@@ -3,19 +3,17 @@
 !> =============================================================================
 
 MODULE test_mod
+  integer, save:: id=0
 CONTAINS
-SUBROUTINE add_task_link_at (link, time)
-  USE list_mod
+SUBROUTINE make_task_at_time (task, time)
   USE task_mod
-  USE timer_mod
   implicit none
   class(task_t), pointer:: task
-  type(link_t),  pointer:: link
   real:: time
   !.............................................................................
-  allocate (link)
   allocate (task)
-  link%item => task
+  id = id+1
+  task%id = id
   task%time = time
 END SUBROUTINE
 END MODULE
@@ -39,67 +37,61 @@ PROGRAM test
   call task_list%init ('task_list')
 
   print*,'first item'
-  call add_task_link_at (link,4.9)
-  call task_list%append (link)
+  call make_task_at_time (task,4.9)
+  call task_list%append (task)
   call task_list%print
 
   print*,'new before'
-  call add_task_link_at (link,0.9)
-  call task_list%add_by_time (link)
+  call make_task_at_time (task,0.9)
+  call task_list%add_by_time (task)
   call task_list%print
 
   print*,'new inside'
-  call add_task_link_at (link,1.9)
-  call task_list%add_by_time (link)
+  call make_task_at_time (task,1.9)
+  call task_list%add_by_time (task)
   call task_list%print
 
   print*,'new after'
-  call add_task_link_at (link,7.9)
-  call task_list%add_by_time (link)
+  call make_task_at_time (task,7.9)
+  call task_list%add_by_time (task)
   call task_list%print
 
   call tic
   n = 1000
   do i=1,n
-    allocate (link)
     allocate (task_t::task)
-    link%item => task
     task%time = i
-    call task_list%append (link)
+    call task_list%append (task)
   end do
   call toc ('     append @  1000', n)
 
   call tic
   m = 200
   do i=1,m
-    allocate (link)
     allocate (task_t::task)
-    link%item => task
     task%time = n-m+(i-0.5)
-    call task_list%add_by_time (link)
+    call task_list%add_by_time (task)
   end do
   call toc ('add_by_time @  1000', m)
 
   call tic
   n = 10000
   do i=1,n
-    allocate (link)
     allocate (task_t::task)
-    link%item => task
     task%time = i
-    call task_list%append (link)
+    call task_list%append (task)
   end do
   call toc ('     append @ 10000', n)
 
   call tic
   m = 1000
   do i=1,m
-    allocate (link)
     allocate (task_t::task)
-    link%item => task
     task%time = n-m+(i-0.5)
-    call task_list%add_by_time (link)
+    call task_list%add_by_time (task)
   end do
   call toc ('add_by_time @ 10000', m)
 
+  call task_list%reset
+  deallocate (task_list)
 END PROGRAM

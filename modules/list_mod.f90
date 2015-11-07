@@ -16,13 +16,14 @@ MODULE list_mod
     type(link_t), pointer:: item => null()
     integer(8):: n = 0
     contains
-    procedure:: init, reset, append, add_by_time, insert, print
+    procedure:: init, reset, append, add_by_time, print
   end type
 PRIVATE
 PUBLIC list_t, link_t
 CONTAINS
 
 !> =============================================================================
+!> Initialize list
 !> =============================================================================
 SUBROUTINE init (list, name)
   class(list_t):: list
@@ -33,10 +34,12 @@ SUBROUTINE init (list, name)
 END SUBROUTINE init
 
 !> =============================================================================
+!> Reset list, by deallocating memory used by items, and deallocating items and
+!> links
 !> =============================================================================
 SUBROUTINE reset (list)
   class(list_t):: list
-  type(link_t), pointer:: link
+  type(link_t), pointer:: link, old
   class(task_t), pointer:: item
   !.............................................................................
   link => list%head
@@ -46,7 +49,9 @@ SUBROUTINE reset (list)
       call item%deallocate
       deallocate (item)
     end if
+    old => link
     link => link%next
+    deallocate (old)
   end do
   nullify (list%head)
   nullify (list%tail)
@@ -55,12 +60,13 @@ END SUBROUTINE reset
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE append (list, link)
+SUBROUTINE append (list, task)
   class(list_t):: list
-  class(task_t), pointer:: item
+  class(task_t), pointer:: task
   type(link_t), pointer:: link
   !.............................................................................
-  item => link%item
+  allocate (link)
+  link%item => task
   if (associated(list%tail)) then
     link%prev => list%tail
     link%prev%next => link
@@ -74,20 +80,23 @@ END SUBROUTINE append
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE add_by_time (list, new)
+SUBROUTINE add_by_time (list, task)
   class(list_t):: list
+  class(task_t), pointer:: task
   type(link_t), pointer:: link, new
   !.............................................................................
   link => list%head
   do while (associated(link))
-    if (link%item%time > new%item%time) then
+    if (link%item%time > task%time) then
+      allocate (new)
+      new%item => task
       call insert (list, link, new)
       list%n = list%n+1
       return
     end if
     link => link%next
   end do
-  call append (list, new)
+  call append (list, task)
   list%n = list%n+1
 END SUBROUTINE add_by_time
 
