@@ -1,0 +1,3 @@
+OPT  = -O0
+DEBUG = -g -fbounds-check -fimplicit-none -fbacktrace -ftrapv -ffpe-trap=invalid,zero,overflow -finit-real=snan
+HW = -Wline-truncation -Wno-surprising

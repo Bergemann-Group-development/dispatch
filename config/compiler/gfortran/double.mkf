@@ -1,0 +1,3 @@
+OPT = -O2 -ftree-vectorize -fdefault-real-8 -fdefault-double-8
+HW = -Wline-truncation -Wno-surprising
+LDFLAGS = $(OPT) $(HW)

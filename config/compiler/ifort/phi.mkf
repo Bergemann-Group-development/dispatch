@@ -1,0 +1,5 @@
+F90=mpiifort.org -cpp -assume byterecl
+LD=mpiifort.org
+HW=-mmic
+DEBUG=-g -traceback
+LIBS=-Wl,-rpath=$(PROD_DIR)/compiler/lib/mic

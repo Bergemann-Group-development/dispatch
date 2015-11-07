@@ -1,0 +1,3 @@
+OPT = -O3
+HW = -axAVX -xSSE4.1 -diag-disable remark
+DEBUG = -g -traceback -fpe:0

@@ -1,0 +1,8 @@
+# Non-default compiler
+#COMPILER = ifort
+
+# Non-default patch directory
+#PATCH = ../patch/test
+
+# Compile without MPI library
+#MPI = nompi

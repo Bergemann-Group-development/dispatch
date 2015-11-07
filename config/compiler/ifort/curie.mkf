@@ -1,0 +1,14 @@
+# If using mpi and openmp add link option for threadsafe mpi library
+ifeq ($(strip $(DO_OPENMP)),yes)
+ifeq ($(strip $(DO_MPI)),yes)
+LDFLAGS += -mt_mpi 
+endif
+endif
+
+######################
+# speccial case
+#SOPT = -O1
+#SFLAGS = $(DEBUG) $(SOPT) $(HW)
+#VB = ../amr/virtual_boundaries.f90
+#virtual_boundaries.o: $(VB)
+#	$(F90) $(DEBUG) $(SOPT) $(HW) $(PAR) $(DEFINES) -c $(VB) -o virtual_boundaries.o

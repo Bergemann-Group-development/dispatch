@@ -1,0 +1,6 @@
+F90 = mpiifort -cpp -assume byterecl
+LD  = mpiifort -cpp
+
+HW = -axAVX -xSSE4.1
+
+#LIBS = -L/usr/lib64/libslurm.so -lpmi

@@ -1,0 +1,3 @@
+HW = -mavx
+COMPILER = gfortran
+F90 = mpif90 -x f95-cpp-input -ffree-line-length-0 -Wline-truncation -Wno-surprising -w

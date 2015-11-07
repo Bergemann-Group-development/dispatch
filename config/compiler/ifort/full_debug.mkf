@@ -1,0 +1,2 @@
+OPT = -O0
+DEBUG = -g -traceback -check all -check noarg_temp_created -fp-stack-check -fpe0 -ftrapuv

@@ -1,0 +1,4 @@
+F90 = mpiifort -cpp -assume byterecl
+LD  = mpiifort
+
+HW = -axAVX -xSSE4.1 -diag-disable remark

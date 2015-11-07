@@ -1,0 +1,3 @@
+OPT = -O2
+HW = -xCORE-AVX2
+DEBUG = -g -traceback -fpe:0
