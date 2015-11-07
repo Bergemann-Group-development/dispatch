@@ -32,18 +32,20 @@ SUBROUTINE toc (label, n)
   !.............................................................................
 #ifdef _OPENMP
   real(8):: omp_get_wtime
-  wt = (omp_get_wtime() - wt)/n
+  wt = (omp_get_wtime() - wt)
 #else
   real(8):: mpi_wtime
-  wt = (MPI_wtime() - wt)/n
+  wt = (MPI_wtime() - wt)
 #endif
-  if (wt < 1d-3) then
-    print 1, label, wt*1e6, 'mus/call'
+  if (wt/n < 1d-6) then
+    print 1, label, wt,  'sec', wt/n*1e9, 'ns/call'
+  else if (wt < 1d-3) then
+    print 1, label, wt,  'sec', wt/n*1e6, 'mus/call'
   else if (wt < 1d0) then
-    print 1, label, wt*1e3, 'ms/call'
+    print 1, label, wt,  'sec', wt/n*1e3, 'ms/call'
   else
-    print 1, label, wt, 's/call'
-    1 format(1x,a,g11.3,1x,a)
+    print 1, label, wt,  'sec', wt/n, 's/call'
+    1 format(1x,a,1h:,2(g20.3,1x,a))
   end if
 END SUBROUTINE toc
 
