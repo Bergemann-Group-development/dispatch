@@ -3,6 +3,7 @@
 #OPTS = full_debug
 OPTS = optimized
 
+OBJ += 
 default: test.x
 
 # Common configuration

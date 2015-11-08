@@ -10,3 +10,5 @@ TOP = ../..
 include $(TOP)/config/Makefile
 
 test.x: $(OBJ)
+
+test.o:

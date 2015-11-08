@@ -17,8 +17,9 @@ MODULE patch_mod
   end type
 CONTAINS
 
-SUBROUTINE init (self)
+SUBROUTINE init (self, id)
   class(patch_t):: self
+  integer:: id
 END SUBROUTINE
 
 SUBROUTINE update (self)

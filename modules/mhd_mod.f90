@@ -15,8 +15,9 @@ MODULE mhd_mod
   end type
 CONTAINS
 
-SUBROUTINE init_mhd (self)
+SUBROUTINE init_mhd (self, id)
   class(mhd_t):: self
+  integer:: id
 END SUBROUTINE
 
 SUBROUTINE update_mhd (self)

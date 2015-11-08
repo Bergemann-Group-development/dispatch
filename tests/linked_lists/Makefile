@@ -3,7 +3,7 @@
 OPTS = full_debug
 #OPTS = optimized
 
-OBJ += mhd_mod.o
+OBJ +=
 default: test.x
 
 # Common configuration

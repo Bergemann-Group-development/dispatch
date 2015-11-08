@@ -58,6 +58,8 @@ PROGRAM test
   USE task_mod
   USE timer_mod
   USE dust_mod
+  USE planet_mod
+  USE star_mod
   implicit none
   class(star_t), pointer:: star
   class(planet_t), pointer:: planet

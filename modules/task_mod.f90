@@ -32,9 +32,10 @@ MODULE task_mod
     procedure(print)     , deferred:: print
   end type
   abstract interface 
-    SUBROUTINE init (self)
+    SUBROUTINE init (self, id)
       import tasks_t
       class(tasks_t):: self
+      integer:: id
     END SUBROUTINE
     SUBROUTINE allocate (self)
       import tasks_t

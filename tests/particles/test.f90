@@ -6,11 +6,14 @@ PROGRAM test
   USE list_mod
   USE task_mod
   USE timer_mod
+  USE star_mod
+  USE planet_mod
+  USE particle_mod
   implicit none
   class(star_t), pointer:: star
   class(planet_t), pointer:: planet
   class(particles_t), pointer:: dust
-  integer:: ndim=3, nbin=64, npart=1000000, ip, ib, id
+  integer:: ndim=3, nbin=64, npart=100000, ip, ib, id, it
   real, dimension(:,:), pointer:: p, v, a, f, r
   real, dimension(:),   pointer:: m, s, t, dt, ra
 
@@ -18,7 +21,7 @@ PROGRAM test
   ! Allocate variables
   !-----------------------------------------------------------------------------
   allocate (dust, star, planet)
-  allocate (dust%particles(npart))
+  allocate (dust%particles(npart,ntime))
   allocate (f(nbin,3))
   allocate (a(nbin,3))
   allocate (r(nbin,3))
@@ -26,18 +29,20 @@ PROGRAM test
   allocate (s(nbin))
   allocate (ra(nbin))
   do ip=1,npart
-    allocate (dust%particles(ip)%p(nbin,3))
-    allocate (dust%particles(ip)%v(nbin,3))
-    allocate (dust%particles(ip)%m(nbin))
-    allocate (dust%particles(ip)%s(nbin))
-    allocate (dust%particles(ip)%t(nbin))
-    allocate (dust%particles(ip)%dt(nbin))
-    dust%particles(ip)%p(:,:)  = 0.0
-    dust%particles(ip)%v  = 0.0
-    dust%particles(ip)%m  = 1.0
-    dust%particles(ip)%s  = 1.0
-    dust%particles(ip)%t  = 0.0
-    dust%particles(ip)%dt = 1.0
+  do it=1,ntime
+    allocate (dust%particles(ip,it)%p(nbin,3))
+    allocate (dust%particles(ip,it)%v(nbin,3))
+    allocate (dust%particles(ip,it)%m(nbin))
+    allocate (dust%particles(ip,it)%s(nbin))
+    allocate (dust%particles(ip,it)%t(nbin))
+    allocate (dust%particles(ip,it)%dt(nbin))
+    dust%particles(ip,it)%p(:,:)  = 0.0
+    dust%particles(ip,it)%v(:,:)  = 0.0
+    dust%particles(ip,it)%m(:)  = 1.0
+    dust%particles(ip,it)%s(:)  = 1.0
+    dust%particles(ip,it)%t(:)  = 0.0
+    dust%particles(ip,it)%dt(:) = 1.0
+  end do
   end do
   !-----------------------------------------------------------------------------
   ! Initialize positions
@@ -48,13 +53,14 @@ PROGRAM test
   ! Evolve with explicit variables
   !-----------------------------------------------------------------------------
   call tic
+  it = 1
   do ip=1,npart
-    p  => dust%particles(ip)%p
-    v  => dust%particles(ip)%v
-    m  => dust%particles(ip)%m
-    s  => dust%particles(ip)%s
-    t  => dust%particles(ip)%t
-    dt => dust%particles(ip)%dt
+    p  => dust%particles(ip,it)%p
+    v  => dust%particles(ip,it)%v
+    m  => dust%particles(ip,it)%m
+    s  => dust%particles(ip,it)%s
+    t  => dust%particles(ip,it)%t
+    dt => dust%particles(ip,it)%dt
     ra = 0.0
     do id=1,ndim
     do ib=1,nbin
@@ -83,12 +89,12 @@ PROGRAM test
   !-----------------------------------------------------------------------------
   call tic
   do ip=1,npart
-    p  => dust%particles(ip)%p
-    v  => dust%particles(ip)%v
-    m  => dust%particles(ip)%m
-    s  => dust%particles(ip)%s
-    t  => dust%particles(ip)%t
-    dt => dust%particles(ip)%dt
+    p  => dust%particles(ip,it)%p
+    v  => dust%particles(ip,it)%v
+    m  => dust%particles(ip,it)%m
+    s  => dust%particles(ip,it)%s
+    t  => dust%particles(ip,it)%t
+    dt => dust%particles(ip,it)%dt
     call move_particles (p, v, m, s, t, dt, ra, r, f, a, star%position, nbin, ndim)
   end do
   call toc ("particle motion", npart*nbin)

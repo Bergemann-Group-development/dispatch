@@ -7,6 +7,9 @@ PROGRAM test
   USE list_mod
   USE task_mod
   USE timer_mod
+  USE particle_mod
+  USE planet_mod
+  USE star_mod
   implicit none
   type part_t
     real:: p(3), v(3)
