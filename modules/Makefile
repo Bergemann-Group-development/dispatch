@@ -1,15 +1,15 @@
 
 # Local object files to include
-OBJ += \
-task_mod.o \
-hd_mod.o \
-mhd_mod.o \
-list_mod.o \
-patch_mod.o \
-particle_mod.o \
-planet_mod.o \
-star_mod.o \
-timer_mod.o
+#OBJ += \
+#task_mod.o \
+#hd_mod.o \
+#mhd_mod.o \
+#list_mod.o \
+#patch_mod.o \
+#particle_mod.o \
+#planet_mod.o \
+#star_mod.o \
+#timer_mod.o
 
 list_mod.o: task_mod.o
 

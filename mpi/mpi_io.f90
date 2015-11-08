@@ -1,7 +1,9 @@
-! $Id: 07b8ba16660e71c0147ae07a98f2cf05caeef8be $
-!*******************************************************************************
+!> =============================================================================
+!> $Id: 07b8ba16660e71c0147ae07a98f2cf05caeef8be $
+!> MPI calls related to input/output
+!> =============================================================================
 MODULE io
-  USE mpi_base
+  USE mpi_basic
   USE omp_mod, only: omp_mythread, omp_trace
   implicit none
 PUBLIC
@@ -38,14 +40,16 @@ PUBLIC
   integer::         leaf_bit=2**14
 CONTAINS
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE init_io
   call getarg(1,inputfile)                                                      ! 1st command line argument
   if (inputfile==' ') inputfile = 'input.nml'                                   ! default = input.nml
   open (input, file=inputfile, form='formatted', status='old')                  ! open for reading
 END SUBROUTINE init_io
 
-!*******************************************************************************
+!> =============================================================================
+!> Print the ID string, but only once, and only on the master
+!> =============================================================================
 SUBROUTINE print_id (id)
   implicit none
   character(len=mch) id
@@ -63,7 +67,10 @@ SUBROUTINE print_id (id)
   end if
 END SUBROUTINE print_id
 
-!*******************************************************************************
+!> =============================================================================
+!> Basic trace call, to be placed at the beginning of files.  It MUST be 
+!> matched by a "call trace_end", also at return point inside the file.
+!> =============================================================================
 SUBROUTINE trace_begin (id)
   implicit none
   character(len=*) id
@@ -84,7 +91,9 @@ SUBROUTINE trace_begin (id)
   end if
 END SUBROUTINE trace_begin
 
-!*******************************************************************************
+!> =============================================================================
+!> Tracing OMP
+!> =============================================================================
 SUBROUTINE trace_omp (id)
   implicit none
   character(len=*) id
@@ -96,7 +105,9 @@ SUBROUTINE trace_omp (id)
   end if
 END SUBROUTINE trace_omp
 
-!*******************************************************************************
+!> =============================================================================
+!> Optional call, to be place between trace_begin and trace_end
+!> =============================================================================
 SUBROUTINE trace (id)
   implicit none
   character(len=*) id
@@ -112,7 +123,9 @@ SUBROUTINE trace (id)
   end if
 END SUBROUTINE trace
 
-!*******************************************************************************
+!> =============================================================================
+!> Matches a trace_begin, and reduces the indentation back to what it was
+!> =============================================================================
 SUBROUTINE trace_end
   implicit none
   integer i
@@ -132,7 +145,9 @@ SUBROUTINE trace_end
   !write(output,*) 'indent-:', indent, level, omp_mythread()
 END SUBROUTINE trace_end
 
-!*******************************************************************************
+!> =============================================================================
+!> Open a file for MPI parallel I/O
+!> =============================================================================
 SUBROUTINE file_open_mpi (filename, dd, d, offset, mode)
   implicit none
   integer:: mode
@@ -148,7 +163,7 @@ SUBROUTINE file_open_mpi (filename, dd, d, offset, mode)
   CALL MPI_Type_commit (filetype, mpi_err)                                      ! commit filetype
 END SUBROUTINE file_open_mpi
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE file_openw_mpi (filename, dd, d, offset)
   implicit none
   integer, dimension(3):: dd, d, offset
@@ -157,7 +172,9 @@ SUBROUTINE file_openw_mpi (filename, dd, d, offset)
   call file_open_mpi (filename, dd, d, offset, MPI_MODE_CREATE+MPI_MODE_RDWR)   ! open read-write
 END SUBROUTINE file_openw_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Open for reading
+!> =============================================================================
 SUBROUTINE file_openr_mpi (filename, dd, d, offset)
   implicit none
   integer, dimension(3):: dd, d, offset
@@ -166,7 +183,9 @@ SUBROUTINE file_openr_mpi (filename, dd, d, offset)
   call file_open_mpi (filename, dd, d, offset, MPI_MODE_RDONLY)                 ! open read-only
 END SUBROUTINE file_openr_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Open for writing
+!> =============================================================================
 SUBROUTINE file_write_mpi (f, d, rec)
   implicit none
   integer:: d(3), rec
@@ -177,7 +196,9 @@ SUBROUTINE file_write_mpi (f, d, rec)
   CALL MPI_File_write_all (handle, f , product(d), MPI_REAL, status, mpi_err)   ! collective write
 END SUBROUTINE file_write_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Read with MPI parallell I/O
+!> =============================================================================
 SUBROUTINE file_read_mpi (f, d, rec)
   implicit none
   integer:: d(3), rec
@@ -188,7 +209,9 @@ SUBROUTINE file_read_mpi (f, d, rec)
   CALL MPI_FILE_READ_ALL(handle, f , product(d), MPI_REAL, status, mpi_err)     ! collective read
 END SUBROUTINE file_read_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Close a file that was opened for MPI parallel I/O
+!> =============================================================================
 SUBROUTINE file_close_mpi
   implicit none
 !...............................................................................

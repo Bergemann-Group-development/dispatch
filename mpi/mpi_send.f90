@@ -1,12 +1,16 @@
-! $Id: 0e5bfbb201ad3dac127445435aa8d590b4a50a74 $
-!*******************************************************************************
+!> =============================================================================
+!> $Id: 0e5bfbb201ad3dac127445435aa8d590b4a50a74 $
+!> MPI point-to-point communication calls
+!> =============================================================================
 MODULE mpi_send
-  USE mpi_base
+  USE mpi_basic
   implicit none 
 PUBLIC
 CONTAINS
 
-!*******************************************************************************
+!> =============================================================================
+!> Broadcase nw ints from rank
+!> =============================================================================
 SUBROUTINE bcast_ints_mpi (a, nw, rank)
   implicit none
   integer:: nw, rank
@@ -15,7 +19,9 @@ SUBROUTINE bcast_ints_mpi (a, nw, rank)
   call assert_mpi ('bcast_ints_mpi', mpi_err)
 END SUBROUTINE bcast_ints_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Broadcase nw reals from rank
+!> =============================================================================
 SUBROUTINE bcast_reals_mpi (a, nw, rank)
   implicit none
   integer:: nw, rank
@@ -24,7 +30,9 @@ SUBROUTINE bcast_reals_mpi (a, nw, rank)
   call assert_mpi ('bcast_reals_mpi', mpi_err)
 END SUBROUTINE bcast_reals_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Broadcase one real8 from rank
+!> =============================================================================
 SUBROUTINE bcast_real8_mpi (a, rank)
   implicit none
   integer:: rank
@@ -33,7 +41,9 @@ SUBROUTINE bcast_real8_mpi (a, rank)
   call assert_mpi ('bcast_reals_mpi', mpi_err)
 END SUBROUTINE bcast_real8_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Broadcase nw real8s from rank
+!> =============================================================================
 SUBROUTINE bcast_real8s_mpi (a, nw, rank)
   implicit none
   integer:: nw, rank
@@ -42,7 +52,9 @@ SUBROUTINE bcast_real8s_mpi (a, nw, rank)
   call assert_mpi ('bcast_reals_mpi', mpi_err)
 END SUBROUTINE bcast_real8s_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Non-blocking send of nw ints to rank
+!> =============================================================================
 SUBROUTINE isend_ints_mpi (a, nw, rank, req)
   implicit none
   integer:: nw, rank, req
@@ -51,7 +63,9 @@ SUBROUTINE isend_ints_mpi (a, nw, rank, req)
   call assert_mpi ('isend_reals_mpi', mpi_err)
 END SUBROUTINE isend_ints_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Non-blocking send of nw ints to rank
+!> =============================================================================
 SUBROUTINE irecv_ints_mpi (a, nw, rank, req)
   implicit none
   integer:: nw, rank, req
@@ -60,7 +74,9 @@ SUBROUTINE irecv_ints_mpi (a, nw, rank, req)
   call assert_mpi ('irecv_reals_mpi', mpi_err)
 END SUBROUTINE irecv_ints_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Non-blocking send of nw reals to rank
+!> =============================================================================
 SUBROUTINE isend_reals_mpi (a, nw, rank, req)
   implicit none
   integer:: nw, rank, req
@@ -69,7 +85,9 @@ SUBROUTINE isend_reals_mpi (a, nw, rank, req)
   call assert_mpi ('isend_reals_mpi', mpi_err)
 END SUBROUTINE isend_reals_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Non-blocking send of nw reals to rank
+!> =============================================================================
 SUBROUTINE issend_reals_mpi (a, nw, rank, req)
   implicit none
   integer:: nw, rank, req
@@ -78,7 +96,9 @@ SUBROUTINE issend_reals_mpi (a, nw, rank, req)
   call assert_mpi ('isend_reals_mpi', mpi_err)
 END SUBROUTINE issend_reals_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Non-blocking recv of nw reals from rank
+!> =============================================================================
 SUBROUTINE irecv_reals_mpi (a, nw, rank, req)
   implicit none
   integer:: nw, rank, req
@@ -87,7 +107,9 @@ SUBROUTINE irecv_reals_mpi (a, nw, rank, req)
   call assert_mpi ('irecv_reals_mpi', mpi_err)
 END SUBROUTINE irecv_reals_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Wait for the completion of an MPI operation
+!> =============================================================================
 SUBROUTINE wait_mpi (req)
   implicit none
   integer:: req
@@ -96,7 +118,9 @@ SUBROUTINE wait_mpi (req)
   call assert_mpi ('wait_mpi', mpi_err)
 END SUBROUTINE wait_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Wait for the completion of all MPI operations corresponding to req(1:n)
+!> =============================================================================
 SUBROUTINE waitall_mpi (req, n)
   implicit none
   integer:: n, req(n)

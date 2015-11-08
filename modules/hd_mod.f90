@@ -8,6 +8,7 @@ MODULE hd_mod
   implicit none
   type, extends(patch_t):: hd_t
     real:: nu(4)
+    contains
     procedure:: init       => init_hd
     procedure:: allocate   => allocate_hd
     procedure:: deallocate => deallocate_hd

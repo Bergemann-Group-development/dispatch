@@ -1,6 +1,9 @@
-!*******************************************************************************
+!> =============================================================================
+!> $Id$
+!> MPI calls related to coordinate systems
+!> =============================================================================
 MODULE mpi_coords
-  USE mpi_base
+  USE mpi_basic
   implicit none
 PUBLIC
   logical:: cart_created=.false.! Set to true if cartesian mpi coordinates are set up
@@ -15,7 +18,9 @@ PUBLIC
   integer:: mpi_comm_cart       ! Communicator for cartesian ordering
 CONTAINS
 
-!*******************************************************************************
+!> =============================================================================
+!> Create a Cartesian arrangement of MPI ranks
+!> =============================================================================
 SUBROUTINE cart_create_mpi (n_mpi, gn)
   implicit none
   integer, dimension(3):: n_mpi, gn, n

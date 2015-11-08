@@ -1,13 +1,17 @@
-! $Id: 79486ae72058c4609ebd8e5f4be02792e50c8ca1 $
-!*******************************************************************************
+!> =============================================================================
+!> $Id: 79486ae72058c4609ebd8e5f4be02792e50c8ca1 $
+!> MPI remote-memory-access (RMA) calls, also referred to as one-sided MPI
+!> =============================================================================
 MODULE mpi_rma
-  USE mpi_base
+  USE mpi_basic
   USE io
   implicit none
 PUBLIC
 CONTAINS
 
-!*******************************************************************************
+!> =============================================================================
+!> Free a window opened with win_create_mpi or win_create_dynamic_mpi
+!> =============================================================================
 SUBROUTINE win_free_mpi (win)
   implicit none
   integer:: win
@@ -21,7 +25,9 @@ SUBROUTINE win_free_mpi (win)
   call trace_end
 END SUBROUTINE win_free_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Lock a window, preparing for access from rank
+!> =============================================================================
 SUBROUTINE win_lock_mpi (win, rank)
   implicit none
   integer:: win, nw, offset, rank
@@ -33,7 +39,9 @@ SUBROUTINE win_lock_mpi (win, rank)
   call assert_mpi ('MPI_Win_lock', mpi_err)
 END SUBROUTINE win_lock_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Lock a window, preparing for exclusive access from rank
+!> =============================================================================
 SUBROUTINE win_lock_x_mpi (win, rank)
   implicit none
   integer:: win, nw, offset, rank
@@ -45,7 +53,9 @@ SUBROUTINE win_lock_x_mpi (win, rank)
   call assert_mpi ('MPI_Win_lock', mpi_err)
 END SUBROUTINE win_lock_x_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Remove a lock
+!> =============================================================================
 SUBROUTINE win_unlock_mpi (win, rank)
   implicit none
   integer:: win, nw, offset, rank
@@ -59,7 +69,9 @@ SUBROUTINE win_unlock_mpi (win, rank)
   call assert_mpi ('MPI_Win_unlock', mpi_err)
 END SUBROUTINE win_unlock_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Synchronize the operations on MPI open windows
+!> =============================================================================
 SUBROUTINE win_fence_mpi (win)
   implicit none
   integer:: win
@@ -72,7 +84,9 @@ SUBROUTINE win_fence_mpi (win)
   call trace_end
 END SUBROUTINE win_fence_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Force a sync
+!> =============================================================================
 SUBROUTINE win_sync_mpi (win, rank)
   implicit none
   integer:: win, rank
@@ -85,7 +99,9 @@ SUBROUTINE win_sync_mpi (win, rank)
   call trace_end
 END SUBROUTINE win_sync_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Create a window that can be changed dynamically
+!> =============================================================================
 SUBROUTINE win_create_dynamic_mpi (win)
   implicit none
   integer:: win
@@ -100,7 +116,9 @@ SUBROUTINE win_create_dynamic_mpi (win)
   !call trace_end
 END SUBROUTINE win_create_dynamic_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Add a value to an integer "hosted" on a certain rank (e.g. 0 = master)
+!> =============================================================================
 SUBROUTINE win_add_int_mpi (win, rank, add, val)
   implicit none
   integer:: win, rank, n=1, val, add, org, tmp
@@ -125,7 +143,9 @@ SUBROUTINE win_add_int_mpi (win, rank, add, val)
   call trace_end
 END SUBROUTINE win_add_int_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Find the smallest value among windows (?)
+!> =============================================================================
 SUBROUTINE win_min_real_mpi (win, val)
   implicit none
   real(8):: val
@@ -147,7 +167,9 @@ END SUBROUTINE win_min_real_mpi
 
 END MODULE mpi_rma
 
-!*******************************************************************************
+!> =============================================================================
+!> Create an MPI window of size "nb" bytes
+!> =============================================================================
 SUBROUTINE win_create_mpi (win, b, nb)
   USE mpi_rma
   implicit none
@@ -174,7 +196,9 @@ SUBROUTINE win_create_mpi (win, b, nb)
   !call trace_end
 END SUBROUTINE win_create_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Define a new range for a window
+!> =============================================================================
 SUBROUTINE win_attach_mpi (win, b, nb)
   USE mpi_rma
   implicit none
@@ -193,7 +217,9 @@ SUBROUTINE win_attach_mpi (win, b, nb)
   call trace_end
 END SUBROUTINE win_attach_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Cancel a previous win_attach
+!> =============================================================================
 SUBROUTINE win_detach_mpi (win, b)
   USE mpi_rma
   implicit none
@@ -211,7 +237,9 @@ SUBROUTINE win_detach_mpi (win, b)
   call trace_end
 END SUBROUTINE win_detach_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Get nb bytes from a window on rank
+!> =============================================================================
 SUBROUTINE win_get_mpi (win, b, nb, offset, rank)
   USE mpi_rma
   implicit none
@@ -229,7 +257,9 @@ SUBROUTINE win_get_mpi (win, b, nb, offset, rank)
   if (verbose>1) call trace_end
 END SUBROUTINE win_get_mpi
 
-!*******************************************************************************
+!> =============================================================================
+!> Put nb bytes from a window on rank
+!> =============================================================================
 SUBROUTINE win_put_mpi (win, b, nb, offset, rank)
   USE mpi_rma
   implicit none

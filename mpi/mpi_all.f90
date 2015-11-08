@@ -1,11 +1,14 @@
-!*******************************************************************************
+!> =============================================================================
+!> $Id$
+!> Module with all-to-all MPI calls 
+!> =============================================================================
 MODULE mpi_all
-  USE mpi_base
+  USE mpi_basic
   implicit none 
 PUBLIC
 CONTAINS
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE scatter_reals_mpi (send, recv, count, rank, nrank, comm)
   implicit none
   integer count, rank, nrank, comm
@@ -16,7 +19,7 @@ SUBROUTINE scatter_reals_mpi (send, recv, count, rank, nrank, comm)
   call assert_mpi ('allscatter_mpi', mpi_err)
 END SUBROUTINE scatter_reals_mpi
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE gather_reals_mpi (send, recv, count, rank, nrank, comm)
   implicit none
   integer count, rank, nrank, comm
@@ -27,7 +30,7 @@ SUBROUTINE gather_reals_mpi (send, recv, count, rank, nrank, comm)
   call assert_mpi ('allscatter_mpi', mpi_err)
 END SUBROUTINE gather_reals_mpi
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE allgather_reals_mpi (send, recv, count, rank, nrank, comm)
   implicit none
   integer count, rank, nrank, comm
@@ -37,7 +40,7 @@ SUBROUTINE allgather_reals_mpi (send, recv, count, rank, nrank, comm)
   call assert_mpi ('allgather_mpi', mpi_err)
 END SUBROUTINE allgather_reals_mpi
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE alltoall_reals_mpi (send, recv, count, nrank, comm)
   implicit none
   integer count, nrank, comm
@@ -47,7 +50,7 @@ SUBROUTINE alltoall_reals_mpi (send, recv, count, nrank, comm)
   call assert_mpi ('alltoall_mpi', mpi_err)
 END SUBROUTINE alltoall_reals_mpi
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE alltoallv_reals_mpi (send, send_count, send_offset, &
                           recv, recv_count, recv_offset, nrank, comm)
   implicit none

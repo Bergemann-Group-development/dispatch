@@ -1,6 +1,6 @@
 ! $Id: 03ec1597fcadf24074074e81168301626fbbb235 $
-!*******************************************************************************
-MODULE mpi_base
+!> =============================================================================
+MODULE mpi_basic
   implicit none
   integer:: mpi_err             ! MPI error status
   logical:: mpi_master          ! true on MPI master (rank 0)
@@ -12,7 +12,7 @@ PUBLIC
   integer, parameter:: mch=120  ! max character string size
 CONTAINS
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE init_mpi
   implicit none
   character(len=mch):: id='nompi.f90 $Id: 03ec1597fcadf24074074e81168301626fbbb235 $'
@@ -27,28 +27,28 @@ SUBROUTINE init_mpi
   call print_id (id)
 END SUBROUTINE init_mpi
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE end_mpi
   implicit none
 !..............................................................................
   call exit        ! avoid "stop" which may produce one output line per process
 END SUBROUTINE
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE abort_mpi
   implicit none
 !...............................................................................
   call exit
 END SUBROUTINE abort_mpi
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE barrier_mpi (label)
   implicit none
   character(len=*) label
 !...............................................................................
 END SUBROUTINE barrier_mpi
 
-!*******************************************************************************
+!> =============================================================================
 REAL(kind=8) FUNCTION wallclock()
   implicit none
   integer, save:: count, count_rate=0, count_max
@@ -63,7 +63,7 @@ REAL(kind=8) FUNCTION wallclock()
   wallclock = count/real(count_rate) - offset
 END FUNCTION wallclock
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE print_id (id)
   implicit none
   character(len=mch) id
@@ -79,4 +79,4 @@ SUBROUTINE print_id (id)
   end if
 END SUBROUTINE print_id
 
-END MODULE mpi_base
+END MODULE mpi_basic

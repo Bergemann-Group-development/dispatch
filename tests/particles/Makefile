@@ -3,7 +3,7 @@
 #OPTS = full_debug
 OPTS = optimized
 
-OBJ += 
+OBJ += list_mod.o task_mod.o particle_mod.o star_mod.o planet_mod.o timer_mod.o
 default: test.x
 
 # Common configuration
