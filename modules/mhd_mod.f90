@@ -1,10 +1,13 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> Template module for MHD task
+!> Template module for MHD task.  Copy this to your experiment directory, or
+!> to a specialized solver directory, and modify with relevant parameters and 
+!> procedures..
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE mhd_mod
-  USE hd_mod
+  USE patch_mod
   implicit none
-  type, extends(hd_t):: mhd_t
+  type, extends(patch_t):: mhd_t
+    real:: nu(4)
     real:: eta(4)
     contains
     procedure:: init       => init_mhd
