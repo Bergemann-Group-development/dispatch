@@ -6,12 +6,12 @@ MODULE test_mod
   integer, save:: id=0
 CONTAINS
 SUBROUTINE make_task_at_time (task, time)
-  USE task_mod
+  USE mhd_mod
   implicit none
-  class(task_t), pointer:: task
+  class(mhd_t), pointer:: task
   real:: time
   !.............................................................................
-  allocate (task)
+  allocate (mhd_t::task)
   id = id+1
   task%id = id
   task%time = time
@@ -20,12 +20,12 @@ END MODULE
 
 PROGRAM test
   USE list_mod
-  USE task_mod
+  USE mhd_mod
   USE timer_mod
   USE test_mod
   implicit none
-  class(task_t), pointer:: task
-  type(list_t), pointer:: task_list
+  class(mhd_t), pointer:: task
+  class(list_t), pointer:: task_list
   type(link_t), pointer:: link
   class(*), pointer:: item
   integer:: i, n, m
@@ -59,7 +59,7 @@ PROGRAM test
   call tic
   n = 1000
   do i=1,n
-    allocate (task_t::task)
+    allocate (task)
     task%time = i
     call task_list%append (task)
   end do
@@ -68,7 +68,7 @@ PROGRAM test
   call tic
   m = 200
   do i=1,m
-    allocate (task_t::task)
+    allocate (task)
     task%time = n-m+(i-0.5)
     call task_list%add_by_time (task)
   end do
@@ -77,7 +77,7 @@ PROGRAM test
   call tic
   n = 10000
   do i=1,n
-    allocate (task_t::task)
+    allocate (task)
     task%time = i
     call task_list%append (task)
   end do
@@ -86,7 +86,7 @@ PROGRAM test
   call tic
   m = 1000
   do i=1,m
-    allocate (task_t::task)
+    allocate (task)
     task%time = n-m+(i-0.5)
     call task_list%add_by_time (task)
   end do

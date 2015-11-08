@@ -1,11 +1,11 @@
 !> *****************************************************************************
-!> Module with list handling for generic class task_t objects
+!> Module with list handling for generic class tasks_t objects
 !> *****************************************************************************
 MODULE list_mod
   USE task_mod
   implicit none
   type link_t
-    class(task_t), pointer :: item => null()
+    class(tasks_t), pointer :: item => null()
     type(link_t),  pointer :: next => null()
     type(link_t),  pointer :: prev => null()
   end type
@@ -44,7 +44,7 @@ END SUBROUTINE init
 SUBROUTINE reset (list)
   class(list_t):: list
   type(link_t), pointer:: link, old
-  class(task_t), pointer:: item
+  class(tasks_t), pointer:: item
   !.............................................................................
   link => list%head
   do while (associated(link))
@@ -66,7 +66,7 @@ END SUBROUTINE reset
 !> =============================================================================
 SUBROUTINE append (list, task)
   class(list_t):: list
-  class(task_t), pointer:: task
+  class(tasks_t), pointer:: task
   type(link_t), pointer:: link
   !.............................................................................
   allocate (link)
@@ -86,7 +86,7 @@ END SUBROUTINE append
 !> =============================================================================
 SUBROUTINE add_by_time (list, task)
   class(list_t):: list
-  class(task_t), pointer:: task
+  class(tasks_t), pointer:: task
   type(link_t), pointer:: link, new
   !.............................................................................
   link => list%head
@@ -110,7 +110,7 @@ END SUBROUTINE add_by_time
 SUBROUTINE insert (list, old, new)
   class(list_t):: list
   type(link_t), pointer:: old, prev, next, new
-  class(task_t), pointer:: item
+  class(tasks_t), pointer:: item
   !.............................................................................
   if (associated(old%prev)) then
     new%prev => old%prev
@@ -128,7 +128,7 @@ END SUBROUTINE insert
 SUBROUTINE print (list)
   class(list_t):: list
   type(link_t), pointer:: link, prev
-  class(task_t), pointer:: item
+  class(tasks_t), pointer:: item
   !.............................................................................
   link => list%head
   print*,'print: ',list%name, list%n
