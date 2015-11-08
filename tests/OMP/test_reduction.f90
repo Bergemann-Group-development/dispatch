@@ -1,4 +1,4 @@
-USE timer_mod
+USE mpi_timer
 implicit none
 real, dimension(:), allocatable:: a, b, c
 integer:: i, n

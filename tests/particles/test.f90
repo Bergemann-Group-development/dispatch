@@ -5,7 +5,7 @@
 PROGRAM test
   USE list_mod
   USE task_mod
-  USE timer_mod
+  USE mpi_timer
   USE star_mod
   USE planet_mod
   USE particle_mod

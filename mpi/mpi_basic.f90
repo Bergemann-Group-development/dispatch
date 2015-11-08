@@ -101,33 +101,6 @@ SUBROUTINE barrier_mpi (label)
 END SUBROUTINE barrier_mpi
 
 !> =============================================================================
-FUNCTION wallclock() result (delta)
-  real(kind=8):: time, delta
-  real(kind=8), save:: offset=-1.
-!...............................................................................
-#ifdef _OPENMP
-  real(kind=8):: OMP_Get_Wtime, OMP_Get_Wtick
-  logical:: OMP_in_parallel
-  if (OMP_in_parallel()) then
-    time = OMP_Get_Wtime()
-  else
-    !$omp parallel
-    time = OMP_Get_Wtime()
-    !$omp end parallel
-  end if
-  if (offset == -1.) then
-    !print *,'tick:', OMP_Get_Wtick()
-#else
-  time = MPI_Wtime()
-  if (offset == -1.) then
-    !print *,'tick:', MPI_Wtick()
-#endif
-    offset=time
-  end if
-  delta = time-offset
-END FUNCTION wallclock
-
-!> =============================================================================
 SUBROUTINE print_id (id)
   character(len=mch) id
   character(len=mch), save:: hl= &

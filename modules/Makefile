@@ -9,7 +9,7 @@
 #particle_mod.o \
 #planet_mod.o \
 #star_mod.o \
-#timer_mod.o
+#mpi_timer.o
 
 list_mod.o: task_mod.o
 

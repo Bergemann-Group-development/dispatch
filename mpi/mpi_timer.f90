@@ -1,7 +1,9 @@
 !> *****************************************************************************
-!> Support tic/toc timing, as in MATLAB
+!> Support tic/toc timing, as in MATLAB, and accurate wallclock() function.
+!> The timing is generally much more accurate if this module is compiled with
+!> OMP active.
 !> *****************************************************************************
-MODULE timer_mod
+MODULE mpi_timer
   implicit none
 #ifndef _OPEMP
   include 'mpif.h'
@@ -49,4 +51,31 @@ SUBROUTINE toc (label, n)
   end if
 END SUBROUTINE toc
 
-END MODULE timer_mod
+!> =============================================================================
+FUNCTION wallclock() result (delta)
+  real(kind=8):: time, delta
+  real(kind=8), save:: offset=-1.
+!...............................................................................
+#ifdef _OPENMP
+  real(kind=8):: OMP_Get_Wtime, OMP_Get_Wtick
+  logical:: OMP_in_parallel
+  if (OMP_in_parallel()) then
+    time = OMP_Get_Wtime()
+  else
+    !$omp parallel
+    time = OMP_Get_Wtime()
+    !$omp end parallel
+  end if
+  if (offset == -1.) then
+    !print *,'tick:', OMP_Get_Wtick()
+#else
+  time = MPI_Wtime()
+  if (offset == -1.) then
+    !print *,'tick:', MPI_Wtick()
+#endif
+    offset=time
+  end if
+  delta = time-offset
+END FUNCTION wallclock
+
+END MODULE mpi_timer

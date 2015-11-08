@@ -3,7 +3,7 @@
 OPTS = full_debug
 #OPTS = optimized
 
-OBJ += timer_mod.o
+OBJ += mpi_timer.o
 default: test_defaults.x test_reduction.x
 
 # Common configuration

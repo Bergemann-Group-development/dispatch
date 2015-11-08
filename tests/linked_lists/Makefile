@@ -3,7 +3,7 @@
 OPTS = full_debug
 #OPTS = optimized
 
-OBJ += list_mod.o task_mod.o patch_mod.o mhd_mod.o timer_mod.o
+OBJ += list_mod.o task_mod.o patch_mod.o mhd_mod.o mpi_timer.o
 default: test.x
 
 # Common configuration

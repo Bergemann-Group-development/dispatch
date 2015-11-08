@@ -25,7 +25,7 @@ END MODULE
 PROGRAM test
   USE list_mod
   USE mhd_mod
-  USE timer_mod
+  USE mpi_timer
   USE test_mod
   implicit none
   type(mhd_t), pointer:: task
