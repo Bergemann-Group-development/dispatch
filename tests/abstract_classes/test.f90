@@ -62,6 +62,7 @@ PROGRAM prog
   USE mod
   type(b_t):: bb
   type(c_t):: cc
+  type(c_t), pointer:: p
   bb%a = 2.0
   bb%b = 1.0
   cc%c = 3.9
@@ -70,4 +71,7 @@ PROGRAM prog
   call bb%sub_b(bb)
   call cc%sub_a(bb)
   call cc%sub_b(bb)
+  allocate (p)
+  p%a = 5.0
+  call cc%sub_b(p)
 END

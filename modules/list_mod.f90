@@ -64,13 +64,10 @@ END SUBROUTINE reset
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE append (list, task)
+SUBROUTINE append (list, link)
   class(list_t):: list
-  class(tasks_t), pointer:: task
-  type(link_t), pointer:: link
+  class(link_t), pointer:: link
   !.............................................................................
-  allocate (link)
-  link%item => task
   if (associated(list%tail)) then
     link%prev => list%tail
     link%prev%next => link
@@ -84,23 +81,20 @@ END SUBROUTINE append
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE add_by_time (list, task)
+SUBROUTINE add_by_time (list, new)
   class(list_t):: list
-  class(tasks_t), pointer:: task
-  type(link_t), pointer:: link, new
+  class(link_t), pointer:: link, new
   !.............................................................................
   link => list%head
   do while (associated(link))
-    if (link%item%time > task%time) then
-      allocate (new)
-      new%item => task
+    if (link%item%time > new%item%time) then
       call insert (list, link, new)
       list%n = list%n+1
       return
     end if
     link => link%next
   end do
-  call append (list, task)
+  call append (list, new)
   list%n = list%n+1
 END SUBROUTINE add_by_time
 
@@ -109,8 +103,7 @@ END SUBROUTINE add_by_time
 !> =============================================================================
 SUBROUTINE insert (list, old, new)
   class(list_t):: list
-  type(link_t), pointer:: old, prev, next, new
-  class(tasks_t), pointer:: item
+  class(link_t), pointer:: old, prev, next, new
   !.............................................................................
   if (associated(old%prev)) then
     new%prev => old%prev
@@ -131,7 +124,7 @@ SUBROUTINE print (list)
   class(tasks_t), pointer:: item
   !.............................................................................
   link => list%head
-  print*,'print: ',list%name, list%n
+  print*,'print: ',trim(list%name), list%n
   do while (associated(link))
     item => link%item
     call item%print

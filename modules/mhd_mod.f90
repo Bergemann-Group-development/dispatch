@@ -11,6 +11,7 @@ MODULE mhd_mod
     procedure:: allocate   => allocate_mhd
     procedure:: deallocate => deallocate_mhd
     procedure:: update     => update_mhd
+    procedure:: print      => print_mhd
   end type
 CONTAINS
 
@@ -32,6 +33,7 @@ END SUBROUTINE
 
 SUBROUTINE print_mhd (self)
   class(mhd_t):: self
+  print*,'print_mhd:', self%id, self%time
 END SUBROUTINE
 
 END MODULE
