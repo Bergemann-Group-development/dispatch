@@ -17,7 +17,11 @@ MODULE task_mod
     real(8):: size(3) = 0d0
     integer:: status = 0
     contains
-    procedure init, allocate, deallocate, update, print
+    procedure:: init
+    procedure:: allocate
+    procedure:: deallocate
+    procedure:: update
+    procedure:: print
   end type
   !-----------------------------------------------------------------------------
   ! Timeslot info added

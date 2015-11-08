@@ -4,8 +4,8 @@
 !> =============================================================================
 MODULE dust_mod
   type part_t
-    real:: p(3), v(3)
-    real:: m, s, t, dt
+    real:: p(3)=0.0, v(3)=1.0
+    real:: m=1.0, s=0.0, t=0.0, dt=1.0
     type(part_t), pointer:: next => null()
   end type
 CONTAINS

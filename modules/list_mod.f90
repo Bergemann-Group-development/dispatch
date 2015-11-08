@@ -16,7 +16,11 @@ MODULE list_mod
     type(link_t), pointer:: item => null()
     integer(8):: n = 0
     contains
-    procedure:: init, reset, append, add_by_time, print
+    procedure:: init
+    procedure:: reset
+    procedure:: append
+    procedure:: add_by_time
+    procedure:: print
   end type
 PRIVATE
 PUBLIC list_t, link_t
