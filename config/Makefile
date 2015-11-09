@@ -75,11 +75,13 @@ $(EXEC): $(OBJ)
 #############################################################################
 clean:
 	rm -f *.o *.$(MOD) *.stackdump
+cleanlog:
+	rm -f *.log
 cleandata:
 	rm -f *.dat
 cleaner: clean
 	rm -f *.x *.bak *.optrpt *.exe
-cleanest: cleaner cleandata
+cleanest: cleaner cleandata cleanlog
 
 #############################################################################
 # Generate list of source files

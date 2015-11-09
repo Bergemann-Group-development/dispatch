@@ -69,7 +69,7 @@ PROGRAM advection_test
   read (*,input); write (*,input)
   allocate (rho(n,n))
   call initial_condition (n, w, rho)
-  open (1, file='advection.dat', form='unformatted', status='unknown')
+  open (1, file='classical.dat', form='unformatted', status='unknown')
   write (1) n
   do i=1,n_step
     call time_step (n, courant, dx, rho, ux, uy)

@@ -1,79 +1,71 @@
 !> =============================================================================
 !> $Id$
+!> This version uses a Fortran module that isolates the experiment data from
+!> the main program, which only is aware of two number: the current step number,
+!> and the total number of steps (n_stp). The module also transfers information
+!> about the calling sequences etc, which allows the use of array valued fns.
 !> =============================================================================
 MODULE experiment
   implicit none
-  type:: experiment_t
-    integer:: n, n_step
-    real:: w, courant, dx, dt, ux, uy
-    real, dimension(:,:), pointer:: rho
-    contains
-    procedure:: init
-    procedure:: update
-    procedure:: output
-  end type
+  integer:: n=100, n_step=100
+  real:: w=10, courant=0.2, dx=1.0, dt, ux=1.0, uy=0.5
+  real, dimension(:,:), pointer:: rho
 PRIVATE
-PUBLIC experiment_t
+PUBLIC init, update, output
 CONTAINS
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE init (self, n_stp)
-  class(experiment_t):: self
-  integer:: ix, iy, n=100, n_step=200, n_stp
-  real:: dx=1.0, x, y, courant=0.2, w=10, ux=1.0, uy=0.5
+SUBROUTINE init(n_stp)
+  integer:: ix, iy, n_stp
+  real:: x, y
   namelist /input/ n, n_step, courant, w, ux, uy
   !.............................................................................
-  read(*,input); write(*,input)
-  self%dx=dx; self%ux=ux; self%uy=uy; self%courant=courant; self%w=w; self%n=n
-  self%n_step=n_step; self%n=n; n_stp=n_step
-  allocate (self%rho(self%n,self%n))
-  do iy=1,self%n
-  do ix=1,self%n
-    x = ix-(self%n+1)*0.5
-    y = iy-(self%n+1)*0.5
-    self%rho(ix,iy) = exp(-(x**2+y**2)/self%w**2)
+  read(*,input); write(*,input); n_stp=n_step
+  allocate (rho(n,n))
+  do iy=1,n
+  do ix=1,n
+    x = ix-(n+1)*0.5
+    y = iy-(n+1)*0.5
+    rho(ix,iy) = exp(-(x**2+y**2)/w**2)
   end do
   end do
-  open (1, file='advection.dat', form='unformatted', status='unknown')
+  open (1, file='module_based.dat', form='unformatted', status='unknown')
   write (1) n
 END SUBROUTINE init
 !> =============================================================================
 !> Derivatives evaluated with central differences
 !> =============================================================================
-FUNCTION ddx (n, f)
+FUNCTION ddx(n,f)
   integer:: n
   real, dimension(n,n):: f, ddx
   !.............................................................................
-  ddx = (cshift(f,dim=1,shift=1)-cshift(f,dim=1,shift=-1))*0.5
+  ddx = (cshift(f,dim=1,shift=1)-cshift(f,dim=1,shift=-1))*0.5/dx
 END FUNCTION ddx
-FUNCTION ddy (n, f)
+FUNCTION ddy(n,f)
   integer:: n
   real, dimension(n,n):: f, ddy
   !.............................................................................
-  ddy = (cshift(f,dim=2,shift=1)-cshift(f,dim=2,shift=-1))*0.5
+  ddy = (cshift(f,dim=2,shift=1)-cshift(f,dim=2,shift=-1))*0.5/dx
 END FUNCTION ddy
 !> =============================================================================
 !> Derivatives evaluated with central differences
 !> =============================================================================
-SUBROUTINE update (self, i)
-  class(experiment_t):: self
+SUBROUTINE update(i)
+  real:: dt, umax
   integer:: i
-  real:: umax
   !.............................................................................
-  umax = sqrt(self%ux**2+self%uy**2)
-  self%dt = self%courant*self%dx/umax
-  self%rho = self%rho - (self%dt/self%dx)* &
-             (ddx(self%n, self%rho*self%ux) + ddy(self%n, self%rho*self%uy))
-  if (modulo(i,10)==0) print*,i,minval(self%rho),maxval(self%rho)
+  umax = sqrt(ux**2+uy**2)
+  dt = courant*dx/umax
+  rho = rho - dt*(ddx(n,rho*ux) + ddy(n,rho*uy))
+  if (modulo(i,10)==0) print*,i,minval(rho),maxval(rho)
 END SUBROUTINE update
 !> =============================================================================
 !> I/O routine
 !> =============================================================================
-SUBROUTINE output (self, i)
-  class(experiment_t):: self
+SUBROUTINE output (i)
   integer:: i
   !.............................................................................
-  write (1) i, self%rho
+  write (1) i, rho
 END SUBROUTINE output
 END MODULE experiment
 
@@ -86,15 +78,11 @@ END MODULE experiment
 !> =============================================================================
 PROGRAM advection_experiment
   USE experiment
-  implicit none
-  class(experiment_t), allocatable:: exp1, exp2
-  integer:: n_step, i
-  !.............................................................................
-  allocate (exp1, exp2)
-  call exp1%init(n_step)
-  do i=1,n_step
-    call exp1%update(i)
-    call exp1%output(i)
+  integer:: n_stp, i
+  call init(n_stp)
+  do i=1,n_stp
+    call update(i)
+    call output(i)
   end do
 END PROGRAM
 

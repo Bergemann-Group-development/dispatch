@@ -1,3 +1,8 @@
+# Option groups
+#OPTS = debug
+#OPTS = full_debug
+OPTS = optimized
+
 # Default target
 default: run
 
@@ -6,8 +11,7 @@ TOP = ../..
 include $(TOP)/config/Makefile
 
 # Dependencies
-
-run: advection_test.x advection_mod.x advection_type.x
-	./advection_test.x < input.nml | tee advection_test.log
-	./advection_mod.x  < input.nml | tee advection_mod.log
-	./advection_type.x < input.nml | tee advection_type.log
+run: classical.x module_based.x object_oriented.x
+	./classical.x       < input.nml | tee classical.log
+	./module_based.x    < input.nml | tee module_based.log
+	./object_oriented.x < input.nml | tee object_oriented.log
