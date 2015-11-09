@@ -1,0 +1,8 @@
+&input
+n=100
+n_step=200
+courant=0.2
+w=10.
+ux=1.0
+uy=0.5
+/

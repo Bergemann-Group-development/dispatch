@@ -1,5 +1,8 @@
-*.mod
 *.o
+*.mod
 *.x
+*.dat
+*.pyc
+*.exe
+*.bak
 a.out
-a.exe
