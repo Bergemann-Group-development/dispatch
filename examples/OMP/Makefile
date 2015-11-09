@@ -1,7 +1,7 @@
 # Option groups
 #OPTS = debug
-OPTS = full_debug
-#OPTS = optimized
+#OPTS = full_debug
+OPTS = optimized
 
 OBJ += mpi_timer.o
 default: test_defaults.x test_reduction.x
