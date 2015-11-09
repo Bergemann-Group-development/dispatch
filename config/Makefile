@@ -78,7 +78,7 @@ clean:
 cleandata:
 	rm -f *.dat
 cleaner: clean
-	rm -f *.x *.bak *.optrpt
+	rm -f *.x *.bak *.optrpt *.exe
 cleanest: cleaner cleandata
 
 #############################################################################
