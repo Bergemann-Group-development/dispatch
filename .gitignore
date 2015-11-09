@@ -5,4 +5,5 @@
 *.pyc
 *.exe
 *.bak
+*.log
 a.out

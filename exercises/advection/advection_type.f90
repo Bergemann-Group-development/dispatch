@@ -4,8 +4,8 @@
 MODULE experiment
   implicit none
   type:: experiment_t
-    integer:: n=100, n_step=100
-    real:: w=10, courant=0.2, dx=1.0, dt, ux=1.0, uy=0.5
+    integer:: n, n_step
+    real:: w, courant, dx, dt, ux, uy
     real, dimension(:,:), pointer:: rho
     contains
     procedure:: init
@@ -17,15 +17,15 @@ PUBLIC experiment_t
 CONTAINS
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE init (self, n_step)
+SUBROUTINE init (self, n_stp)
   class(experiment_t):: self
-  integer:: ix, iy, n, n_step
-  real:: dx, x, y, courant, w, ux, uy
+  integer:: ix, iy, n=100, n_step=200, n_stp
+  real:: dx=1.0, x, y, courant=0.2, w=10, ux=1.0, uy=0.5
   namelist /input/ n, n_step, courant, w, ux, uy
   !.............................................................................
   read(*,input); write(*,input)
   self%dx=dx; self%ux=ux; self%uy=uy; self%courant=courant; self%w=w; self%n=n
-  self%n_step=n_step; self%n=n
+  self%n_step=n_step; self%n=n; n_stp=n_step
   allocate (self%rho(self%n,self%n))
   do iy=1,self%n
   do ix=1,self%n
