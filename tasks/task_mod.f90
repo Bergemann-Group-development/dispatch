@@ -37,17 +37,34 @@ MODULE task_mod
   !-----------------------------------------------------------------------------
   ! Timeslot info added
   !-----------------------------------------------------------------------------
-  type, abstract, extends(task_t):: tasks_t
+  type, extends(task_t):: tasks_t
     real(8):: t(ntime)
     real(8):: dt(ntime)
     integer:: iit(ntime)
     integer:: nt = ntime
     integer:: it = 0
     integer:: verbose = 0
+  contains
+    procedure:: init => void
+    procedure:: check => void
+    procedure:: update => void
+    procedure:: send_to => void2
+    procedure:: allocate => void
+    procedure:: deallocate => void
+    procedure:: print => void
   end type
 PRIVATE
 PUBLIC ntime, task_t, tasks_t
 CONTAINS
+
+SUBROUTINE void (self)
+  class(tasks_t):: self
+END SUBROUTINE
+
+SUBROUTINE void2 (self, rank)
+  class(tasks_t):: self
+  integer:: rank
+END SUBROUTINE
 
 !> =============================================================================
 !> This method specifies the steps to perform on a task ready for execution:

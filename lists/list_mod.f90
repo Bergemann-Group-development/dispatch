@@ -14,7 +14,7 @@ MODULE list_mod
     type(link_t), pointer:: head => null() 
     type(link_t), pointer:: tail => null() 
     type(link_t), pointer:: item => null()
-    integer(8):: n = 0
+    integer:: size = 0
     contains
     procedure:: init
     procedure:: reset
@@ -76,7 +76,7 @@ SUBROUTINE append (list, link)
     list%head => link
     list%tail => link
   end if
-  list%n = list%n+1
+  list%size = list%size+1
 END SUBROUTINE append
 
 !> =============================================================================
@@ -89,13 +89,13 @@ SUBROUTINE add_by_time (list, new)
   do while (associated(link))
     if (link%item%time > new%item%time) then
       call insert (list, link, new)
-      list%n = list%n+1
+      list%size = list%size+1
       return
     end if
     link => link%next
   end do
   call append (list, new)
-  list%n = list%n+1
+  list%size = list%size+1
 END SUBROUTINE add_by_time
 
 !> =============================================================================
@@ -113,7 +113,7 @@ SUBROUTINE insert (list, old, new)
   end if
   new%next => old
   new%next%prev => new
-  list%n = list%n + 1
+  list%size = list%size + 1
 END SUBROUTINE insert
 
 !> =============================================================================
@@ -124,7 +124,7 @@ SUBROUTINE print (list)
   class(item_t), pointer:: item
   !.............................................................................
   link => list%head
-  print*,'print: ',trim(list%name), list%n
+  print*,'print: ',trim(list%name), list%size
   do while (associated(link))
     item => link%item
     call item%print

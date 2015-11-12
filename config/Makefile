@@ -31,7 +31,7 @@ default: $(EXEC)
 
 #############################################################################
 # Sources directories are searched in this exact order (VPATH inside Makefile)
-VPATH = $(TOP)/tasks
+VPATH = $(TOP)
 sinclude $(TOP)/mpi/Makefile
 sinclude $(TOP)/io/Makefile
 sinclude $(TOP)/lists/Makefile
