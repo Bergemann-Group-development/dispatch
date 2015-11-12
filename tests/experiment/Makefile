@@ -1,4 +1,4 @@
-VPATH := $(VPATH):./
+# This Makefile is a template for experiments, and may only need to be changed in the Dependencies section
 
 # Option groups
 #OPTS = debug
@@ -6,30 +6,13 @@ VPATH := $(VPATH):./
 #OPTS = optimized
 OPTS = 
 
-OBJ += \
-omp_mod.o \
-mpi_basic.o \
-mpi_timer.o \
-io_mod.o \
-trace_mod.o \
-mesh_mod.o \
-list_mod.o \
-item_mod.o \
-task_mod.o \
-patch_mod.o \
-mhd_mod.o \
-particle_mod.o \
-dust_mod.o \
-star_mod.o \
-planet_mod.o \
-message_mod.o \
-mesg_list_mod.o \
-experiment_mod.o
-
-default: dispatch.x
+# Local object files
+OBJ += experiment_mod.o
 
 # Common configuration
+EXEC = dispatch.x
 TOP = ../..
 include $(TOP)/config/Makefile
 
-test.x: $(OBJ)
+# Dependencies
+experiment_mod.o : list_mod.o mhd_mod.o

@@ -5,9 +5,6 @@ MODULE io_mod
   USE mpi_basic
   USE mpi_timer
   implicit none
-  logical:: do_debug = .false.
-  logical:: do_trace = .true.
-  integer:: verbose = 1
 PRIVATE
 PUBLIC init_io, print_id, do_debug, do_trace, verbose
 CONTAINS

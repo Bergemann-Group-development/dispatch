@@ -21,6 +21,9 @@ MODULE mpi_basic
   public MPI_REAL               ! for (4-byte) real's
   public MPI_STATUS_SIZE
   integer:: input=1, output=2, data_unit=3, log_unit=4
+  logical:: do_debug = .false.
+  logical:: do_trace = .true.
+  integer:: verbose = 1
 PUBLIC
 CONTAINS
 

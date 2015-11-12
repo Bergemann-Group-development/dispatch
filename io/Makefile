@@ -2,8 +2,11 @@
 VPATH := $(VPATH):$(TOP)/io
 
 # Local object files to include (hardwired later)
-#OBJ += \
-#mesh_mod.o
+ifeq ($(EXEC),dispatch.x)
+  OBJ += \
+  io_mod.o \
+  trace_mod.o
+endif
 
 # Dependencies
 trace_mod.o:            io_mod.o mpi_timer.o

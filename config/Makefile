@@ -23,25 +23,25 @@ sinclude $(CONFIG)/compiler/$(COMPILER)/$(OPTS)_$(HOST).mkf
 
 #############################################################################
 # Executable
-EXEC=dispatch.x
+#EXEC=dispatch.x
 ifeq ($(OPTS),phi)
-  EXEC=dispatch.x.mic
+  EXEC := $(EXEC).mic
 endif
 default: $(EXEC)
 
 #############################################################################
 # Sources directories are searched in this exact order (VPATH inside Makefile)
 VPATH = $(TOP)
-sinclude $(TOP)/mpi/Makefile
+sinclude $(TOP)/$(MPI)/Makefile
 sinclude $(TOP)/io/Makefile
 sinclude $(TOP)/lists/Makefile
 sinclude $(TOP)/meshes/Makefile
 sinclude $(TOP)/tasks/Makefile
-sinclude $(TOP)/solvers/Makefile
-#sinclude $(TOP)/$(MPI)/Makefile
+sinclude $(TOP)/mhd/Makefile
+sinclude $(TOP)/particles/Makefile
 
 #############################################################################
-# Optional patches
+# Optional patches and extra dependencies
 ifdef PATCH
   VPATH := $(PATCH):$(VPATH)
   sinclude $(PATCH)/Makefile

@@ -2,8 +2,12 @@
 VPATH := $(VPATH):$(TOP)/lists
 
 # Local object files to include (hardwired later)
-#OBJ += \
-#list_mod.o
+ifeq ($(EXEC),dispatch.x)
+OBJ += \
+list_mod.o \
+mesg_list_mod.o
+endif
 
 # Dependencies
-list_mod.o: item_mod.o
+list_mod.o	: item_mod.o
+mesg_list_mod.o	: task_mod.o list_mod.o

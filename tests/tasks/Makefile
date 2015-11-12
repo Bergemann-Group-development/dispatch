@@ -1,10 +1,16 @@
+# This Makefile is a templater for simple tests, which do not need the complete DISPATCH list of object files
+
 # Option groups
 #OPTS = debug
 #OPTS = full_debug
 #OPTS = optimized
 OPTS = 
 
-OBJ += \
+# This should be different from dispatch.x for simpe tests, to disable the normal OBJ list
+EXEC = test.x
+
+# Hardwired object list, for simple tests
+OBJ = \
 omp_mod.o \
 mpi_basic.o \
 mpi_timer.o \
@@ -21,10 +27,6 @@ dust_mod.o \
 star_mod.o \
 planet_mod.o
 
-default: test.x
-
 # Common configuration
 TOP = ../..
 include $(TOP)/config/Makefile
-
-test.x: $(OBJ)

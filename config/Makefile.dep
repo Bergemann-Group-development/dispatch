@@ -1,6 +1,0 @@
-# Object file dependencies
-$(MPI)_reduce.o         : $(MPI)_base.o
-$(MPI)_rma.o            : $(MPI)_base.o
-$(MPI)_comm.o           : $(MPI)_base.o
-$(MPI)_coords.o         : $(MPI)_base.o
-$(MPI)_all.o            : $(MPI)_base.o

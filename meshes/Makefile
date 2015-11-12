@@ -2,8 +2,10 @@
 VPATH := $(VPATH):$(TOP)/meshes
 
 # Local object files to include (hardwired later)
-#OBJ += \
-#mesh_mod.o
+ifeq ($(EXEC),dispatch.x)
+OBJ += \
+mesh_mod.o
+endif
 
 # Dependencies
 mesh_mod.o:             trace_mod.o
