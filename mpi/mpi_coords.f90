@@ -27,7 +27,7 @@ SUBROUTINE cart_create_mpi (n_mpi, gn)
   integer:: i, color, size
   character(len=mch), save:: fmt = '(13x,a,3i5)'
   character(len=mch), save:: id= &
-    'mpi_coords.f90 $Id: 5b66abdd71074a2181f902f590868f350cef1c30 $'
+    'mpi_coords.f90 $Id$'
 !-------------------------------------------------------------------------------
   mpi_dims = n_mpi
   mpi_reorder = .true.

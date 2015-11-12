@@ -1,4 +1,4 @@
-! $Id: 03ec1597fcadf24074074e81168301626fbbb235 $
+! $Id$
 !> =============================================================================
 MODULE mpi_basic
   implicit none
@@ -15,7 +15,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init_mpi
   implicit none
-  character(len=mch):: id='nompi.f90 $Id: 03ec1597fcadf24074074e81168301626fbbb235 $'
+  character(len=mch):: id='nompi.f90 $Id$'
 
 !-------------------------------------------------------------------------------
 !  Start up MPI and get number of nodes and our node rank
