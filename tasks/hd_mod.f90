@@ -17,9 +17,8 @@ MODULE hd_mod
   end type
 CONTAINS
 
-SUBROUTINE init_hd (self, id)
+SUBROUTINE init_hd (self)
   class(hd_t):: self
-  integer:: id
 END SUBROUTINE
 
 SUBROUTINE update_hd (self)

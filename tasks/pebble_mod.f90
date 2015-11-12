@@ -1,57 +1,55 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> Template module for planet task
+!> Template module for dust tasks
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-MODULE star_mod
+MODULE pebble_mod
   USE task_mod
   USE particle_mod
   implicit none
   !-----------------------------------------------------------------------------
-  type, extends(particles_t):: star_t
+  type, extends(particles_t):: pebble_t
     real:: mass, radius, surface_temperature
     contains
-    procedure:: init       => init_star
-    procedure:: allocate   => allocate_star
-    procedure:: deallocate => deallocate_star
-    procedure:: update     => update_star
-    procedure:: print      => print_star
+    procedure:: init       => init_pebbles
+    procedure:: allocate   => allocate_pebbles
+    procedure:: deallocate => deallocate_pebbles
+    procedure:: update     => update_pebbles
+    procedure:: print      => print_pebbles
   end type
-PRIVATE
-PUBLIC star_t
+!PRIVATE
+!PUBLIC pebble_t
 CONTAINS
 
 !> =============================================================================
-SUBROUTINE init_star (self, id)
-  class(star_t):: self
-  integer:: id
+SUBROUTINE init_pebbles (self)
+  class(pebble_t):: self
   !.............................................................................
-  self%id = id
-END SUBROUTINE init_star
+END SUBROUTINE init_pebbles
 
 !> =============================================================================
-SUBROUTINE allocate_star (self)
-  class(star_t):: self
+SUBROUTINE allocate_pebbles (self)
+  class(pebble_t):: self
   !.............................................................................
-END SUBROUTINE allocate_star
+END SUBROUTINE allocate_pebbles
 
 !> =============================================================================
-SUBROUTINE deallocate_star (self)
-  class(star_t):: self
+SUBROUTINE deallocate_pebbles (self)
+  class(pebble_t):: self
   !.............................................................................
-END SUBROUTINE deallocate_star
+END SUBROUTINE deallocate_pebbles
 
 !> =============================================================================
-SUBROUTINE update_star (self)
-  class(star_t):: self
+SUBROUTINE update_pebbles (self)
+  class(pebble_t):: self
   !.............................................................................
   self%time = self%time + self%dtime
-END SUBROUTINE update_star
+END SUBROUTINE update_pebbles
 
 !> =============================================================================
-SUBROUTINE print_star (self)
-  class(star_t):: self
+SUBROUTINE print_pebbles (self)
+  class(pebble_t):: self
   !.............................................................................
   print*, self%id, self%time
-END SUBROUTINE print_star
+END SUBROUTINE print_pebbles
 
 !> =============================================================================
 END MODULE

@@ -1,57 +1,58 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> Template module for planet task
+!> Template module for dust tasks
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-MODULE planet_mod
+MODULE dust_mod
+  USE io_mod
   USE task_mod
   USE particle_mod
   implicit none
   !-----------------------------------------------------------------------------
-  type, extends(particles_t):: planet_t
+  type, extends(particles_t):: dust_t
     real:: mass, radius, surface_temperature
     contains
-    procedure:: init       => init_planet
-    procedure:: allocate   => allocate_planet
-    procedure:: deallocate => deallocate_planet
-    procedure:: update     => update_planet
-    procedure:: print      => print_planet
+    procedure:: init       => init_dust
+    procedure:: allocate   => allocate_dust
+    procedure:: deallocate => deallocate_dust
+    procedure:: update     => update_dust
+    procedure:: print      => print_dust
   end type
-!PRIVATE
-!PUBLIC planet_t
+PRIVATE
+PUBLIC dust_t
 CONTAINS
 
 !> =============================================================================
-SUBROUTINE init_planet (self, id)
-  class(planet_t):: self
-  integer:: id
+SUBROUTINE init_dust (self)
+  class(dust_t):: self
   !.............................................................................
-  self%id = id
-END SUBROUTINE init_planet
+  self%verbose = verbose
+  if (self%verbose > 0) print*,'init_dust:', self%id, self%time
+END SUBROUTINE init_dust
 
 !> =============================================================================
-SUBROUTINE allocate_planet (self)
-  class(planet_t):: self
+SUBROUTINE allocate_dust (self)
+  class(dust_t):: self
   !.............................................................................
-END SUBROUTINE allocate_planet
+END SUBROUTINE allocate_dust
 
 !> =============================================================================
-SUBROUTINE deallocate_planet (self)
-  class(planet_t):: self
+SUBROUTINE deallocate_dust (self)
+  class(dust_t):: self
   !.............................................................................
-END SUBROUTINE deallocate_planet
+END SUBROUTINE deallocate_dust
 
 !> =============================================================================
-SUBROUTINE update_planet (self)
-  class(planet_t):: self
+SUBROUTINE update_dust (self)
+  class(dust_t):: self
   !.............................................................................
   self%time = self%time + self%dtime
-END SUBROUTINE update_planet
+END SUBROUTINE update_dust
 
 !> =============================================================================
-SUBROUTINE print_planet (self)
-  class(planet_t):: self
+SUBROUTINE print_dust (self)
+  class(dust_t):: self
   !.............................................................................
   print*, self%id, self%time
-END SUBROUTINE print_planet
+END SUBROUTINE print_dust
 
 !> =============================================================================
 END MODULE

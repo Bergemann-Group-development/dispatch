@@ -1,5 +1,17 @@
 !> =============================================================================
 !> $Id$
+!> This version uses a simple form of object-orientation, where everything 
+!> of concern to the experiments is stored inside the object(s), and which 
+!> illustrates the very significant advantage of such arrangements, in that
+!> one can easily create multiple instances, which can !> optionally be
+!> executed in parallel.
+!>
+!> In this example, which is constructed to just illustrate the principles,
+!> there is no major advantage, compared to running the same code repeatedly
+!> (or parallelizing with MPI), but soon we will use the same type of instancing
+!> to create processes (tasks) that actually collaborate to advance the same
+!> experiment, thus parallelizing with OpenMP on each node, without having to
+!> parallelize each task over multiple OMP threads,
 !> =============================================================================
 MODULE experiment
   implicit none
@@ -19,6 +31,12 @@ PRIVATE
 PUBLIC experiment_t
 CONTAINS
 !> =============================================================================
+!> Initialize the experiment, reading parameters from an input file (with one
+!> namelist input required per task).  Note that procedures that are part of
+!> a derived type are called with an extra first argument, which is the 
+!> relevant instance of the derived data type (object).  This way, the 
+!> procedure automatically has access to all required information.  Here,
+!> the argument is called "self", to indicate this.
 !> =============================================================================
 SUBROUTINE init (self, k)
   class(experiment_t):: self
@@ -55,7 +73,13 @@ SUBROUTINE init (self, k)
   end do
 END SUBROUTINE init
 !> =============================================================================
-!> Derivatives evaluated with central differences
+!> Derivatives evaluated with central differences.  Note that these array-
+!> valued functions are not made part of the experiment object (experiment_t),
+!> they are just local procedures inside the module. In this isolated example,
+!> one could let everithing except "init" and "run" be similarly local, but for
+!> the purpose of illustrationm "update" and "output" are made parts of the 
+!> experiment_t object, as they need to be in more complex and realistic
+!> applications.
 !> =============================================================================
 FUNCTION ddx (n, f)
   integer:: n
@@ -109,10 +133,10 @@ END MODULE experiment
 
 !> =============================================================================
 !> This test should just move the Gaussian, without changing the shape, and w/o
-!> adding any erroneous new features.  Run it first for 100 steps, then 300, then
-!> 1000 steps.  Vary the Courant number (the fraction of a mesh the profiles is
-!> moved per step), and try to move the shape as far as possible (disregarding
-!> the number of time steps needed).
+!> adding any erroneous new features.  Run it with varying number of steps, and
+!> varying Courant number (the fraction of a mesh the profiles is moved per step),
+!>  and try to move the shape as far as possible (disregarding the number of
+!> time steps needed).
 !> =============================================================================
 PROGRAM advection_experiment
   USE experiment
@@ -124,11 +148,24 @@ PROGRAM advection_experiment
   read (*,instances)
   allocate (experiments(n))
 
+  !-----------------------------------------------------------------------------
+  ! Initialize the experiments, one after the other, reading the namelists in
+  ! serial order.
+  !-----------------------------------------------------------------------------
   do k=1,n
     call experiments(k)%init(k)
   end do
 
-  !$omp parallel do
+  !-----------------------------------------------------------------------------
+  ! Run the experiments in parallel, on the available OMP threads.  If the 
+  ! number of experiments is much larger than the number of threads one can
+  ! expect good load balance if the threads are assigned to experiments 
+  ! dynamically, rather than by just dividing the number of experiments 
+  ! equally over the number of available threads (the dedault). This can be
+  ! achieved with options to the !$omp parallel directive, choosing
+  ! schedule(dynamic,1), or schedule(guided).
+  !-----------------------------------------------------------------------------
+  !$omp parallel do schedule(dynamic,1)
   do k=1,n
     call experiments(k)%run
   end do

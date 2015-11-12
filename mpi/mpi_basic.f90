@@ -1,5 +1,5 @@
 !> =============================================================================
-!> $Id: fa7d9b42d0f7e0aec02fc33bcaebb2ccbdbf57ff $
+!> $Id$
 !> Basic MPI calls; initialization, end, barriers, asserts, wallclock, ...
 !> =============================================================================
 MODULE mpi_basic
@@ -20,14 +20,13 @@ MODULE mpi_basic
   public MPI_INT                ! ditto
   public MPI_REAL               ! for (4-byte) real's
   public MPI_STATUS_SIZE
-  private:: print_id
   integer:: input=1, output=2, data_unit=3, log_unit=4
 PUBLIC
 CONTAINS
 
 !> =============================================================================
 SUBROUTINE init_mpi
-  character(len=mch):: id='mpi.f90 $Id: fa7d9b42d0f7e0aec02fc33bcaebb2ccbdbf57ff $'
+  character(len=mch):: id='mpi.f90 $Id$'
   integer:: mpi_provided
 !-------------------------------------------------------------------------------
 !  Start up MPI and get number of nodes and our node rank
@@ -38,7 +37,7 @@ SUBROUTINE init_mpi
   call MPI_Comm_rank (mpi_comm_world, mpi_rank, mpi_err)
   mpi_master = (mpi_rank == 0)
   master = mpi_master
-  call print_id (id)
+  if (master) print*,id
   call init_omp
   if (master) then
     print 1, '***********************************************************************************'
@@ -99,28 +98,6 @@ SUBROUTINE barrier_mpi (label)
   call flush (output)
   call MPI_Barrier (mpi_comm_world, mpi_err)
 END SUBROUTINE barrier_mpi
-
-!> =============================================================================
-SUBROUTINE print_id (id)
-  character(len=mch) id
-  character(len=mch), save:: hl= &
-    '--------------------------------------------------------------------------------'
-!..............................................................................
-  if (id .ne. ' ' .or. mpi_trace) then
-    if (master) then
-      print'(a)',trim(hl)
-      print'(1x,a,f12.2)', trim(id), wallclock()
-    end if
-    if (.not.mpi_trace) id = ' '
-  end if
-END SUBROUTINE print_id
-
-!> =============================================================================
-SUBROUTINE trace_mpi (message)
-  character(len=*):: message
-!..............................................................................
-  if (mpi_trace) print*,mpi_rank,' trace: '//trim(message)
-END SUBROUTINE trace_mpi
 
 !> =============================================================================
 SUBROUTINE assert (message, flag)

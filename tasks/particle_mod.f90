@@ -17,49 +17,69 @@ MODULE particle_mod
   type, extends(tasks_t):: particles_t
     type(particle_t), dimension(:,:), pointer:: particles
     contains
-    procedure:: init       => init_part
-    procedure:: allocate   => allocate_part
-    procedure:: deallocate => deallocate_part
-    procedure:: update     => update_part
-    procedure:: print      => print_part
+    procedure:: init
+    procedure:: allocate
+    procedure:: deallocate
+    procedure:: update
+    procedure:: print
+    procedure:: check
+    procedure:: send_to
+    procedure:: timestep
   end type
 !PRIVATE
 !PUBLIC particles_t
 CONTAINS
 
 !> =============================================================================
-SUBROUTINE init_part (self, id)
-  class(particles_t):: self
-  integer:: id
-  !.............................................................................
-  self%id = id
-END SUBROUTINE init_part
-
-!> =============================================================================
-SUBROUTINE allocate_part (self)
+SUBROUTINE init (self)
   class(particles_t):: self
   !.............................................................................
-END SUBROUTINE allocate_part
+END SUBROUTINE
 
 !> =============================================================================
-SUBROUTINE deallocate_part (self)
+SUBROUTINE check (self)
   class(particles_t):: self
   !.............................................................................
-END SUBROUTINE deallocate_part
+END SUBROUTINE
 
 !> =============================================================================
-SUBROUTINE update_part (self)
+SUBROUTINE timestep (self)
+  class(particles_t):: self
+  !.............................................................................
+END SUBROUTINE
+
+!> =============================================================================
+SUBROUTINE send_to (self, rank)
+  class(particles_t):: self
+  integer:: rank
+  !.............................................................................
+END SUBROUTINE
+
+!> =============================================================================
+SUBROUTINE allocate (self)
+  class(particles_t):: self
+  !.............................................................................
+END SUBROUTINE allocate
+
+!> =============================================================================
+SUBROUTINE deallocate (self)
+  class(particles_t):: self
+  !.............................................................................
+END SUBROUTINE deallocate
+
+!> =============================================================================
+SUBROUTINE update (self)
   class(particles_t):: self
   !.............................................................................
   self%time = self%time + self%dtime
-END SUBROUTINE update_part
+END SUBROUTINE update
 
 !> =============================================================================
-SUBROUTINE print_part (self)
+SUBROUTINE print (self)
   class(particles_t):: self
   !.............................................................................
   print*, self%id, self%time
-END SUBROUTINE print_part
+END SUBROUTINE print
 
 !> =============================================================================
 END MODULE

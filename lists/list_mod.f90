@@ -2,10 +2,10 @@
 !> Module with list handling for generic class tasks_t objects
 !> *****************************************************************************
 MODULE list_mod
-  USE task_mod
+  USE item_mod
   implicit none
   type link_t
-    class(tasks_t), pointer :: item => null()
+    class(item_t), pointer :: item => null()
     type(link_t),  pointer :: next => null()
     type(link_t),  pointer :: prev => null()
   end type
@@ -44,7 +44,7 @@ END SUBROUTINE init
 SUBROUTINE reset (list)
   class(list_t):: list
   type(link_t), pointer:: link, old
-  class(tasks_t), pointer:: item
+  class(item_t), pointer:: item
   !.............................................................................
   link => list%head
   do while (associated(link))
@@ -121,7 +121,7 @@ END SUBROUTINE insert
 SUBROUTINE print (list)
   class(list_t):: list
   type(link_t), pointer:: link, prev
-  class(tasks_t), pointer:: item
+  class(item_t), pointer:: item
   !.............................................................................
   link => list%head
   print*,'print: ',trim(list%name), list%n
