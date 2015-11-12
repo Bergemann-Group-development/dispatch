@@ -37,7 +37,7 @@ sinclude $(TOP)/io/Makefile
 sinclude $(TOP)/lists/Makefile
 sinclude $(TOP)/meshes/Makefile
 sinclude $(TOP)/tasks/Makefile
-sinclude $(TOP)/mhd/Makefile
+sinclude $(TOP)/mhd/$(MHD)/Makefile
 sinclude $(TOP)/particles/Makefile
 
 #############################################################################
@@ -108,6 +108,7 @@ info:
 	@echo "$B  MPI         $N= $(MPI)"
 	@echo "$B  PATCH       $N= $(PATCH)"
 	@echo "$B  VPATH       $N= $(VPATH)"
+	@echo "$B  MHD         $N= $(MHD)"
 	@echo "$B  OBJ         $N= $(OBJ)"
 	@echo "$B  PROG        $N= $(PROG).o"
 	@echo "$B  OPTS        $N= $(OPTS)"

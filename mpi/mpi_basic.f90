@@ -28,45 +28,6 @@ PUBLIC
 CONTAINS
 
 !> =============================================================================
-SUBROUTINE init_mpi
-  character(len=mch):: id='mpi.f90 $Id$'
-  integer:: mpi_provided
-!-------------------------------------------------------------------------------
-!  Start up MPI and get number of nodes and our node rank
-!-------------------------------------------------------------------------------
-  call MPI_INIT_THREAD (MPI_THREAD_MULTIPLE, mpi_provided, mpi_err)
-  mpi_comm = mpi_comm_world
-  call MPI_Comm_size (mpi_comm_world, mpi_size, mpi_err)
-  call MPI_Comm_rank (mpi_comm_world, mpi_rank, mpi_err)
-  mpi_master = (mpi_rank == 0)
-  master = mpi_master
-  if (master) print*,id
-  call init_omp
-  if (master) then
-    print 1, '***********************************************************************************'
-    select case (mpi_provided)
-    case(MPI_THREAD_MULTIPLE)
-      print 1, 'MPI implementation provides support for simultaneous MPI calls by different threads'
-      1 format(1x,a,i7)
-    case(MPI_THREAD_SINGLE)
-      print 1, 'MPI implementation provides only support for MPI calls outside openmp regions'
-    case(MPI_THREAD_FUNNELED)
-      print 1, 'MPI implementation provides only support for MPI calls in master regions'
-    case(MPI_THREAD_SERIALIZED)
-      print 1, 'MPI implementation provides only support for serial MPI calls by any thread'
-    case default
-      print 1, 'unknown MPI implementation'
-    end select
-    print 1, '***********************************************************************************'
-  end if
-  !
-  if (master) then
-    print 1,'number of MPI processes:', mpi_size
-    print 1,'OMP threads per MPI process:', omp_nthreads
-  end if
-END SUBROUTINE init_mpi
-
-!> =============================================================================
 SUBROUTINE end_mpi
 !..............................................................................
   !call finalize_cart
@@ -127,3 +88,44 @@ SUBROUTINE assert_mpi (message, code)
 END SUBROUTINE assert_mpi
 
 END MODULE mpi_basic
+
+!> =============================================================================
+SUBROUTINE init_mpi
+  USE mpi_basic
+  implicit none
+  character(len=mch):: id='mpi.f90 $Id$'
+  integer:: mpi_provided
+!-------------------------------------------------------------------------------
+!  Start up MPI and get number of nodes and our node rank
+!-------------------------------------------------------------------------------
+  call MPI_INIT_THREAD (MPI_THREAD_MULTIPLE, mpi_provided, mpi_err)
+  mpi_comm = mpi_comm_world
+  call MPI_Comm_size (mpi_comm_world, mpi_size, mpi_err)
+  call MPI_Comm_rank (mpi_comm_world, mpi_rank, mpi_err)
+  mpi_master = (mpi_rank == 0)
+  master = mpi_master
+  if (master) print*,id
+  call init_omp
+  if (master) then
+    print 1, '***********************************************************************************'
+    select case (mpi_provided)
+    case(MPI_THREAD_MULTIPLE)
+      print 1, 'MPI implementation provides support for simultaneous MPI calls by different threads'
+      1 format(1x,a,i7)
+    case(MPI_THREAD_SINGLE)
+      print 1, 'MPI implementation provides only support for MPI calls outside openmp regions'
+    case(MPI_THREAD_FUNNELED)
+      print 1, 'MPI implementation provides only support for MPI calls in master regions'
+    case(MPI_THREAD_SERIALIZED)
+      print 1, 'MPI implementation provides only support for serial MPI calls by any thread'
+    case default
+      print 1, 'unknown MPI implementation'
+    end select
+    print 1, '***********************************************************************************'
+  end if
+  !
+  if (master) then
+    print 1,'number of MPI processes:', mpi_size
+    print 1,'OMP threads per MPI process:', omp_nthreads
+  end if
+END SUBROUTINE init_mpi

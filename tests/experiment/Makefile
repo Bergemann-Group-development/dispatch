@@ -8,6 +8,7 @@ OPTS =
 
 # Local object files
 OBJ += experiment_mod.o
+MHD = stagger
 
 # Common configuration
 EXEC = dispatch.x
