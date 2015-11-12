@@ -6,3 +6,4 @@ OBJ += \
 mhd_stagger_mod.o
 
 # Dependencies
+mhd_stagger_mod.o 	: patch_mod.o trace_mod.o mhd_mod.o
