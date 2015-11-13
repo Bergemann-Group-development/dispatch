@@ -61,6 +61,7 @@ SUBROUTINE init (self)
   integer:: i1, i2, i3
   !.............................................................................
   rho => self%mem(:,:,:,1,self%it,1)
+  !rho = gaussian(self)
   do i3=1,self%m(3)%gn
   do i2=1,self%m(2)%gn
   do i1=1,self%m(1)%gn
@@ -77,9 +78,9 @@ END SUBROUTINE
 !> The Gaussian gets the local task position via the task argument, and thus
 !> returns the proper piece of the IC.
 !> =============================================================================
-FUNCTION gaussion (task)
+FUNCTION gaussion (task) result (f)
   class(experiment_t), pointer:: task
-  real, dimension(task%m(1)%gn, task%m(2)%gn, task%m(3)%gn):: gaussian
+  real, dimension(task%m(1)%gn, task%m(2)%gn, task%m(3)%gn):: f
   !.............................................................................
   do i3=1,task%m(3)%gn
   do i2=1,task%m(2)%gn
@@ -87,7 +88,7 @@ FUNCTION gaussion (task)
     x1 = task%m(1)%p + task%m(1)%r(i1)
     x2 = task%m(2)%p + task%m(2)%r(i2)
     x3 = task%m(3)%p + task%m(3)%r(i3)
-    gaussian(i1,i2,i3) = exp(-(x**2+y**2+z**2)/task%w**2)
+    f(i1,i2,i3) = exp(-(x**2+y**2+z**2)/task%w**2)
   end do
   end do
   end do
