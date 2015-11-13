@@ -24,8 +24,30 @@ MODULE mpi_basic
   logical:: do_debug = .false.
   logical:: do_trace = .true.
   integer:: verbose = 1
+  !-----------------------------------------------------------------------------
+  ! Object that returns the most important MPI parameters
+  !-----------------------------------------------------------------------------
+  type mpi_t
+    integer:: size, rank
+  contains
+    procedure:: init => init_mpi_info
+  end type
+  type(mpi_t):: info
 PUBLIC
 CONTAINS
+
+!> =============================================================================
+!> Initialize an object with the most important pieces of information about MPI:
+!> mpi%size = the number of MPI ranks
+!> mpi%rank = the rank of the current MPI process (0-indexed)
+!> mpi%coord = the 3-D position of the rank, if a Cartesian arrangement is used
+!> =============================================================================
+SUBROUTINE init_mpi_info (mpi)
+  class(mpi_t):: mpi
+  !.............................................................................
+  mpi%size = mpi_size
+  mpi%rank = mpi_rank
+END SUBROUTINE init_mpi_info
 
 !> =============================================================================
 SUBROUTINE end_mpi

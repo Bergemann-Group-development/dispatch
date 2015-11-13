@@ -5,7 +5,7 @@
 MODULE pde_mod
   USE patch_mod
   USE mesh_mod
-  USE mpi_mod, only: master, input
+  USE io_mod
   implicit none
   type, extends(patch_t):: pde_t
     real:: v(3) = 0.0
@@ -14,6 +14,9 @@ MODULE pde_mod
     procedure:: allocate => allocate_advection
     procedure:: pde
   end type
+  type(io_t):: io
+PRIVATE
+PUBLIC pde_t
 CONTAINS
 
 !> =============================================================================
@@ -24,9 +27,10 @@ SUBROUTINE init_advection (self)
   real:: velocity(3)
   namelist /advection_params/ velocity
   !.............................................................................
-  rewind (input)
-  read (input,advection_params)
-  if (master) write(*,advection_params)
+  call io%init
+  rewind (io%input)
+  read (io%input,advection_params)
+  if (io%master) write(*,advection_params)
   self%v = velocity
   self%nvar = 1
   call self%patch_t%allocate

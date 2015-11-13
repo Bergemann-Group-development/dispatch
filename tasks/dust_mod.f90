@@ -16,6 +16,7 @@ MODULE dust_mod
     procedure:: update     => update_dust
     procedure:: print      => print_dust
   end type
+  type(io_t):: io
 PRIVATE
 PUBLIC dust_t
 CONTAINS
@@ -24,7 +25,8 @@ CONTAINS
 SUBROUTINE init_dust (self)
   class(dust_t):: self
   !.............................................................................
-  self%verbose = verbose
+  call io%init
+  self%verbose = io%verbose
   if (self%verbose > 0) print*,'init_dust:', self%id, self%time
 END SUBROUTINE init_dust
 

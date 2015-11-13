@@ -6,8 +6,7 @@ ifeq ($(EXEC),dispatch.x)
   omp_mod.o \
   mpi_timer.o \
   mpi_basic.o \
-  mpi_coords.o \
-  mpi_mod.o
+  mpi_coords.o
   #mpi_all.o \
   #mpi_reduce.o \
   #mpi_send.o \
@@ -22,5 +21,4 @@ mpi_reduce.o: mpi_basic.o
 mpi_rma.o:    mpi_basic.o
 mpi_send.o:   mpi_basic.o
 mpi_mesg.o:   mpi_basic.o
-mpi_mod.o:    mpi_basic.o mpi_all.o mpi_coords.o mpi_reduce.o mpi_send.o mpi_timer.o mpi_rma.o
 

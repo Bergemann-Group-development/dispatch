@@ -6,4 +6,4 @@ OBJ += \
 $(PROBLEM)_mod.o
 
 # Dependencies
-$(PROBLEM)_mod.o 	: patch_mod.o mpi_mod.o
+$(PROBLEM)_mod.o 	: patch_mod.o io_mod.o

@@ -3,8 +3,8 @@
 !> Adams-Bashforth time stepping, with constant time step assumed (for now)
 !> =============================================================================
 MODULE timestep_mod
-  USE mpi_mod, only: master
   USE pde_mod
+  USE io_mod
   implicit none
   integer, parameter:: nslice = 4
   type, extends(pde_t):: timest_t

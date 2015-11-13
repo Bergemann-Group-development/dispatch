@@ -9,7 +9,7 @@ MODULE experiment_mod
   USE mhd_mod
   USE io_mod
   USE task_list_mod
-  USE mpi_mod, only: get_mpi_info, template_t, mpi_info_t
+  USE io_mod
   type, extends(pde_t):: experiment_t
     real:: u(3), w, s
     integer:: n

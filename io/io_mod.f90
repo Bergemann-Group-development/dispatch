@@ -4,25 +4,32 @@
 MODULE io_mod
   USE mpi_basic
   USE mpi_timer
-  USE mpi_mod
   implicit none
+  type io_t
+    integer:: verbose, input, output
+    logical:: master, do_debug, do_trace
+  contains
+    procedure:: init  => init_io
+    procedure:: print => print_id
+  end type
 PRIVATE
-PUBLIC init_io, print_id, do_debug, do_trace, verbose, input, output, master, &
-       mpi_size
+PUBLIC io_t
 CONTAINS
 
 !> =============================================================================
-SUBROUTINE init_io
+SUBROUTINE init_io (self)
+  class(io_t):: self
   character(len=mch), save:: id = &
   '$Id$'
   namelist /io_params/ verbose, do_debug, do_trace
   !.............................................................................
-  call print_id (id)
+  call print_id (self, id)
   read (*,io_params)
 END SUBROUTINE init_io
 
 !> =============================================================================
-SUBROUTINE print_id (id)
+SUBROUTINE print_id (self, id)
+  class(io_t):: self
   character(len=mch) id
   character(len=mch), save:: hl= &
     '--------------------------------------------------------------------------------'

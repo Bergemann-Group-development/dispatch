@@ -3,10 +3,11 @@
 !> Advection experiment, runs runs the advection problem in separate patches.
 !> =============================================================================
 MODULE experiment_mod
-  USE pde_mod               ! patches/centered/advection_mod.f90
-  USE io_mod
-  USE task_list_mod
-  USE mpi_mod, only: template_t, mpi_rank
+  USE pde_mod                   ! patches/centered/advection_mod.f90
+  USE patch_mod                 ! tasks/patch_mod.f90
+  USE task_list_mod             ! lists/task_list_mod.f90
+  USE io_mod                    ! io/io_mod.f90
+  USE mpi_basic, only: mpi_t
   implicit none
   !-----------------------------------------------------------------------------
   ! Specialized PDE object for advection with constant velocity
@@ -25,6 +26,8 @@ MODULE experiment_mod
   real:: size          = 16.                    ! experiment size
   integer:: resolution = 64                     ! total number of points
   integer:: patch_resolution = 16               ! number of points per patch
+  type(io_t):: io
+  type(mpi_t):: mpi
 CONTAINS
 
 !> =============================================================================
@@ -39,7 +42,9 @@ SUBROUTINE init_experiment (task_list)
   integer:: ntask, itask, resolution
   namelist /parameters/ size, width, velocity, resolution, patch_resolution
   !.............................................................................
-  read (input, parameters); if (master) write (output, parameters)
+  call io%init
+  call mpi%init
+  read (io%input, parameters); if (io%master) write (io%output, parameters)
   template%box%size = size
   template%box%dim  = resolution
   template%task%dim = patch_resolution
@@ -48,7 +53,7 @@ SUBROUTINE init_experiment (task_list)
     call template%init                          ! computes task position etc
     task%position = template%position           ! copy position
     ! now we can set task parameters from the template
-    if (template%rank == mpi_rank) &            ! if on this rank
+    if (template%rank == mpi%rank) &            ! if on this rank
       call task%allocate                        ! allocate memory and mesh
       item => task                              ! generic task pointer
       call task_list%append (item)              ! append to task_list
