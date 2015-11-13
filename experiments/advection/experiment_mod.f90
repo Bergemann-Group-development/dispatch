@@ -40,9 +40,9 @@ SUBROUTINE init_experiment (task_list)
   namelist /parameters/ size, width, velocity, resolution, patch_resolution
   !.............................................................................
   read (input, parameters); if (master) write (output, parameters)
-  template%box%size  = size
-  template%box%dim   = resolution
-  template%patch%dim = patch_resolution
+  template%box%size = size
+  template%box%dim  = resolution
+  template%task%dim = patch_resolution
   do itask=1,ntask
     template%itask = itask
     call template%init                          ! computes task position etc
