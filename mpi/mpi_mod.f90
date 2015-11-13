@@ -18,12 +18,12 @@ MODULE mpi_mod
     integer:: dim(3)
   end type
   type(box_t):: box, rank, task
-  type mpi_info_t
+  type mpi_t
     integer:: size, rank, coord(3)
   contains
     procedure:: init
   end type
-  type(mpi_info_t):: info
+  type(mpi_t):: info
   !-----------------------------------------------------------------------------
   ! Template task, with procedure to place it it MPI-space
   !-----------------------------------------------------------------------------
@@ -35,10 +35,20 @@ MODULE mpi_mod
   contains
     procedure:: init => init_template
   end type
+PRIVATE
+PUBLIC mpi_t, template_t
 CONTAINS
 
 !> =============================================================================
-!> Compute a task position, based on the linear index itask (0-indexed)
+!> Compute a task position, based on the linear index itask (0-indexed).
+!>
+!> The 3-D array template%mpi%num should be set to the desired MPI-geometry =
+!> the number of MPI-ranks per direction.   The product(mpi%num) should thus
+!> be equal to mpi_size
+!>
+!> The template%task%dim should be set to the desired task dimensions; i.e.,
+!> the number of task points per direction (not counting guard cells).  The
+!> box dimensions need to be divisible with the task dimensions, obviously.
 !> =============================================================================
 SUBROUTINE init_template (self)
   class(template_t):: self
@@ -56,6 +66,10 @@ SUBROUTINE init_template (self)
   tasks_per_dir(3) = tasks_per_dir(3)*tasks_per_dir(3)
   task_pos = self%itask/tasks_per_dir
   self%position = (task_pos+0.5d0)*self%task%size
+  if (product(t%mpi%num) /= mpi_size) then
+    print*,'rank%num, mpi_size', t%mpi%num, mpi_size
+    call abort_mpi ('wrong size')
+  end if
   !-----------------------------------------------------------------------------
   ! The number of ranks per direction gives the MPI-position and the mpi rank
   !-----------------------------------------------------------------------------
@@ -65,41 +79,25 @@ SUBROUTINE init_template (self)
   ranks_per_dir(3) = ranks_per_dir(3)*ranks_per_dir(3)
   mpi_pos = self%itask/ranks_per_dir
   self%rank = product(mpi_pos+1)-1
-END SUBROUTINE init_template
-
-SUBROUTINE init (mpi)
-  class(mpi_info_t):: mpi
-  integer:: rank_num(3)=1, box_dim=64, patch_dim=16
-  real:: box_size(3)=1.0
-  type(template_t):: t
-  namelist /mpi_params/ box_size, box_dim, rank_num, patch_dim
-  !.............................................................................
-  t%box%size  = box_size
-  t%box%dim   = box_dim
   !
-  t%mpi%num   = rank_num
-  t%mpi%dim   = t%box%dim/t%mpi%num
-  t%mpi%size  = t%box%size/t%mpi%num
-  !
-  t%task%dim  = patch_dim
-  t%task%num  = t%mpi%dim/t%mpi%dim
-  t%task%size = t%mpi%size/t%mpi%dim
-  !
-  if (product(t%mpi%num) /= mpi_size) then
-    print*,'rank%num, mpi_size', t%mpi%num, mpi_size
-    call abort_mpi ('wrong size')
-  end if
   if (all(t%task%num*t%task%dim /= t%mpi%dim)) then
     print'(3(3i8,2x))', t%task%num, t%task%dim, t%mpi%dim
     call abort_mpi ('wrong size')
   end if
-END SUBROUTINE init
+END SUBROUTINE init_template
 
-FUNCTION get_mpi_info ()
-  type(mpi_info_t):: get_mpi_info
-  get_mpi_info%size  = mpi_size
-  get_mpi_info%rank  = mpi_rank
-  get_mpi_info%coord = mpi_coord
-END FUNCTION
+!> =============================================================================
+!> Initialize an object with the most important pieces of information about MPI:
+!> mpi%size = the number of MPI ranks
+!> mpi%rank = the rank of the current MPI process (0-indexed)
+!> mpi%coord = the 3-D position of the rank, if a Cartesian arrangement is used
+!> =============================================================================
+SUBROUTINE init (mpi)
+  class(mpi_t):: mpi
+  !.............................................................................
+  mpi%size = mpi_size
+  mpi%rank = mpi_rank
+  mpi%coord = mpi_coord
+END SUBROUTINE init
 
 END MODULE mpi_mod
