@@ -1,7 +1,7 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> Template module for patches, which adds pointers too memory and mesh, and
+!> Template module for patches, which adds pointers to memory and mesh, and
 !> number of dimensions and variables.  The number of dimensions is hardwired
-!> to 3, since we can just choose the actaul dimensions to get 2-D and 1-D.
+!> to 3, since we can just choose the actual dimensions to get 2-D and 1-D.
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE patch_mod
   USE task_mod

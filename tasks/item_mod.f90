@@ -1,5 +1,6 @@
 !> =============================================================================
 !> $Id$
+!> This abstract type exists to be able to organize task lists by time.
 !> =============================================================================
 MODULE item_mod
   implicit none

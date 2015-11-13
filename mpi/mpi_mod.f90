@@ -19,17 +19,19 @@ MODULE mpi_mod
   end type
   type(box_t):: box, rank, patch
   type mpi_info_t
-    type(box_t):: box, rank, patch
+    integer:: size, rank, coord(3)
   contains
     procedure:: init
   end type
   type(mpi_info_t):: info
+  !-----------------------------------------------------------------------------
+  ! Template task, with procedure to place it it MPI-space
+  !-----------------------------------------------------------------------------
   type template_t
-    real:: size
-    integer:: dim(3)
+    type(box_t):: box, mpi, patch
+    real(8):: position(3)
     integer:: itask
     integer:: rank
-    type(mpi_info_t):: mpi_info
   contains
     procedure:: init => init_template
   end type
@@ -37,7 +39,6 @@ CONTAINS
 
 SUBROUTINE init_template (self)
   class(template_t):: self
-  self%mpi_info = get_mpi_info()
 END SUBROUTINE init_template
 
 SUBROUTINE init (mpi)
@@ -57,10 +58,6 @@ SUBROUTINE init (mpi)
   patch%num  = rank%dim/patch%dim
   patch%size = rank%size/patch%dim
   !
-  info%box   = box
-  info%rank  = rank
-  info%patch = patch
-
   if (product(rank%num) /= mpi_size) then
     print*,'rank%num, mpi_size', rank%num, mpi_size
     call abort_mpi ('wrong size')
@@ -73,9 +70,9 @@ END SUBROUTINE init
 
 FUNCTION get_mpi_info ()
   type(mpi_info_t):: get_mpi_info
-  get_mpi_info%box = box
-  get_mpi_info%rank = rank
-  get_mpi_info%patch  = patch
+  get_mpi_info%size  = mpi_size
+  get_mpi_info%rank  = mpi_rank
+  get_mpi_info%coord = mpi_coord
 END FUNCTION
 
 END MODULE mpi_mod

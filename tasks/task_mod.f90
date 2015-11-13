@@ -1,10 +1,9 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> Template module for task
+!> Template module for tasks.
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE task_mod
   USE item_mod
   USE list_mod
-  USE mesh_mod
   implicit none
   integer, parameter:: ntime=7
   !-----------------------------------------------------------------------------

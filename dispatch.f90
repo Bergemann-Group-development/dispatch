@@ -13,9 +13,9 @@ PROGRAM dispatch
   logical:: running = .true.
   !....................................................................
   call init_mpi                                     ! start up MPI
-  !$omp parallel
   call task_list%init ('task_list')                 ! initialize tasks_list
   call ready_queue%init ('ready_queue')             ! initialize ready_queue
+  !$omp parallel
   call init_experiment (task_list)                  ! populate lists with tasks
   do while (task_list%size > 0)                     ! as long as there are tasks
     call mesg_list%probe                            ! probe for new messages
