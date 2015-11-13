@@ -11,8 +11,8 @@ MODULE list_mod
   end type
   type list_t
     character(len=64):: name
-    type(link_t), pointer:: head => null() 
-    type(link_t), pointer:: tail => null() 
+    type(link_t), pointer:: head => null()
+    type(link_t), pointer:: tail => null()
     type(link_t), pointer:: item => null()
     integer:: size = 0
     contains
@@ -64,10 +64,13 @@ END SUBROUTINE reset
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE append (list, link)
+SUBROUTINE append (list, item)
   class(list_t):: list
+  class(item_t), pointer:: item
   class(link_t), pointer:: link
   !.............................................................................
+  allocate (link)
+  link%item => item
   if (associated(list%tail)) then
     link%prev => list%tail
     link%prev%next => link
@@ -81,20 +84,23 @@ END SUBROUTINE append
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE add_by_time (list, new)
+SUBROUTINE add_by_time (list, item)
   class(list_t):: list
+  class(item_t), pointer:: item
   class(link_t), pointer:: link, new
   !.............................................................................
   link => list%head
   do while (associated(link))
     if (link%item%time > new%item%time) then
+      allocate (new)
+      new%item => item
       call insert (list, link, new)
       list%size = list%size+1
       return
     end if
     link => link%next
   end do
-  call append (list, new)
+  call append (list, item)
   list%size = list%size+1
 END SUBROUTINE add_by_time
 

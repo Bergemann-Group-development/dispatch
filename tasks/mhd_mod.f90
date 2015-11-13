@@ -6,6 +6,7 @@
 MODULE mhd_mod
   USE patch_mod
   USE trace_mod
+  USE mesh_mod
   implicit none
   type, extends(patch_t):: mhd_t
     real:: courant                  ! Courant number
@@ -29,8 +30,8 @@ SUBROUTINE init_mhd (self)
   call trace_begin ('init_mhd')
   if (verbose >0) print*,'init_mhd:', self%id, self%time
   do i=1,3
-    allocate (self%mesh(i))
-    call self%mesh(i)%init
+    allocate (self%m(i))
+    call self%m(i)%init
   end do
   call self%allocate
   call trace_end
@@ -58,12 +59,14 @@ END SUBROUTINE
 
 SUBROUTINE allocate_mhd  (self)
   class(mhd_t):: self
-  integer:: m(3)
+  type(mesh_t):: m(3)
+  integer:: n(3)
   !.............................................................................
   if (verbose >0) print*,'allocate_mhd:', self%id, self%time
   if (associated(self%mem)) deallocate (self%mem)
-  m = self%mesh%gn
-  allocate (self%mem(m(1),m(2),m(3),self%nvar,self%nt,2))
+  m = self%m
+  n = m%gn
+  allocate (self%mem(n(1),n(2),n(3),self%nvar,self%nt,2))
 END SUBROUTINE
 
 SUBROUTINE deallocate_mhd  (self)

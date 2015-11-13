@@ -2,12 +2,14 @@
 !> $Id$
 !> =============================================================================
 MODULE item_mod
+  implicit none
   type, abstract:: item_t
     real(8):: time = 0d0
   contains
     procedure(one), deferred:: init
     procedure(one), deferred:: execute
     procedure(one), deferred:: update
+    procedure(one), deferred:: check
     procedure(one), deferred:: allocate
     procedure(one), deferred:: deallocate
     procedure(one), deferred:: print

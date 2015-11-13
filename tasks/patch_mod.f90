@@ -8,9 +8,9 @@ MODULE patch_mod
   USE mesh_mod
   implicit none
   integer, parameter:: ndim = 3
-  type, abstract, extends(tasks_t):: patch_t
+  type, extends(tasks_t):: patch_t
     real, dimension(:,:,:,:,:,:), pointer:: mem
-    type(mesh_t), dimension(:), pointer:: mesh
+    type(mesh_t), dimension(:), pointer:: m
     integer:: ndim = ndim           ! Number of dimensions
     integer:: nvar                  ! Number of variables
   end type

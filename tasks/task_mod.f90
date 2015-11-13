@@ -4,6 +4,7 @@
 MODULE task_mod
   USE item_mod
   USE list_mod
+  USE mesh_mod
   implicit none
   integer, parameter:: ntime=7
   !-----------------------------------------------------------------------------
@@ -17,11 +18,12 @@ MODULE task_mod
     real(8):: velocity(3) = 0d0
     real(8):: size(3) = 0d0
     integer:: status = 0
+    integer:: n_check = 0
     type(list_t), pointer:: nbor_list
   contains
-    procedure                :: execute => execute_task
+    procedure(one), deferred :: execute
     procedure(one), deferred :: check
-    procedure(two), deferred :: send_to    ! deferred to specific task
+    procedure(two), deferred :: send_to
   end type
   abstract interface
     subroutine one (self)
@@ -35,7 +37,7 @@ MODULE task_mod
     end subroutine
   end interface
   !-----------------------------------------------------------------------------
-  ! Timeslot info added
+  ! Timeslot info added in tasks_t
   !-----------------------------------------------------------------------------
   type, extends(task_t):: tasks_t
     real(8):: t(ntime)
@@ -45,13 +47,14 @@ MODULE task_mod
     integer:: it = 0
     integer:: verbose = 0
   contains
-    procedure:: init => void
-    procedure:: check => void
-    procedure:: update => void
-    procedure:: send_to => void2
-    procedure:: allocate => void
+    procedure:: execute
+    procedure:: check
+    procedure:: init       => void
+    procedure:: update     => void
+    procedure:: send_to    => void2
+    procedure:: allocate   => void
     procedure:: deallocate => void
-    procedure:: print => void
+    procedure:: print      => void
   end type
 PRIVATE
 PUBLIC ntime, task_t, tasks_t
@@ -71,8 +74,8 @@ END SUBROUTINE
 !> After taking a time step it broadcasts the new state to neighbors, checks if
 !> any of them can be moved to the ready_queue, and finally checks itself.
 !> =============================================================================
-SUBROUTINE execute_task (self)
-  class(task_t):: self
+SUBROUTINE execute(self)
+  class(tasks_t):: self
   class(item_t), pointer:: item
   class(link_t), pointer:: nbor
   class(task_t), pointer:: nbtask
@@ -86,13 +89,39 @@ SUBROUTINE execute_task (self)
   end select
   do while (associated(nbor))             ! continue to the end
     if (nbtask%rank == self%rank) then    ! same rank task
-      call nbtask%check                   ! nbor task to ready_queue?
+      call nbtask%check                  ! nbor task to ready_queue?
     else                                  ! neighbor on different rank
       call nbtask%send_to (nbtask%rank)   ! send to neighbor rank
     end if
     nbor => nbor%next                     ! next nbor
   end do
   call self%check                         ! self to ready_queue?
+END SUBROUTINE
+
+!> =============================================================================
+!> Simple check function
+!> =============================================================================
+SUBROUTINE check (self)
+  class(tasks_t):: self
+  class(list_t), pointer:: list
+  class(link_t), pointer:: nbor, link
+  class(item_t), pointer:: item
+  !.............................................................................
+  nbor => self%nbor_list%head             ! start on nbor_list
+  do while (associated(nbor))             ! continue to the end
+    item => nbor%item
+    if (item%time < self%time) then       ! fail if neighbor behind
+      select type (item)
+      type is (tasks_t)
+        item%n_check = item%n_check + 1   ! count failures
+      end select
+      return
+    end if
+    nbor => nbor%next                     ! next nbor
+  end do
+!allocate (link)
+!  link%item => self
+!  call list%add_by_time (link)            ! add to list
 END SUBROUTINE
 
 END MODULE

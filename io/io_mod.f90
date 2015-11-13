@@ -4,9 +4,11 @@
 MODULE io_mod
   USE mpi_basic
   USE mpi_timer
+  USE mpi_mod
   implicit none
 PRIVATE
-PUBLIC init_io, print_id, do_debug, do_trace, verbose
+PUBLIC init_io, print_id, do_debug, do_trace, verbose, input, output, master, &
+       mpi_size
 CONTAINS
 
 !> =============================================================================
