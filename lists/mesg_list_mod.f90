@@ -36,7 +36,7 @@ END SUBROUTINE receive
 !> =============================================================================
 SUBROUTINE unpack (unpack_list, task_list)
   class(mesg_list_t):: unpack_list
-  type(task_list_t), pointer:: task_list
+  type(task_list_t):: task_list
 END SUBROUTINE unpack
 
 END MODULE mesg_list_mod

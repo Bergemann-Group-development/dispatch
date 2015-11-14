@@ -2,9 +2,9 @@
 
 # Option groups
 #OPTS = debug
-#OPTS = full_debug
+OPTS = full_debug
 #OPTS = optimized
-OPTS =
+#OPTS =
 
 # Problem specification
 MESH = centered

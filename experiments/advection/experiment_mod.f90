@@ -35,7 +35,7 @@ CONTAINS
 !> local tasks and virtual task = copies of tasks from neighbor ranks).
 !> =============================================================================
 SUBROUTINE init_experiment (task_list)
-  type(task_list_t), pointer:: task_list
+  type(task_list_t):: task_list
   type(template_t):: template
   type(experiment_t), pointer:: task
   class(item_t), pointer:: item
@@ -44,6 +44,7 @@ SUBROUTINE init_experiment (task_list)
   !.............................................................................
   call io%init
   call mpi%init
+  rewind (io%input)
   read (io%input, parameters); if (io%master) write (io%output, parameters)
   template%box%size = size
   template%box%dim  = resolution
