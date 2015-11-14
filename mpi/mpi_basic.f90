@@ -4,9 +4,9 @@
 !> =============================================================================
 MODULE mpi_basic
   USE omp_mod                   ! OMP stuff
- !USE mpi                       ! Most systems accept this, but ..
+  USE mpi                       ! Most systems accept this, but ..
   implicit none
-  include 'mpif.h'              ! .. some systems may require this instead
+  !include 'mpif.h'              ! .. some systems may require this instead
   integer:: mpi_err             ! MPI error status
   logical:: mpi_master          ! true on MPI master (rank 0)
   logical:: mpi_trace=.false.   ! debug trace option
@@ -29,16 +29,20 @@ MODULE mpi_basic
   ! Object that returns the most important MPI parameters
   !-----------------------------------------------------------------------------
   type mpi_t
-    integer:: size, rank
+    integer:: size, rank, comm, verbose=0
+    logical:: master
     logical:: ok = .false.
   contains
     procedure:: init => init_mpi_info
     procedure:: barrier => barrier_
     procedure:: print => print_
+    procedure:: assert
     procedure, nopass:: end => end_mpi
   end type
   type(mpi_t):: info
-PUBLIC
+PRIVATE
+PUBLIC mpi_t, init_mpi, end_mpi, barrier_mpi, abort_mpi, clean_stop, assert, &
+       mch, master, do_debug, do_trace, verbose
 CONTAINS
 
 !> =============================================================================
@@ -58,6 +62,8 @@ SUBROUTINE init_mpi_info (mpi, mpi_dims, dims)
   end if
   mpi%size = mpi_size
   mpi%rank = mpi_rank
+  mpi%comm = mpi_comm_world
+  mpi%master = mpi_rank==0
   mpi%ok   = .true.
 END SUBROUTINE init_mpi_info
 
@@ -92,75 +98,7 @@ SUBROUTINE barrier_ (mpi, label, delay)
 END SUBROUTINE barrier_
 
 !> =============================================================================
-SUBROUTINE end_mpi
-!..............................................................................
-  !call finalize_cart
-  call MPI_Finalize (mpi_err)
-  if (mpi_rank==0) print*,'MPI finalized'
-  call exit        ! avoid "stop" which may produce one output line per process
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE abort_mpi (reason)
-  character(len=*):: reason
-!...............................................................................
-  print*,'mpi_abort: '//trim(reason)
-  if (verbose > 2) then
-    write(output,'(3(a,2x,i6))') 'mpi_abort: rank =',mpi_rank,'thread',omp_mythread(), trim(reason)
-    call flush (output)
-  end if
-  call MPI_Abort (mpi_comm_world, 127, mpi_err)
-  call exit
-END SUBROUTINE abort_mpi
-
-!> =============================================================================
-SUBROUTINE clean_stop
-!...............................................................................
-  call MPI_Abort (mpi_comm_world, 127, mpi_err)
-  call exit
-END SUBROUTINE clean_stop
-
-!> =============================================================================
-SUBROUTINE barrier_mpi (label)
-  character(len=*) label
-!...............................................................................
-  if (mpi_trace) print *,  mpi_rank, 'barrier_mpi: '//label
-  if (verbose > 2) then
-    write (output,*) mpi_rank, 'barrier_mpi: '//label
-    call flush (output)
-  end if
-  call MPI_Barrier (mpi_comm_world, mpi_err)
-END SUBROUTINE barrier_mpi
-
-!> =============================================================================
-SUBROUTINE assert (message, flag)
-  logical:: flag
-  character(len=*):: message
-!..............................................................................
-  if (.not.flag) then
-    write(*,*)      mpi_rank,' error: '//trim(message)
-    write(output,*) mpi_rank,' error: '//trim(message)
-    call flush (output)
-  end if
-END SUBROUTINE assert
-
-!> =============================================================================
-SUBROUTINE assert_mpi (message, code)
-  character(len=*):: message
-  integer code
-  character (len=16):: codemsg
-!..............................................................................
-  if (code/=0) &
-    print*,mpi_rank,' error: '//trim(message)//', code =', code
-  write (codemsg,'("code =",i10)') code
-  call assert (trim(message)//codemsg, code==0)
-END SUBROUTINE assert_mpi
-
-END MODULE mpi_basic
-
-!> =============================================================================
 SUBROUTINE init_mpi
-  USE mpi_basic
   implicit none
   character(len=mch):: id='mpi.f90 $Id$'
   character(len=mch):: filename
@@ -205,3 +143,63 @@ SUBROUTINE init_mpi
     open (output, file=filename, form='formatted', status='unknown')
   end if
 END SUBROUTINE init_mpi
+
+!> =============================================================================
+SUBROUTINE end_mpi
+!..............................................................................
+  !call finalize_cart
+  call MPI_Finalize (mpi_err)
+  if (mpi_rank==0) print*,'MPI finalized'
+  call exit        ! avoid "stop" which may produce one output line per process
+END SUBROUTINE
+
+!> =============================================================================
+SUBROUTINE abort_mpi (reason)
+  character(len=*):: reason
+!...............................................................................
+  print*,'mpi_abort: '//trim(reason)
+  if (verbose > 2) then
+    write(output,'(3(a,2x,i6))') 'mpi_abort: rank =',mpi_rank,'thread',omp_mythread(), trim(reason)
+    call flush (output)
+  end if
+  call MPI_Abort (mpi_comm_world, 127, mpi_err)
+  call exit
+END SUBROUTINE abort_mpi
+
+!> =============================================================================
+SUBROUTINE clean_stop
+!...............................................................................
+  call MPI_Abort (mpi_comm_world, 127, mpi_err)
+  call exit
+END SUBROUTINE clean_stop
+
+!> =============================================================================
+SUBROUTINE barrier_mpi (label)
+  character(len=*) label
+!...............................................................................
+  if (mpi_trace) print *,  mpi_rank, 'barrier_mpi: '//label
+  if (verbose > 2) then
+    write (output,*) mpi_rank, 'barrier_mpi: '//label
+    call flush (output)
+  end if
+  call MPI_Barrier (mpi_comm_world, mpi_err)
+END SUBROUTINE barrier_mpi
+
+!> =============================================================================
+SUBROUTINE assert (mp, message, code)
+  class(mpi_t):: mp
+  character(len=*):: message
+  integer code
+  character (len=16):: codemsg
+!..............................................................................
+  if (code/=0) then
+    write (codemsg,'("code =",i10)') code
+    write(*,*)      mpi_rank,' error: '//trim(message)
+    if (mp%verbose > 1) then
+      write(output,*) mpi_rank,' error: '//trim(message)
+      call flush (output)
+    end if
+  end if
+END SUBROUTINE assert
+
+END MODULE mpi_basic

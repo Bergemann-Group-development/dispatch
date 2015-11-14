@@ -5,7 +5,7 @@
 !> *****************************************************************************
 MODULE mpi_timer
   implicit none
-#ifndef _OPEMP
+#ifndef _OPENMP
   include 'mpif.h'
 #endif
   real(8), save:: wt=0d0

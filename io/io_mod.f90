@@ -10,10 +10,11 @@ MODULE io_mod
     logical:: master, do_debug, do_trace
   contains
     procedure:: init  => init_io
-    procedure:: print => print_id
+    procedure:: print => print_id_
   end type
+  logical:: mpi_trace=.false.
 PRIVATE
-PUBLIC io_t
+PUBLIC io_t, print_id
 CONTAINS
 
 !> =============================================================================
@@ -23,13 +24,20 @@ SUBROUTINE init_io (self)
   '$Id$'
   namelist /io_params/ verbose, do_debug, do_trace
   !.............................................................................
-  call print_id (self, id)
+  call print_id (id)
   read (*,io_params)
 END SUBROUTINE init_io
 
 !> =============================================================================
-SUBROUTINE print_id (self, id)
+SUBROUTINE print_id_ (self, id)
   class(io_t):: self
+  character(len=mch) id
+  !..............................................................................
+  call print_id (id)
+END SUBROUTINE
+
+!> =============================================================================
+SUBROUTINE print_id (id)
   character(len=mch) id
   character(len=mch), save:: hl= &
     '--------------------------------------------------------------------------------'

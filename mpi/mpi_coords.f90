@@ -25,8 +25,10 @@ MODULE mpi_coords
   contains
     procedure:: init
     procedure:: print
+    procedure:: finalize
   end type
-  logical:: ok
+  logical, private:: ok
+PRIVATE
 PUBLIC mpi_coord_t
 CONTAINS
 
@@ -43,7 +45,7 @@ SUBROUTINE init (mpi, mpi_dims, dims)
   end interface
   !.............................................................................
   call mpi%mpi_t%init
-  call cart_create_mpi (mpi_dims, dims=dims)
+  call cart_create_mpi (mpi, mpi_dims, dims=dims)
   mpi%coord = mpi_coord
   mpi%dims  = mpi_dim3
   mpi%plane = mpi_plane
@@ -83,13 +85,15 @@ END SUBROUTINE
 !> Create a Cartesian arrangement of MPI ranks, with dimension n_mpi(3).  If
 !> dims(3) is non-zero, these are taken as information about the global number
 !> of mesh points, and an attempt is made to distribute the MPI-coordinate
-!> dimension to get product(dims) = mpi_size.  If mpi_dims is present, the
+!> dimension to get product(dims) = mpi%size.  If mpi_dims is present, the
 !> dims(3) information is ignored, even if present.
 !> =============================================================================
-SUBROUTINE cart_create_mpi (mpi_dims, dims)
+SUBROUTINE cart_create_mpi (mpi, mpi_dims, dims)
   implicit none
+  class(mpi_coord_t):: mpi
   integer, dimension(3), optional:: mpi_dims, dims
   integer:: i, m, color, size, n(3)
+  integer:: mpi_err
   character(len=mch), save:: id= &
     'mpi_coords.f90 $Id$'
 !-------------------------------------------------------------------------------
@@ -101,60 +105,60 @@ SUBROUTINE cart_create_mpi (mpi_dims, dims)
   ok = .false.
   if (present(mpi_dims)) then
     mpi_dim3 = mpi_dims
-    if (master) print'(a,i7,2x,3i5)',' mpi_size, mpi_dims =', mpi_size, mpi_dims
+    if (mpi%rank==0) print'(a,i7,2x,3i5)',' mpi%size, mpi_dims =', mpi%size, mpi_dims
   else
     if (present(dims)) then
-      if (product(dims)/mpi_size*mpi_size == product(dims)) then
+      if (product(dims)/mpi%size*mpi%size == product(dims)) then
         do while (.true.)
-          m = mpi_size**0.333334
-          if (m**3 == mpi_size) then
+          m = mpi%size**0.333334
+          if (m**3 == mpi%size) then
             mpi_dim3 = [m,m,m]; if (test_is_ok()) exit
           end if
-          m = mpi_size**0.500001
-          if (m**2 == mpi_size) then
+          m = mpi%size**0.500001
+          if (m**2 == mpi%size) then
             mpi_dim3 = [m,m, 1]; if (test_is_ok()) exit
             mpi_dim3 = [m, 1,m]; if (test_is_ok()) exit
             mpi_dim3 = [ 1,m,m]; if (test_is_ok()) exit
           end if
-          m = mpi_size
+          m = mpi%size
             mpi_dim3 = [m,1,1]; if (test_is_ok()) exit
             mpi_dim3 = [1,m,1]; if (test_is_ok()) exit
             mpi_dim3 = [1,1,m]; if (test_is_ok()) exit
           call fail ('ERROR: none of the simple choices worked')
         end do
       else
-        call fail ('ERROR: mpi_size must be a divisor in =', product(dims))
+        call fail ('ERROR: mpi%size must be a divisor in =', product(dims))
       end if
     else
       call fail ('ERROR: either mpi_dims(3) or dims(3) must be present')
     end if
   end if
-  if (mpi_size /= product(mpi_dim3)) then
-    call fail ('ERROR: mpi_size must be equal to product(mpi_dims) =', &
+  if (mpi%size /= product(mpi_dim3)) then
+    call fail ('ERROR: mpi%size must be equal to product(mpi_dims) =', &
       product(mpi_dim3))
   end if
   if (.not. ok) return
   call MPI_Cart_create (mpi_comm_world, 3, mpi_dim3, mpi_periodic, mpi_reorder, &
                         mpi_comm_cart, mpi_err)
-  if (master) print '(13x,a,3i5)', ' Using mpi_dims =', mpi_dim3
-  call assert_mpi ('cart_creat_mpi: cart', mpi_err)
+  if (mpi%rank==0) print '(13x,a,3i5)', ' Using mpi_dims =', mpi_dim3
+  call mpi%assert ('cart_creat_mpi: cart', mpi_err)
   !-----------------------------------------------------------------------------
   ! Compute mpi_coord; our coordinates in Cartesian MPI space
   !-----------------------------------------------------------------------------
-  call MPI_Cart_coords (mpi_comm_cart, mpi_rank, 3, mpi_coord, mpi_err)                  ! mpi_coord(i) = mpi_[xyz]
-  call assert_mpi ('cart_creat_mpi: mpi_coord', mpi_err)
+  call MPI_Cart_coords (mpi_comm_cart, mpi%rank, 3, mpi_coord, mpi_err)                  ! mpi_coord(i) = mpi_[xyz]
+  call mpi%assert ('cart_creat_mpi: mpi_coord', mpi_err)
   do i=1,3
     !---------------------------------------------------------------------------
     ! Compute mpi_up and mpi_dn; the ranks of nearest neighbors
     !---------------------------------------------------------------------------
     call MPI_Cart_shift (mpi_comm_cart, i-1, 1, mpi_dn(i), mpi_up(i), mpi_err)           ! mpi_{up,dn} ranks
-    call assert_mpi ('cart_creat_mpi: mpi_dn/up', mpi_err)
+    call mpi%assert ('cart_creat_mpi: mpi_dn/up', mpi_err)
     !---------------------------------------------------------------------------
     ! Compute mpi_plane; the communicators for planes in MPI-space
     !---------------------------------------------------------------------------
-    call MPI_Comm_split (mpi_comm_world, mpi_coord(i), mpi_rank, mpi_plane(i),& ! mpi_plane(
+    call MPI_Comm_split (mpi_comm_world, mpi_coord(i), mpi%rank, mpi_plane(i),& ! mpi_plane(
                          mpi_err)
-    call assert_mpi ('cart_creat_mpi: mpi_plane', mpi_err)
+    call mpi%assert ('cart_creat_mpi: mpi_plane', mpi_err)
     !---------------------------------------------------------------------------
     ! Compute mpi_beam; the communicators along MPI coordinat axes
     !---------------------------------------------------------------------------
@@ -162,20 +166,20 @@ SUBROUTINE cart_create_mpi (mpi_dims, dims)
           + merge(0,mpi_coord(2),i==2)*mpi_dim3(1) &
           + merge(0,mpi_coord(3),i==3)*mpi_dim3(1)*mpi_dim3(2)
     call MPI_Comm_split (mpi_comm_world, color, mpi_coord(i), mpi_beam(i), mpi_err)
-    call assert_mpi ('cart_creat_mpi: mpi_beam', mpi_err)
+    call mpi%assert ('cart_creat_mpi: mpi_beam', mpi_err)
   end do
   cart_created = .true.
   CONTAINS
     logical function test_is_ok ()
       n = dims/mpi_dim3
-      if (master) print '(13x,a,3i5)', 'trying mpi_dims =', mpi_dim3
-      test_is_ok = all(n*mpi_dim3 == dims) .and. product(mpi_dim3)==mpi_size
+      if (mpi%rank==0) print '(13x,a,3i5)', 'trying mpi_dims =', mpi_dim3
+      test_is_ok = all(n*mpi_dim3 == dims) .and. product(mpi_dim3)==mpi%size
       ok = test_is_ok
     end function
     subroutine fail (label, i)
       character(len=*):: label
       integer, optional:: i
-      if (master) then
+      if (mpi%rank==0) then
         if (present(i)) then
           print *, label, i
         else
@@ -184,22 +188,22 @@ SUBROUTINE cart_create_mpi (mpi_dims, dims)
       end if
     end subroutine
 END SUBROUTINE cart_create_mpi
-END MODULE mpi_coords
 !
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE finalize_cart
-  USE mpi_coords
+SUBROUTINE finalize (mp)
   implicit none
-  integer i
+  class(mpi_coord_t):: mp
+  integer:: mpi_err, i
   !
-  if (cart_created) then
+  if (mp%ok) then
     call MPI_Comm_Free(mpi_comm_cart,mpi_err)
     do i=1,3
       call MPI_Comm_Free(mpi_plane(i),mpi_err)
-      call assert_mpi ('finalize_cart: mpi_plane',mpi_err)
+      call mp%assert ('finalize_cart: mpi_plane',mpi_err)
       call MPI_Comm_Free(mpi_beam(i),mpi_err)
-      call assert_mpi ('finalize_cart: mpi_beam',mpi_err)
+      call mp%assert ('finalize_cart: mpi_beam',mpi_err)
     enddo
   endif
-END SUBROUTINE finalize_cart
+END SUBROUTINE finalize
+END MODULE mpi_coords
