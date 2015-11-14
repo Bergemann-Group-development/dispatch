@@ -21,16 +21,21 @@ MODULE mpi_basic
   public MPI_REAL               ! for (4-byte) real's
   public MPI_STATUS_SIZE
   integer:: input=1, output=2, data_unit=3, log_unit=4
+  integer:: verbose = 1
   logical:: do_debug = .false.
   logical:: do_trace = .true.
-  integer:: verbose = 1
+  logical, private:: first_time = .true.
   !-----------------------------------------------------------------------------
   ! Object that returns the most important MPI parameters
   !-----------------------------------------------------------------------------
   type mpi_t
     integer:: size, rank
+    logical:: ok = .false.
   contains
     procedure:: init => init_mpi_info
+    procedure:: barrier => barrier_
+    procedure:: print => print_
+    procedure, nopass:: end => end_mpi
   end type
   type(mpi_t):: info
 PUBLIC
@@ -42,18 +47,56 @@ CONTAINS
 !> mpi%rank = the rank of the current MPI process (0-indexed)
 !> mpi%coord = the 3-D position of the rank, if a Cartesian arrangement is used
 !> =============================================================================
-SUBROUTINE init_mpi_info (mpi)
+SUBROUTINE init_mpi_info (mpi, mpi_dims, dims)
   class(mpi_t):: mpi
+  integer, optional, dimension(3):: mpi_dims, dims
+  integer:: rank
   !.............................................................................
+  if (first_time) then
+    first_time = .false.
+    call init_mpi
+  end if
   mpi%size = mpi_size
   mpi%rank = mpi_rank
+  mpi%ok   = .true.
 END SUBROUTINE init_mpi_info
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE print_ (mpi)
+  class(mpi_t):: mpi
+  if (master) print *, 'mpi%size  =', mpi%size
+END SUBROUTINE
+!> =============================================================================
+!> MPI barrier with optional label and delay -- often necessary to arrange serial
+!> printout from all ranks, one at a time
+!> =============================================================================
+SUBROUTINE barrier_ (mpi, label, delay)
+  class(mpi_t):: mpi
+  character(len=*), optional:: label
+  integer, optional:: delay
+  integer:: i
+  real:: a = 1.0
+  !.............................................................................
+  if (present(delay)) then
+    !call sleep(delay)
+    do i=1,delay*1000000
+      a = a + sin(a)
+    end do
+  end if
+  if (present(label)) then
+    call barrier_mpi (label)
+  else
+    call barrier_mpi ('mpi%barrier')
+  end if
+END SUBROUTINE barrier_
 
 !> =============================================================================
 SUBROUTINE end_mpi
 !..............................................................................
   !call finalize_cart
   call MPI_Finalize (mpi_err)
+  if (mpi_rank==0) print*,'MPI finalized'
   call exit        ! avoid "stop" which may produce one output line per process
 END SUBROUTINE
 
@@ -62,8 +105,10 @@ SUBROUTINE abort_mpi (reason)
   character(len=*):: reason
 !...............................................................................
   print*,'mpi_abort: '//trim(reason)
-  write(output,'(3(a,2x,i6))') 'mpi_abort: rank =',mpi_rank,'thread',omp_mythread(), trim(reason)
-  call flush (output)
+  if (verbose > 2) then
+    write(output,'(3(a,2x,i6))') 'mpi_abort: rank =',mpi_rank,'thread',omp_mythread(), trim(reason)
+    call flush (output)
+  end if
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
   call exit
 END SUBROUTINE abort_mpi
@@ -80,8 +125,10 @@ SUBROUTINE barrier_mpi (label)
   character(len=*) label
 !...............................................................................
   if (mpi_trace) print *,  mpi_rank, 'barrier_mpi: '//label
-  write (output,*) mpi_rank, 'barrier_mpi: '//label
-  call flush (output)
+  if (verbose > 2) then
+    write (output,*) mpi_rank, 'barrier_mpi: '//label
+    call flush (output)
+  end if
   call MPI_Barrier (mpi_comm_world, mpi_err)
 END SUBROUTINE barrier_mpi
 
@@ -116,6 +163,7 @@ SUBROUTINE init_mpi
   USE mpi_basic
   implicit none
   character(len=mch):: id='mpi.f90 $Id$'
+  character(len=mch):: filename
   integer:: mpi_provided
 !-------------------------------------------------------------------------------
 !  Start up MPI and get number of nodes and our node rank
@@ -126,8 +174,11 @@ SUBROUTINE init_mpi
   call MPI_Comm_rank (mpi_comm_world, mpi_rank, mpi_err)
   mpi_master = (mpi_rank == 0)
   master = mpi_master
-  if (master) print*,id
   call init_omp
+  if (master) then
+    print*,id
+    print*,'MPI initialized'
+  end if
   if (master) then
     print 1, '***********************************************************************************'
     select case (mpi_provided)
@@ -145,9 +196,12 @@ SUBROUTINE init_mpi
     end select
     print 1, '***********************************************************************************'
   end if
-  !
   if (master) then
     print 1,'number of MPI processes:', mpi_size
     print 1,'OMP threads per MPI process:', omp_nthreads
+  end if
+  if (verbose > 1) then
+    write (filename,'(a,i4.4,a)') 'rank_', mpi_rank, '.dat'
+    open (output, file=filename, form='formatted', status='unknown')
   end if
 END SUBROUTINE init_mpi
