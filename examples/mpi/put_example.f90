@@ -1,31 +1,44 @@
 !*******************************************************************************
 PROGRAM put_example
-  USE mpi_rma
+  USE mpi_rma_mod
   USE io_mod
   implicit none
   integer, parameter:: nw=100
   real, dimension(nw):: a, b
   integer i, win, rank, offset
-  character(len=mch), save:: id= &
+  logical:: ok
+  character(len=120), save:: id= &
     'put_example.f90 $Id$'
-  type(mpi_rma_t):: mp
 !-------------------------------------------------------------------------------
-  call mp%init
+  call mpi_rma%init
   call print_id (id)
-  call mp%barrier('init')
+  call mpi_rma%barrier('init',delay=1)
 !-------------------------------------------------------------------------------
-  call mp%win_create_real (win, b, nw)                                          ! make b available
+  call mpi_rma%win_create_real (win, b, nw)                                     ! make b available
   do i=1,nw
-    a(i) = i + nw*mp%rank
+    a(i) = i + nw*mpi_rma%rank
   end do
 !-------------------------------------------------------------------------------
-  rank = modulo(mp%rank-1, mp%size)                                             ! put to one rank down
+  rank = modulo(mpi_rma%rank-1, mpi_rma%size)                                   ! put to one rank down
+
+  offset = 0
+  call mpi_rma%win_fence (win)                                                  ! <-  NO access to ..
+  call mpi_rma%win_put_reals (win, a(1+offset), nw-offset, offset, rank)        !   | .. a&b in this ..
+  call mpi_rma%win_fence (win)                                                  ! <-  .. interval
+  ok = b(offset+1) == offset+1 + nw*modulo(mpi_rma%rank+1, mpi_rma%size)
+  print *,mpi_rma%rank,b(offset+1:offset+5)                                     ! check results
+  print *,'The result is '//merge('ok ','nok',ok)
+  call mpi_rma%barrier(delay=1)
+
   offset = 10
-  call mp%win_fence (win)                                                       ! <-  NO access to ..
-  !!! FIXME call mp%put_reals (win, a(1+offset), nw-offset, offset, rank)                 !   | .. a&b in this ..
-  call mp%win_fence (win)                                                       ! <-  .. interval
-  print *,mp%rank,b(1+offset)                                                   ! check results
+  call mpi_rma%win_fence (win)                                                  ! <-  .. interval
+  call mpi_rma%win_put_reals (win, a(1+offset), nw-offset, offset, rank)        !   | .. a&b in this ..
+  call mpi_rma%win_fence (win)                                                  ! <-  .. interval
+  ok = b(offset+1) == offset+1 + nw*modulo(mpi_rma%rank+1, mpi_rma%size)
+  print *,mpi_rma%rank,b(offset+1:offset+5)                                     ! check results
+  print *,'The result is '//merge('ok ','nok',ok)
+  call mpi_rma%barrier(delay=1)
 !-------------------------------------------------------------------------------
-  call mp%win_free (win)
-  call mp%end
+  call mpi_rma%win_free (win)
+  call mpi_rma%end
 END PROGRAM put_example

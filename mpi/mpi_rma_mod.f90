@@ -2,8 +2,8 @@
 !> $Id$
 !> MPI remote-memory-access (RMA) calls, also referred to as one-sided MPI
 !> =============================================================================
-MODULE mpi_rma
-  USE mpi_basic
+MODULE mpi_rma_mod
+  USE mpi_mod
   implicit none
   include "mpif.h"
   integer, private:: mpi_err
@@ -21,9 +21,13 @@ MODULE mpi_rma
     procedure:: win_attach
     procedure:: win_detach
     procedure:: win_get
+    procedure:: win_get_reals
     procedure:: win_put
+    procedure:: win_put_reals
   end type
-PUBLIC
+  type(mpi_rma_t):: mpi_rma
+PRIVATE
+PUBLIC mpi_rma_t, mpi_rma
 CONTAINS
 
 !> =============================================================================
@@ -289,6 +293,23 @@ END SUBROUTINE win_get
 !> =============================================================================
 !> Put nb bytes from a window on rank
 !> =============================================================================
+SUBROUTINE win_get_reals (mp, win, w, nw, offset, rank)
+  implicit none
+  class(mpi_rma_t):: mp
+  integer:: win, nw, offset, rank, mpi_err
+  real:: w(nw)
+  integer(kind=MPI_ADDRESS_KIND):: offset2
+  !----------------------------------------------------------------------------
+  ! Note that offset is counted in bytes, while numbers are storage units
+  !----------------------------------------------------------------------------
+  offset2 = offset
+  call MPI_get (w, nw, MPI_CHAR, rank, offset2, nw, MPI_CHAR, win, mpi_err)
+  call mp%assert ('MPI_Get', mpi_err)
+END SUBROUTINE win_get_reals
+
+!> =============================================================================
+!> Put nb bytes from a window on rank
+!> =============================================================================
 SUBROUTINE win_put (mp, win, b, nb, offset, rank)
   implicit none
   class(mpi_rma_t):: mp
@@ -300,7 +321,24 @@ SUBROUTINE win_put (mp, win, b, nb, offset, rank)
   !----------------------------------------------------------------------------
   offset2 = offset
   call MPI_put (b, nb, MPI_CHAR, rank, offset2, nb, MPI_CHAR, win, mpi_err)
-  call mp%assert ('MPI_Get', mpi_err)
+  call mp%assert ('MPI_Put', mpi_err)
 END SUBROUTINE win_put
 
-END MODULE mpi_rma
+!> =============================================================================
+!> Put nb bytes from a window on rank
+!> =============================================================================
+SUBROUTINE win_put_reals (mp, win, w, nw, offset, rank)
+  implicit none
+  class(mpi_rma_t):: mp
+  integer:: win, nw, offset, rank, mpi_err
+  real:: w(nw)
+  integer(kind=MPI_ADDRESS_KIND):: offset2
+  !----------------------------------------------------------------------------
+  ! Note that offset is counted in bytes, while numbers are storage units
+  !----------------------------------------------------------------------------
+  offset2 = offset
+  call MPI_put (w, nw, MPI_CHAR, rank, offset2, nw, MPI_CHAR, win, mpi_err)
+  call mp%assert ('MPI_Put', mpi_err)
+END SUBROUTINE win_put_reals
+
+END MODULE mpi_rma_mod

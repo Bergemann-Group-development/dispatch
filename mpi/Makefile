@@ -13,12 +13,12 @@ ifeq ($(EXEC),dispatch.x)
   #mpi_rma.o
 endif
 
-mpi_basic.o:  omp_mod.o
-mpi_all.o:    mpi_basic.o
-mpi_coords.o: mpi_basic.o
-mpi_par_io.o: mpi_basic.o omp_mod.o mpi_timer.o
-mpi_reduce.o: mpi_basic.o
-mpi_rma.o:    mpi_basic.o
-mpi_send.o:   mpi_basic.o
-mpi_mesg.o:   mpi_basic.o
+mpi_mod.o:        omp_mod.o
+mpi_all_mod.o:    mpi_mod.o
+mpi_coord_mod.o:  mpi_mod.o
+mpi_par_io_mod.o: mpi_mod.o mpi_coord_mod.o mpi_timer.o
+mpi_reduce_mod.o: mpi_mod.o
+mpi_rma_mod.o:    mpi_mod.o
+mpi_send_mod.o:   mpi_mod.o
+mpi_mesg_mod.o:   mpi_mod.o
 

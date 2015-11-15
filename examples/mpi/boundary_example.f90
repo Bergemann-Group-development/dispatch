@@ -1,26 +1,20 @@
 !*******************************************************************************
 PROGRAM boundary_example
-  USE mpi_coords
+  USE mpi_coord_mod
   implicit none
-  integer, save:: n_mpi(3) = (/1,1,1/), gn(3) = (/64,64,1/)
+  integer, save:: mpi_dims(3) = [1,1,1], dims(3) = [64,64,1]
   integer:: rank
-  type(mpi_coord_t):: mp
+  type(mpi_coord_t):: mpi
 !-------------------------------------------------------------------------------
-  n_mpi(1) = 2
-  n_mpi(2) = mp%size/n_mpi(1)
-  call mp%init
-
-  if (mp%rank==0) print*,'Finding the nearest neighbors from mpi_dn & mpi_up:'
-
-  call mp%barrier('1',delay=1)
-  do rank=0,mp%size-1
-    if (rank==mp%rank) &
-      print'(a,i4,3(5x,a,3i4))', &
-        'rank:', mp%rank, &
-        'pos:' , mp%coord, &
-        'dn:'  , mp%dn, &
-        'up:'  , mp%up
-    call mp%barrier('2',delay=1)
-  end do
-  call mp%end
+  call mpi%mpi_t%init
+  if ((mpi%size/2)*2 /= mpi%size) &
+    call mpi%end ('ERROR: MPI size must be multiple of 2')
+  mpi_dims(1) = 2
+  mpi_dims(2) = mpi%size/mpi_dims(1)
+  call mpi%init (mpi_dims=mpi_dims)
+  if (mpi%ok) then
+    if (mpi%rank==0) print*,'Find the nearest neighbors from mpi%dn & mpi%up:'
+    call mpi%print
+  end if
+  call mpi%end
 END PROGRAM boundary_example

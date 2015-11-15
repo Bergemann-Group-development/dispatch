@@ -2,7 +2,7 @@
 !> $Id$
 !> Basic MPI calls; initialization, end, barriers, asserts, wallclock, ...
 !> =============================================================================
-MODULE mpi_basic
+MODULE mpi_mod
   USE omp_mod                   ! OMP stuff
   implicit none
   include 'mpif.h'              ! some systems require this instead of 'use mpi'
@@ -18,7 +18,7 @@ MODULE mpi_basic
   integer:: verbose = 1
   logical:: do_debug = .false.
   logical:: do_trace = .true.
-  logical, private:: first_time = .true.
+  logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   ! Object that returns the most important MPI parameters
   !-----------------------------------------------------------------------------
@@ -31,12 +31,12 @@ MODULE mpi_basic
     procedure:: barrier => barrier_
     procedure:: print => print_
     procedure:: assert
+    procedure, nopass:: abort => abort_mpi
     procedure, nopass:: end => end_mpi
   end type
-  type(mpi_t):: info
+  type(mpi_t):: mpi
 PRIVATE
-PUBLIC mpi_t, init_mpi, end_mpi, barrier_mpi, abort_mpi, clean_stop, assert, &
-       mch, master, do_debug, do_trace, verbose
+PUBLIC mpi_t, mpi
 CONTAINS
 
 !> =============================================================================
@@ -45,8 +45,8 @@ CONTAINS
 !> mpi%rank = the rank of the current MPI process (0-indexed)
 !> mpi%coord = the 3-D position of the rank, if a Cartesian arrangement is used
 !> =============================================================================
-SUBROUTINE init_mpi_info (mpi, mpi_dims, dims)
-  class(mpi_t):: mpi
+SUBROUTINE init_mpi_info (mp, mpi_dims, dims)
+  class(mpi_t):: mp
   integer, optional, dimension(3):: mpi_dims, dims
   integer:: rank
   !.............................................................................
@@ -54,25 +54,34 @@ SUBROUTINE init_mpi_info (mpi, mpi_dims, dims)
     first_time = .false.
     call init_mpi
   end if
-  mpi%size = mpi_size
-  mpi%rank = mpi_rank
-  mpi%comm = mpi_comm_world
+  mpi%size   = mpi_size
+  mpi%rank   = mpi_rank
+  mpi%comm   = mpi_comm_world
   mpi%master = mpi_rank==0
-  mpi%ok   = .true.
+  mpi%ok     = .true.
+  !-----------------------------------------------------------------------------
+  ! For some reason, this must be done element by element.  Turning it around,
+  ! and doing mpi = mp (which is syntactically correct), values are screwed
+  !-----------------------------------------------------------------------------
+  mp%size   = mpi%size
+  mp%rank   = mpi%rank
+  mp%comm   = mpi%comm
+  mp%master = mpi%master
+  mp%ok     = mpi%ok
 END SUBROUTINE init_mpi_info
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE print_ (mpi)
-  class(mpi_t):: mpi
+SUBROUTINE print_ (mp)
+  class(mpi_t):: mp
   if (master) print *, 'mpi%size  =', mpi%size
 END SUBROUTINE
 !> =============================================================================
 !> MPI barrier with optional label and delay -- often necessary to arrange serial
 !> printout from all ranks, one at a time
 !> =============================================================================
-SUBROUTINE barrier_ (mpi, label, delay)
-  class(mpi_t):: mpi
+SUBROUTINE barrier_ (mp, label, delay)
+  class(mpi_t):: mp
   character(len=*), optional:: label
   integer, optional:: delay
   integer:: i
@@ -109,7 +118,7 @@ SUBROUTINE init_mpi
   call init_omp
   if (master) then
     print*,id
-    print*,'MPI initialized'
+    print*,'MPI initialized', mpi_size
   end if
   if (master) then
     print 1, '***********************************************************************************'
@@ -139,11 +148,18 @@ SUBROUTINE init_mpi
 END SUBROUTINE init_mpi
 
 !> =============================================================================
-SUBROUTINE end_mpi
+SUBROUTINE end_mpi (label)
+  character(len=*), optional:: label
 !..............................................................................
   !call finalize_cart
+  if (mpi_rank==0) then
+    if (present(label)) then
+      print*,'MPI finalized with '//label
+    else
+      print*,'MPI finalized'
+    end if
+  end if
   call MPI_Finalize (mpi_err)
-  if (mpi_rank==0) print*,'MPI finalized'
   call exit        ! avoid "stop" which may produce one output line per process
 END SUBROUTINE
 
@@ -196,4 +212,4 @@ SUBROUTINE assert (mp, message, code)
   end if
 END SUBROUTINE assert
 
-END MODULE mpi_basic
+END MODULE mpi_mod

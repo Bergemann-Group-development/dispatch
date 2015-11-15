@@ -83,7 +83,7 @@ clean:
 cleanlog:
 	rm -f *.log
 cleandata:
-	rm -f *.dat
+	rm -f *.dat fort.*
 cleaner: clean
 	rm -f *.x *.bak *.optrpt *.exe
 cleanest: cleaner cleandata cleanlog

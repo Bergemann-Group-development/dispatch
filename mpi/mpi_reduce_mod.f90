@@ -2,12 +2,12 @@
 !> $Id$
 !> MPI reduction operators
 !> =============================================================================
-MODULE mpi_reduction
-  USE mpi_basic
+MODULE mpi_reduce_mod
+  USE mpi_mod
   implicit none
   integer, private:: mpi_err
   include "mpif.h"
-  type, extends(mpi_t):: mpi_reduction_t
+  type, extends(mpi_t):: mpi_reduce_t
   contains
     procedure min_int
     procedure sum_int
@@ -21,7 +21,9 @@ MODULE mpi_reduction
     procedure min_reals
     procedure max_reals
   end type
-PUBLIC
+  type(mpi_reduce_t):: mpi_reduce
+PRIVATE
+PUBLIC mpi_reduce_t, mpi_reduce
 CONTAINS
 
 !> =============================================================================
@@ -29,7 +31,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE min_int (mp, a)
   implicit none
-  class(mpi_reduction_t):: mp
+  class(mpi_reduce_t):: mp
   integer:: a, a1
 !-----------------------------------------------------------------------
   call MPI_Allreduce(a,a1,1,MPI_INT,MPI_MIN,mp%comm,mpi_err)
@@ -42,7 +44,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE sum_int (mp, a)
   implicit none
-  class(mpi_reduction_t):: mp
+  class(mpi_reduce_t):: mp
   integer:: a, a1
 !-----------------------------------------------------------------------
   call MPI_Allreduce(a,a1,1,MPI_INT,MPI_SUM,mp%comm,mpi_err)
@@ -55,7 +57,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE max_int (mp, a)
   implicit none
-  class(mpi_reduction_t):: mp
+  class(mpi_reduce_t):: mp
   integer:: a, a1
 !-----------------------------------------------------------------------
   call MPI_Allreduce(a,a1,1,MPI_INT,MPI_MAX,mp%comm,mpi_err)
@@ -68,7 +70,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE min_real (mp, a)
   implicit none
-  class(mpi_reduction_t):: mp
+  class(mpi_reduce_t):: mp
   real:: a, a1
 !-----------------------------------------------------------------------
   call MPI_Allreduce(a,a1,1,MPI_REAL,MPI_MIN,mp%comm,mpi_err)
@@ -81,7 +83,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE sum_real (mp, a)
   implicit none
-  class(mpi_reduction_t):: mp
+  class(mpi_reduce_t):: mp
   real:: a, a1
 !-----------------------------------------------------------------------
   call MPI_Allreduce(a,a1,1,MPI_REAL,MPI_SUM,mp%comm,mpi_err)
@@ -94,7 +96,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE max_real (mp, a)
   implicit none
-  class(mpi_reduction_t):: mp
+  class(mpi_reduce_t):: mp
   real:: a, a1
 !-----------------------------------------------------------------------
   call MPI_Allreduce(a,a1,1,MPI_REAL,MPI_MAX,mp%comm,mpi_err)
@@ -107,7 +109,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE max_real8 (mp, a)
   implicit none
-  class(mpi_reduction_t):: mp
+  class(mpi_reduce_t):: mp
   real(kind=8):: a, a1
 !-----------------------------------------------------------------------
   call MPI_Allreduce(a,a1,1,MPI_REAL8,MPI_MAX,mp%comm,mpi_err)
@@ -120,7 +122,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE min_ints (mp, a, n)
   implicit none
-  class(mpi_reduction_t):: mp
+  class(mpi_reduce_t):: mp
   integer n
   integer, dimension(n):: a, a1
 !-----------------------------------------------------------------------
@@ -134,7 +136,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE max_ints (mp, a, n)
   implicit none
-  class(mpi_reduction_t):: mp
+  class(mpi_reduce_t):: mp
   integer n
   integer, dimension(n):: a, a1
 !-----------------------------------------------------------------------
@@ -148,7 +150,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE min_reals (mp, a, n)
   implicit none
-  class(mpi_reduction_t):: mp
+  class(mpi_reduce_t):: mp
   integer n
   real, dimension(n):: a, a1
 !-----------------------------------------------------------------------
@@ -162,7 +164,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE max_reals (mp, a, n)
   implicit none
-  class(mpi_reduction_t):: mp
+  class(mpi_reduce_t):: mp
   integer n
   real, dimension(n):: a, a1
 !-----------------------------------------------------------------------
@@ -171,4 +173,4 @@ SUBROUTINE max_reals (mp, a, n)
   a = a1
 END SUBROUTINE
 
-END MODULE mpi_reduction
+END MODULE mpi_reduce_mod
