@@ -5,6 +5,7 @@
 MODULE mpi_all
   USE mpi_basic
   implicit none 
+  include 'mpif.h'
   integer, private:: mpi_err
 PUBLIC
 CONTAINS

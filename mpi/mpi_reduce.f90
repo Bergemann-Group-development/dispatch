@@ -4,10 +4,9 @@
 !> =============================================================================
 MODULE mpi_reduction
   USE mpi_basic
-  USE mpi
   implicit none
   integer, private:: mpi_err
-  !include "mpif.h"
+  include "mpif.h"
   type, extends(mpi_t):: mpi_reduction_t
   contains
     procedure min_int

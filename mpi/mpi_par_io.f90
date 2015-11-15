@@ -7,8 +7,8 @@ MODULE mpi_par_io
   USE mpi_basic
   USE mpi_timer
   USE mpi_coords
-  USE mpi
   implicit none
+  include 'mpif.h'
 PUBLIC
   integer, private:: mpi_err
   integer, private:: handle                                                     ! file handle

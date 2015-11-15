@@ -5,6 +5,7 @@
 MODULE mpi_coords
   USE mpi_basic
   implicit none
+  include 'mpif.h'
   logical:: cart_created=.false.! Set to true if cartesian mpi coordinates are set up
   logical:: mpi_reorder         ! Reordering of ranks allowed, or not
   logical:: mpi_periodic(3)     ! Periodic MPI dimensions, or not

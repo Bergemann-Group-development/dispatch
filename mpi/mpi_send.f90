@@ -4,8 +4,8 @@
 !> =============================================================================
 MODULE mpi_send_recv
   USE mpi_basic
-  USE mpi
   implicit none 
+  include "mpif.h"
   integer, private:: mpi_err
 PUBLIC
 CONTAINS

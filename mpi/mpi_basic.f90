@@ -4,9 +4,8 @@
 !> =============================================================================
 MODULE mpi_basic
   USE omp_mod                   ! OMP stuff
-  USE mpi                       ! Most systems accept this, but ..
   implicit none
-  !include 'mpif.h'              ! .. some systems may require this instead
+  include 'mpif.h'              ! some systems require this instead of 'use mpi'
   integer:: mpi_err             ! MPI error status
   logical:: mpi_master          ! true on MPI master (rank 0)
   logical:: mpi_trace=.false.   ! debug trace option
@@ -15,11 +14,6 @@ MODULE mpi_basic
   integer:: mpi_size            ! number of MPI processes
   integer:: mpi_rank            ! process number (zero-based)
   integer, parameter:: mch=120  ! max character string size
-  public mpi_comm_world         ! main MPI communicator
-  public MPI_INTEGER            ! MPI magic number for integers
-  public MPI_INT                ! ditto
-  public MPI_REAL               ! for (4-byte) real's
-  public MPI_STATUS_SIZE
   integer:: input=1, output=2, data_unit=3, log_unit=4
   integer:: verbose = 1
   logical:: do_debug = .false.

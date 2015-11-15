@@ -4,8 +4,8 @@
 !> =============================================================================
 MODULE mpi_rma
   USE mpi_basic
-  USE mpi
   implicit none
+  include "mpif.h"
   integer, private:: mpi_err
   type, extends(mpi_t):: mpi_rma_t
   contains
