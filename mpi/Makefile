@@ -5,8 +5,8 @@ ifeq ($(EXEC),dispatch.x)
   OBJ += \
   omp_mod.o \
   mpi_timer.o \
-  mpi_basic.o \
-  mpi_coords.o
+  mpi_mod.o \
+  mpi_coord_mod.o
   #mpi_all.o \
   #mpi_reduce.o \
   #mpi_send.o \

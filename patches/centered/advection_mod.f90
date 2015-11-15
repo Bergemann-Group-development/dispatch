@@ -14,7 +14,6 @@ MODULE pde_mod
     procedure:: allocate => allocate_advection
     procedure:: pde
   end type
-  type(io_t):: io
 PRIVATE
 PUBLIC pde_t
 CONTAINS

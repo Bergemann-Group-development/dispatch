@@ -7,7 +7,7 @@ MODULE experiment_mod
   USE patch_mod                 ! tasks/patch_mod.f90
   USE task_list_mod             ! lists/task_list_mod.f90
   USE io_mod                    ! io/io_mod.f90
-  USE mpi_basic, only: mpi_t
+  USE mpi_mod
   implicit none
   !-----------------------------------------------------------------------------
   ! Specialized PDE object for advection with constant velocity
@@ -26,8 +26,6 @@ MODULE experiment_mod
   real:: size          = 16.                    ! experiment size
   integer:: resolution = 64                     ! total number of points
   integer:: patch_resolution = 16               ! number of points per patch
-  type(io_t):: io
-  type(mpi_t):: mpi
 CONTAINS
 
 !> =============================================================================

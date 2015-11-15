@@ -3,6 +3,7 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE mesh_mod
   USE trace_mod
+  USE io_mod
   implicit none
   !-----------------------------------------------------------------------------
   ! Mesh for patches
@@ -80,7 +81,7 @@ END SUBROUTINE
 SUBROUTINE print_mesh (self)
   class(mesh_t):: self
   integer:: i
-  if (verbose <= 0) return
+  if (io%verbose <= 0) return
   print*,'mesh%print:'
   print'(3i8)', self%n, self%ng, self%gn
   print'(6i8)', self%lb, self%lo, self%li, self%ui, self%uo, self%ub

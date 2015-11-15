@@ -6,6 +6,7 @@ PROGRAM dispatch
   USE task_list_mod
   USE mesg_list_mod
   USE experiment_mod
+  USE mpi_mod
   implicit none
   type(task_list_t):: task_list, ready_queue
   type(mesg_list_t):: mesg_list, recv_list
@@ -13,7 +14,7 @@ PROGRAM dispatch
   logical:: running = .true.
   !....................................................................
   call trace_begin ('dispatch')
-  call init_mpi                                     ! start up MPI
+  call mpi%init                                     ! start up MPI
   call trace('task_list%init')
   call task_list%init ('task_list')                 ! initialize tasks_list
   call trace('ready_queue')

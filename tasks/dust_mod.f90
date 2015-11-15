@@ -16,7 +16,6 @@ MODULE dust_mod
     procedure:: update     => update_dust
     procedure:: print      => print_dust
   end type
-  type(io_t):: io
 PRIVATE
 PUBLIC dust_t
 CONTAINS

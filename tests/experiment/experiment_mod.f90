@@ -7,9 +7,9 @@ MODULE experiment_mod
   USE patch_mod
   USE pde_mod
   USE mhd_mod
+  USE mpi_coord_mod
   USE io_mod
   USE task_list_mod
-  USE io_mod
   type, extends(pde_t):: experiment_t
     real:: u(3), w, s
     integer:: n
@@ -27,26 +27,24 @@ CONTAINS
 !> local tasks and virtual task = copies of tasks from neighbor ranks).
 !> =============================================================================
 SUBROUTINE init_experiment (task_list)
-  type(task_list_t), pointer:: task_list
+  type(task_list_t):: task_list
   type(template_t):: template
-  type(mpi_info_t):: mpi_info
   type(experiment_t), pointer:: task
   class(item_t), pointer:: item
-  integer:: npatch
+  integer:: npatch, dims(3)
   namelist /parameters/ size, width, velocity, resolution
   !.............................................................................
-  read (input, parameters); if (master) write (output, parameters)
-  template%size = size
-  template%dim  = resolution
-  !
-  template%mpi_info = get_mpi_info()            ! pass MPI info to template
-  allocate (task_list)                          ! get a list to append to
+  read (input, parameters); if (io%master) write (io%output, parameters)
+  template%box%size = size
+  template%box%dim  = resolution
+  dims = resolution
+  call mpi_coord%init (dims=dims)
   do i=1,ntask
     template%itask = i
     call template%init                          ! allocates and initializes
     ! now we can set task parameters from the template
     if (template%rank == mpi_rank) &            ! if on this rank
-      call allocate (task)
+      allocate (task)
       item => task
       call task_list%append (item)              ! append to task_list
   end do

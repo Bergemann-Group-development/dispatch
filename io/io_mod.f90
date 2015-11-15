@@ -13,9 +13,10 @@ MODULE io_mod
     procedure:: init  => init_io
     procedure:: print => print_id_
   end type
+  integer, parameter:: mch=120
   type(io_t):: io
 PRIVATE
-PUBLIC io_t, print_id
+PUBLIC io_t, io, print_id, mch
 CONTAINS
 
 !> =============================================================================

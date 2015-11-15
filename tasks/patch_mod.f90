@@ -4,9 +4,10 @@
 !> to 3, since we can just choose the actual dimensions to get 2-D and 1-D.
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE patch_mod
-  USE mpi_basic, only: mpi_t, abort_mpi
+  USE mpi_mod
   USE task_mod
   USE mesh_mod
+  USE io_mod
   implicit none
   integer, parameter:: ndim = 3
   type, extends(tasks_t):: patch_t
@@ -66,7 +67,7 @@ SUBROUTINE init_template (self)
   self%position = (task_pos+0.5d0)*self%task%size
   if (product(self%mpi%num) /= mpi%size) then
     print*,'rank%num, mpi%size', self%mpi%num, mpi%size
-    call abort_mpi ('wrong size')
+    call mpi%abort ('wrong size')
   end if
   !-----------------------------------------------------------------------------
   ! The number of ranks per direction gives the MPI-position and the mpi rank
@@ -80,7 +81,7 @@ SUBROUTINE init_template (self)
   !
   if (all(self%task%num*self%task%dim /= self%mpi%dim)) then
     print'(3(3i8,2x))', self%task%num, self%task%dim, self%mpi%dim
-    call abort_mpi ('wrong size')
+    call mpi%abort ('wrong size')
   end if
 END SUBROUTINE init_template
 
