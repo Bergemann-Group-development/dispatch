@@ -14,10 +14,7 @@ MODULE mpi_mod
   integer:: mpi_size            ! number of MPI processes
   integer:: mpi_rank            ! process number (zero-based)
   integer, parameter:: mch=120  ! max character string size
-  integer:: input=1, output=2, data_unit=3, log_unit=4
-  integer:: verbose = 1
-  logical:: do_debug = .false.
-  logical:: do_trace = .true.
+  integer:: output=2
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   ! Object that returns the most important MPI parameters
@@ -31,8 +28,8 @@ MODULE mpi_mod
     procedure:: barrier => barrier_
     procedure:: print => print_
     procedure:: assert
-    procedure, nopass:: abort => abort_mpi
-    procedure, nopass:: end => end_mpi
+    procedure:: abort => abort_mpi
+    procedure:: end => end_mpi
   end type
   type(mpi_t):: mpi
 PRIVATE
@@ -52,7 +49,7 @@ SUBROUTINE init (mp, mpi_dims, dims)
   !.............................................................................
   if (first_time) then
     first_time = .false.
-    call init_mpi
+    call init_mpi (mp)
   end if
   mpi%size   = mpi_size
   mpi%rank   = mpi_rank
@@ -94,15 +91,16 @@ SUBROUTINE barrier_ (mp, label, delay)
     end do
   end if
   if (present(label)) then
-    call barrier_mpi (label)
+    call barrier_mpi (mp, label)
   else
-    call barrier_mpi ('mpi%barrier')
+    call barrier_mpi (mp, 'mpi%barrier')
   end if
 END SUBROUTINE barrier_
 
 !> =============================================================================
-SUBROUTINE init_mpi
+SUBROUTINE init_mpi (mp)
   implicit none
+  class(mpi_t):: mp
   character(len=mch):: id='mpi.f90 $Id$'
   character(len=mch):: filename
   integer:: mpi_provided
@@ -141,14 +139,15 @@ SUBROUTINE init_mpi
     print 1,'number of MPI processes:', mpi_size
     print 1,'OMP threads per MPI process:', omp_nthreads
   end if
-  if (verbose > 1) then
+  if (mp%verbose > 1) then
     write (filename,'(a,i4.4,a)') 'rank_', mpi_rank, '.dat'
     open (output, file=filename, form='formatted', status='unknown')
   end if
 END SUBROUTINE init_mpi
 
 !> =============================================================================
-SUBROUTINE end_mpi (label)
+SUBROUTINE end_mpi (mp, label)
+  class(mpi_t):: mp
   character(len=*), optional:: label
 !..............................................................................
   !call finalize_cart
@@ -164,11 +163,12 @@ SUBROUTINE end_mpi (label)
 END SUBROUTINE
 
 !> =============================================================================
-SUBROUTINE abort_mpi (reason)
+SUBROUTINE abort_mpi (mp, reason)
+  class(mpi_t):: mp
   character(len=*):: reason
 !...............................................................................
   print*,'mpi_abort: '//trim(reason)
-  if (verbose > 2) then
+  if (mp%verbose > 2) then
     write(output,'(3(a,2x,i6))') 'mpi_abort: rank =',mpi_rank,'thread',omp_mythread(), trim(reason)
     call flush (output)
   end if
@@ -184,11 +184,12 @@ SUBROUTINE clean_stop
 END SUBROUTINE clean_stop
 
 !> =============================================================================
-SUBROUTINE barrier_mpi (label)
+SUBROUTINE barrier_mpi (mp, label)
+  class(mpi_t):: mp
   character(len=*) label
 !...............................................................................
   if (mpi_trace) print *,  mpi_rank, 'barrier_mpi: '//label
-  if (verbose > 2) then
+  if (mp%verbose > 2) then
     write (output,*) mpi_rank, 'barrier_mpi: '//label
     call flush (output)
   end if

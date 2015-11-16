@@ -8,6 +8,9 @@ MODULE task_list_mod
   USE item_mod
   USE task_mod
   USE bits_mod
+  USE trace_mod
+  USE mpi_mod
+  USE io_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
@@ -15,6 +18,7 @@ MODULE task_list_mod
     type(task_list_t), pointer:: ready_queue
   contains
     procedure:: init
+    procedure:: update
     procedure:: check
     procedure:: process
     procedure:: apply
@@ -27,12 +31,18 @@ CONTAINS
 SUBROUTINE init (list, name)
   class(task_list_t):: list
   character(len=*):: name
-  !.............................................................................
   type(task_list_t), pointer:: out
   type(link_t), pointer:: link
   class(item_t), pointer:: item
+  real(8):: time_end
+  namelist /task_list_params/ time_end
   !.............................................................................
-  print*, 'task_list%init:', list%name
+  call trace_begin('task_list_t%init '//list%name)
+  rewind (io%input)
+  read (io%input, task_list_params)
+  if (io%master) write (*, task_list_params)
+  list%time_end = time_end
+  !
   allocate (list%ready_queue)
   call list%ready_queue%list_t%init ('ready queue')
   link => list%head
@@ -41,8 +51,25 @@ SUBROUTINE init (list, name)
     call list%ready_queue%append (item)
     link => link%next
   end do
-  print*,'MK1'
   call list%ready_queue%print
+  call trace_end
+END SUBROUTINE
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE update (list)
+  class(task_list_t):: list
+  !.............................................................................
+  type(link_t), pointer:: link
+  class(item_t), pointer:: item
+  !.............................................................................
+  call trace_begin('task_list_t%update '//list%name)
+  link => list%ready_queue%head
+  item => link%item
+  call list%ready_queue%remove_link (link)
+  call item%update
+  call list%check (item)
+  call trace_end
 END SUBROUTINE
 
 !> =============================================================================
@@ -53,28 +80,14 @@ SUBROUTINE check (list, item)
   type(link_t), pointer:: link
   class(item_t), pointer:: item
   !.............................................................................
-  print*, 'task_list%check:', list%name, item%id, item%time
-  if (item%time > self%time_end) then
-    call self%remove (item)
+  call trace_begin('task_list_t%check '//list%name)
+  print*, 'task_list%check:', trim(list%name), item%id, item%time, list%time_end
+  if (item%time > list%time_end) then
+    call list%remove (item)
+    call list%ready_queue%remove (item)
   end if
-END SUBROUTINE
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE print (list)
-  class(task_list_t):: list
-  !.............................................................................
-  type(task_list_t), pointer:: out
-  type(link_t), pointer:: link
-  class(item_t), pointer:: item
-  !.............................................................................
-  print*, 'task_list%print:', list%name
-  link => list%head
-  do while (associated(link))
-    item => link%item
-    call item%print
-    link => link%next
-  end do
+  call list%ready_queue%add_by_time (item)
+  call trace_end
 END SUBROUTINE
 
 !> =============================================================================
@@ -89,6 +102,7 @@ SUBROUTINE process (list, queue)
   class(item_t), pointer:: item
   type(tasks_t), pointer:: task
   !.............................................................................
+  call trace_begin('task_list_t%process '//list%name)
   !$omp single
   allocate (queue)
   link => list%head
@@ -118,19 +132,21 @@ SUBROUTINE process (list, queue)
 !    link => link%next
 !  end do
   !$omp end single
+  call trace_end
 END SUBROUTINE
 !> =============================================================================
 !> Process the tasks in a task list through a procedure, which optionally adds
 !> tasks to an out list
 !> =============================================================================
-SUBROUTINE apply (self, procedure, out)
-  class(task_list_t):: self
+SUBROUTINE apply (list, procedure, out)
+  class(task_list_t):: list
   type(task_list_t), pointer:: out
   type(link_t), pointer:: link
   class(item_t), pointer:: task
   !.............................................................................
+  call trace_begin('task_list_t%apply '//list%name)
   !$omp single
-  link => self%head
+  link => list%head
   do while (associated(link))
     task => link%item
     !$omp task
@@ -139,6 +155,24 @@ SUBROUTINE apply (self, procedure, out)
     link => link%next
   end do
   !$omp end single
+  call trace_end
 END SUBROUTINE
 
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE print (list)
+  class(task_list_t):: list
+  !.............................................................................
+  type(task_list_t), pointer:: out
+  type(link_t), pointer:: link
+  class(item_t), pointer:: item
+  !.............................................................................
+  print*, 'task_list%print:', list%name
+  link => list%head
+  do while (associated(link))
+    item => link%item
+    call item%print
+    link => link%next
+  end do
+END SUBROUTINE
 END MODULE

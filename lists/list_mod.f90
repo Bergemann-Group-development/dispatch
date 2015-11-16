@@ -3,6 +3,7 @@
 !> *****************************************************************************
 MODULE list_mod
   USE item_mod
+  USE trace_mod
   implicit none
   type link_t
     class(item_t), pointer :: item => null()
@@ -20,6 +21,7 @@ MODULE list_mod
     procedure:: reset
     procedure:: append
     procedure:: remove
+    procedure:: remove_link
     procedure:: add_by_time
     procedure:: print
   end type
@@ -47,6 +49,7 @@ SUBROUTINE reset (list)
   type(link_t), pointer:: link, old
   class(item_t), pointer:: item
   !.............................................................................
+  call trace_begin ('list_t%reset '//list%name)
   link => list%head
   do while (associated(link))
     item => link%item
@@ -61,28 +64,59 @@ SUBROUTINE reset (list)
   nullify (list%head)
   nullify (list%tail)
   nullify (list%item)
+  call trace_end
 END SUBROUTINE reset
 
 !> =============================================================================
-!> Remove a link from the list
+!> Remove a link from the list, taking special care with the head and tail
+!> =============================================================================
+SUBROUTINE remove_link (list, link)
+  class(list_t):: list
+  type(link_t), pointer:: link, next
+  !.............................................................................
+  call trace_begin ('list_t%remove_link '//list%name)
+  next => link%next
+  !-------------------------------------------------------------------------
+  ! Check for tail item
+  !-------------------------------------------------------------------------
+  if (associated(next)) then
+    next%prev => link%prev                  ! point backwards, possibly null
+  else
+    list%tail => link%prev                  ! new tail link
+  end if
+  !-------------------------------------------------------------------------
+  ! Check for head item
+  !-------------------------------------------------------------------------
+  if (associated(link%prev)) then           ! not head item
+    link%prev%next => next                  ! make prev point to next
+  else                                      ! link was head
+    list%head => next                       ! make head point to next
+  end if
+  deallocate (link)                         ! free to remove link
+  list%size = list%size-1
+  call trace_end
+END SUBROUTINE
+
+!> =============================================================================
+!> Remove a link from the list, taking special care with the head and tail
 !> =============================================================================
 SUBROUTINE remove (list, this)
   class(list_t):: list
-  type(link_t), pointer:: link, next
-  class(item_t), pointer:: this, item
+  type(link_t), pointer:: link
+  class(item_t), pointer:: this
   !.............................................................................
+  call trace_begin ('list_t%remove '//list%name)
   link => list%head
   do while (associated(link))
-    next => link%next
     if (associated(link%item,this)) then
-      print*,'found it, removing', item%id
-      link%prev%next => link%next
-      deallocate (link)
+      call list%remove_link (link)
+      call trace_end
       return
     end if
-    link => next
+    link => link%next
   end do
-END SUBROUTINE reset
+  call trace_end
+END SUBROUTINE
 
 !> =============================================================================
 !> =============================================================================
@@ -91,6 +125,7 @@ SUBROUTINE append (list, item)
   class(item_t), pointer:: item
   class(link_t), pointer:: link
   !.............................................................................
+  !call trace_begin ('list_t%append '//list%name)
   allocate (link)
   link%item => item
   if (associated(list%tail)) then
@@ -102,6 +137,7 @@ SUBROUTINE append (list, item)
     list%tail => link
   end if
   list%size = list%size+1
+  !call trace_end
 END SUBROUTINE append
 
 !> =============================================================================
@@ -111,19 +147,22 @@ SUBROUTINE add_by_time (list, item)
   class(item_t), pointer:: item
   class(link_t), pointer:: link, new
   !.............................................................................
+  call trace_begin ('list_t%add_by_time '//list%name)
   link => list%head
   do while (associated(link))
-    if (link%item%time > new%item%time) then
+    if (link%item%time > item%time) then
       allocate (new)
       new%item => item
       call insert (list, link, new)
       list%size = list%size+1
+      call trace_end
       return
     end if
     link => link%next
   end do
   call append (list, item)
   list%size = list%size+1
+  call trace_end
 END SUBROUTINE add_by_time
 
 !> =============================================================================
@@ -133,6 +172,7 @@ SUBROUTINE insert (list, old, new)
   class(list_t):: list
   class(link_t), pointer:: old, prev, next, new
   !.............................................................................
+  call trace_begin ('list_t%insert '//list%name)
   if (associated(old%prev)) then
     new%prev => old%prev
     new%prev%next => new
@@ -142,6 +182,7 @@ SUBROUTINE insert (list, old, new)
   new%next => old
   new%next%prev => new
   list%size = list%size + 1
+  call trace_end
 END SUBROUTINE insert
 
 !> =============================================================================

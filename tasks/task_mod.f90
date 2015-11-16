@@ -5,6 +5,7 @@ MODULE task_mod
   USE item_mod
   USE list_mod
   USE bits_mod
+  USE trace_mod
   implicit none
   integer, parameter:: ntime=7
   !-----------------------------------------------------------------------------
@@ -16,19 +17,19 @@ MODULE task_mod
     real(8):: velocity(3) = 0d0
     real(8):: size(3) = 0d0
     integer:: n_check = 0
-    type(list_t), pointer:: nbor_list
+    type(list_t), pointer:: nbor_list => null()
   contains
   end type
   !-----------------------------------------------------------------------------
   ! Time slot info and procedures added in tasks_t
   !-----------------------------------------------------------------------------
   type, extends(task_t):: tasks_t
-    real(8):: t(ntime)
-    real(8):: dt(ntime)
-    integer:: iit(ntime)
+    real(8):: t(ntime) = 0d0
+    real(8):: dt(ntime) = 1d0
+    integer:: iit(ntime) = 1
     integer:: nt = ntime
-    integer:: it = 0
-    integer:: verbose = 0
+    integer:: it = 1
+    integer:: verbose = 1
   contains
     procedure:: execute
     procedure:: check
@@ -46,16 +47,22 @@ FUNCTION overlaps (self, item)
   class(tasks_t):: self
   class(item_t):: item
   logical:: overlaps
+  call trace_begin ('task_t%overlap')
   overlaps = .true.
+  call trace_end
 END FUNCTION overlaps
 
 SUBROUTINE set_virtual (self)
   class(tasks_t):: self
+  call trace_begin ('task_t%set_virtual')
+  call trace_end
 END SUBROUTINE
 
 SUBROUTINE send_to (self, rank)
   class(tasks_t):: self
   integer:: rank
+  call trace_begin ('task_t%send_to')
+  call trace_end
 END SUBROUTINE
 
 !> =============================================================================
@@ -69,17 +76,17 @@ SUBROUTINE execute(self)
   class(link_t), pointer:: nbor
   class(task_t), pointer:: nbtask
   !.............................................................................
-  print*,'XX1'
+  call trace_begin ('task_t%execute')
   call self%update                        ! take a timestep
   nbor => self%nbor_list%head             ! start on nbor_list
-  item => nbor%item
-  select type (item)
-  class is (task_t)
-    nbtask => item                        ! neighbor task
-  end select
   do while (associated(nbor))             ! continue to the end
+    item => nbor%item
+    select type (item)
+    class is (task_t)                     ! select task_t items
+      nbtask => item                      ! neighbor task
+    end select
     if (nbtask%rank == self%rank) then    ! same rank task
-      call nbtask%check                  ! nbor task to ready_queue?
+      call nbtask%check                   ! nbor task to ready_queue?
     else                                  ! neighbor on different rank
       select type (nbtask)
       type is (tasks_t)
@@ -89,6 +96,7 @@ SUBROUTINE execute(self)
     nbor => nbor%next                     ! next nbor
   end do
   call self%check                         ! self to ready_queue?
+  call trace_end
 END SUBROUTINE
 
 !> =============================================================================
@@ -100,6 +108,7 @@ SUBROUTINE check (self)
   class(link_t), pointer:: nbor, link
   class(item_t), pointer:: item
   !.............................................................................
+  call trace_begin ('task_t%check')
   nbor => self%nbor_list%head             ! start on nbor_list
   do while (associated(nbor))             ! continue to the end
     item => nbor%item
@@ -108,6 +117,7 @@ SUBROUTINE check (self)
       type is (tasks_t)
         item%n_check = item%n_check + 1   ! count failures
       end select
+      call trace_end
       return
     end if
     nbor => nbor%next                     ! next nbor
@@ -115,6 +125,7 @@ SUBROUTINE check (self)
 !allocate (link)
 !  link%item => self
 !  call list%add_by_time (link)            ! add to list
+  call trace_end
 END SUBROUTINE
 
 END MODULE

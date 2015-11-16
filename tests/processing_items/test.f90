@@ -14,7 +14,6 @@ MODULE experiment_mod
   private
   type, public, extends(tasks_t):: experiment_t
   contains
-    procedure:: create
     procedure:: init
     procedure:: output
   end type

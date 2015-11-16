@@ -19,6 +19,7 @@ OBJ += \
 endif
 
 # Dependencies
+item_mod.o:           bits_mod.o trace_mod.o
 task_mod.o:           item_mod.o io_mod.o mesh_mod.o bits_mod.o
 patch_mod.o:          task_mod.o mesh_mod.o
 hd_mod.o:             patch_mod.o trace_mod.o

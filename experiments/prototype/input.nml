@@ -1,0 +1,11 @@
+&io_params
+ verbose=1
+ do_trace=f
+ do_debug=f
+/
+&task_list_params
+ time_end=0.5
+/
+&experiment_params
+ dims=64,64,64
+/
