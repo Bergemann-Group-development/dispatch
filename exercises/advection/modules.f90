@@ -1,7 +1,7 @@
 !> =============================================================================
 !> $Id$
 !> This version uses a Fortran module that isolates the experiment data from
-!> the main program, which only is aware of two number: the current step number,
+!> the main program, which only is aware of two numbers: the current step number,
 !> and the total number of steps (n_stp). The module also transfers information
 !> about the calling sequences etc, which allows the use of array valued fns.
 !> =============================================================================
@@ -29,23 +29,27 @@ SUBROUTINE init(n_stp)
     rho(ix,iy) = exp(-(x**2+y**2)/w**2)
   end do
   end do
-  open (1, file='module_based.dat', form='unformatted', status='unknown')
+  open (1, file='modules.dat', form='unformatted', status='unknown')
   write (1) n
 END SUBROUTINE init
 !> =============================================================================
-!> Derivatives evaluated with central differences
+!> Derivatives evaluated with central differences.
 !> =============================================================================
-FUNCTION ddx(n,f)
+FUNCTION ddx (n, f)
   integer:: n
   real, dimension(n,n):: f, ddx
   !.............................................................................
-  ddx = (cshift(f,dim=1,shift=1)-cshift(f,dim=1,shift=-1))*0.5/dx
+  ddx(2:n-1,:) = (f(3:n,:)-f(1:n-2,:))*0.5
+  ddx(1    ,:) = (f(2  ,:)-f(  n  ,:))*0.5
+  ddx(  n  ,:) = (f(1  ,:)-f(  n-1,:))*0.5
 END FUNCTION ddx
-FUNCTION ddy(n,f)
+FUNCTION ddy (n, f)
   integer:: n
   real, dimension(n,n):: f, ddy
   !.............................................................................
-  ddy = (cshift(f,dim=2,shift=1)-cshift(f,dim=2,shift=-1))*0.5/dx
+  ddy(:,2:n-1) = (f(:,3:n)-f(:,1:n-2))*0.5
+  ddy(:,1    ) = (f(:,2  )-f(:,  n  ))*0.5
+  ddy(:,  n  ) = (f(:,1  )-f(:,  n-1))*0.5
 END FUNCTION ddy
 !> =============================================================================
 !> Derivatives evaluated with central differences

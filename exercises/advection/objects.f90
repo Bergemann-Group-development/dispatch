@@ -69,9 +69,8 @@ SUBROUTINE init (self, m)
   !write (*,input)
   call self%gaussian (self%rho)
 END SUBROUTINE
-
 !> =============================================================================
-!> Construct a Gaussian centered on self.position, for initial conditions and
+!> Construct a Gaussian centered on self%position, for initial conditions and
 !> for comparisons.
 !> =============================================================================
 SUBROUTINE gaussian (self, data)
@@ -140,7 +139,7 @@ SUBROUTINE print (self)
     'rms:', sqrt(sum((self%rho-self%rho0)**2))/sqrt(sum(self%rho**2))
 END SUBROUTINE
 !> =============================================================================
-!> Binary I/O to objects_nn.dat files
+!> Binary I/O to objects_nn.dat files (only if do_output=.true.)
 !> =============================================================================
 SUBROUTINE output (self)
   class(experiment_t):: self
@@ -155,14 +154,14 @@ SUBROUTINE run (self)
   class(experiment_t):: self
   integer:: istep
   !.............................................................................
-  do istep=1,self%ns
-    call self%update
+  do istep=1,self%ns                            ! for self%ns time steps
+    call self%update                            ! update
   end do
-  call self%print
-  deallocate (self%rho, self%rho0)
-  if (self%do_output) then
-    call self%output
-    close (self%unit)
+  call self%print                               ! print summary
+  deallocate (self%rho, self%rho0)              ! deallocate memory
+  if (self%do_output) then                      ! optionally ...
+    call self%output                            ! write binary output
+    close (self%unit)                           ! close binary file
   end if
 END SUBROUTINE
 END MODULE experiment
@@ -184,7 +183,6 @@ PROGRAM advection_experiment
   !.............................................................................
   read (*,instances)
   allocate (experiments(n))
-
   !-----------------------------------------------------------------------------
   ! Initialize the experiments, one after the other, reading the namelists in
   ! serial order.
@@ -192,7 +190,6 @@ PROGRAM advection_experiment
   do k=1,n
     call experiments(k)%init(k)
   end do
-
   !-----------------------------------------------------------------------------
   ! Run the experiments in parallel, on the available OMP threads.  If the
   ! number of experiments is much larger than the number of threads one can
@@ -202,13 +199,10 @@ PROGRAM advection_experiment
   ! achieved with options to the !$omp parallel directive, choosing
   ! schedule(dynamic,1), or schedule(guided).
   !-----------------------------------------------------------------------------
-  call tic
-  !!$omp parallel do schedule(dynamic,1)
-  !$omp parallel do
+  call tic                                      ! start Matlab style timer
+  !$omp parallel do schedule(dynamic,1)
   do k=1,n
     call experiments(k)%run
   end do
-  call toc ('run', n*experiments(1)%n**3)
-
+  call toc ('run', n*experiments(1)%n**3)       ! stop MatLab style timer
 END PROGRAM
-

@@ -28,14 +28,18 @@ SUBROUTINE ddx (n, f, d)
   integer:: n
   real, dimension(n,n):: f, d
   !.............................................................................
-  d = (cshift(f,dim=1,shift=1)-cshift(f,dim=1,shift=-1))*0.5
+  d(2:n-1,:) = (f(3:n,:)-f(1:n-2,:))*0.5
+  d(1    ,:) = (f(2  ,:)-f(  n  ,:))*0.5
+  d(  n  ,:) = (f(1  ,:)-f(  n-1,:))*0.5
 END SUBROUTINE ddx
 SUBROUTINE ddy (n, f, d)
   implicit none
   integer:: n
   real, dimension(n,n):: f, d
   !.............................................................................
-  d = (cshift(f,dim=2,shift=1)-cshift(f,dim=2,shift=-1))*0.5
+  d(:,2:n-1) = (f(:,3:n)-f(:,1:n-2))*0.5
+  d(:,1    ) = (f(:,2  )-f(:,  n  ))*0.5
+  d(:,  n  ) = (f(:,1  )-f(:,  n-1))*0.5
 END SUBROUTINE ddy
 ! ------------------------------------------------------------------------------
 ! Simplest possible time step -- first order in time
