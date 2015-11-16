@@ -1,7 +1,7 @@
 !> =============================================================================
 !> $Id$
-!> This version uses a simple form of object-orientation, where everything 
-!> of concern to the experiments is stored inside the object(s), and which 
+!> This version uses a simple form of object-orientation, where everything
+!> of concern to the experiments is stored inside the object(s), and which
 !> illustrates the very significant advantage of such arrangements, in that
 !> one can easily create multiple instances, which can !> optionally be
 !> executed in parallel.
@@ -33,8 +33,8 @@ CONTAINS
 !> =============================================================================
 !> Initialize the experiment, reading parameters from an input file (with one
 !> namelist input required per task).  Note that procedures that are part of
-!> a derived type are called with an extra first argument, which is the 
-!> relevant instance of the derived data type (object).  This way, the 
+!> a derived type are called with an extra first argument, which is the
+!> relevant instance of the derived data type (object).  This way, the
 !> procedure automatically has access to all required information.  Here,
 !> the argument is called "self", to indicate this.
 !> =============================================================================
@@ -77,24 +77,28 @@ END SUBROUTINE init
 !> valued functions are not made part of the experiment object (experiment_t),
 !> they are just local procedures inside the module. In this isolated example,
 !> one could let everithing except "init" and "run" be similarly local, but for
-!> the purpose of illustrationm "update" and "output" are made parts of the 
+!> the purpose of illustrationm "update" and "output" are made parts of the
 !> experiment_t object, as they need to be in more complex and realistic
 !> applications.
 !> =============================================================================
 FUNCTION ddx (n, f)
   integer:: n
-  real, dimension(n,n):: f, ddx
+  real, dimension(n,n,n):: f, ddx
   !.............................................................................
-  ddx = (cshift(f,dim=1,shift=1)-cshift(f,dim=1,shift=-1))*0.5
+  ddx(2:n-1,:,:) = (f(3:n,:,:)-f(1:n-2,:,:))*0.5
+  ddy(1    ,:,:) = (f(2  ,:,:)-f(  n  ,:,:))*0.5
+  ddy(  n  ,:,:) = (f(1  ,:,:)-f(  n-1,:,:))*0.5
 END FUNCTION ddx
 FUNCTION ddy (n, f)
   integer:: n
-  real, dimension(n,n):: f, ddy
+  real, dimension(n,n,n):: f, ddy
   !.............................................................................
-  ddy = (cshift(f,dim=2,shift=1)-cshift(f,dim=2,shift=-1))*0.5
+  ddx(:,2:n-1,:) = (f(:,3:n,:)-f(:,1:n-2,:))*0.5
+  ddy(:,1    ,:) = (f(:,2  ,:)-f(:,  n  ,:))*0.5
+  ddy(:,  n  ,:) = (f(:,1  ,:)-f(:,  n-1,:))*0.5
 END FUNCTION ddy
 !> =============================================================================
-!> Derivatives evaluated with central differences
+!> Simple time stepping -- 1st order
 !> =============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
@@ -106,7 +110,7 @@ SUBROUTINE update (self)
              (ddx(self%n, self%rho*self%ux) + ddy(self%n, self%rho*self%uy))
 END SUBROUTINE
 !> =============================================================================
-!> I/O routine
+!> I/O routines
 !> =============================================================================
 SUBROUTINE output (self, istep)
   class(experiment_t):: self
@@ -157,10 +161,10 @@ PROGRAM advection_experiment
   end do
 
   !-----------------------------------------------------------------------------
-  ! Run the experiments in parallel, on the available OMP threads.  If the 
+  ! Run the experiments in parallel, on the available OMP threads.  If the
   ! number of experiments is much larger than the number of threads one can
-  ! expect good load balance if the threads are assigned to experiments 
-  ! dynamically, rather than by just dividing the number of experiments 
+  ! expect good load balance if the threads are assigned to experiments
+  ! dynamically, rather than by just dividing the number of experiments
   ! equally over the number of available threads (the dedault). This can be
   ! achieved with options to the !$omp parallel directive, choosing
   ! schedule(dynamic,1), or schedule(guided).

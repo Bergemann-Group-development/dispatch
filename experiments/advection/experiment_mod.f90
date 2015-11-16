@@ -7,7 +7,13 @@ MODULE experiment_mod
   USE patch_mod                 ! tasks/patch_mod.f90
   USE task_list_mod             ! lists/task_list_mod.f90
   USE io_mod                    ! io/io_mod.f90
+  USE mpi_coord_mod             ! use cartesian coordinates
+  USE nbor_list_mod             !
+  USE bits_mod
   USE mpi_mod
+  USE item_mod
+  USE list_mod
+  USE unigrid_mod
   implicit none
   !-----------------------------------------------------------------------------
   ! Specialized PDE object for advection with constant velocity
@@ -33,34 +39,74 @@ CONTAINS
 !> local tasks and virtual task = copies of tasks from neighbor ranks).
 !> =============================================================================
 SUBROUTINE init_experiment (task_list)
+  implicit none
   type(task_list_t):: task_list
-  type(template_t):: template
-  type(experiment_t), pointer:: task
+  type(box_t):: box, task_box, rank_box
   class(item_t), pointer:: item
-  integer:: ntask, itask, resolution
-  namelist /parameters/ size, width, velocity, resolution, patch_resolution
+  type(link_t), pointer:: link
+  integer:: resolution, dims(3), patch_dims(3), rank_c(3), task_c(3)
+  real:: size, width, velocity(3)
+  type(experiment_t), pointer:: task
+  integer:: mpi_x, mpi_y, mpi_z, patch_x, patch_y, patch_z, rank
+  namelist /parameters/ size, width, velocity, resolution
   !.............................................................................
-  call io%init
-  call mpi%init
-  rewind (io%input)
-  read (io%input, parameters); if (io%master) write (io%output, parameters)
-  template%box%size = size
-  template%box%dim  = resolution
-  template%task%dim = patch_resolution
-  do itask=1,ntask
-    template%itask = itask
-    call template%init                          ! computes task position etc
-    task%position = template%position           ! copy position
-    ! now we can set task parameters from the template
-    if (template%rank == mpi%rank) &            ! if on this rank
-      call task%allocate                        ! allocate memory and mesh
-      item => task                              ! generic task pointer
-      call task_list%append (item)              ! append to task_list
+  rewind (io%input); read (io%input, parameters)  ! experiment parameters
+  if (io%master) write (*, parameters)
+  dims = resolution                               ! unigrid 3-D resolution
+  patch_dims = patch_resolution                   ! unigrid patch resolution
+  call unigrid%init                               ! get MPI geometry
+  unigrid%size = size                             ! set size
+  unigrid%resolution = resolution                 ! set resolution
+
+  ! FIXME call unigrid%generate (task_list)               ! make a task list
+  !-----------------------------------------------------------------------------
+  ! Generate initial conditions, using the task init routine, which relies on
+  ! using the task meshes, which were initialized when the task was allocated
+  !-----------------------------------------------------------------------------
+  link => task_list%head
+  do rank=0,mpi%size-1
+    rank_c = mpi_coord%rank_to_coords(rank)
+    do patch_z=0,unigrid%task_box%num(3)-1
+    do patch_y=0,unigrid%task_box%num(2)-1
+    do patch_x=0,unigrid%task_box%num(1)-1
+      box      = unigrid%box
+      task_box = unigrid%task_box
+      rank_box = unigrid%rank_box
+      allocate (task)                             ! allocate new task
+      task%rank = rank                            ! set its rank
+      task%size = task_box%size                   ! set task size
+      task_c = [patch_x,patch_y,patch_z]          ! integer patch position
+      task%position = &                           ! set task position
+        (rank_c*task_box%num + task_c + 0.5d0)*task_box%size - 0.5d0*box%size
+      item => task                                ! generic task pointer
+      call task_list%append (item)                ! append to task_list
+      if (task%rank==mpi%rank) then
+        call task%set (bits%internal)              ! owned by this rank
+      else
+        call task%set (bits%external)              ! owned by another rank
+      end if
+    end do
+    end do
+    end do
+  end do
+!  call task_list%init_nbors
+  link => task_list%head
+  do while (associated(link))
+    item => link%item
+    select type (item)
+    class is (patch_t)
+      if (item%is_set(bits%internal+bits%virtual)) then
+        call item%init
+      end if
+    end select
+    link => link%next
   end do
 END SUBROUTINE
 
 !> =============================================================================
-!> Set the initial conditions of a task.
+!> Set the initial conditions for a single task.  This must reside in the same
+!> module that reads in experiment parameters, so the place is here.  It could
+!> in principle also contain a loop over tasks, but that is a more generic thing.
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self

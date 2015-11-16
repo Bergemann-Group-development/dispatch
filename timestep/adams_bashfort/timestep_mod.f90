@@ -3,7 +3,7 @@
 !> Adams-Bashforth time stepping, with constant time step assumed (for now)
 !> =============================================================================
 MODULE timestep_mod
-  USE pde_mod
+  USE experiment_mod
   USE io_mod
   implicit none
   integer, parameter:: nslice = 4
@@ -57,18 +57,16 @@ SUBROUTINE update_timestep (task)
   integer:: it
   call task%pde_t%dfdt (task)                   ! time derivative at it
   it = modulo(task%it,task%ntime)+1             ! wrap new time slot
-  do iv=1,task%nvar                             ! for all variables
-    do jt=1,task%timeorder                      ! loop over time
-      kt = modulo(it-jt,task%ntime)             ! previous time slots
-      if (jt == 1) then
-        task%mem(:,:,:,iv,it,1) = &
-        task%mem(:,:,:,iv,kt,2)*(task%wt(jt)*task%dtime)
-      else
-        task%mem(:,:,:,iv,it,1) = &
-        task%mem(:,:,:,iv,it,1) + &
-        task%mem(:,:,:,iv,kt,2)*(task%wt(jt)*task%dtime)
-      end if
-    end do
+  do jt=1,task%timeorder                        ! loop over time
+    kt = modulo(it-jt,task%ntime)               ! previous time slots
+    if (jt == 1) then
+      task%mem(:,:,:,:,it,1) = &
+      task%mem(:,:,:,:,kt,2)*(task%wt(jt)*task%dtime)
+    else
+      task%mem(:,:,:,:,it,1) = &
+      task%mem(:,:,:,:,it,1) + &
+      task%mem(:,:,:,:,kt,2)*(task%wt(jt)*task%dtime)
+    end if
   end do
   task%time = task%time + task%dtime            ! update task time
   task%t(it) = task%time                        ! update slot time

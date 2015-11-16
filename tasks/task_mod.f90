@@ -1,42 +1,26 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+ !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> Template module for tasks.
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE task_mod
   USE item_mod
   USE list_mod
+  USE bits_mod
   implicit none
   integer, parameter:: ntime=7
   !-----------------------------------------------------------------------------
   ! Basic task info
   !-----------------------------------------------------------------------------
-  type, abstract, extends(item_t):: task_t
-    integer:: id = 0
+  type, extends(item_t):: task_t
     integer:: rank = 0
-    real(8):: dtime = 0d0
     real(8):: position(3) = 0d0
     real(8):: velocity(3) = 0d0
     real(8):: size(3) = 0d0
-    integer:: status = 0
     integer:: n_check = 0
     type(list_t), pointer:: nbor_list
   contains
-    procedure(one), deferred :: execute
-    procedure(one), deferred :: check
-    procedure(two), deferred :: send_to
   end type
-  abstract interface
-    subroutine one (self)
-    import task_t
-    class(task_t):: self
-    end subroutine
-    subroutine two (self, rank)
-    import task_t
-    class(task_t):: self
-    integer:: rank
-    end subroutine
-  end interface
   !-----------------------------------------------------------------------------
-  ! Timeslot info added in tasks_t
+  ! Time slot info and procedures added in tasks_t
   !-----------------------------------------------------------------------------
   type, extends(task_t):: tasks_t
     real(8):: t(ntime)
@@ -48,22 +32,28 @@ MODULE task_mod
   contains
     procedure:: execute
     procedure:: check
-    procedure:: init       => void
-    procedure:: update     => void
-    procedure:: send_to    => void2
-    procedure:: allocate   => void
-    procedure:: deallocate => void
-    procedure:: print      => void
+    procedure:: set_virtual
+    procedure:: send_to
+    procedure:: overlaps
   end type
 PRIVATE
 PUBLIC ntime, task_t, tasks_t
 CONTAINS
 
-SUBROUTINE void (self)
+!> =============================================================================
+!> =============================================================================
+FUNCTION overlaps (self, item)
+  class(tasks_t):: self
+  class(item_t):: item
+  logical:: overlaps
+  overlaps = .true.
+END FUNCTION overlaps
+
+SUBROUTINE set_virtual (self)
   class(tasks_t):: self
 END SUBROUTINE
 
-SUBROUTINE void2 (self, rank)
+SUBROUTINE send_to (self, rank)
   class(tasks_t):: self
   integer:: rank
 END SUBROUTINE
@@ -90,7 +80,10 @@ SUBROUTINE execute(self)
     if (nbtask%rank == self%rank) then    ! same rank task
       call nbtask%check                  ! nbor task to ready_queue?
     else                                  ! neighbor on different rank
-      call nbtask%send_to (nbtask%rank)   ! send to neighbor rank
+      select type (nbtask)
+      type is (tasks_t)
+        call nbtask%send_to (nbtask%rank) ! send to neighbor rank
+      end select
     end if
     nbor => nbor%next                     ! next nbor
   end do

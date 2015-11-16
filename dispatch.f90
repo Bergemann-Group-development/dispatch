@@ -15,9 +15,8 @@ PROGRAM dispatch
   !....................................................................
   call trace_begin ('dispatch')
   call mpi%init                                     ! start up MPI
-  call trace('task_list%init')
+  call io%init                                      ! start up I/O
   call task_list%init ('task_list')                 ! initialize tasks_list
-  call trace('ready_queue')
   call ready_queue%init ('ready_queue')             ! initialize ready_queue
   !$omp parallel
   call trace('init_experiment')
@@ -29,4 +28,5 @@ PROGRAM dispatch
     call ready_queue%head%item%execute              ! execute the oldest task
   end do
   !$omp end parallel
+  call mpi%end                                      ! finalize
 END PROGRAM

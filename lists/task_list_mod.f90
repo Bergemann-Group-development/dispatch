@@ -6,36 +6,94 @@
 MODULE task_list_mod
   USE list_mod
   USE item_mod
-  USE patch_mod
+  USE task_mod
+  USE bits_mod
   implicit none
-  type, extends(list_t):: task_list_t
+  private
+  type, public, extends(list_t):: task_list_t
   contains
     procedure:: process
+    procedure:: apply
+    procedure:: print
   end type
 CONTAINS
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE print (list)
+  class(task_list_t):: list
+  !.............................................................................
+  type(task_list_t), pointer:: out
+  type(link_t), pointer:: link
+  class(item_t), pointer:: item
+  !.............................................................................
+  print*, 'task_list%print:', list%name
+  link => list%head
+  do while (associated(link))
+    item => link%item
+    call item%print
+    link => link%next
+  end do
+END SUBROUTINE
 
 !> =============================================================================
 !> Process the task list, computing initial values where appropriate (which
 !> can take significant time).  The list process is best done by a single
 !> thread, while the other ones can help with the actual computation.
 !> =============================================================================
-SUBROUTINE process (list, ready_queue)
+SUBROUTINE process (list, queue)
   class(task_list_t):: list
-  type(task_list_t), pointer:: ready_queue
+  type(task_list_t), pointer:: queue
   class(link_t), pointer:: link
   class(item_t), pointer:: item
+  type(tasks_t), pointer:: task
   !.............................................................................
   !$omp single
-  allocate (ready_queue)
+  allocate (queue)
   link => list%head
   do while (associated(link))
     item => link%item
     !$omp task
     select type (item)
-    class is (patch_t)
-      call item%init
+    class is (task_t)
+      if (item%is_set(bits%internal+bits%virtual)) then
+        call item%init
+      end if
     end select
-    call ready_queue%append (item)
+    if (item%is_set(bits%internal)) then
+      call queue%append (item)
+    end if
+    !$omp end task
+    link => link%next
+  end do
+!  link => list%head
+!  do while (associated(link))
+!    item => link%item
+!    select type (item)
+!    type is (tasks_t)
+!      nbor_list => task%nbor_list
+!      call nbor_list%init (task_list, task)
+!    end select
+!    link => link%next
+!  end do
+  !$omp end single
+END SUBROUTINE
+!> =============================================================================
+!> Process the tasks in a task list through a procedure, which optionally adds
+!> tasks to an out list
+!> =============================================================================
+SUBROUTINE apply (self, procedure, out)
+  class(task_list_t):: self
+  type(task_list_t), pointer:: out
+  type(link_t), pointer:: link
+  class(item_t), pointer:: task
+  !.............................................................................
+  !$omp single
+  link => self%head
+  do while (associated(link))
+    task => link%item
+    !$omp task
+    call procedure (task, out)
     !$omp end task
     link => link%next
   end do

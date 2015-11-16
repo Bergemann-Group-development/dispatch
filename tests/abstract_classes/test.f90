@@ -1,7 +1,7 @@
 !> =============================================================================
-!> Template hieararchy, with the first abstract level minimal, the 2nd level
-!> has an added procedure, and the 3rd and 4th non-abstract levels add one 
-!> more procedure, which is overridden in the 4th level.  This is simlar to
+!> Template hierarchy, with the first abstract level minimal, the 2nd level
+!> has an added procedure, and the 3rd and 4th non-abstract levels add one
+!> more procedure, which is overridden in the 4th level.  This is similar to
 !> what we want to do with the task structure levels
 !> =============================================================================
 MODULE mod

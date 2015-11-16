@@ -17,6 +17,7 @@ MODULE mpi_coord_mod
   integer:: mpi_up(3)           ! Ranks upwards (circular)
   integer:: mpi_comm_cart       ! Communicator for cartesian ordering
   logical:: ok
+  integer:: mpi_err
   type, extends(mpi_t):: mpi_coord_t
     integer:: coord(3)
     integer:: dims(3)
@@ -24,15 +25,40 @@ MODULE mpi_coord_mod
     integer:: beam(3)
     integer:: dn(3)
     integer:: up(3)
+    integer:: cart_comm
   contains
     procedure:: init
     procedure:: print
+    procedure:: coords_to_rank
+    procedure:: rank_to_coords
     procedure:: finalize
   end type
   type(mpi_coord_t):: mpi_coord
 PRIVATE
 PUBLIC mpi_coord_t, mpi_coord
 CONTAINS
+
+!> =============================================================================
+!> Set the coordinates from the rank
+!> =============================================================================
+FUNCTION rank_to_coords (self, rank) result (coords)
+  class(mpi_coord_t):: self
+  integer:: rank, coords(3)
+  !.............................................................................
+  call MPI_CART_COORDS (self%cart_comm, rank, 3, coords, mpi_err)
+  call mpi%assert ('MPI_CART_COORDS', mpi_err)
+END FUNCTION rank_to_coords
+
+!> =============================================================================
+!> Set the rank from the coordinates
+!> =============================================================================
+FUNCTION coords_to_rank (self, coord) result (rank)
+  class(mpi_coord_t):: self
+  integer:: coord(3), rank
+  !.............................................................................
+  call MPI_CART_RANK (self%cart_comm, coord, rank, mpi_err)
+  call mpi%assert ('MPI_CART_RANK', mpi_err)
+END FUNCTION coords_to_rank
 
 !> =============================================================================
 !> Extent the basic MPI object with MPI coordinate info
@@ -154,6 +180,7 @@ SUBROUTINE cart_create_mpi (mp, mpi_dims, dims)
   if (.not. ok) return
   call MPI_Cart_create (mpi_comm_world, 3, mpi_dim3, mpi_periodic, mpi_reorder, &
                         mpi_comm_cart, mpi_err)
+  mp%cart_comm = mpi_comm_cart
   if (mp%rank==0) print '(13x,a,3i5)', ' Using mpi_dims =', mpi_dim3
   call mpi%assert ('cart_creat_mpi: cart', mpi_err)
   !-----------------------------------------------------------------------------

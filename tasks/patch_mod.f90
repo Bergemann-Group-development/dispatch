@@ -5,6 +5,7 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE patch_mod
   USE mpi_mod
+  USE item_mod
   USE task_mod
   USE mesh_mod
   USE io_mod
@@ -15,6 +16,7 @@ MODULE patch_mod
     type(mesh_t), dimension(:), pointer:: m
     integer:: ndim = ndim           ! Number of dimensions
     integer:: nvar                  ! Number of variables
+  contains
   end type
   !-----------------------------------------------------------------------------
   ! Template task, with procedure to place it it MPI-space

@@ -27,7 +27,7 @@ MODULE mpi_mod
     logical:: master
     logical:: ok = .false.
   contains
-    procedure:: init => init_mpi_info
+    procedure:: init
     procedure:: barrier => barrier_
     procedure:: print => print_
     procedure:: assert
@@ -45,7 +45,7 @@ CONTAINS
 !> mpi%rank = the rank of the current MPI process (0-indexed)
 !> mpi%coord = the 3-D position of the rank, if a Cartesian arrangement is used
 !> =============================================================================
-SUBROUTINE init_mpi_info (mp, mpi_dims, dims)
+SUBROUTINE init (mp, mpi_dims, dims)
   class(mpi_t):: mp
   integer, optional, dimension(3):: mpi_dims, dims
   integer:: rank
@@ -68,7 +68,7 @@ SUBROUTINE init_mpi_info (mp, mpi_dims, dims)
   mp%comm   = mpi%comm
   mp%master = mpi%master
   mp%ok     = mpi%ok
-END SUBROUTINE init_mpi_info
+END SUBROUTINE init
 
 !> =============================================================================
 !> =============================================================================

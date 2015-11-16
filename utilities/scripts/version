@@ -1,0 +1,1 @@
+git describe --tags --long | sed -e 's/-/ build /' -e 's/-/ (/' -e 's/$/)/'     

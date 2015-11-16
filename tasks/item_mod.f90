@@ -1,26 +1,75 @@
 !> =============================================================================
 !> $Id$
-!> This abstract type exists to be able to organize task lists by time.
+!> This type exists to be able to organize task lists by time.  It corresponds
+!> 0-dimensional tasks, which just evolve in time
 !> =============================================================================
 MODULE item_mod
+  USE bits_mod
   implicit none
-  type, abstract:: item_t
+  type:: item_t
     real(8):: time = 0d0
+    real(8):: dtime = 0.1d0
+    integer:: status = 0
+    integer:: id = 0
   contains
-    procedure(one), deferred:: init
-    procedure(one), deferred:: execute
-    procedure(one), deferred:: update
-    procedure(one), deferred:: check
-    procedure(one), deferred:: allocate
-    procedure(one), deferred:: deallocate
-    procedure(one), deferred:: print
+    procedure:: update
+    procedure:: set
+    procedure:: clear
+    procedure:: print
+    procedure:: is_set
+    procedure:: is_clear
+    procedure:: init => void
+    procedure:: check => void
+    procedure:: allocate => void
+    procedure:: deallocate => void
+    procedure:: execute => void
   end type
-  abstract interface
-    subroutine one (self)
-    import item_t
-    class(item_t):: self
-    end subroutine
-  end interface
 PRIVATE
 PUBLIC item_t
+CONTAINS
+
+SUBROUTINE void (self)
+  class (item_t):: self
+  print*, 'ERROR: item%void called'
+END SUBROUTINE
+
+SUBROUTINE print (self)
+  class (item_t):: self
+  print*, 'item%print:', self%id, self%time
+END SUBROUTINE
+
+SUBROUTINE update (self)
+  class (item_t):: self
+  self%time = self%time + self%dtime
+  print*,'item%update:', self%id, self%time
+END SUBROUTINE
+
+!> =============================================================================
+!> Set and clear status bits
+!> =============================================================================
+SUBROUTINE set (self, bit)
+  class (item_t):: self
+  integer:: bit
+  !.............................................................................
+  self%status = ior(self%status, bit)
+END SUBROUTINE
+SUBROUTINE clear (self, bit)
+  class (item_t):: self
+  integer:: bit
+  !.............................................................................
+  self%status = iand(self%status, not(bit))
+END SUBROUTINE
+LOGICAL FUNCTION is_set (self, bit)
+  class (item_t):: self
+  integer:: bit
+  !.............................................................................
+  is_set = (ior(self%status, bit) /= 0)
+END FUNCTION
+LOGICAL FUNCTION is_clear (self, bit)
+  class (item_t):: self
+  integer:: bit
+  !.............................................................................
+  is_clear = (iand(self%status, bit) == 0)
+END FUNCTION
+
 END MODULE item_mod

@@ -10,7 +10,7 @@ MODULE pde_mod
   type, extends(patch_t):: pde_t
     real:: v(3) = 0.0
   contains
-    procedure:: int      => init_advection
+    procedure:: init     => init_advection
     procedure:: allocate => allocate_advection
     procedure:: pde
   end type

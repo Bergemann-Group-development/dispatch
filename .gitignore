@@ -6,4 +6,6 @@
 *.exe
 *.bak
 *.log
+*.cbp
+*.layout
 a.out

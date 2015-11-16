@@ -4,6 +4,7 @@
 !> =============================================================================
 MODULE experiment_mod
   USE list_mod
+  USE item_mod
   USE patch_mod
   USE pde_mod
   USE mhd_mod
