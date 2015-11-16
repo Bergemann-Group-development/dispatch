@@ -40,13 +40,13 @@ SUBROUTINE toc (label, n)
   wt = (MPI_wtime() - wt)
 #endif
   if (wt/n < 1d-6) then
-    print 1, label, wt,  'sec', wt/n*1e9, 'ns/call'
-  else if (wt < 1d-3) then
-    print 1, label, wt,  'sec', wt/n*1e6, 'mus/call'
-  else if (wt < 1d0) then
-    print 1, label, wt,  'sec', wt/n*1e3, 'ms/call'
+    print 1, label, wt,  'sec', wt/n*1e9, 'ns/cell'
+  else if (wt/n < 1d-3) then
+    print 1, label, wt,  'sec', wt/n*1e6, 'mus/cell'
+  else if (wt/n < 1d0) then
+    print 1, label, wt,  'sec', wt/n*1e3, 'ms/cell'
   else
-    print 1, label, wt,  'sec', wt/n, 's/call'
+    print 1, label, wt,  'sec', wt/n, 's/cell'
     1 format(1x,a,1h:,2(g20.3,1x,a))
   end if
 END SUBROUTINE toc

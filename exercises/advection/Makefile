@@ -1,7 +1,7 @@
 # Option groups
-#OPTS = debug
+OPTS = debug
 #OPTS = full_debug
-OPTS = optimized
+#OPTS = optimized
 
 # Default target
 default: run
@@ -10,8 +10,13 @@ default: run
 TOP = ../..
 include $(TOP)/config/Makefile
 
+OBJ = mpi_timer.o
+classical.x: $(OBJ)
+modules.x: $(OBJ)
+objects.x: $(OBJ)
+
 # Dependencies
-run: classical.x module_based.x object_oriented.x
-	./classical.x       < input.nml | tee classical.log
-	./module_based.x    < input.nml | tee module_based.log
-	./object_oriented.x < input.nml | tee object_oriented.log
+run: classical.x modules.x objects.x
+	./classical.x  < input.nml | tee classical.log
+	./modules.x    < input.nml | tee modules.log
+	./objects.x    < input.nml | tee objects.log
