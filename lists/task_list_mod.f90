@@ -11,12 +11,53 @@ MODULE task_list_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
+    real(8):: time_end
+    type(task_list_t), pointer:: ready_queue
   contains
+    procedure:: init
+    procedure:: check
     procedure:: process
     procedure:: apply
     procedure:: print
   end type
 CONTAINS
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE init (list, name)
+  class(task_list_t):: list
+  character(len=*):: name
+  !.............................................................................
+  type(task_list_t), pointer:: out
+  type(link_t), pointer:: link
+  class(item_t), pointer:: item
+  !.............................................................................
+  print*, 'task_list%init:', list%name
+  allocate (list%ready_queue)
+  call list%ready_queue%list_t%init ('ready queue')
+  link => list%head
+  do while (associated(link))
+    item => link%item
+    call list%ready_queue%append (item)
+    link => link%next
+  end do
+  print*,'MK1'
+  call list%ready_queue%print
+END SUBROUTINE
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE check (list, item)
+  class(task_list_t):: list
+  !.............................................................................
+  type(link_t), pointer:: link
+  class(item_t), pointer:: item
+  !.............................................................................
+  print*, 'task_list%check:', list%name, item%id, item%time
+  if (item%time > self%time_end) then
+    call self%remove (item)
+  end if
+END SUBROUTINE
 
 !> =============================================================================
 !> =============================================================================

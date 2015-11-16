@@ -69,6 +69,7 @@ SUBROUTINE execute(self)
   class(link_t), pointer:: nbor
   class(task_t), pointer:: nbtask
   !.............................................................................
+  print*,'XX1'
   call self%update                        ! take a timestep
   nbor => self%nbor_list%head             ! start on nbor_list
   item => nbor%item

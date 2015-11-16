@@ -6,31 +6,38 @@
 MODULE item_mod
   USE bits_mod
   implicit none
-  type:: item_t
+  private
+  type, public:: item_t
     real(8):: time = 0d0
     real(8):: dtime = 0.1d0
     integer:: status = 0
     integer:: id = 0
   contains
+    procedure:: init
     procedure:: update
     procedure:: set
     procedure:: clear
     procedure:: print
     procedure:: is_set
     procedure:: is_clear
-    procedure:: init => void
     procedure:: check => void
     procedure:: allocate => void
     procedure:: deallocate => void
     procedure:: execute => void
   end type
-PRIVATE
-PUBLIC item_t
+  integer:: id=0
 CONTAINS
 
 SUBROUTINE void (self)
   class (item_t):: self
   print*, 'ERROR: item%void called'
+END SUBROUTINE
+
+SUBROUTINE init (self)
+  class (item_t):: self
+  id = id+1
+  self%id = id
+  print*, 'item%init:', self%id, self%time
 END SUBROUTINE
 
 SUBROUTINE print (self)

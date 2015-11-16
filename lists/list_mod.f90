@@ -19,6 +19,7 @@ MODULE list_mod
     procedure:: init
     procedure:: reset
     procedure:: append
+    procedure:: remove
     procedure:: add_by_time
     procedure:: print
   end type
@@ -60,6 +61,27 @@ SUBROUTINE reset (list)
   nullify (list%head)
   nullify (list%tail)
   nullify (list%item)
+END SUBROUTINE reset
+
+!> =============================================================================
+!> Remove a link from the list
+!> =============================================================================
+SUBROUTINE remove (list, this)
+  class(list_t):: list
+  type(link_t), pointer:: link, next
+  class(item_t), pointer:: this, item
+  !.............................................................................
+  link => list%head
+  do while (associated(link))
+    next => link%next
+    if (associated(link%item,this)) then
+      print*,'found it, removing', item%id
+      link%prev%next => link%next
+      deallocate (link)
+      return
+    end if
+    link => next
+  end do
 END SUBROUTINE reset
 
 !> =============================================================================

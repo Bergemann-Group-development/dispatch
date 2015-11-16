@@ -1,3 +1,12 @@
+!> =============================================================================
+!> $Id$
+!> Prototype experiment, showing the steps and components needed:
+!> 1) a "create" procedure, which creates tasks and adds them to a task_list
+!> 2) an "init" proc, which will be executed by the task_list%init
+!> 3) an "update" procedure, which will be executed by task_queue%update
+!> 3) an "output" procedure, which does whatever is desired
+!> =============================================================================
+
 MODULE experiment_mod
   USE task_mod
   USE task_list_mod
@@ -5,8 +14,9 @@ MODULE experiment_mod
   private
   type, public, extends(tasks_t):: experiment_t
   contains
+    procedure:: create
     procedure:: init
-    procedure:: print
+    procedure:: output
   end type
   integer:: id=0
 contains
@@ -18,16 +28,16 @@ subroutine init (self)
   print *,'experiment%init', self%id
 end subroutine init
 
-subroutine print (self)
+subroutine output (self)
   class(experiment_t):: self
-  print*,'experiment%print:', self%id, self%time
+  call self%print
 end subroutine
+
 END MODULE experiment_mod
 
 PROGRAM test
-  USE task_list_mod
-  USE task_mod
   USE item_mod
+  USE task_list_mod
   USE experiment_mod
   implicit none
   type(task_list_t):: task_list
