@@ -1,5 +1,8 @@
 import matplotlib.pyplot as pl
 import numpy as np
+import matplotlib.animation as animation
+
+play=True
 
 
 def initial_condition(n,w):
@@ -16,6 +19,7 @@ def initial_condition(n,w):
     class ic:
         rho=np.exp(-(x**2+y**2)/w**2)
         ux=1.0; uy=0.5; dx=1.0
+        play=True
     return ic
 
 def dd(f,axis):
@@ -34,7 +38,7 @@ def time_step(f,courant):
     """
     umax=np.sqrt(np.max(f.ux**2+f.uy**2))
     dt=courant*f.dx/umax
-    f.rho=f.rho-(dt/f.dx)*(dd(f.rho*f.ux,1)+dd(f.rho*f.uy,0))
+    f.rho[:]=f.rho-(dt/f.dx)*(dd(f.rho*f.ux,1)+dd(f.rho*f.uy,0))
     return f
 
 def advection_test(n_step,courant=0.2):
@@ -47,11 +51,20 @@ def advection_test(n_step,courant=0.2):
         --------------------------------------------------------------------
     """
     print('advection_test.py $Id$')
+
     f=initial_condition(64,10.0)
+    fig = pl.figure()
     im=pl.imshow(f.rho,origin='lower')
-    pl.show()
-    for i in range(n_step):
-        f=time_step(f,courant)
+
+    def init():
+        pass
+    
+    def animate(i):
+        if(i>=n_step-1): f.play=False
+        if(f.play==False): return
+        time_step(f,courant)
         im.set_data(f.rho)
-        pl.draw()
-        
+
+    ani = animation.FuncAnimation(fig, animate, np.arange(1, n_step),
+                              interval=25, blit=False, init_func=init)
+    pl.show()        
