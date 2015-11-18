@@ -9,10 +9,9 @@ PROGRAM dispatch
   call io%init
   allocate (experiment_list)
   call experiment_list%init ('experiment_list')
-  do while (experiment_list%size > 0)
-    print*,experiment_list%name
-    print*,experiment_list%ready_queue%name
+  do while (experiment_list%n > 0)
     call experiment_list%update
   end do
+  call experiment_list%output
   call mpi%end
 END PROGRAM

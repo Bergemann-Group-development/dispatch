@@ -2,20 +2,28 @@
 !> Module with list handling for generic class tasks_t objects
 !> *****************************************************************************
 MODULE list_mod
+  USE io_mod
   USE task_mod
   USE trace_mod
   implicit none
-  type link_t
-    class(task_t), pointer :: task => null()
-    type(link_t),  pointer :: next => null()
-    type(link_t),  pointer :: prev => null()
-    type(link_t),  pointer :: nbor => null()
+  private
+  type, public:: nbor_t
+    class(task_t), pointer :: task => null()          ! task
+    class(link_t), pointer :: nbor => null()          ! next nbor
+    class(link_t), pointer :: link => null()          ! nbor's link (maybe not needed)
   end type
-  type list_t
+  type, extends(nbor_t), public:: link_t
+    type(link_t),  pointer :: next => null()          ! next link in task list
+    type(link_t),  pointer :: prev => null()          ! previous link in task list
+    type(link_t),  pointer :: next_time => null()     ! next link in time order
+  end type
+  type, public:: list_t
     character(len=64):: name
     type(link_t), pointer:: head => null()
     type(link_t), pointer:: tail => null()
-    integer:: size = 0
+    type(link_t), pointer:: queue => null()
+    integer:: n = 0
+    integer:: nq = 0
     contains
     procedure:: init
     procedure:: update
@@ -24,11 +32,9 @@ MODULE list_mod
     procedure:: remove_task
     procedure:: remove_link
     procedure:: remove_head
-    procedure:: add_by_time
+    procedure:: queue_by_time
     procedure:: print
   end type
-PRIVATE
-PUBLIC list_t, link_t
 CONTAINS
 
 !> =============================================================================
@@ -93,7 +99,7 @@ SUBROUTINE append (self, task)
     self%head => link
     self%tail => link
   end if
-  self%size = self%size+1
+  self%n = self%n+1
   call trace_end
 END SUBROUTINE append
 
@@ -123,7 +129,7 @@ SUBROUTINE remove_link (self, link)
     self%head => next                       ! make head point to next
   end if
   deallocate (link)                         ! free to remove link
-  self%size = self%size-1
+  self%n = self%n-1
   call trace_end
 END SUBROUTINE
 
@@ -149,7 +155,7 @@ SUBROUTINE remove_head (self)
   ! Remove the head link
   !-------------------------------------------------------------------------
   self%head => next                         ! make head point to next
-  self%size = self%size-1
+  self%n = self%n-1
   call trace_end
 END SUBROUTINE remove_head
 
@@ -158,10 +164,35 @@ END SUBROUTINE remove_head
 !> =============================================================================
 SUBROUTINE remove_task (self, task)
   class(list_t):: self
-  type(link_t), pointer:: link
+  class(link_t), pointer:: link, prev
   class(task_t), pointer:: task
+  integer:: i
   !.............................................................................
   call trace_begin ('list_t%remove '//self%name)
+  !-----------------------------------------------------------------------------
+  ! Prevent damage to the time queue when removing the task
+  !-----------------------------------------------------------------------------
+!  print *, 'patching the queue when removing task', task%id, self%nq, self%n
+  nullify(prev)
+  link => self%queue
+  i = 0
+  do while (associated(link))
+    i = i+1
+    if (associated(link%task,task)) then
+      if (associated(prev)) then
+!        print*, 'patching previous link', prev%task%id, associated(link%next_time)
+        prev%next_time => link%next_time
+      else
+!        print*, 'patching self%queue', prev%task%id, associated(link%next_time)
+        self%queue => link%next_time
+      end if
+    end if
+    prev => link
+    link => link%next_time
+  end do
+  !-----------------------------------------------------------------------------
+  ! Now find the task link, and remove it
+  !-----------------------------------------------------------------------------
   link => self%head
   do while (associated(link))
     if (associated(link%task,task)) then
@@ -175,29 +206,43 @@ SUBROUTINE remove_task (self, task)
 END SUBROUTINE remove_task
 
 !> =============================================================================
+!> Add a link node into the queue chain, in ascending time order
 !> =============================================================================
-SUBROUTINE add_by_time (self, task)
+SUBROUTINE queue_by_time (self, this)
   class(list_t):: self
-  class(task_t), pointer:: task
-  class(link_t), pointer:: link, new
+  type(link_t), pointer:: this, next, prev
   !.............................................................................
   call trace_begin ('list_t%add_by_time '//self%name)
-  link => self%head
-  do while (associated(link))
-    if (link%task%time > task%time) then
-      allocate (new)
-      new%task => task
-      call insert (self, link, new)
-      self%size = self%size+1
+  nullify (this%next_time)
+  nullify (prev)
+  next => self%queue
+  do while (associated(next))
+    this%next_time => next
+    if (next%task%time > this%task%time) then
+      if (associated(prev)) then
+        prev%next_time => this
+        !print*, 'inserted1: ', prev%task%id, this%task%id, this%next_time%task%id
+      else
+        self%queue => this
+        !print*, 'inserted2: ', -1, this%task%id, this%next_time%task%id
+      end if
+      self%nq = self%nq+1
       call trace_end
       return
     end if
-    link => link%next
+    prev => next
+    next => next%next_time
   end do
-  call append (self, task)
-  self%size = self%size+1
+  if (associated(self%queue)) then
+    this%next_time => self%queue
+    !print*, 'inserted3: ', this%task%id, this%next_time%task%id
+  else
+    !print*, 'inserted4: ', this%task%id
+  end if
+  self%queue => this
+  self%nq = self%nq+1
   call trace_end
-END SUBROUTINE add_by_time
+END SUBROUTINE queue_by_time
 
 !> =============================================================================
 !> Insert 'new' task before 'old' task
@@ -215,7 +260,7 @@ SUBROUTINE insert (self, old, new)
   end if
   new%next => old
   new%next%prev => new
-  self%size = self%size + 1
+  self%n = self%n + 1
   call trace_end
 END SUBROUTINE insert
 
@@ -227,10 +272,11 @@ SUBROUTINE print (self)
   class(task_t), pointer:: task
   !.............................................................................
   link => self%head
-  print*,'print: ',trim(self%name), self%size
+  print*,'print: ',trim(self%name), self%n
   do while (associated(link))
     task => link%task
-    call task%print
+    if (io%master) print*, 'task_t%print:', &
+      task%id, task%time, task%nbors, associated(link%nbor)
     link => link%next
   end do
 END SUBROUTINE print

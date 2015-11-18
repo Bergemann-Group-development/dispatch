@@ -16,8 +16,9 @@ MODULE task_mod
     integer:: status = 0
     integer:: rank = 0
     integer:: n_check = 0
+    integer:: nbors = 0
     real(8):: time = 0d0
-    real(8):: end_time = 0d0
+    real(8):: end_time = 1d0
     real(8):: dtime = 0.1d0
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0
@@ -72,6 +73,7 @@ LOGICAL FUNCTION ahead_of (self, task)
   class (task_t):: self, task
   !.............................................................................
   ahead_of = self%time > task%time + task%grace
+!  print*,'ahead_of: ', self%time, task%time, task%grace, ahead_of
 END FUNCTION
 
 !> =============================================================================
@@ -87,7 +89,6 @@ END SUBROUTINE send_to
 !> =============================================================================
 SUBROUTINE print (self)
   class (task_t):: self
-  if (io%master) print*, 'task_t%print:', self%id, self%time
 END SUBROUTINE
 
 !> =============================================================================
@@ -97,36 +98,36 @@ SUBROUTINE set (self, bit)
   class (task_t):: self
   integer:: bit
   !.............................................................................
-  call trace_begin ('task_t%set')
+!  call trace_begin ('task_t%set')
   self%status = ior(self%status, bit)
-  call trace_end
+!  call trace_end
 END SUBROUTINE
 !> =============================================================================
 SUBROUTINE clear (self, bit)
   class (task_t):: self
   integer:: bit
   !.............................................................................
-  call trace_begin ('task_t%clear')
+!  call trace_begin ('task_t%clear')
   self%status = iand(self%status, not(bit))
-  call trace_end
+!  call trace_end
 END SUBROUTINE
 !> =============================================================================
 LOGICAL FUNCTION is_set (self, bit)
   class (task_t):: self
   integer:: bit
   !.............................................................................
-  call trace_begin ('task_t%is_set')
-  is_set = (ior(self%status, bit) /= 0)
-  call trace_end
+!  call trace_begin ('task_t%is_set')
+  is_set = (iand(self%status, bit) /= 0)
+!  call trace_end
 END FUNCTION
 !> =============================================================================
 LOGICAL FUNCTION is_clear (self, bit)
   class (task_t):: self
   integer:: bit
   !.............................................................................
-  call trace_begin ('task_t%is_clear')
+!  call trace_begin ('task_t%is_clear')
   is_clear = (iand(self%status, bit) == 0)
-  call trace_end
+!  call trace_end
 END FUNCTION
 
 END MODULE task_mod

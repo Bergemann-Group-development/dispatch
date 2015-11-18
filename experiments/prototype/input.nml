@@ -3,9 +3,8 @@
  do_trace=f
  do_debug=f
 /
-&task_list_params
- time_end=0.5
-/
 &experiment_params
  dims=64,64,64
+ end_time=1.0
+ grace=0.0
 /

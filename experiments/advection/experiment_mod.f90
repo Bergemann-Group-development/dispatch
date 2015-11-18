@@ -27,6 +27,7 @@ MODULE experiment_mod
   !-----------------------------------------------------------------------------
   ! Parameters for namelist
   !-----------------------------------------------------------------------------
+  real:: end_time      = 1.0
   real:: velocity(3)   = [1.0, 0.5, 0.0]        ! velocity components
   real:: width         = 1.0                    ! Gaussian width
   real:: size          = 16.                    ! experiment size
@@ -48,7 +49,7 @@ SUBROUTINE init_experiment (task_list)
   real:: size, width, velocity(3)
   type(experiment_t), pointer:: task
   integer:: mpi_x, mpi_y, mpi_z, patch_x, patch_y, patch_z, rank
-  namelist /parameters/ size, width, velocity, resolution
+  namelist /parameters/ end_time, size, width, velocity, resolution
   !.............................................................................
   rewind (io%input); read (io%input, parameters)  ! experiment parameters
   if (io%master) write (*, parameters)
@@ -114,6 +115,7 @@ SUBROUTINE init (self)
   integer:: i1, i2, i3
   real:: x1, x2, x3
   !.............................................................................
+  self%end_time = end_time
   rho => self%mem(:,:,:,1,self%it,1)
   do i3=1,self%m(3)%gn
   do i2=1,self%m(2)%gn
