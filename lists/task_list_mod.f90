@@ -1,12 +1,20 @@
-!> =============================================================================
+!> ==================-===========================================================
 !> $Id$
 !> A task_list_t has the distinction that it must be able to call an initial
-!> condition routine, which only exists in experiment_t tasks
+!> condition routine, which only exists in experiment_t tasks.  Procedures in
+!> the module use these foreign procedures:
+!>
+!>    task_t%init         : to initialize a task
+!>    task_t%update       : to update a task
+!>    task_t%send_to      : send data to foreign task
+!>    list_t%remove_task  : remove task from list
+!>    list_t%remove_head  : remove head from list
+!>
 !> =============================================================================
 MODULE task_list_mod
   USE list_mod
-  USE item_mod
   USE task_mod
+  USE tasks_mod
   USE bits_mod
   USE trace_mod
   USE mpi_mod
@@ -14,165 +22,122 @@ MODULE task_list_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
-    real(8):: time_end
-    type(task_list_t), pointer:: ready_queue
+    type(task_list_t), pointer:: ready_queue => null()
   contains
     procedure:: init
     procedure:: update
-    procedure:: check
-    procedure:: process
-    procedure:: apply
-    procedure:: print
+    procedure:: check_mpi
+    procedure:: check_nbors
+    procedure:: check_ready
+!    procedure:: print
   end type
 CONTAINS
 
 !> =============================================================================
+!> Initialize the task list, by allocating a ready queue and initializing the
+!> task list tasks
 !> =============================================================================
-SUBROUTINE init (list, name)
-  class(task_list_t):: list
+SUBROUTINE init (self, name)
+  class(task_list_t):: self
   character(len=*):: name
-  type(task_list_t), pointer:: out
   type(link_t), pointer:: link
-  class(item_t), pointer:: item
-  real(8):: time_end
-  namelist /task_list_params/ time_end
+  class(task_t), pointer:: task
   !.............................................................................
-  call trace_begin('task_list_t%init '//list%name)
-  rewind (io%input)
-  read (io%input, task_list_params)
-  if (io%master) write (*, task_list_params)
-  list%time_end = time_end
-  !
-  allocate (list%ready_queue)
-  call list%ready_queue%list_t%init ('ready queue')
-  link => list%head
+  call trace_begin('task_list_t%init '//name)
+  allocate (self%ready_queue)
+  call self%ready_queue%list_t%init ('ready queue')
+  link => self%head
   do while (associated(link))
-    item => link%item
-    call list%ready_queue%append (item)
+    task => link%task
+    call task%init
     link => link%next
   end do
-  call list%ready_queue%print
   call trace_end
-END SUBROUTINE
+END SUBROUTINE init
 
 !> =============================================================================
+!> Update the state of the task list, taking the steps necessary to update the
+!> head task on the ready_queue, and check for consequences
 !> =============================================================================
-SUBROUTINE update (list)
-  class(task_list_t):: list
+SUBROUTINE update (self)
+  class(task_list_t):: self
   !.............................................................................
-  type(link_t), pointer:: link
-  class(item_t), pointer:: item
+  type(link_t), pointer:: head
+  class(task_t), pointer:: task
   !.............................................................................
-  call trace_begin('task_list_t%update '//list%name)
-  link => list%ready_queue%head
-  item => link%item
-  call list%ready_queue%remove_link (link)
-  call item%update
-  call list%check (item)
-  call trace_end
-END SUBROUTINE
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE check (list, item)
-  class(task_list_t):: list
-  !.............................................................................
-  type(link_t), pointer:: link
-  class(item_t), pointer:: item
-  !.............................................................................
-  call trace_begin('task_list_t%check '//list%name)
-  print*, 'task_list%check:', trim(list%name), item%id, item%time, list%time_end
-  if (item%time > list%time_end) then
-    call list%remove (item)
-    call list%ready_queue%remove (item)
-  end if
-  call list%ready_queue%add_by_time (item)
-  call trace_end
-END SUBROUTINE
-
-!> =============================================================================
-!> Process the task list, computing initial values where appropriate (which
-!> can take significant time).  The list process is best done by a single
-!> thread, while the other ones can help with the actual computation.
-!> =============================================================================
-SUBROUTINE process (list, queue)
-  class(task_list_t):: list
-  type(task_list_t), pointer:: queue
-  class(link_t), pointer:: link
-  class(item_t), pointer:: item
-  type(tasks_t), pointer:: task
-  !.............................................................................
-  call trace_begin('task_list_t%process '//list%name)
-  !$omp single
-  allocate (queue)
-  link => list%head
-  do while (associated(link))
-    item => link%item
-    !$omp task
-    select type (item)
-    class is (task_t)
-      if (item%is_set(bits%internal+bits%virtual)) then
-        call item%init
-      end if
-    end select
-    if (item%is_set(bits%internal)) then
-      call queue%append (item)
+  call trace_begin('task_list_t%update '//self%name)
+  head => self%ready_queue%head                        ! head link
+  task => head%task                                    ! head task
+  print*,self%ready_queue%name
+  if (associated(task)) then
+    call self%check_mpi                                 ! check incoming MPI
+    call self%ready_queue%remove_head                   ! remove the head link
+    call task%update                                    ! update the task
+    if (task%time > task%end_time) then                 ! finished:
+      call self%remove_task (task)                      ! also remove from self
+    else                                                ! not finished:
+      call trace('9')
+      call self%check_nbors (head)                      ! any nbor ready?
     end if
-    !$omp end task
-    link => link%next
-  end do
-!  link => list%head
-!  do while (associated(link))
-!    item => link%item
-!    select type (item)
-!    type is (tasks_t)
-!      nbor_list => task%nbor_list
-!      call nbor_list%init (task_list, task)
-!    end select
-!    link => link%next
-!  end do
-  !$omp end single
+    deallocate (head)
+  end if
   call trace_end
-END SUBROUTINE
+END SUBROUTINE update
+
 !> =============================================================================
-!> Process the tasks in a task list through a procedure, which optionally adds
-!> tasks to an out list
+!> Check for MPI messages
 !> =============================================================================
-SUBROUTINE apply (list, procedure, out)
-  class(task_list_t):: list
-  type(task_list_t), pointer:: out
-  type(link_t), pointer:: link
-  class(item_t), pointer:: task
+SUBROUTINE check_mpi (self)
+  class(task_list_t):: self
   !.............................................................................
-  call trace_begin('task_list_t%apply '//list%name)
-  !$omp single
-  link => list%head
-  do while (associated(link))
-    task => link%item
-    !$omp task
-    call procedure (task, out)
-    !$omp end task
-    link => link%next
+  call trace_begin ('check_mpi')
+  call trace_end
+END SUBROUTINE check_mpi
+
+!> =============================================================================
+!> Among a task and its neighbor tasks, move local tasks to ready_queue if they
+!> are ready, and send task data to non-locals.
+!> =============================================================================
+SUBROUTINE check_nbors (self, link)
+  class(task_list_t):: self
+  type(link_t), pointer:: link, nbor
+  class(task_t), pointer:: task, nbtask
+  !.............................................................................
+  call trace_begin('task_list_t%check_nbors '//self%name)
+  task => link%task                                   ! main task
+  nbor => link%nbor                                   ! first nbor
+  do while (associated (nbor))                        ! keep going until end
+    nbtask => nbor%task                               ! neighbor task
+    if (nbtask%rank==mpi%rank) then                   ! local rank:
+      call self%ready_queue%check_ready (nbor)        ! nbor ready?
+    else                                              ! foreign rank:
+      call task%send_to (nbtask)                      ! send task data
+    end if
+    nbor => nbor%next                                 ! next nbor
   end do
-  !$omp end single
+  call self%ready_queue%check_ready (link)            ! finally check link task
   call trace_end
 END SUBROUTINE
 
 !> =============================================================================
+!> Check if the task of link is ready, and if so, add it to self
 !> =============================================================================
-SUBROUTINE print (list)
-  class(task_list_t):: list
+SUBROUTINE check_ready (self, link)
+  class(task_list_t):: self
+  class(link_t):: link
+  class(task_t), pointer:: task, nbtask
+  type(link_t), pointer:: nbor
   !.............................................................................
-  type(task_list_t), pointer:: out
-  type(link_t), pointer:: link
-  class(item_t), pointer:: item
-  !.............................................................................
-  print*, 'task_list%print:', list%name
-  link => list%head
-  do while (associated(link))
-    item => link%item
-    call item%print
-    link => link%next
+  call trace_begin('task_list_t%check_ready '//self%name)
+  task => link%task
+  nbor => link%nbor                                   ! start on nbor list
+  do while (associated (nbor))                        ! keep going until end
+    nbtask => nbor%task
+    if (task%ahead_of(nbtask)) return                 ! give up -- do nothing
+    nbor => nbor%next                                 ! next nbor
   end do
-END SUBROUTINE
+  call self%add_by_time (task)                        ! add task to list
+  call trace_end
+END SUBROUTINE check_ready
+
 END MODULE

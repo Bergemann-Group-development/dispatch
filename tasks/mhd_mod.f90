@@ -4,6 +4,7 @@
 !> procedures..
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE mhd_mod
+  USE task_mod
   USE patch_mod
   USE trace_mod
   USE mesh_mod
@@ -51,9 +52,9 @@ SUBROUTINE check_mhd (self)
   if (io%verbose >0) print*,'check_mhd:', self%id, self%time
 END SUBROUTINE
 
-SUBROUTINE send_to_mhd (self, rank)
+SUBROUTINE send_to_mhd (self, task)
   class(mhd_t):: self
-  integer:: rank
+  class(task_t), pointer:: task
   !.............................................................................
   if (io%verbose >0) print*,'check_mhd:', self%id, self%time
 END SUBROUTINE

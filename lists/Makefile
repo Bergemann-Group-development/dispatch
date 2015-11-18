@@ -10,10 +10,7 @@ ifeq ($(EXEC),dispatch.x)
 endif
 
 # Dependencies
-item_mod.o        : bits_mod.o
-list_mod.o				: item_mod.o
-task_mod.o        : list_mod.o
-task_list_mod.o 	: task_mod.o
-mesg_list_mod.o		: task_list_mod.o
-simple_list_mod.o : list_mod.o
+list_mod.o        : task_mod.o
+task_list_mod.o   : list_mod.o tasks_mod.o
+mesg_list_mod.o	  : task_list_mod.o
 nbor_list_mod.o   : simple_list_mod.o task_list_mod.o task_mod.o

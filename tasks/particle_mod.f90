@@ -3,6 +3,7 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE particle_mod
   USE task_mod
+  USE tasks_mod
   implicit none
   !-----------------------------------------------------------------------------
   ! Particles.  The first dimension is over size bins, which is of suitable
@@ -49,9 +50,9 @@ SUBROUTINE timestep (self)
 END SUBROUTINE
 
 !> =============================================================================
-SUBROUTINE send_to (self, rank)
+SUBROUTINE send_to (self, task)
   class(particles_t):: self
-  integer:: rank
+  class(task_t), pointer:: task
   !.............................................................................
 END SUBROUTINE
 

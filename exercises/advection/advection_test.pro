@@ -41,9 +41,11 @@ PRO advection_test, n_step, courant_number
   if n_elements(courant_number) eq 0 then courant_number=0.2
   f = {rho:ic.rho, ux:ic.ux, uy:ic.uy, dx:1.0, courant:courant_number}
   wsz=512
+  device,decompose=0
+  loadct,39
   window,xsize=wsz,ysiz=wsz
   imsz,wsz
-  for i=0,n_step-1 do begin
+  for i=0,n_step do begin
     f = time_step(f)
     image,f.rho,title=str(i)
     wait,0.01
