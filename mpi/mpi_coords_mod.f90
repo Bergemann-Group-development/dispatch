@@ -1,10 +1,35 @@
 !> =============================================================================
 !> $Id$
-!> MPI calls related to coordinate systems
+!> MPI calls related to Cartesian MPI coordinate systems
+!> 
+!> To make use of this module, make sure it is compiled together with your code,
+!> using either the Makefile and the 'make' command, or compiling manually, with
+!> 
+!> mpi = ../../../../../mpi             # or wherever
+!> mpifort -c $mpi/mpi_mod.f90          # compiler mpi_mod.f90
+!> mpifort -c $mpi/mpi_coords.f90       # add any other module your need
+!> mpifort -c your_code.f90             # compile your code
+!> mpifort *.o -o your_code.x           # link together into your_code.x 
+!>
+!> In your_code.f90 you add lines such as:
+!>
+!> USE mpi_coords                       ! makes the mpi_coords% object available
+!> implicit none
+!> integer:: dims(3)                    ! MPI cartesian dimension
+!> ...
+!> call mpi_coords%init (dims=dims)     ! initializes the mpi%object
+!> call mpi_coords%print                ! prints an overview of the geometry
+!> ...
+!> ...
+!> call mpi_coords%end                  ! closes MPI
+!>
+!> Too see which variables and procedures are inside mpi%, just look below!
+!>
 !> =============================================================================
-MODULE mpi_coord_mod
+MODULE mpi_coords_mod
   USE mpi_mod
   implicit none
+  private
   include 'mpif.h'
   logical:: cart_created=.false.! Set to true if cartesian mpi coordinates are set up
   logical:: mpi_reorder         ! Reordering of ranks allowed, or not
@@ -18,8 +43,8 @@ MODULE mpi_coord_mod
   integer:: mpi_comm_cart       ! Communicator for cartesian ordering
   logical:: ok
   integer:: mpi_err
-  type, extends(mpi_t):: mpi_coord_t
-    integer:: coord(3)
+  type, public, extends(mpi_t):: mpi_coords_t
+    integer:: coords(3)
     integer:: dims(3)
     integer:: plane(3)
     integer:: beam(3)
@@ -33,16 +58,14 @@ MODULE mpi_coord_mod
     procedure:: rank_to_coords
     procedure:: finalize
   end type
-  type(mpi_coord_t):: mpi_coord
-PRIVATE
-PUBLIC mpi_coord_t, mpi_coord
+  type(mpi_coords_t), public:: mpi_coords
 CONTAINS
 
 !> =============================================================================
 !> Set the coordinates from the rank
 !> =============================================================================
 FUNCTION rank_to_coords (self, rank) result (coords)
-  class(mpi_coord_t):: self
+  class(mpi_coords_t):: self
   integer:: rank, coords(3)
   !.............................................................................
   call MPI_CART_COORDS (self%cart_comm, rank, 3, coords, mpi_err)
@@ -52,11 +75,11 @@ END FUNCTION rank_to_coords
 !> =============================================================================
 !> Set the rank from the coordinates
 !> =============================================================================
-FUNCTION coords_to_rank (self, coord) result (rank)
-  class(mpi_coord_t):: self
-  integer:: coord(3), rank
+FUNCTION coords_to_rank (self, coords) result (rank)
+  class(mpi_coords_t):: self
+  integer:: coords(3), rank
   !.............................................................................
-  call MPI_CART_RANK (self%cart_comm, coord, rank, mpi_err)
+  call MPI_CART_RANK (self%cart_comm, coords, rank, mpi_err)
   call mpi%assert ('MPI_CART_RANK', mpi_err)
 END FUNCTION coords_to_rank
 
@@ -64,7 +87,7 @@ END FUNCTION coords_to_rank
 !> Extent the basic MPI object with MPI coordinate info
 !> =============================================================================
 SUBROUTINE init (mp, mpi_dims, dims)
-  class(mpi_coord_t):: mp
+  class(mpi_coords_t):: mp
   integer, optional:: mpi_dims(3), dims(3)
   interface
     subroutine mpi_create_mpi (mpi_dims, dims)
@@ -74,26 +97,26 @@ SUBROUTINE init (mp, mpi_dims, dims)
   !.............................................................................
   call mp%mpi_t%init
   call cart_create_mpi (mp, mpi_dims, dims=dims)
-  mp%coord = mpi_cord3
-  mp%dims  = mpi_dim3
-  mp%plane = mpi_plane
-  mp%beam  = mpi_beam
-  mp%dn    = mpi_dn
-  mp%up    = mpi_up
-  mp%ok    = ok
-  mpi_coord%coord = mp%coord
-  mpi_coord%dims  = mp%dims
-  mpi_coord%plane = mp%plane
-  mpi_coord%beam  = mp%beam
-  mpi_coord%dn    = mp%dn
-  mpi_coord%up    = mp%up
-  mpi_coord%ok    = mp%ok
+  mp%coords = mpi_cord3
+  mp%dims   = mpi_dim3
+  mp%plane  = mpi_plane
+  mp%beam   = mpi_beam
+  mp%dn     = mpi_dn
+  mp%up     = mpi_up
+  mp%ok     = ok
+  mpi_coords%coords = mp%coords
+  mpi_coords%dims   = mp%dims
+  mpi_coords%plane  = mp%plane
+  mpi_coords%beam   = mp%beam
+  mpi_coords%dn     = mp%dn
+  mpi_coords%up     = mp%up
+  mpi_coords%ok     = mp%ok
 END SUBROUTINE init
 
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE print (mp)
-  class(mpi_coord_t):: mp
+  class(mpi_coords_t):: mp
   integer:: rank
   !.............................................................................
   if (mp%ok) then
@@ -101,13 +124,13 @@ SUBROUTINE print (mp)
     do rank=0,mp%size-1
       if (rank==mp%rank) then
         print *,'...............................................'
-        print *, 'mpi%rank  =', mp%rank
-        print *, 'mpi%dims  =', mp%dims
-        print *, 'mpi%coord =', mp%coord
-        print *, 'mpi%beam  =', mp%beam
-        print *, 'mpi%plane =', mp%plane
-        print *, 'mpi%dn    =', mp%dn
-        print *, 'mpi%up    =', mp%up
+        print *, 'mpi%rank   =', mp%rank
+        print *, 'mpi%dims   =', mp%dims
+        print *, 'mpi%coords =', mp%coords
+        print *, 'mpi%beam   =', mp%beam
+        print *, 'mpi%plane  =', mp%plane
+        print *, 'mpi%dn     =', mp%dn
+        print *, 'mpi%up     =', mp%up
       end if
       call mpi%barrier (delay=1)
     end do
@@ -125,12 +148,12 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE cart_create_mpi (mp, mpi_dims, dims)
   implicit none
-  class(mpi_coord_t):: mp
+  class(mpi_coords_t):: mp
   integer, dimension(3), optional:: mpi_dims, dims
   integer:: i, m, color, size, n(3)
   integer:: mpi_err
   character(len=120), save:: id= &
-    'mpi_coord.f90 $Id$'
+    'mpi_coords.f90 $Id$'
 !-------------------------------------------------------------------------------
   mpi_reorder = .true.
   mpi_periodic = .true.
@@ -234,7 +257,7 @@ END SUBROUTINE cart_create_mpi
 !> =============================================================================
 SUBROUTINE finalize (mp)
   implicit none
-  class(mpi_coord_t):: mp
+  class(mpi_coords_t):: mp
   integer:: mpi_err, i
   !
   if (mp%ok) then
@@ -247,4 +270,4 @@ SUBROUTINE finalize (mp)
     enddo
   endif
 END SUBROUTINE finalize
-END MODULE mpi_coord_mod
+END MODULE mpi_coords_mod

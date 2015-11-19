@@ -1,9 +1,30 @@
 !> =============================================================================
 !> $Id$
 !> Basic MPI calls; initialization, end, barriers, asserts, wallclock, ...
+!> 
+!> To make use of this module, make sure it is compiled together with your code,
+!> using either the Makefile and the 'make' command, or compiling manually, with
+!> 
+!> mpi = ../../../../../mpi             # or wherever
+!> mpifort -c $mpi/mpi_mod.f90          # compiler mpi_mod.f90
+!> mpifort -c $mpi/mpi_...              # add any other module your need
+!> mpifort -c your_code.f90             # compile your code
+!> mpifort *.o -o your_code.x           # link together into your_code.x 
+!>
+!> In your_code.f90 you add lines such as:
+!>
+!> USE mpi_mod                          ! makes the mpi% object available
+!> ...
+!> call mpi%init                        ! initializes the mpi%object
+!> ...
+!> if (mpi%rank==0) print *, 'this will be printed only on MPI process 0'
+!> ...
+!> call mpi%end                         ! closes MPI
+!>
+!> Too see which variables and procedures are inside mpi%, just look below!
+!>
 !> =============================================================================
 MODULE mpi_mod
-  USE omp_mod                   ! OMP stuff
   implicit none
   include 'mpif.h'              ! some systems require this instead of 'use mpi'
   integer:: mpi_err             ! MPI error status
@@ -113,7 +134,6 @@ SUBROUTINE init_mpi (mp)
   call MPI_Comm_rank (mpi_comm_world, mpi_rank, mpi_err)
   mpi_master = (mpi_rank == 0)
   master = mpi_master
-  call init_omp
   if (master) then
     print*,id
     print*,'MPI initialized', mpi_size
@@ -137,7 +157,6 @@ SUBROUTINE init_mpi (mp)
   end if
   if (master) then
     print 1,'number of MPI processes:', mpi_size
-    print 1,'OMP threads per MPI process:', omp_nthreads
   end if
   if (mp%verbose > 1) then
     write (filename,'(a,i4.4,a)') 'rank_', mpi_rank, '.dat'
@@ -169,7 +188,7 @@ SUBROUTINE abort_mpi (mp, reason)
 !...............................................................................
   print*,'mpi_abort: '//trim(reason)
   if (mp%verbose > 2) then
-    write(output,'(3(a,2x,i6))') 'mpi_abort: rank =',mpi_rank,'thread',omp_mythread(), trim(reason)
+    write(output,'(3(a,2x,i6))') 'mpi_abort: rank =',mpi_rank,'thread',trim(reason)
     call flush (output)
   end if
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
