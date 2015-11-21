@@ -271,13 +271,16 @@ SUBROUTINE print (self)
   type(link_t), pointer:: link, prev
   class(task_t), pointer:: task
   !.............................................................................
+  call trace_begin ('list_t%print')
+  print*,'list_t%print: ',trim(self%name), self%n
   link => self%head
-  print*,'print: ',trim(self%name), self%n
   do while (associated(link))
     task => link%task
-    if (io%master) print*, 'task_t%print:', &
-      task%id, task%time, task%nbors, associated(link%nbor)
+    if (io%master) print '(a,i7,f10.6,3x,3f10.6,i6,l5)', 'list_t%print:', &
+      task%id, task%time, task%position, task%nbors, associated(link%nbor)
     link => link%next
   end do
+  call trace_end
 END SUBROUTINE print
+
 END MODULE list_mod

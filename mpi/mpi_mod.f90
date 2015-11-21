@@ -135,15 +135,13 @@ SUBROUTINE init_mpi (mp)
   mpi_master = (mpi_rank == 0)
   master = mpi_master
   if (master) then
-    print*,id
-    print*,'MPI initialized', mpi_size
-  end if
-  if (master) then
-    print 1, '***********************************************************************************'
+    print 1, '-----------------------------------------------------------------------------------'
+    print 1, id
+    print 1, 'MPI initialized, mpi%size =', mpi_size
+  1 format(1x,a,i7)
     select case (mpi_provided)
     case(MPI_THREAD_MULTIPLE)
       print 1, 'MPI implementation provides support for simultaneous MPI calls by different threads'
-      1 format(1x,a,i7)
     case(MPI_THREAD_SINGLE)
       print 1, 'MPI implementation provides only support for MPI calls outside openmp regions'
     case(MPI_THREAD_FUNNELED)
@@ -153,10 +151,7 @@ SUBROUTINE init_mpi (mp)
     case default
       print 1, 'unknown MPI implementation'
     end select
-    print 1, '***********************************************************************************'
-  end if
-  if (master) then
-    print 1,'number of MPI processes:', mpi_size
+    print 1, '-----------------------------------------------------------------------------------'
   end if
   if (mp%verbose > 1) then
     write (filename,'(a,i4.4,a)') 'rank_', mpi_rank, '.dat'
@@ -172,7 +167,7 @@ SUBROUTINE end_mpi (mp, label)
   !call finalize_cart
   if (mpi_rank==0) then
     if (present(label)) then
-      print*,'MPI finalized with '//label
+      print*,'MPI finalized with message: "'//trim(label)//'"'
     else
       print*,'MPI finalized'
     end if

@@ -6,7 +6,7 @@ ifeq ($(EXEC),dispatch.x)
   omp_mod.o \
   mpi_timer.o \
   mpi_mod.o \
-  mpi_coord_mod.o
+  mpi_coords_mod.o
   #mpi_all.o \
   #mpi_reduce.o \
   #mpi_send.o \

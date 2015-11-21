@@ -3,7 +3,7 @@
 !> common properties in the end are copied over to the permanent patch.
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE unigrid_mod
-  USE mpi_coord_mod
+  USE mpi_coords_mod
   USE patch_mod
   USE io_mod
   implicit none
@@ -35,13 +35,13 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE init (self)
   class(unigrid_t):: self
-  type(mpi_coord_t):: mpi
+  type(mpi_coords_t):: mpi
   integer:: tasks_per_dir(3), task_pos(3), ranks_per_dir(3), mpi_pos(3)
 END SUBROUTINE init
 
 SUBROUTINE init2 (self)
   class(unigrid_t):: self
-  type(mpi_coord_t):: mpi
+  type(mpi_coords_t):: mpi
   integer:: tasks_per_dir(3), task_pos(3), ranks_per_dir(3), mpi_pos(3)
   !.............................................................................
 END SUBROUTINE init2

@@ -87,12 +87,10 @@ SUBROUTINE update (self)
   if (self%nq < 1) then
     n1 = self%nq
     call self%check_all
-!    print *,'check_all', n1, self%nq
+    print *,'check_all', n1, self%nq
   end if
-  call self%qconsistency(0)
   head => self%queue                                    ! queue start
   if (associated(head)) then
-    !print*,head%task%id, self%nq
     self%queue => self%queue%next_time                  ! update the link
     self%nq = self%nq-1
     call self%check_mpi                                 ! check incoming MPI
@@ -106,6 +104,7 @@ SUBROUTINE update (self)
     end if
   else
     print*,'no self%queue', self%nq, self%n
+    call mpi%abort ('ready queue empty')
   end if
   call trace_end
 END SUBROUTINE update
@@ -116,7 +115,7 @@ END SUBROUTINE update
 SUBROUTINE check_mpi (self)
   class(task_list_t):: self
   !.............................................................................
-  call trace_begin ('check_mpi')
+  call trace_begin ('check_mpi',2)
   call trace_end
 END SUBROUTINE check_mpi
 

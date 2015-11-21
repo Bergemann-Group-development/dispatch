@@ -3,15 +3,15 @@ PROGRAM dispatch
   USE mpi_mod
   USE io_mod
   implicit none
-  class(experiment_list_t), pointer:: experiment_list
+  class(experiment_t), pointer:: experiment
   !.............................................................................
   call mpi%init
   call io%init
-  allocate (experiment_list)
-  call experiment_list%init ('experiment_list')
-  do while (experiment_list%n > 0)
-    call experiment_list%update
+  allocate (experiment)
+  call experiment%init
+  do while (experiment%task_list%n > 0)
+    call experiment%task_list%update
   end do
-  call experiment_list%output
+  call experiment%end
   call mpi%end
 END PROGRAM

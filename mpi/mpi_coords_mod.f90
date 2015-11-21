@@ -1,27 +1,29 @@
 !> =============================================================================
 !> $Id$
 !> MPI calls related to Cartesian MPI coordinate systems
-!> 
+!>
 !> To make use of this module, make sure it is compiled together with your code,
 !> using either the Makefile and the 'make' command, or compiling manually, with
-!> 
+!>
 !> mpi = ../../../../../mpi             # or wherever
 !> mpifort -c $mpi/mpi_mod.f90          # compiler mpi_mod.f90
 !> mpifort -c $mpi/mpi_coords.f90       # add any other module your need
 !> mpifort -c your_code.f90             # compile your code
-!> mpifort *.o -o your_code.x           # link together into your_code.x 
+!> mpifort *.o -o your_code.x           # link together into your_code.x
 !>
 !> In your_code.f90 you add lines such as:
 !>
+!> USE mpi                              ! makes the mpi% object available
 !> USE mpi_coords                       ! makes the mpi_coords% object available
 !> implicit none
 !> integer:: dims(3)                    ! MPI cartesian dimension
 !> ...
-!> call mpi_coords%init (dims=dims)     ! initializes the mpi%object
+!> call mpi%init                        ! initializes the mpi%object
+!> call mpi_coords%init (dims=dims)     ! initializes the mpi_coords%object
 !> call mpi_coords%print                ! prints an overview of the geometry
 !> ...
 !> ...
-!> call mpi_coords%end                  ! closes MPI
+!> call mpi%end                         ! closes MPI
 !>
 !> Too see which variables and procedures are inside mpi%, just look below!
 !>

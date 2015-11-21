@@ -64,6 +64,7 @@ SUBROUTINE update (self)
   !.............................................................................
   call trace_begin ('task_t%update')
   self%time = self%time + self%dtime
+  if (io%master) print *, 'task_t%update: id, time =', self%id, self%time
   call trace_end
 END SUBROUTINE
 
