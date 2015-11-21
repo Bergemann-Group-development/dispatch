@@ -20,4 +20,4 @@ TOP = ../..
 include $(TOP)/config/Makefile
 
 # Dependencies
-experiment_mod.o : task_mod.o tasks_mod.o patch_mod.o task_list_mod.o trace_mod.o mpi_coord_mod.o
+experiment_mod.o : task_mod.o tasks_mod.o patch_mod.o task_list_mod.o trace_mod.o mpi_coords_mod.o

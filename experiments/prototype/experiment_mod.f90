@@ -10,9 +10,8 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
-  USE mpi_coord_mod
+  USE mpi_coords_mod
   USE task_mod
-  USE tasks_mod
   USE patch_mod
   USE task_list_mod
   implicit none
@@ -24,7 +23,6 @@ MODULE experiment_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: output
   end type
   !-----------------------------------------------------------------------------
   ! Task list structure, overriding only init
@@ -32,12 +30,12 @@ MODULE experiment_mod
   type, public, extends(task_list_t):: experiment_list_t
   contains
     procedure:: init => init_experiment
-    procedure:: output => output_experiment
   end type
   logical:: first_time=.true.
   integer:: dims(3), n=64
   real(8):: end_time=1.0, grace=0.0
 contains
+
 !> =============================================================================
 !> This is where to compute initial conditions
 !> =============================================================================
@@ -52,6 +50,7 @@ subroutine init (self)
   call trace_end
   first_time = .false.
 end subroutine init
+
 !> =============================================================================
 !> Any special handling of a time step update, in addition to the standard one
 !> =============================================================================
@@ -60,9 +59,9 @@ subroutine update (self)
   !.............................................................................
   call trace_begin ('experiment_t%update')
   call self%task_t%update
-  print*, self%id, self%time, self%position
   call trace_end
 end subroutine
+
 !> =============================================================================
 !> Output file handling here
 !> =============================================================================
@@ -79,7 +78,7 @@ end subroutine
 !> =============================================================================
 SUBROUTINE init_experiment (self, name)
   class(experiment_list_t):: self
-  character(len=*):: name
+  character(len=*), optional:: name
   type(experiment_t), pointer:: exper
   class(task_t), pointer:: task
   integer:: i
@@ -93,7 +92,7 @@ SUBROUTINE init_experiment (self, name)
   rewind (io%input)
   read (io%input, experiment_params)
   if (io%master.and.first_time) write (*, experiment_params)
-  call mpi_coord%init (dims=dims)
+  call mpi_coords%init (dims=dims)
   !-----------------------------------------------------------------------------
   ! Initialize a task list, and add a few tasks to it
   !-----------------------------------------------------------------------------
@@ -124,13 +123,5 @@ SUBROUTINE init_experiment (self, name)
   call self%print                               ! print the list (if verbose)
   call trace_end
 END SUBROUTINE init_experiment
-
-SUBROUTINE output_experiment (self)
-  class(experiment_list_t):: self
-  print '(a,3(5x,a,i5))', 'output_experiment:', &
-    'n_ready:', self%n_ready, &
-    'n_fail:' , self%n_fail, &
-    'n_nbor:' , self%n_nbor
-END SUBROUTINE output_experiment
 
 END MODULE

@@ -41,6 +41,7 @@ SUBROUTINE init (self)
   allocate (self%task_list)
   self%task_list%name = 'envelope task list'
   !-----------------------------------------------------------------------------
+  print *,'envelope/experiment_t%init: envelope experiment patches'
   do iz=1,self%n_patch(3)
   do iy=1,self%n_patch(2)
   do ix=1,self%n_patch(1)
@@ -52,11 +53,9 @@ SUBROUTINE init (self)
     print '(3i4,4x,3f8.3)',ix,iy,iz,patch%position
     call patch%init
     call self%task_list%append (patch)
-    call self%task_list%queue_by_time (self%task_list%tail)
   end do
   end do
   end do
-  call self%task_list%print
   call trace_end
 END SUBROUTINE
 

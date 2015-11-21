@@ -1,4 +1,4 @@
-!> =============================================================================
+å!> =============================================================================
 !> $Id$
 !> This version uses a simple form of object-orientation, where everything
 !> of concern to the experiments is stored inside the object(s), and which
@@ -94,18 +94,32 @@ END SUBROUTINE
 !> Derivatives evaluated with central differences.
 !> =============================================================================
 FUNCTION ddx (n, f)
-  integer:: n
+  integer:: n, rq(2)
   real, dimension(n,n,n):: f, ddx
+  real, dimension(n,n):: send, recv
   !.............................................................................
   ddx(2:n-1,:,:) = (f(3:n,:,:)-f(1:n-2,:,:))*0.5
-  ddx(1    ,:,:) = (f(2  ,:,:)-f(  n  ,:,:))*0.5
-  ddx(  n  ,:,:) = (f(1  ,:,:)-f(  n-1,:,:))*0.5
+  send = f(1,:,:)
+  call mpi_send%irecv_real(n*n, recv, mpi_coords%dn(1), rq(1))
+  call mpi_send%isend_real(n*n, send, mpi_coords%up(1), rq(2))
+  call mpi_send%waitall (2, rq)
+  ddx(1    ,:,:) = (f(2  ,:,:)-recv)*0.5
+  send = f(n,:,:)
+  call mpi_send%irecv_real(n*n, recv, mpi_coords%up(1), rq(1))
+  call mpi_send%isend_real(n*n, send, mpi_coords%dn(1), rq(2))
+  call mpi_send%waitall (2, rq)
+  ddx(  n  ,:,:) = (recv-f(  n-1,:,:))*0.5
 END FUNCTION ddx
 FUNCTION ddy (n, f)
   integer:: n
   real, dimension(n,n,n):: f, ddy
   !.............................................................................
   ddy(:,2:n-1,:) = (f(:,3:n,:)-f(:,1:n-2,:))*0.5
+  send = f(:,1,:)
+  call mpi_send%irecv_real(n*n, recv, mpi_coords%dn(1), rq(1))
+  call mpi_send%isend_real(n*n, send, mpi_coords%up(1), rq(2))
+  call mpi_send%waitall (2, rq)
+  f(:,n,:) = recv
   ddy(:,1    ,:) = (f(:,2  ,:)-f(:,  n  ,:))*0.5
   ddy(:,  n  ,:) = (f(:,1  ,:)-f(:,  n-1,:))*0.5
 END FUNCTION ddy

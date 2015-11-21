@@ -1,5 +1,5 @@
 &io_params
- verbose=1
+ verbose=0
  do_trace=f
  do_debug=f
 /
@@ -7,4 +7,7 @@
  dims=64,64,64
  end_time=1.0
  grace=0.0
+/
+&task_list_params
+ debug=0
 /

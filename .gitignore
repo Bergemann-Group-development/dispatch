@@ -8,4 +8,5 @@
 *.log
 *.cbp
 *.layout
+log*
 a.out

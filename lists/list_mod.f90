@@ -24,7 +24,7 @@ MODULE list_mod
     type(link_t), pointer:: queue => null()
     integer:: n = 0
     integer:: nq = 0
-    contains
+  contains
     procedure:: init
     procedure:: update
     procedure:: reset
@@ -42,10 +42,12 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self, name)
   class(list_t):: self
-  character(len=*):: name
+  character(len=*), optional:: name
   !.............................................................................
-  self%name = name
-  print*,'init_list: ', name
+  if (present(name)) then
+    self%name = name
+    print*,'init_list: ', name
+  end if
 END SUBROUTINE init
 
 !> =============================================================================
@@ -212,35 +214,59 @@ SUBROUTINE queue_by_time (self, this)
   class(list_t):: self
   type(link_t), pointer:: this, next, prev
   !.............................................................................
-  call trace_begin ('list_t%add_by_time '//self%name)
+  call trace_begin ('list_t%queue_by_time '//self%name)
   nullify (this%next_time)
   nullify (prev)
+!  print*, self%nq, associated(next)
+  !-----------------------------------------------------------------------------
+  ! Run through the queue link chain
+  !-----------------------------------------------------------------------------
   next => self%queue
   do while (associated(next))
+    !---------------------------------------------------------------------------
+    ! Point to the next link in the time chain, which may or may not exist
+    !---------------------------------------------------------------------------
     this%next_time => next
-    if (next%task%time > this%task%time) then
-      if (associated(prev)) then
-        prev%next_time => this
-        !print*, 'inserted1: ', prev%task%id, this%task%id, this%next_time%task%id
-      else
-        self%queue => this
-        !print*, 'inserted2: ', -1, this%task%id, this%next_time%task%id
-      end if
+!    print *, this%task%id, this%task%time, next%task%id, next%task%time
+    if (next%task%time >= this%task%time) then
+      !-------------------------------------------------------------------------
+      ! The next link time is larger or the same, so insert this link before
+      !-------------------------------------------------------------------------
       self%nq = self%nq+1
+      if (associated(prev)) then
+        !-----------------------------------------------------------------------
+        ! If the previous time link exist, just redirect its next_time to this
+        !-----------------------------------------------------------------------
+        prev%next_time => this
+!        print*, 'inserted1: ', prev%task%id, this%task%id, this%next_time%task%id, self%nq
+      else
+        !-----------------------------------------------------------------------
+        ! If the previous time link doesn't exist we should be the head of the list
+        !-----------------------------------------------------------------------
+        self%queue => this
+!        print*, 'inserted2: ', this%task%id, self%nq
+      end if
       call trace_end
       return
     end if
     prev => next
     next => next%next_time
   end do
-  if (associated(self%queue)) then
-    this%next_time => self%queue
-    !print*, 'inserted3: ', this%task%id, this%next_time%task%id
-  else
-    !print*, 'inserted4: ', this%task%id
-  end if
-  self%queue => this
+  !-----------------------------------------------------------------------------
+  ! No time was larger or equal to this time, so it should be appended
+  !-----------------------------------------------------------------------------
   self%nq = self%nq+1
+  if (associated(prev)) then
+    prev%next_time => this
+    nullify (this%next_time)
+!    print*, 'inserted3: ', this%task%id, self%nq
+  else
+    !---------------------------------------------------------------------------
+    ! If there is nothing to append to, this should be the head
+    !---------------------------------------------------------------------------
+    self%queue => this
+!    print*, 'inserted4: ', this%task%id, self%nq
+  end if
   call trace_end
 END SUBROUTINE queue_by_time
 
@@ -276,8 +302,8 @@ SUBROUTINE print (self)
   link => self%head
   do while (associated(link))
     task => link%task
-    if (io%master) print '(a,i7,f10.6,3x,3f10.6,i6,l5)', 'list_t%print:', &
-      task%id, task%time, task%position, task%nbors, associated(link%nbor)
+    if (io%master) print '(a,i7,f10.6,3x,3f10.6,i4,i6,l5)', 'list_t%print:', &
+      task%id, task%time, task%position, task%status, task%nbors, associated(link%nbor)
     link => link%next
   end do
   call trace_end

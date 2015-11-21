@@ -36,6 +36,7 @@ MODULE task_mod
     procedure:: send_to
     procedure:: allocate => void
     procedure:: deallocate => void
+    procedure:: unique_id
   end type
   integer:: id=0
 CONTAINS
@@ -52,8 +53,10 @@ SUBROUTINE init (self)
   class (task_t):: self
   !.............................................................................
   call trace_begin ('task_t%init')
-  id = id+1
-  self%id = id
+  if (self%id==0) then
+    id = self%unique_id()
+    self%id = id
+  end if
   call trace_end
 END SUBROUTINE
 
@@ -64,7 +67,8 @@ SUBROUTINE update (self)
   !.............................................................................
   call trace_begin ('task_t%update')
   self%time = self%time + self%dtime
-  if (io%master) print *, 'task_t%update: id, time =', self%id, self%time
+  if (io%master .and. io%verbose > 0) &
+    print *, 'task_t%update: id, time =', self%id, self%time
   call trace_end
 END SUBROUTINE
 
@@ -130,5 +134,13 @@ LOGICAL FUNCTION is_clear (self, bit)
   is_clear = (iand(self%status, bit) == 0)
 !  call trace_end
 END FUNCTION
+
+!> =============================================================================
+FUNCTION unique_id (self)
+  class (task_t):: self
+  integer:: unique_id
+  id = id+1             ! FIXME
+  unique_id = id
+END FUNCTION unique_id
 
 END MODULE task_mod

@@ -1,0 +1,10 @@
+&io_params
+ verbose=1
+ do_trace=f
+ do_debug=f
+/
+&experiment_params
+ dims=64,64,64
+ end_time=1.0
+ grace=0.0
+/
