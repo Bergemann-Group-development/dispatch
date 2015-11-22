@@ -34,6 +34,9 @@ MODULE experiment
     procedure:: output
     procedure:: print
     procedure:: run
+    procedure:: ddx
+    procedure:: ddy
+    procedure:: ddz
   end type
 CONTAINS
 !> =============================================================================
@@ -112,11 +115,13 @@ END SUBROUTINE
 !> decomposition, one needs to get a single slice of "ghost cells" on each of
 !> the 6 faces of the local domain.
 !> =============================================================================
-FUNCTION ddx (n, f)
+FUNCTION ddx (self, f)
+  class(experiment_t):: self
   integer:: n(3), m, rank, rq(2), k
-  real, dimension(n(1),n(2),n(3)):: f, ddx
-  real, dimension(n(2),n(3)):: send, recv
+  real, dimension(self%n(1),self%n(2),self%n(3)):: f, ddx
+  real, dimension(self%n(1),self%n(2)):: send, recv
   !.............................................................................
+  n = self%n
   m=n(1)
   ddx(2:m-1,:,:) = (f(3:m,:,:)-f(1:m-2,:,:))*0.5  ! this part is local
   send = f(m,:,:)
@@ -139,11 +144,13 @@ FUNCTION ddx (n, f)
   !end if
   !end do
 END FUNCTION ddx
-FUNCTION ddy (n, f)
+FUNCTION ddy (self, f)
+  class(experiment_t):: self
   integer:: n(3), m, rq(2)
-  real, dimension(n(1),n(2),n(3)):: f, ddy
-  real, dimension(n(1),n(3)):: send, recv
+  real, dimension(self%n(1),self%n(2),self%n(3)):: f, ddy
+  real, dimension(self%n(1),self%n(2)):: send, recv
   !.............................................................................
+  n = self%n
   m=n(2)
   ddy(:,2:m-1,:) = (f(:,3:m,:)-f(:,1:m-2,:))*0.5  ! this part is local
   send = f(:,m,:)
@@ -157,11 +164,13 @@ FUNCTION ddy (n, f)
   call mpi_send%waitall (2, rq)
   ddy(:,  m  ,:) = (recv      -f(:,  m-1,:))*0.5  ! remote (:,1,:) slice needed!
 END FUNCTION ddy
-FUNCTION ddz (n, f)
+FUNCTION ddz (self, f)
+  class(experiment_t):: self
   integer:: n(3), m, rq(2)
-  real, dimension(n(1),n(2),n(3)):: f, ddz
-  real, dimension(n(1),n(2)):: send, recv
+  real, dimension(self%n(1),self%n(2),self%n(3)):: f, ddz
+  real, dimension(self%n(1),self%n(2)):: send, recv
   !.............................................................................
+  n = self%n
   m=n(3)
   ddz(:,:,2:m-1) = (f(:,:,3:m)-f(:,:,1:m-2))*0.5  ! this part is local
   send = f(:,:,m)
@@ -185,9 +194,9 @@ SUBROUTINE update (self)
   umax = sqrt(sum(self%velocity**2))
   self%dt = self%courant*self%dx/umax
   self%rho = self%rho - (self%dt/self%dx)* ( &
-            ddx(self%n, self%rho*self%velocity(1)) &
-          + ddy(self%n, self%rho*self%velocity(2)) &
-          + ddz(self%n, self%rho*self%velocity(3)) )
+            ddx(self, self%rho*self%velocity(1)) &
+          + ddy(self, self%rho*self%velocity(2)) &
+          + ddz(self, self%rho*self%velocity(3)) )
   self%time = self%time + self%dt
   self%position = self%position + self%velocity*self%dt
 END SUBROUTINE
