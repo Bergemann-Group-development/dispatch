@@ -1,17 +1,7 @@
 
-&mesh
-s=64,64,64
-gn=64,64,1
-n_mpi=1,1,1
-/
+&instances n=1 /
+&input n=100 n_step=10 courant=0.10 w=10. ux=1.0 uy=0.5 /
+&input n=100 n_step=200 courant=0.15 w=10. ux=1.0 uy=0.5 /
+&input n=100 n_step=200 courant=0.20 w=10. ux=1.0 uy=0.5 /
+&input n=100 n_step=200 courant=0.25 w=10. ux=1.0 uy=0.5 /
 
-&advection
-u=1,0.5,0.0
-width=10
-fout=5
-courant=0.3
-nstep=100
-/
-
-&boundary
-/

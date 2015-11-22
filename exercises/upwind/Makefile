@@ -1,11 +1,14 @@
-# Make $(PROG).x from $(PROG).f90
-default: advection_modular.x
+# Option groups
+OPTS = debug
+#OPTS = full_debug
+#OPTS = optimized
 
-SOLVER=advect
+# Default target
+default: objects.x
 
 # Common configuration
 TOP = ../..
 include $(TOP)/config/Makefile
 
-# Dependencies
-advection_modular.x : $(OBJ)
+OBJ = mpi_timer_mod.o mpi_mod.o mpi_coords_mod.o mpi_send_mod.o mpi_reduce_mod.o
+objects.x: $(OBJ)
