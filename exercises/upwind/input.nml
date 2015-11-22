@@ -1,0 +1,17 @@
+
+&mesh
+s=64,64,64
+gn=64,64,1
+n_mpi=1,1,1
+/
+
+&advection
+u=1,0.5,0.0
+width=10
+fout=5
+courant=0.3
+nstep=100
+/
+
+&boundary
+/
