@@ -18,6 +18,7 @@ MODULE induction_mod
     real, dimension(3):: position, u, size, ds
     real:: time, dtime, end_time=1.0, out_time=0.1, out_next
     real:: courant, w
+    logical:: do_upwind = .true.
     integer:: n(3), gn(3), iout=0, ns=0
     real, dimension(:,:,:), pointer:: Bx, Ex, dBxdt
     real, dimension(:,:,:), pointer:: By, Ey, dBydt
@@ -115,10 +116,18 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE run (self)
   USE derivatives_mod
+  USE upwind_mod
   class(induction_t):: self
   integer:: istep
-  type(derivatives_t):: d
+  type(derivatives_t), target:: c
+  type(upwind_t), target:: u
+  class(derivatives_t), pointer:: d
   !.............................................................................
+  if (self%do_upwind) then
+    d => u
+  else
+    d => c
+  end if
   associate (Bx=>self%bx, Ex=>self%ex, dbxdt=>self%dbxdt, &
              By=>self%by, Ey=>self%ey, dbydt=>self%dbydt, &
              Bz=>self%bz, Ez=>self%ez, dbzdt=>self%dbzdt, &

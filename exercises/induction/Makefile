@@ -26,6 +26,7 @@ mpi_send_mod.o \
 mpi_reduce_mod.o \
 mpi_par_io_mod.o \
 task_mod.o \
+upwind_mod.o \
 derivatives_mod.o
 
 induction.x: $(OBJ)
