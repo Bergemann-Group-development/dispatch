@@ -18,7 +18,7 @@ MODULE induction_mod
     real, dimension(3):: position, u, size, ds
     real:: time, dtime, end_time=1.0, out_time=0.1, out_next
     real:: courant, w
-    logical:: do_upwind = .true.
+    logical:: do_upwind
     integer:: n(3), gn(3), iout=0, ns=0
     real, dimension(:,:,:), pointer:: Bx, Ex, dBxdt
     real, dimension(:,:,:), pointer:: By, Ey, dBydt
@@ -42,7 +42,9 @@ SUBROUTINE init (self)
   real:: width=10., size=1.0, courant=0.2, end_time=1.0, out_time=0.1
   integer:: n=100, dims(3), offset(3)=0, coords(3)
   character(len=64):: file='induction.dat'
-  namelist /induction_params/ n, u, size, width, courant, end_time, out_time
+  logical:: do_upwind=.true.
+  namelist /induction_params/ n, u, size, width, courant, end_time, out_time, &
+                              do_upwind
   !-----------------------------------------------------------------------------
   ! Initialize MPI and mesh
   !-----------------------------------------------------------------------------
@@ -72,6 +74,7 @@ SUBROUTINE init (self)
   self%end_time = end_time                              ! run end time
   self%out_time = out_time                              ! file output interval
   self%out_next = out_time                              ! next file output
+  self%do_upwind = do_upwind                            ! choose derivative type
   call mpi_reduce%init                                  ! reduction operators
   call mpi_par_io%init                                  ! parallel I/O
   call mpi_par_io%openw (file, self%gn, self%n, offset) ! open output file
@@ -116,10 +119,11 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE run (self)
   USE derivatives_mod
+  USE central_mod
   USE upwind_mod
   class(induction_t):: self
   integer:: istep
-  type(derivatives_t), target:: c
+  type(central_t), target:: c
   type(upwind_t), target:: u
   class(derivatives_t), pointer:: d
   !.............................................................................

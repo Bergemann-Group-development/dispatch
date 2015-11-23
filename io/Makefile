@@ -9,5 +9,6 @@ ifeq ($(EXEC),dispatch.x)
 endif
 
 # Dependencies
-trace_mod.o:            io_mod.o mpi_timer.o
-io_mod.o:               mpi_mod.o mpi_timer.o
+trace_mod.o:            io_mod.o mpi_timer_mod.o
+io_mod.o:               mpi_mod.o mpi_timer_mod.o
+

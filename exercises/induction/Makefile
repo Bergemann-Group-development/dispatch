@@ -33,8 +33,8 @@ derivatives_mod.o
 induction.x: $(OBJ)
 
 # Dependencies
-upwind_mod.o: mpi_coords_mod.o mpi_send_mod.o
-central_mod.o: mpi_coords_mod.o mpi_send_mod.o
+upwind_mod.o: mpi_coords_mod.o mpi_send_mod.o derivatives_mod.o
+central_mod.o: mpi_coords_mod.o mpi_send_mod.o derivatives_mod.o
 run: induction.x
 	./induction.x | tee induction.log
 

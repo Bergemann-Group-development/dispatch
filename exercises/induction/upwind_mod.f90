@@ -5,12 +5,14 @@ MODULE upwind_mod
   USE mpi_send_mod
   USE mpi_coords_mod
   USE derivatives_mod
+  USE io_mod
   implicit none
   private
   type, public, extends(derivatives_t):: upwind_t
   contains
     procedure:: dx, dy, dz
   end type
+  logical:: first_time=.true.
 CONTAINS
 
 !> =============================================================================
@@ -25,7 +27,10 @@ FUNCTION dx (self, f)
   real, dimension(self%n(2),self%n(3)):: send, recv
   real:: c
   !.............................................................................
-!  print*,self%ds
+  if (first_time) then
+    first_time = .false.
+    if (io%master) print *,'using upwind differences'
+  end if
   m = self%n(1)
   c = 0.5/self%ds(1)
   dx(2:m-1,:,:) = (f(3:m,:,:)-f(1:m-2,:,:))*c  ! this part is local
