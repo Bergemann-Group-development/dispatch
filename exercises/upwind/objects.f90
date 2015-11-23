@@ -81,6 +81,8 @@ SUBROUTINE init (self, m)
   else
     self%d => self%central
   endif
+  self%d%n = self%n
+  self%d%ds = self%dx
     
   self%do_output = do_output
   if (mpi%rank==0) print*,'                              positions'
@@ -180,11 +182,11 @@ SUBROUTINE run (self)
     call self%update                            ! update
   end do
   call self%print                               ! print summary
-  deallocate (self%rho, self%rho0)              ! deallocate memory
   if (self%do_output) then                      ! optionally ...
     call self%output                            ! write binary output
     close (self%unit)                           ! close binary file
   end if
+  deallocate (self%rho, self%rho0)              ! deallocate memory
 END SUBROUTINE
 END MODULE experiment
 
