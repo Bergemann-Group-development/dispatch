@@ -14,6 +14,7 @@ MODULE mpi_reduce_mod
     procedure max_int
     procedure min_real
     procedure sum_real
+    procedure sum_reals
     procedure max_real
     procedure max_real8
     procedure min_ints
@@ -87,6 +88,20 @@ SUBROUTINE sum_real (mp, a)
   real:: a, a1
 !-----------------------------------------------------------------------
   call MPI_Allreduce(a,a1,1,MPI_REAL,MPI_SUM,mp%comm,mpi_err)
+  call mp%assert ('sum_real_mpi', mpi_err)
+  a = a1
+END SUBROUTINE
+
+!> =============================================================================
+!> Return the sum of reals over the MPI ranks
+!> =============================================================================
+SUBROUTINE sum_reals (mp, n, a)
+  implicit none
+  class(mpi_reduce_t):: mp
+  integer:: n
+  real, dimension(n):: a, a1
+!-----------------------------------------------------------------------
+  call MPI_Allreduce(a,a1,n,MPI_REAL,MPI_SUM,mp%comm,mpi_err)
   call mp%assert ('sum_real_mpi', mpi_err)
   a = a1
 END SUBROUTINE
