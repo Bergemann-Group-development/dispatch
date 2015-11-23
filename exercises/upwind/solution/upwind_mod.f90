@@ -36,7 +36,7 @@ FUNCTION dx (self, f)
 
   ! velocity is positive, we need stuff from "downstream"
   if (self%velocity(1) > 0.0) then
-    dx(2:m,  :,:) = (f(2:m,:,:)-f(1:m-2,:,:))*c  ! this part is local
+    dx(2:m,  :,:) = (f(2:m,:,:)-f(1:m-1,:,:))*c  ! this part is local
 
     send = f(m,:,:)
     call mpi_send%isend_reals (self%n(2)*self%n(3), send, mpi_coords%up(1), rq(1))
