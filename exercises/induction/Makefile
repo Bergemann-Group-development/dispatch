@@ -27,12 +27,14 @@ mpi_reduce_mod.o \
 mpi_par_io_mod.o \
 task_mod.o \
 upwind_mod.o \
+central_mod.o \
 derivatives_mod.o
 
 induction.x: $(OBJ)
 
 # Dependencies
-derivatives_mod.o: mpi_coords_mod.o mpi_send_mod.o
+upwind_mod.o: mpi_coords_mod.o mpi_send_mod.o
+central_mod.o: mpi_coords_mod.o mpi_send_mod.o
 run: induction.x
 	./induction.x | tee induction.log
 
