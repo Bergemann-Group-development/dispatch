@@ -24,6 +24,7 @@ MODULE task_mod
     real(8):: position(3) = 0d0
     real(8):: velocity(3) = 0d0
     real(8):: size(3) = 0d0
+    character(len=64), pointer:: name
   contains
     procedure:: init
     procedure:: update
@@ -56,6 +57,7 @@ SUBROUTINE init (self)
   if (self%id==0) then
     id = self%unique_id()
     self%id = id
+    print*,id
   end if
   call trace_end
 END SUBROUTINE
@@ -67,8 +69,8 @@ SUBROUTINE update (self)
   !.............................................................................
   call trace_begin ('task_t%update')
   self%time = self%time + self%dtime
-  if (io%master .and. io%verbose > 0) &
-    print *, 'task_t%update: id, time =', self%id, self%time
+  if (io%master .and. io%verbose > 1) &
+    print *, 'task_t%update: id, time =', self%id, self%time, self%name
   call trace_end
 END SUBROUTINE
 

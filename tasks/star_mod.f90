@@ -23,6 +23,8 @@ CONTAINS
 SUBROUTINE init_star (self)
   class(star_t):: self
   !.............................................................................
+  call self%task_t%init
+  print*,'star is ID', self%id
 END SUBROUTINE init_star
 
 !> =============================================================================

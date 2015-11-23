@@ -1,7 +1,7 @@
 &envelope_params
 /
 &io_params
- verbose=1
+ verbose=0
  do_trace=f
  do_debug=f
 /

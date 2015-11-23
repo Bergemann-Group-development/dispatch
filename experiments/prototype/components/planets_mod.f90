@@ -27,6 +27,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace_begin ('planets_t%init')
   allocate (self%task_list)
+  call self%task_list%list_t%init ('planets')
   allocate (planet(nplanet))
   do i=1,nplanet
     call planet(i)%init

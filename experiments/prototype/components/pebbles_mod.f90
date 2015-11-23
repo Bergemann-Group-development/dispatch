@@ -24,6 +24,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace_begin ('pebbles_t%init')
   allocate (self%task_list)
+  call self%task_list%list_t%init ('pebbles')
   allocate (pebble(npebble))
   do i=1,npebble
     call pebble(i)%init

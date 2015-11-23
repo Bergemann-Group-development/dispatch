@@ -4,6 +4,11 @@
 MODULE list_mod
   USE io_mod
   USE task_mod
+  USE particle_mod
+  USE star_mod
+  USE pebble_mod
+  USE planet_mod
+  USE patch_mod
   USE trace_mod
   implicit none
   private
@@ -296,14 +301,31 @@ SUBROUTINE print (self)
   class(list_t):: self
   type(link_t), pointer:: link, prev
   class(task_t), pointer:: task
+  character(len=32):: type
   !.............................................................................
   call trace_begin ('list_t%print')
   print*,'list_t%print: ',trim(self%name), self%n
   link => self%head
   do while (associated(link))
     task => link%task
-    if (io%master) print '(a,i7,f10.6,3x,3f10.6,i4,i6,l5)', 'list_t%print:', &
-      task%id, task%time, task%position, task%status, task%nbors, associated(link%nbor)
+    type = ''
+    select type (task)
+    type is (task_t)
+      type = 'task_t'
+    type is (particle_t)
+      type = 'particle_t'
+    type is (planet_t)
+      type = 'planet_t'
+    type is (star_t)
+      type = 'star_t'
+    type is (pebble_t)
+      type = 'pebble_t'
+    class is (patch_t)
+      type = 'patch_t'
+    end select
+    if (io%master) print '(a,i7,f10.6,3x,3f10.6,i4,i6,l5,2x,a)', 'list_t%print:', &
+      task%id, task%time, task%position, task%status, task%nbors, associated(link%nbor), &
+      type
     link => link%next
   end do
   call trace_end

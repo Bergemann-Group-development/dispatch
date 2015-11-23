@@ -10,6 +10,7 @@ MODULE experiment_mod
   USE star_mod
   USE task_list_mod
   USE task_mod
+  USE trace_mod
   implicit none
   private
   type, public:: experiment_t
@@ -32,10 +33,12 @@ SUBROUTINE init (self)
   class(task_t), pointer:: task
   class(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
+  ! Start with the envelope%task_list
+  !-----------------------------------------------------------------------------
+  call trace_begin ('experiment%init')
   allocate (envelope)
   call envelope%init ('env')
   self%task_list => envelope%task_list
-  allocate (self%task_list)
   !-----------------------------------------------------------------------------
   ! Create a star object, initialize it, and add its task to the task list
   !-----------------------------------------------------------------------------
@@ -58,6 +61,8 @@ SUBROUTINE init (self)
   call pebbles%init
   task_list => pebbles%task_list
   call self%task_list%append_list (task_list)      ! pebble is a component
+  call self%task_list%init
+  call trace_end
 END SUBROUTINE init
 
 END MODULE experiment_mod

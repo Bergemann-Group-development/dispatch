@@ -5,9 +5,11 @@
 !> =============================================================================
 MODULE envelope_mod
   USE task_list_mod
+  USE list_mod
   USE task_mod
   USE mhd_mod
   USE io_mod
+  USE trace_mod
   implicit none
   private
   type, public:: envelope_t
@@ -35,21 +37,27 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   ! Envelop section, with a large number of MHD patches
   !-----------------------------------------------------------------------------
+  call trace_begin ('envelope_t%init')
   rewind (io%input); read (io%input, envelope_params)
   self%n_patch = n_patch
   self%size = size
   self%density = density
   !-----------------------------------------------------------------------------
+  allocate (self%task_list)
+  call self%task_list%list_t%init ('envelope task list')
   do iz=1,self%n_patch(3)
   do iy=1,self%n_patch(2)
   do ix=1,self%n_patch(1)
     allocate (patch)
+    call patch%init
     patch%size = self%size/self%n_patch
     patch%position = ([ix,iy,iz]-0.5)*patch%size
-    call patch%init
+    patch%name => self%task_list%name
+    call trace('append')
     call self%task_list%append (patch)
   end do
   end do
   end do
+  call trace_end
 END SUBROUTINE
 END MODULE envelope_mod

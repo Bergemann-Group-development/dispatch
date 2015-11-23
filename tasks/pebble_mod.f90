@@ -23,6 +23,7 @@ CONTAINS
 SUBROUTINE init_pebbles (self)
   class(pebble_t):: self
   !.............................................................................
+  call self%task_t%init
 END SUBROUTINE init_pebbles
 
 !> =============================================================================

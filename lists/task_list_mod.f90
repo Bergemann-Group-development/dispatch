@@ -39,6 +39,7 @@ MODULE task_list_mod
     procedure:: statistics
     procedure:: append_list
   end type
+  integer, parameter:: mnbor=100
 CONTAINS
 
 !> =============================================================================
@@ -65,14 +66,16 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   ! Call the task%init routines, which normally set initial conditions
   !-----------------------------------------------------------------------------
+  call trace ('call link%task%init')
   link => self%head
   do while (associated(link))
     call link%task%init
     link => link%next
   end do
   !-----------------------------------------------------------------------------
-  ! Compute neighbor list and used to perform checks for ready status
+  ! Compute neighbor list used to perform checks for ready status
   !-----------------------------------------------------------------------------
+  call trace ('call self%init_nbors')
   call self%init_nbors
   link => self%head
   do while (associated(link))
@@ -118,8 +121,8 @@ SUBROUTINE update (self)
     print*,'ERROR: no self%queue', self%nq, self%n
     call mpi%abort ('ERROR: ready queue empty')
   end if
-  print '(i8,f10.6,2x,3f10.6,i6,i6)', task%id, task%time, task%position, &
-    task%status, self%nq
+  print '(i8,f10.6,2x,3f10.6,i6,i6,2x,a)', task%id, task%time, task%position, &
+    task%status, self%nq !, task%name
   call trace_end
 END SUBROUTINE update
 
@@ -142,7 +145,7 @@ SUBROUTINE check_nbors (self, link)
   class(link_t), pointer:: link
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
-  integer:: nbors(100), inbor
+  integer:: nbors(mnbor), inbor
   !.............................................................................
   call trace_begin('task_list_t%check_nbors '//self%name)
   task => link%task                                   ! main task
@@ -150,7 +153,7 @@ SUBROUTINE check_nbors (self, link)
   inbor = 0
   do while (associated (nbor))                        ! keep going until end
     nbtask => nbor%task                               ! neighbor task
-    inbor = inbor+1
+    inbor = min(inbor+1,mnbor)
     if (nbtask%rank==mpi%rank) then                   ! local rank:
       if (nbtask%is_clear(bits%ready)) then           ! needs checking?
         nbors(inbor) = nbtask%id
@@ -196,7 +199,7 @@ SUBROUTINE check_ready (self, link, set_debug)
   class(link_t), pointer:: link
   class(task_t), pointer:: task, nbtask
   class(link_t), pointer:: nbor
-  integer:: set_debug, debug, nbors(100), inbor
+  integer:: set_debug, debug, nbors(mnbor), inbor
   optional:: set_debug
   !.............................................................................
   if (present(set_debug)) then
@@ -214,7 +217,7 @@ SUBROUTINE check_ready (self, link, set_debug)
     nbtask => nbor%task
     if (task%ahead_of(nbtask)) then
       self%n_check = self%n_check+1
-      inbor = inbor+1
+      inbor = min(inbor+1,mnbor)
       nbors(inbor) = nbtask%id
       if (self%debug==1) &
         print*, task%id, ' check_ready failed on task', nbtask%id
@@ -223,8 +226,8 @@ SUBROUTINE check_ready (self, link, set_debug)
       call trace_end
       return                                          ! give up -- do nothing
     else
-       inbor = inbor+1
-       nbors(inbor) = nbtask%id
+      inbor = min(inbor+1,mnbor)
+      nbors(inbor) = nbtask%id
 !      print*,'nbor task', nbtask%id, nbtask%time
     end if
     nbor => nbor%nbor                                 ! next nbor
@@ -385,6 +388,7 @@ SUBROUTINE append_list (self, task_list)
   type(link_t), pointer:: link
   integer:: n
   !-----------------------------------------------------------------------------
+  call trace_begin ('task_list_t%append_list')
   self%tail%next => task_list%head
   self%tail      => task_list%tail
   self%n = self%n + task_list%n
@@ -399,6 +403,7 @@ SUBROUTINE append_list (self, task_list)
   else
     print *, trim(self%name)//': inconsistent append of '//task_list%name
   end if
+  call trace_end
 END SUBROUTINE append_list
 
 END MODULE
