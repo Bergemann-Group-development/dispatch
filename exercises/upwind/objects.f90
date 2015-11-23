@@ -18,6 +18,9 @@ MODULE experiment
   USE mpi_coords_mod
   USE mpi_send_mod
   USE mpi_reduce_mod
+  USE derivatives_mod
+  USE upwind_mod
+  USE central_mod
   implicit none
   private
   type, public:: experiment_t
@@ -27,6 +30,10 @@ MODULE experiment
     type(experiment_t), pointer:: next => null()
     character(len=32):: filename
     logical:: do_output=.false.
+    logical:: do_upwind=.false.
+    type(central_t) :: central
+    type(upwind_t)  :: upwind
+    class(derivatives_t), pointer :: d
     contains
     procedure:: init
     procedure:: gaussian
@@ -34,9 +41,6 @@ MODULE experiment
     procedure:: output
     procedure:: print
     procedure:: run
-    procedure:: ddx
-    procedure:: ddy
-    procedure:: ddz
   end type
 CONTAINS
 !> =============================================================================
@@ -48,12 +52,12 @@ CONTAINS
 !> the argument is called "self", to indicate this.
 !> =============================================================================
 SUBROUTINE init (self, m)
-  class(experiment_t):: self
+  class(experiment_t),target:: self
   integer:: i, j, k, m, rank
   integer:: n=63, n_step=200
   real:: dx=1.0, courant=0.2, w=10, ux=1.0, uy=0.5, uz=0.8
-  logical:: do_output
-  namelist /input/ n, n_step, courant, w, ux, uy, uz, filename, do_output
+  logical:: do_output=.true., do_upwind=.false.
+  namelist /input/ n, n_step, courant, w, ux, uy, uz, filename, do_output, do_upwind
   character(len=32):: filename
   !.............................................................................
   read (1,input)
@@ -68,6 +72,16 @@ SUBROUTINE init (self, m)
   self%w  = w
   self%courant   = courant
   self%velocity  = [ux,uy,uz]
+  self%do_upwind = do_upwind
+
+  ! Select which differential operator type to use
+  if (do_upwind) then
+    self%d => self%upwind
+    self%upwind%velocity => self%velocity ! pass information about advection velocity
+  else
+    self%d => self%central
+  endif
+    
   self%do_output = do_output
   if (mpi%rank==0) print*,'                              positions'
   call mpi%barrier (delay=10)
@@ -111,80 +125,6 @@ SUBROUTINE gaussian (self, data)
   end do
 END SUBROUTINE
 !> =============================================================================
-!> Derivatives evaluated with central differences.  When using MPI domain
-!> decomposition, one needs to get a single slice of "ghost cells" on each of
-!> the 6 faces of the local domain.
-!> =============================================================================
-FUNCTION ddx (self, f)
-  class(experiment_t):: self
-  integer:: n(3), m, rank, rq(2), k
-  real, dimension(self%n(1),self%n(2),self%n(3)):: f, ddx
-  real, dimension(self%n(1),self%n(2)):: send, recv
-  !.............................................................................
-  n = self%n
-  m=n(1)
-  ddx(2:m-1,:,:) = (f(3:m,:,:)-f(1:m-2,:,:))*0.5  ! this part is local
-  send = f(m,:,:)
-  call mpi_send%isend_reals (n(2)*n(3), send, mpi_coords%up(1), rq(1))
-  call mpi_send%irecv_reals (n(2)*n(3), recv, mpi_coords%dn(1), rq(2))
-  call mpi_send%waitall (2, rq)
-  ddx(1    ,:,:) = (f(2  ,:,:)-recv        )*0.5  ! remote (n,:,:) slice needed!
-  send = f(1,:,:)
-  call mpi_send%isend_reals (n(2)*n(3), send, mpi_coords%dn(1), rq(1))
-  call mpi_send%irecv_reals (n(2)*n(3), recv, mpi_coords%up(1), rq(2))
-  call mpi_send%waitall (2, rq)
-  ddx(  m  ,:,:) = (recv      -f(  m-1,:,:))*0.5  ! remote (1,:,:) slice needed!
-  !do rank=0,mpi%size-1
-  !call mpi%barrier (delay=2)
-  !if (mpi%rank==rank) then
-  !  print*,'f', rank
-  !  print'(16f7.3)', f(:,n(2)/2,n(3)/2)
-  !  print*,'ddx', rank
-  !  print'(16f7.3)',ddx(:,n(2)/2,n(3)/2)
-  !end if
-  !end do
-END FUNCTION ddx
-FUNCTION ddy (self, f)
-  class(experiment_t):: self
-  integer:: n(3), m, rq(2)
-  real, dimension(self%n(1),self%n(2),self%n(3)):: f, ddy
-  real, dimension(self%n(1),self%n(2)):: send, recv
-  !.............................................................................
-  n = self%n
-  m=n(2)
-  ddy(:,2:m-1,:) = (f(:,3:m,:)-f(:,1:m-2,:))*0.5  ! this part is local
-  send = f(:,m,:)
-  call mpi_send%isend_reals (n(1)*n(3), send, mpi_coords%up(2), rq(1))
-  call mpi_send%irecv_reals (n(1)*n(3), recv, mpi_coords%dn(2), rq(2))
-  call mpi_send%waitall (2, rq)
-  ddy(:,1    ,:) = (f(:,2  ,:)-recv        )*0.5  ! remote (:,n,:) slice needed!
-  send = f(:,1,:)
-  call mpi_send%isend_reals (n(1)*n(3), send, mpi_coords%dn(2), rq(1))
-  call mpi_send%irecv_reals (n(1)*n(3), recv, mpi_coords%up(2), rq(2))
-  call mpi_send%waitall (2, rq)
-  ddy(:,  m  ,:) = (recv      -f(:,  m-1,:))*0.5  ! remote (:,1,:) slice needed!
-END FUNCTION ddy
-FUNCTION ddz (self, f)
-  class(experiment_t):: self
-  integer:: n(3), m, rq(2)
-  real, dimension(self%n(1),self%n(2),self%n(3)):: f, ddz
-  real, dimension(self%n(1),self%n(2)):: send, recv
-  !.............................................................................
-  n = self%n
-  m=n(3)
-  ddz(:,:,2:m-1) = (f(:,:,3:m)-f(:,:,1:m-2))*0.5  ! this part is local
-  send = f(:,:,m)
-  call mpi_send%isend_reals (n(1)*n(2), send, mpi_coords%up(3), rq(1))
-  call mpi_send%irecv_reals (n(1)*n(2), recv, mpi_coords%dn(3), rq(2))
-  call mpi_send%waitall (2, rq)
-  ddz(:,:,1    ) = (f(:,:,2  )-recv        )*0.5  ! remote (:,:,n) slice needed!
-  send = f(:,:,1)
-  call mpi_send%isend_reals (n(1)*n(2), send, mpi_coords%dn(3), rq(1))
-  call mpi_send%irecv_reals (n(1)*n(2), recv, mpi_coords%up(3), rq(2))
-  call mpi_send%waitall (2, rq)
-  ddz(:,:,  m  ) = (recv      -f(:,:,  m-1))*0.5  ! remote (:,:,1) slice needed!
-END FUNCTION ddz
-!> =============================================================================
 !> Simple time stepping -- 1st order:    f[n+1] = f[n] + dt*dfdt[n]
 !> =============================================================================
 SUBROUTINE update (self)
@@ -194,9 +134,9 @@ SUBROUTINE update (self)
   umax = sqrt(sum(self%velocity**2))
   self%dt = self%courant*self%dx/umax
   self%rho = self%rho - (self%dt/self%dx)* ( &
-            ddx(self, self%rho*self%velocity(1)) &
-          + ddy(self, self%rho*self%velocity(2)) &
-          + ddz(self, self%rho*self%velocity(3)) )
+            self%d%dx(self%rho*self%velocity(1)) &
+          + self%d%dy(self%rho*self%velocity(2)) &
+          + self%d%dz(self%rho*self%velocity(3)) )
   self%time = self%time + self%dt
   self%position = self%position + self%velocity*self%dt
 END SUBROUTINE
