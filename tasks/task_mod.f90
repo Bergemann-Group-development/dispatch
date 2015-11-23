@@ -57,7 +57,6 @@ SUBROUTINE init (self)
   if (self%id==0) then
     id = self%unique_id()
     self%id = id
-    print*,id
   end if
   call trace_end
 END SUBROUTINE
