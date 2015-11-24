@@ -77,13 +77,9 @@ SUBROUTINE init (self, m)
   ! Select which differential operator type to use
   if (do_upwind) then
     self%d => self%upwind
-    self%d%n = self%n
-    self%d%ds = self%dx
     self%upwind%velocity => self%velocity ! pass information about advection velocity
   else
     self%d => self%central
-    self%d%n = self%n
-    self%d%ds = self%dx
   endif
   self%d%n = self%n
   self%d%ds = self%dx
