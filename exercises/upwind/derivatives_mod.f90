@@ -7,7 +7,7 @@ MODULE derivatives_mod
   implicit none
   private
   type, abstract, public:: derivatives_t
-    real:: ds(3)=1.0
+    real:: ds(3)=1.0, dt
     integer:: n(3)
   contains
     procedure(deriv), deferred:: dx, dy, dz

@@ -1,7 +1,7 @@
 
 &instances n=2 /
-&input n=100 n_step=100 courant=0.10 w=10. ux=1.0 uy=0.5 do_upwind=f /
-&input n=100 n_step=100 courant=0.10 w=10. ux=1.0 uy=0.5 do_upwind=t /
+&input n=100 n_step=200 courant=0.20 w=10. ux=1.0 uy=0.5 do_upwind=f /
+&input n=100 n_step=200 courant=0.20 w=10. ux=1.0 uy=0.5 do_upwind=t upwind=1.2 /
 &input n=100 n_step=200 courant=0.15 w=10. ux=1.0 uy=0.5 /
 &input n=100 n_step=200 courant=0.20 w=10. ux=1.0 uy=0.5 /
 &input n=100 n_step=200 courant=0.25 w=10. ux=1.0 uy=0.5 /

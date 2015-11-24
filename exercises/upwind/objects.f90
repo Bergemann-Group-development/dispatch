@@ -55,9 +55,10 @@ SUBROUTINE init (self, m)
   class(experiment_t),target:: self
   integer:: i, j, k, m, rank
   integer:: n=63, n_step=200
-  real:: dx=1.0, courant=0.2, w=10, ux=1.0, uy=0.5, uz=0.8
+  real:: dx=1.0, courant=0.2, w=10, ux=1.0, uy=0.5, uz=0.8, upwind=1.0
   logical:: do_output=.true., do_upwind=.false.
-  namelist /input/ n, n_step, courant, w, ux, uy, uz, filename, do_output, do_upwind
+  namelist /input/ n, n_step, courant, w, ux, uy, uz, filename, do_output, &
+                   do_upwind, upwind
   character(len=32):: filename
   !.............................................................................
   read (1,input)
@@ -77,14 +78,14 @@ SUBROUTINE init (self, m)
   ! Select which differential operator type to use
   if (do_upwind) then
     self%d => self%upwind
-    self%d%n = self%n
-    self%d%ds = self%dx
+    self%upwind%factor = upwind
     self%upwind%velocity => self%velocity ! pass information about advection velocity
   else
     self%d => self%central
-    self%d%n = self%n
-    self%d%ds = self%dx
   endif
+  self%d%n = self%n
+  self%d%ds = self%dx
+  self%d%dt = self%dt
     
   self%do_output = do_output
   if (mpi%rank==0) print*,'                              positions'
@@ -137,6 +138,7 @@ SUBROUTINE update (self)
   !.............................................................................
   umax = sqrt(sum(self%velocity**2))
   self%dt = self%courant*self%dx/umax
+  self%d%dt = self%dt
   self%rho = self%rho - (self%dt/self%dx)* ( &
             self%d%dx(self%rho*self%velocity(1)) &
           + self%d%dy(self%rho*self%velocity(2)) &

@@ -40,7 +40,7 @@ END
 ; moved per step), and try to move the shape as far as possible (disregarding
 ; the number of time steps needed).
 ; ------------------------------------------------------------------------------
-PRO advection_test, n_step, courant_number
+PRO upwind_test, n_step, courant_number
   ic = initial_condition(64,10.0,[0.,0.])
   if n_elements(n_step) eq 0 then n_step=300
   if n_elements(courant_number) eq 0 then courant_number=0.10
