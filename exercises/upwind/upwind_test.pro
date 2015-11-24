@@ -36,7 +36,8 @@ FUNCTION time_step,f
   umax = sqrt(max(f.ux^2+f.uy^2))
   dt = f.courant*f.dx/umax
   f.t = f.t+dt
-  delta = dt*f.ux*1.5
+  delta = dt*f.ux*f.f
+  if f.f eq -1 then delta = sign(f.ux)
   a = (1.0+delta)*0.5
   b = (1.0-delta)*0.5
   drho0 = - (dt/f.dx)*((a*ddxdn(f.rho*f.ux)+b*ddxup(f.rho*f.ux)) + ddy(f.rho*f.uy))
@@ -54,13 +55,14 @@ END
 ; moved per step), and try to move the shape as far as possible (disregarding
 ; the number of time steps needed).
 ; ------------------------------------------------------------------------------
-PRO upwind_test, courant_number=courant_number, n_step=nstep, width=width
+PRO upwind_test, courant_number=courant_number, n_step=nstep, width=width, factor=factor
   n=64
   if n_elements(width) eq 0 then width=10.
+  if n_elements(factor) eq 0 then factor=1.5
   if n_elements(n_step) eq 0 then n_step=10000
   if n_elements(courant_number) eq 0 then courant_number=0.2
   ic = initial_condition(n,width,[0.,0.])
-  f = {rho:ic.rho, ux:ic.ux, uy:ic.uy, dx:1.0, courant:courant_number,t:0.0}
+  f = {rho:ic.rho, ux:ic.ux, uy:ic.uy, dx:1.0, courant:courant_number,t:0.0,f:factor}
   wsz=256
   device,decompose=0
   window,5,xs=wsz,ys=wsz & imsz,wsz
