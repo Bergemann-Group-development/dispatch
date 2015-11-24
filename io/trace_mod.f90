@@ -3,7 +3,7 @@
 !> =============================================================================
 MODULE trace_mod
   USE omp_mod
-  USE mpi_mod
+!  USE mpi_mod
   USE mpi_timer_mod
   USE io_mod
   implicit none

@@ -2,9 +2,7 @@
 !> $Id$
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE derivatives_mod
-  USE mpi_send_mod
-  USE mpi_coords_mod
-  USE mesh_mod
+  USE meshes_mod
   implicit none
   private
   type, abstract, public:: derivatives_t

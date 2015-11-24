@@ -1,15 +1,15 @@
 !> =============================================================================
 !> $Id$
 !> Basic MPI calls; initialization, end, barriers, asserts, wallclock, ...
-!> 
+!>
 !> To make use of this module, make sure it is compiled together with your code,
 !> using either the Makefile and the 'make' command, or compiling manually, with
-!> 
+!>
 !> mpi = ../../../../../mpi             # or wherever
 !> mpifort -c $mpi/mpi_mod.f90          # compiler mpi_mod.f90
 !> mpifort -c $mpi/mpi_...              # add any other module your need
 !> mpifort -c your_code.f90             # compile your code
-!> mpifort *.o -o your_code.x           # link together into your_code.x 
+!> mpifort *.o -o your_code.x           # link together into your_code.x
 !>
 !> In your_code.f90 you add lines such as:
 !>
@@ -25,6 +25,7 @@
 !>
 !> =============================================================================
 MODULE mpi_mod
+  USE io_mod
   implicit none
   include 'mpif.h'              ! some systems require this instead of 'use mpi'
   integer:: mpi_err             ! MPI error status
@@ -34,7 +35,6 @@ MODULE mpi_mod
   integer:: mpi_comm            ! short hand for mpi_comm_world
   integer:: mpi_size            ! number of MPI processes
   integer:: mpi_rank            ! process number (zero-based)
-  integer, parameter:: mch=120  ! max character string size
   integer:: output=2
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
@@ -77,6 +77,7 @@ SUBROUTINE init (mp, mpi_dims, dims)
   mpi%comm   = mpi_comm_world
   mpi%master = mpi_rank==0
   mpi%ok     = .true.
+  io%master  = mpi%rank==0
   !-----------------------------------------------------------------------------
   ! For some reason, this must be done element by element.  Turning it around,
   ! and doing mpi = mp (which is syntactically correct), values are screwed
