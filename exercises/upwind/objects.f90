@@ -77,9 +77,13 @@ SUBROUTINE init (self, m)
   ! Select which differential operator type to use
   if (do_upwind) then
     self%d => self%upwind
+    self%d%n = self%n
+    self%d%ds = self%dx
     self%upwind%velocity => self%velocity ! pass information about advection velocity
   else
     self%d => self%central
+    self%d%n = self%n
+    self%d%ds = self%dx
   endif
   self%d%n = self%n
   self%d%ds = self%dx
@@ -103,7 +107,7 @@ SUBROUTINE init (self, m)
   end if
   if (mpi%rank==0) write(*,input)
   call self%gaussian (self%rho)
-END SUBROUTINE
+END SUBROUTINE init
 !> =============================================================================
 !> Construct a Gaussian centered on self%position, for initial conditions and
 !> for comparisons.
@@ -118,14 +122,14 @@ SUBROUTINE gaussian (self, data)
   do k=1,self%n(3)
   do j=1,self%n(2)
   do i=1,self%n(1)
-    x = i-(self%n(1)+1)*0.5 + self%position(1)
-    y = j-(self%n(2)+1)*0.5 + self%position(2)
-    z = k-(self%n(3)+1)*0.5 + self%position(3)
+    x = i-(self%n(1)+1)*0.5 - self%position(1)
+    y = j-(self%n(2)+1)*0.5 - self%position(2)
+    z = k-(self%n(3)+1)*0.5 - self%position(3)
     data(i,j,k) = exp(-(x**2+y**2+z**2)/self%w**2)
   end do
   end do
   end do
-END SUBROUTINE
+END SUBROUTINE gaussian
 !> =============================================================================
 !> Simple time stepping -- 1st order:    f[n+1] = f[n] + dt*dfdt[n]
 !> =============================================================================
@@ -141,7 +145,7 @@ SUBROUTINE update (self)
           + self%d%dz(self%rho*self%velocity(3)) )
   self%time = self%time + self%dt
   self%position = self%position + self%velocity*self%dt
-END SUBROUTINE
+END SUBROUTINE update
 !> =============================================================================
 !> Print summary, with error measure
 !> =============================================================================
