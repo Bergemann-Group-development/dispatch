@@ -7,7 +7,7 @@ MODULE io_mod
   logical:: mpi_trace=.false.
   type io_t
     integer:: verbose=0, input=1, output=2, data_unit=3, log_unit=4
-    logical:: master, do_debug=.false., do_trace=.false.
+    logical:: master=.true., do_debug=.false., do_trace=.false.
   contains
     procedure:: init
     procedure:: print_id => print_id_

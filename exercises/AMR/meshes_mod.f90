@@ -20,7 +20,6 @@ MODULE meshes_mod
     integer:: gn(3) = 20        ! number of global cells
   contains
     procedure:: init            ! initialize d, gs, gn, and r
-    procedure:: place_in_box    ! place the mesh at index ii in box with n
     procedure:: distance        ! return the distance btw two patches
     procedure:: overlaps        ! return true if they overlap (incl. ghost zones)
     procedure:: index_range     ! returns the index ranges btw two points
@@ -34,7 +33,7 @@ SUBROUTINE init (self, size, n)
   real:: size(3)
   integer:: i, j, n(3)
   !.............................................................................
-  call trace_begin ('mesh_t%init')
+  call trace_begin ('mesh_t%init',4)
   self%s  = size
   self%n  = n
   self%gn = self%n + 2*self%ng
@@ -49,13 +48,6 @@ SUBROUTINE init (self, size, n)
   end do
   call trace_end
 END SUBROUTINE init
-!> =============================================================================
-SUBROUTINE place_in_box (self, ii)
-  class(mesh_t):: self
-  integer:: ii(3)
-  !.............................................................................
-  self%p = -0.5_8*self%b + (ii-0.5_8)*self%s
-END SUBROUTINE place_in_box
 !> =============================================================================
 FUNCTION index_range (self, p)
   class(mesh_t):: self
@@ -98,6 +90,6 @@ FUNCTION overlaps (self, mesh)
   class(mesh_t):: self, mesh
   logical:: overlaps
   !.............................................................................
-  overlaps = all(distance(self,mesh) < 0.5000000001_8*(self%gs+mesh%s))
+  overlaps = all(distance(self,mesh) <= 0.5000000001_8*(self%gs+mesh%s))
 END FUNCTION
 END MODULE meshes_mod

@@ -15,28 +15,29 @@ MODULE patches_mod
   type, public:: patch_t
     integer:: id = 0, i=-3, j=-3 ,k=-3
     real,    dimension(3):: size = 1.0
-    integer, dimension(3):: n = [1,1,1]
+    integer, dimension(3):: dims = 16
     type(mesh_t), pointer:: mesh
     class(derivatives_t), pointer:: d
     logical:: do_upwind
+    logical:: is_leaf = .true.
   contains
     procedure:: init
     !procedure:: update
   end type
-  integer:: n(3) = [4,4,1]
+  integer:: dims(3) = [16,16,1]
   real:: size(3) = 1.0, factor = 1.5
   logical:: do_upwind = .true., first_time = .true.
   integer:: id = 0
 CONTAINS
 !> =============================================================================
-SUBROUTINE init (self, size, n, i, j, k)
+SUBROUTINE init (self, size)
   implicit none
   class(patch_t):: self
   real:: size(3)
-  integer:: i, j, k, n(3)
+  integer:: i, j, k
   type(upwind_t), pointer:: upwind
   type(central_t), pointer:: central
-  namelist /patch_params/ do_upwind, factor
+  namelist /patch_params/ do_upwind, factor, dims
   !-----------------------------------------------------------------------------
   ! Read patch parameters and copy to self
   !-----------------------------------------------------------------------------
@@ -45,21 +46,20 @@ SUBROUTINE init (self, size, n, i, j, k)
     first_time = .false.
     rewind (io%input)
     read (io%input, patch_params)
+    where (dims==1)
+      size = 0.0
+    end where
     if (io%master) write (*, patch_params)
   end if
   id = id+1
   self%id = id
-  self%n = n
-  self%size = size/n
-  self%i = i
-  self%j = j
-  self%k = k
+  self%dims = dims
+  self%size = size
   !-----------------------------------------------------------------------------
   ! Initialize mesh and place us in the unit cube
   !-----------------------------------------------------------------------------
   allocate (self%mesh)
-  call self%mesh%init (self%size, self%n)
-  call self%mesh%place_in_box (ii=[i,j,k])
+  call self%mesh%init (self%size, self%dims)
   !-----------------------------------------------------------------------------
   ! Initialize derivative operators
   !-----------------------------------------------------------------------------

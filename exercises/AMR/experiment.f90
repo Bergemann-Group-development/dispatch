@@ -9,9 +9,11 @@ PROGRAM experiment
   type (list_t):: list
   !.............................................................................
   call io%init                          ! Initialize input (input.nml) / output
-  call list%init                        ! Initialize the patches
+  call list%init_cartesian              ! Initialize the patches
   do while (list%n > 0)                 ! As long as there are patches in the list
     call list%update                    ! update the list = update member patches
   end do
+  call list%split (list%head)           ! try splitting a single patch
+  call list%print ('after split of first patch')
 !> =============================================================================
 END PROGRAM experiment
