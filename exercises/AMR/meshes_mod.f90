@@ -98,6 +98,6 @@ FUNCTION overlaps (self, mesh)
   class(mesh_t):: self, mesh
   logical:: overlaps
   !.............................................................................
-  overlaps = all(distance(self,mesh) < 0.5000000001_8*(self%gs+mesh%gs))
+  overlaps = all(distance(self,mesh) < 0.5000000001_8*(self%gs+mesh%s))
 END FUNCTION
 END MODULE meshes_mod
