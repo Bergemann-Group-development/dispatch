@@ -1,0 +1,7 @@
+&io_params
+ do_trace=f
+/
+&patch_params
+ do_upwind=t
+ factor=1.5
+/

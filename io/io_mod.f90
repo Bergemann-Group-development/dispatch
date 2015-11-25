@@ -2,7 +2,6 @@
 !> $Id$
 !> =============================================================================
 MODULE io_mod
-  USE mpi_mod
   USE mpi_timer_mod
   implicit none
   logical:: mpi_trace=.false.
@@ -40,12 +39,10 @@ SUBROUTINE init (self)
   open (io%input, file=inputfile, form='formatted', status='old')                  ! open for reading
   rewind (io%input)
   read (io%input, io_params)
-  io%master = mpi%rank==0
   io%do_debug = do_debug
   io%do_trace = do_trace
   io%verbose = verbose
   if (io%master.and.first_time) write (*,io_params)
-  self%master = mpi%rank==0
   self%do_debug = do_debug
   self%do_trace = do_trace
   self%verbose = verbose
@@ -65,7 +62,7 @@ SUBROUTINE print_hl
   character(len=120), save:: hl= &
     '--------------------------------------------------------------------------------'
   !..............................................................................
-  if (mpi%master) then
+  if (io%master) then
     print'(a)',trim(hl)
   end if
 END SUBROUTINE print_hl
@@ -77,7 +74,7 @@ SUBROUTINE print_id (id)
     '--------------------------------------------------------------------------------'
   !..............................................................................
   if (id .ne. ' ' .or. mpi_trace) then
-    if (mpi%master) then
+    if (io%master) then
       call print_hl
       print'(1x,a,f12.2)', trim(id), wallclock()
     end if
