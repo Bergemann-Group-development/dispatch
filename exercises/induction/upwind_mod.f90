@@ -5,10 +5,10 @@ MODULE upwind_mod
   USE mpi_send_mod
   USE mpi_coords_mod
   USE derivatives_mod
-  USE io_mod
   implicit none
   private
   type, public, extends(derivatives_t):: upwind_t
+    real, pointer :: velocity(:)
   contains
     procedure:: dx, dy, dz
   end type
@@ -29,21 +29,31 @@ FUNCTION dx (self, f)
   !.............................................................................
   if (first_time) then
     first_time = .false.
-    if (io%master) print *,'using upwind differences'
+    if (mpi_coords%rank==0) print *,'using upwind differences'
   end if
   m = self%n(1)
-  c = 0.5/self%ds(1)
-  dx(2:m-1,:,:) = (f(3:m,:,:)-f(1:m-2,:,:))*c  ! this part is local
-  send = f(m,:,:)
-  call mpi_send%isend_reals (self%n(2)*self%n(3), send, mpi_coords%up(1), rq(1))
-  call mpi_send%irecv_reals (self%n(2)*self%n(3), recv, mpi_coords%dn(1), rq(2))
-  call mpi_send%waitall (2, rq)
-  dx(1    ,:,:) = (f(2  ,:,:)-recv        )*c  ! remote (n,:,:) slice needed!
-  send = f(1,:,:)
-  call mpi_send%isend_reals (self%n(2)*self%n(3), send, mpi_coords%dn(1), rq(1))
-  call mpi_send%irecv_reals (self%n(2)*self%n(3), recv, mpi_coords%up(1), rq(2))
-  call mpi_send%waitall (2, rq)
-  dx(  m  ,:,:) = (recv      -f(  m-1,:,:))*c  ! remote (1,:,:) slice needed!
+  c = 1./self%ds(1)
+
+  ! velocity is positive, we need stuff from "downstream"
+  if (self%velocity(1) > 0.0) then
+    dx(2:m,  :,:) = (f(2:m,:,:)-f(1:m-1,:,:))*c  ! this part is local
+
+    send = f(m,:,:)
+    call mpi_send%isend_reals (self%n(2)*self%n(3), send, mpi_coords%up(1), rq(1))
+    call mpi_send%irecv_reals (self%n(2)*self%n(3), recv, mpi_coords%dn(1), rq(2))
+    call mpi_send%waitall (2, rq)
+    dx(1    ,:,:) = (f(1  ,:,:)-recv)*c          ! remote (n,:,:) slice needed!
+
+  ! velocity is negative, we need stuff from "upstream"
+  else
+    dx(1:m-1,:,:) = (f(2:m,:,:)-f(1:m-1,:,:))*c  ! this part is local
+
+    send = f(1,:,:)
+    call mpi_send%isend_reals (self%n(2)*self%n(3), send, mpi_coords%dn(1), rq(1))
+    call mpi_send%irecv_reals (self%n(2)*self%n(3), recv, mpi_coords%up(1), rq(2))
+    call mpi_send%waitall (2, rq)
+    dx(  m  ,:,:) = (recv-f(  m,:,:))*c          ! remote (1,:,:) slice needed!
+  endif
 END FUNCTION dx
 !> =============================================================================
 FUNCTION dy (self, f)
@@ -54,18 +64,28 @@ FUNCTION dy (self, f)
   real:: c
   !.............................................................................
   m = self%n(2)
-  c = 0.5/self%ds(2)
-  dy(:,2:m-1,:) = (f(:,3:m,:)-f(:,1:m-2,:))*c  ! this part is local
-  send = f(:,m,:)
-  call mpi_send%isend_reals (self%n(1)*self%n(3), send, mpi_coords%up(2), rq(1))
-  call mpi_send%irecv_reals (self%n(1)*self%n(3), recv, mpi_coords%dn(2), rq(2))
-  call mpi_send%waitall (2, rq)
-  dy(:,1    ,:) = (f(:,2  ,:)-recv        )*c  ! remote (:,n,:) slice needed!
-  send = f(:,1,:)
-  call mpi_send%isend_reals (self%n(1)*self%n(3), send, mpi_coords%dn(2), rq(1))
-  call mpi_send%irecv_reals (self%n(1)*self%n(3), recv, mpi_coords%up(2), rq(2))
-  call mpi_send%waitall (2, rq)
-  dy(:,  m  ,:) = (recv      -f(:,  m-1,:))*c  ! remote (:,1,:) slice needed!
+  c = 1./self%ds(2)
+
+  ! velocity is positive, we need stuff from "downstream"
+  if (self%velocity(2) > 0.0) then
+    dy(:,2:m,:) = (f(:,2:m,:)-f(:,1:m-1,:))*c   ! this part is local
+
+    send = f(:,m,:)
+    call mpi_send%isend_reals (self%n(1)*self%n(3), send, mpi_coords%up(2), rq(1))
+    call mpi_send%irecv_reals (self%n(1)*self%n(3), recv, mpi_coords%dn(2), rq(2))
+    call mpi_send%waitall (2, rq)
+    dy(:,1  ,:) = (f(:,1  ,:)-recv)*c           ! remote (:,n,:) slice needed!
+
+  ! velocity is negative, we need stuff from "upstream"
+  else
+    dy(:,1:m-1,:) = (f(:,2:m,:)-f(:,1:m-1,:))*c ! this part is local
+
+    send = f(:,1,:)
+    call mpi_send%isend_reals (self%n(1)*self%n(3), send, mpi_coords%dn(2), rq(1))
+    call mpi_send%irecv_reals (self%n(1)*self%n(3), recv, mpi_coords%up(2), rq(2))
+    call mpi_send%waitall (2, rq)
+    dy(:,  m  ,:) = (recv-f(:,  m,:))*c         ! remote (:,1,:) slice needed!
+  endif
 END FUNCTION dy
 !> =============================================================================
 FUNCTION dz (self, f)
@@ -76,18 +96,28 @@ FUNCTION dz (self, f)
   real:: c
   !.............................................................................
   m = self%n(3)
-  c = 0.5/self%ds(3)
-  dz(:,:,2:m-1) = (f(:,:,3:m)-f(:,:,1:m-2))*c  ! this part is local
-  send = f(:,:,m)
-  call mpi_send%isend_reals (self%n(1)*self%n(2), send, mpi_coords%up(3), rq(1))
-  call mpi_send%irecv_reals (self%n(1)*self%n(2), recv, mpi_coords%dn(3), rq(2))
-  call mpi_send%waitall (2, rq)
-  dz(:,:,1    ) = (f(:,:,2  )-recv        )*c  ! remote (:,:,n) slice needed!
-  send = f(:,:,1)
-  call mpi_send%isend_reals (self%n(1)*self%n(2), send, mpi_coords%dn(3), rq(1))
-  call mpi_send%irecv_reals (self%n(1)*self%n(2), recv, mpi_coords%up(3), rq(2))
-  call mpi_send%waitall (2, rq)
-  dz(:,:,  m  ) = (recv      -f(:,:,  m-1))*c  ! remote (:,:,1) slice needed!
+  c = 1./self%ds(3)
+
+  ! velocity is positive, we need stuff from "downstream"
+  if (self%velocity(2) > 0.0) then
+    dz(:,:,2:m) = (f(:,:,2:m)-f(:,:,1:m-1))*c   ! this part is local
+
+    send = f(:,:,m)
+    call mpi_send%isend_reals (self%n(1)*self%n(2), send, mpi_coords%up(3), rq(1))
+    call mpi_send%irecv_reals (self%n(1)*self%n(2), recv, mpi_coords%dn(3), rq(2))
+    call mpi_send%waitall (2, rq)
+    dz(:,:,1  ) = (f(:,:,1  )-recv)*c           ! remote (:,:,n) slice needed!
+
+  ! velocity is negative, we need stuff from "upstream"
+  else
+    dz(:,:,1:m-1) = (f(:,:,2:m)-f(:,:,1:m-1))*c ! this part is local
+
+    send = f(:,:,1)
+    call mpi_send%isend_reals (self%n(1)*self%n(2), send, mpi_coords%dn(3), rq(1))
+    call mpi_send%irecv_reals (self%n(1)*self%n(2), recv, mpi_coords%up(3), rq(2))
+    call mpi_send%waitall (2, rq)
+    dz(:,:,  m  ) = (recv-f(:,:,  m))*c         ! remote (:,:,1) slice needed!
+  endif
 END FUNCTION dz
 
 END MODULE upwind_mod
