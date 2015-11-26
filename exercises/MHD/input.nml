@@ -1,0 +1,20 @@
+&io_params
+/
+
+&induction_params
+ size=1 end_time=0.1 out_time=0.005
+ !size=100 end_time=10 out_time=0.5
+ n=100
+ u=1,1,0
+ width=10
+ courant=0.2
+ do_upwind=t
+/
+
+&velocity_params
+!type='advect'
+!type='converge'
+!type='diverge'
+!type='bend'
+type='twist'
+/

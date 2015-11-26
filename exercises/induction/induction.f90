@@ -129,10 +129,10 @@ SUBROUTINE run (self)
   do while (t < end_time)                               ! loop until end time
     E    = cross(U,B)                                   ! ignore 1st minus sign
     dBdt = curl(E)                                      ! ignore 2nd minus sign
-    B  = B + dt*dBdt                                    ! increment B
+    B  = B  + dt*dBdt                                   ! increment B
     t  = t  + dt                                        ! increment time
     ns = ns + 1                                         ! increment counter
-    call self%output (B%z)                              ! write?
+    call self%output (B%z)                              ! FIXME: Should be all of B
   enddo
   !.............................................................................
   end associate
