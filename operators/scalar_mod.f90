@@ -33,7 +33,7 @@ MODULE scalar_mod
   interface maxval
     module procedure scalar_maxval
   end interface
-  integer:: n(3)=1
+  integer, public:: n(3)=1
 CONTAINS
 !> =============================================================================
 SUBROUTINE scalar_assign_real (out, in)

@@ -121,15 +121,24 @@ SUBROUTINE run (self)
   USE vector_mod
   class(induction_t):: self
   integer:: istep
-  type(vector_t):: E, U, B, dBdt
-  associate (u=> self%u, ds=>self%ds, n=>self%n, ns=>self%ns, end_time=>self%end_time, &
-             t=>self%time, dt=>self%dtime, courant=>self%courant)
+  type(vector_t):: E, UU, B, dBdt
   !.............................................................................
-  U = self%u
-  dt = courant*minval(ds)/sqrt(sum(u**2))               ! dt = C ds/u
-  print*,n
+
+  print*,self%u
+  UU = self%u
+  n = self%n
+  B = [0.,0.,1.]
+  B%n = n
+  UU%n = n
+  print*,'n,self',n,self%n
+  self%dtime = self%courant*minval(self%ds) &
+             /sqrt(sum(self%u**2))! dt = C ds/u
+  associate (ds=>self%ds, n=>self%n, ns=>self%ns, end_time=>self%end_time, &
+             t=>self%time, dt=>self%dtime, courant=>self%courant)
+  print*,'dt',dt
+  print*,'n',n
   do while (t < end_time)                               ! loop until end time
-    E    = cross(U,B)                                   ! ignore 1st minus sign
+    E    = cross(UU,B)                                   ! ignore 1st minus sign
     dBdt = curl(E)                                      ! ignore 2nd minus sign
     B  = B  + dt*dBdt                                   ! increment B
     t  = t  + dt                                        ! increment time

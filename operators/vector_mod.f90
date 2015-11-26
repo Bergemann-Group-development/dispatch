@@ -55,6 +55,7 @@ SUBROUTINE vector_assign_real_3 (out, in)
   type(vector_t), intent(out):: out
   real, intent(in):: in(3)
   call out%allocate
+  print *,'v_a_e',in
   out%x = in(1)
   out%y = in(2)
   out%z = in(3)
@@ -260,7 +261,7 @@ END FUNCTION vector_curl
 SUBROUTINE allocate_vector (self)
   class(vector_t):: self
   if (self%allocated) return
-  print*,'allocate_vector',n
+  print*,'allocate_vector',n,self%n
   call flush()
   self%n = n
   allocate (self%x(self%n(1), self%n(2), self%n(3)))
