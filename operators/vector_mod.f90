@@ -27,6 +27,9 @@ MODULE vector_mod
   interface grad
     module procedure vector_real_grad, vector_int_grad, vector_scalar_grad
   end interface
+  interface div
+    module procedure vector_scalar_div
+  end interface
   interface cross
     module procedure real4_vector_cross, real8_vector_cross, vector_cross
   end interface
@@ -170,6 +173,16 @@ FUNCTION vector_scalar_grad (in) RESULT (out)
   out%y = d%dy (in%f)
   out%z = d%dz (in%f)
 END FUNCTION vector_scalar_grad
+!> =============================================================================
+FUNCTION vector_scalar_div (in) RESULT (out)
+  type(scalar_t):: out
+  type(vector_t), intent(in):: in
+  !-----------------------------------------------------------------------------
+  call out%allocate
+  n = [size(in%x,dim=1), size(in%x,dim=2), size(in%x,dim=3)]
+  call deriv%init (ds, n)
+  out%f = d%dx (in%x) + d%dy (in%y) + d%dz (in%z)
+END FUNCTION vector_scalar_div
 !> =============================================================================
 FUNCTION real8_vector_cross (in1, in2) RESULT (out)
   type(vector_t):: out

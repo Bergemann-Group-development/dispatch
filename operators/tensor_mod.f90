@@ -27,6 +27,9 @@ MODULE tensor_mod
   interface grad
     module procedure vector_tensor_grad
   end interface
+  interface div
+    module procedure vector_tensor_div
+  end interface
   private n
 CONTAINS
 !> =============================================================================
@@ -80,6 +83,18 @@ FUNCTION vector_tensor_grad (in) RESULT (out)
   out%yz = d%dy (in%z)
   out%zz = d%dz (in%z)
 END FUNCTION vector_tensor_grad
+!> =============================================================================
+FUNCTION vector_tensor_div (in) RESULT (out)
+  type(vector_t):: out
+  type(tensor_t), intent(in):: in
+  !-----------------------------------------------------------------------------
+  n = [size(in%xx,dim=1), size(in%xx,dim=2), size(in%xx,dim=3)]
+  call deriv%init (n=n)
+  call out%allocate
+  out%x = d%dx (in%xx) + d%dy(in%yx) + d%dz(in%zx)
+  out%y = d%dx (in%xy) + d%dy(in%yy) + d%dz(in%zy)
+  out%z = d%dx (in%xz) + d%dy(in%yz) + d%dz(in%zz)
+END FUNCTION vector_tensor_div
 !> =============================================================================
 FUNCTION tensor_tensor_add (in1, in2) RESULT (out)
   type(tensor_t):: out
