@@ -18,6 +18,9 @@ MODULE vector_mod
   interface operator(*)
     module procedure real4_vector_mul, real8_vector_mul, vector_vector_mul
   end interface
+  interface operator(/)
+    module procedure  vector_scalar_dv
+  end interface
   interface operator(+)
     module procedure vector_real_add, vector_int_add, vector_vector_add
   end interface
@@ -173,6 +176,19 @@ FUNCTION vector_scalar_grad (in) RESULT (out)
   out%y = d%dy (in%f)
   out%z = d%dz (in%f)
 END FUNCTION vector_scalar_grad
+!> =============================================================================
+FUNCTION vector_scalar_dv (in1,in2) RESULT (out)
+  type(vector_t):: out
+  type(scalar_t), intent(in):: in2
+  type(vector_t), intent(in):: in1
+  !-----------------------------------------------------------------------------
+  call out%allocate
+  n = [size(in2%f,dim=1), size(in2%f,dim=2), size(in2%f,dim=3)]
+  call deriv%init (ds, n)
+  out%x = in1%x/in2%f
+  out%y = in1%y/in2%f
+  out%z = in1%z/in2%f
+END FUNCTION vector_scalar_dv
 !> =============================================================================
 FUNCTION vector_scalar_div (in) RESULT (out)
   type(scalar_t):: out
