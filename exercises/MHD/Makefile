@@ -4,7 +4,7 @@
 #OPTS = optimized
 
 # Default target
-default: mhd.x
+default: mhd.x conservative.x
 
 # Common configuration
 TOP = ../..
@@ -35,5 +35,6 @@ OBJ = io_mod.o \
   derivatives_mod.o
 
 # Dependencies
+conservative.x: $(OBJ)
 mhd.x: $(OBJ)
 test.x: $(OBJ)

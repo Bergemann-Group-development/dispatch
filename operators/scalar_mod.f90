@@ -25,7 +25,7 @@ MODULE scalar_mod
     module procedure scalar_scalar_div
   end interface
   interface operator(-)
-    module procedure scalar_real_sub, scalar_int_sub, scalar_scalar_sub
+    module procedure scalar_real_sub, scalar_int_sub, scalar_scalar_sub, scalar_minus
   end interface
   interface exps
     module procedure scalar_exp
@@ -58,6 +58,14 @@ SUBROUTINE scalar_assign (out, in)
   call out%allocate
   out%f = in
 END SUBROUTINE scalar_assign
+!> =============================================================================
+FUNCTION scalar_minus (in) RESULT (out)
+  type(scalar_t):: out
+  type(scalar_t), intent(in):: in
+  n = [size(in%f,dim=1), size(in%f,dim=2), size(in%f,dim=3)]
+  call out%allocate
+  out%f = - in%f
+END FUNCTION scalar_minus
 !> =============================================================================
 FUNCTION scalar_maxval (in) RESULT (out)
   real:: out
