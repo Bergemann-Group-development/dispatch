@@ -10,7 +10,9 @@ MODULE induction_mod
   USE mpi_reduce_mod                                    ! max, min, average
   USE mpi_send_mod                                      ! send / recv
   USE mpi_par_io_mod                                    ! MPI parallel I/O
+  USE velocity_fields
   implicit none
+  type(velocity_t):: vel
   private
   character(len=mch), save:: id= &
     'main.f90 $Id$'
@@ -88,6 +90,7 @@ SUBROUTINE init (self)
          self%dBydt(self%n(1),self%n(2),self%n(3)), &   !
          self%dBzdt(self%n(1),self%n(2),self%n(3)))     !
   call self%gaussian (self%bz)
+  call vel%init (self%n)
   call self%output (self%bz)
 END SUBROUTINE
 

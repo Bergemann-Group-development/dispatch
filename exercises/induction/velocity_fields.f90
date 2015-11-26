@@ -6,7 +6,7 @@
 !> integer:: dims(3)                    ! dimensions
 !> real:: u(3)                          ! velocity amplitudes
 !> ...
-!> call vel%init(n,u)
+!> call vel%init(self%n)
 !>   ... = ... vel%ux(:,:,:) ...
 !>   ... = ... vel%uy(:,:,:) ...
 !>   ... = ... vel%ux(:,:,:) ...
@@ -34,7 +34,7 @@ MODULE velocity_fields
 CONTAINS
 
 !*******************************************************************************
-SUBROUTINE init (s, n, u)
+SUBROUTINE init (s, n)
   class(velocity_t):: s
   integer n(3), ix, iy, iz
   real:: u(3)

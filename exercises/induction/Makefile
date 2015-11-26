@@ -32,6 +32,7 @@ central_mod.o \
 scalar_mod.o \
 vector_mod.o \
 tensor_mod.o \
+velocity_fields.o \
 derivatives_mod.o
 
 induction.x: $(OBJ)
