@@ -104,9 +104,9 @@ SUBROUTINE gaussian (self, f)
   do k=1,self%n(3)
   do j=1,self%n(2)
   do i=1,self%n(1)
-    x = (i-(self%n(1)+1)*0.5) + self%position(1)/self%ds(1)
-    y = (j-(self%n(2)+1)*0.5) + self%position(2)/self%ds(2)
-    z = (k-(self%n(3)+1)*0.5) + self%position(3)/self%ds(3)
+    x = (i-(self%n(1)+1)*0.5) - self%position(1)/self%ds(1)
+    y = (j-(self%n(2)+1)*0.5) - self%position(2)/self%ds(2)
+    z = (k-(self%n(3)+1)*0.5) - self%position(3)/self%ds(3)
     f(i,j,k) = exp(-(x**2+y**2+z**2)/self%w**2)
   end do
   end do
@@ -118,42 +118,23 @@ END SUBROUTINE
 !> region with aliasing, which makes expressions there more easily readable.
 !> =============================================================================
 SUBROUTINE run (self)
-  USE derivatives_mod
-  USE central_mod
-  USE upwind_mod
+  USE vector_mod
   class(induction_t):: self
   integer:: istep
-  type(central_t), target:: c
-  type(upwind_t), target:: u
-  class(derivatives_t), pointer:: d
-  !.............................................................................
-  if (self%do_upwind) then
-    d => u
-  else
-    d => c
-  end if
-  associate (Bx=>self%bx, Ex=>self%ex, dbxdt=>self%dbxdt, &
-             By=>self%by, Ey=>self%ey, dbydt=>self%dbydt, &
-             Bz=>self%bz, Ez=>self%ez, dbzdt=>self%dbzdt, &
-             u=> self%u, ds=>self%ds, n=>self%n, ns=>self%ns, &
+  type(vector_t):: E, U, B, dBdt
+  associate (u=> self%u, ds=>self%ds, n=>self%n, ns=>self%ns, end_time=>self%end_time, &
              t=>self%time, dt=>self%dtime, courant=>self%courant)
+  !.............................................................................
   dt = courant*minval(ds)/sqrt(sum(u**2))               ! dt = C ds/u
-  do while (t < self%end_time)
-    Ex = -u(2)*bz + u(3)*by                             ! E = -(U x B)
-    Ey = -u(3)*bx + u(1)*bz
-    Ez = -u(1)*by + u(2)*bx
-    d%ds = ds
-    d%n  = n
-    dbxdt = -d%dy(Ez) + d%dz(Ey)                        ! dB/dt = -curl(E)
-    dbydt = -d%dz(Ex) + d%dx(Ez)
-    dbzdt = -d%dx(Ey) + d%dy(Ex)
-    bx = bx - dt*dbxdt                                  ! B = B + dt*dB/dt
-    by = by - dt*dbydt
-    bz = bz - dt*dbzdt
+  do while (t < end_time)                               ! loop until end time
+    E    = cross(U,B)                                   ! ignore 1st minus sign
+    dBdt = curl(E)                                      ! ignore 2nd minus sign
+    B  = B + dt*dBdt                                    ! increment B
     t  = t  + dt                                        ! increment time
-    ns = ns + 1
-    call self%output (bz)                               ! write?
+    ns = ns + 1                                         ! increment counter
+    call self%output (B%z)                              ! write?
   enddo
+  !.............................................................................
   end associate
 END SUBROUTINE run
 
@@ -196,9 +177,7 @@ SUBROUTINE print (self)
   sqsum(1) = sum((self%bz-tmp)**2)
   sqsum(2) = sum(tmp**2)
   deallocate (tmp)
-  call mpi_reduce%sum_real (sqsum(1))
-  call mpi_reduce%sum_real (sqsum(2))
-  !call mpi_reduce%sum_reals (2, sqsum)
+  call mpi_reduce%sum_reals (2, sqsum)
   if (io%master) &
     print'(1x,2(a,i5,3x),a,f6.3,3x,a,1p,2e10.2)', &
     'thread:', omp_get_thread_num(), &

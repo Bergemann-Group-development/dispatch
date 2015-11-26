@@ -11,7 +11,8 @@ MODULE derivatives_mod
   private
   type, abstract, public:: derivatives_t
     real:: ds(3)=1.0
-    integer:: n(3)
+    integer:: n(3)=1
+    logical:: do_upwind
   contains
     procedure(deriv), deferred:: dx, dy, dz
   end type

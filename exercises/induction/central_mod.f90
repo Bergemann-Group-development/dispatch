@@ -2,8 +2,8 @@
 !> $Id$
 !> =============================================================================
 MODULE central_mod
-  USE mpi_send_mod
-  USE mpi_coords_mod
+  !USE mpi_send_mod
+  !USE mpi_coords_mod
   USE derivatives_mod
   USE io_mod
   implicit none
@@ -35,14 +35,16 @@ FUNCTION dx (self, f)
   c = 0.5/self%ds(1)
   dx(2:m-1,:,:) = (f(3:m,:,:)-f(1:m-2,:,:))*c  ! this part is local
   send = f(m,:,:)
-  call mpi_send%isend_reals (self%n(2)*self%n(3), send, mpi_coords%up(1), rq(1))
-  call mpi_send%irecv_reals (self%n(2)*self%n(3), recv, mpi_coords%dn(1), rq(2))
-  call mpi_send%waitall (2, rq)
+  recv = send
+  !call mpi_send%isend_reals (self%n(2)*self%n(3), send, mpi_coords%up(1), rq(1))
+  !call mpi_send%irecv_reals (self%n(2)*self%n(3), recv, mpi_coords%dn(1), rq(2))
+  !call mpi_send%waitall (2, rq)
   dx(1    ,:,:) = (f(2  ,:,:)-recv        )*c  ! remote (n,:,:) slice needed!
   send = f(1,:,:)
-  call mpi_send%isend_reals (self%n(2)*self%n(3), send, mpi_coords%dn(1), rq(1))
-  call mpi_send%irecv_reals (self%n(2)*self%n(3), recv, mpi_coords%up(1), rq(2))
-  call mpi_send%waitall (2, rq)
+  recv = send
+  !call mpi_send%isend_reals (self%n(2)*self%n(3), send, mpi_coords%dn(1), rq(1))
+  !call mpi_send%irecv_reals (self%n(2)*self%n(3), recv, mpi_coords%up(1), rq(2))
+  !call mpi_send%waitall (2, rq)
   dx(  m  ,:,:) = (recv      -f(  m-1,:,:))*c  ! remote (1,:,:) slice needed!
 END FUNCTION dx
 !> =============================================================================
@@ -57,14 +59,16 @@ FUNCTION dy (self, f)
   c = 0.5/self%ds(2)
   dy(:,2:m-1,:) = (f(:,3:m,:)-f(:,1:m-2,:))*c  ! this part is local
   send = f(:,m,:)
-  call mpi_send%isend_reals (self%n(1)*self%n(3), send, mpi_coords%up(2), rq(1))
-  call mpi_send%irecv_reals (self%n(1)*self%n(3), recv, mpi_coords%dn(2), rq(2))
-  call mpi_send%waitall (2, rq)
+  recv = send
+  !call mpi_send%isend_reals (self%n(1)*self%n(3), send, mpi_coords%up(2), rq(1))
+  !call mpi_send%irecv_reals (self%n(1)*self%n(3), recv, mpi_coords%dn(2), rq(2))
+  !call mpi_send%waitall (2, rq)
   dy(:,1    ,:) = (f(:,2  ,:)-recv        )*c  ! remote (:,n,:) slice needed!
   send = f(:,1,:)
-  call mpi_send%isend_reals (self%n(1)*self%n(3), send, mpi_coords%dn(2), rq(1))
-  call mpi_send%irecv_reals (self%n(1)*self%n(3), recv, mpi_coords%up(2), rq(2))
-  call mpi_send%waitall (2, rq)
+  recv = send
+  !call mpi_send%isend_reals (self%n(1)*self%n(3), send, mpi_coords%dn(2), rq(1))
+  !call mpi_send%irecv_reals (self%n(1)*self%n(3), recv, mpi_coords%up(2), rq(2))
+  !call mpi_send%waitall (2, rq)
   dy(:,  m  ,:) = (recv      -f(:,  m-1,:))*c  ! remote (:,1,:) slice needed!
 END FUNCTION dy
 !> =============================================================================
@@ -79,14 +83,16 @@ FUNCTION dz (self, f)
   c = 0.5/self%ds(3)
   dz(:,:,2:m-1) = (f(:,:,3:m)-f(:,:,1:m-2))*c  ! this part is local
   send = f(:,:,m)
-  call mpi_send%isend_reals (self%n(1)*self%n(2), send, mpi_coords%up(3), rq(1))
-  call mpi_send%irecv_reals (self%n(1)*self%n(2), recv, mpi_coords%dn(3), rq(2))
-  call mpi_send%waitall (2, rq)
+  recv = send
+  !call mpi_send%isend_reals (self%n(1)*self%n(2), send, mpi_coords%up(3), rq(1))
+  !call mpi_send%irecv_reals (self%n(1)*self%n(2), recv, mpi_coords%dn(3), rq(2))
+  !call mpi_send%waitall (2, rq)
   dz(:,:,1    ) = (f(:,:,2  )-recv        )*c  ! remote (:,:,n) slice needed!
   send = f(:,:,1)
-  call mpi_send%isend_reals (self%n(1)*self%n(2), send, mpi_coords%dn(3), rq(1))
-  call mpi_send%irecv_reals (self%n(1)*self%n(2), recv, mpi_coords%up(3), rq(2))
-  call mpi_send%waitall (2, rq)
+  recv = send
+  !call mpi_send%isend_reals (self%n(1)*self%n(2), send, mpi_coords%dn(3), rq(1))
+  !call mpi_send%irecv_reals (self%n(1)*self%n(2), recv, mpi_coords%up(3), rq(2))
+  !call mpi_send%waitall (2, rq)
   dz(:,:,  m  ) = (recv      -f(:,:,  m-1))*c  ! remote (:,:,1) slice needed!
 END FUNCTION dz
 

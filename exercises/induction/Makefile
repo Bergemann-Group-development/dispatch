@@ -26,15 +26,24 @@ mpi_send_mod.o \
 mpi_reduce_mod.o \
 mpi_par_io_mod.o \
 task_mod.o \
+deriv_mod.o \
 upwind_mod.o \
 central_mod.o \
+scalar_mod.o \
+vector_mod.o \
+tensor_mod.o \
 derivatives_mod.o
 
 induction.x: $(OBJ)
 
 # Dependencies
-upwind_mod.o: mpi_coords_mod.o mpi_send_mod.o derivatives_mod.o
-central_mod.o: mpi_coords_mod.o mpi_send_mod.o derivatives_mod.o
-run: induction.x
-	./induction.x | tee induction.log
+upwind_mod.o            : mpi_coords_mod.o mpi_send_mod.o derivatives_mod.o mpi_send_mod.o mpi_coords_mod.o io_mod.o
+central_mod.o           : mpi_coords_mod.o mpi_send_mod.o derivatives_mod.o mpi_send_mod.o mpi_coords_mod.o io_mod.o
+derivatives_mod.o       : mpi_send_mod.o mpi_coords_mod.o io_mod.o
+deriv_mod.o             : derivatives_mod.o central_mod.o upwind_mod.o
+operators_mod.o         : deriv_mod.o derivatives_mod.o 
+scalar_mod.o            : deriv_mod.o derivatives_mod.o 
+vector_mod.o            : deriv_mod.o derivatives_mod.o scalar_mod.o
+tensor_mod.o            : deriv_mod.o derivatives_mod.o vector_mod.o
 
+test.x: $(OBJ)
