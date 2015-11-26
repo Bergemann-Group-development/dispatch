@@ -1,7 +1,7 @@
 !> =============================================================================
 !> To use this module to generate a velocity field, do
 !> 
-!> USE veloccity_mod
+!> USE velocity_fields
 !> type(velocity_t):: vel
 !> integer:: dims(3)                    ! dimensions
 !> real:: u(3)                          ! velocity amplitudes
