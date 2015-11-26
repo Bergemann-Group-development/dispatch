@@ -28,7 +28,7 @@ MODULE induction_mod
     procedure:: gaussian
     procedure:: run
     procedure:: output
-    procedure:: print
+    procedure:: printit
     procedure:: finish
   end type
 CONTAINS
@@ -125,7 +125,9 @@ SUBROUTINE run (self)
   associate (u=> self%u, ds=>self%ds, n=>self%n, ns=>self%ns, end_time=>self%end_time, &
              t=>self%time, dt=>self%dtime, courant=>self%courant)
   !.............................................................................
+  U = self%u
   dt = courant*minval(ds)/sqrt(sum(u**2))               ! dt = C ds/u
+  print*,n
   do while (t < end_time)                               ! loop until end time
     E    = cross(U,B)                                   ! ignore 1st minus sign
     dBdt = curl(E)                                      ! ignore 2nd minus sign
@@ -165,7 +167,7 @@ END SUBROUTINE output
 !> =============================================================================
 !> Print summary, with error measure
 !> =============================================================================
-SUBROUTINE print (self)
+SUBROUTINE printit (self)
   class(induction_t):: self
   integer:: istep, omp_get_thread_num
   real, dimension(:,:,:), pointer:: tmp
@@ -192,7 +194,7 @@ END SUBROUTINE
 SUBROUTINE finish (self)
   class(induction_t):: self
   !.............................................................................
-  call self%print
+  call self%printit
   deallocate (self%Bx, self%Ex, self%dBxdt)
   deallocate (self%By, self%Ey, self%dBydt)
   deallocate (self%Bz, self%Ez, self%dBzdt)

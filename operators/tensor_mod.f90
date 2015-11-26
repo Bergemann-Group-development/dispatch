@@ -158,6 +158,8 @@ SUBROUTINE allocate_tensor (self)
   class(tensor_t):: self
   if (self%allocated) return
   self%n = n
+  print*,'allocate_tensor',n
+  call flush()
   allocate (self%xx (self%n(1), self%n(2), self%n(3)))
   allocate (self%yx (self%n(1), self%n(2), self%n(3)))
   allocate (self%zx (self%n(1), self%n(2), self%n(3)))

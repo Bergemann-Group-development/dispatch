@@ -181,6 +181,8 @@ SUBROUTINE allocate_scalar (self)
   class(scalar_t):: self
   if (self%allocated) return
   self%n = n
+  print*,'allocate_scalar', n
+  call flush()
   allocate (self%f(self%n(1), self%n(2), self%n(3)))
   self%allocated = .true.
 END SUBROUTINE allocate_scalar

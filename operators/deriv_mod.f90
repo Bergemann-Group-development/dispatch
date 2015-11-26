@@ -15,6 +15,7 @@ MODULE deriv_mod
   type(central_t), pointer:: central
   class(derivatives_t), public, pointer:: d
   type(deriv_t), public:: deriv
+  logical:: first_time = .true.
 CONTAINS
 
 !> =============================================================================
@@ -27,6 +28,10 @@ SUBROUTINE init (ds,n)
   namelist /deriv_params/ do_upwind
   integer:: iostat
   !.............................................................................
+  print*,'mk'
+  if (.not.first_time) return
+  print*,'mk2'
+  first_time = .false.
   if (present(ds)) then
     ds1 = ds
   else

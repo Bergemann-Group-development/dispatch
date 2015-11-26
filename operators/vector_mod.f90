@@ -260,6 +260,8 @@ END FUNCTION vector_curl
 SUBROUTINE allocate_vector (self)
   class(vector_t):: self
   if (self%allocated) return
+  print*,'allocate_vector',n
+  call flush()
   self%n = n
   allocate (self%x(self%n(1), self%n(2), self%n(3)))
   allocate (self%y(self%n(1), self%n(2), self%n(3)))
