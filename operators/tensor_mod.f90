@@ -27,6 +27,9 @@ MODULE tensor_mod
   interface grad
     module procedure vector_tensor_grad
   end interface
+  interface outer
+    module procedure vector_vector_outer
+  end interface
   interface div
     module procedure vector_tensor_div
   end interface
@@ -135,6 +138,21 @@ FUNCTION tensor_tensor_sub (in1, in2) RESULT (out)
   out%yz = in1%yz - in2%yz
   out%zz = in1%zz - in2%zz
 END FUNCTION tensor_tensor_sub
+!> =============================================================================
+FUNCTION vector_vector_outer (in1, in2) RESULT (out)
+  type(tensor_t):: out
+  type(vector_t), intent(in):: in1, in2
+  !-----------------------------------------------------------------------------
+  out%xx = in1%x - in2%x
+  out%yx = in1%y - in2%x
+  out%zx = in1%z - in2%x
+  out%xy = in1%x - in2%y
+  out%yy = in1%y - in2%y
+  out%zy = in1%z - in2%y
+  out%xz = in1%x - in2%z
+  out%yz = in1%y - in2%z
+  out%zz = in1%z - in2%z
+END FUNCTION vector_vector_outer
 !> =============================================================================
 SUBROUTINE allocate_tensor (self)
   class(tensor_t):: self

@@ -25,7 +25,7 @@ MODULE vector_mod
     module procedure vector_real_add, vector_int_add, vector_vector_add
   end interface
   interface operator(-)
-    module procedure vector_vector_sub
+    module procedure vector_vector_sub, vector_minus
   end interface
   interface grad
     module procedure vector_real_grad, vector_int_grad, vector_scalar_grad
@@ -144,6 +144,15 @@ FUNCTION vector_vector_sub (in1, in2) RESULT (out)
   out%y = in1%y - in2%y
   out%z = in1%z - in2%z
 END FUNCTION vector_vector_sub
+!> =============================================================================
+FUNCTION vector_minus (in1) RESULT (out)
+  type(vector_t):: out
+  type(vector_t), intent(in):: in1
+  call out%allocate
+  out%x = -in1%x
+  out%y = -in1%y
+  out%z = -in1%z
+END FUNCTION vector_minus
 !> =============================================================================
 
 FUNCTION vector_real_grad (in) RESULT (out)
