@@ -140,9 +140,8 @@ SUBROUTINE run (self)
     Umax = sqrt(maxval((B*B + Pg)/Rho))                 ! fast mode speed
     dt   = courant*minval(ds)/Umax                      ! dt = C ds/u
 
-    dlnRhodt = UU*grad(lnRho)                           ! avection of lnRho
-    tmp = grad(UU)
-    dUdt     = UU*tmp- Temp*grad(lnRho)                 ! isothermal 
+    dlnRhodt = -UU*grad(lnRho)                          ! avection of lnRho
+    dUdt     = -UU*grad(UU)- Temp*grad(lnRho)           ! isothermal 
     dBdt     = curl(cross(UU,B))                        ! ignore minus signs
 
     lnRho    = lnRHo + dt*dlnRhodt
