@@ -1,24 +1,10 @@
 PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
-  nu = [0.2,0.0,1.0,1.0,1.0,1.0]
-  nu1 = nu[0] & nu2=nu[1] & nu3=nu[2] & nu4=nu[3] & nu5=nu[4] & nu6=nu[5]
+  nu = [0.2,0.6]
   ; downstaggered velocity field
   lnr = alog(rho)
   ldx = xdn(lnr) & ldy = ydn(lnr) & ldz = zdn(lnr)
   rdx = exp(ldx) & rdy = exp(ldy) & rdz = exp(ldz)
   Ux = px / rdx  & Uy = py / rdy  & Uz = pz / rdz
-
-  ; E-field, and dBdt
-  Ex = ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
-  Ey = zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
-  Ez = xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
-  dBxdt = ddzup(Ey) - ddyup(Ez)
-  dBydt = ddxup(Ez) - ddzup(Ex)
-  dBzdt = ddyup(Ex) - ddxup(Ey)
-  ;if (eta gt 0.) then begin ; resistivity
-  ;  eta1 = eta * (dx^2 + dy^2 + dz^2)
-  ;endif
-  ; Diffusion coefficient
-  ds = min([dx,dy,dz])
   if (gamma eq 1.) then begin
     Pg = rho
     cs = 1. + rho*0.
@@ -26,27 +12,14 @@ PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
     Pg = rho^gamma*exp(S/rho*(gamma-1.))
     cs = sqrt(gamma*Pg/rho)
   endelse
-  if (max(abs([nu1,nu2,nu3])) gt 0.) then begin ; at least one nu > 0
-    if (nu2+nu3 gt 0.) then begin
-      du = ds * (-ddxup(Ux)-ddyup(Uy)-ddzup(Uz) > 1e-20)
-      pa = nu3 * rho * du^2 ; dim: pressure
-    endif else begin
-      du = 0.0*rho
-      pa = 0.0*rho
-    endelse
-    if (nu1+nu2 gt 0.) then begin
-      du = (nu1 * cs + nu2*du)*ds ; dim: U*ds
-    endif else begin
-      du = 0.0*rho
-    endelse
-  endif else begin
-    du = 1e-30
-    pa = 0.0*rho
-  endelse
+  ; diffusion and artificial pressure
+  ds = min([dx,dy,dz])
+  du = nu[0]*cs*ds                                          ; dimension: viscosity
+  pa = nu[1]*rho*(ds*(ddxup(Ux)+ddyup(Uy)+ddzup(Uz)<0))^2   ; dimension: pressure
   ; Conservation of mass
-  fdifx = rdx*ddxdn(lnr)*xdn(du)*nu5 ; diffusive mass flux
-  fdify = rdy*ddydn(lnr)*ydn(du)*nu5
-  fdifz = rdz*ddzdn(lnr)*zdn(du)*nu5
+  fdifx = rdx*ddxdn(lnr)*xdn(du) ; diffusive mass flux
+  fdify = rdy*ddydn(lnr)*ydn(du)
+  fdifz = rdz*ddzdn(lnr)*zdn(du)
   ;
   drhodt = - ddxup(px - fdifx) - ddyup(py - fdify) - ddzup(pz - fdifz)
   ; Conservation of entropy
@@ -55,9 +28,9 @@ PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
   endif else begin
     ss = s / rho
     dsdt = $
-      - ddxup1(xdn(ss)*px - rdx*ddxdn(ss)*xdn1(du)*nu6 - fdifx*xdn(ss)) $
-      - ddyup1(ydn(ss)*py - rdy*ddydn(ss)*ydn1(du)*nu6 - fdify*ydn(ss)) $
-      - ddzup1(zdn(ss)*pz - rdz*ddzdn(ss)*zdn1(du)*nu6 - fdifz*zdn(ss))
+      - ddxup1(xdn(ss)*px - rdx*ddxdn(ss)*xdn1(du) - fdifx*xdn(ss)) $
+      - ddyup1(ydn(ss)*py - rdy*ddydn(ss)*ydn1(du) - fdify*ydn(ss)) $
+      - ddzup1(zdn(ss)*pz - rdz*ddzdn(ss)*zdn1(du) - fdifz*zdn(ss))
   endelse
   ; conservation of momentum. f[xyz][xyz] are the fluxes
 
@@ -78,11 +51,9 @@ PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
   fzx = xdn(Uz)*zdn(Ux)
 
   ; off-diagonal viscous part
-  if (nu4 gt 0) then begin
-    fxy += - nu4*xdn1(ydn1(du))*(ddxdn(Uy)+ddydn(Ux))
-    fyz += - nu4*ydn1(zdn1(du))*(ddydn(Uz)+ddzdn(Uy))
-    fzx += - nu4*zdn1(xdn1(du))*(ddzdn(Ux)+ddxdn(Uz))
-  endif
+  fxy += - xdn1(ydn1(du))*(ddxdn(Uy)+ddydn(Ux))
+  fyz += - ydn1(zdn1(du))*(ddydn(Uz)+ddzdn(Uy))
+  fzx += - zdn1(xdn1(du))*(ddzdn(Ux)+ddxdn(Uz))
 
   ; multiply with edge centred density
   fxy = exp(ydn(ldx))*fxy
@@ -95,9 +66,9 @@ PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
   fzx += - xdn(Bz)*zdn(Bx)
 
   ; consistent addition of mass-flux related momentum-flux
-  fxx += - (rho*du*nu5)*ddxup(ldx)*xup(Ux)
-  fyy += - (rho*du*nu5)*ddyup(ldy)*yup(Uy)
-  fzz += - (rho*du*nu5)*ddzup(ldz)*zup(Uz)
+  fxx += - (rho*du)*ddxup(ldx)*xup(Ux)
+  fyy += - (rho*du)*ddyup(ldy)*yup(Uy)
+  fzz += - (rho*du)*ddzup(ldz)*zup(Uz)
   fxy += - (xdn1(fdify)*ydn(Ux)+ydn1(fdifx)*xdn(Uy))
   fyz += - (ydn1(fdifz)*zdn(Uy)+zdn1(fdify)*ydn(Uz))
   fzx += - (zdn1(fdifx)*xdn(Uz)+xdn1(fdifz)*ydn(Ux))
@@ -105,6 +76,27 @@ PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
   dpxdt = - ddxdn1(fxx) - ddyup1(fxy) - ddzup1(fzx)
   dpydt = - ddydn1(fyy) - ddzup1(fyz) - ddxup1(fxy)
   dpzdt = - ddzdn1(fzz) - ddxup1(fzx) - ddyup1(fyz)
+
+  ; electric current and resistive electric field
+  Jx = ddydn(Bz) - ddzdn(By)
+  Jy = ddzdn(Bx) - ddxdn(Bz)
+  Jz = ddxdn(By) - ddydn(Bx)
+  Ex = ydn1(zdn1(du))*Jx
+  Ey = zdn1(xdn1(du))*Jy
+  Ez = xdn1(ydn1(du))*Jz
+  ; Joule heating
+  QJ = yup1(zup1(Ex*Jx)) $
+     + zup1(xup1(Ey*Jy)) $
+     + xup1(yup1(Ez*Jz))
+  dsdt += QJ*rho
+  ; advective E-field
+  Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
+  Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
+  Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
+
+  dBxdt = ddzup(Ey) - ddyup(Ez)
+  dBydt = ddxup(Ez) - ddzup(Ex)
+  dBzdt = ddyup(Ex) - ddxup(Ey)
 
   ; Time stepping
 
@@ -131,13 +123,13 @@ gamma = 5./3.
 l = lonarr(n/2)
 rhol = 1.0d
 ul   = [1.0d,0.0d,0.0d]
-Bl   = [0.0d,0.0d,0.0d]
+Bl   = [0.0d,1.0d,0.0d]
 Pl   = 1.0d
 ; right state
 r = lonarr(n-n/2)
 rhor=1.0d
 ur   = [-1.0d,0.0d,0.0d]
-Br   = [0.0d,0.0d,0.0d]
+Br   = [0.0d,0.0d,1.0d]
 Pr   = 1.0d
 
 ; set up variables
@@ -146,6 +138,7 @@ rho = [l+rhol,r+rhor]
 px  = rho * [l+ul[0],r+ur[0]]
 py  = rho * [l+ul[1],r+ur[1]]
 pz  = rho * [l+ul[2],r+ur[2]]
+px = xdn1(px)
 
 Bx  = [l+Bl[0],r+Br[0]]
 By  = [l+Bl[1],r+Br[1]]
@@ -156,9 +149,9 @@ P = [l+Pl,r+Pr]
 S = rho / (gamma-1.)*alog(P/rho^gamma)
 
 ; Run benchmark
-dt = 0.064*dx
+dt = 0.05*dx
 t = 0.0
-tend = 0.30
+tend = 1.
 
 ws,0
 !p.multi = [0,2,2]
