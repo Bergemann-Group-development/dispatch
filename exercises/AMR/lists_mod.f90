@@ -7,6 +7,7 @@ MODULE lists_mod
   USE io_mod
   USE trace_mod
   USE patches_mod
+  USE refine_mod
   implicit none
   private
   !.............................................................................
@@ -236,16 +237,50 @@ SUBROUTINE search_nbors_by_overlap (self, start)
   end do
   call trace_end
 END SUBROUTINE search_nbors_by_overlap
+
 !> =============================================================================
-!> Skeleton routine, for now
+!> Update the state of the task list, taking the steps necessary to update the
+!> head task on the ready_queue, and check for consequences
 !> =============================================================================
 SUBROUTINE update (self)
-  class (list_t):: self
+  class(task_list_t):: self
   !.............................................................................
-  call trace_begin('list_t%update', 1)
-  self%n = self%n-1
+  class(link_t), pointer:: head
+  class(timestep_t), pointer:: task
+  integer:: n1
+  !.............................................................................
+  call trace_begin('task_list_t%update '//self%name)
+  if (self%nq < 1) then
+    n1 = self%nq
+    call self%check_all
+    print *,'WARNING: check_all (should not be needed), found', self%nq
+  end if
+  head => self%queue                                    ! queue start
+  if (associated(head)) then
+    self%queue => self%queue%next_time                  ! update the link
+    self%nq = self%nq-1
+    call self%check_mpi                                 ! check incoming MPI
+    task => head%task                                   ! head task
+    if (refine%needed (task)) then                      ! if refinement needed
+      call self%split (link)                            ! refined tasks go back to queue
+    else
+      call task%update                                  ! update the task
+      call self%check_nbors (head)                      ! any nbor ready?
+      if (task%time > task%end_time) then               ! finished:
+        call self%remove_task (task)                    ! remove from self
+      else                                              ! not finished:
+        call task%clear(bits%ready)                     ! needs new check
+      end if
+    end if
+  else
+    print*,'ERROR: no self%queue', self%nq, self%n
+    call mpi%abort ('ERROR: ready queue empty')
+  end if
+  print '(i8,f10.6,2x,3f10.6,i6,i6,2x,a)', task%id, task%time, task%position, &
+    task%status, self%nq !, task%name
   call trace_end
 END SUBROUTINE update
+
 !> =============================================================================
 !> Split a patch into two (parameter) in each direction, merging the new patches
 !> into the list, and initializing their nbor lists.  Also make a temporary list
