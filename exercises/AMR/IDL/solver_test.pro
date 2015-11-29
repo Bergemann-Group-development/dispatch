@@ -1,5 +1,5 @@
-PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
-  nu = [0.2,0.6]
+PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma, vf
+  nu = [0.2,1.0]
   ; downstaggered velocity field
   lnr = alog(rho)
   ldx = xdn(lnr) & ldy = ydn(lnr) & ldz = zdn(lnr)
@@ -15,45 +15,43 @@ PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
   ; diffusion and artificial pressure
   ds = min([dx,dy,dz])
   du = nu[0]*cs*ds                                          ; dimension: viscosity
-  pa = nu[1]*rho*(ds*(ddxup(Ux)+ddyup(Uy)+ddzup(Uz)<0))^2   ; dimension: pressure
+  pa = nu[1]*(ds*(ddxup(Ux)+ddyup(Uy)+ddzup(Uz)<0))^2       ; dimension: pressure/density
   ; Conservation of mass
   fdifx = rdx*ddxdn(lnr)*xdn(du) ; diffusive mass flux
   fdify = rdy*ddydn(lnr)*ydn(du)
   fdifz = rdz*ddzdn(lnr)*zdn(du)
   ;
   drhodt = - ddxup(px - fdifx) - ddyup(py - fdify) - ddzup(pz - fdifz)
-  ; Conservation of entropy
-  if (gamma eq 1.0) then begin
-    dsdt = 0.*s
-  endif else begin
-    ss = s / rho
-    dsdt = $
-      - ddxup1(xdn(ss)*px - rdx*ddxdn(ss)*xdn1(du) - fdifx*xdn(ss)) $
-      - ddyup1(ydn(ss)*py - rdy*ddydn(ss)*ydn1(du) - fdify*ydn(ss)) $
-      - ddzup1(zdn(ss)*pz - rdz*ddzdn(ss)*zdn1(du) - fdifz*zdn(ss))
-  endelse
+
   ; conservation of momentum. f[xyz][xyz] are the fluxes
+  ; diagnoal part of viscous stress
+  Sxx = ddxup(Ux)
+  Syy = ddyup(Uy)
+  Szz = ddzup(Uz)
+  fxx = rho*(pa - du*Sxx) ; rho*U*ds*U/ds=rho*U^2
+  fyy = rho*(pa - du*Syy)
+  fzz = rho*(pa - du*Szz)
+  Qv = -(fxx*Sxx+fyy*Syy+fzz*Szz)
 
   ; diagonal terms - Pm==magnetic pressure
   Pm = 0.5*(xup(Bx)^2 + yup(By)^2 + zup(Bz)^2)
-  fxx = rho*xup(Ux)^2 - xup(Bx)^2 + Pg + Pm
-  fyy = rho*yup(Uy)^2 - yup(By)^2 + Pg + Pm
-  fzz = rho*zup(Uz)^2 - zup(Bz)^2 + Pg + Pm
-
-  ; diagnoal part of viscous stress
-  fxx += pa - rho*du*ddxup(Ux) ; rho*U*ds*U/ds=rho*U^2
-  fyy += pa - rho*du*ddyup(Uy)
-  fzz += pa - rho*du*ddzup(Uz)
-
-  ; off-diagnoal part of Reynolds stress, without the density factor
-  fxy = ydn(Ux)*xdn(Uy)
-  fyz = zdn(Uy)*ydn(Uz)
-  fzx = xdn(Uz)*zdn(Ux)
+  fxx += rho*xup(Ux)^2 - xup(Bx)^2 + Pg + Pm
+  fyy += rho*yup(Uy)^2 - yup(By)^2 + Pg + Pm
+  fzz += rho*zup(Uz)^2 - zup(Bz)^2 + Pg + Pm
 
   ; off-diagonal viscous part
-  fxy += - xdn1(ydn1(du))*(ddxdn(Uy)+ddydn(Ux))
-  fyz += - ydn1(zdn1(du))*(ddydn(Uz)+ddzdn(Uy))
-  fzx += - zdn1(xdn1(du))*(ddzdn(Ux)+ddxdn(Uz))
+  Sxy = (ddxdn(Uy)+ddydn(Ux))*0.5
+  Syz = (ddydn(Uz)+ddzdn(Uy))*0.5
+  Szx = (ddzdn(Ux)+ddxdn(Uz))*0.5
+  fxy = - xdn1(ydn1(du))*Sxy
+  fyz = - ydn1(zdn1(du))*Syz
+  fzx = - zdn1(xdn1(du))*Szx
+  Qv -= rho*(xup1(yup1(fxy*Sxy))+yup1(zup1(fyz*Syz))+zup1(xup1(fzx*Szx)))
+
+  ; off-diagnoal part of Reynolds stress, without the density factor
+  fxy += ydn(Ux)*xdn(Uy)
+  fyz += zdn(Uy)*ydn(Uz)
+  fzx += xdn(Uz)*zdn(Ux)
 
   ; multiply with edge centred density
   fxy = exp(ydn(ldx))*fxy
@@ -84,11 +82,12 @@ PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
   Ex = ydn1(zdn1(du))*Jx
   Ey = zdn1(xdn1(du))*Jy
   Ez = xdn1(ydn1(du))*Jz
+
   ; Joule heating
   QJ = yup1(zup1(Ex*Jx)) $
      + zup1(xup1(Ey*Jy)) $
      + xup1(yup1(Ez*Jz))
-  dsdt += QJ*rho
+
   ; advective E-field
   Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
   Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
@@ -97,6 +96,21 @@ PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
   dBxdt = ddzup(Ey) - ddyup(Ez)
   dBydt = ddxup(Ez) - ddzup(Ex)
   dBzdt = ddyup(Ex) - ddxup(Ey)
+
+  ; Conservation of entropy, from co-moving per unit mass: d(ss) = Q/T = Q*rhp/Pg
+  if (gamma eq 1.0) then begin
+    dsdt = 0.*s
+  endif else begin
+    ss = s / rho
+    temp = Pg/rho
+    dsdt = (Qv+QJ)/temp $
+      - ddxup1(xdn(ss)*px - rdx*ddxdn(ss)*xdn1(du) - fdifx*xdn(ss)) $
+      - ddyup1(ydn(ss)*py - rdy*ddydn(ss)*ydn1(du) - fdify*ydn(ss)) $
+      - ddzup1(zdn(ss)*pz - rdz*ddzdn(ss)*zdn1(du) - fdifz*zdn(ss))
+  endelse
+
+  ; fast mode speed relative to moving gas
+  vf = sqrt((Pm+gamma*Pg+Pa)/rho)+sqrt(px^2+py^2+pz^2)/rho
 
   ; Time stepping
 
@@ -119,17 +133,20 @@ init_derivs, dx=dx, dy=dy, dz=dz
 
 ; Initial conditions
 gamma = 5./3.
+gamma = 1.000001d0
 ; left state
 l = lonarr(n/2)
 rhol = 1.0d
-ul   = [1.0d,0.0d,0.0d]
-Bl   = [0.0d,1.0d,0.0d]
+u0   = 1d0
+ul   = [u0,0.0d,0.0d]
+B0   = 1d0
+Bl   = [0.0d,B0,0.0d]
 Pl   = 1.0d
 ; right state
 r = lonarr(n-n/2)
 rhor=1.0d
-ur   = [-1.0d,0.0d,0.0d]
-Br   = [0.0d,0.0d,1.0d]
+ur   = [-u0,0.0d,0.0d]
+Br   = [0.0d,0.0d,B0]
 Pr   = 1.0d
 
 ; set up variables
@@ -138,7 +155,7 @@ rho = [l+rhol,r+rhor]
 px  = rho * [l+ul[0],r+ur[0]]
 py  = rho * [l+ul[1],r+ur[1]]
 pz  = rho * [l+ul[2],r+ur[2]]
-px = xdn1(px)
+px  = xdn1(px)
 
 Bx  = [l+Bl[0],r+Br[0]]
 By  = [l+Bl[1],r+Br[1]]
@@ -149,59 +166,70 @@ P = [l+Pl,r+Pr]
 S = rho / (gamma-1.)*alog(P/rho^gamma)
 
 ; Run benchmark
-dt = 0.05*dx
+dt = 0.25*dx
 t = 0.0
-tend = 1.
+tend = 1.0
 
 ws,0
 !p.multi = [0,2,2]
 
-time_evol=2
+time_evol=3
 every=10
 it=0
+vfmax = 0.
 while (t lt tend) do begin
   if (time_evol eq 1) then begin ; Euler step
-    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, 0.5*dt, gamma
+    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, 0.5*dt, gamma, vf
   endif else if (time_Evol eq 2) then begin ; mid-point method
     drho=rho & dpx=px & dpy=py & dpz=pz & dBx=Bx & dBy=By & dBz=Bz & dS=S
-    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, 0.5*dt, gamma
+    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, 0.5*dt, gamma, vf
     drho-=rho & dpx-=px & dpy-=py & dpz-=pz & dBx-=Bx & dBy-=By & dBz-=Bz & dS-=S
-    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
+    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma, vf
     rho+=drho & px+=dpx & py+=dpy & pz+=dpz & Bx+=dBx & By+=dBy & Bz+=dBz & S+=dS
   endif else if (time_Evol eq 3) then begin ; Heun's method
     drho=rho & dpx=px & dpy=py & dpz=pz & dBx=Bx & dBy=By & dBz=Bz & dS=S
-    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma
+    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma, vf
     drho-=rho & dpx-=px & dpy-=py & dpz-=pz & dBx-=Bx & dBy-=By & dBz-=Bz & dS-=S
-    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, 0.5*dt, gamma
+    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, 0.5*dt, gamma, vf
     rho+=.5*drho & px+=.5*dpx & py+=.5*dpy & pz+=.5*dpz & Bx+=.5*dBx & By+=.5*dBy & Bz+=.5*dBz & S+=.5*dS
   endif
+  vfmax = max(vf) > vfmax
 
   t = t + dt
-  it=it+1
 
   !x.style=1
-  if it mod 10 eq 1 then begin
+  ;!x.range=[n/2-20,n/2+20]
+  if it mod 20 eq 0 then begin
 	  plot, rho, ps=-1,tit='rho time='+str(t,format='(f5.3)'), symsize=0.3,yst=3
+	  wait, 0.
 	  plot, px, ps=-1, tit='px', symsize=0.3,yst=3
-	;  plot, py, ps=-1, tit='py', symsize=0.3
-	  ux = px/exp(xdn(alog(rho)))
-	  plot, ux, ps=-1, tit='ux', symsize=0.3
-	  plot, S, ps=-1, tit='s', symsize=0.3,yst=3
-	  wait, 0.1
+	  wait, 0.
+	  ;plot, py, ps=-1, tit='py', symsize=0.3
+	  ;ux = px/exp(xdn(alog(rho)))
+	  ;plot, ux, ps=-1, tit='ux', symsize=0.3
+	  plot, by, ps=-1, tit='by', symsize=0.3
+	  wait, 0.
+	  plot, S/rho, ps=-1, tit='s', symsize=0.3,yst=3
+	  wait, 0.25
   end
+  it=it+1
+
   ;stat, rho, l='rho'
   ;stat, px , l='Px'
   ;stat, S  , l='S'
   ;stat, P  , l='P'
 endwhile
+print,'max Courant number:',vfmax*dt/dx
 ws,0
 !p.multi=[0,2,2]
 !x.style=3
 !y.style=3
 plot, rho, ps=-1,tit='rho time='+str(t,format='(f5.3)'), symsize=0.3
 plot, px, ps=-1, tit='px', symsize=0.3
-plot, py, ps=-1, tit='py', symsize=0.3
-plot, S, ps=-1, tit='s', symsize=0.3,yst=3
+;ux = px/exp(xdn(alog(rho)))
+;plot, ux, ps=-1, tit='ux', symsize=0.3
+plot, by, ps=-1, tit='by', symsize=0.3
+plot, S/rho, ps=-1, tit='s', symsize=0.3,yst=3
 ws,1
 ;!p.multi=[0,2,2]
 plot, rho, xr=5+[0,20], psym=-1,yst=3,xst=3
