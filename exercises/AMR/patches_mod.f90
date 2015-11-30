@@ -187,8 +187,13 @@ END FUNCTION distance
 FUNCTION overlaps (self, patch)
   class(patch_t):: self, patch
   logical:: overlaps
+  integer:: idir
   !.............................................................................
-  overlaps = all(distance(self,patch) <= 0.5000000001_8*(self%gsize+patch%size))
+  if (minval(self%ds) <= minval(patch%ds)) then                                 ! make sure smallest guard zone is used
+    overlaps = all(distance(self,patch) <= 0.5000000001_8*(self%gsize+patch%size)) ! prologation needs at least an additional zone
+  else
+    overlaps = all(distance(self,patch) <= 0.5000000001_8*(self%size+patch%gsize))
+  endif
 END FUNCTION
 
 !> =============================================================================
