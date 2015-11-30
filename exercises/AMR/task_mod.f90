@@ -9,11 +9,13 @@ MODULE task_mod
   integer, parameter:: ntime=7
   private
   type, public:: task_t
-    real, dimension(3):: position, size, ds
+    integer:: id
     integer:: nt, nv
     integer:: n(3), ng(3)=2, gn(3), li(3), ui(3)
     integer:: it=1, new=2
+    integer:: i, j, k
     integer, pointer:: iit(:)
+    real, dimension(3):: position, size, gsize, box, ds, origin
     real, pointer:: t(:)
     real, pointer:: dt(:)
     real:: time, dtime, end_time=1.0
@@ -23,15 +25,21 @@ MODULE task_mod
     integer:: iout=0                            ! output counter
     real, dimension(:,:,:,:,:,:), pointer:: mem
     integer:: verbose = 0
+    logical:: is_leaf = .true.
   contains
     procedure:: init
     procedure:: update
     procedure:: output
+    procedure:: distance        ! return the distance btw two patches
+    procedure:: overlaps        ! return true if they overlap (incl. ghost zones)
+    procedure:: index_range     ! returns the index ranges btw two points
+    procedure:: indices         ! computes indices and fractional indices
+    procedure:: index           ! compute the index for a single point
   end type
   logical:: is_allocated = .false.
 CONTAINS
 !> =============================================================================
-!> Initialize the task memory and task mesh.  For this we need to be told the
+!> Initialize the task memory and task dimensions.  For this we need to be told the
 !> task dimensions (which include the number of variable and the number of time
 !> slices), the task position, and the task size
 !> =============================================================================
@@ -88,4 +96,51 @@ SUBROUTINE output (self)
   if (io%master) print*,'task_t%output: should do output at t =', self%time
 END SUBROUTINE output
 !> =============================================================================
+FUNCTION index_range (self, position)
+  class(task_t):: self
+  real:: position(3)
+  integer:: index_range(3,2)
+  integer:: dir
+  !.............................................................................
+  do dir=1,3
+    index_range(:,dir) = int(modulo(position(dir)-self%origin, self%box/self%ds)) + 1
+    index_range(:,dir) = max(1, min(self%gn, index_range(:,dir)))
+  end do
+END FUNCTION index_range
+!> =============================================================================
+SUBROUTINE indices (self, np, p, ii, f)
+  class(task_t):: self
+  real:: p(np), f(np,3)
+  integer:: np, dir, ii(np,3)
+  !.............................................................................
+  do dir=1,3
+    f(:,dir) = modulo(p-self%origin(dir), self%box(dir))/self%ds(dir)
+    ii(:,dir) = max(1, min(self%gn(dir), int(f(:,dir))))
+  end do
+  f = f-ii
+END SUBROUTINE indices
+!> =============================================================================
+FUNCTION index (self, position)
+  class(task_t):: self
+  real, dimension(3):: position, f
+  integer:: index(3)
+  !.............................................................................
+  f = modulo(position-self%origin, self%box)/self%ds + 1.0
+  index = max(1, min(self%gn, int(f)))
+  f = f - index
+END FUNCTION index
+!> =============================================================================
+FUNCTION distance (self, task)
+  class(task_t):: self, task
+  real:: distance(3)
+  distance = self%position-task%position+0.5*self%box
+  distance = abs(modulo(distance+0.5*self%box,self%box)-0.5*self%box)
+END FUNCTION distance
+!> =============================================================================
+FUNCTION overlaps (self, task)
+  class(task_t):: self, task
+  logical:: overlaps
+  !.............................................................................
+  overlaps = all(distance(self,task) <= 0.5000000001_8*(self%gsize+task%size))
+END FUNCTION
 END MODULE
