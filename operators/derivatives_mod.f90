@@ -5,8 +5,6 @@
 !> type (object) is defined as an extension of this one
 !> =============================================================================
 MODULE derivatives_mod
-  USE mpi_send_mod
-  USE mpi_coords_mod
   implicit none
   private
   type, abstract, public:: derivatives_t

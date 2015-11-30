@@ -22,6 +22,7 @@ MODULE task_mod
     integer:: istep=0                           ! time step counter
     integer:: iout=0                            ! output counter
     real, dimension(:,:,:,:,:,:), pointer:: mem
+    integer:: verbose = 0
   contains
     procedure:: init
     procedure:: update

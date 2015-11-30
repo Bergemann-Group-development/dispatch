@@ -12,15 +12,20 @@ include $(TOP)/config/Makefile
 
 OBJ = \
   mpi_timer_mod.o upwind_mod.o central_mod.o derivatives_mod.o \
-  patches_mod.o meshes_mod.o io_mod.o lists_mod.o trace_mod.o omp_mod.o
+  io_mod.o lists_mod.o trace_mod.o omp_mod.o \
+  patches_mod.o refine_mod.o
 
 # Dependencies
-lists_mod.o             : io_mod.o patches_mod.o
+task_mod.o              : trace_mod.o io_mod.o
+hd_mod.o                : task_mod.o scalar_mod.o vector_mod.o tensor_mod.o stagger_mod.o
+refine_mod.o            : task_mod.o
+lists_mod.o             : io_mod.o timestep_mod.o patches_mod.o refine_mod.o
 meshes_mod.o            : trace_mod.o
 derivatives_mod.o       : meshes_mod.o
-upwind_mod.o            : derivatives_mod.o
-central_mod.o           : derivatives_mod.o
-patches_mod.o           : derivatives_mod.o upwind_mod.o central_mod.o meshes_mod.o trace_mod.o io_mod.o
+timestep_mod.o          : io_mod.o hd_mod.o
+#upwind_mod.o            : derivatives_mod.o
+#central_mod.o           : derivatives_mod.o
+#patches_mod.o           : derivatives_mod.o upwind_mod.o central_mod.o meshes_mod.o trace_mod.o io_mod.o
 experiment.o            : io_mod.o lists_mod.o
 
 experiment.x: $(OBJ)

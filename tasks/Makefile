@@ -23,7 +23,7 @@ item_mod.o:           bits_mod.o trace_mod.o
 task_mod.o:           io_mod.o mesh_mod.o bits_mod.o
 tasks_mod.o:          task_mod.o
 patch_mod.o:          tasks_mod.o mesh_mod.o
-hd_mod.o:             patch_mod.o trace_mod.o
+#hd_mod.o:             patch_mod.o trace_mod.o
 mhd_mod.o:            patch_mod.o trace_mod.o
 unigrid_mod.o:        patch_mod.o mpi_coords_mod.o
 

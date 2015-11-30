@@ -3,12 +3,13 @@
 !> Adams-Bashforth time stepping, with constant time step assumed (for now)
 !> =============================================================================
 MODULE timestep_mod
-  USE experiment_mod
   USE io_mod
+  USE pde_mod
   implicit none
   integer, parameter:: nslice = 4
-  type, extends(pde_t):: timest_t
+  type, extends(pde_t):: timestep_t
     real:: wt(nslice)
+    integer:: timeorder
   contains
     procedure:: init   => init_timestep
     procedure:: update => update_timestep
@@ -22,17 +23,19 @@ CONTAINS
 !> =============================================================================
 !> Initialize coefficients for Adams-Bashforth time stepping
 !> =============================================================================
-SUBROUTINE init (self)
-  class(timest_t):: self
-  implicit none
-  namelist /timestep_params/ courant_number, timeorder, verbose
+SUBROUTINE init_timestep (self, dims, position, size)
+  class(timestep_t):: self
+  integer:: dims(5)
+  real:: position(3), size(3)
+  real:: courant = 0.4
+  namelist /timestep_params/ courant, timeorder, verbose
 !........................................................................
   !$omp critical (timest_cr)
   if (first_time) then
     first_time = .false.
-    rewind (input)
-    read (input,timestep_params)
-    if (master) write (*,timestep_params)
+    rewind (io%input)
+    read (io%input,timestep_params)
+    if (io%master) write (*,timestep_params)
   end if
   !$omp end critical (timest_cr)
   select case (timeorder)
@@ -42,7 +45,7 @@ SUBROUTINE init (self)
     self%wt = [   1.5,     -.5,      0.0,    0.0]   ! 2nd order
   case (3)
     self%wt = [23./12., -4./3.,   5./12.,    0.0]   ! 3rd order
-  case (t)
+  case (4)
     self%wt = [55./24., -59./24., 37/24., -3./8.]   ! 4th order
   end select
   self%courant   = courant
@@ -51,27 +54,26 @@ SUBROUTINE init (self)
 END SUBROUTINE init_timestep
 
 !************************************************************************
-SUBROUTINE time_step (task)
-  implicit none
-  class(timestep_t):: task
-  integer:: it
-  call task%pde_t%dfdt (task)                   ! time derivative at it
-  it = modulo(task%it,task%ntime)+1             ! wrap new time slot
-  do jt=1,task%timeorder                        ! loop over time
-    kt = modulo(it-jt,task%ntime)               ! previous time slots
+SUBROUTINE update_timestep (self)
+  class(timestep_t):: self
+  integer:: it, jt, kt
+  call self%pde_t%update                          ! time derivative at it
+  it = modulo(self%it,self%nt)+1             ! wrap new time slot
+  do jt=1,self%timeorder                        ! loop over time
+    kt = modulo(it-jt,self%nt)               ! previous time slots
     if (jt == 1) then
-      task%mem(:,:,:,:,it,1) = &
-      task%mem(:,:,:,:,kt,2)*(task%wt(jt)*task%dtime)
+      self%mem(:,:,:,:,it,1) = &
+      self%mem(:,:,:,:,kt,2)*(self%wt(jt)*self%dtime)
     else
-      task%mem(:,:,:,:,it,1) = &
-      task%mem(:,:,:,:,it,1) + &
-      task%mem(:,:,:,:,kt,2)*(task%wt(jt)*task%dtime)
+      self%mem(:,:,:,:,it,1) = &
+      self%mem(:,:,:,:,it,1) + &
+      self%mem(:,:,:,:,kt,2)*(self%wt(jt)*self%dtime)
     end if
   end do
-  task%time = task%time + task%dtime            ! update task time
-  task%t(it) = task%time                        ! update slot time
-  task%it = it                                  ! update time slot
+  self%time = self%time + self%dtime            ! update self time
+  self%t(it) = self%time                        ! update slot time
+  self%it = it                                  ! update time slot
 !........................................................................
-END SUBROUTINE time_step
+END SUBROUTINE update_timestep
 
-END MODULE timestep
+END MODULE timestep_mod
