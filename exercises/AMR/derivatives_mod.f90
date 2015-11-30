@@ -2,7 +2,6 @@
 !> $Id$
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE derivatives_mod
-  USE meshes_mod
   implicit none
   private
   type, abstract, public:: derivatives_t
@@ -21,10 +20,10 @@ MODULE derivatives_mod
   end interface
 CONTAINS
 !> =============================================================================
-SUBROUTINE init (self, mesh)
+SUBROUTINE init (self, ds)
   class(derivatives_t):: self
-  type(mesh_t):: mesh
-  self%ds = mesh%d
+  real:: ds(3)
+  self%ds = ds
 END SUBROUTINE init
 !> =============================================================================
 END MODULE derivatives_mod

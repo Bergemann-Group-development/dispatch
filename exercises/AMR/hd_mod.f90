@@ -8,7 +8,6 @@ MODULE pde_mod
   USE scalar_mod
   USE vector_mod
   USE tensor_mod
-  USE stagger_mod
   implicit none
   private
   integer, parameter:: i_d=1, i_s=2, i_px=3, i_py=4, i_pz=5
@@ -30,6 +29,7 @@ MODULE pde_mod
   type(vector_t):: u, ld, uup
   type(tensor_t):: uu
 CONTAINS
+
 !> =============================================================================
 !> Make sure the memory is allocated, then map variables to the current time slot
 !> The 'it' slot must be the one we are to update, with new values going into the
@@ -52,32 +52,29 @@ SUBROUTINE init_hd (self, dims, position, size)
   self%dpdt%y => self%mem(:,:,:,i_py,self%it,2)
   self%dpdt%z => self%mem(:,:,:,i_pz,self%it,2)
 END SUBROUTINE init_hd
+
 !> =============================================================================
 !> Compute the time derivatives, using the symbolic names mapped into task%mem
-!> above
 !> =============================================================================
 SUBROUTINE pde (self)
   USE scalar_mod
   class(pde_t):: self
   integer:: it
-  type(scalar_t):: tmp
-  type(vector_t):: vec
+  type(vector_t):: u
+  type(tensor_t):: pu
   !.............................................................................
 associate (d=>self%d, p=>self%p, s=>self%s, gamma=>self%gamma)
-  tmp = self%s/self%d*(gamma-1.0)
-  pg = d**gamma*exp(tmp)
-  ld = dnv(log(d))
-  u  = p/exp(ld)
+  pg = d**gamma*exp(s/d*(gamma-1.0))
+  u  = p/d
+  pu = d*outer(u,u)
   self%dddt = -div(p)
-  uup = upv(u)
-  uu = outer(uup,uup)
-  uu = d*uu
-  self%dpdt = -div(uu) - grad(pg)
-  vec = dnv(s)
-  vec = vec*p
-  self%dsdt = -div(vec)
+  self%dpdt = -div(pu) - grad(pg)
+  self%dsdt = -div(p*s)
 end associate
 END SUBROUTINE pde
+
+!> =============================================================================
+!> Compute the log density -- for use in refinement
 !> =============================================================================
 SUBROUTINE log_density (self, out)
   class(pde_t):: self
@@ -87,6 +84,7 @@ SUBROUTINE log_density (self, out)
                      self%li(2):self%ui(2), &
                      self%li(3):self%ui(3), i_d, self%it, 1))
 END SUBROUTINE log_density
+
 !> =============================================================================
 SUBROUTINE log_pressure (self, out)
   class(pde_t):: self
@@ -96,6 +94,7 @@ SUBROUTINE log_pressure (self, out)
                      self%li(2):self%ui(2), &
                      self%li(3):self%ui(3), i_d, self%it, 1))
 END SUBROUTINE log_pressure
+
 !> =============================================================================
 SUBROUTINE velocity_magnitude (self, out)
   class(pde_t):: self
@@ -105,6 +104,7 @@ SUBROUTINE velocity_magnitude (self, out)
                      self%li(2):self%ui(2), &
                      self%li(3):self%ui(3), i_d, self%it, 1))
 END SUBROUTINE velocity_magnitude
+
 !> =============================================================================
 SUBROUTINE magnetic_field_magnitude (self, out)
   class(pde_t):: self
@@ -112,5 +112,6 @@ SUBROUTINE magnetic_field_magnitude (self, out)
   !...............................................................................
   out = 0.0
 END SUBROUTINE magnetic_field_magnitude
+
 !> =============================================================================
 END MODULE pde_mod

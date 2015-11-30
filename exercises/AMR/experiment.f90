@@ -5,8 +5,8 @@ PROGRAM experiment
 !> and update the patches.  Keep updating until the list is empty
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
-  USE lists_mod
-  type (list_t):: list
+  USE patch_list_mod
+  type (patch_list_t):: list
   !.............................................................................
   call io%init                          ! Initialize input (input.nml) / output
   call list%init_cartesian              ! Initialize the patches
