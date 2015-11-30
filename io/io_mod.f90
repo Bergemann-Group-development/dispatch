@@ -2,7 +2,7 @@
 !> $Id$
 !> =============================================================================
 MODULE io_mod
-  USE mpi_timer_mod
+  USE omp_timer_mod
   implicit none
   logical:: mpi_trace=.false.
   type io_t
