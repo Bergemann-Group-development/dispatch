@@ -211,7 +211,7 @@ FUNCTION scalar_real_sub (in1, in2) RESULT(out)
   type(scalar_t), intent(in):: in1
   real, intent(in):: in2
   call out%allocate (in1)
-  out%f = in1%f + in2
+  out%f = in1%f - in2
   print*,out%n
 END FUNCTION scalar_real_sub
 !> =============================================================================
@@ -220,7 +220,7 @@ FUNCTION scalar_int_sub (in1, in2) RESULT (out)
   type(scalar_t), intent(in):: in1
   integer, intent(in):: in2
   call out%allocate (in1)
-  out%f = in1%f + in2
+  out%f = in1%f - in2
   print*,out%n
 END FUNCTION scalar_int_sub
 !> =============================================================================
@@ -228,7 +228,7 @@ FUNCTION scalar_scalar_sub (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1, in2
   call out%allocate (in1)
-  out%f = in1%f + in2%f
+  out%f = in1%f - in2%f
 END FUNCTION scalar_scalar_sub
 
 !> =============================================================================
