@@ -39,7 +39,9 @@ SUBROUTINE init (self, name)
   class (patch_list_t):: self
   character(len=*):: name
   !.............................................................................
+  call trace_begin('patch_list_t%init')
   self%name = name
+  call trace_end
 END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE init_cartesian (self)
@@ -52,6 +54,7 @@ SUBROUTINE init_cartesian (self)
   integer:: i, j, k, i1, j1, k1, i2, j2, k2
   namelist /box_params/ size, dims, msplit
   !.............................................................................
+  call trace_begin ('patch_list_t%init_cartesian')
   rewind (io%input); read (io%input, box_params)
   if (io%master) write (*, box_params)
   self%dims = dims
@@ -65,10 +68,10 @@ SUBROUTINE init_cartesian (self)
     !---------------------------------------------------------------------------
     patch => patches(i,j,k)
     position = -0.5_8*self%size + ([i,j,k]-0.5_8)*patch%size
-    call patch%init (self%dims, position, self%size/self%dims)
+    call patch%init (position, self%size/self%dims)
     patch%i = i; patch%j = j; patch%k = k
-!    print'(i5,3(3f9.4,3x))', &
-!            patch%id, patch%position, patch%size
+    if (io%verbose > 2) &
+      print'(i5,3(3f9.4,3x))', patch%id, patch%position, patch%size
     ! Add to a list of links, with pointers from patch to patch
     !---------------------------------------------------------------------------
     allocate (link)
@@ -83,6 +86,8 @@ SUBROUTINE init_cartesian (self)
   end do
   end do
   self%tail => link
+  call self%print ('after init_cartesian')
+  call trace_end
 END SUBROUTINE init_cartesian
 
 !> =============================================================================
@@ -96,7 +101,7 @@ SUBROUTINE update (self)
   class(timestep_t), pointer:: patch
   integer:: n1
   !.............................................................................
-  call trace_begin('patch_list_t%update '//self%name)
+  call trace_begin('patch_list_t%update')
   link => self%head
   do while (associated(link))
     patch => link%patch                                   ! link patch
@@ -147,9 +152,9 @@ SUBROUTINE split (self, this)
   type(timestep_t), pointer:: patch
   type(link_t), pointer:: this, link, tail, new_patches
   integer dir, i, ix, iy, iz
-  real(8):: pos(3), position(3)
+  real:: pos(3), position(3)
   !.............................................................................
-  call trace_begin('patch_list_t%split', 2)
+  call trace_begin('patch_list_t%split', 1)
   new_patches => self%tail
   nsplit = msplit
   where (this%patch%size==0)
@@ -169,7 +174,7 @@ SUBROUTINE split (self, this)
         !------------------------------------------------------------------------
         allocate (patch, source=this%patch)
         position = this%patch%position + pos*patch%size
-        call patch%init (self%dims, position, self%size/self%dims)
+        call patch%init (position, self%size/self%dims)
         !------------------------------------------------------------------------
         ! Append links to the new patches as the list tail
         !------------------------------------------------------------------------
@@ -196,7 +201,7 @@ SUBROUTINE print (self, label)
   link => self%head
   if (io%master) then
     print*, label
-    print*,' id         position   n_nbor:  neighbors'
+    print*,' id         position'
   end if
   do while (associated(link))
     print '(i4,1h:,3f7.3)', link%patch%id, link%patch%position

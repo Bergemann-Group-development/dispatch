@@ -9,7 +9,7 @@ MODULE patches_mod
   integer, parameter:: ntime=7
   private
   type, public:: patch_t
-    integer:: id
+    integer:: id = 0
     integer:: nt, nv
     integer:: n(3), ng(3)=2, gn(3), li(3), ui(3)
     integer:: it=1, new=2
@@ -37,21 +37,32 @@ MODULE patches_mod
     procedure:: index           ! compute the index for a single point
   end type
   logical:: is_allocated = .false.
+  integer:: id = 0
 CONTAINS
 !> =============================================================================
 !> Initialize the patch memory and patch dimensions.  For this we need to be told the
 !> patch dimensions (which include the number of variable and the number of time
 !> slices), the patch position, and the patch size
 !> =============================================================================
-SUBROUTINE init (self, dims, position, size)
+SUBROUTINE init (self, position, size)
   class(patch_t):: self
   integer:: dims(5)
   real:: position(3), size(3)
+  namelist /patch_params/ dims, size
   !.............................................................................
-  self%position = position
+  !$omp atomic
+  id = id + 1                                   ! increment global
+  self%id = id                                  ! new patch id
+  self%position = position                      ! as per call
   if (is_allocated) return                      ! check
+  call trace_begin ('patch_t%init', 3)
+  !-----------------------------------------------------------------------------
+  ! Read and set patch parameters
+  !-----------------------------------------------------------------------------
+  rewind (io%input)
+  read (io%input, patch_params)
+  if (io%master) write (*, patch_params)
   is_allocated = .true.                         ! mark
-  call trace_begin ('patch_t%init')
   self%size = size                              ! patch size
   self%n  = dims(1:3)                           ! patch dimensions
   self%gn = self%n + 2*self%ng                  ! including guard cells
