@@ -78,11 +78,17 @@ SUBROUTINE init (self, position, size)
   end if
   self%size = size                              ! patch size
   self%n  = dims(1:3)                           ! patch dimensions
+  self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   where (self%n==1)                             ! for collapsed dimensions
     self%ng = 0                                 ! no guard zones
     self%size = 0.0                             ! zero size
+    self%ds = 0.0                               ! first zero
+  end where
+  where (self%n==1)                             ! for collapsed dimensions
+    self%ds = maxval(self%ds)                   ! then set to reasonable val
   end where
   self%gn = self%n + 2*self%ng                  ! including guard cells
+  self%gsize = self%size*real(self%gn,kind=8)/self%n ! size incl guard cells 
   self%li = 1       + self%ng                   ! lower interior index
   self%ui = self%gn - self%ng                   ! upper interior index
   self%nt = dims(4)                             ! number of time slices
