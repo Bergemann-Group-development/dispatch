@@ -6,8 +6,9 @@ MODULE timestep_mod
   USE io_mod
   USE pde_mod
   implicit none
+  private
   integer, parameter:: nslice = 4
-  type, extends(pde_t):: timestep_t
+  type, public, extends(pde_t):: timestep_t
     real:: wt(nslice)
     integer:: timeorder
   contains
@@ -17,7 +18,6 @@ MODULE timestep_mod
   integer:: verbose = 1
   integer:: timeorder = 2
   logical, save:: first_time = .true.
-PRIVATE
 CONTAINS
 
 !> =============================================================================

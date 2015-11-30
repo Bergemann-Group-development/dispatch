@@ -20,6 +20,10 @@ MODULE pde_mod
   contains
     procedure:: init => init_hd
     procedure:: pde
+    procedure:: log_density
+    procedure:: log_pressure
+    procedure:: velocity_magnitude
+    procedure:: magnetic_field_magnitude
   end type
   type(pde_t):: mhd
   type(scalar_t):: pg
@@ -74,5 +78,39 @@ associate (d=>self%d, p=>self%p, s=>self%s, gamma=>self%gamma)
   self%dsdt = -div(vec)
 end associate
 END SUBROUTINE pde
+!> =============================================================================
+SUBROUTINE log_density (self, out)
+  class(pde_t):: self
+  real, dimension(self%n(1),self%n(2),self%n(3)):: out
+  !...............................................................................
+  out = log(self%mem(self%li(1):self%ui(1), &
+                     self%li(2):self%ui(2), &
+                     self%li(3):self%ui(3), i_d, self%it, 1))
+END SUBROUTINE log_density
+!> =============================================================================
+SUBROUTINE log_pressure (self, out)
+  class(pde_t):: self
+  real, dimension(self%n(1),self%n(2),self%n(3)):: out
+  !...............................................................................
+  out = log(self%mem(self%li(1):self%ui(1), &
+                     self%li(2):self%ui(2), &
+                     self%li(3):self%ui(3), i_d, self%it, 1))
+END SUBROUTINE log_pressure
+!> =============================================================================
+SUBROUTINE velocity_magnitude (self, out)
+  class(pde_t):: self
+  real, dimension(self%n(1),self%n(2),self%n(3)):: out
+  !...............................................................................
+  out = log(self%mem(self%li(1):self%ui(1), &
+                     self%li(2):self%ui(2), &
+                     self%li(3):self%ui(3), i_d, self%it, 1))
+END SUBROUTINE velocity_magnitude
+!> =============================================================================
+SUBROUTINE magnetic_field_magnitude (self, out)
+  class(pde_t):: self
+  real, dimension(self%n(1),self%n(2),self%n(3)):: out
+  !...............................................................................
+  out = 0.0
+END SUBROUTINE magnetic_field_magnitude
 !> =============================================================================
 END MODULE pde_mod
