@@ -4,14 +4,14 @@
 !> in space
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE pde_mod
-  USE task_mod
+  USE patches_mod
   USE scalar_mod
   USE vector_mod
   USE tensor_mod
   implicit none
   private
   integer, parameter:: i_d=1, i_s=2, i_px=3, i_py=4, i_pz=5
-  type, public, extends(task_t):: pde_t
+  type, public, extends(patch_t):: pde_t
     type(scalar_t):: d, dddt
     type(scalar_t):: s, dsdt
     type(vector_t):: p, dpdt
@@ -40,7 +40,7 @@ SUBROUTINE init_hd (self, dims, position, size)
   integer:: dims(5)
   real:: position(3), size(3)
   !.............................................................................
-  call self%task_t%init (dims, position, size)
+  call self%patch_t%init (dims, position, size)
   self%d%f    => self%mem(:,:,:,i_d ,self%it,1)
   self%s%f    => self%mem(:,:,:,i_s ,self%it,1)
   self%p%x    => self%mem(:,:,:,i_px,self%it,1)

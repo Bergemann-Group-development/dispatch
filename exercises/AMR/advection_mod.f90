@@ -4,10 +4,10 @@
 !> in space
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE pde_mod
-  USE task_mod
+  USE patches_mod
   implicit none
   private
-  type, public, extends(task_t):: advection_t
+  type, public, extends(patch_t):: advection_t
     real, pointer, dimension(:,:,:) :: rho, drhodt
     real :: u(3)
   contains
@@ -25,12 +25,12 @@ SUBROUTINE init (self)
   type(advection_t):: self
   integer:: it
   !.............................................................................
-  call self%task_t%init
-  self%rho    => task%mem(:,:,:,i_d ,task%it,1)
-  self%drhodt => task%mem(:,:,:,i_d ,task%it,2)
+  call self%patch_t%init
+  self%rho    => patch%mem(:,:,:,i_d ,patch%it,1)
+  self%drhodt => patch%mem(:,:,:,i_d ,patch%it,2)
 END SUBROUTINE init
 !> =============================================================================
-!> Compute the time derivatives, using the symbolic names mapped into task%mem
+!> Compute the time derivatives, using the symbolic names mapped into patch%mem
 !> above
 !> =============================================================================
 SUBROUTINE pde (self)

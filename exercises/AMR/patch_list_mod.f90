@@ -6,7 +6,7 @@
 MODULE patch_list_mod
   USE io_mod
   USE trace_mod
-  USE task_mod
+  USE patches_mod
   USE timestep_mod
   USE refine_mod
   implicit none
@@ -117,7 +117,7 @@ END SUBROUTINE update
 SUBROUTINE remove_patch (self, patch)
   class(patch_list_t):: self
   class(link_t), pointer:: link, prev
-  class(task_t):: patch
+  class(patch_t):: patch
   !.............................................................................
   call trace_begin('patch_list_t%remove_patch')
   link => self%head
