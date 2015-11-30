@@ -63,9 +63,13 @@ SUBROUTINE update_timestep (self)
   class(timestep_t):: self
   integer:: it, jt, kt
   !......................................................................
-  call trace_begin ('timestep_t%tupdate', 3)
+  call trace_begin ('timestep_t%update', 3)
   call self%pde_t%update                        ! time derivative at it
-  it = modulo(self%it,self%nt)+1                ! wrap new time slot
+  it = modulo(self%it,self%nt)+1                ! wrap to new time slot
+  if (io%verbose>3) then
+    print*, 'timestep_t%update, id =', self%id, self%it, it
+    print*, 'timestep_t%update, d =', self%mem(1:5,1,1,1,1,1)
+  end if
   do jt=1,self%time_order                       ! loop over time
     kt = modulo(it-jt,self%nt)                  ! previous time slots
     if (jt == 1) then
@@ -77,6 +81,10 @@ SUBROUTINE update_timestep (self)
       self%mem(:,:,:,:,kt,2)*(self%wt(jt)*self%dtime)
     end if
   end do
+  if (io%verbose>3) then
+    print*, 'timestep_t%update, t =', self%time, self%dtime
+    print*, 'timestep_t%update, d =', self%mem(1:5,1,1,1,1,1)
+  end if
   self%time = self%time + self%dtime            ! update self time
   self%t(it) = self%time                        ! update slot time
   self%it = it                                  ! update time slot

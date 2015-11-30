@@ -68,7 +68,7 @@ SUBROUTINE init_cartesian (self)
     !---------------------------------------------------------------------------
     patch => patches(i,j,k)
     position = -0.5_8*self%size + ([i,j,k]-0.5_8)*patch%size
-    call patch%init (position, self%size/self%dims)
+    call patch%init_values (position, self%size/self%dims)
     patch%i = i; patch%j = j; patch%k = k
     if (io%verbose > 2) &
       print'(i5,3(3f9.4,3x))', patch%id, patch%position, patch%size

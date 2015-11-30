@@ -1,6 +1,6 @@
 &io_params
  do_trace=t
- verbose=4
+ verbose=5
 /
 &box_params
  size=1,1,0

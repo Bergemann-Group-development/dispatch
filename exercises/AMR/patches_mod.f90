@@ -18,7 +18,7 @@ MODULE patches_mod
     real, dimension(3):: position, size, gsize, box, ds, origin
     real, pointer:: t(:)
     real, pointer:: dt(:)
-    real:: time, dtime, end_time=1.0
+    real:: time=0.0, dtime=0.1, end_time=1.0
     real:: out_time=0.1, out_next=0.0           ! controls output
     real:: courant=0.2                          ! courant constant
     integer:: istep=0                           ! time step counter
@@ -78,6 +78,9 @@ SUBROUTINE init (self, position, size)
   end if
   self%is_allocated = .true.                    ! mark
   allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
+  self%t = 0.0
+  self%dt = 1.0
+  self%iit = 1
   associate (nx=>self%gn(1), ny=>self%gn(2), nz=>self%gn(3))
     print*,'mem:',nx,ny,nz,self%nv,self%nt
     allocate (self%mem(nx,ny,nz,self%nv,self%nt,2))

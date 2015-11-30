@@ -20,9 +20,12 @@ MODULE derivatives_mod
   end interface
 CONTAINS
 !> =============================================================================
-SUBROUTINE init (self, ds)
+SUBROUTINE init (self, dims, ds)
   class(derivatives_t):: self
+  integer:: dims(3)
   real:: ds(3)
+  !.............................................................................
+  self%n = dims
   self%ds = ds
 END SUBROUTINE init
 !> =============================================================================

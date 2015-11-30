@@ -39,79 +39,83 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 !> =============================================================================
-FUNCTION needed (self, task)
+FUNCTION needed (self, patch)
   class(refine_t):: self
-  class(timestep_t), pointer:: task
+  class(timestep_t), pointer:: patch
   logical:: needed
   !.............................................................................
   call trace_begin ('refine_t%needed', 2)
-  needed = check_log_density    (self, task); if (needed) return
-  needed = check_log_pressure   (self, task); if (needed) return
-  needed = check_velocity       (self, task); if (needed) return
-  needed = check_magnetic_field (self, task)
+  needed = check_log_density    (self, patch); if (needed) return
+  needed = check_log_pressure   (self, patch); if (needed) return
+  needed = check_velocity       (self, patch); if (needed) return
+  needed = check_magnetic_field (self, patch)
   call trace_end
 END FUNCTION
 !> =============================================================================
-FUNCTION check_log_density (self, task) RESULT(out)
+FUNCTION check_log_density (self, patch) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: task
+  class(timestep_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v, d
   logical:: out
   !.............................................................................
   call trace_begin ('refine_t%check_log_densisty', 2)
-  allocate (v(task%li(1):task%ui(1),task%li(2):task%ui(2),task%li(3):task%ui(3)))
-  call task%log_density (v)
-  out = check_max_diff (self, task, v)
+  if (io%verbose>3) then
+    print*, 'check_log', patch%id
+    print*, 'check_log', patch%li, patch%ui
+  end if
+  allocate (v(patch%li(1):patch%ui(1),patch%li(2):patch%ui(2),patch%li(3):patch%ui(3)))
+  call patch%log_density (v)
+  out = check_max_diff (self, patch, v)
   deallocate (v)
   call trace_end
 END FUNCTION
 !> =============================================================================
-FUNCTION check_log_pressure (self, task) RESULT(out)
+FUNCTION check_log_pressure (self, patch) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: task
+  class(timestep_t), pointer:: patch
   real, dimension(:,:,:), pointer:: p, v
   logical:: out
   !.............................................................................
-  allocate (v(task%li(1):task%ui(1),task%li(2):task%ui(2),task%li(3):task%ui(3)))
-  call task%log_pressure (v)
-  out = check_max_diff (self, task, v)
+  allocate (v(patch%li(1):patch%ui(1),patch%li(2):patch%ui(2),patch%li(3):patch%ui(3)))
+  call patch%log_pressure (v)
+  out = check_max_diff (self, patch, v)
   deallocate (v)
 END FUNCTION
 !> =============================================================================
-FUNCTION check_velocity (self, task) RESULT(out)
+FUNCTION check_velocity (self, patch) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: task
+  class(timestep_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
-  allocate (v(task%li(1):task%ui(1),task%li(2):task%ui(2),task%li(3):task%ui(3)))
-  call task%velocity_magnitude (v)
-  out = check_max_diff (self, task, v)
+  allocate (v(patch%li(1):patch%ui(1),patch%li(2):patch%ui(2),patch%li(3):patch%ui(3)))
+  call patch%velocity_magnitude (v)
+  out = check_max_diff (self, patch, v)
   deallocate (v)
 END FUNCTION
 !> =============================================================================
-FUNCTION check_magnetic_field (self, task) RESULT(out)
+FUNCTION check_magnetic_field (self, patch) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: task
+  class(timestep_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
-  allocate (v(task%li(1):task%ui(1),task%li(2):task%ui(2),task%li(3):task%ui(3)))
-  call task%magnetic_field_magnitude (v)
-  out = check_max_diff (self, task, v)
+  allocate (v(patch%li(1):patch%ui(1),patch%li(2):patch%ui(2),patch%li(3):patch%ui(3)))
+  call patch%magnetic_field_magnitude (v)
+  out = check_max_diff (self, patch, v)
   deallocate (v)
 END FUNCTION
 !> =============================================================================
-FUNCTION check_max_diff (self, task, v) RESULT(out)
+FUNCTION check_max_diff (self, patch, v) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: task
+  class(timestep_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v
   integer:: n(3), i1, i2, i3
   real:: max_diff
   logical:: out
   !.............................................................................
   out = .false.
-  associate (li=>task%li, ui=>task%ui, n=>task%n)
+  associate (li=>patch%li, ui=>patch%ui, n=>patch%n)
     do i1=-1,1
     do i2=-1,1
     do i3=-1,1
