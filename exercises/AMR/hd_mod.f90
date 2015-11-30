@@ -4,6 +4,7 @@
 !> in space
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE pde_mod
+  USE trace_mod
   USE patches_mod
   USE scalar_mod
   USE vector_mod
@@ -35,12 +36,12 @@ CONTAINS
 !> The 'it' slot must be the one we are to update, with new values going into the
 !> 'new' time slot
 !> =============================================================================
-SUBROUTINE init_hd (self, dims, position, size)
+SUBROUTINE init_hd (self, position, size)
   class(pde_t):: self
-  integer:: dims(5)
   real:: position(3), size(3)
   !.............................................................................
-  call self%patch_t%init (dims, position, size)
+  call trace_begin ('hd_mod:pde_t%init', 2)
+  call self%patch_t%init (position, size)
   self%d%f    => self%mem(:,:,:,i_d ,self%it,1)
   self%s%f    => self%mem(:,:,:,i_s ,self%it,1)
   self%p%x    => self%mem(:,:,:,i_px,self%it,1)
@@ -51,6 +52,7 @@ SUBROUTINE init_hd (self, dims, position, size)
   self%dpdt%x => self%mem(:,:,:,i_px,self%it,2)
   self%dpdt%y => self%mem(:,:,:,i_py,self%it,2)
   self%dpdt%z => self%mem(:,:,:,i_pz,self%it,2)
+  call trace_end
 END SUBROUTINE init_hd
 
 !> =============================================================================
@@ -63,6 +65,7 @@ SUBROUTINE pde (self)
   type(vector_t):: u
   type(tensor_t):: pu
   !.............................................................................
+  call trace_begin ('hd_t%pde')
 associate (d=>self%d, p=>self%p, s=>self%s, gamma=>self%gamma)
   pg = d**gamma*exp(s/d*(gamma-1.0))
   u  = p/d
@@ -70,6 +73,7 @@ associate (d=>self%d, p=>self%p, s=>self%s, gamma=>self%gamma)
   self%dddt = -div(p)
   self%dpdt = -div(pu) - grad(pg)
   self%dsdt = -div(p*s)
+  call trace_end
 end associate
 END SUBROUTINE pde
 
