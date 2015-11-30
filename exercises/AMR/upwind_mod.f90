@@ -6,7 +6,7 @@ MODULE upwind_mod
   implicit none
   private
   type, public, extends(derivatives_t):: upwind_t
-    real, pointer :: velocity(:)
+    real, pointer, dimension(:,:,:) :: vx,vy,vz
   contains
     procedure:: dx, dy, dz
   end type
@@ -14,16 +14,15 @@ MODULE upwind_mod
 CONTAINS
 
 !> =============================================================================
-!> Derivatives evaluated with central differences.  When using MPI domain
-!> decomposition, one needs to get a single slice of "ghost cells" on each of
-!> the 6 faces of the local domain.
+!> Derivatives evaluated with upwind differences. We do not care about guard-cells.
+!> They are supposed to be updated elsewhere.
 !> =============================================================================
 FUNCTION dx (self, f)
   class(upwind_t):: self
-  integer:: m, rank, rq(2), k, i
+  integer:: m, rank, rq(2), i
   real, dimension(self%n(1),self%n(2),self%n(3)):: f, dx
-  real, dimension(self%n(2),self%n(3)):: send, recv, dx1, dx2
-  real:: c, delta
+  real, dimension(self%n(2),self%n(3)):: dx1, dx2, delta
+  real :: c
   !.............................................................................
   if (first_time) then
     first_time = .false.
@@ -31,53 +30,48 @@ FUNCTION dx (self, f)
   m = self%n(1)
   c = 0.5/self%ds(1)
 
-  delta = self%velocity(1)*self%dt*self%factor/self%ds(1)
   do i=2,m-1
+    delta = self%vx(i,:,:)*self%dt*self%factor/self%ds(1)
     dx1 = f(i  ,:,:)-f(i-1,:,:)
     dx2 = f(i+1,:,:)-f(i  ,:,:)
     dx(i,:,:) = c*(dx1*(1.0+delta)+dx2*(1.0-delta))
   end do
-  dx(2:m-1,:,:) = (f(3:m,:,:)-f(1:m-2,:,:))*c  ! this part is local
-
-  dx1 = f(1,:,:)-recv
-  dx2 = f(2,:,:)-f(1 ,:,:)
-  dx(1,:,:) = c*(dx1*(1.0+delta)+dx2*(1.0-delta))
-
-  dx1 = f(m,:,:)-f(m-1 ,:,:)
-  dx2 = recv-f(m,:,:)
-  dx(m,:,:) = c*(dx1*(1.0+delta)+dx2*(1.0-delta))
 END FUNCTION dx
 !> =============================================================================
 FUNCTION dy (self, f)
   class(upwind_t):: self
-  integer:: n(3), m, rq(2)
+  integer:: n(3), m, i
   real, dimension(self%n(1),self%n(2),self%n(3)):: f, dy
-  real, dimension(self%n(1),self%n(3)):: send, recv
+  real, dimension(self%n(1),self%n(3)):: dy1, dy2, delta
   real:: c
   !.............................................................................
   m = self%n(2)
   c = 0.5/self%ds(2)
-  dy(:,2:m-1,:) = (f(:,3:m,:)-f(:,1:m-2,:))*c  ! this part is local
-  send = f(:,m,:)
-  dy(:,1    ,:) = (f(:,2  ,:)-recv        )*c  ! remote (:,n,:) slice needed!
-  send = f(:,1,:)
-  dy(:,  m  ,:) = (recv      -f(:,  m-1,:))*c  ! remote (:,1,:) slice needed!
+  
+  do i=2,m-1
+    delta = self%vy(:,i,:)*self%dt*self%factor/self%ds(2)
+    dy1 = f(:,i  ,:)-f(:,i-1,:)
+    dy2 = f(:,i+1,:)-f(:,i  ,:)
+    dy(:,i,:) = c*(dy1*(1.0+delta)+dy2*(1.0-delta))
+  end do
 END FUNCTION dy
 !> =============================================================================
 FUNCTION dz (self, f)
   class(upwind_t):: self
-  integer:: n(3), m, rq(2)
+  integer:: n(3), m, i
   real, dimension(self%n(1),self%n(2),self%n(3)):: f, dz
-  real, dimension(self%n(1),self%n(2)):: send, recv
+  real, dimension(self%n(1),self%n(2)):: dz1, dz2, delta
   real:: c
   !.............................................................................
   m = self%n(3)
   c = 0.5/self%ds(3)
-  dz(:,:,2:m-1) = (f(:,:,3:m)-f(:,:,1:m-2))*c  ! this part is local
-  send = f(:,:,m)
-  dz(:,:,1    ) = (f(:,:,2  )-recv        )*c  ! remote (:,:,n) slice needed!
-  send = f(:,:,1)
-  dz(:,:,  m  ) = (recv      -f(:,:,  m-1))*c  ! remote (:,:,1) slice needed!
+  
+  do i=2,m-1
+    delta = self%vz(:,:,i)*self%dt*self%factor/self%ds(3)
+    dz1 = f(:,:,i  )-f(:,:,i-1)
+    dz2 = f(:,:,i+1)-f(:,:,i  )
+    dz(:,:,i) = c*(dz1*(1.0+delta)+dz2*(1.0-delta))
+  end do
 END FUNCTION dz
 
 END MODULE upwind_mod
