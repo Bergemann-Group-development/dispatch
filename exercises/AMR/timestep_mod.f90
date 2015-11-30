@@ -11,13 +11,14 @@ MODULE timestep_mod
   integer, parameter:: nslice = 4
   type, public, extends(pde_t):: timestep_t
     real:: wt(nslice)
-    integer:: timeorder
+    integer:: time_order
   contains
     procedure:: init   => init_timestep
     procedure:: update => update_timestep
   end type
+  real:: courant = 0.4
   integer:: verbose = 1
-  integer:: timeorder = 2
+  integer:: time_order = 2
   logical, save:: first_time = .true.
 CONTAINS
 
@@ -27,11 +28,12 @@ CONTAINS
 SUBROUTINE init_timestep (self, position, size)
   class(timestep_t):: self
   real:: position(3), size(3)
-  real:: courant = 0.4
-  namelist /timestep_params/ courant, timeorder, verbose
+  namelist /timestep_params/ courant, time_order, verbose
 !........................................................................
   call trace_begin ('timestep_t%init', 1)
   call self%pde_t%init (position, size)
+  print*,'ts',self%id
+  print*,'ts',self%mem(1:6,1,1,1,1,1)
   !$omp critical (timest_cr)
   if (first_time) then
     first_time = .false.
@@ -40,7 +42,7 @@ SUBROUTINE init_timestep (self, position, size)
     if (io%master) write (*,timestep_params)
   end if
   !$omp end critical (timest_cr)
-  select case (timeorder)
+  select case (time_order)
   case (1)
     self%wt = [   1.0,     0.0,      0.0,    0.0]   ! 1st order
   case (2)
@@ -51,7 +53,7 @@ SUBROUTINE init_timestep (self, position, size)
     self%wt = [55./24., -59./24., 37/24., -3./8.]   ! 4th order
   end select
   self%courant   = courant
-  self%timeorder = timeorder
+  self%time_order = time_order
   self%verbose   = verbose
   call trace_end
 END SUBROUTINE init_timestep
@@ -62,10 +64,10 @@ SUBROUTINE update_timestep (self)
   integer:: it, jt, kt
   !......................................................................
   call trace_begin ('timestep_t%tupdate', 3)
-  call self%pde_t%update                          ! time derivative at it
-  it = modulo(self%it,self%nt)+1             ! wrap new time slot
-  do jt=1,self%timeorder                        ! loop over time
-    kt = modulo(it-jt,self%nt)               ! previous time slots
+  call self%pde_t%update                        ! time derivative at it
+  it = modulo(self%it,self%nt)+1                ! wrap new time slot
+  do jt=1,self%time_order                       ! loop over time
+    kt = modulo(it-jt,self%nt)                  ! previous time slots
     if (jt == 1) then
       self%mem(:,:,:,:,it,1) = &
       self%mem(:,:,:,:,kt,2)*(self%wt(jt)*self%dtime)

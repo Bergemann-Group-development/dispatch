@@ -1,6 +1,6 @@
 &io_params
  do_trace=t
- verbose=0
+ verbose=4
 /
 &box_params
  size=1,1,0
@@ -8,6 +8,9 @@
  msplit=2
 /
 &timestep_params
+ courant=0.2
+ time_order=2
+ verbose=0
 /
 &patch_params
  dims=16,16,1,5,5

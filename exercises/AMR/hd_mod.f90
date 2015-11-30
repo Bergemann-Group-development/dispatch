@@ -39,10 +39,18 @@ CONTAINS
 SUBROUTINE init_hd (self, position, size)
   class(pde_t):: self
   real:: position(3), size(3)
+  type(tensor_t):: tensor
   !.............................................................................
   call trace_begin ('hd_mod:pde_t%init', 2)
   call self%patch_t%init (position, size)
+  !-----------------------------------------------------------------------------
+  ! Memory mapping
+  !-----------------------------------------------------------------------------
+  call self%d%init (self%gn, size/self%n)
+  call self%p%init (self%gn, size/self%n)
+  call tensor%init (self%gn, size/self%n)
   self%d%f    => self%mem(:,:,:,i_d ,self%it,1)
+  call trace ('1')
   self%s%f    => self%mem(:,:,:,i_s ,self%it,1)
   self%p%x    => self%mem(:,:,:,i_px,self%it,1)
   self%p%y    => self%mem(:,:,:,i_py,self%it,1)
@@ -52,6 +60,19 @@ SUBROUTINE init_hd (self, position, size)
   self%dpdt%x => self%mem(:,:,:,i_px,self%it,2)
   self%dpdt%y => self%mem(:,:,:,i_py,self%it,2)
   self%dpdt%z => self%mem(:,:,:,i_pz,self%it,2)
+  !-----------------------------------------------------------------------------
+  ! Physical initial conditions
+  !-----------------------------------------------------------------------------
+  call trace ('2')
+  self%d%id = 1
+  self%s%id = 2
+  self%p%id = 3
+  self%d = 1.0
+  self%s = 0.01
+  self%p = 0.0
+  print*,'hd',self%id, self%it, i_d
+  print*,'hd',self%li,self%ui
+  print*,'hd',self%mem(1:6,1,1,1,1,1)
   call trace_end
 END SUBROUTINE init_hd
 
@@ -65,6 +86,8 @@ SUBROUTINE pde (self)
   type(vector_t):: u
   type(tensor_t):: pu
   !.............................................................................
+  call  u%allocate
+  call pu%allocate
   call trace_begin ('hd_t%pde')
 associate (d=>self%d, p=>self%p, s=>self%s, gamma=>self%gamma)
   pg = d**gamma*exp(s/d*(gamma-1.0))
@@ -84,9 +107,16 @@ SUBROUTINE log_density (self, out)
   class(pde_t):: self
   real, dimension(self%n(1),self%n(2),self%n(3)):: out
   !...............................................................................
+  call trace_begin ('hd_mod:pde_t%log_density')
+  if (io%verbose>3) then
+    print*,'log_d',self%id, self%it, i_d
+    print*,'log_d',self%li,self%ui
+    print *,self%mem(1:5,1,1,1,1,1)
+  end if
   out = log(self%mem(self%li(1):self%ui(1), &
                      self%li(2):self%ui(2), &
                      self%li(3):self%ui(3), i_d, self%it, 1))
+  call trace_end
 END SUBROUTINE log_density
 
 !> =============================================================================

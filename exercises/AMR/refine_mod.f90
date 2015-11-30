@@ -32,9 +32,11 @@ SUBROUTINE init (self)
   real:: max_change
   namelist /refine_params/ max_change
   !.............................................................................
+  call trace_begin ('refine_t%init')
   rewind (io%input)
   read (io%input, refine_params)
   if (io%master) write (*, refine_params)
+  call trace_end
 END SUBROUTINE init
 !> =============================================================================
 FUNCTION needed (self, task)
@@ -42,10 +44,12 @@ FUNCTION needed (self, task)
   class(timestep_t), pointer:: task
   logical:: needed
   !.............................................................................
+  call trace_begin ('refine_t%needed', 2)
   needed = check_log_density    (self, task); if (needed) return
   needed = check_log_pressure   (self, task); if (needed) return
   needed = check_velocity       (self, task); if (needed) return
   needed = check_magnetic_field (self, task)
+  call trace_end
 END FUNCTION
 !> =============================================================================
 FUNCTION check_log_density (self, task) RESULT(out)
@@ -54,10 +58,12 @@ FUNCTION check_log_density (self, task) RESULT(out)
   real, dimension(:,:,:), pointer:: v, d
   logical:: out
   !.............................................................................
+  call trace_begin ('refine_t%check_log_densisty', 2)
   allocate (v(task%li(1):task%ui(1),task%li(2):task%ui(2),task%li(3):task%ui(3)))
   call task%log_density (v)
   out = check_max_diff (self, task, v)
   deallocate (v)
+  call trace_end
 END FUNCTION
 !> =============================================================================
 FUNCTION check_log_pressure (self, task) RESULT(out)

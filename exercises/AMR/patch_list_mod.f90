@@ -72,8 +72,10 @@ SUBROUTINE init_cartesian (self)
     patch%i = i; patch%j = j; patch%k = k
     if (io%verbose > 2) &
       print'(i5,3(3f9.4,3x))', patch%id, patch%position, patch%size
+    !---------------------------------------------------------------------------
     ! Add to a list of links, with pointers from patch to patch
     !---------------------------------------------------------------------------
+    self%n = self%n + 1
     allocate (link)
     link%patch => patches(i,j,k)
     if (associated(self%head)) then
@@ -103,16 +105,27 @@ SUBROUTINE update (self)
   !.............................................................................
   call trace_begin('patch_list_t%update')
   link => self%head
+  call trace('MK1')
   do while (associated(link))
+  call trace('MK2')
     patch => link%patch                                   ! link patch
+  call trace('MK3')
     if (refine%needed (patch)) then                       ! if refinement needed
+  call trace('MK4')
       call self%split (link)                              ! refined patch go back to queue
+  call trace('MK5')
     else
+  call trace('MK6')
       call patch%update                                   ! update the patch
+  call trace('MK7')
       if (patch%time > patch%end_time) then               ! finished:
+  call trace('MK8')
         call self%remove_patch (patch)                    ! remove from self
+  call trace('MK9')
       end if
+  call trace('MK10')
     end if
+  call trace('MK11')
     link => link%next
   end do
   call trace_end

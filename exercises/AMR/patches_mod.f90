@@ -26,6 +26,7 @@ MODULE patches_mod
     real, dimension(:,:,:,:,:,:), pointer:: mem
     integer:: verbose = 0
     logical:: is_leaf = .true.
+    logical:: is_allocated = .false.
   contains
     procedure:: init
     procedure:: update
@@ -36,7 +37,6 @@ MODULE patches_mod
     procedure:: indices         ! computes indices and fractional indices
     procedure:: index           ! compute the index for a single point
   end type
-  logical:: is_allocated = .false.
   integer:: id = 0
 CONTAINS
 !> =============================================================================
@@ -46,23 +46,25 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self, position, size)
   class(patch_t):: self
-  integer:: dims(5)
+  integer:: dims(5) = 4
   real:: position(3), size(3)
+  logical:: first_time = .true.
   namelist /patch_params/ dims, size
   !.............................................................................
   !$omp atomic
   id = id + 1                                   ! increment global
   self%id = id                                  ! new patch id
   self%position = position                      ! as per call
-  if (is_allocated) return                      ! check
   call trace_begin ('patch_t%init', 3)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters
   !-----------------------------------------------------------------------------
-  rewind (io%input)
-  read (io%input, patch_params)
-  if (io%master) write (*, patch_params)
-  is_allocated = .true.                         ! mark
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, patch_params)
+    if (io%master) write (*, patch_params)
+  end if
   self%size = size                              ! patch size
   self%n  = dims(1:3)                           ! patch dimensions
   self%gn = self%n + 2*self%ng                  ! including guard cells
@@ -70,8 +72,14 @@ SUBROUTINE init (self, position, size)
   self%ui = self%gn - self%ng                   ! upper interior index
   self%nt = dims(4)                             ! number of time slices
   self%nv = dims(5)                             ! number of variables
+  if (self%is_allocated) then
+    call trace_end
+    return
+  end if
+  self%is_allocated = .true.                    ! mark
   allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
   associate (nx=>self%gn(1), ny=>self%gn(2), nz=>self%gn(3))
+    print*,'mem:',nx,ny,nz,self%nv,self%nt
     allocate (self%mem(nx,ny,nz,self%nv,self%nt,2))
   end associate
   call trace_end

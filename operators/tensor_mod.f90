@@ -2,6 +2,7 @@
 !> $Id$
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE tensor_mod
+  USE trace_mod
   USE vector_mod
   USE derivatives_mod
   implicit none
@@ -43,14 +44,15 @@ SUBROUTINE init_tensor (self, dims, ds)
   integer:: dims(3)
   real:: ds(3)
   !.............................................................................
+  call trace_begin ('tensor_t%init', 2)
   n = dims
   self%n = dims
+  call trace_end
 END SUBROUTINE init_tensor
 !> =============================================================================
 SUBROUTINE tensor_tensor_assign (out, in)
   type(tensor_t), intent(out):: out
   type(tensor_t), intent(in):: in
-  call out%allocate
   out%xx = in%xx
   out%yx = in%yx
   out%zx = in%zx
@@ -67,7 +69,6 @@ FUNCTION tensor_vector_grad (in) RESULT (out)
   type(vector_t), intent(in):: in
   !-----------------------------------------------------------------------------
   n = [size(in%x,dim=1), size(in%x,dim=2), size(in%x,dim=3)]
-  call out%allocate
   out%xx = d%dx (in%x)
   out%yx = d%dy (in%x)
   out%zx = d%dz (in%x)
@@ -84,7 +85,6 @@ FUNCTION vector_tensor_grad (in) RESULT (out)
   type(vector_t), intent(in):: in
   !-----------------------------------------------------------------------------
   n = [size(in%x,dim=1), size(in%x,dim=2), size(in%x,dim=3)]
-  call out%allocate
   out%xx = d%dx (in%x)
   out%yx = d%dy (in%x)
   out%zx = d%dz (in%x)
@@ -101,7 +101,6 @@ FUNCTION vector_tensor_div (in) RESULT (out)
   type(tensor_t), intent(in):: in
   !-----------------------------------------------------------------------------
   n = [size(in%xx,dim=1), size(in%xx,dim=2), size(in%xx,dim=3)]
-  call out%allocate
   out%x = d%dx (in%xx) + d%dy(in%yx) + d%dz(in%zx)
   out%y = d%dx (in%xy) + d%dy(in%yy) + d%dz(in%zy)
   out%z = d%dx (in%xz) + d%dy(in%yz) + d%dz(in%zz)
