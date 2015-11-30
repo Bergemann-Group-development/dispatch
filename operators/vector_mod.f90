@@ -254,6 +254,7 @@ END FUNCTION vector_int_grad
 SUBROUTINE check_dims (f, label)
   real, dimension(:,:,:), pointer:: f
   character(len=*):: label
+  if (io%verbose>2) &
   print *, 'check_dims: '//label, size(f,dim=1), size(f,dim=2), size(f,dim=3)
 END
 !> =============================================================================

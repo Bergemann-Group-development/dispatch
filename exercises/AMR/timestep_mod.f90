@@ -32,7 +32,9 @@ SUBROUTINE init_timestep (self, position, size)
 !........................................................................
   call trace_begin ('timestep_t%init', 1)
   call self%pde_t%init (position, size)
+  if (io%verbose>2) &
   print*,'ts',self%id
+  if (io%verbose>2) &
   print*,'ts',self%mem(1:6,1,1,1,1,1)
   !$omp critical (timest_cr)
   if (first_time) then

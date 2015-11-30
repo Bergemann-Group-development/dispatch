@@ -203,6 +203,7 @@ SUBROUTINE split (self, this)
         ! and is reset back to -0.5 before continuing to the next direction
         !------------------------------------------------------------------------
         allocate (patch, source=this%patch)
+        patch%mem_allocated = .false.
         position = this%patch%position + pos*patch%size
         call patch%init (position, self%size/self%dims)
         !------------------------------------------------------------------------

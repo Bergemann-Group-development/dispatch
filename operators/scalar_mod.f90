@@ -68,10 +68,13 @@ END SUBROUTINE init_scalar
 SUBROUTINE scalar_assign_real (out, in)
   type(scalar_t), intent(inout):: out
   real, intent(in):: in
+  if (io%verbose>2) &
   print*,'sc', out%id, out%allocated, associated(out%f), out%name
+  if (io%verbose>2) &
   print*,'sc', in, size(out%f)
   call out%allocate (out)
   out%f = in
+  if (io%verbose>2) &
   print*,'sc', out%f(1:6,1,1)
 END SUBROUTINE scalar_assign_real
 !> =============================================================================

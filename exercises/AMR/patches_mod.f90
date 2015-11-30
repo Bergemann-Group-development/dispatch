@@ -7,8 +7,6 @@ MODULE patches_mod
   USE io_mod
   USE bits_mod
   USE central_mod
-  USE upwind_mod
-  USE derivatives_mod
   implicit none
   integer, parameter:: ntime=7
   private
@@ -31,7 +29,7 @@ MODULE patches_mod
     real, dimension(:,:,:,:,:,:), pointer:: mem
     integer:: verbose = 0
     logical:: is_leaf = .true.
-    logical:: is_allocated = .false.
+    logical:: mem_allocated = .false.
     class(central_t), pointer:: derivs
   contains
     procedure:: init
@@ -95,21 +93,25 @@ SUBROUTINE init (self, position, size)
   self%nv = dims(5)                             ! number of variables
   allocate (self%derivs)                        ! thread safe derivatives
   call self%derivs%init (dims(1:3), size/self%n)! pass on patch info to derivs
-  if (self%is_allocated) then
+  if (self%mem_allocated) then
     call trace_end
     return
   end if
-  self%is_allocated = .true.                    ! mark
+  self%mem_allocated = .true.                   ! mark
+  print*,'MK1', associated(self%t) , associated(self%iit), &
+                associated(self%dt), associated(self%mem)
   allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
   self%t = 0.0
   self%dt = 1.0
   self%iit = 1
   associate (nx=>self%gn(1), ny=>self%gn(2), nz=>self%gn(3))
+    if (io%verbose>2) &
     print*,'mem:',nx,ny,nz,self%nv,self%nt
     allocate (self%mem(nx,ny,nz,self%nv,self%nt,2))
   end associate
   call trace_end
 END SUBROUTINE init
+
 !> =============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time
 !> step puts new values in the 'new' slot 2, while saving the time step used in
