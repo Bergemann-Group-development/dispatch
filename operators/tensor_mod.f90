@@ -31,10 +31,10 @@ MODULE tensor_mod
   interface grad
     module procedure vector_tensor_grad
   end interface
-  interface outer
+  interface outers
     module procedure vector_vector_outer
   end interface
-  interface outerf
+  interface outer
     module procedure vector_vector_outerf
   end interface
   interface div

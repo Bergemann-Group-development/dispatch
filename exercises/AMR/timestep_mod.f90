@@ -63,7 +63,7 @@ SUBROUTINE update_timestep (self)
   class(timestep_t):: self
   integer:: it, jt, kt
   !......................................................................
-  call trace_begin ('timestep_t%update', 3)
+  call trace_begin ('timestep_t%update', 1)
   call self%pde_t%update                        ! time derivative at it
   it = modulo(self%it,self%nt)+1                ! wrap to new time slot
   if (io%verbose>3) then

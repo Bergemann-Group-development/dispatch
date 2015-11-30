@@ -24,7 +24,7 @@ MODULE scalar_mod
     module procedure scalar_real_add, scalar_int_add, scalar_scalar_add
   end interface
   interface operator(**)
-    module procedure scalar_power_int
+    module procedure scalar_power_int, scalar_power_real
   end interface
   interface operator(*)
     module procedure scalar_real_mul, real_scalar_mul, scalar_int_mul, scalar_scalar_mul

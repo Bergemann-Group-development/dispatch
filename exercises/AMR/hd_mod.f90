@@ -9,6 +9,7 @@ MODULE pde_mod
   USE scalar_mod
   USE vector_mod
   USE tensor_mod
+!  USE upwind_mod, only: d
   implicit none
   private
   integer, parameter:: i_d=1, i_s=2, i_px=3, i_py=4, i_pz=5
@@ -81,67 +82,33 @@ SUBROUTINE init_values (self, position, size)
   self%d = 1.0
   self%s = 0.01
   self%p = 0.0
-  print*,'hd',self%id, self%it, i_d
-  print*,'hd',self%li,self%ui
-  print*,'hd',self%mem(1:6,1,1,1,1,1)
+!  print*,'hd',self%id, self%it, i_d
+!  print*,'hd',self%li,self%ui
+!  print*,'hd',self%mem(1:6,1,1,1,1,1)
   call trace_end
 END SUBROUTINE init_values
 
 !> =============================================================================
-!> Compute the time derivatives, using the symbolic names mapped into task%mem
+!> Compute the time derivatives, using the symbolic names mapped into task%mem,
+!> and an associate block to make the code maximally readable
 !> =============================================================================
 SUBROUTINE update (self)
   USE scalar_mod
   class(pde_t):: self
-  integer:: it
-  type(scalar_t), save:: pg, d1
+  type(scalar_t), save:: pg
   type(vector_t), save:: u
   type(tensor_t), save:: pu
   !.............................................................................
-  call pg%allocate
-  call  u%allocate
-  call pu%allocate
-  pg%id = 5
-  call trace_begin ('hd_t%update')
-  call check_dims (self%dddt%f, 'update, ddt%f')
-associate (d=>self%d, p=>self%p, s=>self%s, gamma=>self%gamma)
-  call trace('1')
-  pg%f = d%f**gamma
-  call trace('2')
-  pg%f = pg%f*exp(s%f/d%f*(gamma-1.0))
-  u%x  = p%x/d%f
-  u%y  = p%y/d%f
-  u%z  = p%z/d%f
-  call trace('3')
-  call outer (pu,d,u)
-  call trace('4')
-  !pu = outerf(u,u)
-  !pu = d*outer(u,u)
-  print*, minval(p%x), maxval(p%x)
-  print*, minval(p%y), maxval(p%y)
-  print*, minval(p%z), maxval(p%z)
-  call d1%allocate
-  d1%f = div3 (p%x, p%y, p%z)
-  self%dddt = div(p)
-  call trace('5')
-  call check_dims (u%x, 'update, u%x')
-  call check_dims (u%y, 'update, u%y')
-  call check_dims (u%z, 'update, u%z')
-  call check_dims (pg%f, 'update, pg%f')
-!  u = grads (pg)
-!  call grads (pg, u)
-  u = grad(pg)
-  call check_dims (pu%xx, 'update, pu%xx')
-  call trace('6')
-  self%dpdt = div(pu)
-  call trace('6a')
-  self%dpdt = -div(pu)
-  call trace('6b')
-  self%dpdt = -div(pu) - grad(pg)
-  call trace('6c')
-  self%dsdt = -div(p*s)
-  call trace('7')
-end associate
+  call trace_begin ('hd_mod:pde_t%update', 2)
+  associate (d=>self%d, p=>self%p, s=>self%s, gamma=>self%gamma)
+    pg = d**gamma*exp((s/d)*(gamma-1.0))
+    u = p/d
+    pu = outer(p,u)
+    self%dddt = -div(p)
+    self%dpdt = -div(pu)
+    self%dpdt = -div(pu) - grad(pg)
+    self%dsdt = -div(p*s)
+  end associate
   call trace_end
 END SUBROUTINE update
 

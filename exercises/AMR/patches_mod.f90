@@ -96,7 +96,7 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(patch_t):: self
   !.............................................................................
-  call trace_begin ('patch_t%update')
+  call trace_begin ('patch_t%update', 3)
   if (self%time >= self%out_time) then
     call self%output
     self%out_next = self%out_next + self%out_time
