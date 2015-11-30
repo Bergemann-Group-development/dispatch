@@ -5,6 +5,7 @@
 MODULE patches_mod
   USE trace_mod
   USE io_mod
+  USE bits_mod
   USE central_mod
   USE upwind_mod
   USE derivatives_mod
@@ -17,11 +18,12 @@ MODULE patches_mod
     integer:: n(3), ng(3)=2, gn(3), li(3), ui(3)
     integer:: it=1, new=2
     integer:: i, j, k
+    integer:: status
     integer, pointer:: iit(:)
     real, dimension(3):: position, size, gsize, box, ds, origin
     real, pointer:: t(:)
     real, pointer:: dt(:)
-    real:: time=0.0, dtime=0.1, end_time=1.0
+    real:: time=0.0, dtime=0.1, end_time=1.0, grace=0.0
     real:: out_time=0.1, out_next=0.0           ! controls output
     real:: courant=0.2                          ! courant constant
     integer:: istep=0                           ! time step counter
@@ -40,6 +42,11 @@ MODULE patches_mod
     procedure:: index_range     ! returns the index ranges btw two points
     procedure:: indices         ! computes indices and fractional indices
     procedure:: index           ! compute the index for a single point
+    procedure:: set
+    procedure:: clear
+    procedure:: is_set
+    procedure:: is_clear
+    procedure:: ahead_of
   end type
   integer:: id = 0
 CONTAINS
@@ -174,5 +181,51 @@ FUNCTION overlaps (self, patch)
   logical:: overlaps
   !.............................................................................
   overlaps = all(distance(self,patch) <= 0.5000000001_8*(self%gsize+patch%size))
+END FUNCTION
+
+!> =============================================================================
+!> Set and clear status bits
+!> =============================================================================
+SUBROUTINE set (self, bit)
+  class (patch_t):: self
+  integer:: bit
+  !.............................................................................
+!  call trace_begin ('patch_t%set')
+  self%status = ior(self%status, bit)
+!  call trace_end
+END SUBROUTINE
+!> =============================================================================
+SUBROUTINE clear (self, bit)
+  class (patch_t):: self
+  integer:: bit
+  !.............................................................................
+!  call trace_begin ('patch_t%clear')
+  self%status = iand(self%status, not(bit))
+!  call trace_end
+END SUBROUTINE
+!> =============================================================================
+LOGICAL FUNCTION is_set (self, bit)
+  class (patch_t):: self
+  integer:: bit
+  !.............................................................................
+!  call trace_begin ('patch_t%is_set')
+  is_set = (iand(self%status, bit) /= 0)
+!  call trace_end
+END FUNCTION
+!> =============================================================================
+LOGICAL FUNCTION is_clear (self, bit)
+  class (patch_t):: self
+  integer:: bit
+  !.............................................................................
+!  call trace_begin ('patch_t%is_clear')
+  is_clear = (iand(self%status, bit) == 0)
+!  call trace_end
+END FUNCTION
+!> =============================================================================
+LOGICAL FUNCTION ahead_of (self, patch)
+  class (patch_t):: self, patch
+  !.............................................................................
+  ahead_of = self%time > patch%time + patch%grace
+!  print*,'ahead_of: ', self%time, patch%time, patch%grace, ahead_of
 END FUNCTION
 END MODULE

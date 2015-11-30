@@ -16,7 +16,6 @@ MODULE task_list_mod
   USE task_mod
   USE bits_mod
   USE trace_mod
-  USE mpi_mod
   USE io_mod
   implicit none
   private
@@ -154,16 +153,11 @@ SUBROUTINE check_nbors (self, link)
   do while (associated (nbor))                        ! keep going until end
     nbtask => nbor%task                               ! neighbor task
     inbor = min(inbor+1,mnbor)
-    if (nbtask%rank==mpi%rank) then                   ! local rank:
-      if (nbtask%is_clear(bits%ready)) then           ! needs checking?
-        nbors(inbor) = nbtask%id
-        call self%check_ready (nbor%link)             ! nbor ready?
-      else
-        nbors(inbor) = -nbtask%id
-      end if
-    else                                              ! foreign rank:
-      call task%send_to (nbtask)                      ! send task data
-      nbors(inbor) = 0
+    if (nbtask%is_clear(bits%ready)) then             ! needs checking?
+      nbors(inbor) = nbtask%id
+      call self%check_ready (nbor%link)               ! nbor ready?
+    else
+      nbors(inbor) = -nbtask%id
     end if
     nbor => nbor%nbor                                 ! next nbor
   end do
