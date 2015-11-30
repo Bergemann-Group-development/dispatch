@@ -15,7 +15,7 @@ MODULE patch_list_mod
   !.............................................................................
   type, public:: link_t
     type(link_t), pointer:: next => null()
-    type(link_t), pointer:: nbors => null()
+    class(link_t), pointer:: nbors => null()
     type(link_t), pointer:: next_time => null()
     type(timestep_t), pointer:: patch => null()
     integer:: n_nbors
