@@ -5,6 +5,9 @@
 MODULE patches_mod
   USE trace_mod
   USE io_mod
+  USE central_mod
+  USE upwind_mod
+  USE derivatives_mod
   implicit none
   integer, parameter:: ntime=7
   private
@@ -27,6 +30,7 @@ MODULE patches_mod
     integer:: verbose = 0
     logical:: is_leaf = .true.
     logical:: is_allocated = .false.
+    class(central_t), pointer:: derivs
   contains
     procedure:: init
     procedure:: update
@@ -67,11 +71,17 @@ SUBROUTINE init (self, position, size)
   end if
   self%size = size                              ! patch size
   self%n  = dims(1:3)                           ! patch dimensions
+  where (self%n==1)                             ! for collapsed dimensions
+    self%ng = 0                                 ! no guard zones
+    self%size = 0.0                             ! zero size
+  end where
   self%gn = self%n + 2*self%ng                  ! including guard cells
   self%li = 1       + self%ng                   ! lower interior index
   self%ui = self%gn - self%ng                   ! upper interior index
   self%nt = dims(4)                             ! number of time slices
   self%nv = dims(5)                             ! number of variables
+  allocate (self%derivs)                        ! thread safe derivatives
+  call self%derivs%init (dims(1:3), size/self%n)! pass on patch info to derivs
   if (self%is_allocated) then
     call trace_end
     return

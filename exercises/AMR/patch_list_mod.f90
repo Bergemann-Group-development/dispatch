@@ -41,6 +41,7 @@ SUBROUTINE init (self, name)
   !.............................................................................
   call trace_begin('patch_list_t%init')
   self%name = name
+  call init_cartesian (self)
   call trace_end
 END SUBROUTINE init
 !> =============================================================================

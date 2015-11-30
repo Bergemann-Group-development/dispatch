@@ -40,12 +40,16 @@ SUBROUTINE init (self, position, size)
   type(tensor_t):: tensor
   !.............................................................................
   call trace_begin ('hd_mod:pde_t%init', 2)
+  call self%patch_t%init (position, size)
   !-----------------------------------------------------------------------------
   ! Memory mapping
   !-----------------------------------------------------------------------------
-  call self%d%init (self%gn, size/self%n)
-  call self%p%init (self%gn, size/self%n)
-  call tensor%init (self%gn, size/self%n)
+  call    self%d%init (self%gn, self%size/self%n, self%derivs, 'd')
+  call    self%s%init (self%gn, self%size/self%n, self%derivs, 's')
+  call    self%p%init (self%gn, self%size/self%n, self%derivs, 'p')
+  call self%dddt%init (self%gn, self%size/self%n, self%derivs, 'dddt')
+  call self%dsdt%init (self%gn, self%size/self%n, self%derivs, 'dsdt')
+  call self%dpdt%init (self%gn, self%size/self%n, self%derivs, 'dpdt')
   self%d%f    => self%mem(:,:,:,i_d ,self%it,1)
   self%s%f    => self%mem(:,:,:,i_s ,self%it,1)
   self%p%x    => self%mem(:,:,:,i_px,self%it,1)
@@ -71,20 +75,13 @@ SUBROUTINE init_values (self, position, size)
   type(tensor_t):: tensor
   !.............................................................................
   call trace_begin ('hd_mod:pde_t%init_values', 2)
-  call self%patch_t%init (position, size)
   call self%init (position, size)
   !-----------------------------------------------------------------------------
   ! Physical initial conditions
   !-----------------------------------------------------------------------------
-  self%d%id = 1
-  self%s%id = 2
-  self%p%id = 3
-  self%d = 1.0
   self%s = 0.01
+  self%d = 1.0
   self%p = 0.0
-!  print*,'hd',self%id, self%it, i_d
-!  print*,'hd',self%li,self%ui
-!  print*,'hd',self%mem(1:6,1,1,1,1,1)
   call trace_end
 END SUBROUTINE init_values
 
@@ -100,6 +97,9 @@ SUBROUTINE update (self)
   type(tensor_t), save:: pu
   !.............................................................................
   call trace_begin ('hd_mod:pde_t%update', 2)
+  call pg%init (self%gn, self%size/self%n, self%derivs, 'pg')
+  call  u%init (self%gn, self%size/self%n, self%derivs, 'u' )
+  call pu%init (self%gn, self%size/self%n, self%derivs, 'pu')
   associate (d=>self%d, p=>self%p, s=>self%s, gamma=>self%gamma)
     pg = d**gamma*exp((s/d)*(gamma-1.0))
     u = p/d

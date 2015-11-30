@@ -6,12 +6,10 @@ MODULE tensor_mod
   USE vector_mod
   USE derivatives_mod
   implicit none
-  type:: tensor_t
+  type, public, extends(vector_t):: tensor_t
     real, dimension(:,:,:), pointer:: xx=>null(),xy=>null(),xz=>null(), &
                                       yx=>null(),yy=>null(),yz=>null(), &
                                       zx=>null(),zy=>null(),zz=>null()
-    logical:: allocated=.false.
-    integer:: n(3)
   contains
     procedure:: init => init_tensor
     procedure:: allocate => allocate_tensor
@@ -40,21 +38,21 @@ MODULE tensor_mod
   interface div
     module procedure vector_tensor_div
   end interface
-  integer, private:: n(3)
-  class(central_t), private, pointer:: d
 CONTAINS
 !> =============================================================================
-SUBROUTINE init_tensor (self, dims, ds)
+SUBROUTINE init_tensor (self, dims, ds, deriv, name)
   class(tensor_t):: self
   integer:: dims(3)
   real:: ds(3)
+  class(central_t), pointer:: deriv
+  character(len=*):: name
   !.............................................................................
   call trace_begin ('tensor_t%init', 2)
-  n = dims
   self%n = dims
-  allocate (d)
-  ds = 1.0
-  call d%init (dims, ds)
+  self%ds = ds
+  self%name = name
+  self%d => deriv
+  call self%allocate (self)
   call trace_end
 END SUBROUTINE init_tensor
 !> =============================================================================
@@ -62,7 +60,7 @@ SUBROUTINE tensor_tensor_assign (out, in)
   type(tensor_t), intent(out):: out
   type(tensor_t), intent(in):: in
   !.............................................................................
-  call out%allocate
+  call out%allocate (in)
   out%xx = in%xx
   out%yx = in%yx
   out%zx = in%zx
@@ -78,43 +76,47 @@ FUNCTION tensor_vector_grad (in) RESULT (out)
   type(tensor_t):: out
   type(vector_t), intent(in):: in
   !.............................................................................
-  call out%allocate
-  out%xx = d%dx (in%x)
-  out%yx = d%dy (in%x)
-  out%zx = d%dz (in%x)
-  out%xy = d%dx (in%y)
-  out%yy = d%dy (in%y)
-  out%zy = d%dz (in%y)
-  out%xz = d%dx (in%z)
-  out%yz = d%dy (in%z)
-  out%zz = d%dz (in%z)
+  call out%allocate (in)
+  out%xx = out%d%dx (in%x)
+  out%yx = out%d%dy (in%x)
+  out%zx = out%d%dz (in%x)
+  out%xy = out%d%dx (in%y)
+  out%yy = out%d%dy (in%y)
+  out%zy = out%d%dz (in%y)
+  out%xz = out%d%dx (in%z)
+  out%yz = out%d%dy (in%z)
+  out%zz = out%d%dz (in%z)
 END FUNCTION tensor_vector_grad
 !> =============================================================================
 FUNCTION vector_tensor_grad (in) RESULT (out)
   type(tensor_t):: out
   type(vector_t), intent(in):: in
   !.............................................................................
-  call out%allocate
-  out%xx = d%dx (in%x)
-  out%yx = d%dy (in%x)
-  out%zx = d%dz (in%x)
-  out%xy = d%dx (in%y)
-  out%yy = d%dy (in%y)
-  out%zy = d%dz (in%y)
-  out%xz = d%dx (in%z)
-  out%yz = d%dy (in%z)
-  out%zz = d%dz (in%z)
+  call out%allocate (in)
+  out%xx = out%d%dx (in%x)
+  out%yx = out%d%dy (in%x)
+  out%zx = out%d%dz (in%x)
+  out%xy = out%d%dx (in%y)
+  out%yy = out%d%dy (in%y)
+  out%zy = out%d%dz (in%y)
+  out%xz = out%d%dx (in%z)
+  out%yz = out%d%dy (in%z)
+  out%zz = out%d%dz (in%z)
 END FUNCTION vector_tensor_grad
 !> =============================================================================
 FUNCTION vector_tensor_div (in) RESULT (out)
   type(vector_t):: out
-  type(tensor_t), intent(in):: in
+  class(scalar_t), intent(in):: in
   !.............................................................................
   call trace_begin ('vector_tensor_div', 3)
-  call out%allocate
-  out%x = d%dx (in%xx) + d%dy(in%yx) + d%dz(in%zx)
-  out%y = d%dx (in%xy) + d%dy(in%yy) + d%dz(in%zy)
-  out%z = d%dx (in%xz) + d%dy(in%yz) + d%dz(in%zz)
+  print *,trim(out%name)//' = div('//trim(in%name)
+  call out%allocate (in)
+  select type (in)
+  type is (tensor_t)
+    out%x = in%d%dx (in%xx) + in%d%dy(in%yx) + in%d%dz(in%zx)
+    out%y = in%d%dx (in%xy) + in%d%dy(in%yy) + in%d%dz(in%zy)
+    out%z = in%d%dx (in%xz) + in%d%dy(in%yz) + in%d%dz(in%zz)
+  end select
   call trace_end
 END FUNCTION vector_tensor_div
 !> =============================================================================
@@ -122,7 +124,7 @@ FUNCTION tensor_tensor_add (in1, in2) RESULT (out)
   type(tensor_t):: out
   type(tensor_t), intent(in):: in1, in2
   !.............................................................................
-  call out%allocate
+  call out%allocate (in1)
   out%xx = in1%xx + in2%xx
   out%yx = in1%yx + in2%yx
   out%zx = in1%zx + in2%zx
@@ -139,7 +141,7 @@ FUNCTION vector_tensor_mul (in1, in2) RESULT (out)
   type(vector_t), intent(in):: in1
   type(tensor_t), intent(in):: in2
   !.............................................................................
-  call out%allocate
+  call out%allocate (in1)
   out%x = in1%x * in2%xx + in1%y * in2%xy + in1%z * in2%xz
   out%y = in1%y * in2%yx + in1%y * in2%yy + in1%z * in2%yz
   out%z = in1%z * in2%zx + in1%y * in2%zy + in1%z * in2%zz
@@ -150,7 +152,7 @@ FUNCTION scalar_tensor_mul (in1, in2) RESULT (out)
   type(scalar_t), intent(in):: in1
   type(tensor_t), intent(in):: in2
   !.............................................................................
-  call out%allocate
+  call out%allocate (in1)
   out%xx = in1%f - in2%xx
   out%yx = in1%f - in2%yx
   out%zx = in1%f - in2%zx
@@ -166,7 +168,7 @@ FUNCTION tensor_tensor_sub (in1, in2) RESULT (out)
   type(tensor_t):: out
   type(tensor_t), intent(in):: in1, in2
   !.............................................................................
-  call out%allocate
+  call out%allocate (in1)
   out%xx = in1%xx - in2%xx
   out%yx = in1%yx - in2%yx
   out%zx = in1%zx - in2%zx
@@ -184,7 +186,7 @@ SUBROUTINE vector_vector_outer (out, in1, in2)
   type(scalar_t), intent(in):: in1
   type(vector_t), intent(in):: in2
   !.............................................................................
-  call out%allocate
+  call out%allocate (in1)
   out%xx = in1%f * in2%x * in2%x
   out%yx = in1%f * in2%y * in2%x
   out%zx = in1%f * in2%z * in2%x
@@ -200,7 +202,7 @@ FUNCTION vector_vector_outerf (in1, in2) RESULT(out)
   type(tensor_t):: out
   type(vector_t), intent(in):: in1, in2
   !.............................................................................
-  call out%allocate
+  call out%allocate (in1)
   out%xx = in1%x - in2%x
   out%yx = in1%y - in2%x
   out%zx = in1%z - in2%x
@@ -213,12 +215,12 @@ FUNCTION vector_vector_outerf (in1, in2) RESULT(out)
 END FUNCTION vector_vector_outerf
 
 !> =============================================================================
-SUBROUTINE allocate_tensor (self)
+SUBROUTINE allocate_tensor (self, in)
   class(tensor_t):: self
+  class(scalar_t):: in
   !.............................................................................
-  call trace_begin('allocate_tensor', 3)
-  if (io%verbose>3) print*,'allocate_tensor',n,self%n
-  self%n = n
+  call trace_begin('allocate_tensor '//trim(self%name), 3)
+  if (io%verbose>3) print*,'allocate_tensor',self%n
   call flush()
   if (.not.associated(self%xx)) &
     allocate (self%xx (self%n(1), self%n(2), self%n(3)))

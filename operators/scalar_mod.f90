@@ -4,6 +4,7 @@
 MODULE scalar_mod
   USE io_mod
   USE trace_mod
+  USE central_mod
   USE derivatives_mod
   implicit none
   public
@@ -12,6 +13,9 @@ MODULE scalar_mod
     logical:: allocated=.false.
     integer:: n(3)
     integer:: id
+    real:: ds(3)
+    character(len=32):: name = ''
+    class(central_t), pointer:: d => null()
   contains
     procedure:: init => init_scalar
     procedure:: allocate => allocate_scalar
@@ -44,27 +48,29 @@ MODULE scalar_mod
   interface maxval
     module procedure scalar_maxval
   end interface
-  integer, private:: n(3)=1
-  private init_scalar
+  private init_scalar, allocate_scalar
 CONTAINS
 !> =============================================================================
-SUBROUTINE init_scalar (self, dims, ds)
+SUBROUTINE init_scalar (self, dims, ds, deriv, name)
   class(scalar_t):: self
   integer:: dims(3)
   real:: ds(3)
+  class(central_t), pointer:: deriv
+  character(len=*):: name
   !.............................................................................
   call trace_begin ('scalar_t%init', 2)
-  n = dims
   self%n = dims
+  self%name = name
+  call self%allocate (self)
   call trace_end
 END SUBROUTINE init_scalar
 !> =============================================================================
 SUBROUTINE scalar_assign_real (out, in)
-  type(scalar_t):: out
+  type(scalar_t), intent(inout):: out
   real, intent(in):: in
-  print*,'sc', out%id, associated(out%f)
+  print*,'sc', out%id, out%allocated, associated(out%f), out%name
   print*,'sc', in, size(out%f)
-  call out%allocate
+  call out%allocate (out)
   out%f = in
   print*,'sc', out%f(1:6,1,1)
 END SUBROUTINE scalar_assign_real
@@ -72,21 +78,21 @@ END SUBROUTINE scalar_assign_real
 SUBROUTINE scalar_assign_int (out, in)
   type(scalar_t), intent(inout):: out
   integer, intent(in):: in
-  call out%allocate
+  call out%allocate (out)
   out%f = in
 END SUBROUTINE scalar_assign_int
 !> =============================================================================
 SUBROUTINE scalar_assign (out, in)
   type(scalar_t):: out
   real, dimension(:,:,:), intent(in), pointer:: in
-  call out%allocate
+  call out%allocate (out)
   out%f = in
 END SUBROUTINE scalar_assign
 !> =============================================================================
 FUNCTION scalar_minus (in) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in
-  call out%allocate
+  call out%allocate (in)
   out%f = - in%f
 END FUNCTION scalar_minus
 !> =============================================================================
@@ -99,14 +105,14 @@ END FUNCTION scalar_maxval
 FUNCTION scalar_exp (in) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in
-  call out%allocate
+  call out%allocate (in)
   out%f = exp(in%f)
 END FUNCTION scalar_exp
 !> =============================================================================
 FUNCTION scalar_log (in) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in
-  call out%allocate
+  call out%allocate (in)
   out%f = log(in%f)
 END FUNCTION scalar_log
 
@@ -115,7 +121,7 @@ FUNCTION scalar_real_add (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
   real, intent(in):: in2
-  call out%allocate
+  call out%allocate (in1)
   out%f = in1%f + in2
   if (io%verbose>3) print*,'scalar_mod:s_r-a', out%n
 END FUNCTION scalar_real_add
@@ -124,7 +130,7 @@ FUNCTION scalar_int_add (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
   integer, intent(in):: in2
-  call out%allocate
+  call out%allocate (in1)
   out%f = in1%f + in2
   print*,out%n
 END FUNCTION scalar_int_add
@@ -132,7 +138,7 @@ END FUNCTION scalar_int_add
 FUNCTION scalar_scalar_add (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1, in2
-  call out%allocate
+  call out%allocate (in1)
   out%f = in1%f + in2%f
 END FUNCTION scalar_scalar_add
 
@@ -141,7 +147,7 @@ FUNCTION real_scalar_mul (in1, in2) RESULT (out)
   type(scalar_t):: out
   real, intent(in):: in1
   type(scalar_t), intent(in):: in2
-  call out%allocate
+  call out%allocate (in2)
   out%f = in1 * in2%f
   print*,out%n
 END FUNCTION real_scalar_mul
@@ -150,7 +156,7 @@ FUNCTION scalar_real_mul (in1, in2) RESULT (out)
   type(scalar_t):: out
   real, intent(in):: in2
   type(scalar_t), intent(in):: in1
-  call out%allocate
+  call out%allocate (in1)
   out%f = in2 * in1%f
   print*,out%n
 END FUNCTION scalar_real_mul
@@ -159,7 +165,7 @@ FUNCTION scalar_int_mul (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
   integer, intent(in):: in2
-  call out%allocate
+  call out%allocate (in1)
   out%f = in1%f * in2
   print*,out%n
 END FUNCTION scalar_int_mul
@@ -167,15 +173,17 @@ END FUNCTION scalar_int_mul
 FUNCTION scalar_scalar_mul (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1, in2
-  call out%allocate
+  call out%allocate (in1)
   out%f = in1%f * in2%f
 END FUNCTION scalar_scalar_mul
 !> =============================================================================
 FUNCTION scalar_scalar_divide (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1, in2
-  call out%allocate
+  call trace_begin ('scalar_scalar_divide '//trim(in1%name)//'/'//trim(in2%name), 3)
+  call out%allocate (in1)
   out%f = in1%f / in2%f
+  call trace_end
 END FUNCTION scalar_scalar_divide
 
 !> =============================================================================
@@ -183,7 +191,7 @@ FUNCTION scalar_power_int (in1, in2) RESULT(out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
   integer, intent(in):: in2
-  call out%allocate
+  call out%allocate (in1)
   out%f = in1%f**in2
   print*,out%n
 END FUNCTION scalar_power_int
@@ -193,7 +201,7 @@ FUNCTION scalar_power_real (in1, in2) RESULT(out)
   type(scalar_t), intent(in):: in1
   real, intent(in):: in2
   if (io%verbose>3) print*,'scalar:', out%id
-  call out%allocate
+  call out%allocate (in1)
   out%f = in1%f**in2
   print*,out%n
 END FUNCTION scalar_power_real
@@ -202,7 +210,7 @@ FUNCTION scalar_real_sub (in1, in2) RESULT(out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
   real, intent(in):: in2
-  call out%allocate
+  call out%allocate (in1)
   out%f = in1%f + in2
   print*,out%n
 END FUNCTION scalar_real_sub
@@ -211,7 +219,7 @@ FUNCTION scalar_int_sub (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
   integer, intent(in):: in2
-  call out%allocate
+  call out%allocate (in1)
   out%f = in1%f + in2
   print*,out%n
 END FUNCTION scalar_int_sub
@@ -219,25 +227,31 @@ END FUNCTION scalar_int_sub
 FUNCTION scalar_scalar_sub (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1, in2
-  call out%allocate
+  call out%allocate (in1)
   out%f = in1%f + in2%f
 END FUNCTION scalar_scalar_sub
 
 !> =============================================================================
-SUBROUTINE allocate_scalar (self)
+SUBROUTINE allocate_scalar (self, in)
   class(scalar_t):: self
-  if (io%verbose>3) print*,'sc', self%allocated, associated(self%f)
-  if (io%verbose>3) print*,'allocate_scalar', n, self%n
-  self%n = n
-  if (.not.associated(self%f)) &
-    allocate (self%f(self%n(1), self%n(2), self%n(3)))
+  class(scalar_t):: in
+  integer:: id=0
+  !.............................................................................
+  if (associated(self%f)) return
+  call trace_begin ('allocate_scalar '//trim(self%name))
+  !$omp atomic
+  id = id+1
+  self%id = id
+  if (io%verbose>3) print*,'sc', self%id, in%id, self%allocated, associated(self%f)
+  if (io%verbose>3) print*,'allocate_scalar', self%n, in%n
+  self%n = in%n
+  allocate (self%f(self%n(1), self%n(2), self%n(3)))
   self%allocated = .true.
+  call trace_end
 END SUBROUTINE allocate_scalar
 !> =============================================================================
 SUBROUTINE set_dims (dims)
   integer:: dims(3)
-  n = dims
-  print*,n
 END SUBROUTINE set_dims
 !> =============================================================================
 END MODULE scalar_mod
