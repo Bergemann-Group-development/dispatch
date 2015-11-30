@@ -15,7 +15,6 @@ MODULE patch_list_mod
   !.............................................................................
   type, public:: link_t
     type(link_t), pointer:: next => null()
-    type(link_t), pointer:: nbor => null()
     type(link_t), pointer:: nbors => null()
     type(link_t), pointer:: next_time => null()
     type(timestep_t), pointer:: patch => null()
@@ -23,7 +22,7 @@ MODULE patch_list_mod
   end type
   !.............................................................................
   type, public:: patch_list_t
-    type(link_t), pointer:: head=>null(), tail=>null(), nbors=>null(), queue=>null()
+    type(link_t), pointer:: head=>null(), tail=>null(), queue=>null()
     real:: size(3)=1.0
     integer:: dims(3)=[4,4,1]
     character(len=120):: name = 'patch list'
@@ -307,6 +306,7 @@ SUBROUTINE search_nbors_by_overlap (self, start)
             link1%patch%overlaps(link2%patch)
         if (link1%patch%overlaps(link2%patch)) then
           allocate (nbor)                       ! new nbor (has no nbor)
+          nbor%nbors => link2                   ! pointer back to link2
           link1%n_nbors = link1%n_nbors+1
           nbor%patch => link2%patch             ! but has a patch
           if (associated(prev)) then            ! check if we are in list
@@ -338,18 +338,18 @@ SUBROUTINE check_nbors (self, link)
   !.............................................................................
   call trace_begin('patch_list_t%check_nbors '//self%name)
   patch => link%patch                                 ! main patch
-  nbor => link%nbor                                   ! first nbor
+  nbor => link%nbors                                  ! first nbor
   inbor = 0
   do while (associated (nbor))                        ! keep going until end
     nbpatch => nbor%patch                             ! neighbor patch
     inbor = min(inbor+1,mnbor)
     if (nbpatch%is_clear(bits%ready)) then            ! needs checking?
       nbors(inbor) = nbpatch%id
-!      call self%check_ready (nbor%link)               ! nbor ready?
+      call self%check_ready (nbor%nbors)              ! pointer back
     else
       nbors(inbor) = -nbpatch%id
     end if
-    nbor => nbor%nbor                                 ! next nbor
+    nbor => nbor%next                                 ! next nbor
   end do
   if (self%debug>0) &
     print'(i7,a,i4,2x,26i4)', patch%id, ' nbors:', inbor, nbors(1:inbor)
@@ -394,9 +394,9 @@ SUBROUTINE check_ready (self, link, set_debug)
   patch => link%patch                                   ! already checked?
   if (patch%is_set(bits%ready)) return
   call trace_begin('patch_list_t%check_ready '//self%name,2)
-  nbor => link%nbor                                   ! start on nbor list
+  nbor => link%nbors                                    ! start on nbor list
   inbor = 0
-  do while (associated (nbor))                        ! keep going until end
+  do while (associated (nbor))                          ! keep going until end
     nbpatch => nbor%patch
     if (patch%ahead_of(nbpatch)) then
       self%n_check = self%n_check+1
@@ -407,16 +407,16 @@ SUBROUTINE check_ready (self, link, set_debug)
       if (self%debug>2) &
         print '(i4,a,i3,2x,30i3)', patch%id, ' failed:', inbor, nbors(1:inbor)
       call trace_end
-      return                                          ! give up -- do nothing
+      return                                            ! give up -- do nothing
     else
       inbor = min(inbor+1,mnbor)
       nbors(inbor) = nbpatch%id
 !      print*,'nbor patch', nbpatch%id, nbpatch%time
     end if
-    nbor => nbor%nbor                                 ! next nbor
+    nbor => nbor%next                                   ! next nbor
   end do
-  call patch%set(bits%ready)                           ! mark as checked
-  call self%queue_by_time (link)                      ! add patch to queue
+  call patch%set(bits%ready)                            ! mark as checked
+  call self%queue_by_time (link)                        ! add patch to queue
   self%n_ready = self%n_ready+1
   if (self%debug>0) print *, patch%id, ' found by check_ready, nq =', self%nq
   call trace_end
