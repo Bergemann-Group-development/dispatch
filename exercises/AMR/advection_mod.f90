@@ -82,7 +82,7 @@ SUBROUTINE update_pde (self)
   !.............................................................................
   call trace_begin ('advection_mod:pde_t%update', 2)
   call p%init (self%gn, self%size/self%n, self%derivs, 'p')
-  associate (d=>self%d,self&u)
+  associate (d=>self%d,u=>self%u)
     p = u
     p = p*d
     call trace('dddt')
