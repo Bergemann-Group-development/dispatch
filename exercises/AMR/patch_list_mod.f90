@@ -19,6 +19,8 @@ MODULE patch_list_mod
     type(link_t), pointer:: next_time => null()
     type(timestep_t), pointer:: patch => null()
     integer:: n_nbors
+  contains
+    procedure:: get_guardcells
   end type
   !.............................................................................
   type, public:: patch_list_t
@@ -127,6 +129,7 @@ SUBROUTINE update (self)
   if (associated(head)) then
     self%queue => self%queue%next_time                  ! update the link
     self%nq = self%nq-1
+    call head%get_guardcells
     patch => head%patch                                 ! head patch
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue
@@ -459,6 +462,23 @@ SUBROUTINE queue_by_time (self, this)
   end if
   call trace_end
 END SUBROUTINE queue_by_time
+
+!> =============================================================================
+!> Run through neighbor list and pick up guard cells
+!> =============================================================================
+SUBROUTINE get_guardcells (self)
+  class (link_t):: self
+  class (link_t), pointer:: nbor
+    class (patch_t), pointer:: patch
+  !.............................................................................
+  nbor => self%nbors
+  patch => self%patch
+  do while (associated (nbor))
+    if (nbor%patch%is_relevant_for(patch)) &
+      call nbor%patch%get_guardcells_for (patch)
+    nbor => nbor%next
+  end do
+END SUBROUTINE get_guardcells
 
 !> =============================================================================
 !> Print a table with patch id, positions, and all neighbors
