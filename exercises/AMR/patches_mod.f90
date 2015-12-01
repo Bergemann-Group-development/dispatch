@@ -60,7 +60,8 @@ SUBROUTINE init (self, position, size)
   integer:: dims(5) = 4
   real:: position(3), size(3)
   logical:: first_time = .true.
-  namelist /patch_params/ dims, size
+  real:: end_time=1.0, out_time=1.0
+  namelist /patch_params/ dims, size, out_time, end_time
   !.............................................................................
   !$omp atomic
   id = id + 1                                   ! increment global
@@ -77,6 +78,8 @@ SUBROUTINE init (self, position, size)
     read (io%input, patch_params)
     if (io%master) write (*, patch_params)
   end if
+  self%end_time=end_time
+  self%out_time=out_time
   self%size = size                              ! patch size
   self%n  = dims(1:3)                           ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
@@ -101,11 +104,10 @@ SUBROUTINE init (self, position, size)
     return
   end if
   self%mem_allocated = .true.                   ! mark
-  print*,'MK1', associated(self%t) , associated(self%iit), &
-                associated(self%dt), associated(self%mem)
+!  print*,'MK1', associated(self%t) , associated(self%iit), &
+!                associated(self%dt), associated(self%mem)
   allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
   self%t = 0.0
-  self%dt = 1.0
   self%iit = 1
   associate (nx=>self%gn(1), ny=>self%gn(2), nz=>self%gn(3))
     if (io%verbose>2) &
@@ -133,7 +135,7 @@ SUBROUTINE update_patch (self)
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = self%time                          ! initial time
   self%it = self%new                                    ! update time slot
-  self%new = mod(self%new,ntime)+1                      ! increment / rotate
+  self%new = mod(self%new,self%nt)+1                      ! increment / rotate
   self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
   self%iit(self%nt) = self%new                          ! new right-most slot
   self%istep = self%istep + 1
@@ -182,9 +184,9 @@ SUBROUTINE get_guardcells_for (self, patch)
       if (abs(rlb(dir)-patch%position(dir)) < hs) then
         ! We are overlapping in this direction, exchange data
         ls = 1; us=self%gn
-        ls(dir) = 1 
+        ls(dir) = 1
         us(dir) = patch%li(dir) - 1
-        
+
         lp = 1; up=patch%gn
         lp(dir) = patch%ui(dir) - patch%ng(dir) + 1
         up(dir) = patch%ui(dir) - 1

@@ -138,10 +138,18 @@ SUBROUTINE log_density (self, out)
     print*, 'log_d', self%li, self%ui, self%n
     print *, self%mem(1:5,1,1,1,1,1)
     print *, 'min,max:', minval(self%d%f), maxval(self%d%f)
+    print *, 'min,max:', &
+      minval(self%mem(self%li(1):self%ui(1), &
+                      self%li(2):self%ui(2), &
+                      self%li(3):self%ui(3), i_d, self%it, 1)), &
+      maxval(self%mem(self%li(1):self%ui(1), &
+                      self%li(2):self%ui(2), &
+                      self%li(3):self%ui(3), i_d, self%it, 1))
   end if
   out = log(self%mem(self%li(1):self%ui(1), &
                      self%li(2):self%ui(2), &
                      self%li(3):self%ui(3), i_d, self%it, 1))
+  print*,'ZZZZ'
   call trace_end
 END SUBROUTINE log_density
 

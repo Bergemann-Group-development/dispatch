@@ -41,8 +41,6 @@ FUNCTION dx (self, f)
   real:: c
   !.............................................................................
   call trace_begin ('central_t%dx', 3)
-  print*,'central', self%ds
-  print*,'central', self%n
   if (first_time) then
     first_time = .false.
   end if
@@ -51,7 +49,6 @@ FUNCTION dx (self, f)
   else
     m = self%n(1)
     c = 0.5/self%ds(1)
-    print*,'central', c
     dx(2:m-1,:,:) = (f(3:m,:,:)-f(1:m-2,:,:))*c  ! this part is local
     recv = f(m,:,:)
     dx(1    ,:,:) = (f(2  ,:,:)-recv        )*c  ! remote (n,:,:) slice needed!

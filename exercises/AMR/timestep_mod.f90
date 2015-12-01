@@ -54,6 +54,9 @@ SUBROUTINE init_timestep (self, position, size)
   case (4)
     self%wt = [55./24., -59./24., 37/24., -3./8.]   ! 4th order
   end select
+  self%iit = 1
+  self%new = 2
+  self%iit(self%nt) = self%new
   self%courant   = courant
   self%time_order = time_order
   self%verbose   = verbose
@@ -65,7 +68,7 @@ END SUBROUTINE init_timestep
 !************************************************************************
 SUBROUTINE update_timestep (self)
   class(timestep_t):: self
-  integer:: it, jt, kt
+  integer:: it, jt, kt, lt, nt
   !......................................................................
   call trace_begin ('timestep_t%update', 1)
   call self%pde_t%update                        ! time derivative at it
@@ -74,15 +77,32 @@ SUBROUTINE update_timestep (self)
     print*, 'timestep_t%update, id =', self%id, self%it, it
     print*, 'timestep_t%update, d =', self%mem(1:5,1,1,1,1,1)
   end if
-  do jt=1,self%time_order                       ! loop over time
-    kt = modulo(it-jt-2,self%nt)+1               ! previous time slots
+  nt = self%nt
+  lt = self%iit(nt)
+  if (io%verbose>3) then
+    print*,'dtime',self%dtime
+    print*,'li,ui', self%li, self%ui
+  end if
+  do jt=1,self%time_order                       ! loop over AB slot
+    kt = self%iit(nt-jt)                        ! previous time slots
+    !print*,'timestep',jt,nt,kt,lt
     if (jt == 1) then
-      self%mem(:,:,:,:,it,1) = &
+      self%mem(:,:,:,:,lt,1) = &
+      self%mem(:,:,:,:,kt,1) + &
       self%mem(:,:,:,:,kt,2)*(self%wt(jt)*self%dtime)
     else
-      self%mem(:,:,:,:,it,1) = &
-      self%mem(:,:,:,:,it,1) + &
+      self%mem(:,:,:,:,lt,1) = &
+      self%mem(:,:,:,:,lt,1) + &
       self%mem(:,:,:,:,kt,2)*(self%wt(jt)*self%dtime)
+    end if
+    if (io%verbose>3) then
+      print*,'timestep:',jt,lt,kt,self%t(kt),self%wt(jt)
+      print*,'minmax:', &
+        minval(self%mem(:,:,:,:,kt,1)), &
+        maxval(self%mem(:,:,:,:,kt,1))
+      print*,'minmax:', &
+        minval(self%mem(:,:,:,:,lt,1)), &
+        maxval(self%mem(:,:,:,:,lt,1))
     end if
   end do
   if (io%verbose>3) then

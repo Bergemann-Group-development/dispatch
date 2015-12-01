@@ -1,6 +1,6 @@
 &io_params
- do_trace=t
- verbose=4
+ do_trace=f
+ verbose=0
 /
 &box_params
  size=1,1,0
@@ -13,5 +13,7 @@
  verbose=0
 /
 &patch_params
- dims=16,16,1,1,5
+ dims=16,16,1,5,1
+ end_time=0.499
+ out_time=9
 /
