@@ -45,6 +45,7 @@ FUNCTION needed (self, patch)
   logical:: needed
   !.............................................................................
   call trace_begin ('refine_t%needed', 2)
+  if (io%verbose>2) print*,'refine%needed? patch:', patch%id, patch%it, patch%new
   needed = check_log_density    (self, patch); if (needed) return
   needed = check_log_pressure   (self, patch); if (needed) return
   needed = check_velocity       (self, patch); if (needed) return

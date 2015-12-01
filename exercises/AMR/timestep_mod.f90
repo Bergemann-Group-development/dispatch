@@ -57,6 +57,8 @@ SUBROUTINE init_timestep (self, position, size)
   self%courant   = courant
   self%time_order = time_order
   self%verbose   = verbose
+  if (io%verbose>3) &
+   print*,'new patch:',self%id,'  it:',self%it,'  new:',self%new
   call trace_end
 END SUBROUTINE init_timestep
 

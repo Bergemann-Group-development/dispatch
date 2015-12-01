@@ -12,7 +12,7 @@ MODULE patches_mod
   private
   type, public:: patch_t
     integer:: id = 0
-    integer:: nt, nv
+    integer:: nt = ntime, nv = 5
     integer:: n(3), ng(3)=2, gn(3), li(3), ui(3)
     integer:: it=1, new=2
     integer:: i, j, k
@@ -33,7 +33,7 @@ MODULE patches_mod
     class(central_t), pointer:: derivs
   contains
     procedure:: init
-    procedure:: update
+    procedure:: update => update_patch
     procedure:: output
     procedure:: distance        ! return the distance btw two patches
     procedure:: overlaps        ! return true if they overlap (incl. ghost zones)
@@ -68,6 +68,7 @@ SUBROUTINE init (self, position, size)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters
   !-----------------------------------------------------------------------------
+  dims(4) = self%nt
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -86,7 +87,7 @@ SUBROUTINE init (self, position, size)
     self%ds = maxval(self%ds)                   ! then set to reasonable val
   end where
   self%gn = self%n + 2*self%ng                  ! including guard cells
-  self%gsize = self%size*real(self%gn,kind=8)/self%n ! size incl guard cells 
+  self%gsize = self%size*real(self%gn,kind=8)/self%n ! size incl guard cells
   self%li = 1       + self%ng                   ! lower interior index
   self%ui = self%gn - self%ng                   ! upper interior index
   self%nt = dims(4)                             ! number of time slices
@@ -118,7 +119,7 @@ END SUBROUTINE init
 !> dt(1). Then the current slot (it) becomes 2, and the new one becomes 3, etc.
 !> This way, there is no need to copy memory btw time steps.
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE update_patch (self)
   class(patch_t):: self
   !.............................................................................
   call trace_begin ('patch_t%update', 3)
@@ -132,8 +133,10 @@ SUBROUTINE update (self)
   self%it = self%new
   self%new = mod(self%new,ntime)+1
   self%t(self%new) = self%time
+  if (io%verbose>3) &
+   print*,'patch:',self%id,'  it:',self%it,'  new:',self%new
   call trace_end
-END SUBROUTINE update
+END SUBROUTINE update_patch
 !> =============================================================================
 !> Write results to disk
 !> =============================================================================

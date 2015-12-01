@@ -205,7 +205,8 @@ SUBROUTINE split (self, this)
         allocate (patch, source=this%patch)
         patch%mem_allocated = .false.
         position = this%patch%position + pos*patch%size
-        call patch%init (position, self%size/self%dims)
+        !call patch%init (position, self%size/self%dims)
+        call patch%init_values (position, self%size/self%dims)
         !------------------------------------------------------------------------
         ! Append links to the new patches as the list tail
         !------------------------------------------------------------------------

@@ -45,6 +45,9 @@ MODULE scalar_mod
     interface log
     module procedure scalar_log
   end interface
+  interface minval
+    module procedure scalar_minval
+  end interface
   interface maxval
     module procedure scalar_maxval
   end interface
@@ -58,7 +61,7 @@ SUBROUTINE init_scalar (self, dims, ds, deriv, name)
   class(central_t), pointer:: deriv
   character(len=*):: name
   !.............................................................................
-  call trace_begin ('scalar_t%init', 2)
+  call trace_begin ('scalar_t%init '//trim(self%name), 2)
   self%n = dims
   self%name = name
   call self%allocate (self)
@@ -104,6 +107,12 @@ FUNCTION scalar_maxval (in) RESULT (out)
   type(scalar_t), intent(in):: in
   out = maxval(in%f)
 END FUNCTION scalar_maxval
+!> =============================================================================
+FUNCTION scalar_minval (in) RESULT (out)
+  real:: out
+  type(scalar_t), intent(in):: in
+  out = minval(in%f)
+END FUNCTION scalar_minval
 !> =============================================================================
 FUNCTION scalar_exp (in) RESULT (out)
   type(scalar_t):: out
@@ -184,7 +193,7 @@ FUNCTION scalar_scalar_divide (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1, in2
   call trace_begin ('scalar_scalar_divide '//trim(in1%name)//'/'//trim(in2%name), 3)
-  call out%allocate (in1)
+  call out%allocate (in2)
   out%f = in1%f / in2%f
   call trace_end
 END FUNCTION scalar_scalar_divide

@@ -21,7 +21,7 @@ MODULE pde_mod
   contains
     procedure:: init
     procedure:: init_values
-    procedure:: update
+    procedure:: update => update_pde
     procedure:: log_density
     procedure:: log_pressure
     procedure:: velocity_magnitude
@@ -82,6 +82,7 @@ SUBROUTINE init_values (self, position, size)
   self%s = 0.01
   self%d = 1.0
   self%p = 0.0
+  print*,'patch:', self%id, '  min, max:', minval(self%d), maxval(self%d)
   call trace_end
 END SUBROUTINE init_values
 
@@ -89,7 +90,7 @@ END SUBROUTINE init_values
 !> Compute the time derivatives, using the symbolic names mapped into task%mem,
 !> and an associate block to make the code maximally readable
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE update_pde (self)
   USE scalar_mod
   class(pde_t):: self
   type(scalar_t), save:: pg
@@ -101,16 +102,28 @@ SUBROUTINE update (self)
   call  u%init (self%gn, self%size/self%n, self%derivs, 'u' )
   call pu%init (self%gn, self%size/self%n, self%derivs, 'pu')
   associate (d=>self%d, p=>self%p, s=>self%s, gamma=>self%gamma)
+    call trace('self%d**gamma')  ! OK
+    pg = self%d**self%gamma
+    call trace('s/d')       ! NOK
+    pg = s/d
+    call trace('s/d*(gamma-1)')
+    pg = (s/d)*(gamma-1.0)
+    call trace('pg')
     pg = d**gamma*exp((s/d)*(gamma-1.0))
+    call trace('u')
     u = p/d
     pu = outer(p,u)
+    call trace('dddt')
     self%dddt = -div(p)
+    call trace('dpdt')
     self%dpdt = -div(pu)
+    call trace('dpdt')
     self%dpdt = -div(pu) - grad(pg)
+    call trace('dsdt')
     self%dsdt = -div(p*s)
   end associate
   call trace_end
-END SUBROUTINE update
+END SUBROUTINE update_pde
 
 !> =============================================================================
 !> Compute the log density -- for use in refinement
@@ -121,7 +134,7 @@ SUBROUTINE log_density (self, out)
   !...............................................................................
   call trace_begin ('hd_mod:pde_t%log_density')
   if (io%verbose>3) then
-    print*, 'log_d', self%id, self%it, i_d
+    print*, 'log_d', self%id, self%it, self%new, i_d
     print*, 'log_d', self%li, self%ui, self%n
     print *, self%mem(1:5,1,1,1,1,1)
     print *, 'min,max:', minval(self%d%f), maxval(self%d%f)

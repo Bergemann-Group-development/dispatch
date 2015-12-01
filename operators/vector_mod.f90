@@ -62,7 +62,7 @@ SUBROUTINE init_vector (self, dims, ds, deriv, name)
   class(central_t), pointer:: deriv
   character(len=*):: name
   !.............................................................................
-  call trace_begin ('vector_t%init', 2)
+  call trace_begin ('vector_t%init '//trim(self%name), 2)
   self%n = dims
   self%d => deriv
   self%name = name
@@ -379,6 +379,7 @@ SUBROUTINE allocate_vector (self, in)
   type is (vector_t)
     allocate (self%x(self%n(1), self%n(2), self%n(3)))
     allocate (self%y(self%n(1), self%n(2), self%n(3)))
+    allocate (self%z(self%n(1), self%n(2), self%n(3)))
   end select
   self%allocated = .true.
   call trace_end

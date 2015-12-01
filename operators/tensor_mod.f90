@@ -47,7 +47,7 @@ SUBROUTINE init_tensor (self, dims, ds, deriv, name)
   class(central_t), pointer:: deriv
   character(len=*):: name
   !.............................................................................
-  call trace_begin ('tensor_t%init', 2)
+  call trace_begin ('tensor_t%init '//trim(self%name), 2)
   self%n = dims
   self%ds = ds
   self%name = name
@@ -105,17 +105,22 @@ FUNCTION vector_tensor_grad (in) RESULT (out)
 END FUNCTION vector_tensor_grad
 !> =============================================================================
 FUNCTION vector_tensor_div (in) RESULT (out)
-  type(vector_t):: out
   class(scalar_t), intent(in):: in
+  type(vector_t):: out
   !.............................................................................
   call trace_begin ('vector_tensor_div', 3)
   print *,trim(out%name)//' = div('//trim(in%name)
   call out%allocate (in)
   select type (in)
   type is (tensor_t)
+    print*,'v_t_div'
+    print*,'v_t_div', in%d%ds
+    print*,'v_t_div', in%d%n
     out%x = in%d%dx (in%xx) + in%d%dy(in%yx) + in%d%dz(in%zx)
     out%y = in%d%dx (in%xy) + in%d%dy(in%yy) + in%d%dz(in%zy)
     out%z = in%d%dx (in%xz) + in%d%dy(in%yz) + in%d%dz(in%zz)
+  class default
+    print*,'WARNING'
   end select
   call trace_end
 END FUNCTION vector_tensor_div
@@ -219,27 +224,19 @@ SUBROUTINE allocate_tensor (self, in)
   class(tensor_t):: self
   class(scalar_t):: in
   !.............................................................................
+  if (associated(self%xx)) return
   call trace_begin('allocate_tensor '//trim(self%name), 3)
-  if (io%verbose>3) print*,'allocate_tensor',self%n
-  call flush()
-  if (.not.associated(self%xx)) &
-    allocate (self%xx (self%n(1), self%n(2), self%n(3)))
-  if (.not.associated(self%yx)) &
-    allocate (self%yx (self%n(1), self%n(2), self%n(3)))
-  if (.not.associated(self%zx)) &
-    allocate (self%zx (self%n(1), self%n(2), self%n(3)))
-  if (.not.associated(self%xy)) &
-    allocate (self%xy (self%n(1), self%n(2), self%n(3)))
-  if (.not.associated(self%yy)) &
-    allocate (self%yy (self%n(1), self%n(2), self%n(3)))
-  if (.not.associated(self%zy)) &
-    allocate (self%zy (self%n(1), self%n(2), self%n(3)))
-  if (.not.associated(self%xz)) &
-    allocate (self%xz (self%n(1), self%n(2), self%n(3)))
-  if (.not.associated(self%yz)) &
-    allocate (self%yz (self%n(1), self%n(2), self%n(3)))
-  if (.not.associated(self%zz)) &
-    allocate (self%zz (self%n(1), self%n(2), self%n(3)))
+  if (io%verbose>3) print*,'allocate_tensor',self%n, in%n
+  self%n = in%n
+  allocate (self%xx (self%n(1), self%n(2), self%n(3)))
+  allocate (self%yx (self%n(1), self%n(2), self%n(3)))
+  allocate (self%zx (self%n(1), self%n(2), self%n(3)))
+  allocate (self%xy (self%n(1), self%n(2), self%n(3)))
+  allocate (self%yy (self%n(1), self%n(2), self%n(3)))
+  allocate (self%zy (self%n(1), self%n(2), self%n(3)))
+  allocate (self%xz (self%n(1), self%n(2), self%n(3)))
+  allocate (self%yz (self%n(1), self%n(2), self%n(3)))
+  allocate (self%zz (self%n(1), self%n(2), self%n(3)))
   self%allocated = .true.
   call trace_end
 END SUBROUTINE allocate_tensor
