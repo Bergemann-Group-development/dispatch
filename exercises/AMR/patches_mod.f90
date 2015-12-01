@@ -45,6 +45,8 @@ MODULE patches_mod
     procedure:: is_set
     procedure:: is_clear
     procedure:: ahead_of
+    procedure:: is_relevant_for
+    procedure:: get_guardcells_for
   end type
   integer:: id = 0
 CONTAINS
@@ -137,6 +139,12 @@ SUBROUTINE update_patch (self)
    print*,'patch:',self%id,'  it:',self%it,'  new:',self%new
   call trace_end
 END SUBROUTINE update_patch
+
+SUBROUTINE get_guardcells_for (self, patch)
+  class(patch_t):: self
+  class(patch_t), pointer:: patch
+END SUBROUTINE get_guardcells_for
+
 !> =============================================================================
 !> Write results to disk
 !> =============================================================================
@@ -179,6 +187,7 @@ FUNCTION index (self, position)
   index = max(1, min(self%gn, int(f)))
   f = f - index
 END FUNCTION index
+
 !> =============================================================================
 FUNCTION distance (self, patch)
   class(patch_t):: self, patch
@@ -197,6 +206,15 @@ FUNCTION overlaps (self, patch)
   else
     overlaps = all(distance(self,patch) <= 0.5000000001_8*(self%size+patch%gsize))
   endif
+END FUNCTION
+!> =============================================================================
+!> This is the relevance criterion if we don't need corner nbors
+!> =============================================================================
+LOGICAL FUNCTION is_relevant_for (self, patch)
+  class (patch_t):: self
+  class (patch_t), pointer:: patch
+  !............................................................................
+  is_relevant_for = any(distance(self,patch) < 0.01*self%size)
 END FUNCTION
 
 !> =============================================================================
