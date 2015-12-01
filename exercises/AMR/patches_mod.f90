@@ -14,7 +14,7 @@ MODULE patches_mod
     integer:: id = 0
     integer:: nt = ntime, nv = 5
     integer:: n(3), ng(3)=2, gn(3), li(3), ui(3)
-    integer:: it=1, new=2
+    integer:: it=1, new=1
     integer:: i, j, k
     integer:: status
     integer, pointer:: iit(:)
@@ -65,13 +65,14 @@ SUBROUTINE init (self, position, size)
   !.............................................................................
   !$omp atomic
   id = id + 1                                   ! increment global
+  print*,'XXX',id
   self%id = id                                  ! new patch id
   self%position = position                      ! as per call
   call trace_begin ('patch_t%init', 3)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters
   !-----------------------------------------------------------------------------
-  dims(4) = self%nt
+  dims(4) = self%nt                             ! set by timestep_t:init
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -127,10 +128,7 @@ SUBROUTINE update_patch (self)
   class(patch_t):: self
   !.............................................................................
   call trace_begin ('patch_t%update', 3)
-  if (self%time >= self%out_time) then
-    call self%output
-    self%out_next = self%out_next + self%out_time
-  end if
+  call self%output
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = self%time                          ! initial time
@@ -206,12 +204,22 @@ SUBROUTINE output (self)
   character(len=32) filename
   integer:: iv
   !.............................................................................
+  if (self%time < self%out_next) return
+  call trace_begin ('patch_t%output')
+  self%out_next = self%out_next + self%out_time
+  !-----------------------------------------------------------------------------
+  ! Write a small text file with info
+  !-----------------------------------------------------------------------------
   call system ('mkdir -p data/')
   write (filename,'(a,i3.3,"_",i4.4)') 'data/patch_', self%id, self%iout
-  if (io%master) print*,'output to ',filename
+  if (io%verbose>0) &
+    print*,'output to ',trim(filename), self%time, self%out_time
   open (3, file=trim(filename)//'.txt', form='formatted', status='unknown')
   write (3, *) self%n, self%time
   close (3)
+  !-----------------------------------------------------------------------------
+  ! Write a binary file with the data cube
+  !-----------------------------------------------------------------------------
   open (3, file=trim(filename)//'.dat', form='unformatted', access='direct', &
     status='unknown', recl =sizeof(self%mem(1,1,1,1,1,1))*product(self%n))
 associate (l=>self%li, u=>self%ui)
@@ -220,6 +228,8 @@ associate (l=>self%li, u=>self%ui)
   end do
 end associate
   close (3)
+  self%iout = self%iout+1
+  call trace_end
 END SUBROUTINE output
 !> =============================================================================
 FUNCTION index_range (self, position)

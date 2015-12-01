@@ -1,20 +1,21 @@
 &io_params
- do_trace=f
- verbose=0
+!do_trace=t verbose=4   ! =1 for output file messages
+ do_trace=f verbose=0   ! =1 for output file messages
+!do_trace=f verbose=4   ! =1 for output file messages
 /
 &box_params
- size=1,1,0
- dims=4,4,1
+ size=1,1,0             ! box size
+ dims=4,4,1             ! number of patches
 /
 &refine_params
- msplit=2
+ msplit=2               ! split into 2 in each dimension
 /
 &timestep_params
- courant=0.2
+ courant=0.05
  time_order=2
- end_time=0.499
- out_time=9
+ end_time=0.2
+ out_time=0.02
 /
 &patch_params
- dims=16,16,1,5,1
+ dims=16,16,1,5,1       ! nx, ny, nz, ntime, nvar
 /

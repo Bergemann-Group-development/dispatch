@@ -11,9 +11,9 @@ PROGRAM experiment
   call io%init                          ! Initialize input (input.nml) / output
   call list%init ('patch list')         ! Initialize the patch list and patches
 !  call list%split (list%head)           ! try splitting a single patch
+!  call list%print ('after split of the first patch')
   do while (list%n > 0)                 ! As long as there are patches in the list
     call list%update                    ! update the list = update member patches
   end do
-  call list%print ('after split of first patch')
 !> =============================================================================
 END PROGRAM experiment

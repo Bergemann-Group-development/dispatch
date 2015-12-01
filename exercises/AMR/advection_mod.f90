@@ -17,9 +17,10 @@ MODULE pde_mod
     type(scalar_t):: d, dddt
     real:: u(3)=(/1.0,0.,0.1/)
     real:: gamma=5./3.
+    real:: w_gauss=0.15
+    real:: p_gauss=4.0
   contains
     procedure:: init
-    procedure:: init_values
     procedure:: update => update_pde
     procedure:: log_density
     procedure:: log_pressure
@@ -37,11 +38,37 @@ SUBROUTINE init (self, position, size)
   class(pde_t):: self
   real:: position(3), size(3)
   type(tensor_t):: tensor
+  integer:: i, j
+  real:: x, y
   !.............................................................................
   call trace_begin ('hd_mod:pde_t%init', 2)
-  call self%patch_t%init (position, size)
   !-----------------------------------------------------------------------------
-  ! Memory mapping
+  ! Physical initial conditions: Gaussian top hat.  Only at time=0.0
+  !-----------------------------------------------------------------------------
+  if (self%time==0.0) then
+    call self%patch_t%init (position, size)
+    do j=1,self%gn(2)
+    do i=1,self%gn(1)
+      x = (i-(self%gn(1)+1)*0.5)*self%ds(1) + self%position(1)
+      y = (j-(self%gn(2)+1)*0.5)*self%ds(2) + self%position(2)
+      self%mem(i,j,:,1,1,1) = &
+        1.0 + exp(-(x**2+y**2)/self%w_gauss**2)**self%p_gauss
+    end do
+    end do
+    self%nv = 1
+    if (io%verbose>1) then
+      print'(i4,2x,3i4,1p,6e10.2)', &
+        self%id,self%n,self%w_gauss,self%p_gauss,self%position
+    else
+      print'(1x,a,i4,2(3f8.3,2x),a,1p,2e10.2)', &
+        'initial:', self%id, self%position, self%size, &
+        '  min, max:', &
+        minval(self%mem(:,:,:,1,1,1)), &
+        maxval(self%mem(:,:,:,1,1,1))
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! Memory mapping; this is cheap, and may be done every time
   !-----------------------------------------------------------------------------
   call    self%d%init (self%gn, self%size/self%n, self%derivs, 'd')
   call self%dddt%init (self%gn, self%size/self%n, self%derivs, 'dddt')
@@ -50,26 +77,6 @@ SUBROUTINE init (self, position, size)
   call check_dims (self%dddt%f, 'init')
   call trace_end
 END SUBROUTINE init
-
-!> =============================================================================
-!> Make sure the memory is allocated, then map variables to the current time slot
-!> The 'it' slot must be the one we are to update, with new values going into the
-!> 'new' time slot
-!> =============================================================================
-SUBROUTINE init_values (self, position, size)
-  class(pde_t):: self
-  real:: position(3), size(3)
-  type(tensor_t):: tensor
-  !.............................................................................
-  call trace_begin ('advection_mod:pde_t%init_values', 2)
-  call self%init (position, size)
-  !-----------------------------------------------------------------------------
-  ! Physical initial conditions
-  !-----------------------------------------------------------------------------
-  self%d = 1.0
-  print*,'patch:', self%id, '  min, max:', minval(self%d), maxval(self%d)
-  call trace_end
-END SUBROUTINE init_values
 
 !> =============================================================================
 !> Compute the time derivatives, using the symbolic names mapped into task%mem,
@@ -82,11 +89,21 @@ SUBROUTINE update_pde (self)
   !.............................................................................
   call trace_begin ('advection_mod:pde_t%update', 2)
   call p%init (self%gn, self%size/self%n, self%derivs, 'p')
+  self%dddt%f => self%mem(:,:,:,1,self%it,2)
   associate (d=>self%d,u=>self%u)
     p = u
     p = p*d
-    call trace('dddt')
-    self%dddt = -div(p)
+   !self%dddt = -div(p)
+    self%dddt%f  = -self%derivs%dx(p%x) &
+                   -self%derivs%dy(p%y)
+    if (io%verbose>2) &
+    print'(1x,a,1p,i4,4(2x,2e10.2))', 'update_pde', &
+      self%id,minval(self%dddt),maxval(self%dddt), &
+              minval(self%dddt%f),maxval(self%dddt%f), &
+              minval(self%mem(:,:,:,1,self%it,2)), &
+              maxval(self%mem(:,:,:,1,self%it,2)), &
+              minval(self%mem(:,:,:,1,self%new,2)), &
+              maxval(self%mem(:,:,:,1,self%new,2))
   end associate
   call trace_end
 END SUBROUTINE update_pde
@@ -100,10 +117,15 @@ SUBROUTINE log_density (self, out)
   !...............................................................................
   call trace_begin ('hd_mod:pde_t%log_density')
   if (io%verbose>3) then
-    print*, 'log_d', self%id, self%it, self%new, i_d
-    print*, 'log_d', self%li, self%ui, self%n
-    print *, self%mem(1:5,1,1,1,1,1)
-    print *, 'min,max:', minval(self%d%f), maxval(self%d%f)
+    print'(1x,a,4i4,3(2x,3i4),3x,a,1p,4e10.2)', &
+      'log_d', self%id, self%it, self%new, i_d, self%li, self%ui, self%n, &
+      'minmax:', minval(self%d%f), maxval(self%d%f), &
+      minval(self%mem(self%li(1):self%ui(1), &
+                      self%li(2):self%ui(2), &
+                      self%li(3):self%ui(3), i_d, self%it, 1)), &
+      maxval(self%mem(self%li(1):self%ui(1), &
+                      self%li(2):self%ui(2), &
+                      self%li(3):self%ui(3), i_d, self%it, 1))
   end if
   out = log(self%mem(self%li(1):self%ui(1), &
                      self%li(2):self%ui(2), &

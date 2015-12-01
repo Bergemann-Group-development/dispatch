@@ -14,7 +14,7 @@ MODULE timestep_mod
     real:: wt(nslice)
     integer:: time_order
   contains
-    procedure:: init   => init_timestep
+    procedure:: init
     procedure:: update => update_timestep
   end type
   real:: courant = 0.4
@@ -26,17 +26,16 @@ CONTAINS
 !> =============================================================================
 !> Initialize coefficients for Adams-Bashforth time stepping
 !> =============================================================================
-SUBROUTINE init_timestep (self, position, size)
+SUBROUTINE init (self, position, size)
   class(timestep_t):: self
   real:: position(3), size(3)
-  namelist /timestep_params/ courant, time_order, verbose, end_time, out_time
+  integer:: nslice=5
+  namelist /timestep_params/ courant, time_order, verbose, end_time, out_time, &
+    nslice
 !........................................................................
   call trace_begin ('timestep_t%init', 1)
-  call self%pde_t%init (position, size)
-  if (io%verbose>2) &
-  print*,'ts',self%id
-  if (io%verbose>2) &
-  print*,'ts',self%mem(1:6,1,1,1,1,1)
+  self%nt = nslice
+  !-----------------------------------------------------------------------------
   !$omp critical (timest_cr)
   if (first_time) then
     first_time = .false.
@@ -45,6 +44,12 @@ SUBROUTINE init_timestep (self, position, size)
     if (io%master) write (*,timestep_params)
   end if
   !$omp end critical (timest_cr)
+  !-----------------------------------------------------------------------------
+  call self%pde_t%init (position, size)
+  if (io%verbose>2) &
+  print*,'ts',self%id
+  if (io%verbose>2) &
+  print*,'ts',self%mem(1:6,1,1,1,1,1)
   select case (time_order)
   case (1)
     self%wt = [   1.0,     0.0,      0.0,    0.0]   ! 1st order
@@ -56,7 +61,6 @@ SUBROUTINE init_timestep (self, position, size)
     self%wt = [55./24., -59./24., 37/24., -3./8.]   ! 4th order
   end select
   self%iit = 1
-  self%new = 2
   self%iit(self%nt) = self%new
   self%courant   = courant
   self%time_order = time_order
@@ -64,7 +68,7 @@ SUBROUTINE init_timestep (self, position, size)
   if (io%verbose>3) &
    print*,'new patch:',self%id,'  it:',self%it,'  new:',self%new
   call trace_end
-END SUBROUTINE init_timestep
+END SUBROUTINE init
 
 !************************************************************************
 SUBROUTINE update_timestep (self)
@@ -72,12 +76,14 @@ SUBROUTINE update_timestep (self)
   integer:: it, jt, kt, lt, nt
   !......................................................................
   call trace_begin ('timestep_t%update', 1)
+  call self%patch_t%update                      ! rotate time slots
   call self%pde_t%update                        ! time derivative at it
   it = modulo(self%it,self%nt)+1                ! wrap to new time slot
   if (io%verbose>3) then
     print*, 'timestep_t%update, id =', self%id, self%it, it
     print*, 'timestep_t%update, d =', self%mem(1:5,1,1,1,1,1)
   end if
+  self%dtime = self%courant*self%ds(1)/sqrt(sum(self%u**2))
   nt = self%nt
   lt = self%iit(nt)
   if (io%verbose>3) then
@@ -97,11 +103,10 @@ SUBROUTINE update_timestep (self)
       self%mem(:,:,:,:,kt,2)*(self%wt(jt)*self%dtime)
     end if
     if (io%verbose>3) then
-      print*,'timestep:',jt,lt,kt,self%t(kt),self%wt(jt)
-      print*,'minmax:', &
-        minval(self%mem(:,:,:,:,kt,1)), &
-        maxval(self%mem(:,:,:,:,kt,1))
-      print*,'minmax:', &
+      print'(a,i4,4i3,2f8.3,2x,a,1p,6e10.2)', 'timestep: id,j,k,l,n,t,wt', &
+        self%id, jt, kt, lt, nt, self%t(kt), self%wt(jt), 'minmax:', &
+        minval(self%mem(:,:,:,:,kt,2)), &
+        maxval(self%mem(:,:,:,:,kt,2)), &
         minval(self%mem(:,:,:,:,lt,1)), &
         maxval(self%mem(:,:,:,:,lt,1))
     end if
@@ -112,7 +117,6 @@ SUBROUTINE update_timestep (self)
   end if
   self%time = self%time + self%dtime            ! update self time
   self%t(it) = self%time                        ! update slot time
-  call self%patch_t%update                      ! rotate time slots
   call trace_end
 !........................................................................
 END SUBROUTINE update_timestep

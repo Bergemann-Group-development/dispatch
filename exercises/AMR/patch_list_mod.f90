@@ -79,11 +79,13 @@ SUBROUTINE init_cartesian (self)
   do j=1,self%dims(2)
   do k=1,self%dims(3)
     !---------------------------------------------------------------------------
-    ! Initialize each patch
+    ! Initialize each patch, via timestep_t:init -> pde_t:init -> patch_t:init
     !---------------------------------------------------------------------------
     patch => patches(i,j,k)
-    position = -0.5_8*self%size + ([i,j,k]-0.5_8)*patch%size
-    call patch%init_values (position, self%size/self%dims)
+    position = -0.5_8*self%size + ([i,j,k]-0.5_8)*self%size/self%dims
+    call patch%init (position, self%size/self%dims)
+    if (io%verbose>1) &
+      print*,'init_cartesian:', patch%id, self%size, patch%size
     patch%i = i; patch%j = j; patch%k = k
     if (io%verbose > 2) &
       print'(i5,3(3f9.4,3x))', patch%id, patch%position, patch%size
@@ -122,7 +124,7 @@ SUBROUTINE update (self)
   if (self%nq < 1) then
     n1 = self%nq
     call self%check_all
-    print *,'WARNING: check_all (should not be needed), found', self%nq
+    !print *,'WARNING: check_all (should not be needed), found', self%nq
   end if
   head => self%queue                                    ! queue start
   if (associated(head)) then
@@ -136,13 +138,14 @@ SUBROUTINE update (self)
       call patch%update                                 ! update the patch
       call self%check_nbors (head)                      ! any nbor ready?
       if (patch%time > patch%end_time) then             ! finished:
+        call patch%output                               ! final one
         call self%remove_patch (patch)                  ! remove from self
       else                                              ! not finished:
         call patch%clear(bits%ready)                    ! needs new check
       end if
     end if
   else
-    print*,'ERROR: no self%queue', self%nq, self%n
+    !print*,'ERROR: no self%queue', self%nq, self%n
     stop
   end if
   print '(i8,f10.6,2x,3f10.6,i6,i6,2x,a)', patch%id, patch%time, patch%position, &
@@ -207,8 +210,7 @@ SUBROUTINE split (self, this)
         allocate (patch, source=this%patch)
         patch%mem_allocated = .false.
         position = this%patch%position + pos*patch%size
-        !call patch%init (position, self%size/self%dims)
-        call patch%init_values (position, self%size/self%dims)
+        call patch%init (position, self%size/self%dims)
         !------------------------------------------------------------------------
         ! Append links to the new patches as the list tail
         !------------------------------------------------------------------------
@@ -290,8 +292,9 @@ END SUBROUTINE init_nbor_by_overlap
 !> neighbors.
 !> =============================================================================
 SUBROUTINE search_nbors_by_overlap (self, start)
-  class (link_t), target:: self
-  type(link_t) , pointer:: link1, link2, start, prev, nbor
+  class(link_t), target:: self
+  class(link_t), pointer:: link1, link2, start, prev
+  type(link_t), pointer:: nbor
   !> ===========================================================================
   !> For each patch link, make a list of neighbors, starting with link%nbor
   !> ===========================================================================
