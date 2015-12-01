@@ -203,8 +203,23 @@ END SUBROUTINE get_guardcells_for
 !> =============================================================================
 SUBROUTINE output (self)
   class(patch_t):: self
+  character(len=32) filename
+  integer:: iv
   !.............................................................................
-  if (io%master) print*,'patch_t%output: should do output at t =', self%time
+  call system ('mkdir -p data/')
+  write (filename,'(a,i3.3,"_",i4.4)') 'data/patch_', self%id, self%iout
+  if (io%master) print*,'output to ',filename
+  open (3, file=trim(filename)//'.txt', form='formatted', status='unknown')
+  write (3, *) self%n, self%time
+  close (3)
+  open (3, file=trim(filename)//'.dat', form='unformatted', access='direct', &
+    status='unknown', recl =sizeof(self%mem(1,1,1,1,1,1))*product(self%n))
+associate (l=>self%li, u=>self%ui)
+  do iv=1,self%nv
+    write (3,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
+  end do
+end associate
+  close (3)
 END SUBROUTINE output
 !> =============================================================================
 FUNCTION index_range (self, position)

@@ -104,22 +104,14 @@ SUBROUTINE update_pde (self)
   associate (d=>self%d, p=>self%p, s=>self%s, gamma=>self%gamma)
     call trace('self%d**gamma')  ! OK
     pg = self%d**self%gamma
-    call trace('s/d')       ! NOK
     pg = s/d
-    call trace('s/d*(gamma-1)')
     pg = (s/d)*(gamma-1.0)
-    call trace('pg')
     pg = d**gamma*exp((s/d)*(gamma-1.0))
-    call trace('u=p/d')
     u = p/d
     pu = outer(p,u)
-    call trace('dddt')
     self%dddt = -div(p)
-    call trace('dpdt')
     self%dpdt = -div(pu)
-    call trace('dpdt')
     self%dpdt = -div(pu) - grad(pg)
-    call trace('dsdt')
     self%dsdt = -div(p*s)
   end associate
   call trace_end
