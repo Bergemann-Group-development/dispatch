@@ -55,9 +55,9 @@ SUBROUTINE prolongate (self, coarse, fine, init, guard)
     first_time = .false.
   end if
 
-  ! Need to know switch first:
-  !if (.not. coarse%guard_cells_present) &
-  !  call abort('interpolation_mod.f90: prolongation operator called for a coarse patch that does not have guard cells updated')
+  if (guard) then
+    ! test for overlaps and check where data has been uploaded already
+  endif
 
   if (init) then
     offset = merge(coarse%li-1,coarse%li + coarse%n/2-1,fine%position < coarse%position)
@@ -170,10 +170,15 @@ SUBROUTINE restrict (self, coarse, fine, upload, guard)
   integer :: ix,iy,iz,jx,jy,jz,kx,ky,kz,lb(3),ub(3)
   real    :: inp
   !.............................................................................
-  call trace_begin ('interpolation_t%prolongation', 3)
+  call trace_begin ('interpolation_t%restrict', 3)
   if (first_time) then
     first_time = .false.
   end if
+ 
+  if (guard) then
+    ! test for overlaps and check where data has been uploaded already
+  endif
+
   if (upload) then
     lb = merge(coarse%li,coarse%li + coarse%n/2,   fine%position < coarse%position) ! lower index in coarse cell
     ub = merge(coarse%li + coarse%n/2-1,coarse%ui, fine%position < coarse%position) ! upper index in coarse cell
@@ -194,9 +199,6 @@ SUBROUTINE restrict (self, coarse, fine, upload, guard)
     enddo
     enddo
     enddo
-  endif
-  if (guard) then
-    ! test for overlaps and check where data has been uploaded already
   endif
   call trace_end
 END SUBROUTINE restrict
