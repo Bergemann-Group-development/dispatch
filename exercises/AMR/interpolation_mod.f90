@@ -47,10 +47,115 @@ SUBROUTINE prolongate (self, coarse, fine, init, guard)
   class(patch_t):: coarse, fine
   logical :: init, guard
   !.............................................................................
+  integer :: offset(3),ix,iy,iz,cx,cy,cz,ox,oy,oz
+  logical :: flat(3)
+  !.............................................................................
   call trace_begin ('interpolation_t%prolongate', 3)
   if (first_time) then
     first_time = .false.
   end if
+
+  ! Need to know switch first:
+  !if (.not. coarse%guard_cells_present) &
+  !  call abort('interpolation_mod.f90: prolongation operator called for a coarse patch that does not have guard cells updated')
+
+  if (init) then
+    offset = merge(coarse%li-1,coarse%li + coarse%n/2-1,fine%position < coarse%position)
+    flat = coarse%n == 1
+    if (flat(3)) then   ! z-dim is flat
+      if (flat(2)) then ! y-dim is flat: 1D run in x-direction
+        do ix=fine%li(1), fine%ui(1)
+          cx = (ix-1)/2 + offset(1)
+          ox = cx + merge(-1,1,modulo(ix-fine%li(1),2)==0)
+          fine%mem(ix,1,1,:,fine%it,:) = 0.75 * coarse%mem(cx,1,1,:,coarse%it,:) + &
+                                         0.25 * coarse%mem(ox,1,1,:,coarse%it,:)
+        enddo
+      else
+        if (flat(1)) then ! x-dim is flat: 1D run in y-direction
+          do iy=fine%li(2), fine%ui(2)
+            cy = (iy-1)/2 + offset(2)
+            oy = cy + merge(-1,1,modulo(iy-fine%li(2),2)==0)
+            fine%mem(1,iy,1,:,fine%it,:) = 0.75 * coarse%mem(1,cy,1,:,coarse%it,:) + &
+                                           0.25 * coarse%mem(1,oy,1,:,coarse%it,:)
+          enddo
+        else ! 2D run in x-y plane
+          do iy=fine%li(2), fine%ui(2)
+            cy = (iy-1)/2 + offset(2)
+            oy = cy + merge(-1,1,modulo(iy-fine%li(2),2)==0)
+          do ix=fine%li(1), fine%ui(1)
+            cx = (ix-1)/2 + offset(1)
+            ox = cx + merge(-1,1,modulo(ix-fine%li(1),2)==0)
+            fine%mem(ix,iy,1,:,fine%it,:) = 0.75*0.75 * coarse%mem(cx,cy,1,:,coarse%it,:) + &
+                                            0.25*0.75 * coarse%mem(ox,cy,1,:,coarse%it,:) + &
+                                            0.75*0.25 * coarse%mem(cx,oy,1,:,coarse%it,:) + &
+                                            0.25*0.25 * coarse%mem(ox,oy,1,:,coarse%it,:)
+          enddo
+          enddo
+        endif
+      endif
+    else
+      if (flat(2)) then
+        if (flat(1)) then ! 1D run in z-dir
+          do iz=fine%li(3), fine%ui(3)
+            cz = (iz-1)/2 + offset(3)
+            oz = cz + merge(-1,1,modulo(iz-fine%li(3),2)==0)
+            fine%mem(1,1,iz,:,fine%it,:) = 0.75 * coarse%mem(1,1,cz,:,coarse%it,:) + &
+                                           0.25 * coarse%mem(1,1,oz,:,coarse%it,:)
+          enddo
+        else ! 2D run in x-z plane
+          do iz=fine%li(3), fine%ui(3)
+            cz = (iz-1)/2 + offset(3)
+            oz = cz + merge(-1,1,modulo(iz-fine%li(3),2)==0)
+          do ix=fine%li(1), fine%ui(1)
+            cx = (ix-1)/2 + offset(1)
+            ox = cx + merge(-1,1,modulo(ix-fine%li(1),2)==0)
+            fine%mem(ix,1,iz,:,fine%it,:) = 0.75*0.75 * coarse%mem(cx,1,cz,:,coarse%it,:) + &
+                                            0.25*0.75 * coarse%mem(ox,1,cz,:,coarse%it,:) + &
+                                            0.75*0.25 * coarse%mem(cx,1,oz,:,coarse%it,:) + &
+                                            0.25*0.25 * coarse%mem(ox,1,oz,:,coarse%it,:)
+          enddo
+          enddo
+        endif
+      else
+        if (flat(1)) then ! 2D run in y-z plane
+          do iz=fine%li(3), fine%ui(3)
+            cz = (iz-1)/2 + offset(3)
+            oz = cz + merge(-1,1,modulo(iz-fine%li(3),2)==0)
+          do iy=fine%li(2), fine%ui(2)
+            cy = (iy-1)/2 + offset(2)
+            oy = cy + merge(-1,1,modulo(iy-fine%li(2),2)==0)
+            fine%mem(1,iy,iz,:,fine%it,:) = 0.75*0.75 * coarse%mem(1,cy,cz,:,coarse%it,:) + &
+                                            0.25*0.75 * coarse%mem(1,oy,cz,:,coarse%it,:) + &
+                                            0.75*0.25 * coarse%mem(1,cy,oz,:,coarse%it,:) + &
+                                            0.25*0.25 * coarse%mem(1,oy,oz,:,coarse%it,:)
+          enddo
+          enddo
+        else ! 3D run
+          do iz=fine%li(3), fine%ui(3)
+            cz = (iz-1)/2 + offset(3)
+            oz = cz + merge(-1,1,modulo(iz-fine%li(3),2)==0)
+          do iy=fine%li(2), fine%ui(2)
+            cy = (iy-1)/2 + offset(2)
+            oy = cy + merge(-1,1,modulo(iy-fine%li(2),2)==0)
+          do ix=fine%li(1), fine%ui(1)
+            cx = (ix-1)/2 + offset(1)
+            ox = cx + merge(-1,1,modulo(ix-fine%li(1),2)==0)
+            fine%mem(ix,iy,iz,:,fine%it,:) = 0.75*0.75*0.75 * coarse%mem(cx,cy,cz,:,coarse%it,:) + &
+                                             0.25*0.75*0.75 * coarse%mem(ox,cy,cz,:,coarse%it,:) + &
+                                             0.75*0.25*0.75 * coarse%mem(cx,oy,cz,:,coarse%it,:) + &
+                                             0.25*0.25*0.75 * coarse%mem(ox,oy,cz,:,coarse%it,:) + &
+                                             0.75*0.75*0.25 * coarse%mem(cx,cy,oz,:,coarse%it,:) + &
+                                             0.25*0.75*0.25 * coarse%mem(ox,cy,oz,:,coarse%it,:) + &
+                                             0.75*0.25*0.25 * coarse%mem(cx,oy,oz,:,coarse%it,:) + &
+                                             0.25*0.25*0.25 * coarse%mem(ox,oy,oz,:,coarse%it,:)
+          enddo
+          enddo
+          enddo
+        endif
+      endif
+    endif
+  endif
+
   call trace_end
 END SUBROUTINE prolongate
 !> =============================================================================
