@@ -13,5 +13,5 @@
  verbose=0
 /
 &patch_params
- dims=16,16,1,1,5
+ dims=16,16,1,5,1
 /
