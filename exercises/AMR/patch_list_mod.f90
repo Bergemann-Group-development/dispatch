@@ -45,7 +45,6 @@ MODULE patch_list_mod
     procedure:: print
   end type
   type(timestep_t), pointer, dimension(:,:,:):: patches
-  integer:: msplit=2
   integer, parameter:: mnbor=00
 CONTAINS
 !> =============================================================================
@@ -68,7 +67,7 @@ SUBROUTINE init_cartesian (self)
   type(timestep_t), pointer:: patch
   type(link_t) , pointer:: prev=>null(), link
   integer:: i, j, k, i1, j1, k1, i2, j2, k2
-  namelist /box_params/ size, dims, msplit
+  namelist /box_params/ size, dims
   !.............................................................................
   call trace_begin ('patch_list_t%init_cartesian')
   rewind (io%input); read (io%input, box_params)

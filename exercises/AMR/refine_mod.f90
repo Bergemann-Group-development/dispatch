@@ -24,13 +24,14 @@ MODULE refine_mod
     procedure:: check_velocity
     procedure:: check_magnetic_field
   end type
+  integer, public:: msplit=0
+  real, public:: max_change=100
   type(refine_t), public:: refine
 CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(refine_t):: self
-  real:: max_change
-  namelist /refine_params/ max_change
+  namelist /refine_params/ max_change, msplit
   !.............................................................................
   call trace_begin ('refine_t%init')
   rewind (io%input)

@@ -5,6 +5,8 @@
 &box_params
  size=1,1,0
  dims=4,4,1
+/
+&refine_params
  msplit=2
 /
 &timestep_params
