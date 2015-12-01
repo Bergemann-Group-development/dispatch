@@ -129,17 +129,24 @@ SUBROUTINE update_patch (self)
     call self%output
     self%out_next = self%out_next + self%out_time
   end if
+  self%dt(self%it) = self%dtime                         ! just updated
+  self%dt(self%new)= self%dtime                         ! next estimate
+  self%t(self%new) = self%time                          ! initial time
+  self%it = self%new                                    ! update time slot
+  self%new = mod(self%new,ntime)+1                      ! increment / rotate
+  self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
+  self%iit(self%nt) = self%new                          ! new right-most slot
   self%istep = self%istep + 1
-  self%dt(self%it) = self%dtime
-  self%t(self%new) = self%time
-  self%it = self%new
-  self%new = mod(self%new,ntime)+1
-  self%t(self%new) = self%time
+  if (io%verbose>2) &
+   print*,'patch id:',self%id,'  it:',self%it,'  new:',self%new
   if (io%verbose>3) &
-   print*,'patch:',self%id,'  it:',self%it,'  new:',self%new
+   print*,'patch iit:', self%iit
+  if (io%verbose>3) &
+   print*,'patch t(iit):', self%t(self%iit)
   call trace_end
 END SUBROUTINE update_patch
 
+!> =============================================================================
 SUBROUTINE get_guardcells_for (self, patch)
   class(patch_t):: self
   class(patch_t), pointer:: patch
@@ -160,22 +167,28 @@ FUNCTION index_range (self, position)
   integer:: index_range(3,2)
   integer:: dir
   !.............................................................................
+  print '(1x,a,2(3x,3f8.3))',   'positions:', position
   do dir=1,3
     index_range(:,dir) = int(modulo(position(dir)-self%origin, self%box/self%ds)) + 1
     index_range(:,dir) = max(1, min(self%gn, index_range(:,dir)))
+    print '(1x,a,2(3x,i3,a,i3))', 'index range:', &
+      index_range(1,dir), ' - ', index_range(2,dir)
   end do
 END FUNCTION index_range
 !> =============================================================================
 SUBROUTINE indices (self, np, p, ii, f)
   class(patch_t):: self
   real:: p(np), f(np,3)
-  integer:: np, dir, ii(np,3)
+  integer:: np, dir, ii(np,3), i
   !.............................................................................
   do dir=1,3
     f(:,dir) = modulo(p-self%origin(dir), self%box(dir))/self%ds(dir)
     ii(:,dir) = max(1, min(self%gn(dir), int(f(:,dir))))
   end do
   f = f-ii
+  do i=1,np
+    print'(i4,3x,a,3i4,3x,a,3f8.3)', i, 'index:', ii(i,:), 'fraction:', f(i,:)
+  end do
 END SUBROUTINE indices
 !> =============================================================================
 FUNCTION index (self, position)
@@ -184,8 +197,10 @@ FUNCTION index (self, position)
   integer:: index(3)
   !.............................................................................
   f = modulo(position-self%origin, self%box)/self%ds + 1.0
-  index = max(1, min(self%gn, int(f)))
+  index = max(1, min(self%gn-1, int(f)))
   f = f - index
+  print*,'index:', index
+  print*,'fraction:', f
 END FUNCTION index
 
 !> =============================================================================

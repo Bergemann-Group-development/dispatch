@@ -91,7 +91,7 @@ SUBROUTINE update_timestep (self)
   end if
   self%time = self%time + self%dtime            ! update self time
   self%t(it) = self%time                        ! update slot time
-  self%it = it                                  ! update time slot
+  call self%patch_t%update                      ! rotate time slots
   call trace_end
 !........................................................................
 END SUBROUTINE update_timestep
