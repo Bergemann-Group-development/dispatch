@@ -75,7 +75,7 @@ SUBROUTINE update_timestep (self)
     print*, 'timestep_t%update, d =', self%mem(1:5,1,1,1,1,1)
   end if
   do jt=1,self%time_order                       ! loop over time
-    kt = modulo(it-jt,self%nt)                  ! previous time slots
+    kt = modulo(it-jt-2,self%nt)+1               ! previous time slots
     if (jt == 1) then
       self%mem(:,:,:,:,it,1) = &
       self%mem(:,:,:,:,kt,2)*(self%wt(jt)*self%dtime)
