@@ -2,9 +2,10 @@
 !> $Id$
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE tensor_mod
+  USE io_mod
   USE trace_mod
   USE vector_mod
-  USE derivatives_mod
+  USE central_mod
   implicit none
   type, public, extends(vector_t):: tensor_t
     real, dimension(:,:,:), pointer:: xx=>null(),xy=>null(),xz=>null(), &
@@ -52,6 +53,7 @@ SUBROUTINE init_tensor (self, dims, ds, deriv, name)
   self%ds = ds
   self%name = name
   self%d => deriv
+  call self%d%init (dims, ds)
   call self%allocate (self)
   call trace_end
 END SUBROUTINE init_tensor

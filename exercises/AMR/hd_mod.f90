@@ -110,7 +110,7 @@ SUBROUTINE update_pde (self)
     pg = (s/d)*(gamma-1.0)
     call trace('pg')
     pg = d**gamma*exp((s/d)*(gamma-1.0))
-    call trace('u')
+    call trace('u=p/d')
     u = p/d
     pu = outer(p,u)
     call trace('dddt')

@@ -7,7 +7,7 @@ MODULE trace_mod
   USE io_mod
   implicit none
   private
-  character(len=64), dimension(30), save:: tracing                              ! active routine
+  character(len=80), dimension(30), save:: tracing                              ! active routine
   integer, save:: verbosity(30)
   integer, private, save:: indent=4                                             ! trace indent
   integer, private, save:: level=1                                              ! trace level

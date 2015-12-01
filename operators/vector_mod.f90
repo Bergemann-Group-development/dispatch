@@ -6,8 +6,6 @@ MODULE vector_mod
   USE trace_mod
   USE scalar_mod
   USE central_mod
-!  USE upwind_mod
-!  USE derivatives_mod
   implicit none
   public
   type, public, extends(scalar_t):: vector_t
@@ -64,6 +62,7 @@ SUBROUTINE init_vector (self, dims, ds, deriv, name)
   !.............................................................................
   call trace_begin ('vector_t%init '//trim(self%name), 2)
   self%n = dims
+  self%ds = ds
   self%d => deriv
   self%name = name
   call self%d%init (dims, ds)
@@ -312,6 +311,7 @@ FUNCTION vector_scalar_divide (in1,in2) RESULT (out)
   out%x = in1%x/in2%f
   out%y = in1%y/in2%f
   out%z = in1%z/in2%f
+  call trace_end
 END FUNCTION vector_scalar_divide
 !> =============================================================================
 FUNCTION vector_scalar_div (in) RESULT (out)
