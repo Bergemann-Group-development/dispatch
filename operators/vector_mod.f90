@@ -370,9 +370,13 @@ END FUNCTION vector_curl
 SUBROUTINE allocate_vector (self, in)
   class(vector_t):: self
   class(scalar_t):: in
+  integer:: id=0
   !.............................................................................
   if (associated(self%x)) return
   call trace_begin ('allocate vector '//trim(self%name))
+  !$omp atomic
+  id = id+1
+  self%id = id
   if (io%verbose>3) print*,'allocate_vector',self%n, in%n
   self%n = in%n
   select type (self)
