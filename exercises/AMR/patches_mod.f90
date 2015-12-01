@@ -150,6 +150,50 @@ END SUBROUTINE update_patch
 SUBROUTINE get_guardcells_for (self, patch)
   class(patch_t):: self
   class(patch_t), pointer:: patch
+  !
+  integer :: ls(3), us(3), lp(3), up(3), dir
+  real(kind=8) :: rlb(3), rub(3), hs
+  !
+  ! Check if the two patches have same size
+  if (maxval(abs(patch%ds-self%ds)/max(patch%ds,self%ds)) < 1e-5) then  ! we are on the same level
+    ! Get real lower and upper boundary with possible wrap-around
+    rlb = self%position-(self%n/2+1+1e-5_8)*self%ds ! go slightly below lower boundary
+    rub = self%position+(self%n/2+1+1e-5_8)*self%ds ! go slightly above upper boundary
+    rlb = modulo(rlb + self%box, self%box)          ! wrap around
+    rub = modulo(rub + self%box, self%box)
+    ! check if we can get guard cells in a given direction
+    do dir=1,3
+      hs = 0.5_8 * patch%size(dir)
+      ! check lower boundary
+      if (abs(patch%position(dir) - rub(dir)) < hs) then
+        ! We are overlapping in this direction, exchange data
+        ls = 1; us=self%gn
+        ls(dir) = self%ui(dir) - patch%ng(dir) + 1
+        us(dir) = self%ui(dir)
+
+        lp = 1; up=patch%gn
+        lp(dir) = 1
+        up(dir) = patch%li(dir) - 1
+        ! copy data
+        patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
+         self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%it,:)
+      endif
+      ! check upper boundary
+      if (abs(rlb(dir)-patch%position(dir)) < hs) then
+        ! We are overlapping in this direction, exchange data
+        ls = 1; us=self%gn
+        ls(dir) = 1 
+        us(dir) = patch%li(dir) - 1
+        
+        lp = 1; up=patch%gn
+        lp(dir) = patch%ui(dir) - patch%ng(dir) + 1
+        up(dir) = patch%ui(dir) - 1
+        ! copy data
+        patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
+         self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%it,:)
+      endif
+    enddo
+  endif
 END SUBROUTINE get_guardcells_for
 
 !> =============================================================================
