@@ -63,7 +63,10 @@ SUBROUTINE init_scalar (self, dims, ds, deriv, name)
   !.............................................................................
   call trace_begin ('scalar_t%init '//trim(self%name), 2)
   self%n = dims
+  self%ds = ds
+  self%d => deriv
   self%name = name
+  call self%d%init (dims, ds)
   call self%allocate (self)
   call trace_end
 END SUBROUTINE init_scalar
