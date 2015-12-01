@@ -1,0 +1,17 @@
+&io_params
+ do_trace=t
+ verbose=4
+/
+&box_params
+ size=1,1,0
+ dims=4,4,1
+ msplit=0
+/
+&timestep_params
+ courant=0.2
+ time_order=2
+ verbose=0
+/
+&patch_params
+ dims=16,16,1,1,5
+/
