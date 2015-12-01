@@ -6,6 +6,7 @@ MODULE timestep_mod
   USE io_mod
   USE trace_mod
   USE pde_mod
+  USE patches_mod
   implicit none
   private
   integer, parameter:: nslice = 4
@@ -28,7 +29,7 @@ CONTAINS
 SUBROUTINE init_timestep (self, position, size)
   class(timestep_t):: self
   real:: position(3), size(3)
-  namelist /timestep_params/ courant, time_order, verbose
+  namelist /timestep_params/ courant, time_order, verbose, end_time, out_time
 !........................................................................
   call trace_begin ('timestep_t%init', 1)
   call self%pde_t%init (position, size)

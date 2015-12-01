@@ -48,6 +48,7 @@ MODULE patches_mod
     procedure:: is_relevant_for
     procedure:: get_guardcells_for
   end type
+  real, public:: end_time=1.0, out_time=0.1
   integer:: id = 0
 CONTAINS
 !> =============================================================================
@@ -60,8 +61,7 @@ SUBROUTINE init (self, position, size)
   integer:: dims(5) = 4
   real:: position(3), size(3)
   logical:: first_time = .true.
-  real:: end_time=1.0, out_time=1.0
-  namelist /patch_params/ dims, size, out_time, end_time
+  namelist /patch_params/ dims, size
   !.............................................................................
   !$omp atomic
   id = id + 1                                   ! increment global

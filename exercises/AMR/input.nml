@@ -12,10 +12,9 @@
 &timestep_params
  courant=0.2
  time_order=2
- verbose=0
+ end_time=0.499
+ out_time=9
 /
 &patch_params
  dims=16,16,1,5,1
- end_time=0.499
- out_time=9
 /
