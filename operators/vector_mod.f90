@@ -163,6 +163,7 @@ FUNCTION vector_scalar_mul (in1, in2) RESULT (out)
   out%x = in1%x * in2%f
   out%y = in1%y * in2%f
   out%y = in1%z * in2%f
+  out%d => in2%d
 END FUNCTION vector_scalar_mul
 !> =============================================================================
 FUNCTION real4_vector_mul (in1, in2) RESULT (out)
@@ -321,6 +322,7 @@ FUNCTION vector_scalar_div (in) RESULT (out)
   call trace_begin ('vector_scalar_div', 3)
   call out%allocate (in)
   out%f = in%d%dx (in%x) + in%d%dy (in%y) + in%d%dz (in%z)
+  out%d => in%d
   call trace_end
 END FUNCTION vector_scalar_div
 
