@@ -15,7 +15,7 @@ MODULE pde_mod
   integer, parameter:: i_d=1
   type, public, extends(patch_t):: pde_t
     type(scalar_t):: d, dddt
-    real:: u(3)
+    real:: u(3)=(/1.0,0.,0.1/)
     real:: gamma=5./3.
   contains
     procedure:: init
