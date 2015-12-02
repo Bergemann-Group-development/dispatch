@@ -15,10 +15,12 @@ MODULE vector_mod
     procedure:: allocate => allocate_vector
   end type
   interface assignment(=)
-    module procedure vector_assign_array, vector_assign_real, vector_assign_int, vector_assign_real_3
+    module procedure vector_assign_array, vector_assign_real, vector_assign_int, &
+                     vector_assign_scalar, vector_assign_real_3
   end interface
   interface operator(*)
-    module procedure real4_vector_mul, real8_vector_mul, vector_vector_mul, vector_scalar_mul
+    module procedure real4_vector_mul, real8_vector_mul, vector_vector_mul, vector_scalar_mul, &
+                     const3_scalar_mul, const3_vector_mul
   end interface
   interface dot
     module procedure vector_vector_dot
@@ -112,6 +114,15 @@ SUBROUTINE vector_assign_array (out, in)
   out%z = in(:,:,:,3)
 END SUBROUTINE vector_assign_array
 !> =============================================================================
+SUBROUTINE vector_assign_scalar (out, in)
+  type(vector_t):: out
+  type(scalar_t):: in
+  call out%allocate (out)
+  out%x = in%f
+  out%y = in%f
+  out%z = in%f
+END SUBROUTINE vector_assign_scalar
+!> =============================================================================
 SUBROUTINE vector_assign_real_3 (out, in)
   type(vector_t), intent(inout):: out
   real, intent(in):: in(3)
@@ -178,6 +189,26 @@ FUNCTION vector_scalar_mul (in1, in2) RESULT (out)
   out%y = in1%z * in2%f
   out%d => in2%d
 END FUNCTION vector_scalar_mul
+!> =============================================================================
+FUNCTION const3_scalar_mul (in2, in1) RESULT (out)
+  type(scalar_t):: out
+  real, intent(in):: in1(3)
+  type(vector_t), intent(in):: in2
+!  call out%allocate (in2)
+  out%f = in2%x * in1(1)
+  out%f = in2%y * in1(2)
+  out%f = in2%z * in1(3)
+END FUNCTION const3_scalar_mul
+!> =============================================================================
+FUNCTION const3_vector_mul (in1, in2) RESULT (out)
+  type(vector_t):: out
+  real, intent(in):: in1(3)
+  type(vector_t), intent(in):: in2
+!  call out%allocate (in2)
+  out%x = in2%x * in1(1)
+  out%y = in2%y * in1(2)
+  out%z = in2%z * in1(3)
+END FUNCTION const3_vector_mul
 !> =============================================================================
 FUNCTION real4_vector_mul (in1, in2) RESULT (out)
   type(vector_t):: out

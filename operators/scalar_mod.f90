@@ -42,8 +42,11 @@ MODULE scalar_mod
   interface exp
     module procedure scalar_exp
   end interface
-    interface log
+  interface log
     module procedure scalar_log
+  end interface
+  interface sqrt
+    module procedure scalar_sqrt
   end interface
   interface minval
     module procedure scalar_minval
@@ -130,6 +133,13 @@ FUNCTION scalar_log (in) RESULT (out)
   call out%allocate (in)
   out%f = log(in%f)
 END FUNCTION scalar_log
+!> =============================================================================
+FUNCTION scalar_sqrt (in) RESULT (out)
+  type(scalar_t):: out
+  type(scalar_t), intent(in):: in
+  call out%allocate (in)
+  out%f = sqrt(in%f)
+END FUNCTION scalar_sqrt
 
 !> =============================================================================
 FUNCTION scalar_real_add (in1, in2) RESULT (out)

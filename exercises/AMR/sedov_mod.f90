@@ -191,17 +191,22 @@ END SUBROUTINE
 SUBROUTINE minus_div_tensor (out,in)
   type(vector_t):: out
   type(tensor_t):: in
+  out%f = - d%ddxup(in%x) - d%ddyup(in%y) - d%ddzup(in%z)
 END SUBROUTINE
 !> =============================================================================
 FUNCTION velocity_interpolation (in1, in2) RESULT (out)
   type(vector_t):: in1
   type(scalar_t):: in2
   type(vector_t):: out
+  out%x = in1%x/exp(d%xdn(alog(in2%f)))
+  out%y = in1%y/exp(d%xdn(alog(in2%f)))
+  out%z = in1%z/exp(d%xdn(alog(in2%f)))
 END FUNCTION
 !> =============================================================================
 FUNCTION square_magnitude (in1) RESULT (out)
   type(vector_t):: in1
   type(scalar_t):: out
+  out%f = in1%x**2 + in1%y**2 + in1%z**2
 END FUNCTION
 
 !> =============================================================================

@@ -83,7 +83,7 @@ SUBROUTINE update_timestep (self)
     print*, 'timestep_t%update, id =', self%id, self%it, it
     print*, 'timestep_t%update, d =', self%mem(1:5,1,1,1,1,1)
   end if
-  self%dtime = self%courant*self%ds(1)/sqrt(sum(self%u**2))
+  self%dtime = self%courant*self%ds(1)/self%u_max
   nt = self%nt
   lt = self%iit(nt)
   if (io%verbose>3) then
