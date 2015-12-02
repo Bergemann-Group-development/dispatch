@@ -18,7 +18,7 @@ MODULE patches_mod
     integer:: i, j, k
     integer:: status
     integer, pointer:: iit(:)
-    real, dimension(3):: position, size, gsize, box=1, ds, origin
+    real, dimension(3):: position, size, gsize, box, ds, origin
     real, pointer:: t(:)
     real, pointer:: dt(:)
     real:: time=0.0, dtime=0.1, end_time=1.0, grace=0.0
@@ -78,6 +78,7 @@ SUBROUTINE init (self, position, size)
     read (io%input, patch_params)
     if (io%master) write (*, patch_params)
   end if
+  self%status=0
   self%end_time=end_time
   self%out_time=out_time
   self%size = size                              ! patch size
@@ -152,18 +153,22 @@ SUBROUTINE get_guardcells_for (self, patch)
   class(patch_t), pointer:: patch
   !
   integer :: ls(3), us(3), lp(3), up(3), dir
-  real(kind=8) :: rlb(3), rub(3), hs
+  real(kind=8) :: rlb(3), rub(3), grlb(3), hs
+  integer :: nprint=10
   !
   ! Check if the two patches have same size
   if (maxval(abs(patch%ds-self%ds)/max(patch%ds,self%ds)) < 1e-5) then  ! we are on the same level
     ! Get real lower and upper boundary with possible wrap-around
     rlb = self%position-(self%n/2+1+1e-5_8)*self%ds ! go slightly below lower boundary
     rub = self%position+(self%n/2+1+1e-5_8)*self%ds ! go slightly above upper boundary
-    rlb = modulo(rlb + self%box, self%box)          ! wrap around
-    rub = modulo(rub + self%box, self%box)
+    grlb = self%origin - 0.5*self%box               ! global lower boundary in box
+    rlb = modulo(rlb - grlb, self%box) + grlb       ! wrap around
+    rub = modulo(rub - grlb, self%box) + grlb
     if (io%verbose > 4) then
       print *, 'rlb for self:', rlb
       print *, 'rub for self:', rub
+      print *, 'patch positi:', patch%position
+      print *, 'patch origin:', patch%origin
     endif
 
     ! check if we can get guard cells in a given direction
@@ -183,6 +188,10 @@ SUBROUTINE get_guardcells_for (self, patch)
           print *, 'Overlapping in lower boundary:', dir
           print *, 'Patch (receiver):', lp, up, up-lp+1
           print *, 'Self  (donor)   :', ls, us, us-ls+1
+          print *, 'Patch time      :', patch%it, patch%time
+          print *, 'Self  time      :', self%it, self%time
+          nprint = nprint - 1
+          if (nprint==0) stop
         endif
         ! copy data
         patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
@@ -202,6 +211,10 @@ SUBROUTINE get_guardcells_for (self, patch)
           print *, 'Overlapping in upper boundary:', dir
           print *, 'Patch (receiver):', lp, up, up-lp+1
           print *, 'Self  (donor)   :', ls, us, us-ls+1
+          print *, 'Patch time      :', patch%it, patch%time
+          print *, 'Self  time      :', self%it, self%time
+          nprint = nprint - 1
+          if (nprint==0) stop
         endif
         
         ! copy data
@@ -295,7 +308,7 @@ FUNCTION distance (self, patch)
   class(patch_t):: self, patch
   real:: distance(3)
   distance = self%position-patch%position
-  distance = abs(modulo(distance+0.5*self%box,self%box)-0.5*self%box)
+  distance = mod(distance+1.5*self%box,max(self%box,1e-30))-0.5*self%box
 END FUNCTION distance
 !> =============================================================================
 FUNCTION overlaps (self, patch)

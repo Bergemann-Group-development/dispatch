@@ -63,12 +63,13 @@ END SUBROUTINE init
 SUBROUTINE init_cartesian (self)
   class (patch_list_t):: self
   integer:: dims(3) = [4,4,1]
+  real:: origin(3) = [0.0,0.0,0.0]
   real:: size(3) = [1.0,1.0,1.0]
   real:: position(3)
   type(timestep_t), pointer:: patch
   type(link_t) , pointer:: prev=>null(), link
   integer:: i, j, k, i1, j1, k1, i2, j2, k2
-  namelist /box_params/ size, dims
+  namelist /box_params/ size, dims, origin
   !.............................................................................
   call trace_begin ('patch_list_t%init_cartesian')
   rewind (io%input); read (io%input, box_params)
@@ -83,7 +84,9 @@ SUBROUTINE init_cartesian (self)
     ! Initialize each patch, via timestep_t:init -> pde_t:init -> patch_t:init
     !---------------------------------------------------------------------------
     patch => patches(i,j,k)
-    position = -0.5_8*self%size + ([i,j,k]-0.5_8)*self%size/self%dims
+    position = -0.5_8*self%size + ([i,j,k]-0.5_8)*self%size/self%dims + origin
+    patch%box = self%size
+    patch%origin = origin
     call patch%init (position, self%size/self%dims)
     if (io%verbose>1) &
       print*,'init_cartesian:', patch%id, self%size, patch%size
@@ -126,13 +129,13 @@ SUBROUTINE update (self)
   if (self%nq < 1) then
     n1 = self%nq
     call self%check_all
-    !print *,'WARNING: check_all (should not be needed), found', self%nq
+    !print *,'WARNING: check_all (should not be needed), found', self%nq, n1
   end if
   head => self%queue                                    ! queue start
   if (associated(head)) then
     self%queue => self%queue%next_time                  ! update the link
     self%nq = self%nq-1
-    !call head%get_guardcells
+    call head%get_guardcells
     patch => head%patch                                 ! head patch
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue
@@ -472,18 +475,24 @@ END SUBROUTINE queue_by_time
 !> Run through neighbor list and pick up guard cells
 !> =============================================================================
 SUBROUTINE get_guardcells (self)
+  implicit none
   class (link_t):: self
-  class (link_t), pointer:: nbor
-    class (patch_t), pointer:: patch
+  class (link_t),  pointer:: nbor
+  class (patch_t), pointer:: patch
+  integer :: nguard
   !.............................................................................
   call trace_begin('link_t%get_guardcells')
   nbor => self%nbors
   patch => self%patch
+  nguard=0
   do while (associated (nbor))
-    if (nbor%patch%is_relevant_for(patch)) &
+    if (nbor%patch%is_relevant_for(patch)) then
       call nbor%patch%get_guardcells_for (patch)
+      nguard = nguard + 1
+    endif
     nbor => nbor%next
   end do
+  print *, 'Number of neighbors with guard cells:', nguard
   call trace_end
 END SUBROUTINE get_guardcells
 
