@@ -299,8 +299,28 @@ END FUNCTION
 LOGICAL FUNCTION is_relevant_for (self, patch)
   class (patch_t):: self
   class (patch_t), pointer:: patch
+  !
+  integer      :: dir, overlap
+  real(kind=8) :: dist(3), right_distance
+  logical      :: face, edge, corner
   !............................................................................
-  is_relevant_for = any(distance(self,patch) < 0.01*self%size)
+  dist = distance(self,patch)
+  overlap = 0
+  do dir=1,3
+    if (patch%n(dir)==1) cycle ! cycle if direction is passive
+    ! this is the right distance
+    right_distance = 0.5_8*(self%ds(dir)*self%n(dir) + patch%ds(dir)*patch%n(dir))
+    ! inc overlap counter if we are at the right distance. Compare with ds to avoid round-off errors
+    if (abs(dist(dir) - right_distance) < 0.1_8*min(self%ds(dir),patch%ds(dir))) &
+      overlap = overlap + 1
+  enddo
+
+  face = (overlap==1)
+  edge = (overlap==2)
+  corner = (overlap==3)
+
+  ! For now only check for face-overlap
+  is_relevant_for = face
 END FUNCTION
 
 !> =============================================================================
