@@ -153,7 +153,7 @@ SUBROUTINE get_guardcells_for (self, patch)
   class(patch_t):: self
   class(patch_t), pointer:: patch
   !
-  integer :: ls(3), us(3), lp(3), up(3), dir
+  integer :: ls(3), us(3), lp(3), up(3), dir, it
   real(kind=8) :: rlb(3), rub(3), origin(3), hs
   integer :: nprint=100
   !
@@ -191,18 +191,25 @@ SUBROUTINE get_guardcells_for (self, patch)
         lp = 1; up=patch%gn
         lp(dir) = 1
         up(dir) = patch%li(dir) - 1
+
+        ! copy data
+        do it=self%nt,1,-1
+          if (self%t(self%iit(it))==patch%time) then
+            patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
+             self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%iit(it),:)
+            exit
+          endif
+        enddo
+
         if (io%verbose > 4) then
           print *, 'Overlapping in lower boundary:', dir
           print *, 'Patch (receiver):', lp, up, up-lp+1
           print *, 'Self  (donor)   :', ls, us, us-ls+1
           print *, 'Patch time      :', patch%it, patch%time
-          print *, 'Self  time      :', self%it, self%time
+          print *, 'Self  time      :', it, self%t(self%iit(it))
           nprint = nprint - 1
           if (nprint==0) stop
         endif
-        ! copy data
-        patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
-         self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%it,:)
       endif
       ! check upper boundary
       if (abs(rlb(dir)-patch%position(dir)) < hs) then
@@ -214,22 +221,28 @@ SUBROUTINE get_guardcells_for (self, patch)
         lp = 1; up=patch%gn
         lp(dir) = patch%ui(dir) + 1
         up(dir) = patch%gn(dir)
+
+        ! copy data
+        do it=self%nt,1,-1
+          if (self%t(self%iit(it))==patch%time) then
+            patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
+             self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%iit(it),:)
+            exit
+          endif
+        enddo
+
         if (io%verbose > 4) then
           print *, 'Overlapping in upper boundary:', dir
           print *, 'Patch (receiver):', lp, up, up-lp+1
           print *, 'Self  (donor)   :', ls, us, us-ls+1
           print *, 'Patch time      :', patch%it, patch%time
-          print *, 'Self  time      :', self%it, self%time
+          print *, 'Self  time      :', it, self%t(self%iit(it))
           nprint = nprint - 1
           if (nprint==0) then
             print *, 'Max prints reached in guard cells. Stopping.'
             stop
           endif
         endif
-
-        ! copy data
-        patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
-         self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%it,:)
       endif
     enddo
   endif
