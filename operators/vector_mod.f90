@@ -41,6 +41,9 @@ MODULE vector_mod
   interface div
     module procedure vector_scalar_div
   end interface
+  interface minusdiv
+    module procedure vector_scalar_minusdiv
+  end interface
   interface cross
     module procedure real4_vector_cross, real8_vector_cross, vector_cross
   end interface
@@ -52,6 +55,16 @@ MODULE vector_mod
   end interface
   private:: allocate_vector
 CONTAINS
+
+!> =============================================================================
+SUBROUTINE minus_div (out, in)
+  type(vector_t), intent(in):: in
+  type(scalar_t), intent(inout):: out
+  !.............................................................................
+  !print*,in%d%n, in%d%ds, associated(out%f)
+  out%f = - in%d%dx(in%x) - in%d%dy(in%y) - in%d%dz(in%z)
+END SUBROUTINE
+
 !> =============================================================================
 SUBROUTINE init_vector (self, dims, ds, deriv, name)
   class(vector_t):: self
@@ -315,16 +328,25 @@ FUNCTION vector_scalar_divide (in1,in2) RESULT (out)
   call trace_end
 END FUNCTION vector_scalar_divide
 !> =============================================================================
-FUNCTION vector_scalar_div (in) RESULT (out)
-  type(scalar_t):: out
+SUBROUTINE vector_scalar_div (out, in)
+  type(scalar_t), intent(inout):: out
   type(vector_t), intent(in):: in
   !-----------------------------------------------------------------------------
   call trace_begin ('vector_scalar_div', 3)
-  call out%allocate (in)
   out%f = in%d%dx (in%x) + in%d%dy (in%y) + in%d%dz (in%z)
-  out%d => in%d
+!  out%d => in%d
   call trace_end
-END FUNCTION vector_scalar_div
+END SUBROUTINE vector_scalar_div
+!> =============================================================================
+SUBROUTINE vector_scalar_minusdiv (out, in)
+  type(scalar_t):: out
+  type(vector_t), intent(in):: in
+  !-----------------------------------------------------------------------------
+  call trace_begin ('vector_scalar_minus_div', 3)
+  out%f = -in%d%dx (in%x) - in%d%dy (in%y) - in%d%dz (in%z)
+!  out%d => in%d
+  call trace_end
+END SUBROUTINE vector_scalar_minusdiv
 
 !> =============================================================================
 FUNCTION real8_vector_cross (in1, in2) RESULT (out)

@@ -106,13 +106,13 @@ FUNCTION vector_tensor_grad (in) RESULT (out)
   out%zz = out%d%dz (in%z)
 END FUNCTION vector_tensor_grad
 !> =============================================================================
-FUNCTION vector_tensor_div (in) RESULT (out)
-  class(scalar_t), intent(in):: in
-  type(vector_t):: out
+SUBROUTINE vector_tensor_div (out, in)
+  type(vector_t), intent(inout):: out
+  class(tensor_t), intent(in):: in
   !.............................................................................
   call trace_begin ('vector_tensor_div', 3)
   print *,trim(out%name)//' = div('//trim(in%name)
-  call out%allocate (in)
+  !call out%allocate (in)
   select type (in)
   type is (tensor_t)
     print*,'v_t_div'
@@ -125,7 +125,7 @@ FUNCTION vector_tensor_div (in) RESULT (out)
     print*,'WARNING'
   end select
   call trace_end
-END FUNCTION vector_tensor_div
+END SUBROUTINE vector_tensor_div
 !> =============================================================================
 FUNCTION tensor_tensor_add (in1, in2) RESULT (out)
   type(tensor_t):: out

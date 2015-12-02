@@ -90,12 +90,10 @@ SUBROUTINE update_pde (self)
   call trace_begin ('advection_mod:pde_t%update', 2)
   call p%init (self%gn, self%size/self%n, self%derivs, 'p')
   self%dddt%f => self%mem(:,:,:,1,self%it,2)
-  associate (d=>self%d,u=>self%u)
+  associate (d=>self%d,u=>self%u,dddt=>self%dddt)
     p = u
     p = p*d
-   !self%dddt = -div(p)
-    self%dddt%f  = -self%derivs%dx(p%x) &
-                   -self%derivs%dy(p%y)
+    call minus_div (dddt, p)
     if (io%verbose>2) &
     print'(1x,a,1p,i4,4(2x,2e10.2))', 'update_pde', &
       self%id,minval(self%dddt),maxval(self%dddt), &

@@ -11,9 +11,9 @@
  msplit=2               ! split into 2 in each dimension
 /
 &timestep_params
- courant=0.05
+ courant=0.15
  time_order=2
- end_time=0.2
+ end_time=0.1
  out_time=0.02
 /
 &patch_params
