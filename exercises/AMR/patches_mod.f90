@@ -155,7 +155,7 @@ SUBROUTINE get_guardcells_for (self, patch)
   !
   integer :: ls(3), us(3), lp(3), up(3), dir
   real(kind=8) :: rlb(3), rub(3), origin(3), hs
-  integer :: nprint=10
+  integer :: nprint=100
   !
   ! Check if the two patches have same size
   if (maxval(abs(patch%ds-self%ds)/max(patch%ds,self%ds)) < 1e-5) then  ! we are on the same level
@@ -163,7 +163,7 @@ SUBROUTINE get_guardcells_for (self, patch)
     rlb = self%position-(self%n/2+1e-5_8)*self%ds ! go slightly below lower boundary
     rub = self%position+(self%n/2+1e-5_8)*self%ds ! go slightly above upper boundary
     origin = self%origin                            ! global lower boundary in box
-    rlb = modulo(rlb - origin, max(self%box,1e-30)) + origin   ! wrap around
+    rlb = modulo(rlb - origin, max(self%box,1e-30)) + origin   ! wrap around to stay inside box
     rub = modulo(rub - origin, max(self%box,1e-30)) + origin
     where(self%n==1)
       rlb=0.
@@ -174,10 +174,12 @@ SUBROUTINE get_guardcells_for (self, patch)
       print *, 'rlb for self:', rlb
       print *, 'rub for self:', rub
       print *, 'patch positi:', patch%position
+      print *, 'patch size  :', patch%size
     endif
 
     ! check if we can get guard cells in a given direction
     do dir=1,3
+      if (patch%n(dir)==1) cycle                                         ! exclude inactive dimensions
       hs = 0.5_8 * patch%size(dir)
       ! check lower boundary
       if (abs(patch%position(dir) - rub(dir)) < hs) then
@@ -206,12 +208,12 @@ SUBROUTINE get_guardcells_for (self, patch)
       if (abs(rlb(dir)-patch%position(dir)) < hs) then
         ! We are overlapping in this direction, exchange data
         ls = 1; us=self%gn
-        ls(dir) = 1
-        us(dir) = patch%li(dir) - 1
+        ls(dir) = patch%li(dir)
+        us(dir) = patch%li(dir) + patch%ng(dir) - 1
 
         lp = 1; up=patch%gn
-        lp(dir) = patch%ui(dir) - patch%ng(dir) + 1
-        up(dir) = patch%ui(dir)
+        lp(dir) = patch%ui(dir) + 1
+        up(dir) = patch%gn(dir)
         if (io%verbose > 4) then
           print *, 'Overlapping in upper boundary:', dir
           print *, 'Patch (receiver):', lp, up, up-lp+1
