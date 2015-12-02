@@ -132,7 +132,7 @@ SUBROUTINE update (self)
   if (associated(head)) then
     self%queue => self%queue%next_time                  ! update the link
     self%nq = self%nq-1
-    call head%get_guardcells
+    !call head%get_guardcells
     patch => head%patch                                 ! head patch
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue

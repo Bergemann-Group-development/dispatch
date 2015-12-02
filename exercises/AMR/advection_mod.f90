@@ -17,9 +17,10 @@ MODULE pde_mod
     type(scalar_t):: d, dddt
     real:: u(3)=(/1.0,0.,0.1/)
     real:: gamma=5./3.
-    real:: w_gauss=0.15
-    real:: p_gauss=4.0
-    real:: u_max=1.0
+    real:: w_gauss
+    real:: p_gauss
+    real:: u_max
+    real:: amplitude
   contains
     procedure:: init
     procedure:: update => update_pde
@@ -29,8 +30,14 @@ MODULE pde_mod
     procedure:: magnetic_field_magnitude
   end type
   type(pde_t):: mhd
+  public experiment_name
 CONTAINS
 
+!> =============================================================================
+FUNCTION experiment_name()
+  character(len=64):: experiment_name
+  experiment_name = 'advection'
+END FUNCTION
 !> =============================================================================
 !> Map variables to the current time slot. The 'it' slot is the one we are to
 !> update, with new values going into the 'new' time slot
@@ -41,19 +48,30 @@ SUBROUTINE init (self, position, size)
   type(tensor_t):: tensor
   integer:: i, j
   real:: x, y
+  logical:: first_time = .true.
+  real:: w_gauss=5.0, p_gauss=1.0, amplitude=1.0
+  namelist /advection_params/ w_gauss, p_gauss, amplitude
   !.............................................................................
   call trace_begin ('hd_mod:pde_t%init', 2)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, advection_params)
+    if (io%master) write (*,advection_params)
+  end if
+  self%w_gauss = w_gauss
+  self%p_gauss = p_gauss
+  self%amplitude = amplitude
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Gaussian top hat.  Only at time=0.0
   !-----------------------------------------------------------------------------
   if (self%time==0.0) then
-    call self%patch_t%init (position, size)
     do j=1,self%gn(2)
     do i=1,self%gn(1)
-      x = (i-(self%gn(1)+1)*0.5)*self%ds(1) + self%position(1)
-      y = (j-(self%gn(2)+1)*0.5)*self%ds(2) + self%position(2)
+      x = (i-(self%gn(1)+1)*0.5) + self%position(1)/self%ds(1)
+      y = (j-(self%gn(2)+1)*0.5) + self%position(2)/self%ds(2)
       self%mem(i,j,:,1,1,1) = &
-        1.0 + exp(-(x**2+y**2)/self%w_gauss**2)**self%p_gauss
+        1.0 + self%amplitude*exp(-(x**2+y**2)/self%w_gauss**2)**self%p_gauss
     end do
     end do
     self%nv = 1

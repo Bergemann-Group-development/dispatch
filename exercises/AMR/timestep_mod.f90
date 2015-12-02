@@ -45,6 +45,7 @@ SUBROUTINE init (self, position, size)
   end if
   !$omp end critical (timest_cr)
   !-----------------------------------------------------------------------------
+  call self%patch_t%init (position, size)               ! set patch dimensions
   call self%pde_t%init (position, size)
   if (io%verbose>2) &
   print*,'ts',self%id
@@ -52,13 +53,13 @@ SUBROUTINE init (self, position, size)
   print*,'ts',self%mem(1:6,1,1,1,1,1)
   select case (time_order)
   case (1)
-    self%wt = [   1.0,     0.0,      0.0,    0.0]   ! 1st order
+    self%wt = [   1.0,     0.0,      0.0,    0.0]       ! 1st order
   case (2)
-    self%wt = [   1.5,     -.5,      0.0,    0.0]   ! 2nd order
+    self%wt = [   1.5,     -.5,      0.0,    0.0]       ! 2nd order
   case (3)
-    self%wt = [23./12., -4./3.,   5./12.,    0.0]   ! 3rd order
+    self%wt = [23./12., -4./3.,   5./12.,    0.0]       ! 3rd order
   case (4)
-    self%wt = [55./24., -59./24., 37/24., -3./8.]   ! 4th order
+    self%wt = [55./24., -59./24., 37/24., -3./8.]       ! 4th order
   end select
   self%iit = 1
   self%iit(self%nt) = self%new

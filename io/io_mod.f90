@@ -21,22 +21,31 @@ PUBLIC io_t, io, print_id, mch
 CONTAINS
 
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, name)
   class(io_t):: self
   character(len=120), save:: id = &
   'io_mod.f90 $Id$'
   integer:: verbose
-  character(len=mch):: inputfile
-  logical:: do_debug, do_trace
+  character(len=*), optional:: name
+  character(len=mch):: inputfile, argfile
+  logical:: do_debug, do_trace, exist
   namelist /io_params/ verbose, do_debug, do_trace
   !.............................................................................
   call print_id (id)
-  call getarg(1,inputfile)                                                      ! 1st command line argument
-  if (inputfile==' ') inputfile = 'input.nml'                                   ! default = input.nml
+  if (present(name)) inputfile = trim(name)//'.nml'                             ! experiment_name given?
+  inquire (file=inputfile, exist=exist)                                         ! experiment.nml ?
+  if (.not.exist) inputfile = 'input.nml'                                       ! default
+  call getarg(1,argfile)                                                        ! command line argument
+  if (argfile /= ' ') inputfile = argfile                                       ! use, if present
   do_trace = io%do_trace
   do_debug = io%do_debug
   verbose  = io%verbose
-  open (io%input, file=inputfile, form='formatted', status='old')                  ! open for reading
+  open (io%input, file=inputfile, form='formatted', status='old')               ! open for reading
+  if (io%master) then
+    print*,'======================================================================='
+    print*,'NOTE: Reading parameters from '//trim(inputfile)
+    print*,'======================================================================='
+  end if
   rewind (io%input)
   read (io%input, io_params)
   io%do_debug = do_debug

@@ -5,10 +5,11 @@ PROGRAM experiment
 !> and update the patches.  Keep updating until the list is empty
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
+  USE pde_mod
   USE patch_list_mod
   type (patch_list_t):: list
   !.............................................................................
-  call io%init                          ! Initialize input (input.nml) / output
+  call io%init (experiment_name())      ! pick up name for name list and output
   call list%init ('patch list')         ! Initialize the patch list and patches
 !  call list%split (list%head)           ! try splitting a single patch
 !  call list%print ('after split of the first patch')

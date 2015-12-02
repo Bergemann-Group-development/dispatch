@@ -1,3 +1,6 @@
+@stagger_6th
+@stagger_2nd
+
 PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma, vf
   nu = [0.2,1.0]
   ; downstaggered velocity field

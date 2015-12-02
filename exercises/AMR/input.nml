@@ -1,3 +1,8 @@
+&sedov_params
+ w_gauss=3.0
+ p_gauss=4.0
+ amplitude=2.0
+/
 &io_params
  !do_trace=t verbose=4   ! =1 for output file messages
  do_trace=f verbose=0   ! =1 for output file messages
@@ -5,7 +10,7 @@
 /
 &box_params
  size=1,1,0             ! box size
- dims=4,4,1             ! number of patches
+ dims=2,2,1             ! number of patches
 /
 &refine_params
  msplit=2               ! split into 2 in each dimension
@@ -17,5 +22,5 @@
  out_time=0.02
 /
 &patch_params
- dims=16,16,1,5,1       ! nx, ny, nz, ntime, nvar
+ dims=64,64,1,5,5       ! nx, ny, nz, ntime, nvar
 /

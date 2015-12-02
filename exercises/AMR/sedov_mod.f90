@@ -17,10 +17,10 @@ MODULE pde_mod
     type(vector_t):: p, dpdt
     real:: nu(2)
     real:: gamma = 5./3.
-    real:: amplitude = 2.3
-    real:: w_gauss = 3.0
-    real:: p_gauss = 4.0
-    real:: u_max = 1.0
+    real:: amplitude
+    real:: w_gauss
+    real:: p_gauss
+    real:: u_max
   contains
     procedure:: init
     procedure:: update
@@ -30,21 +30,34 @@ MODULE pde_mod
     procedure:: magnetic_field_magnitude
   end type
   type(operator_t), pointer:: d
+  public experiment_name
 CONTAINS
 
 !> =============================================================================
-!> Map variables to the current time slot in memory, and initialize the deriv
-!> operators.
+FUNCTION experiment_name()
+  character(len=64):: experiment_name
+  experiment_name = 'sedov'
+END FUNCTION
+!> =============================================================================
+!> Map variables to the current memory slot and initialize the deriv operators.
+!> pde_t%init is called from timestep_t%init, again called from task_list_t%init.
 !> =============================================================================
 SUBROUTINE init(self, position, size)
   class(pde_t):: self
   real:: position(3), size(3)
   type(tensor_t):: tensor
-  integer:: n(3)
   integer:: i, j
   real:: x, y
+  real:: w_gauss=3.0, p_gauss=4.0, amplitude=2.0
+  namelist /sedov_params/ w_gauss, p_gauss, amplitude
   !.............................................................................
   call trace_begin ('hd_mod:pde_t%init', 2)
+  rewind (io%input)
+  read (io%input, sedov_params)
+  if (io%master) write (*,sedov_params)
+  self%w_gauss = w_gauss
+  self%p_gauss = p_gauss
+  self%amplitude = amplitude
   !-----------------------------------------------------------------------------
   ! Memory mapping; this is cheap, and may be done every time
   !-----------------------------------------------------------------------------
@@ -59,13 +72,13 @@ SUBROUTINE init(self, position, size)
   self%dpdt%y => self%mem(:,:,:,i_py,self%it,2)
   self%dpdt%z => self%mem(:,:,:,i_pz,self%it,2)
   allocate (d)
+  print*,self%gn,self%size,self%n
   call d%init (self%gn, self%size/self%n)
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Gaussian top hat in entropy.  Only at time=0.0
   !-----------------------------------------------------------------------------
   self%nv = 5
   if (self%time==0.0) then
-    call self%patch_t%init (position, size)
     self%d = 1.0
     self%p = 0.0
     do j=1,self%gn(2)
@@ -113,31 +126,31 @@ associate (d=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt, 
   !-----------------------------------------------------------------------------
   log_density         = log(d)
   entropy_per_mass    = s/d
-  velocity            = velocity_interpolation (p, log_density)
-  delta_u             = square_magnitude (velocity)
+  velocity            = velocity_interpolation (p, log_density)                 ! OK
+  delta_u             = square_magnitude (velocity)                             ! OK
   self%u_max          = sqrt(maxval(delta_u%f))         ! for Courant condition
   !-----------------------------------------------------------------------------
   diffusion_speed     = c_sound
   diffusion_speed     = (ds*nu(1))*diffusion_speed
   delta_u             = (ds*nu(2))*velocity
   !-----------------------------------------------------------------------------
-  mass_diffusion      =       minus_grad (diffusion_speed, log_density)
+  mass_diffusion      =       minus_grad (diffusion_speed, log_density)         ! OK
   mass_flux           = p + mass_diffusion
-  call                minus_div_vector (dd_dt, mass_flux)
+  call                minus_div_vector (dd_dt, mass_flux)                       ! OK
   !-----------------------------------------------------------------------------
-  entropy_flux        = p*s + minus_grad (diffusion_speed, entropy_per_mass)
-  call                minus_div_vector (ds_dt, entropy_flux)
+  entropy_flux        = p*s + minus_grad (diffusion_speed, entropy_per_mass)    ! OK
+  call                minus_div_vector (ds_dt, entropy_flux)                    ! OK
   !-----------------------------------------------------------------------------
-  reynolds_stress     = outer_product (velocity, velocity)
-  strain_tensor       = symmetrized_derivatives (velocity)
-  viscous_stress      = tensor_factor (viscosity, strain_tensor)
-  viscous_stress      = viscous_stress + edge_multiply (mass_diffusion, velocity)
-  artificial_pressure = square_magnitude (delta_u)
-  call                tensor_add_diagonal (viscous_stress, artificial_pressure)
-  viscous_dissipation = scalar_tensor_product (strain_tensor, viscous_stress)
-  call                tensor_add_diagonal (viscous_stress, gas_pressure)
+  reynolds_stress     = outer_product (p, velocity)                             ! OK
+  strain_tensor       = symmetrized_derivatives (velocity)                      ! OK
+  viscous_stress      = tensor_factor (log_density, diffusion_speed, strain_tensor) ! OK
+  viscous_stress      = viscous_stress + edge_multiply (mass_diffusion, velocity)   ! ??
+  artificial_pressure = square_magnitude (delta_u)                              ! OK
+  call                tensor_add_diagonal (viscous_stress, artificial_pressure) ! OK
+  viscous_dissipation = scalar_tensor_product (strain_tensor, viscous_stress)   ! OK
+  call                tensor_add_diagonal (viscous_stress, gas_pressure)        ! OK
   momentum_flux       = reynolds_stress + viscous_stress
-  call                minus_div_tensor (dp_dt, momentum_flux)
+  call                minus_div_tensor (dp_dt, momentum_flux)                   ! OK
   !-----------------------------------------------------------------------------
 end associate
 END SUBROUTINE
@@ -146,45 +159,63 @@ END SUBROUTINE
 !> Functions and subroutines in this block support the hydrodynamics equations
 !> in update.
 !> =============================================================================
-FUNCTION scalar_tensor_product (in1, in2) RESULT (out)
-  type(scalar_t):: out
-  type(tensor_t):: in1, in2
-  out%f = in1%xx * in2%xx + in1%xy * in2%xy + in1%xz * in2%xz &
-        + in1%yx * in2%yx + in1%yy * in2%yy + in1%yz * in2%yz &
-        + in1%zx * in2%zx + in1%zy * in2%zy + in1%zz * in2%zz
+FUNCTION velocity_interpolation (in1, in2) RESULT (out)
+  type(vector_t):: in1
+  type(scalar_t):: in2
+  type(vector_t):: out
+  out%x = in1%x/exp(d%xdn(alog(in2%f)))
+  out%y = in1%y/exp(d%ydn(alog(in2%f)))
+  out%z = in1%z/exp(d%zdn(alog(in2%f)))
 END FUNCTION
 !> =============================================================================
-SUBROUTINE tensor_add_diagonal (out, in1)
-  type(tensor_t):: out
-  type(scalar_t):: in1
-  out%xx = out%xx + in1%x
-  out%yy = out%yy + in1%y
-  out%zz = out%zz + in1%x
+!> This should produce centered square values
+!> =============================================================================
+FUNCTION square_magnitude (in1) RESULT (out)
+  type(vector_t):: in1
+  type(scalar_t):: out
+  out%f = d%xup(in1%x**2) + d%yup(in1%y**2) + d%zup(in1%z**2)
+END FUNCTION
+!> =============================================================================
+!> This should produce down-shifted gradients, for face centered fluxes
+!> =============================================================================
+FUNCTION minus_grad (in1, in2) RESULT (out)
+  type(scalar_t):: in2
+  type(vector_t):: in1, out
+  out%x = - d%xdn(in1%x)*d%ddxdn(in2%f)
+  out%y = - d%ydn(in1%y)*d%ddydn(in2%f)
+  out%z = - d%zdn(in1%z)*d%ddzdn(in2%f)
+END FUNCTION
+!> =============================================================================
+!> The in argument is downshfted, so the div should have up-derivatives
+!> =============================================================================
+SUBROUTINE minus_div_vector (out,in)
+  type(scalar_t):: out
+  type(vector_t):: in
+  out%f = - d%ddxup(in%x) - d%ddyup(in%y) - d%ddzup(in%z)
 END SUBROUTINE
+!> =============================================================================
+!> in1%yx is the transport of y-mom by u_x, and is taken ddxup() of for non-
+!> diagonal elements, and ddxdn() of for diagonal ones.
+!> in2 is velocity, in1 is momentum.   The tensor is symmetric, so only
+!> 6 elements are significant.  The off-diagonal elements have d%ddydn(out%xy).
+!> FIXME: In IDL the density factor is interpolated separately, which is better
 !> =============================================================================
 FUNCTION outer_product (in1, in2) RESULT (out)
   type(tensor_t):: out
   type(vector_t):: in1, in2
-  out%xx = in1%x*out%x; out%xy = in1%y*out%x; out%xz = in1%z*out%x
-  out%yx = in1%x*out%y; out%yy = in1%y*out%y; out%yz = in1%z*out%y
-  out%zx = in1%x*out%z; out%zy = in1%y*out%z; out%zz = in1%z*out%z
+  out%xx = d%xup(in2%x)*d%xup(in1%x)
+  out%yy = d%yup(in2%y)*d%yup(in1%y)
+  out%zz = d%zup(in2%z)*d%zup(in1%z)
+  out%xy = d%ydn(in2%x)*d%xdn(in1%y)
+  out%yz = d%zdn(in2%y)*d%ydn(in1%z)
+  out%zx = d%xdn(in2%z)*d%zdn(in1%x)
+  out%yx = out%xy
+  out%zy = out%yz
+  out%xz = out%zx
 END FUNCTION
 !> =============================================================================
-FUNCTION tensor_factor (in1, in2) RESULT (out)
-  type(tensor_t):: out
-  type(scalar_t):: in1
-  type(tensor_t):: in2
-  out%xx = in1%f*out%xx; out%xy = in1%f*out%xy; out%xz = in1%f*out%xz
-  out%yx = in1%f*out%yx; out%yy = in1%f*out%yy; out%yz = in1%f*out%yz
-  out%zx = in1%f*out%zx; out%zy = in1%f*out%zy; out%zz = in1%f*out%zz
-END FUNCTION
-!> =============================================================================
-FUNCTION edge_multiply (in1, in2) RESULT (out)
-  type(tensor_t):: out
-  type(scalar_t):: in1
-  type(vector_t):: in2
-  out%xx = in1%f
-END FUNCTION
+!> These elements should be cell centered on the diagonal, and edge centered
+!> elsewhere
 !> =============================================================================
 FUNCTION symmetrized_derivatives (in1) RESULT (out)
   type(tensor_t):: out
@@ -200,42 +231,73 @@ FUNCTION symmetrized_derivatives (in1) RESULT (out)
   out%xz = out%zx
 END FUNCTION
 !> =============================================================================
-FUNCTION minus_grad (c, in) RESULT (out)
-  type(scalar_t):: c, in
-  type(vector_t):: out
-  out%x = - d%ddxdn(in%f)
-  out%y = - d%ddydn(in%f)
-  out%z = - d%ddzdn(in%f)
+!> The in1 argument is cell centered, the in2 argument is face-centered, and
+!> the in3 argument is edge-centered, as should the output be, except in the
+!> diagonal, which is cell centered
+!> =============================================================================
+FUNCTION tensor_factor (in1, in2, in3) RESULT (out)
+  type(tensor_t):: out
+  type(scalar_t):: in1
+  type(vector_t):: in2
+  type(tensor_t):: in3
+  out%xx = in1%f*d%xup(in2%x)*in3%xx
+  out%yy = in1%f*d%yup(in2%y)*in3%yy
+  out%zz = in1%f*d%zup(in2%z)*in3%zz
+  out%xy = d%ydn(d%xdn(in1%f)*in2%x)*in3%xy
+  out%yz = d%zdn(d%ydn(in1%f)*in2%y)*in3%yz
+  out%zx = d%xdn(d%zdn(in1%f)*in2%z)*in3%zx
+  out%yx = out%xy
+  out%zy = out%yz
+  out%xz = out%zx
 END FUNCTION
 !> =============================================================================
-SUBROUTINE minus_div_vector (out,in)
+!> This is to compute the cell-centered sum of squares for dissipation
+!> =============================================================================
+FUNCTION scalar_tensor_product (in1, in2) RESULT (out)
   type(scalar_t):: out
-  type(vector_t):: in
-  out%f = - d%ddxup(in%x) - d%ddyup(in%y) - d%ddzup(in%z)
+  type(tensor_t):: in1, in2
+  out%f = in1%xx*in2%xx + in1%yy*in2%yy + in1%zz*in2%zz + 2*( &
+        + d%xup(d%yup(in1%yx*in2%yx)) &
+        + d%yup(d%zup(in1%zy*in2%zy)) &
+        + d%zup(d%xup(in1%xz*in2%xz)))
+END FUNCTION
+!> =============================================================================
+!> This adds a centered component to the diagonal
+!> =============================================================================
+SUBROUTINE tensor_add_diagonal (out, in1)
+  type(tensor_t):: out
+  type(scalar_t):: in1
+  out%xx = out%xx + in1%f
+  out%yy = out%yy + in1%f
+  out%zz = out%zz + in1%f
 END SUBROUTINE
+!> =============================================================================
+!> The first argument is a face centered flux, the 2nd argument is a face-
+!> centered velocity, and the output should have a cell centered diagonal and
+!> edge-centered off-diagonals
+!> =============================================================================
+FUNCTION edge_multiply (in1, in2) RESULT (out)
+  type(tensor_t):: out
+  type(vector_t):: in1
+  type(vector_t):: in2
+  out%xx = d%xup(in1%x*in2%x)
+  out%yy = d%yup(in1%y*in2%y)
+  out%zz = d%zup(in1%z*in2%z)
+  out%xy = d%xdn(in1%y)*d%ydn(in2%x)
+  out%yz = d%ydn(in1%z)*d%zdn(in2%y)
+  out%zx = d%zdn(in1%x)*d%xdn(in2%z)
+  out%yx = out%xy
+  out%zy = out%yz
+  out%xz = out%zx
+END FUNCTION
 !> =============================================================================
 SUBROUTINE minus_div_tensor (out,in)
   type(vector_t):: out
   type(tensor_t):: in
-  out%x = - d%ddxup(in%xx) - d%ddyup(in%yx) - d%ddzup(in%zx)
-  out%y = - d%ddxup(in%xy) - d%ddyup(in%yy) - d%ddzup(in%zy)
-  out%z = - d%ddxup(in%xz) - d%ddyup(in%yz) - d%ddzup(in%zz)
+  out%x = - d%ddxup(in%xx) - d%ddyup(in%xy) - d%ddzup(in%xz)
+  out%y = - d%ddxup(in%yx) - d%ddyup(in%yy) - d%ddzup(in%yz)
+  out%z = - d%ddxup(in%zx) - d%ddyup(in%zy) - d%ddzup(in%zz)
 END SUBROUTINE
-!> =============================================================================
-FUNCTION velocity_interpolation (in1, in2) RESULT (out)
-  type(vector_t):: in1
-  type(scalar_t):: in2
-  type(vector_t):: out
-  out%x = in1%x/exp(d%xdn(alog(in2%f)))
-  out%y = in1%y/exp(d%xdn(alog(in2%f)))
-  out%z = in1%z/exp(d%xdn(alog(in2%f)))
-END FUNCTION
-!> =============================================================================
-FUNCTION square_magnitude (in1) RESULT (out)
-  type(vector_t):: in1
-  type(scalar_t):: out
-  out%f = in1%x**2 + in1%y**2 + in1%z**2
-END FUNCTION
 
 !> =============================================================================
 !> Compute the log density and other similar things -- for use in refinement
