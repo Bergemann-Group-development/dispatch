@@ -18,7 +18,7 @@ MODULE patches_mod
     integer:: i, j, k
     integer:: status
     integer, pointer:: iit(:)
-    real, dimension(3):: position, size, gsize, box, ds, origin
+    real, dimension(3):: position, size, gsize, box=1, ds, origin
     real, pointer:: t(:)
     real, pointer:: dt(:)
     real:: time=0.0, dtime=0.1, end_time=1.0, grace=0.0
@@ -65,7 +65,6 @@ SUBROUTINE init (self, position, size)
   !.............................................................................
   !$omp atomic
   id = id + 1                                   ! increment global
-  print*,'XXX',id
   self%id = id                                  ! new patch id
   self%position = position                      ! as per call
   call trace_begin ('patch_t%init', 3)
@@ -189,8 +188,9 @@ SUBROUTINE get_guardcells_for (self, patch)
         lp(dir) = patch%ui(dir) - patch%ng(dir) + 1
         up(dir) = patch%ui(dir) - 1
         ! copy data
-        patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
-         self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%it,:)
+! FIXME: index error here
+!        patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
+!         self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%it,:)
       endif
     enddo
   endif
@@ -255,11 +255,11 @@ SUBROUTINE indices (self, np, p, ii, f)
   do dir=1,3
     f(:,dir) = modulo(p-self%origin(dir), self%box(dir))/self%ds(dir)
     ii(:,dir) = max(1, min(self%gn(dir), int(f(:,dir))))
-  end do
+      end do
   f = f-ii
   do i=1,np
     print'(i4,3x,a,3i4,3x,a,3f8.3)', i, 'index:', ii(i,:), 'fraction:', f(i,:)
-  end do
+    end do
 END SUBROUTINE indices
 !> =============================================================================
 FUNCTION index (self, position)
@@ -278,7 +278,7 @@ END FUNCTION index
 FUNCTION distance (self, patch)
   class(patch_t):: self, patch
   real:: distance(3)
-  distance = self%position-patch%position+0.5*self%box
+  distance = self%position-patch%position
   distance = abs(modulo(distance+0.5*self%box,self%box)-0.5*self%box)
 END FUNCTION distance
 !> =============================================================================

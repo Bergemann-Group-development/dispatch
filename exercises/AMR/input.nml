@@ -1,7 +1,7 @@
 &io_params
-!do_trace=t verbose=4   ! =1 for output file messages
+ !do_trace=t verbose=4   ! =1 for output file messages
  do_trace=f verbose=0   ! =1 for output file messages
-!do_trace=f verbose=4   ! =1 for output file messages
+ !do_trace=f verbose=4   ! =1 for output file messages
 /
 &box_params
  size=1,1,0             ! box size

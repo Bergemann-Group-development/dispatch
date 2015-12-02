@@ -16,6 +16,7 @@ MODULE patch_list_mod
   type, public:: link_t
     type(link_t), pointer:: next => null()
     class(link_t), pointer:: nbors => null()
+    class(link_t), pointer:: parent => null()
     type(link_t), pointer:: next_time => null()
     type(timestep_t), pointer:: patch => null()
     integer:: n_nbors
@@ -45,7 +46,7 @@ MODULE patch_list_mod
     procedure:: print
   end type
   type(timestep_t), pointer, dimension(:,:,:):: patches
-  integer, parameter:: mnbor=00
+  integer, parameter:: mnbor=200
 CONTAINS
 !> =============================================================================
 SUBROUTINE init (self, name)
@@ -104,6 +105,7 @@ SUBROUTINE init_cartesian (self)
   end do
   end do
   end do
+  call self%init_nbors_by_overlap
   self%tail => link
   call self%print ('after init_cartesian')
   call trace_end
@@ -261,13 +263,14 @@ SUBROUTINE init_nbor_by_overlap (self, link1)
   if (io%verbose>3) print*,' id, size, position, distance:'
   do while (associated(link2))
     if (.not.associated(link1,link2)) then
-      if (io%verbose>3) &
-        print'(2(i5,3(3f8.4,2x)),l3)', &
-          link1%patch%id, link1%patch%size, link1%patch%position, link1%patch%distance(link2%patch), &
-          link2%patch%id, link2%patch%size, link2%patch%position, link2%patch%distance(link1%patch), &
-          link1%patch%overlaps(link2%patch)
+!      if (io%verbose>3) &
+!        print'(2(i5,3(3f8.4,2x)),l3)', &
+!          link1%patch%id, link1%patch%size, link1%patch%position, link1%patch%distance(link2%patch), &
+!          link2%patch%id, link2%patch%size, link2%patch%position, link2%patch%distance(link1%patch), &
+!          link1%patch%overlaps(link2%patch)
       if (link1%patch%overlaps(link2%patch)) then
         allocate (nbor)
+        nbor%nbors => link2                   ! pointer back to link2
         link1%n_nbors = link1%n_nbors+1
         nbor%patch => link2%patch
         if (associated(link1%nbors)) then
@@ -473,6 +476,7 @@ SUBROUTINE get_guardcells (self)
   class (link_t), pointer:: nbor
     class (patch_t), pointer:: patch
   !.............................................................................
+  call trace_begin('link_t%get_guardcells')
   nbor => self%nbors
   patch => self%patch
   do while (associated (nbor))
@@ -480,6 +484,7 @@ SUBROUTINE get_guardcells (self)
       call nbor%patch%get_guardcells_for (patch)
     nbor => nbor%next
   end do
+  call trace_end
 END SUBROUTINE get_guardcells
 
 !> =============================================================================
@@ -488,15 +493,18 @@ END SUBROUTINE get_guardcells
 SUBROUTINE print (self, label)
   class (patch_list_t):: self
   character(len=*):: label
-  type(link_t) , pointer:: link
+  type(link_t) , pointer:: link, nbor
   !.............................................................................
   link => self%head
-  if (io%master) then
-    print*, label
-    print*,' id         position'
-  end if
+  print*, label
   do while (associated(link))
-    print '(i4,1h:,3f7.3)', link%patch%id, link%patch%position
+    nbor => link%nbors
+    print '(i7,1h:,3x,3f7.3,"   ",$)', link%patch%id, link%patch%position
+    do while (associated(nbor))
+      print '(i4,$)', nbor%patch%id
+      nbor => nbor%next
+    end do
+    print*,''
     link => link%next
   end do
 END SUBROUTINE print
