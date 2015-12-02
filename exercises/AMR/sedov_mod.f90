@@ -137,6 +137,9 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   call viscous_stress%init      (self%gn, self%size/self%n, 'visc')
   call momentum_flux%init       (self%gn, self%size/self%n, 'mom_fl')
 
+  !-----------------------------------------------------------------------------
+  ! Equation of state for ideal gas
+  !-----------------------------------------------------------------------------
   entropy_per_mass%f        = s%f/rho%f
   if (gas_gamma==1.0) then
     gas_pressure%f          = rho%f
@@ -147,21 +150,27 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
     c_sound%f = sqrt(c_sound%f)
   end if
   !-----------------------------------------------------------------------------
-  log_density%f      = log(rho%f)
-
+  ! Velocity field from linear momenta
+  !-----------------------------------------------------------------------------
+  log_density%f     = log(rho%f)
   velocity%x        = p%x/exp(o%xdn(log_density%f))
   velocity%y        = p%y/exp(o%ydn(log_density%f))
   velocity%z        = p%z/exp(o%zdn(log_density%f))
-
   self%u_max = sqrt(maxval(velocity%x**2+velocity%y**2+velocity%z**2)) &
              + maxval(c_sound%f)
-
+  !-----------------------------------------------------------------------------
+  ! Diffusion added for stability
+  !-----------------------------------------------------------------------------
   diffusion_speed%x = (ds(1)*nu(1))*c_sound%f
   diffusion_speed%y = (ds(2)*nu(1))*c_sound%f
   diffusion_speed%z = (ds(3)*nu(1))*c_sound%f
   delta_u%x         = (ds(1)*nu(2))*velocity%x
   delta_u%y         = (ds(1)*nu(2))*velocity%y
   delta_u%z         = (ds(1)*nu(2))*velocity%z
+  artificial_pressure%f = nu(2)*(delta_u%x**2 + delta_u%y**2 + delta_u%z**2)
+  !-----------------------------------------------------------------------------
+  ! Evolution of mass density
+  !-----------------------------------------------------------------------------
   mass_diffusion%x  =  - o%xdn(diffusion_speed%x) * o%ddxdn (log_density%f)
   mass_diffusion%y  =  - o%ydn(diffusion_speed%y) * o%ddydn (log_density%f)
   mass_diffusion%z  =  - o%zdn(diffusion_speed%z) * o%ddzdn (log_density%f)
@@ -170,10 +179,7 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   mass_flux%z        = p%z + mass_diffusion%z
   call minus_div_vector (dd_dt, mass_flux)
   !-----------------------------------------------------------------------------
-  entropy_flux%x  =  - o%xdn(diffusion_speed%x) * o%ddxdn (entropy_per_mass%f)
-  entropy_flux%y  =  - o%ydn(diffusion_speed%y) * o%ddydn (entropy_per_mass%f)
-  entropy_flux%z  =  - o%zdn(diffusion_speed%z) * o%ddzdn (entropy_per_mass%f)
-  call minus_div_vector (ds_dt, entropy_flux)
+  ! Evolution of linear momenta = equation-of-motion
   !-----------------------------------------------------------------------------
   reynolds_stress%xx = o%xup(velocity%x)*o%xup(p%x)
   reynolds_stress%yy = o%yup(velocity%y)*o%yup(p%y)
@@ -195,9 +201,6 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   viscous_stress%xy = o%ydn(o%xdn(log_density%f)*diffusion_speed%x)*strain_tensor%xy
   viscous_stress%yz = o%zdn(o%ydn(log_density%f)*diffusion_speed%y)*strain_tensor%yz
   viscous_stress%zx = o%xdn(o%zdn(log_density%f)*diffusion_speed%z)*strain_tensor%zx
-  viscous_stress%yx = viscous_stress%xy
-  viscous_stress%zy = viscous_stress%yz
-  viscous_stress%xz = viscous_stress%zx
 
   viscous_stress%xx = viscous_stress%xx + o%xup(mass_diffusion%x*velocity%x)
   viscous_stress%yy = viscous_stress%yy + o%yup(mass_diffusion%y*velocity%y)
@@ -206,7 +209,6 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   viscous_stress%yz = viscous_stress%yz + o%ydn(mass_diffusion%z)*o%zdn(velocity%y)
   viscous_stress%zx = viscous_stress%zx + o%zdn(mass_diffusion%x)*o%xdn(velocity%z)
 
-  artificial_pressure%f = nu(2)*(delta_u%x**2 + delta_u%y**2 + delta_u%z**2)
   viscous_stress%xx = viscous_stress%xx + artificial_pressure%f
   viscous_stress%yy = viscous_stress%yy + artificial_pressure%f
   viscous_stress%zz = viscous_stress%zz + artificial_pressure%f
@@ -215,9 +217,9 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
     strain_tensor%xx*viscous_stress%xx + &
     strain_tensor%yy*viscous_stress%yy + &
     strain_tensor%zz*viscous_stress%zz + &
-    2*(o%xup(o%yup(strain_tensor%xy*viscous_stress%yx)) &
-     + o%yup(o%zup(strain_tensor%yz*viscous_stress%zy)) &
-     + o%zup(o%xup(strain_tensor%zx*viscous_stress%xz)))
+    2*(o%xup(o%yup(strain_tensor%xy*viscous_stress%xy)) &
+     + o%yup(o%zup(strain_tensor%yz*viscous_stress%yz)) &
+     + o%zup(o%xup(strain_tensor%zx*viscous_stress%zx)))
 
   viscous_stress%xx = viscous_stress%xx + gas_pressure%f
   viscous_stress%yy = viscous_stress%yy + gas_pressure%f
@@ -231,7 +233,16 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   momentum_flux%zx = reynolds_stress%zx + viscous_stress%zx
 
   call minus_div_tensor (dp_dt, momentum_flux)
-  call trace_end
+  !-----------------------------------------------------------------------------
+  ! Evolution of entropy
+  !-----------------------------------------------------------------------------
+  entropy_flux%x  =  - o%xdn(diffusion_speed%x) * o%ddxdn (entropy_per_mass%f)
+  entropy_flux%y  =  - o%ydn(diffusion_speed%y) * o%ddydn (entropy_per_mass%f)
+  entropy_flux%z  =  - o%zdn(diffusion_speed%z) * o%ddzdn (entropy_per_mass%f)
+  call minus_div_vector (ds_dt, entropy_flux)
+  ds_dt%f = ds_dt%f + viscous_dissipation%f * gas_pressure%f/rho%f
+  !-----------------------------------------------------------------------------
+    call trace_end
 end associate
 END SUBROUTINE
 

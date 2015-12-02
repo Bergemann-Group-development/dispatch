@@ -5,7 +5,7 @@ imsz,256
 device,decompose=0
 loadct,39
 n=32
-nout=18
+nout=1
 nid=4
 nx=long(sqrt(nid)+0.1)
 !order=0

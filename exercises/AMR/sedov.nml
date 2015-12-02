@@ -19,8 +19,8 @@
 &timestep_params
  courant=0.10
  time_order=2
- end_time=0.25
- out_time=0.01
+ end_time=0.002
+ out_time=0.00001
 /
 &patch_params
  dims=32,32,1,5,5       ! nx, ny, nz, ntime, nvar
