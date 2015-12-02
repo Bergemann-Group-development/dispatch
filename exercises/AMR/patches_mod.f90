@@ -146,6 +146,7 @@ SUBROUTINE update_patch (self)
 END SUBROUTINE update_patch
 
 !> =============================================================================
+!> Get guard cells for "patch" using active cells in "self"
 SUBROUTINE get_guardcells_for (self, patch)
   class(patch_t):: self
   class(patch_t), pointer:: patch
@@ -160,6 +161,11 @@ SUBROUTINE get_guardcells_for (self, patch)
     rub = self%position+(self%n/2+1+1e-5_8)*self%ds ! go slightly above upper boundary
     rlb = modulo(rlb + self%box, self%box)          ! wrap around
     rub = modulo(rub + self%box, self%box)
+    if (io%verbose > 4) then
+      print *, 'rlb for self:', rlb
+      print *, 'rub for self:', rub
+    endif
+
     ! check if we can get guard cells in a given direction
     do dir=1,3
       hs = 0.5_8 * patch%size(dir)
@@ -173,6 +179,11 @@ SUBROUTINE get_guardcells_for (self, patch)
         lp = 1; up=patch%gn
         lp(dir) = 1
         up(dir) = patch%li(dir) - 1
+        if (io%verbose > 4) then
+          print *, 'Overlapping in lower boundary:', dir
+          print *, 'Patch (receiver):', lp, up, up-lp+1
+          print *, 'Self  (donor)   :', ls, us, us-ls+1
+        endif
         ! copy data
         patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
          self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%it,:)
@@ -186,11 +197,16 @@ SUBROUTINE get_guardcells_for (self, patch)
 
         lp = 1; up=patch%gn
         lp(dir) = patch%ui(dir) - patch%ng(dir) + 1
-        up(dir) = patch%ui(dir) - 1
+        up(dir) = patch%ui(dir)
+        if (io%verbose > 4) then
+          print *, 'Overlapping in upper boundary:', dir
+          print *, 'Patch (receiver):', lp, up, up-lp+1
+          print *, 'Self  (donor)   :', ls, us, us-ls+1
+        endif
+        
         ! copy data
-! FIXME: index error here
-!        patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
-!         self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%it,:)
+        patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
+         self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%it,:)
       endif
     enddo
   endif
@@ -295,6 +311,8 @@ FUNCTION overlaps (self, patch)
 END FUNCTION
 !> =============================================================================
 !> This is the relevance criterion if we don't need corner nbors
+!> We are checking if self is relevant for patch for guard cells
+!> This does not work if patch is embedded (a descendant) of self.
 !> =============================================================================
 LOGICAL FUNCTION is_relevant_for (self, patch)
   class (patch_t):: self
@@ -318,7 +336,7 @@ LOGICAL FUNCTION is_relevant_for (self, patch)
   face = (overlap==1)
   edge = (overlap==2)
   corner = (overlap==3)
-
+  
   ! For now only check for face-overlap
   is_relevant_for = face
 END FUNCTION
