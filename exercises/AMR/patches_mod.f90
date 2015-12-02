@@ -218,7 +218,10 @@ SUBROUTINE get_guardcells_for (self, patch)
           print *, 'Patch time      :', patch%it, patch%time
           print *, 'Self  time      :', self%it, self%time
           nprint = nprint - 1
-          if (nprint==0) stop
+          if (nprint==0) then
+            print *, 'Max prints reached in guard cells. Stopping.'
+            stop
+          endif
         endif
         
         ! copy data
