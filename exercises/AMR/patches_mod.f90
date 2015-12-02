@@ -307,7 +307,7 @@ FUNCTION distance (self, patch)
   class(patch_t):: self, patch
   real:: distance(3)
   distance = self%position-patch%position
-  distance = mod(distance+1.5*self%box,max(self%box,1e-30))-0.5*self%box
+  distance = abs(modulo(distance+0.5*self%box,max(self%box,1e-30))-0.5*self%box)
 END FUNCTION distance
 !> =============================================================================
 FUNCTION overlaps (self, patch)
