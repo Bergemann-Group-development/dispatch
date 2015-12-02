@@ -19,6 +19,7 @@ MODULE pde_mod
     real:: gamma=5./3.
     real:: w_gauss=0.15
     real:: p_gauss=4.0
+    real:: u_max=1.0
   contains
     procedure:: init
     procedure:: update => update_pde
@@ -66,6 +67,7 @@ SUBROUTINE init (self, position, size)
         minval(self%mem(:,:,:,1,1,1)), &
         maxval(self%mem(:,:,:,1,1,1))
     end if
+    self%u_max = sqrt(sum(self%u**2))
   end if
   !-----------------------------------------------------------------------------
   ! Memory mapping; this is cheap, and may be done every time

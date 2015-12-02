@@ -90,13 +90,14 @@ SUBROUTINE init(self, position, size)
 END SUBROUTINE init
 
 !> =============================================================================
+!> Evaluates the time derivatives of the hydrodynamic variables
+!> =============================================================================
 SUBROUTINE update (self)
   class(pde_t):: self
   type(scalar_t):: viscosity, p_gas, c_sound, log_density, artificial_pressure, &
-                   viscous_dissipation, entropy_per_mass, diffusion_coefficient, &
-                   gas_pressure, mass_diffusion
+                   viscous_dissipation, entropy_per_mass, gas_pressure
   type(vector_t):: velocity, delta_u, mass_flux, entropy_flux, &
-                   diffusion_speed
+                   diffusion_speed, mass_diffusion
   type(tensor_t):: reynolds_stress, strain_tensor, viscous_stress, momentum_flux
 associate (d=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt, &
            ds=>self%ds, dp_dt=>self%dpdt, gas_gamma=>self%gamma, nu=>self%nu)
@@ -111,12 +112,21 @@ associate (d=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt, 
   end if
   !-----------------------------------------------------------------------------
   log_density         = log(d)
-  velocity            = velocity_interpolation (p, log_density)
   entropy_per_mass    = s/d
+  velocity            = velocity_interpolation (p, log_density)
+  delta_u             = square_magnitude (velocity)
+  self%u_max          = sqrt(maxval(delta_u%f))         ! for Courant condition
   !-----------------------------------------------------------------------------
   diffusion_speed     = c_sound
   diffusion_speed     = (ds*nu(1))*diffusion_speed
   delta_u             = (ds*nu(2))*velocity
+  !-----------------------------------------------------------------------------
+  mass_diffusion      =       minus_grad (diffusion_speed, log_density)
+  mass_flux           = p + mass_diffusion
+  call                minus_div_vector (dd_dt, mass_flux)
+  !-----------------------------------------------------------------------------
+  entropy_flux        = p*s + minus_grad (diffusion_speed, entropy_per_mass)
+  call                minus_div_vector (ds_dt, entropy_flux)
   !-----------------------------------------------------------------------------
   reynolds_stress     = outer_product (velocity, velocity)
   strain_tensor       = symmetrized_derivatives (velocity)
@@ -127,13 +137,8 @@ associate (d=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt, 
   viscous_dissipation = scalar_tensor_product (strain_tensor, viscous_stress)
   call                tensor_add_diagonal (viscous_stress, gas_pressure)
   momentum_flux       = reynolds_stress + viscous_stress
+  call                minus_div_tensor (dp_dt, momentum_flux)
   !-----------------------------------------------------------------------------
-  mass_flux           = p + minus_grad (diffusion_coefficient, log_density)
-  entropy_flux        =     minus_grad (diffusion_coefficient, entropy_per_mass)
-  !-----------------------------------------------------------------------------
-  call minus_div_vector (dd_dt, mass_flux)
-  call minus_div_vector (ds_dt, entropy_flux)
-  call minus_div_tensor (dp_dt, momentum_flux)
 end associate
 END SUBROUTINE
 
@@ -152,11 +157,17 @@ END FUNCTION
 SUBROUTINE tensor_add_diagonal (out, in1)
   type(tensor_t):: out
   type(scalar_t):: in1
+  out%xx = out%xx + in1%x
+  out%yy = out%yy + in1%y
+  out%zz = out%zz + in1%x
 END SUBROUTINE
 !> =============================================================================
 FUNCTION outer_product (in1, in2) RESULT (out)
   type(tensor_t):: out
   type(vector_t):: in1, in2
+  out%xx = in1%x*out%x; out%xy = in1%y*out%x; out%xz = in1%z*out%x
+  out%yx = in1%x*out%y; out%yy = in1%y*out%y; out%yz = in1%z*out%y
+  out%zx = in1%x*out%z; out%zy = in1%y*out%z; out%zz = in1%z*out%z
 END FUNCTION
 !> =============================================================================
 FUNCTION tensor_factor (in1, in2) RESULT (out)
@@ -172,6 +183,7 @@ FUNCTION edge_multiply (in1, in2) RESULT (out)
   type(tensor_t):: out
   type(scalar_t):: in1
   type(vector_t):: in2
+  out%xx = in1%f
 END FUNCTION
 !> =============================================================================
 FUNCTION symmetrized_derivatives (in1) RESULT (out)

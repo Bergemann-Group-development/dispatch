@@ -10,8 +10,8 @@ default: experiment.x
 TOP = ../..
 include $(TOP)/config/Makefile
 
-#PDE = advection
-PDE = sedov
+PDE = advection
+#PDE = sedov
 
 OBJ = \
   omp_timer_mod.o upwind_mod.o central_mod.o derivatives_mod.o interpolation_mod.o \
