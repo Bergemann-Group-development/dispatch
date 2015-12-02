@@ -141,14 +141,12 @@ END SUBROUTINE
 !> Functions and subroutines in this block support the hydrodynamics equations
 !> in update.
 !> =============================================================================
-FUNCTION scalar_product (in1, in2) RESULT (out)
-  type(tensor_t):: out
-  type(tensor_t):: in1, in2
-END FUNCTION
-!> =============================================================================
 FUNCTION scalar_tensor_product (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(tensor_t):: in1, in2
+  out%f = in1%xx * in2%xx + in1%xy * in2%xy + in1%xz * in2%xz &
+        + in1%yx * in2%yx + in1%yy * in2%yy + in1%yz * in2%yz &
+        + in1%zx * in2%zx + in1%zy * in2%zy + in1%zz * in2%zz
 END FUNCTION
 !> =============================================================================
 SUBROUTINE tensor_add_diagonal (out, in1)
@@ -165,6 +163,9 @@ FUNCTION tensor_factor (in1, in2) RESULT (out)
   type(tensor_t):: out
   type(scalar_t):: in1
   type(tensor_t):: in2
+  out%xx = in1%f*out%xx; out%xy = in1%f*out%xy; out%xz = in1%f*out%xz
+  out%yx = in1%f*out%yx; out%yy = in1%f*out%yy; out%yz = in1%f*out%yz
+  out%zx = in1%f*out%zx; out%zy = in1%f*out%zy; out%zz = in1%f*out%zz
 END FUNCTION
 !> =============================================================================
 FUNCTION edge_multiply (in1, in2) RESULT (out)
@@ -176,22 +177,37 @@ END FUNCTION
 FUNCTION symmetrized_derivatives (in1) RESULT (out)
   type(tensor_t):: out
   type(vector_t):: in1
+  out%xx = d%ddxup(in1%x)
+  out%yy = d%ddyup(in1%y)
+  out%zz = d%ddzup(in1%z)
+  out%xy = 0.5*(d%ddydn(in1%x) + d%ddxdn(in1%y))
+  out%yz = 0.5*(d%ddzdn(in1%y) + d%ddydn(in1%z))
+  out%zx = 0.5*(d%ddxdn(in1%z) + d%ddzdn(in1%x))
+  out%yx = out%xy
+  out%zy = out%yz
+  out%xz = out%zx
 END FUNCTION
 !> =============================================================================
 FUNCTION minus_grad (c, in) RESULT (out)
   type(scalar_t):: c, in
   type(vector_t):: out
+  out%x = - d%ddxdn(in%f)
+  out%y = - d%ddydn(in%f)
+  out%z = - d%ddzdn(in%f)
 END FUNCTION
 !> =============================================================================
 SUBROUTINE minus_div_vector (out,in)
   type(scalar_t):: out
   type(vector_t):: in
+  out%f = - d%ddxup(in%x) - d%ddyup(in%y) - d%ddzup(in%z)
 END SUBROUTINE
 !> =============================================================================
 SUBROUTINE minus_div_tensor (out,in)
   type(vector_t):: out
   type(tensor_t):: in
-  out%f = - d%ddxup(in%x) - d%ddyup(in%y) - d%ddzup(in%z)
+  out%x = - d%ddxup(in%xx) - d%ddyup(in%yx) - d%ddzup(in%zx)
+  out%y = - d%ddxup(in%xy) - d%ddyup(in%yy) - d%ddzup(in%zy)
+  out%z = - d%ddxup(in%xz) - d%ddyup(in%yz) - d%ddzup(in%zz)
 END SUBROUTINE
 !> =============================================================================
 FUNCTION velocity_interpolation (in1, in2) RESULT (out)
