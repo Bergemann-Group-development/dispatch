@@ -159,12 +159,17 @@ SUBROUTINE get_guardcells_for (self, patch)
   ! Check if the two patches have same size
   if (maxval(abs(patch%ds-self%ds)/max(patch%ds,self%ds)) < 1e-5) then  ! we are on the same level
     ! Get real lower and upper boundary with possible wrap-around
-    rlb = self%position-(self%n/2+1+1e-5_8)*self%ds ! go slightly below lower boundary
-    rub = self%position+(self%n/2+1+1e-5_8)*self%ds ! go slightly above upper boundary
+    rlb = self%position-(self%n/2+1e-5_8)*self%ds ! go slightly below lower boundary
+    rub = self%position+(self%n/2+1e-5_8)*self%ds ! go slightly above upper boundary
     origin = self%origin                            ! global lower boundary in box
-    rlb = modulo(rlb - origin, self%box) + origin   ! wrap around
-    rub = modulo(rub - origin, self%box) + origin
+    rlb = modulo(rlb - origin, max(self%box,1e-30)) + origin   ! wrap around
+    rub = modulo(rub - origin, max(self%box,1e-30)) + origin
+    where(self%n==1)
+      rlb=0.
+      rub=0.
+    endwhere
     if (io%verbose > 4) then
+      print *, 'self, patch id :', self%id, patch%id
       print *, 'rlb for self:', rlb
       print *, 'rub for self:', rub
       print *, 'patch positi:', patch%position
