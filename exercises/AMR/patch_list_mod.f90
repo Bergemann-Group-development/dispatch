@@ -63,7 +63,7 @@ END SUBROUTINE init
 SUBROUTINE init_cartesian (self)
   class (patch_list_t):: self
   integer:: dims(3) = [4,4,1]
-  real:: origin(3) = [0.0,0.0,0.0]
+  real:: origin(3) = [-0.5,-0.5,-0.5]
   real:: size(3) = [1.0,1.0,1.0]
   real:: position(3)
   type(timestep_t), pointer:: patch
@@ -84,7 +84,7 @@ SUBROUTINE init_cartesian (self)
     ! Initialize each patch, via timestep_t:init -> pde_t:init -> patch_t:init
     !---------------------------------------------------------------------------
     patch => patches(i,j,k)
-    position = -0.5_8*self%size + ([i,j,k]-0.5_8)*self%size/self%dims + origin
+    position = ([i,j,k]-0.5_8)*self%size/self%dims + origin
     patch%box = self%size
     patch%origin = origin
     call patch%init (position, self%size/self%dims)

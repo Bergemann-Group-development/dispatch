@@ -153,7 +153,7 @@ SUBROUTINE get_guardcells_for (self, patch)
   class(patch_t), pointer:: patch
   !
   integer :: ls(3), us(3), lp(3), up(3), dir
-  real(kind=8) :: rlb(3), rub(3), grlb(3), hs
+  real(kind=8) :: rlb(3), rub(3), origin(3), hs
   integer :: nprint=10
   !
   ! Check if the two patches have same size
@@ -161,14 +161,13 @@ SUBROUTINE get_guardcells_for (self, patch)
     ! Get real lower and upper boundary with possible wrap-around
     rlb = self%position-(self%n/2+1+1e-5_8)*self%ds ! go slightly below lower boundary
     rub = self%position+(self%n/2+1+1e-5_8)*self%ds ! go slightly above upper boundary
-    grlb = self%origin - 0.5*self%box               ! global lower boundary in box
-    rlb = modulo(rlb - grlb, self%box) + grlb       ! wrap around
-    rub = modulo(rub - grlb, self%box) + grlb
+    origin = self%origin                            ! global lower boundary in box
+    rlb = modulo(rlb - origin, self%box) + origin   ! wrap around
+    rub = modulo(rub - origin, self%box) + origin
     if (io%verbose > 4) then
       print *, 'rlb for self:', rlb
       print *, 'rub for self:', rub
       print *, 'patch positi:', patch%position
-      print *, 'patch origin:', patch%origin
     endif
 
     ! check if we can get guard cells in a given direction
