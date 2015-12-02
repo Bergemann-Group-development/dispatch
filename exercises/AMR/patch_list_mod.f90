@@ -129,7 +129,7 @@ SUBROUTINE update (self)
   if (self%nq < 1) then
     n1 = self%nq
     call self%check_all
-    !print *,'WARNING: check_all (should not be needed), found', self%nq, n1
+    print *,'WARNING: check_all (should not be needed), found', self%nq, n1
   end if
   head => self%queue                                    ! queue start
   if (associated(head)) then
@@ -150,7 +150,7 @@ SUBROUTINE update (self)
       end if
     end if
   else
-    !print*,'ERROR: no self%queue', self%nq, self%n
+    print*,'ERROR: no self%queue', self%nq, self%n
     stop
   end if
   print '(i8,f10.6,2x,3f10.6,i6,i6,2x,a)', patch%id, patch%time, patch%position, &
@@ -492,7 +492,8 @@ SUBROUTINE get_guardcells (self)
     endif
     nbor => nbor%next
   end do
-  print *, 'Number of neighbors with guard cells:', nguard
+  if (io%verbose > 5) &
+    print *, 'get_guardcells: Number of neighbors with guard cells:', nguard
   call trace_end
 END SUBROUTINE get_guardcells
 
