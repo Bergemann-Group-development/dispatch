@@ -41,19 +41,16 @@ MODULE tensor_mod
   end interface
 CONTAINS
 !> =============================================================================
-SUBROUTINE init_tensor (self, dims, ds, deriv, name)
+SUBROUTINE init_tensor (self, dims, ds, name)
   class(tensor_t):: self
   integer:: dims(3)
   real:: ds(3)
-  class(central_t), pointer:: deriv
   character(len=*):: name
   !.............................................................................
   call trace_begin ('tensor_t%init '//trim(self%name), 2)
   self%n = dims
   self%ds = ds
   self%name = name
-  self%d => deriv
-  call self%d%init (dims, ds)
   call self%allocate (self)
   call trace_end
 END SUBROUTINE init_tensor

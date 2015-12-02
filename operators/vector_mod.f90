@@ -68,19 +68,16 @@ SUBROUTINE minus_div (out, in)
 END SUBROUTINE
 
 !> =============================================================================
-SUBROUTINE init_vector (self, dims, ds, deriv, name)
+SUBROUTINE init_vector (self, dims, ds, name)
   class(vector_t):: self
   integer:: dims(3)
   real:: ds(3)
-  class(central_t), pointer:: deriv
   character(len=*):: name
   !.............................................................................
   call trace_begin ('vector_t%init '//trim(self%name), 2)
   self%n = dims
   self%ds = ds
-  self%d => deriv
   self%name = name
-  call self%d%init (dims, ds)
   call self%allocate (self)
   call trace_end
 END SUBROUTINE init_vector

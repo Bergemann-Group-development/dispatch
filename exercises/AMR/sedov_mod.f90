@@ -29,7 +29,7 @@ MODULE pde_mod
     procedure:: velocity_magnitude
     procedure:: magnetic_field_magnitude
   end type
-  type(operator_t), pointer:: d
+  type(operator_t), pointer:: o
   public experiment_name
 CONTAINS
 
@@ -48,8 +48,8 @@ SUBROUTINE init(self, position, size)
   type(tensor_t):: tensor
   integer:: i, j
   real:: x, y
-  real:: w_gauss=3.0, p_gauss=4.0, amplitude=2.0
-  namelist /sedov_params/ w_gauss, p_gauss, amplitude
+  real:: w_gauss=3.0, p_gauss=4.0, amplitude=2.0, nu(2)=[0.5,2.0]
+  namelist /sedov_params/ w_gauss, p_gauss, amplitude, nu
   !.............................................................................
   call trace_begin ('hd_mod:pde_t%init', 2)
   rewind (io%input)
@@ -58,6 +58,7 @@ SUBROUTINE init(self, position, size)
   self%w_gauss = w_gauss
   self%p_gauss = p_gauss
   self%amplitude = amplitude
+  self%nu = nu
   !-----------------------------------------------------------------------------
   ! Memory mapping; this is cheap, and may be done every time
   !-----------------------------------------------------------------------------
@@ -71,16 +72,19 @@ SUBROUTINE init(self, position, size)
   self%dpdt%x => self%mem(:,:,:,i_px,self%it,2)
   self%dpdt%y => self%mem(:,:,:,i_py,self%it,2)
   self%dpdt%z => self%mem(:,:,:,i_pz,self%it,2)
-  allocate (d)
+  allocate (o)
   print*,self%gn,self%size,self%n
-  call d%init (self%gn, self%size/self%n)
+  call o%init (self%gn, self%size/self%n)
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Gaussian top hat in entropy.  Only at time=0.0
   !-----------------------------------------------------------------------------
   self%nv = 5
   if (self%time==0.0) then
-    self%d = 1.0
-    self%p = 0.0
+    self%d%f = 1.0
+    print*,'MK1', self%it, self%new
+    self%p%x = 0.0
+    self%p%y = 0.0
+    self%p%z = 0.0
     do j=1,self%gn(2)
     do i=1,self%gn(1)
       x = (i-(self%gn(1)+1)*0.5) + self%position(1)/self%ds(1)
@@ -107,83 +111,139 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(pde_t):: self
-  type(scalar_t):: viscosity, p_gas, c_sound, log_density, artificial_pressure, &
+  type(scalar_t):: viscosity, c_sound, log_density, artificial_pressure, &
                    viscous_dissipation, entropy_per_mass, gas_pressure
   type(vector_t):: velocity, delta_u, mass_flux, entropy_flux, &
                    diffusion_speed, mass_diffusion
   type(tensor_t):: reynolds_stress, strain_tensor, viscous_stress, momentum_flux
-associate (d=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt, &
+associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt, &
            ds=>self%ds, dp_dt=>self%dpdt, gas_gamma=>self%gamma, nu=>self%nu)
   !.............................................................................
+  call trace_begin ('sedov_mod::pde_t%update')
+  call entropy_per_mass%init    (self%gn, self%size/self%n, 'entropy')
+  call gas_pressure%init        (self%gn, self%size/self%n, 'p_gas')
+  call c_sound%init             (self%gn, self%size/self%n, 'c_sound')
+  call delta_u%init             (self%gn, self%size/self%n, 'delta_u')
+  call velocity%init            (self%gn, self%size/self%n, 'veloc')
+  call log_density%init         (self%gn, self%size/self%n, 'log_d')
+  call artificial_pressure%init (self%gn, self%size/self%n, 'p_artif')
+  call viscous_dissipation%init (self%gn, self%size/self%n, 'visc_d')
+  call mass_flux%init           (self%gn, self%size/self%n, 'mass_fl')
+  call entropy_flux%init        (self%gn, self%size/self%n, 'entr_fl')
+  call diffusion_speed%init     (self%gn, self%size/self%n, 'dif_sp')
+  call mass_diffusion%init      (self%gn, self%size/self%n, 'mass_dif')
+  call reynolds_stress%init     (self%gn, self%size/self%n, 'reyn_str')
+  call strain_tensor%init       (self%gn, self%size/self%n, 'strain')
+  call viscous_stress%init      (self%gn, self%size/self%n, 'visc')
+  call momentum_flux%init       (self%gn, self%size/self%n, 'mom_fl')
+
+  entropy_per_mass%f        = s%f/rho%f
   if (gas_gamma==1.0) then
-    p_gas = d
-    c_sound = 1.0
+    gas_pressure%f          = rho%f
+    c_sound%f = 1.0
   else
-    p_gas = d**gas_gamma*exp(entropy_per_mass*(gas_gamma-1.0))
-    c_sound = gas_gamma*(p_gas/d)
-    c_sound = sqrt(c_sound)
+    gas_pressure%f = rho%f**gas_gamma*exp(entropy_per_mass%f*(gas_gamma-1.0))
+    c_sound%f = gas_gamma*(gas_pressure%f/rho%f)
+    c_sound%f = sqrt(c_sound%f)
   end if
   !-----------------------------------------------------------------------------
-  log_density         = log(d)
-  entropy_per_mass    = s/d
-  velocity            = velocity_interpolation (p, log_density)                 ! OK
-  delta_u             = square_magnitude (velocity)                             ! OK
-  self%u_max          = sqrt(maxval(delta_u%f))         ! for Courant condition
+  log_density%f      = log(rho%f)
+
+  velocity%x        = p%x/exp(o%xdn(log_density%f))
+  velocity%y        = p%y/exp(o%ydn(log_density%f))
+  velocity%z        = p%z/exp(o%zdn(log_density%f))
+
+  self%u_max = sqrt(maxval(velocity%x**2+velocity%y**2+velocity%z**2)) &
+             + maxval(c_sound%f)
+
+  diffusion_speed%x = (ds(1)*nu(1))*c_sound%f
+  diffusion_speed%y = (ds(2)*nu(1))*c_sound%f
+  diffusion_speed%z = (ds(3)*nu(1))*c_sound%f
+  delta_u%x         = (ds(1)*nu(2))*velocity%x
+  delta_u%y         = (ds(1)*nu(2))*velocity%y
+  delta_u%z         = (ds(1)*nu(2))*velocity%z
+  mass_diffusion%x  =  - o%xdn(diffusion_speed%x) * o%ddxdn (log_density%f)
+  mass_diffusion%y  =  - o%ydn(diffusion_speed%y) * o%ddydn (log_density%f)
+  mass_diffusion%z  =  - o%zdn(diffusion_speed%z) * o%ddzdn (log_density%f)
+  mass_flux%x        = p%x + mass_diffusion%x
+  mass_flux%y        = p%y + mass_diffusion%y
+  mass_flux%z        = p%z + mass_diffusion%z
+  call minus_div_vector (dd_dt, mass_flux)
   !-----------------------------------------------------------------------------
-  diffusion_speed     = c_sound
-  diffusion_speed     = (ds*nu(1))*diffusion_speed
-  delta_u             = (ds*nu(2))*velocity
+  entropy_flux%x  =  - o%xdn(diffusion_speed%x) * o%ddxdn (entropy_per_mass%f)
+  entropy_flux%y  =  - o%ydn(diffusion_speed%y) * o%ddydn (entropy_per_mass%f)
+  entropy_flux%z  =  - o%zdn(diffusion_speed%z) * o%ddzdn (entropy_per_mass%f)
+  call minus_div_vector (ds_dt, entropy_flux)
   !-----------------------------------------------------------------------------
-  mass_diffusion      =       minus_grad (diffusion_speed, log_density)         ! OK
-  mass_flux           = p + mass_diffusion
-  call                minus_div_vector (dd_dt, mass_flux)                       ! OK
-  !-----------------------------------------------------------------------------
-  entropy_flux        = p*s + minus_grad (diffusion_speed, entropy_per_mass)    ! OK
-  call                minus_div_vector (ds_dt, entropy_flux)                    ! OK
-  !-----------------------------------------------------------------------------
-  reynolds_stress     = outer_product (p, velocity)                             ! OK
-  strain_tensor       = symmetrized_derivatives (velocity)                      ! OK
-  viscous_stress      = tensor_factor (log_density, diffusion_speed, strain_tensor) ! OK
-  viscous_stress      = viscous_stress + edge_multiply (mass_diffusion, velocity)   ! ??
-  artificial_pressure = square_magnitude (delta_u)                              ! OK
-  call                tensor_add_diagonal (viscous_stress, artificial_pressure) ! OK
-  viscous_dissipation = scalar_tensor_product (strain_tensor, viscous_stress)   ! OK
-  call                tensor_add_diagonal (viscous_stress, gas_pressure)        ! OK
-  momentum_flux       = reynolds_stress + viscous_stress
-  call                minus_div_tensor (dp_dt, momentum_flux)                   ! OK
-  !-----------------------------------------------------------------------------
+  reynolds_stress%xx = o%xup(velocity%x)*o%xup(p%x)
+  reynolds_stress%yy = o%yup(velocity%y)*o%yup(p%y)
+  reynolds_stress%zz = o%zup(velocity%z)*o%zup(p%z)
+  reynolds_stress%xy = o%ydn(velocity%x)*o%xdn(p%y)
+  reynolds_stress%yz = o%zdn(velocity%y)*o%ydn(p%z)
+  reynolds_stress%zx = o%xdn(velocity%z)*o%zdn(p%x)
+
+  strain_tensor%xx = o%ddxup(velocity%x)
+  strain_tensor%yy = o%ddyup(velocity%y)
+  strain_tensor%zz = o%ddzup(velocity%z)
+  strain_tensor%xy = 0.5*(o%ddydn(velocity%x) + o%ddxdn(velocity%y))
+  strain_tensor%yz = 0.5*(o%ddzdn(velocity%y) + o%ddydn(velocity%z))
+  strain_tensor%zx = 0.5*(o%ddxdn(velocity%z) + o%ddzdn(velocity%x))
+
+  viscous_stress%xx = log_density%f*o%xup(diffusion_speed%x)*strain_tensor%xx
+  viscous_stress%yy = log_density%f*o%yup(diffusion_speed%y)*strain_tensor%yy
+  viscous_stress%zz = log_density%f*o%zup(diffusion_speed%z)*strain_tensor%zz
+  viscous_stress%xy = o%ydn(o%xdn(log_density%f)*diffusion_speed%x)*strain_tensor%xy
+  viscous_stress%yz = o%zdn(o%ydn(log_density%f)*diffusion_speed%y)*strain_tensor%yz
+  viscous_stress%zx = o%xdn(o%zdn(log_density%f)*diffusion_speed%z)*strain_tensor%zx
+  viscous_stress%yx = viscous_stress%xy
+  viscous_stress%zy = viscous_stress%yz
+  viscous_stress%xz = viscous_stress%zx
+
+  viscous_stress%xx = viscous_stress%xx + o%xup(mass_diffusion%x*velocity%x)
+  viscous_stress%yy = viscous_stress%yy + o%yup(mass_diffusion%y*velocity%y)
+  viscous_stress%zz = viscous_stress%zz + o%zup(mass_diffusion%z*velocity%z)
+  viscous_stress%xy = viscous_stress%xy + o%xdn(mass_diffusion%y)*o%ydn(velocity%x)
+  viscous_stress%yz = viscous_stress%yz + o%ydn(mass_diffusion%z)*o%zdn(velocity%y)
+  viscous_stress%zx = viscous_stress%zx + o%zdn(mass_diffusion%x)*o%xdn(velocity%z)
+
+  artificial_pressure%f = nu(2)*(delta_u%x**2 + delta_u%y**2 + delta_u%z**2)
+  viscous_stress%xx = viscous_stress%xx + artificial_pressure%f
+  viscous_stress%yy = viscous_stress%yy + artificial_pressure%f
+  viscous_stress%zz = viscous_stress%zz + artificial_pressure%f
+
+  viscous_dissipation%f = &
+    strain_tensor%xx*viscous_stress%xx + &
+    strain_tensor%yy*viscous_stress%yy + &
+    strain_tensor%zz*viscous_stress%zz + &
+    2*(o%xup(o%yup(strain_tensor%xy*viscous_stress%yx)) &
+     + o%yup(o%zup(strain_tensor%yz*viscous_stress%zy)) &
+     + o%zup(o%xup(strain_tensor%zx*viscous_stress%xz)))
+
+  viscous_stress%xx = viscous_stress%xx + gas_pressure%f
+  viscous_stress%yy = viscous_stress%yy + gas_pressure%f
+  viscous_stress%zz = viscous_stress%zz + gas_pressure%f
+
+  momentum_flux%xx = reynolds_stress%xx + viscous_stress%xx
+  momentum_flux%yy = reynolds_stress%yy + viscous_stress%yy
+  momentum_flux%zz = reynolds_stress%zz + viscous_stress%zz
+  momentum_flux%xy = reynolds_stress%xy + viscous_stress%xy
+  momentum_flux%yz = reynolds_stress%yz + viscous_stress%yz
+  momentum_flux%zx = reynolds_stress%zx + viscous_stress%zx
+
+  call minus_div_tensor (dp_dt, momentum_flux)
+  call trace_end
 end associate
 END SUBROUTINE
 
-!> =============================================================================
-!> Functions and subroutines in this block support the hydrodynamics equations
-!> in update.
-!> =============================================================================
-FUNCTION velocity_interpolation (in1, in2) RESULT (out)
-  type(vector_t):: in1
-  type(scalar_t):: in2
-  type(vector_t):: out
-  out%x = in1%x/exp(d%xdn(alog(in2%f)))
-  out%y = in1%y/exp(d%ydn(alog(in2%f)))
-  out%z = in1%z/exp(d%zdn(alog(in2%f)))
-END FUNCTION
-!> =============================================================================
-!> This should produce centered square values
-!> =============================================================================
-FUNCTION square_magnitude (in1) RESULT (out)
-  type(vector_t):: in1
-  type(scalar_t):: out
-  out%f = d%xup(in1%x**2) + d%yup(in1%y**2) + d%zup(in1%z**2)
-END FUNCTION
 !> =============================================================================
 !> This should produce down-shifted gradients, for face centered fluxes
 !> =============================================================================
 FUNCTION minus_grad (in1, in2) RESULT (out)
   type(scalar_t):: in2
   type(vector_t):: in1, out
-  out%x = - d%xdn(in1%x)*d%ddxdn(in2%f)
-  out%y = - d%ydn(in1%y)*d%ddydn(in2%f)
-  out%z = - d%zdn(in1%z)*d%ddzdn(in2%f)
+  out%x = - o%xdn(in1%x)*o%ddxdn(in2%f)
+  out%y = - o%ydn(in1%y)*o%ddydn(in2%f)
+  out%z = - o%zdn(in1%z)*o%ddzdn(in2%f)
 END FUNCTION
 !> =============================================================================
 !> The in argument is downshfted, so the div should have up-derivatives
@@ -191,75 +251,45 @@ END FUNCTION
 SUBROUTINE minus_div_vector (out,in)
   type(scalar_t):: out
   type(vector_t):: in
-  out%f = - d%ddxup(in%x) - d%ddyup(in%y) - d%ddzup(in%z)
+  out%f = - o%ddxup(in%x) - o%ddyup(in%y) - o%ddzup(in%z)
 END SUBROUTINE
 !> =============================================================================
 !> in1%yx is the transport of y-mom by u_x, and is taken ddxup() of for non-
 !> diagonal elements, and ddxdn() of for diagonal ones.
 !> in2 is velocity, in1 is momentum.   The tensor is symmetric, so only
-!> 6 elements are significant.  The off-diagonal elements have d%ddydn(out%xy).
+!> 6 elements are significant.  The off-diagonal elements have o%ddydn(out%xy).
 !> FIXME: In IDL the density factor is interpolated separately, which is better
 !> =============================================================================
-FUNCTION outer_product (in1, in2) RESULT (out)
+SUBROUTINE outer_product (out, in1, in2)
   type(tensor_t):: out
   type(vector_t):: in1, in2
-  out%xx = d%xup(in2%x)*d%xup(in1%x)
-  out%yy = d%yup(in2%y)*d%yup(in1%y)
-  out%zz = d%zup(in2%z)*d%zup(in1%z)
-  out%xy = d%ydn(in2%x)*d%xdn(in1%y)
-  out%yz = d%zdn(in2%y)*d%ydn(in1%z)
-  out%zx = d%xdn(in2%z)*d%zdn(in1%x)
-  out%yx = out%xy
-  out%zy = out%yz
-  out%xz = out%zx
-END FUNCTION
+  print*,'zz'
+END SUBROUTINE
 !> =============================================================================
 !> These elements should be cell centered on the diagonal, and edge centered
 !> elsewhere
 !> =============================================================================
-FUNCTION symmetrized_derivatives (in1) RESULT (out)
+SUBROUTINE symmetrized_derivatives (out, in1)
   type(tensor_t):: out
   type(vector_t):: in1
-  out%xx = d%ddxup(in1%x)
-  out%yy = d%ddyup(in1%y)
-  out%zz = d%ddzup(in1%z)
-  out%xy = 0.5*(d%ddydn(in1%x) + d%ddxdn(in1%y))
-  out%yz = 0.5*(d%ddzdn(in1%y) + d%ddydn(in1%z))
-  out%zx = 0.5*(d%ddxdn(in1%z) + d%ddzdn(in1%x))
-  out%yx = out%xy
-  out%zy = out%yz
-  out%xz = out%zx
-END FUNCTION
+END SUBROUTINE
 !> =============================================================================
 !> The in1 argument is cell centered, the in2 argument is face-centered, and
 !> the in3 argument is edge-centered, as should the output be, except in the
 !> diagonal, which is cell centered
 !> =============================================================================
-FUNCTION tensor_factor (in1, in2, in3) RESULT (out)
+SUBROUTINE tensor_factor (out, in1, in2, in3)
   type(tensor_t):: out
   type(scalar_t):: in1
   type(vector_t):: in2
   type(tensor_t):: in3
-  out%xx = in1%f*d%xup(in2%x)*in3%xx
-  out%yy = in1%f*d%yup(in2%y)*in3%yy
-  out%zz = in1%f*d%zup(in2%z)*in3%zz
-  out%xy = d%ydn(d%xdn(in1%f)*in2%x)*in3%xy
-  out%yz = d%zdn(d%ydn(in1%f)*in2%y)*in3%yz
-  out%zx = d%xdn(d%zdn(in1%f)*in2%z)*in3%zx
-  out%yx = out%xy
-  out%zy = out%yz
-  out%xz = out%zx
-END FUNCTION
+END SUBROUTINE
 !> =============================================================================
 !> This is to compute the cell-centered sum of squares for dissipation
 !> =============================================================================
 FUNCTION scalar_tensor_product (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(tensor_t):: in1, in2
-  out%f = in1%xx*in2%xx + in1%yy*in2%yy + in1%zz*in2%zz + 2*( &
-        + d%xup(d%yup(in1%yx*in2%yx)) &
-        + d%yup(d%zup(in1%zy*in2%zy)) &
-        + d%zup(d%xup(in1%xz*in2%xz)))
 END FUNCTION
 !> =============================================================================
 !> This adds a centered component to the diagonal
@@ -280,12 +310,12 @@ FUNCTION edge_multiply (in1, in2) RESULT (out)
   type(tensor_t):: out
   type(vector_t):: in1
   type(vector_t):: in2
-  out%xx = d%xup(in1%x*in2%x)
-  out%yy = d%yup(in1%y*in2%y)
-  out%zz = d%zup(in1%z*in2%z)
-  out%xy = d%xdn(in1%y)*d%ydn(in2%x)
-  out%yz = d%ydn(in1%z)*d%zdn(in2%y)
-  out%zx = d%zdn(in1%x)*d%xdn(in2%z)
+  out%xx = o%xup(in1%x*in2%x)
+  out%yy = o%yup(in1%y*in2%y)
+  out%zz = o%zup(in1%z*in2%z)
+  out%xy = o%xdn(in1%y)*o%ydn(in2%x)
+  out%yz = o%ydn(in1%z)*o%zdn(in2%y)
+  out%zx = o%zdn(in1%x)*o%xdn(in2%z)
   out%yx = out%xy
   out%zy = out%yz
   out%xz = out%zx
@@ -294,9 +324,9 @@ END FUNCTION
 SUBROUTINE minus_div_tensor (out,in)
   type(vector_t):: out
   type(tensor_t):: in
-  out%x = - d%ddxup(in%xx) - d%ddyup(in%xy) - d%ddzup(in%xz)
-  out%y = - d%ddxup(in%yx) - d%ddyup(in%yy) - d%ddzup(in%yz)
-  out%z = - d%ddxup(in%zx) - d%ddyup(in%zy) - d%ddzup(in%zz)
+  out%x = - o%ddxup(in%xx) - o%ddyup(in%xy) - o%ddzup(in%xz)
+  out%y = - o%ddxup(in%yx) - o%ddyup(in%yy) - o%ddzup(in%yz)
+  out%z = - o%ddxup(in%zx) - o%ddyup(in%zy) - o%ddzup(in%zz)
 END SUBROUTINE
 
 !> =============================================================================

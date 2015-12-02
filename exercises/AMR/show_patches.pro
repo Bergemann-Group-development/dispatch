@@ -4,10 +4,12 @@ erase
 imsz,256
 device,decompose=0
 loadct,39
-n=16
-nout=10
-nid=16
+n=32
+nout=18
+nid=4
+nx=long(sqrt(nid)+0.1)
 !order=0
+iv=1
 
 for iout=0,nout-1 do begin
 	for id=1,nid do begin
@@ -17,12 +19,14 @@ for iout=0,nout-1 do begin
 	  openr,1,file
 	  a=assoc(1,fltarr(n,n))
 	  ;image,a[0],title=file,id-1
-	  y=(id-1) mod 4
-	  x=(id-1)/4
-	  tv,bytscl(rebin(a[0],128,128),top=254,max=2.0,min=1.0)+1,x+(3-y)*4
-	  ;print,id,min(a[0],max=max),max
-	  x=0.125+0.25*x
-	  y=0.125+0.25*y
+	  iy=(id-1) mod nx
+	  ix=(id-1)/nx
+	  tv,bytscl(rebin(a[iv],512/nx,512/nx),top=254)+1,ix+(nx-1-iy)*nx
+	  ;print,id,min(a[iv],max=max),max
+	  sz=1./nx
+	  x=sz/2+sz*ix
+	  y=sz/2+sz*iy
+	  print,file,ix,iy,x,y
     xyouts,x,y,name,align=0.5
 	end
   wait,1

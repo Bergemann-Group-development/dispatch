@@ -140,8 +140,8 @@ FUNCTION ddxdn (self, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  c = 1./self%ds(1)
   if (self%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 1./self%ds(1)
     do iz=self%l(3),self%u(3)
     do iy=self%l(2),self%u(2)
     do ix=self%l(1)+1,self%u(1)
@@ -150,6 +150,7 @@ FUNCTION ddxdn (self, a) RESULT (b)
     end do
     end do
   endif
+  b(self%l(1),:,:) = 0.0
 END FUNCTION ddxdn
 
 !*******************************************************************************
@@ -159,8 +160,8 @@ SUBROUTINE ddxdn_add (self, a, b, sign)
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  c = 1./self%ds(1)
   if (self%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 1./self%ds(1)
     do iz=self%l(3),self%u(3)
     do iy=self%l(2),self%u(2)
     do ix=self%l(1)+1,self%u(1)
@@ -181,8 +182,8 @@ FUNCTION ddydn (self, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  c = 1./self%ds(2)
   if (self%n(2) > 1) then
+    c = 1./self%ds(2)
     b(:,self%l(2),:) = 0.0
     do iz=self%l(3),self%u(3)
     do iy=self%l(2)+1,self%u(2)
@@ -192,6 +193,7 @@ FUNCTION ddydn (self, a) RESULT (b)
     end do
     end do
   endif
+  b(:,self%l(2),:) = 0.0
 END FUNCTION ddydn
 
 !*******************************************************************************
@@ -201,8 +203,8 @@ SUBROUTINE ddydn_add (self, a, b, sign)
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  c = 1./self%ds(2)
   if (self%n(2) > 1) then
+    c = 1./self%ds(2)
     do iz=self%l(3),self%u(3)
     do iy=self%l(2)+1,self%u(2)
     do ix=self%l(1),self%u(1)
@@ -223,8 +225,8 @@ FUNCTION ddzdn (self, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  c = 1./self%ds(3)
   if (self%n(3) > 1) then
+    c = 1./self%ds(3)
     b(:,:,self%l(3)) = 0.0
     do iz=self%l(3)+1,self%u(3)
     do iy=self%l(2),self%u(2)
@@ -233,6 +235,9 @@ FUNCTION ddzdn (self, a) RESULT (b)
     end do
     end do
     end do
+    b(:,:,self%l(3)) = 0.0
+  else
+    b = 0.0
   endif
 END FUNCTION ddzdn
 
@@ -243,8 +248,8 @@ SUBROUTINE ddzdn_add (self, a, b, sign)
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  c = 1./self%ds(3)
   if (self%n(3) > 1) then
+    c = 1./self%ds(3)
     do iz=self%l(3)+1,self%u(3)
     do iy=self%l(2),self%u(2)
     do ix=self%l(1),self%u(1)
@@ -265,8 +270,8 @@ FUNCTION ddxup (self, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  c = 1./self%ds(1)
   if (self%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 1./self%ds(1)
     do iz=self%l(3),self%u(3)
     do iy=self%l(2),self%u(2)
     do ix=self%l(1),self%u(1)-1
@@ -274,6 +279,9 @@ FUNCTION ddxup (self, a) RESULT (b)
     end do
     end do
     end do
+    b(self%u(1),:,:) = 0.0
+  else
+    b = 0.0
   endif
 END FUNCTION ddxup
 
@@ -284,8 +292,8 @@ SUBROUTINE ddxup_add (self, a, b, sign)
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  c = 1./self%ds(1)
   if (self%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 1./self%ds(1)
     do iz=self%l(3),self%u(3)
     do iy=self%l(2),self%u(2)
     do ix=self%l(1),self%u(1)-1
@@ -306,8 +314,8 @@ FUNCTION ddyup (self, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  c = 1./self%ds(2)
   if (self%n(2) > 1) then
+    c = 1./self%ds(2)
     b(:,self%u(2),:) = 0.0
     do iz=self%l(3),self%u(3)
     do iy=self%l(2),self%u(2)-1
@@ -317,6 +325,7 @@ FUNCTION ddyup (self, a) RESULT (b)
     end do
     end do
   endif
+  b(:,self%u(2),:) = 0.0
 END FUNCTION ddyup
 
 !*******************************************************************************
@@ -326,8 +335,8 @@ SUBROUTINE ddyup_add (self, a, b, sign)
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  c = 1./self%ds(2)
   if (self%n(2) > 1) then
+    c = 1./self%ds(2)
     do iz=self%l(3),self%u(3)
     do iy=self%l(2),self%u(2)-1
     do ix=self%l(1),self%u(1)
@@ -348,8 +357,8 @@ FUNCTION ddzup (self, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  c = 1./self%ds(3)
   if (self%n(3) > 1) then
+    c = 1./self%ds(3)
     do iz=self%l(3),self%u(3)-1
     do iy=self%l(2),self%u(2)
     do ix=self%l(1),self%u(1)
@@ -357,6 +366,9 @@ FUNCTION ddzup (self, a) RESULT (b)
     end do
     end do
     end do
+    b(:,:,self%u(3)) = 0.0
+  else
+    b = 0.0
   endif
 END FUNCTION ddzup
 
@@ -367,8 +379,8 @@ SUBROUTINE ddzup_add (self, a, b, sign)
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  c = 1./self%ds(3)
   if (self%n(3) > 1) then
+    c = 1./self%ds(3)
     do iz=self%l(3),self%u(3)-1
     do iy=self%l(2),self%u(2)
     do ix=self%l(1),self%u(1)
@@ -397,6 +409,7 @@ FUNCTION xdn (self, a) RESULT (b)
   end do
   end do
   end do
+  b(self%l(1),:,:) = 0.0
 END FUNCTION xdn
 
 !*******************************************************************************
@@ -414,6 +427,7 @@ SUBROUTINE xdn_subr (self, a, b)
   end do
   end do
   end do
+  b(self%l(1),:,:) = 0.0
 END SUBROUTINE
 
 !*******************************************************************************
@@ -454,6 +468,7 @@ FUNCTION ydn (self, a) RESULT (b)
   end do
   end do
   end do
+  b(:,self%l(2),:) = 0.0
 END FUNCTION ydn
 
 !*******************************************************************************
@@ -485,14 +500,19 @@ FUNCTION zdn (self, a) RESULT (b)
   real:: c
   integer:: ix, iy, iz
 !...............................................................................
-  c = 0.5
-  do iz=self%l(3)+1,self%u(3)
-  do iy=self%l(2),self%u(2)
-  do ix=self%l(1),self%u(1)
-    b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy,iz-1))
-  end do
-  end do
-  end do
+  if (self%n(3) > 1) then
+    c = 0.5
+    do iz=self%l(3)+1,self%u(3)
+    do iy=self%l(2),self%u(2)
+    do ix=self%l(1),self%u(1)
+      b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy,iz-1))
+    end do
+    end do
+    end do
+    b(:,:,self%l(3)) = 0.0
+  else
+    b = 0.0
+  end if
 END FUNCTION zdn
 
 !*******************************************************************************
@@ -533,6 +553,7 @@ FUNCTION xup (self, a) RESULT (b)
     end do
     end do
     end do
+  b(self%u(1),:,:) = 0.0
   endif
 END FUNCTION
 
@@ -575,6 +596,7 @@ FUNCTION yup (self, a) RESULT (b)
     end do
     end do
   endif
+  b(:,self%u(2),:) = 0.0
 END FUNCTION
 
 !*******************************************************************************
@@ -615,6 +637,9 @@ FUNCTION zup (self, a) RESULT (b)
     end do
     end do
     end do
+    b(:,:,self%u(3)) = 0.0
+  else
+    b = 0.0
   endif
 END FUNCTION
 

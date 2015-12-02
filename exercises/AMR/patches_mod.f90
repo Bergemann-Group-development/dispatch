@@ -82,6 +82,7 @@ SUBROUTINE init (self, position, size)
   self%end_time=end_time
   self%out_time=out_time
   self%size = size                              ! patch size
+  self%origin = self%position - 0.5*self%size   ! physical origin
   self%n  = dims(1:3)                           ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   where (self%n==1)                             ! for collapsed dimensions
@@ -223,7 +224,7 @@ SUBROUTINE get_guardcells_for (self, patch)
             stop
           endif
         endif
-        
+
         ! copy data
         patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
          self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%it,:)
@@ -260,6 +261,9 @@ SUBROUTINE output (self)
     status='unknown', recl =sizeof(self%mem(1,1,1,1,1,1))*product(self%n))
 associate (l=>self%li, u=>self%ui)
   do iv=1,self%nv
+    print*,trim(filename),iv, &
+      minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)), &
+      maxval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1))
     write (3,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
   end do
 end associate
@@ -276,7 +280,7 @@ FUNCTION index_range (self, position)
   !.............................................................................
   print '(1x,a,2(3x,3f8.3))',   'positions:', position
   do dir=1,3
-    index_range(:,dir) = int(modulo(position(dir)-self%origin, self%box/self%ds)) + 1
+    index_range(:,dir) = int(modulo(position(dir)-self%origin, self%box)/self%ds + 1.5)
     index_range(:,dir) = max(1, min(self%gn, index_range(:,dir)))
     print '(1x,a,2(3x,i3,a,i3))', 'index range:', &
       index_range(1,dir), ' - ', index_range(2,dir)
@@ -289,7 +293,7 @@ SUBROUTINE indices (self, np, p, ii, f)
   integer:: np, dir, ii(np,3), i
   !.............................................................................
   do dir=1,3
-    f(:,dir) = modulo(p-self%origin(dir), self%box(dir))/self%ds(dir)
+    f(:,dir) = modulo(p-self%origin(dir), self%box(dir))/self%ds(dir) + 1.5
     ii(:,dir) = max(1, min(self%gn(dir), int(f(:,dir))))
       end do
   f = f-ii
@@ -303,7 +307,7 @@ FUNCTION index (self, position)
   real, dimension(3):: position, f
   integer:: index(3)
   !.............................................................................
-  f = modulo(position-self%origin, self%box)/self%ds + 1.0
+  f = modulo(position-self%origin, self%box)/self%ds + 1.5
   index = max(1, min(self%gn-1, int(f)))
   f = f - index
   print*,'index:', index
@@ -356,7 +360,7 @@ LOGICAL FUNCTION is_relevant_for (self, patch)
   face = (overlap==1)
   edge = (overlap==2)
   corner = (overlap==3)
-  
+
   ! For now only check for face-overlap
   is_relevant_for = face
 END FUNCTION
