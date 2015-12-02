@@ -60,7 +60,7 @@ SUBROUTINE init (self, position, size)
       print'(i4,2x,3i4,1p,6e10.2)', &
         self%id,self%n,self%w_gauss,self%p_gauss,self%position
     else
-      print'(1x,a,i4,2(3f8.3,2x),a,1p,2e10.2)', &
+      print'(1x,a,i4,2(3f8.3,2x),a,1p,2e11.3)', &
         'initial:', self%id, self%position, self%size, &
         '  min, max:', &
         minval(self%mem(:,:,:,1,1,1)), &
@@ -117,7 +117,12 @@ SUBROUTINE log_density (self, out)
   if (io%verbose>3) then
     print'(1x,a,4i4,3(2x,3i4),3x,a,1p,4e10.2)', &
       'log_d', self%id, self%it, self%new, i_d, self%li, self%ui, self%n, &
-      'minmax:', minval(self%d%f), maxval(self%d%f), &
+      'minmax:', minval(self%d%f(self%li(1):self%ui(1), &
+                                 self%li(2):self%ui(2), &
+                                 self%li(3):self%ui(3))),&
+                 maxval(self%d%f(self%li(1):self%ui(1), &
+                                 self%li(2):self%ui(2), &
+                                 self%li(3):self%ui(3))), &
       minval(self%mem(self%li(1):self%ui(1), &
                       self%li(2):self%ui(2), &
                       self%li(3):self%ui(3), i_d, self%it, 1)), &
