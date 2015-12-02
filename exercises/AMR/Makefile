@@ -26,7 +26,7 @@ central_mod.o           : io_mod.o trace_mod.o
 upwind_mod.o            : central_mod.o
 timestep_mod.o          : io_mod.o $(PDE)_mod.o
 refine_mod.o            : timestep_mod.o
-patches_mod.o           : bits_mod.o
+patches_mod.o           : bits_mod.o central_mod.o
 experiment.o            : io_mod.o patch_list_mod.o
 interpolation_mod.o     : io_mod.o trace_mod.o patches_mod.o
 
