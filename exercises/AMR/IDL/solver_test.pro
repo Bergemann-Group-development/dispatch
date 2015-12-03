@@ -1,7 +1,7 @@
 @stagger_6th
 @stagger_2nd
 
-PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma, vf
+PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, gamma, vf, drhodt, dpxdt, dpydt, dpzdt, dBxdt, dBydt, dBzdt, dsdt
   nu = [0.2,1.0]
   ; downstaggered velocity field
   lnr = alog(rho)
@@ -115,16 +115,98 @@ PRO update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma, vf
   ; fast mode speed relative to moving gas
   vf = sqrt((Pm+gamma*Pg+Pa)/rho)+sqrt(px^2+py^2+pz^2)/rho
 
-  ; Time stepping
+END
+;
+PRO get_components, sol, rho, px, py, pz, Bx, By, Bz, s
+  rho=sol.r
+  px=sol.px
+  py=sol.py
+  pz=sol.pz
+  Bx=sol.Bx
+  By=sol.By
+  Bz=sol.Bz
+  S=sol.s
+END
+;
+PRO set_components, sol, rho, px, py, pz, Bx, By, Bz, s
+  sol = {r:rho, s:s, px:px, py:py, pz:pz, Bx:Bx, By:By, Bz:Bz}
+END
+; Time stepping
+PRO timestep, sol, dx, dy, dz, dt, gamma, vf, time_evol, sol_old=sol_old
 
-  rho += dt * drhodt
-  s   += dt * dsdt
-  px  += dt * dpxdt
-  py  += dt * dpydt
-  pz  += dt * dpzdt
-  Bx  += dt * dBxdt
-  By  += dt * dBydt
-  Bz  += dt * dBzdt
+  get_components, sol, rho, px, py, pz, Bx, By, Bz, s
+
+  ; Euler timestep
+  if (time_evol eq 1) then begin
+    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, gamma, vf, $
+                drhodt, dpxdt, dpydt, dpzdt, dBxdt, dBydt, dBzdt, dsdt
+    rho += dt * drhodt
+    s   += dt * dsdt
+    px  += dt * dpxdt
+    py  += dt * dpydt
+    pz  += dt * dpzdt
+    Bx  += dt * dBxdt
+    By  += dt * dBydt
+    Bz  += dt * dBzdt
+  endif
+
+  ; mid-point method
+  if (time_evol eq 2) then begin
+    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, gamma, vf, $
+                drhodt, dpxdt, dpydt, dpzdt, dBxdt, dBydt, dBzdt, dsdt
+    rhom += 0.5*dt * drhodt
+    sm   += 0.5*dt * dsdt
+    pxm  += 0.5*dt * dpxdt
+    pym  += 0.5*dt * dpydt
+    pzm  += 0.5*dt * dpzdt
+    Bxm  += 0.5*dt * dBxdt
+    Bym  += 0.5*dt * dBydt
+    Bzm  += 0.5*dt * dBzdt
+    update_mhd, rhom, pxm, pym, pzm, Bxm, Bym, Bzm, Sm, dx, dy, dz, gamma, vf, $
+                drhodt, dpxdt, dpydt, dpzdt, dBxdt, dBydt, dBzdt, dsdt
+    rho += dt * drhodt
+    s   += dt * dsdt
+    px  += dt * dpxdt
+    py  += dt * dpydt
+    pz  += dt * dpzdt
+    Bx  += dt * dBxdt
+    By  += dt * dBydt
+    Bz  += dt * dBzdt
+  endif
+
+  ; 2nd order A-B method
+  if (time_evol eq 3) then begin
+    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, gamma, vf, $
+                drhodt, dpxdt, dpydt, dpzdt, dBxdt, dBydt, dBzdt, dsdt
+    rho += 1.5*dt * drhodt
+    s   += 1.5*dt * dsdt
+    px  += 1.5*dt * dpxdt
+    py  += 1.5*dt * dpydt
+    pz  += 1.5*dt * dpzdt
+    Bx  += 1.5*dt * dBxdt
+    By  += 1.5*dt * dBydt
+    Bz  += 1.5*dt * dBzdt
+
+    if (n_elements(sol_old) eq 0) then sol_old = sol
+
+    get_components, sol_old, rhoo, pxo, pyo, pzo, Bxo, Byo, Bzo, so
+
+    update_mhd, rhoo, pxo, pyo, pzo, Bxo, Byo, Bzo, So, dx, dy, dz, gamma, vf, $
+                drhodt, dpxdt, dpydt, dpzdt, dBxdt, dBydt, dBzdt, dsdt
+
+    rho += -0.5*dt * drhodt
+    s   += -0.5*dt * dsdt
+    px  += -0.5*dt * dpxdt
+    py  += -0.5*dt * dpydt
+    pz  += -0.5*dt * dpzdt
+    Bx  += -0.5*dt * dBxdt
+    By  += -0.5*dt * dBydt
+    Bz  += -0.5*dt * dBzdt
+
+    sol_old = sol
+  endif
+
+  set_components, sol, rho, px, py, pz, Bx, By, Bz, s
 END
 
 stagger_2nd ; get stagger operators
@@ -169,7 +251,7 @@ P = [l+Pl,r+Pr]
 S = rho / (gamma-1.)*alog(P/rho^gamma)
 
 ; Run benchmark
-dt = 0.25*dx
+dt = 0.025*dx
 t = 0.0
 tend = 1.0
 
@@ -180,39 +262,27 @@ time_evol=3
 every=10
 it=0
 vfmax = 0.
-while (t lt tend) do begin
-  if (time_evol eq 1) then begin ; Euler step
-    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, 0.5*dt, gamma, vf
-  endif else if (time_Evol eq 2) then begin ; mid-point method
-    drho=rho & dpx=px & dpy=py & dpz=pz & dBx=Bx & dBy=By & dBz=Bz & dS=S
-    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, 0.5*dt, gamma, vf
-    drho-=rho & dpx-=px & dpy-=py & dpz-=pz & dBx-=Bx & dBy-=By & dBz-=Bz & dS-=S
-    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma, vf
-    rho+=drho & px+=dpx & py+=dpy & pz+=dpz & Bx+=dBx & By+=dBy & Bz+=dBz & S+=dS
-  endif else if (time_Evol eq 3) then begin ; Heun's method
-    drho=rho & dpx=px & dpy=py & dpz=pz & dBx=Bx & dBy=By & dBz=Bz & dS=S
-    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, dt, gamma, vf
-    drho-=rho & dpx-=px & dpy-=py & dpz-=pz & dBx-=Bx & dBy-=By & dBz-=Bz & dS-=S
-    update_mhd, rho, px, py, pz, Bx, By, Bz, S, dx, dy, dz, 0.5*dt, gamma, vf
-    rho+=.5*drho & px+=.5*dpx & py+=.5*dpy & pz+=.5*dpz & Bx+=.5*dBx & By+=.5*dBy & Bz+=.5*dBz & S+=.5*dS
-  endif
-  vfmax = max(vf) > vfmax
 
+set_components, sol, rho, px, py, pz, Bx, By, Bz, s
+
+while (t lt tend) do begin
+  timestep, sol, dx, dy, dz, dt, gamma, vf, time_evol, sol_old=sol_old
+  vfmax = max(vf) > vfmax
   t = t + dt
 
   !x.style=1
   ;!x.range=[n/2-20,n/2+20]
   if it mod 20 eq 0 then begin
-	  plot, rho, ps=-1,tit='rho time='+str(t,format='(f5.3)'), symsize=0.3,yst=3
+	  plot, sol.r, ps=-1,tit='rho time='+str(t,format='(f5.3)'), symsize=0.3,yst=3
 	  wait, 0.
-	  plot, px, ps=-1, tit='px', symsize=0.3,yst=3
+	  plot, sol.px, ps=-1, tit='px', symsize=0.3,yst=3
 	  wait, 0.
 	  ;plot, py, ps=-1, tit='py', symsize=0.3
 	  ;ux = px/exp(xdn(alog(rho)))
 	  ;plot, ux, ps=-1, tit='ux', symsize=0.3
-	  plot, by, ps=-1, tit='by', symsize=0.3
+	  plot, sol.by, ps=-1, tit='by', symsize=0.3
 	  wait, 0.
-	  plot, S/rho, ps=-1, tit='s', symsize=0.3,yst=3
+	  plot, sol.S/sol.r, ps=-1, tit='s', symsize=0.3,yst=3
 	  wait, 0.25
   end
   it=it+1
@@ -222,20 +292,27 @@ while (t lt tend) do begin
   ;stat, S  , l='S'
   ;stat, P  , l='P'
 endwhile
+
+sol_old=0
+
+delvar, sol_old
+
 print,'max Courant number:',vfmax*dt/dx
+
 ws,0
 !p.multi=[0,2,2]
 !x.style=3
 !y.style=3
-plot, rho, ps=-1,tit='rho time='+str(t,format='(f5.3)'), symsize=0.3
-plot, px, ps=-1, tit='px', symsize=0.3
+plot, sol.rho, ps=-1,tit='rho time='+str(t,format='(f5.3)'), symsize=0.3
+plot, sol.px, ps=-1, tit='px', symsize=0.3
 ;ux = px/exp(xdn(alog(rho)))
 ;plot, ux, ps=-1, tit='ux', symsize=0.3
-plot, by, ps=-1, tit='by', symsize=0.3
-plot, S/rho, ps=-1, tit='s', symsize=0.3,yst=3
+plot, sol.by, ps=-1, tit='by', symsize=0.3
+plot, sol.S/sol.rho, ps=-1, tit='s', symsize=0.3,yst=3
+
 ws,1
 ;!p.multi=[0,2,2]
-plot, rho, xr=5+[0,20], psym=-1,yst=3,xst=3
-plot, px, xr=5+[0,20], psym=-1,yst=3,xst=3
+plot, sol.rho, xr=5+[0,20], psym=-1,yst=3,xst=3
+plot, sol.px, xr=5+[0,20], psym=-1,yst=3,xst=3
 
 END
