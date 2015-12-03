@@ -43,6 +43,7 @@ MODULE patch_list_mod
     procedure:: check_ready
     procedure:: check_all
     procedure:: queue_by_time
+    procedure:: output
     procedure:: print
   end type
   type(timestep_t), pointer, dimension(:,:,:):: patches
@@ -56,6 +57,7 @@ SUBROUTINE init (self, name)
   call trace_begin('patch_list_t%init')
   self%name = name
   call init_cartesian (self)
+  call refine%init
   call trace_end
 END SUBROUTINE init
 
@@ -139,6 +141,11 @@ SUBROUTINE update (self)
     patch => head%patch                                 ! head patch
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue
+      if (patch%level > refine%levelmax) then
+        call self%output
+        print*,'stopping after refine'
+        stop
+      end if
     else
       call patch%update                                 ! update the patch
       call self%check_nbors (head)                      ! any nbor ready?
@@ -215,6 +222,7 @@ SUBROUTINE split (self, this)
         !------------------------------------------------------------------------
         allocate (patch, source=this%patch)
         patch%mem_allocated = .false.
+        nullify (patch%mem)
         position = this%patch%position + pos*patch%size
         call patch%init (position, self%size/self%dims)
         !------------------------------------------------------------------------
@@ -501,6 +509,20 @@ END SUBROUTINE get_guardcells
 !> =============================================================================
 !> Print a table with patch id, positions, and all neighbors
 !> =============================================================================
+SUBROUTINE output (self)
+  class (patch_list_t):: self
+  type(link_t) , pointer:: link, nbor
+  !.............................................................................
+  link => self%head
+  do while (associated(link))
+    call link%patch%output
+    link => link%next
+  end do
+END SUBROUTINE output
+
+!> =============================================================================
+!> Print a table with patch id, positions, and all neighbors
+!> =============================================================================
 SUBROUTINE print (self, label)
   class (patch_list_t):: self
   character(len=*):: label
@@ -519,5 +541,6 @@ SUBROUTINE print (self, label)
     link => link%next
   end do
 END SUBROUTINE print
+
 !> =============================================================================
 END MODULE patch_list_mod

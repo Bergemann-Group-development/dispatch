@@ -49,17 +49,21 @@ SUBROUTINE init(self, position, size)
   type(tensor_t):: tensor
   integer:: i, j
   real:: x, y
+  logical:: first_time=.true.
   real:: w_gauss=3.0, p_gauss=4.0, amplitude=2.0, nu(2)=[0.5,2.0]
   namelist /sedov_params/ w_gauss, p_gauss, amplitude, nu
   !.............................................................................
   call trace_begin ('hd_mod:pde_t%init', 2)
-  rewind (io%input)
-  read (io%input, sedov_params)
-  if (io%master) write (*,sedov_params)
-  self%w_gauss = w_gauss
-  self%p_gauss = p_gauss
-  self%amplitude = amplitude
-  self%nu = nu
+  if (first_time) then
+    first_time=.false.
+    rewind (io%input)
+    read (io%input, sedov_params)
+    if (io%master) write (*,sedov_params)
+    self%w_gauss = w_gauss
+    self%p_gauss = p_gauss
+    self%amplitude = amplitude
+    self%nu = nu
+  end if
   !-----------------------------------------------------------------------------
   ! Memory mapping; this is cheap, and may be done every time
   !-----------------------------------------------------------------------------
@@ -178,7 +182,7 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   mass_flux%x        = p%x + mass_diffusion%x
   mass_flux%y        = p%y + mass_diffusion%y
   mass_flux%z        = p%z + mass_diffusion%z
-  call minus_div_vector (dd_dt, mass_flux)
+  dd_dt%f = - o%ddxup(mass_flux%x)- o%ddyup(mass_flux%y)- o%ddzup(mass_flux%z)
   !-----------------------------------------------------------------------------
   ! Evolution of linear momenta = equation-of-motion
   !-----------------------------------------------------------------------------
@@ -233,14 +237,16 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   momentum_flux%yz = reynolds_stress%yz + viscous_stress%yz
   momentum_flux%zx = reynolds_stress%zx + viscous_stress%zx
 
-  call minus_div_tensor (dp_dt, momentum_flux)
+  dp_dt%x = - o%ddxdn(momentum_flux%xx) - o%ddyup(momentum_flux%xy) - o%ddzup(momentum_flux%xz)
+  dp_dt%y = - o%ddxup(momentum_flux%yx) - o%ddydn(momentum_flux%yy) - o%ddzup(momentum_flux%yz)
+  dp_dt%z = - o%ddxup(momentum_flux%zx) - o%ddyup(momentum_flux%zy) - o%ddzdn(momentum_flux%zz)
   !-----------------------------------------------------------------------------
   ! Evolution of entropy
   !-----------------------------------------------------------------------------
   entropy_flux%x  =  - o%xdn(diffusion_speed%x) * o%ddxdn (entropy_per_mass%f)
   entropy_flux%y  =  - o%ydn(diffusion_speed%y) * o%ddydn (entropy_per_mass%f)
   entropy_flux%z  =  - o%zdn(diffusion_speed%z) * o%ddzdn (entropy_per_mass%f)
-  call minus_div_vector (ds_dt, entropy_flux)
+  ds_dt%f = - o%ddxup(entropy_flux%x) - o%ddyup(entropy_flux%y) - o%ddzup(entropy_flux%z)
   ds_dt%f = ds_dt%f + viscous_dissipation%f * gas_pressure%f/rho%f
   !-----------------------------------------------------------------------------
     call trace_end
@@ -248,105 +254,11 @@ end associate
 END SUBROUTINE
 
 !> =============================================================================
-!> This should produce down-shifted gradients, for face centered fluxes
-!> =============================================================================
-FUNCTION minus_grad (in1, in2) RESULT (out)
-  type(scalar_t):: in2
-  type(vector_t):: in1, out
-  out%x = - o%xdn(in1%x)*o%ddxdn(in2%f)
-  out%y = - o%ydn(in1%y)*o%ddydn(in2%f)
-  out%z = - o%zdn(in1%z)*o%ddzdn(in2%f)
-END FUNCTION
-!> =============================================================================
-!> The in argument is downshfted, so the div should have up-derivatives
-!> =============================================================================
-SUBROUTINE minus_div_vector (out,in)
-  type(scalar_t):: out
-  type(vector_t):: in
-  out%f = - o%ddxup(in%x) - o%ddyup(in%y) - o%ddzup(in%z)
-END SUBROUTINE
-!> =============================================================================
-!> in1%yx is the transport of y-mom by u_x, and is taken ddxup() of for non-
-!> diagonal elements, and ddxdn() of for diagonal ones.
-!> in2 is velocity, in1 is momentum.   The tensor is symmetric, so only
-!> 6 elements are significant.  The off-diagonal elements have o%ddydn(out%xy).
-!> FIXME: In IDL the density factor is interpolated separately, which is better
-!> =============================================================================
-SUBROUTINE outer_product (out, in1, in2)
-  type(tensor_t):: out
-  type(vector_t):: in1, in2
-  print*,'zz'
-END SUBROUTINE
-!> =============================================================================
-!> These elements should be cell centered on the diagonal, and edge centered
-!> elsewhere
-!> =============================================================================
-SUBROUTINE symmetrized_derivatives (out, in1)
-  type(tensor_t):: out
-  type(vector_t):: in1
-END SUBROUTINE
-!> =============================================================================
-!> The in1 argument is cell centered, the in2 argument is face-centered, and
-!> the in3 argument is edge-centered, as should the output be, except in the
-!> diagonal, which is cell centered
-!> =============================================================================
-SUBROUTINE tensor_factor (out, in1, in2, in3)
-  type(tensor_t):: out
-  type(scalar_t):: in1
-  type(vector_t):: in2
-  type(tensor_t):: in3
-END SUBROUTINE
-!> =============================================================================
-!> This is to compute the cell-centered sum of squares for dissipation
-!> =============================================================================
-FUNCTION scalar_tensor_product (in1, in2) RESULT (out)
-  type(scalar_t):: out
-  type(tensor_t):: in1, in2
-END FUNCTION
-!> =============================================================================
-!> This adds a centered component to the diagonal
-!> =============================================================================
-SUBROUTINE tensor_add_diagonal (out, in1)
-  type(tensor_t):: out
-  type(scalar_t):: in1
-  out%xx = out%xx + in1%f
-  out%yy = out%yy + in1%f
-  out%zz = out%zz + in1%f
-END SUBROUTINE
-!> =============================================================================
-!> The first argument is a face centered flux, the 2nd argument is a face-
-!> centered velocity, and the output should have a cell centered diagonal and
-!> edge-centered off-diagonals
-!> =============================================================================
-FUNCTION edge_multiply (in1, in2) RESULT (out)
-  type(tensor_t):: out
-  type(vector_t):: in1
-  type(vector_t):: in2
-  out%xx = o%xup(in1%x*in2%x)
-  out%yy = o%yup(in1%y*in2%y)
-  out%zz = o%zup(in1%z*in2%z)
-  out%xy = o%xdn(in1%y)*o%ydn(in2%x)
-  out%yz = o%ydn(in1%z)*o%zdn(in2%y)
-  out%zx = o%zdn(in1%x)*o%xdn(in2%z)
-  out%yx = out%xy
-  out%zy = out%yz
-  out%xz = out%zx
-END FUNCTION
-!> =============================================================================
-SUBROUTINE minus_div_tensor (out,in)
-  type(vector_t):: out
-  type(tensor_t):: in
-  out%x = - o%ddxup(in%xx) - o%ddyup(in%xy) - o%ddzup(in%xz)
-  out%y = - o%ddxup(in%yx) - o%ddyup(in%yy) - o%ddzup(in%yz)
-  out%z = - o%ddxup(in%zx) - o%ddyup(in%zy) - o%ddzup(in%zz)
-END SUBROUTINE
-
-!> =============================================================================
 !> Compute the log density and other similar things -- for use in refinement
 !> =============================================================================
 SUBROUTINE log_density (self, out)
   class(pde_t):: self
-  real, dimension(self%n(1),self%n(2),self%n(3)):: out
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: out
   !...............................................................................
   call trace_begin ('hd_mod:pde_t%log_density')
   if (io%verbose>3) then
@@ -360,9 +272,11 @@ SUBROUTINE log_density (self, out)
                       self%li(2):self%ui(2), &
                       self%li(3):self%ui(3), i_d, self%it, 1))
   end if
-  out = log(self%mem(self%li(1):self%ui(1), &
-                     self%li(2):self%ui(2), &
-                     self%li(3):self%ui(3), i_d, self%it, 1))
+  out(self%li(1):self%ui(1), &
+      self%li(2):self%ui(2), &
+      self%li(3):self%ui(3)) = log(self%mem(self%li(1):self%ui(1), &
+                                            self%li(2):self%ui(2), &
+                                            self%li(3):self%ui(3), i_d, self%it, 1))
   call trace_end
 END SUBROUTINE log_density
 !> =============================================================================

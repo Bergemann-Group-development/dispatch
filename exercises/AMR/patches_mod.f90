@@ -26,6 +26,7 @@ MODULE patches_mod
     real:: courant=0.2                          ! courant constant
     integer:: istep=0                           ! time step counter
     integer:: iout=0                            ! output counter
+    integer:: level
     real, dimension(:,:,:,:,:,:), pointer:: mem
     integer:: verbose = 0
     logical:: is_leaf = .true.
@@ -102,6 +103,8 @@ SUBROUTINE init (self, position, size)
   self%ui = self%gn - self%ng                   ! upper interior index
   self%nt = dims(4)                             ! number of time slices
   self%nv = dims(5)                             ! number of variables
+  self%level = log(maxval(self%box)/minval(self%ds))/log(2.) + 0.1
+  print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
   allocate (self%derivs)                        ! thread safe derivatives
   call self%derivs%init (dims(1:3), size/self%n)! pass on patch info to derivs
   if (self%mem_allocated) then

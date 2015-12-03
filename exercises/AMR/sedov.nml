@@ -4,9 +4,15 @@
  amplitude=3
  nu=0.5,2
 /
+&refine_params
+ msplit=2
+ refine_time=999
+ max_change=999
+ levelmax=8
+/
 &io_params
  !do_trace=t verbose=3   ! =1 for output file messages
- do_trace=f verbose=0   ! =1 for output file messages
+ do_trace=f verbose=1   ! =1 for output file messages
  !do_trace=f verbose=4   ! =1 for output file messages
 /
 &box_params
@@ -19,8 +25,8 @@
 &timestep_params
  courant=0.10
  time_order=2
- end_time=0.01
- out_time=0.001
+ end_time=1.50
+ out_time=0.05
  u_fixed=10.
 /
 &patch_params
