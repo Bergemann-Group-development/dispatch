@@ -4,16 +4,16 @@ erase
 imsz,256
 device,decompose=0
 loadct,39
-n=32
+n=16
 nout=5
-nid=4
+nid=16
 nx=long(sqrt(nid)+0.1)
 !order=0
-iv=1
+iv=0
 
 for iout=0,nout-1 do begin
 	for id=1,nid do begin
-	  name='patch_'+string(id,format='(i3.3)')+'_'+string(iout,format='(i4.4)')
+	  name='advection_'+string(id,format='(i3.3)')+'_'+string(iout,format='(i4.4)')
 	  file='data/'+name+'.dat'
 	  close,1
 	  openr,1,file

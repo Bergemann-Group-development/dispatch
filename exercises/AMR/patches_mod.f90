@@ -31,6 +31,7 @@ MODULE patches_mod
     logical:: is_leaf = .true.
     logical:: mem_allocated = .false.
     class(central_t), pointer:: derivs
+    character(len=64), pointer:: experiment_name
   contains
     procedure:: init
     procedure:: update => update_patch
@@ -49,6 +50,7 @@ MODULE patches_mod
     procedure:: get_guardcells_for
   end type
   real, public:: end_time=1.0, out_time=0.1
+  character(len=64), public, target:: experimentname
   integer:: id = 0
 CONTAINS
 !> =============================================================================
@@ -78,6 +80,7 @@ SUBROUTINE init (self, position, size)
     read (io%input, patch_params)
     if (io%master) write (*, patch_params)
   end if
+  self%experiment_name => experimentname
   self%status=0
   self%end_time=end_time
   self%out_time=out_time
@@ -263,7 +266,8 @@ SUBROUTINE output (self)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   call system ('mkdir -p data/')
-  write (filename,'(a,i3.3,"_",i4.4)') 'data/patch_', self%id, self%iout
+  write (filename,'(a,i3.3,"_",i4.4)') &
+    'data/'//trim(self%experiment_name)//'_', self%id, self%iout
   if (io%verbose>0) &
     print*,'output to ',trim(filename), self%time, self%out_time
   open (3, file=trim(filename)//'.txt', form='formatted', status='unknown')

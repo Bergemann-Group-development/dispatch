@@ -36,7 +36,8 @@ CONTAINS
 !> =============================================================================
 FUNCTION experiment_name()
   character(len=64):: experiment_name
-  experiment_name = 'sedov'
+  experimentname = 'sedov'
+  experiment_name = experimentname
 END FUNCTION
 !> =============================================================================
 !> Map variables to the current memory slot and initialize the deriv operators.

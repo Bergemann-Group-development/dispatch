@@ -37,7 +37,8 @@ CONTAINS
 !> =============================================================================
 FUNCTION experiment_name()
   character(len=64):: experiment_name
-  experiment_name = 'advection'
+  experimentname = 'advection'                  ! shared from patches_mod
+  experiment_name = experimentname
 END FUNCTION
 !> =============================================================================
 !> Map variables to the current time slot. The 'it' slot is the one we are to
