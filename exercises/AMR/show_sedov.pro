@@ -4,9 +4,9 @@ erase
 imsz,256
 device,decompose=0
 loadct,39
-n=32
-nout=5
-nid=4
+n=16
+nout=20
+nid=1
 nx=long(sqrt(nid)+0.1)
 !order=0
 iv=1
@@ -22,7 +22,7 @@ for iout=0,nout-1 do begin
 	  iy=(id-1) mod nx
 	  ix=(id-1)/nx
 	  tv,bytscl(rebin(a[iv],512/nx,512/nx),top=254)+1,ix+(nx-1-iy)*nx
-	  ;print,id,min(a[iv],max=max),max
+	  print,id,min(a[iv],max=max),max
 	  sz=1./nx
 	  x=sz/2+sz*ix
 	  y=sz/2+sz*iy

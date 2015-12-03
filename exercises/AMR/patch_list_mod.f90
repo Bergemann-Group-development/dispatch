@@ -129,7 +129,7 @@ SUBROUTINE update (self)
   if (self%nq < 1) then
     n1 = self%nq
     call self%check_all
-    print *,'WARNING: check_all (should not be needed), found', self%nq, n1
+    !print *,'WARNING: check_all (should not be needed), found', self%nq, n1
   end if
   head => self%queue                                    ! queue start
   if (associated(head)) then
