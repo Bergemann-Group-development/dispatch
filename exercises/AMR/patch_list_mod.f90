@@ -153,8 +153,9 @@ SUBROUTINE update (self)
     print*,'ERROR: no self%queue', self%nq, self%n
     stop
   end if
-  print '(i8,f10.6,2x,3f10.6,i6,i6,2x,a)', patch%id, patch%time, patch%position, &
-    patch%status, self%nq !, patch%name
+  if (io%verbose>0) &
+  print '(i8,i8,i3,f10.6,2x,3f10.6,i6,i6,2x,a)', patch%id, patch%istep, patch%it, patch%time, patch%position, &
+    patch%status, self%nq
   call trace_end
 END SUBROUTINE update
 

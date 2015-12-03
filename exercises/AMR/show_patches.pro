@@ -5,7 +5,7 @@ imsz,256
 device,decompose=0
 loadct,39
 n=32
-nout=1
+nout=5
 nid=4
 nx=long(sqrt(nid)+0.1)
 !order=0
@@ -26,10 +26,10 @@ for iout=0,nout-1 do begin
 	  sz=1./nx
 	  x=sz/2+sz*ix
 	  y=sz/2+sz*iy
-	  print,file,ix,iy,x,y
+	  ;print,file,ix,iy,x,y
     xyouts,x,y,name,align=0.5
 	end
-  wait,1
+  wait,0.1
 end
 close,1
 END
