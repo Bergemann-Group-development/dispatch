@@ -85,7 +85,7 @@ SUBROUTINE init (self, position, size)
   self%end_time=end_time
   self%out_time=out_time
   self%size = size                              ! patch size
-  self%origin = self%position - 0.5*self%size   ! physical origin
+  !self%origin = self%position - 0.5*self%size   ! physical origin -- already defined
   self%n  = dims(1:3)                           ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   where (self%n==1)                             ! for collapsed dimensions
