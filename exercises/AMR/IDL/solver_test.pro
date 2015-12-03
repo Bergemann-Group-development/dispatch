@@ -283,7 +283,7 @@ while (t lt tend) do begin
 	  plot, sol.by, ps=-1, tit='by', symsize=0.3
 	  wait, 0.
 	  plot, sol.S/sol.r, ps=-1, tit='s', symsize=0.3,yst=3
-	  wait, 0.25
+	  wait, 0.1
   end
   it=it+1
 

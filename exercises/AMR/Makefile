@@ -10,7 +10,15 @@ default: $(PDE).x
 
 # Common configuration
 TOP = ../..
-include $(TOP)/config/Makefile
+sinclude $(TOP)/config/Makefile
+TOP = ../../..
+sinclude $(TOP)/config/Makefile
+TOP = ../../../..
+sinclude $(TOP)/config/Makefile
+TOP = ../../../../..
+sinclude $(TOP)/config/Makefile
+TOP = ../../../../../..
+sinclude $(TOP)/config/Makefile
 
 
 OBJ = \

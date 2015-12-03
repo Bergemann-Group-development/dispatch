@@ -49,6 +49,7 @@ MODULE patches_mod
     procedure:: ahead_of
     procedure:: is_relevant_for
     procedure:: get_guardcells_for
+    procedure:: myposition
   end type
   real, public:: end_time=1.0, out_time=0.1
   character(len=64), public, target:: experimentname
@@ -154,8 +155,53 @@ SUBROUTINE update_patch (self)
 END SUBROUTINE update_patch
 
 !> =============================================================================
-!> Get guard cells for "patch" using active cells in "self"
+!> Get guard cells for "patch" using active cells in "self".  So, we loop through
+!> all guard cells in patch, and check if there are proper source points inside
+!> the interior of the source.  For this, we need to map an index position in
+!> patch to an absolute position, and then ask about that position in the
+!> source (self) patch
+!> =============================================================================
 SUBROUTINE get_guardcells_for (self, patch)
+  class(patch_t):: self
+  class(patch_t), pointer:: patch
+  integer:: ii(3), ix, iy, iz, jj(3), jx, jy, jz, n, it, iv
+  real:: f(3)
+associate (target=>self%mem, source=>patch%mem)
+  do iz=1,patch%gn(3)
+  do iy=1,patch%gn(2)
+  do ix=1,patch%gn(1)
+    ii = [ix,iy,iz]
+    if (.not. all((ii >= patch%li) .and. (ii <= self%ui))) then
+      jj = self%index (patch%myposition(ii), f)
+      if (all((jj >= self%li) .and. (jj <= self%ui-1))) then
+        jx=jj(1); jy=jj(2); jz=jj(3); it=patch%it
+        target(ix,iy,iz,iv,it,1) = &
+          (1.-f(3))*(1.-f(2))*((1.-f(1))*source(jx  ,jy  ,jz  ,iv,it,1) + (0.+f(1))*source(jx+1,jy  ,jz  ,iv,it,1)) +&
+          (1.-f(3))*(0.+f(2))*((1.-f(1))*source(jx  ,jy+1,jz  ,iv,it,1) + (0.+f(1))*source(jx+1,jy+1,jz  ,iv,it,1)) +&
+          (0.+f(3))*(1.-f(2))*((1.-f(1))*source(jx  ,jy  ,jz+1,iv,it,1) + (0.+f(1))*source(jx+1,jy  ,jz+1,iv,it,1)) +&
+          (0.+f(3))*(0.+f(2))*((1.-f(1))*source(jx  ,jy+1,jz+1,iv,it,1) + (0.+f(1))*source(jx+1,jy+1,jz+1,iv,it,1))
+        n = n+1
+      end if
+    end if
+  end do
+  end do
+  end do
+end associate
+END SUBROUTINE get_guardcells_for
+!> =============================================================================
+!> This function gives the physical position of an index triple (patch point)
+!> =============================================================================
+FUNCTION myposition (self, ii) RESULT(out)
+  class(patch_t):: self
+  real:: out(3)
+  integer:: ii(3)
+  !.............................................................................
+  out = self%origin + (ii-0.5)*self%ds
+END FUNCTION
+
+!> =============================================================================
+!> Get guard cells for "patch" using active cells in "self"
+SUBROUTINE troels_get_guardcells_for (self, patch)
   class(patch_t):: self
   class(patch_t), pointer:: patch
   !
@@ -182,7 +228,7 @@ SUBROUTINE get_guardcells_for (self, patch)
       print *, 'patch positi:', patch%position
       print *, 'patch size  :', patch%size
     endif
-
+    !
     ! check if we can get guard cells in a given direction
     do dir=1,3
       if (patch%n(dir)==1) cycle                                         ! exclude inactive dimensions
@@ -252,7 +298,7 @@ SUBROUTINE get_guardcells_for (self, patch)
       endif
     enddo
   endif
-END SUBROUTINE get_guardcells_for
+END SUBROUTINE troels_get_guardcells_for
 
 !> =============================================================================
 !> Write results to disk
@@ -324,13 +370,12 @@ SUBROUTINE indices (self, np, p, ii, f)
     end do
 END SUBROUTINE indices
 !> =============================================================================
-FUNCTION index (self, position)
+FUNCTION index (self, position, f)
   class(patch_t):: self
   real, dimension(3):: position, f
   integer:: index(3)
   !.............................................................................
-  f = modulo(position-self%origin, self%box)/self%ds + 1.5
-  index = max(1, min(self%gn-1, int(f)))
+  f = modulo(position-self%origin, self%box)/self%ds + 1.0
   f = f - index
   print*,'index:', index
   print*,'fraction:', f
