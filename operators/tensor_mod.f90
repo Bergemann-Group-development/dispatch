@@ -223,7 +223,7 @@ SUBROUTINE allocate_tensor (self, in)
   class(tensor_t):: self
   class(scalar_t):: in
   !.............................................................................
-  if (associated(self%xx)) return
+  if (associated(self%xx).or.self%allocated) return
   call trace_begin('allocate_tensor '//trim(self%name), 3)
   if (io%verbose>3) print*,'allocate_tensor',self%n, in%n
   self%n = in%n

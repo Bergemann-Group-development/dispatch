@@ -17,7 +17,7 @@ MODULE pde_mod
     type(vector_t):: p, dpdt
     real:: nu(2)
     real:: gamma = 5./3.
-    real:: amplitude
+    real:: amplitude, amplitude_rho
     real:: w_gauss
     real:: p_gauss
     real:: u_max
@@ -50,8 +50,8 @@ SUBROUTINE init(self, position, size)
   integer:: i, j
   real:: x, y
   logical:: first_time=.true.
-  real:: w_gauss=3.0, p_gauss=4.0, amplitude=2.0, nu(2)=[0.5,2.0]
-  namelist /sedov_params/ w_gauss, p_gauss, amplitude, nu
+  real:: w_gauss=3.0, p_gauss=4.0, amplitude=3.0, nu(2)=[0.5,2.0], amplitude_rho=3.
+  namelist /sedov_params/ w_gauss, p_gauss, amplitude, amplitude_rho, nu
   !.............................................................................
   call trace_begin ('hd_mod:pde_t%init', 2)
   if (first_time) then
@@ -86,7 +86,7 @@ SUBROUTINE init(self, position, size)
   self%nv = 5
   if (self%time==0.0) then
     self%d%f = 1.0
-    print*,'MK1', self%it, self%new
+    self%s%f = 0.0
     self%p%x = 0.0
     self%p%y = 0.0
     self%p%z = 0.0
@@ -94,7 +94,7 @@ SUBROUTINE init(self, position, size)
     do i=1,self%gn(1)
       x = (i-(self%gn(1)+1)*0.5) + self%position(1)/self%ds(1)
       y = (j-(self%gn(2)+1)*0.5) + self%position(2)/self%ds(2)
-      self%s%f(i,j,:) = self%amplitude*exp(-(x**2+y**2)/self%w_gauss**2)**self%p_gauss
+      self%d%f(i,j,:) = exp(self%amplitude*exp(-(x**2+y**2)/self%w_gauss**2)**self%p_gauss)
     end do
     end do
     if (io%verbose>1) then
@@ -116,11 +116,11 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(pde_t):: self
-  type(scalar_t):: viscosity, c_sound, log_density, artificial_pressure, &
+  type(scalar_t), save:: viscosity, c_sound, log_density, artificial_pressure, &
                    viscous_dissipation, entropy_per_mass, gas_pressure
-  type(vector_t):: velocity, delta_u, mass_flux, entropy_flux, &
+  type(vector_t), save:: velocity, delta_u, mass_flux, entropy_flux, &
                    diffusion_speed, mass_diffusion
-  type(tensor_t):: reynolds_stress, strain_tensor, viscous_stress, momentum_flux
+  type(tensor_t), save:: reynolds_stress, strain_tensor, viscous_stress, momentum_flux
 associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt, &
            ds=>self%ds, dp_dt=>self%dpdt, gas_gamma=>self%gamma, nu=>self%nu)
   !.............................................................................
@@ -218,13 +218,13 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   viscous_stress%yy = viscous_stress%yy + artificial_pressure%f
   viscous_stress%zz = viscous_stress%zz + artificial_pressure%f
 
-  viscous_dissipation%f = &
-    strain_tensor%xx*viscous_stress%xx + &
-    strain_tensor%yy*viscous_stress%yy + &
-    strain_tensor%zz*viscous_stress%zz + &
-    2*(o%xup(o%yup(strain_tensor%xy*viscous_stress%xy)) &
-     + o%yup(o%zup(strain_tensor%yz*viscous_stress%yz)) &
-     + o%zup(o%xup(strain_tensor%zx*viscous_stress%zx)))
+!  viscous_dissipation%f = &
+!    strain_tensor%xx*viscous_stress%xx + &
+!    strain_tensor%yy*viscous_stress%yy + &
+!    strain_tensor%zz*viscous_stress%zz + &
+!    2*(o%xup(o%yup(strain_tensor%xy*viscous_stress%xy)) &
+!     + o%yup(o%zup(strain_tensor%yz*viscous_stress%yz)) &
+!     + o%zup(o%xup(strain_tensor%zx*viscous_stress%zx)))
 
   viscous_stress%xx = viscous_stress%xx + gas_pressure%f
   viscous_stress%yy = viscous_stress%yy + gas_pressure%f
@@ -237,9 +237,9 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   momentum_flux%yz = reynolds_stress%yz + viscous_stress%yz
   momentum_flux%zx = reynolds_stress%zx + viscous_stress%zx
 
-  dp_dt%x = - o%ddxdn(momentum_flux%xx) - o%ddyup(momentum_flux%xy) - o%ddzup(momentum_flux%xz)
-  dp_dt%y = - o%ddxup(momentum_flux%yx) - o%ddydn(momentum_flux%yy) - o%ddzup(momentum_flux%yz)
-  dp_dt%z = - o%ddxup(momentum_flux%zx) - o%ddyup(momentum_flux%zy) - o%ddzdn(momentum_flux%zz)
+  dp_dt%x = - o%ddxdn(momentum_flux%xx) - o%ddyup(momentum_flux%xy) - o%ddzup(momentum_flux%zz)
+  dp_dt%y = - o%ddxup(momentum_flux%xy) - o%ddydn(momentum_flux%yy) - o%ddzup(momentum_flux%yz)
+  dp_dt%z = - o%ddxup(momentum_flux%zx) - o%ddyup(momentum_flux%yz) - o%ddzdn(momentum_flux%zz)
   !-----------------------------------------------------------------------------
   ! Evolution of entropy
   !-----------------------------------------------------------------------------

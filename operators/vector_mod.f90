@@ -424,7 +424,7 @@ SUBROUTINE allocate_vector (self, in)
   class(scalar_t):: in
   integer:: id=0
   !.............................................................................
-  if (associated(self%x)) return
+  if (associated(self%x).or.self%allocated) return
   call trace_begin ('allocate vector '//trim(self%name))
   !$omp atomic
   id = id+1

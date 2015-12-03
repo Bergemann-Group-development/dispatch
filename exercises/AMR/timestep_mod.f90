@@ -14,6 +14,7 @@ MODULE timestep_mod
     real:: wt(nslice)
     integer:: time_order
     real:: u_fixed
+    real:: dt_fixed
   contains
     procedure:: init
     procedure:: update => update_timestep
@@ -22,6 +23,7 @@ MODULE timestep_mod
   integer:: verbose = 1
   integer:: time_order = 2
   real:: u_fixed=-1.
+  real:: dt_fixed=-1.
   logical, save:: first_time = .true.
 CONTAINS
 
@@ -33,7 +35,7 @@ SUBROUTINE init (self, position, size)
   real:: position(3), size(3)
   integer:: nslice=5
   namelist /timestep_params/ courant, time_order, verbose, end_time, out_time, &
-    nslice, u_fixed
+    nslice, u_fixed, dt_fixed
 !........................................................................
   call trace_begin ('timestep_t%init', 1)
   self%nt = nslice
@@ -69,6 +71,7 @@ SUBROUTINE init (self, position, size)
   self%time_order = time_order
   self%verbose    = verbose
   self%u_fixed    = u_fixed
+  self%dt_fixed    = dt_fixed
   if (io%verbose>3) &
    print*,'new patch:',self%id,'  it:',self%it,'  new:',self%new
   call trace_end
@@ -87,7 +90,10 @@ SUBROUTINE update_timestep (self)
     print*, 'timestep_t%update, id =', self%id, self%it, it
     print*, 'timestep_t%update, d =', self%mem(1:5,1,1,1,1,1)
   end if
-  if (self%u_fixed>0.) then
+  if (self%dt_fixed>0.) then
+    self%courant = self%dt_fixed*self%u_max/self%ds(1)
+    self%dtime = self%dt_fixed
+  else if (self%u_fixed>0.) then
     self%dtime = self%courant*self%ds(1)/self%u_fixed
   else
     self%dtime = self%courant*self%ds(1)/self%u_max

@@ -21,7 +21,7 @@ for iout=0,nout-1 do begin
 	  ;image,a[0],title=file,id-1
 	  iy=(id-1) mod nx
 	  ix=(id-1)/nx
-	  tv,bytscl(rebin(a[iv],512/nx,512/nx),top=254)+1,ix+(nx-1-iy)*nx
+	  tv,bytscl(rebin(a[iv],512/nx,512/nx),top=254,min=1,max=2)+1,ix+(nx-1-iy)*nx
 	  ;print,id,min(a[iv],max=max),max
 	  sz=1./nx
 	  x=sz/2+sz*ix

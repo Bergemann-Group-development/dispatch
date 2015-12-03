@@ -18,7 +18,7 @@ MODULE patches_mod
     integer:: i, j, k
     integer:: status
     integer, pointer:: iit(:)
-    real, dimension(3):: position, size, gsize, box, ds, origin
+    real, dimension(3):: position, size, gsize, box=1, ds, origin
     real, pointer:: t(:)
     real, pointer:: dt(:)
     real:: time=0.0, dtime=0.1, end_time=1.0, grace=0.0
@@ -87,15 +87,14 @@ SUBROUTINE init (self, position, size)
   self%end_time=end_time
   self%out_time=out_time
   self%size = size                              ! patch size
-  !self%origin = self%position - 0.5*self%size   ! physical origin -- already defined
+  self%origin = self%position - 0.5*self%size   ! physical origin -- already defined
   self%n  = dims(1:3)                           ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   where (self%n==1)                             ! for collapsed dimensions
     self%ng = 0                                 ! no guard zones
     self%size = 0.0                             ! zero size
     self%ds = 0.0                               ! first zero
-  end where
-  where (self%n==1)                             ! for collapsed dimensions
+    self%box = 1                                ! make sure it is non-zero
     self%ds = maxval(self%ds)                   ! then set to reasonable val
   end where
   self%gn = self%n + 2*self%ng                  ! including guard cells
@@ -164,23 +163,36 @@ END SUBROUTINE update_patch
 SUBROUTINE get_guardcells_for (self, patch)
   class(patch_t):: self
   class(patch_t), pointer:: patch
-  integer:: ii(3), ix, iy, iz, jj(3), jx, jy, jz, n, it, iv
-  real:: f(3)
-associate (target=>self%mem, source=>patch%mem)
+  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3)
+  real:: f(3), pos(3)
+  !.............................................................................
+  if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','index:self,patch:', &
+    self%id,self%position,patch%id,patch%position, self%li, self%ui
+associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
+  it = patch%it
   do iz=1,patch%gn(3)
   do iy=1,patch%gn(2)
   do ix=1,patch%gn(1)
     ii = [ix,iy,iz]
-    if (.not. all((ii >= patch%li) .and. (ii <= self%ui))) then
-      jj = self%index (patch%myposition(ii), f)
-      if (all((jj >= self%li) .and. (jj <= self%ui-1))) then
-        jx=jj(1); jy=jj(2); jz=jj(3); it=patch%it
-        target(ix,iy,iz,iv,it,1) = &
-          (1.-f(3))*(1.-f(2))*((1.-f(1))*source(jx  ,jy  ,jz  ,iv,it,1) + (0.+f(1))*source(jx+1,jy  ,jz  ,iv,it,1)) +&
-          (1.-f(3))*(0.+f(2))*((1.-f(1))*source(jx  ,jy+1,jz  ,iv,it,1) + (0.+f(1))*source(jx+1,jy+1,jz  ,iv,it,1)) +&
-          (0.+f(3))*(1.-f(2))*((1.-f(1))*source(jx  ,jy  ,jz+1,iv,it,1) + (0.+f(1))*source(jx+1,jy  ,jz+1,iv,it,1)) +&
-          (0.+f(3))*(0.+f(2))*((1.-f(1))*source(jx  ,jy+1,jz+1,iv,it,1) + (0.+f(1))*source(jx+1,jy+1,jz+1,iv,it,1))
-        n = n+1
+    if (.not. all((ii >= patch%li) .and. (ii <= patch%ui))) then
+      pos = patch%myposition(ii)
+      j0 = self%index (patch%myposition(ii), f)
+      if (all((j0+f >= self%li-0.1) .and. (j0+f <= self%ui+0.1) .or. (self%n==1))) then
+        if (io%verbose>3) print'(a,2(i4,2x,3i4,2x),1p,2(3f9.4,2x),2x,2f11.6," ****")', &
+          'index:ii,j0,f:', patch%id, ii,  self%id, j0, f, pos, self%t(it)-patch%t(it)
+        j1 = j0+1
+        where (self%n==1) j1 = j0
+        do iv=1,self%nv
+          target(ix,iy,iz,iv,it,1) = &
+            (1.-f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j0(3),iv,it,1)    &
+                                   + f(1) *source(j1(1),j0(2),j0(3),iv,it,1)) + &
+            (1.-f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j0(3),iv,it,1)    &
+                                   + f(1) *source(j1(1),j1(2),j0(3),iv,it,1)) + &
+            (   f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j1(3),iv,it,1)    &
+                                   + f(1) *source(j1(1),j0(2),j1(3),iv,it,1)) + &
+            (   f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j1(3),iv,it,1)    &
+                                   + f(1) *source(j1(1),j1(2),j1(3),iv,it,1))
+          end do
       end if
     end if
   end do
@@ -196,7 +208,7 @@ FUNCTION myposition (self, ii) RESULT(out)
   real:: out(3)
   integer:: ii(3)
   !.............................................................................
-  out = self%origin + (ii-0.5)*self%ds
+  out = self%origin + (ii-self%li + 0.5)*self%ds
 END FUNCTION
 
 !> =============================================================================
@@ -214,7 +226,12 @@ SUBROUTINE troels_get_guardcells_for (self, patch)
     ! Get real lower and upper boundary with possible wrap-around
     rlb = self%position-(self%n/2+1e-5_8)*self%ds ! go slightly below lower boundary
     rub = self%position+(self%n/2+1e-5_8)*self%ds ! go slightly above upper boundary
-    origin = self%origin                            ! global lower boundary in box
+
+    ! Troels: if you need a global origin you have to put it in a different variable -- presumably
+    ! a globale one (e.g. in patch_list_mod) -- this one is taken.  But it is also obvious, that
+    ! the only information needed is the relative position btw self and patch, so this "origin"
+    ! is redundant.
+    !origin = self%origin                            ! global lower boundary in box
     rlb = modulo(rlb - origin, max(self%box,1e-30)) + origin   ! wrap around to stay inside box
     rub = modulo(rub - origin, max(self%box,1e-30)) + origin
     where(self%n==1)
@@ -317,8 +334,8 @@ SUBROUTINE output (self)
   call system ('mkdir -p data/')
   write (filename,'(a,i3.3,"_",i4.4)') &
     'data/'//trim(self%experiment_name)//'_', self%id, self%iout
-  if (io%verbose>0) &
-    print*,'output to ',trim(filename), self%time, self%out_time
+  if (io%verbose>=0) &
+    print'(a,3x,"time:",g12.3)', 'output to '//trim(filename), self%time
   open (3, file=trim(filename)//'.txt', form='formatted', status='unknown')
   write (3, *) self%n, self%time
   close (3)
@@ -375,10 +392,9 @@ FUNCTION index (self, position, f)
   real, dimension(3):: position, f
   integer:: index(3)
   !.............................................................................
-  f = modulo(position-self%origin, self%box)/self%ds + 1.0
+  f = modulo(position - self%origin + self%li*self%ds, self%box)/self%ds - 0.5 + 1e-5
+  index = f
   f = f - index
-  print*,'index:', index
-  print*,'fraction:', f
 END FUNCTION index
 
 !> =============================================================================

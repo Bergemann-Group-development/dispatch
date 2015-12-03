@@ -259,7 +259,7 @@ SUBROUTINE allocate_scalar (self, in)
   class(scalar_t):: in
   integer:: id=0
   !.............................................................................
-  if (associated(self%f)) return
+  if (associated(self%f).or.self%allocated) return
   call trace_begin ('allocate_scalar '//trim(self%name))
   !$omp atomic
   id = id+1

@@ -88,7 +88,6 @@ SUBROUTINE init_cartesian (self)
     patch => patches(i,j,k)
     position = ([i,j,k]-0.5_8)*self%size/self%dims + origin
     patch%box = self%size
-    patch%origin = origin
     call patch%init (position, self%size/self%dims)
     if (io%verbose>1) &
       print*,'init_cartesian:', patch%id, self%size, patch%size
@@ -157,11 +156,11 @@ SUBROUTINE update (self)
       end if
     end if
   else
-    print*,'ERROR: no self%queue', self%nq, self%n
+    print*,'stopping: no more tasks', self%nq, self%n
     stop
   end if
   if (io%verbose>0) &
-  print '(i8,i8,i3,f10.6,2x,3f10.6,i6,i6,2x,a)', patch%id, patch%istep, patch%it, patch%time, patch%position, &
+  print '(i8,i8,i3,f10.6,2x,f7.3,i6,i6,2x,a)', patch%id, patch%istep, patch%it, patch%time, patch%courant, &
     patch%status, self%nq
   call trace_end
 END SUBROUTINE update
@@ -205,7 +204,7 @@ SUBROUTINE split (self, this)
   call trace_begin('patch_list_t%split', 1)
   new_patches => self%tail
   nsplit = msplit
-  where (this%patch%size==0)
+  where (this%patch%size==0 .or. this%patch%n==1)
     nsplit = 1
   end where
   do ix=1,nsplit(1)
