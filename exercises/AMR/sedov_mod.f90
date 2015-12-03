@@ -164,10 +164,10 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   diffusion_speed%x = (ds(1)*nu(1))*c_sound%f
   diffusion_speed%y = (ds(2)*nu(1))*c_sound%f
   diffusion_speed%z = (ds(3)*nu(1))*c_sound%f
-  delta_u%x         = (ds(1)*nu(2))*velocity%x
-  delta_u%y         = (ds(1)*nu(2))*velocity%y
-  delta_u%z         = (ds(1)*nu(2))*velocity%z
-  artificial_pressure%f = nu(2)*(delta_u%x**2 + delta_u%y**2 + delta_u%z**2)
+  delta_u%x         = (ds(1)*nu(2))*o%ddxup(velocity%x)
+  delta_u%y         = (ds(1)*nu(2))*o%ddyup(velocity%y)
+  delta_u%z         = (ds(1)*nu(2))*o%ddzup(velocity%z)
+  artificial_pressure%f = rho%f*min(0.0,delta_u%x + delta_u%y + delta_u%z)**2
   !-----------------------------------------------------------------------------
   ! Evolution of mass density
   !-----------------------------------------------------------------------------

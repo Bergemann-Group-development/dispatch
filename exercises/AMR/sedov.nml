@@ -5,8 +5,8 @@
  nu=0.5,1
 /
 &io_params
- !do_trace=t verbose=5   ! =1 for output file messages
- do_trace=f verbose=0   ! =1 for output file messages
+ !do_trace=t verbose=3   ! =1 for output file messages
+ do_trace=f verbose=1   ! =1 for output file messages
  !do_trace=f verbose=4   ! =1 for output file messages
 /
 &box_params
@@ -19,8 +19,9 @@
 &timestep_params
  courant=0.10
  time_order=2
- end_time=0.002
- out_time=0.00001
+ end_time=0.5
+ !out_time=0.005 dt_hard=0.0001
+ out_time=0.02 dt_hard=0.0002
 /
 &patch_params
  dims=32,32,1,5,5       ! nx, ny, nz, ntime, nvar

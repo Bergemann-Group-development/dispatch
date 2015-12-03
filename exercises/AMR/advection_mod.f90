@@ -30,6 +30,7 @@ MODULE pde_mod
     procedure:: magnetic_field_magnitude
   end type
   type(pde_t):: mhd
+  class(central_t), pointer:: deriv
   public experiment_name
 CONTAINS
 
@@ -90,8 +91,10 @@ SUBROUTINE init (self, position, size)
   !-----------------------------------------------------------------------------
   ! Memory mapping; this is cheap, and may be done every time
   !-----------------------------------------------------------------------------
-  call    self%d%init (self%gn, self%size/self%n, self%derivs, 'd')
-  call self%dddt%init (self%gn, self%size/self%n, self%derivs, 'dddt')
+  allocate (deriv)
+  call     deriv%init (self%gn, self%size/self%n)
+  call    self%d%init (self%gn, self%size/self%n, 'd')
+  call self%dddt%init (self%gn, self%size/self%n, 'dddt')
   self%d%f    => self%mem(:,:,:,i_d ,self%it,1)
   self%dddt%f => self%mem(:,:,:,i_d ,self%it,2)
   call check_dims (self%dddt%f, 'init')
@@ -108,12 +111,13 @@ SUBROUTINE update_pde (self)
   type(vector_t), save:: p
   !.............................................................................
   call trace_begin ('advection_mod:pde_t%update', 2)
-  call p%init (self%gn, self%size/self%n, self%derivs, 'p')
+  call p%init (self%gn, self%size/self%n, 'p')
   self%dddt%f => self%mem(:,:,:,1,self%it,2)
   associate (d=>self%d,u=>self%u,dddt=>self%dddt)
     p = u
     p = p*d
-    call minus_div (dddt, p)
+    dddt%f = -deriv%dx(p%x)-deriv%dy(p%y)
+    !call minus_div (dddt, p)
     if (io%verbose>2) &
     print'(1x,a,1p,i4,4(2x,2e10.2))', 'update_pde', &
       self%id,minval(self%dddt),maxval(self%dddt), &
