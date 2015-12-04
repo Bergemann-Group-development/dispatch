@@ -64,7 +64,7 @@ SUBROUTINE minus_div (out, in)
   type(scalar_t), intent(inout):: out
   !.............................................................................
   !print*,in%d%n, in%d%ds, associated(out%f)
-  out%f = - in%d%dx(in%x) - in%d%dy(in%y) - in%d%dz(in%z)
+  !out%f = - in%d%dx(in%x) - in%d%dy(in%y) - in%d%dz(in%z)
 END SUBROUTINE
 
 !> =============================================================================
@@ -103,7 +103,7 @@ FUNCTION vector_exp (in) RESULT (out)
 END FUNCTION vector_exp
 !> =============================================================================
 SUBROUTINE vector_assign_array (out, in)
-  type(vector_t):: out
+  type(vector_t), intent(inout):: out
   real, dimension(:,:,:,:), intent(in), pointer:: in
   call out%allocate (out)
   out%x = in(:,:,:,1)
@@ -112,7 +112,7 @@ SUBROUTINE vector_assign_array (out, in)
 END SUBROUTINE vector_assign_array
 !> =============================================================================
 SUBROUTINE vector_assign_scalar (out, in)
-  type(vector_t):: out
+  type(vector_t), intent(inout):: out
   type(scalar_t):: in
   call out%allocate (out)
   out%x = in%f
@@ -131,7 +131,7 @@ SUBROUTINE vector_assign_real_3 (out, in)
 END SUBROUTINE vector_assign_real_3
 !> =============================================================================
 SUBROUTINE vector_assign_real (out, in)
-  type(vector_t):: out
+  type(vector_t), intent(inout):: out
   real, intent(in):: in
   call out%allocate (out)
   out%x = in
@@ -140,7 +140,7 @@ SUBROUTINE vector_assign_real (out, in)
 END SUBROUTINE vector_assign_real
 !> =============================================================================
 SUBROUTINE vector_assign_int (out, in)
-  type(vector_t):: out
+  type(vector_t), intent(inout):: out
   integer, intent(in):: in
   call out%allocate (out)
   out%x = in
@@ -293,7 +293,7 @@ FUNCTION vector_int_grad (in) RESULT (out)
   out%z = 0.0
 END FUNCTION vector_int_grad
 SUBROUTINE check_dims (f, label)
-  real, dimension(:,:,:), pointer:: f
+  real, dimension(:,:,:), intent(inout), pointer:: f
   character(len=*):: label
   if (io%verbose>2) &
   print *, 'check_dims: '//label, size(f,dim=1), size(f,dim=2), size(f,dim=3)
@@ -301,7 +301,7 @@ END
 !> =============================================================================
 FUNCTION vector_scalar_grad (in) RESULT (out)
   type(vector_t):: out
-  type(scalar_t), intent(in):: in
+  type(scalar_t), intent(inout):: in
   !-----------------------------------------------------------------------------
   call trace_begin ('vector_scalar_grad')
   call check_dims(in%f, 'in%f')
@@ -311,9 +311,9 @@ FUNCTION vector_scalar_grad (in) RESULT (out)
   call check_dims(out%z, 'out%z')
   call out%allocate (in)
   print*, associated(out%x), out%allocated
-  out%x = out%d%dx (in%f)
-  out%y = out%d%dy (in%f)
-  out%z = out%d%dz (in%f)
+  !out%x = out%d%dx (in%f)
+  !out%y = out%d%dy (in%f)
+  !out%z = out%d%dz (in%f)
   call trace_end
 END FUNCTION vector_scalar_grad
 !> =============================================================================
@@ -326,9 +326,9 @@ FUNCTION grads (in) RESULT(out)
   print *, sizeof(out%y)
   print *, sizeof(out%z)
   call out%allocate (in)
-  out%x = out%d%dx (in%f)
-  out%y = out%d%dy (in%f)
-  out%z = out%d%dz (in%f)
+  !out%x = out%d%dx (in%f)
+  !out%y = out%d%dy (in%f)
+  !out%z = out%d%dz (in%f)
   call trace_end
 END FUNCTION grads
 !> =============================================================================
@@ -361,7 +361,7 @@ SUBROUTINE vector_scalar_div (out, in)
   type(vector_t), intent(in):: in
   !-----------------------------------------------------------------------------
   call trace_begin ('vector_scalar_div', 3)
-  out%f = in%d%dx (in%x) + in%d%dy (in%y) + in%d%dz (in%z)
+  !  out%f = in%d%dx (in%x) + in%d%dy (in%y) + in%d%dz (in%z)
 !  out%d => in%d
   call trace_end
 END SUBROUTINE vector_scalar_div
@@ -371,7 +371,7 @@ SUBROUTINE vector_scalar_minusdiv (out, in)
   type(vector_t), intent(in):: in
   !-----------------------------------------------------------------------------
   call trace_begin ('vector_scalar_minus_div', 3)
-  out%f = -in%d%dx (in%x) - in%d%dy (in%y) - in%d%dz (in%z)
+  !out%f = -in%d%dx (in%x) - in%d%dy (in%y) - in%d%dz (in%z)
 !  out%d => in%d
   call trace_end
 END SUBROUTINE vector_scalar_minusdiv
@@ -414,9 +414,9 @@ FUNCTION vector_curl (in) RESULT (out)
   type(vector_t), intent(in):: in
   !-----------------------------------------------------------------------------
   call out%allocate (in)
-  out%x = out%d%dy(in%z) - out%d%dz(in%y)
-  out%y = out%d%dz(in%x) - out%d%dx(in%z)
-  out%z = out%d%dx(in%y) - out%d%dy(in%x)
+  !out%x = out%d%dy(in%z) - out%d%dz(in%y)
+  !out%y = out%d%dz(in%x) - out%d%dx(in%z)
+  !out%z = out%d%dx(in%y) - out%d%dy(in%x)
 END FUNCTION vector_curl
 !> =============================================================================
 SUBROUTINE allocate_vector (self, in)
@@ -424,7 +424,7 @@ SUBROUTINE allocate_vector (self, in)
   class(scalar_t):: in
   integer:: id=0
   !.............................................................................
-  if (associated(self%x).or.self%allocated) return
+  if (associated(self%x)) return
   call trace_begin ('allocate vector '//trim(self%name))
   !$omp atomic
   id = id+1

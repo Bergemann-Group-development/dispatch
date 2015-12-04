@@ -11,8 +11,11 @@ MODULE upwind_mod
     real, pointer, dimension(:,:,:) :: vx,vy,vz
     real:: factor=1.5
   contains
+    procedure:: init
+    procedure:: dx
+    procedure:: dy
+    procedure:: dz
     procedure:: init_upwind
-    procedure:: dx, dy, dz
   end type
   logical:: first_time=.true.
 CONTAINS
@@ -26,23 +29,35 @@ SUBROUTINE init_upwind (self, vx, vy, vz)
 END SUBROUTINE
 
 !> =============================================================================
+SUBROUTINE init (self, dims, ds)
+  class(upwind_t):: self
+  integer:: dims(3)
+  real:: ds(3)
+  !.............................................................................
+  call trace_begin('central_t%init', 1)
+  self%n = dims
+  self%ds = ds
+  call trace_end
+END SUBROUTINE init
+
+!> =============================================================================
 !> Derivatives evaluated with upwind differences. We do not care about guard-cells.
 !> They are supposed to be updated elsewhere.
 !> =============================================================================
-FUNCTION dx (self, f)
+FUNCTION dx (self, f, n)
   class(upwind_t):: self
-  integer:: m, rank, rq(2), i
-  real, dimension(self%n(1),self%n(2),self%n(3)):: f, dx
-  real, dimension(self%n(2),self%n(3)):: dx1, dx2, delta
+  integer:: m, n(3), i
+  real, dimension(n(1),n(2),n(3)):: f, dx
+  real, dimension(n(2),n(3)):: dx1, dx2, delta
   real :: c
   !.............................................................................
   if (first_time) then
     first_time = .false.
   end if
-  if (self%n(1)==1) then
+  if (n(1)==1) then
     dx = 0.0
   else
-    m = self%n(1)
+    m = n(1)
     c = 0.5/self%ds(1)
     do i=2,m-1
       delta = self%vx(i,:,:)*self%dt*self%factor/self%ds(1)
@@ -53,17 +68,17 @@ FUNCTION dx (self, f)
   end if
 END FUNCTION dx
 !> =============================================================================
-FUNCTION dy (self, f)
+FUNCTION dy (self, f, n)
   class(upwind_t):: self
   integer:: n(3), m, i
-  real, dimension(self%n(1),self%n(2),self%n(3)):: f, dy
-  real, dimension(self%n(1),self%n(3)):: dy1, dy2, delta
+  real, dimension(n(1),n(2),n(3)):: f, dy
+  real, dimension(n(1),n(3)):: dy1, dy2, delta
   real:: c
   !.............................................................................
-  if (self%n(2)==1) then
+  if (n(2)==1) then
     dy = 0.0
   else
-    m = self%n(2)
+    m = n(2)
     c = 0.5/self%ds(2)
     do i=2,m-1
       delta = self%vy(:,i,:)*self%dt*self%factor/self%ds(2)
@@ -74,17 +89,17 @@ FUNCTION dy (self, f)
   end if
 END FUNCTION dy
 !> =============================================================================
-FUNCTION dz (self, f)
+FUNCTION dz (self, f, n)
   class(upwind_t):: self
   integer:: n(3), m, i
-  real, dimension(self%n(1),self%n(2),self%n(3)):: f, dz
-  real, dimension(self%n(1),self%n(2)):: dz1, dz2, delta
+  real, dimension(n(1),n(2),n(3)):: f, dz
+  real, dimension(n(1),n(2)):: dz1, dz2, delta
   real:: c
   !.............................................................................
-  if (self%n(3)==1) then
+  if (n(3)==1) then
     dz = 0.0
   else
-    m = self%n(3)
+    m = n(3)
     c = 0.5/self%ds(3)
     do i=2,m-1
       delta = self%vz(:,:,i)*self%dt*self%factor/self%ds(3)

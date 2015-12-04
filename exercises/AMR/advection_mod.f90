@@ -117,7 +117,7 @@ SUBROUTINE update_pde (self)
   associate (d=>self%d,u=>self%u,dddt=>self%dddt)
     p = u
     p = p*d
-    dddt%f = -deriv%dx(p%x)-deriv%dy(p%y)
+    dddt%f = -deriv%dx(p%x,self%gn)-deriv%dy(p%y,self%gn)
     !call minus_div (dddt, p)
     if (io%verbose>2) &
     print'(1x,a,1p,i4,4(2x,2e10.2))', 'update_pde', &

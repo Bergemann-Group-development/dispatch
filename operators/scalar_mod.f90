@@ -92,7 +92,7 @@ SUBROUTINE scalar_assign_int (out, in)
 END SUBROUTINE scalar_assign_int
 !> =============================================================================
 SUBROUTINE scalar_assign (out, in)
-  type(scalar_t):: out
+  type(scalar_t), intent(inout):: out
   real, dimension(:,:,:), intent(in), pointer:: in
   call out%allocate (out)
   out%f = in
@@ -259,7 +259,7 @@ SUBROUTINE allocate_scalar (self, in)
   class(scalar_t):: in
   integer:: id=0
   !.............................................................................
-  if (associated(self%f).or.self%allocated) return
+  if (associated(self%f)) return
   call trace_begin ('allocate_scalar '//trim(self%name))
   !$omp atomic
   id = id+1

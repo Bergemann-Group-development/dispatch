@@ -88,6 +88,7 @@ SUBROUTINE init_cartesian (self)
     patch => patches(i,j,k)
     position = ([i,j,k]-0.5_8)*self%size/self%dims + origin
     patch%box = self%size
+    patch%origin = origin
     call patch%init (position, self%size/self%dims)
     if (io%verbose>1) &
       print*,'init_cartesian:', patch%id, self%size, patch%size
@@ -160,7 +161,7 @@ SUBROUTINE update (self)
     stop
   end if
   if (io%verbose>0) &
-  print '(i8,i8,i3,f10.6,2x,f7.3,i6,i6,2x,a)', patch%id, patch%istep, patch%it, patch%time, patch%courant, &
+  print '(i8,i8,i3,f10.6,2x,3f10.6,i6,i6,2x,a)', patch%id, patch%istep, patch%it, patch%time, patch%position, &
     patch%status, self%nq
   call trace_end
 END SUBROUTINE update
@@ -195,9 +196,10 @@ END SUBROUTINE remove_patch
 !> =============================================================================
 SUBROUTINE split (self, this)
   class(patch_list_t):: self
+  class(link_t), pointer:: this
   integer:: nsplit(3)
   type(timestep_t), pointer:: patch
-  type(link_t), pointer:: this, link, tail, new_patches
+  type(link_t), pointer:: link, tail, new_patches
   integer dir, i, ix, iy, iz
   real:: pos(3), position(3)
   !.............................................................................
@@ -448,7 +450,8 @@ END SUBROUTINE check_ready
 !> =============================================================================
 SUBROUTINE queue_by_time (self, this)
   class(patch_list_t):: self
-  type(link_t), pointer:: this, next, prev
+  class(link_t), pointer:: this
+  type(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%queue_by_time '//self%name)
   nullify (this%next_time)
@@ -494,10 +497,10 @@ SUBROUTINE get_guardcells (self)
   patch => self%patch
   nguard=0
   do while (associated (nbor))
-    if (nbor%patch%is_relevant_for(patch)) then
+    !if (nbor%patch%is_relevant_for(patch)) then
       call nbor%patch%get_guardcells_for (patch)
       nguard = nguard + 1
-    endif
+    !endif
     nbor => nbor%next
   end do
   if (io%verbose > 5) &

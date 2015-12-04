@@ -49,7 +49,7 @@ SUBROUTINE init_tensor (self, dims, ds, name)
   !.............................................................................
   call trace_begin ('tensor_t%init '//trim(self%name), 2)
   self%n = dims
-  self%ds = ds
+!  self%ds = ds
   self%name = name
   call self%allocate (self)
   call trace_end
@@ -76,15 +76,15 @@ FUNCTION tensor_vector_grad (in) RESULT (out)
   type(vector_t), intent(in):: in
   !.............................................................................
   call out%allocate (in)
-  out%xx = out%d%dx (in%x)
-  out%yx = out%d%dy (in%x)
-  out%zx = out%d%dz (in%x)
-  out%xy = out%d%dx (in%y)
-  out%yy = out%d%dy (in%y)
-  out%zy = out%d%dz (in%y)
-  out%xz = out%d%dx (in%z)
-  out%yz = out%d%dy (in%z)
-  out%zz = out%d%dz (in%z)
+!  out%xx = out%d%dx (in%x)
+!  out%yx = out%d%dy (in%x)
+!  out%zx = out%d%dz (in%x)
+!  out%xy = out%d%dx (in%y)
+!  out%yy = out%d%dy (in%y)
+!  out%zy = out%d%dz (in%y)
+!  out%xz = out%d%dx (in%z)
+!  out%yz = out%d%dy (in%z)
+!  out%zz = out%d%dz (in%z)
 END FUNCTION tensor_vector_grad
 !> =============================================================================
 FUNCTION vector_tensor_grad (in) RESULT (out)
@@ -92,15 +92,15 @@ FUNCTION vector_tensor_grad (in) RESULT (out)
   type(vector_t), intent(in):: in
   !.............................................................................
   call out%allocate (in)
-  out%xx = out%d%dx (in%x)
-  out%yx = out%d%dy (in%x)
-  out%zx = out%d%dz (in%x)
-  out%xy = out%d%dx (in%y)
-  out%yy = out%d%dy (in%y)
-  out%zy = out%d%dz (in%y)
-  out%xz = out%d%dx (in%z)
-  out%yz = out%d%dy (in%z)
-  out%zz = out%d%dz (in%z)
+!  out%xx = out%d%dx (in%x)
+!  out%yx = out%d%dy (in%x)
+!  out%zx = out%d%dz (in%x)
+!  out%xy = out%d%dx (in%y)
+!  out%yy = out%d%dy (in%y)
+!  out%zy = out%d%dz (in%y)
+!  out%xz = out%d%dx (in%z)
+!  out%yz = out%d%dy (in%z)
+!  out%zz = out%d%dz (in%z)
 END FUNCTION vector_tensor_grad
 !> =============================================================================
 SUBROUTINE vector_tensor_div (out, in)
@@ -113,11 +113,11 @@ SUBROUTINE vector_tensor_div (out, in)
   select type (in)
   type is (tensor_t)
     print*,'v_t_div'
-    print*,'v_t_div', in%d%ds
-    print*,'v_t_div', in%d%n
-    out%x = in%d%dx (in%xx) + in%d%dy(in%yx) + in%d%dz(in%zx)
-    out%y = in%d%dx (in%xy) + in%d%dy(in%yy) + in%d%dz(in%zy)
-    out%z = in%d%dx (in%xz) + in%d%dy(in%yz) + in%d%dz(in%zz)
+!    print*,'v_t_div', in%d%ds
+!    print*,'v_t_div', in%d%n
+!    out%x = in%d%dx (in%xx) + in%d%dy(in%yx) + in%d%dz(in%zx)
+!    out%y = in%d%dx (in%xy) + in%d%dy(in%yy) + in%d%dz(in%zy)
+!    out%z = in%d%dx (in%xz) + in%d%dy(in%yz) + in%d%dz(in%zz)
   class default
     print*,'WARNING'
   end select
@@ -223,7 +223,7 @@ SUBROUTINE allocate_tensor (self, in)
   class(tensor_t):: self
   class(scalar_t):: in
   !.............................................................................
-  if (associated(self%xx).or.self%allocated) return
+  if (associated(self%xx)) return
   call trace_begin('allocate_tensor '//trim(self%name), 3)
   if (io%verbose>3) print*,'allocate_tensor',self%n, in%n
   self%n = in%n
