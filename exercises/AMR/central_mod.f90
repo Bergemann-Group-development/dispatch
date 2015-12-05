@@ -50,9 +50,9 @@ FUNCTION dx (self, f, n)
   else
     m = n(1)
     c = 0.5/self%ds(1)
-    dx(3:m-2,:,:) = (f(4:m-1,:,:)-f(2:m-3,:,:))*c  ! this part is local
-    dx(  1:2,:,:) = 0.0
-    dx(m-1:m,:,:) = 0.0
+    dx(2:m-1,:,:) = (f(3:m,:,:)-f(1:m-2,:,:))*c  ! this part is local
+    dx(  1,:,:) = 0.0
+    dx(m-1,:,:) = 0.0
   end if
   call trace_end
 END FUNCTION dx
@@ -89,6 +89,8 @@ FUNCTION dz (self, f, n)
     m = n(3)
     c = 0.5/self%ds(3)
     dz(:,:,2:m-1) = (f(:,:,3:m)-f(:,:,1:m-2))*c  ! this part is local
+    dz(:,:,1) = 0.0
+    dz(:,:,m) = 0.0
   end if
   call trace_end
 END FUNCTION dz

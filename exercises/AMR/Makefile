@@ -1,11 +1,11 @@
 # Option groups
 #OPTS = debug
-#OPTS = full_debug
-OPTS = optimized
+OPTS = full_debug
+#OPTS = optimized
 
 # Default target
-PDE = advection
-#PDE = sedov
+#PDE = advection
+PDE = sedov
 default: $(PDE).x
 
 # Common configuration

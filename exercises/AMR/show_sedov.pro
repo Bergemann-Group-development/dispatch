@@ -1,34 +1,27 @@
 
-ws,xsize=512,ysize=512
-erase
-imsz,256
+sz=512
+window,xsize=sz,ysize=sz
 device,decompose=0
 loadct,39
-n=16
-nout=20
-nid=1
-nx=long(sqrt(nid)+0.1)
-!order=0
+nout=10
 iv=1
+im=0
 
 for iout=0,nout-1 do begin
-	for id=1,nid do begin
-	  name='sedov_'+string(id,format='(i3.3)')+'_'+string(iout,format='(i4.4)')
-	  file='data/'+name+'.dat'
-	  close,1
-	  openr,1,file
-	  a=assoc(1,fltarr(n,n))
-	  ;image,a[0],title=file,id-1
-	  iy=(id-1) mod nx
-	  ix=(id-1)/nx
-	  tv,bytscl(rebin(a[iv],512/nx,512/nx),top=254)+1,ix+(nx-1-iy)*nx
-	  print,id,min(a[iv],max=max),max
-	  sz=1./nx
-	  x=sz/2+sz*ix
-	  y=sz/2+sz*iy
-	  ;print,file,ix,iy,x,y
-    xyouts,x,y,name,align=0.5
+	for id=1,1000 do begin
+	  name='data/sedov_'+string(id,format='(i3.3)')+'_'+string(iout,format='(i4.4)')
+	  print,name
+	  close,1 & openr,1,name+'.txt',error=error
+	  if error ne 0 then break
+	  time=0.0 & readf,1,time
+	  m=lonarr(3) & n=m & li=m & ui=m & readf,1,m,n,li,ui
+	  if n_elements(im) le 1 then im=fltarr(m[0],m[1])
+	  close,1 & openr,1,name+'.dat'
+	  a=assoc(1,fltarr(n[0],n[1]))
+	  im[li[0]:ui[0],li[1]:ui[1]]=a[iv]
 	end
+	tvscl,rebin(im,sz,sz),top=254
+  xyouts,0.5,0.95,align=0.5,/normal,'time ='+string(time,format='(f5.2)')
   wait,0.1
 end
 close,1

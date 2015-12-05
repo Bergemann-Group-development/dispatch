@@ -59,11 +59,11 @@ SUBROUTINE init(self, position, size)
     rewind (io%input)
     read (io%input, sedov_params)
     if (io%master) write (*,sedov_params)
-    self%w_gauss = w_gauss
-    self%p_gauss = p_gauss
-    self%amplitude = amplitude
-    self%nu = nu
   end if
+  self%w_gauss = w_gauss
+  self%p_gauss = p_gauss
+  self%amplitude = amplitude
+  self%nu = nu
   !-----------------------------------------------------------------------------
   ! Memory mapping; this is cheap, and may be done every time
   !-----------------------------------------------------------------------------
@@ -150,6 +150,10 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
     gas_pressure%f          = rho%f
     c_sound%f = 1.0
   else
+    if (minval(rho%f) < 0.0) then
+      print*,'density negative: id, loc=', self%id, minloc(rho%f)
+      call self%output
+    end if
     gas_pressure%f = rho%f**gas_gamma*exp(entropy_per_mass%f*(gas_gamma-1.0))
     c_sound%f = gas_gamma*(gas_pressure%f/rho%f)
     c_sound%f = sqrt(c_sound%f)

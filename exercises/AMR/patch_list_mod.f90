@@ -494,10 +494,7 @@ SUBROUTINE get_guardcells (self)
   patch => self%patch
   nguard=0
   do while (associated (nbor))
-    if (nbor%patch%is_relevant_for(patch)) then
-      call nbor%patch%get_guardcells_for (patch)
-      nguard = nguard + 1
-    endif
+    call nbor%patch%get_guardcells_for (patch)
     nbor => nbor%next
   end do
   if (io%verbose > 5) &
