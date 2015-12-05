@@ -2,6 +2,7 @@
  w_gauss=5.0
  p_gauss=1.0
  amplitude=1.0
+ u=1.0,0.4,0.1
 /
 &io_params
  !do_trace=t verbose=4   ! =1 for output file messages
@@ -18,8 +19,8 @@
 &timestep_params
  courant=0.15
  time_order=2
- end_time=0.1
- out_time=0.02
+ !end_time=0.040 out_time=0.002 dt_fixed=0.002
+ out_time=0.01 end_time=1.0 dt_fixed=0.002
 /
 &patch_params
  dims=16,16,1,5,1       ! nx, ny, nz, ntime, nvar

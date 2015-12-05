@@ -1,6 +1,17 @@
 !> =============================================================================
 !> $Id$
 !> Adams-Bashforth time stepping, with constant time step assumed (for now)
+!>
+!> We store results in nt memory slots, starting with number 1, and continuing
+!> with numbers 2..nt, and then looping back to 1.  The variables t(1:nt) and
+!> dt(1:nt) contain the times and time derivatives for the corresponding slots.
+!> to be able to always refer to an array with increasing time, we use the
+!> index mapping ii(1:nt), such that t(iit) and the mem(:,:,:,:,iit,:) refer
+!> to time slots in increasing order.  The (1:nt-1) slots are complete, and
+!> may be used freely, while the (nt) slot is the one where new values are to
+!> be stored.  The pde_t%update procedure thus writes new time derivatives
+!> there, and it is the task of this timestep procedure to update the values
+!> there, using the previous values and time derivatives.
 !> =============================================================================
 MODULE timestep_mod
   USE io_mod
@@ -83,7 +94,6 @@ SUBROUTINE update_timestep (self)
   integer:: it, jt, kt, lt, nt
   !......................................................................
   call trace_begin ('timestep_t%update', 1)
-  call self%patch_t%update                      ! rotate time slots
   call self%pde_t%update                        ! time derivative at it
   it = modulo(self%it,self%nt)+1                ! wrap to new time slot
   if (io%verbose>3) then
@@ -125,12 +135,12 @@ SUBROUTINE update_timestep (self)
         maxval(self%mem(:,:,:,:,lt,1))
     end if
   end do
-  if (io%verbose>3) then
-    print*, 'timestep_t%update, t =', self%time, self%dtime
-    print*, 'timestep_t%update, d =', self%mem(1:5,1,1,1,1,1)
+  if (io%verbose>2) then
+    print'(2(a,f9.4,3x),3(a,i5,3x))', 'timestep_t%update: t=', self%time, &
+      'dt=', self%dtime, 'it=', self%it, 'new=', self%new, 'id=', self%id
   end if
   self%time = self%time + self%dtime            ! update self time
-  self%t(it) = self%time                        ! update slot time
+  call self%patch_t%update                      ! rotate time slots
   call trace_end
 !........................................................................
 END SUBROUTINE update_timestep

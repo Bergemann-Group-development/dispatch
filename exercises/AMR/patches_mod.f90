@@ -14,7 +14,7 @@ MODULE patches_mod
     integer:: id = 0
     integer:: nt = ntime, nv = 5
     integer:: n(3), ng(3)=2, gn(3), li(3), ui(3)
-    integer:: it=1, new=1
+    integer:: it=1, new=2
     integer:: i, j, k
     integer:: status
     integer, pointer:: iit(:)
@@ -135,7 +135,6 @@ SUBROUTINE update_patch (self)
   class(patch_t):: self
   !.............................................................................
   call trace_begin ('patch_t%update', 3)
-  call self%output
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = self%time                          ! initial time
@@ -163,13 +162,14 @@ END SUBROUTINE update_patch
 SUBROUTINE get_guardcells_for (self, patch)
   class(patch_t):: self
   class(patch_t), pointer:: patch
-  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3)
+  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), n
   real:: f(3), pos(3)
   !.............................................................................
   if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','index:self,patch:', &
     self%id,self%position,patch%id,patch%position, self%li, self%ui
 associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
   it = patch%it
+  n = 0
   do iz=1,patch%gn(3)
   do iy=1,patch%gn(2)
   do ix=1,patch%gn(1)
@@ -178,10 +178,20 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
       pos = patch%myposition(ii)
       j0 = self%index (patch%myposition(ii), f)
       if (all((j0+f >= self%li-0.1) .and. (j0+f <= self%ui+0.1) .or. (self%n==1))) then
-        if (io%verbose>3) print'(a,2(i4,2x,3i4,2x),1p,2(3f9.4,2x),2x,2f11.6," ****")', &
+        if (io%verbose>3.and.patch%id==10) print'(a,2(i4,2x,3i4,2x),1p,2(3f9.4,2x),2x,2f11.6," ****")', &
           'index:ii,j0,f:', patch%id, ii,  self%id, j0, f, pos, self%t(it)-patch%t(it)
         j1 = j0+1
         where (self%n==1) j1 = j0
+        where (j1 > self%ui)
+          j0 = j0-1
+          j1 = j1-1
+          f  = f+1.0
+        end where
+        where (j0 < self%li)
+          j0 = j0+1
+          j1 = j1+1
+          f  = f-1.0
+        end where
         do iv=1,self%nv
           target(ix,iy,iz,iv,it,1) = &
             (1.-f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j0(3),iv,it,1)    &
@@ -192,12 +202,16 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
                                    + f(1) *source(j1(1),j0(2),j1(3),iv,it,1)) + &
             (   f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j1(3),iv,it,1)    &
                                    + f(1) *source(j1(1),j1(2),j1(3),iv,it,1))
-          end do
+          n = n+1
+      end do
       end if
     end if
   end do
   end do
   end do
+  if (patch%t(patch%it)/=self%t(patch%it)) &
+    print'(2(a,i4,f9.4,4x),2i3,2x,5i3,7f8.3)','ERROR: patch:', patch%id, patch%t(patch%it), &
+      'self:', self%id, self%t(self%it), patch%it, patch%new, patch%iit, patch%t
 end associate
 END SUBROUTINE get_guardcells_for
 !> =============================================================================
@@ -323,7 +337,7 @@ END SUBROUTINE troels_get_guardcells_for
 SUBROUTINE output (self)
   class(patch_t):: self
   character(len=32) filename
-  integer:: iv
+  integer:: iv, li(3)=0, ui(3)=0
   !.............................................................................
   if (self%time < self%out_next) return
   call trace_begin ('patch_t%output')
@@ -337,13 +351,18 @@ SUBROUTINE output (self)
   if (io%verbose>=0) &
     print'(a,3x,"time:",g12.3)', 'output to '//trim(filename), self%time
   open (3, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  write (3, *) self%n, self%time
+  where (self%size > 0.0)
+    li = (self%position+0.5*(self%box-self%size))/self%ds
+    ui = (self%position+0.5*(self%box+self%size))/self%ds - 1.0
+  end where
+  write (3,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
+  write (3,'(4(3i7,2x))') int(self%box/self%ds+0.5), self%n, li, ui
   close (3)
   !-----------------------------------------------------------------------------
   ! Write a binary file with the data cube
   !-----------------------------------------------------------------------------
   open (3, file=trim(filename)//'.dat', form='unformatted', access='direct', &
-    status='unknown', recl =sizeof(self%mem(1,1,1,1,1,1))*product(self%n))
+    status='unknown', recl =sizeof(self%mem(1,1,1,1,1,1))*product(self%gn))
 associate (l=>self%li, u=>self%ui)
   do iv=1,self%nv
     !print*,trim(filename),iv, &

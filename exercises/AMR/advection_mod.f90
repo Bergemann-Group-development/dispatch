@@ -15,7 +15,7 @@ MODULE pde_mod
   integer, parameter:: i_d=1
   type, public, extends(patch_t):: pde_t
     type(scalar_t):: d, dddt
-    real:: u(3)=(/1.0,0.,0.1/)
+    real:: u(3)
     real:: gamma=5./3.
     real:: w_gauss
     real:: p_gauss
@@ -51,8 +51,9 @@ SUBROUTINE init (self, position, size)
   integer:: i, j
   real:: x, y
   logical:: first_time = .true.
+  real:: u(3)=(/1.0,0.4,0.0/)
   real:: w_gauss=5.0, p_gauss=1.0, amplitude=1.0
-  namelist /advection_params/ w_gauss, p_gauss, amplitude
+  namelist /advection_params/ w_gauss, p_gauss, amplitude, u
   !.............................................................................
   call trace_begin ('hd_mod:pde_t%init', 2)
   if (first_time) then
@@ -64,6 +65,7 @@ SUBROUTINE init (self, position, size)
   self%w_gauss = w_gauss
   self%p_gauss = p_gauss
   self%amplitude = amplitude
+  self%u = u
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Gaussian top hat.  Only at time=0.0
   !-----------------------------------------------------------------------------
@@ -116,8 +118,10 @@ SUBROUTINE update_pde (self)
   self%dddt%f => self%mem(:,:,:,1,self%it,2)
   associate (d=>self%d,u=>self%u,dddt=>self%dddt)
     p = u
-    p = p*d
-    dddt%f = -deriv%dx(p%x,self%gn)-deriv%dy(p%y,self%gn)
+    p%x = p%x*self%mem(:,:,:,1,self%it,1)
+    p%y = p%y*self%mem(:,:,:,1,self%it,1)
+    p%z = p%z*self%mem(:,:,:,1,self%it,1)
+    self%mem(:,:,:,1,self%it,2) = -deriv%dx(p%x,self%gn)-deriv%dy(p%y,self%gn)
     !call minus_div (dddt, p)
     if (io%verbose>2) &
     print'(1x,a,1p,i4,4(2x,2e10.2))', 'update_pde', &

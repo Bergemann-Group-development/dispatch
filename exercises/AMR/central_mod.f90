@@ -50,7 +50,9 @@ FUNCTION dx (self, f, n)
   else
     m = n(1)
     c = 0.5/self%ds(1)
-    dx(2:m-1,:,:) = (f(3:m,:,:)-f(1:m-2,:,:))*c  ! this part is local
+    dx(3:m-2,:,:) = (f(4:m-1,:,:)-f(2:m-3,:,:))*c  ! this part is local
+    dx(  1:2,:,:) = 0.0
+    dx(m-1:m,:,:) = 0.0
   end if
   call trace_end
 END FUNCTION dx
@@ -68,6 +70,8 @@ FUNCTION dy (self, f, n)
     m = n(2)
     c = 0.5/self%ds(2)
     dy(:,2:m-1,:) = (f(:,3:m,:)-f(:,1:m-2,:))*c  ! this part is local
+    dy(:,1,:) = 0.0
+    dy(:,m,:) = 0.0
   end if
   call trace_end
 END FUNCTION dy

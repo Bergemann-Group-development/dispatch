@@ -4,8 +4,8 @@
 OPTS = optimized
 
 # Default target
-#PDE = advection
-PDE = sedov
+PDE = advection
+#PDE = sedov
 default: $(PDE).x
 
 # Common configuration
