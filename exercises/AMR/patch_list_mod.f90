@@ -195,9 +195,10 @@ END SUBROUTINE remove_patch
 !> =============================================================================
 SUBROUTINE split (self, this)
   class(patch_list_t):: self
+  class(link_t), pointer:: this
   integer:: nsplit(3)
   type(timestep_t), pointer:: patch
-  type(link_t), pointer:: this, link, tail, new_patches
+  type(link_t), pointer:: link, tail, new_patches
   integer dir, i, ix, iy, iz
   real:: pos(3), position(3)
   !.............................................................................
@@ -448,7 +449,8 @@ END SUBROUTINE check_ready
 !> =============================================================================
 SUBROUTINE queue_by_time (self, this)
   class(patch_list_t):: self
-  type(link_t), pointer:: this, next, prev
+  class(link_t), pointer:: this
+  type(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%queue_by_time '//self%name)
   nullify (this%next_time)
