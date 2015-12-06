@@ -17,13 +17,10 @@ MODULE pde_mod
     real:: w_gauss
     real:: p_gauss
     real:: amplitude
-    type(laplace_t), pointer:: laplace
   contains
     procedure:: init
-    procedure:: poisson
-    procedure:: laplace
+    procedure:: solve
   end type
-  type(laplace_t):: lap
 CONTAINS
 
 !> =============================================================================
@@ -69,14 +66,15 @@ SUBROUTINE init (self)
     do k=1,self%gn(3)
     do j=1,self%gn(2)
     do i=1,self%gn(1)
-      x = (i-(self%gn(1)+1)*0.5) + self%position(1)/self%ds(1)
-      y = (j-(self%gn(2)+1)*0.5) + self%position(2)/self%ds(2)
-      y = (j-(self%gn(3)+1)*0.5) + self%position(3)/self%ds(3)
+      x = (i-(self%gn(1)+1)*0.5)*self%ds(1) + self%position(1)
+      y = (j-(self%gn(2)+1)*0.5)*self%ds(2) + self%position(2)
+      z = (k-(self%gn(3)+1)*0.5)*self%ds(3) + self%position(3)
       self%d%f(i,j,k) = &
-        exp(self%amplitude*exp(-sqrt(x**2+y**2)/self%w_gauss**self%p_gauss))
+        exp(self%amplitude*exp(-(sqrt(x**2+y**2+z**2)/self%w_gauss)**self%p_gauss))
     end do
     end do
     end do
+    print*,self%it,maxval(self%d%f)
   end if
   call trace_end
 END SUBROUTINE init
@@ -85,35 +83,13 @@ END SUBROUTINE init
 !> Compute the time derivatives, using the symbolic names mapped into task%mem,
 !> and an associate block to make the code maximally readable
 !> =============================================================================
-SUBROUTINE poisson (self)
+SUBROUTINE solve (self)
   class(pde_t):: self
   !.............................................................................
   call trace_begin ('poisson_mod:pde_t%update', 2)
   !...
   call trace_end
-END SUBROUTINE poisson
-
-!> =============================================================================
-!> =============================================================================
-FUNCTION laplace (self) RESULT(out)
-  class(pde_t):: self
-  class(scalar_t):: out
-  !.............................................................................
-  call trace_begin ('poisson_mod:pde_t%laplace', 2)
-  !out = lap%laplace_2nd()
-  call trace_end
-END FUNCTION laplace
-
-!> =============================================================================
-!> =============================================================================
-FUNCTION residue (self) RESULT(out)
-  class(pde_t):: self
-  class(scalar_t):: out
-  !.............................................................................
-  call trace_begin ('poisson_mod:pde_t%residue', 2)
-  !out = self%laplace (self%phi%f) - self%d%f
-  call trace_end
-END FUNCTION residue
+END SUBROUTINE solve
 
 !> =============================================================================
 END MODULE pde_mod

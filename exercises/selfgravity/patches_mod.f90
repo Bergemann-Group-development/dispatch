@@ -357,7 +357,7 @@ SUBROUTINE output (self)
 associate (l=>self%li, u=>self%ui)
   do iv=1,self%nv
     if (io%verbose>1) &
-      print*,trim(filename),iv, &
+      print*,trim(filename),self%it,iv, &
               minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)), &
               maxval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1))
     write (3,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)

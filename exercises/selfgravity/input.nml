@@ -1,11 +1,11 @@
 &poisson_params
- w_gauss=0.10           ! Gaussian width
- p_gauss=8              ! exp(-(r/w_gauss)**p_gauss)
- amplitude=1.0          ! density max = exp(amplitude)
+ w_gauss=0.20           ! Gaussian width
+ p_gauss=2              ! exp(-(r/w_gauss)**p_gauss)
+ amplitude=0.5          ! density max = exp(amplitude)
 /
 &io_params
 !do_trace=t verbose=4   ! =1 for output file messages
- do_trace=f verbose=0   ! =1 for output file messages
+ do_trace=f verbose=2   ! =1 for output file messages
 /
 &patch_params
  dims=16,16,16          ! nx, ny, nz

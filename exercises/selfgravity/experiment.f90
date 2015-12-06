@@ -9,7 +9,7 @@ PROGRAM experiment
   type(pde_t):: poisson
   !.............................................................................
   call poisson%init
-  call poisson%update
+  call poisson%solve
   call poisson%output
 !> =============================================================================
 END PROGRAM experiment
