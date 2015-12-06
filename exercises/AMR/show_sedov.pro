@@ -1,18 +1,18 @@
 
 sz=512
-window,xsize=sz,ysize=sz
+ws,xsize=sz,ysize=sz
 device,decompose=0
 loadct,39
-nout=10
-iv=1
+nout=61
+iv=0
 im=0
 
 for iout=0,nout-1 do begin
 	for id=1,1000 do begin
 	  name='data/sedov_'+string(id,format='(i3.3)')+'_'+string(iout,format='(i4.4)')
-	  print,name
 	  close,1 & openr,1,name+'.txt',error=error
 	  if error ne 0 then break
+	  print,name
 	  time=0.0 & readf,1,time
 	  m=lonarr(3) & n=m & li=m & ui=m & readf,1,m,n,li,ui
 	  if n_elements(im) le 1 then im=fltarr(m[0],m[1])
@@ -24,5 +24,5 @@ for iout=0,nout-1 do begin
   xyouts,0.5,0.95,align=0.5,/normal,'time ='+string(time,format='(f5.2)')
   wait,0.1
 end
-close,1
+;close,1
 END

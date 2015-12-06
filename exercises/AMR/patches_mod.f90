@@ -362,12 +362,12 @@ SUBROUTINE output (self)
   ! Write a binary file with the data cube
   !-----------------------------------------------------------------------------
   open (3, file=trim(filename)//'.dat', form='unformatted', access='direct', &
-    status='unknown', recl =sizeof(self%mem(1,1,1,1,1,1))*product(self%gn))
+    status='unknown', recl =sizeof(self%mem(1,1,1,1,1,1))*product(self%n))
 associate (l=>self%li, u=>self%ui)
   do iv=1,self%nv
-    !print*,trim(filename),iv, &
-    !  minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)), &
-    !  maxval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1))
+    print*,trim(filename),iv, &
+              minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)), &
+              maxval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1))
     write (3,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
   end do
 end associate
