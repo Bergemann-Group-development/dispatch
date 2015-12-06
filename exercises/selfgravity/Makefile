@@ -25,5 +25,6 @@ OBJ = \
 
 # Dependencies
 $(PDE)_mod.o            : io_mod.o trace_mod.o patches_mod.o scalar_mod.o
+patches_mod.o           : trace_mod.o io_mod.o bits_mod.o
 
 $(EXEC): $(OBJ)

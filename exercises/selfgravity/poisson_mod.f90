@@ -7,6 +7,7 @@ MODULE pde_mod
   USE trace_mod
   USE patches_mod
   USE scalar_mod
+  USE laplace_mod
   implicit none
   private
   integer, parameter:: i_d=1, i_phi=2
@@ -16,10 +17,13 @@ MODULE pde_mod
     real:: w_gauss
     real:: p_gauss
     real:: amplitude
+    type(laplace_t), pointer:: laplace
   contains
     procedure:: init
     procedure:: poisson
+    procedure:: laplace
   end type
+  type(laplace_t):: lap
 CONTAINS
 
 !> =============================================================================
@@ -88,6 +92,28 @@ SUBROUTINE poisson (self)
   !...
   call trace_end
 END SUBROUTINE poisson
+
+!> =============================================================================
+!> =============================================================================
+FUNCTION laplace (self) RESULT(out)
+  class(pde_t):: self
+  class(scalar_t):: out
+  !.............................................................................
+  call trace_begin ('poisson_mod:pde_t%laplace', 2)
+  !out = lap%laplace_2nd()
+  call trace_end
+END FUNCTION laplace
+
+!> =============================================================================
+!> =============================================================================
+FUNCTION residue (self) RESULT(out)
+  class(pde_t):: self
+  class(scalar_t):: out
+  !.............................................................................
+  call trace_begin ('poisson_mod:pde_t%residue', 2)
+  !out = self%laplace (self%phi%f) - self%d%f
+  call trace_end
+END FUNCTION residue
 
 !> =============================================================================
 END MODULE pde_mod

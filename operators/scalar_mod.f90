@@ -4,8 +4,8 @@
 MODULE scalar_mod
   USE io_mod
   USE trace_mod
-  USE central_mod
-  USE derivatives_mod
+  !USE central_mod
+  !USE derivatives_mod
   implicit none
   public
   type, public:: scalar_t
@@ -15,7 +15,7 @@ MODULE scalar_mod
     integer:: id
     real:: ds(3)
     character(len=32):: name = ''
-    class(central_t), pointer:: d => null()
+    !class(central_t), pointer:: d => null()
   contains
     procedure:: init => init_scalar
     procedure:: allocate => allocate_scalar
