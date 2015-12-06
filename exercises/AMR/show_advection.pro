@@ -5,6 +5,7 @@ device,decompose=0
 loadct,39
 nout=50
 iv=0
+im=0
 
 for iout=0,nout-1 do begin
 	for id=1,1000 do begin
@@ -13,7 +14,7 @@ for iout=0,nout-1 do begin
 	  if error ne 0 then break
 	  time=0.0 & readf,1,time
 	  m=lonarr(3) & n=m & li=m & ui=m & readf,1,m,n,li,ui
-	  if n_elements(im) eq 0 then im=fltarr(m[0],m[1])
+	  if n_elements(im) le 1 then im=fltarr(m[0],m[1])
 	  close,1 & openr,1,name+'.dat'
 	  a=assoc(1,fltarr(n[0],n[1]))
 	  im[li[0]:ui[0],li[1]:ui[1]]=a[iv]
