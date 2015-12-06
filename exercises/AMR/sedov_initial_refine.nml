@@ -11,7 +11,7 @@
  refine_from=0.0
  refine_until=0.0
  max_change=0.3
- levelmax=8
+ levelmax=10
 /
 &io_params
  !do_trace=t verbose=3   ! =1 for output file messages
@@ -27,7 +27,7 @@
  courant=0.10
  time_order=3
 !end_time=0.300   out_time=0.004   dt_fixed=0.00002
- end_time=0.00003 out_time=0.00001 dt_fixed=0.00002
+ end_time=0.00005 out_time=0.00001 dt_fixed=0.00002
 /
 &patch_params
  !dims=256,256,1,5,5       ! nx, ny, nz, ntime, nvar

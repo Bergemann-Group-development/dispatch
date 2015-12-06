@@ -50,6 +50,8 @@ MODULE patches_mod
     procedure:: is_relevant_for
     procedure:: get_guardcells_for
     procedure:: myposition
+    procedure:: fmaxval         ! interior max value
+    procedure:: fminval         ! interior min value
   end type
   real, public:: end_time=1.0, out_time=0.1
   character(len=64), public, target:: experimentname
@@ -341,7 +343,7 @@ SUBROUTINE output (self)
   !.............................................................................
   if (self%time < self%out_next) return
   call trace_begin ('patch_t%output')
-  do while (self%out_next < self%time)
+  do while (self%out_next <= self%time)
     self%out_next = self%out_next + self%out_time
   end do
   !-----------------------------------------------------------------------------
@@ -351,7 +353,7 @@ SUBROUTINE output (self)
   write (filename,'(a,i3.3,"_",i4.4)') &
     'data/'//trim(self%experiment_name)//'_', self%id, self%iout
   if (io%verbose>=0) &
-    print'(a,3x,"time:",g12.3)', 'patches_t%output: file= '//trim(filename)
+    print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%time
   open (3, file=trim(filename)//'.txt', form='formatted', status='unknown')
   where (self%size > 0.0)
     li = (self%position+0.5*(self%box-self%size))/self%ds
@@ -514,5 +516,19 @@ LOGICAL FUNCTION ahead_of (self, patch)
   !.............................................................................
   ahead_of = self%time > patch%time + patch%grace
 !  print*,'ahead_of: ', self%time, patch%time, patch%grace, ahead_of
+END FUNCTION
+!> =============================================================================
+FUNCTION fmaxval (self, f)
+  real:: fmaxval
+  class(patch_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: f
+  fmaxval = maxval(f(self%li(1):self%ui(1),self%li(2):self%ui(2),self%li(3):self%ui(3)))
+END FUNCTION
+!> =============================================================================
+FUNCTION fminval (self, f)
+  real:: fminval
+  class(patch_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: f
+  fminval = minval(f(self%li(1):self%ui(1),self%li(2):self%ui(2),self%li(3):self%ui(3)))
 END FUNCTION
 END MODULE

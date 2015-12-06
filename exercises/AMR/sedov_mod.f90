@@ -185,7 +185,7 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   velocity%x  = p%x/rho_face%x
   velocity%y  = p%y/rho_face%y
   velocity%z  = p%y/rho_face%z
-  self%u_max = maxval(sqrt(velocity%x**2+velocity%y**2+velocity%z**2)+c_sound%f)
+  self%u_max = self%fmaxval(sqrt(velocity%x**2+velocity%y**2+velocity%z**2)+c_sound%f)
   !-----------------------------------------------------------------------------
   ! Diffusion added for stability
   !-----------------------------------------------------------------------------
@@ -204,7 +204,7 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   mass_flux%y        = p%y + mass_diffusion%y
   mass_flux%z        = p%z + mass_diffusion%z
   dd_dt%f = - o%ddxup(mass_flux%x)- o%ddyup(mass_flux%y)- o%ddzup(mass_flux%z)
-  self%u_max = max(self%u_max, maxval(dd_dt%f/rho%f)/ds(1))
+  self%u_max = max(self%u_max, ds(1)*self%fmaxval(abs(dd_dt%f/rho%f)))
   !-----------------------------------------------------------------------------
   ! Evolution of linear momenta = equation-of-motion
   !-----------------------------------------------------------------------------
