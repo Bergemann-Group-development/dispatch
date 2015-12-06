@@ -100,10 +100,10 @@ SUBROUTINE update_timestep (self)
     print*, 'timestep_t%update, id =', self%id, self%it, it
     print*, 'timestep_t%update, d =', self%mem(1:5,1,1,1,1,1)
   end if
-  if (self%dt_fixed>0.) then
-    self%courant = self%dt_fixed*self%u_max/self%ds(1)
+  if (self%dt_fixed > 0.0) then
     self%dtime = self%dt_fixed
-  else if (self%u_fixed>0.) then
+    self%courant = self%dtime*self%u_max/self%ds(1)
+  else if (self%u_fixed > 0.0) then
     self%dtime = self%courant*self%ds(1)/self%u_fixed
   else
     self%dtime = self%courant*self%ds(1)/self%u_max
@@ -135,14 +135,24 @@ SUBROUTINE update_timestep (self)
         maxval(self%mem(:,:,:,:,lt,1))
     end if
   end do
-  if (io%verbose>2) then
+  self%time = self%time + self%dtime            ! update self time
+  call self%patch_t%update                      ! rotate time slots
+  !-----------------------------------------------------------------------------
+  ! Print time step info?
+  !-----------------------------------------------------------------------------
+  if (io%verbose==1) then
+    if (self%dt_fixed > 0.0) then
+      print '(i8,i8,i3,f10.6,2x,f7.3,i6,i6,2x,a)', &
+        self%id, self%istep, self%it, self%time, self%courant, self%status
+    else
+      print '(i8,i8,i3,f10.6,2x,f7.3,i6,i6,2x,a)', &
+        self%id, self%istep, self%it, self%time, self%dtime, self%status
+    end if
+  else if (io%verbose>1) then
     print'(2(a,f9.4,3x),3(a,i5,3x))', 'timestep_t%update: t=', self%time, &
       'dt=', self%dtime, 'it=', self%it, 'new=', self%new, 'id=', self%id
   end if
-  self%time = self%time + self%dtime            ! update self time
-  call self%patch_t%update                      ! rotate time slots
   call trace_end
-!........................................................................
 END SUBROUTINE update_timestep
-
+!-------------------------------------------------------------------------------
 END MODULE timestep_mod

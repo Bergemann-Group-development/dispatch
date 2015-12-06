@@ -138,6 +138,7 @@ SUBROUTINE update (self)
     self%nq = self%nq-1
     call head%get_guardcells
     patch => head%patch                                 ! head patch
+    call patch%output                                   ! check output
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue
       if (patch%level > refine%levelmax) then
@@ -159,9 +160,6 @@ SUBROUTINE update (self)
     print*,'stopping: no more tasks', self%nq, self%n
     stop
   end if
-  if (io%verbose>0) &
-  print '(i8,i8,i3,f10.6,2x,f7.3,i6,i6,2x,a)', patch%id, patch%istep, patch%it, patch%time, patch%courant, &
-    patch%status, self%nq
   call trace_end
 END SUBROUTINE update
 
@@ -274,7 +272,7 @@ SUBROUTINE init_nbor_by_overlap (self, link1)
   link2 => self%head
   if (io%verbose>3) print*,' id, size, position, distance:'
   do while (associated(link2))
-    if (.not.associated(link1,link2)) then
+    if (.not.associated(link1,link2).or.all(link1%patch%size==link1%patch%box)) then
 !      if (io%verbose>3) &
 !        print'(2(i5,3(3f8.4,2x)),l3)', &
 !          link1%patch%id, link1%patch%size, link1%patch%position, link1%patch%distance(link2%patch), &
