@@ -1,36 +1,32 @@
 &sedov_params
- w_gauss=6
+ w_gauss=0.005
  p_gauss=8
  gamma=1.666667
- amplitude=2.3
- amplitude_rho=0.0
+ amplitude=0.0
+ amplitude_rho=2.0
  nu=0.6,2.0
 /
 &refine_params
- msplit=2
- max_change=999
- levelmax=8
+ msplit=2               ! split into 2x2
+ max_change=0.1         ! log value
+ levelmax=10            ! continue up to resolution = 2**levelmax
+ refine_from=0.0        ! start refining at t=0.0
+ refine_until=100       ! continue all the time
 /
 &io_params
- !do_trace=t verbose=3   ! =1 for output file messages
- do_trace=f verbose=1   ! =1 for output file messages
- !do_trace=f verbose=4   ! =1 for output file messages
+ do_trace=t verbose=4   ! =1 for output file messages
+!do_trace=f verbose=1   ! =1 for output file messages
 /
 &box_params
  size=1,1,0             ! box size
- dims=1,1,1             ! number of patches
- !dims=4,4,1             ! number of patches
-/
-&refine_params
- msplit=2               ! split into 2 in each dimension
+ dims=8,8,1             ! number of patches
 /
 &timestep_params
  courant=0.10
  time_order=3
- end_time=0.3 out_time=0.005 dt_fixed=0.00002
- !end_time=0.050 out_time=0.002 dt_fixed=0.0002
+ end_time=0.00015 out_time=0.00005 dt_fixed=0.00001     ! production runs
+!end_time=0.00005 out_time=0.00002 dt_fixed=0.00001     ! debugs and trials
 /
 &patch_params
- dims=256,256,1,5,5       ! nx, ny, nz, ntime, nvar
- !dims=16,16,1,5,5       ! nx, ny, nz, ntime, nvar
+ dims=16,16,1,5,5       ! nx, ny, nz, ntime, nvar
 /

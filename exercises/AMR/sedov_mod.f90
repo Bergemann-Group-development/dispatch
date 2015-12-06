@@ -81,12 +81,11 @@ SUBROUTINE init(self, position, size)
   self%dpdt%y => self%mem(:,:,:,i_py,self%it,2)
   self%dpdt%z => self%mem(:,:,:,i_pz,self%it,2)
   if (.not.associated(o)) allocate (o)
-  print*,self%gn,self%size,self%n
   call o%init (self%gn, self%size/self%n)
-  !-----------------------------------------------------------------------------
-  ! Physical initial conditions: Gaussian top hat in entropy.  Only at time=0.0
-  !-----------------------------------------------------------------------------
   self%nv = 5
+  !-----------------------------------------------------------------------------
+  ! Physical initial conditions: Gaussian top hat in entropy if at time=0
+  !-----------------------------------------------------------------------------
   if (self%time==0.0) then
     self%d%f = 1.0
     self%s%f = 0.0

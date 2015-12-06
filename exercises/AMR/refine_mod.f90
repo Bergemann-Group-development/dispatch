@@ -28,14 +28,14 @@ MODULE refine_mod
     procedure:: check_velocity
     procedure:: check_magnetic_field
   end type
-  integer, public:: msplit=0
+  integer, public:: msplit=2                   ! shared with patch_list_mod
   real, public:: max_change=100
   type(refine_t), public:: refine
 CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(refine_t):: self
-  real:: refine_from = 0.0, refine_until = 0.0
+  real:: refine_from = 0.0, refine_until = 1e9
   integer:: levelmax = 100
   logical:: first_time = .true.
   namelist /refine_params/ max_change, msplit, refine_from, refine_until, levelmax

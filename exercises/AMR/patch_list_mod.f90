@@ -21,7 +21,7 @@ MODULE patch_list_mod
     type(timestep_t), pointer:: patch => null()
     integer:: n_nbors
   contains
-    procedure:: get_guardcells
+    procedure:: download
   end type
   !.............................................................................
   type, public:: patch_list_t
@@ -43,7 +43,9 @@ MODULE patch_list_mod
     procedure:: check_ready
     procedure:: check_all
     procedure:: queue_by_time
+    procedure:: add_by_quality
     procedure:: output
+    procedure:: check_queue
     procedure:: print
   end type
   type(timestep_t), pointer, dimension(:,:,:):: patches
@@ -111,7 +113,6 @@ SUBROUTINE init_cartesian (self)
   end do
   call self%init_nbors_by_overlap
   self%tail => link
-  call self%print ('after init_cartesian')
   call trace_end
 END SUBROUTINE init_cartesian
 
@@ -132,12 +133,15 @@ SUBROUTINE update (self)
     call self%check_all
     !print *,'WARNING: check_all (should not be needed), found', self%nq, n1
   end if
+  call self%check_queue
   head => self%queue                                    ! queue start
   if (associated(head)) then
     self%queue => self%queue%next_time                  ! update the link
     self%nq = self%nq-1
-    call head%get_guardcells
+    call head%download (guardcells=.true.)              ! download guard cells
     patch => head%patch                                 ! head patch
+    print*,'patch_list_t%update: removed from queue =', &
+      patch%id, ' new head=', self%queue%patch%id
     call patch%output                                   ! check output
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue
@@ -149,7 +153,9 @@ SUBROUTINE update (self)
     else
       call patch%update                                 ! update the patch
       call patch%output                                 ! check output
+      print*,'head patch(1)=', self%queue%patch%id
       call self%check_nbors (head)                      ! any nbor ready?
+      print*,'head patch(2)=', self%queue%patch%id
       if (patch%time > patch%end_time) then             ! finished:
         call self%remove_patch (patch)                  ! remove from self
       else                                              ! not finished:
@@ -160,6 +166,7 @@ SUBROUTINE update (self)
     print*,'stopping: no more tasks', self%nq, self%n
     stop
   end if
+  print*,'head patch(3)=', self%queue%patch%id
   call trace_end
 END SUBROUTINE update
 
@@ -176,14 +183,19 @@ SUBROUTINE remove_patch (self, patch)
     if (link%patch%id == patch%id) then
       if (associated(prev)) then
         prev%next => link%next
+        print*,'removed patch', patch%id, '  after', prev%patch%id
       else
         self%head => link%next
+        print*,'removed patch at head', patch%id
       end if
       self%n = self%n - 1
+      call trace_end
+      return
     end if
     prev => link
     link => link%next
   end do
+  print*,'ERROR: failed to remove from task list, patch', patch%id
   call trace_end
 END SUBROUTINE remove_patch
 
@@ -194,10 +206,10 @@ END SUBROUTINE remove_patch
 !> =============================================================================
 SUBROUTINE split (self, this)
   class(patch_list_t):: self
-  class(link_t), pointer:: this
+  class(link_t), pointer:: this, link
   integer:: nsplit(3)
   type(timestep_t), pointer:: patch
-  type(link_t), pointer:: link, tail, new_patches
+  type(link_t), pointer:: tail, new_patches
   integer dir, i, ix, iy, iz
   real:: pos(3)
   !.............................................................................
@@ -222,9 +234,32 @@ SUBROUTINE split (self, this)
         nullify (patch%mem)
         patch%size = this%patch%size/nsplit
         patch%position = this%patch%position + pos*patch%size
-        call patch%init (patch%position, patch%size)
         patch%out_next = patch%time
         patch%iout = this%patch%iout
+        !------------------------------------------------------------------------
+        ! Append links to the new patches as the list tail, and insert it in queue
+        !------------------------------------------------------------------------
+        allocate (link)
+        link%patch => patch
+        call self%add_by_quality (link)
+        !------------------------------------------------------------------------
+        ! If we are still at time=0.0 (refining on initial conditions), use the
+        ! generic init to get initial values
+        !------------------------------------------------------------------------
+        if (patch%time==0.0) then
+          call patch%init (patch%position, patch%size)
+        !------------------------------------------------------------------------
+        ! Otherwise, download values from neighbors (including the parent)
+        !------------------------------------------------------------------------
+        else
+          call link%download
+        end if
+        !------------------------------------------------------------------------
+        ! Insert the new patch at the head of the queue
+        !------------------------------------------------------------------------
+        link%next_time => self%queue
+        self%queue => link
+        self%nq = self%nq+1
         if (io%verbose>0) then
           print 1,'task_list_t%split:  patch, iout, time, size, origin =', &
             patch%id, patch%iout, patch%time, patch%size, patch%origin
@@ -232,20 +267,10 @@ SUBROUTINE split (self, this)
           print 1,'task_list_t%split: parent, iout, time, size, origin =', &
             this%patch%id, this%patch%iout, this%patch%time, this%patch%size, this%patch%origin
         end if
-        !------------------------------------------------------------------------
-        ! Append links to the new patches as the list tail, and insert it in queue
-        !------------------------------------------------------------------------
-        allocate (link)
-        link%patch => patch
-        link%parent => this
-        self%tail%next => link
-        self%tail => link
-        link%next_time => self%queue
-        self%queue => link
-        self%nq = self%nq+1
       end do
     end do
   end do
+  call self%check_queue
   new_patches => new_patches%next
   call this%patch%set(bits%not_leaf)
   call trace_end
@@ -493,11 +518,55 @@ SUBROUTINE queue_by_time (self, this)
 END SUBROUTINE queue_by_time
 
 !> =============================================================================
+!> Add a link node into the patch list, in increasing quality order
+!> =============================================================================
+SUBROUTINE add_by_quality (self, this)
+  class(patch_list_t):: self
+  class(link_t), pointer:: this
+  type(link_t), pointer:: next, prev
+  !.............................................................................
+  call trace_begin ('list_t%add_by_quality '//self%name)
+  nullify (prev)
+  next => self%head
+  do while (associated(next))
+    this%next => next
+    if (next%patch%level >= this%patch%level) then
+      !-------------------------------------------------------------------------
+      ! Found a patch we should be ahead of, so insert here
+      !-------------------------------------------------------------------------
+      if (associated(prev)) then
+        prev%next => this
+      else
+        self%head => this
+      end if
+      self%n = self%n+1
+      call trace_end
+      return
+    end if
+    prev => next
+    next => next%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! This patch has the highest quality, so append it
+  !-----------------------------------------------------------------------------
+  if (associated(prev)) then
+    prev%next => this
+    nullify (this%next)
+  else
+    self%head => this
+  end if
+  self%tail => this
+  self%n = self%n+1
+  call trace_end
+END SUBROUTINE add_by_quality
+
+!> =============================================================================
 !> Run through neighbor list and pick up guard cells
 !> =============================================================================
-SUBROUTINE get_guardcells (self)
+SUBROUTINE download (self, guardcells)
   implicit none
   class (link_t):: self
+  logical, optional:: guardcells
   class (link_t),  pointer:: nbor
   class (patch_t), pointer:: patch
   integer :: nguard
@@ -507,13 +576,13 @@ SUBROUTINE get_guardcells (self)
   patch => self%patch
   nguard=0
   do while (associated (nbor))
-    call nbor%patch%get_guardcells_for (patch)
+    call nbor%patch%download_to (patch, guardcells)
     nbor => nbor%next
   end do
   if (io%verbose > 5) &
     print *, 'get_guardcells: Number of neighbors with guard cells:', nguard
   call trace_end
-END SUBROUTINE get_guardcells
+END SUBROUTINE download
 
 !> =============================================================================
 !> Print a table with patch id, positions, and all neighbors
@@ -528,6 +597,29 @@ SUBROUTINE output (self)
     link => link%next
   end do
 END SUBROUTINE output
+
+!> =============================================================================
+!> Print a table with patch id, positions, and all neighbors
+!> =============================================================================
+SUBROUTINE check_queue (self)
+  class(patch_list_t):: self
+  class(link_t), pointer:: link
+  real:: previous
+  integer:: nq
+  !.............................................................................
+  link => self%queue
+  previous = -1.0
+  nq = 0
+  do while (associated(link))
+    if (link%patch%time < previous) &
+      print *,'ERROR: queue out of order at', link%patch%id, link%patch%time, &
+      previous
+    previous = link%patch%time
+    link => link%next_time
+    nq = nq+1
+  end do
+  if (nq /= self%nq) print*,'ERROR: inconsistent number of patches in queue', nq, self%nq
+END SUBROUTINE check_queue
 
 !> =============================================================================
 !> Print a table with patch id, positions, and all neighbors

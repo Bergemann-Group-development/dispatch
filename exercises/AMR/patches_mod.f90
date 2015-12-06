@@ -48,7 +48,7 @@ MODULE patches_mod
     procedure:: is_clear
     procedure:: ahead_of
     procedure:: is_relevant_for
-    procedure:: get_guardcells_for
+    procedure:: download_to
     procedure:: myposition
     procedure:: fmaxval         ! interior max value
     procedure:: fminval         ! interior min value
@@ -109,21 +109,17 @@ SUBROUTINE init (self, position, size)
   !print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
   allocate (self%derivs)                        ! thread safe derivatives
   call self%derivs%init (dims(1:3), size/self%n)! pass on patch info to derivs
-  if (self%mem_allocated) then
-    call trace_end
-    return
+  !-----------------------------------------------------------------------------
+  ! Allocate memory, if not allocated
+  !-----------------------------------------------------------------------------
+  if (.not.self%mem_allocated) then
+    allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
+    if (associated(self%mem)) deallocate (self%mem)
+    allocate (self%mem(self%gn(1),self%gn(2),self%gn(3),self%nv,self%nt,2))
+    self%mem_allocated = .true.                 ! mark
   end if
-  self%mem_allocated = .true.                   ! mark
-!  print*,'MK1', associated(self%t) , associated(self%iit), &
-!                associated(self%dt), associated(self%mem)
-  allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
-  self%t = 0.0
-  self%iit = 1
-  associate (nx=>self%gn(1), ny=>self%gn(2), nz=>self%gn(3))
-    if (io%verbose>2) &
-    print*,'mem:',nx,ny,nz,self%nv,self%nt
-    allocate (self%mem(nx,ny,nz,self%nv,self%nt,2))
-  end associate
+  self%t = 0.0                                  ! initial time
+  self%iit = 1                                  ! initial memory slots
   call trace_end
 END SUBROUTINE init
 
@@ -155,14 +151,18 @@ SUBROUTINE update_patch (self)
 END SUBROUTINE update_patch
 
 !> =============================================================================
-!> Get guard cells for "patch" using active cells in "self".  So, we loop through
-!> all guard cells in patch, and check if there are proper source points inside
-!> the interior of the source.  For this, we need to map an index position in
-!> patch to an absolute position, and then ask about that position in the
-!> source (self) patch
+!> Download values from the source (self) to the target (patch), trying to get
+!> all cells in the tager if "all_target" is true, and only guard cells if not.
+!> We use myposition() to map an index position in the target patch to an
+!> absolute position, and then index() to get the integer and floating point
+!> position in the source patch.  With that, we make a tri-linear interpolation.
+!> This is useful for both guard cell fill-in, and for "prolongation" = creating
+!> patches with higher resolution.
 !> =============================================================================
-SUBROUTINE get_guardcells_for (self, patch)
+SUBROUTINE download_to (self, patch, guardcells)
   class(patch_t):: self
+  logical, optional:: guardcells
+  logical:: all_target
   class(patch_t), pointer:: patch
   integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), n
   real:: f(3), pos(3)
@@ -172,13 +172,21 @@ SUBROUTINE get_guardcells_for (self, patch)
 associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
   it = patch%it
   n = 0
+  all_target = .true.
+  if (present(guardcells)) all_target = .not.guardcells
   do iz=1,patch%gn(3)
   do iy=1,patch%gn(2)
   do ix=1,patch%gn(1)
     ii = [ix,iy,iz]
-    if (.not. all((ii >= patch%li) .and. (ii <= patch%ui))) then
+    !---------------------------------------------------------------------------
+    ! Check if the target point is the guard zone region (= not inside)
+    !---------------------------------------------------------------------------
+    if (all_target .or. .not.all((ii >= patch%li) .and. (ii <= patch%ui))) then
       pos = patch%myposition(ii)
-      j0 = self%index (patch%myposition(ii), f)
+      j0 = self%index (pos, f)
+      !---------------------------------------------------------------------------
+      ! Check that the source in in the internal region (= not guard zone)
+      !---------------------------------------------------------------------------
       if (all((j0+f >= self%li-0.1) .and. (j0+f <= self%ui+0.1) .or. (self%n==1))) then
         if (io%verbose>3.and.patch%id==10) print'(a,2(i4,2x,3i4,2x),1p,2(3f9.4,2x),2x,2f11.6," ****")', &
           'index:ii,j0,f:', patch%id, ii,  self%id, j0, f, pos, self%t(it)-patch%t(it)
@@ -215,7 +223,7 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
     print'(2(a,i4,f9.4,4x),2i3,2x,5i3,7f8.3)','ERROR: patch:', patch%id, patch%t(patch%it), &
       'self:', self%id, self%t(self%it), patch%it, patch%new, patch%iit, patch%t
 end associate
-END SUBROUTINE get_guardcells_for
+END SUBROUTINE download_to
 !> =============================================================================
 !> This function gives the physical position of an index triple (patch point)
 !> =============================================================================
