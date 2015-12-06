@@ -143,7 +143,7 @@ SUBROUTINE update (self)
       call self%split (head)                            ! refined patchs go back to queue
       if (patch%level > refine%levelmax) then
         call self%output
-        print*,'stopping after refine'
+        print*,'stopping after refine reached levelmax =', refine%levelmax
         stop
       end if
     else
@@ -179,6 +179,7 @@ SUBROUTINE remove_patch (self, patch)
       else
         self%head => link%next
       end if
+      self%n = self%n - 1
     end if
     prev => link
     link => link%next
@@ -198,7 +199,7 @@ SUBROUTINE split (self, this)
   type(timestep_t), pointer:: patch
   type(link_t), pointer:: link, tail, new_patches
   integer dir, i, ix, iy, iz
-  real:: pos(3), position(3)
+  real:: pos(3)
   !.............................................................................
   call trace_begin('patch_list_t%split', 1)
   new_patches => self%tail
@@ -215,26 +216,38 @@ SUBROUTINE split (self, this)
         !------------------------------------------------------------------------
         ! Allocate a new patch, half the size of original one, and adjust its
         ! position in each direction with "pos", in units of the new size.
-        ! "pos" is incremented with one unit of the new size for each new patch,
-        ! and is reset back to -0.5 before continuing to the next direction
         !------------------------------------------------------------------------
         allocate (patch, source=this%patch)
         patch%mem_allocated = .false.
         nullify (patch%mem)
-        position = this%patch%position + pos*patch%size
-        call patch%init (position, self%size/self%dims)
+        patch%size = this%patch%size/nsplit
+        patch%position = this%patch%position + pos*patch%size
+        call patch%init (patch%position, patch%size)
+        patch%out_next = patch%time
+        patch%iout = this%patch%iout
+        if (io%verbose>0) then
+          print 1,'task_list_t%split:  patch, iout, time, size, origin =', &
+            patch%id, patch%iout, patch%time, patch%size, patch%origin
+          1 format(a,2i6,f10.6,2(2x,3f8.4))
+          print 1,'task_list_t%split: parent, iout, time, size, origin =', &
+            this%patch%id, this%patch%iout, this%patch%time, this%patch%size, this%patch%origin
+        end if
         !------------------------------------------------------------------------
-        ! Append links to the new patches as the list tail
+        ! Append links to the new patches as the list tail, and insert it in queue
         !------------------------------------------------------------------------
         allocate (link)
         link%patch => patch
+        link%parent => this
         self%tail%next => link
         self%tail => link
+        link%next_time => self%queue
+        self%queue => link
+        self%nq = self%nq+1
       end do
     end do
   end do
   new_patches => new_patches%next
-  this%patch%is_leaf = .false.
+  call this%patch%set(bits%not_leaf)
   call trace_end
 END SUBROUTINE split
 

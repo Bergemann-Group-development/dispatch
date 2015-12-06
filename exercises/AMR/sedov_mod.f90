@@ -95,8 +95,8 @@ SUBROUTINE init(self, position, size)
     self%p%z = 0.0
     do j=1,self%gn(2)
     do i=1,self%gn(1)
-      x = (i-(self%gn(1)+1)*0.5) + self%position(1)/self%ds(1)
-      y = (j-(self%gn(2)+1)*0.5) + self%position(2)/self%ds(2)
+      x = (i-(self%gn(1)+1)*0.5)*self%ds(1) + self%position(1)
+      y = (j-(self%gn(2)+1)*0.5)*self%ds(2) + self%position(2)
       f = exp(-(sqrt(x**2+y**2)/self%w_gauss)**self%p_gauss)
       self%d%f(i,j,:) = exp(self%amplitude_rho*f)
       self%s%f(i,j,:) = self%amplitude*f*self%d%f(i,j,:)
@@ -107,8 +107,8 @@ SUBROUTINE init(self, position, size)
         self%id,self%n,self%w_gauss,self%p_gauss,self%position
     else
       print'(1x,a,i4,2(3f8.3,2x),a,1p,2e10.2)', &
-        'initial:', self%id, self%position, self%size, &
-        '  min, max:', &
+        'pde_t%init: id, pos, size, min/max =', &
+        self%id, self%position, self%size, '  min, max:', &
         minval(self%mem(:,:,:,1,1,1)), &
         maxval(self%mem(:,:,:,1,1,1))
     end if
@@ -204,7 +204,7 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   mass_flux%y        = p%y + mass_diffusion%y
   mass_flux%z        = p%z + mass_diffusion%z
   dd_dt%f = - o%ddxup(mass_flux%x)- o%ddyup(mass_flux%y)- o%ddzup(mass_flux%z)
-  self%u_max = max(self%u_max, ds(1)/maxval(dd_dt%f/rho%f))
+  self%u_max = max(self%u_max, maxval(dd_dt%f/rho%f)/ds(1))
   !-----------------------------------------------------------------------------
   ! Evolution of linear momenta = equation-of-motion
   !-----------------------------------------------------------------------------
@@ -290,7 +290,7 @@ END SUBROUTINE update
 !> =============================================================================
 SUBROUTINE log_density (self, out)
   class(pde_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: out
+  real, dimension(self%n(1),self%n(2),self%n(3)):: out
   !...............................................................................
   call trace_begin ('hd_mod:pde_t%log_density')
   if (io%verbose>3) then
@@ -304,9 +304,9 @@ SUBROUTINE log_density (self, out)
                       self%li(2):self%ui(2), &
                       self%li(3):self%ui(3), i_d, self%it, 1))
   end if
-  out(self%li(1):self%ui(1), &
-      self%li(2):self%ui(2), &
-      self%li(3):self%ui(3)) = log(self%mem(self%li(1):self%ui(1), &
+  out(1:self%n(1), &
+      1:self%n(2), &
+      1:self%n(3)) = log(self%mem(self%li(1):self%ui(1), &
                                             self%li(2):self%ui(2), &
                                             self%li(3):self%ui(3), i_d, self%it, 1))
   call trace_end

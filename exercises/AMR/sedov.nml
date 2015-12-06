@@ -8,7 +8,6 @@
 /
 &refine_params
  msplit=2
- refine_time=999
  max_change=999
  levelmax=8
 /

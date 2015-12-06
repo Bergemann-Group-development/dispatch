@@ -7,6 +7,7 @@
 MODULE refine_mod
   USE io_mod
   USE trace_mod
+  USE bits_mod
   USE timestep_mod
   implicit none
   private
@@ -15,7 +16,8 @@ MODULE refine_mod
     character(len=16):: name
     integer:: ivar = 0
     real:: max_diff = 1.0
-    real:: refine_time=999.
+    real:: refine_from=999.
+    real:: refine_until=0.0
     integer:: levelmax=100
   contains
     procedure:: init
@@ -33,10 +35,10 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(refine_t):: self
-  real:: refine_time = 999
+  real:: refine_from = 0.0, refine_until = 0.0
   integer:: levelmax = 100
   logical:: first_time = .true.
-  namelist /refine_params/ max_change, msplit, refine_time, levelmax
+  namelist /refine_params/ max_change, msplit, refine_from, refine_until, levelmax
   !.............................................................................
   call trace_begin ('refine_t%init')
   if (first_time) then
@@ -44,10 +46,11 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, refine_params)
     if (io%master) write (*, refine_params)
-    self%max_diff = max_change
-    self%refine_time = refine_time
-    self%levelmax = levelmax
   end if
+  self%max_diff = max_change
+  self%refine_from = refine_from
+  self%refine_until = refine_until
+  self%levelmax = levelmax
   call trace_end
 END SUBROUTINE init
 !> =============================================================================
@@ -56,12 +59,12 @@ FUNCTION needed (self, patch)
   class(timestep_t), pointer:: patch
   logical:: needed
   !.............................................................................
-  needed = .false.
-  if (patch%time < self%refine_time) return
+   needed = .false.
+  if (patch%is_set(bits%not_leaf) .or. patch%level >= self%levelmax) return
+  if (patch%time < self%refine_from .or. patch%time > self%refine_until) return
   call trace_begin ('refine_t%needed', 2)
   if (io%verbose>2) print*,'refine%needed? patch:', patch%id, patch%it, patch%new
   needed = check_log_density    (self, patch)
-  print*,'refine needed:', needed, patch%level, self%levelmax
   if (needed) then
     call trace_end
     return
@@ -84,9 +87,9 @@ FUNCTION check_log_density (self, patch) RESULT(out)
     print*, 'check_log', patch%li, patch%ui
   end if
   !allocate (v(patch%li(1):patch%ui(1),patch%li(2):patch%ui(2),patch%li(3):patch%ui(3)))
-  allocate (v(1:patch%gn(1),1:patch%gn(2),1:patch%gn(3)))
+  allocate (v(1:patch%n(1),1:patch%n(2),1:patch%n(3)))
   call patch%log_density (v)
-  print*, 'check_log', minval(v), maxval(v)
+  !print*, 'check_log', minval(v), maxval(v)
   out = check_max_diff (self, patch, v)
   deallocate (v)
   call trace_end
@@ -142,21 +145,21 @@ FUNCTION check_max_diff (self, patch, v) RESULT(out)
     m = 0
   end where
   associate (li=>patch%li, ui=>patch%ui, n=>patch%n)
-    print*,'li,ui',li,ui,m
     do i1=-m(1),m(1)
     do i2=-m(2),m(2)
     do i3=-m(3),m(3)
       if (i1==0.and.i2==0.and.i3==0) cycle
-      diff = maxval(abs(v(li(1)+m(1)+i1:ui(1)-m(1)+i1, &
-                          li(2)+m(2)+i2:ui(2)-m(2)+i2, &
-                          li(3)+m(3)+i3:ui(3)-m(3)+i3) &
-                      - v(li(1)+m(1)   :ui(1)-m(1),   &
-                          li(2)+m(2)   :ui(2)-m(2),   &
-                          li(3)+m(3)   :ui(3)-m(3))))
-      print *,'diff', i1,i2,i3, diff, self%max_diff
+      diff = maxval(abs(v(1+m(1)+i1:n(1)-m(1)+i1, &
+                          1+m(2)+i2:n(2)-m(2)+i2, &
+                          1+m(3)+i3:n(3)-m(3)+i3) &
+                      - v(1+m(1)   :n(1)-m(1),   &
+                          1+m(2)   :n(2)-m(2),   &
+                          1+m(3)   :n(3)-m(3))))
       if (diff >= self%max_diff) then
+        if (io%verbose > 1) &
+          print *,'refine_t%chck_max_diff: id, index, diff, max_diff', &
+          patch%id, diff, self%max_diff
         out = .true.
-        print*,'REFINE'
         return
       end if
     end do

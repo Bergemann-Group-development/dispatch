@@ -16,5 +16,6 @@ PROGRAM experiment
   do while (list%n > 0)                 ! As long as there are patches in the list
     call list%update                    ! update the list = update member patches
   end do
+  print*,'stopping: all tasks finished'
 !> =============================================================================
 END PROGRAM experiment

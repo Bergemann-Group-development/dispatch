@@ -104,7 +104,7 @@ SUBROUTINE init (self, position, size)
   self%nt = dims(4)                             ! number of time slices
   self%nv = dims(5)                             ! number of variables
   self%level = log(maxval(self%box)/minval(self%ds))/log(2.) + 0.1
-  print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
+  !print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
   allocate (self%derivs)                        ! thread safe derivatives
   call self%derivs%init (dims(1:3), size/self%n)! pass on patch info to derivs
   if (self%mem_allocated) then
@@ -341,7 +341,9 @@ SUBROUTINE output (self)
   !.............................................................................
   if (self%time < self%out_next) return
   call trace_begin ('patch_t%output')
-  self%out_next = self%out_next + self%out_time
+  do while (self%out_next < self%time)
+    self%out_next = self%out_next + self%out_time
+  end do
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
@@ -349,7 +351,7 @@ SUBROUTINE output (self)
   write (filename,'(a,i3.3,"_",i4.4)') &
     'data/'//trim(self%experiment_name)//'_', self%id, self%iout
   if (io%verbose>=0) &
-    print'(a,3x,"time:",g12.3)', 'output to '//trim(filename), self%time
+    print'(a,3x,"time:",g12.3)', 'patches_t%output: file= '//trim(filename)
   open (3, file=trim(filename)//'.txt', form='formatted', status='unknown')
   where (self%size > 0.0)
     li = (self%position+0.5*(self%box-self%size))/self%ds
