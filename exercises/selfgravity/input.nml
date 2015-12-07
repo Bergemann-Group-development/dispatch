@@ -3,7 +3,7 @@
  p_gauss=2              ! exp(-(r/w_gauss)**p_gauss)
  amplitude=0.5          ! density max = exp(amplitude)
  G=1.                   ! strength of gravity
- tolerance=1e-3         ! tolerance on relative error
+ tolerance=1e-5         ! tolerance on relative error
  min_iter=5             ! minimum number of iterations in gravity solver
  max_iter=1000          ! maximum number of iterations in gravity solver
 !solver='gauss-seidel'  ! solver name (jacobi, gauss-seidel, sor, cg, multi-grid)
