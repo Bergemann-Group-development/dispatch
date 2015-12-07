@@ -122,7 +122,7 @@ SUBROUTINE jacobi_2nd (self, phi, phi_new, FourPiGrho, error)
   ! In the interior of the domain, assuming a source 4piGrho, and that
   ! the boundaries are fixed and therefore copied
   !.............................................................................
-associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
+associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
   ! Calculate 1 / [(2/dx + 2/dy + 2/dz)] prefactor according to dimensionality
   a = 0.0
   if (n(1)>1) a = a + 2. / ds(1)**2
@@ -133,15 +133,15 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
   phi_new = -a * FourPiGrho
   if (n(1)>1) then
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
-    phi_new(u(1)+1:n(1),  :,:) = phi(u(1)+1:n(1),  :,:)
+    phi_new(u(1)+1:gn(1),  :,:) = phi(u(1)+1:gn(1),  :,:)
   endif
   if (n(2)>1) then
     phi_new(:,     1:l(2)-1,:) = phi(:,     1:l(2)-1,:)
-    phi_new(:,u(2)+1:n(2),  :) = phi(:,u(2)+1:n(2),  :)
+    phi_new(:,u(2)+1:gn(2),  :) = phi(:,u(2)+1:gn(2),  :)
   endif
   if (n(3)>1) then
     phi_new(:,     1:l(3)-1,:) = phi(:,     1:l(3)-1,:)
-    phi_new(:,u(3)+1:n(3),  :) = phi(:,u(3)+1:n(3),  :)
+    phi_new(:,u(3)+1:gn(3),  :) = phi(:,u(3)+1:gn(3),  :)
   endif
   !
   ! Add up contributions
@@ -239,7 +239,7 @@ SUBROUTINE jacobi_4th (self, phi, phi_new, FourPiGrho, error)
   ! Calculation has to be done in the interior of the domain, assuming a source 4piGrho, and that
   ! the boundaries are fixed and therefore copied
   !.............................................................................
-associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
+associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
   !
   if (all(n > 1)) then
     ! ****************************** HINT HINT HINT ******************************
@@ -252,11 +252,11 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
     phi_new = -a * FourPiGrho
 
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
-    phi_new(u(1)+1:n(1),  :,:) = phi(u(1)+1:n(1),  :,:)
+    phi_new(u(1)+1:gn(1),  :,:) = phi(u(1)+1:gn(1),  :,:)
     phi_new(:,     1:l(2)-1,:) = phi(:,     1:l(2)-1,:)
-    phi_new(:,u(2)+1:n(2),  :) = phi(:,u(2)+1:n(2),  :)
+    phi_new(:,u(2)+1:gn(2),  :) = phi(:,u(2)+1:gn(2),  :)
     phi_new(:,     1:l(3)-1,:) = phi(:,     1:l(3)-1,:)
-    phi_new(:,u(3)+1:n(3),  :) = phi(:,u(3)+1:n(3),  :)
+    phi_new(:,u(3)+1:gn(3),  :) = phi(:,u(3)+1:gn(3),  :)
 
     ! Add up contributions
     b1 = a / ds(1)**2 ! IS THIS RIGHT? ARE THERE MORE TERMS?
@@ -319,7 +319,7 @@ SUBROUTINE gauss_seidel_2nd (self, phi, phi_new, FourPiGrho, error)
   ! In the interior of the domain, assuming a source 4piGrho, and that
   ! the boundaries are fixed and therefore copied
   !.............................................................................
-associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
+associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
   ! Calculate 1 / [(2/dx + 2/dy + 2/dz)] prefactor according to dimensionality
   a = 0.0
   if (n(1)>1) a = a + 2. / ds(1)**2
@@ -330,15 +330,15 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
   phi_new = -a * FourPiGrho
   if (n(1)>1) then
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
-    phi_new(u(1)+1:n(1),  :,:) = phi(u(1)+1:n(1),  :,:)
+    phi_new(u(1)+1:gn(1),  :,:) = phi(u(1)+1:gn(1),  :,:)
   endif
   if (n(2)>1) then
     phi_new(:,     1:l(2)-1,:) = phi(:,     1:l(2)-1,:)
-    phi_new(:,u(2)+1:n(2),  :) = phi(:,u(2)+1:n(2),  :)
+    phi_new(:,u(2)+1:gn(2),  :) = phi(:,u(2)+1:gn(2),  :)
   endif
   if (n(3)>1) then
     phi_new(:,     1:l(3)-1,:) = phi(:,     1:l(3)-1,:)
-    phi_new(:,u(3)+1:n(3),  :) = phi(:,u(3)+1:n(3),  :)
+    phi_new(:,u(3)+1:gn(3),  :) = phi(:,u(3)+1:gn(3),  :)
   endif
   !
   do sweep=0,1
@@ -433,7 +433,7 @@ SUBROUTINE sor_2nd (self, phi, phi_new, FourPiGrho, error)
   ! In the interior of the domain, assuming a source 4piGrho, and that
   ! the boundaries are fixed and therefore copied
   !.............................................................................
-associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,omega_sor=>self%omega_sor)
+associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn,omega_sor=>self%omega_sor)
   ! Calculate 1 / [(2/dx + 2/dy + 2/dz)] prefactor according to dimensionality
   a = 0.0
   if (n(1)>1) a = a + 2. / ds(1)**2
@@ -443,15 +443,15 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,omega_sor=>self%omega_sor)
   ! Init iteration and copy boundary conditions
   if (n(1)>1) then
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
-    phi_new(u(1)+1:n(1),  :,:) = phi(u(1)+1:n(1),  :,:)
+    phi_new(u(1)+1:gn(1),  :,:) = phi(u(1)+1:gn(1),  :,:)
   endif
   if (n(2)>1) then
     phi_new(:,     1:l(2)-1,:) = phi(:,     1:l(2)-1,:)
-    phi_new(:,u(2)+1:n(2),  :) = phi(:,u(2)+1:n(2),  :)
+    phi_new(:,u(2)+1:gn(2),  :) = phi(:,u(2)+1:gn(2),  :)
   endif
   if (n(3)>1) then
     phi_new(:,     1:l(3)-1,:) = phi(:,     1:l(3)-1,:)
-    phi_new(:,u(3)+1:n(3),  :) = phi(:,u(3)+1:n(3),  :)
+    phi_new(:,u(3)+1:gn(3),  :) = phi(:,u(3)+1:gn(3),  :)
   endif
   !
   do sweep=0,1
