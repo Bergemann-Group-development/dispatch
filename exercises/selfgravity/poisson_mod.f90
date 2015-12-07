@@ -4,6 +4,7 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE pde_mod
   USE io_mod
+  USE omp_timer_mod
   USE trace_mod
   USE patches_mod
   USE scalar_mod
@@ -126,6 +127,7 @@ end associate
 
   error = 2.*self%tolerance
   it    = 0
+  call tic
   do while((it<self%min_iter) .or. &                                            ! Do at least min_iter iterations 
            (error >= self%tolerance .and. it<self%max_iter))                    ! Stop if error<=tolerance or max iterations reached
 
@@ -135,6 +137,7 @@ end associate
     it = it + 1
 
   enddo
+  call toc ('poisson', product(self%n))
 
   ! Check if we reached solution in time
   if (it == self%max_iter .and. io%verbose>0) &

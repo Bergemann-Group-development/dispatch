@@ -73,9 +73,9 @@ SUBROUTINE jacobi_2nd (self, phi, phi_new, FourPiGrho, error)
 associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
   ! Calculate 1 / [(2/dx + 2/dy + 2/dz)] prefactor according to dimensionality
   a = 0.0
-  if (n(1)>1) a = a + 2. / ds(1)
-  if (n(2)>1) a = a + 2. / ds(2)
-  if (n(3)>1) a = a + 2. / ds(3)
+  if (n(1)>1) a = a + 2. / ds(1)**2
+  if (n(2)>1) a = a + 2. / ds(2)**2
+  if (n(3)>1) a = a + 2. / ds(3)**2
   a = 1. / a
   ! Init iteration and copy boundary conditions
   phi_new = -a * FourPiGrho
@@ -94,7 +94,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
   !
   ! Add up contributions
   if (n(1)>1) then
-    b = a / ds(1)
+    b = a / ds(1)**2
     do k=l(3),u(3)
     do j=l(2),u(2)
     do i=l(1),u(1)
@@ -104,7 +104,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
     enddo
   endif
   if (n(2)>1) then
-    b = a / ds(2)
+    b = a / ds(2)**2
     do k=l(3),u(3)
     do j=l(2),u(2)
     do i=l(1),u(1)
@@ -114,7 +114,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
     enddo
   endif
   if (n(3)>1) then
-    b = a / ds(3)
+    b = a / ds(3)**2
     do k=l(3),u(3)
     do j=l(2),u(2)
     do i=l(1),u(1)
@@ -161,9 +161,9 @@ SUBROUTINE gauss_seidel_2nd (self, phi, phi_new, FourPiGrho, error)
 associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
   ! Calculate 1 / [(2/dx + 2/dy + 2/dz)] prefactor according to dimensionality
   a = 0.0
-  if (n(1)>1) a = a + 2. / ds(1)
-  if (n(2)>1) a = a + 2. / ds(2)
-  if (n(3)>1) a = a + 2. / ds(3)
+  if (n(1)>1) a = a + 2. / ds(1)**2
+  if (n(2)>1) a = a + 2. / ds(2)**2
+  if (n(3)>1) a = a + 2. / ds(3)**2
   a = 1. / a
   ! Init iteration and copy boundary conditions
   phi_new = -a * FourPiGrho
@@ -188,7 +188,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
     endif
     ! Add up contributions
     if (n(1)>1) then
-      b = a / ds(1)
+      b = a / ds(1)**2
       do k=l(3),u(3)
       do j=l(2),u(2)
       do i=l(1),u(1)
@@ -199,7 +199,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
       enddo
     endif
     if (n(2)>1) then
-      b = a / ds(2)
+      b = a / ds(2)**2
       do k=l(3),u(3)
       do j=l(2),u(2)
       do i=l(1),u(1)
@@ -210,7 +210,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
       enddo
     endif
     if (n(3)>1) then
-      b = a / ds(3)
+      b = a / ds(3)**2
       do k=l(3),u(3)
       do j=l(2),u(2)
       do i=l(1),u(1)
@@ -254,7 +254,7 @@ FUNCTION error_2nd (self, phi, scratch, FourPiGrho) result(error)
   ! Add up contributions from Phi's
 associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
   if (n(1)>1) then
-    b = 1. / ds(1)
+    b = 1. / ds(1)**2
     do k=l(3),u(3)
     do j=l(2),u(2)
     do i=l(1),u(1)
@@ -264,7 +264,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
     enddo
   endif
   if (n(2)>1) then
-    b = 1. / ds(2)
+    b = 1. / ds(2)**2
     do k=l(3),u(3)
     do j=l(2),u(2)
     do i=l(1),u(1)
@@ -274,14 +274,14 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
     enddo
   endif
   if (n(3)>1) then
-    b = 1. / ds(3)
-    do k=l(3),u(3)
-    do j=l(2),u(2)
-    do i=l(1),u(1)
+    b = 1. / ds(3)**2
+  do k=l(3),u(3)
+  do j=l(2),u(2)
+  do i=l(1),u(1)
       scratch(i,j,k) = scratch(i,j,k) - b * (phi(i,j,k+1)-2.*phi(i,j,k)+phi(i,j,k-1))
-    enddo
-    enddo
-    enddo
+  enddo
+  enddo
+  enddo
   endif  
   error = maxval(abs(scratch(l(1):u(1),l(2):u(2),l(3):u(3))))
   error = error / max(maxval(abs(phi)),maxval(FourPiGrho))
