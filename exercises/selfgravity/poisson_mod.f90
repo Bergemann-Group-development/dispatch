@@ -126,6 +126,7 @@ end associate
            (error >= self%tolerance .and. it<max_iter))                         ! Stop if error<=tolerance or max iterations reached
 
     call l%jacobi_2nd (phi_old, phi_new, FourPiGrho, error)                     ! do one iteration and get error
+    !call l%gauss_seidel_2nd (phi_old, phi_new, FourPiGrho, error)                     ! do one iteration and get error
     if (io%verbose>2) write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Iter=', it, ' Tolerance=', self%tolerance, ' Error=', error
     phi_swap => phi_new; phi_new=>phi_old; phi_old=>phi_swap                    ! swap phi_old and phi_new pointers
     it = it + 1
