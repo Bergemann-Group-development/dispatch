@@ -232,7 +232,6 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
   if (n(3)>1) a = a + 2. / ds(3)**2
   a = 1. / a
   ! Init iteration and copy boundary conditions
-  phi_new = -a * FourPiGrho
   if (n(1)>1) then
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
     phi_new(u(1)+1:n(1),  :,:) = phi(u(1)+1:n(1),  :,:)
@@ -309,7 +308,7 @@ SUBROUTINE sor_2nd (self, phi, phi_new, FourPiGrho, error)
   real    :: error
   !
   integer :: i,j,k,sweep,ss
-  real    :: a,b,c,d,sor
+  real    :: a,b,b1,b2,b3,sor
   real, dimension(:,:,:), pointer :: source
   !.............................................................................
   ! Make one iterative update for
@@ -331,7 +330,6 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,omega_sor=>self%omega_sor)
   if (n(3)>1) a = a + 2. / ds(3)**2
   a = 1. / a
   ! Init iteration and copy boundary conditions
-  phi_new = -a * FourPiGrho
   if (n(1)>1) then
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
     phi_new(u(1)+1:n(1),  :,:) = phi(u(1)+1:n(1),  :,:)
@@ -353,23 +351,35 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,omega_sor=>self%omega_sor)
     endif
     ! Add up contributions
     if (all(n > 1)) then
-      b = a / ds(1)**2
-      c = a / ds(2)**2
-      d = a / ds(3)**2
+      b1 = 1. / ds(1)**2
+      b2 = 1. / ds(2)**2
+      b3 = 1. / ds(3)**2
       do k=l(3),u(3)
       do j=l(2),u(2)
         ss = modulo(j+k+sweep,2)                                                ! n(1)>1: We can move sweep factor outside
-      do i=l(1)+ss,u(1),2
-        phi_new(i,j,k) = phi_new(i,j,k) + b * (source(i+1,j,k)+source(i-1,j,k)) &
-                                        + c * (source(i,j+1,k)+source(i,j-1,k)) &
-                                        + d * (source(i,j,k+1)+source(i,j,k-1))
-        phi_new(i,j,k) = source(i,j,k) + omega_sor*(phi_new(i,j,k) - source(i,j,k))
+      do i=l(1)+ss,u(1),2        
+        phi_new(i,j,k) = a * ( (1. - omega_sor) * source(i,j,k) + &
+                               omega_sor * ( &
+                                 b1 * (source(i+1,j,k)+source(i-1,j,k)) & ! The new solution
+                               + b2 * (source(i,j+1,k)+source(i,j-1,k)) &
+                               + b3 * (source(i,j,k+1)+source(i,j,k-1)) &
+                               - FourPiGrho(i,j,k) ) )
       enddo
       enddo
       enddo
     else
-      if (n(1)>1) then
-        b = a / ds(1)**2
+      ! Correction from last iteration and source term 4 pi G rho
+      do k=l(3),u(3)
+      do j=l(2),u(2)
+      do i=l(1),u(1)
+        if (modulo(i+j+k,2)==sweep) cycle                                     ! red-black sweep
+        phi_new(i,j,k) = a * ((1 - omega_sor)*source(i,j,k) &
+                            - omega_sor * FourPiGrho(i,j,k))
+      enddo
+      enddo
+      enddo
+      if (n(1)>1) then ! x-direction of Laplace operator
+        b = omega_sor * a / ds(1)**2
         do k=l(3),u(3)
         do j=l(2),u(2)
         do i=l(1),u(1)
@@ -379,8 +389,8 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,omega_sor=>self%omega_sor)
         enddo
         enddo
       endif
-      if (n(2)>1) then
-        b = a / ds(2)**2
+      if (n(2)>1) then ! y-direction of Laplace operator
+        b = omega_sor * a / ds(2)**2
         do k=l(3),u(3)
         do j=l(2),u(2)
         do i=l(1),u(1)
@@ -390,8 +400,8 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,omega_sor=>self%omega_sor)
         enddo
         enddo
       endif
-      if (n(3)>1) then
-        b = a / ds(3)**2
+      if (n(3)>1) then ! z-direction of Laplace operator
+        b = omega_sor * a / ds(3)**2
         do k=l(3),u(3)
         do j=l(2),u(2)
         do i=l(1),u(1)
