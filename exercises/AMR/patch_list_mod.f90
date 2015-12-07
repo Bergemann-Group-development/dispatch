@@ -147,6 +147,8 @@ SUBROUTINE update (self)
     call patch%output                                   ! check output
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue
+      print*,'head patch(0)=', self%queue%patch%id
+      call print_lists(self)
       if (patch%level > refine%levelmax) then
         call self%output
         print*,'stopping after refine reached levelmax =', refine%levelmax
@@ -156,10 +158,10 @@ SUBROUTINE update (self)
       call patch%update                                 ! update the patch
       call patch%output                                 ! check output
       print*,'head patch(1)=', self%queue%patch%id
-      call print_lists
+      call print_lists(self)
       call self%check_nbors (head)                      ! any nbor ready?
       print*,'head patch(2)=', self%queue%patch%id
-      call print_lists
+      call print_lists(self)
       if (patch%time > patch%end_time) then             ! finished:
         end_game = .true.
         call self%remove_patch (patch)                  ! remove from self
@@ -172,7 +174,7 @@ SUBROUTINE update (self)
     stop
   end if
   print*,'head patch(3)=', self%queue%patch%id
-  call print_lists
+  call print_lists(self)
   call trace_end
 END SUBROUTINE update
 
