@@ -7,7 +7,6 @@ MODULE pde_mod
   USE trace_mod
   USE patches_mod
   USE scalar_mod
-  USE laplace_mod
   implicit none
   private
   integer, parameter:: i_d=1, i_phi=2
@@ -17,10 +16,14 @@ MODULE pde_mod
     real:: w_gauss
     real:: p_gauss
     real:: amplitude
+    real:: G                                                                    ! Strength of gravity
+    real:: tolerance
+    integer:: min_iter, max_iter
   contains
     procedure:: init
     procedure:: solve
   end type
+  real :: tolerance=1e-4, G=1., min_iter=0, max_iter=100
 CONTAINS
 
 !> =============================================================================
@@ -32,7 +35,7 @@ SUBROUTINE init (self)
   real:: x, y, z
   logical:: first_time = .true.
   real:: w_gauss=5.0, p_gauss=1.0, amplitude=1.0
-  namelist /poisson_params/ w_gauss, p_gauss, amplitude
+  namelist /poisson_params/ w_gauss, p_gauss, amplitude, tolerance, min_iter, max_iter, G
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
@@ -50,6 +53,10 @@ SUBROUTINE init (self)
   self%w_gauss   = w_gauss
   self%p_gauss   = p_gauss
   self%amplitude = amplitude
+  self%tolerance = tolerance
+  self%min_iter  = min_iter
+  self%max_iter  = max_iter
+  self%G         = G
   self%nv        = 2
   call self%patch_t%init
   !-----------------------------------------------------------------------------
@@ -57,6 +64,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call    self%d%init (self%gn, self%size/self%n, 'd')
   call  self%phi%init (self%gn, self%size/self%n, 'phi')
+  if (self%d%allocated)   deallocate(self%d%f)
+  if (self%phi%allocated) deallocate(self%phi%f)
   self%d%f   => self%mem(:,:,:,i_d   ,self%it,1)
   self%phi%f => self%mem(:,:,:,i_phi ,self%it,1)
   !-----------------------------------------------------------------------------
@@ -76,20 +85,65 @@ SUBROUTINE init (self)
     end do
     print*,self%it,maxval(self%d%f)
   end if
+  !-----------------------------------------------------------------------------
+  ! Initial and boundary conditions for phi
+  !-----------------------------------------------------------------------------
+  self%phi%f = 0.0
+  !
   call trace_end
 END SUBROUTINE init
-
 !> =============================================================================
-!> Compute the time derivatives, using the symbolic names mapped into task%mem,
-!> and an associate block to make the code maximally readable
+!> Compute iteratively the solution to the Poisson equation stoppin when reaching the tolerance tol
 !> =============================================================================
 SUBROUTINE solve (self)
+  USE laplace_mod
   class(pde_t):: self
+  !
+  real, allocatable, dimension(:,:,:)         :: FourPiGrho
+  real, allocatable, dimension(:,:,:), target :: phi_scratch
+  real, pointer,     dimension(:,:,:)         :: phi_old, phi_new, phi_swap
+  real, parameter :: FourPi = 4.0 * 3.14159265358979323846
+  type(laplace_t) :: l
+  real            :: error
+  integer         :: it
   !.............................................................................
   call trace_begin ('poisson_mod:pde_t%update', 2)
-  !...
+
+  ! Set the right dimension from current patch for iterator
+  call l%init(self)
+
+associate(gn=>self%gn)
+  Allocate(FourPiGrho(gn(1),gn(2),gn(3)),phi_scratch(gn(1),gn(2),gn(3)))        ! Allocate scratch memory
+end associate
+  FourPiGrho = FourPi * self%G * self%d%f                                       ! Set up source of gravity
+
+  phi_old => self%phi%f                                                         ! Do initial pointer arrangement
+  phi_new => phi_scratch
+
+  error = 2.*self%tolerance
+  it    = 0
+  do while((it<min_iter) .or. &                                                 ! Do at least min_iter iterations 
+           (error >= self%tolerance .and. it<max_iter))                         ! Stop if error<=tolerance or max iterations reached
+
+    call l%jacobi_2nd (phi_old, phi_new, FourPiGrho, error)                     ! do one iteration and get error
+    phi_swap => phi_new; phi_new=>phi_old; phi_old=>phi_swap                    ! swap phi_old and phi_new pointers
+    it = it + 1
+
+  enddo
+
+  ! Check if we reached solution in time
+  if (it == max_iter .and. io%verbose>0) &
+    write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Did not reach convergence in patch. Max iter=', it, &
+                                  ' Tolerance=', self%tolerance, ' Error=', error
+  if (it <= max_iter .and. io%verbose>1) &
+    write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Reached convergence in patch. Max iter=', it, &
+                                  ' Tolerance=', self%tolerance, ' Error=', error
+
+  ! Because we swap pointers at the end of each iteration, newest solution is in phi_old
+  ! Check if we have to copy over solution
+  if (associated(phi_old,phi_scratch)) self%phi%f = phi_scratch
+  
   call trace_end
 END SUBROUTINE solve
-
 !> =============================================================================
 END MODULE pde_mod
