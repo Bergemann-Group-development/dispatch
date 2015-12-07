@@ -124,7 +124,8 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
     enddo
   endif
   ! Calculate relative error using old array as scratch
-  error = error_2nd(self, phi_new, phi, FourPiGrho)
+  !error = error_2nd(self, phi_new, phi, FourPiGrho)
+  error = error_direct (self, phi_new, phi, FourPiGrho, a)
 end associate
 END SUBROUTINE jacobi_2nd
 !===============================================================================
@@ -222,7 +223,8 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
     endif
   enddo
   ! Calculate relative error using old array as scratch
-  error = error_2nd(self, phi_new, phi, FourPiGrho)
+  !error = error_2nd (self, phi_new, phi, FourPiGrho)
+  error = error_direct (self, phi_new, phi, FourPiGrho, a)
 end associate
 END SUBROUTINE gauss_seidel_2nd
 !===============================================================================
@@ -287,5 +289,37 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
   error = error / max(maxval(abs(phi)),maxval(FourPiGrho))
 end associate
 END FUNCTION error_2nd
+!===============================================================================
+! 3pt 2nd order Error calculation -- scratch is used as temp scratch space
+!===============================================================================
+FUNCTION error_direct (self, phi, scratch, FourPiGrho, a) result(error)
+  implicit none
+  class(laplace_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)) :: scratch
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)), intent(in)  :: &
+                     Phi, FourPiGrho
+  real    :: error, a
+  !
+  integer :: i,j,k
+  !.............................................................................
+  ! Calculate error as
+  !
+  !   error = maxval(abs(phi-phi_old)//FourPiGrho)/a
+  !
+  ! which is mathematically equivalent to maxval(abs(residue)/FourPiGrho)
+  !.............................................................................
+  !
+associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
+  a = 1./a
+  do k=l(3),u(3)
+  do j=l(2),u(2)
+  do i=l(1),u(1)
+    scratch(i,j,k) = a * abs(phi(i,j,k)-scratch(i,j,k))/FourPiGrho(i,j,k)
+  enddo
+  enddo
+  enddo
+  error = maxval(scratch(l(1):u(1),l(2):u(2),l(3):u(3)))
+end associate
+END FUNCTION error_direct
 !===============================================================================
 END MODULE laplace_mod
