@@ -33,10 +33,12 @@ rho = np.fromfile(file=f, dtype=np.float32, count=np.prod(shape)).reshape(shape)
 print "  density range:", [rho.min(),rho.max()]
 pl.subplot(1,2,1)
 pl.imshow(rho[:,:,n[2]/2],origin='lower',interpolation='nearest')
+pl.colorbar(orientation='horizontal')
 pl.title('density')
 phi = np.fromfile(file=f, dtype=np.float32, count=np.prod(shape)).reshape(shape)
 print "potential range:", [phi.min(),phi.max()]
 pl.subplot(1,2,2)
 pl.title('potential')
 pl.imshow(phi[:,:,n[2]/2],origin='lower',interpolation='nearest')
+pl.colorbar(orientation='horizontal')
 pl.show()
