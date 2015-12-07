@@ -35,7 +35,7 @@ SUBROUTINE init (self)
   real:: x, y, z
   logical:: first_time = .true.
   real:: w_gauss=5.0, p_gauss=1.0, amplitude=1.0
-  namelist /poisson_params/ w_gauss, p_gauss, amplitude, tolerance, min_iter, max_iter, G
+  namelist /poisson_params/ w_gauss, p_gauss, amplitude, G, tolerance, min_iter, max_iter
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
@@ -126,6 +126,7 @@ end associate
            (error >= self%tolerance .and. it<max_iter))                         ! Stop if error<=tolerance or max iterations reached
 
     call l%jacobi_2nd (phi_old, phi_new, FourPiGrho, error)                     ! do one iteration and get error
+    if (io%verbose>2) write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Iter=', it, ' Tolerance=', self%tolerance, ' Error=', error
     phi_swap => phi_new; phi_new=>phi_old; phi_old=>phi_swap                    ! swap phi_old and phi_new pointers
     it = it + 1
 
@@ -135,7 +136,7 @@ end associate
   if (it == max_iter .and. io%verbose>0) &
     write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Did not reach convergence in patch. Max iter=', it, &
                                   ' Tolerance=', self%tolerance, ' Error=', error
-  if (it <= max_iter .and. io%verbose>1) &
+  if (it < max_iter .and. io%verbose>1) &
     write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Reached convergence in patch. Max iter=', it, &
                                   ' Tolerance=', self%tolerance, ' Error=', error
 

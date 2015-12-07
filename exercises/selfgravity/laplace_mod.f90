@@ -145,7 +145,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
     enddo
     enddo
   endif  
-  error = maxval(abs(phi))
+  error = maxval(abs(phi(l(1):u(1),l(2):u(2),l(3):u(3))))
   error = error / max(maxval(abs(phi_new)),maxval(FourPiGrho))
 end associate
 END SUBROUTINE jacobi_2nd
