@@ -126,8 +126,10 @@ SUBROUTINE update (self)
   class(link_t), pointer:: head
   class(timestep_t), pointer:: patch
   integer:: n1
+  logical:: end_game=.false.
   !.............................................................................
   call trace_begin('patch_list_t%update')
+!  if (end_game) call print_lists (self)
   if (self%nq < 1) then
     n1 = self%nq
     call self%check_all
@@ -154,9 +156,12 @@ SUBROUTINE update (self)
       call patch%update                                 ! update the patch
       call patch%output                                 ! check output
       print*,'head patch(1)=', self%queue%patch%id
+      call print_lists
       call self%check_nbors (head)                      ! any nbor ready?
       print*,'head patch(2)=', self%queue%patch%id
+      call print_lists
       if (patch%time > patch%end_time) then             ! finished:
+        end_game = .true.
         call self%remove_patch (patch)                  ! remove from self
       else                                              ! not finished:
         call patch%clear(bits%ready)                    ! needs new check
@@ -167,6 +172,7 @@ SUBROUTINE update (self)
     stop
   end if
   print*,'head patch(3)=', self%queue%patch%id
+  call print_lists
   call trace_end
 END SUBROUTINE update
 
@@ -450,7 +456,8 @@ SUBROUTINE check_ready (self, link, set_debug)
     debug = 0
   end if
   patch => link%patch                                   ! already checked?
-  if (patch%is_set(bits%ready)) return
+  if (patch%is_set(bits%ready)) return                  ! skip if already checked
+  if (patch%time > patch%end_time) return               ! don't bother if finished
   call trace_begin('patch_list_t%check_ready '//self%name,2)
   nbor => link%nbors                                    ! start on nbor list
   inbor = 0
@@ -489,6 +496,8 @@ SUBROUTINE queue_by_time (self, this)
   type(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%queue_by_time '//self%name)
+  if (io%verbose>2) print'(1x,a,i6,a,f10.5)', 'list_t%queue_by_time: adding patch', &
+    this%patch%id, ' at time', this%patch%time
   nullify (this%next_time)
   nullify (prev)
   next => self%queue
@@ -620,6 +629,29 @@ SUBROUTINE check_queue (self)
   end do
   if (nq /= self%nq) print*,'ERROR: inconsistent number of patches in queue', nq, self%nq
 END SUBROUTINE check_queue
+
+!> =============================================================================
+!> Print a table with patch id, positions, and all neighbors
+!> =============================================================================
+SUBROUTINE print_lists (self)
+  class (patch_list_t):: self
+  type(link_t) , pointer:: link, nbor
+  !.............................................................................
+  link => self%head
+  print'(a,i4,":",$)', 'task_list', self%n
+  do while (associated(link))
+    print '(i4,$)', link%patch%id
+    link => link%next
+  end do
+  print*,''
+  link => self%queue
+  print'(a,i4,":",$)', 'ready_queue', self%nq
+  do while (associated(link))
+    print '(i4,$)', link%patch%id
+    link => link%next_time
+  end do
+    print*,''
+END SUBROUTINE print_lists
 
 !> =============================================================================
 !> Print a table with patch id, positions, and all neighbors

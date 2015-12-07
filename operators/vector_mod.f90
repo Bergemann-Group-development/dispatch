@@ -184,7 +184,7 @@ FUNCTION vector_scalar_mul (in1, in2) RESULT (out)
   out%x = in1%x * in2%f
   out%y = in1%y * in2%f
   out%y = in1%z * in2%f
-  out%d => in2%d
+  !out%d => in2%d
 END FUNCTION vector_scalar_mul
 !> =============================================================================
 FUNCTION const3_scalar_mul (in2, in1) RESULT (out)
