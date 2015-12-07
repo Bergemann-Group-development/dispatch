@@ -232,6 +232,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
   if (n(3)>1) a = a + 2. / ds(3)**2
   a = 1. / a
   ! Init iteration and copy boundary conditions
+  phi_new = -a * FourPiGrho
   if (n(1)>1) then
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
     phi_new(u(1)+1:n(1),  :,:) = phi(u(1)+1:n(1),  :,:)
