@@ -26,9 +26,9 @@ MODULE pde_mod
     procedure:: init
     procedure:: solve
   end type
-  real    :: tolerance=1e-4, G=1., omega_sor=0.0
+  real    :: tolerance=1e-4, G=1.
   integer :: min_iter=0, max_iter=100
-  character(len=12):: solver='jacobi'
+  character(len=12):: solver='jacobi_2nd'
 CONTAINS
 
 !> =============================================================================
@@ -41,7 +41,7 @@ SUBROUTINE init (self)
   logical:: first_time = .true.
   real:: w_gauss=5.0, p_gauss=1.0, amplitude=1.0
   namelist /poisson_params/ w_gauss, p_gauss, amplitude, G, tolerance, &
-                            min_iter, max_iter, solver, omega_sor
+                            min_iter, max_iter, solver
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
@@ -68,7 +68,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Set up the right dimensions from current patch, etc for laplace iteration method
   !-----------------------------------------------------------------------------
-  call self%laplace%init(self,solver,omega_sor)
+  call self%laplace%init(self,solver)
   !-----------------------------------------------------------------------------
   ! Memory mapping og density and potentiall field
   !-----------------------------------------------------------------------------
