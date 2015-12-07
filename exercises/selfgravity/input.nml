@@ -6,11 +6,12 @@
  tolerance=1e-3         ! tolerance on relative error
  min_iter=5             ! minimum number of iterations in gravity solver
  max_iter=1000          ! maximum number of iterations in gravity solver
+ solver='jacobi'        ! solver name (jacobi, gauss-seidel, sor, cg, multi-grid)
 /
 &io_params
 !do_trace=t verbose=4   ! =1 for output file messages
  do_trace=f verbose=3   ! =1 for output file messages
 /
 &patch_params
- dims=16,16,16          ! nx, ny, nz
+ dims=16,16,16         ! nx, ny, nz
 /

@@ -19,11 +19,14 @@ MODULE pde_mod
     real:: G                                                                    ! Strength of gravity
     real:: tolerance
     integer:: min_iter, max_iter
+    character(len=12):: solver
   contains
     procedure:: init
     procedure:: solve
   end type
-  real :: tolerance=1e-4, G=1., min_iter=0, max_iter=100
+  real    :: tolerance=1e-4, G=1.
+  integer :: min_iter=0, max_iter=100
+  character(len=12):: solver='jacobi'
 CONTAINS
 
 !> =============================================================================
@@ -35,7 +38,7 @@ SUBROUTINE init (self)
   real:: x, y, z
   logical:: first_time = .true.
   real:: w_gauss=5.0, p_gauss=1.0, amplitude=1.0
-  namelist /poisson_params/ w_gauss, p_gauss, amplitude, G, tolerance, min_iter, max_iter
+  namelist /poisson_params/ w_gauss, p_gauss, amplitude, G, tolerance, min_iter, max_iter, solver
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
@@ -53,10 +56,11 @@ SUBROUTINE init (self)
   self%w_gauss   = w_gauss
   self%p_gauss   = p_gauss
   self%amplitude = amplitude
+  self%G         = G
   self%tolerance = tolerance
   self%min_iter  = min_iter
   self%max_iter  = max_iter
-  self%G         = G
+  self%solver    = solver
   self%nv        = 2
   call self%patch_t%init
   !-----------------------------------------------------------------------------
@@ -110,7 +114,7 @@ SUBROUTINE solve (self)
   call trace_begin ('poisson_mod:pde_t%update', 2)
 
   ! Set the right dimension from current patch for iterator
-  call l%init(self)
+  call l%init(self,self%solver)
 
 associate(gn=>self%gn)
   Allocate(FourPiGrho(gn(1),gn(2),gn(3)),phi_scratch(gn(1),gn(2),gn(3)))        ! Allocate scratch memory
@@ -122,11 +126,10 @@ end associate
 
   error = 2.*self%tolerance
   it    = 0
-  do while((it<min_iter) .or. &                                                 ! Do at least min_iter iterations 
-           (error >= self%tolerance .and. it<max_iter))                         ! Stop if error<=tolerance or max iterations reached
+  do while((it<self%min_iter) .or. &                                            ! Do at least min_iter iterations 
+           (error >= self%tolerance .and. it<self%max_iter))                    ! Stop if error<=tolerance or max iterations reached
 
-    call l%jacobi_2nd (phi_old, phi_new, FourPiGrho, error)                     ! do one iteration and get error
-    !call l%gauss_seidel_2nd (phi_old, phi_new, FourPiGrho, error)                     ! do one iteration and get error
+    call l%solver (phi_old, phi_new, FourPiGrho, error)                         ! do one iteration and get error
     if (io%verbose>2) write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Iter=', it, ' Tolerance=', self%tolerance, ' Error=', error
     phi_swap => phi_new; phi_new=>phi_old; phi_old=>phi_swap                    ! swap phi_old and phi_new pointers
     it = it + 1
@@ -134,12 +137,12 @@ end associate
   enddo
 
   ! Check if we reached solution in time
-  if (it == max_iter .and. io%verbose>0) &
+  if (it == self%max_iter .and. io%verbose>0) &
     write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Did not reach convergence in patch. Max iter=', it, &
                                   ' Tolerance=', self%tolerance, ' Error=', error
-  if (it < max_iter .and. io%verbose>1) &
-    write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Reached convergence in patch. Max iter=', it, &
-                                  ' Tolerance=', self%tolerance, ' Error=', error
+  if (it < self%max_iter .and. io%verbose>1) &
+    write(*,'(2(a,i4),2(a,e10.3))'), 'Poisson: Reached convergence in patch. Iter=', it, &
+                                  ' Max iter=', self%max_iter, ' Tolerance=', self%tolerance, ' Error=', error
 
   ! Because we swap pointers at the end of each iteration, newest solution is in phi_old
   ! Check if we have to copy over solution

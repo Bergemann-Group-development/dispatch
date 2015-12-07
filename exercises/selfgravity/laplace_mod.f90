@@ -10,6 +10,7 @@ MODULE laplace_mod
   type, public:: laplace_t
     integer :: li(3), ui(3), n(3), gn(3)
     real    :: ds(3)
+    procedure(jacobi_2nd), pointer :: solver => null()
   contains
     procedure:: init
     procedure:: jacobi_2nd
@@ -18,15 +19,26 @@ MODULE laplace_mod
   end type
 CONTAINS
 !> =============================================================================
-SUBROUTINE init (self, patch)
-  class(laplace_t):: self
-  class(patch_t)  :: patch
+SUBROUTINE init (self, patch, solver_name)
+  implicit none
+  class(laplace_t)  :: self
+  class(patch_t)    :: patch
+  character(len=12) :: solver_name
   !.............................................................................
   self%n  = patch%n
   self%gn = patch%gn
   self%li = patch%li
   self%ui = patch%ui
   self%ds = patch%ds
+  select case(solver_name)
+  case('jacobi')
+    self%solver => jacobi_2nd
+  case('gauss-seidel')
+    self%solver => gauss_seidel_2nd
+  case default
+    write(*,*) 'Poisson solver '//trim(solver_name)//' is unknown'
+    write(*,*) 'Only valid solvers are: jacobi and gauss-seidel'
+  end select
 END SUBROUTINE init
 !===============================================================================
 ! 3pt 2nd order Jacobi iteration, for filtering high-k
@@ -35,11 +47,12 @@ END SUBROUTINE init
 ! phi_new contains the new guess for phi
 !===============================================================================
 SUBROUTINE jacobi_2nd (self, phi, phi_new, FourPiGrho, error)
+  implicit none
   class(laplace_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)) :: phi
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)), intent(out) :: &
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)), target :: phi
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)), intent(out), target :: &
                      phi_new
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)), intent(in)  :: &
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)), intent(in) :: &
                      FourPiGrho
   real    :: error
   !
@@ -121,6 +134,7 @@ END SUBROUTINE jacobi_2nd
 ! phi_new contains the new guess for phi
 !===============================================================================
 SUBROUTINE gauss_seidel_2nd (self, phi, phi_new, FourPiGrho, error)
+  implicit none
   class(laplace_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)), target :: phi
   real, dimension(self%gn(1),self%gn(2),self%gn(3)), intent(out), target :: &
@@ -215,6 +229,7 @@ END SUBROUTINE gauss_seidel_2nd
 ! 3pt 2nd order Error calculation -- scratch is used as temp scratch space
 !===============================================================================
 FUNCTION error_2nd (self, phi, scratch, FourPiGrho) result(error)
+  implicit none
   class(laplace_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)) :: scratch
   real, dimension(self%gn(1),self%gn(2),self%gn(3)), intent(in)  :: &
