@@ -57,7 +57,7 @@ SUBROUTINE jacobi_2nd (self, phi, phi_new, FourPiGrho, error)
   real    :: error
   !
   integer :: i,j,k
-  real    :: a,b
+  real    :: a,b,b1,b2,b3
   !.............................................................................
   ! Make one iterative update for
   !
@@ -93,15 +93,51 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
   endif
   !
   ! Add up contributions
-    b = a / ds(1)**2
-    phi_new(l(1)  :u(1)  ,l(2)  :u(2)  ,l(3)  :u(3)  ) = &
-    phi_new(l(1)  :u(1)  ,l(2)  :u(2)  ,l(3)  :u(3)  ) + &
-     b*(phi(l(1)+1:u(1)+1,l(2)  :u(2)  ,l(3)  :u(3)  ) + &
-        phi(l(1)-1:u(1)-1,l(2)  :u(2)  ,l(3)  :u(3)  )) + &
-     b*(phi(l(1)  :u(1)  ,l(2)+1:u(2)+1,l(3)  :u(3)  ) + &
-        phi(l(1)  :u(1)  ,l(2)-1:u(2)-1,l(3)  :u(3)  )) + &
-     b*(phi(l(1)  :u(1)  ,l(2)  :u(2)  ,l(3)+1:u(3)+1) + &
-        phi(l(1)  :u(1)  ,l(2)  :u(2)  ,l(3)-1:u(3)-1))
+  if (all(n > 1)) then
+    b1 = a / ds(1)**2
+    b2 = a / ds(2)**2
+    b3 = a / ds(3)**2
+    do k=l(3),u(3)
+    do j=l(2),u(2)
+    do i=l(1),u(1)
+      phi_new(i,j,k) = phi_new(i,j,k) + b1 * (phi(i+1,j,k)+phi(i-1,j,k)) &
+                     +                  b2 * (phi(i,j+1,k)+phi(i,j-1,k)) &
+                     +                  b2 * (phi(i,j,k+1)+phi(i,j,k-1))
+    enddo
+    enddo
+    enddo
+  else
+   if (n(1)>1) then
+     b = a / ds(1)**2
+     do k=l(3),u(3)
+     do j=l(2),u(2)
+     do i=l(1),u(1)
+       phi_new(i,j,k) = phi_new(i,j,k) + b * (phi(i+1,j,k)+phi(i-1,j,k))
+     enddo
+     enddo
+     enddo
+   endif
+   if (n(2)>1) then
+     b = a / ds(2)**2
+     do k=l(3),u(3)
+     do j=l(2),u(2)
+     do i=l(1),u(1)
+       phi_new(i,j,k) = phi_new(i,j,k) + b * (phi(i,j+1,k)+phi(i,j-1,k))
+     enddo
+     enddo
+     enddo
+   endif
+   if (n(3)>1) then
+     b = a / ds(3)**2
+     do k=l(3),u(3)
+     do j=l(2),u(2)
+     do i=l(1),u(1)
+       phi_new(i,j,k) = phi_new(i,j,k) + b * (phi(i,j,k+1)+phi(i,j,k-1))
+     enddo
+     enddo
+     enddo
+   endif
+  endif
   ! Calculate relative error using old array as scratch
   !error = error_2nd(self, phi_new, phi, FourPiGrho)
   error = error_direct (self, phi_new, phi, FourPiGrho, a)
