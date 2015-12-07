@@ -18,17 +18,17 @@ MODULE pde_mod
     real:: w_gauss
     real:: p_gauss
     real:: amplitude
-    real:: G                                                                    ! Strength of gravity
-    real:: tolerance
+    real(kind=8):: G                                                                    ! Strength of gravity
+    real(kind=8):: tolerance
     integer:: min_iter, max_iter
     type(laplace_t)  :: laplace
   contains
     procedure:: init
     procedure:: solve
   end type
-  real    :: tolerance=1e-4, G=1.
+  real(kind=8)    :: tolerance=1e-4, G=1., omega_sor=0.0
   integer :: min_iter=0, max_iter=100
-  character(len=12):: solver='jacobi_2nd'
+  character(len=12):: solver='jacobi'
 CONTAINS
 
 !> =============================================================================
@@ -41,7 +41,7 @@ SUBROUTINE init (self)
   logical:: first_time = .true.
   real:: w_gauss=5.0, p_gauss=1.0, amplitude=1.0
   namelist /poisson_params/ w_gauss, p_gauss, amplitude, G, tolerance, &
-                            min_iter, max_iter, solver
+                            min_iter, max_iter, solver, omega_sor
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
@@ -68,7 +68,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Set up the right dimensions from current patch, etc for laplace iteration method
   !-----------------------------------------------------------------------------
-  call self%laplace%init(self,solver)
+  call self%laplace%init(self,solver,omega_sor)
   !-----------------------------------------------------------------------------
   ! Memory mapping og density and potentiall field
   !-----------------------------------------------------------------------------
@@ -107,22 +107,25 @@ END SUBROUTINE init
 SUBROUTINE solve (self)
   class(pde_t):: self
   !
-  real, allocatable, dimension(:,:,:)         :: FourPiGrho
-  real, allocatable, dimension(:,:,:), target :: phi_scratch
-  real, pointer,     dimension(:,:,:)         :: phi_old, phi_new, phi_swap
-  real, parameter :: FourPi = 4.0 * 3.14159265358979323846
-  real            :: error
+  real(kind=8), allocatable, dimension(:,:,:)         :: FourPiGrho
+  real(kind=8), allocatable, dimension(:,:,:), target :: phi_1, phi_2
+  real(kind=8), pointer,     dimension(:,:,:)         :: phi_old, phi_new, phi_swap
+  real(kind=8), parameter :: FourPi = 4.0 * 3.14159265358979323846
+  real(kind=8)            :: error
   integer         :: it
   !.............................................................................
   call trace_begin ('poisson_mod:pde_t%update', 2)
 
 associate(gn=>self%gn)
-  Allocate(FourPiGrho(gn(1),gn(2),gn(3)),phi_scratch(gn(1),gn(2),gn(3)))        ! Allocate scratch memory
+  Allocate(FourPiGrho(gn(1),gn(2),gn(3)), &
+           phi_1(gn(1),gn(2),gn(3)),      &
+           phi_2(gn(1),gn(2),gn(3)))        ! Allocate scratch memory
 end associate
   FourPiGrho = FourPi * self%G * self%d%f                                       ! Set up source of gravity
 
-  phi_old => self%phi%f                                                         ! Do initial pointer arrangement
-  phi_new => phi_scratch
+  phi_1 = self%phi%f
+  phi_old => phi_1                                                         ! Do initial pointer arrangement
+  phi_new => phi_2
 
   error = 2.*self%tolerance
   it    = 0
@@ -147,8 +150,7 @@ end associate
                                   ' Max iter=', self%max_iter, ' Tolerance=', self%tolerance, ' Error=', error
 
   ! Because we swap pointers at the end of each iteration, newest solution is in phi_old
-  ! Check if we have to copy over solution
-  if (associated(phi_old,phi_scratch)) self%phi%f = phi_scratch
+  self%phi%f = phi_old
   
   call trace_end
 END SUBROUTINE solve
