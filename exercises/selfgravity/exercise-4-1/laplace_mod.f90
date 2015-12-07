@@ -154,7 +154,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
     do i=l(1),u(1)
       phi_new(i,j,k) = phi_new(i,j,k) + b1 * (phi(i+1,j,k)+phi(i-1,j,k)) &
                      +                  b2 * (phi(i,j+1,k)+phi(i,j-1,k)) &
-                     +                  b2 * (phi(i,j,k+1)+phi(i,j,k-1))
+                     +                  b3 * (phi(i,j,k+1)+phi(i,j,k-1))
     enddo
     enddo
     enddo
@@ -233,11 +233,11 @@ SUBROUTINE jacobi_4th (self, phi, phi_new, FourPiGrho, error)
   ! You are free to assume the you are solving it in the 3D case.
   !
   ! For an extra challenge: What should be done to handle 1D, 2D, and 3D, like in
-  ! the 2nd order version? Split up terms in "face", "edge", and "corner" contributions.
+  ! the 2nd order version?
   ! ****************************** HINT HINT HINT ******************************
   !
-  ! Calculation has to be done in the interior of the domain, assuming a source 4piGrho, and that
-  ! the boundaries are fixed and therefore copied
+  ! Calculation has to be done in the interior of the domain, assuming a source
+  ! 4piGrho, and that the boundaries are fixed and therefore copied
   !.............................................................................
 associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
   !
@@ -246,7 +246,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
     ! Insert a, b1, b2, b3 are for fourth order case
     ! ****************************** HINT HINT HINT ******************************
 
-    a = 1. ! WRITE CORRECT PREFACTOR
+    a = 1. ! WRITE CORRECT PREFACTOR FOR CENTER TERM
 
     ! Init iteration and copy boundary conditions
     phi_new = -a * FourPiGrho
@@ -268,7 +268,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
       ! THIS IS SECOND ORDER. GENERALIZE TO FOURTH ORDER
       !phi_new(i,j,k) = phi_new(i,j,k) + b1 * (phi(i+1,j,k)+phi(i-1,j,k)) &
       !               +                  b2 * (phi(i,j+1,k)+phi(i,j-1,k)) &
-      !               +                  b2 * (phi(i,j,k+1)+phi(i,j,k-1))
+      !               +                  b3 * (phi(i,j,k+1)+phi(i,j,k-1))
     enddo
     enddo
     enddo
