@@ -2,7 +2,7 @@
    Read the density and potential from the data directory
 '''
 import numpy as np
-from matplotlib.pyplot import imshow, show
+import matplotlib.pyplot as pl
 
 f = open('data/poisson_001_0000.txt','r')
 # line 1: time pos(1:3) size(1:3)
@@ -31,9 +31,13 @@ f = open('data/poisson_001_0000.dat','rb')
 shape = (n[0],n[1],n[2])
 rho = np.fromfile(file=f, dtype=np.float32, count=np.prod(shape)).reshape(shape)
 print "  density range:", [rho.min(),rho.max()]
-imshow(rho[:,:,n[2]/2],origin='lower')
-show()
+pl.subplot(1,2,1)
+pl.imshow(rho[:,:,n[2]/2],origin='lower')
+pl.title('density')
+pl.show()
 phi = np.fromfile(file=f, dtype=np.float32, count=np.prod(shape)).reshape(shape)
 print "potential range:", [phi.min(),phi.max()]
-#imshow(phi[:,:,n[2]/2],origin='lower')
-#show()
+pl.subplot(1,2,2)
+pl.title('potential')
+pl.imshow(phi[:,:,n[2]/2],origin='lower')
+pl.show()
