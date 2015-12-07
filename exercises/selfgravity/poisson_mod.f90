@@ -8,6 +8,7 @@ MODULE pde_mod
   USE trace_mod
   USE patches_mod
   USE scalar_mod
+  USE laplace_mod
   implicit none
   private
   integer, parameter:: i_d=1, i_phi=2
@@ -20,12 +21,12 @@ MODULE pde_mod
     real:: G                                                                    ! Strength of gravity
     real:: tolerance
     integer:: min_iter, max_iter
-    character(len=12):: solver
+    type(laplace_t)  :: laplace
   contains
     procedure:: init
     procedure:: solve
   end type
-  real    :: tolerance=1e-4, G=1.
+  real    :: tolerance=1e-4, G=1., omega_sor=0.0
   integer :: min_iter=0, max_iter=100
   character(len=12):: solver='jacobi'
 CONTAINS
@@ -39,7 +40,8 @@ SUBROUTINE init (self)
   real:: x, y, z
   logical:: first_time = .true.
   real:: w_gauss=5.0, p_gauss=1.0, amplitude=1.0
-  namelist /poisson_params/ w_gauss, p_gauss, amplitude, G, tolerance, min_iter, max_iter, solver
+  namelist /poisson_params/ w_gauss, p_gauss, amplitude, G, tolerance, &
+                            min_iter, max_iter, solver, omega_sor
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
@@ -61,9 +63,12 @@ SUBROUTINE init (self)
   self%tolerance = tolerance
   self%min_iter  = min_iter
   self%max_iter  = max_iter
-  self%solver    = solver
   self%nv        = 2
   call self%patch_t%init
+  !-----------------------------------------------------------------------------
+  ! Set up the right dimensions from current patch, etc for laplace iteration method
+  !-----------------------------------------------------------------------------
+  call self%laplace%init(self,solver,omega_sor)
   !-----------------------------------------------------------------------------
   ! Memory mapping og density and potentiall field
   !-----------------------------------------------------------------------------
@@ -88,7 +93,6 @@ SUBROUTINE init (self)
     end do
     end do
     end do
-    print*,self%it,maxval(self%d%f)
   end if
   !-----------------------------------------------------------------------------
   ! Initial and boundary conditions for phi
@@ -101,21 +105,16 @@ END SUBROUTINE init
 !> Compute iteratively the solution to the Poisson equation stoppin when reaching the tolerance tol
 !> =============================================================================
 SUBROUTINE solve (self)
-  USE laplace_mod
   class(pde_t):: self
   !
   real, allocatable, dimension(:,:,:)         :: FourPiGrho
   real, allocatable, dimension(:,:,:), target :: phi_scratch
   real, pointer,     dimension(:,:,:)         :: phi_old, phi_new, phi_swap
   real, parameter :: FourPi = 4.0 * 3.14159265358979323846
-  type(laplace_t) :: l
   real            :: error
   integer         :: it
   !.............................................................................
   call trace_begin ('poisson_mod:pde_t%update', 2)
-
-  ! Set the right dimension from current patch for iterator
-  call l%init(self,self%solver)
 
 associate(gn=>self%gn)
   Allocate(FourPiGrho(gn(1),gn(2),gn(3)),phi_scratch(gn(1),gn(2),gn(3)))        ! Allocate scratch memory
@@ -131,7 +130,7 @@ end associate
   do while((it<self%min_iter) .or. &                                            ! Do at least min_iter iterations 
            (error >= self%tolerance .and. it<self%max_iter))                    ! Stop if error<=tolerance or max iterations reached
 
-    call l%solver (phi_old, phi_new, FourPiGrho, error)                         ! do one iteration and get error
+    call self%laplace%solver (phi_old, phi_new, FourPiGrho, error)              ! do one iteration and get error
     if (io%verbose>2) write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Iter=', it, ' Tolerance=', self%tolerance, ' Error=', error
     phi_swap => phi_new; phi_new=>phi_old; phi_old=>phi_swap                    ! swap phi_old and phi_new pointers
     it = it + 1
