@@ -209,8 +209,8 @@ SUBROUTINE gauss_seidel_2nd (self, phi, phi_new, FourPiGrho, error)
                      FourPiGrho
   real    :: error
   !
-  integer :: i,j,k, sweep
-  real    :: a,b
+  integer :: i,j,k,sweep,ss
+  real    :: a,b,b1,b2,b3
   real, dimension(:,:,:), pointer :: source
   !.............................................................................
   ! Make one iterative update for
@@ -253,38 +253,54 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
       source => phi_new
     endif
     ! Add up contributions
-    if (n(1)>1) then
-      b = a / ds(1)**2
+    if (all(n > 1)) then
+      b1 = a / ds(1)**2
+      b2 = a / ds(2)**2
+      b3 = a / ds(3)**2
       do k=l(3),u(3)
       do j=l(2),u(2)
-      do i=l(1),u(1)
-        if (modulo(i+j+k,2)==sweep) cycle
-        phi_new(i,j,k) = phi_new(i,j,k) + b * (source(i+1,j,k)+source(i-1,j,k))
+        ss = modulo(j+k+sweep,2)                                                ! n(1)>1: We can move sweep factor outside
+      do i=l(1)+ss,u(1),2
+        phi_new(i,j,k) = phi_new(i,j,k) + b1 * (source(i+1,j,k)+source(i-1,j,k)) & ! The new solution
+                                       + b2 * (source(i,j+1,k)+source(i,j-1,k)) &
+                                       + b3 * (source(i,j,k+1)+source(i,j,k-1))
       enddo
       enddo
       enddo
-    endif
-    if (n(2)>1) then
-      b = a / ds(2)**2
-      do k=l(3),u(3)
-      do j=l(2),u(2)
-      do i=l(1),u(1)
-        if (modulo(i+j+k,2)==sweep) cycle
-        phi_new(i,j,k) = phi_new(i,j,k) + b * (source(i,j+1,k)+source(i,j-1,k))
-      enddo
-      enddo
-      enddo
-    endif
-    if (n(3)>1) then
-      b = a / ds(3)**2
-      do k=l(3),u(3)
-      do j=l(2),u(2)
-      do i=l(1),u(1)
-        if (modulo(i+j+k,2)==sweep) cycle
-        phi_new(i,j,k) = phi_new(i,j,k) + b * (source(i,j,k+1)+source(i,j,k-1))
-      enddo
-      enddo
-      enddo
+    else
+      if (n(1)>1) then
+        b = a / ds(1)**2
+        do k=l(3),u(3)
+        do j=l(2),u(2)
+        do i=l(1),u(1)
+          if (modulo(i+j+k,2)==sweep) cycle
+          phi_new(i,j,k) = phi_new(i,j,k) + b * (source(i+1,j,k)+source(i-1,j,k))
+        enddo
+        enddo
+        enddo
+      endif
+      if (n(2)>1) then
+        b = a / ds(2)**2
+        do k=l(3),u(3)
+        do j=l(2),u(2)
+        do i=l(1),u(1)
+          if (modulo(i+j+k,2)==sweep) cycle
+          phi_new(i,j,k) = phi_new(i,j,k) + b * (source(i,j+1,k)+source(i,j-1,k))
+        enddo
+        enddo
+        enddo
+      endif
+      if (n(3)>1) then
+        b = a / ds(3)**2
+        do k=l(3),u(3)
+        do j=l(2),u(2)
+        do i=l(1),u(1)
+          if (modulo(i+j+k,2)==sweep) cycle
+          phi_new(i,j,k) = phi_new(i,j,k) + b * (source(i,j,k+1)+source(i,j,k-1))
+        enddo
+        enddo
+        enddo
+      endif
     endif
   enddo
   ! Calculate relative error using old array as scratch
@@ -358,7 +374,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,omega_sor=>self%omega_sor)
       do k=l(3),u(3)
       do j=l(2),u(2)
         ss = modulo(j+k+sweep,2)                                                ! n(1)>1: We can move sweep factor outside
-      do i=l(1)+ss,u(1),2        
+      do i=l(1)+ss,u(1),2
         phi_new(i,j,k) = (1. - omega_sor) * phi(i,j,k) + &
                                omega_sor * ( &
                                  b1 * (source(i+1,j,k)+source(i-1,j,k)) & ! The new solution
