@@ -8,7 +8,7 @@
  max_iter=1000          ! maximum number of iterations in gravity solver
 !solver='gauss-seidel'  ! solver name (jacobi, gauss-seidel, sor, cg, multi-grid)
 !solver='sor'           ! solver name (jacobi, gauss-seidel, sor, cg, multi-grid)
-!omega_sor=0.95         ! acceleration factor for SOR method -- optional, otherwise computed
+!omega_sor=0.0          ! acceleration factor for SOR method -- optional, otherwise computed
  solver='jacobi'        ! solver name (jacobi, gauss-seidel, sor, cg, multi-grid)
 /
 &io_params
