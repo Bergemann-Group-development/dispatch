@@ -351,19 +351,19 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,omega_sor=>self%omega_sor)
     endif
     ! Add up contributions
     if (all(n > 1)) then
-      b1 = 1. / ds(1)**2
-      b2 = 1. / ds(2)**2
-      b3 = 1. / ds(3)**2
+      b1 = a / ds(1)**2
+      b2 = a / ds(2)**2
+      b3 = a / ds(3)**2
       do k=l(3),u(3)
       do j=l(2),u(2)
         ss = modulo(j+k+sweep,2)                                                ! n(1)>1: We can move sweep factor outside
       do i=l(1)+ss,u(1),2        
-        phi_new(i,j,k) = (1. - omega_sor) * source(i,j,k) + &
-                               a * omega_sor * ( &
+        phi_new(i,j,k) = (1. - omega_sor) * phi(i,j,k) + &
+                               omega_sor * ( &
                                  b1 * (source(i+1,j,k)+source(i-1,j,k)) & ! The new solution
                                + b2 * (source(i,j+1,k)+source(i,j-1,k)) &
                                + b3 * (source(i,j,k+1)+source(i,j,k-1)) &
-                               - FourPiGrho(i,j,k) )
+                               - a * FourPiGrho(i,j,k) )
       enddo
       enddo
       enddo
@@ -373,7 +373,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,omega_sor=>self%omega_sor)
       do j=l(2),u(2)
       do i=l(1),u(1)
         if (modulo(i+j+k,2)==sweep) cycle                                     ! red-black sweep
-        phi_new(i,j,k) = (1 - omega_sor)*source(i,j,k) &
+        phi_new(i,j,k) = (1 - omega_sor)*phi(i,j,k) &
                             - a * omega_sor * FourPiGrho(i,j,k)
       enddo
       enddo
