@@ -1,10 +1,8 @@
 PROGRAM experiment
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
-!> Make list of links with pointers to patches, and with procedures to initialize
-!> and update the patches.  Keep updating until the list is empty
+!> Setup a single patch with a density tophat and call the Poisson solver
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-  USE io_mod
   USE pde_mod
   type(pde_t):: poisson
   !.............................................................................
