@@ -114,7 +114,7 @@ SUBROUTINE init (self, position, size)
   !-----------------------------------------------------------------------------
   if (.not.self%mem_allocated) then
     allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
-    if (associated(self%mem)) deallocate (self%mem)
+!    if (associated(self%mem)) deallocate (self%mem)
     allocate (self%mem(self%gn(1),self%gn(2),self%gn(3),self%nv,self%nt,2))
     self%mem_allocated = .true.                 ! mark
   end if
@@ -219,6 +219,8 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
   end do
   end do
   end do
+  if (io%verbose > 1) print'(6(1x,a,i5))', 'patch', patch%id, ' level', patch%level, &
+    ' picked up', n, ' points from patch', self%id, ' at level', patch%level
   if (patch%t(patch%it)/=self%t(patch%it)) &
     print'(2(a,i4,f9.4,4x),2i3,2x,5i3,7f8.3)','ERROR: patch:', patch%id, patch%t(patch%it), &
       'self:', self%id, self%t(self%it), patch%it, patch%new, patch%iit, patch%t
