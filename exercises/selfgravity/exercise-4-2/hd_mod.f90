@@ -27,15 +27,7 @@ MODULE hd_mod
     procedure:: magnetic_field_magnitude
   end type
   type(operator_t), pointer:: o
-  public experiment_name
 CONTAINS
-
-!> =============================================================================
-FUNCTION experiment_name()
-  character(len=64):: experiment_name
-  experimentname = 'sedov'
-  experiment_name = experimentname
-END FUNCTION
 
 !> =============================================================================
 !> Map variables to the current memory slot and initialize the deriv operators.
@@ -45,9 +37,16 @@ SUBROUTINE init (self)
   class(hd_t):: self
   logical:: first_time=.true.
   real:: nu(2)=[0.5,2.0], gamma=5./3.
-  namelist /sedov_params/ gamma, nu
+  namelist /hd_params/ gamma, nu
   !.............................................................................
   call trace_begin ('hd_mod:hd_t%init', 2)
+  call self%patch_t%init
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, hd_params)
+    if (io%master) write (*,hd_params)
+  end if
   self%gamma = gamma
   self%nu = nu
   !-----------------------------------------------------------------------------
@@ -80,7 +79,7 @@ SUBROUTINE update (self)
 associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt, &
            ds=>self%ds, dp_dt=>self%dpdt, gas_gamma=>self%gamma, nu=>self%nu)
   !.............................................................................
-  call trace_begin ('sedov_mod::hd_t%update')
+  call trace_begin ('hd_mod::hd_t%update')
   call entropy_per_mass%init    (self%gn, self%size/self%n, 'entropy')
   call gas_pressure%init        (self%gn, self%size/self%n, 'p_gas')
   call c_sound%init             (self%gn, self%size/self%n, 'c_sound')

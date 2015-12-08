@@ -35,19 +35,19 @@ SUBROUTINE init (self)
   real:: x, y, z
   logical:: first_time = .true.
   real:: w_BE=5.0, p_BE=1.0, a_BE=0.10, amplitude=10., r
-  namelist /poisson_params/ w_BE, p_BE, a_BE, amplitude, G, tolerance, &
-                            min_iter, max_iter, solver, omega_sor
+  namelist /BE_params/ w_BE, p_BE, a_BE, amplitude
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
   experimentname = 'BE'
   call io%init (experimentname)
+  call self%ghd_t%init
   call trace_begin ('hd_mod:pde_t%init', 2)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, poisson_params)
-    if (io%master) write (*,poisson_params)
+    read (io%input, BE_params)
+    if (io%master) write (*,BE_params)
   end if
   self%size      = 1.
   self%position  = 0.
@@ -59,7 +59,6 @@ SUBROUTINE init (self)
   self%tolerance = tolerance
   self%min_iter  = min_iter
   self%max_iter  = max_iter
-  self%nv        = 5
   call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Set up the right dimensions from current patch, etc for laplace iteration method
@@ -86,7 +85,7 @@ SUBROUTINE init (self)
       z = (k-(self%gn(3)+1)*0.5)*self%ds(3) + self%position(3)
       r = sqrt(x**2+y**2+z**2)/self%w_BE
       self%d%f(i,j,k) = &
-        self%amplitude*exp(-r**self%p_BE/(1.+r**self%p_BE/log(r**2/self%a_BE)))
+        1.0 + self%amplitude*exp(-r**self%p_BE/(1.+r**self%p_BE/log(r**2/self%a_BE)))
     end do
     end do
     end do
@@ -111,7 +110,7 @@ SUBROUTINE solve (self)
   real(kind=8)            :: error
   integer         :: it
   !.............................................................................
-  call trace_begin ('poisson_mod:pde_t%update', 2)
+  call trace_begin ('BE_mod:pde_t%update', 2)
 
 associate(gn=>self%gn)
   Allocate(FourPiGrho(gn(1),gn(2),gn(3)), &
@@ -136,7 +135,7 @@ end associate
     it = it + 1
 
   enddo
-  call toc ('poisson', product(self%n))
+  call toc ('BE', product(self%n))
 
   ! Check if we reached solution in time
   if (it == self%max_iter .and. io%verbose>0) &

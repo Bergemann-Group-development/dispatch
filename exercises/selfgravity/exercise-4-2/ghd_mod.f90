@@ -27,7 +27,7 @@ MODULE ghd_mod
   end type
   real(kind=8)    :: tolerance=1e-4, G=1., omega_sor=0.0
   integer :: min_iter=0, max_iter=100
-  character(len=12):: solver='jacobi'
+  character(len=12):: solver='sor'
   type(operator_t), pointer:: o
 CONTAINS
 
@@ -45,6 +45,7 @@ SUBROUTINE init (self)
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
   call trace_begin ('ghd_mod:ghd_t%init', 2)
+  call self%hd_t%init
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -58,7 +59,6 @@ SUBROUTINE init (self)
   self%min_iter  = min_iter
   self%max_iter  = max_iter
   self%nv        = 6
-  call self%hd_t%init
   !-----------------------------------------------------------------------------
   ! Set up the right dimensions from current patch, etc for laplace iteration method
   !-----------------------------------------------------------------------------
