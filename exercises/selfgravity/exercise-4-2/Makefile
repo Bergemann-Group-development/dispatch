@@ -4,7 +4,7 @@
 OPTS = optimized
 
 # Default target
-PDE = poisson
+PDE = BE
 EXEC= experiment.x
 
 # Common configuration
@@ -22,13 +22,14 @@ VPATH:=..:$(VPATH)
 
 OBJ = \
   mpi_mod.o omp_mod.o omp_timer_mod.o io_mod.o trace_mod.o stagger_mod.o \
-  $(PDE)_mod.o hd_mod.o patches_mod.o laplace_mod.o scalar_mod.o vector_mod.o tensor_mod.o
+  $(PDE)_mod.o hd_mod.o ghd_mod.o patches_mod.o laplace_mod.o scalar_mod.o vector_mod.o tensor_mod.o
 
 # Dependencies
-$(PDE)_mod.o            : omp_timer_mod.o io_mod.o trace_mod.o patches_mod.o scalar_mod.o laplace_mod.o hd_mod.o
+$(PDE)_mod.o            : omp_timer_mod.o io_mod.o trace_mod.o patches_mod.o scalar_mod.o laplace_mod.o hd_mod.o ghd_mod.o
 patches_mod.o           : trace_mod.o io_mod.o bits_mod.o
 laplace_mod.o           : io_mod.o trace_mod.o patches_mod.o mpi_mod.o
 hd_mod.o                : io_mod.o trace_mod.o scalar_mod.o vector_mod.o tensor_mod.o
+ghd_mod.o               : hd_mod.o
 stagger_mod.o           : io_mod.o trace_mod.o
 
 $(EXEC): $(OBJ)

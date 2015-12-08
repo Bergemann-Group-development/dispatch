@@ -9,23 +9,17 @@ MODULE pde_mod
   USE patches_mod
   USE scalar_mod
   USE laplace_mod
-  USE hd_mod
+  USE ghd_mod
   implicit none
   private
   integer, parameter:: i_d=1, i_phi=2, i_px=3, i_py=4, i_pz=5
-  type, public, extends(hd_t):: pde_t
-    type(scalar_t):: phi
+  type, public, extends(ghd_t):: pde_t
     real:: w_BE
     real:: p_BE
     real:: a_BE
     real:: amplitude
-    real(kind=8):: G                                                                    ! Strength of gravity
-    real(kind=8):: tolerance
-    integer:: min_iter, max_iter
-    type(laplace_t)  :: laplace
   contains
     procedure:: init
-    procedure:: solve
   end type
   real(kind=8)    :: tolerance=1e-4, G=1., omega_sor=0.0
   integer :: min_iter=0, max_iter=100
