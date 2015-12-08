@@ -40,7 +40,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
-  experimentname = 'poisson'
+  experimentname = 'BE'
   call io%init (experimentname)
   call trace_begin ('hd_mod:pde_t%init', 2)
   if (first_time) then
