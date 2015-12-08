@@ -28,7 +28,7 @@ SUBROUTINE init (self, patch, solver_name, omega_sor)
   class(laplace_t)  :: self
   class(patch_t)    :: patch
   character(len=12) :: solver_name
-  real(kind=8)              :: omega_sor
+  real(kind=8)      :: omega_sor
   !.............................................................................
   self%n  = patch%n
   self%gn = patch%gn
@@ -71,8 +71,8 @@ block                                                                           
       delta = 0.0; pref = 0.0
       do i=1,3
         if (self%n(i) > 1) then
-          pref  = pref + 1. / self%ds(i)**2
-          delta = delta + 1. / self%ds(i)**2 * cos(pi / self%n(i))
+          pref  = pref + 1.
+          delta = delta + cos(pi / self%n(i))
         endif
       enddo
       delta = delta / pref

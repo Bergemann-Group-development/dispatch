@@ -4,10 +4,10 @@ PROGRAM experiment
 !> Setup a single patch with a density tophat and call the Poisson solver
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE pde_mod
-  type(pde_t):: poisson
+  type(pde_t):: BE
   !.............................................................................
-  call poisson%init
-  call poisson%solve
-  call poisson%output
+  call BE%init
+  call BE%solve
+  call BE%output
 !> =============================================================================
 END PROGRAM experiment

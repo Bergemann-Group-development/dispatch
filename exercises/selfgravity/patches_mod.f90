@@ -63,9 +63,9 @@ CONTAINS
 SUBROUTINE init (self)
   class(patch_t):: self
   integer:: dims(3) = 16
-  real:: size(3) = 1.0
+  real:: size(3) = 1.0, position(3) = 0.0
   logical:: first_time = .true.
-  namelist /patch_params/ dims, size
+  namelist /patch_params/ dims, size, position
   !.............................................................................
   !$omp atomic
   id = id + 1                                   ! increment global
@@ -84,9 +84,10 @@ SUBROUTINE init (self)
   self%status=0
   self%end_time=end_time
   self%out_time=out_time
-  self%origin = self%position - 0.5*self%size   ! physical origin -- already defined
+  self%size = size                              ! physical size
   self%n  = dims(1:3)                           ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
+  self%origin = self%position - 0.5*self%size   ! physical origin
   where (self%n==1)                             ! for collapsed dimensions
     self%ng = 0                                 ! no guard zones
     self%size = 0.0                             ! zero size
