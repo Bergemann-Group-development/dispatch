@@ -8,5 +8,7 @@
 *.log
 *.cbp
 *.layout
+*.stackdump
+*.asv
 log*
 a.out
