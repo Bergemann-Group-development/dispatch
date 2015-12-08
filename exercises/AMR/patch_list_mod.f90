@@ -29,7 +29,7 @@ MODULE patch_list_mod
     real:: size(3)=1.0
     integer:: dims(3)=[4,4,1]
     character(len=120):: name = 'patch list'
-    integer:: n=0, nq=0, n_nbor=0, n_check=0, n_ready=0
+    integer:: n=0, nq=0, n_nbor=0, n_check=0, n_ready=0, n_behind=0
     integer:: debug=0
   contains
     procedure:: init
@@ -142,38 +142,44 @@ SUBROUTINE update (self)
     self%nq = self%nq-1
     call head%download (guardcells=.true.)              ! download guard cells
     patch => head%patch                                 ! head patch
-    print*,'patch_list_t%update: removed from queue =', &
-      patch%id, ' new head=', self%queue%patch%id
+    if (io%verbose > 1) then
+      if (associated(self%queue)) then
+        print*,'patch_list_t%update: removed from queue =', &
+          patch%id, ' new head=', self%queue%patch%id
+      else
+        print*,'patch_list_t%update: removed from queue =', &
+          patch%id, ' no new head'
+      end if
+    end if
     call patch%output                                   ! check output
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue
-      print*,'head patch(0)=', self%queue%patch%id
+      if (io%verbose > 2) print*,'head patch(0)=', self%queue%patch%id
       call print_lists(self)
       if (patch%level > refine%levelmax) then
         call self%output
         print*,'stopping after refine reached levelmax =', refine%levelmax
         stop
       end if
-    else
-      call patch%update                                 ! update the patch
-      call patch%output                                 ! check output
-      print*,'head patch(1)=', self%queue%patch%id
-      call print_lists(self)
-      call self%check_nbors (head)                      ! any nbor ready?
-      print*,'head patch(2)=', self%queue%patch%id
-      call print_lists(self)
-      if (patch%time > patch%end_time) then             ! finished:
-        end_game = .true.
-        call self%remove_patch (patch)                  ! remove from self
-      else                                              ! not finished:
-        call patch%clear(bits%ready)                    ! needs new check
-      end if
+    end if
+    call patch%update                                 ! update the patch
+    call patch%output                                 ! check output
+    if (io%verbose > 2) print*,'head patch(1)=', self%queue%patch%id
+    call print_lists(self)
+    call self%check_nbors (head)                      ! any nbor ready?
+    if (io%verbose > 2) print*,'head patch(2)=', self%queue%patch%id
+    call print_lists(self)
+    if (patch%time > patch%end_time) then             ! finished:
+      end_game = .true.
+      call self%remove_patch (patch)                  ! remove from self
+    else                                              ! not finished:
+      call patch%clear(bits%ready)                    ! needs new check
     end if
   else
     print*,'stopping: no more tasks', self%nq, self%n
     stop
   end if
-  print*,'head patch(3)=', self%queue%patch%id
+  if (io%verbose > 2) print*,'head patch(3)=', self%queue%patch%id
   call print_lists(self)
   call trace_end
 END SUBROUTINE update
@@ -406,6 +412,9 @@ SUBROUTINE check_nbors (self, link)
   patch => link%patch                                 ! main patch
   nbor => link%nbors                                  ! first nbor
   inbor = 0
+  self%n_check = 0
+  self%n_ready = 0
+  self%n_behind = 0
   do while (associated (nbor))                        ! keep going until end
     nbpatch => nbor%patch                             ! neighbor patch
     inbor = min(inbor+1,mnbor)
@@ -421,6 +430,10 @@ SUBROUTINE check_nbors (self, link)
     print'(i7,a,i4,2x,26i4)', patch%id, ' nbors:', inbor, nbors(1:inbor)
   call self%check_ready (link)                        ! finally check link patch
   self%n_nbor = self%n_nbor + 1
+  if (io%verbose>2) print '(9(1x,a,i6,1x))', &
+    'patch',patch%id,'on level',patch%level,'has',link%n_nbors,'neighbors, checked', &
+    self%n_check,'nbor-nbors, of which', self%n_ready,'are ready, and',self%n_behind,&
+    'were behind'
   call trace_end
 END SUBROUTINE check_nbors
 
@@ -465,9 +478,9 @@ SUBROUTINE check_ready (self, link, set_debug)
   inbor = 0
   do while (associated (nbor))                          ! keep going until end
     nbpatch => nbor%patch
+    inbor = min(inbor+1,mnbor)
     if (patch%ahead_of(nbpatch)) then
       self%n_check = self%n_check+1
-      inbor = min(inbor+1,mnbor)
       nbors(inbor) = nbpatch%id
       if (self%debug==1) &
         print*, patch%id, ' check_ready failed on patch', nbpatch%id
@@ -476,7 +489,7 @@ SUBROUTINE check_ready (self, link, set_debug)
       call trace_end
       return                                            ! give up -- do nothing
     else
-      inbor = min(inbor+1,mnbor)
+      self%n_behind = self%n_behind+1
       nbors(inbor) = nbpatch%id
 !      print*,'nbor patch', nbpatch%id, nbpatch%time
     end if
@@ -587,7 +600,8 @@ SUBROUTINE download (self, guardcells)
   patch => self%patch
   nguard=0
   do while (associated (nbor))
-    call nbor%patch%download_to (patch, guardcells)
+    if (abs(self%patch%level-patch%level) < 2) &
+      call nbor%patch%download_to (patch, guardcells)
     nbor => nbor%next
   end do
   if (io%verbose > 5) &
@@ -639,6 +653,7 @@ SUBROUTINE print_lists (self)
   class (patch_list_t):: self
   type(link_t) , pointer:: link, nbor
   !.............................................................................
+  if (io%verbose < 2) return
   link => self%head
   print'(a,i4,":",$)', 'task_list', self%n
   do while (associated(link))

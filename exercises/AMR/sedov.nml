@@ -15,7 +15,7 @@
 /
 &io_params
 !do_trace=t verbose=4   ! =1 for output file messages
-do_trace=f verbose=1   ! =1 for output file messages
+do_trace=f verbose=3   ! =1 for output file messages
 /
 &box_params
  size=1,1,0             ! box size
@@ -24,7 +24,7 @@ do_trace=f verbose=1   ! =1 for output file messages
 &timestep_params
  courant=0.10
  time_order=3
- end_time=0.00015 out_time=0.00005 dt_fixed=0.00001     ! production runs
+ end_time=0.00014 out_time=0.00005 dt_fixed=0.00001     ! production runs
 !end_time=0.00005 out_time=0.00002 dt_fixed=0.00001     ! debugs and trials
 /
 &patch_params
