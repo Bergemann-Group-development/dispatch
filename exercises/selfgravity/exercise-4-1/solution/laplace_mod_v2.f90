@@ -273,12 +273,12 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
     d1 = a * c3 / ds(1)**2 ! +-2 terms with rescaling included
     d2 = a * c3 / ds(2)**2
     d3 = a * c3 / ds(3)**2
-    omega = 0.9
+    omega = 1.0
 
     a2nd = 1. / (2./ds(1)**2 + 2./ds(2)**2 + 2./ds(3)**2)
-    b12nd = a / ds(1)**2 ! +-1 terms with rescaling included
-    b22nd = a / ds(2)**2
-    b32nd = a / ds(3)**2
+    b12nd = a2nd / ds(1)**2 ! +-1 terms with rescaling included
+    b22nd = a2nd / ds(2)**2
+    b32nd = a2nd / ds(3)**2
 
     do k=l(3),u(3)
     do j=l(2),u(2)
