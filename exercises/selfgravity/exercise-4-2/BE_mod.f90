@@ -64,7 +64,7 @@ SUBROUTINE init (self)
       z = (k-(self%gn(3)+1)*0.5)*self%ds(3) + self%position(3)
       r = sqrt(x**2+y**2+z**2)/self%w_BE
       self%d%f(i,j,k) = &
-        1.0 + self%amplitude*exp(-r**self%p_BE/(1.+r**self%p_BE/log(r**2/self%a_BE)))
+        self%amplitude*exp(-r**self%p_BE/(1.+r**self%p_BE/log(r**2/self%a_BE)))
     end do
     end do
     end do

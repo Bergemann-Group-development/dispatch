@@ -1,6 +1,7 @@
 &BE_params
- w_BE=0.20              ! Gaussian width
- p_BE=2                 ! exp(-(r/w_gauss)**p_gauss)
+ w_BE=0.15              ! Gaussian width
+ p_BE=8                 ! f(r) = exp(-(r/w_gauss)**p_gauss) for small r
+ a_BE=0.1              ! f(r) = a/r**2 for r >> w_gauss
  amplitude=10.          ! density contrast
 /
 &ghd_params
@@ -15,7 +16,8 @@
 &hd_params
 /
 &patch_params
- dims=32,32,32
+ dims=16,16,16
+ !dims=64,64,64
 /
 &io_params
  do_trace=f verbose=2   ! =1 for output file messages
