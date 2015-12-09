@@ -38,11 +38,11 @@ def read_patch (f, fileroot, verbose=False):
     fd = open(fileroot+'.dat','rb')
     n=patch.n
     shape = (n[0],n[1],n[2])
-    patch.rho = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape)
-    patch.ent = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape)
-    patch.px  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape)
-    patch.py  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape)
-    patch.pz  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape)
+    patch.rho = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.ent = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.px  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.py  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.pz  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
     if (verbose):
         print "  density range:", [patch.rho.min(),patch.rho.max()]
         print "  entropy range:", [patch.ent.min(),patch.ent.max()]
