@@ -4,13 +4,8 @@
 '''
 import numpy as np
 
-def read_patch (id, iout):
-    name = 'BE'
-    file = 'data/%s_%3.3d_%4.4d.*' % (name,id,iout)
-    print '          files:', file
-
-    file = 'data/%s_%3.3d_%4.4d.txt' % (name,id,iout)
-    f = open(file,'r')
+def read_patch (fileroot):
+    print '          files:', fileroot+'{txt,dat}'
     class patch:
         id=1
     
@@ -35,15 +30,21 @@ def read_patch (id, iout):
     print "  partial patch:", patch.n
     print "  lower indices:", patch.li
     print "  upper indices:", patch.ui
-    f.close 
 
-    # binary data    
-    file = 'data/%s_%3.3d_%4.4d.dat' % (name,id,iout)
-    f = open(file,'rb')
+    # binary data
+    fd = open(fileroot+'.dat','rb')
     n=patch.n
     shape = (n[0],n[1],n[2])
-    patch.rho = np.fromfile(file=f, dtype=np.float32, count=np.prod(shape)).reshape(shape)
+    patch.rho = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape)
     print "  density range:", [patch.rho.min(),patch.rho.max()]
-    patch.ent = np.fromfile(file=f, dtype=np.float32, count=np.prod(shape)).reshape(shape)
+    patch.ent = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape)
     print "  entropy range:", [patch.ent.min(),patch.ent.max()]
+    patch.px  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape)
+    print "       px range:", [patch.px.min(),patch.px.max()]
+    patch.py  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape)
+    print "       py range:", [patch.py.min(),patch.py.max()]
+    patch.pz  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape)
+    print "       pz range:", [patch.pz.min(),patch.pz.max()]
+    fd.close
+
     return patch
