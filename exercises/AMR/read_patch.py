@@ -1,11 +1,11 @@
 '''
-   Read the density and entropy for a single patch, which is placed correctly into a 
-   larger image
+   Read the patch data for a single patch, taking information for the file f, 
+   which is a file (e.g. data/sedov.log) to be opened in the calling procedure
 '''
 import numpy as np
 
-def read_patch (fileroot):
-    print '          files:', fileroot+'{txt,dat}'
+def read_patch (f, fileroot):
+    print '          files:', fileroot+'{.txt,.dat}'
     class patch:
         id=1
     
