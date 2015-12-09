@@ -61,7 +61,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self, position, size)
   class(patch_t):: self
-  integer:: dims(5) = 4
+  integer:: dims(5) = 6
   real:: position(3), size(3)
   logical:: first_time = .true.
   namelist /patch_params/ dims, size
