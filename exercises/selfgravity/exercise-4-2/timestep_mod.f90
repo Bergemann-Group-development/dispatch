@@ -60,7 +60,7 @@ SUBROUTINE init (self, position, size)
   end if
   !$omp end critical (timest_cr)
   !-----------------------------------------------------------------------------
-  call self%patch_t%init (position, size)
+  !call self%patch_t%init (position, size)
   call self%pde_t%init (position, size)
   if (io%verbose>2) &
   print*,'ts',self%id

@@ -69,12 +69,12 @@ SUBROUTINE init (self, position, size)
   logical:: first_time = .true.
   namelist /patch_params/ dims, size
   !.............................................................................
+  call trace_begin ('patch_t%init', 3)
   !$omp atomic
   id = id + 1                                   ! increment global
   print*,'patch_t%init: id=', id
   self%id = id                                  ! new patch id
   self%position = position                      ! as per call
-  call trace_begin ('patch_t%init', 3)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters
   !-----------------------------------------------------------------------------

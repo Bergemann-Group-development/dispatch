@@ -23,11 +23,11 @@
  dims=1,1,1
 /
 &timestep_params
- end_time=0.0
+ end_time=0.012 out_time=0.002 dt_fixed=0.002
 /
 &refine_params
  refine_until=-1
 /
 &io_params
- do_trace=t verbose=4   ! =1 for output file messages
+ do_trace=f verbose=1   ! =1 for output file messages
 /

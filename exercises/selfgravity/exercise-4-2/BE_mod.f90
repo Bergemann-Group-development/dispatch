@@ -39,8 +39,8 @@ SUBROUTINE init (self, position, size)
   !-----------------------------------------------------------------------------
   experimentname = 'BE'
   call io%init (experimentname)
+  call trace_begin ('BE_mod::pde_t%init')
   call self%ghd_t%init (position, size)
-  call trace_begin ('hd_mod:pde_t%init', 2)
   if (first_time) then
     first_time = .false.
     rewind (io%input)

@@ -14,7 +14,7 @@ MODULE hd_mod
   type, public, extends(patch_t):: hd_t
     type(scalar_t):: d, dddt
     type(scalar_t):: s, dsdt
-    type(vector_t):: p, dpdt
+    type(vector_t):: p, dpdt, rho_face
     real:: u_max
     real:: nu(2)
     real:: gamma
@@ -42,7 +42,7 @@ SUBROUTINE init (self, position, size)
   !.............................................................................
   call trace_begin ('hd_mod:hd_t%init', 2)
   call self%patch_t%init (position, size)
-  call o%init (self%n, self%ds)
+  call o%init (self%gn, self%ds)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -76,7 +76,7 @@ SUBROUTINE update (self)
   type(scalar_t), save:: viscosity, c_sound, log_rho, artificial_pressure, &
                    diffusion_speed, viscous_dissipation, entropy_per_mass, gas_pressure
   type(vector_t), save:: velocity, delta_u, mass_flux, entropy_flux, &
-                   mass_diffusion, rho_face
+                   mass_diffusion
   type(tensor_t), save:: reynolds_stress, strain_tensor, viscous_stress, momentum_flux
 associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt, &
            ds=>self%ds, dp_dt=>self%dpdt, gas_gamma=>self%gamma, nu=>self%nu)
@@ -88,7 +88,7 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   call delta_u%init             (self%gn, self%size/self%n, 'delta_u')
   call velocity%init            (self%gn, self%size/self%n, 'veloc')
   call log_rho%init             (self%gn, self%size/self%n, 'log_d')
-  call rho_face%init            (self%gn, self%size/self%n, 'rho_f')
+  call self%rho_face%init       (self%gn, self%size/self%n, 'rho_f')
   call artificial_pressure%init (self%gn, self%size/self%n, 'p_artif')
   call viscous_dissipation%init (self%gn, self%size/self%n, 'visc_d')
   call mass_flux%init           (self%gn, self%size/self%n, 'mass_fl')
@@ -131,14 +131,12 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   ! Velocity field from linear momenta
   !-----------------------------------------------------------------------------
   log_rho%f   = log(rho%f)
-  rho_face%x  = exp(o%xdn(log_rho%f))
-  rho_face%y  = exp(o%ydn(log_rho%f))
-  rho_face%z  = exp(o%zdn(log_rho%f))
-  print*, minval(p%x), maxval(p%x)
-  print*, minval(rho_face%x), maxval(rho_face%x)
-  velocity%x  = p%x/rho_face%x
-  velocity%y  = p%y/rho_face%y
-  velocity%z  = p%y/rho_face%z
+  self%rho_face%x  = exp(o%xdn(log_rho%f))
+  self%rho_face%y  = exp(o%ydn(log_rho%f))
+  self%rho_face%z  = exp(o%zdn(log_rho%f))
+  velocity%x  = p%x/self%rho_face%x
+  velocity%y  = p%y/self%rho_face%y
+  velocity%z  = p%z/self%rho_face%z
   self%u_max = self%fmaxval(sqrt(velocity%x**2+velocity%y**2+velocity%z**2)+c_sound%f)
   !-----------------------------------------------------------------------------
   ! Diffusion added for stability
@@ -151,9 +149,9 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   !-----------------------------------------------------------------------------
   ! Evolution of mass density, with diffusive term proportional to -\grad\ln\rho
   !-----------------------------------------------------------------------------
-  mass_diffusion%x  =  - ds(1)*rho_face%x*o%xdn(diffusion_speed%f)*o%ddxdn(log_rho%f)
-  mass_diffusion%y  =  - ds(2)*rho_face%y*o%ydn(diffusion_speed%f)*o%ddydn(log_rho%f)
-  mass_diffusion%z  =  - ds(3)*rho_face%z*o%zdn(diffusion_speed%f)*o%ddzdn(log_rho%f)
+  mass_diffusion%x  =  - ds(1)*self%rho_face%x*o%xdn(diffusion_speed%f)*o%ddxdn(log_rho%f)
+  mass_diffusion%y  =  - ds(2)*self%rho_face%y*o%ydn(diffusion_speed%f)*o%ddydn(log_rho%f)
+  mass_diffusion%z  =  - ds(3)*self%rho_face%z*o%zdn(diffusion_speed%f)*o%ddzdn(log_rho%f)
   mass_flux%x        = p%x + mass_diffusion%x
   mass_flux%y        = p%y + mass_diffusion%y
   mass_flux%z        = p%z + mass_diffusion%z

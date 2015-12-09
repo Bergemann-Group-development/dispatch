@@ -25,7 +25,7 @@ MODULE ghd_mod
     procedure:: update
     procedure:: solve
   end type
-  type(operator_t), pointer:: o
+  type(operator_t):: o
 CONTAINS
 
 !> =============================================================================
@@ -44,6 +44,7 @@ SUBROUTINE init (self, position, size)
   !-----------------------------------------------------------------------------
   call trace_begin ('ghd_mod:ghd_t%init', 2)
   call self%hd_t%init (position, size)
+  call o%init (self%gn, self%ds)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -138,10 +139,11 @@ SUBROUTINE update (self)
   class(ghd_t):: self
   !.............................................................................
   call trace_begin ('ghd_mod:ghd_t%update', 2)
+  call self%solve
   call self%hd_t%update
-  self%dpdt%x = self%dpdt%x - o%ddxdn(self%phi%f)/exp(o%xdn(log(self%d%f)))
-  self%dpdt%y = self%dpdt%y - o%ddydn(self%phi%f)/exp(o%ydn(log(self%d%f)))
-  self%dpdt%z = self%dpdt%z - o%ddzdn(self%phi%f)/exp(o%zdn(log(self%d%f)))
+  self%dpdt%x = self%dpdt%x - o%ddxdn(self%phi%f)/self%rho_face%x
+  self%dpdt%y = self%dpdt%y - o%ddydn(self%phi%f)/self%rho_face%y
+  self%dpdt%z = self%dpdt%z - o%ddzdn(self%phi%f)/self%rho_face%z
   call trace_end
 END SUBROUTINE update
 !> =============================================================================
