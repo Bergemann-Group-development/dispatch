@@ -144,7 +144,7 @@ SUBROUTINE update (self)
   if (associated(head)) then
     self%queue => self%queue%next_time                  ! update the link
     self%nq = self%nq-1
-    call head%download (guardcells=.true.)              ! download guard cells
+    call head%download                                  ! guard cells & interior
     patch => head%patch                                 ! head patch
     if (io%verbose > 1) then
       if (associated(self%queue)) then
@@ -256,9 +256,10 @@ SUBROUTINE split (self, this)
         call self%add_by_quality (link)         ! which is added to the task list
         call link%make_new_nbors (link, this)   ! make a new nbors list for link
         !------------------------------------------------------------------------
-        ! Otherwise, download values from neighbors (including the parent)
+        ! Download values from parent and neighbors, except at time==0.0, to
+        ! allow recursive refinement there
         !------------------------------------------------------------------------
-        call link%download
+        if (this%patch%time > 0.0) call link%download (all_cells=.true.)
         !------------------------------------------------------------------------
         ! Insert the new patch at the head of the ready queue
         !------------------------------------------------------------------------
@@ -678,10 +679,10 @@ END SUBROUTINE add_by_quality
 !> =============================================================================
 !> Run through neighbor list and pick up guard cells
 !> =============================================================================
-SUBROUTINE download (self, guardcells)
+SUBROUTINE download (self, all_cells, guard_cells)
   implicit none
   class (link_t):: self
-  logical, optional:: guardcells
+  logical, optional:: guard_cells, all_cells
   class (link_t),  pointer:: nbor
   class (patch_t), pointer:: patch
   integer :: nguard
@@ -692,7 +693,7 @@ SUBROUTINE download (self, guardcells)
   nguard=0
   do while (associated (nbor))
     if (abs(self%patch%level-patch%level) < 2) &
-      call nbor%patch%download_to (patch, guardcells)
+      call nbor%patch%download_to (patch, all_cells, guard_cells)
     nbor => nbor%next
   end do
   if (io%verbose > 5) &

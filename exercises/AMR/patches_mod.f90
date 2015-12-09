@@ -159,9 +159,9 @@ END SUBROUTINE update_patch
 !> This is useful for both guard cell fill-in, and for "prolongation" = creating
 !> patches with higher resolution.
 !> =============================================================================
-SUBROUTINE download_to (self, patch, guardcells)
+SUBROUTINE download_to (self, patch, all_cells, guard_cells)
   class(patch_t):: self
-  logical, optional:: guardcells
+  logical, optional:: guard_cells, all_cells
   logical:: all_target
   class(patch_t), pointer:: patch
   integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), n
@@ -173,9 +173,17 @@ SUBROUTINE download_to (self, patch, guardcells)
 associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
   it = patch%it
   n = 0
+  !-----------------------------------------------------------------------------
+  ! Download rules:  1) Always download guard cells.  2) Download all cells if
+  ! a) all_cells is set, and the source level is at most one level higher. In
+  !    this case (first fill-in), the source level may be lower than target level
+  ! b) the level is one level higher
+  !-----------------------------------------------------------------------------
   all_target = .true.
-  if (present(guardcells)) all_target = .not.guardcells
-  if (self%level <= patch%level) all_target = .false.
+  if (present(guard_cells)     ) all_target = .not.guard_cells
+  if (self%level <= patch%level) all_target = .false.   ! do not upload from below
+  if (present(all_cells)       ) all_target = .true.    ! unless explicit order
+  if ((self%level-patch%level) > 1) return              ! upload at most 1 level
   do iz=1,patch%gn(3)
   do iy=1,patch%gn(2)
   do ix=1,patch%gn(1)
@@ -217,15 +225,15 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
                                    + f(1) *source(j1(1),j0(2),j1(3),iv,it,1)) + &
             (   f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j1(3),iv,it,1)    &
                                    + f(1) *source(j1(1),j1(2),j1(3),iv,it,1))
-          n = n+1
-      end do
+        end do
+        n = n+1
       end if
     end if
   end do
   end do
   end do
   if (io%verbose > 1) print'(6(1x,a,i5))', 'patch', patch%id, ' level', patch%level, &
-    ' picked up', n, ' points from patch', self%id, ' at level', patch%level
+    ' picked up', n, ' points from patch', self%id, ' at level', self%level
   if (patch%t(patch%it)/=self%t(patch%it)) &
     print'(2(a,i4,f9.4,4x),2i3,2x,5i3,7f8.3)','ERROR: patch:', patch%id, patch%t(patch%it), &
       'self:', self%id, self%t(self%it), patch%it, patch%new, patch%iit, patch%t
