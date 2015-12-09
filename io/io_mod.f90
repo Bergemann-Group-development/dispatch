@@ -8,6 +8,7 @@ MODULE io_mod
   type io_t
     integer:: verbose=0, input=1, output=2, data_unit=3, log_unit=4
     logical:: master=.true., do_debug=.false., do_trace=.false.
+    integer:: levelmax=10
   contains
     procedure:: init
     procedure:: print_id => print_id_
@@ -25,11 +26,11 @@ SUBROUTINE init (self, name)
   class(io_t):: self
   character(len=120), save:: id = &
   'io_mod.f90 $Id$'
-  integer:: verbose
+  integer:: verbose=0, levelmax=10
   character(len=*), optional:: name
   character(len=mch):: inputfile, argfile
   logical:: do_debug, do_trace, exist
-  namelist /io_params/ verbose, do_debug, do_trace
+  namelist /io_params/ verbose, do_debug, do_trace, levelmax
   !.............................................................................
   call print_id (id)
   if (present(name)) inputfile = trim(name)//'.nml'                             ! experiment_name given?
@@ -50,11 +51,12 @@ SUBROUTINE init (self, name)
   read (io%input, io_params)
   io%do_debug = do_debug
   io%do_trace = do_trace
-  io%verbose = verbose
+  io%verbose  = verbose
+  io%levelmax = levelmax
   if (io%master.and.first_time) write (*,io_params)
   self%do_debug = do_debug
   self%do_trace = do_trace
-  self%verbose = verbose
+  self%verbose  = verbose
   first_time = .false.
 END SUBROUTINE init
 

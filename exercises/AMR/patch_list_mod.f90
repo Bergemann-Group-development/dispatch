@@ -158,8 +158,6 @@ SUBROUTINE update (self)
     call patch%output                                   ! check output
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue
-      if (io%verbose > 2) print*,'head patch(0)=', self%queue%patch%id
-      call print_lists(self)
       if (patch%level > refine%levelmax) then
         call self%output
         print*,'stopping after refine reached levelmax =', refine%levelmax
@@ -168,11 +166,7 @@ SUBROUTINE update (self)
     end if
     call patch%update                                 ! update the patch
     call patch%output                                 ! check output
-    if (io%verbose > 2) print*,'head patch(1)=', self%queue%patch%id
-    call print_lists(self)
     call self%check_nbors (head)                      ! any nbor ready?
-    if (io%verbose > 2) print*,'head patch(2)=', self%queue%patch%id
-    call print_lists(self)
     if (patch%time > patch%end_time) then             ! finished:
       end_game = .true.
       call self%remove_patch (patch)                  ! remove from self
@@ -183,7 +177,6 @@ SUBROUTINE update (self)
     print*,'stopping: no more tasks', self%nq, self%n
     stop
   end if
-  if (io%verbose > 2) print*,'head patch(3)=', self%queue%patch%id
   call print_lists(self)
   call trace_end
 END SUBROUTINE update
@@ -261,18 +254,10 @@ SUBROUTINE split (self, this)
         link%patch => patch
         link%parent => this                     ! link is the link to the new patch
         call self%add_by_quality (link)         ! which is added to the task list
-        call print_lists (self)
-        call this%print_nbors ('before mk_nb')  ! print parent's nbors list
-        print*,'before make_new_nbors'
-        call print_lists (self)
         call link%make_new_nbors (link, this)   ! make a new nbors list for link
-        call this%print_nbors ('after mk_nb')   ! print parent's nbors list
-        call link%print_nbors ('new link nb')   ! print new link nbors list
         !------------------------------------------------------------------------
         ! Otherwise, download values from neighbors (including the parent)
         !------------------------------------------------------------------------
-        print*,'before download'
-        call print_lists (self)
         call link%download
         !------------------------------------------------------------------------
         ! Insert the new patch at the head of the ready queue
@@ -308,9 +293,7 @@ SUBROUTINE make_new_nbors (self, selfp, parent)
   call trace_begin('patch_list_t%make_new_nbors', 1)
   call self%make_new_nbor (selfp, parent)         ! make me a neighbor of my parent
   nbor => parent%nbors                            ! start on parent's nbors chain
-  print*,'searching parent nbors list:'
   do while (associated(nbor))
-    print*,nbor%patch%id, associated(self%patch,nbor%patch), self%patch%overlaps (nbor%patch)
     if (.not.associated(self%patch,nbor%patch) &
       .and. self%patch%overlaps (nbor%patch)) &   ! if my patch overlaps with that patch
       call self%make_new_nbor (selfp, nbor%nbors) ! make a neighbor (and make me one)
@@ -668,11 +651,7 @@ SUBROUTINE add_by_quality (self, this)
       this%next => next
       if (associated(prev)) then
         prev%next => this
-        print*,'inserted', this%patch%id, ' after', prev%patch%id, ' and before', next%patch%id
-        print*,prev%patch%id,this%patch%id,next%patch%id
-        print*,prev%patch%id,prev%next%patch%id,prev%next%next%patch%id
       else
-        print*,'inserted', this%patch%id, ' at head, before', next%patch%id
         self%head => this
       end if
       self%n = self%n+1
@@ -692,7 +671,6 @@ SUBROUTINE add_by_quality (self, this)
   end if
   nullify (this%next)
   self%tail => this
-  print*,'appended',this%patch%id,' to patch list'
   self%n = self%n+1
   call trace_end
 END SUBROUTINE add_by_quality
@@ -708,7 +686,7 @@ SUBROUTINE download (self, guardcells)
   class (patch_t), pointer:: patch
   integer :: nguard
   !.............................................................................
-  call trace_begin('link_t%get_guardcells')
+  call trace_begin('link_t%download')
   nbor => self%nbors
   patch => self%patch
   nguard=0
@@ -718,7 +696,7 @@ SUBROUTINE download (self, guardcells)
     nbor => nbor%next
   end do
   if (io%verbose > 5) &
-    print *, 'get_guardcells: Number of neighbors with guard cells:', nguard
+    print *, 'download: Number of neighbors with guard cells:', nguard
   call trace_end
 END SUBROUTINE download
 

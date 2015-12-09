@@ -167,6 +167,7 @@ SUBROUTINE download_to (self, patch, guardcells)
   integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), n
   real:: f(3), pos(3)
   !.............................................................................
+!  if (self%id==patch%id .and. all(patch%size /= box%size)) return
   if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','index:self,patch:', &
     self%id,self%position,patch%id,patch%position, self%li, self%ui
 associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
@@ -174,6 +175,7 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
   n = 0
   all_target = .true.
   if (present(guardcells)) all_target = .not.guardcells
+  if (self%level <= patch%level) all_target = .false.
   do iz=1,patch%gn(3)
   do iy=1,patch%gn(2)
   do ix=1,patch%gn(1)
@@ -191,7 +193,6 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
         if (io%verbose>3.and.patch%id==10) print'(a,2(i4,2x,3i4,2x),1p,2(3f9.4,2x),2x,2f11.6," ****")', &
           'index:ii,j0,f:', patch%id, ii,  self%id, j0, f, pos, self%t(it)-patch%t(it)
         j1 = j0+1
-        where (self%n==1) j1 = j0
         where (j1 > self%ui)
           j0 = j0-1
           j1 = j1-1
@@ -201,6 +202,10 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
           j0 = j0+1
           j1 = j1+1
           f  = f-1.0
+        end where
+        where (self%n==1)
+          j0 = 1
+          j1 = 1
         end where
         do iv=1,self%nv
           target(ix,iy,iz,iv,it,1) = &
@@ -348,8 +353,10 @@ END SUBROUTINE troels_get_guardcells_for
 !> =============================================================================
 SUBROUTINE output (self)
   class(patch_t):: self
-  character(len=32) filename
+  character(len=32) filename, logname
   integer:: iv, li(3)=0, ui(3)=0
+  real:: ds(3)
+  logical:: first_time=.true.
   !-----------------------------------------------------------------------------
   ! If the out_next time has passed, set a new time = the integer number of
   ! out_time's that have passed, plus one more
@@ -365,18 +372,18 @@ SUBROUTINE output (self)
     'data/'//trim(self%experiment_name)//'_', self%id, self%iout
   if (io%verbose>=0) &
     print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%time
-  open (3, file=trim(filename)//'.txt', form='formatted', status='unknown')
+  open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   where (self%size > 0.0)
     li = (self%position+0.5*(self%box-self%size))/self%ds
     ui = (self%position+0.5*(self%box+self%size))/self%ds - 1.0
   end where
-  write (3,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
-  write (3,'(4(3i7,2x))') int(self%box/self%ds+0.5), self%n, li, ui
-  close (3)
+  write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
+  write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), self%n, li, ui
+  close (io%data_unit)
   !-----------------------------------------------------------------------------
   ! Write a binary file with the data cube
   !-----------------------------------------------------------------------------
-  open (3, file=trim(filename)//'.dat', form='unformatted', access='direct', &
+  open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
     status='unknown', recl =sizeof(self%mem(1,1,1,1,1,1))*product(self%n))
 associate (l=>self%li, u=>self%ui)
   do iv=1,self%nv
@@ -384,10 +391,30 @@ associate (l=>self%li, u=>self%ui)
       print*,trim(filename),iv, &
               minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)), &
               maxval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1))
-    write (3,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
+    write (io%data_unit,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
   end do
 end associate
-  close (3)
+  close (io%data_unit)
+  !-----------------------------------------------------------------------------
+  ! Write a log file, with files written by this rank
+  !-----------------------------------------------------------------------------
+  write (logname,'(a)') 'data/'//trim(self%experiment_name)//'.log'
+  if (first_time) then
+    first_time = .false.
+    if (io%master) print*, 'output data file log written to '//trim(logname)
+    open (io%log_unit,file=trim(logname),status='unknown')
+  else
+    open (io%log_unit,file=trim(logname),status='unknown',position='append')
+  end if
+  write (io%log_unit,'(a)') trim(filename)
+  ds = self%box/2.0**io%levelmax
+  where (self%size > 0.0)
+    li = (self%position+0.5*(self%box-self%size))/ds
+    ui = (self%position+0.5*(self%box+self%size))/ds - 1.0
+  end where
+  write (io%log_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
+  write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), self%n, li, ui
+  close (io%log_unit)
   self%iout = self%iout+1
   call trace_end
 END SUBROUTINE output

@@ -51,6 +51,7 @@ SUBROUTINE init (self)
   self%refine_from = refine_from
   self%refine_until = refine_until
   self%levelmax = levelmax
+  io%levelmax = min(io%levelmax, self%levelmax)
   call trace_end
 END SUBROUTINE init
 !> =============================================================================

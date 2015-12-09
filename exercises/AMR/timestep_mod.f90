@@ -140,13 +140,13 @@ SUBROUTINE update_timestep (self)
   !-----------------------------------------------------------------------------
   ! Print time step info?
   !-----------------------------------------------------------------------------
-  if (io%verbose==1) then
+  if (io%verbose>=1) then
     print '(a,2i5,i3,2f10.6,1p,e10.2,0p,f7.3,2x,b6.6)', &
       'timestep_t%update: id,step,level,t,dt,umax,courant,status=', &
       self%id, self%istep, self%level, self%time, self%dtime, self%u_max, self%courant, self%status
-  else if (io%verbose>1) then
-    print'(2(a,f9.4,3x),3(a,i5,3x))', 'timestep_t%update: t=', self%time, &
-      'dt=', self%dtime, 'it=', self%it, 'new=', self%new, 'id=', self%id
+!  else if (io%verbose>1) then
+!    print'(2(a,f9.4,3x),3(a,i5,3x))', 'timestep_t%update: t=', self%time, &
+!      'dt=', self%dtime, 'it=', self%it, 'new=', self%new, 'id=', self%id
   end if
   call trace_end
 END SUBROUTINE update_timestep
