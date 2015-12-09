@@ -6,7 +6,6 @@ MODULE patches_mod
   USE trace_mod
   USE io_mod
   USE bits_mod
-  USE central_mod
   implicit none
   integer, parameter:: ntime=7
   private
@@ -31,7 +30,6 @@ MODULE patches_mod
     integer:: verbose = 0
     logical:: is_leaf = .true.
     logical:: mem_allocated = .false.
-    class(central_t), pointer:: derivs
     character(len=64), pointer:: experiment_name
   contains
     procedure:: init
@@ -54,7 +52,6 @@ MODULE patches_mod
     procedure:: fminval         ! interior min value
   end type
   real, public:: end_time=1.0, out_time=0.1
-  character(len=64), public, target:: experimentname
   integer:: id = 0
 CONTAINS
 !> =============================================================================
@@ -108,8 +105,6 @@ SUBROUTINE init (self, position, size)
   self%nv = dims(5)                             ! number of variables
   self%level = log(maxval(self%box)/minval(self%ds))/log(2.) + 0.1
   !print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
-  allocate (self%derivs)                        ! thread safe derivatives
-  call self%derivs%init (dims(1:3), size/self%n)! pass on patch info to derivs
   !-----------------------------------------------------------------------------
   ! Allocate memory, if not allocated
   !-----------------------------------------------------------------------------
