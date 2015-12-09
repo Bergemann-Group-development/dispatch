@@ -80,7 +80,7 @@ $(EXEC): $(OBJ)
 
 #############################################################################
 clean:
-	rm -f *.o *.$(MOD) *.stackdump
+	rm -f *.o *.$(MOD) *.stackdump ../*.o
 cleanlog:
 	rm -f *.log
 cleandata:

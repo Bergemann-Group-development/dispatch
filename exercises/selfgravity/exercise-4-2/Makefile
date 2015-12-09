@@ -18,7 +18,7 @@ TOP = ../../../../..
 sinclude $(TOP)/config/Makefile
 TOP = ../../../../../..
 sinclude $(TOP)/config/Makefile
-VPATH:=..:$(VPATH)
+VPATH:=$(VPATH):../
 
 OBJ = \
   mpi_mod.o omp_mod.o omp_timer_mod.o io_mod.o trace_mod.o stagger_mod.o \

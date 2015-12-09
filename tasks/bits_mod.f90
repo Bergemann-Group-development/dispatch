@@ -4,7 +4,7 @@
 !> =============================================================================
 MODULE bits_mod
   integer, parameter::       remove_bit=1
-  integer, parameter::        retry_bit=2
+  integer, parameter::         leaf_bit=2
   integer, parameter::        ready_bit=2**2
   integer, parameter::     internal_bit=2**3
   integer, parameter::      virtual_bit=2**4
@@ -17,7 +17,7 @@ MODULE bits_mod
   integer, parameter::       planet_bit=2**11
   integer, parameter::         disk_bit=2**12
   integer, parameter::     particle_bit=2**13
-  integer, parameter::         leaf_bit=2**14
+  integer, parameter::        retry_bit=2**14
   type bits_t
     integer:: remove       = remove_bit
     integer:: retry        = retry_bit
@@ -27,7 +27,7 @@ MODULE bits_mod
     integer:: boundary     = boundary_bit
     integer:: external     = external_bit
     integer:: root_grid    = root_grid_bit
-    integer:: leaf         = leaf_bit
+    integer:: not_leaf     = leaf_bit
     integer:: frozen       = frozen_bit
     integer:: swap_request = swap_request_bit
     integer:: particle     = particle_bit
