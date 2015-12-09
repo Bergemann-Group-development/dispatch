@@ -80,6 +80,7 @@ SUBROUTINE init_cartesian (self)
   namelist /box_params/ size, dims, origin
   !.............................................................................
   call trace_begin ('patch_list_t%init_cartesian')
+  call io%init
   rewind (io%input); read (io%input, box_params)
   if (io%master) write (*, box_params)
   self%dims = dims
