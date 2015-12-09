@@ -22,7 +22,9 @@ MODULE patch_list_mod
     integer:: n_nbors
   contains
     procedure:: download
-    procedure:: add_by_quality
+    procedure:: add_nbor_by_quality
+    procedure:: make_new_nbors
+    procedure:: make_new_nbor
     procedure:: print_nbors
   end type
   !.............................................................................
@@ -44,6 +46,7 @@ MODULE patch_list_mod
     procedure:: check_nbors
     procedure:: check_ready
     procedure:: check_all
+    procedure:: add_by_quality
     procedure:: queue_by_time
     procedure:: output
     procedure:: check_queue
@@ -245,39 +248,38 @@ SUBROUTINE split (self, this)
         !------------------------------------------------------------------------
         allocate (patch, source=this%patch)
         patch%mem_allocated = .false.
-        nullify (patch%mem)
         patch%size = this%patch%size/nsplit
         patch%position = this%patch%position + pos*patch%size
-        patch%out_next = patch%time
-        patch%iout = this%patch%iout
+        nullify (patch%mem)
+        call patch%init (patch%position, patch%size)    ! patch, for a new id
+        patch%out_next = patch%time                     ! force output now
+        patch%iout = this%patch%iout                    ! copy counter
         !------------------------------------------------------------------------
         ! Append links to the new patch in the patch list, sorted by quality
         !------------------------------------------------------------------------
         allocate (link)
         link%patch => patch
-        link%parent => this
-        call self%head%add_by_quality (link)
-        call self%make_new_nbors (link)
-        call this%print_nbors
-        call link%print_nbors
-        !------------------------------------------------------------------------
-        ! If we are still at time=0.0 (refining on initial conditions), use the
-        ! generic init to get initial values
-        !------------------------------------------------------------------------
-        if (patch%time==0.0) then
-          call patch%init (patch%position, patch%size)
+        link%parent => this                     ! link is the link to the new patch
+        call self%add_by_quality (link)         ! which is added to the task list
+        call print_lists (self)
+        call this%print_nbors ('before mk_nb')  ! print parent's nbors list
+        print*,'before make_new_nbors'
+        call print_lists (self)
+        call link%make_new_nbors (link, this)   ! make a new nbors list for link
+        call this%print_nbors ('after mk_nb')   ! print parent's nbors list
+        call link%print_nbors ('new link nb')   ! print new link nbors list
         !------------------------------------------------------------------------
         ! Otherwise, download values from neighbors (including the parent)
         !------------------------------------------------------------------------
-        else
-          call link%download
-        end if
+        print*,'before download'
+        call print_lists (self)
+        call link%download
         !------------------------------------------------------------------------
         ! Insert the new patch at the head of the ready queue
         !------------------------------------------------------------------------
-        link%next_time => self%queue
-        self%queue => link
-        self%nq = self%nq+1
+!        link%next_time => self%queue
+!        self%queue => link
+!        self%nq = self%nq+1
         if (io%verbose>0) then
           print 1,'task_list_t%split:  patch, iout, time, size, origin =', &
             patch%id, patch%iout, patch%time, patch%size, patch%origin
@@ -294,54 +296,106 @@ SUBROUTINE split (self, this)
 END SUBROUTINE split
 
 !> =============================================================================
-!> Initialize the nbors chain of a new patch, by
+!> Initialize the nbors chain of a new patch (self), by
 !> 1) adding the parent
 !> 2) searching the parent nbors, adding patches that overlap
 !> Each time it adds an nbor, it should also add itself to that nbor's nbor list
 !> =============================================================================
-SUBROUTINE make_new_nbors (self)
-  class (link_t):: self
-  class(link_t) , pointer:: that
+SUBROUTINE make_new_nbors (self, selfp, parent)
+  class(link_t):: self
+  class(link_t), pointer:: selfp, parent, nbor
   !> ...........................................................................
   call trace_begin('patch_list_t%make_new_nbors', 1)
-  call self%parent%make_new_nbor (self)       ! make me a neighbor of my parent
-  that => self%parent%nbors                   ! start on parent's nbors chain
-  do while (associated(that))
-    if (self%patch%overlaps (that%patch)) &   ! if my patch overlaps with that patch
-      call self%make_new_nbor (that)          ! make a neighbor (and make me one)
-    that => that%next                         ! continue on parents nbors chain
+  call self%make_new_nbor (selfp, parent)         ! make me a neighbor of my parent
+  nbor => parent%nbors                            ! start on parent's nbors chain
+  print*,'searching parent nbors list:'
+  do while (associated(nbor))
+    print*,nbor%patch%id, associated(self%patch,nbor%patch), self%patch%overlaps (nbor%patch)
+    if (.not.associated(self%patch,nbor%patch) &
+      .and. self%patch%overlaps (nbor%patch)) &   ! if my patch overlaps with that patch
+      call self%make_new_nbor (selfp, nbor%nbors) ! make a neighbor (and make me one)
+    nbor => nbor%next                             ! continue on parents nbors chain
   end do
   call trace_end
 END SUBROUTINE make_new_nbors
 
 !> =============================================================================
 !> Add a link to a new neighbor to my nbors chain, and add myself into that
-!> neighbor's neighbor chain.  An nbor chain link has two pointers: a pointer
-!> to its patch, and a pointer to the next link in the chain.  We need two new
+!> neighbor's neighbor chain.  An nbor chain link has three pointers: a pointer
+!> to its patch, a pointer to the next link in the chain, and a pointer back to
+!> the patch list link to the patch.  We need to make and add two now nbor chain
 !> links; one for our own nbors chain, and one for that's nbors chain.  Both
-!> are, for now, added at the start of the nbors chains, but should really be
-!> added in quality order
+!> are added in quality order
 !> =============================================================================
-SUBROUTINE make_new_nbor (self, that)
-  class (link_t):: self
-  class (link_t), pointer:: that
-  type(link_t) , pointer:: link1, link2
+SUBROUTINE make_new_nbor (self, selfp, that)
+  class(link_t):: self
+  class(link_t), pointer:: selfp, that
+  class(link_t), pointer:: link1, link2
   !> ...........................................................................
   call trace_begin('patch_list_t%make_new_nbor', 1)
-  allocate (link1)                         ! allocate a new nbor link
-  link1%patch => that%patch                ! the link points to that patch
-  call that%nbors%add_by_quality (link1)   ! add to that chain in quality order
-  allocate (link2)                         ! allocate a link for this nbors
-  link2%patch => self%patch                ! that's new link points to my patch
-  call self%nbors%add_by_quality (link2)   ! add to my nbors chain in quality order
+  allocate (link1)                              ! for our own nbors chain
+  link1%patch => that%patch                     ! the link points to that patch
+  link1%nbors => that                           ! link to the nbor link
+  link1%parent => that%parent                   ! direct link to patch parent
+  call self%add_nbor_by_quality (link1)         ! add to that chain in quality order
+  allocate (link2)                              ! for that's nbors chain
+  link2%patch => self%patch                     ! that's new link points to my patch
+  link2%nbors => selfp                          ! pointer back to self
+  link2%parent => selfp%parent                  ! direct link to self parent
+  call that%add_nbor_by_quality (link2)         ! add to my nbors chain in quality order
   call trace_end
-END SUBROUTINE make_new_nbors
+END SUBROUTINE make_new_nbor
+
+!> =============================================================================
+!> Add a link node into the nbors list of self, in increasing quality order.
+!> self must be a link whose 'nbors' points to a chain of nbors
+!> =============================================================================
+SUBROUTINE add_nbor_by_quality (self, this)
+  class(link_t):: self
+  class(link_t), pointer:: this
+  type(link_t), pointer:: next, prev
+  !.............................................................................
+  call trace_begin ('list_t%add_nbor_by_quality')
+  nullify (prev)
+  next => self%nbors
+  do while (associated(next))
+    if (.not.associated(next%patch,this%patch)) then
+      if (next%patch%level >= this%patch%level) then
+        !-------------------------------------------------------------------------
+        ! Found a patch we should be ahead of, so insert here
+        !-------------------------------------------------------------------------
+        this%next => next
+        if (associated(prev)) then
+          prev%next => this
+        else
+          self%nbors => this
+        end if
+        self%n_nbors = self%n_nbors+1
+        call trace_end
+        return
+      end if
+    end if
+    prev => next
+    next => next%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! This patch has the highest quality, so append it
+  !-----------------------------------------------------------------------------
+  if (associated(prev)) then
+    prev%next => this
+    nullify (this%next)
+  else
+    self%nbors => this
+  end if
+  self%n_nbors = self%n_nbors+1
+  call trace_end
+END SUBROUTINE add_nbor_by_quality
 
 !> =============================================================================
 !> Initialize nbors via a double loop over the linked list.
 !> =============================================================================
 SUBROUTINE init_nbors_by_overlap (self)
-  class (patch_list_t):: self
+  class(patch_list_t):: self
   type(link_t) , pointer:: prev, link
   !> ===========================================================================
   !> For each patch link, make a list of neighbors, starting with link%nbors
@@ -360,7 +414,7 @@ END SUBROUTINE init_nbors_by_overlap
 !> Initialize the nbor list of a single link
 !> =============================================================================
 SUBROUTINE init_nbor_by_overlap (self, link1)
-  class (patch_list_t):: self
+  class(patch_list_t):: self
   type(link_t) , pointer:: prev, link1, link2, nbor
   !> ===========================================================================
   !> For each patch link, make a list of neighbors, starting with link%nbor
@@ -542,7 +596,6 @@ SUBROUTINE check_ready (self, link, set_debug)
     end if
     nbor => nbor%next                                   ! next nbor
   end do
-  call patch%set(bits%ready)                            ! mark as checked
   call self%queue_by_time (link)                        ! add patch to queue
   self%n_ready = self%n_ready+1
   if (self%debug>0) print *, patch%id, ' found by check_ready, nq =', self%nq
@@ -558,20 +611,23 @@ SUBROUTINE queue_by_time (self, this)
   type(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%queue_by_time '//self%name)
+  call this%patch%set(bits%ready)                       ! mark as checked
   if (io%verbose>2) print'(1x,a,i6,a,f10.5)', 'list_t%queue_by_time: adding patch', &
     this%patch%id, ' at time', this%patch%time
-  nullify (this%next_time)
   nullify (prev)
+
   next => self%queue
   do while (associated(next))
-    this%next_time => next
-    if (next%patch%time >= this%patch%time) then
-      self%nq = self%nq+1
+    if (associated(next%patch, this%patch)) then
+      print*,'WARNMING: patch', this%patch%id, ' is already on ready queue'
+    else if (next%patch%time >= this%patch%time) then
+      this%next_time => next
       if (associated(prev)) then
         prev%next_time => this
       else
         self%queue => this
       end if
+      self%nq = self%nq+1
       call trace_end
       return
     end if
@@ -581,10 +637,10 @@ SUBROUTINE queue_by_time (self, this)
   self%nq = self%nq+1
   if (associated(prev)) then
     prev%next_time => this
-    nullify (this%next_time)
   else
     self%queue => this
   end if
+  nullify (this%next_time)
   call trace_end
 END SUBROUTINE queue_by_time
 
@@ -592,22 +648,31 @@ END SUBROUTINE queue_by_time
 !> Add a link node into the patch list, in increasing quality order
 !> =============================================================================
 SUBROUTINE add_by_quality (self, this)
-  class(link_t):: self
+  class(patch_list_t):: self
   class(link_t), pointer:: this
   type(link_t), pointer:: next, prev
   !.............................................................................
-  call trace_begin ('list_t%add_by_quality '//self%name)
+  call trace_begin ('list_t%add_by_quality')
   nullify (prev)
-  next => self
+  next => self%head
   do while (associated(next))
-    this%next => next
+    if (associated(next%patch,this%patch)) then
+      print *,'ERROR: Trying to add patch', this%patch%id, ' which is already there'
+      call trace_end
+      return
+    end if
     if (next%patch%level >= this%patch%level) then
       !-------------------------------------------------------------------------
       ! Found a patch we should be ahead of, so insert here
       !-------------------------------------------------------------------------
+      this%next => next
       if (associated(prev)) then
         prev%next => this
+        print*,'inserted', this%patch%id, ' after', prev%patch%id, ' and before', next%patch%id
+        print*,prev%patch%id,this%patch%id,next%patch%id
+        print*,prev%patch%id,prev%next%patch%id,prev%next%next%patch%id
       else
+        print*,'inserted', this%patch%id, ' at head, before', next%patch%id
         self%head => this
       end if
       self%n = self%n+1
@@ -622,11 +687,12 @@ SUBROUTINE add_by_quality (self, this)
   !-----------------------------------------------------------------------------
   if (associated(prev)) then
     prev%next => this
-    nullify (this%next)
   else
     self%head => this
   end if
+  nullify (this%next)
   self%tail => this
+  print*,'appended',this%patch%id,' to patch list'
   self%n = self%n+1
   call trace_end
 END SUBROUTINE add_by_quality
@@ -696,12 +762,14 @@ END SUBROUTINE check_queue
 !> =============================================================================
 !> Print a list of nbors
 !> =============================================================================
-SUBROUTINE print_nbors (self)
+SUBROUTINE print_nbors (self, label)
   class (link_t):: self
+  character(len=*):: label
   type(link_t) , pointer:: link, nbor
   !.............................................................................
   if (io%verbose < 2) return
-  print'(a,i5,a,$)', 'patch', self%patch%id, ' nbors:'
+  if (label /= '') print'(a)', label
+  print'(2(a,i5,2x),a,$)', 'patch', self%patch%id, 'level', self%patch%level, 'nbors:'
   link => self%nbors
   do while (associated(link))
     print '(i4,$)', link%patch%id
@@ -745,7 +813,7 @@ SUBROUTINE print (self, label)
   print*, label
   link => self%head
   do while (associated(link))
-    call link%print_nbors
+    call link%print_nbors ('')
     link => link%next
   end do
 END SUBROUTINE print

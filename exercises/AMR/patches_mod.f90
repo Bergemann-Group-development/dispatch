@@ -350,15 +350,16 @@ SUBROUTINE output (self)
   class(patch_t):: self
   character(len=32) filename
   integer:: iv, li(3)=0, ui(3)=0
-  !.............................................................................
+  !-----------------------------------------------------------------------------
+  ! If the out_next time has passed, set a new time = the integer number of
+  ! out_time's that have passed, plus one more
+  !-----------------------------------------------------------------------------
   if (self%time < self%out_next) return
-  call trace_begin ('patch_t%output')
-  do while (self%out_next <= self%time)
-    self%out_next = self%out_next + self%out_time
-  end do
+  self%out_next = self%out_time*int(self%time/self%out_time) + self%out_time
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
+  call trace_begin ('patch_t%output')
   call system ('mkdir -p data/')
   write (filename,'(a,i3.3,"_",i4.4)') &
     'data/'//trim(self%experiment_name)//'_', self%id, self%iout
