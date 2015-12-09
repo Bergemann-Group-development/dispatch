@@ -71,6 +71,7 @@ SUBROUTINE init (self, position, size)
   !.............................................................................
   !$omp atomic
   id = id + 1                                   ! increment global
+  print*,'patch_t%init: id=', id
   self%id = id                                  ! new patch id
   self%position = position                      ! as per call
   call trace_begin ('patch_t%init', 3)

@@ -26,7 +26,7 @@ MODULE hd_mod
     procedure:: velocity_magnitude
     procedure:: magnetic_field_magnitude
   end type
-  type(operator_t), pointer:: o
+  type(operator_t):: o
 CONTAINS
 
 !> =============================================================================
@@ -42,6 +42,7 @@ SUBROUTINE init (self, position, size)
   !.............................................................................
   call trace_begin ('hd_mod:hd_t%init', 2)
   call self%patch_t%init (position, size)
+  call o%init (self%n, self%ds)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -133,6 +134,8 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   rho_face%x  = exp(o%xdn(log_rho%f))
   rho_face%y  = exp(o%ydn(log_rho%f))
   rho_face%z  = exp(o%zdn(log_rho%f))
+  print*, minval(p%x), maxval(p%x)
+  print*, minval(rho_face%x), maxval(rho_face%x)
   velocity%x  = p%x/rho_face%x
   velocity%y  = p%y/rho_face%y
   velocity%z  = p%y/rho_face%z
