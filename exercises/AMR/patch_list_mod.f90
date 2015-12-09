@@ -692,8 +692,7 @@ SUBROUTINE download (self, all_cells, guard_cells)
   patch => self%patch
   nguard=0
   do while (associated (nbor))
-    if (abs(self%patch%level-patch%level) < 2) &
-      call nbor%patch%download_to (patch, all_cells, guard_cells)
+    call nbor%patch%download_to (patch, all_cells, guard_cells)
     nbor => nbor%next
   end do
   if (io%verbose > 5) &

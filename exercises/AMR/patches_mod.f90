@@ -54,7 +54,6 @@ MODULE patches_mod
     procedure:: fminval         ! interior min value
   end type
   real, public:: end_time=1.0, out_time=0.1
-  character(len=64), public, target:: experimentname
   integer:: id = 0
 CONTAINS
 !> =============================================================================
@@ -84,7 +83,7 @@ SUBROUTINE init (self, position, size)
     read (io%input, patch_params)
     if (io%master) write (*, patch_params)
   end if
-  self%experiment_name => experimentname
+  self%experiment_name => experimentname        ! public from io_mod
   self%status=0
   self%end_time=end_time
   self%out_time=out_time
@@ -369,8 +368,13 @@ SUBROUTINE output (self)
   ! If the out_next time has passed, set a new time = the integer number of
   ! out_time's that have passed, plus one more
   !-----------------------------------------------------------------------------
-  if (self%time < self%out_next) return
-  self%out_next = self%out_time*int(self%time/self%out_time) + self%out_time
+  if (self%time+0.5*self%dtime < self%out_next) return
+  if (self%time==0.0) then
+    self%out_next = self%out_time
+  else
+    self%out_next = self%out_time* &
+      int((self%time+0.5*self%dtime)/self%out_time) + self%out_time
+  end if
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------

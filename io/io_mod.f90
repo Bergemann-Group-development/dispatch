@@ -17,8 +17,9 @@ MODULE io_mod
   integer, parameter:: mch=120
   logical:: first_time=.true.
   type(io_t):: io
+  character(len=64), target:: experimentname
 PRIVATE
-PUBLIC io_t, io, print_id, mch
+PUBLIC io_t, io, print_id, mch, experimentname
 CONTAINS
 
 !> =============================================================================
@@ -42,6 +43,7 @@ SUBROUTINE init (self, name)
   do_debug = io%do_debug
   verbose  = io%verbose
   open (io%input, file=inputfile, form='formatted', status='old')               ! open for reading
+  experimentname = inputfile(1:index(inputfile,'.')-1)
   if (io%master) then
     print*,'======================================================================='
     print*,'NOTE: Reading parameters from '//trim(inputfile)
