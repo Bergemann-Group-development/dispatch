@@ -40,7 +40,6 @@ SUBROUTINE init (self, position, size)
   !-----------------------------------------------------------------------------
   experimentname = 'BE'
   call io%init (experimentname)
-  experimentname = 'BE'
   call trace_begin ('BE_mod::pde_t%init')
   call self%ghd_t%init (position, size)
   if (first_time) then

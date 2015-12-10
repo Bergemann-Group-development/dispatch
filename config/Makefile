@@ -82,11 +82,11 @@ $(EXEC): $(OBJ)
 clean:
 	rm -f *.o *.$(MOD) *.stackdump ../*.o
 cleanlog:
-	rm -f *.log
+	rm -f *.log log*
 cleandata:
 	rm -f *.dat fort.*
 cleaner: clean
-	rm -f *.x *.bak *.optrpt *.exe
+	rm -f *.x *.bak *.optrpt *.exe *.pyc
 cleanest: cleaner cleandata cleanlog
 
 #############################################################################
