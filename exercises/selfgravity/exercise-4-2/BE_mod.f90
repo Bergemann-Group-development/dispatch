@@ -82,6 +82,9 @@ SUBROUTINE init (self, position, size)
   call trace_end
 END SUBROUTINE init
 
+!> =============================================================================
+!> Enforce constant values outside a radius r=r_BE (not equalt to the BE-radius)
+!> =============================================================================
 SUBROUTINE update(self)
   class(pde_t):: self
   integer:: i, j, k, ii(3), iv
@@ -102,6 +105,9 @@ associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
   end do
   end do
   call trace_begin('BE_mod::pde_t%init')
+  !-----------------------------------------------------------------------------
+  ! This where d(f)/dt is computed, so zap to zero outside r=r_BE
+  !-----------------------------------------------------------------------------
   call self%ghd_t%update
   ntot = 0.0
   nout = 0.0

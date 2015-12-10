@@ -15,7 +15,6 @@ MODULE io_mod
     procedure, nopass:: print_hl
   end type
   integer, parameter:: mch=120
-  logical:: first_time=.true.
   type(io_t):: io
   character(len=64), target:: experimentname
 PRIVATE
@@ -30,27 +29,31 @@ SUBROUTINE init (self, name)
   integer:: verbose=0, levelmax=10
   character(len=*), optional:: name
   character(len=mch):: inputfile, argfile
-  logical:: do_debug, do_trace, exist
+  logical:: first_time=.true.
+  logical:: do_debug=.false., do_trace=.false., exist
   namelist /io_params/ verbose, do_debug, do_trace, levelmax
   !.............................................................................
   call print_id (id)
-  if (present(name)) inputfile = trim(name)//'.nml'                             ! experiment_name given?
-  inquire (file=inputfile, exist=exist)                                         ! experiment.nml ?
-  if (.not.exist) inputfile = 'input.nml'                                       ! default
-  call getarg(1,argfile)                                                        ! command line argument
-  if (argfile /= ' ') inputfile = argfile                                       ! use, if present
-  do_trace = io%do_trace
-  do_debug = io%do_debug
-  verbose  = io%verbose
-  open (io%input, file=inputfile, form='formatted', status='old')               ! open for reading
-  experimentname = inputfile(1:index(inputfile,'.')-1)
-  if (io%master) then
-    print*,'======================================================================='
-    print*,'NOTE: Reading parameters from '//trim(inputfile)
-    print*,'======================================================================='
+  if (first_time) then
+    first_time=.false.
+    if (present(name)) inputfile = trim(name)//'.nml'                             ! experiment_name given?
+    inquire (file=inputfile, exist=exist)                                         ! experiment.nml ?
+    if (.not.exist) inputfile = 'input.nml'                                       ! default
+    call getarg(1,argfile)                                                        ! command line argument
+    if (argfile /= ' ') inputfile = argfile                                       ! use, if present
+    do_trace = io%do_trace
+    do_debug = io%do_debug
+    verbose  = io%verbose
+    open (io%input, file=inputfile, form='formatted', status='old')               ! open for reading
+    experimentname = inputfile(1:index(inputfile,'.')-1)
+    if (io%master) then
+      print*,'======================================================================='
+      print*,'NOTE: Reading parameters from '//trim(inputfile)
+      print*,'======================================================================='
+    end if
+    rewind (io%input)
+    read (io%input, io_params)
   end if
-  rewind (io%input)
-  read (io%input, io_params)
   io%do_debug = do_debug
   io%do_trace = do_trace
   io%verbose  = verbose
@@ -59,7 +62,6 @@ SUBROUTINE init (self, name)
   self%do_debug = do_debug
   self%do_trace = do_trace
   self%verbose  = verbose
-  first_time = .false.
 END SUBROUTINE init
 
 !> =============================================================================
