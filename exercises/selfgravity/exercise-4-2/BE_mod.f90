@@ -123,19 +123,23 @@ associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
       self%mem(i,j,k,self%i_d  ,self%it,2) = 0.0
       self%mem(i,j,k,self%i_s  ,self%it,2) = 0.0
     end if
-    x = (i-(gn(1)+2)*0.5)*ds(1) + pos(1)
+    x = (i-(gn(1)+4)*0.5)*ds(1) + pos(1)
+    y = (j-(gn(2)+3)*0.5)*ds(2) + pos(2)
+    z = (k-(gn(3)+3)*0.5)*ds(3) + pos(3)
     r = sqrt(x**2+y**2+z**2)
     if (r > self%r_BE) then
       self%mem(i,j,k,self%i_px,self%it,2) = 0.0
     end if
-    x = (i-(gn(1)+1)*0.5)*ds(1) + pos(1)
-    y = (j-(gn(2)+2)*0.5)*ds(2) + pos(2)
+    x = (i-(gn(1)+3)*0.5)*ds(1) + pos(1)
+    y = (j-(gn(2)+4)*0.5)*ds(2) + pos(2)
+    z = (k-(gn(3)+3)*0.5)*ds(3) + pos(3)
     r = sqrt(x**2+y**2+z**2)
     if (r > self%r_BE) then
       self%mem(i,j,k,self%i_py,self%it,2) = 0.0
     end if
-    y = (j-(gn(2)+1)*0.5)*ds(2) + pos(2)
-    z = (k-(gn(3)+2)*0.5)*ds(3) + pos(3)
+    x = (i-(gn(1)+3)*0.5)*ds(1) + pos(1)
+    y = (j-(gn(2)+3)*0.5)*ds(2) + pos(2)
+    z = (k-(gn(3)+4)*0.5)*ds(3) + pos(3)
     r = sqrt(x**2+y**2+z**2)
     if (r > self%r_BE) then
       self%mem(i,j,k,self%i_pz,self%it,2) = 0.0
