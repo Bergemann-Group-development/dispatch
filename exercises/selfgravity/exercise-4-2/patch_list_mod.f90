@@ -61,9 +61,10 @@ SUBROUTINE init (self, name)
   character(len=*):: name
   !.............................................................................
   call trace_begin('patch_list_t%init')
+  call io%init
+  call refine%init
   self%name = name
   call init_cartesian (self)
-  call refine%init
   call trace_end
 END SUBROUTINE init
 
@@ -80,7 +81,6 @@ SUBROUTINE init_cartesian (self)
   namelist /box_params/ size, dims, origin
   !.............................................................................
   call trace_begin ('patch_list_t%init_cartesian')
-  call io%init
   rewind (io%input); read (io%input, box_params)
   if (io%master) write (*, box_params)
   self%dims = dims
@@ -408,14 +408,12 @@ SUBROUTINE init_nbor_by_overlap (self, link1)
   link1%n_nbors = 0
   nullify (link1%nbors)
   link2 => self%head
-  if (io%verbose>3) print*,' id, size, position, distance:'
+  if (io%verbose>3) print*,' ids, overlap:', &
+    link2%patch%id, link1%patch%id, link1%patch%overlaps(link2%patch), &
+    all(link1%patch%size==link1%patch%box)
   do while (associated(link2))
-    if (.not.associated(link1,link2).or.all(link1%patch%size==link1%patch%box)) then
-!      if (io%verbose>3) &
-!        print'(2(i5,3(3f8.4,2x)),l3)', &
-!          link1%patch%id, link1%patch%size, link1%patch%position, link1%patch%distance(link2%patch), &
-!          link2%patch%id, link2%patch%size, link2%patch%position, link2%patch%distance(link1%patch), &
-!          link1%patch%overlaps(link2%patch)
+    if (link1%patch%id /= link2%patch%id) then
+   !if (link1%patch%id /= link2%patch%id .or. all(link1%patch%size==link1%patch%box)) then
       if (link1%patch%overlaps(link2%patch)) then
         allocate (nbor)
         nbor%nbors => link2                   ! pointer back to link2
@@ -427,9 +425,9 @@ SUBROUTINE init_nbor_by_overlap (self, link1)
           link1%nbors => nbor
         end if
         prev => nbor
-        if (io%verbose==3)print*,'overlaps', link1%patch%id, link2%patch%id, ' T'
+        if (io%verbose>=3)print*,'overlaps', link1%patch%id, link2%patch%id, ' T'
       else
-        if (io%verbose==3)print*,'overlaps', link1%patch%id, link2%patch%id, ' F'
+        if (io%verbose>=3)print*,'overlaps', link1%patch%id, link2%patch%id, ' F'
       end if
     end if
     link2 => link2%next

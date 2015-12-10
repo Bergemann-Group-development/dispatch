@@ -26,7 +26,7 @@ SUBROUTINE init (self, name)
   class(io_t):: self
   character(len=120), save:: id = &
   'io_mod.f90 $Id$'
-  integer:: verbose=0, levelmax=10
+  integer:: verbose=0, levelmax
   character(len=*), optional:: name
   character(len=mch):: inputfile, argfile
   logical:: first_time=.true.
@@ -34,8 +34,8 @@ SUBROUTINE init (self, name)
   namelist /io_params/ verbose, do_debug, do_trace, levelmax
   !.............................................................................
   call print_id (id)
+  print *,io%master,'cc'
   if (first_time) then
-    first_time=.false.
     if (present(name)) inputfile = trim(name)//'.nml'                             ! experiment_name given?
     inquire (file=inputfile, exist=exist)                                         ! experiment.nml ?
     if (.not.exist) inputfile = 'input.nml'                                       ! default
@@ -51,17 +51,19 @@ SUBROUTINE init (self, name)
       print*,'NOTE: Reading parameters from '//trim(inputfile)
       print*,'======================================================================='
     end if
+    levelmax = io%levelmax
     rewind (io%input)
     read (io%input, io_params)
+    io%levelmax = levelmax
   end if
   io%do_debug = do_debug
   io%do_trace = do_trace
   io%verbose  = verbose
-  io%levelmax = levelmax
   if (io%master.and.first_time) write (*,io_params)
   self%do_debug = do_debug
   self%do_trace = do_trace
   self%verbose  = verbose
+  first_time=.false.
 END SUBROUTINE init
 
 !> =============================================================================

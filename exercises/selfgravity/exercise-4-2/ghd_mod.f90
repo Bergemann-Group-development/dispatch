@@ -158,11 +158,15 @@ SUBROUTINE update (self)
   class(ghd_t):: self
   !.............................................................................
   call trace_begin ('ghd_mod:ghd_t%update', 2)
-  call self%solve
-  call self%hd_t%update
-  self%dpdt%x = self%dpdt%x - o%ddxdn(self%phi%f)*self%rho_face%x
-  self%dpdt%y = self%dpdt%y - o%ddydn(self%phi%f)*self%rho_face%y
-  self%dpdt%z = self%dpdt%z - o%ddzdn(self%phi%f)*self%rho_face%z
+  if (self%G == 0.0) then
+    call self%hd_t%update
+  else 
+    call self%solve
+    call self%hd_t%update
+    self%dpdt%x = self%dpdt%x - o%ddxdn(self%phi%f)*self%rho_face%x
+    self%dpdt%y = self%dpdt%y - o%ddydn(self%phi%f)*self%rho_face%y
+    self%dpdt%z = self%dpdt%z - o%ddzdn(self%phi%f)*self%rho_face%z
+  end if
   call trace_end
 END SUBROUTINE update
 

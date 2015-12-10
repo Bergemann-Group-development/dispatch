@@ -139,6 +139,7 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   velocity%y  = p%y/self%rho_face%y
   velocity%z  = p%z/self%rho_face%z
   self%u_max = self%fmaxval(sqrt(velocity%x**2+velocity%y**2+velocity%z**2)+c_sound%f)
+  print*,self%u_max, maxval(c_sound%f)
   !-----------------------------------------------------------------------------
   ! Diffusion added for stability
   !-----------------------------------------------------------------------------

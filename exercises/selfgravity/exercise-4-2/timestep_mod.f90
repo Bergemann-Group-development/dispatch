@@ -62,10 +62,6 @@ SUBROUTINE init (self, position, size)
   !-----------------------------------------------------------------------------
   !call self%patch_t%init (position, size)
   call self%pde_t%init (position, size)
-  if (io%verbose>2) &
-  print*,'ts',self%id
-  if (io%verbose>2) &
-  print*,'ts',self%mem(1:6,1,1,1,1,1)
   select case (time_order)
   case (1)
     self%wt = [   1.0,     0.0,      0.0,    0.0]       ! 1st order

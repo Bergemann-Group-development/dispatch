@@ -37,6 +37,6 @@
  levelmax=10
 /
 &io_params
- do_trace=f             ! =t to trace execution
- verbose=0              ! =1 for output file messages
+ do_trace=t             ! =t to trace execution
+ verbose=7              ! =1 for output file messages
 /

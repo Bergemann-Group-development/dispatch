@@ -70,7 +70,8 @@ SUBROUTINE init (self, position, size)
   call trace_begin ('patch_t%init', 3)
   !$omp atomic
   id = id + 1                                   ! increment global
-  print*,'patch_t%init: id=', id
+  if (io%verbose>2) &
+    print*,'patch_t%init: id=', id
   self%id = id                                  ! new patch id
   self%position = position                      ! as per call
   !-----------------------------------------------------------------------------
@@ -105,7 +106,8 @@ SUBROUTINE init (self, position, size)
   self%nt = dims(4)                             ! number of time slices
   self%nv = dims(5)                             ! number of variables
   self%level = log(maxval(self%box)/minval(self%ds))/log(2.) + 0.1
-  print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
+  if (io%verbose>3) &
+    print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
   !-----------------------------------------------------------------------------
   ! Allocate memory, if not allocated
   !-----------------------------------------------------------------------------

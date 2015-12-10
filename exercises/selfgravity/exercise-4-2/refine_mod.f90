@@ -18,7 +18,7 @@ MODULE refine_mod
     real:: max_diff = 1.0
     real:: refine_from=999.
     real:: refine_until=0.0
-    integer:: levelmax=100
+    integer:: levelmax
   contains
     procedure:: init
     procedure:: needed
@@ -38,13 +38,14 @@ CONTAINS
 SUBROUTINE init (self)
   class(refine_t):: self
   real:: refine_from = 0.0, refine_until = 1e9
-  integer:: levelmax = 100
+  integer, save:: levelmax
   logical:: first_time = .true.
   namelist /refine_params/ max_change, msplit, refine_from, refine_until, levelmax
   !.............................................................................
   call trace_begin ('refine_t%init')
   if (first_time) then
     first_time=.false.
+    levelmax = io%levelmax
     rewind (io%input)
     read (io%input, refine_params)
     if (io%master) write (*, refine_params)
@@ -62,11 +63,15 @@ FUNCTION needed (self, patch)
   class(timestep_t), pointer:: patch
   logical:: needed
   !.............................................................................
-   needed = .false.
+  needed = .false.
+  if (io%verbose>1) &
+    print*, patch%is_set(bits%not_leaf), patch%level >= self%levelmax, &
+            patch%time < self%refine_from, patch%time > self%refine_until
   if (patch%is_set(bits%not_leaf) .or. patch%level >= self%levelmax) return
   if (patch%time < self%refine_from .or. patch%time > self%refine_until) return
   call trace_begin ('refine_t%needed', 2)
   if (io%verbose>2) print*,'refine%needed? patch:', patch%id, patch%it, patch%new
+  !
   !needed = check_log_density    (self, patch)
   !needed = self%check_potential (patch)
   needed = self%check_Jeans (patch)
@@ -85,9 +90,15 @@ FUNCTION check_jeans (self, patch) RESULT(out)
   class(timestep_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v, d
   logical:: out
+  real:: c_sound, jeans_length, ratio
   !.............................................................................
   call trace_begin ('refine_t%check_check_jeans', 2)
-  out = patch%ds(1)*sqrt(maxval(patch%mem(:,:,:,patch%i_d,patch%it,1)*patch%G)) > self%max_diff
+  c_sound = 1.0     ! FIXME
+  jeans_length = c_sound/sqrt(maxval(patch%mem(:,:,:,patch%i_d,patch%it,1)*patch%G))
+  ratio = jeans_length/minval(patch%ds)
+  out = ratio > self%max_diff
+  if (io%verbose > 2) &
+    print*,'Jeans:', ratio, self%max_diff, out
   call trace_end
 END FUNCTION
 !> =============================================================================

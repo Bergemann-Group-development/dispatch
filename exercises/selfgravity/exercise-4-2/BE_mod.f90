@@ -38,8 +38,8 @@ SUBROUTINE init (self, position, size)
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
-  experimentname = 'BE'
-  call io%init (experimentname)
+  !experimentname = 'BE'
+  call io%init
   call trace_begin ('BE_mod::pde_t%init')
   call self%ghd_t%init (position, size)
   if (first_time) then
@@ -74,7 +74,14 @@ SUBROUTINE init (self, position, size)
     end do
   end if
   !-----------------------------------------------------------------------------
-  ! Initial and boundary conditions for phi
+  ! Cheat refinement into making Rubiks Cubes, by insisting that the central
+  ! density is huge, thus triggering Jeans' length refinement
+  !-----------------------------------------------------------------------------
+  if (self%level<io%levelmax .and. all(self%position==0.0)) then
+    self%d%f(self%gn(1)/2,self%gn(2)/2,self%gn(3)/2) = 1e8
+  end if
+  !-----------------------------------------------------------------------------
+  ! Initial condition for phi
   !-----------------------------------------------------------------------------
   self%phi%f = 0.0
   !
@@ -89,6 +96,7 @@ SUBROUTINE update(self)
   integer:: i, j, k, ii(3), iv
   real:: x, y, z, r, ntot, nout
   !.............................................................................
+  call trace_begin('BE_mod::pde_t%update')
 associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
   do k=1,gn(3)
   do j=1,gn(2)
@@ -103,7 +111,6 @@ associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
   end do
   end do
   end do
-  call trace_begin('BE_mod::pde_t%init')
   !-----------------------------------------------------------------------------
   ! This where d(f)/dt is computed, so zap to zero outside r=r_BE
   !-----------------------------------------------------------------------------
