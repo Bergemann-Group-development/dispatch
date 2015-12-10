@@ -8,6 +8,7 @@ MODULE refine_mod
   USE io_mod
   USE trace_mod
   USE bits_mod
+  USE patches_mod
   USE timestep_mod
   implicit none
   private
@@ -30,7 +31,6 @@ MODULE refine_mod
     procedure:: check_jeans
     procedure:: check_magnetic_field
   end type
-  integer, public:: msplit=2                   ! shared with patch_list_mod
   real, public:: max_change=100
   type(refine_t), public:: refine
 CONTAINS
@@ -65,8 +65,9 @@ FUNCTION needed (self, patch)
   !.............................................................................
   needed = .false.
   if (io%verbose>1) &
-    print*, patch%is_set(bits%not_leaf), patch%level >= self%levelmax, &
-            patch%time < self%refine_from, patch%time > self%refine_until
+    print*, 'needed:', patch%is_set(bits%not_leaf), patch%level >= self%levelmax, &
+            patch%time < self%refine_from, patch%time > self%refine_until, &
+            patch%time, self%refine_until
   if (patch%is_set(bits%not_leaf) .or. patch%level >= self%levelmax) return
   if (patch%time < self%refine_from .or. patch%time > self%refine_until) return
   call trace_begin ('refine_t%needed', 2)
@@ -95,7 +96,7 @@ FUNCTION check_jeans (self, patch) RESULT(out)
   call trace_begin ('refine_t%check_check_jeans', 2)
   c_sound = 1.0     ! FIXME
   jeans_length = c_sound/sqrt(maxval(patch%mem(:,:,:,patch%i_d,patch%it,1)*patch%G))
-  ratio = jeans_length/minval(patch%ds)
+  ratio = minval(patch%ds)/jeans_length
   out = ratio > self%max_diff
   if (io%verbose > 2) &
     print*,'Jeans:', ratio, self%max_diff, out

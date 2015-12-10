@@ -159,20 +159,15 @@ SUBROUTINE update (self)
     call patch%output                                   ! check output
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue
-      if (patch%level > refine%levelmax) then
-        call self%output
-        print*,'stopping after refine reached levelmax =', refine%levelmax
-        stop
-      end if
     end if
-    call patch%update                                 ! update the patch
-    call patch%output                                 ! check output
-    call self%check_nbors (head)                      ! any nbor ready?
-    if (patch%time > patch%end_time) then             ! finished:
+    call patch%update                                   ! update the patch
+    call patch%output                                   ! check output
+    call self%check_nbors (head)                        ! any nbor ready?
+    if (patch%time > patch%end_time) then               ! finished:
       end_game = .true.
-      call self%remove_patch (patch)                  ! remove from self
-    else                                              ! not finished:
-      call patch%clear(bits%ready)                    ! needs new check
+      call self%remove_patch (patch)                    ! remove from self
+    else                                                ! not finished:
+      call patch%clear(bits%ready)                      ! needs new check
     end if
   else
     print*,'stopping: no more tasks', self%nq, self%n
@@ -225,6 +220,7 @@ SUBROUTINE split (self, this)
   integer dir, i, ix, iy, iz
   real:: pos(3)
   !.............................................................................
+  if (this%patch%is_set(bits%not_leaf)) return
   call trace_begin('patch_list_t%split', 1)
   nsplit = msplit
   where (this%patch%size==0 .or. this%patch%n==1)
@@ -237,7 +233,7 @@ SUBROUTINE split (self, this)
       do iz=1,nsplit(3)
         pos(3) = iz-(nsplit(3)+1)*0.5
         !------------------------------------------------------------------------
-        ! Allocate a new patch, half the size of original one, and adjust its
+        ! Allocate a new patch, 1/nsplit the size of original one, and adjust its
         ! position in each direction with "pos", in units of the new size.
         !------------------------------------------------------------------------
         allocate (patch, source=this%patch)
@@ -268,11 +264,11 @@ SUBROUTINE split (self, this)
 !        self%queue => link
 !        self%nq = self%nq+1
         if (io%verbose>0) then
-          print 1,'task_list_t%split:  patch, iout, time, size, origin =', &
-            patch%id, patch%iout, patch%time, patch%size, patch%origin
-          1 format(a,2i6,f10.6,2(2x,3f8.4))
-          print 1,'task_list_t%split: parent, iout, time, size, origin =', &
-            this%patch%id, this%patch%iout, this%patch%time, this%patch%size, this%patch%origin
+          print 1,'task_list_t%split:  patch, level, iout, time, size, origin =', &
+            patch%id, patch%level, patch%iout, patch%time, patch%size, patch%origin
+          1 format(a,3i6,f10.6,2(2x,3f8.4))
+          print 1,'task_list_t%split: parent, level, iout, time, size, origin =', &
+            this%patch%id, this%patch%level, this%patch%iout, this%patch%time, this%patch%size, this%patch%origin
         end if
       end do
     end do

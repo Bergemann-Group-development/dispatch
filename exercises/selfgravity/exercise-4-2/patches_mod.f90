@@ -53,6 +53,7 @@ MODULE patches_mod
     procedure:: fminval         ! interior min value
   end type
   real, public:: end_time=1.0, out_time=0.1
+  integer, public:: msplit=2    ! shared with refine_mod and patch_list_mod
   integer:: id = 0
 CONTAINS
 !> =============================================================================
@@ -105,7 +106,7 @@ SUBROUTINE init (self, position, size)
   self%ui = self%gn - self%ng                   ! upper interior index
   self%nt = dims(4)                             ! number of time slices
   self%nv = dims(5)                             ! number of variables
-  self%level = log(maxval(self%box)/minval(self%ds))/log(2.) + 0.1
+  self%level = log(maxval(self%box)/minval(self%ds))/log(real(msplit)) + 0.1
   if (io%verbose>3) &
     print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
   !-----------------------------------------------------------------------------
@@ -242,7 +243,7 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
     end do
     end do
   end do
-  if (io%verbose > 1) print'(6(1x,a,i5))', 'patch', patch%id, ' level', patch%level, &
+  if (io%verbose > 3) print'(6(1x,a,i7,1x))', 'patch', patch%id, ' level', patch%level, &
     ' picked up', n, ' points from patch', self%id, ' at level', self%level
   if (patch%t(patch%it)/=self%t(patch%it)) &
     print'(2(a,i4,f9.4,4x),2i3,2x,5i3,7f8.3)','ERROR: patch:', patch%id, patch%t(patch%it), &

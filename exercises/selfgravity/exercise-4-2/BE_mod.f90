@@ -31,10 +31,11 @@ SUBROUTINE init (self, position, size)
   class(pde_t):: self
   real:: position(3), size(3)
   integer:: i, j, k
+  integer, save:: levelmax=0
   real:: x, y, z
   logical:: first_time = .true.
   real:: w_BE=5.0, p_BE=1.0, a_BE=0.10, r_BE=0.45, amplitude=10., r
-  namelist /BE_params/ w_BE, p_BE, a_BE, r_BE, amplitude
+  namelist /BE_params/ w_BE, p_BE, a_BE, r_BE, amplitude, levelmax
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
@@ -75,8 +76,8 @@ SUBROUTINE init (self, position, size)
   ! Cheat refinement into making Rubiks Cubes, by insisting that the central
   ! density is huge, thus triggering Jeans' length refinement
   !-----------------------------------------------------------------------------
-  if (self%level<io%levelmax .and. all(self%position==0.0)) then
-    self%d%f(self%gn(1)/2,self%gn(2)/2,self%gn(3)/2) = 1e8
+  if (self%level<levelmax .and. sum(abs(self%position))<0.5*minval(self%ds)) then
+    self%d%f(self%gn(1)/2,self%gn(2)/2,self%gn(3)/2) = 1e30
   end if
   !-----------------------------------------------------------------------------
   ! Initial condition for phi
