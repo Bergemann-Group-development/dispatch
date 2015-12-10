@@ -183,7 +183,7 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
   rho_face%z  = exp(o%zdn(log_rho%f))
   velocity%x  = p%x/rho_face%x
   velocity%y  = p%y/rho_face%y
-  velocity%z  = p%y/rho_face%z
+  velocity%z  = p%z/rho_face%z
   self%u_max = self%fmaxval(sqrt(velocity%x**2+velocity%y**2+velocity%z**2)+c_sound%f)
   !-----------------------------------------------------------------------------
   ! Diffusion added for stability
