@@ -12,4 +12,4 @@ def image(f,title=''):
     pl.imshow(f.squeeze().transpose(), 
       origin='lower',interpolation='nearest')
     pl.colorbar()
-    pl.show()
+    pl.show(block=False)

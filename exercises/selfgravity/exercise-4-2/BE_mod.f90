@@ -144,7 +144,7 @@ associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
   end do
   end do
   end do
-  print*,'fraction outside:',nout/ntot, pos, ds
+  !print*,'fraction outside:',nout/ntot, pos, ds
 end associate
   call trace_end
 END SUBROUTINE update

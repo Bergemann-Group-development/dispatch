@@ -26,6 +26,7 @@ MODULE ghd_mod
     procedure:: update
     procedure:: download_to
     procedure:: solve
+    procedure:: grav_potential
   end type
   type(operator_t):: o
 CONTAINS
@@ -84,11 +85,11 @@ END SUBROUTINE init
 SUBROUTINE download_to (self, patch, only_down)
   class(ghd_t):: self
   class(patch_t), pointer:: patch
-  integer, optional:: only_down
+  integer:: only_down
   integer:: only_down_
   !.............................................................................
-  only_down_ = self%i_phi
-   call download_to (self, patch, only_down=only_down_)
+  only_down = self%i_phi
+  call self%patch_t%download_to (patch, only_down)
 END SUBROUTINE download_to
 
 !> =============================================================================
@@ -127,7 +128,7 @@ end associate
   do while((it<self%min_iter) .or. &
            (error >= self%tolerance .and. it<self%max_iter))
     call self%laplace%solver (phi_old, phi_new, FourPiGrho, error)
-    if (io%verbose>2) write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Iter=', it, &
+    if (io%verbose>3) write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Iter=', it, &
       ' Tolerance=', self%tolerance, ' Error=', error
     phi_swap => phi_new; phi_new=>phi_old; phi_old=>phi_swap
     it = it + 1
@@ -159,10 +160,23 @@ SUBROUTINE update (self)
   call trace_begin ('ghd_mod:ghd_t%update', 2)
   call self%solve
   call self%hd_t%update
-  self%dpdt%x = self%dpdt%x - o%ddxdn(self%phi%f)/self%rho_face%x
-  self%dpdt%y = self%dpdt%y - o%ddydn(self%phi%f)/self%rho_face%y
-  self%dpdt%z = self%dpdt%z - o%ddzdn(self%phi%f)/self%rho_face%z
+  self%dpdt%x = self%dpdt%x - o%ddxdn(self%phi%f)*self%rho_face%x
+  self%dpdt%y = self%dpdt%y - o%ddydn(self%phi%f)*self%rho_face%y
+  self%dpdt%z = self%dpdt%z - o%ddzdn(self%phi%f)*self%rho_face%z
   call trace_end
 END SUBROUTINE update
+
+!> =============================================================================
+SUBROUTINE grav_potential (self, out)
+  class(ghd_t):: self
+  real, dimension(self%n(1),self%n(2),self%n(3)):: out
+  !...............................................................................
+  call trace_begin ('hd_mod:hd_t%log_density')
+  out(1:self%n(1), &
+      1:self%n(2), &
+      1:self%n(3)) = log(self%mem(self%li(1):self%ui(1), &
+       self%li(2):self%ui(2), self%li(3):self%ui(3), i_phi, self%it, 1))
+  call trace_end
+END SUBROUTINE grav_potential
 !> =============================================================================
 END MODULE ghd_mod

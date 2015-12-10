@@ -4,11 +4,10 @@
 '''
 import numpy as np
 
-def read_patch (fileroot, verbose=False):
+def read_patch (f, fileroot, verbose=False):
     if (verbose):
         print '          files:', fileroot+'{txt,dat}'
 
-    f = open(fileroot+'.txt','r')
     class patch:
         id=1
     
@@ -35,7 +34,6 @@ def read_patch (fileroot, verbose=False):
         print "  partial patch:", patch.n
         print "  lower indices:", patch.li
         print "  upper indices:", patch.ui
-    f.close 
 
     # binary data
     f = open(fileroot+'.dat','rb')
