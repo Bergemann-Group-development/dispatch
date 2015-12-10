@@ -15,6 +15,7 @@ MODULE hd_mod
     type(scalar_t):: d, dddt
     type(scalar_t):: s, dsdt
     type(vector_t):: p, dpdt, rho_face
+    integer:: i_d=i_d, i_s=i_s, i_px=i_px, i_py=i_py, i_pz=i_pz
     real:: u_max
     real:: nu(2)
     real:: gamma

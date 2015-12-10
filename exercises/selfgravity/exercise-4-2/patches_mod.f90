@@ -34,6 +34,7 @@ MODULE patches_mod
   contains
     procedure:: init
     procedure:: update => update_patch
+    procedure:: solve           ! static solver backup
     procedure:: output
     procedure:: distance        ! return the distance btw two patches
     procedure:: overlaps        ! return true if they overlap (incl. ghost zones)
@@ -120,6 +121,12 @@ SUBROUTINE init (self, position, size)
 END SUBROUTINE init
 
 !> =============================================================================
+SUBROUTINE solve (self)
+  class(patch_t):: self
+  !.............................................................................
+END SUBROUTINE solve
+
+!> =============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time
 !> step puts new values in the 'new' slot 2, while saving the time step used in
 !> dt(1). Then the current slot (it) becomes 2, and the new one becomes 3, etc.
@@ -155,14 +162,16 @@ END SUBROUTINE update_patch
 !> This is useful for both guard cell fill-in, and for "prolongation" = creating
 !> patches with higher resolution.
 !> =============================================================================
-SUBROUTINE download_to (self, patch, all_cells, guard_cells)
+SUBROUTINE download_to (self, patch, only_down)
   class(patch_t):: self
-  logical, optional:: guard_cells, all_cells
-  logical:: all_target
   class(patch_t), pointer:: patch
-  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), n
+  integer, optional:: only_down
+  logical:: all_target
+  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), n, only_down_
   real:: f(3), pos(3)
   !.............................................................................
+  only_down_ = -1                                       ! normally bypass
+  if (present(only_down)) only_down_ = only_down        ! unless optionally set
 !  if (self%id==patch%id .and. all(patch%size /= box%size)) return
   if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','index:self,patch:', &
     self%id,self%position,patch%id,patch%position, self%li, self%ui
@@ -175,58 +184,63 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
   !    this case (first fill-in), the source level may be lower than target level
   ! b) the level is one level higher
   !-----------------------------------------------------------------------------
-  all_target = .true.
-  if (present(guard_cells)     ) all_target = .not.guard_cells
-  if (self%level <= patch%level) all_target = .false.   ! do not upload from below
-  if (present(all_cells)       ) all_target = .true.    ! unless explicit order
-  if ((self%level-patch%level) > 1) return              ! upload at most 1 level
-  do iz=1,patch%gn(3)
-  do iy=1,patch%gn(2)
-  do ix=1,patch%gn(1)
-    ii = [ix,iy,iz]
-    !---------------------------------------------------------------------------
-    ! Check if the target point is the guard zone region (= not inside)
-    !---------------------------------------------------------------------------
-    if (all_target .or. .not.all((ii >= patch%li) .and. (ii <= patch%ui))) then
-      pos = patch%myposition(ii)
-      j0 = self%index (pos, f)
-      !---------------------------------------------------------------------------
-      ! Check that the source in in the internal region (= not guard zone)
-      !---------------------------------------------------------------------------
-      if (all((j0+f >= self%li-0.1) .and. (j0+f <= self%ui+0.1) .or. (self%n==1))) then
-        if (io%verbose>3.and.patch%id==10) print'(a,2(i4,2x,3i4,2x),1p,2(3f9.4,2x),2x,2f11.6," ****")', &
-          'index:ii,j0,f:', patch%id, ii,  self%id, j0, f, pos, self%t(it)-patch%t(it)
-        j1 = j0+1
-        where (j1 > self%ui)
-          j0 = j0-1
-          j1 = j1-1
-          f  = f+1.0
-        end where
-        where (j0 < self%li)
-          j0 = j0+1
-          j1 = j1+1
-          f  = f-1.0
-        end where
-        where (self%n==1)
-          j0 = 1
-          j1 = 1
-        end where
-        do iv=1,self%nv
-          target(ix,iy,iz,iv,it,1) = &
-            (1.-f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j0(3),iv,it,1)    &
-                                   + f(1) *source(j1(1),j0(2),j0(3),iv,it,1)) + &
-            (1.-f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j0(3),iv,it,1)    &
-                                   + f(1) *source(j1(1),j1(2),j0(3),iv,it,1)) + &
-            (   f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j1(3),iv,it,1)    &
-                                   + f(1) *source(j1(1),j0(2),j1(3),iv,it,1)) + &
-            (   f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j1(3),iv,it,1)    &
-                                   + f(1) *source(j1(1),j1(2),j1(3),iv,it,1))
-        end do
-        n = n+1
-      end if
+  do iv=1,self%nv
+    all_target = .true.
+    if (self%level <= patch%level) all_target = .false.   ! do not upload from below
+    if ((self%level-patch%level) > 1) return              ! upload at most 1 level
+    if (iv==only_down_) then
+      if (self%level >= patch%level) cycle                ! only download
+      all_target = .true.                                 ! interior + guard cells
+      if (io%verbose>0) &
+        print'(10(1x,a,i6,3x))', 'patch', patch%id, 'at level', patch%level, &
+        'downloading variable', only_down_, 'from patch', self%id, 'level', self%level
     end if
-  end do
-  end do
+    do iz=1,patch%gn(3)
+    do iy=1,patch%gn(2)
+    do ix=1,patch%gn(1)
+      ii = [ix,iy,iz]
+      !---------------------------------------------------------------------------
+      ! Check if the target point is the guard zone region (= not inside)
+      !---------------------------------------------------------------------------
+      if (all_target .or. .not.all((ii >= patch%li) .and. (ii <= patch%ui))) then
+        pos = patch%myposition(ii)
+        j0 = self%index (pos, f)
+        !---------------------------------------------------------------------------
+        ! Check that the source in in the internal region (= not guard zone)
+        !---------------------------------------------------------------------------
+        if (all((j0+f >= self%li-0.1) .and. (j0+f <= self%ui+0.1) .or. (self%n==1))) then
+          if (io%verbose>3.and.patch%id==10) print'(a,2(i4,2x,3i4,2x),1p,2(3f9.4,2x),2x,2f11.6," ****")', &
+            'index:ii,j0,f:', patch%id, ii,  self%id, j0, f, pos, self%t(it)-patch%t(it)
+          j1 = j0+1
+          where (j1 > self%ui)
+            j0 = j0-1
+            j1 = j1-1
+            f  = f+1.0
+          end where
+          where (j0 < self%li)
+            j0 = j0+1
+            j1 = j1+1
+            f  = f-1.0
+          end where
+          where (self%n==1)
+            j0 = 1
+            j1 = 1
+          end where
+            target(ix,iy,iz,iv,it,1) = &
+              (1.-f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j0(3),iv,it,1)    &
+                                     + f(1) *source(j1(1),j0(2),j0(3),iv,it,1)) + &
+              (1.-f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j0(3),iv,it,1)    &
+                                     + f(1) *source(j1(1),j1(2),j0(3),iv,it,1)) + &
+              (   f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j1(3),iv,it,1)    &
+                                     + f(1) *source(j1(1),j0(2),j1(3),iv,it,1)) + &
+              (   f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j1(3),iv,it,1)    &
+                                     + f(1) *source(j1(1),j1(2),j1(3),iv,it,1))
+          n = n+1
+        end if
+      end if
+    end do
+    end do
+    end do
   end do
   if (io%verbose > 1) print'(6(1x,a,i5))', 'patch', patch%id, ' level', patch%level, &
     ' picked up', n, ' points from patch', self%id, ' at level', self%level

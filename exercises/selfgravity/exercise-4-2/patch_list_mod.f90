@@ -260,7 +260,7 @@ SUBROUTINE split (self, this)
         ! Download values from parent and neighbors, except at time==0.0, to
         ! allow recursive refinement there
         !------------------------------------------------------------------------
-        if (this%patch%time > 0.0) call link%download (all_cells=.true.)
+        if (this%patch%time > 0.0) call link%download
         !------------------------------------------------------------------------
         ! Insert the new patch at the head of the ready queue
         !------------------------------------------------------------------------
@@ -680,10 +680,9 @@ END SUBROUTINE add_by_quality
 !> =============================================================================
 !> Run through neighbor list and pick up guard cells
 !> =============================================================================
-SUBROUTINE download (self, all_cells, guard_cells)
+SUBROUTINE download (self)
   implicit none
   class (link_t):: self
-  logical, optional:: guard_cells, all_cells
   class (link_t),  pointer:: nbor
   class (patch_t), pointer:: patch
   integer :: nguard
@@ -694,7 +693,7 @@ SUBROUTINE download (self, all_cells, guard_cells)
   nguard=0
   do while (associated (nbor))
     if (abs(self%patch%level-patch%level) < 2) &
-      call nbor%patch%download_to (patch, all_cells, guard_cells)
+      call nbor%patch%download_to (patch)
     nbor => nbor%next
   end do
   if (io%verbose > 5) &

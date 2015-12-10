@@ -30,7 +30,7 @@ $(PDE)_mod.o            : omp_timer_mod.o io_mod.o trace_mod.o patches_mod.o sca
 patches_mod.o           : trace_mod.o io_mod.o bits_mod.o
 laplace_mod.o           : io_mod.o trace_mod.o patches_mod.o mpi_mod.o
 hd_mod.o                : io_mod.o trace_mod.o scalar_mod.o vector_mod.o tensor_mod.o
-ghd_mod.o               : hd_mod.o
+ghd_mod.o               : hd_mod.o laplace_mod.o stagger_mod.o
 
 # Dependencies
 patch_list_mod.o        : io_mod.o timestep_mod.o refine_mod.o

@@ -19,10 +19,12 @@ MODULE ghd_mod
     real(kind=8):: G                                                                    ! Strength of gravity
     real(kind=8):: tolerance
     integer:: min_iter, max_iter
+    integer:: i_phi=i_phi
     type(laplace_t)  :: laplace
   contains
     procedure:: init
     procedure:: update
+    procedure:: download_to
     procedure:: solve
   end type
   type(operator_t):: o
@@ -72,6 +74,22 @@ SUBROUTINE init (self, position, size)
   !
   call trace_end
 END SUBROUTINE init
+
+!> =============================================================================
+!> Intercept the call from patch_list_mod::update to pde_t%download, which
+!> normally falls through to patch_t%update.  Instrument an extra flag, which
+!> forces a download from lower levels to higher levels (only) for that mem
+!> slot
+!> =============================================================================
+SUBROUTINE download_to (self, patch, only_down)
+  class(ghd_t):: self
+  class(patch_t), pointer:: patch
+  integer, optional:: only_down
+  integer:: only_down_
+  !.............................................................................
+  only_down_ = self%i_phi
+   call download_to (self, patch, only_down=only_down_)
+END SUBROUTINE download_to
 
 !> =============================================================================
 !> Compute iteratively the solution to the Poisson equation, stopping when
