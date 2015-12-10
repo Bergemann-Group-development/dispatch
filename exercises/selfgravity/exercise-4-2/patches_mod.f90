@@ -105,7 +105,7 @@ SUBROUTINE init (self, position, size)
   self%nt = dims(4)                             ! number of time slices
   self%nv = dims(5)                             ! number of variables
   self%level = log(maxval(self%box)/minval(self%ds))/log(2.) + 0.1
-  !print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
+  print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
   !-----------------------------------------------------------------------------
   ! Allocate memory, if not allocated
   !-----------------------------------------------------------------------------
@@ -165,13 +165,11 @@ END SUBROUTINE update_patch
 SUBROUTINE download_to (self, patch, only_down)
   class(patch_t):: self
   class(patch_t), pointer:: patch
-  integer, optional:: only_down
+  integer:: only_down
   logical:: all_target
   integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), n, only_down_
   real:: f(3), pos(3)
   !.............................................................................
-  only_down_ = -1                                       ! normally bypass
-  if (present(only_down)) only_down_ = only_down        ! unless optionally set
 !  if (self%id==patch%id .and. all(patch%size /= box%size)) return
   if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','index:self,patch:', &
     self%id,self%position,patch%id,patch%position, self%li, self%ui
@@ -188,7 +186,7 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
     all_target = .true.
     if (self%level <= patch%level) all_target = .false.   ! do not upload from below
     if ((self%level-patch%level) > 1) return              ! upload at most 1 level
-    if (iv==only_down_) then
+    if (iv==only_down) then
       if (self%level >= patch%level) cycle                ! only download
       all_target = .true.                                 ! interior + guard cells
       if (io%verbose>0) &

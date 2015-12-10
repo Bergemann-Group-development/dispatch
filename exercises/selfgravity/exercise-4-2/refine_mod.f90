@@ -26,6 +26,8 @@ MODULE refine_mod
     procedure:: check_log_density
     procedure:: check_log_pressure
     procedure:: check_velocity
+    procedure:: check_potential
+    procedure:: check_jeans
     procedure:: check_magnetic_field
   end type
   integer, public:: msplit=2                   ! shared with patch_list_mod
@@ -65,7 +67,9 @@ FUNCTION needed (self, patch)
   if (patch%time < self%refine_from .or. patch%time > self%refine_until) return
   call trace_begin ('refine_t%needed', 2)
   if (io%verbose>2) print*,'refine%needed? patch:', patch%id, patch%it, patch%new
-  needed = check_log_density    (self, patch)
+  !needed = check_log_density    (self, patch)
+  !needed = self%check_potential (patch)
+  needed = self%check_Jeans (patch)
   if (needed) then
     call trace_end
     return
@@ -73,6 +77,17 @@ FUNCTION needed (self, patch)
   !needed = check_log_pressure   (self, patch); if (needed) return
   !needed = check_velocity       (self, patch); if (needed) return
   !needed = check_magnetic_field (self, patch)
+  call trace_end
+END FUNCTION
+!> =============================================================================
+FUNCTION check_jeans (self, patch) RESULT(out)
+  class(refine_t):: self
+  class(timestep_t), pointer:: patch
+  real, dimension(:,:,:), pointer:: v, d
+  logical:: out
+  !.............................................................................
+  call trace_begin ('refine_t%check_check_jeans', 2)
+  out = patch%ds(1)*sqrt(maxval(patch%mem(:,:,:,patch%i_d,patch%it,1)*patch%G)) > self%max_diff
   call trace_end
 END FUNCTION
 !> =============================================================================
@@ -91,6 +106,24 @@ FUNCTION check_log_density (self, patch) RESULT(out)
   allocate (v(1:patch%n(1),1:patch%n(2),1:patch%n(3)))
   call patch%log_density (v)
   !print*, 'check_log', minval(v), maxval(v)
+  out = check_max_diff (self, patch, v)
+  deallocate (v)
+  call trace_end
+END FUNCTION
+!> =============================================================================
+FUNCTION check_potential (self, patch) RESULT(out)
+  class(refine_t):: self
+  class(timestep_t), pointer:: patch
+  real, dimension(:,:,:), pointer:: v, d
+  logical:: out
+  !.............................................................................
+  call trace_begin ('refine_t%potential', 2)
+  if (io%verbose>3) then
+    print*, 'check_pot', patch%id
+    print*, 'check_pot', patch%li, patch%ui
+  end if
+  allocate (v(1:patch%n(1),1:patch%n(2),1:patch%n(3)))
+  call patch%grav_potential (v)
   out = check_max_diff (self, patch, v)
   deallocate (v)
   call trace_end

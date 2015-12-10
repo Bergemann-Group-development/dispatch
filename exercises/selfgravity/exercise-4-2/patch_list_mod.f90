@@ -685,15 +685,17 @@ SUBROUTINE download (self)
   class (link_t):: self
   class (link_t),  pointer:: nbor
   class (patch_t), pointer:: patch
-  integer :: nguard
+  integer :: nguard, special
   !.............................................................................
   call trace_begin('link_t%download')
   nbor => self%nbors
   patch => self%patch
   nguard=0
   do while (associated (nbor))
-    if (abs(self%patch%level-patch%level) < 2) &
-      call nbor%patch%download_to (patch)
+    if (abs(self%patch%level-patch%level) < 2) then
+      special = -1
+      call nbor%patch%pde_t%download_to (patch, special)
+    end if
     nbor => nbor%next
   end do
   if (io%verbose > 5) &
