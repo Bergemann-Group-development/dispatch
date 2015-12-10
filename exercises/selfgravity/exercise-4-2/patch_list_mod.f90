@@ -97,7 +97,7 @@ SUBROUTINE init_cartesian (self)
     patch%box = self%size
     call patch%init (position, self%size/self%dims)
     if (io%verbose>1) &
-      print*,'init_cartesian:', patch%id, self%size, patch%size
+      print*,'init_cartesian: id, size, pos =', patch%id, patch%size, patch%position
     patch%i = i; patch%j = j; patch%k = k
     if (io%verbose > 2) &
       print'(i5,3(3f9.4,3x))', patch%id, patch%position, patch%size

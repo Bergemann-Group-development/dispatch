@@ -46,7 +46,7 @@ def image_patch(patch):
 
     pl.subplot(2,2,4)
     pl.title('velocity')
-    vel = (patch.px**2 + patch.py**2 + patch.pz**2)**0.5 / patch.rho
+    vel = (patch.px**2 + patch.py**2 + patch.pz**2)**0.5
     f = vel[:,:,patch.n[2]/2]
     pl.imshow(f.squeeze().transpose(), 
       origin='lower',interpolation='nearest')

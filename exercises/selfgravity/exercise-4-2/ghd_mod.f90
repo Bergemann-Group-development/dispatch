@@ -54,8 +54,6 @@ SUBROUTINE init (self, position, size)
     read (io%input, ghd_params)
     if (io%master) write (*,ghd_params)
   end if
-  self%size      = 1.
-  self%position  = 0.
   self%G         = G
   self%tolerance = tolerance
   self%min_iter  = min_iter

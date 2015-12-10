@@ -65,7 +65,7 @@ SUBROUTINE init (self, position, size)
   integer:: dims(5) = 6
   real:: position(3), size(3)
   logical:: first_time = .true.
-  namelist /patch_params/ dims, size
+  namelist /patch_params/ dims
   !.............................................................................
   call trace_begin ('patch_t%init', 3)
   !$omp atomic

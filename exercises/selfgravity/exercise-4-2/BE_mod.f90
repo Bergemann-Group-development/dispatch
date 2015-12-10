@@ -48,8 +48,6 @@ SUBROUTINE init (self, position, size)
     read (io%input, BE_params)
     if (io%master) write (*,BE_params)
   end if
-  self%size      = 1.
-  self%position  = 0.
   self%w_BE      = w_BE
   self%p_BE      = p_BE
   self%a_BE      = a_BE

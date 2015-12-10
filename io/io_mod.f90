@@ -34,7 +34,6 @@ SUBROUTINE init (self, name)
   namelist /io_params/ verbose, do_debug, do_trace, levelmax
   !.............................................................................
   call print_id (id)
-  print *,io%master,'cc'
   if (first_time) then
     if (present(name)) inputfile = trim(name)//'.nml'                             ! experiment_name given?
     inquire (file=inputfile, exist=exist)                                         ! experiment.nml ?
