@@ -10,6 +10,7 @@ MODULE pde_mod
   USE scalar_mod
   USE laplace_mod
   USE ghd_mod
+  USE boundary_mod
   implicit none
   private
   type, public, extends(ghd_t):: pde_t
@@ -53,6 +54,7 @@ SUBROUTINE init (self, position, size)
   self%p_BE      = p_BE
   self%a_BE      = a_BE
   self%r_BE      = r_BE
+  boundary%r_BE  = r_BE
   self%amplitude = amplitude
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Approximate a Bonnor-Ebert sphere

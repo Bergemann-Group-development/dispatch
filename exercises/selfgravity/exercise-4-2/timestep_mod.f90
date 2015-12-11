@@ -90,7 +90,6 @@ SUBROUTINE update_timestep (self)
   integer:: it, jt, kt, lt, nt
   !......................................................................
   call trace_begin ('timestep_t%update', 1)
-  call self%pde_t%solve                         ! any static solvers?
   call self%pde_t%update                        ! time derivative at it
   it = modulo(self%it,self%nt)+1                ! wrap to new time slot
   if (io%verbose>3) then
@@ -138,9 +137,10 @@ SUBROUTINE update_timestep (self)
   ! Print time step info?
   !-----------------------------------------------------------------------------
   if (io%verbose>=1) then
-    print '(a,2i5,i3,2f10.6,1p,e10.2,0p,f7.3,2x,b6.6)', &
+    print '(a,2i5,i3,2f10.6,1p,e10.2,0p,f7.3,2x,b6.6,i6)', &
       'timestep_t%update: id,step,level,t,dt,umax,courant,status=', &
-      self%id, self%istep, self%level, self%time, self%dtime, self%u_max, self%courant, self%status
+      self%id, self%istep, self%level, self%time, self%dtime, self%u_max, &
+      self%courant, self%status, self%iter
 !  else if (io%verbose>1) then
 !    print'(2(a,f9.4,3x),3(a,i5,3x))', 'timestep_t%update: t=', self%time, &
 !      'dt=', self%dtime, 'it=', self%it, 'new=', self%new, 'id=', self%id

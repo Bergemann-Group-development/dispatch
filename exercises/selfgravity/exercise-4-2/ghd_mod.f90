@@ -10,6 +10,7 @@ MODULE ghd_mod
   USE scalar_mod
   USE laplace_mod
   USE hd_mod
+  USE boundary_mod
   USE operators_mod
   implicit none
   private
@@ -18,7 +19,7 @@ MODULE ghd_mod
     type(scalar_t):: phi
     real(kind=8):: G                                                                    ! Strength of gravity
     real(kind=8):: tolerance
-    integer:: min_iter, max_iter
+    integer:: min_iter, max_iter, iter
     integer:: i_phi=i_phi
     type(laplace_t)  :: laplace
   contains
@@ -67,10 +68,9 @@ SUBROUTINE init (self, position, size)
   ! Memory mapping of density and potentiall field
   !-----------------------------------------------------------------------------
   call self%phi%init (self%gn, self%size/self%n, 'd')
-  if (self%phi%allocated) deallocate(self%phi%f)
   self%phi%f => self%mem(:,:,:,i_phi ,self%it,1)
-  self%phi%f = 0.0
-  !
+  open(40,file='dbg0.dat',form='unformatted',status='unknown')
+  open(41,file='dbg1.dat',form='unformatted',status='unknown')
   call trace_end
 END SUBROUTINE init
 
@@ -86,7 +86,7 @@ SUBROUTINE download_to (self, patch, only_down)
   integer:: only_down
   integer:: only_down_
   !.............................................................................
-  only_down = self%i_phi
+  only_down = 0
   call self%patch_t%download_to (patch, only_down)
 END SUBROUTINE download_to
 
@@ -114,7 +114,9 @@ end associate
   ! Set up source of gravity
   !-----------------------------------------------------------------------------
   FourPiGrho = FourPi * self%G * self%d%f
+  self%phi%f => self%mem(:,:,:,i_phi ,self%it,1)
   phi_1 = self%phi%f
+  !phi_1 = 0.0
   phi_old => phi_1                              ! initial pointer arrangement
   phi_new => phi_2
   error = 2.*self%tolerance
@@ -125,12 +127,25 @@ end associate
   !-----------------------------------------------------------------------------
   do while((it<self%min_iter) .or. &
            (error >= self%tolerance .and. it<self%max_iter))
-    call self%laplace%solver (phi_old, phi_new, FourPiGrho, error)
+    call self%laplace%solver (self, phi_old, phi_new, FourPiGrho, error)
+    call boundary%sphere (self, phi_new, 0.0, 0.0)
+    if (self%id==1) then
+      print 1,self%id,it,self%time,self%d%f(11,11,11),phi_new(11,11,11), minval(phi_new), maxval(phi_new), error
+      1 format(2i5,1p,6e14.6)
+      write (40) it, self%time, size(phi_new,dim=1), size(phi_new,dim=2), size(phi_new,dim=3)
+      write (40) FourPiGrho, phi_new
+    end if
+    if (self%id==16) then
+      print 1,self%id,it,self%time,self%d%f(11,11,11),phi_new(11,11,11), minval(phi_new), maxval(phi_new), error
+      write (41) it, self%time, size(phi_new,dim=1), size(phi_new,dim=2), size(phi_new,dim=3)
+      write (41) FourPiGrho, phi_new
+    end if
     if (io%verbose>3) write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Iter=', it, &
       ' Tolerance=', self%tolerance, ' Error=', error
     phi_swap => phi_new; phi_new=>phi_old; phi_old=>phi_swap
     it = it + 1
   enddo
+  self%iter = it
   !-----------------------------------------------------------------------------
   ! Check if we reached solution in time
   !-----------------------------------------------------------------------------
@@ -156,9 +171,10 @@ SUBROUTINE update (self)
   class(ghd_t):: self
   !.............................................................................
   call trace_begin ('ghd_mod:ghd_t%update', 2)
+  self%phi%f => self%mem(:,:,:,i_phi ,self%it,1)
   if (self%G == 0.0) then
     call self%hd_t%update
-  else 
+  else
     call self%solve
     call self%hd_t%update
     self%dpdt%x = self%dpdt%x - o%ddxdn(self%phi%f)*self%rho_face%x

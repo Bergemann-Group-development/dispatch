@@ -194,7 +194,7 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
       all_target = .true.                                 ! interior + guard cells
       if (io%verbose>0) &
         print'(10(1x,a,i6,3x))', 'patch', patch%id, 'at level', patch%level, &
-        'downloading variable', only_down_, 'from patch', self%id, 'level', self%level
+        'downloading variable', only_down, 'from patch', self%id, 'level', self%level
     end if
     do iz=1,patch%gn(3)
     do iy=1,patch%gn(2)

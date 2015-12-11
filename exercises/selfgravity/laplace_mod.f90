@@ -6,6 +6,7 @@ MODULE laplace_mod
   USE io_mod
   USE trace_mod
   USE patches_mod
+  USE boundary_mod
   implicit none
   private
   type, public:: laplace_t
@@ -98,9 +99,10 @@ END SUBROUTINE init
 ! On output phi is destroyed in the error calculation while
 ! phi_new contains the new guess for phi
 !===============================================================================
-SUBROUTINE jacobi_2nd (self, phi, phi_new, FourPiGrho, error)
+SUBROUTINE jacobi_2nd (self, patch, phi, phi_new, FourPiGrho, error)
   implicit none
-  class(laplace_t):: self
+  class(laplace_t) :: self
+  class(patch_t)   :: patch
   real(kind=8), dimension(self%gn(1),self%gn(2),self%gn(3)), target :: phi
   real(kind=8), dimension(self%gn(1),self%gn(2),self%gn(3)), intent(out), target :: &
                      phi_new
@@ -191,7 +193,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
    endif
   endif
   ! Calculate relative error using old array as scratch
-  error = error_direct (self, phi_new, phi, FourPiGrho, a)
+  error = error_direct (self, patch, phi_new, phi, FourPiGrho, a)
 end associate
 END SUBROUTINE jacobi_2nd
 !===============================================================================
@@ -200,9 +202,10 @@ END SUBROUTINE jacobi_2nd
 ! On output phi is destroyed in the error calculation while
 ! phi_new contains the new guess for phi
 !===============================================================================
-SUBROUTINE jacobi_4th (self, phi, phi_new, FourPiGrho, error)
+SUBROUTINE jacobi_4th (self, patch, phi, phi_new, FourPiGrho, error)
   implicit none
-  class(laplace_t):: self
+  class(laplace_t) :: self
+  class(patch_t)   :: patch
   real(kind=8), dimension(self%gn(1),self%gn(2),self%gn(3)), target :: phi
   real(kind=8), dimension(self%gn(1),self%gn(2),self%gn(3)), intent(out), target :: &
                      phi_new
@@ -252,11 +255,11 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
     phi_new = -a * FourPiGrho
 
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
-    phi_new(u(1)+1:gn(1),  :,:) = phi(u(1)+1:gn(1),  :,:)
+    phi_new(u(1)+1:gn(1) ,:,:) = phi(u(1)+1:gn(1) ,:,:)
     phi_new(:,     1:l(2)-1,:) = phi(:,     1:l(2)-1,:)
-    phi_new(:,u(2)+1:gn(2),  :) = phi(:,u(2)+1:gn(2),  :)
-    phi_new(:,     1:l(3)-1,:) = phi(:,     1:l(3)-1,:)
-    phi_new(:,u(3)+1:gn(3),  :) = phi(:,u(3)+1:gn(3),  :)
+    phi_new(:,u(2)+1:gn(2) ,:) = phi(:,u(2)+1:gn(2) ,:)
+    phi_new(:,:,     1:l(3)-1) = phi(:,:,     1:l(3)-1)
+    phi_new(:,:,u(3)+1:gn(3) ) = phi(:,:,u(3)+1:gn(3) )
 
     ! Add up contributions
     b1 = a / ds(1)**2 ! IS THIS RIGHT? ARE THERE MORE TERMS?
@@ -285,7 +288,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
     endif
   endif
   ! Calculate relative error using old array as scratch
-  error = error_direct (self, phi_new, phi, FourPiGrho, a)
+  error = error_direct (self, patch, phi_new, phi, FourPiGrho, a)
 end associate
 END SUBROUTINE jacobi_4th
 !===============================================================================
@@ -294,9 +297,9 @@ END SUBROUTINE jacobi_4th
 ! On output phi is destroyed in the error calculation while
 ! phi_new contains the new guess for phi
 !===============================================================================
-SUBROUTINE gauss_seidel_2nd (self, phi, phi_new, FourPiGrho, error)
-  implicit none
-  class(laplace_t):: self
+SUBROUTINE gauss_seidel_2nd (self, patch, phi, phi_new, FourPiGrho, error)
+  class(laplace_t) :: self
+  class(patch_t)   :: patch
   real(kind=8), dimension(self%gn(1),self%gn(2),self%gn(3)), target :: phi
   real(kind=8), dimension(self%gn(1),self%gn(2),self%gn(3)), intent(out), target :: &
                      phi_new
@@ -399,7 +402,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
     endif
   enddo
   ! Calculate relative error using old array as scratch
-  error = error_direct (self, phi_new, phi, FourPiGrho, a)
+  error = error_direct (self, patch, phi_new, phi, FourPiGrho, a)
 end associate
 END SUBROUTINE gauss_seidel_2nd
 !===============================================================================
@@ -408,9 +411,9 @@ END SUBROUTINE gauss_seidel_2nd
 ! On output phi is destroyed in the error calculation while
 ! phi_new contains the new guess for phi
 !===============================================================================
-SUBROUTINE sor_2nd (self, phi, phi_new, FourPiGrho, error)
-  implicit none
-  class(laplace_t):: self
+SUBROUTINE sor_2nd (self, patch, phi, phi_new, FourPiGrho, error)
+  class(laplace_t) :: self
+  class(patch_t)   :: patch
   real(kind=8), dimension(self%gn(1),self%gn(2),self%gn(3)), target :: phi
   real(kind=8), dimension(self%gn(1),self%gn(2),self%gn(3)), intent(out), target :: &
                      phi_new
@@ -533,15 +536,15 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn,omega_sor=>sel
     endif
   enddo
   ! Calculate relative error using old array as scratch
-  error = error_direct (self, phi_new, phi, FourPiGrho, a)
+  error = error_direct (self, patch, phi_new, phi, FourPiGrho, a)
 end associate
 END SUBROUTINE sor_2nd
 !===============================================================================
 ! 3pt 2nd order Error calculation -- scratch is used as temp scratch space
 !===============================================================================
-FUNCTION error_direct (self, phi, scratch, FourPiGrho, a) result(error)
-  implicit none
-  class(laplace_t):: self
+FUNCTION error_direct (self, patch, phi, scratch, FourPiGrho, a) result(error)
+  class(laplace_t) :: self
+  class(patch_t)   :: patch
   real(kind=8), dimension(self%gn(1),self%gn(2),self%gn(3)) :: scratch
   real(kind=8), dimension(self%gn(1),self%gn(2),self%gn(3)), intent(in)  :: &
                      Phi, FourPiGrho
@@ -564,6 +567,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui)
   enddo
   enddo
   enddo
+  call boundary%sphere (patch, scratch, 0.0, 2.*minval(patch%ds))
   error = maxval(scratch(l(1):u(1),l(2):u(2),l(3):u(3)))/a
 end associate
 END FUNCTION error_direct
