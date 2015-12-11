@@ -133,15 +133,15 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
   phi_new = -a * FourPiGrho
   if (n(1)>1) then
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
-    phi_new(u(1)+1:gn(1),  :,:) = phi(u(1)+1:gn(1),  :,:)
+    phi_new(u(1)+1:gn(1) ,:,:) = phi(u(1)+1:gn(1) ,:,:)
   endif
   if (n(2)>1) then
     phi_new(:,     1:l(2)-1,:) = phi(:,     1:l(2)-1,:)
-    phi_new(:,u(2)+1:gn(2),  :) = phi(:,u(2)+1:gn(2),  :)
+    phi_new(:,u(2)+1:gn(2) ,:) = phi(:,u(2)+1:gn(2) ,:)
   endif
   if (n(3)>1) then
-    phi_new(:,     1:l(3)-1,:) = phi(:,     1:l(3)-1,:)
-    phi_new(:,u(3)+1:gn(3),  :) = phi(:,u(3)+1:gn(3),  :)
+    phi_new(:,:,     1:l(3)-1) = phi(:,:,     1:l(3)-1)
+    phi_new(:,:,u(3)+1:gn(3) ) = phi(:,:,u(3)+1:gn(3) )
   endif
   !
   ! Add up contributions
@@ -330,15 +330,15 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
   phi_new = -a * FourPiGrho
   if (n(1)>1) then
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
-    phi_new(u(1)+1:gn(1),  :,:) = phi(u(1)+1:gn(1),  :,:)
+    phi_new(u(1)+1:gn(1) ,:,:) = phi(u(1)+1:gn(1) ,:,:)
   endif
   if (n(2)>1) then
     phi_new(:,     1:l(2)-1,:) = phi(:,     1:l(2)-1,:)
-    phi_new(:,u(2)+1:gn(2),  :) = phi(:,u(2)+1:gn(2),  :)
+    phi_new(:,u(2)+1:gn(2) ,:) = phi(:,u(2)+1:gn(2) ,:)
   endif
   if (n(3)>1) then
-    phi_new(:,     1:l(3)-1,:) = phi(:,     1:l(3)-1,:)
-    phi_new(:,u(3)+1:gn(3),  :) = phi(:,u(3)+1:gn(3),  :)
+    phi_new(:,:,     1:l(3)-1) = phi(:,:,     1:l(3)-1)
+    phi_new(:,:,u(3)+1:gn(3) ) = phi(:,:,u(3)+1:gn(3) )
   endif
   !
   do sweep=0,1
@@ -443,15 +443,15 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn,omega_sor=>sel
   ! Init iteration and copy boundary conditions
   if (n(1)>1) then
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
-    phi_new(u(1)+1:gn(1),  :,:) = phi(u(1)+1:gn(1),  :,:)
+    phi_new(u(1)+1:gn(1) ,:,:) = phi(u(1)+1:gn(1) ,:,:)
   endif
   if (n(2)>1) then
     phi_new(:,     1:l(2)-1,:) = phi(:,     1:l(2)-1,:)
-    phi_new(:,u(2)+1:gn(2),  :) = phi(:,u(2)+1:gn(2),  :)
+    phi_new(:,u(2)+1:gn(2) ,:) = phi(:,u(2)+1:gn(2) ,:)
   endif
   if (n(3)>1) then
-    phi_new(:,     1:l(3)-1,:) = phi(:,     1:l(3)-1,:)
-    phi_new(:,u(3)+1:gn(3),  :) = phi(:,u(3)+1:gn(3),  :)
+    phi_new(:,:,     1:l(3)-1) = phi(:,:,     1:l(3)-1)
+    phi_new(:,:,u(3)+1:gn(3) ) = phi(:,:,u(3)+1:gn(3) )
   endif
   !
   do sweep=0,1
