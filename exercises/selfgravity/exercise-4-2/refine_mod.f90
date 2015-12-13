@@ -16,9 +16,11 @@ MODULE refine_mod
     type(refine_t), pointer:: next
     character(len=16):: name
     integer:: ivar = 0
-    real:: max_diff = 1.0
-    real:: refine_from=999.
-    real:: refine_until=0.0
+    real:: max_diff
+    real:: refine_from
+    real:: refine_until
+    real:: min_jeans
+    real:: max_dln_rho
     integer:: levelmax
   contains
     procedure:: init
@@ -37,10 +39,11 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(refine_t):: self
-  real:: refine_from = 0.0, refine_until = 1e9
+  real:: refine_from=0.0, refine_until=1e9, min_jeans=0.0,max_dln_rho=2.3
   integer, save:: levelmax
   logical:: first_time = .true.
-  namelist /refine_params/ max_change, msplit, refine_from, refine_until, levelmax
+  namelist /refine_params/ msplit, refine_from, refine_until, levelmax, &
+    min_jeans, max_dln_rho
   !.............................................................................
   call trace_begin ('refine_t%init')
   if (first_time) then
@@ -54,6 +57,8 @@ SUBROUTINE init (self)
   self%refine_from = refine_from
   self%refine_until = refine_until
   self%levelmax = levelmax
+  self%min_jeans = min_jeans
+  self%max_dln_rho = max_dln_rho
   io%levelmax = min(io%levelmax, self%levelmax)
   call trace_end
 END SUBROUTINE init
@@ -75,7 +80,8 @@ FUNCTION needed (self, patch)
   !
   !needed = check_log_density    (self, patch)
   !needed = self%check_potential (patch)
-  needed = self%check_Jeans (patch)
+  if (self%min_jeans   > 0.0) needed = needed.or.self%check_Jeans (patch)
+!  if (self%max_dln_rho > 0.0) needed = needed.or.self%check_max_diff (patch)
   if (needed) then
     call trace_end
     return
@@ -96,10 +102,10 @@ FUNCTION check_jeans (self, patch) RESULT(out)
   call trace_begin ('refine_t%check_check_jeans', 2)
   c_sound = 1.0     ! FIXME
   jeans_length = c_sound/sqrt(maxval(patch%mem(:,:,:,patch%i_d,patch%it,1)*patch%G))
-  ratio = minval(patch%ds)/jeans_length
-  out = ratio > self%max_diff
+  ratio = jeans_length/minval(patch%ds)
+  out = ratio < self%min_jeans
   if (io%verbose > 2) &
-    print*,'Jeans:', ratio, self%max_diff, out
+    print*,'Jeans:', patch%id, ratio, self%min_jeans, out
   call trace_end
 END FUNCTION
 !> =============================================================================
@@ -177,7 +183,7 @@ FUNCTION check_magnetic_field (self, patch) RESULT(out)
   deallocate (v)
 END FUNCTION
 !> =============================================================================
-FUNCTION check_max_diff (self, patch, v) RESULT(out)
+FUNCTION check_max_diff (self, patch,v ) RESULT(out)
   class(refine_t):: self
   class(timestep_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v
@@ -186,32 +192,32 @@ FUNCTION check_max_diff (self, patch, v) RESULT(out)
   real:: max_diff, diff
   logical:: out
   !.............................................................................
+associate (n=>patch%n)
   out = .false.
-  where (patch%n==1)
+  where (n==1)
     m = 0
   end where
-  associate (li=>patch%li, ui=>patch%ui, n=>patch%n)
-    do i1=-m(1),m(1)
-    do i2=-m(2),m(2)
-    do i3=-m(3),m(3)
-      if (i1==0.and.i2==0.and.i3==0) cycle
-      diff = maxval(abs(v(1+m(1)+i1:n(1)-m(1)+i1, &
-                          1+m(2)+i2:n(2)-m(2)+i2, &
-                          1+m(3)+i3:n(3)-m(3)+i3) &
-                      - v(1+m(1)   :n(1)-m(1),   &
-                          1+m(2)   :n(2)-m(2),   &
-                          1+m(3)   :n(3)-m(3))))
-      if (diff >= self%max_diff) then
-        if (io%verbose > 1) &
-          print *,'refine_t%chck_max_diff: id, index, diff, max_diff', &
-          patch%id, diff, self%max_diff
-        out = .true.
-        return
-      end if
-    end do
-    end do
-    end do
-  end associate
+  do i1=-m(1),m(1)
+  do i2=-m(2),m(2)
+  do i3=-m(3),m(3)
+    if (i1==0.and.i2==0.and.i3==0) cycle
+    diff = maxval(abs(v(1+m(1)+i1:n(1)-m(1)+i1, &
+                        1+m(2)+i2:n(2)-m(2)+i2, &
+                        1+m(3)+i3:n(3)-m(3)+i3) &
+                    - v(1+m(1)   :n(1)-m(1),   &
+                        1+m(2)   :n(2)-m(2),   &
+                        1+m(3)   :n(3)-m(3))))
+    if (diff >= self%max_diff) then
+      if (io%verbose > 1) &
+        print *,'refine_t%chck_max_diff: id, index, diff, max_diff', &
+        patch%id, diff, self%max_diff
+      out = .true.
+      return
+    end if
+  end do
+  end do
+  end do
+end associate
 END FUNCTION
 !> =============================================================================
 END MODULE refine_mod

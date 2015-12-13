@@ -75,13 +75,6 @@ SUBROUTINE init (self, position, size)
     end do
   end if
   !-----------------------------------------------------------------------------
-  ! Cheat refinement into making Rubiks Cubes, by insisting that the central
-  ! density is huge, thus triggering Jeans' length refinement
-  !-----------------------------------------------------------------------------
-  if (self%level<levelmax .and. sum(abs(self%position))<0.5*minval(self%ds)) then
-    self%d%f(self%gn(1)/2,self%gn(2)/2,self%gn(3)/2) = 1e30
-  end if
-  !-----------------------------------------------------------------------------
   ! Initial condition for phi
   !-----------------------------------------------------------------------------
   self%phi%f = 0.0

@@ -165,9 +165,10 @@ END SUBROUTINE update_patch
 !> This is useful for both guard cell fill-in, and for "prolongation" = creating
 !> patches with higher resolution.
 !> =============================================================================
-SUBROUTINE download_to (self, patch, only_down)
+SUBROUTINE download_to (self, patch, only_down, all_cells)
   class(patch_t):: self
   class(patch_t), pointer:: patch
+  logical, optional:: all_cells
   integer:: only_down
   logical:: all_target
   integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), n, only_down_
@@ -188,13 +189,14 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
   do iv=1,self%nv
     all_target = .true.
     if (self%level <= patch%level) all_target = .false.   ! do not upload from below
+    if (present(all_cells)) all_target = .true.           ! unless told to do so
     if ((self%level-patch%level) > 1) return              ! upload at most 1 level
     if (iv==only_down) then
-      if (self%level >= patch%level) cycle                ! only download
-      all_target = .true.                                 ! interior + guard cells
-      if (io%verbose>0) &
-        print'(10(1x,a,i6,3x))', 'patch', patch%id, 'at level', patch%level, &
-        'downloading variable', only_down, 'from patch', self%id, 'level', self%level
+      if (self%level >= patch%level) cycle                ! only download phi from lower levels
+      !all_target = .true.                                 ! interior + guard cells
+      !if (io%verbose>0) &
+      !  print'(10(1x,a,i6,3x))', 'patch', patch%id, 'at level', patch%level, &
+      !  'downloading variable', only_down, 'from patch', self%id, 'level', self%level
     end if
     do iz=1,patch%gn(3)
     do iy=1,patch%gn(2)

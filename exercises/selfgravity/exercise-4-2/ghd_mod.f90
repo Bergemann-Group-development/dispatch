@@ -1,6 +1,60 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
-!> Solve the Poisson problem in 3-D
+!> Solve the Poisson problem in 3-D.  In a refined setting, where a smaller
+!> patch exists inside a large one, we rely on the larger patch to provide
+!> updates of the largest scales -- including at the boundaries, and we propagate
+!> these changes to the smaller scale patch by adding it to the existing values.
+!> The time and memory slots are used it the following way:
+!>
+!>                 level  initial guess of phi       iterative correction
+!> time = t(now):   l     mem(:,:,:,i_phi,now,1)     mem(:,:,:,i_phi,now,2)
+!>
+!> The initial estimate for t(new) at the root grid is obtained from extrapolation
+!> in time, using the previous time slot values.  Test this separately, first
+!>
+!> The initial value for the smaller patch cannot be obtained directly from just
+!> time extrapolation, since it needs to match the boundary conditions set by
+!> the larger patch, after it finishes iterating.  The best initial estimate
+!> for smaller scale patches is thus obtained by adding the downloaded correction
+!> from the larger scale to the previous solution.  Symbolically:
+!>
+!> mem(:,:,:,i_phi,prv,1) contains the previous solution, at time=t(prv)
+!> mem(:,:,:,i_phi,now,2) is where we download the correction from lower levels to
+!> mem(:,:,:,i_phi,now,1) = mem(:,:,:,i_phi,prv,1) + mem(:,:,:,i_phi,now,2) = IC
+!> mem(:,:,:,i_phi,now,2) is finally filled with the difference, to be downloaded
+!>
+!> To support this from the larger patch requires that it too uses the same slots,
+!> leaving when finished the correction on its scale in mem(:,:,:,i_phi,now,2).
+!>
+!> Steps        largest scale                   smaller scale
+!> ----------   ---------------------------     ----------------------------------
+!> initial:     mem1 = previous                 mem1 = previous
+!>              mem2 = previous change          mem2 = previous local change
+!> prediction:  mem1 = extrapolation            mem1 = extrapolation
+!>              mem2 = change extrapolation     mem2 = change extrapolation
+!> download:    mem1 = total extrapolation      mem1 = total extrapolation
+!>              mem2 = none                     mem2 = downloaded large scale change
+!> iteration:   mem1 = relaxation               mem1 = relaxation
+!>              mem2 = new - old                mem2 = new-old
+!>
+!> The mem2 local correction is amenable to time extrapolation, which could
+!> speed up convergence of the local iterations even more.  The constraints for
+!> prediction on the smaller scale are: 1) it must not change the boundary
+!> values (to be) imposed by the larger scale through addition, and 2) it must
+!> NOT already contain (part of) the larger scale change to be added from the
+!> larger scale.  It should thus entirely be referring to the local scale, which
+!> is true if it is based entirely on the correction in step "iteration".  To be
+!> clear, let's assume two scales that are entirely separate: A large (disk?)
+!> scale, and a local (planetary) scale.  Changes on the small scale coming from
+!> the large scale are slow, and are systematic throughout the small scale.  If
+!> they are imposed only on the boundary the residual consist of a spectrum of
+!> changes that includes the largest of the small scales (the whole small box).
+!> If they are imposed as an additive term they are instead nearly exact, and
+!> cause only minor extra work.
+!>
+!> The two accelerations should be tested separately.  First the addition of
+!> the iterative change from the level above, and then the extrapolation in time
+!> of the local change.
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE ghd_mod
   USE io_mod
@@ -80,13 +134,13 @@ END SUBROUTINE init
 !> forces a download from lower levels to higher levels (only) for that mem
 !> slot
 !> =============================================================================
-SUBROUTINE download_to (self, patch, only_down)
+SUBROUTINE download_to (self, patch, only_down, all_cells)
   class(ghd_t):: self
   class(patch_t), pointer:: patch
   integer:: only_down
-  integer:: only_down_
+  logical, optional:: all_cells
   !.............................................................................
-  only_down = 0
+  only_down = 6
   call self%patch_t%download_to (patch, only_down)
 END SUBROUTINE download_to
 

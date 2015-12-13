@@ -145,8 +145,8 @@ SUBROUTINE update (self)
   if (associated(head)) then
     self%queue => self%queue%next_time                  ! update the link
     self%nq = self%nq-1
-    call head%download                                  ! guard cells & interior
     patch => head%patch                                 ! head patch
+    call head%download                                  ! guard cells & interior
     if (io%verbose > 1) then
       if (associated(self%queue)) then
         print*,'patch_list_t%update: removed from queue =', &
@@ -256,13 +256,14 @@ SUBROUTINE split (self, this)
         ! Download values from parent and neighbors, except at time==0.0, to
         ! allow recursive refinement there
         !------------------------------------------------------------------------
-        if (this%patch%time > 0.0) call link%download
+        if (this%patch%time > 0.0) call link%download (all_cells=.true.)
         !------------------------------------------------------------------------
         ! Insert the new patch at the head of the ready queue
         !------------------------------------------------------------------------
-!        link%next_time => self%queue
-!        self%queue => link
-!        self%nq = self%nq+1
+        link%next_time => self%queue
+        self%queue => link
+        self%nq = self%nq+1
+        call patch%set (bits%ready)              ! make sure it's not added twice
         if (io%verbose>0) then
           print 1,'task_list_t%split:  patch, level, iout, time, size, origin =', &
             patch%id, patch%level, patch%iout, patch%time, patch%size, patch%origin
@@ -674,9 +675,10 @@ END SUBROUTINE add_by_quality
 !> =============================================================================
 !> Run through neighbor list and pick up guard cells
 !> =============================================================================
-SUBROUTINE download (self)
+SUBROUTINE download (self, all_cells)
   implicit none
   class (link_t):: self
+  logical, optional:: all_cells
   class (link_t),  pointer:: nbor
   class (patch_t), pointer:: patch
   integer :: nguard, special
@@ -687,8 +689,8 @@ SUBROUTINE download (self)
   nguard=0
   do while (associated (nbor))
     if (abs(self%patch%level-patch%level) < 2) then
-      special = -1
-      call nbor%patch%pde_t%download_to (patch, special)
+      if (patch%level == self%patch%level-1) special = 6
+      call nbor%patch%pde_t%download_to (patch, special, all_cells)
     end if
     nbor => nbor%next
   end do
