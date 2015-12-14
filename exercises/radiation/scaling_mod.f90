@@ -1,0 +1,56 @@
+!> =============================================================================
+!> Define code units, in terms of (here) CGS units
+!> =============================================================================
+MODULE scaling_mod
+  USE units_mod
+  USE io_mod
+  implicit none
+  private
+  type, public:: units_t
+    real(kind=8):: l = 1.0
+    real(kind=8):: t = 1.0
+    real(kind=8):: m = 1.0
+    real(kind=8):: d = 1.0
+    real(kind=8):: e = 1.0
+    real(kind=8):: p = 1.0
+    real(kind=8):: u = 1.0
+    real(kind=8):: grav = 1.0
+    real(kind=8):: temp = 1.0
+    real(kind=8):: mu = 2.4
+  contains
+    procedure:: init
+  end type
+  type(units_t), public:: scaling
+CONTAINS
+!> =============================================================================
+!> Initialize comprehensive code units:
+!> =============================================================================
+SUBROUTINE init (self)
+  class(units_t):: self
+  logical, save:: first_time=.true.
+  if (.not.first_time) return
+  first_time = .false.
+  self%l = cgs%pc
+  self%u = cgs%kms
+  self%d = 1e5
+  self%m = self%d*self%l**3
+  self%t = self%l/self%u
+  self%p = self%d*self%u**2
+  self%e = self%m*self%u**2
+  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2
+  self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e)
+  if (io%master) then
+    print 1,' CODE UNITS:   (cgs):'
+    print 1,'     length: ',self%l
+    print 1,'   velocity: ',self%u
+    print 1,'       mass: ',self%m
+    print 1,'       time: ',self%t
+    print 1,'    density: ',self%d
+    print 1,'   pressure: ',self%p
+    print 1,'     energy: ',self%e
+    print 1,'    gravity: ',self%grav
+    print 1,'temperature: ',self%temp
+  1 format(1x,a,1p,e11.3)
+  end if
+END SUBROUTINE init
+END MODULE scaling_mod

@@ -4,6 +4,7 @@ VPATH := $(VPATH):$(TOP)/operators
 # Local object files to include (hardwired later)
 ifeq ($(EXEC),dispatch.x)
   OBJ += \
+  cgs_mod.o \
   bits_mod.o \
   scalar_mod.o \
   vector_mod.o \
