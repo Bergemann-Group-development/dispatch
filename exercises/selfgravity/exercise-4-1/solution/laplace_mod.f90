@@ -215,36 +215,15 @@ SUBROUTINE jacobi_4th (self, phi, phi_new, FourPiGrho, error)
   !.............................................................................
   ! Make one iterative update for phi_new.
   !
-  ! The SECOND ORDER equation is
-  !
-  !   (2/dx^2 + 2/dy^2 + 2/dz^2) phi_new_ijk =
-  !                                 (phi_i+1,j,k + phi_i-1,j,k)/dx^2
-  !                               + (phi_i,j+1,k + phi_i,j-1,k)/dy^2
-  !                               + (phi_i,j,k+1 + phi_i,j,k-1)/dz^2
-  !                               - FourPiGrho
-  !
-  ! WHAT IS THE FOURTH ORDER EQUIVALENT?
-  !
   !   c1 = 5/2, c2= 4/3, c3=-1/12
-  !   (c1/dx^2 + c1/dy^2 + c1/dz^2) phi_new_ijk =
+  !   (c1/dx^2 + c1/dy^2 + c1/dz^2) phi_new_ijk = (1-omega) * phi_ijk + omega * [
   !                                 c2 (phi_i+1,j,k + phi_i-1,j,k)/dx^2
   !                               + c2 (phi_i,j+1,k + phi_i,j-1,k)/dy^2
   !                               + c2 (phi_i,j,k+1 + phi_i,j,k-1)/dz^2
   !                                 c3 (phi_i+2,j,k + phi_i-2,j,k)/dx^2
   !                               + c3 (phi_i,j+2,k + phi_i,j-2,k)/dy^2
   !                               + c3 (phi_i,j,k+2 + phi_i,j,k-2)/dz^2
-  !                               - FourPiGrho
-  !
-  ! ****************************** HINT HINT HINT ******************************
-  ! Check slides and Absalon page
-  !
-  ! Write down the form of the fourth order operator on paper BEFORE touching code
-  !
-  ! You are free to assume the you are solving it in the 3D case.
-  !
-  ! For an extra challenge: What should be done to handle 1D, 2D, and 3D, like in
-  ! the 2nd order version? Split up terms in "face", "edge", and "corner" contributions.
-  ! ****************************** HINT HINT HINT ******************************
+  !                               - FourPiGrho]
   !
   ! Calculation has to be done in the interior of the domain, assuming a source 4piGrho, and that
   ! the boundaries are fixed and therefore copied
@@ -254,26 +233,26 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
   if (all(n > 1)) then
     ! Copy boundary conditions
     phi_new(     1:l(1)-1,:,:) = phi(     1:l(1)-1,:,:)
-    phi_new(u(1)+1:gn(1),  :,:) = phi(u(1)+1:gn(1),  :,:)
-    phi_new(:,     1:l(2)-1,:) = phi(:,     1:l(2)-1,:)
-    phi_new(:,u(2)+1:gn(2),  :) = phi(:,u(2)+1:gn(2),  :)
-    phi_new(:,     1:l(3)-1,:) = phi(:,     1:l(3)-1,:)
-    phi_new(:,u(3)+1:gn(3),  :) = phi(:,u(3)+1:gn(3),  :)
+    phi_new(u(1)+1:gn(1), :,:) = phi(u(1)+1:gn(1), :,:)
+    phi_new(:,:,     1:l(2)-1) = phi(:,:,     1:l(2)-1)
+    phi_new(:,:,u(2)+1:gn(2) ) = phi(:,:,u(2)+1:gn(2) )
+    phi_new(:,:,     1:l(3)-1) = phi(:,:,     1:l(3)-1)
+    phi_new(:,:,u(3)+1:gn(3) ) = phi(:,:,u(3)+1:gn(3) )
 
     ! Prefactors for different terms in 4th order Laplace operator.
     ! Notice change of sign for central value (c1) due to rearrangement
-    c1 = 5./2.
-    c2 = 4./3.
-    c3 = -1./12.
+    c1 = 5.0_8/2.0_8
+    c2 = 4.0_8/3.0_8
+    c3 = -1.0_8/12.0_8
     ! a is overall rescaling factor and is the inverse of term in front of diagonal
-    a = 1. / (c1/ds(1)**2 + c1/ds(2)**2 + c1/ds(3)**2)
+    a = 1.0_8 / (c1/ds(1)**2 + c1/ds(2)**2 + c1/ds(3)**2)
     b1 = a * c2 / ds(1)**2 ! +-1 terms with rescaling included
     b2 = a * c2 / ds(2)**2
     b3 = a * c2 / ds(3)**2
     d1 = a * c3 / ds(1)**2 ! +-2 terms with rescaling included
     d2 = a * c3 / ds(2)**2
     d3 = a * c3 / ds(3)**2
-    omega = 0.92
+    omega = 7.5/8          ! Needed to keep checkerboard in check
     do k=l(3),u(3)
     do j=l(2),u(2)
     do i=l(1),u(1)
@@ -288,16 +267,7 @@ associate(n=>self%n,ds=>self%ds,l=>self%li,u=>self%ui,gn=>self%gn)
     enddo
     enddo
   else
-    call mpi%abort('Laplace_mod: jacobi_fourth; patch has to be 3D')
-    if (n(1)>1) then
-      !...
-    endif
-    if (n(2)>1) then
-      !...
-    endif
-    if (n(3)>1) then
-      !...
-    endif
+    call mpi%abort('Laplace_mod: jacobi_4th; patch has to be 3D')
   endif
   ! Calculate relative error using old array as scratch
   error = error_direct (self, phi_new, phi, FourPiGrho, a)
