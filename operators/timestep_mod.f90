@@ -41,7 +41,7 @@ CONTAINS
 !> =============================================================================
 !> Initialize coefficients for Adams-Bashforth time stepping
 !> =============================================================================
-SUBROUTINE init (self, position, size)
+SUBROUTINE init (self) !, position, size)
   class(timestep_t):: self
   real:: position(3), size(3)
   integer:: nslice=5

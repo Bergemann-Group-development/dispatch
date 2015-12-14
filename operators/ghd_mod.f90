@@ -89,7 +89,7 @@ CONTAINS
 !> =============================================================================
 !> Setup parameters for the Poisson solver
 !> =============================================================================
-SUBROUTINE init (self, position, size)
+SUBROUTINE init (self) !, position, size)
   class(ghd_t):: self
   real:: position(3), size(3)
   real(kind=8) :: tolerance=1e-4, G=1., omega_sor=0.0

@@ -1,0 +1,10 @@
+&rt_params
+ solver='integral'
+/
+&io_params
+!do_trace=t verbose=4   ! =1 for output file messages
+ do_trace=f verbose=2   ! =1 for output file messages
+/
+&patch_params
+ dims=128,128,128
+/

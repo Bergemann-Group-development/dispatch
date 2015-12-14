@@ -34,7 +34,7 @@ CONTAINS
 !> Map variables to the current memory slot and initialize the deriv operators.
 !> hd_t%init is called from timestep_t%init, again called from task_list_t%init.
 !> =============================================================================
-SUBROUTINE init (self, position, size)
+SUBROUTINE init (self) !, position, size)
   class(hd_t):: self
   real:: position(3), size(3)
   logical:: first_time=.true.
