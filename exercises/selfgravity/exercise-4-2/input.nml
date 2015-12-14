@@ -33,7 +33,7 @@
 /
 &refine_params
  refine_until=-0.01     ! disables refinment
- max_change=0.10
+ min_jeans=10.
  levelmax=10
 /
 &io_params

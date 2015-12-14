@@ -41,9 +41,8 @@ CONTAINS
 !> =============================================================================
 !> Initialize coefficients for Adams-Bashforth time stepping
 !> =============================================================================
-SUBROUTINE init (self) !, position, size)
+SUBROUTINE init (self)
   class(timestep_t):: self
-  real:: position(3), size(3)
   integer:: nslice=5
   namelist /timestep_params/ courant, time_order, verbose, end_time, out_time, &
     nslice, u_fixed, dt_fixed
@@ -60,8 +59,8 @@ SUBROUTINE init (self) !, position, size)
   end if
   !$omp end critical (timest_cr)
   !-----------------------------------------------------------------------------
-  !call self%patch_t%init (position, size)
-  call self%pde_t%init (position, size)
+  !call self%patch_t%init
+  call self%pde_t%init
   select case (time_order)
   case (1)
     self%wt = [   1.0,     0.0,      0.0,    0.0]       ! 1st order

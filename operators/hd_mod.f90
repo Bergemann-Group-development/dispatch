@@ -34,15 +34,14 @@ CONTAINS
 !> Map variables to the current memory slot and initialize the deriv operators.
 !> hd_t%init is called from timestep_t%init, again called from task_list_t%init.
 !> =============================================================================
-SUBROUTINE init (self) !, position, size)
+SUBROUTINE init (self)
   class(hd_t):: self
-  real:: position(3), size(3)
   logical:: first_time=.true.
   real:: nu(2)=[0.5,2.0], gamma=5./3.
   namelist /hd_params/ gamma, nu
   !.............................................................................
   call trace_begin ('hd_mod:hd_t%init', 2)
-  call self%patch_t%init (position, size)
+  call self%patch_t%init
   call o%init (self%gn, self%ds)
   if (first_time) then
     first_time = .false.
