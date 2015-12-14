@@ -123,8 +123,6 @@ SUBROUTINE init (self, position, size)
   !-----------------------------------------------------------------------------
   call self%phi%init (self%gn, self%size/self%n, 'd')
   self%phi%f => self%mem(:,:,:,i_phi ,self%it,1)
-  open(40,file='dbg0.dat',form='unformatted',status='unknown')
-  open(41,file='dbg1.dat',form='unformatted',status='unknown')
   call trace_end
 END SUBROUTINE init
 
@@ -183,17 +181,6 @@ end associate
            (error >= self%tolerance .and. it<self%max_iter))
     call self%laplace%solver (self, phi_old, phi_new, FourPiGrho, error)
     call boundary%sphere (self, phi_new, 0.0, 0.0)
-    if (self%id==1) then
-      print 1,self%id,it,self%time,self%d%f(11,11,11),phi_new(11,11,11), minval(phi_new), maxval(phi_new), error
-      1 format(2i5,1p,6e14.6)
-      write (40) it, self%time, size(phi_new,dim=1), size(phi_new,dim=2), size(phi_new,dim=3)
-      write (40) FourPiGrho, phi_new
-    end if
-    if (self%id==16) then
-      print 1,self%id,it,self%time,self%d%f(11,11,11),phi_new(11,11,11), minval(phi_new), maxval(phi_new), error
-      write (41) it, self%time, size(phi_new,dim=1), size(phi_new,dim=2), size(phi_new,dim=3)
-      write (41) FourPiGrho, phi_new
-    end if
     if (io%verbose>3) write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Iter=', it, &
       ' Tolerance=', self%tolerance, ' Error=', error
     phi_swap => phi_new; phi_new=>phi_old; phi_old=>phi_swap
