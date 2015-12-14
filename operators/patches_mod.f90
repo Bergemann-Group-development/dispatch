@@ -33,7 +33,8 @@ MODULE patches_mod
     character(len=64), pointer:: experiment_name
   contains
     procedure:: init
-    procedure:: update
+    procedure:: update => update_patch
+    procedure:: solve           ! static solver backup
     procedure:: output
     procedure:: distance        ! return the distance btw two patches
     procedure:: overlaps        ! return true if they overlap (incl. ghost zones)
@@ -46,13 +47,13 @@ MODULE patches_mod
     procedure:: is_clear
     procedure:: ahead_of
     procedure:: is_relevant_for
-    procedure:: get_guardcells_for
+    procedure:: download_to
     procedure:: myposition
     procedure:: fmaxval         ! interior max value
     procedure:: fminval         ! interior min value
   end type
   real, public:: end_time=1.0, out_time=0.1
-  character(len=64), public, target:: experimentname
+  integer, public:: msplit=2    ! shared with refine_mod and patch_list_mod
   integer:: id = 0
 CONTAINS
 !> =============================================================================
@@ -60,20 +61,24 @@ CONTAINS
 !> patch dimensions (which include the number of variable and the number of time
 !> slices), the patch position, and the patch size
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, position, size)
   class(patch_t):: self
-  integer:: dims(3) = 16
-  real:: size(3) = 1.0, position(3) = 0.0
+  integer:: dims(5) = 6
+  real:: position(3), size(3)
   logical:: first_time = .true.
-  namelist /patch_params/ dims, size, position
+  namelist /patch_params/ dims
   !.............................................................................
+  call trace_begin ('patch_t%init', 3)
   !$omp atomic
   id = id + 1                                   ! increment global
+  if (io%verbose>2) &
+    print*,'patch_t%init: id=', id
   self%id = id                                  ! new patch id
-  call trace_begin ('patch_t%init', 3)
+  self%position = position                      ! as per call
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters
   !-----------------------------------------------------------------------------
+  dims(4) = self%nt                             ! set by timestep_t:init
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -84,10 +89,10 @@ SUBROUTINE init (self)
   self%status=0
   self%end_time=end_time
   self%out_time=out_time
-  self%size = size                              ! physical size
+  self%size = size                              ! patch size
+  self%origin = self%position - 0.5*self%size   ! physical origin -- already defined
   self%n  = dims(1:3)                           ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
-  self%origin = self%position - 0.5*self%size   ! physical origin
   where (self%n==1)                             ! for collapsed dimensions
     self%ng = 0                                 ! no guard zones
     self%size = 0.0                             ! zero size
@@ -99,21 +104,30 @@ SUBROUTINE init (self)
   self%gsize = self%size*real(self%gn,kind=8)/self%n ! size incl guard cells
   self%li = 1       + self%ng                   ! lower interior index
   self%ui = self%gn - self%ng                   ! upper interior index
-  self%nt = max(self%nt,2)                      ! must have at least two
-  self%level = log(maxval(self%box)/minval(self%ds))/log(2.) + 0.1
-  if (self%mem_allocated) then
-    call trace_end
-    return
+  self%nt = dims(4)                             ! number of time slices
+  self%nv = dims(5)                             ! number of variables
+  self%level = log(maxval(self%box)/minval(self%ds))/log(real(msplit)) + 0.1
+  if (io%verbose>3) &
+    print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
+  !-----------------------------------------------------------------------------
+  ! Allocate memory, if not allocated
+  !-----------------------------------------------------------------------------
+  if (.not.self%mem_allocated) then
+    allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
+!    if (associated(self%mem)) deallocate (self%mem)
+    allocate (self%mem(self%gn(1),self%gn(2),self%gn(3),self%nv,self%nt,2))
+    self%mem_allocated = .true.                 ! mark
   end if
-  self%mem_allocated = .true.                   ! mark
-  allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
-  self%t = 0.0
-  self%iit = 1
-  if (io%verbose>2) &
-    print*,'mem:',self%gn,self%nv,self%nt
-  allocate (self%mem(self%gn(1),self%gn(2),self%gn(3),self%nv,self%nt,2))
+  self%t = 0.0                                  ! initial time
+  self%iit = 1                                  ! initial memory slots
   call trace_end
 END SUBROUTINE init
+
+!> =============================================================================
+SUBROUTINE solve (self)
+  class(patch_t):: self
+  !.............................................................................
+END SUBROUTINE solve
 
 !> =============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time
@@ -121,7 +135,7 @@ END SUBROUTINE init
 !> dt(1). Then the current slot (it) becomes 2, and the new one becomes 3, etc.
 !> This way, there is no need to copy memory btw time steps.
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE update_patch (self)
   class(patch_t):: self
   !.............................................................................
   call trace_begin ('patch_t%update', 3)
@@ -140,70 +154,104 @@ SUBROUTINE update (self)
   if (io%verbose>3) &
    print*,'patch t(iit):', self%t(self%iit)
   call trace_end
-END SUBROUTINE update
+END SUBROUTINE update_patch
 
 !> =============================================================================
-!> Get guard cells for "patch" using active cells in "self".  So, we loop through
-!> all guard cells in patch, and check if there are proper source points inside
-!> the interior of the source.  For this, we need to map an index position in
-!> patch to an absolute position, and then ask about that position in the
-!> source (self) patch
+!> Download values from the source (self) to the target (patch), trying to get
+!> all cells in the tager if "all_target" is true, and only guard cells if not.
+!> We use myposition() to map an index position in the target patch to an
+!> absolute position, and then index() to get the integer and floating point
+!> position in the source patch.  With that, we make a tri-linear interpolation.
+!> This is useful for both guard cell fill-in, and for "prolongation" = creating
+!> patches with higher resolution.
 !> =============================================================================
-SUBROUTINE get_guardcells_for (self, patch)
+SUBROUTINE download_to (self, patch, only_down, all_cells)
   class(patch_t):: self
   class(patch_t), pointer:: patch
-  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), n
+  logical, optional:: all_cells
+  integer:: only_down
+  logical:: all_target
+  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), n, only_down_
   real:: f(3), pos(3)
   !.............................................................................
+!  if (self%id==patch%id .and. all(patch%size /= box%size)) return
   if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','index:self,patch:', &
     self%id,self%position,patch%id,patch%position, self%li, self%ui
 associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
   it = patch%it
   n = 0
-  do iz=1,patch%gn(3)
-  do iy=1,patch%gn(2)
-  do ix=1,patch%gn(1)
-    ii = [ix,iy,iz]
-    if (.not. all((ii >= patch%li) .and. (ii <= patch%ui))) then
-      pos = patch%myposition(ii)
-      j0 = self%index (patch%myposition(ii), f)
-      if (all((j0+f >= self%li-0.1) .and. (j0+f <= self%ui+0.1) .or. (self%n==1))) then
-        if (io%verbose>3.and.patch%id==10) print'(a,2(i4,2x,3i4,2x),1p,2(3f9.4,2x),2x,2f11.6," ****")', &
-          'index:ii,j0,f:', patch%id, ii,  self%id, j0, f, pos, self%t(it)-patch%t(it)
-        j1 = j0+1
-        where (self%n==1) j1 = j0
-        where (j1 > self%ui)
-          j0 = j0-1
-          j1 = j1-1
-          f  = f+1.0
-        end where
-        where (j0 < self%li)
-          j0 = j0+1
-          j1 = j1+1
-          f  = f-1.0
-        end where
-        do iv=1,self%nv
-          target(ix,iy,iz,iv,it,1) = &
-            (1.-f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j0(3),iv,it,1)    &
-                                   + f(1) *source(j1(1),j0(2),j0(3),iv,it,1)) + &
-            (1.-f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j0(3),iv,it,1)    &
-                                   + f(1) *source(j1(1),j1(2),j0(3),iv,it,1)) + &
-            (   f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j1(3),iv,it,1)    &
-                                   + f(1) *source(j1(1),j0(2),j1(3),iv,it,1)) + &
-            (   f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j1(3),iv,it,1)    &
-                                   + f(1) *source(j1(1),j1(2),j1(3),iv,it,1))
-          n = n+1
-      end do
-      end if
+  !-----------------------------------------------------------------------------
+  ! Download rules:  1) Always download guard cells.  2) Download all cells if
+  ! a) all_cells is set, and the source level is at most one level higher. In
+  !    this case (first fill-in), the source level may be lower than target level
+  ! b) the level is one level higher
+  !-----------------------------------------------------------------------------
+  do iv=1,self%nv
+    all_target = .true.
+    if (self%level <= patch%level) all_target = .false.   ! do not upload from below
+    if (present(all_cells)) all_target = .true.           ! unless told to do so
+    if ((self%level-patch%level) > 1) return              ! upload at most 1 level
+    if (iv==only_down) then
+      if (self%level >= patch%level) cycle                ! only download phi from lower levels
+      !all_target = .true.                                 ! interior + guard cells
+      !if (io%verbose>0) &
+      !  print'(10(1x,a,i6,3x))', 'patch', patch%id, 'at level', patch%level, &
+      !  'downloading variable', only_down, 'from patch', self%id, 'level', self%level
     end if
+    do iz=1,patch%gn(3)
+    do iy=1,patch%gn(2)
+    do ix=1,patch%gn(1)
+      ii = [ix,iy,iz]
+      !---------------------------------------------------------------------------
+      ! Check if the target point is the guard zone region (= not inside)
+      !---------------------------------------------------------------------------
+      if (all_target .or. .not.all((ii >= patch%li) .and. (ii <= patch%ui))) then
+        pos = patch%myposition(ii)
+        j0 = self%index (pos, f)
+        !---------------------------------------------------------------------------
+        ! Check that the source in in the internal region (= not guard zone)
+        !---------------------------------------------------------------------------
+        if (all((j0+f >= self%li-0.1) .and. (j0+f <= self%ui+0.1) .or. (self%n==1))) then
+          if (io%verbose>3.and.patch%id==10) print'(a,2(i4,2x,3i4,2x),1p,2(3f9.4,2x),2x,2f11.6," ****")', &
+            'index:ii,j0,f:', patch%id, ii,  self%id, j0, f, pos, self%t(it)-patch%t(it)
+          j1 = j0+1
+          where (j1 > self%ui)
+            j0 = j0-1
+            j1 = j1-1
+            f  = f+1.0
+          end where
+          where (j0 < self%li)
+            j0 = j0+1
+            j1 = j1+1
+            f  = f-1.0
+          end where
+          where (self%n==1)
+            j0 = 1
+            j1 = 1
+          end where
+            target(ix,iy,iz,iv,it,1) = &
+              (1.-f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j0(3),iv,it,1)    &
+                                     + f(1) *source(j1(1),j0(2),j0(3),iv,it,1)) + &
+              (1.-f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j0(3),iv,it,1)    &
+                                     + f(1) *source(j1(1),j1(2),j0(3),iv,it,1)) + &
+              (   f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j1(3),iv,it,1)    &
+                                     + f(1) *source(j1(1),j0(2),j1(3),iv,it,1)) + &
+              (   f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j1(3),iv,it,1)    &
+                                     + f(1) *source(j1(1),j1(2),j1(3),iv,it,1))
+          n = n+1
+        end if
+      end if
+    end do
+    end do
+    end do
   end do
-  end do
-  end do
+  if (io%verbose > 3) print'(6(1x,a,i7,1x))', 'patch', patch%id, ' level', patch%level, &
+    ' picked up', n, ' points from patch', self%id, ' at level', self%level
   if (patch%t(patch%it)/=self%t(patch%it)) &
     print'(2(a,i4,f9.4,4x),2i3,2x,5i3,7f8.3)','ERROR: patch:', patch%id, patch%t(patch%it), &
       'self:', self%id, self%t(self%it), patch%it, patch%new, patch%iit, patch%t
 end associate
-END SUBROUTINE get_guardcells_for
+END SUBROUTINE download_to
 !> =============================================================================
 !> This function gives the physical position of an index triple (patch point)
 !> =============================================================================
@@ -326,45 +374,68 @@ END SUBROUTINE troels_get_guardcells_for
 !> =============================================================================
 SUBROUTINE output (self)
   class(patch_t):: self
-  character(len=32) filename
+  character(len=32) filename, logname
   integer:: iv, li(3)=0, ui(3)=0
-  !.............................................................................
+  real:: ds(3)
+  logical:: first_time=.true.
+  !-----------------------------------------------------------------------------
+  ! If the out_next time has passed, set a new time = the integer number of
+  ! out_time's that have passed, plus one more
+  !-----------------------------------------------------------------------------
   if (self%time < self%out_next) return
-  call trace_begin ('patch_t%output')
-  do while (self%out_next <= self%time)
-    self%out_next = self%out_next + self%out_time
-  end do
+  self%out_next = self%out_time*int(self%time/self%out_time) + self%out_time
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
+  call trace_begin ('patch_t%output')
   call system ('mkdir -p data/')
   write (filename,'(a,i3.3,"_",i4.4)') &
     'data/'//trim(self%experiment_name)//'_', self%id, self%iout
   if (io%verbose>=0) &
     print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%time
-  open (3, file=trim(filename)//'.txt', form='formatted', status='unknown')
+  open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   where (self%size > 0.0)
     li = (self%position+0.5*(self%box-self%size))/self%ds
     ui = (self%position+0.5*(self%box+self%size))/self%ds - 1.0
   end where
-  write (3,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
-  write (3,'(4(3i7,2x))') int(self%box/self%ds+0.5), self%n, li, ui
-  close (3)
+  write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
+  write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), self%n, li, ui
+  close (io%data_unit)
   !-----------------------------------------------------------------------------
   ! Write a binary file with the data cube
   !-----------------------------------------------------------------------------
-  open (3, file=trim(filename)//'.dat', form='unformatted', access='direct', &
+  open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
     status='unknown', recl =sizeof(self%mem(1,1,1,1,1,1))*product(self%n))
 associate (l=>self%li, u=>self%ui)
   do iv=1,self%nv
     if (io%verbose>1) &
-      print*,trim(filename),self%it,iv, &
+      print*,trim(filename),iv, &
               minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)), &
               maxval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1))
-    write (3,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
+    write (io%data_unit,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
   end do
 end associate
-  close (3)
+  close (io%data_unit)
+  !-----------------------------------------------------------------------------
+  ! Write a log file, with files written by this rank
+  !-----------------------------------------------------------------------------
+  write (logname,'(a)') 'data/'//trim(self%experiment_name)//'.log'
+  if (first_time) then
+    first_time = .false.
+    if (io%master) print*, 'output data file log written to '//trim(logname)
+    open (io%log_unit,file=trim(logname),status='unknown')
+  else
+    open (io%log_unit,file=trim(logname),status='unknown',position='append')
+  end if
+  write (io%log_unit,'(a)') trim(filename)
+  ds = self%box/2.0**io%levelmax
+  where (self%size > 0.0)
+    li = (self%position+0.5*(self%box-self%size))/ds
+    ui = (self%position+0.5*(self%box+self%size))/ds - 1.0
+  end where
+  write (io%log_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
+  write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), self%n, li, ui
+  close (io%log_unit)
   self%iout = self%iout+1
   call trace_end
 END SUBROUTINE output

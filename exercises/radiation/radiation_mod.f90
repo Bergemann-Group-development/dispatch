@@ -11,9 +11,9 @@ MODULE pde_mod
   USE rt_mod
   implicit none
   private
-  integer, parameter:: i_d=1, i_phi=2
+  integer, parameter:: i_d=1, i_tr=2
   type, public, extends(patch_t):: pde_t
-    type(scalar_t):: d, t
+    type(scalar_t):: d, tt
     real:: w_gauss
     real:: p_gauss
     real:: amplitude
@@ -58,16 +58,14 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Set up the right dimensions from current patch, etc for radiative transfer
   !-----------------------------------------------------------------------------
-  call self%rt%init(self,solver)
+  call self%rt%init (solver)
   !-----------------------------------------------------------------------------
   ! Memory mapping og density and temperature
   !-----------------------------------------------------------------------------
-  call  self%d%init (self%gn, self%size/self%n, 'd')
-  call  self%t%init (self%gn, self%size/self%n, 't')
-  if (self%d%allocated)   deallocate(self%d%f)
-  if (self%phi%allocated) deallocate(self%t%f)
-  self%d%f => self%mem(:,:,:,i_d ,self%it,1)
-  self%t%f => self%mem(:,:,:,i_t ,self%it,1)
+  call   self%d%init (self%gn, self%size/self%n, 'd')
+  call  self%tt%init (self%gn, self%size/self%n, 'tt')
+  self%d%f  => self%mem(:,:,:,i_d ,self%it,1)
+  self%tt%f => self%mem(:,:,:,i_tr,self%it,1)
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: gaussian top hat
   !-----------------------------------------------------------------------------
@@ -87,7 +85,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initial and boundary conditions for temperature [Kelvin]
   !-----------------------------------------------------------------------------
-  self%t%f = 1000.
+  self%tt%f = 1000.
   !
   call trace_end
 END SUBROUTINE init
@@ -96,7 +94,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE solve (self)
   class(pde_t):: self
-  real, allocatable, dimension(:,:,:) :: Intensity
+  real, pointer, dimension(:,:,:) :: Intensity
   !
   !.............................................................................
   call trace_begin ('radiation_mod:pde_t%update', 2)
@@ -106,7 +104,7 @@ associate(gn=>self%gn)
 end associate
 
   call tic
-  call self%rt%solver (self,Intensity)                                          ! get Intensity
+  call self%rt%solver
   call toc ('radiation', product(self%n))
 
   call trace_end
