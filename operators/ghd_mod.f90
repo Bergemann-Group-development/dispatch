@@ -89,9 +89,8 @@ CONTAINS
 !> =============================================================================
 !> Setup parameters for the Poisson solver
 !> =============================================================================
-SUBROUTINE init (self) !, position, size)
+SUBROUTINE init (self)
   class(ghd_t):: self
-  real:: position(3), size(3)
   real(kind=8) :: tolerance=1e-4, G=1., omega_sor=0.0
   integer      :: min_iter=0, max_iter=100
   character(len=12):: solver='sor'
@@ -101,7 +100,7 @@ SUBROUTINE init (self) !, position, size)
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
   call trace_begin ('ghd_mod:ghd_t%init', 2)
-  call self%hd_t%init (position, size)
+  call self%hd_t%init
   call o%init (self%gn, self%ds)
   if (first_time) then
     first_time = .false.

@@ -28,9 +28,8 @@ CONTAINS
 !> =============================================================================
 !> Setup a patch with density and gravitational potential for the Poisson solver
 !> =============================================================================
-SUBROUTINE init (self, position, size)
+SUBROUTINE init (self)
   class(pde_t):: self
-  real:: position(3), size(3)
   integer:: i, j, k
   integer, save:: levelmax=0
   real:: x, y, z
@@ -43,7 +42,7 @@ SUBROUTINE init (self, position, size)
   !experimentname = 'BE'
   call io%init
   call trace_begin ('BE_mod::pde_t%init')
-  call self%ghd_t%init (position, size)
+  call self%ghd_t%init
   if (first_time) then
     first_time = .false.
     rewind (io%input)

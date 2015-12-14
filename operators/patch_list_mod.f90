@@ -93,9 +93,10 @@ SUBROUTINE init_cartesian (self)
     ! Initialize each patch, via timestep_t:init -> pde_t:init -> patch_t:init
     !---------------------------------------------------------------------------
     patch => patches(i,j,k)
-    position = ([i,j,k]-0.5_8)*self%size/self%dims + origin
     patch%box = self%size
-    call patch%init (position, self%size/self%dims)
+    patch%position = ([i,j,k]-0.5_8)*self%size/self%dims + origin
+    patch%size = self%size/self%dims
+    call patch%init
     if (io%verbose>1) &
       print*,'init_cartesian: id, size, pos =', patch%id, patch%size, patch%position
     patch%i = i; patch%j = j; patch%k = k
@@ -238,10 +239,10 @@ SUBROUTINE split (self, this)
         !------------------------------------------------------------------------
         allocate (patch, source=this%patch)
         patch%mem_allocated = .false.
-        patch%size = this%patch%size/nsplit
-        patch%position = this%patch%position + pos*patch%size
         nullify (patch%mem)
-        call patch%init (patch%position, patch%size)    ! patch, for a new id
+        patch%size = this%patch%size/nsplit             ! new size
+        patch%position = this%patch%position + pos*patch%size
+        call patch%init                                 ! patch, for a new id
         patch%out_next = patch%time                     ! force output now
         patch%iout = this%patch%iout                    ! copy counter
         !------------------------------------------------------------------------

@@ -61,10 +61,9 @@ CONTAINS
 !> patch dimensions (which include the number of variable and the number of time
 !> slices), the patch position, and the patch size
 !> =============================================================================
-SUBROUTINE init (self) !, position, size)
+SUBROUTINE init (self)
   class(patch_t):: self
   integer:: dims(5) = 6
-  real:: position(3), size(3)
   logical:: first_time = .true.
   namelist /patch_params/ dims
   !.............................................................................
@@ -74,7 +73,6 @@ SUBROUTINE init (self) !, position, size)
   if (io%verbose>2) &
     print*,'patch_t%init: id=', id
   self%id = id                                  ! new patch id
-  self%position = position                      ! as per call
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters
   !-----------------------------------------------------------------------------
@@ -89,7 +87,6 @@ SUBROUTINE init (self) !, position, size)
   self%status=0
   self%end_time=end_time
   self%out_time=out_time
-  self%size = size                              ! patch size
   self%origin = self%position - 0.5*self%size   ! physical origin -- already defined
   self%n  = dims(1:3)                           ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
