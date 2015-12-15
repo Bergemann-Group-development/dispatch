@@ -1,3 +1,6 @@
+!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!> $Id$
+!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE microphysics_mod
   USE patches_mod
   USE scaling_mod
@@ -5,15 +8,17 @@ MODULE microphysics_mod
   implicit none
   private
   type, public:: microphysics_t
-    procedure(source_planck), pointer :: source
-    procedure(opacity_grey),  pointer :: opacity
+    procedure(source_planck), pointer :: source => null()
+    procedure(opacity_grey),  pointer :: opacity => null()
     real :: kappa_grey
     real :: lambda
   contains
+    procedure          :: init
     procedure, private :: source_planck
     procedure          :: opacity_grey
     procedure          :: dtau
   end type
+  type(microphysics_t), public:: microphysics
 CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
@@ -49,6 +54,7 @@ SUBROUTINE init (self)
     self%opacity => opacity_grey
   end select
 END SUBROUTINE
+!> =============================================================================
 !> compute dtau given a patch, density, temperature, and direction
 !> direction is 1,2,3 for x,y,z
 !> =============================================================================
@@ -57,9 +63,9 @@ FUNCTION dtau (self, direction, patch, density, temperature)
   class(microphysics_t) :: self
   integer               :: direction
   class(patch_t)        :: patch
-  real, dimension(patch%gn(1),patch%gn(2),patch%gn(3)):: density, temperature, dtau
+  real, dimension(patch%n(1),patch%n(2),patch%n(3)):: density, temperature, dtau
   !
-  real, dimension(patch%gn(1),patch%gn(2),patch%gn(3)):: opacity
+  real, dimension(patch%n(1),patch%n(2),patch%n(3)):: opacity
   !
   opacity = self%opacity(density, temperature)
   ! dtau is the increment in tau from one ray-point to the next.
@@ -78,6 +84,7 @@ FUNCTION dtau (self, direction, patch, density, temperature)
   end select
   dtau = 0.5 * patch%ds(direction) * dtau 
 END FUNCTION
+!> =============================================================================
 !> Set the opacity to be constant 
 !> =============================================================================
 FUNCTION opacity_grey (self, density, temperature) result(opacity)
@@ -88,6 +95,7 @@ FUNCTION opacity_grey (self, density, temperature) result(opacity)
   !
   opacity = self%kappa_grey
 END FUNCTION
+!> =============================================================================
 !> Set the source function equal to the planck function
 !> =============================================================================
 FUNCTION source_planck (self, density, temperature) result(source)
@@ -101,6 +109,7 @@ FUNCTION source_planck (self, density, temperature) result(source)
   n = shape(temperature)
   call planck(n, lambda, temperature, source)
 END FUNCTION
+!> =============================================================================
 !> The planck function for a given temperature and wavelength input in code units
 !> output is also in code units
 !> =============================================================================
