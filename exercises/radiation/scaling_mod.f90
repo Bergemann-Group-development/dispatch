@@ -23,17 +23,17 @@ MODULE scaling_mod
   type(units_t), public:: scaling
 CONTAINS
 !> =============================================================================
-!> Initialize comprehensive code units:
+!> Initialize code units:
 !> =============================================================================
 SUBROUTINE init (self)
   class(units_t):: self
   logical, save:: first_time=.true.
   if (.not.first_time) return
   first_time = .false.
-  self%l = cgs%pc
+  self%l = 1e4*cgs%au
+  self%m = cgs%m_sun
+  self%d = self%m/self%l**3
   self%u = cgs%kms
-  self%d = 1e5
-  self%m = self%d*self%l**3
   self%t = self%l/self%u
   self%p = self%d*self%u**2
   self%e = self%m*self%u**2
