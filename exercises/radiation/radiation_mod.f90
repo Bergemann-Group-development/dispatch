@@ -8,6 +8,7 @@ MODULE pde_mod
   USE trace_mod
   USE patches_mod
   USE scalar_mod
+  USE scaling_mod
   USE rt_mod
   implicit none
   private
@@ -43,6 +44,7 @@ SUBROUTINE init (self)
   call io%init (experimentname)
   call trace_begin ('hd_mod:pde_t%init', 2)
   if (first_time) then
+    call scaling%init
     first_time = .false.
     rewind (io%input)
     read (io%input, rt_params)
@@ -55,6 +57,10 @@ SUBROUTINE init (self)
   self%amplitude = amplitude
   self%nv        = 2
   call self%patch_t%init
+  ! Setup microphysics for RT. One microphysics object per wavelength is needed
+  ! All new calls will get default value for wavelength, and this has to be updated
+  ! "externally" if multi-frequency RT is desired.
+  call self%microphysics%init
   !-----------------------------------------------------------------------------
   ! Set up the right dimensions from current patch, etc for radiative transfer
   !-----------------------------------------------------------------------------
