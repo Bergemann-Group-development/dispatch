@@ -1,5 +1,5 @@
 !***********************************************************************
-SUBROUTINE transfer (N, dtau, S, Ifw1, IrvN, Q, Irv1, IfwN)
+SUBROUTINE feautrier (M, N, dtau, S, Ifw1, IrvN, Q, Irv1, IfwN)
 !
 !  Solve the transfer equation, given optical depth increments dtau, 
 !  source function S, infalling intensity Ifw1 at the first point and
@@ -18,68 +18,96 @@ SUBROUTINE transfer (N, dtau, S, Ifw1, IrvN, Q, Irv1, IfwN)
 !  The routine returns the net heating contribution Q at each point, and 
 !  the outgoing intensity at the first point.
 !
-!  Operation count: 4 divide + 7 multiply + 9 add = 20 flops
+!  This is a second order version.  For simulations, with rapidly
+!  varying absorption coefficients and source functions, this is to be
+!  preferred over spline and Hermitean versions because it is positive
+!  definite, in the sense that a positive source function is guaranteed
+!  to result in a positive average intensity p.  Also, the flux
+!  divergence is exactly equal to q, for the conventional definition
+!  of the flux.
+!
+!  "Steins trick" is used; storing the sum of the three elements in each
+!  row of the tridiagonal equation system, instead of the diagonal ele-
+!  ment.  This allows accurate solutions to be otained for arbitrarily
+!  small optical depths.  Without this trick, round off errors become
+!  noticeable already when the smallest optical depth is less than the
+!  square root of the machine precisions.
+!
+!  Operation count: 3 divide + 9 multiply + 8 add = 20 flops
 !
 !***********************************************************************
 !
   implicit none
-  integer, intent(in)              :: n
-  real, intent(in) , dimension(n)  :: dtau, s
-  real, intent(in)                 :: Ifw1, IrvN
-  real, intent(out), dimension(n)  :: q
-  real, intent(out)                :: Irv1, IfwN
+  integer, intent(in)               :: m, n
+  real, intent(in) , dimension(m,n) :: dtau, s
+  real, intent(in) , dimension(m)   :: Ifw1, IrvN
+  real, intent(out), dimension(m,n) :: q
+  real, intent(out), dimension(m)   :: Irv1, IfwN
 
-  real, dimension(n)               :: a1, a2, a3, d
-  integer                          :: k
-  real                             :: a, dsdtau_1, dsdtau_2, d2sdtau2
+  real, dimension(m,n)              :: a1, a2, a3, d
+  integer                           :: j, k
+  real                              :: a, dsdtau_1, dsdtau_2, d2sdtau2
 !
-!  Boundary condition at k=1; infalling intensity = Ifw1
+!  Boundary condition at k=n; infalling forward intensity = Ifw1
 !
-  a2(1) = +1. + dtau(2) + 0.5*dtau(2)**2                                ! matrix element a(1,1)
-  a3(1) = -1.                                                           ! matrix element a(2,1)
-  dsdtau_1 = (s(2)-s(1))/dtau(2)                                        ! dS/dtau at i=1+1/2
-  dsdtau_2 = (s(3)-s(2))/dtau(3)                                        ! dS/dtau at i=2+1/2
-  d2sdtau2 = (dsdtau_2-dsdtau_1)*2./(dtau(2)+dtau(3))                   ! d2S/dtau2
-  q(1)  = - dtau(2)*(s(1) - dsdtau_1 - Ifw1) + 0.5*dtau(2)**2*d2sdtau2  ! right hand side
-!
-!  Compute matrix elements in the interior
-!
-  d(2) = -1./dtau(2)                                      ! flop count
-  do k=2,n-1
-    a       = 2./(dtau(k+1)+dtau(k))                      ! 1d    1a    ! store and reuse
-    d(k+1)  = -1./dtau(k+1)                               ! 1d          ! save a divide 
-    a3(k)   = a*d(k+1)                                    !    1m       ! matrix element a(i-1,i)
-    a1(k)   = a*d(k)                                      !    1m       ! matrix element a(i+1,i)
-    a2(k)   = 1.-a1(k)-a3(k)                              !       2a    ! matrix element a(i,i)
-    q(k)    = a1(k)*(s(k)-s(k-1)) + a3(k)*(s(k)-s(k+1))   !    2m 3a    ! right hand sides
+  do j=1,m
+    a2(j,1)  = +1. + dtau(j,2) + 0.5*dtau(j,2)**2
+    a3(j,1)  = -1.
+    dsdtau_1 = (s(j,2)-s(j,1))/dtau(j,2)
+    dsdtau_2 = (s(j,3)-s(j,2))/dtau(j,3)
+    d2sdtau2 = (dsdtau_2-dsdtau_1)*2./(dtau(j,2)+dtau(j,3))
+    q(j,1)   = - dtau(j,2)*(s(j,1) - dsdtau_1 - Ifw1(j)) + 0.5*dtau(j,2)**2*d2sdtau2
+    a2(j,1)  = + dtau(j,2) + 0.5*dtau(j,2)**2
+    d(j,2)   = -1./dtau(j,2)
   end do
 !
-!  Boundary condition at k=n; infalling intensity = IrvN
+!  Compute matrix elements and eliminate the sub-diagonal in one sweep
 !
-  a2(n) = +1. + dtau(n) + 0.5*dtau(n)**2                                ! matrix element a(n,n)
-  a1(n) = -1.                                                           ! matrix element a(n-1,n)
-  dsdtau_1 = (s(n  )-s(n-1))/dtau(n  )
-  dsdtau_2 = (s(n-1)-s(n-2))/dtau(n-1)
-  d2sdtau2 = (dsdtau_1-dsdtau_2)*2./(dtau(n)+dtau(n-1))
-  q(n)  = - dtau(n)*(s(n) + dsdtau_1 - IrvN) - 0.5*dtau(n)**2*d2sdtau2  ! right hand side
+  do k=2,n-1
+  do j=1,m
+    a        = 2./(dtau(j,k+1)+dtau(j,k))                               ! 1d    1a
+    d(j,k+1) = -1./dtau(j,k+1)                                          ! 1d
+    a3(j,k)  = a*d(j,k+1)                                               !    1m
+    a1(j,k)  = a*d(j,k)                                                 !    1m
+    a2(j,k)  = 1.
+    q(j,k)   = a1(j,k)*(s(j,k)-s(j,k-1)) + a3(j,k)*(s(j,k)-s(j,k+1))    !    2m 3a
+    a        = 1./(a2(j,k-1)-a3(j,k-1))                                 ! 1d    1a
+    a1(j,k)  = a1(j,k)*a                                                !    1m
+    q(j,k)   = q(j,k) - a1(j,k)*q(j,k-1)                                !    1m 1a
+    a2(j,k)  = a2(j,k) - a1(j,k)*a2(j,k-1)                              !    1m 1a
+    a2(j,k-1) = a
+  end do
+  end do
 !
-!  Eliminate subdiagonal
+!  Boundary condition at k=n; infalling reverse intensity = IrvN
 !
-  do k=2,n
-    a1(k)   = a1(k)/a2(k-1)                               ! 1d          ! fraction of k-1 to subtract
-    q(k)    = q(k) - a1(k)*q(k-1)                         !    1m 1a    ! subtract from row k RHS
-    a2(k)   = a2(k) - a1(k)*a3(k-1)                       !    1m 1a    ! subtract from row k LHS
+  do j=1,m
+   a2(j,n) = +1. + dtau(j,n) + 0.5*dtau(j,n)**2
+   a1(j,n) = -1.
+   dsdtau_1 = (s(j,n  )-s(j,n-1))/dtau(j,n  )
+   dsdtau_2 = (s(j,n-1)-s(j,n-2))/dtau(j,n-1)
+   d2sdtau2 = (dsdtau_1-dsdtau_2)*2./(dtau(j,n)+dtau(j,n-1))
+   q(j,n)  = - dtau(j,n)*(s(j,n) + dsdtau_1 - IrvN(j)) - 0.5*dtau(j,n)**2*d2sdtau2
+   a2(j,n) = + dtau(j,n) + 0.5*dtau(j,n)**2
+!
+   a       = 1./(a2(j,n-1)-a3(j,n-1))                                   ! 1d    1a
+   a1(j,n) = a1(j,n)*a                                                  !    1m
+   q(j,n)    = q(j,n) - a1(j,n)*q(j,n-1)                                !    1m 1a
+   a2(j,n)   = a2(j,n) - a1(j,n)*a2(j,n-1)                              !    1m 1a
+   a2(j,n-1) = a
+   q(j,n) = q(j,n)/a2(j,n)                                              ! solution at n
   end do
 !
 !  Backsubstitute
 !
-  q(n) = q(n)/a2(n)                                                     ! solution at n
   do k=n-1,1,-1
-    q(k) = (q(k)-a3(k)*q(k+1))/a2(k)                      ! 1d 1m 1a    ! remaining super-diagonal
+  do j=1,m
+    q(j,k) = (q(j,k)-a3(j,k)*q(j,k+1))*a2(j,k)                          !    2m 1a
   end do
-!                                                         ! 4d 9m 9a    ! 20 flops
+  end do
+!                                                                       ! 3d 9m 8a = 20f
 !  Surface intensities
 !
-  Irv1 = 2.*(q(1) + s(1))-Ifw1                                          ! reverse surface intensity
-  IfwN = 2.*(q(n) + s(n))-IrvN                                          ! forward surface intensity
+  Irv1 = 2.*(q(:,1) + s(:,1))-Ifw1                                      ! reverse surface intensity
+  IfwN = 2.*(q(:,n) + s(:,n))-IrvN                                      ! forward surface intensity
 END

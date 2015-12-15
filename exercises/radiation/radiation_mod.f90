@@ -94,19 +94,33 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE solve (self)
   class(pde_t):: self
-  real, pointer, dimension(:,:,:) :: Intensity
+  real, pointer, dimension(:,:,:) :: qq
+  real, pointer, dimension(:,:) :: dtau, source, qcool
+  real, pointer, dimension(:) :: ifw0, irv0, ifw1, irv1
+  integer:: iz
   !
   !.............................................................................
   call trace_begin ('radiation_mod:pde_t%update', 2)
-
-associate(gn=>self%gn)
-  Allocate(Intensity(gn(1),gn(2),gn(3)))
-end associate
-
+associate(gn=>self%gn, n=>self%n, l=>self%li, u=>self%ui)
+  allocate (ifw0(n(1)), irv0(n(1)))
+  allocate (ifw1(n(1)), irv1(n(1)))
+  allocate (dtau  (n(1),n(2)))
+  allocate (source(n(1),n(2)))
+  allocate (qcool (n(1),n(2)))
+  allocate (qq    (n(1),n(2),n(3)))
+  !.............................................................................
   call tic
-  call self%rt%solver
+  do iz=l(3),u(3)
+    ! FIXME: calculate dtau and source for a ray bundle
+    ifw0 = 0.0
+    irv1 = 0.0
+    call self%rt%solver (n(1), n(2), dtau, source, ifw0, ifw1, qcool, irv0, irv1)
+    qq(l(1):u(1),l(2):u(2),iz) = qcool
+  end do
+  deallocate (dtau, source, qcool, ifw0, irv0, ifw1, irv1)
+  deallocate (qq)
   call toc ('radiation', product(self%n))
-
+end associate
   call trace_end
 END SUBROUTINE solve
 !> =============================================================================

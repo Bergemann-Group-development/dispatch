@@ -95,6 +95,7 @@ FUNCTION source_planck (self, density, temperature) result(source)
   class(microphysics_t) :: self
   real, dimension(:,:,:):: density, temperature
   real, dimension(size(temperature,1),size(temperature,2),size(temperature,3)):: source
+  real:: lambda
   !
   integer, dimension(3) :: n
   n = shape(temperature)

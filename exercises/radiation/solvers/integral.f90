@@ -1,10 +1,10 @@
 ! $Id$
 !***********************************************************************
-SUBROUTINE transfer (N, dtau, S, Ifw0, Irv1, Q, Irv0, Ifw1)
+SUBROUTINE integral (M, N, dtau, S, Ifw0, Irv1, Q, Irv0, Ifw1)
   implicit none
-  integer n
-  real, dimension(n) :: dtau, s, q, qfw, qre
-  real Ifw0, Ifw1, Irv0, Irv1
+  integer m, n
+  real, dimension(m,n) :: dtau, s, q, qfw, qre
+  real, dimension(m)   :: Ifw0, Ifw1, Irv0, Irv1
 !
 !  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
 ! Output: Q(1:n-1), qfw(n-1), qre(2)
@@ -21,51 +21,50 @@ SUBROUTINE transfer (N, dtau, S, Ifw0, Irv1, Q, Irv0, Ifw1)
 ! be written as a linear combination of the formal solution for constant
 ! and linear source functions.
 !
-  real, dimension(n) :: ex0, ex1, ex2, ds1dtau, dsdtau, d2sdtau2, dqfw, dqre
-  real ctau
+  real, dimension(m,n) :: ex0, ex1, ex2, ds1, d1s, d2s
+  real, dimension(m)   :: ctau
   integer i
 !-----------------------------------------------------------------------
 !
   do i=2,n
-      ex0(i) = exp(-dtau(i))                            !          1e
-      ex1(i) = 1.-ex0(i)                                !       1a
-      ex2(i) = ex1(i)-dtau(i)*ex0(i)                    !    1m 1a
-      ds1dtau(i) = (s(i)-s(i-1))/dtau(i)                ! 1d    1a      ! half-point centered dS/dtau
+      ex0(:,i) = exp(-dtau(:,i))                        !          1e
+      ex1(:,i) = 1.-ex0(:,i)                            !       1a
+      ex2(:,i) = ex1(:,i)-dtau(:,i)*ex0(:,i)            !    1m 1a
+      ds1(:,i) = (s(:,i)-s(:,i-1))/dtau(:,i)            ! 1d    1a      ! half-point centered dS/dtau
   end do
 !
 !  dS/dtau and d2S/dtau2 (3a+5m+1d)
 !
   do i=2,n-1
-    ctau = 1./(dtau(i+1)+dtau(i))                       ! 1d    1a
-    dsdtau(i) = &
-      (ds1dtau(i+1)*dtau(i)+ds1dtau(i)*dtau(i+1))*ctau  !    3m 1a      ! dS/dtau, 2nd. order accurate
-    d2sdtau2(i) = (ds1dtau(i+1)-ds1dtau(i))*2.*ctau     !    2m 1a      ! d2S/dtau2, 2nd. order accurate
-    dqfw(i) = - dsdtau(i)*ex1(i) + d2sdtau2(i)*ex2(i)   !    2m 1a      ! formal solution forward
-    dqre(i) = dsdtau(i)*ex1(i+1) + d2sdtau2(i)*ex2(i+1) !    2m 1a      ! formal solution backwards
+    ctau = 1./(dtau(:,i+1)+dtau(:,i))                   ! 1d    1a
+    d1s(:,i) = &
+      (ds1(:,i+1)*dtau(:,i)+ds1(:,i)*dtau(:,i+1))*ctau  !    3m 1a      ! dS/dtau, 2nd. order accurate
+    d2s(:,i) = (ds1(:,i+1)-ds1(:,i))*2.*ctau            !    2m 1a      ! d2S/dtau2, 2nd. order accurate
   end do
-  d2sdtau2(1) = d2sdtau2(2)                                             ! assume constant d2S/dtau2
-  dsdtau(1) = dsdtau(2) - dtau(2)*d2sdtau2(2)                           ! extrapolate to 1
-  d2sdtau2(n) = d2sdtau2(n-1)                                           ! assume constant d2S/dtau2
-  dsdtau(n) = dsdtau(n-1) + dtau(n)*d2sdtau2(n)                         ! extrapolate to n
-  dqfw(n) = - dsdtau(n)*ex1(n) + d2sdtau2(n)*ex2(n)                     ! formal solution forward
-  dqre(1) = dsdtau(1)*ex1(2) + d2sdtau2(1)*ex2(2)                       ! formal solution backwards
+
+    d2s(:,1) = d2s(:,2)                                                 ! assume constant d2S/dtau2
+    d1s(:,1) = d1s(:,2) - dtau(:,2)*d2s(:,2)                            ! extrapolate to 1
+    d2s(:,n) = d2s(:,n-1)                                               ! assume constant d2S/dtau2
+    d1s(:,n) = d1s(:,n-1) + dtau(:,n)*d2s(:,n)                          ! extrapolate to n
+    qfw(:,1) = Ifw0(:) - s(:,1)                                         ! initial forward Q
 !
 !  Forward rays (2a+3m)
 !
-  qfw(1) = Ifw0 - s(1)                                                  ! initial forward Q
   do i=2,n
-    qfw(i) = qfw(i-1)*ex0(i) + dqfw(i)                  !    1m ra      ! formal solution forward
+    qfw(:,i) = qfw(:,i-1)*ex0(:,i) &
+           - d1s(:,i)*ex1(:,i) + d2s(:,i)*ex2(:,i)      !    3m 2a      ! formal solution forward
   end do
-  Ifw1 = qfw(n) + s(n)                                                  ! forward boundary intensity
+    Ifw1(:) = qfw(:,n) + s(:,n)                                         ! forward boundary intensity
+    qre(:,n) = Irv1(:) - s(:,n)                                         ! initial reverse Q
+    q(:,n) = 0.5*(qre(:,n)+qfw(:,n))                                    ! mean Q
 !
 !  Reverse rays (2a+3m)
 !
-  qre(n) = Irv1 - s(n)                                                  ! initial reverse Q
-  q(n) = 0.5*(qre(n)+qfw(n))                                            ! mean Q
   do i=n-1,1,-1
-    qre(i) = qre(i+1)*ex0(i+1) + dqre(i)                !    1m 1a
-    q(i) = 0.5*(qre(i)+qfw(i))                          !    1m 1a      ! mean Q
+    qre(:,i) = qre(:,i+1)*ex0(:,i+1) &
+           + d1s(:,i)*ex1(:,i+1) + d2s(:,i)*ex2(:,i+1)  !    3m 2a      ! formal solution backwards
+    q(:,i) = 0.5*(qre(:,i)+qfw(:,i))                    !    1m 1a      ! mean Q
   end do
-  Irv0 = qre(1) + s(1)                                                  ! reverse boundary intensity
+    Irv0(:) = qre(:,1) + s(:,1)                                         ! reverse boundary intensity
 
-END                                                     ! 2d 13m 11a 1e ! 26f + 1e
+END                                                     ! 2d 13m 11a 1e ! 26f + 1e 
