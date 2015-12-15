@@ -63,7 +63,10 @@ FUNCTION dtau (self, direction, patch, density, temperature)
   !
   opacity = self%opacity(density, temperature)
   ! dtau is the increment in tau from one ray-point to the next.
-  ! Therefore dtau is downstaggered and has only a half value on the lower boundary
+  ! Therefore dtau is downstaggered and has only a half value on the lower edge of the patch
+  !
+  ! FIXME: Should one instead use the lower boundary patch%li and upper boundary self%ui?
+  !
   dtau = density * opacity
   select case(direction)
   case(1)
@@ -93,17 +96,12 @@ FUNCTION source_planck (self, density, temperature) result(source)
   real, dimension(:,:,:):: density, temperature
   real, dimension(size(temperature,1),size(temperature,2),size(temperature,3)):: source
   !
-  real, dimension(size(temperature,1),size(temperature,2),size(temperature,3)):: temperature_K
-  real                  :: wavelength_mu
   integer, dimension(3) :: n
   n = shape(temperature)
-  wavelength_mu = self%lambda * scaling%l * 1e4
-  temperature_K = temperature * scaling%t
-  call planck(n, wavelength_mu, temperature_K, source)
-  ! source function is returned in micro-meter^-4 Kelvin and has to be converted to code units
-  source = real(1.0_8 / (scaling%t / (1e-4_8*scaling%l)**4),kind=kind(source)) * source
+  call planck(n, lambda, temperature, source)
 END FUNCTION
-!> The planck function for a given temperature and wavelength
+!> The planck function for a given temperature and wavelength input in code units
+!> output is also in code units
 !> =============================================================================
 SUBROUTINE planck (n, lambda, temperature, source)
   implicit none
@@ -112,10 +110,13 @@ SUBROUTINE planck (n, lambda, temperature, source)
   real:: lambda
   !
   integer :: iy, iz
-  real, parameter :: cp=1.191042870e7                                           ! first radiation constant: 1.191042870e-16 W m^2 sr^-1
-  real, parameter :: c2=1.438777e4                                              ! second radiation constant [micro-meter Kelvin]
+  real(kind=8), parameter :: cp=1.191042870-5                                   ! first radiation constant: 1.191042870e-5 erg/s cm^2 sr^-1
+  real(kind=8), parameter :: c2=1.438777e4                                      ! second radiation constant [micro-meter Kelvin]
+  real    :: cp_code, c2_code
   real, dimension(n(1)):: e
 !...............................................................................
+  cp_code = cp / (scaling%e / scaling%t * scaling%l**2)                         ! we divide to go from cgs to code 
+  c2_code = c2 / (scaling%l * 1e4 * scaling%temp)
   do iz=1,n(3)
   do iy=1,n(2)
     e(:) = exp(-c2/(temperature(:,iy,iz)*lambda))
