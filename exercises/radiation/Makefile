@@ -25,7 +25,7 @@ OBJ = \
   solvers/integral.o solvers/feautrier.o
 
 # Dependencies
-$(PDE)_mod.o      : omp_timer_mod.o io_mod.o trace_mod.o patches_mod.o scalar_mod.o rt_mod.o
+$(PDE)_mod.o      : omp_timer_mod.o io_mod.o trace_mod.o patches_mod.o scalar_mod.o rt_mod.o 
 patches_mod.o     : trace_mod.o io_mod.o bits_mod.o
 rt_mod.o          : io_mod.o trace_mod.o patches_mod.o mpi_mod.o microphysics_mod.o
 scaling_mod.o     : io_mod.o cgs_mod.o

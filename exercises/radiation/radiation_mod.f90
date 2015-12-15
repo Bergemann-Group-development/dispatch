@@ -9,6 +9,7 @@ MODULE pde_mod
   USE patches_mod
   USE scalar_mod
   USE scaling_mod
+  USE microphysics_mod
   USE rt_mod
   implicit none
   private
@@ -20,6 +21,7 @@ MODULE pde_mod
     real:: amplitude
     real(kind=8):: tolerance
     type(rt_t)  :: rt
+    type(microphysics_t) :: microphysics
   contains
     procedure:: init
     procedure:: solve
@@ -62,10 +64,6 @@ SUBROUTINE init (self)
   ! "externally" if multi-frequency RT is desired.
   call self%microphysics%init
   !-----------------------------------------------------------------------------
-  ! Set up the right dimensions from current patch, etc for radiative transfer
-  !-----------------------------------------------------------------------------
-  call self%rt%init (solver)
-  !-----------------------------------------------------------------------------
   ! Memory mapping og density and temperature
   !-----------------------------------------------------------------------------
   call   self%d%init (self%gn, self%size/self%n, 'd')
@@ -91,7 +89,12 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initial and boundary conditions for temperature [Kelvin]
   !-----------------------------------------------------------------------------
-  self%tt%f = 1000.
+  self%tt%f = 10.
+  !-----------------------------------------------------------------------------
+  ! Set up the right dimensions from current patch, etc for radiative transfer
+  !-----------------------------------------------------------------------------
+  call self%microphysics%init
+  call self%rt%init (solver)
   !
   call trace_end
 END SUBROUTINE init
@@ -116,12 +119,11 @@ associate(gn=>self%gn, n=>self%n, l=>self%li, u=>self%ui)
   allocate (qq    (n(1),n(2),n(3)))
   !.............................................................................
   call tic
+  !dtau = self%dtau (direction, ...)
   do iz=l(3),u(3)
-    ! FIXME: calculate dtau and source for a ray bundle
-    ifw0 = 0.0
-    irv1 = 0.0
+    ifw0 = 0.0; irv1 = 0.0
     call self%rt%solver (n(1), n(2), dtau, source, ifw0, ifw1, qcool, irv0, irv1)
-    qq(l(1):u(1),l(2):u(2),iz) = qcool
+    qq(:,:,iz) = qcool
   end do
   deallocate (dtau, source, qcool, ifw0, irv0, ifw1, irv1)
   deallocate (qq)
