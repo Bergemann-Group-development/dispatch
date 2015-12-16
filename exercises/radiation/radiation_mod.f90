@@ -18,6 +18,7 @@ MODULE pde_mod
     type(scalar_t):: d, tt
     real:: w_gauss
     real:: p_gauss
+    real:: a_gauss
     real:: amplitude
     real(kind=8):: tolerance
     type(rt_t)  :: rt
@@ -35,10 +36,10 @@ CONTAINS
 SUBROUTINE init (self)
   class(pde_t):: self
   integer:: i, j, k
-  real:: x, y, z
+  real:: x, y, z, r
   logical:: first_time = .true.
-  real:: w_gauss=5.0, p_gauss=1.0, amplitude=1.0
-  namelist /rt_params/ w_gauss, p_gauss, amplitude, solver
+  real:: w_gauss=5.0, p_gauss=1.0, a_gauss=0.10, amplitude=2.3, temperature=10., tmp
+  namelist /rt_params/ w_gauss, p_gauss, a_gauss, amplitude, temperature, solver
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
@@ -56,12 +57,14 @@ SUBROUTINE init (self)
   self%position  = 0.
   self%w_gauss   = w_gauss
   self%p_gauss   = p_gauss
+  self%a_gauss   = a_gauss
   self%amplitude = amplitude
   self%nv        = 2
   call self%patch_t%init
+  self%nv        = 2
+  !-----------------------------------------------------------------------------
   ! Setup microphysics for RT. One microphysics object per wavelength is needed
-  ! All new calls will get default value for wavelength, and this has to be updated
-  ! "externally" if multi-frequency RT is desired.
+  !-----------------------------------------------------------------------------
   call self%microphysics%init
   !-----------------------------------------------------------------------------
   ! Memory mapping og density and temperature
@@ -71,7 +74,7 @@ SUBROUTINE init (self)
   self%d%f  => self%mem(:,:,:,i_d ,self%it,1)
   self%tt%f => self%mem(:,:,:,i_tr,self%it,1)
   !-----------------------------------------------------------------------------
-  ! Physical initial conditions: gaussian top hat
+  ! Physical initial conditions: Gaussian top hat with 1/r**2 wings
   !-----------------------------------------------------------------------------
   if (self%time==0.0) then
     do k=1,self%gn(3)
@@ -80,20 +83,21 @@ SUBROUTINE init (self)
       x = (i-(self%gn(1)+1)*0.5)*self%ds(1) + self%position(1)
       y = (j-(self%gn(2)+1)*0.5)*self%ds(2) + self%position(2)
       z = (k-(self%gn(3)+1)*0.5)*self%ds(3) + self%position(3)
+      r = sqrt(x**2+y**2+z**2)/self%w_gauss
+      r = min(r,0.5/w_gauss)
       self%d%f(i,j,k) = &
-        exp(self%amplitude*exp(-(sqrt(x**2+y**2+z**2)/self%w_gauss)**self%p_gauss))
+        self%amplitude*exp(-r**self%p_gauss/(1.+r**self%p_gauss/log(r**2/self%a_gauss)))
     end do
     end do
     end do
   end if
   !-----------------------------------------------------------------------------
-  ! Initial and boundary conditions for temperature [Kelvin]
+  ! Initial conditions for temperature [Kelvin]
   !-----------------------------------------------------------------------------
-  self%tt%f = 10.
+  self%tt%f = temperature/scaling%temp
   !-----------------------------------------------------------------------------
   ! Set up the right dimensions from current patch, etc for radiative transfer
   !-----------------------------------------------------------------------------
-  call self%microphysics%init
   call self%rt%init (solver)
   !
   call trace_end
@@ -103,31 +107,38 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE solve (self)
   class(pde_t):: self
-  real, pointer, dimension(:,:,:) :: qq
-  real, pointer, dimension(:,:) :: dtau, source, qcool
+  real, pointer, dimension(:,:,:) :: qq, src3, dtau3
+  real, pointer, dimension(:,:) :: dtau, src, source, qcool
   real, pointer, dimension(:) :: ifw0, irv0, ifw1, irv1
-  integer:: iz
+  integer:: ix, iy, iz, m
   !
   !.............................................................................
   call trace_begin ('radiation_mod:pde_t%update', 2)
-associate(gn=>self%gn, n=>self%n, l=>self%li, u=>self%ui)
-  allocate (ifw0(n(1)), irv0(n(1)))
-  allocate (ifw1(n(1)), irv1(n(1)))
-  allocate (dtau  (n(1),n(2)))
-  allocate (source(n(1),n(2)))
-  allocate (qcool (n(1),n(2)))
-  allocate (qq    (n(1),n(2),n(3)))
+associate(gn=>self%gn, n=>self%n, ntau=>self%n(3), l=>self%li, u=>self%ui)
+  allocate (ifw0(n(1)*n(2)), irv0(n(1)*n(2)))
+  allocate (ifw1(n(1)*n(2)), irv1(n(1)*n(2)))
+  allocate (dtau3 (n(1),n(2),n(3)))
+  allocate (src3  (n(1),n(2),n(3)))
+  allocate (dtau  (n(1)*n(2),n(3)))
+  allocate (src  (n(1)*n(2),n(3)))
+  allocate (source(n(1)*n(2),n(3)))
+  allocate (qcool (n(1)*n(2),n(3)))
   !.............................................................................
   call tic
-  !dtau = self%dtau (direction, ...)
-  do iz=l(3),u(3)
-    ifw0 = 0.0; irv1 = 0.0
-    call self%rt%solver (n(1), n(2), dtau, source, ifw0, ifw1, qcool, irv0, irv1)
-    qq(:,:,iz) = qcool
+  dtau3 = self%microphysics%dtau (3, self, self%d%f, self%tt%f)
+  src3 = self%microphysics%source(self%d%f(1:n(1),1:n(2),1:n(3)), self%tt%f(1:n(1),1:n(2),1:n(3)))
+  m = 0
+  do iy=l(2),u(2)
+  do ix=l(1),u(1)
+    m = m+1
+    dtau(m,:) = dtau3(ix,iy,:)
+    src(m,:) = src3(ix,iy,:)
   end do
-  deallocate (dtau, source, qcool, ifw0, irv0, ifw1, irv1)
-  deallocate (qq)
+  end do
+  ifw0 = 0.0; irv1 = 0.0
+  call self%rt%solver (m, ntau, dtau, source, ifw0, ifw1, qcool, irv0, irv1)
   call toc ('radiation', product(self%n))
+  deallocate (dtau, source, qcool, ifw0, irv0, ifw1, irv1)
 end associate
   call trace_end
 END SUBROUTINE solve

@@ -74,14 +74,16 @@ FUNCTION dtau (self, direction, patch, density, temperature)
   ! FIXME: Should one instead use the lower boundary patch%li and upper boundary self%ui?
   !
   dtau = density * opacity
+associate (n=>patch%n)
   select case(direction)
   case(1)
-    dtau(2:,:,:) = dtau(1:,:,:) + density(1:,:,:) * opacity(1:,:,:)
+    dtau(2:,:,:) = dtau(1:n(1)-1,:,:) + density(1:n(1)-1,:,:) * opacity(1:n(1)-1,:,:)
   case(2)
-    dtau(:,2:,:) = dtau(:,1:,:) + density(:,1:,:) * opacity(:,1:,:)
+    dtau(:,2:,:) = dtau(:,1:n(2)-1,:) + density(:,1:n(2)-1,:) * opacity(:,1:n(2)-1,:)
   case(3)
-    dtau(:,:,2:) = dtau(:,:,1:) + density(:,:,1:) * opacity(:,:,1:)
+    dtau(:,:,2:) = dtau(:,:,1:n(3)-1) + density(:,:,1:n(3)-1) * opacity(:,:,1:n(3)-1)
   end select
+end associate
   dtau = 0.5 * patch%ds(direction) * dtau 
 END FUNCTION
 !> =============================================================================
@@ -103,11 +105,10 @@ FUNCTION source_planck (self, density, temperature) result(source)
   class(microphysics_t) :: self
   real, dimension(:,:,:):: density, temperature
   real, dimension(size(temperature,1),size(temperature,2),size(temperature,3)):: source
-  real:: lambda
   !
   integer, dimension(3) :: n
   n = shape(temperature)
-  call planck(n, lambda, temperature, source)
+  call planck(n, self%lambda, temperature, source)
 END FUNCTION
 !> =============================================================================
 !> The planck function for a given temperature and wavelength input in code units
@@ -129,8 +130,8 @@ SUBROUTINE planck (n, lambda, temperature, source)
   c2_code = c2 / (scaling%l * 1e4 * scaling%temp)
   do iz=1,n(3)
   do iy=1,n(2)
-    e(:) = exp(-c2/(temperature(:,iy,iz)*lambda))
-    source(:,iy,iz) = cp*e(:)/((1.0-e(:))*lambda**5)
+    e(:) = exp(-c2_code/(temperature(:,iy,iz)*lambda))
+    source(:,iy,iz) = cp_code*e(:)/((1.0-e(:))*lambda**5)
    end do
    end do
 END SUBROUTINE
