@@ -20,6 +20,7 @@ MODULE pde_mod
     real:: p_gauss
     real:: a_gauss
     real:: amplitude
+    integer:: nbuf, nwave
     real(kind=8):: tolerance
     type(rt_t)  :: rt
     type(microphysics_t) :: microphysics
@@ -38,8 +39,9 @@ SUBROUTINE init (self)
   integer:: i, j, k
   real:: x, y, z, r
   logical:: first_time = .true.
-  real:: w_gauss=5.0, p_gauss=1.0, a_gauss=0.10, amplitude=2.3, temperature=10., tmp
-  namelist /rt_params/ w_gauss, p_gauss, a_gauss, amplitude, temperature, solver
+  integer, save:: nbuf=64, nwave=20
+  real, save:: w_gauss=5.0, p_gauss=1.0, a_gauss=0.10, amplitude=2.3, temperature=10., tmp
+  namelist /rt_params/ w_gauss, p_gauss, a_gauss, amplitude, temperature, solver, nbuf, nwave
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
@@ -59,6 +61,7 @@ SUBROUTINE init (self)
   self%p_gauss   = p_gauss
   self%a_gauss   = a_gauss
   self%amplitude = amplitude
+  self%nbuf      = 64
   self%nv        = 2
   call self%patch_t%init
   self%nv        = 2
@@ -119,24 +122,33 @@ associate(gn=>self%gn, n=>self%n, ntau=>self%n(3), l=>self%li, u=>self%ui)
   allocate (ifw1(n(1)*n(2)), irv1(n(1)*n(2)))
   allocate (dtau3 (l(1):u(1), l(2):u(2), l(3):u(3)))
   allocate (src3  (l(1):u(1), l(2):u(2), l(3):u(3)))
-  allocate (dtau  (n(1)*n(2),n(3)))
-  allocate (src   (n(1)*n(2),n(3)))
-  allocate (source(n(1)*n(2),n(3)))
-  allocate (qcool (n(1)*n(2),n(3)))
+  allocate (dtau  (n(self%nbuf),n(3)))
+  allocate (src   (n(self%nbuf),n(3)))
+  allocate (source(n(self%nbuf),n(3)))
+  allocate (qcool (n(self%nbuf),n(3)))
   !.............................................................................
   call tic
   dtau3 = self%microphysics%dtau (3, self, self%d%f, self%tt%f)
+  call toc ('     dtau', product(self%n))
+  call tic
   src3 = self%microphysics%source(self%d%f(1:n(1),1:n(2),1:n(3)), self%tt%f(1:n(1),1:n(2),1:n(3)))
+  call toc ('   source', product(self%n))
+  call tic
   m = 0
   do iy=l(2),u(2)
-  do ix=l(1),u(1)
-    m = m+1
-    dtau(m,:) = dtau3(ix,iy,:)
-    src(m,:) = src3(ix,iy,:)
+    do ix=l(1),u(1)
+      m = m+1
+      dtau(m,:) = dtau3(ix,iy,:)
+      src(m,:) = src3(ix,iy,:)
+      if (m == self%nbuf) then
+        ifw0 = 0.0; irv1 = 0.0
+        call self%rt%solver (m, ntau, dtau, source, ifw0, ifw1, qcool, irv0, irv1)
+        m = 0
+      end if
+    end do
+    !ifw0 = 0.0; irv1 = 0.0
+    !call self%rt%solver (m, ntau, dtau, source, ifw0, ifw1, qcool, irv0, irv1)
   end do
-  end do
-  ifw0 = 0.0; irv1 = 0.0
-  call self%rt%solver (m, ntau, dtau, source, ifw0, ifw1, qcool, irv0, irv1)
   call toc ('radiation', product(self%n))
   deallocate (dtau, source, qcool, ifw0, irv0, ifw1, irv1)
 end associate
