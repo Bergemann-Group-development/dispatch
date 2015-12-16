@@ -4,6 +4,7 @@
 MODULE microphysics_mod
   USE patches_mod
   USE scaling_mod
+  USE units_mod
   USE io_mod
   implicit none
   private
@@ -42,7 +43,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! For multi frequency RT lambda may be redefined by calling function
   !-----------------------------------------------------------------------------
-  self%lambda     = wavelength_mu * 1e-4 / scaling%l 
+  self%lambda     = wavelength_mu * cgs%mum / scaling%l
   !.............................................................................
   select case(source)
   case('planck')
@@ -64,17 +65,15 @@ FUNCTION dtau (self, direction, patch, density, temperature)
   integer               :: direction
   class(patch_t)        :: patch
   real, dimension(patch%n(1),patch%n(2),patch%n(3)):: density, temperature, dtau
-  !
   real, dimension(patch%n(1),patch%n(2),patch%n(3)):: opacity
-  !
-  opacity = self%opacity(density, temperature)
-  ! dtau is the increment in tau from one ray-point to the next.
-  ! Therefore dtau is downstaggered and has only a half value on the lower edge of the patch
-  !
-  ! FIXME: Should one instead use the lower boundary patch%li and upper boundary self%ui?
-  !
-  dtau = density * opacity
+  !.............................................................................
 associate (n=>patch%n)
+  opacity = self%opacity(density, temperature)
+  !-----------------------------------------------------------------------------
+  ! dtau is the increment in tau from one ray-point to the next. Therefore dtau
+  ! is downstaggered and has only a half value on the lower edge of the patch
+  !-----------------------------------------------------------------------------
+  dtau = density * opacity
   select case(direction)
   case(1)
     dtau(2:,:,:) = dtau(1:n(1)-1,:,:) + density(1:n(1)-1,:,:) * opacity(1:n(1)-1,:,:)
@@ -112,28 +111,29 @@ FUNCTION source_planck (self, density, temperature) result(source)
 END FUNCTION
 !> =============================================================================
 !> The planck function for a given temperature and wavelength input in code units
-!> output is also in code units
+!> output is also in code units.  We use lambda in micrometers, to avoid underflow
+!> and divide fault in the expression when computing lambda**5
 !> =============================================================================
 SUBROUTINE planck (n, lambda, temperature, source)
   implicit none
   integer:: n(3)
+  real:: lambda, lambda_mum
   real, dimension(n(1),n(2),n(3)):: temperature, source
-  real:: lambda
   !
   integer :: iy, iz
-  real(kind=8), parameter :: cp=1.191042870-5                                   ! first radiation constant: 1.191042870e-5 erg/s cm^2 sr^-1
-  real(kind=8), parameter :: c2=1.438777e4                                      ! second radiation constant [micro-meter Kelvin]
-  real    :: cp_code, c2_code
+  real(8) :: c1, c2
   real, dimension(n(1)):: e
 !...............................................................................
-  cp_code = cp / (scaling%e / scaling%t * scaling%l**2)                         ! we divide to go from cgs to code 
-  c2_code = c2 / (scaling%l * 1e4 * scaling%temp)
+  c1 = 2d0*cgs%h_p*cgs%c**2/(cgs%mum**5)                ! 2*h*c**2/lambda**5
+  c2 = cgs%h_p*cgs%c/(cgs%k_b*cgs%mum*scaling%temp)     ! h*c/(lambda*T)
+  lambda_mum = lambda*scaling%l/cgs%mum                 ! lambda in micrometers
   do iz=1,n(3)
   do iy=1,n(2)
-    e(:) = exp(-c2_code/(temperature(:,iy,iz)*lambda))
-    source(:,iy,iz) = cp_code*e(:)/((1.0-e(:))*lambda**5)
-   end do
-   end do
+    e(:) = exp(-c2/(temperature(:,iy,iz)*lambda_mum))
+    source(:,iy,iz) = c1*e(:)/((1.0-e(:))*lambda_mum**5)
+  end do
+  end do
+  print*,source(1,1,1)
 END SUBROUTINE
 !> =============================================================================
 END MODULE microphysics_mod
