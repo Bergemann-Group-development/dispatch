@@ -110,44 +110,38 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE solve (self)
   class(pde_t):: self
-  real, pointer, dimension(:,:,:) :: qq, src3, dtau3
-  real, pointer, dimension(:,:) :: dtau, src, source, qcool
+  real, pointer, dimension(:,:) :: dtau, src, source, qcool, dens, temp
   real, pointer, dimension(:) :: ifw0, irv0, ifw1, irv1
   integer:: ix, iy, iz, m
   !
   !.............................................................................
   call trace_begin ('radiation_mod:pde_t%update', 2)
 associate(gn=>self%gn, n=>self%n, ntau=>self%n(3), l=>self%li, u=>self%ui)
-  allocate (ifw0(n(1)*n(2)), irv0(n(1)*n(2)))
-  allocate (ifw1(n(1)*n(2)), irv1(n(1)*n(2)))
-  allocate (dtau3 (l(1):u(1), l(2):u(2), l(3):u(3)))
-  allocate (src3  (l(1):u(1), l(2):u(2), l(3):u(3)))
-  allocate (dtau  (n(self%nbuf),n(3)))
-  allocate (src   (n(self%nbuf),n(3)))
-  allocate (source(n(self%nbuf),n(3)))
-  allocate (qcool (n(self%nbuf),n(3)))
+  allocate (ifw0  (self%nbuf))
+  allocate (ifw1  (self%nbuf))
+  allocate (irv0  (self%nbuf))
+  allocate (irv1  (self%nbuf))
+  allocate (dens  (self%nbuf,n(3)))
+  allocate (temp  (self%nbuf,n(3)))
+  allocate (dtau  (self%nbuf,n(3)))
+  allocate (source(self%nbuf,n(3)))
+  allocate (qcool (self%nbuf,n(3)))
   !.............................................................................
-  call tic
-  dtau3 = self%microphysics%dtau (3, self, self%d%f, self%tt%f)
-  call toc ('     dtau', product(self%n))
-  call tic
-  src3 = self%microphysics%source(self%d%f(1:n(1),1:n(2),1:n(3)), self%tt%f(1:n(1),1:n(2),1:n(3)))
-  call toc ('   source', product(self%n))
   call tic
   m = 0
   do iy=l(2),u(2)
     do ix=l(1),u(1)
       m = m+1
-      dtau(m,:) = dtau3(ix,iy,:)
-      src(m,:) = src3(ix,iy,:)
+      dens(m,:) =  self%d%f(ix,iy,l(3):u(3))
+      temp(m,:) = self%tt%f(ix,iy,l(3):u(3))
       if (m == self%nbuf) then
         ifw0 = 0.0; irv1 = 0.0
+        dtau   = self%microphysics%dtau   (dens, temp, self%ds(3))
+        source = self%microphysics%source (dens, temp)
         call self%rt%solver (m, ntau, dtau, source, ifw0, ifw1, qcool, irv0, irv1)
         m = 0
       end if
     end do
-    !ifw0 = 0.0; irv1 = 0.0
-    !call self%rt%solver (m, ntau, dtau, source, ifw0, ifw1, qcool, irv0, irv1)
   end do
   call toc ('radiation', product(self%n))
   deallocate (dtau, source, qcool, ifw0, irv0, ifw1, irv1)

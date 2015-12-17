@@ -11,5 +11,5 @@
  do_trace=f verbose=2   ! =1 for output file messages
 /
 &patch_params
- dims=32,32,32
+ dims=128,128,128
 /
