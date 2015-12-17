@@ -136,8 +136,8 @@ associate(gn=>self%gn, n=>self%n, ntau=>self%n(3), l=>self%li, u=>self%ui)
       temp(m,:) = self%tt%f(ix,iy,l(3):u(3))
       if (m == self%nbuf) then
         ifw0 = 0.0; irv1 = 0.0
-        dtau   = self%microphysics%dtau   (dens, temp, self%ds(3))
-        source = self%microphysics%source (dens, temp)
+        dtau   = self%microphysics%dtau   (m, ntau, dens, temp, self%ds(3))
+        source = self%microphysics%source (m, ntau, dens, temp)
         call self%rt%solver (m, ntau, dtau, source, ifw0, ifw1, qcool, irv0, irv1)
         m = 0
       end if

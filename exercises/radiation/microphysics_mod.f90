@@ -59,11 +59,11 @@ END SUBROUTINE
 !> compute dtau given a patch, density, temperature, and direction
 !> direction is 1,2,3 for x,y,z
 !> =============================================================================
-FUNCTION dtau (self, density, temperature, ds)
+FUNCTION dtau (self, m, n, density, temperature, ds)
   class(microphysics_t) :: self
-  integer               :: n
-  real, dimension(:,:):: density, temperature
-  real, dimension(size(temperature,1),size(temperature,2)):: dtau, opacity
+  integer               :: m, n
+  real, dimension(m,n):: density, temperature
+  real, dimension(m,n):: dtau, opacity
   real:: ds
   !.............................................................................
   opacity = self%opacity(density, temperature)
@@ -89,35 +89,34 @@ END FUNCTION
 !> =============================================================================
 !> Set the source function equal to the planck function
 !> =============================================================================
-FUNCTION source_planck (self, density, temperature) result(source)
+FUNCTION source_planck (self, m, n, density, temperature) result(source)
   implicit none
   class(microphysics_t) :: self
-  real, dimension(:,:):: density, temperature
-  real, dimension(size(temperature,1),size(temperature,2)):: source
-  integer, dimension(2) :: n
+  integer:: m, n
+  real, dimension(m,n):: density, temperature
+  real, dimension(m,n):: source
   !.............................................................................
-  n = shape(temperature)
-  call planck(n, self%lambda, temperature, source)
+  call planck(m, n, self%lambda, temperature, source)
 END FUNCTION
 !> =============================================================================
 !> The planck function for a given temperature and wavelength input in code units
 !> output is also in code units.  We use lambda in micrometers, to avoid underflow
 !> and divide fault in the expression when computing lambda**5
 !> =============================================================================
-SUBROUTINE planck (n, lambda, temperature, source)
+SUBROUTINE planck (m, n, lambda, temperature, source)
   implicit none
-  integer:: n(3)
+  integer:: m, n
   real:: lambda, lambda_mum, lambda_5
-  real, dimension(n(1),n(2)):: temperature, source
+  real, dimension(m, n):: temperature, source
   integer :: j
   real    :: c1, c2
-  real, dimension(n(1)):: e
+  real, dimension(m):: e
   !.............................................................................
   c1 = 2d0*cgs%h_p*cgs%c**2/(cgs%mum**5)                ! 2*h*c**2/lambda**5
   c2 = cgs%h_p*cgs%c/(cgs%k_b*cgs%mum*scaling%temp)     ! h*c/(lambda*T)
   lambda_mum = lambda*scaling%l/cgs%mum                 ! lambda in micrometers
   lambda_5 = lambda_mum**5
-  do j=1,n(2)
+  do j=1,n
     e(:) = exp(-c2/(temperature(:,j)*lambda_mum))
     source(:,j) = c1*e(:)/((1.0-e(:))*lambda_5)
   end do
