@@ -29,15 +29,17 @@ CONTAINS
 !> =============================================================================
 !> Initialize table lookup of the Planck function.  Express everything in the
 !> non-dimensional variable x = h*c/(lambda*k*T), which makes the Planck function
-!> = c*T**4/((exp(x)-1.0)*x**4)
+!> = c*T**4*x**4/(exp(x)-1).  Interpolate in x/(exp(x)-1), which is smooth. The
+!> limits xmin=0.01 and xmax=20 are perfect, since the error below 0.01 is less
+!> 0.5%, and the value above x=20 is negligible.
 !> =============================================================================
 SUBROUTINE init (self)
   class (planck_t):: self
   integer:: n=10000
-  real(8):: xmin=1d-2, xmax=1d1
+  real(8):: xmin=1d-3, xmax=2d1
   character(len=12) :: source='function'        ! choice of source function
   integer:: i
-  real:: x, lnx
+  real:: x, lnx, dx
   logical:: debug=.false.
   namelist /planck_params/ n, xmin, xmax, debug, source
   !.............................................................................
@@ -57,14 +59,16 @@ SUBROUTINE init (self)
   self%xmax = xmax
   self%debug = debug
   self%cx = real(self%n,kind=8)/(xmax-xmin)
+  dx = (xmax-xmin)/real(self%n,kind=8)
   allocate (self%table(0:self%n))
   if (self%debug) print *, 'test table values'
   do i=0,self%n
-    x = self%xmin + i/self%cx
-    self%table(i) = x**4/(exp(x)-1.0)
+    x = self%xmin + i*dx
+    self%table(i) = x/(exp(x)-1.0)
     if (self%debug) print *, i, x, self%table(i)
   end do
   call self%test
+  self%debug = .false.
 END SUBROUTINE init
 
 !> =============================================================================
@@ -88,15 +92,15 @@ SUBROUTINE function (self, n, lambda, temperature, source)
   lambda_4 = lambda_mum**4
   do i=1,n(2)
     e(:) = exp(-c2/(temperature(:,i)*lambda_mum))
-    !e(:) = c2/(temperature(:,i)*lambda_mum)
     source(:,i) = c1*e(:)/((1.0-e(:))*lambda_4)
   end do
 END SUBROUTINE function
 
 !> =============================================================================
 !> Linear interpolation in linear wavelength, for maximum speed.  To handle 
-!> cases where some x are below xmin one could implement a test on the smallest
-!> x, leading to a slower version, with an assumed x**3 behavior below xmin.
+!> uncommon cases where some x are below xmin a test is made on x, before 
+!> choosing how to interpolate.  This is only slightly slower than if one knows
+!> everything is in range.
 !> =============================================================================
 SUBROUTINE lookup (self, n, wavelength, temperature, source)
   class (planck_t):: self
@@ -105,9 +109,9 @@ SUBROUTINE lookup (self, n, wavelength, temperature, source)
   real,    dimension(n(1),n(2)) :: temperature
   real,    dimension(n(1),n(2)) :: source
   !.............................................................................
-  real                          :: c1, c2, src
+  real                          :: c1, c2, src, x1, f
   integer                       :: i, j
-  real,    dimension(n(1))      :: x
+  real,    dimension(n(1))      :: x, p
   integer, dimension(n(1))      :: k
   !-----------------------------------------------------------------------------
   c1 = cgs%h_p*cgs%c/(wavelength*scaling%l*cgs%k_b*scaling%temp)
@@ -118,16 +122,24 @@ SUBROUTINE lookup (self, n, wavelength, temperature, source)
   if (self%debug) then
     print*,'table lookup', c1, c2, wavelength, temperature(1,1)
     call self%function (n, wavelength, temperature, source)
+    print*,self%table(0:1)
     do i=1,n(1)
     do j=1,n(2)
-      x(i) = (c1/temperature(i,j) - self%xmin)*self%cx
-      k(i)  = max (0, min (self%n-1, int(x(i))))
-      x(i)  = x(i)-k(i)
+      x1 = c1/temperature(i,j)
       src   = source(i,j)
-      source(i,j) = c2*temperature(i,j)**4*( &
-              x(i) *self%table(k(i)+1) + &
-         (1.0-x(i))*self%table(k(i)  ) )
-      print *,i, j, x(i), k(i), src, source(i,j)
+      if (x1 < self%xmin) then
+        k(i) = 0
+        source(i,j) = c2*temperature(i,j)**4*x1**3*self%table(0)
+        f = source(i,j)/(c2*temperature(i,j)**4)
+      else
+        p(i) = (x1 - self%xmin)*self%cx
+        k(i)  = min (self%n-1, int(p(i)))
+        p(i)  = p(i)-k(i)
+        f =   p(i) *self%table(k(i)+1) + &
+         (1.0-p(i))*self%table(k(i)  )
+        source(i,j) = c2*temperature(i,j)**4*f*x1**3
+      end if
+      print *,i, x1, p(i), k(i), src/(c2*temperature(i,j)**4), f
     end do
     end do
   !-----------------------------------------------------------------------------
@@ -135,10 +147,24 @@ SUBROUTINE lookup (self, n, wavelength, temperature, source)
   !-----------------------------------------------------------------------------
   else
     do j=1,n(2)
-      x = (c1/temperature(:,j) - self%xmin)*self%cx
-      k  = max (0, min (self%n-1, int(x)))
-      x  = x-k
-      source(:,j) = c2*temperature(:,j)**4*(x*self%table(k+1) + (1.0-x)*self%table(k))
+      x = c1/temperature(:,j)
+      if (minval(x) >= self%xmin) then
+        p = (x-self%xmin)*self%cx
+        k = min (self%n-1, int(p))
+        p = p-k
+        source(:,j) = c2*temperature(:,j)**4*x**3* &
+                      (p*self%table(k+1) + (1.0-p)*self%table(k))
+      else
+        where (x < self%xmin)
+          source(:,j) = c2*temperature(:,j)**4*x**3*self%table(0)
+        else where
+          p = (x-self%xmin)*self%cx
+          k  = min (self%n-1, int(p))
+          p  = p-k
+          source(:,j) = c2*temperature(:,j)**4*x**3* &
+                        (p*self%table(k+1) + (1.0-p)*self%table(k))
+        end where
+      end if
     end do
   end if
 END SUBROUTINE lookup
@@ -160,21 +186,22 @@ SUBROUTINE stefan (self, n, lambda, temperature, source)
 END SUBROUTINE stefan
 
 !> =============================================================================
-!> Test the table lookup.  Wavelength is in micrometers, and the temperatures
-!> are the ones the span over the x-range in the table.
+!> Test the table lookup.  Wavelength (in micrometers) is unimportant. The
+!> temperatures spans over the x-range in the table + an order of magnitude below
 !> =============================================================================
 SUBROUTINE test (self)
   class(planck_t):: self
   integer:: m, n(2), i, j
-  real:: wavelength, x
+  real:: wavelength, x, xmin
   real, dimension(:,:), pointer:: temperature, source1, source2
   !.............................................................................
-  m = self%n*3
+  m = self%n*4
   allocate (temperature(m,1), source1(m,1), source2(m,1))
   wavelength = 100.*cgs%mum/scaling%l
   if (self%debug) print *, 'test temperatures'
   do i=1,m
-    x = self%xmin + (i-1)*((self%xmax-self%xmin)/real(m))
+    xmin = self%xmin*0.1
+    x = xmin + (i-1)*((self%xmax-xmin)/real(m-1))
     temperature(i,1) = cgs%h_p*cgs%c/(cgs%k_b*x*wavelength*scaling%l)
     if (self%debug) print *, i, x, temperature(i,1)
     temperature(i,1) = temperature(i,1)/scaling%temp

@@ -7,10 +7,10 @@ solver='feautrier'
  amplitude=27.
 /
 &planck_params
-!debug=t n=19 xmin=0.1 xmax=10.
+!debug=t n=20 xmin=0.01 xmax=1.
 !source='planck'
 !source='teff'
-source='lookup'
+source='lookup' xmin=1e-3 xmax=20.
 /
 &microphysics_params
  wavelength_mu=150.
