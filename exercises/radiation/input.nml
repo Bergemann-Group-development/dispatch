@@ -6,9 +6,13 @@ solver='feautrier'
  a_gauss=0.10
  amplitude=27.
 /
-&microphysics_params
+&planck_params
+!debug=t n=19 xmin=0.1 xmax=10.
 !source='planck'
-source='teff'
+!source='teff'
+source='lookup'
+/
+&microphysics_params
  wavelength_mu=150.
 /
 &io_params
