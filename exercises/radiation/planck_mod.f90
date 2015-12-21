@@ -30,14 +30,14 @@ CONTAINS
 !> Initialize table lookup of the Planck function.  Express everything in the
 !> non-dimensional variable x = h*c/(lambda*k*T), which makes the Planck function
 !> = c*T**4*x**4/(exp(x)-1).  Interpolate in x/(exp(x)-1), which is smooth. The
-!> limits xmin=0.01 and xmax=20 are perfect, since the error below 0.01 is less
-!> 0.5%, and the value above x=20 is negligible.
+!> limits xmin=0.001 and xmax=20 are perfect, since the error below 0.01 is less
+!> 0.05%, and the value above x=20 is negligible.
 !> =============================================================================
 SUBROUTINE init (self)
   class (planck_t):: self
-  integer:: n=10000
+  integer:: n=1000
   real(8):: xmin=1d-3, xmax=2d1
-  character(len=12) :: source='function'        ! choice of source function
+  character(len=12) :: source='lookup'        ! choice of source function
   integer:: i
   real:: x, lnx, dx
   logical:: debug=.false.
@@ -111,7 +111,7 @@ SUBROUTINE lookup (self, n, wavelength, temperature, source)
   !.............................................................................
   real                          :: c1, c2, src, x1, f
   integer                       :: i, j
-  real,    dimension(n(1))      :: x, p
+  real,    dimension(n(1))      :: p
   integer, dimension(n(1))      :: k
   !-----------------------------------------------------------------------------
   c1 = cgs%h_p*cgs%c/(wavelength*scaling%l*cgs%k_b*scaling%temp)
@@ -147,21 +147,23 @@ SUBROUTINE lookup (self, n, wavelength, temperature, source)
   !-----------------------------------------------------------------------------
   else
     do j=1,n(2)
-      x = c1/temperature(:,j)
-      if (minval(x) >= self%xmin) then
-        p = (x-self%xmin)*self%cx
+      p = c1/temperature(:,j)
+      if (minval(p) >= self%xmin) then
+        source(:,j) = c2*temperature(:,j)**4*p**3
+        p = (p-self%xmin)*self%cx
         k = min (self%n-1, int(p))
         p = p-k
-        source(:,j) = c2*temperature(:,j)**4*x**3* &
+        source(:,j) = source(:,j)* &
                       (p*self%table(k+1) + (1.0-p)*self%table(k))
       else
-        where (x < self%xmin)
-          source(:,j) = c2*temperature(:,j)**4*x**3*self%table(0)
+        where (p < self%xmin)
+          source(:,j) = c2*temperature(:,j)**4*p**3*self%table(0)
         else where
-          p = (x-self%xmin)*self%cx
+          source(:,j) = c2*temperature(:,j)**4*p**3
+          p = (p-self%xmin)*self%cx
           k  = min (self%n-1, int(p))
           p  = p-k
-          source(:,j) = c2*temperature(:,j)**4*x**3* &
+          source(:,j) = source(:,j)* &
                         (p*self%table(k+1) + (1.0-p)*self%table(k))
         end where
       end if
@@ -207,7 +209,7 @@ SUBROUTINE test (self)
     temperature(i,1) = temperature(i,1)/scaling%temp
   end do
   n = [m,1]
-  call self%lookup (n, wavelength, temperature, source1)
+  call self%source (n, wavelength, temperature, source1)
   call self%function (n, wavelength, temperature, source2)
   source1 = source1/source2-1.0
   print*,'planck_mod: min and max deviations =', minval(source1), maxval(source1)

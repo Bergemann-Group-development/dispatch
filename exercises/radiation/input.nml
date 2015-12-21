@@ -8,9 +8,9 @@ solver='feautrier'
 /
 &planck_params
 !debug=t n=20 xmin=0.01 xmax=1.
-!source='planck'
+!source='function'
 !source='teff'
-source='lookup' xmin=1e-3 xmax=20.
+!source='lookup'
 /
 &microphysics_params
  wavelength_mu=150.
