@@ -1,15 +1,14 @@
 &rt_params
 !solver='integral'
 solver='feautrier'
-!solver='feautrier8'
  p_gauss=4.0
  w_gauss=0.15
  a_gauss=0.10
  amplitude=27.
 /
 &microphysics_params
-source='planck'
-!source='teff'
+!source='planck'
+source='teff'
  wavelength_mu=150.
 /
 &io_params

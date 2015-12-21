@@ -32,12 +32,8 @@ SUBROUTINE init (self, solver_name)
   select case(solver_name)
   case('integral')
     self%solver => integral
-  case('integral2')
-    self%solver => integral
   case('feautrier')
     self%solver => feautrier
-  case('feautrier8')
-    self%solver => feautrier8
   end select
 END SUBROUTINE
 !> =============================================================================

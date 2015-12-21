@@ -66,21 +66,19 @@ END SUBROUTINE
 !> =============================================================================
 !> compute dtau given density, temperature, and step ds along the ray
 !> =============================================================================
-FUNCTION dtau (self, ds, density, temperature)
+FUNCTION dtau (self, ds, opacity)
   implicit none
   class(microphysics_t) :: self
-  real, dimension(:,:)  :: density, temperature
   real                  :: ds
-  real, dimension(size(density,1),size(density,2)):: opacity, dtau
-  !.............................................................................
-  opacity = self%opacity(density, temperature)
+  real, dimension(:,:)  :: opacity
+  real, dimension(size(opacity,1),size(opacity,2)):: dtau
   !-----------------------------------------------------------------------------
   ! dtau is the increment in tau from one ray-point to the next. Therefore dtau
   ! is downstaggered and has only a half value on the lower edge of the patch
   !-----------------------------------------------------------------------------
-associate (n=>size(density,2))
-  dtau = density * opacity
-  dtau(:,2:) = dtau(:,1:n-1) + density(:,1:n-1) * opacity(:,1:n-1)
+associate (n=>size(opacity,2))
+  dtau = opacity
+  dtau(:,2:) = dtau(:,1:n-1) + opacity(:,1:n-1)
   dtau = 0.5*ds*dtau 
 end associate
 END FUNCTION
@@ -94,7 +92,7 @@ FUNCTION opacity_grey (self, density, temperature) result(opacity)
   real, dimension(:,:):: density, temperature
   real, dimension(size(density,1),size(density,2)):: opacity
   !.............................................................................
-  opacity = self%kappa_grey
+  opacity = density * self%kappa_grey
 END FUNCTION
 
 !> =============================================================================
@@ -164,7 +162,7 @@ SUBROUTINE teff (n, lambda, temperature, source)
   real, dimension(n(1),n(2)):: temperature, source
   real:: lambda, c
 !...............................................................................
-  c = cgs%stefan*scaling%temp**4/(scaling%e/(scaling%l**2*scaling%t))
+  c = cgs%stefan/cgs%pi*scaling%temp**4/(scaling%e/(scaling%l**2*scaling%t))
   source = c*temperature**4
 END SUBROUTINE
 !> =============================================================================

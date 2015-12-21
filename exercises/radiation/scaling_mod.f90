@@ -17,6 +17,7 @@ MODULE scaling_mod
     real(kind=8):: grav = 1.0
     real(kind=8):: temp = 1.0
     real(kind=8):: mu = 2.4                             ! mean molecular weight
+    real(kind=8):: pi = asin(1.0) * 2.0
   contains
     procedure:: init
   end type

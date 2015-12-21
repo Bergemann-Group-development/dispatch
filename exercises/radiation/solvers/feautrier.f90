@@ -47,22 +47,29 @@ SUBROUTINE feautrier (M, N, dtau, S, Ifw1, IrvN, Q, Irv1, IfwN)
   real, dimension(m,n)              :: a1, a2, a3, d
   integer                           :: j, k
   real                              :: a, dsdtau_1, dsdtau_2, d2sdtau2
-!
-!  Boundary condition at k=n; infalling forward intensity = Ifw1
-!
+  logical                           :: debug=.false., first_time=.true.
+  !.............................................................................
+  if (debug) then
+    if (first_time) open(20,file='rt.dat',form='unformatted',status='unknown')
+    first_time = .false.
+    write(20) m, n
+    write(20) dtau, s, Ifw1, IrvN
+  end if
+  !-----------------------------------------------------------------------------
+  ! Boundary condition at k=1; infalling forward intensity = Ifw1
+  !-----------------------------------------------------------------------------
   do j=1,m
-    a2(j,1)  = +1. + dtau(j,2) + 0.5*dtau(j,2)**2
+    a2(j,1)  = dtau(j,2) + 0.5*dtau(j,2)**2
     a3(j,1)  = -1.
     dsdtau_1 = (s(j,2)-s(j,1))/dtau(j,2)
     dsdtau_2 = (s(j,3)-s(j,2))/dtau(j,3)
     d2sdtau2 = (dsdtau_2-dsdtau_1)*2./(dtau(j,2)+dtau(j,3))
     q(j,1)   = - dtau(j,2)*(s(j,1) - dsdtau_1 - Ifw1(j)) + 0.5*dtau(j,2)**2*d2sdtau2
-    a2(j,1)  = + dtau(j,2) + 0.5*dtau(j,2)**2
     d(j,2)   = -1./dtau(j,2)
   end do
-!
-!  Compute matrix elements and eliminate the sub-diagonal in one sweep
-!
+  !-----------------------------------------------------------------------------
+  ! Compute matrix elements and eliminate the sub-diagonal in one sweep
+  !-----------------------------------------------------------------------------
   do k=2,n-1
   do j=1,m
     a        = 2./(dtau(j,k+1)+dtau(j,k))                               ! 1d    1a
@@ -78,36 +85,36 @@ SUBROUTINE feautrier (M, N, dtau, S, Ifw1, IrvN, Q, Irv1, IfwN)
     a2(j,k-1) = a
   end do
   end do
-!
-!  Boundary condition at k=n; infalling reverse intensity = IrvN
-!
+  !-----------------------------------------------------------------------------
+  ! Boundary condition at k=n; infalling reverse intensity = IrvN
+  !-----------------------------------------------------------------------------
   do j=1,m
-   a2(j,n) = +1. + dtau(j,n) + 0.5*dtau(j,n)**2
-   a1(j,n) = -1.
-   dsdtau_1 = (s(j,n  )-s(j,n-1))/dtau(j,n  )
-   dsdtau_2 = (s(j,n-1)-s(j,n-2))/dtau(j,n-1)
-   d2sdtau2 = (dsdtau_1-dsdtau_2)*2./(dtau(j,n)+dtau(j,n-1))
-   q(j,n)  = - dtau(j,n)*(s(j,n) + dsdtau_1 - IrvN(j)) - 0.5*dtau(j,n)**2*d2sdtau2
-   a2(j,n) = + dtau(j,n) + 0.5*dtau(j,n)**2
+    a2(j,n) = dtau(j,n) + 0.5*dtau(j,n)**2
+    a1(j,n) = -1.
+    dsdtau_1 = (s(j,n  )-s(j,n-1))/dtau(j,n  )
+    dsdtau_2 = (s(j,n-1)-s(j,n-2))/dtau(j,n-1)
+    d2sdtau2 = (dsdtau_1-dsdtau_2)*2./(dtau(j,n)+dtau(j,n-1))
+    q(j,n)  = - dtau(j,n)*(s(j,n) + dsdtau_1 - IrvN(j)) - 0.5*dtau(j,n)**2*d2sdtau2
 !
-   a       = 1./(a2(j,n-1)-a3(j,n-1))                                   ! 1d    1a
-   a1(j,n) = a1(j,n)*a                                                  !    1m
-   q(j,n)    = q(j,n) - a1(j,n)*q(j,n-1)                                !    1m 1a
-   a2(j,n)   = a2(j,n) - a1(j,n)*a2(j,n-1)                              !    1m 1a
-   a2(j,n-1) = a
-   q(j,n) = q(j,n)/a2(j,n)                                              ! solution at n
+    a       = 1./(a2(j,n-1)-a3(j,n-1))                                  ! 1d    1a
+    a1(j,n) = a1(j,n)*a                                                 !    1m
+    q(j,n)    = q(j,n) - a1(j,n)*q(j,n-1)                               !    1m 1a
+    a2(j,n)   = a2(j,n) - a1(j,n)*a2(j,n-1)                             !    1m 1a
+    a2(j,n-1) = a
+    q(j,n) = q(j,n)/a2(j,n)                                             ! solution at n
   end do
-!
-!  Backsubstitute
-!
+  !-----------------------------------------------------------------------------
+  ! Backsubstitute
+  !-----------------------------------------------------------------------------
   do k=n-1,1,-1
   do j=1,m
     q(j,k) = (q(j,k)-a3(j,k)*q(j,k+1))*a2(j,k)                          !    2m 1a
   end do
   end do
-!                                                                       ! 3d 9m 8a = 20f
-!  Surface intensities
-!
+  !-----------------------------------------------------------------------------
+  ! Surface intensities
+  !-----------------------------------------------------------------------------
   Irv1 = 2.*(q(:,1) + s(:,1))-Ifw1                                      ! reverse surface intensity
   IfwN = 2.*(q(:,n) + s(:,n))-IrvN                                      ! forward surface intensity
+  if (debug) write(20) q, Irv1, IfwN
 END
