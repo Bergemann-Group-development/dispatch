@@ -94,6 +94,9 @@ cleanest: cleaner cleandata cleanlog
 FILES = $(subst .o,.w,$(OBJ))
 files: $(FILES)
 	@echo xx >/dev/null
+deps: files.txt
+	@make files > files.txt
+	@perl $(CONFIG)/deps.pl files.txt
 
 #############################################################################
 # update documentation via doxygen
