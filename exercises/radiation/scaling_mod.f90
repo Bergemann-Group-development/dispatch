@@ -16,7 +16,7 @@ MODULE scaling_mod
     real(kind=8):: u = 1.0
     real(kind=8):: grav = 1.0
     real(kind=8):: temp = 1.0
-    real(kind=8):: mu = 2.4
+    real(kind=8):: mu = 2.4                             ! mean molecular weight
   contains
     procedure:: init
   end type
@@ -30,15 +30,15 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   if (.not.first_time) return
   first_time = .false.
-  self%l = 1e4*cgs%au
-  self%m = cgs%m_sun
-  self%d = self%m/self%l**3
-  self%u = cgs%kms
-  self%t = self%l/self%u
-  self%p = self%d*self%u**2
-  self%e = self%m*self%u**2
-  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2
-  self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e)
+  self%l = 1e4*cgs%au                                   ! length
+  self%m = cgs%m_sun                                    ! mass
+  self%d = self%m/self%l**3                             ! mass density
+  self%u = cgs%kms                                      ! speed
+  self%t = self%l/self%u                                ! time
+  self%p = self%d*self%u**2                             ! pressure = energy density
+  self%e = self%m*self%u**2                             ! energy
+  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
+  self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for give mu
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
     print 1,'     length: ',self%l

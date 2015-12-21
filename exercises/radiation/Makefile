@@ -22,7 +22,7 @@ sinclude $(TOP)/config/Makefile
 OBJ = \
   cgs_mod.o mpi_mod.o omp_mod.o omp_timer_mod.o io_mod.o trace_mod.o \
   $(PDE)_mod.o patches_mod.o scalar_mod.o rt_mod.o microphysics_mod.o scaling_mod.o \
-  solvers/integral.o solvers/feautrier.o
+  solvers/integral.o solvers/feautrier.o solvers/feautrier8.o
 
 # Dependencies
 $(PDE)_mod.o      : omp_timer_mod.o io_mod.o trace_mod.o patches_mod.o scalar_mod.o rt_mod.o 

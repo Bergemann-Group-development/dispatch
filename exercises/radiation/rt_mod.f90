@@ -16,7 +16,7 @@ MODULE rt_mod
       real, dimension(m)  , intent(out) :: irv1, ifwN
     end subroutine
   end interface
-  external integral, feautrier
+  external integral, feautrier, feautrier8
   logical :: first_time = .true.
   type, public:: rt_t
     procedure(solve), nopass, public, pointer:: solver => null()
@@ -36,6 +36,8 @@ SUBROUTINE init (self, solver_name)
     self%solver => integral
   case('feautrier')
     self%solver => feautrier
+  case('feautrier8')
+    self%solver => feautrier8
   end select
 END SUBROUTINE
 !> =============================================================================

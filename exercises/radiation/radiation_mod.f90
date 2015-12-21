@@ -13,14 +13,13 @@ MODULE pde_mod
   USE rt_mod
   implicit none
   private
-  integer, parameter:: i_d=1, i_tr=2
+  integer, parameter:: i_d=1, i_tr=2, i_s=3
   type, public, extends(patch_t):: pde_t
-    type(scalar_t):: d, tt
+    type(scalar_t):: d, tt, s, qq
     real:: w_gauss
     real:: p_gauss
     real:: a_gauss
     real:: amplitude
-    integer:: nbuf, nwave
     real(kind=8):: tolerance
     type(rt_t)  :: rt
     type(microphysics_t) :: microphysics
@@ -39,9 +38,9 @@ SUBROUTINE init (self)
   integer:: i, j, k
   real:: x, y, z, r
   logical:: first_time = .true.
-  integer, save:: nbuf=64, nwave=20
-  real, save:: w_gauss=5.0, p_gauss=1.0, a_gauss=0.10, amplitude=2.3, temperature=10., tmp
-  namelist /rt_params/ w_gauss, p_gauss, a_gauss, amplitude, temperature, solver, nbuf, nwave
+  real:: w_gauss=0.15, p_gauss=4.0, a_gauss=0.10, amplitude=10., temperature=100., tmp
+  namelist /rt_params/ w_gauss, p_gauss, a_gauss, amplitude, temperature, solver
+associate(gn=>self%gn, n=>self%n, l=>self%li, u=>self%ui)
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
@@ -61,10 +60,9 @@ SUBROUTINE init (self)
   self%p_gauss   = p_gauss
   self%a_gauss   = a_gauss
   self%amplitude = amplitude
-  self%nbuf      = 64
-  self%nv        = 2
+  self%nv        = 3
   call self%patch_t%init
-  self%nv        = 2
+  self%nv        = 3
   !-----------------------------------------------------------------------------
   ! Setup microphysics for RT. One microphysics object per wavelength is needed
   !-----------------------------------------------------------------------------
@@ -72,20 +70,22 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Memory mapping og density and temperature
   !-----------------------------------------------------------------------------
-  call   self%d%init (self%gn, self%size/self%n, 'd')
-  call  self%tt%init (self%gn, self%size/self%n, 'tt')
+  call   self%d%init (gn, self%size/n, 'd')
+  call  self%tt%init (gn, self%size/n, 'tt')
   self%d%f  => self%mem(:,:,:,i_d ,self%it,1)
   self%tt%f => self%mem(:,:,:,i_tr,self%it,1)
+  self%s%f  => self%mem(:,:,:,i_s ,self%it,1)
+  self%qq%f => self%mem(:,:,:,i_s ,self%it,2)
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Gaussian top hat with 1/r**2 wings
   !-----------------------------------------------------------------------------
   if (self%time==0.0) then
-    do k=1,self%gn(3)
-    do j=1,self%gn(2)
-    do i=1,self%gn(1)
-      x = (i-(self%gn(1)+1)*0.5)*self%ds(1) + self%position(1)
-      y = (j-(self%gn(2)+1)*0.5)*self%ds(2) + self%position(2)
-      z = (k-(self%gn(3)+1)*0.5)*self%ds(3) + self%position(3)
+    do k=1,gn(3)
+    do j=1,gn(2)
+    do i=1,gn(1)
+      x = (i-(gn(1)+1)*0.5)*self%ds(1) + self%position(1)
+      y = (j-(gn(2)+1)*0.5)*self%ds(2) + self%position(2)
+      z = (k-(gn(3)+1)*0.5)*self%ds(3) + self%position(3)
       r = sqrt(x**2+y**2+z**2)/self%w_gauss
       r = min(r,0.5/w_gauss)
       self%d%f(i,j,k) = &
@@ -94,6 +94,7 @@ SUBROUTINE init (self)
     end do
     end do
   end if
+  print*,'mass:',sum(self%d%f(l(1):u(1),l(2):u(2),l(3):u(3)))*product(self%ds)
   !-----------------------------------------------------------------------------
   ! Initial conditions for temperature [Kelvin]
   !-----------------------------------------------------------------------------
@@ -104,46 +105,46 @@ SUBROUTINE init (self)
   call self%rt%init (solver)
   !
   call trace_end
+end associate
 END SUBROUTINE init
 !> =============================================================================
 !> Compute the solution to the radiative transfer equation
 !> =============================================================================
 SUBROUTINE solve (self)
   class(pde_t):: self
-  real, pointer, dimension(:,:) :: dtau, src, source, qcool, dens, temp
+  real, pointer, dimension(:,:) :: dtau, src, source, qcool, density, temperature
   real, pointer, dimension(:) :: ifw0, irv0, ifw1, irv1
-  integer:: ix, iy, iz, m
-  !
+  integer:: ix, iy, iz
+  real(8):: wc(6), cost(5)
   !.............................................................................
   call trace_begin ('radiation_mod:pde_t%update', 2)
 associate(gn=>self%gn, n=>self%n, ntau=>self%n(3), l=>self%li, u=>self%ui)
-  allocate (ifw0  (self%nbuf))
-  allocate (ifw1  (self%nbuf))
-  allocate (irv0  (self%nbuf))
-  allocate (irv1  (self%nbuf))
-  allocate (dens  (self%nbuf,n(3)))
-  allocate (temp  (self%nbuf,n(3)))
-  allocate (dtau  (self%nbuf,n(3)))
-  allocate (source(self%nbuf,n(3)))
-  allocate (qcool (self%nbuf,n(3)))
+  allocate (ifw0(n(1)), irv0(n(1)), ifw1(n(1)), irv1(n(1)))
+  allocate (density    (l(1):u(1), l(3):u(3)))
+  allocate (temperature(l(1):u(1), l(3):u(3)))
+  allocate (dtau       (l(1):u(1), l(3):u(3)))
+  allocate (source     (l(1):u(1), l(3):u(3)))
+  allocate (qcool      (l(1):u(1), l(3):u(3)))
   !.............................................................................
-  call tic
-  m = 0
+  ifw0 = 0.0; irv1 = 0.0
+  cost = 0d0
   do iy=l(2),u(2)
-    do ix=l(1),u(1)
-      m = m+1
-      dens(m,:) =  self%d%f(ix,iy,l(3):u(3))
-      temp(m,:) = self%tt%f(ix,iy,l(3):u(3))
-      if (m == self%nbuf) then
-        ifw0 = 0.0; irv1 = 0.0
-        dtau   = self%microphysics%dtau   (m, ntau, dens, temp, self%ds(3))
-        source = self%microphysics%source (m, ntau, dens, temp)
-        call self%rt%solver (m, ntau, dtau, source, ifw0, ifw1, qcool, irv0, irv1)
-        m = 0
-      end if
-    end do
+      wc(1) = wallclock()
+    density     = self%d%f (l(1):u(1), iy, l(3):u(3))
+    temperature = self%tt%f(l(1):u(1), iy, l(3):u(3))
+      wc(2) = wallclock()
+    dtau   = self%microphysics%dtau (self%ds(3), density, temperature)
+      wc(3) = wallclock()
+    source = self%microphysics%source (density, temperature)
+      wc(4) = wallclock()
+    call self%rt%solver (n(1), n(3), dtau, source, ifw0, ifw1, qcool, irv0, irv1)
+      wc(5) = wallclock()
+    self%qq%f(l(1):u(1),iy,l(3):u(3)) = qcool(l(1):u(1),:)
+      wc(6) = wallclock()
+      cost = cost + wc(2:6) - wc(1:5)
   end do
-  call toc ('radiation', product(self%n))
+  cost = cost*1e9/product(n)            ! convert to nanosec/point
+  print'(a,6f6.1))', ' mus/pt: copy, dtau, source, solve, copy, total =', cost, sum(cost)
   deallocate (dtau, source, qcool, ifw0, irv0, ifw1, irv1)
 end associate
   call trace_end

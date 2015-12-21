@@ -10,6 +10,7 @@ MODULE units_mod
     real(kind=8):: k_b = 1.3807d-16
     real(kind=8):: h_p = 6.6260755d-27
     real(kind=8):: c = 2.999792d10
+    real(kind=8):: stefan = 6.67d-8
     real(kind=8):: grav = 6.67d-8
     real(kind=8):: AU = 1.498d13
     real(kind=8):: pc = 3.086d18

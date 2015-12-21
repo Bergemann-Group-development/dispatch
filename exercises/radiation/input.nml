@@ -1,13 +1,20 @@
 &rt_params
- solver='integral'
+!solver='integral'
+solver='feautrier'
+!solver='feautrier8'
+ p_gauss=4.0
+ w_gauss=0.15
+ a_gauss=0.10
+ amplitude=27.
 /
 &microphysics_params
- source='planck'
+source='planck'
+!source='teff'
  wavelength_mu=150.
 /
 &io_params
- do_trace=t verbose=4   ! =1 for output file messages
-!do_trace=f verbose=2   ! =1 for output file messages
+!do_trace=t verbose=4   ! =1 for output file messages
+ do_trace=f verbose=2   ! =1 for output file messages
 /
 &patch_params
  dims=128,128,128
