@@ -41,7 +41,7 @@ SUBROUTINE init (self)
     read (io%input, microphysics_params)
     if (io%master) write (*,microphysics_params)
   end if
-  self%kappa_grey = kappa_grey_cgs / (scaling%l**2 / scaling%m) 
+  self%kappa_grey = kappa_grey_cgs / (scaling%l**2 / scaling%m)
   !-----------------------------------------------------------------------------
   ! For multi frequency RT lambda may be redefined by calling function
   !-----------------------------------------------------------------------------
@@ -69,12 +69,12 @@ FUNCTION dtau (self, ds, opacity)
 associate (n=>size(opacity,2))
   dtau = opacity
   dtau(:,2:) = dtau(:,1:n-1) + opacity(:,1:n-1)
-  dtau = 0.5*ds*dtau 
+  dtau = 0.5*ds*dtau
 end associate
 END FUNCTION
 
 !> =============================================================================
-!> Set the opacity to be constant 
+!> Set the opacity to be constant per unit mass
 !> =============================================================================
 FUNCTION opacity_grey (self, density, temperature) result(opacity)
   class(microphysics_t) :: self

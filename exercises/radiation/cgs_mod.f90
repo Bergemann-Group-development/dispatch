@@ -24,5 +24,5 @@ MODULE units_mod
     real(kind=8):: r_earth = 6.371d8
     real(kind=8):: pi = asin(1.0) * 2.0
   end type
-  type(const_t), public:: cgs
+  type(const_t), public:: cgs, code
 END MODULE units_mod

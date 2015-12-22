@@ -12,6 +12,7 @@ MODULE scaling_mod
     real(kind=8):: m = 1.0
     real(kind=8):: d = 1.0
     real(kind=8):: e = 1.0
+    real(kind=8):: f = 1.0
     real(kind=8):: p = 1.0
     real(kind=8):: u = 1.0
     real(kind=8):: grav = 1.0
@@ -38,6 +39,7 @@ SUBROUTINE init (self)
   self%t = self%l/self%u                                ! time
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
+  self%f = self%p*self%u                                ! energy flux = P u
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
   self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for give mu
   if (io%master) then
@@ -53,5 +55,12 @@ SUBROUTINE init (self)
     print 1,'temperature: ',self%temp
   1 format(1x,a,1p,e11.3)
   end if
+  code%c = cgs%c/scaling%u
+  code%m_u = cgs%m_u/scaling%m
+  code%k_B = cgs%k_B*scaling%temp/scaling%e
+  code%h_p = cgs%h_p/(scaling%t*scaling%e)
+  code%stefan = cgs%stefan*scaling%temp**4/scaling%f
+  code%grav = cgs%grav*scaling%d*scaling%t**2
+  code%mum = cgs%mum/scaling%l
 END SUBROUTINE init
 END MODULE scaling_mod

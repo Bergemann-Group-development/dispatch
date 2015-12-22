@@ -86,8 +86,8 @@ SUBROUTINE function (self, n, lambda, temperature, source)
   real(8) :: c1, c2
   real, dimension(n(1)):: e
   !.............................................................................
-  c1 = 2d0*cgs%h_p*cgs%c**2/(cgs%mum**4)                ! 2*h*c**2/lambda**4
-  c2 = cgs%h_p*cgs%c/(cgs%k_b*cgs%mum*scaling%temp)     ! h*c/(lambda*T)
+  c1 = 2d0*code%h_p*code%c**2/(code%mum**4)             ! 2*h*c**2/lambda**4
+  c2 = code%h_p*code%c/(code%k_b*code%mum)              ! h*c/(lambda*T)
   lambda_mum = lambda*scaling%l/cgs%mum                 ! lambda in micrometers
   lambda_4 = lambda_mum**4
   do i=1,n(2)
@@ -97,8 +97,8 @@ SUBROUTINE function (self, n, lambda, temperature, source)
 END SUBROUTINE function
 
 !> =============================================================================
-!> Linear interpolation in linear wavelength, for maximum speed.  To handle 
-!> uncommon cases where some x are below xmin a test is made on x, before 
+!> Linear interpolation in linear wavelength, for maximum speed.  To handle
+!> uncommon cases where some x are below xmin a test is made on x, before
 !> choosing how to interpolate.  This is only slightly slower than if one knows
 !> everything is in range.
 !> =============================================================================
@@ -115,7 +115,7 @@ SUBROUTINE lookup (self, n, wavelength, temperature, source)
   integer, dimension(n(1))      :: k
   !-----------------------------------------------------------------------------
   c1 = cgs%h_p*cgs%c/(wavelength*scaling%l*cgs%k_b*scaling%temp)
-  c2 = 2.*(cgs%k_b*scaling%temp)**4/(cgs%h_p**3*cgs%c**2)
+  c2 = 2.*(cgs%k_b*scaling%temp)**4/(cgs%h_p**3*cgs%c**2)/scaling%f
   !-----------------------------------------------------------------------------
   ! Case with printout
   !-----------------------------------------------------------------------------
@@ -173,17 +173,17 @@ END SUBROUTINE lookup
 
 !> =============================================================================
 !> The integrated Planck function is proportional to Stefan's constant times the
-!> fourth power of the temperature.  This is the relevant source function when
-!> the opacity is constant as a function of wavelength, so one can integrate 
-!> over wavelengthe before solving the radiative transfer equation
+!> fourth power of the temperature, divided by pi.  This is the relevant source
+!> function when the opacity is constant as a function of wavelength, so one can
+!> integrate over wavelength before solving the radiative transfer equation.
 !> =============================================================================
 SUBROUTINE stefan (self, n, lambda, temperature, source)
   class(planck_t):: self
   integer:: n(2)
   real, dimension(n(1),n(2)):: temperature, source
   real:: lambda, c
-!...............................................................................
-  c = cgs%stefan/cgs%pi*scaling%temp**4/(scaling%e/(scaling%l**2*scaling%t))
+  !.............................................................................
+  c = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
   source = c*temperature**4
 END SUBROUTINE stefan
 
@@ -194,9 +194,23 @@ END SUBROUTINE stefan
 SUBROUTINE test (self)
   class(planck_t):: self
   integer:: m, n(2), i, j
-  real:: wavelength, x, xmin
+  real:: wavelength, x, xmin, sum, f
   real, dimension(:,:), pointer:: temperature, source1, source2
-  !.............................................................................
+  !-----------------------------------------------------------------------------
+  ! Verify the accuracy of integration of x**4/(exp(x-1.0)), over log intervals
+  !-----------------------------------------------------------------------------
+  x = 1e-3
+  sum = 0.0
+  f = 1.1
+  do while (x<20)
+    sum = sum+x**4/(exp(x)-1.0)
+    x=x*f
+  end do
+  sum = sum*log(f)
+  print*,'sum:', sum, cgs%pi**4/15.0
+  !-----------------------------------------------------------------------------
+  ! Compare the straight evaluation with table lookup
+  !-----------------------------------------------------------------------------
   m = self%n*4
   allocate (temperature(m,1), source1(m,1), source2(m,1))
   wavelength = 100.*cgs%mum/scaling%l
