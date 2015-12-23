@@ -8,6 +8,7 @@ MODULE pde_mod
   USE trace_mod
   USE patches_mod
   USE scalar_mod
+  USE units_mod
   USE scaling_mod
   USE microphysics_mod
   USE rt_mod
@@ -15,12 +16,13 @@ MODULE pde_mod
   private
   integer, parameter:: i_d=1, i_s=2, i_tt=3
   type, public, extends(patch_t):: pde_t
-    type(scalar_t):: d, s, dsdt, tt
+    type(scalar_t):: d, s, dsdt, tt, op
     real:: w_gauss
     real:: p_gauss
     real:: a_gauss
     real:: amplitude
     real:: gamma
+    real:: cr_heating
     real(kind=8):: tolerance
     type(rt_t)  :: rt
     type(microphysics_t) :: microphysics
@@ -40,8 +42,9 @@ SUBROUTINE init (self)
   real:: x, y, z, r, density
   logical:: first_time = .true.
   real:: w_gauss=0.15, p_gauss=4.0, a_gauss=0.10
-  real:: amplitude=25., temperature=100., gamma=1.4
-  namelist /rt_params/ w_gauss, p_gauss, a_gauss, amplitude, temperature, gamma, solver
+  real:: amplitude=25., temperature=100., gamma=1.4, cr_heating=4.4e-27
+  namelist /rt_params/ w_gauss, p_gauss, a_gauss, amplitude, temperature, gamma, &
+    solver, cr_heating
 associate(gn=>self%gn, n=>self%n, l=>self%li, u=>self%ui)
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
@@ -56,22 +59,23 @@ associate(gn=>self%gn, n=>self%n, l=>self%li, u=>self%ui)
     read (io%input, rt_params)
     if (io%master) write (*,rt_params)
   end if
-  self%size      = 1.
-  self%position  = 0.
-  self%w_gauss   = w_gauss
-  self%p_gauss   = p_gauss
-  self%a_gauss   = a_gauss
-  self%gamma     = gamma
-  self%amplitude = amplitude
-  self%nv        = 3
+  self%size       = 1.
+  self%position   = 0.
+  self%w_gauss    = w_gauss
+  self%p_gauss    = p_gauss
+  self%a_gauss    = a_gauss
+  self%gamma      = gamma
+  self%amplitude  = amplitude
+  self%cr_heating = cr_heating/cgs%m_u*scaling%d/(scaling%e/scaling%l**3/scaling%t)
+  self%nv         = 4
   call self%patch_t%init
-  self%nv        = 3
+  self%nv         = 4
   !-----------------------------------------------------------------------------
   ! Setup microphysics for RT. One microphysics object per wavelength is needed
   !-----------------------------------------------------------------------------
   call self%microphysics%init
   !-----------------------------------------------------------------------------
-  ! Memory mappinf og density, temperature, entropy, and cooling
+  ! Memory mapping of density, temperature, entropy, and cooling
   !-----------------------------------------------------------------------------
   call   self%d%init (gn, self%size/n, 'd')
   call   self%s%init (gn, self%size/n, 's')
@@ -80,6 +84,7 @@ associate(gn=>self%gn, n=>self%n, l=>self%li, u=>self%ui)
   self%tt%f   => self%mem(:,:,:,i_tt,self%it,1)
   self%s%f    => self%mem(:,:,:,i_s ,self%it,1)
   self%dsdt%f => self%mem(:,:,:,i_s ,self%it,2)
+  self%op%f   => self%mem(:,:,:,4   ,self%it,1)
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Gaussian top hat with 1/r**2 wings in density,
   ! with constant temperature defining the entropy
@@ -120,8 +125,8 @@ SUBROUTINE solve (self)
   real, pointer, dimension(:,:) :: dtau, src, source, qcool, opacity, &
                                    density, temperature
   real, pointer, dimension(:)   :: ifw0, irv0, ifw1, irv1
-  integer                       :: ix, iy, iz
-  real(8)                       :: wc(6), cost(5)
+  integer                       :: ix, iy, iz, loc(3)
+  real(8)                       :: wc(6), cost(5), dt_cool
   !.............................................................................
   call trace_begin ('radiation_mod:pde_t%update', 2)
 associate(gn=>self%gn, n=>self%n, ntau=>self%n(3), l=>self%li, u=>self%ui)
@@ -153,17 +158,60 @@ associate(gn=>self%gn, n=>self%n, ntau=>self%n(3), l=>self%li, u=>self%ui)
       wc(4) = wallclock()
     call self%rt%solver (n(1), n(3), dtau, source, ifw0, ifw1, qcool, irv0, irv1)
       wc(5) = wallclock()
-    self%dsdt%f(l(1):u(1),iy,l(3):u(3)) = 4.*scaling%pi*opacity*qcool/temperature
+    self%dsdt%f(l(1):u(1),iy,l(3):u(3)) = 4.*code%pi/3.*opacity*qcool/temperature &
+      + density*self%cr_heating/temperature
       wc(6) = wallclock()
       cost = cost + wc(2:6) - wc(1:5)
+  end do
+  print*, 'minmax(dSdt):', minval(self%dsdt%f(l(1):u(1),l(2):u(2),l(3):u(3)))
+  !-----------------------------------------------------------------------------
+  ! Radiation in y-direction
+  !-----------------------------------------------------------------------------
+  do iz=l(3),u(3)
+    density     = self%d%f (l(1):u(1), l(2):u(2), iz)
+    temperature = self%tt%f(l(1):u(1), l(2):u(2), iz)
+    opacity = self%microphysics%opacity (density, temperature)
+    dtau    = self%microphysics%dtau (self%ds(3), opacity)
+    source = self%microphysics%source (density, temperature)
+    call self%rt%solver (n(1), n(3), dtau, source, ifw0, ifw1, qcool, irv0, irv1)
+    self%dsdt%f(l(1):u(1),l(2):u(2),iz) = &
+    self%dsdt%f(l(1):u(1),l(2):u(2),iz) + 4.*code%pi/3.*opacity*qcool/temperature
+  end do
+  print*, 'minmax(dSdt):', minval(self%dsdt%f(l(1):u(1),l(2):u(2),l(3):u(3)))
+  !-----------------------------------------------------------------------------
+  ! Radiation in x-direction
+  !-----------------------------------------------------------------------------
+  do iz=l(3),u(3)
+    do iy=l(2),u(2)
+    do ix=l(1),u(1)
+      density    (iy,ix) = self%d%f (ix,iy,iz)
+      temperature(iy,ix) = self%tt%f(ix,iy,iz)
+    end do
+    end do
+    opacity = self%microphysics%opacity (density, temperature)
+    dtau    = self%microphysics%dtau (self%ds(3), opacity)
+    source = self%microphysics%source (density, temperature)
+    call self%rt%solver (n(1), n(3), dtau, source, ifw0, ifw1, qcool, irv0, irv1)
+    do iy=l(2),u(2)
+    do ix=l(1),u(1)
+      self%dsdt%f(ix,iy,iz) = &
+      self%dsdt%f(ix,iy,iz) + 4.*code%pi/3.*opacity(iy,ix)*qcool(iy,ix)/temperature(iy,ix)
+      self%op%f(ix,iy,iz) = opacity(iy,ix)
+      self%dsdt%f(ix,iy,iz) = self%dsdt%f(ix,iy,iz)/density(iy,ix)
+    end do
+    end do
   end do
   !-----------------------------------------------------------------------------
   ! Convert the cost to nanoseconds per point
   !-----------------------------------------------------------------------------
   cost = cost*1e9/product(n)
-  print'(a,6f6.1))', ' mus/pt: copy, dtau, source, solve, copy, total =', cost, sum(cost)
+  print'(a,6f6.1))', ' ns/pt: copy, dtau, source, solve, copy, total =', cost, sum(cost)
   print*, 'minmax(dSdt):', minval(self%dsdt%f(l(1):u(1),l(2):u(2),l(3):u(3))), &
                            maxval(self%dsdt%f(l(1):u(1),l(2):u(2),l(3):u(3)))
+  dt_cool = -1./minval(self%dsdt%f(l(1):u(1),l(2):u(2),l(3):u(3)))
+  print'(a,g10.3,a,3i5)', ' cooling time:', dt_cool*scaling%t/cgs%yr, ' years'
+  dt_cool = 1./maxval(abs(self%cr_heating*self%d%f(l(1):u(1),l(2):u(2),l(3):u(3))))
+  print'(a,g10.3,a,3i5)', ' cooling time:', dt_cool*scaling%t/cgs%yr, ' years'
   deallocate (dtau, source, qcool, ifw0, irv0, ifw1, irv1)
   !-----------------------------------------------------------------------------
   ! Just to get dSdt included in the output file, use the temperature slot

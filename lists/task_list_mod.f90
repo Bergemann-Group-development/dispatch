@@ -12,6 +12,7 @@
 !>
 !> =============================================================================
 MODULE task_list_mod
+  USE mpi_mod
   USE list_mod
   USE task_mod
   USE bits_mod
