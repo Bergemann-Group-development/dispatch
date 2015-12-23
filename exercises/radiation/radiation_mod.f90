@@ -209,9 +209,9 @@ associate(gn=>self%gn, n=>self%n, ntau=>self%n(3), l=>self%li, u=>self%ui)
   print*, 'minmax(dSdt):', minval(self%dsdt%f(l(1):u(1),l(2):u(2),l(3):u(3))), &
                            maxval(self%dsdt%f(l(1):u(1),l(2):u(2),l(3):u(3)))
   dt_cool = -1./minval(self%dsdt%f(l(1):u(1),l(2):u(2),l(3):u(3)))
-  print'(a,g10.3,a,3i5)', ' cooling time:', dt_cool*scaling%t/cgs%yr, ' years'
+  print'(a,1p,g10.3,a,3i5)', ' shortest cooling time:', dt_cool*scaling%t/cgs%yr, ' years'
   dt_cool = 1./maxval(abs(self%cr_heating*self%d%f(l(1):u(1),l(2):u(2),l(3):u(3))))
-  print'(a,g10.3,a,3i5)', ' cooling time:', dt_cool*scaling%t/cgs%yr, ' years'
+  print'(a,1p,g10.3,a,3i5)', ' shortest heating time:', dt_cool*scaling%t/cgs%yr, ' years'
   deallocate (dtau, source, qcool, ifw0, irv0, ifw1, irv1)
   !-----------------------------------------------------------------------------
   ! Just to get dSdt included in the output file, use the temperature slot
