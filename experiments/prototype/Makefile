@@ -8,16 +8,15 @@ OPTS = full_debug
 
 # Problem specification
 MESH = centered
-PROBLEM = advection
+PDE = advection
 TIMESTEP = adams_bashforth
-
-# Local object files
-OBJ += experiment_mod.o
 
 # Common configuration
 EXEC = dispatch.x
+AUTO = yes
 TOP = ../..
 include $(TOP)/config/Makefile
 
 # Dependencies
-experiment_mod.o : task_mod.o tasks_mod.o patch_mod.o task_list_mod.o trace_mod.o mpi_coords_mod.o
+$(EXEC) : experiment_mod.o
+experiment_mod.o : io_mod.o task_mod.o patch_mod.o task_list_mod.o trace_mod.o mpi_coords_mod.o

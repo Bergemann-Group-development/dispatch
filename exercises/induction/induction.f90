@@ -123,7 +123,7 @@ END SUBROUTINE
 SUBROUTINE run (self)
   USE vector_mod
   class(induction_t):: self
-  integer:: istep
+  integer:: istep, n(3)
   type(vector_t):: E, UU, B, dBdt
   !.............................................................................
 

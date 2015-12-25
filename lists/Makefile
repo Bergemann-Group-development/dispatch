@@ -1,16 +1,8 @@
 # Append to VPATH
 VPATH := $(VPATH):$(TOP)/lists
 
-# Local object files to include (hardwired later)
-ifeq ($(EXEC),dispatch.x)
-	OBJ += \
-	list_mod.o \
-	mesg_list_mod.o \
-	task_list_mod.o
-endif
-
 # Dependencies
-list_mod.o        : task_mod.o particle_mod.o planet_mod.o star_mod.o pebble_mod.o
-task_list_mod.o   : list_mod.o tasks_mod.o
+list_mod.o        : task_mod.o particle_mod.o planet_mod.o star_mod.o pebble_mod.o patch_mod.o
+task_list_mod.o   : mpi_mod.o list_mod.o task_mod.o bits_mod.o trace_mod.o io_mod.o
 mesg_list_mod.o	  : task_list_mod.o
 nbor_list_mod.o   : simple_list_mod.o task_list_mod.o task_mod.o

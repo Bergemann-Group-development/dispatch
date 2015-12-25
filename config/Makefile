@@ -52,6 +52,11 @@ VPATH := ./:$(VPATH)
 sinclude $(CONFIG)/Makefile.dep
 
 #############################################################################
+# Macro to hide compiler output
+E = @
+
+ifeq ($(AUTO),yes)
+#############################################################################
 # Infrastructure to automatically determine dependencies
 DEPDIR := .d
 $(shell mkdir -p $(DEPDIR) >/dev/null)
@@ -65,24 +70,20 @@ POSTCOMPILE= mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
 FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
 
 #############################################################################
-# Macro to hide compiler output
-E = @
-
-#############################################################################
 # Pattern rules to get .o files from .f90 files
 %.o: %.f90 $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
-	$(E)$(FC) $(FFLAGS) $(DEPFLAGS) -c $< -o $@
+	$(E)$(F90) $(FFLAGS) $(DEPFLAGS) -c $< -o $@
 	$(E)$(POSTCOMPILE)
-	$(eval OBJ+=$@)
+	$(eval OBJS+=$@)
 %.x: %.f90
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
-	$(eval OBJ+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
-	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJ)) -o $@ $(LIBS)
+	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
+	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJS)) -o $@ $(LIBS)
 %.x.mic: %.f90
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
-	$(eval OBJ+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
-	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJ)) -o $@ $(LIBS)
+	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
+	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJS)) -o $@ $(LIBS)
 %.w: %.f90
 	@echo $<
 $(DEPDIR)/%.d: ;
@@ -91,13 +92,31 @@ $(DEPDIR)/%.d: ;
 .PRECIOUS: $(DEPDIR)/%.d
 
 .PHONY: showopt clean cleanlog cleandata clean-deps cleaner cleanest info
+else
+#############################################################################
+# Rule to get .o files from .f90 files
+.SUFFIXES:
+.SUFFIXES: .x.mic .x .o .f90 .f .w
+.f90.x.mic: $(OBJ)
+	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
+	$(E)$(LD) $(LDFLAGS) $(OBJ) $< -o $@ $(LIBS)
+.f90.x: $(OBJ)
+	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
+	$(E)$(LD) $(LDFLAGS) $(OBJ) $< -o $@ $(LIBS)
+.f90.o:
+	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
+	$(E)$(F90) $(FFLAGS) -c $< -o $@
+.f90.w:
+	@echo $<
+$(EXEC): $(OBJ)
+endif
 
 showopt:
-	@echo "FC = $(FC) $(FFLAGS)"
+	@echo "FC = $(F90) $(FFLAGS)"
 	@echo "LD = $(LD) $(LDFLAGS)"
 
 #############################################################################
-
+## Clean up
 clean:
 	rm -f *.o *.$(MOD) *.stackdump
 cleanlog:
@@ -141,7 +160,7 @@ info:
 	@echo "$B  HW          $N= $(HW)"
 	@echo "$B  DEBUG       $N= $(DEBUG)"
 	@echo "$B  PAR         $N= $(PAR)"
-	@echo "$B  FC          $N= $(FC)"
+	@echo "$B  FC          $N= $(F90)"
 	@echo "$B  LD          $N= $(LD)"
 	@echo "$B  FFLAGS      $N= $(FFLAGS)"
 	@echo "$B  LDFLAGS     $N= $(LDFLAGS)"

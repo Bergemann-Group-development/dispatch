@@ -20,4 +20,5 @@ TOP = ../..
 include $(TOP)/config/Makefile
 
 # Dependencies
+$(EXEC): experiment_mod.o
 experiment_mod.o : nbor_list_mod.o mhd_mod.o advection_mod.o task_list_mod.o unigrid_mod.o

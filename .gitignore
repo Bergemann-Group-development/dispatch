@@ -12,3 +12,4 @@
 *.asv
 log*
 a.out
+.d/

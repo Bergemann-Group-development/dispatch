@@ -19,6 +19,7 @@ sinclude $(TOP)/config/Makefile
 OBJ = io_mod.o \
 trace_mod.o \
 omp_mod.o \
+omp_timer_mod.o \
 mpi_mod.o \
 mpi_timer_mod.o \
 mpi_coords_mod.o \
@@ -46,5 +47,6 @@ operators_mod.o         : deriv_mod.o derivatives_mod.o
 scalar_mod.o            : deriv_mod.o derivatives_mod.o 
 vector_mod.o            : deriv_mod.o derivatives_mod.o scalar_mod.o
 tensor_mod.o            : deriv_mod.o derivatives_mod.o vector_mod.o
+velocity_fields.o       : io_mod.o mpi_mod.o
 
 test.x: $(OBJ)
