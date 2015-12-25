@@ -52,48 +52,69 @@ VPATH := ./:$(VPATH)
 sinclude $(CONFIG)/Makefile.dep
 
 #############################################################################
+# Infrastructure to automatically determine dependencies
+DEPDIR := .d
+$(shell mkdir -p $(DEPDIR) >/dev/null)
+ifeq ($(COMPILER),gfortran)
+  DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.Td
+endif
+ifeq ($(COMPILER),ifort)
+  DEPFLAGS = -gen-depformat=make -gen-dep=$(DEPDIR)/$*.Td
+endif
+POSTCOMPILE= mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
+FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
+
+#############################################################################
 # Macro to hide compiler output
 E = @
 
 #############################################################################
-# Rule to get .o files from .f90 files
-.SUFFIXES:
-.SUFFIXES: .x.mic .x .o .f90 .f .w
-.f90.x.mic: $(OBJ)
-	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
-	$(E)$(LD) $(LDFLAGS) $(OBJ) $< -o $@ $(LIBS)
-.f90.x: $(OBJ)
-	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
-	$(E)$(LD) $(LDFLAGS) $(OBJ) $< -o $@ $(LIBS)
-.f90.o:
+# Pattern rules to get .o files from .f90 files
+%.o: %.f90 $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
-	$(E)$(F90) $(FFLAGS) -c $< -o $@
-.f90.w:
+	$(E)$(FC) $(FFLAGS) $(DEPFLAGS) -c $< -o $@
+	$(E)$(POSTCOMPILE)
+	$(eval OBJ+=$@)
+%.x: %.f90
+	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
+	$(eval OBJ+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
+	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJ)) -o $@ $(LIBS)
+%.x.mic: %.f90
+	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
+	$(eval OBJ+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
+	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJ)) -o $@ $(LIBS)
+%.w: %.f90
 	@echo $<
+$(DEPDIR)/%.d: ;
+
+# Prevent deletion of dependency files after successful compilation
+.PRECIOUS: $(DEPDIR)/%.d
+
+.PHONY: showopt clean cleanlog cleandata clean-deps cleaner cleanest info
+
 showopt:
-	@echo "FC = $(F90) $(FFLAGS)"
+	@echo "FC = $(FC) $(FFLAGS)"
 	@echo "LD = $(LD) $(LDFLAGS)"
 
 #############################################################################
-# Recipe for linking
-$(EXEC): $(OBJ)
 
-#############################################################################
 clean:
-	rm -f *.o *.$(MOD) *.stackdump ../*.o
+	rm -f *.o *.$(MOD) *.stackdump
 cleanlog:
 	rm -f *.log log*
 cleandata:
 	rm -f *.dat fort.*
-cleaner: clean
+clean-deps:
+	rm -f .d/*.d
+cleaner: clean clean-deps
 	rm -f *.x *.bak *.optrpt *.exe *.pyc
-cleanest: cleaner cleandata cleanlog
+cleanest: cleaner cleandata cleanlog clean-deps
 
 #############################################################################
 # Generate list of source files
-FILES = $(subst .o,.w,$(OBJ))
-files: $(FILES)
-	@echo xx >/dev/null
+files: 
+	@echo "$(FILES)"
+# Generate list of dependencies
 deps: files
 	@make files > files.txt
 	@perl $(CONFIG)/deps.pl files.txt
@@ -114,14 +135,13 @@ info:
 	@echo "$B  PATCH       $N= $(PATCH)"
 	@echo "$B  VPATH       $N= $(VPATH)"
 	@echo "$B  MHD         $N= $(MHD)"
-	@echo "$B  OBJ         $N= $(OBJ)"
 	@echo "$B  PROG        $N= $(PROG).o"
 	@echo "$B  OPTS        $N= $(OPTS)"
 	@echo "$B  OPT         $N= $(OPT)"
 	@echo "$B  HW          $N= $(HW)"
 	@echo "$B  DEBUG       $N= $(DEBUG)"
 	@echo "$B  PAR         $N= $(PAR)"
-	@echo "$B  F90         $N= $(F90)"
+	@echo "$B  FC          $N= $(FC)"
 	@echo "$B  LD          $N= $(LD)"
 	@echo "$B  FFLAGS      $N= $(FFLAGS)"
 	@echo "$B  LDFLAGS     $N= $(LDFLAGS)"
