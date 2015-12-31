@@ -73,6 +73,9 @@ SUBROUTINE init (self)
     end do
     end do
   end if
+associate (l=>self%li, u=>self%ui)
+  print*,'mass:',sum(self%d%f(l(1):u(1),l(2):u(2),l(3):u(3)))*product(self%ds)
+end associate
   !-----------------------------------------------------------------------------
   ! Initial condition for phi
   !-----------------------------------------------------------------------------

@@ -5,6 +5,7 @@
 MODULE patches_mod
   USE trace_mod
   USE io_mod
+  USE omp_timer_mod
   USE bits_mod
   implicit none
   integer, parameter:: ntime=7
@@ -12,12 +13,12 @@ MODULE patches_mod
   type, public:: patch_t
     integer:: id = 0
     integer:: nt = ntime, nv = 5
-    integer:: n(3), ng(3)=2, gn(3), li(3), ui(3)
+    integer:: n(3), ng(3)=2, gn(3), li(3), ui(3), lb(3), ub(3)
     integer:: it=1, new=2
     integer:: i, j, k
     integer:: status
     integer, pointer:: iit(:)
-    real, dimension(3):: position, size, gsize, box=1, ds, origin
+    real, dimension(3):: position, size, gsize, box=1, ds, origin, offset
     real, pointer:: t(:)
     real, pointer:: dt(:)
     real:: time=0.0, dtime=0.1, end_time=1.0, grace=0.0
@@ -38,15 +39,18 @@ MODULE patches_mod
     procedure:: output
     procedure:: distance        ! return the distance btw two patches
     procedure:: overlaps        ! return true if they overlap (incl. ghost zones)
-    procedure:: index_range     ! returns the index ranges btw two points
+    procedure:: upload_range    ! returns the index ranges btw two points
+    procedure:: dnload_range    ! returns the index ranges btw two points
     procedure:: indices         ! computes indices and fractional indices
     procedure:: index           ! compute the index for a single point
+    procedure:: nearest         ! the nearest index that maps to patch point
+    procedure:: lowest          ! the lowest index that maps to patch point
+    procedure:: highest         ! the highest index that maps to patch point
     procedure:: set
     procedure:: clear
     procedure:: is_set
     procedure:: is_clear
     procedure:: ahead_of
-    procedure:: is_relevant_for
     procedure:: download_to
     procedure:: myposition
     procedure:: fmaxval         ! interior max value
@@ -65,6 +69,7 @@ SUBROUTINE init (self)
   class(patch_t):: self
   integer:: dims(5) = 6
   logical:: first_time = .true.
+  real:: position(3)
   namelist /patch_params/ dims
   !.............................................................................
   call trace_begin ('patch_t%init', 3)
@@ -99,8 +104,11 @@ SUBROUTINE init (self)
   end where
   self%gn = self%n + 2*self%ng                  ! including guard cells
   self%gsize = self%size*real(self%gn,kind=8)/self%n ! size incl guard cells
+  self%lb = 1                                   ! lower guard zone index
   self%li = 1       + self%ng                   ! lower interior index
   self%ui = self%gn - self%ng                   ! upper interior index
+  self%ub = self%gn                             ! upper guard zone index
+  self%offset = (self%lb+self%ub)/2.0           ! mid point index offset
   self%nt = dims(4)                             ! number of time slices
   self%nv = dims(5)                             ! number of variables
   self%level = log(maxval(self%box)/minval(self%ds))/log(real(msplit)) + 0.1
@@ -117,8 +125,25 @@ SUBROUTINE init (self)
   end if
   self%t = 0.0                                  ! initial time
   self%iit = 1                                  ! initial memory slots
+  if (self%id<=3) call test_patch (self)
   call trace_end
 END SUBROUTINE init
+
+!> =============================================================================
+SUBROUTINE test_patch (self)
+  class(patch_t):: self
+  real, dimension(3):: pos, f
+  integer, dimension(3):: ii, nn
+  integer:: i
+  !.............................................................................
+  print *, 'test_patch:', self%id
+  do i=self%lb(1),self%ub(1)
+    pos = self%myposition([i,i,i])
+    ii = self%index(self, [i,i,i], f)
+    nn = self%nearest(self, [i,i,i])
+    print '(i4,2(3f7.3,3i4))', i, pos, ii, f, nn
+  end do
+END SUBROUTINE test_patch
 
 !> =============================================================================
 SUBROUTINE solve (self)
@@ -155,7 +180,7 @@ END SUBROUTINE update_patch
 
 !> =============================================================================
 !> Download values from the source (self) to the target (patch), trying to get
-!> all cells in the tager if "all_target" is true, and only guard cells if not.
+!> all cells in the target if "all_target" is true, and only guard cells if not.
 !> We use myposition() to map an index position in the target patch to an
 !> absolute position, and then index() to get the integer and floating point
 !> position in the source patch.  With that, we make a tri-linear interpolation.
@@ -168,15 +193,15 @@ SUBROUTINE download_to (self, patch, only_down, all_cells)
   logical, optional:: all_cells
   integer:: only_down
   logical:: all_target
-  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), n, only_down_
-  real:: f(3), pos(3)
+  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), ntot, nuse, only_down_
+  integer, dimension(3):: l1, u1, l2, u2
+  real:: f(3), pos(3), weight
   !.............................................................................
 !  if (self%id==patch%id .and. all(patch%size /= box%size)) return
   if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','index:self,patch:', &
     self%id,self%position,patch%id,patch%position, self%li, self%ui
 associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
   it = patch%it
-  n = 0
   !-----------------------------------------------------------------------------
   ! Download rules:  1) Always download guard cells.  2) Download all cells if
   ! a) all_cells is set, and the source level is at most one level higher. In
@@ -184,48 +209,115 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
   ! b) the level is one level higher
   !-----------------------------------------------------------------------------
   do iv=1,self%nv
-    all_target = .true.
-    if (self%level <= patch%level) all_target = .false.   ! do not upload from below
+    all_target = .true.                                   ! default: use all points
+    if (self%level <= patch%level) all_target = .false.   ! only upload from deeper levels
     if (present(all_cells)) all_target = .true.           ! unless told to do so
     if ((self%level-patch%level) > 1) return              ! upload at most 1 level
-    if (iv==only_down) then
+    if (iv==only_down) then                               ! if the variable is phi
       if (self%level >= patch%level) cycle                ! only download phi from lower levels
       !all_target = .true.                                 ! interior + guard cells
       !if (io%verbose>0) &
       !  print'(10(1x,a,i6,3x))', 'patch', patch%id, 'at level', patch%level, &
       !  'downloading variable', only_down, 'from patch', self%id, 'level', self%level
     end if
-    do iz=1,patch%gn(3)
-    do iy=1,patch%gn(2)
-    do ix=1,patch%gn(1)
-      ii = [ix,iy,iz]
-      !---------------------------------------------------------------------------
-      ! Check if the target point is the guard zone region (= not inside)
-      !---------------------------------------------------------------------------
-      if (all_target .or. .not.all((ii >= patch%li) .and. (ii <= patch%ui))) then
-        pos = patch%myposition(ii)
-        j0 = self%index (pos, f)
+
+    !---------------------------------------------------------------------------
+    ! When the source resolution is higher than the target resolution, all cells
+    ! in the source need to be distributed over the nearest cells in the target.
+    ! First, we need to find the index ranges in the source that map entirely
+    ! into the target. For simplicity, we first ignore the periodic mapping of
+    ! the box, and assume all patches are inside the box.  Then the range of an
+    ! index is the cross section of the whole source range with the range of
+    ! target mapped into the source. Since this is to be used for uploading,
+    ! there is no need to go the very limit, so to keep things simple we require
+    ! a target point to exist both above and below a source point, for it to be
+    ! included in the range.
+    !---------------------------------------------------------------------------
+    if (self%level > patch%level) then                    ! source has finer cells
+      !-------------------------------------------------------------------------
+      ! upload_range (p1, p2, li, ui, l1, u1, l2, u2) gives the index ranges in
+      ! patches p1 and p2, respectively, corresponding to p2%li and p2%ui, of a
+      ! region inside p2%li-p2%ui, which is also inside p1%lb-p1%ub. In this 
+      ! context p1 (patch) is the target patch, and p2 (self) is the source patch.
+      !-------------------------------------------------------------------------
+      call patch%upload_range (self, l1, u1, l2, u2)
+      !print '(2(a,i4,2(2x,3i4)))', &
+        !'uploading to patch', patch%id, l1, u1, ' from patch', self%id, l2, u2
+      target(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),iv,it,1) = 0.0
+      weight = product(self%ds)/product(patch%ds)
+      !-------------------------------------------------------------------------
+      ! If we are using all target points, this is a straight loop, in which
+      ! the calculation of the target index is the most costly part, so it may
+      ! be a good idea to use an inline expression here.
+      !-------------------------------------------------------------------------
+      if (all_target) then
+        do iz=l2(3),u2(3)
+        do iy=l2(2),u2(2)
+        do ix=l2(1),u2(1)
+          ii = [ix,iy,iz]
+          j0 = patch%nearest (self, ii)
+         !j0 = nint(patch%offset+(self%position+(index-self%offset)*self%ds-patch%position)/patch%ds)
+          target(j0(1),j0(2),j0(3),iv,it,1) = &
+          target(j0(1),j0(2),j0(3),iv,it,1) + weight*source(ix,iy,iz,iv,it,1)
+        end do
+        end do
+        end do
+      !-------------------------------------------------------------------------
+      ! If we are only using guard cells we just need to exclude the interior of
+      ! the target.  This is much simpler and cheaper than treating all 26 guard
+      ! zone regions separately. For 15-16 cell interiors with 2+2 guard cells
+      ! the number of excluded points is roughly half of all points considered.
+      !-------------------------------------------------------------------------
+      else
+        do iz=l2(3),u2(3)
+        do iy=l2(2),u2(2)
+        do ix=l2(1),u2(1)
+          ii = [ix,iy,iz]
+          j0 = patch%nearest (self, ii)
+          if (any(j0 >= patch%li .or. j0 <= patch%ui)) cycle
+          target(j0(1),j0(2),j0(3),iv,it,1) = &
+          target(j0(1),j0(2),j0(3),iv,it,1) + weight*source(ix,iy,iz,iv,it,1)
+        end do
+        end do
+        end do
+      end if
+    else
+      call patch%dnload_range (self, l1, u1)
+      ntot = 0
+      nuse = 0
+      !do iz=1,patch%gn(3)
+      !do iy=1,patch%gn(2)
+      !do ix=1,patch%gn(1)
+      do iz=l1(3),u1(3)
+      do iy=l1(2),u1(2)
+      do ix=l1(1),u1(1)
+        ntot = ntot+1
+        ii = [ix,iy,iz]
         !---------------------------------------------------------------------------
-        ! Check that the source in in the internal region (= not guard zone)
+        ! Check if the target point is in the guard zone region (= not inside)
         !---------------------------------------------------------------------------
-        if (all((j0+f >= self%li-0.1) .and. (j0+f <= self%ui+0.1) .or. (self%n==1))) then
-          if (io%verbose>3.and.patch%id==10) print'(a,2(i4,2x,3i4,2x),1p,2(3f9.4,2x),2x,2f11.6," ****")', &
-            'index:ii,j0,f:', patch%id, ii,  self%id, j0, f, pos, self%t(it)-patch%t(it)
-          j1 = j0+1
-          where (j1 > self%ui)
-            j0 = j0-1
-            j1 = j1-1
-            f  = f+1.0
-          end where
-          where (j0 < self%li)
-            j0 = j0+1
-            j1 = j1+1
-            f  = f-1.0
-          end where
-          where (self%n==1)
-            j0 = 1
-            j1 = 1
-          end where
+        if (all_target .or. .not.all((ii >= patch%li) .and. (ii <= patch%ui))) then
+          j0 = self%index (patch, ii, f)
+          if (patch%id==12.and.self%id==8) print*,'xx',ii,j0
+          !---------------------------------------------------------------------------
+          ! Check that the source is in the internal region (= not guard zone)
+          !---------------------------------------------------------------------------
+          if (all((j0+f >= self%li-0.1) .and. (j0+f <= self%ui+0.1) .or. (self%n==1))) then
+            j1 = j0+1
+            where (j1 > self%ui)
+              j0 = j0-1
+              j1 = j1-1
+              f  = f+1.0
+            end where
+            where (j0 < self%li)
+              j0 = j0+1
+              j1 = j1+1
+              f  = f-1.0
+            end where
+            where (self%n==1)
+              j0 = 1
+              j1 = 1
+            end where
             target(ix,iy,iz,iv,it,1) = &
               (1.-f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j0(3),iv,it,1)    &
                                      + f(1) *source(j1(1),j0(2),j0(3),iv,it,1)) + &
@@ -235,15 +327,29 @@ associate (source=>self%mem, target=>patch%mem, jm=>self%gn)
                                      + f(1) *source(j1(1),j0(2),j1(3),iv,it,1)) + &
               (   f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j1(3),iv,it,1)    &
                                      + f(1) *source(j1(1),j1(2),j1(3),iv,it,1))
-          n = n+1
+            if (patch%id==1 .and. ix==10 .and. iy==10 .and. iz==10 .and. iv==1) &
+              print'(a,4i4,3f8.2,2x,8f8.2,3x,f8.2)','download:',self%id,j0,f, &
+                                             source(j0(1),j0(2),j0(3),iv,it,1), &
+                                             source(j1(1),j0(2),j0(3),iv,it,1), &
+                                             source(j0(1),j1(2),j0(3),iv,it,1), &
+                                             source(j1(1),j1(2),j0(3),iv,it,1), &
+                                             source(j0(1),j0(2),j1(3),iv,it,1), &
+                                             source(j1(1),j0(2),j1(3),iv,it,1), &
+                                             source(j0(1),j1(2),j1(3),iv,it,1), &
+                                             source(j1(1),j1(2),j1(3),iv,it,1), &
+                                             target(ix,iy,iz,iv,it,1)
+            nuse = nuse+1
+          end if
         end if
-      end if
-    end do
-    end do
-    end do
+      end do
+      end do
+      end do
+    end if
+    if (patch%id==1) print'(7(1x,a,i7,1x))', 'patch 1, var', iv, ' at level', patch%level, &
+      ' picked up', nuse, 'of', ntot, ' points from patch', self%id, ' at level', self%level
   end do
-  if (io%verbose > 3) print'(6(1x,a,i7,1x))', 'patch', patch%id, ' level', patch%level, &
-    ' picked up', n, ' points from patch', self%id, ' at level', self%level
+  if (io%verbose > 3) print'(7(1x,a,i7,1x))', 'patch', patch%id, ' level', patch%level, &
+    ' picked up', nuse, 'of', ntot, ' points from patch', self%id, ' at level', self%level
   if (patch%t(patch%it)/=self%t(patch%it)) &
     print'(2(a,i4,f9.4,4x),2i3,2x,5i3,7f8.3)','ERROR: patch:', patch%id, patch%t(patch%it), &
       'self:', self%id, self%t(self%it), patch%it, patch%new, patch%iit, patch%t
@@ -257,7 +363,7 @@ FUNCTION myposition (self, ii) RESULT(out)
   real:: out(3)
   integer:: ii(3)
   !.............................................................................
-  out = self%origin + (ii-self%li + 0.5)*self%ds
+  out = self%position + (ii-self%offset)*self%ds
 END FUNCTION
 
 !> =============================================================================
@@ -379,8 +485,12 @@ SUBROUTINE output (self)
   ! If the out_next time has passed, set a new time = the integer number of
   ! out_time's that have passed, plus one more
   !-----------------------------------------------------------------------------
-  if (self%time < self%out_next) return
-  self%out_next = self%out_time*int(self%time/self%out_time) + self%out_time
+  if (self%time+0.5*self%dtime < self%out_next) return
+  if (self%time==0.0) then
+    self%out_next = self%out_time
+  else
+    self%out_next = self%out_time*int((self%time+self%dtime)/self%out_time) + self%out_time
+  end if
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
@@ -437,20 +547,45 @@ end associate
   call trace_end
 END SUBROUTINE output
 !> =============================================================================
-FUNCTION index_range (self, position)
-  class(patch_t):: self
-  real:: position(3)
-  integer:: index_range(3,2)
-  integer:: dir
-  !.............................................................................
-  print '(1x,a,2(3x,3f8.3))',   'positions:', position
-  do dir=1,3
-    index_range(:,dir) = int(modulo(position(dir)-self%origin, self%box)/self%ds + 1.5)
-    index_range(:,dir) = max(1, min(self%gn, index_range(:,dir)))
-    print '(1x,a,2(3x,i3,a,i3))', 'index range:', &
-      index_range(1,dir), ' - ', index_range(2,dir)
-  end do
-END FUNCTION index_range
+!> Find the p1 target and p2 source index ranges that correspond to the overlap
+!> region, for upload from p2 to p1 (p1 has higher level than p2)
+!> =============================================================================
+SUBROUTINE upload_range (p1, p2, l1, u1, l2, u2)
+  class(patch_t):: p1
+  class(patch_t):: p2
+  integer, dimension(3):: l1, u1, l2, u2
+  real, dimension(3):: f, pos1, pos2
+  !-----------------------------------------------------------------------------
+  ! Lower index limits
+  !-----------------------------------------------------------------------------
+  print*, p1%id, ' target position, size:', p1%position, p1%size
+  print*, p2%id, ' source position, size:', p2%position, p2%size
+  l2 = max(p2%li, p2%lowest  (p1, p1%lb))
+  u2 = min(p2%ui, p2%highest (p1, p1%ub))
+  l1 = p1%nearest (p2, l2)
+  u1 = p1%nearest (p2, u2)
+  print*,'l1,l2', l1, l2
+  print*,'u1,u2', u1, u2
+END SUBROUTINE upload_range
+!> =============================================================================
+!> Find the p1 target index ranges that correspond to the overlap region, for
+!> download from p2 to p1 (p1 has lower or the same level as p2)
+!> =============================================================================
+SUBROUTINE dnload_range (p1, p2, l1, u1)
+  class(patch_t):: p1
+  class(patch_t):: p2
+  integer, dimension(3):: l1, u1
+  real, dimension(3):: f, pos1, pos2
+  !-----------------------------------------------------------------------------
+  ! Lower index limits
+  !-----------------------------------------------------------------------------
+  print*, p1%id, ' target position, size:', p1%position, p1%size
+  print*, p2%id, ' source position, size:', p2%position, p2%size
+  l1 = max(p1%lb, p1%lowest  (p2, p2%li))
+  u1 = min(p1%ub, p1%highest (p2, p2%ui))
+  print*,'l1', l1
+  print*,'u1', u1
+END SUBROUTINE dnload_range
 !> =============================================================================
 SUBROUTINE indices (self, np, p, ii, f)
   class(patch_t):: self
@@ -467,66 +602,100 @@ SUBROUTINE indices (self, np, p, ii, f)
     end do
 END SUBROUTINE indices
 !> =============================================================================
-FUNCTION index (self, position, f)
-  class(patch_t):: self
-  real, dimension(3):: position, f
-  integer:: index(3)
+!> The nearest smaller index position in the self patch coordinate system.  The
+!> point with index self%lb is half a cell inside the patch guard size, so the
+!> floating point position is counted relative to that point, and is split into
+!> an integer part and a remainder.  For patches smaller than the box, the index
+!> may become both smaller than self%lb and larger than self%ub.  For the root
+!> grid patch, the index is in the range (li-1,ui) inside the interior.
+!> =============================================================================
+FUNCTION index (self, other, oindex, f)
+  class(patch_t):: self, other
+  real, dimension(3):: position, f, pos, pos_lb
+  integer, dimension(3):: index, oindex
   !.............................................................................
-  f = modulo(position - self%origin + self%li*self%ds, self%box)/self%ds - 0.5 + 1e-5
-  index = f
-  f = f - index
+  pos = other%position + (oindex-other%offset)*other%ds         ! position in other
+  pos = pos-self%position                                       ! relative
+  pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
+  f = self%offset + pos/self%ds                                 ! floating integer 
+  index = f                                                     ! smaller integer
+  f = f - index                                                 ! remainder
 END FUNCTION index
+!> =============================================================================
+!> The nearest index position in the self patch of the point in another patch.
+!> The cost of this operation is 4 plus and 2 multiply per direction = 18 flops
+!> =============================================================================
+FUNCTION nearest (self, other, index) RESULT (out)
+  class(patch_t):: self, other
+  integer, dimension(3):: out, index
+  real, dimension(3):: position, pos_lb, f, pos
+  !.............................................................................
+  pos = other%position + (index-other%offset)*other%ds          ! position in other
+  pos = pos-self%position                                       ! relative
+  pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
+  f = self%offset + pos/self%ds                                 ! floating integer 
+  out = nint(f)                                                 ! nearest integer
+END FUNCTION nearest
+!> =============================================================================
+!> The lowest index position in the self patch of the point in another patch
+!> =============================================================================
+FUNCTION lowest (self, other, index) RESULT (out)
+  class(patch_t):: self, other
+  integer, dimension(3):: out, index
+  real, dimension(3):: position, pos_lb, f, pos
+  !.............................................................................
+  pos = other%position + (index-other%offset-0.49)*other%ds     ! position in other
+  pos = pos-self%position                                       ! relative
+  pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
+  f = self%offset + pos/self%ds                                 ! floating integer 
+  out = nint(f)                                                 ! lowest integer
+END FUNCTION lowest
+!> =============================================================================
+!> The highest index position in the self patch of the point in another patch
+!> =============================================================================
+FUNCTION highest (self, other, index) RESULT (out)
+  class(patch_t):: self, other
+  integer, dimension(3):: out, index
+  real, dimension(3):: position, pos_lb, f, pos
+  !.............................................................................
+  pos = other%position + (index-other%offset+0.49)*other%ds     ! position in other
+  pos = pos-self%position                                       ! relative
+  pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
+  f = self%offset + pos/self%ds                                 ! floating integer 
+  out = nint(f)                                                 ! highest integer
+END FUNCTION highest
 
+!> =============================================================================
+!> Signed distance between two points in the periodic box
+!> =============================================================================
+FUNCTION point_distance (self, point1, point2) RESULT (out)
+  class (patch_t):: self
+  real(8), dimension(3):: point1, point2, out
+  !.............................................................................
+  out = point1 - point2
+  out = modulo(out+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box
+END FUNCTION point_distance
+!> =============================================================================
+!> Distance between the centers of two patches in the periodic box
 !> =============================================================================
 FUNCTION distance (self, patch)
   class(patch_t):: self, patch
-  real:: distance(3)
+  real(8):: distance(3)
   distance = self%position-patch%position
-  distance = abs(modulo(distance+0.5*self%box,max(self%box,1e-30))-0.5*self%box)
+  distance = abs(modulo(distance+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box)
 END FUNCTION distance
+!> =============================================================================
+!> Check if there is overlap, using the full size (including guard zones), since
+!> the guard zones may be used in interpolations for qualified time slices. The
+!> definition of overlap also MUST be symmetric, since it is being used to define
+!> neighbor relations.
 !> =============================================================================
 FUNCTION overlaps (self, patch)
   class(patch_t):: self, patch
   logical:: overlaps
-  integer:: idir
   !.............................................................................
-  if (minval(self%ds) <= minval(patch%ds)) then                                 ! make sure smallest guard zone is used
-    overlaps = all(distance(self,patch) <= 0.5000000001_8*(self%gsize+patch%size)) ! prologation needs at least an additional zone
-  else
-    overlaps = all(distance(self,patch) <= 0.5000000001_8*(self%size+patch%gsize))
-  endif
-END FUNCTION
-!> =============================================================================
-!> This is the relevance criterion if we don't need corner nbors
-!> We are checking if self is relevant for patch for guard cells
-!> This does not work if patch is embedded (a descendant) of self.
-!> =============================================================================
-LOGICAL FUNCTION is_relevant_for (self, patch)
-  class (patch_t):: self
-  class (patch_t), pointer:: patch
-  !
-  integer      :: dir, overlap
-  real(kind=8) :: dist(3), right_distance
-  logical      :: face, edge, corner
-  !............................................................................
-  dist = distance(self,patch)
-  overlap = 0
-  do dir=1,3
-    if (patch%n(dir)==1) cycle ! cycle if direction is passive
-    ! this is the right distance
-    right_distance = 0.5_8*(self%ds(dir)*self%n(dir) + patch%ds(dir)*patch%n(dir))
-    ! inc overlap counter if we are at the right distance. Compare with ds to avoid round-off errors
-    if (abs(dist(dir) - right_distance) < 0.1_8*min(self%ds(dir),patch%ds(dir))) &
-      overlap = overlap + 1
-  enddo
-
-  face = (overlap==1)
-  edge = (overlap==2)
-  corner = (overlap==3)
-
-  ! For now only check for face-overlap
-  is_relevant_for = face
-END FUNCTION
+  overlaps = all(distance(self,patch) <= 0.5000000001_8*(self%gsize+patch%gsize))
+END FUNCTION overlaps
 
 !> =============================================================================
 !> Set and clear status bits

@@ -6,7 +6,7 @@ solver='feautrier'
  a_gauss=0.10
  amplitude=27.
  temperature=10.
- cr_heating=4.4e-27
+ cr_heating=3.746e-24
 /
 &planck_params
 !debug=t n=20 xmin=0.01 xmax=1.

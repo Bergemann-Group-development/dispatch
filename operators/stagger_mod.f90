@@ -43,6 +43,7 @@ SUBROUTINE init (self, n, ds)
   real:: ds(3)
   !.............................................................................
   self%ds = ds
+  print*,'STAGGER',ds
   self%n = n
   self%l = 1
   self%u = n

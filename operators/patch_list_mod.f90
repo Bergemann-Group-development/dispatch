@@ -157,10 +157,10 @@ SUBROUTINE update (self)
           patch%id, ' no new head'
       end if
     end if
-    call patch%output                                   ! check output
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue
     end if
+    call patch%output                                   ! check output
     call patch%update                                   ! update the patch
     call patch%output                                   ! check output
     call self%check_nbors (head)                        ! any nbor ready?
@@ -261,10 +261,7 @@ SUBROUTINE split (self, this)
         !------------------------------------------------------------------------
         ! Insert the new patch at the head of the ready queue
         !------------------------------------------------------------------------
-        link%next_time => self%queue
-        self%queue => link
-        self%nq = self%nq+1
-        call patch%set (bits%ready)              ! make sure it's not added twice
+        call self%queue_by_time (link)          ! add patch to queue
         if (io%verbose>0) then
           print 1,'task_list_t%split:  patch, level, iout, time, size, origin =', &
             patch%id, patch%level, patch%iout, patch%time, patch%size, patch%origin
@@ -584,7 +581,9 @@ SUBROUTINE check_ready (self, link, set_debug)
 END SUBROUTINE check_ready
 
 !> =============================================================================
-!> Add a link node into the queue chain, in ascending time order
+!> Add a link node into the queue chain, in ascending time order.  When a link
+!> to a patch with time larger than this%patch%time is found, or the end of the
+!> list is fount, this link is inserted before.
 !> =============================================================================
 SUBROUTINE queue_by_time (self, this)
   class(patch_list_t):: self
@@ -596,12 +595,11 @@ SUBROUTINE queue_by_time (self, this)
   if (io%verbose>2) print'(1x,a,i6,a,f10.5)', 'list_t%queue_by_time: adding patch', &
     this%patch%id, ' at time', this%patch%time
   nullify (prev)
-
   next => self%queue
   do while (associated(next))
     if (associated(next%patch, this%patch)) then
       print*,'WARNMING: patch', this%patch%id, ' is already on ready queue'
-    else if (next%patch%time >= this%patch%time) then
+    else if (next%patch%time > this%patch%time) then
       this%next_time => next
       if (associated(prev)) then
         prev%next_time => this
@@ -609,6 +607,7 @@ SUBROUTINE queue_by_time (self, this)
         self%queue => this
       end if
       self%nq = self%nq+1
+      print*, 'added', this%patch%id, ' after', prev%patch%id
       call trace_end
       return
     end if
@@ -618,8 +617,10 @@ SUBROUTINE queue_by_time (self, this)
   self%nq = self%nq+1
   if (associated(prev)) then
     prev%next_time => this
+    print*, 'added', this%patch%id, ' after', prev%patch%id
   else
     self%queue => this
+    print*, 'added', this%patch%id, ' as queue head'
   end if
   nullify (this%next_time)
   call trace_end
@@ -690,7 +691,7 @@ SUBROUTINE download (self, all_cells)
   nguard=0
   do while (associated (nbor))
     if (abs(self%patch%level-patch%level) < 2) then
-      if (patch%level == self%patch%level-1) special = 6
+      if (nbor%patch%level == patch%level+1) special = 6
       call nbor%patch%pde_t%download_to (patch, special, all_cells)
     end if
     nbor => nbor%next
