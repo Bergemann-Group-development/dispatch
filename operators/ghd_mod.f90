@@ -135,10 +135,10 @@ SUBROUTINE download_to (self, patch, only_down, all_cells)
   class(ghd_t):: self
   class(patch_t), pointer:: patch
   integer:: only_down
-  logical, optional:: all_cells
+  logical:: all_cells
   !.............................................................................
   only_down = 6
-  call self%patch_t%download_to (patch, only_down)
+  call self%patch_t%download_to (patch, only_down, all_cells)
 END SUBROUTINE download_to
 
 !> =============================================================================

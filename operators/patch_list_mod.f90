@@ -147,7 +147,7 @@ SUBROUTINE update (self)
     self%queue => self%queue%next_time                  ! update the link
     self%nq = self%nq-1
     patch => head%patch                                 ! head patch
-    call head%download                                  ! guard cells & interior
+    call head%download (all_cells=.false.)              ! guard cells
     if (io%verbose > 1) then
       if (associated(self%queue)) then
         print*,'patch_list_t%update: removed from queue =', &
@@ -164,7 +164,7 @@ SUBROUTINE update (self)
     call patch%update                                   ! update the patch
     call patch%output                                   ! check output
     call self%check_nbors (head)                        ! any nbor ready?
-    if (patch%time > patch%end_time) then               ! finished:
+    if (patch%time+0.5*patch%dtime > patch%end_time) then ! finished:
       end_game = .true.
       call self%remove_patch (patch)                    ! remove from self
     else                                                ! not finished:
@@ -243,8 +243,13 @@ SUBROUTINE split (self, this)
         patch%size = this%patch%size/nsplit             ! new size
         patch%position = this%patch%position + pos*patch%size
         call patch%init                                 ! patch, for a new id
+        patch%t   = this%patch%t                        ! newly allocated
+        patch%dt  = this%patch%dt                       ! newly allocated
+        patch%iit = this%patch%iit                      ! newly allocated
+        !print*,'mk1: id,it,it,new,new',patch%id,patch%it,this%patch%it,patch%new,this%patch%new
+        !print*,'mk2; id,it,iit',patch%id,this%patch%it, this%patch%iit
+        patch%iit(1:patch%nt-1) = this%patch%it         ! fake history
         patch%out_next = patch%time                     ! force output now
-        patch%iout = this%patch%iout                    ! copy counter
         !------------------------------------------------------------------------
         ! Append links to the new patch in the patch list, sorted by quality
         !------------------------------------------------------------------------
@@ -607,7 +612,6 @@ SUBROUTINE queue_by_time (self, this)
         self%queue => this
       end if
       self%nq = self%nq+1
-      print*, 'added', this%patch%id, ' after', prev%patch%id
       call trace_end
       return
     end if
@@ -617,10 +621,8 @@ SUBROUTINE queue_by_time (self, this)
   self%nq = self%nq+1
   if (associated(prev)) then
     prev%next_time => this
-    print*, 'added', this%patch%id, ' after', prev%patch%id
   else
     self%queue => this
-    print*, 'added', this%patch%id, ' as queue head'
   end if
   nullify (this%next_time)
   call trace_end
@@ -675,7 +677,8 @@ SUBROUTINE add_by_quality (self, this)
 END SUBROUTINE add_by_quality
 
 !> =============================================================================
-!> Run through neighbor list and pick up guard cells
+!> Run through neighbor list and pick up guard cells, after which the whole 
+!> patch is valid for download into other patches guard cells
 !> =============================================================================
 SUBROUTINE download (self, all_cells)
   implicit none
@@ -684,6 +687,7 @@ SUBROUTINE download (self, all_cells)
   class (link_t),  pointer:: nbor
   class (patch_t), pointer:: patch
   integer :: nguard, special
+  real:: dmin
   !.............................................................................
   call trace_begin('link_t%download')
   nbor => self%nbors
@@ -691,11 +695,16 @@ SUBROUTINE download (self, all_cells)
   nguard=0
   do while (associated (nbor))
     if (abs(self%patch%level-patch%level) < 2) then
+      !dmin = minval(nbor%patch%mem(:,:,:,1,nbor%patch%it,1))
+      !if (dmin <= 0.0) print*,'MK1',nbor%patch%id,dmin
       if (nbor%patch%level == patch%level+1) special = 6
       call nbor%patch%pde_t%download_to (patch, special, all_cells)
     end if
+    !dmin = minval(self%patch%mem(:,:,:,1,self%patch%it,1))
+    !if (dmin <= 0.0) print*,'MK2',self%patch%id,dmin
     nbor => nbor%next
   end do
+  !print*,'MK', self%patch%id, self%patch%it, minval(self%patch%mem(:,:,:,1,self%patch%it,1))
   if (io%verbose > 5) &
     print *, 'download: Number of neighbors with guard cells:', nguard
   call trace_end

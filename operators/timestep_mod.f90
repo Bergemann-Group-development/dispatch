@@ -86,7 +86,7 @@ END SUBROUTINE init
 !************************************************************************
 SUBROUTINE update_timestep (self)
   class(timestep_t):: self
-  integer:: it, jt, kt, lt, nt
+  integer:: it, jt, kt, lt, nt, i(3), j(3)
   !......................................................................
   call trace_begin ('timestep_t%update', 1)
   call self%pde_t%update                        ! time derivative at it
@@ -109,6 +109,7 @@ SUBROUTINE update_timestep (self)
     print*,'dtime',self%dtime
     print*,'li,ui', self%li, self%ui
   end if
+  if (self%id==1) call self%periodic_grid       ! periodic root grid
   do jt=1,self%time_order                       ! loop over AB slot
     kt = self%iit(nt-jt)                        ! previous time slots
     !print*,'timestep',jt,nt,kt,lt
@@ -130,6 +131,14 @@ SUBROUTINE update_timestep (self)
         maxval(self%mem(:,:,:,:,lt,1))
     end if
   end do
+  !-----------------------------------------------------------------------------
+  ! Periodic wrapping, time extrapolation, time slot rotation
+  !-----------------------------------------------------------------------------
+  if (self%id==1) then
+    call self%periodic_grid                     ! periodic root grid
+  else
+    call self%extrapolate_guards                ! time-extrapolate guard cells
+  end if
   self%time = self%time + self%dtime            ! update self time
   call self%patch_t%update                      ! rotate time slots
   !-----------------------------------------------------------------------------
