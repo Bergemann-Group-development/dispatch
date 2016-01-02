@@ -268,11 +268,11 @@ SUBROUTINE split (self, this)
         !------------------------------------------------------------------------
         call self%queue_by_time (link)          ! add patch to queue
         if (io%verbose>0) then
-          print 1,'task_list_t%split:  patch, level, iout, time, size, origin =', &
-            patch%id, patch%level, patch%iout, patch%time, patch%size, patch%origin
+          print 1,'task_list_t%split:  patch, level, iout, time, size =', &
+            patch%id, patch%level, patch%iout, patch%time, patch%size
           1 format(a,3i6,f10.6,2(2x,3f8.4))
-          print 1,'task_list_t%split: parent, level, iout, time, size, origin =', &
-            this%patch%id, this%patch%level, this%patch%iout, this%patch%time, this%patch%size, this%patch%origin
+          print 1,'task_list_t%split: parent, level, iout, time, size =', &
+            this%patch%id, this%patch%level, this%patch%iout, this%patch%time, this%patch%size
         end if
       end do
     end do

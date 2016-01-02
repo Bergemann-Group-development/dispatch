@@ -18,7 +18,7 @@ MODULE patches_mod
     integer:: i, j, k
     integer:: status
     integer, pointer:: iit(:)
-    real, dimension(3):: position, size, gsize, box=1, ds, origin, offset
+    real, dimension(3):: position, size, gsize, box=1, ds, offset
     real, pointer:: t(:)
     real, pointer:: dt(:)
     real:: time=0.0, dtime=0.1, end_time=1.0, grace=0.0
@@ -41,7 +41,6 @@ MODULE patches_mod
     procedure:: overlaps        ! return true if they overlap (incl. ghost zones)
     procedure:: upload_range    ! returns the index ranges btw two points
     procedure:: dnload_range    ! returns the index ranges btw two points
-    procedure:: indices         ! computes indices and fractional indices
     procedure:: index           ! compute the index for a single point
     procedure:: nearest         ! the nearest index that maps to patch point
     procedure:: lowest          ! the lowest index that maps to patch point
@@ -94,7 +93,6 @@ SUBROUTINE init (self)
   self%status=0
   self%end_time=end_time
   self%out_time=out_time
-  self%origin = self%position - 0.5*self%size   ! physical origin -- already defined
   self%n  = dims(1:3)                           ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   where (self%n==1)                             ! for collapsed dimensions
@@ -423,112 +421,6 @@ END SUBROUTINE extrapolate_guards
 !> =============================================================================
 
 !> =============================================================================
-!> Get guard cells for "patch" using active cells in "self"
-SUBROUTINE troels_get_guardcells_for (self, patch)
-  class(patch_t):: self
-  class(patch_t), pointer:: patch
-  !
-  integer :: ls(3), us(3), lp(3), up(3), dir, it
-  real(kind=8) :: rlb(3), rub(3), origin(3), hs
-  integer :: nprint=100
-  !
-  ! Check if the two patches have same size
-  if (maxval(abs(patch%ds-self%ds)/max(patch%ds,self%ds)) < 1e-5) then  ! we are on the same level
-    ! Get real lower and upper boundary with possible wrap-around
-    rlb = self%position-(self%n/2+1e-5_8)*self%ds ! go slightly below lower boundary
-    rub = self%position+(self%n/2+1e-5_8)*self%ds ! go slightly above upper boundary
-
-    ! Troels: if you need a global origin you have to put it in a different variable -- presumably
-    ! a globale one (e.g. in patch_list_mod) -- this one is taken.  But it is also obvious, that
-    ! the only information needed is the relative position btw self and patch, so this "origin"
-    ! is redundant.
-    !origin = self%origin                            ! global lower boundary in box
-    rlb = modulo(rlb - origin, max(self%box,1e-30)) + origin   ! wrap around to stay inside box
-    rub = modulo(rub - origin, max(self%box,1e-30)) + origin
-    where(self%n==1)
-      rlb=0.
-      rub=0.
-    endwhere
-    if (io%verbose > 4) then
-      print *, 'self, patch id :', self%id, patch%id
-      print *, 'rlb for self:', rlb
-      print *, 'rub for self:', rub
-      print *, 'patch positi:', patch%position
-      print *, 'patch size  :', patch%size
-    endif
-    !
-    ! check if we can get guard cells in a given direction
-    do dir=1,3
-      if (patch%n(dir)==1) cycle                                         ! exclude inactive dimensions
-      hs = 0.5_8 * patch%size(dir)
-      ! check lower boundary
-      if (abs(patch%position(dir) - rub(dir)) < hs) then
-        ! We are overlapping in this direction, exchange data
-        ls = 1; us=self%gn
-        ls(dir) = self%ui(dir) - patch%ng(dir) + 1
-        us(dir) = self%ui(dir)
-
-        lp = 1; up=patch%gn
-        lp(dir) = 1
-        up(dir) = patch%li(dir) - 1
-
-        ! copy data
-        do it=self%nt,1,-1
-          if (self%t(self%iit(it))==patch%time) then
-            patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
-             self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%iit(it),:)
-            exit
-          endif
-        enddo
-
-        if (io%verbose > 4) then
-          print *, 'Overlapping in lower boundary:', dir
-          print *, 'Patch (receiver):', lp, up, up-lp+1
-          print *, 'Self  (donor)   :', ls, us, us-ls+1
-          print *, 'Patch time      :', patch%it, patch%time
-          print *, 'Self  time      :', it, self%t(self%iit(it))
-          nprint = nprint - 1
-          if (nprint==0) stop
-        endif
-      endif
-      ! check upper boundary
-      if (abs(rlb(dir)-patch%position(dir)) < hs) then
-        ! We are overlapping in this direction, exchange data
-        ls = 1; us=self%gn
-        ls(dir) = patch%li(dir)
-        us(dir) = patch%li(dir) + patch%ng(dir) - 1
-
-        lp = 1; up=patch%gn
-        lp(dir) = patch%ui(dir) + 1
-        up(dir) = patch%gn(dir)
-
-        ! copy data
-        do it=self%nt,1,-1
-          if (self%t(self%iit(it))==patch%time) then
-            patch%mem(lp(1):up(1),lp(2):up(2),lp(3):up(3),:,patch%it,:) = &
-             self%mem(ls(1):us(1),ls(2):us(2),ls(3):us(3),:,self%iit(it),:)
-            exit
-          endif
-        enddo
-
-        if (io%verbose > 4) then
-          print *, 'Overlapping in upper boundary:', dir
-          print *, 'Patch (receiver):', lp, up, up-lp+1
-          print *, 'Self  (donor)   :', ls, us, us-ls+1
-          print *, 'Patch time      :', patch%it, patch%time
-          print *, 'Self  time      :', it, self%t(self%iit(it))
-          nprint = nprint - 1
-          if (nprint==0) then
-            print *, 'Max prints reached in guard cells. Stopping.'
-            stop
-          endif
-        endif
-      endif
-    enddo
-  endif
-END SUBROUTINE troels_get_guardcells_for
-
-!> =============================================================================
 !> Write results to disk
 !> =============================================================================
 SUBROUTINE output (self)
@@ -648,21 +540,6 @@ SUBROUTINE dnload_range (p1, p2, l1, u1)
     end where
   end if
 END SUBROUTINE dnload_range
-!> =============================================================================
-SUBROUTINE indices (self, np, p, ii, f)
-  class(patch_t):: self
-  real:: p(np), f(np,3)
-  integer:: np, dir, ii(np,3), i
-  !.............................................................................
-  do dir=1,3
-    f(:,dir) = modulo(p-self%origin(dir), self%box(dir))/self%ds(dir) + 1.5
-    ii(:,dir) = max(1, min(self%gn(dir), int(f(:,dir))))
-      end do
-  f = f-ii
-  do i=1,np
-    print'(i4,3x,a,3i4,3x,a,3f8.3)', i, 'index:', ii(i,:), 'fraction:', f(i,:)
-  end do
-END SUBROUTINE indices
 !> =============================================================================
 !> The nearest smaller index position in the self patch coordinate system.  The
 !> point with index self%lb is half a cell inside the patch guard size, so the
