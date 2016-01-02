@@ -1,0 +1,13 @@
+&star_params
+ mass=1.0
+ grav=1.0
+/
+&particle_params
+ dtime=0.1
+ end_time=10.
+ out_time=1.0
+/
+&io_params
+ do_trace=f
+ verbose=0
+/
