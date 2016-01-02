@@ -14,13 +14,15 @@ def read(filename, shape):
     fd=open(filename,'rb')
     dd=fromfile(file=fd, dtype=float32, count=prod(shape)).reshape(shape)
     dd=np.transpose(dd)
-    im = np.log(dd[:,:,n/2])
+    im = dd[:,:,n/2]
+    im = np.log10(dd[:,:,n/2])
+    print 'Density:', np.min(dd), np.max(dd)
     return im
 
 def update(*args):
     global image, i
     i = i + 1
-    if(i>38): return
+    if(i>91): return
     filename='data/BE_{:0=3d}_{:0=4d}.dat'.format(taskid,i)
     im = read(filename, shape)
     image.set_data(im)
@@ -32,5 +34,5 @@ im = read(filename, shape)
 # Show a central slice of log(density)
 image = imshow(im,interpolation='nearest')
 colorbar()
-ani = animation.FuncAnimation(fig, update, interval=200, blit=False)
+ani = animation.FuncAnimation(fig, update, interval=500, blit=False)
 show()
