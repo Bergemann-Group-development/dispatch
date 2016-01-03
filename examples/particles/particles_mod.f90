@@ -96,7 +96,7 @@ SUBROUTINE update (self)
       a = star%central_force (p%r)              ! acceleration
       dt = sqrt(sum(p%v**2)/sum(a**2)) &        ! ratio of speed to acceleration
            * self%courant                       ! particle Courant number
-      dt = min(self%dtime, dt)                  ! don't overshoot
+      dt = min(self%time - p%t, dt)             ! don't overshoot
       p%v = p%v + a*dt*0.5                      ! kick
       p%r = p%r + p%v*dt                        ! drift
       a = star%central_force (p%r)              ! acceleration
