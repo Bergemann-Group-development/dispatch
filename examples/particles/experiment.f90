@@ -11,9 +11,9 @@ PROGRAM experiment
   !.............................................................................
   call particles%init
   call tic
-  do while (particles%time < particles%end_time)
-    call particles%update
-  end do
+  call particles%update
+  call toc ('particle update', particles%n_step)
+
   particles%dt_aver = particles%dt_aver/particles%n_step
   particles%dt_harmonic = particles%n_step/particles%dt_harmonic
   print'(4(a,1p,e10.2/))', &
@@ -21,15 +21,10 @@ PROGRAM experiment
    '    dt_aver:', particles%dt_aver, &
    'dt_harmonic:', particles%dt_harmonic, &
    '     dt_max:', particles%dt_max
-  call toc ('particle update', particles%n_step)
 
   call particles%init
+  call tic
   call particles%update_cache
-
-  !call particles%init
-  !call particles%update
-  !do while (particles%time < particles%end_time)
-  !  call particles%update_bags
-  !end do
+  call toc ('particle update_cache', particles%n_step)
 !> =============================================================================
 END PROGRAM experiment

@@ -13,31 +13,23 @@ MODULE particles_mod
   implicit none
   private
   type, public, extends(task_t):: particle_task_t
-    type(particle_t), pointer:: head => null()    ! particle list head
-    integer:: n
-    integer:: n_step
-    integer:: n_list
-    real:: mass
-    real:: radius
-    real:: dispersion
-    real:: dt_min
-    real:: dt_aver
-    real:: dt_harmonic
-    real:: dt_max
-    real:: courant
+    type(particle_t), pointer:: head => null()  ! particle list head
+    integer:: n                                 ! number of particles
+    integer:: n_step                            ! number of steps taken
+    integer:: n_list                            ! switch to list when these remain
+    real:: mass                                 ! total particle mass
+    real:: radius                               ! particle cloud radius
+    real:: dispersion                           ! velocity dispersion
+    real:: dt_min                               ! min time step
+    real:: dt_aver                              ! average time step
+    real:: dt_harmonic                          ! harmonic mean time step
+    real:: dt_max                               ! max time step
+    real:: courant                              ! "Courant" number
   contains
-    procedure:: init
-    procedure:: update
-    procedure:: update_cache
-    procedure:: update_bags
-    procedure:: output
-  end type
-  type, public:: particle_bag_t
-    integer:: n
-    real:: dt_max
-    real, dimension(:,:), pointer:: r, v
-    real, dimension(:), pointer:: dt
-    real(8), dimension(:), pointer:: t
+    procedure:: init                            ! initialize
+    procedure:: update                          ! update linked list
+    procedure:: update_cache                    ! update via array cache
+    procedure:: output                          ! output data
   end type
   type(random_t):: random
   type(star_t):: star
@@ -85,6 +77,9 @@ SUBROUTINE init (self)
   self%dt_aver = 0.0
   self%dt_harmonic = 0.0
   self%dt_max = 0.0
+  !-----------------------------------------------------------------------------
+  ! If new, allocate list of particles
+  !-----------------------------------------------------------------------------
   if (first_time) then
     do i=1,n
       allocate (p)
@@ -94,10 +89,10 @@ SUBROUTINE init (self)
       p%m = self%mass/n
       self%head => p
     end do
+  !-----------------------------------------------------------------------------
+  ! If already initialized, reset to new start
+  !-----------------------------------------------------------------------------
   else
-    !---------------------------------------------------------------------------
-    ! If already initialized, reset to new start
-    !---------------------------------------------------------------------------
     p => self%head
     do while (associated(p))
       p%t = 0.0
@@ -112,22 +107,22 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> Update particles using the Kick-Drift-Kick algorithm (Springel, 19xx).  The
-!> particles are advanced individually, but for a maximum time of self%dtime,
-!> which is intended to correspond to a typical patch update time.
+!> particles are advanced individually, for a time interval of about self%dtime,
+!> which is intended to correspond to a typical patch update time. There is no
+!> need to require particles to land exactly on the target time.
 !> =============================================================================
 SUBROUTINE update (self)
   class(particle_task_t):: self
-  real:: a(3)                                   ! force
-  real:: dt, r2, c1, c2
-  type(particle_t), pointer:: p
+  real:: a(3)                                   ! accelration
+  real:: dt, r2, c1, c2                         ! temporary data
+  type(particle_t), pointer:: p                 ! particle pointer
   !.............................................................................
   call trace_begin ('particles_mod%update', 3)
-  p => self%head
-  self%time = self%time + self%dtime            ! target time
-  c1 = 1./(star%m*star%g)
-  c2 = self%courant*c1
-  do while (associated(p))
-    do while (p%t < self%time)
+  p => self%head                                ! pointer to 1st particle
+  c1 = 1./(star%m*star%g)                       ! acceleration coefficient
+  c2 = self%courant*c1                          ! time step coefficient
+  do while (associated(p))                      ! for each list member
+    do while (p%t < self%end_time)              ! advance it to target time
       r2 = sum(p%r**2)                          ! radius square
       a = -p%r*(1./sqrt(r2))/r2*c1              ! 1./sqrt() is often fast
       dt = maxval(abs(p%v))*r2*c2               ! using maxval for speed
@@ -138,7 +133,7 @@ SUBROUTINE update (self)
       a = -p%r*(1./sqrt(r2))/r2*c1              ! acceleration
       p%v = p%v + a*dt*0.5                      ! kick
       p%t = p%t + dt                            ! increment time
-      p%dt = dt                                 ! save for "bagging"
+      p%dt = dt                                 ! save for analysis
       self%n_step = self%n_step+1               ! count steps
       self%dt_aver = self%dt_aver+dt            ! cost related measure
       self%dt_harmonic = self%dt_harmonic+1./dt ! cost related measure
@@ -151,7 +146,11 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !> =============================================================================
-!> Optimized update, using arrays for vectorization
+!> Optimized update, cashing into arrays for vectorization.  At the end of 
+!> each update sweep any particles that are finished are moved to the end of
+!> the array, and the number of still active particles is reduced.  When the
+!> number of remaining particles drops to a small number (parameter n_list),
+!> the remaining ones are updated in the linked list.
 !> =============================================================================
 SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   class(particle_task_t):: self
@@ -166,8 +165,8 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   integer:: i
   !...........................................................................
   allocate (r2(n), r3(n))
-  c1 = 1./(star%m*star%g)
-  c2 = self%courant*c1
+  c1 = 1./(star%m*star%g)                       ! acceleration coefficient
+  c2 = self%courant*c1                          ! time step coefficient
   !---------------------------------------------------------------------------
   ! Kick. Optimize by using 1./sqrt(), max norm, and by keeping r2 available
   !---------------------------------------------------------------------------
@@ -195,7 +194,9 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   end do
   self%n_step = self%n_step+n
   !---------------------------------------------------------------------------
-  ! Place any finished particles at the end
+  ! Place any finished particles at the end.  This could be made faster, by
+  ! storing in the unused position m+1, resulting in a gap that could be 
+  ! removed when finished.
   !---------------------------------------------------------------------------
   t_max = maxval(t)
   m = n
@@ -215,7 +216,10 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
 END SUBROUTINE update_arrays
 
 !> =============================================================================
-!> Check speed of updates when caching the linked list values in an array.
+!> Optimized update, cashing into arrays to be able to use update_arrays, which
+!> after each update sweep moves any particles that are finished to the end of
+!> the arrays.  When the number of remaining particles drops to a small number
+!> (parameter n_list), the remaining ones are updated in the linked list.
 !> =============================================================================
 SUBROUTINE update_cache (self)
   class(particle_task_t):: self
@@ -226,7 +230,7 @@ SUBROUTINE update_cache (self)
   real(8), dimension(:), pointer:: t
   real:: c1, c2, dt0
   integer:: i, j, m, n
-  real(8):: wc(5)
+  real(8):: t_min, wc(5) 
   !.............................................................................
   call trace_begin ('particles_mod%update', 3)
   n = self%n
@@ -234,15 +238,13 @@ SUBROUTINE update_cache (self)
   !-----------------------------------------------------------------------------
   ! Cache, for speed measuring purposes only, the positions and velocities
   !-----------------------------------------------------------------------------
-  wc(1) = wallclock()
-  call tic
+                                                             wc(1) = wallclock()
   dt0 = 0.0003
-  self%time = 0.0
   self%n_step = 0
   c1 = 1./(star%m*star%g)
   c2 = self%courant*c1
   !---------------------------------------------------------------------------
-  ! Pull list into array
+  ! Pull list date into arrays
   !---------------------------------------------------------------------------
   i = 0
   p => self%head
@@ -253,18 +255,18 @@ SUBROUTINE update_cache (self)
     t(i) = p%t
     p => p%next
   end do
-  wc(2) = wallclock()
+                                                           wc(2) = wallclock()
   !---------------------------------------------------------------------------
-  ! Update, while moving the finished ones to the end, and skipping them
+  ! Update, while moving the finished ones to the end, skipping them next time
   !---------------------------------------------------------------------------
   n = self%n
-  do while (self%time < self%end_time .and. n > self%n_list)
+  t_min = 0.0
+  do while (t_min < self%end_time .and. n > self%n_list)
     call update_arrays (self, n, m, r, v, dt, t)
-    self%time = minval(t(1:m))
+    t_min = minval(t(1:m))
     n = m
-    !print *, n, m, self%time, minval(dt(1:m)), maxval(dt(1:m))
   end do
-  wc(3) = wallclock()
+                                                           wc(3) = wallclock()
   !---------------------------------------------------------------------------
   ! Push back to list
   !---------------------------------------------------------------------------
@@ -278,126 +280,18 @@ SUBROUTINE update_cache (self)
     p%t = t(i)
     p => p%next
   end do
-  wc(4) = wallclock()
-  self%time = self%end_time - self%dtime
+                                                           wc(4) = wallclock()
   call update (self)
-  wc(5) = wallclock()
-  call toc ('update_cache', self%n_step)
+                                                           wc(5) = wallclock()
   deallocate (r, v, r2, r3, dt, t)
+  !---------------------------------------------------------------------------
+  ! Print timing info, measuring in milliseconds
+  !---------------------------------------------------------------------------
   wc(1:4) = wc(2:5)-wc(1:4)
   print*,'   gather     array   scatter      list'
   print'(3p,4f10.3)', wc(1:4)
   call trace_end
 END SUBROUTINE update_cache
-
-!> =============================================================================
-!> Distrubute the particles into "bags" with similar number of expected steps.
-!> Each bag construction and update requires running through the particle list
-!> =============================================================================
-SUBROUTINE update_bags (self)
-  class(particle_task_t):: self
-  type(particle_bag_t), dimension(:), pointer:: bag
-  type(particle_t), pointer:: p
-  real, dimension(:,:), pointer:: r, v
-  real, dimension(:), pointer:: r2, r3, dt
-  real:: c, dt_bag, t_min, t_max
-  integer:: i, j, n, n_bag, n_step, i_step
-  !---------------------------------------------------------------------------
-  ! Count how many bags we need, and allocate them (one extra for finished)
-  !---------------------------------------------------------------------------
-  print*,'============= update_bags =============='
-  dt_bag = self%dtime
-  n_bag = 0
-  do while (dt_bag > self%dt_min)
-    n_bag = n_bag+1
-    dt_bag = 0.5*dt_bag
-  end do
-  print *, 'n_bag:', n_bag
-  allocate (bag(0:n_bag))
-  !---------------------------------------------------------------------------
-  ! Count how many particles go into each bag, and allocate arrays
-  !---------------------------------------------------------------------------
-  print*,'count bag sizes'
-  p => self%head
-  bag(:)%n = 0
-  n = 0
-  p => self%head
-  do while (associated(p))
-    n = n+1
-    if (p%t > self%end_time .or. p%t > self%time + self%dtime) then
-      i = 0
-    else
-      i = 1.0 + log((self%time + self%dtime - p%t)/p%dt)/log(2.)
-    end if
-    !print*, n, i
-    i = min(n_bag,max(1,i))
-    bag(i)%n = bag(i)%n + 1
-    p => p%next
-  end do
-  do i=0,n_bag
-    bag(i)%dt_max = self%dt_max*0.5**(i-1)
-    print *, i, bag(i)%n, dt_bag
-    n = bag(i)%n
-    if (n > 0) &
-      allocate (bag(i)%r(n,3), bag(i)%v(n,3), bag(i)%dt(n), bag(i)%t(n))
-  end do
-  !---------------------------------------------------------------------------
-  ! Fill the bags
-  !---------------------------------------------------------------------------
-  print*,'fill bags'
-  bag(:)%n = 0
-  n = 0
-  p => self%head
-  do while (associated(p))
-    n = n+1
-    if (p%t > self%end_time .or. p%t > self%time + self%dtime) then
-      i = 0
-    else
-      i = 1.0 + log((self%time + self%dtime - p%t)/p%dt)/log(2.)
-    end if
-    i = min(n_bag,max(1,i))
-    bag(i)%n = bag(i)%n+1
-    !print *, n, i
-    bag(i)%r(bag(i)%n,:) = p%r
-    bag(i)%v(bag(i)%n,:) = p%v
-    bag(i)%dt(bag(i)%n) = p%dt
-    bag(i)%t(bag(i)%n) = p%t
-    p => p%next
-  end do
-  !---------------------------------------------------------------------------
-  ! Update each bag, empty it back onto the linked list, and waste it.  The
-  ! timesteps in each bag are in the range [0.5,1.0]*bag(i)%dt_max
-  !---------------------------------------------------------------------------
-  print*,'update bags'
-  p => self%head
-  do i=0,n_bag
-    if (i==0) then
-      n_step=0
-    else
-      n_step = 2.0*self%dtime/bag(i)%dt_max + 0.1
-    end if
-    if (bag(i)%n > 0) then
-      do i_step=1,n_step
-        call update_arrays (self, bag(i)%n, n, bag(i)%r, bag(i)%v, bag(i)%dt, bag(i)%t)
-      end do
-      t_min = 1e10
-      t_max = 0.0
-      do j=1,bag(i)%n
-        p%r  = bag(i)%r(j,:)
-        p%v  = bag(i)%v(j,:)
-        p%dt = bag(i)%dt(j)
-        p%t  = bag(i)%t(j)
-        t_min = min(t_min,p%t)
-        t_max = max(t_max,p%t)
-      end do
-      print *, i, n_step, t_min, t_max
-      deallocate (bag(i)%r, bag(i)%v, bag(i)%dt, bag(i)%t)
-    end if
-  end do
-  deallocate (bag)
-  self%time = self%time + self%dtime
-  print *, self%time, t_min, t_max
-END SUBROUTINE update_bags
 
 !> =============================================================================
 !> Skeleton output procedure, which may also be used for -- for example --
