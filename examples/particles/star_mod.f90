@@ -75,7 +75,7 @@ FUNCTION central_force (self, r) RESULT (out)
   real, intent(in):: r(3)
   real:: out(3)
   !.............................................................................
-  out = -r*(self%g*self%m/sqrt(sum(r**2))**3)
+  out = -r*(self%g*self%m/(sum(r**2))**1.5)
 END FUNCTION central_force
 
 END MODULE star_mod

@@ -5,6 +5,7 @@ MODULE particle_mod
     real:: r(3)                         ! position
     real:: v(3)                         ! velocity
     real:: m                            ! mass
-    real(8):: t=0d0                     ! time increment
+    real:: dt                           ! time increment
+    real(8):: t=0d0                     ! time
   end type
 END MODULE particle_mod
