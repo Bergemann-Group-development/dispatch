@@ -15,3 +15,4 @@ interpolation_mod.o     : io_mod.o trace_mod.o patches_mod.o
 patch_list_mod.o        : io_mod.o timestep_mod.o refine_mod.o
 refine_mod.o            : io_mod.o trace_mod.o timestep_mod.o
 stagger_mod.o           : io_mod.o trace_mod.o
+random_mod.o		: io_mod.o
