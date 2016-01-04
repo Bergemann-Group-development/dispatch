@@ -24,8 +24,8 @@ SUBROUTINE init (self)
   !.............................................................................
   self%seed = -11
   a = self%ran1()
-  print*,a
-  !call random_seed
+  !print*,'1st random number:', a
+  call random_seed
   !call random_number (a)
   !call random_number (b)
   !if (io%master) then

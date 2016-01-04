@@ -11,8 +11,10 @@ PROGRAM experiment
   !.............................................................................
   call particles%init
   call tic
-  call particles%update
-  !call particles%update_cache
+  do while (particles%time < particles%end_time)
+    particles%time = particles%time + particles%dtime
+    call particles%update
+  end do
   call toc ('particle update', particles%n_step)
 
   particles%dt_aver = particles%dt_aver/particles%n_step
@@ -26,7 +28,10 @@ PROGRAM experiment
   call particles%init
   particles%n_step = 0
   call tic
-  call particles%update_cache
+  do while (particles%time < particles%end_time)
+    particles%time = particles%time + particles%dtime
+    call particles%update_cache
+  end do
   call toc ('particle update_cache', particles%n_step)
 !> =============================================================================
 END PROGRAM experiment

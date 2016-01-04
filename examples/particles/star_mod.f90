@@ -15,7 +15,6 @@ MODULE star_mod
     procedure:: kepler_speed
     procedure:: central_force
   end type
-  integer:: nprint=10
 CONTAINS
 
 !> =============================================================================
@@ -62,10 +61,6 @@ FUNCTION kepler_speed (self, r) RESULT (out)
   v = self%g*self%m/rm
   out = cross (r, self%omega)
   out = v*out/sqrt(sum(out**2))
-  if (nprint>0) then
-    print*,'kepler_speed',out
-    nprint = nprint-1
-  end if
 END FUNCTION kepler_speed
 
 !> =============================================================================

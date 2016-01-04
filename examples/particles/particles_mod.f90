@@ -36,13 +36,16 @@ MODULE particles_mod
 CONTAINS
 
 !> =============================================================================
-!> Initialize a number of particles consistent with a particle task, with a given
-!> total mass, in Kepler orbits with a specified extra velocity dispersion.
+!> Initialize a number of particles consistent with a typical particle task, with
+!> a given total mass, in Kepler orbits with a specified extra velocity dispersion.
+!> The "courant" number parameter is based on comparing the acceleration to the
+!> velocity, and controls the fraction of an orbit taken.  For a circular orbit,
+!> a ratio of unity corresponds to taking 2\pi steps per orbit.
 !> =============================================================================
 SUBROUTINE init (self)
   class(particle_task_t):: self
-  integer:: n=10000, i
   type(particle_t), pointer:: p
+  integer:: n=10000, i
   real:: radius=1.
   real:: dispersion=0.1
   real:: mass=0.01
@@ -91,7 +94,7 @@ SUBROUTINE init (self)
       self%head => p
     end do
   !-----------------------------------------------------------------------------
-  ! If already initialized, reset to new start
+  ! If already initialized, reset to new, identical start
   !-----------------------------------------------------------------------------
   else
     p => self%head
@@ -128,9 +131,9 @@ SUBROUTINE update (self)
   dt_max = 0.0
   i = 0
   do while (associated(p))                      ! for each list member
-    e0 = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
+    !e0 = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
     i = i+1
-    do while (p%t < self%end_time)              ! advance it to target time
+    do while (p%t < self%time)                  ! advance it to target time
       r2 = sum(p%r**2)                          ! radius square
       a = -p%r*(1./sqrt(r2))/r2*c1              ! 1./sqrt() is often fast
       dt = maxval(abs(p%v))*r2*c2               ! using maxval for speed
@@ -144,7 +147,7 @@ SUBROUTINE update (self)
       a = -p%r*(1./sqrt(r2))/r2*c1              ! acceleration
       p%v = p%v + a*dt*0.5                      ! kick
       p%t = p%t + dt                            ! increment time
-      e = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
+      !e = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
       !if (i==1) print*,'a',p%t,dt,r2,e
       p%dt = dt                                 ! save for analysis
       self%n_step = self%n_step+1               ! count steps
@@ -153,10 +156,9 @@ SUBROUTINE update (self)
       self%dt_min = min(self%dt_min,dt)         ! cost related measure
       self%dt_max = max(self%dt_max,dt)         ! cost related measure
     end do
-    e1 = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
+    !e1 = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
     p => p%next                                 ! next particle
   end do
-  print*,dt_min,dt_max
   call trace_end
 END SUBROUTINE update
 
@@ -173,10 +175,10 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   real, dimension(n,3):: r, v
   real, dimension(n):: dt
   real(8), dimension(n):: t
-  real:: r1(3), v1(3), dt1
   real(8):: t1
-  real, dimension(:), allocatable:: r2, r3
+  real:: r1(3), v1(3), dt1
   real:: c1, c2, t_max
+  real, dimension(:), allocatable:: r2, r3
   integer:: i, j
   !...........................................................................
   allocate (r2(n), r3(n))
@@ -216,11 +218,11 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   ! removed when finished.
   !---------------------------------------------------------------------------
   t_max = maxval(t(1:m))
-  if (t_max > self%end_time) then
+  if (t_max > self%time) then
     j = 0
     do while (j < m)
       j = j+1
-      if (t(j) > self%end_time) then
+      if (t(j) > self%time) then
         r1    =r(m,:); v1    =v(m,:); dt1  =dt(m); t1  =t(m)
         r(m,:)=r(j,:); v(m,:)=v(j,:); dt(m)=dt(j); t(m)=t(j) 
         r(j,:)=r1    ; v(j,:)=v1    ; dt(j)=dt1  ; t(j)=t1  ;
@@ -232,37 +234,30 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
 END SUBROUTINE update_arrays
 
 !> =============================================================================
-!> Optimized update, cashing into arrays to be able to use update_arrays, which
-!> after each update sweep moves any particles that are finished to the end of
-!> the arrays.  When the number of remaining particles drops to a small number
-!> (parameter n_list), the remaining ones are updated in the linked list.
+!> Optimized update, cashing into arrays to be able to use update_arrays(), which
+!> after each update sweep moves particles that are finished to the end of the
+!> arrays.  When the number of remaining particles drops to a small number
+!> (parameter n_list), the remaining ones are updated directly in the linked list.
 !> =============================================================================
 SUBROUTINE update_cache (self)
   class(particle_task_t):: self
-  real:: a(3)                                   ! force
   type(particle_t), pointer:: p
   real, dimension(:,:), pointer:: r, v
   real, dimension(:), pointer:: r2, r3, dt
   real(8), dimension(:), pointer:: t
-  real:: c1, c2, dt0
-  integer:: i, j, m, n
-  real(8):: t_min, wc(5) 
-  real:: dt_min, dt_max
+  real:: a(3)                                           ! acceleration
+  real:: c1, c2                                         ! scaling constants
+  integer:: i, m, n
+  real(8):: t_min
   !.............................................................................
   call trace_begin ('particles_mod%update', 3)
-  n = self%n
-  allocate (r(n,3), v(n,3), r2(n), r3(n), dt(n), t(n))
-  !-----------------------------------------------------------------------------
-  ! Cache, for speed measuring purposes only, the positions and velocities
-  !-----------------------------------------------------------------------------
-                                                             wc(1) = wallclock()
-  dt0 = 0.0003
-  self%n_step = 0
   c1 = 1./(star%m*star%g)
   c2 = self%courant*c1
   !---------------------------------------------------------------------------
   ! Pull list date into arrays
   !---------------------------------------------------------------------------
+  n = self%n
+  allocate (r(n,3), v(n,3), r2(n), r3(n), dt(n), t(n))
   i = 0
   p => self%head
   do while (associated(p))
@@ -272,23 +267,16 @@ SUBROUTINE update_cache (self)
     t(i) = p%t
     p => p%next
   end do
-                                                           wc(2) = wallclock()
   !---------------------------------------------------------------------------
   ! Update, while moving the finished ones to the end, skipping them next time
   !---------------------------------------------------------------------------
   n = self%n
   m = n
   t_min = 0.0
-  dt_min = 1e30
-  dt_max = 0.0
-  do while (t_min < self%end_time .and. n > self%n_list)
+  do while (t_min < self%time .and. n > self%n_list)
     call update_arrays (self, n, m, r, v, dt, t)
     t_min = minval(t(1:m))
-    dt_min = min(dt_min, minval(dt(1:m)))
-    dt_max = max(dt_max, maxval(dt(1:m)))
   end do
-  print*,dt_min,dt_max
-                                                           wc(3) = wallclock()
   !---------------------------------------------------------------------------
   ! Push back to list
   !---------------------------------------------------------------------------
@@ -302,16 +290,8 @@ SUBROUTINE update_cache (self)
     p%t = t(i)
     p => p%next
   end do
-                                                           wc(4) = wallclock()
   call update (self)
-                                                           wc(5) = wallclock()
   deallocate (r, v, r2, r3, dt, t)
-  !---------------------------------------------------------------------------
-  ! Print timing info, measuring in milliseconds
-  !---------------------------------------------------------------------------
-  wc(1:4) = wc(2:5)-wc(1:4)
-  print*,'   gather     array   scatter      list'
-  print'(3p,4f10.3)', wc(1:4)
   call trace_end
 END SUBROUTINE update_cache
 

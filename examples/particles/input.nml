@@ -4,7 +4,7 @@
 /
 &particle_params
  n=100000
- dtime=0.1
+ dtime=1
  end_time=10.
  out_time=1.0
  n_list=100
