@@ -172,9 +172,9 @@ END SUBROUTINE update
 SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   class(particle_task_t):: self
   integer:: n, m
-  real, dimension(n+1,3):: r, v
-  real, dimension(n+1):: dt
-  real(8), dimension(n+1):: t
+  real, dimension(n,3):: r, v
+  real, dimension(n):: dt
+  real(8), dimension(n):: t
   real(8):: t1
   real:: r1(3), v1(3), dt1
   real:: c1, c2, t_max
@@ -213,10 +213,9 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   self%n_step = self%n_step+m
   !print*,'b',t(1),dt(1),r2(1),0.5*sum(v(1,:)**2)-c1/sqrt(r2(1))
   !---------------------------------------------------------------------------
-  ! Place any finished particles at the end.  Attempt to optimize by storing in
-  ! the unused position m+1, resulting in a gap that is removed when finished.
-  ! The index j is duplicated in m+1, and n+1 holds a valid point. This does
-  ! NOT result in improvement with ifort.
+  ! Place any finished particles at the end.  This is NOT made faster by
+  ! storing in the unused position m+1, resulting in a gap that needs to be
+  ! removed when finished.
   !---------------------------------------------------------------------------
   t_max = maxval(t(1:m))
   if (t_max > self%time) then
@@ -224,12 +223,12 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
     do while (j < m)
       j = j+1
       if (t(j) > self%time) then
-        r(m+1,:)=r(j,:); v(m+1,:)=v(j,:); dt(m+1)=dt(j); t(m+1)=t(j) 
+        r1    =r(m,:); v1    =v(m,:); dt1  =dt(m); t1  =t(m)
+        r(m,:)=r(j,:); v(m,:)=v(j,:); dt(m)=dt(j); t(m)=t(j) 
+        r(j,:)=r1    ; v(j,:)=v1    ; dt(j)=dt1  ; t(j)=t1  ;
         m=m-1
-        r(j,:)=r(m+1,:); v(j,:)=v(m+1,:); dt(j)=dt(m+1); t(j)=t(m+1);
       end if
     end do
-    !print'(10f8.4)',r(1:n+1,1)
   end if
   deallocate (r2, r3)
 END SUBROUTINE update_arrays
@@ -258,9 +257,11 @@ SUBROUTINE update_cache (self)
   ! Pull list date into arrays
   !---------------------------------------------------------------------------
   n = self%n
-  allocate (r(n+1,3), v(n+1,3), dt(n+1), t(n+1))
+  allocate (r(n,3), v(n,3), dt(n), t(n))
+  i = 0
   p => self%head
-  do i=1,n
+  do while (associated(p))
+    i = i+1
     r(i,:) = p%r
     v(i,:) = p%v
     t(i) = p%t
@@ -277,17 +278,12 @@ SUBROUTINE update_cache (self)
     t_min = minval(t(1:m))
   end do
   !---------------------------------------------------------------------------
-  ! Push back to list, removing the gap at m+1 resulting from the swapping
+  ! Push back to list
   !---------------------------------------------------------------------------
+  i = 0
   p => self%head
-  do i=1,m
-    p%r = r(i,:)
-    p%v = v(i,:)
-    p%dt = dt(i)
-    p%t = t(i)
-    p => p%next
-  end do
-  do i=m+2,n+1
+  do while (associated(p))
+    i = i+1
     p%r = r(i,:)
     p%v = v(i,:)
     p%dt = dt(i)
