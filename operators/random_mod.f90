@@ -7,7 +7,7 @@ MODULE random_mod
   implicit none
   private
   type, public:: random_t
-    integer:: seed=-11
+    integer:: seed
   contains
     procedure:: init
     procedure:: ran1
@@ -22,15 +22,16 @@ SUBROUTINE init (self)
   class(random_t):: self
   real:: a, b(3)
   !.............................................................................
+  self%seed = -11
   a = self%ran1()
   print*,a
-  call random_seed
-  call random_number (a)
-  call random_number (b)
-  if (io%master) then
-    print*,'random_number:',a
-    print*,'random_number:',b
-  end if
+  !call random_seed
+  !call random_number (a)
+  !call random_number (b)
+  !if (io%master) then
+  !  print*,'random_number:',a
+  !  print*,'random_number:',b
+  !end if
 END SUBROUTINE init
 
 !> =============================================================================

@@ -27,14 +27,14 @@ SUBROUTINE toc (label, n)
   !.............................................................................
   wt = (omp_get_wtime() - wt)
   if (wt/n < 1d-6) then
-    print 1, label, wt,  'sec', wt/n*1e9, 'ns/cell'
+    print 1, label, wt,  'sec', wt/n*1e9, 'ns/upd', n
   else if (wt/n < 1d-3) then
-    print 1, label, wt,  'sec', wt/n*1e6, 'mus/cell'
+    print 1, label, wt,  'sec', wt/n*1e6, 'mus/upd', n
   else if (wt/n < 1d0) then
-    print 1, label, wt,  'sec', wt/n*1e3, 'ms/cell'
+    print 1, label, wt,  'sec', wt/n*1e3, 'ms/upd', n
   else
-    print 1, label, wt,  'sec', wt/n, 's/cell'
-    1 format(1x,a,1h:,2(g20.3,1x,a))
+    print 1, label, wt,  'sec', wt/n, 's/upd', n
+    1 format(1x,a,1h:,2(g20.3,1x,a),i9)
   end if
 END SUBROUTINE toc
 

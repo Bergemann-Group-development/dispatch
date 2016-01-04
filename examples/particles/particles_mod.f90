@@ -56,6 +56,7 @@ SUBROUTINE init (self)
     end_time, out_time, n_list
   !.............................................................................
   call trace_begin ('particles_mod%init', 3)
+  call random%init
   if (first_time) then
     call star%init
     rewind (io%input)
@@ -116,16 +117,26 @@ SUBROUTINE update (self)
   real:: a(3)                                   ! accelration
   real:: dt, r2, c1, c2                         ! temporary data
   type(particle_t), pointer:: p                 ! particle pointer
+  real:: dt_min, dt_max, e0, e, e1
+  integer:: i
   !.............................................................................
   call trace_begin ('particles_mod%update', 3)
   p => self%head                                ! pointer to 1st particle
-  c1 = 1./(star%m*star%g)                       ! acceleration coefficient
-  c2 = self%courant*c1                          ! time step coefficient
+  c1 = star%m*star%g                            ! acceleration coefficient
+  c2 = self%courant/c1                          ! time step coefficient
+  dt_min = 1e30
+  dt_max = 0.0
+  i = 0
   do while (associated(p))                      ! for each list member
+    e0 = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
+    i = i+1
     do while (p%t < self%end_time)              ! advance it to target time
       r2 = sum(p%r**2)                          ! radius square
       a = -p%r*(1./sqrt(r2))/r2*c1              ! 1./sqrt() is often fast
       dt = maxval(abs(p%v))*r2*c2               ! using maxval for speed
+      !dt = sqrt(sum(p%v**2)/sum(a**2))*self%courant
+      dt_min = min(dt_min,dt)
+      dt_max = max(dt_max,dt)
       dt = min(self%dtime, dt)                  ! don't overshoot too much
       p%v = p%v + a*dt*0.5                      ! kick
       p%r = p%r + p%v*dt                        ! drift
@@ -133,6 +144,8 @@ SUBROUTINE update (self)
       a = -p%r*(1./sqrt(r2))/r2*c1              ! acceleration
       p%v = p%v + a*dt*0.5                      ! kick
       p%t = p%t + dt                            ! increment time
+      e = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
+      !if (i==1) print*,'a',p%t,dt,r2,e
       p%dt = dt                                 ! save for analysis
       self%n_step = self%n_step+1               ! count steps
       self%dt_aver = self%dt_aver+dt            ! cost related measure
@@ -140,8 +153,10 @@ SUBROUTINE update (self)
       self%dt_min = min(self%dt_min,dt)         ! cost related measure
       self%dt_max = max(self%dt_max,dt)         ! cost related measure
     end do
+    e1 = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
     p => p%next                                 ! next particle
   end do
+  print*,dt_min,dt_max
   call trace_end
 END SUBROUTINE update
 
@@ -162,52 +177,53 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   real(8):: t1
   real, dimension(:), allocatable:: r2, r3
   real:: c1, c2, t_max
-  integer:: i
+  integer:: i, j
   !...........................................................................
   allocate (r2(n), r3(n))
-  c1 = 1./(star%m*star%g)                       ! acceleration coefficient
-  c2 = self%courant*c1                          ! time step coefficient
+  c1 = star%m*star%g                            ! acceleration coefficient
+  c2 = self%courant/c1                          ! time step coefficient
   !---------------------------------------------------------------------------
   ! Kick. Optimize by using 1./sqrt(), max norm, and by keeping r2 available
   !---------------------------------------------------------------------------
-  r2(:) = r(:,1)**2+r(:,2)**2+r(:,3)**2 
-  r3(:) = (1./sqrt(r2(:)))**3
-  dt(:) = max(abs(v(:,1)),abs(v(:,2)),abs(v(:,3)))/r2(:)*c2
-  dt(:) = min(dt(:),self%dtime)
-  t(:) = t(:) + dt(:)
+  r2(1:m) = r(1:m,1)**2+r(1:m,2)**2+r(1:m,3)**2 
+  r3(1:m) = (1./sqrt(r2(1:m)))**3
+  dt(1:m) = max(abs(v(1:m,1)),abs(v(1:m,2)),abs(v(1:m,3)))*r2(1:m)*c2
+  !dt(1:m) = sqrt(v(1:m,1)**2+v(1:m,2)**2+v(1:m,3)**2)*r2(1:m)*c2
+  dt(1:m) = min(dt(1:m),self%dtime)
+  t(1:m) = t(1:m) + dt(1:m)
   do i=1,3
-    v(:,i) = v(:,i)-0.5*dt(:)*r(:,i)*r3(:)*c1
+    v(1:m,i) = v(1:m,i)-0.5*dt(1:m)*r(1:m,i)*r3(1:m)*c1
   end do
   !---------------------------------------------------------------------------
   ! Drift
   !---------------------------------------------------------------------------
   do i=1,3
-    r(:,i) = r(:,i)+dt(:)*v(:,i)
+    r(1:m,i) = r(1:m,i)+dt(1:m)*v(1:m,i)
   end do
   !---------------------------------------------------------------------------
   ! Kick
   !---------------------------------------------------------------------------
-  r2(:) = r(:,1)**2+r(:,2)**2+r(:,3)**2 
-  r3(:) = (1./sqrt(r2(:)))**3
+  r2(1:m) = r(1:m,1)**2+r(1:m,2)**2+r(1:m,3)**2 
+  r3(1:m) = (1./sqrt(r2(1:m)))**3
   do i=1,3
-    v(:,i) = v(:,i)-0.5*dt(:)*r(:,i)*r3(:)*c1
+    v(1:m,i) = v(1:m,i)-0.5*dt(1:m)*r(1:m,i)*r3(1:m)*c1
   end do
-  self%n_step = self%n_step+n
+  self%n_step = self%n_step+m
+  !print*,'b',t(1),dt(1),r2(1),0.5*sum(v(1,:)**2)-c1/sqrt(r2(1))
   !---------------------------------------------------------------------------
   ! Place any finished particles at the end.  This could be made faster, by
   ! storing in the unused position m+1, resulting in a gap that could be 
   ! removed when finished.
   !---------------------------------------------------------------------------
-  t_max = maxval(t)
-  m = n
+  t_max = maxval(t(1:m))
   if (t_max > self%end_time) then
-    i = 0
-    do while (i < m)
-      i = i+1
-      if (t(i) > self%end_time) then
+    j = 0
+    do while (j < m)
+      j = j+1
+      if (t(j) > self%end_time) then
         r1    =r(m,:); v1    =v(m,:); dt1  =dt(m); t1  =t(m)
-        r(m,:)=r(i,:); v(m,:)=v(i,:); dt(m)=dt(i); t(m)=t(i) 
-        r(i,:)=r1    ; v(i,:)=v1    ; dt(i)=dt1  ; t(i)=t1  ;
+        r(m,:)=r(j,:); v(m,:)=v(j,:); dt(m)=dt(j); t(m)=t(j) 
+        r(j,:)=r1    ; v(j,:)=v1    ; dt(j)=dt1  ; t(j)=t1  ;
         m=m-1
       end if
     end do
@@ -231,6 +247,7 @@ SUBROUTINE update_cache (self)
   real:: c1, c2, dt0
   integer:: i, j, m, n
   real(8):: t_min, wc(5) 
+  real:: dt_min, dt_max
   !.............................................................................
   call trace_begin ('particles_mod%update', 3)
   n = self%n
@@ -260,12 +277,17 @@ SUBROUTINE update_cache (self)
   ! Update, while moving the finished ones to the end, skipping them next time
   !---------------------------------------------------------------------------
   n = self%n
+  m = n
   t_min = 0.0
+  dt_min = 1e30
+  dt_max = 0.0
   do while (t_min < self%end_time .and. n > self%n_list)
     call update_arrays (self, n, m, r, v, dt, t)
     t_min = minval(t(1:m))
-    n = m
+    dt_min = min(dt_min, minval(dt(1:m)))
+    dt_max = max(dt_max, maxval(dt(1:m)))
   end do
+  print*,dt_min,dt_max
                                                            wc(3) = wallclock()
   !---------------------------------------------------------------------------
   ! Push back to list
