@@ -243,7 +243,7 @@ SUBROUTINE update_cache (self)
   class(particle_task_t):: self
   type(particle_t), pointer:: p
   real, dimension(:,:), pointer:: r, v
-  real, dimension(:), pointer:: r2, r3, dt
+  real, dimension(:), pointer:: dt
   real(8), dimension(:), pointer:: t
   real:: a(3)                                           ! acceleration
   real:: c1, c2                                         ! scaling constants
@@ -257,11 +257,9 @@ SUBROUTINE update_cache (self)
   ! Pull list date into arrays
   !---------------------------------------------------------------------------
   n = self%n
-  allocate (r(n,3), v(n,3), r2(n), r3(n), dt(n), t(n))
-  i = 0
+  allocate (r(n,3), v(n,3), dt(n), t(n))
   p => self%head
-  do while (associated(p))
-    i = i+1
+  do i=1,n
     r(i,:) = p%r
     v(i,:) = p%v
     t(i) = p%t
@@ -280,10 +278,8 @@ SUBROUTINE update_cache (self)
   !---------------------------------------------------------------------------
   ! Push back to list
   !---------------------------------------------------------------------------
-  i = 0
   p => self%head
-  do while (associated(p))
-    i = i+1
+  do i=1,n
     p%r = r(i,:)
     p%v = v(i,:)
     p%dt = dt(i)
@@ -291,7 +287,7 @@ SUBROUTINE update_cache (self)
     p => p%next
   end do
   call update (self)
-  deallocate (r, v, r2, r3, dt, t)
+  deallocate (r, v, dt, t)
   call trace_end
 END SUBROUTINE update_cache
 
