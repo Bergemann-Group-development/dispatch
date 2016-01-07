@@ -6,6 +6,9 @@
 MODULE omp_timer_mod
   implicit none
   real(8), save:: wt=0d0
+  interface toc
+    module procedure toc_i4, toc_i8
+  end interface
 CONTAINS
 
 !> =============================================================================
@@ -19,24 +22,44 @@ END SUBROUTINE tic
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE toc (label, n)
+SUBROUTINE toc_i4 (label, n)
   implicit none
   character(len=*):: label
   integer:: n
+  !.............................................................................
+  call toc_r (label, real(n))
+END SUBROUTINE toc_i4
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE toc_i8 (label, n)
+  implicit none
+  character(len=*):: label
+  integer(8):: n
+  !.............................................................................
+  call toc_r (label, real(n))
+END SUBROUTINE toc_i8
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE toc_r (label, n)
+  implicit none
+  character(len=*):: label
+  real:: n
   real(8):: omp_get_wtime
   !.............................................................................
   wt = (omp_get_wtime() - wt)
   if (wt/n < 1d-6) then
-    print 1, label, wt,  'sec', wt/n*1e9, 'ns/upd', n
+    print 1, label, wt,  'sec', wt/n*1e9, 'ns/upd,', n, 'updates'
   else if (wt/n < 1d-3) then
-    print 1, label, wt,  'sec', wt/n*1e6, 'mus/upd', n
+    print 1, label, wt,  'sec', wt/n*1e6, 'mus/upd,', n, 'updates'
   else if (wt/n < 1d0) then
-    print 1, label, wt,  'sec', wt/n*1e3, 'ms/upd', n
+    print 1, label, wt,  'sec', wt/n*1e3, 'ms/upd,', n, 'updates'
   else
-    print 1, label, wt,  'sec', wt/n, 's/upd', n
-    1 format(1x,a,1h:,2(g20.3,1x,a),i9)
+    print 1, label, wt,  'sec', wt/n, 's/upd,', n, 'updates'
+    1 format(1x,a,1h:,2(g20.3,1x,a),1p,e10.2,1x,a)
   end if
-END SUBROUTINE toc
+END SUBROUTINE toc_r
 
 !> =============================================================================
 FUNCTION wallclock() result (delta)
