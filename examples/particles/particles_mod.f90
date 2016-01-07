@@ -15,11 +15,16 @@ MODULE particles_mod
   type, public, extends(task_t):: particle_task_t
     type(particle_t), pointer:: head => null()  ! particle list head
     integer:: n                                 ! number of particles
-    integer:: n_step                            ! number of steps taken
+    integer(8):: n_step                         ! number of steps taken
     integer:: n_list                            ! switch to list when these remain
     real:: mass                                 ! total particle mass
     real:: radius                               ! particle cloud radius
     real:: dispersion                           ! velocity dispersion
+    real:: e_rms                                ! rms energy variation
+    real:: e_max_rms                            ! rms energy variation
+    real:: e_kin                                ! kinetic energy
+    real:: e_aver                               ! average energy
+    real:: e2_aver                              ! average energy squared
     real:: dt_min                               ! min time step
     real:: dt_aver                              ! average time step
     real:: dt_harmonic                          ! harmonic mean time step
@@ -27,7 +32,7 @@ MODULE particles_mod
     real:: courant                              ! "Courant" number
   contains
     procedure:: init                            ! initialize
-    procedure:: update                          ! update linked list
+    procedure:: update_list                     ! update linked list
     procedure:: update_cache                    ! update via array cache
     procedure:: output                          ! output data
   end type
@@ -81,6 +86,9 @@ SUBROUTINE init (self)
   self%dt_aver = 0.0
   self%dt_harmonic = 0.0
   self%dt_max = 0.0
+  self%e_rms = 0.0
+  self%e_aver = 0.0
+  self%e2_aver = 0.0
   !-----------------------------------------------------------------------------
   ! If new, allocate list of particles
   !-----------------------------------------------------------------------------
@@ -115,31 +123,30 @@ END SUBROUTINE init
 !> which is intended to correspond to a typical patch update time. There is no
 !> need to require particles to land exactly on the target time.
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE update_list (self)
   class(particle_task_t):: self
   real:: a(3)                                   ! accelration
   real:: dt, r2, c1, c2                         ! temporary data
   type(particle_t), pointer:: p                 ! particle pointer
-  real:: dt_min, dt_max, e0, e, e1
-  integer:: i
+  real:: e, e2, e_aver, e2_aver, e_rms, e_kin
+  integer:: i, n_step
   !.............................................................................
   call trace_begin ('particles_mod%update', 3)
   p => self%head                                ! pointer to 1st particle
   c1 = star%m*star%g                            ! acceleration coefficient
   c2 = self%courant/c1                          ! time step coefficient
-  dt_min = 1e30
-  dt_max = 0.0
   i = 0
   do while (associated(p))                      ! for each list member
-    !e0 = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
     i = i+1
+    e_aver = 0.0
+    e2_aver = 0.0
+    n_step = 0
     do while (p%t < self%time)                  ! advance it to target time
+      n_step = n_step + 1
       r2 = sum(p%r**2)                          ! radius square
       a = -p%r*(1./sqrt(r2))/r2*c1              ! 1./sqrt() is often fast
-      dt = maxval(abs(p%v))*r2*c2               ! using maxval for speed
-      !dt = sqrt(sum(p%v**2)/sum(a**2))*self%courant
-      dt_min = min(dt_min,dt)
-      dt_max = max(dt_max,dt)
+      !dt = maxval(abs(p%v))*r2*c2               ! using maxval for speed
+      dt = sqrt(sum(p%v**2))*r2*c2              ! using 2-norm
       dt = min(self%dtime, dt)                  ! don't overshoot too much
       p%v = p%v + a*dt*0.5                      ! kick
       p%r = p%r + p%v*dt                        ! drift
@@ -147,20 +154,34 @@ SUBROUTINE update (self)
       a = -p%r*(1./sqrt(r2))/r2*c1              ! acceleration
       p%v = p%v + a*dt*0.5                      ! kick
       p%t = p%t + dt                            ! increment time
-      !e = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
-      !if (i==1) print*,'a',p%t,dt,r2,e
       p%dt = dt                                 ! save for analysis
+      e = 0.5*sum(p%v**2)                       ! kinetic energy
+      e_kin = e_kin + e
+      self%e_kin = self%e_kin + e
+      e = e - c1/sqrt(r2)                       ! total energy
+      e2 = e**2
+      e_aver = e_aver + e
+      e2_aver = e2_aver + e2
+      self%e_aver = self%e_aver + e             ! accuracy measure
+      self%e2_aver = self%e2_aver + e2          ! accuracy measure
       self%n_step = self%n_step+1               ! count steps
       self%dt_aver = self%dt_aver+dt            ! cost related measure
       self%dt_harmonic = self%dt_harmonic+1./dt ! cost related measure
       self%dt_min = min(self%dt_min,dt)         ! cost related measure
       self%dt_max = max(self%dt_max,dt)         ! cost related measure
     end do
-    !e1 = 0.5*sum(p%v**2) - c1/sqrt(sum(p%r**2))
+    if (n_step > 0) then
+      e_aver = e_aver/n_step
+      e_kin  = e_kin /n_step
+      e2_aver = e2_aver/n_step
+      e_rms = sqrt(max(e2_aver-e_aver**2,0.0))/e_kin
+      self%e_rms = self%e_rms + n_step*e_rms**2
+      self%e_max_rms = max(self%e_max_rms,e_rms)
+    end if
     p => p%next                                 ! next particle
   end do
   call trace_end
-END SUBROUTINE update
+END SUBROUTINE update_list
 
 !> =============================================================================
 !> Optimized update, cashing into arrays for vectorization.  At the end of 
@@ -189,8 +210,8 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   !---------------------------------------------------------------------------
   r2(1:m) = r(1:m,1)**2+r(1:m,2)**2+r(1:m,3)**2 
   r3(1:m) = (1./sqrt(r2(1:m)))**3
-  dt(1:m) = max(abs(v(1:m,1)),abs(v(1:m,2)),abs(v(1:m,3)))*r2(1:m)*c2
-  !dt(1:m) = sqrt(v(1:m,1)**2+v(1:m,2)**2+v(1:m,3)**2)*r2(1:m)*c2
+  !dt(1:m) = max(abs(v(1:m,1)),abs(v(1:m,2)),abs(v(1:m,3)))*r2(1:m)*c2
+  dt(1:m) = sqrt(v(1:m,1)**2+v(1:m,2)**2+v(1:m,3)**2)*r2(1:m)*c2
   dt(1:m) = min(dt(1:m),self%dtime)
   t(1:m) = t(1:m) + dt(1:m)
   do i=1,3
@@ -290,7 +311,7 @@ SUBROUTINE update_cache (self)
     p%t = t(i)
     p => p%next
   end do
-  call update (self)
+  call update_list (self)
   deallocate (r, v, dt, t)
   call trace_end
 END SUBROUTINE update_cache

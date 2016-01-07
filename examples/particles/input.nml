@@ -3,11 +3,12 @@
  grav=1.0
 /
 &particle_params
- n=100000
- dtime=1
- end_time=10.
+ n=10000
+ dtime=1.0
+ end_time=10000.
  out_time=1.0
- n_list=100
+ n_list=10
+ courant=0.05
 /
 &io_params
  do_trace=f
