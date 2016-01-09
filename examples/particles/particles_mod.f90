@@ -195,7 +195,7 @@ END SUBROUTINE update_list
 SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   class(particle_task_t):: self
   integer:: n, m
-  real, dimension(n,3):: r, v
+  real, dimension(3,n):: r, v
   real, dimension(n):: dt
   real(8), dimension(n):: t
   real(8):: t1
@@ -212,20 +212,20 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   ! Kick. Optimize by using 1./sqrt(), max norm, and by keeping r2 available
   !---------------------------------------------------------------------------
   !call disk%structure (n, m, r, d, cs, v_gas)
-  r2(1:m) = r(1:m,1)**2+r(1:m,2)**2+r(1:m,3)**2 
+  r2(1:m) = r(1,1:m)**2+r(2,1:m)**2+r(3,1:m)**2 
   r3(1:m) = (1./sqrt(r2(1:m)))**3
-  !dt(1:m) = max(abs(v(1:m,1)),abs(v(1:m,2)),abs(v(1:m,3)))*r2(1:m)*c2
-  dt(1:m) = sqrt(v(1:m,1)**2+v(1:m,2)**2+v(1:m,3)**2)*r2(1:m)*c2
+  !dt(1:m) = max(abs(v(1,1:m)),abs(v(2,1:m)),abs(v(3,1:m)))*r2(1:m)*c2
+  dt(1:m) = sqrt(v(1,1:m)**2+v(2,1:m)**2+v(3,1:m)**2)*r2(1:m)*c2
   dt(1:m) = min(dt(1:m),self%dtime)
   t(1:m) = t(1:m) + dt(1:m)
   do i=1,3
-    v(1:m,i) = v(1:m,i)-0.5*dt(1:m)*r(1:m,i)*r3(1:m)*c1
+    v(i,1:m) = v(i,1:m)-0.5*dt(1:m)*r(i,1:m)*r3(1:m)*c1
   end do
   !---------------------------------------------------------------------------
   ! Drift
   !---------------------------------------------------------------------------
   do i=1,3
-    r(1:m,i) = r(1:m,i)+dt(1:m)*v(1:m,i)
+    r(i,1:m) = r(i,1:m)+dt(1:m)*v(i,1:m)
   end do
   !---------------------------------------------------------------------------
   ! Kick
@@ -233,7 +233,7 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   r2(1:m) = r(1:m,1)**2+r(1:m,2)**2+r(1:m,3)**2 
   r3(1:m) = (1./sqrt(r2(1:m)))**3
   do i=1,3
-    v(1:m,i) = v(1:m,i)-0.5*dt(1:m)*r(1:m,i)*r3(1:m)*c1
+    v(i,1:m) = v(i,1:m)-0.5*dt(1:m)*r(i,1:m)*r3(1:m)*c1
   end do
   self%n_step = self%n_step+m
   !print*,'b',t(1),dt(1),r2(1),0.5*sum(v(1,:)**2)-c1/sqrt(r2(1))
@@ -248,9 +248,9 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
     do while (j < m)
       j = j+1
       if (t(j) > self%time) then
-        r1    =r(m,:); v1    =v(m,:); dt1  =dt(m); t1  =t(m)
-        r(m,:)=r(j,:); v(m,:)=v(j,:); dt(m)=dt(j); t(m)=t(j) 
-        r(j,:)=r1    ; v(j,:)=v1    ; dt(j)=dt1  ; t(j)=t1  ;
+        r1    =r(:,m); v1    =v(:,m); dt1  =dt(m); t1  =t(m)
+        r(:,m)=r(:,j); v(:,m)=v(:,j); dt(m)=dt(j); t(m)=t(j) 
+        r(:,j)=r1    ; v(:,j)=v1    ; dt(j)=dt1  ; t(j)=t1  ;
         m=m-1
       end if
     end do
@@ -282,13 +282,13 @@ SUBROUTINE update_cache (self)
   ! Pull list date into arrays
   !---------------------------------------------------------------------------
   n = self%n
-  allocate (r(n,3), v(n,3), dt(n), t(n))
+  allocate (r(3,n), v(3,n), dt(n), t(n))
   i = 0
   p => self%head
   do while (associated(p))
     i = i+1
-    r(i,:) = p%r
-    v(i,:) = p%v
+    r(:,i) = p%r
+    v(:,i) = p%v
     t(i) = p%t
     p => p%next
   end do
@@ -309,8 +309,8 @@ SUBROUTINE update_cache (self)
   p => self%head
   do while (associated(p))
     i = i+1
-    p%r = r(i,:)
-    p%v = v(i,:)
+    p%r = r(:,i)
+    p%v = v(:,i)
     p%dt = dt(i)
     p%t = t(i)
     p => p%next
