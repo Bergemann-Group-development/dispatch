@@ -3,13 +3,17 @@ PROGRAM experiment
 !> $Id$
 !> Setup a single star with oribiting particles
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-  USE star_mod
+  !USE star_mod
+  !USE standard_disk_mod
   USE particles_mod
   USE omp_timer_mod
   implicit none
   type (particle_task_t):: particles
   !.............................................................................
+  !call star%init
+  !call standard_disk%init
   call particles%init
+  !
   call tic
   do while (particles%time < particles%end_time)
     particles%time = particles%time + particles%dtime

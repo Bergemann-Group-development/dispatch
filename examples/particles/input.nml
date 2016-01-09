@@ -5,7 +5,7 @@
 &particle_params
  n=10000
  dtime=1.0
- end_time=10000.
+ end_time=100.
  out_time=1.0
  n_list=10
  courant=0.05

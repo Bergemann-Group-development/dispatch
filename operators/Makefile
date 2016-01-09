@@ -16,3 +16,4 @@ patch_list_mod.o        : io_mod.o timestep_mod.o refine_mod.o
 refine_mod.o            : io_mod.o trace_mod.o timestep_mod.o
 stagger_mod.o           : io_mod.o trace_mod.o
 random_mod.o		: io_mod.o
+scaling_mod.o           : io_mod.o cgs_mod.o

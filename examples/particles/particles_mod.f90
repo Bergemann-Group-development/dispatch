@@ -145,13 +145,15 @@ SUBROUTINE update_list (self)
       n_step = n_step + 1
       r2 = sum(p%r**2)                          ! radius square
       a = -p%r*(1./sqrt(r2))/r2*c1              ! 1./sqrt() is often fast
-      !dt = maxval(abs(p%v))*r2*c2               ! using maxval for speed
-      dt = sqrt(sum(p%v**2))*r2*c2              ! using 2-norm
+      !a = a + drag_force(p,dt)                  ! add drag force
+      dt = maxval(abs(p%v))*r2*c2               ! using maxval for speed
+      !dt = sqrt(sum(p%v**2)/sum(a**2))*self%courant
       dt = min(self%dtime, dt)                  ! don't overshoot too much
       p%v = p%v + a*dt*0.5                      ! kick
       p%r = p%r + p%v*dt                        ! drift
       r2 = sum(p%r**2)                          ! radius square
       a = -p%r*(1./sqrt(r2))/r2*c1              ! acceleration
+      !a = a + drag_force(p,dt)                  ! add drag force
       p%v = p%v + a*dt*0.5                      ! kick
       p%t = p%t + dt                            ! increment time
       p%dt = dt                                 ! save for analysis
@@ -199,15 +201,17 @@ SUBROUTINE update_arrays (self, n, m, r, v, dt, t)
   real(8):: t1
   real:: r1(3), v1(3), dt1
   real:: c1, c2, t_max
-  real, dimension(:), allocatable:: r2, r3
+  real, dimension(:), allocatable:: r2, r3, d, c
+  real, dimension(:,:), allocatable:: v_gas
   integer:: i, j
   !...........................................................................
-  allocate (r2(n), r3(n))
+  allocate (r2(m), r3(m)) !, d(m), cs(m), v_gas(m,3))
   c1 = star%m*star%g                            ! acceleration coefficient
   c2 = self%courant/c1                          ! time step coefficient
   !---------------------------------------------------------------------------
   ! Kick. Optimize by using 1./sqrt(), max norm, and by keeping r2 available
   !---------------------------------------------------------------------------
+  !call disk%structure (n, m, r, d, cs, v_gas)
   r2(1:m) = r(1:m,1)**2+r(1:m,2)**2+r(1:m,3)**2 
   r3(1:m) = (1./sqrt(r2(1:m)))**3
   !dt(1:m) = max(abs(v(1:m,1)),abs(v(1:m,2)),abs(v(1:m,3)))*r2(1:m)*c2
