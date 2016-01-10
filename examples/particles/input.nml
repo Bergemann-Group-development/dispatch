@@ -1,3 +1,5 @@
+&disk_params
+/
 &star_params
  mass=1.0
  grav=1.0

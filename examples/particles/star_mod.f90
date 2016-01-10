@@ -15,6 +15,7 @@ MODULE star_mod
     procedure:: kepler_speed
     procedure:: central_force
   end type
+  type(star_t), public:: star
 CONTAINS
 
 !> =============================================================================
