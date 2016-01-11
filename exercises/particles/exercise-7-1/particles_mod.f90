@@ -112,46 +112,43 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(particle_task_t):: self
-  real:: a(3), atot(3), rhat(3), phihat(3)      ! accelration
+  real:: a(3), atot(3)                          ! accelration
   real:: dt, r2, c1, c2                         ! temporary data
   type(particle_t), pointer:: p                 ! particle pointer
   real:: e, e2, e_aver, e2_aver, e_rms, e_kin
   real:: v_gas(3), c, b, am
   integer:: i, n_step
-  integer, save:: nprint=1
   !.............................................................................
   call trace_begin ('particles_mod%update', 3)
-  p => self%head                                ! pointer to 1st particle
   c1 = star%m*star%g                            ! acceleration coefficient
   c2 = self%courant/c1                          ! time step coefficient
-  i = 0
-  phihat(3) = 0.0
+  i = 0                                         ! particle counter
+  p => self%head                                ! pointer to 1st particle
   do while (associated(p))                      ! for each list member
     i = i+1
-    if (nprint>0) then
-      print*,'----------- particle', i
-    end if
-    nprint=nprint-1
-    e_aver = 0.0
-    e2_aver = 0.0
-    n_step = 0
+    e_aver = 0.0                                ! average total energy
+    e2_aver = 0.0                               ! squared
+    e_kin = 0.0                                 ! average kinetic energy
+    n_step = 0                                  ! steps along path
+    c = 0.0                                     ! no drag
+    v_gas = 0.0                                 ! for testing
     do while (p%t < self%time)                  ! advance it to target time
       !------------------------------------------------------------------------
       ! First sub-step
       !------------------------------------------------------------------------
       if (n_step==0) then                       ! calculations only needed 1st time
         r2 = sum(p%r**2)                        ! radius square
-        a = -p%r*(1./sqrt(r2))/r2*c1            ! 1./sqrt() is often fast in hardware
+        am = c1/r2                              ! magnitude of acceleration
+        a = -p%r*(1./sqrt(r2))*am               ! 1./sqrt() is often fast in hardware
       end if
       n_step = n_step + 1
-      am = c1/r2                                ! magnitude of acceleration
       dt = sqrt(sum(p%v**2))/am*self%courant    ! time step limited by curvature
       dt = min(self%dtime, dt)                  ! don't overshoot too much
-      call disk%drag (p%r+2.*dt*p%v, p%v+2.*dt*a, v_gas, c)       ! the v_gas should be at a position dt ahead of the current one
-      !dt = min(dt,0.01/c)
+     !call disk%drag (p%r+2.*dt*p%v, p%v+2.*dt*a, v_gas, c)       ! the v_gas should be at a position dt ahead of the current one
+     !dt = min(dt,0.01/max(c,1e-35))
       b=1.0                                     ! control asymptotic behavior
       atot = (a + (v_gas-p%v)*c)/(1.0+b*c*dt)   ! total acceleration
-      p%v = p%v + dt*atot
+      p%v = p%v + dt*atot                       ! update velocity
       p%r = p%r + p%v*dt*2.0                    ! drift
       p%t = p%t + dt*2.0                        ! increment time
       p%dt = dt                                 ! save for analysis
@@ -159,10 +156,11 @@ SUBROUTINE update (self)
       ! Second sub-step
       !------------------------------------------------------------------------
       r2 = sum(p%r**2)                          ! radius square
-      a = -p%r*(1./sqrt(r2))/r2*c1              ! acceleration
-      call disk%drag (p%r, p%v, v_gas, c)      ! the position for this v_gas should be at the current r
-      atot = (a + (v_gas-p%v)*c)/(1.0+b*c*dt)
-      p%v = p%v + dt*atot
+      am = c1/r2                                ! magnitude of acceleration
+      a = -p%r*(1./sqrt(r2))*am                 ! acceleration
+     !call disk%drag (p%r, p%v, v_gas, c)       ! the position for this v_gas should be at the current r
+      atot = (a + (v_gas-p%v)*c)/(1.0+b*c*dt)   ! total acceleration
+      p%v = p%v + dt*atot                       ! update velocity
       !------------------------------------------------------------------------
       ! Accumulate statistics
       !------------------------------------------------------------------------

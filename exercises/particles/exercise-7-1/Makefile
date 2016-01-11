@@ -1,7 +1,7 @@
 # Option groups
 #OPTS = debug
-OPTS = full_debug
-#OPTS = optimized
+#OPTS = full_debug
+OPTS = optimized
 
 # Default target
 EXEC= experiment.x

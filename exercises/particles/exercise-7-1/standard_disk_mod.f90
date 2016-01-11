@@ -62,7 +62,7 @@ SUBROUTINE drag (self, position, v, v_gas, c)
   aver = 0.0
   rm = sqrt(position(1)**2+position(2)**2+position(3)**2)
   sigma = self%sigma*rm**self%sigma_p
-  !print*,sigma,self%sigma,rm
+  print*,sigma,self%sigma,rm
   temp = self%temp*rm**self%temp_p
   cs = sqrt(self%gamma*cgs%k_b*temp/(self%mu*cgs%m_u))/scaling%u
   v_kepler = sqrt(star%g*star%m/rm)
@@ -73,8 +73,8 @@ SUBROUTINE drag (self, position, v, v_gas, c)
   v_gas (3) =  0.0
   dv2 = (v_gas(1)-v(1))**2+(v_gas(2)-v(2))**2+(v_gas(3)-v(3))**2
   density = sigma/h*exp(-(position(3)/h)**2)
-  !print*,sigma,h,density,position(3)/h
   c = (density/density_solid)*sqrt(cs**2+dv2)/particle_size
+  print*,sigma,h,density,position(3)/h,c
   aver = aver + dv2/v_kepler**2
 END SUBROUTINE drag
 

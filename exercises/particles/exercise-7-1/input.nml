@@ -4,9 +4,9 @@
  mass_solar=1.0
 /
 &particle_params
- n=10000
- dtime=10
- end_time=10
+ n=1000
+ dtime=1
+ end_time=1
  out_time=1.0
  dispersion=0.0
  courant=0.005

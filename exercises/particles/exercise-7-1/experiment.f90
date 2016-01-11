@@ -21,7 +21,7 @@ PROGRAM experiment
     particles%time = particles%time + particles%dtime
     call particles%update
   end do
-  call toc (' particle update_list', particles%n_step)
+  call toc (' particle update', particles%n_step)
   !-----------------------------------------------------------------------------
   ! Calculate and print statistics
   !-----------------------------------------------------------------------------
