@@ -1,0 +1,17 @@
+&disk_params
+/
+&star_params
+ mass_solar=1.0
+/
+&particle_params
+ n=10000
+ dtime=10
+ end_time=10
+ out_time=1.0
+ dispersion=0.0
+ courant=0.005
+/
+&io_params
+ do_trace=f
+ verbose=0
+/
