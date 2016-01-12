@@ -326,7 +326,7 @@ SUBROUTINE output (self)
   write(io%data_unit) self%n
   p => self%head
   do i=1,self%n
-    write(io%data_unit) p%t, p%r, p%v, p%m
+    write(io%data_unit) real(p%t,kind=4), p%r, p%v, p%m
     p => p%next
   enddo
 
