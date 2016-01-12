@@ -55,8 +55,9 @@ END SUBROUTINE update
 !> =============================================================================
 !> Update the task
 !> =============================================================================
-SUBROUTINE output (self)
+SUBROUTINE output (self, name)
   class(task_t):: self
+  character(len=*):: name
   !.............................................................................
   call trace_begin ('task_t%output', 3)
   call trace_end

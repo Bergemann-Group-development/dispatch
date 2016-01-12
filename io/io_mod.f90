@@ -7,7 +7,7 @@ MODULE io_mod
   logical:: mpi_trace=.false.
   type io_t
     integer:: verbose=0, input=1, output=2, data_unit=3, log_unit=4
-    logical:: master=.true., do_debug=.false., do_trace=.false.
+    logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.false.
     integer:: levelmax=10
   contains
     procedure:: init
@@ -30,8 +30,8 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   character(len=mch):: inputfile, argfile
   logical:: first_time=.true.
-  logical:: do_debug=.false., do_trace=.false., exist
-  namelist /io_params/ verbose, do_debug, do_trace, levelmax
+  logical:: do_debug=.false., do_trace=.false., do_output=.false., exist
+  namelist /io_params/ verbose, do_debug, do_trace, do_output, levelmax
   !.............................................................................
   call print_id (id)
   if (first_time) then
@@ -61,6 +61,7 @@ SUBROUTINE init (self, name)
   if (io%master.and.first_time) write (*,io_params)
   self%do_debug = do_debug
   self%do_trace = do_trace
+  self%do_output = do_output
   self%verbose  = verbose
   first_time=.false.
 END SUBROUTINE init

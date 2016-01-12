@@ -83,6 +83,7 @@ SUBROUTINE init (self)
   self%dtime = dtime
   self%end_time = end_time
   self%out_time = out_time
+  self%out_next = self%time
   self%courant = courant
   self%dt_min = 1e10
   self%dt_aver = 0.0
@@ -296,42 +297,45 @@ SUBROUTINE update_rk3 (self)
   end do
   call trace_end
 END SUBROUTINE update_rk3
+
 !> =============================================================================
-!> Skeleton output procedure, which may also be used for -- for example --
-!> measuring the total energy
+!> Output procedure, writing particles out at self%out_time intervals.  Each 
+!> output consist of an integer giving the number of particles, followed by a
+!> a record for each particle, with time, position, velocity, and mass.
 !> =============================================================================
-SUBROUTINE output (self)
+SUBROUTINE output (self, name)
   USE io_mod
   implicit none
   class(particle_task_t):: self
   type(particle_t), pointer:: p                 ! particle pointer
   character(len=64) filename
+  character(len=*) name
   integer:: i
   !-----------------------------------------------------------------------------
   ! If the out_next time has passed, set a new time = the integer number of
   ! out_time's that have passed, plus one more
   !-----------------------------------------------------------------------------
-  if (self%time < self%out_next) return
+  if ((self%time < self%out_next) .or. (.not.io%do_output)) return
   !
-  write (filename,'(a)') 'data/particles.dat'
+  write (filename,'(a)') 'data/'//trim(experimentname)//'_'//trim(name)//'.dat'
   if (self%out_next==0.) then                   ! first snapshot, create file
     call system ('mkdir -p data/')
     open (io%data_unit, file=trim(filename), form='unformatted', status='unknown')
   else
     open (io%data_unit, file=trim(filename), form='unformatted', status='old', position='append')
   endif
-
   self%out_next = self%out_next + self%out_time
-
+  !
   write(io%data_unit) self%n
   p => self%head
   do i=1,self%n
     write(io%data_unit) real(p%t,kind=4), p%r, p%v, p%m
     p => p%next
   enddo
-
+  !
   close(io%data_unit)
 END SUBROUTINE output
+
 !> =============================================================================
 !> Output statistics about energy 
 !> =============================================================================

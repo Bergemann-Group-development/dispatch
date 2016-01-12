@@ -21,7 +21,7 @@ PROGRAM experiment
   do while (particles%time < particles%end_time)
     particles%time = particles%time + particles%dtime
     call particles%update_kdk
-    call particles%output
+    call particles%output('kdk')
   end do
   call toc (' particle update', particles%n_step)
   !-----------------------------------------------------------------------------
@@ -56,6 +56,7 @@ PROGRAM experiment
   do while (particles%time < particles%end_time)
     particles%time = particles%time + particles%dtime
     call particles%update_rk3
+    call particles%output('rk3')
   end do
   call toc (' particle update', particles%n_step)
   !-----------------------------------------------------------------------------
