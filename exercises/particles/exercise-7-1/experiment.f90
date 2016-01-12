@@ -52,7 +52,6 @@ PROGRAM experiment
   ! Advance time in steps "dtime", to mimic conditions when patch tasks are also
   ! being updated. "dtime" represents typical patch update times.
   !-----------------------------------------------------------------------------
-  print*,particles%time, particles%dtime, particles%end_time
   do while (particles%time < particles%end_time)
     particles%time = particles%time + particles%dtime
     call particles%update_rk3

@@ -250,7 +250,7 @@ SUBROUTINE update_rk3 (self)
       rs = sum(r1**2)                           ! radius square
       am = c1/rs                                ! magnitude of acceleration
       a1 = -r1*(1./sqrt(rs))*am                 ! 1./sqrt() is often fast in hardware
-      dt = sqrt(sum(p%v**2))/am*3.*self%courant    ! time step limited by curvature
+      dt = sqrt(sum(p%v**2))/am*self%courant    ! time step limited by curvature
       dt = min(self%dtime, dt)                  ! don't overshoot too much
       v2 = v1 + 0.5*dt*a1                       ! update velocity
       r2 = r1 + 0.5*dt*v1                       ! drift
@@ -344,7 +344,8 @@ SUBROUTINE stat (self)
   class(particle_task_t):: self
   type(particle_t), pointer:: p                 ! particle pointer
   integer:: i
-  real:: c1, e, e_tot, rs
+  real:: c1, e, rs
+  real(8):: e_tot
 
   c1 = star%m*star%g                          ! gravitational mass
 

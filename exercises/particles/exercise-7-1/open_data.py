@@ -16,7 +16,7 @@ from fortranfile import FortranFile
 
 all = []
 
-with FortranFile("data/kdk.dat", "r") as f:
+with FortranFile("data/input_kdk.dat", "r") as f:
     # Each loop in the while tries to read first an integer
     # giving the number of particles that follow, and then 
     # reads the particle data, which for each particls is
