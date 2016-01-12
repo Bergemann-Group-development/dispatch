@@ -21,6 +21,7 @@ MODULE particles_mod
     real:: mass                                 ! total particle mass
     real:: radius                               ! particle cloud radius
     real:: dispersion                           ! velocity dispersion
+    real:: excentricity                         ! fixed excentricity if >0.0
     real:: courant                              ! "Courant" number
     real:: e_rms                                ! rms energy variation
     real:: e_max_rms                            ! rms energy variation
@@ -61,9 +62,10 @@ SUBROUTINE init (self)
   real:: end_time=100.
   real:: out_time=1.
   real:: courant=0.01
+  real:: excentricity=0.0
   logical, save:: first_time=.true.
   namelist /particle_params/ n, radius, mass, dispersion, dtime, courant, &
-    end_time, out_time
+    end_time, out_time, excentricity
   !.............................................................................
   call trace_begin ('particles_mod%init', 3)
   call random%init
@@ -80,6 +82,7 @@ SUBROUTINE init (self)
   self%mass = mass
   self%radius = radius
   self%dispersion = dispersion
+  self%excentricity = excentricity
   self%time = 0.0
   self%dtime = dtime
   self%end_time = end_time
@@ -104,6 +107,9 @@ SUBROUTINE init (self)
       p%v = star%kepler_speed(p%r) * (1.+dispersion*random%ran3())
       p%r(3)=0.
       p%v(3)=0.
+      if (self%excentricity > 0.0) then
+        p%v = star%kepler_speed(p%r)*sqrt(1.+self%excentricity)
+      end if
       p%m = self%mass/n
       self%head => p
     end do
@@ -114,6 +120,9 @@ SUBROUTINE init (self)
       p%v = star%kepler_speed(p%r) * (1.+dispersion*random%ran3())
       p%r(3)=0.
       p%v(3)=0.
+      if (self%excentricity > 0.0) then
+        p%v = star%kepler_speed(p%r)*sqrt(1.+self%excentricity)
+      end if
       p%m = self%mass/n
       p%t = 0.0
       p => p%next
@@ -164,6 +173,7 @@ SUBROUTINE update_kdk (self)
       n_step = n_step + 1
       dt = sqrt(sum(p%v**2))/am*self%courant    ! time step limited by curvature
       dt = min(self%dtime, dt)                  ! don't overshoot too much
+      dt = merge(dt,-self%courant,self%courant>0.0) ! force dt = - courant when negative
      !call disk%drag (p%r+2.*dt*p%v, p%v+2.*dt*a, v_gas, c)       ! the v_gas should be at a position dt ahead of the current one
      !dt = min(dt,0.01/max(c,1e-35))
       b = 0.5                                   ! control asymptotic behavior
@@ -254,6 +264,7 @@ SUBROUTINE update_rk3 (self)
       a1 = -r1*(1./sqrt(rs))*am                 ! 1./sqrt() is often fast in hardware
       dt = sqrt(sum(p%v**2))/am*self%courant    ! time step limited by curvature
       dt = min(self%dtime, dt)                  ! don't overshoot too much
+      dt = merge(dt,-self%courant,self%courant>0.0) ! force dt = - courant when negative
       v2 = v1 + 0.5*dt*a1                       ! update velocity
       r2 = r1 + 0.5*dt*v1                       ! drift
       rs = sum(r2**2)                           ! radius square
@@ -341,6 +352,7 @@ SUBROUTINE update_rk4 (self)
       a1 = -r1*(1./sqrt(rs))*am                 ! 1./sqrt() is often fast in hardware
       dt = sqrt(sum(v1**2))/am*self%courant     ! time step limited by curvature
       dt = min(self%dtime, dt)                  ! don't overshoot too much
+      dt = merge(dt,-self%courant,self%courant>0.0) ! force dt = - courant when negative
       v2 = v1 + 0.5*dt*a1                       ! update velocity
       r2 = r1 + 0.5*dt*v1                       ! drift
       rs = sum(r2**2)                           ! radius square
@@ -433,13 +445,13 @@ END SUBROUTINE output
 !> =============================================================================
 !> Output statistics about energy 
 !> =============================================================================
-SUBROUTINE stat (self)
+SUBROUTINE stat (self, e_previous)
   implicit none
   class(particle_task_t):: self
   type(particle_t), pointer:: p                 ! particle pointer
   integer:: i
   real:: c1, e, rs
-  real(8):: e_tot
+  real(8):: e_tot, e_previous
 
   c1 = star%m*star%g                          ! gravitational mass
 
@@ -454,6 +466,9 @@ SUBROUTINE stat (self)
   end do
 
   print *, 'Average energy per particle in system :', e_tot / self%n
+  if (e_previous /= 0.0) &
+  print *, '  error energy per particle in system :', (e_tot-e_previous) / self%n
+  e_previous = e_tot
 END SUBROUTINE stat
 
 END MODULE particles_mod

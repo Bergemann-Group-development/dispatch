@@ -1,7 +1,8 @@
 # Option groups
 #OPTS = debug
 #OPTS = full_debug
-OPTS = optimized
+#OPTS = optimized
+OPTS = optimized_real8
 
 # Default target
 EXEC= experiment.x

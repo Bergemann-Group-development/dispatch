@@ -4,12 +4,12 @@
  mass_solar=1.0
 /
 &particle_params
- n=1
- dtime=0.01
- end_time=450
- out_time=0.1
- dispersion=1.83
- courant=0.003
+ n=100
+ dtime=1
+ end_time=100
+ out_time=1.0
+ dispersion=0.4
+ courant=0.005
 /
 &io_params
  do_trace=f

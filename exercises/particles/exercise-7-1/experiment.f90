@@ -9,10 +9,12 @@ PROGRAM experiment
   USE standard_disk_mod
   implicit none
   type (particle_task_t):: particles
+  real(8):: e_previous
   !.............................................................................
   call io%init
   call particles%init
-  call particles%stat
+  e_previous = 0.0
+  call particles%stat (e_previous)
   call tic
   !-----------------------------------------------------------------------------
   ! Advance time in steps "dtime", to mimic conditions when patch tasks are also
@@ -23,11 +25,12 @@ PROGRAM experiment
     call particles%update_kdk
     call particles%output('kdk')
   end do
-  call toc (' particle update', particles%n_step)
+  call toc ('KDK particle update', particles%n_step)
   call statistics
   
   call particles%init
-  call particles%stat
+  e_previous = 0.0
+  call particles%stat (e_previous)
   particles%time = 0.0
   call tic
   !-----------------------------------------------------------------------------
@@ -38,11 +41,12 @@ PROGRAM experiment
     call particles%update_rk3
     call particles%output('rk3')
   end do
-  call toc (' particle update', particles%n_step)
+  call toc ('RK3 particle update', particles%n_step)
   call statistics
 
   call particles%init
-  call particles%stat
+  e_previous = 0.0
+  call particles%stat (e_previous)
   particles%time = 0.0
   call tic
   !-----------------------------------------------------------------------------
@@ -53,7 +57,7 @@ PROGRAM experiment
     call particles%update_rk4
     call particles%output('rk4')
   end do
-  call toc (' particle update', particles%n_step)
+  call toc ('RK4 particle update', particles%n_step)
   call statistics
 
   contains
@@ -66,7 +70,7 @@ PROGRAM experiment
     particles%e_kin = particles%e_kin/particles%n_step
     particles%e_aver = particles%e_aver/particles%n_step
     particles%e2_aver = particles%e2_aver/particles%n_step
-    call particles%stat
+    call particles%stat (e_previous)
     print'((a,1p,e10.2))', &
      '     n_step:', real(particles%n_step), &
      '     dt_min:', particles%dt_min, &

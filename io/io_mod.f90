@@ -32,6 +32,7 @@ SUBROUTINE init (self, name)
   logical:: first_time=.true.
   logical:: do_debug=.false., do_trace=.false., do_output=.false., exist
   namelist /io_params/ verbose, do_debug, do_trace, do_output, levelmax
+  real:: test
   !.............................................................................
   call print_id (id)
   if (first_time) then
@@ -48,6 +49,7 @@ SUBROUTINE init (self, name)
     if (io%master) then
       print*,'======================================================================='
       print*,'NOTE: Reading parameters from '//trim(inputfile)
+      print'(a,i1)', ' This version was compiled with default real KIND=', kind(test)
       print*,'======================================================================='
     end if
     levelmax = io%levelmax
