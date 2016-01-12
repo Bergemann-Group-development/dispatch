@@ -275,7 +275,7 @@ SUBROUTINE update_rk3 (self)
       self%dt_harmonic = self%dt_harmonic+1./dt ! cost related measure
       self%dt_min = min(self%dt_min,dt)         ! cost related measure
       self%dt_max = max(self%dt_max,dt)         ! cost related measure
-      print*,i,n_step,sqrt(sum(p%r**2)), p%v(1)
+      !print*,i,n_step,sqrt(sum(p%r**2)), p%v(1)
     end do
     if (n_step > 0) then
       e_aver = e_aver/n_step                    ! average energy for this path

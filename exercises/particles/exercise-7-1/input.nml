@@ -8,7 +8,7 @@
  dtime=1
  end_time=100
  out_time=1.0
- dispersion=0.0
+ dispersion=0.4
  courant=0.005
 /
 &io_params
