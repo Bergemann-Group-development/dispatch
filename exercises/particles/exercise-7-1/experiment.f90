@@ -12,6 +12,7 @@ PROGRAM experiment
   !.............................................................................
   call io%init
   call particles%init
+  call particles%stat
   call tic
   !-----------------------------------------------------------------------------
   ! Advance time in steps "dtime", to mimic conditions when patch tasks are also
@@ -20,6 +21,7 @@ PROGRAM experiment
   do while (particles%time < particles%end_time)
     particles%time = particles%time + particles%dtime
     call particles%update_kdk
+    call particles%output
   end do
   call toc (' particle update', particles%n_step)
   !-----------------------------------------------------------------------------
@@ -30,6 +32,7 @@ PROGRAM experiment
   particles%e_kin = particles%e_kin/particles%n_step
   particles%e_aver = particles%e_aver/particles%n_step
   particles%e2_aver = particles%e2_aver/particles%n_step
+  call particles%stat
   print'((a,1p,e10.2))', &
    '     n_step:', real(particles%n_step), &
    '     dt_min:', particles%dt_min, &
@@ -42,6 +45,7 @@ PROGRAM experiment
    '  e_max_rms:', particles%e_max_rms
 
   call particles%init
+  call particles%stat
   particles%time = 0.0
   call tic
   !-----------------------------------------------------------------------------
@@ -62,6 +66,7 @@ PROGRAM experiment
   particles%e_kin = particles%e_kin/particles%n_step
   particles%e_aver = particles%e_aver/particles%n_step
   particles%e2_aver = particles%e2_aver/particles%n_step
+  call particles%stat
   print'((a,1p,e10.2))', &
    '     n_step:', real(particles%n_step), &
    '     dt_min:', particles%dt_min, &

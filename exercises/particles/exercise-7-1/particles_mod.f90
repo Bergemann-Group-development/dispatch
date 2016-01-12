@@ -36,6 +36,7 @@ MODULE particles_mod
     procedure:: update_kdk                      ! update linked list
     procedure:: update_rk3                      ! update linked list
     procedure:: output                          ! output data
+    procedure:: stat                            ! print statistics about particles
   end type
   type(random_t):: random
   type(standard_disk_t):: disk
@@ -99,6 +100,8 @@ SUBROUTINE init (self)
       p%next => self%head
       p%r = random%ran3()
       p%v = star%kepler_speed(p%r) * (1.+dispersion*random%ran3())
+      p%r(3)=0.
+      p%v(3)=0.
       p%m = self%mass/n
       self%head => p
     end do
@@ -107,6 +110,8 @@ SUBROUTINE init (self)
     do i=1,n
       p%r = random%ran3()
       p%v = star%kepler_speed(p%r) * (1.+dispersion*random%ran3())
+      p%r(3)=0.
+      p%v(3)=0.
       p%m = self%mass/n
       p%t = 0.0
       p => p%next
@@ -123,6 +128,7 @@ END SUBROUTINE init
 !> need to require particles to land exactly on the target time.
 !> =============================================================================
 SUBROUTINE update_kdk (self)
+  implicit none
   class(particle_task_t):: self
   real:: a(3), atot(3)                          ! accelration
   real:: dt, r2, c1, c2                         ! temporary data
@@ -208,6 +214,7 @@ END SUBROUTINE update_kdk
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE update_rk3 (self)
+  implicit none
   class(particle_task_t):: self
   real:: a(3), atot(3)                          ! acceleration
   real, dimension(3):: a1, a2, a3               ! accelerations
@@ -242,7 +249,7 @@ SUBROUTINE update_rk3 (self)
       rs = sum(r1**2)                           ! radius square
       am = c1/rs                                ! magnitude of acceleration
       a1 = -r1*(1./sqrt(rs))*am                 ! 1./sqrt() is often fast in hardware
-      dt = sqrt(sum(p%v**2))/am*self%courant    ! time step limited by curvature
+      dt = sqrt(sum(p%v**2))/am*3.*self%courant    ! time step limited by curvature
       dt = min(self%dtime, dt)                  ! don't overshoot too much
       v2 = v1 + 0.5*dt*a1                       ! update velocity
       r2 = r1 + 0.5*dt*v1                       ! drift
@@ -270,7 +277,7 @@ SUBROUTINE update_rk3 (self)
       e2_aver = e2_aver + e2                    ! squared, for RMS
       self%e_aver = self%e_aver + e             ! accuracy measure
       self%e2_aver = self%e2_aver + e2          ! accuracy measure
-      self%n_step = self%n_step+1               ! count steps
+      self%n_step = self%n_step + 1             ! count steps
       self%dt_aver = self%dt_aver+dt            ! cost related measure
       self%dt_harmonic = self%dt_harmonic+1./dt ! cost related measure
       self%dt_min = min(self%dt_min,dt)         ! cost related measure
@@ -294,7 +301,59 @@ END SUBROUTINE update_rk3
 !> measuring the total energy
 !> =============================================================================
 SUBROUTINE output (self)
+  USE io_mod
+  implicit none
   class(particle_task_t):: self
+  type(particle_t), pointer:: p                 ! particle pointer
+  character(len=64) filename
+  integer:: i
+  !-----------------------------------------------------------------------------
+  ! If the out_next time has passed, set a new time = the integer number of
+  ! out_time's that have passed, plus one more
+  !-----------------------------------------------------------------------------
+  if (self%time < self%out_next) return
+  !
+  write (filename,'(a)') 'data/particles.dat'
+  if (self%out_next==0.) then                   ! first snapshot, create file
+    call system ('mkdir -p data/')
+    open (io%data_unit, file=trim(filename), form='unformatted', status='unknown')
+  else
+    open (io%data_unit, file=trim(filename), form='unformatted', status='old', position='append')
+  endif
+
+  self%out_next = self%out_next + self%out_time
+
+  write(io%data_unit) self%n
+  p => self%head
+  do i=1,self%n
+    write(io%data_unit) p%t, p%r, p%v, p%m
+  enddo
+
+  close(io%data_unit)
 END SUBROUTINE output
+!> =============================================================================
+!> Output statistics about energy 
+!> =============================================================================
+SUBROUTINE stat (self)
+  implicit none
+  class(particle_task_t):: self
+  type(particle_t), pointer:: p                 ! particle pointer
+  integer:: i
+  real:: c1, e, e_tot, rs
+
+  c1 = star%m*star%g                          ! gravitational mass
+
+  ! Loop over particles and sum up (absolute) energy
+  p => self%head
+  do i=1,self%n
+    e = 0.5*sum(p%v**2)                       ! kinetic energy
+    rs = sum(p%r**2)                          ! radius square
+    e = e - c1/sqrt(rs)                       ! total energy
+    e_tot = e_tot + e                         ! average total energy
+    p => p%next
+  end do
+
+  print *, 'Average energy per particle in system :', e_tot / self%n
+END SUBROUTINE stat
 
 END MODULE particles_mod
