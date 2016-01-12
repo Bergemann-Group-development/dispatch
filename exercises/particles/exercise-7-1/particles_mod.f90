@@ -327,6 +327,7 @@ SUBROUTINE output (self)
   p => self%head
   do i=1,self%n
     write(io%data_unit) p%t, p%r, p%v, p%m
+    p => p%next
   enddo
 
   close(io%data_unit)

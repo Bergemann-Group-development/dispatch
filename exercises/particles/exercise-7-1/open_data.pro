@@ -13,12 +13,12 @@ endwhile
 rewind, lun
 print, 'ntot, mrec :', ntot, mrec
 
-r = dblarr(3,mrec*n)
-v = dblarr(3,mrec*n)
-t = dblarr(mrec*n)  
-m = dblarr(mrec*n)
-s= dblarr(8,n)
-ss = dblarr(8)
+r = fltarr(3,mrec*n)
+v = fltarr(3,mrec*n)
+t = fltarr(mrec*n)  
+m = fltarr(mrec*n)
+s= fltarr(8,n)
+ss = fltarr(8)
 i=0l
 while (not eof(lun)) do begin
   readu, lun, n
