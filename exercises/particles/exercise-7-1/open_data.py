@@ -17,6 +17,6 @@ with FortranFile("data/particles.dat", "r") as f:
   
 all = np.concatenate(all)
 s = all.shape
-all.shape = (s[0]/9,9)
-pyplot.plot(all[:,1],all[:,2])
+all.shape = (s[0]/8,8)
+pyplot.plot(all[:,1],all[:,2],'o')
 pyplot.show()
