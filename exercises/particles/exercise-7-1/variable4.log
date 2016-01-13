@@ -1,0 +1,85 @@
+--------------------------------------------------------------------------------
+ io_mod.f90 $Id: 3682fd22545ca19c9d2ad125fc9e49bc4b482e02 $        0.00
+ =======================================================================
+ NOTE: Reading parameters from variable4.nml
+ This version was compiled with default real KIND=8
+ =======================================================================
+&IO_PARAMS
+ VERBOSE=          0,
+ DO_DEBUG=F,
+ DO_TRACE=F,
+ DO_OUTPUT=T,
+ LEVELMAX=         10,
+ /
+  CODE UNITS:   (cgs):
+      length:   1.498E+13
+    velocity:   1.000E+05
+        mass:   1.989E+33
+        time:   1.498E+08
+     density:   5.917E-07
+    pressure:   5.917E+03
+      energy:   1.989E+43
+     gravity:   8.856E+02
+ temperature:   2.907E+02
+&STAR_PARAMS
+ MASS_SOLAR=  1.0000000000000000     ,
+ OMEGA= 2*0.0000000000000000       ,  1.0000000000000000     ,
+ /
+&DISK_PARAMS
+ SIGMA_CGS=  1700.0000000000000     ,
+ SIGMA_P= -1.5000000000000000     ,
+ TEMPERATURE=  100.00000000000000     ,
+ TEMPERATURE_P= -1.0000000000000000     ,
+ MU=  2.3999999999999999     ,
+ GAMMA=  1.3999999999999999     ,
+ /
+&PARTICLE_PARAMS
+ N=          1,
+ RADIUS=  1.0000000000000000     ,
+ MASS=  1.0000000000000000E-002,
+ DISPERSION= 0.10000000000000001     ,
+ DTIME=  450.00000000000000     ,
+ COURANT=  3.0000000000000001E-003,
+ END_TIME=  450.00000000000000     ,
+ OUT_TIME=  450.00000000000000     ,
+ EXCENTRICITY= 0.90000000000000002     ,
+ /
+ Average energy per particle in system :  -113.14714032887377     
+ KDK particle update:           0.928E-01 sec            111.     ns/upd,  8.37E+05 updates
+ Average energy per particle in system :  -113.13614946411364     
+   error energy per particle in system :   1.0990864760131558E-002
+     n_step:  8.37E+05
+     dt_min:  3.40E-05
+    dt_aver:  5.37E-04
+dt_harmonic:  1.58E-04
+     dt_max:  1.01E-03
+     e_aver: -1.13E+02
+      e_kin:  4.99E+02
+      e_rms:  8.92E-06
+  e_max_rms:  8.92E-06
+ Average energy per particle in system :  -113.14714032887377     
+ RK3 particle update:           0.104     sec            125.     ns/upd,  8.37E+05 updates
+ Average energy per particle in system :  -113.15963310321706     
+   error energy per particle in system :  -1.2492774343286328E-002
+     n_step:  8.37E+05
+     dt_min:  3.40E-05
+    dt_aver:  5.37E-04
+dt_harmonic:  1.58E-04
+     dt_max:  1.01E-03
+     e_aver: -1.13E+02
+      e_kin:  4.99E+02
+      e_rms:  1.43E-05
+  e_max_rms:  1.43E-05
+ Average energy per particle in system :  -113.14714032887377     
+ RK4 particle update:           0.117     sec            140.     ns/upd,  8.37E+05 updates
+ Average energy per particle in system :  -113.14714031261705     
+   error energy per particle in system :   1.6256720414276060E-008
+     n_step:  8.37E+05
+     dt_min:  3.40E-05
+    dt_aver:  5.37E-04
+dt_harmonic:  1.58E-04
+     dt_max:  1.01E-03
+     e_aver: -1.13E+02
+      e_kin:  4.99E+02
+      e_rms:  7.76E-08
+  e_max_rms:  1.43E-05
