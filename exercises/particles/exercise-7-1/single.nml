@@ -5,11 +5,12 @@
 /
 &particle_params
  n=1
- dtime=0.01
- end_time=450
- out_time=0.1
- dispersion=1.83
- courant=0.003
+ !dtime=0.01
+ !end_time=450
+ !out_time=0.1
+ dtime=450. end_time=450. out_time=450.
+ !dispersion=1.83 courant=0.03
+ excentricity=0.9 courant=-1e-5
 /
 &io_params
  do_output=t

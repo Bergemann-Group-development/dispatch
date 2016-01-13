@@ -1,0 +1,19 @@
+&disk_params
+ particle_size_cgs=1
+ particle_density_cgs=2
+/
+&star_params
+ mass_solar=1.0
+/
+&particle_params
+ n=1
+ dtime=0.1
+ out_time=0.1
+ end_time=340
+ excentricity=1e-6 courant=0.003
+/
+&io_params
+ do_output=t
+ do_trace=f
+ verbose=0
+/
