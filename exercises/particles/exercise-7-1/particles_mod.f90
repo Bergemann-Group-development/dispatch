@@ -141,11 +141,11 @@ END SUBROUTINE init
 SUBROUTINE update_kdk (self)
   implicit none
   class(particle_task_t):: self
-  real:: a(3), atot(3)                          ! accelration
+  real:: a(3), adrag(3)                         ! accelration
   real:: dt, r2, c1, c2                         ! temporary data
   type(particle_t), pointer:: p                 ! particle pointer
   real:: e, e2, e_aver, e2_aver, e_rms, e_kin
-  real:: v_gas(3), c, b, am
+  real:: v_gas(3), v_gas_prv(3), v_kep(3), c, b, am
   integer:: i, n_step
   !.............................................................................
   call trace_begin ('particles_mod%update_kdk', 3)
@@ -161,6 +161,7 @@ SUBROUTINE update_kdk (self)
     n_step = 0                                  ! steps along path
     c = 0.0                                     ! no drag
     v_gas = 0.0                                 ! for testing
+    v_gas_prv = 0.0
     do while (p%t < self%time)                  ! advance it to target time
       !------------------------------------------------------------------------
       ! First sub-step
@@ -170,15 +171,20 @@ SUBROUTINE update_kdk (self)
         am = c1/r2                              ! magnitude of acceleration
         a = -p%r*(1./sqrt(r2))*am               ! 1./sqrt() is often fast in hardware
       end if
-      n_step = n_step + 1
       dt = sqrt(sum(p%v**2))/am*self%courant    ! time step limited by curvature
       dt = min(self%dtime, dt)                  ! don't overshoot too much
       dt = merge(dt,-self%courant,self%courant>0.0) ! force dt = - courant when negative
-     !call disk%drag (p%r+2.*dt*p%v, p%v+2.*dt*a, v_gas, c)       ! the v_gas should be at a position dt ahead of the current one
+      !------------------------------------------------------------------------
+      ! At this point the position and velocity are at the beginning of the
+      ! interval, so p%v, v_gas, and v_kep are all consistent
+      !------------------------------------------------------------------------
+      call disk%drag (p%r, p%v, v_gas, v_kep, c)! v_gas before the drift
+      adrag = - ((v_gas-v_gas_prv)/dt+c*(p%v-v_kep-v_gas))/(1.0+dt*c)
+      adrag = 0.0
+      a = a + adrag
      !dt = min(dt,0.01/max(c,1e-35))
       b = 0.5                                   ! control asymptotic behavior
-      atot = (a + (v_gas-p%v)*c)/(1.0+b*c*dt)   ! total acceleration
-      p%v = p%v + 0.5*dt*atot                   ! update velocity
+      p%v = p%v + 0.5*dt*a                      ! update velocity
       p%r = p%r + dt*p%v                        ! drift
       p%t = p%t + dt                            ! increment time
       p%dt = dt                                 ! save for analysis
@@ -188,9 +194,21 @@ SUBROUTINE update_kdk (self)
       r2 = sum(p%r**2)                          ! radius square
       am = c1/r2                                ! magnitude of acceleration
       a = -p%r*(1./sqrt(r2))*am                 ! acceleration
-     !call disk%drag (p%r, p%v, v_gas, c)       ! the position for this v_gas should be at the current r
-      atot = (a + (v_gas-p%v)*c)/(1.0+b*c*dt)   ! total acceleration
-      p%v = p%v + 0.5*dt*atot                   ! update velocity
+      !------------------------------------------------------------------------
+      ! At this point the position is at the end of the interval, but the
+      ! velocity is not, and hence there will be a phase difference between
+      ! on the one hand p%v and on the other hand v_kep.  Since the time
+      ! step is split into two, it might be most consistent to keep the
+      ! drag correction term constant, so the full residual is compensated.
+      ! The drawbacks are that probably a new residual has already built up,
+      ! and that the vector p%v-u_gas is no longer exactly tangential, but
+      ! has a weak outwards component.  We need at least evaluate p%v and v_kep
+      ! at the same point in time (which is t+dt as far as p%r is concerned).
+      !------------------------------------------------------------------------
+      p%v = p%v + 0.5*dt*a                      ! update velocity
+      call disk%drag (p%r, p%v, v_gas, v_kep, c)! v_gas before the drift
+      adrag = - ((v_gas-v_gas_prv)/dt+c*(p%v-v_kep-v_gas))/(1.0+dt*c)
+      p%v = p%v + 0.5*dt*adrag                  ! update velocity
       !------------------------------------------------------------------------
       ! Accumulate statistics
       !------------------------------------------------------------------------
@@ -208,7 +226,11 @@ SUBROUTINE update_kdk (self)
       self%dt_harmonic = self%dt_harmonic+1./dt ! cost related measure
       self%dt_min = min(self%dt_min,dt)         ! cost related measure
       self%dt_max = max(self%dt_max,dt)         ! cost related measure
-      !print*,i,n_step,sqrt(sum(p%r**2))
+      print '(i8,1p,8(2x,2e10.2))', n_step, &
+        phi_rad(p%r), phi_rad(p%v), phi_rad(v_gas), phi_rad(v_kep), &
+        phi_rad(v_gas-v_gas_prv), phi_rad(p%v-v_kep), c*dt
+      v_gas_prv = v_gas
+      n_step = n_step + 1
     end do
     if (n_step > 0) then
       e_aver = e_aver/n_step                    ! average energy for this path
@@ -221,7 +243,22 @@ SUBROUTINE update_kdk (self)
     p => p%next                                 ! next particle
   end do
   call trace_end
+  contains
+  !> ===========================================================================
+  FUNCTION phi_rad (v) RESULT (out)
+    real:: v(3), r(3), out(2), r_hat(3), phi_hat(3)
+    !...........................................................................
+    r_hat = p%r
+    r_hat(3) = 0.0
+    r_hat = r_hat/sqrt(sum(r_hat**2))
+    phi_hat(1) =  r_hat(2)
+    phi_hat(2) = -r_hat(1)
+    phi_hat(3) = 0.0
+    out(1) = sum(phi_hat*v)
+    out(2) = sum(  r_hat*v)
+  END FUNCTION
 END SUBROUTINE update_kdk
+
 
 !> =============================================================================
 !> 3rd order Runge-Kutta update
@@ -405,7 +442,7 @@ SUBROUTINE update_rk4 (self)
 END SUBROUTINE update_rk4
 
 !> =============================================================================
-!> Output procedure, writing particles out at self%out_time intervals.  Each 
+!> Output procedure, writing particles out at self%out_time intervals.  Each
 !> output consist of an integer giving the number of particles, followed by a
 !> a record for each particle, with time, position, velocity, and mass.
 !> =============================================================================
@@ -443,7 +480,7 @@ SUBROUTINE output (self, name)
 END SUBROUTINE output
 
 !> =============================================================================
-!> Output statistics about energy 
+!> Output statistics about energy
 !> =============================================================================
 SUBROUTINE stat (self, e_previous)
   implicit none
