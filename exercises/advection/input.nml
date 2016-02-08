@@ -1,7 +1,0 @@
-
-&dimensions n=1 dims=64,64,64 /
-! 4 cases
-&input n=100 n_step=200 courant=0.10 w=10. ux=1.0 uy=0.5 /
-&input n=100 n_step=200 courant=0.15 w=10. ux=1.0 uy=0.5 /
-&input n=100 n_step=200 courant=0.20 w=10. ux=1.0 uy=0.5 /
-&input n=100 n_step=200 courant=0.25 w=10. ux=1.0 uy=0.5 /
