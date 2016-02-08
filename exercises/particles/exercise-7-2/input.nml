@@ -1,0 +1,27 @@
+! This setup creates a 100 particles in orbits of different size, orientation,
+! and ellipticity.  You can vary the particle_size_cgs, and the alpha parameter,
+! to control the radial drift relative to the gas, and the radial velocity of the
+! gas, respectively.
+
+&disk_params
+ particle_size_cgs=0.1
+ particle_density_cgs=2
+ alpha=1e-4
+/
+&star_params
+ mass_solar=1.0
+/
+&particle_params
+ radius=2.5
+ n=100
+ end_time=20
+ dtime=0.02
+ out_time=0.02
+ dispersion=0.4
+ courant=0.001
+/
+&io_params
+ do_output=t
+ do_trace=f
+ verbose=0
+/

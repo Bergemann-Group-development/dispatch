@@ -35,8 +35,6 @@ MODULE particles_mod
   contains
     procedure:: init                            ! initialize
     procedure:: update_kdk                      ! update linked list
-    procedure:: update_rk3                      ! update linked list
-    procedure:: update_rk4                      ! update linked list
     procedure:: output                          ! output data
     procedure:: stat                            ! print statistics about particles
   end type
@@ -97,13 +95,13 @@ SUBROUTINE init (self)
   self%e_aver = 0.0
   self%e2_aver = 0.0
   !-----------------------------------------------------------------------------
-  ! Alocate a list of particles
+  ! Allocate a list of particles
   !-----------------------------------------------------------------------------
   if (first_time) then
     do i=1,n
       allocate (p)
       p%next => self%head
-      p%r = random%ran3()
+      p%r = self%radius*random%ran3()
       p%v = star%kepler_speed(p%r) * (1.+dispersion*random%ran3())
       p%r(3)=0.
       p%v(3)=0.
@@ -162,6 +160,7 @@ SUBROUTINE update_kdk (self)
     c = 0.0                                     ! no drag
     v_gas = 0.0                                 ! for testing
     v_gas_prv = 0.0
+    b = 0.5                                     ! control asymptotic behavior
     do while (p%t < self%time)                  ! advance it to target time
       !------------------------------------------------------------------------
       ! First sub-step
@@ -176,14 +175,17 @@ SUBROUTINE update_kdk (self)
       dt = merge(dt,-self%courant,self%courant>0.0) ! force dt = - courant when negative
       !------------------------------------------------------------------------
       ! At this point the position and velocity are at the beginning of the
-      ! interval, so p%v, v_gas, and v_kep are all consistent
+      ! interval, so p%v, v_gas, and v_kep are all lined up
       !------------------------------------------------------------------------
       call disk%drag (p%r, p%v, v_gas, v_kep, c)! v_gas before the drift
-      adrag = - ((v_gas-v_gas_prv)/dt+c*(p%v-v_kep-v_gas))/(1.0+dt*c)
-      adrag = 0.0
-      a = a + adrag
+      adrag = - ((v_gas-v_gas_prv)/dt+c*(p%v-v_kep-v_gas))/(1.0+0.5*dt*c)
+      print '("a",i8,1p,8(2x,2e10.2))', n_step, &
+        p%r(3), c*dt, &
+        phi_rad(p%r), phi_rad(v_gas-v_gas_prv), &
+        phi_rad(p%v-v_gas-v_kep)
+      v_gas_prv = v_gas
      !dt = min(dt,0.01/max(c,1e-35))
-      b = 0.5                                   ! control asymptotic behavior
+      p%v = p%v +     dt*adrag                  ! update velocity
       p%v = p%v + 0.5*dt*a                      ! update velocity
       p%r = p%r + dt*p%v                        ! drift
       p%t = p%t + dt                            ! increment time
@@ -194,21 +196,7 @@ SUBROUTINE update_kdk (self)
       r2 = sum(p%r**2)                          ! radius square
       am = c1/r2                                ! magnitude of acceleration
       a = -p%r*(1./sqrt(r2))*am                 ! acceleration
-      !------------------------------------------------------------------------
-      ! At this point the position is at the end of the interval, but the
-      ! velocity is not, and hence there will be a phase difference between
-      ! on the one hand p%v and on the other hand v_kep.  Since the time
-      ! step is split into two, it might be most consistent to keep the
-      ! drag correction term constant, so the full residual is compensated.
-      ! The drawbacks are that probably a new residual has already built up,
-      ! and that the vector p%v-u_gas is no longer exactly tangential, but
-      ! has a weak outwards component.  We need at least evaluate p%v and v_kep
-      ! at the same point in time (which is t+dt as far as p%r is concerned).
-      !------------------------------------------------------------------------
       p%v = p%v + 0.5*dt*a                      ! update velocity
-      call disk%drag (p%r, p%v, v_gas, v_kep, c)! v_gas before the drift
-      adrag = - ((v_gas-v_gas_prv)/dt+c*(p%v-v_kep-v_gas))/(1.0+dt*c)
-      p%v = p%v + 0.5*dt*adrag                  ! update velocity
       !------------------------------------------------------------------------
       ! Accumulate statistics
       !------------------------------------------------------------------------
@@ -226,10 +214,6 @@ SUBROUTINE update_kdk (self)
       self%dt_harmonic = self%dt_harmonic+1./dt ! cost related measure
       self%dt_min = min(self%dt_min,dt)         ! cost related measure
       self%dt_max = max(self%dt_max,dt)         ! cost related measure
-      print '(i8,1p,8(2x,2e10.2))', n_step, &
-        phi_rad(p%r), phi_rad(p%v), phi_rad(v_gas), phi_rad(v_kep), &
-        phi_rad(v_gas-v_gas_prv), phi_rad(p%v-v_kep), c*dt
-      v_gas_prv = v_gas
       n_step = n_step + 1
     end do
     if (n_step > 0) then
@@ -258,188 +242,6 @@ SUBROUTINE update_kdk (self)
     out(2) = sum(  r_hat*v)
   END FUNCTION
 END SUBROUTINE update_kdk
-
-
-!> =============================================================================
-!> 3rd order Runge-Kutta update
-!> =============================================================================
-SUBROUTINE update_rk3 (self)
-  implicit none
-  class(particle_task_t):: self
-  real:: a(3), atot(3)                          ! acceleration
-  real, dimension(3):: a1, a2, a3               ! accelerations
-  real, dimension(3):: v1, v2, v3               ! velocities
-  real, dimension(3):: r1, r2, r3               ! positions
-  real:: dt, rs, c1, c2                         ! temporary data
-  type(particle_t), pointer:: p                 ! particle pointer
-  real:: e, e2, e_aver, e2_aver, e_rms, e_kin
-  real:: v_gas(3), c, b, am
-  integer:: i, n_step
-  !.............................................................................
-  call trace_begin ('particles_mod%update_rk3', 3)
-  c1 = star%m*star%g                            ! acceleration coefficient
-  c2 = self%courant/c1                          ! time step coefficient
-  i = 0                                         ! particle counter
-  p => self%head                                ! pointer to 1st particle
-  do while (associated(p))                      ! for each list member
-    i = i+1
-    e_aver = 0.0                                ! average total energy
-    e2_aver = 0.0                               ! squared
-    e_kin = 0.0                                 ! average kinetic energy
-    n_step = 0                                  ! steps along path
-    c = 0.0                                     ! no drag
-    v_gas = 0.0                                 ! for testing
-    do while (p%t < self%time)                  ! advance it to target time
-      n_step = n_step + 1
-      !------------------------------------------------------------------------
-      ! 3rd order Runge-Kutta step
-      !------------------------------------------------------------------------
-      r1 = p%r                                  ! initial position
-      v1 = p%v                                  ! initial speed
-      rs = sum(r1**2)                           ! radius square
-      am = c1/rs                                ! magnitude of acceleration
-      a1 = -r1*(1./sqrt(rs))*am                 ! 1./sqrt() is often fast in hardware
-      dt = sqrt(sum(p%v**2))/am*self%courant    ! time step limited by curvature
-      dt = min(self%dtime, dt)                  ! don't overshoot too much
-      dt = merge(dt,-self%courant,self%courant>0.0) ! force dt = - courant when negative
-      v2 = v1 + 0.5*dt*a1                       ! update velocity
-      r2 = r1 + 0.5*dt*v1                       ! drift
-      rs = sum(r2**2)                           ! radius square
-      am = c1/rs                                ! magnitude of acceleration
-      a2 = -r2*(1./sqrt(rs))*am                 ! 1./sqrt() is often fast in hardware
-      v3 = v1 + dt*(2.0*a2-a1)                  ! update velocity
-      r3 = r1 + dt*(2.0*v2-v1)                  ! update position
-      rs = sum(r3**2)                           ! radius square
-      am = c1/rs                                ! magnitude of acceleration
-      a3 = -r3*(1./sqrt(rs))*am                 ! 1./sqrt() is often fast in hardware
-      p%r = r1 + (dt/6.)*(v1+4.0*v2+v3)         ! final position
-      p%v = v1 + (dt/6.)*(a1+4.0*a2+a3)         ! final velocity
-      p%t = p%t + dt                            ! increment time
-      p%dt = dt                                 ! save for analysis
-      !------------------------------------------------------------------------
-      ! Accumulate statistics
-      !------------------------------------------------------------------------
-      e = 0.5*sum(p%v**2)                       ! kinetic energy
-      e_kin = e_kin + e                         ! accumulate over one path
-      self%e_kin = self%e_kin + e               ! accumulate over all paths
-      e = e - c1/sqrt(rs)                       ! total energy
-      e2 = e**2                                 ! squared
-      e_aver = e_aver + e                       ! average total energy
-      e2_aver = e2_aver + e2                    ! squared, for RMS
-      self%e_aver = self%e_aver + e             ! accuracy measure
-      self%e2_aver = self%e2_aver + e2          ! accuracy measure
-      self%n_step = self%n_step + 1             ! count steps
-      self%dt_aver = self%dt_aver+dt            ! cost related measure
-      self%dt_harmonic = self%dt_harmonic+1./dt ! cost related measure
-      self%dt_min = min(self%dt_min,dt)         ! cost related measure
-      self%dt_max = max(self%dt_max,dt)         ! cost related measure
-      !print*,i,n_step,sqrt(sum(p%r**2)), p%v(1)
-    end do
-    if (n_step > 0) then
-      e_aver = e_aver/n_step                    ! average energy for this path
-      e_kin  = e_kin /n_step                    ! average kinetic energy for this path
-      e2_aver = e2_aver/n_step
-      e_rms = sqrt(max(e2_aver-e_aver**2,0.0))/e_kin
-      self%e_rms = self%e_rms + n_step*e_rms**2 ! Root-mean square
-      self%e_max_rms = max(self%e_max_rms,e_rms)
-    end if
-    p => p%next                                 ! next particle
-  end do
-  call trace_end
-END SUBROUTINE update_rk3
-
-!> =============================================================================
-!> 4th order Runge-Kutta update
-!> =============================================================================
-SUBROUTINE update_rk4 (self)
-  implicit none
-  class(particle_task_t):: self
-  real:: a(3), atot(3)                          ! acceleration
-  real, dimension(3):: a1, a2, a3, a4           ! accelerations
-  real, dimension(3):: v1, v2, v3, v4           ! velocities
-  real, dimension(3):: r1, r2, r3, r4           ! positions
-  real:: dt, rs, c1, c2                         ! temporary data
-  type(particle_t), pointer:: p                 ! particle pointer
-  real:: e, e2, e_aver, e2_aver, e_rms, e_kin
-  real:: v_gas(3), c, b, am
-  integer:: i, n_step
-  !.............................................................................
-  call trace_begin ('particles_mod%update_rk3', 3)
-  c1 = star%m*star%g                            ! acceleration coefficient
-  c2 = self%courant/c1                          ! time step coefficient
-  i = 0                                         ! particle counter
-  p => self%head                                ! pointer to 1st particle
-  do while (associated(p))                      ! for each list member
-    i = i+1
-    e_aver = 0.0                                ! average total energy
-    e2_aver = 0.0                               ! squared
-    e_kin = 0.0                                 ! average kinetic energy
-    n_step = 0                                  ! steps along path
-    c = 0.0                                     ! no drag
-    v_gas = 0.0                                 ! for testing
-    do while (p%t < self%time)                  ! advance it to target time
-      n_step = n_step + 1
-      !------------------------------------------------------------------------
-      ! 4th order Runge-Kutta step
-      !------------------------------------------------------------------------
-      r1 = p%r                                  ! initial position
-      v1 = p%v                                  ! initial speed
-      rs = sum(r1**2)                           ! radius square
-      am = c1/rs                                ! magnitude of acceleration
-      a1 = -r1*(1./sqrt(rs))*am                 ! 1./sqrt() is often fast in hardware
-      dt = sqrt(sum(v1**2))/am*self%courant     ! time step limited by curvature
-      dt = min(self%dtime, dt)                  ! don't overshoot too much
-      dt = merge(dt,-self%courant,self%courant>0.0) ! force dt = - courant when negative
-      v2 = v1 + 0.5*dt*a1                       ! update velocity
-      r2 = r1 + 0.5*dt*v1                       ! drift
-      rs = sum(r2**2)                           ! radius square
-      am = c1/rs                                ! magnitude of acceleration
-      a2 = -r2*(1./sqrt(rs))*am                 ! 1./sqrt() is often fast in hardware
-      v3 = v1 + 0.5*dt*a2                       ! update velocity
-      r3 = r1 + 0.5*dt*v2                       ! drift
-      rs = sum(r3**2)                           ! radius square
-      am = c1/rs                                ! magnitude of acceleration
-      a3 = -r3*(1./sqrt(rs))*am                 ! 1./sqrt() is often fast in hardware
-      v4 = v1 + dt*a3                           ! update velocity
-      r4 = r1 + dt*v3                           ! drift
-      rs = sum(r4**2)                           ! radius square
-      am = c1/rs                                ! magnitude of acceleration
-      a4 = -r4*(1./sqrt(rs))*am                 ! 1./sqrt() is often fast in hardware
-      p%r = r1 + (dt/6.)*(v1+2.*(v2+v3)+v4)     ! final position
-      p%v = v1 + (dt/6.)*(a1+2.*(a2+a3)+a4)     ! final velocity
-      p%t = p%t + dt                            ! increment time
-      p%dt = dt                                 ! save for analysis
-      !------------------------------------------------------------------------
-      ! Accumulate statistics
-      !------------------------------------------------------------------------
-      e = 0.5*sum(p%v**2)                       ! kinetic energy
-      e_kin = e_kin + e                         ! accumulate over one path
-      self%e_kin = self%e_kin + e               ! accumulate over all paths
-      e = e - c1/sqrt(rs)                       ! total energy
-      e2 = e**2                                 ! squared
-      e_aver = e_aver + e                       ! average total energy
-      e2_aver = e2_aver + e2                    ! squared, for RMS
-      self%e_aver = self%e_aver + e             ! accuracy measure
-      self%e2_aver = self%e2_aver + e2          ! accuracy measure
-      self%n_step = self%n_step + 1             ! count steps
-      self%dt_aver = self%dt_aver+dt            ! cost related measure
-      self%dt_harmonic = self%dt_harmonic+1./dt ! cost related measure
-      self%dt_min = min(self%dt_min,dt)         ! cost related measure
-      self%dt_max = max(self%dt_max,dt)         ! cost related measure
-      !print*,i,n_step,sqrt(sum(p%r**2)), p%v(1)
-    end do
-    if (n_step > 0) then
-      e_aver = e_aver/n_step                    ! average energy for this path
-      e_kin  = e_kin /n_step                    ! average kinetic energy for this path
-      e2_aver = e2_aver/n_step
-      e_rms = sqrt(max(e2_aver-e_aver**2,0.0))/e_kin
-      self%e_rms = self%e_rms + n_step*e_rms**2 ! Root-mean square
-      self%e_max_rms = max(self%e_max_rms,e_rms)
-    end if
-    p => p%next                                 ! next particle
-  end do
-  call trace_end
-END SUBROUTINE update_rk4
 
 !> =============================================================================
 !> Output procedure, writing particles out at self%out_time intervals.  Each

@@ -1,0 +1,29 @@
+! This setup creates a single particle in a 1 AU orbit, which has a practically
+! circular orbit (the excentricity is non-zero to trigger it being in the x-y
+! plane.  You can vary the particle_size_cgs, and the alpha parameter, to 
+! control the radial drift relative to the gas, and the radial velocity of the
+! gas, respectively.  With the time unit being approximately 5 years, there are
+! five orbits per time unit, so the 34 below corresponds to 170 orbits.
+
+&disk_params
+ particle_size_cgs=1
+ particle_density_cgs=2
+ alpha=1e-4
+/
+&star_params
+ mass_solar=1.0
+/
+&particle_params
+ radius=2.55
+ n=1
+ !dtime=0.1 out_time=0.1
+ dtime=34 out_time=34
+ end_time=34
+ excentricity=1e-6
+ courant=0.003
+/
+&io_params
+ do_output=t
+ do_trace=f
+ verbose=0
+/

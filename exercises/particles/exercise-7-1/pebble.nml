@@ -1,16 +1,19 @@
 &disk_params
  particle_size_cgs=1
  particle_density_cgs=2
+ alpha=1e-4
 /
 &star_params
  mass_solar=1.0
 /
 &particle_params
+ radius=2.55
  n=1
- dtime=0.1
- out_time=0.1
- end_time=340
- excentricity=1e-6 courant=0.003
+ !dtime=0.1 out_time=0.1
+ dtime=34 out_time=34
+ end_time=34
+ excentricity=1e-6
+ courant=0.02
 /
 &io_params
  do_output=t
