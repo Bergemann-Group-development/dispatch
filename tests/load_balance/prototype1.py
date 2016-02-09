@@ -19,14 +19,14 @@ rank0=np.copy(rank)
 count=np.zeros(nrank,dtype=np.int32)
 count0=n*n/nrank
 
-def show_ranks(r,iter):
+def show_ranks(r,iter,tol):
     pl.imshow(r,interpolation='nearest')
-    pl.title(iter)
+    pl.title((iter,tol))
     pl.draw()
-    pl.pause(0.1)
+    pl.pause(0.01)
     
-pl.figure()
-show_ranks(rank0,0)
+pl.figure(1)
+show_ranks(rank0,0,0)
 
 #nbors =np.zeros((n,n),dtype=np.int32)
 vnbors=np.zeros((n,n),dtype=np.int32)
@@ -43,30 +43,38 @@ def nvnb(i,j):
     return nvn
 
 # Compute the number of virtual nbors for all tasks
-def count_vnbors():
+def count_vnbors(str):
     count[:]=0
     for i0 in range(n):
         for j0 in range(n):
             count[rank[i0,j0]]+=1
             vnbors[i0,j0]=nvnb(i0,j0)
-    print np.sum(vnbors)
-    #print count,count0
+    ntot=np.sum(vnbors)
+    print str,ntot
+    return ntot
 
-count_vnbors()
+nv0=count_vnbors("initial:")
 
 def load_balance(iter,tol):
     for i0 in range(n):
         for j0 in range(n):
+            case=0
             for i1 in range(-1,2):
                 i2=np.mod(i0+i1,n)
                 for j1 in range(-1,2):
                     j2=np.mod(j0+j1,n)
                     rank0=rank[i0,j0]
                     rank2=rank[i2,j2]
-                    # if rank2 is different from rank0, then a change of
-                    # rank0 to rank2 means the number of vnbors[i2,j2] is 
-                    # reduced by one, while vnbors[i0,j0] must be recomputed
-                    if rank2!=rank0 and count[rank2]<(count0+tol) and count[rank0]>(count0-tol):
+                    # keep swap, update rank counts and vnb counts
+                    def keep_swap():
+                        count[rank2]+=1
+                        count[rank0]-=1
+                        for i3 in range(-1,2):
+                            i4=np.mod(i0+i3,n)
+                            for j3 in range(-1,2):
+                                j4=np.mod(j0+j3,n)
+                                vnbors[i4,j4]=nvnb(i4,j4)
+                    def try_swap():
                         rank[i0,j0]=rank2
                         dn=0
                         for i3 in range(-1,2):
@@ -74,30 +82,57 @@ def load_balance(iter,tol):
                             for j3 in range(-1,2):
                                 j4=np.mod(j0+j3,n)
                                 dn=dn+nvnb(i4,j4)-vnbors[i4,j4]
-                        # if the number of vnbors is increased by a migration, cancel
-                        if dn>0:
-                            rank[i0,j0]=rank0
-                        # else update rank and vnb counts
-                        else:
-                            count[rank2]+=1
-                            count[rank0]-=1
-                            for i3 in range(-1,2):
-                                i4=np.mod(i0+i3,n)
-                                for j3 in range(-1,2):
-                                    j4=np.mod(j0+j3,n)
-                                    vnbors[i4,j4]=nvnb(i4,j4)
-                            #print i0,j0,vnbors[i0,j0],nvnb(i0,j0),vnbors[i2,j2],nvnb(i2,j2),dvnbs
-    count_vnbors()
-    show_ranks(rank,iter)
+                        return dn
+                    if rank2!=rank0:
+                        retry=True
+                        if count[rank2]<(count0+tol) and count[rank0]>(count0-tol):
+                            dn=try_swap()
+                            vnbors_new=nvnb(i0,j0)
+                            # if swap decreases the number of virtual tasks, OR if the
+                            # number of virtual nbors is larger than 4 (corner), keep swap
+                            if dn<=0 or (vnbors[i0,j0]>4 and vnbors_new<vnbors[i0,j0]):
+                                keep_swap()
+                                retry=False
+                                case=1
+                            # else, cancel the swap
+                            else:
+                                rank[i0,j0]=rank0
+                                case=2
+                        # if the number of virtual neighbors is 6 or more (corner or worse)
+                        # try a swap, and keep if it improves the local value, disregarding
+                        # for now both balancing and a possible increase of the total nvnb
+                        if retry and vnbors[i0,j0]>4:
+                            dn=try_swap()
+                            vnbors_new=nvnb(i0,j0)
+                            if vnbors_new<vnbors[i0,j0]:
+                                keep_swap()
+                                #print "attacked a case:", vnbors[i0,j0], vnbors_new
+                                retry=False
+                                case=3
+                            else:
+                                rank[i0,j0]=rank0
+                                case=4
+                        # if still no good move, check if load balance can be improved, with
+                        # only one more virtual nbors resulting from the swap
+                        #if retry and count[rank2]<(count0+1) and count[rank0]>(count0-1):
+                        #    dn=try_swap()
+                        #    if dn<=1:
+                        #        keep_swap()
+            #if vnbors[i0,j0]>5: 
+            #    print "failed:{0:4d}{1:4d}{2:4d}{3:4d}".format(
+            #      i0,j0,vnbors[i0,j0],case)
+        show_ranks(rank,iter,tol)
     
 def iterate_load_balance(niter,tolerance):
     for iter in range(1,niter+1):
         load_balance(iter,tolerance)
+        print count, tolerance, np.sum(vnbors)
 
-niter=20
+niter=5
 iterate_load_balance(niter,1)
-iterate_load_balance(niter,2)
-iterate_load_balance(niter,3)
+#iterate_load_balance(niter,2)
+#iterate_load_balance(niter,3)
+nv1=count_vnbors("  final:")
 
 rank2=ran.random_integers(0,nrank-1,(n*2,n*2))
 for i in range(2):
