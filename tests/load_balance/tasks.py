@@ -38,9 +38,13 @@ def count_nbors(task):
     task.vnbors=0
     node=task.nbors.head
     task.ranks=np.zeros(task.nrank,dtype=np.int32)
+    task.hvnbors=np.zeros(task.nrank,dtype=np.int32)
     while node:
         nbor=node.data
         task.ranks[nbor.rank]+=1
+        # count the number of vnbors for each possible rank
+        #for rank in range(task.nrank):
+        #    task.hvnbors[rank]+=nbor.rank!=rank
         if do_print: print "{0:3d}{1:3d}{2:3d}{3:3d}{4:3d}".format(
           task.j+task.i*task.n,
           np.mod(task.i-nbor.i+1,task.n)-1,
@@ -55,16 +59,14 @@ def count_nbors(task):
 # print the number of vnbors
 def sum_nbors(tasks):
     vnbors=0
-    nnbors=0
     for ij in range(np.size(tasks)):
         count_nbors(tasks[ij])
         vnbors+=tasks[ij].vnbors
-        nnbors+=tasks[ij].nnbors
-    return (vnbors,nnbors)
+    return vnbors
     
 # print the number of vnbors
 def print_nbors(tasks):
-    vnbors,nnbors=sum_nbors(tasks)
+    vnbors=sum_nbors(tasks)
     print vnbors
     return vnbors
 
