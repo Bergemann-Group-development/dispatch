@@ -42,13 +42,15 @@ def nvnb(i,j):
     for i1 in range(-1,2):
         i2=np.mod(i+i1,n)
         for j1 in range(-1,2):
+            if i1==0 and j1==0: continue
             j2=np.mod(j+j1,n)
-            if i1!=0 or j1!=0: tmp[rank[i2,j2]]+=1
+            tmp[rank[i2,j2]]+=1
             if rank[i2,j2]!=rank[i,j]:
                 nvn+=1
     return nvn
 
-# Compute the number of virtual nbors for all tasks
+# Compute the number of virtual nbors for all tasks, and an array ranks[0:nrank], which
+# gives the number of nbor tasks with that rank.
 def count_vnbors():
     count[:]=0
     for i0 in range(n):
@@ -64,6 +66,70 @@ def print_vnbors():
 
 print_vnbors()
 
+def update_vnbors(i,j):
+    # update the vnbors array, which holds the number of virtual nbors for the 3x3 tasks
+    for i1 in range(-1,2):
+        i2=np.mod(i+i1,n)
+        for j1 in range(-1,2):
+            j2=np.mod(j+j1,n)
+            vnbors[i2,j2]=nvnb(i2,j2)
+
+# add one task to rank r, choosing one that minimized the change in vnbors
+def add_one(r):
+    dnmin=99
+    for i in range(n):
+        for j in range(n):
+            rsave=rank[i,j]
+            if rsave==r: continue
+            rank[i,j]=r
+            dn=0
+            for i1 in range(-1,2):
+                i2=np.mod(i+i1,n)
+                for j1 in range(-1,2):
+                    j2=np.mod(j+j1,n)
+                    dn=dn+nvnb(i2,j2)-vnbors[i2,j2]
+            rank[i,j]=rsave
+            if dn<dnmin:
+                i3=i
+                j3=j
+                dnmin=dn
+    rsave=rank[i3,j3]
+    count[rsave]-=1
+    rank[i3,j3]=r
+    count[r]+=1
+    update_vnbors(i3,j3)
+    print "added a task to rank {0:}, by changing the rank at {1:},{2:} from {3:}, dn={4:}, count={5:}".format(
+    r,i3,j3,rsave,dnmin,count[r])
+
+# remove one task from rank r, choosing one that minimized the change in vnbors
+def remove_one(r):
+    dnmin=99
+    for i in range(n):
+        for j in range(n):
+            if rank[i,j]==r:
+                for r1 in range(nrank):
+                    if r1==r: continue
+                    rsave=rank[i,j]
+                    rank[i,j]=r1
+                    dn=0
+                    for i1 in range(-1,2):
+                        i2=np.mod(i+i1,n)
+                        for j1 in range(-1,2):  # [i4,j4] is the neighbor-neighbor
+                            j2=np.mod(j+j1,n)
+                            dn=dn+nvnb(i2,j2)-vnbors[i2,j2]
+                    rank[i,j]=rsave
+                    if dn<dnmin:
+                        i3=i
+                        j3=j
+                        dnmin=dn
+                        rmin=r1
+    count[r]-=1
+    rank[i3,j3]=rmin
+    count[rmin]+=1
+    update_vnbors(i3,j3)
+    print "removed a task from rank {0:}, by changing the rank at {1:},{2:} to {3:}, dn={4:}, count={5:}".format(
+    r,i3,j3,rmin,dnmin,count[r])
+
 def load_balance(iter,tol):
     for i0 in range(n):
         for j0 in range(n):
@@ -76,58 +142,43 @@ def load_balance(iter,tol):
             choices=find(nranks!=0)
             for rank2 in choices:
                 if rank2==rank0: continue
-                # if rank2 is different from rank0, 
-                if count[rank2]<(count0+tol) and count[rank0]>(count0-tol):
-                    rank[i0,j0]=rank2
-                    count[rank2]+=1
-                    count[rank0]-=1
-                    dn=0
-                    # this double loop computes the change of the number of virtual 
-                    # neighbors in the 9 cells centered on [i0,j0]. 
-                    for i3 in range(-1,2):
-                        i4=np.mod(i0+i3,n)
-                        for j3 in range(-1,2):  # [i4,j4] is the neighbor-neighbor
-                            j4=np.mod(j0+j3,n)
-                            dn=dn+nvnb(i4,j4)-vnbors[i4,j4]
-                    # If the number of vnbors is increased by a migration, cancel!
-                    if dn>0:
-                        rank[i0,j0]=rank0
-                        count[rank2]-=1
-                        count[rank0]+=1
-                    # else update rank and vnb counts
-                    else:
-                        #dnlast=dn
-                        if dn<dnmin: 
-                            changes+=1
-                            dnmin=dn
-                            rank1=rank2
-                        # the [i0,j0] cell is changed from rank0 to rank2
-                        #count[rank2]+=1
-                        #count[rank0]-=1
-                        #ranks[i0,i0,rank0]-=1
-                        #ranks[i0,i0,rank2]+=1
-                        # this loops over all nbors of [i0,j0], updating the count of
-                        # virtual nbors of each nbor
-                        #for i3 in range(-1,2):
-                        #    i4=np.mod(i0+i3,n)
-                        #    for j3 in range(-1,2):
-                        #        j4=np.mod(j0+j3,n)
-                        #        vnbors[i4,j4]=nvnb(i4,j4)
-                        #xx0+=dn
-                        #s="migrate:{:4d}{:4d}{:4d}{:4d}"
-                        #print ranks[i0,j0,:],rank0,rank2
-                        #print s.format(i0,j0,dn,dn1) #,dn2
-                        #print i0,j0,vnbors[i0,j0],nvnb(i0,j0),vnbors[i2,j2],nvnb(i2,j2),dvnbs
+                rank[i0,j0]=rank2
+                count[rank2]+=1
+                count[rank0]-=1
+                # this double loop computes the change of the number of virtual 
+                # neighbors in the 9 cells centered on [i0,j0]. 
+                dn=0
+                for i3 in range(-1,2):
+                    i4=np.mod(i0+i3,n)
+                    for j3 in range(-1,2):  # [i4,j4] is the neighbor-neighbor
+                        j4=np.mod(j0+j3,n)
+                        dn=dn+nvnb(i4,j4)-vnbors[i4,j4]
+                # If the number of vnbors is increased by a migration, cancel!
+                if dn>0:
+                    rank[i0,j0]=rank0
+                    count[rank2]-=1
+                    count[rank0]+=1
+                # else compare with the previous best case, and save if better
+                else:
+                    #dnlast=dn
+                    if dn<dnmin: 
+                        changes+=1
+                        dnmin=dn
+                        rank1=rank2
             if changes>0: # and dnlast!=dnmin: 
                 #print "changes={} last choice={} dn={} best={}".format(changes,rank2,dnlast,dnmin)
+                # if we have too many tasks on rank2, find one to remove  
+                while count[rank1]>(count0-1):
+                    remove_one(rank1)
+                # if we don't have enough tasks on rank0, find one to add  
+                while count[rank0]<(count0+1):
+                    add_one(rank0)
+                print "changed rank={} at {},{} to {}, dn={}, count={}".format(
+                  rank0,i0,j0,rank1,dnmin,count[rank1])
                 rank[i0,j0]=rank1
                 count[rank2]-=1
                 count[rank1]+=1
-                for i3 in range(-1,2):
-                    i4=np.mod(i0+i3,n)
-                    for j3 in range(-1,2):
-                        j4=np.mod(j0+j3,n)
-                        vnbors[i4,j4]=nvnb(i4,j4)
+                update_vnbors(i0,j0)
     print_vnbors()
     #print xx0
     show_ranks(rank,iter)
