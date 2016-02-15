@@ -93,17 +93,16 @@ def add_one(r):
                 i3=i
                 j3=j
                 dnmin=dn
-    if dnmin<99:
-        rsave=rank[i3,j3]
-        count[rsave]-=1
-        rank[i3,j3]=r
-        count[r]+=1
-        update_vnbors(i3,j3)
-        print "added a task to rank {0:}, by changing the rank at {1:},{2:} from {3:}, dn={4:}, count={5:}".format(
-        r,i3,j3,rsave,dnmin,count[r])
+    rsave=rank[i3,j3]
+    count[rsave]-=1
+    rank[i3,j3]=r
+    count[r]+=1
+    update_vnbors(i3,j3)
+    print "added a task to rank {0:}, by changing the rank at {1:},{2:} from {3:}, dn={4:}, count={5:}".format(
+    r,i3,j3,rsave,dnmin,count[r])
 
 # remove one task from rank r, choosing one that minimized the change in vnbors
-def remove_one(r,count0):
+def remove_one(r):
     dnmin=99
     for i in range(n):
         for j in range(n):
@@ -119,18 +118,17 @@ def remove_one(r,count0):
                             j2=np.mod(j+j1,n)
                             dn=dn+nvnb(i2,j2)-vnbors[i2,j2]
                     rank[i,j]=rsave
-                    if dn<dnmin and count[r1]<count0+5:
+                    if dn<dnmin:
                         i3=i
                         j3=j
                         dnmin=dn
                         rmin=r1
-    if dnmin<99:
-        count[r]-=1
-        rank[i3,j3]=rmin
-        count[rmin]+=1
-        update_vnbors(i3,j3)
-        print "removed a task from rank {0:}, by changing the rank at {1:},{2:} to {3:}, dn={4:}, count={5:}".format(
-        r,i3,j3,rmin,dnmin,count[r])
+    count[r]-=1
+    rank[i3,j3]=rmin
+    count[rmin]+=1
+    update_vnbors(i3,j3)
+    print "removed a task from rank {0:}, by changing the rank at {1:},{2:} to {3:}, dn={4:}, count={5:}".format(
+    r,i3,j3,rmin,dnmin,count[r])
 
 def load_balance(iter,tol):
     for i0 in range(n):
@@ -142,7 +140,8 @@ def load_balance(iter,tol):
             # ranks[i0,,jo,k] is the number of nbors with rank=k
             nranks=ranks[i0,j0,:]
             choices=find(nranks!=0)
-            count0=np.sum(count[choices])/np.size(choices)
+            global count0
+            count0=np.sum(count[choices])/np.size(choices)    
             for rank2 in choices:
                 if rank2==rank0: continue
                 rank[i0,j0]=rank2
@@ -171,11 +170,11 @@ def load_balance(iter,tol):
             if changes>0: # and dnlast!=dnmin: 
                 #print "changes={} last choice={} dn={} best={}".format(changes,rank2,dnlast,dnmin)
                 # if we have too many tasks on rank2, find one to remove  
-                while count[rank1]>count0+1:
-                    remove_one(rank1,count0)
+                while count[rank1]>(count0-1):
+                    remove_one(rank1)
                 # if we don't have enough tasks on rank0, find one to add  
-                #while count[rank0]<count[rank1]+2:
-                #    add_one(rank0)
+                while count[rank0]<(count0+1):
+                    add_one(rank0)
                 print "changed rank={} at {},{} to {}, dn={}, count={}".format(
                   rank0,i0,j0,rank1,dnmin,count[rank1])
                 rank[i0,j0]=rank1
