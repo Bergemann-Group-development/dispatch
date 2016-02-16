@@ -38,6 +38,7 @@ MODULE task_mod
     procedure:: allocate => void
     procedure:: deallocate => void
     procedure:: unique_id
+    procedure:: load_balance
   end type
   integer:: id=0
 CONTAINS
@@ -143,5 +144,39 @@ FUNCTION unique_id (self)
   id = id+1             ! FIXME
   unique_id = id
 END FUNCTION unique_id
+
+!> =============================================================================
+!> The load balancing procedure is part of the negotiation between a patch and
+!> its virtual neighbors.  We use the pro-active approach, where the decision
+!> to migrate to a different rank is taken by the task itself.  It can then be
+!> implemented with a minimum of complication, in that one of the last things
+!> the task does before broadcasting itself to its neighbors is to change its
+!> rank.  The new rank should check if an incoming virtual patch in fact has
+!> opted to become a boundart patch instead.  It comes with a complete list of
+!> neighbors already.
+!>
+!> To decide whether to migrate to another rank, the following parameters should
+!> be considered, for both tasks:
+!>
+!> task%load    : the load of the task, in milliseconds per update
+!> task%dt      : the time step per update
+!> task%time    : the current time of the task
+!> rank%time    : the current time of the neighbor rank
+!> rank%surplus : the extra capacity available on the nbor rank
+!>
+!> If the time difference (rank%time-task%time)/task%dt is positive it means
+!> that even the most delayed task on the other rank is ahead of the current
+!> task, which speaks in favor of migrating.
+!>
+!> If the nbor rank has extra capacity, this also speaks in favor of migration
+!>
+!> A good measure of the load of a rank is the number of wall clock seconds per
+!> simulation time unit.  This can be computed by running through the list of
+!> tasks on the rank, adding for each task its cost in ms/time_unit, and finally
+!> dividing by the number of (real) cores available to work on the tasks.
+!> =============================================================================
+SUBROUTINE load_balance (self)
+
+END SUBROUTINE load_balance
 
 END MODULE task_mod
