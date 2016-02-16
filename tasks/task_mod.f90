@@ -176,6 +176,7 @@ END FUNCTION unique_id
 !> dividing by the number of (real) cores available to work on the tasks.
 !> =============================================================================
 SUBROUTINE load_balance (self)
+class(task_t):: self
 
 END SUBROUTINE load_balance
 

@@ -35,12 +35,12 @@ VPATH = $(TOP)
 sinclude $(TOP)/$(MPI)/Makefile
 sinclude $(TOP)/io/Makefile
 sinclude $(TOP)/operators/Makefile
-#sinclude $(TOP)/lists/Makefile
-#sinclude $(TOP)/tasks/Makefile
-#sinclude $(TOP)/meshes/$(MESH)/Makefile
-#sinclude $(TOP)/patches/$(MESH)/Makefile
-#sinclude $(TOP)/timestep/$(UPD)/Makefile
-#sinclude $(TOP)/particles/Makefile
+sinclude $(TOP)/lists/Makefile
+sinclude $(TOP)/tasks/Makefile
+sinclude $(TOP)/meshes/$(MESH)/Makefile
+sinclude $(TOP)/patches/$(MESH)/Makefile
+sinclude $(TOP)/timestep/$(UPD)/Makefile
+sinclude $(TOP)/particles/Makefile
 
 #############################################################################
 # Optional patches and extra dependencies
@@ -118,13 +118,13 @@ showopt:
 #############################################################################
 ## Clean up
 clean:
-	rm -f *.o *.$(MOD) *.stackdump .d/*.d
+	rm -f *.o *.$(MOD) *.stackdump
 cleanlog:
 	rm -f *.log log*
 cleandata:
 	rm -f *.dat fort.*
 clean-deps:
-	rm -rf .d
+	rm -f .d/*.d
 cleaner: clean clean-deps
 	rm -f *.x *.bak *.optrpt *.exe *.pyc
 cleanest: cleaner cleandata cleanlog clean-deps
