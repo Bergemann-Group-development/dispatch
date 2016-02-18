@@ -2,15 +2,14 @@
 
 ### What is this repository for? ###
 
-* This is the Teacher repository for the 2015 course Computational Astrophysics at NBI/KU
-* Version 1.0
+* This is the repository for DISPATCH2 (based on CompAstroCPH2015Teachers)
+* Version 0.1
 * [Markdown demo](https://bitbucket.org/tutorials/markdowndemo)
 
 ### How to set up a connection to this repository ###
 
-* Updates in general go directly into this repos
-* You may choose to work on a branch when developing
-* Otionally, you can fork and use pull requests
+* If you have write access: simple updates in general go directly into this repository
+    * For larger, non-trivial edits, work on a branch and use pull requests
+* If you have read access: fork this repository and use pull requests to contribute
 
 ### Contribution guidelines ###
-
