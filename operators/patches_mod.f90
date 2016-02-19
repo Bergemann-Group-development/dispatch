@@ -160,7 +160,7 @@ END SUBROUTINE solve
 SUBROUTINE update_patch (self)
   class(patch_t):: self
   !.............................................................................
-  call trace_begin ('patch_t%update', 3)
+  call trace_begin ('patch_t%update')
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = self%time                          ! initial time

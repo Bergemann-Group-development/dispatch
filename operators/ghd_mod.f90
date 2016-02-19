@@ -210,7 +210,7 @@ END SUBROUTINE solve
 SUBROUTINE update (self)
   class(ghd_t):: self
   !.............................................................................
-  call trace_begin ('ghd_mod:ghd_t%update', 2)
+  call trace_begin ('ghd_mod:ghd_t%update')
   self%phi%f => self%mem(:,:,:,i_phi ,self%it,1)
   if (self%G == 0.0) then
     call self%hd_t%update
