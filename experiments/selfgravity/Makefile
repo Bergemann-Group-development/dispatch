@@ -6,6 +6,7 @@ OPTS = optimized
 # Default target and methods
 PDE = BE
 UPD = adams_bashforth
+SOLVERS = compastro
 EXEC= experiment.x
 
 # Common configuration
