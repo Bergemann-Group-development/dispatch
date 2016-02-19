@@ -1,19 +1,17 @@
 # This Makefile is a template for experiments, and may only need to be changed in the Dependencies section
 
 # Option groups
-#OPTS = debug
-OPTS = full_debug
+OPTS = debug
+#OPTS = full_debug
 #OPTS = optimized
 #OPTS =
 
 # Problem specification
 MESH = centered
 PDE = advection
-TIMESTEP = adams_bashforth
 
 # Common configuration
 EXEC = dispatch.x
-AUTO = yes
 TOP = ../..
 include $(TOP)/config/Makefile
 

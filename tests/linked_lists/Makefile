@@ -3,11 +3,10 @@
 OPTS = full_debug
 #OPTS = optimized
 
-OBJ += list_mod.o task_mod.o patch_mod.o mhd_mod.o mpi_timer.o
-default: test.x
+EXEC = test.x
 
 # Common configuration
 TOP = ../..
 include $(TOP)/config/Makefile
 
-test.x: $(OBJ)
+$(EXEC): list_mod.o mhd_mod.o mpi_timer.o

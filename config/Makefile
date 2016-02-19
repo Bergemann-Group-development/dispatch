@@ -9,6 +9,7 @@ OMP=yes
 COMPILER = gfortran
 MPI = mpi
 MOD = mod
+AUTO = yes
 
 #############################################################################
 # Check for options

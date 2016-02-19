@@ -3,11 +3,11 @@
 OPTS = full_debug
 #OPTS = optimized
 
-default: test.x
+# Select
+EXEC = test.x
 
 # Common configuration
 TOP = ../..
 include $(TOP)/config/Makefile
 
-OBJ =
-test.x: $(OBJ)
+test.x:

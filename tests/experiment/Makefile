@@ -9,15 +9,14 @@ OPTS =
 # Problem specification
 MESH = centered
 PROBLEM = advection
-TIMESTEP = adams_bashforth
-
-# Local object files
-OBJ += experiment_mod.o
+UPD = adams_bashforth
+EXEC = dispatch.x
 
 # Common configuration
-EXEC = dispatch.x
 TOP = ../..
 include $(TOP)/config/Makefile
 
 # Dependencies
 experiment_mod.o : mpi_mod.o mpi_coord_mod.o list_mod.o mhd_mod.o advection_mod.o task_list_mod.o
+
+$(EXEC): experiment_mod.o
