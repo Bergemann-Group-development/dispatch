@@ -118,7 +118,7 @@ showopt:
 
 #############################################################################
 ## Clean up
-clean:
+clean: clean-deps
 	rm -f *.o *.$(MOD) *.stackdump
 cleanlog:
 	rm -f *.log log*
@@ -126,7 +126,7 @@ cleandata:
 	rm -f *.dat fort.*
 clean-deps:
 	rm -f .d/*.d
-cleaner: clean clean-deps
+cleaner: clean
 	rm -f *.x *.bak *.optrpt *.exe *.pyc
 cleanest: cleaner cleandata cleanlog clean-deps
 
