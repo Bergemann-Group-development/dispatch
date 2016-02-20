@@ -2,7 +2,7 @@
 !> $Id$
 !> Solve the Poisson problem in 3-D
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-MODULE pde_mod
+MODULE experiment_mod
   USE io_mod
   USE omp_timer_mod
   USE trace_mod
@@ -13,7 +13,7 @@ MODULE pde_mod
   USE boundary_mod
   implicit none
   private
-  type, public, extends(ghd_t):: pde_t
+  type, public, extends(ghd_t):: experiment_t
     real:: w_BE
     real:: p_BE
     real:: a_BE
@@ -29,7 +29,7 @@ CONTAINS
 !> Setup a patch with density and gravitational potential for the Poisson solver
 !> =============================================================================
 SUBROUTINE init (self)
-  class(pde_t):: self
+  class(experiment_t):: self
   integer:: i, j, k
   integer, save:: levelmax=0
   real:: x, y, z
@@ -41,7 +41,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   !experimentname = 'BE'
   call io%init
-  call trace_begin ('BE_mod::pde_t%init')
+  call trace_begin ('BE_mod::experiment_t%init')
   call self%ghd_t%init
   if (first_time) then
     first_time = .false.
@@ -85,11 +85,11 @@ END SUBROUTINE init
 !> Enforce constant values outside a radius r=r_BE (not equalt to the BE-radius)
 !> =============================================================================
 SUBROUTINE update(self)
-  class(pde_t):: self
+  class(experiment_t):: self
   integer:: i, j, k, ii(3), iv
   real:: x, y, z, r, ntot, nout
   !.............................................................................
-  call trace_begin('BE_mod::pde_t%update')
+  call trace_begin('BE_mod::experiment_t%update')
 associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
   do k=1,gn(3)
   do j=1,gn(2)
@@ -148,4 +148,4 @@ end associate
   call trace_end
 END SUBROUTINE update
 !> =============================================================================
-END MODULE pde_mod
+END MODULE experiment_mod

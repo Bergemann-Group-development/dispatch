@@ -8,7 +8,7 @@ MODULE patch_list_mod
   USE bits_mod
   USE trace_mod
   USE patches_mod
-  USE timestep_mod
+  USE experiment_mod
   USE refine_mod
   implicit none
   private
@@ -18,7 +18,7 @@ MODULE patch_list_mod
     class(link_t), pointer:: nbors => null()          ! nbors => nbors%next => ...
     class(link_t), pointer:: parent => null()
     type(link_t), pointer:: next_time => null()
-    type(timestep_t), pointer:: patch => null()
+    type(experiment_t), pointer:: patch => null()
     integer:: n_nbors
   contains
     procedure:: download
@@ -52,9 +52,12 @@ MODULE patch_list_mod
     procedure:: check_queue
     procedure:: print
   end type
-  type(timestep_t), pointer, dimension(:,:,:):: patches
+  type(experiment_t), pointer, dimension(:,:,:):: patches
   integer, parameter:: mnbor=200
 CONTAINS
+
+!> =============================================================================
+!> For now, the default initial distribution of patches is done in init_cartesian
 !> =============================================================================
 SUBROUTINE init (self, name)
   class (patch_list_t):: self
@@ -69,13 +72,15 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !> =============================================================================
+!> Distribute patches in a Cartesian arrangement in a box
+!> =============================================================================
 SUBROUTINE init_cartesian (self)
   class (patch_list_t):: self
   integer:: dims(3) = [4,4,1]
   real:: origin(3) = [-0.5,-0.5,-0.5]
   real:: size(3) = [1.0,1.0,1.0]
   real:: position(3)
-  type(timestep_t), pointer:: patch
+  type(experiment_t), pointer:: patch
   type(link_t) , pointer:: prev=>null(), link
   integer:: i, j, k, i1, j1, k1, i2, j2, k2
   namelist /box_params/ size, dims, origin
@@ -90,7 +95,7 @@ SUBROUTINE init_cartesian (self)
   do j=1,self%dims(2)
   do k=1,self%dims(3)
     !---------------------------------------------------------------------------
-    ! Initialize each patch, via timestep_t:init -> pde_t:init -> patch_t:init
+    ! Initialize each patch, via experiment_t:init -> patch_t:init
     !---------------------------------------------------------------------------
     patch => patches(i,j,k)
     patch%box = self%size
@@ -130,7 +135,7 @@ SUBROUTINE update (self)
   class(patch_list_t):: self
   !.............................................................................
   class(link_t), pointer:: head
-  class(timestep_t), pointer:: patch
+  class(experiment_t), pointer:: patch
   integer:: n1
   logical:: end_game=.false.
   !.............................................................................
@@ -182,7 +187,7 @@ END SUBROUTINE update
 SUBROUTINE remove_patch (self, patch)
   class(patch_list_t):: self
   class(link_t), pointer:: link, prev
-  class(patch_t):: patch
+  class(experiment_t):: patch
   !.............................................................................
   call trace_begin('patch_list_t%remove_patch')
   link => self%head
@@ -216,7 +221,7 @@ SUBROUTINE split (self, this)
   class(patch_list_t):: self
   class(link_t), pointer:: this, link
   integer:: nsplit(3)
-  type(timestep_t), pointer:: patch
+  type(experiment_t), pointer:: patch
   type(link_t), pointer:: tail
   integer dir, i, ix, iy, iz
   real:: pos(3)
@@ -489,7 +494,7 @@ SUBROUTINE check_nbors (self, link)
   class(patch_list_t):: self
   class(link_t), pointer:: link
   class(link_t), pointer:: nbor
-  class(patch_t), pointer:: patch, nbpatch
+  class(experiment_t), pointer:: patch, nbpatch
   integer:: nbors(mnbor), inbor
   !.............................................................................
   call trace_begin('patch_list_t%check_nbors '//self%name)
@@ -544,7 +549,7 @@ END SUBROUTINE check_all
 SUBROUTINE check_ready (self, link, set_debug)
   class(patch_list_t):: self
   class(link_t), pointer:: link
-  class(patch_t), pointer:: patch, nbpatch
+  class(experiment_t), pointer:: patch, nbpatch
   class(link_t), pointer:: nbor
   integer:: set_debug, debug, nbors(mnbor), inbor
   optional:: set_debug
@@ -698,7 +703,10 @@ SUBROUTINE download (self, all_cells)
       !dmin = minval(nbor%patch%mem(:,:,:,1,nbor%patch%it,1))
       !if (dmin <= 0.0) print*,'MK1',nbor%patch%id,dmin
       if (nbor%patch%level == patch%level+1) special = 6
-      call nbor%patch%pde_t%download_to (patch, special, all_cells)
+      !select type (patch)
+      !class is (experiment_t)
+      call nbor%patch%download_to (patch, special, all_cells)
+      !end select
     end if
     !dmin = minval(self%patch%mem(:,:,:,1,self%patch%it,1))
     !if (dmin <= 0.0) print*,'MK2',self%patch%id,dmin

@@ -9,7 +9,7 @@ MODULE refine_mod
   USE trace_mod
   USE bits_mod
   USE patches_mod
-  USE timestep_mod
+  USE experiment_mod
   implicit none
   private
   type:: refine_t
@@ -65,7 +65,7 @@ END SUBROUTINE init
 !> =============================================================================
 FUNCTION needed (self, patch)
   class(refine_t):: self
-  class(timestep_t), pointer:: patch
+  class(experiment_t), pointer:: patch
   logical:: needed
   !.............................................................................
   needed = .false.
@@ -94,7 +94,7 @@ END FUNCTION
 !> =============================================================================
 FUNCTION check_jeans (self, patch) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: patch
+  class(experiment_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v, d
   logical:: out
   real:: c_sound, jeans_length, ratio
@@ -111,7 +111,7 @@ END FUNCTION
 !> =============================================================================
 FUNCTION check_log_density (self, patch) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: patch
+  class(experiment_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v, d
   logical:: out
   !.............................................................................
@@ -131,7 +131,7 @@ END FUNCTION
 !> =============================================================================
 FUNCTION check_potential (self, patch) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: patch
+  class(experiment_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v, d
   logical:: out
   !.............................................................................
@@ -149,7 +149,7 @@ END FUNCTION
 !> =============================================================================
 FUNCTION check_log_pressure (self, patch) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: patch
+  class(experiment_t), pointer:: patch
   real, dimension(:,:,:), pointer:: p, v
   logical:: out
   !.............................................................................
@@ -161,7 +161,7 @@ END FUNCTION
 !> =============================================================================
 FUNCTION check_velocity (self, patch) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: patch
+  class(experiment_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
@@ -173,7 +173,7 @@ END FUNCTION
 !> =============================================================================
 FUNCTION check_magnetic_field (self, patch) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: patch
+  class(experiment_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
@@ -185,7 +185,7 @@ END FUNCTION
 !> =============================================================================
 FUNCTION check_max_diff (self, patch,v ) RESULT(out)
   class(refine_t):: self
-  class(timestep_t), pointer:: patch
+  class(experiment_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v
   !real:: v(patch%li(1):patch%ui(1),patch%li(2):patch%ui(2),patch%li(3):patch%ui(3))
   integer:: n(3), i1, i2, i3, m(3)=1
