@@ -7,6 +7,7 @@ MODULE patches_mod
   USE io_mod
   USE omp_timer_mod
   USE bits_mod
+  USE timestep_mod
   implicit none
   integer, parameter:: ntime=7
   private
@@ -33,6 +34,7 @@ MODULE patches_mod
     logical:: is_leaf = .true.
     logical:: mem_allocated = .false.
     character(len=64), pointer:: experiment_name
+    type(timestep_t):: timestep
   contains
     procedure:: init
     procedure:: update => update_patch
@@ -85,8 +87,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters
   !-----------------------------------------------------------------------------
-  dims(4) = self%nt                             ! set by timestep_t:init
-  dims(5) = self%nv                             ! set by timestep_t:init
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -131,6 +131,9 @@ SUBROUTINE init (self)
   end if
   self%t = 0.0                                  ! initial time
   self%iit = 1                                  ! initial memory slots
+  self%iit(nt) = 2                              ! first output slot
+  self%it = self%iit(nt-1)                      ! short-hand
+  self%new = self%iit(nt)                       ! short-hand
   if (self%id<=3) call test_patch (self)
   call trace_end
 END SUBROUTINE init
@@ -167,7 +170,38 @@ SUBROUTINE update_patch (self)
   class(patch_t):: self
   !.............................................................................
   call trace_begin ('patch_t%update')
+  !-----------------------------------------------------------------------------
+  ! Call timestep update procedure to fill the next time slot with values
+  !-----------------------------------------------------------------------------
+  if (io%verbose > 1) then
+    print'(a,7i10)',   'experiment_t%update: iit =', self%iit
+    print'(a,7f10.6)', 'experiment_t%update:   t =', self%t(self%iit)
+  end if
+  call self%courant_condition
+  call self%timestep%update (self%id, self%iit, self%dt, self%mem)
+  !-----------------------------------------------------------------------------
+  ! Periodic wrapping, time extrapolation
+  !-----------------------------------------------------------------------------
+  if (self%id==1) then
+    call self%periodic_grid                     ! periodic root grid
+  else
+    call self%extrapolate_guards                ! time-extrapolate guard cells
+  end if
+  !-----------------------------------------------------------------------------
+  ! One line summary
+  !-----------------------------------------------------------------------------
   self%time = self%time + self%dtime                    ! update self time
+  if (io%verbose>0) then
+    print'(a,i4,2i3,2f11.6,2x,a,1p,6e10.2)', 'update: id,j,k,l,n,dt,t', &
+      self%id, self%it, self%new, self%dtime, self%time, 'minmax:', &
+      minval(self%mem(:,:,:,1,self%it ,2)), &
+      maxval(self%mem(:,:,:,1,self%it ,2)), &
+      minval(self%mem(:,:,:,1,self%new,1)), &
+      maxval(self%mem(:,:,:,1,self%new,1))
+  end if
+  !-----------------------------------------------------------------------------
+  ! Time slot rotation
+  !-----------------------------------------------------------------------------
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = self%time                          ! initial time

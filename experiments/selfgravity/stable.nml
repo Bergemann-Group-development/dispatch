@@ -1,4 +1,4 @@
-&BE_params
+&experiment_params
  w_BE=0.15              ! Gaussian width
  p_BE=2                 ! f(r) = exp(-(r/w_gauss)**p_gauss) for small r
  a_BE=0.1               ! f(r) = a/r**2 for r >> w_gauss
@@ -22,18 +22,18 @@
 !dims=16,16,16          ! patch dimensions
 !dims=32,32,32          ! patch dimensions
  dims=64,64,64          ! patch dimensions
+ end_time=1.0000        ! experiment end time
+ out_time=0.0100        ! output cadence
+ dt_fixed=0.0002        ! fixed time step
 /
 &box_params
  dims=1,1,1             ! number of patches
 /
 &timestep_params
- end_time=1.0000        ! experiment end time
- out_time=0.0100        ! output cadence
- dt_fixed=0.0002        ! fixed time step
 /
 &refine_params
  refine_until=-0.01     ! disables refinment
- max_change=0.10
+!max_change=0.10
  levelmax=10
 /
 &io_params

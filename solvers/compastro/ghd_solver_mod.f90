@@ -56,14 +56,14 @@
 !> the iterative change from the level above, and then the extrapolation in time
 !> of the local change.
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-MODULE ghd_mod
+MODULE ghd_solver_mod
   USE io_mod
   USE omp_timer_mod
   USE trace_mod
   USE patches_mod
   USE scalar_mod
   USE laplace_mod
-  USE hd_mod
+  USE hd_solver_mod
   USE boundary_mod
   USE operators_mod
   implicit none
@@ -237,4 +237,4 @@ SUBROUTINE grav_potential (self, out)
   call trace_end
 END SUBROUTINE grav_potential
 !> =============================================================================
-END MODULE ghd_mod
+END MODULE ghd_solver_mod

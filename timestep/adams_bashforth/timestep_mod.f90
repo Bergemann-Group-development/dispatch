@@ -30,38 +30,38 @@ MODULE timestep_mod
 CONTAINS
 
 !> =============================================================================
-!> Initialize coefficients for Adams-Bashforth time stepping.  Thread safe, 
-!> since it refers only to object data.
+!> Initialize coefficients for Adams-Bashforth time stepping
 !> =============================================================================
 SUBROUTINE init (self)
   class(timestep_t):: self
-  integer:: verbose, time_order
+  integer, save:: verbose=0, time_order=0
   namelist /timestep_params/ verbose, time_order
   !.............................................................................
   call trace_begin ('timestep_t%init', 1)
-  if (self%time_order==0) then
-    verbose = 0
+  !$omp critical (timestep_cr)
+  if (time_order==0) then
     time_order = 2
     rewind (io%input)
     read (io%input,timestep_params)
     if (io%master) write (*,timestep_params)
-    self%verbose = verbose
-    self%time_order = time_order
-    !---------------------------------------------------------------------------
-    select case (time_order)
-    case (1)
-      self%wt = [   1.0,     0.0,      0.0,    0.0]       ! 1st order
-    case (2)
-      self%wt = [   1.5,     -.5,      0.0,    0.0]       ! 2nd order
-    case (3)
-      self%wt = [23./12., -4./3.,   5./12.,    0.0]       ! 3rd order
-    case (4)
-      self%wt = [55./24., -59./24., 37/24., -3./8.]       ! 4th order
-    case default
-      if (io%master) print*,'ERROR: illegal timestep time_order =', time_order
-      stop
-    end select
   end if
+  self%verbose = verbose
+  self%time_order = time_order
+  !---------------------------------------------------------------------------
+  select case (time_order)
+  case (1)
+    self%wt = [   1.0,     0.0,      0.0,    0.0]       ! 1st order
+  case (2)
+    self%wt = [   1.5,     -.5,      0.0,    0.0]       ! 2nd order
+  case (3)
+    self%wt = [23./12., -4./3.,   5./12.,    0.0]       ! 3rd order
+  case (4)
+    self%wt = [55./24., -59./24., 37/24., -3./8.]       ! 4th order
+  case default
+    if (io%master) print*,'ERROR: illegal timestep time_order =', time_order
+    stop
+  end select
+  !$omp end critical (timestep_cr)
   call trace_end
 END SUBROUTINE init
 
@@ -108,10 +108,10 @@ SUBROUTINE update (self, id, iit, dt, mem)
   if (self%verbose>0) then
     print'(a,i4,2x,a,1p,6e10.2)', 'timestep, id:', &
       id, 'minmax:', &
-      minval(mem(:,:,:,1,nt-1,2)), &
-      maxval(mem(:,:,:,1,nt-1,2)), &
-      minval(mem(:,:,:,1,nt  ,1)), &
-      maxval(mem(:,:,:,1,nt  ,1))
+      minval(mem(:,:,:,1,iit(nt-1),2)), &
+      maxval(mem(:,:,:,1,iit(nt-1),2)), &
+      minval(mem(:,:,:,1,iit(nt  ),1)), &
+      maxval(mem(:,:,:,1,iit(nt  ),1))
   end if
   call trace_end
 END SUBROUTINE update

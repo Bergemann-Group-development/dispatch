@@ -1,4 +1,4 @@
-&BE_params
+&experiment_params
  w_BE=0.15              ! Gaussian width
  p_BE=4                 ! f(r) = exp(-(r/w_gauss)**p_gauss) for small r
  a_BE=0.1               ! f(r) = a/r**2 for r >> w_gauss
@@ -22,16 +22,16 @@ solver='sor'           ! solver name (jacobi, gauss-seidel, sor, cg, multi-grid)
 /
 &patch_params
  dims=16,16,16          ! patch dimensions
-/
-&box_params
- dims=1,1,1             ! number of patches
-/
-&timestep_params
 !end_time=1.0000 out_time=0.0100 dt_fixed=0.0010
  end_time=15e-4 out_time=5e-4 dt_fixed=5e-4
 !end_time=1.0000        ! experiment end time
 !out_time=0.0100        ! output cadence
 !dt_fixed=0.0002        ! fixed time step
+/
+&box_params
+ dims=1,1,1             ! number of patches
+/
+&timestep_params
 /
 &refine_params
  refine_until=0.000     ! disables refinment

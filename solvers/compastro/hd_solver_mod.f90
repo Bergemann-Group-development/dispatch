@@ -2,7 +2,7 @@
 !> $Id$
 !> HD module for the Sedov blast wave exercise
 !> =============================================================================
-MODULE hd_mod
+MODULE hd_solver_mod
   USE scalar_mod
   USE vector_mod
   USE tensor_mod
@@ -284,4 +284,4 @@ SUBROUTINE magnetic_field_magnitude (self, out)
   out = 0.0
 END SUBROUTINE magnetic_field_magnitude
 !> =============================================================================
-END MODULE hd_mod
+END MODULE hd_solver_mod
