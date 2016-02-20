@@ -11,6 +11,7 @@ MODULE experiment_mod
   USE laplace_mod
   USE ghd_mod
   USE boundary_mod
+  USE timestep_mod
   implicit none
   private
   type, public, extends(ghd_t):: experiment_t
@@ -19,6 +20,7 @@ MODULE experiment_mod
     real:: a_BE
     real:: r_BE
     real:: amplitude
+    type(timestep_t):: timestep
   contains
     procedure:: init
     procedure:: update
@@ -35,19 +37,18 @@ SUBROUTINE init (self)
   real:: x, y, z
   logical:: first_time = .true.
   real:: w_BE=5.0, p_BE=1.0, a_BE=0.10, r_BE=0.45, amplitude=10., r
-  namelist /BE_params/ w_BE, p_BE, a_BE, r_BE, amplitude, levelmax
+  namelist /experiment_params/ w_BE, p_BE, a_BE, r_BE, amplitude, levelmax
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
-  !experimentname = 'BE'
   call io%init
-  call trace_begin ('BE_mod::experiment_t%init')
+  call trace_begin ('experiment_t%init')
   call self%ghd_t%init
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, BE_params)
-    if (io%master) write (*,BE_params)
+    read (io%input, experiment_params)
+    if (io%master) write (*,experiment_params)
   end if
   self%w_BE      = w_BE
   self%p_BE      = p_BE
@@ -89,8 +90,11 @@ SUBROUTINE update(self)
   integer:: i, j, k, ii(3), iv
   real:: x, y, z, r, ntot, nout
   !.............................................................................
-  call trace_begin('BE_mod::experiment_t%update')
+  call trace_begin('experiment_t%update')
 associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
+  !-----------------------------------------------------------------------------
+  ! Set phi=0 at and outside the boundary
+  !-----------------------------------------------------------------------------
   do k=1,gn(3)
   do j=1,gn(2)
   do i=1,gn(1)
@@ -105,7 +109,8 @@ associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
   end do
   end do
   !-----------------------------------------------------------------------------
-  ! This where d(f)/dt is computed, so zap to zero outside r=r_BE
+  ! This where d(f)/dt is computed, so zap to zero outside the boundary, treating
+  ! staggered components separately
   !-----------------------------------------------------------------------------
   call self%ghd_t%update
   ntot = 0.0
@@ -145,6 +150,25 @@ associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
   end do
   !print*,'fraction outside:',nout/ntot, pos, ds
 end associate
+  !-----------------------------------------------------------------------------
+  ! Call timestep update procedure to fill the next time slot with values
+  !-----------------------------------------------------------------------------
+  if (io%verbose > 1) then
+    print'(a,7i10)',   'experiment_t%update: iit =', self%iit
+    print'(a,7f10.6)', 'experiment_t%update:   t =', self%t(self%iit)
+  end if
+  call self%courant_condition
+  call self%timestep%update (self%id, self%iit, self%dt, self%mem)
+  !-----------------------------------------------------------------------------
+  ! Periodic wrapping, time extrapolation, time slot rotation
+  !-----------------------------------------------------------------------------
+  if (self%id==1) then
+    call self%periodic_grid                     ! periodic root grid
+  else
+    call self%extrapolate_guards                ! time-extrapolate guard cells
+  end if
+  call self%patch_t%update                      ! rotate time slots
+  !
   call trace_end
 END SUBROUTINE update
 !> =============================================================================

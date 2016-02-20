@@ -24,6 +24,7 @@ MODULE patches_mod
     real:: time=0.0, dtime=0.1, end_time=1.0, grace=0.0
     real:: out_time=0.1, out_next=0.0           ! controls output
     real:: courant=0.2                          ! courant constant
+    real:: u_max, u_fixed=-1.0, dt_fixed=-1.0   ! courant options
     integer:: istep=0                           ! time step counter
     integer:: iout=0                            ! output counter
     integer:: level
@@ -56,8 +57,8 @@ MODULE patches_mod
     procedure:: extrapolate_guards
     procedure:: fmaxval         ! interior max value
     procedure:: fminval         ! interior min value
+    procedure:: courant_condition
   end type
-  real, public:: end_time=1.0, out_time=0.1
   integer, public:: msplit=2    ! shared with refine_mod and patch_list_mod
   integer:: id = 0
 CONTAINS
@@ -68,10 +69,12 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
-  integer:: dims(5) = 6
+  integer:: dims(3)=16, nt=ntime
   logical:: first_time = .true.
   real:: position(3)
-  namelist /patch_params/ dims
+  real, save:: courant=0.2, u_fixed=-1.0, dt_fixed=-1.0
+  real, save:: end_time=1.0, out_time=0.1
+  namelist /patch_params/ dims, nt, courant, u_fixed, dt_fixed, end_time, out_time
   !.............................................................................
   call trace_begin ('patch_t%init', 3)
   !$omp atomic
@@ -83,17 +86,21 @@ SUBROUTINE init (self)
   ! Read and set patch parameters
   !-----------------------------------------------------------------------------
   dims(4) = self%nt                             ! set by timestep_t:init
+  dims(5) = self%nv                             ! set by timestep_t:init
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, patch_params)
     if (io%master) write (*, patch_params)
   end if
+  self%courant = courant
+  self%dt_fixed = dt_fixed
+  self%u_fixed = u_fixed
   self%experiment_name => experimentname
   self%status=0
   self%end_time=end_time
   self%out_time=out_time
-  self%n  = dims(1:3)                           ! patch dimensions
+  self%n  = dims                                ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   where (self%n==1)                             ! for collapsed dimensions
     self%ng = 0                                 ! no guard zones
@@ -109,8 +116,7 @@ SUBROUTINE init (self)
   self%ui = self%gn - self%ng                   ! upper interior index
   self%ub = self%gn                             ! upper guard zone index
   self%offset = (self%lb+self%ub)/2.0           ! mid point index offset
-  self%nt = dims(4)                             ! number of time slices
-  self%nv = dims(5)                             ! number of variables
+  self%nt = nt                                  ! number of time slices
   self%level = log(maxval(self%box)/minval(self%ds))/log(real(msplit)) + 0.1
   if (io%verbose>3) &
     print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
@@ -161,11 +167,12 @@ SUBROUTINE update_patch (self)
   class(patch_t):: self
   !.............................................................................
   call trace_begin ('patch_t%update')
+  self%time = self%time + self%dtime                    ! update self time
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = self%time                          ! initial time
   self%it = self%new                                    ! update time slot
-  self%new = mod(self%new,self%nt)+1                      ! increment / rotate
+  self%new = mod(self%new,self%nt)+1                    ! increment / rotate
   self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
   self%iit(self%nt) = self%new                          ! new right-most slot
   self%istep = self%istep + 1
@@ -603,6 +610,22 @@ FUNCTION highest (self, other, index) RESULT (out)
   f = self%offset + pos/self%ds                                 ! floating integer 
   out = nint(f)                                                 ! highest integer
 END FUNCTION highest
+
+!> =============================================================================
+!> Signed distance between the centers of two patches in the periodic box
+!> =============================================================================
+SUBROUTINE courant_condition (self)
+  class(patch_t):: self
+  !.............................................................................
+  if (self%dt_fixed > 0.0) then
+    self%dtime = self%dt_fixed
+    self%courant = self%dtime*self%u_max/minval(self%ds)
+  else if (self%u_fixed > 0.0) then
+    self%dtime = self%courant*minval(self%ds)/self%u_fixed
+  else
+    self%dtime = self%courant*minval(self%ds)/self%u_max
+  endif
+END SUBROUTINE courant_condition
 
 !> =============================================================================
 !> Signed distance between the centers of two patches in the periodic box

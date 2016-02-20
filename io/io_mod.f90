@@ -22,6 +22,11 @@ PUBLIC io_t, io, print_id, mch, experimentname
 CONTAINS
 
 !> =============================================================================
+!> Initialize I/O related parameters.  The first thread that enters here blocks
+!> access in a critical region, reads namelist parameters, and stores them in a
+!> global, public instance, which we normally refer to.  Other calls pick up the
+!> global values and store them in other instances (which may be the same).
+!> =============================================================================
 SUBROUTINE init (self, name)
   class(io_t):: self
   character(len=120), save:: id = &
@@ -35,6 +40,7 @@ SUBROUTINE init (self, name)
   real:: test
   !.............................................................................
   call print_id (id)
+  !$omp critical (io_cr)
   if (first_time) then
     if (present(name)) inputfile = trim(name)//'.nml'                             ! experiment_name given?
     inquire (file=inputfile, exist=exist)                                         ! experiment.nml ?
@@ -56,16 +62,18 @@ SUBROUTINE init (self, name)
     rewind (io%input)
     read (io%input, io_params)
     io%levelmax = levelmax
+    io%do_debug = do_debug
+    io%do_trace = do_trace
+    io%verbose  = verbose
+    if (io%master.and.first_time) write (*,io_params)
+    first_time=.false.
   end if
-  io%do_debug = do_debug
-  io%do_trace = do_trace
-  io%verbose  = verbose
-  if (io%master.and.first_time) write (*,io_params)
-  self%do_debug = do_debug
-  self%do_trace = do_trace
-  self%do_output = do_output
-  self%verbose  = verbose
-  first_time=.false.
+  !$omp end critical (io_cr)
+  self%do_debug  = io%do_debug
+  self%do_trace  = io%do_trace
+  self%do_output = io%do_output
+  self%levelmax  = io%levelmax
+  self%verbose   = io%verbose
 END SUBROUTINE init
 
 !> =============================================================================

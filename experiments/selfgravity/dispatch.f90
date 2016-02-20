@@ -1,4 +1,4 @@
-PROGRAM experiment
+PROGRAM dispatch
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
 !> Setup a single patch with a density tophat and call the Poisson solver
@@ -13,4 +13,4 @@ PROGRAM experiment
   end do
   print*,'stopping: all tasks finished'
 !> =============================================================================
-END PROGRAM experiment
+END PROGRAM dispatch

@@ -3,157 +3,117 @@
 !> Adams-Bashforth time stepping, with constant time step assumed (for now)
 !>
 !> We store results in nt memory slots, starting with number 1, and continuing
-!> with numbers 2..nt, and then looping back to 1.  The variables t(1:nt) and
-!> dt(1:nt) contain the times and time derivatives for the corresponding slots.
-!> to be able to always refer to an array with increasing time, we use the
-!> index mapping ii(1:nt), such that t(iit) and the mem(:,:,:,:,iit,:) refer
-!> to time slots in increasing order.  The (1:nt-1) slots are complete, and
-!> may be used freely, while the (nt) slot is the one where new values are to
-!> be stored.  The pde_t%update procedure thus writes new time derivatives
+!> with numbers 2..nt, and then looping back to 1, but this is mapped by the
+!> iit array so that the last nt-1 time slot are t(iit(1:nt-1)), and t(iit(nt))
+!> is the next time slot.  The (1:nt-1) slots are complete, and may be used
+!> freely, while the (nt) slot is the one where new values are to be stored.
+!> The experiment_t%update procedure thus writes new time derivatives
 !> there, and it is the task of this timestep procedure to update the values
-!> there, using the previous values and time derivatives.
+!> there, using them time derivatives and the previous values.
 !> =============================================================================
 MODULE timestep_mod
   USE io_mod
   USE trace_mod
-  USE pde_mod
-  USE patches_mod
   implicit none
   private
   integer, parameter:: nslice = 4
-  type, public, extends(pde_t):: timestep_t
-    real:: wt(nslice)
-    integer:: time_order
-    real:: u_fixed
-    real:: dt_fixed
+  type, public:: timestep_t
+    integer:: id                                        ! task id
+    integer:: verbose=0                                 ! verbosity
+    integer:: time_order=0                              ! time order of integration
+    integer, dimension(:), pointer:: iit                ! time slot order
+    real:: wt(nslice)                                   ! time slot weights
   contains
     procedure:: init
-    procedure:: update => update_timestep
+    procedure:: update
   end type
-  real:: courant = 0.4
-  integer:: verbose = 1
-  integer:: time_order = 2
-  real:: u_fixed=-1.
-  real:: dt_fixed=-1.
-  logical, save:: first_time = .true.
 CONTAINS
 
 !> =============================================================================
-!> Initialize coefficients for Adams-Bashforth time stepping
+!> Initialize coefficients for Adams-Bashforth time stepping.  Thread safe, 
+!> since it refers only to object data.
 !> =============================================================================
 SUBROUTINE init (self)
   class(timestep_t):: self
-  integer:: nslice=5
-  namelist /timestep_params/ courant, time_order, verbose, end_time, out_time, &
-    nslice, u_fixed, dt_fixed
-!........................................................................
+  integer:: verbose, time_order
+  namelist /timestep_params/ verbose, time_order
+  !.............................................................................
   call trace_begin ('timestep_t%init', 1)
-  self%nt = nslice
-  !-----------------------------------------------------------------------------
-  !$omp critical (timest_cr)
-  if (first_time) then
-    first_time = .false.
+  if (self%time_order==0) then
+    verbose = 0
+    time_order = 2
     rewind (io%input)
     read (io%input,timestep_params)
     if (io%master) write (*,timestep_params)
+    self%verbose = verbose
+    self%time_order = time_order
+    !---------------------------------------------------------------------------
+    select case (time_order)
+    case (1)
+      self%wt = [   1.0,     0.0,      0.0,    0.0]       ! 1st order
+    case (2)
+      self%wt = [   1.5,     -.5,      0.0,    0.0]       ! 2nd order
+    case (3)
+      self%wt = [23./12., -4./3.,   5./12.,    0.0]       ! 3rd order
+    case (4)
+      self%wt = [55./24., -59./24., 37/24., -3./8.]       ! 4th order
+    case default
+      if (io%master) print*,'ERROR: illegal timestep time_order =', time_order
+      stop
+    end select
   end if
-  !$omp end critical (timest_cr)
-  !-----------------------------------------------------------------------------
-  !call self%patch_t%init
-  call self%pde_t%init
-  select case (time_order)
-  case (1)
-    self%wt = [   1.0,     0.0,      0.0,    0.0]       ! 1st order
-  case (2)
-    self%wt = [   1.5,     -.5,      0.0,    0.0]       ! 2nd order
-  case (3)
-    self%wt = [23./12., -4./3.,   5./12.,    0.0]       ! 3rd order
-  case (4)
-    self%wt = [55./24., -59./24., 37/24., -3./8.]       ! 4th order
-  end select
-  self%iit = 1
-  self%iit(self%nt) = self%new
-  self%courant    = courant
-  self%time_order = time_order
-  self%verbose    = verbose
-  self%u_fixed    = u_fixed
-  self%dt_fixed    = dt_fixed
-  if (io%verbose>3) &
-   print*,'new patch:',self%id,'  it:',self%it,'  new:',self%new
   call trace_end
 END SUBROUTINE init
 
-!************************************************************************
-SUBROUTINE update_timestep (self)
+!> =============================================================================
+!> Adams-Bashforth linear multi-step update.  We consider it to be linear 
+!> multi-step in time index space, which may be just as good -- or better -- 
+!> than attempting to map into linear time space.  The time slot derivative
+!> values have already been multiplied with the individual time steps dt.
+!> =============================================================================
+SUBROUTINE update (self, id, iit, dt, mem)
   class(timestep_t):: self
-  integer:: it, jt, kt, lt, nt, i(3), j(3)
+  integer:: id, nt
+  integer, dimension(:):: iit
+  real, dimension(:):: dt
+  real, dimension(:,:,:,:,:,:):: mem            ! memory buffer
   !......................................................................
   call trace_begin ('timestep_t%update', 1)
-  call self%pde_t%update                        ! time derivative at it
-  it = modulo(self%it,self%nt)+1                ! wrap to new time slot
-  if (io%verbose>3) then
-    print*, 'timestep_t%update, id =', self%id, self%it, it
-    print*, 'timestep_t%update, d =', self%mem(1:5,1,1,1,1,1)
-  end if
-  if (self%dt_fixed > 0.0) then
-    self%dtime = self%dt_fixed
-    self%courant = self%dtime*self%u_max/self%ds(1)
-  else if (self%u_fixed > 0.0) then
-    self%dtime = self%courant*self%ds(1)/self%u_fixed
-  else
-    self%dtime = self%courant*self%ds(1)/self%u_max
-  endif
-  nt = self%nt
-  lt = self%iit(nt)
-  if (io%verbose>3) then
-    print*,'dtime',self%dtime
-    print*,'li,ui', self%li, self%ui
-  end if
-  if (self%id==1) call self%periodic_grid       ! periodic root grid
-  do jt=1,self%time_order                       ! loop over AB slot
-    kt = self%iit(nt-jt)                        ! previous time slots
-    !print*,'timestep',jt,nt,kt,lt
-    if (jt == 1) then
-      self%mem(:,:,:,:,lt,1) = &
-      self%mem(:,:,:,:,kt,1) + &
-      self%mem(:,:,:,:,kt,2)*(self%wt(jt)*self%dtime)
-    else
-      self%mem(:,:,:,:,lt,1) = &
-      self%mem(:,:,:,:,lt,1) + &
-      self%mem(:,:,:,:,kt,2)*(self%wt(jt)*self%dtime)
-    end if
-    if (io%verbose>3) then
-      print'(a,i4,4i3,2f8.3,2x,a,1p,6e10.2)', 'timestep: id,j,k,l,n,t,wt', &
-        self%id, jt, kt, lt, nt, self%t(kt), self%wt(jt), 'minmax:', &
-        minval(self%mem(:,:,:,:,kt,2)), &
-        maxval(self%mem(:,:,:,:,kt,2)), &
-        minval(self%mem(:,:,:,:,lt,1)), &
-        maxval(self%mem(:,:,:,:,lt,1))
-    end if
-  end do
-  !-----------------------------------------------------------------------------
-  ! Periodic wrapping, time extrapolation, time slot rotation
-  !-----------------------------------------------------------------------------
-  if (self%id==1) then
-    call self%periodic_grid                     ! periodic root grid
-  else
-    call self%extrapolate_guards                ! time-extrapolate guard cells
-  end if
-  self%time = self%time + self%dtime            ! update self time
-  call self%patch_t%update                      ! rotate time slots
-  !-----------------------------------------------------------------------------
-  ! Print time step info?
-  !-----------------------------------------------------------------------------
-  if (io%verbose>=1) then
-    print '(a,2i5,i3,2f10.6,1p,e10.2,0p,f7.3,2x,b6.6,i6)', &
-      'timestep_t%update: id,step,level,t,dt,umax,courant,status=', &
-      self%id, self%istep, self%level, self%time, self%dtime, self%u_max, &
-      self%courant, self%status, self%iter
-!  else if (io%verbose>1) then
-!    print'(2(a,f9.4,3x),3(a,i5,3x))', 'timestep_t%update: t=', self%time, &
-!      'dt=', self%dtime, 'it=', self%it, 'new=', self%new, 'id=', self%id
+  call self%init                                ! auto-initialize
+  nt = size(iit)                                ! number of time slots
+  select case (self%time_order)
+  case (1)
+    mem(:,:,:,:,iit(nt  ),1) = &
+    mem(:,:,:,:,iit(nt-1),1) + &
+    mem(:,:,:,:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1)))
+  case (2)
+    mem(:,:,:,:,iit(nt  ),1) = &
+    mem(:,:,:,:,iit(nt-1),1) + &
+    mem(:,:,:,:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1))) + &
+    mem(:,:,:,:,iit(nt-2),2)*(self%wt(2)*dt(iit(nt-2)))
+  case (3)
+    mem(:,:,:,:,iit(nt  ),1) = &
+    mem(:,:,:,:,iit(nt-1),1) + &
+    mem(:,:,:,:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1))) + &
+    mem(:,:,:,:,iit(nt-2),2)*(self%wt(2)*dt(iit(nt-2))) + &
+    mem(:,:,:,:,iit(nt-3),2)*(self%wt(3)*dt(iit(nt-3)))
+  case (4)
+    mem(:,:,:,:,iit(nt  ),1) = &
+    mem(:,:,:,:,iit(nt-1),1) + &
+    mem(:,:,:,:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1))) + &
+    mem(:,:,:,:,iit(nt-2),2)*(self%wt(2)*dt(iit(nt-2))) + &
+    mem(:,:,:,:,iit(nt-3),2)*(self%wt(3)*dt(iit(nt-3))) + &
+    mem(:,:,:,:,iit(nt-4),2)*(self%wt(4)*dt(iit(nt-4)))
+  end select
+  if (self%verbose>0) then
+    print'(a,i4,2x,a,1p,6e10.2)', 'timestep, id:', &
+      id, 'minmax:', &
+      minval(mem(:,:,:,1,nt-1,2)), &
+      maxval(mem(:,:,:,1,nt-1,2)), &
+      minval(mem(:,:,:,1,nt  ,1)), &
+      maxval(mem(:,:,:,1,nt  ,1))
   end if
   call trace_end
-END SUBROUTINE update_timestep
+END SUBROUTINE update
 !-------------------------------------------------------------------------------
 END MODULE timestep_mod

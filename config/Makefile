@@ -162,7 +162,7 @@ info:
 	@echo "$B  HW          $N= $(HW)"
 	@echo "$B  DEBUG       $N= $(DEBUG)"
 	@echo "$B  PAR         $N= $(PAR)"
-	@echo "$B  FC          $N= $(F90)"
+	@echo "$B  F90         $N= $(F90)"
 	@echo "$B  LD          $N= $(LD)"
 	@echo "$B  FFLAGS      $N= $(FFLAGS)"
 	@echo "$B  LDFLAGS     $N= $(LDFLAGS)"
