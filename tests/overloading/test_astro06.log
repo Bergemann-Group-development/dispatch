@@ -1,0 +1,36 @@
+--------------------------------------------------------------------------------
+ io_mod.f90 $Id: e2f60365edd3bc5adf74bdc96c685ff2b9a8ca69 $        0.00
+ =======================================================================
+ NOTE: Reading parameters from input.nml
+ This version was compiled with default real KIND=4
+ =======================================================================
+ &IO_PARAMS
+ VERBOSE =           0,
+ DO_DEBUG        = F,
+ DO_TRACE        = F,
+ DO_OUTPUT       = F,
+ LEVELMAX        =          10
+ /
+ &TEST_PARAMS
+ N       =         300
+ /
+         300         300         300
+           2           2           2
+   1.00000000000000        1.00000000000000        1.00000000000000     
+  0.000000000000000E+000  0.000000000000000E+000  0.000000000000000E+000
+             init:           0.629E-04 sec           0.233E-02 ns/upd,  2.70E+07 updates
+         allocate:           0.262E-02 sec           0.323E-01 ns/upd,  8.10E+07 updates
+              set:           0.339     sec            4.18     ns/upd,  8.10E+07 updates
+           cross1:           0.374     sec            4.61     ns/upd,  8.10E+07 updates
+  -3.000000       6.000000    
+             copy:           0.298     sec            3.67     ns/upd,  8.10E+07 updates
+           cross2:           0.209     sec            2.58     ns/upd,  8.10E+07 updates
+  -3.000000       6.000000    
+           cross1:           0.209     sec            2.58     ns/upd,  8.10E+07 updates
+  -3.000000       6.000000    
+           crossf:           0.214     sec            2.64     ns/upd,  8.10E+07 updates
+  0.0000000E+00  0.0000000E+00
+            cross:           0.213     sec            2.63     ns/upd,  8.10E+07 updates
+  0.0000000E+00  0.0000000E+00
+           crossf:           0.211     sec            2.60     ns/upd,  8.10E+07 updates
+  0.0000000E+00  0.0000000E+00

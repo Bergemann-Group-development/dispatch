@@ -45,7 +45,7 @@ MODULE vector_mod
     module procedure vector_scalar_minusdiv
   end interface
   interface cross
-    module procedure real4_vector_cross, real8_vector_cross, vector_cross
+    module procedure real4_vector_cross, real8_vector_cross, vector_cross, vector_cross_arr
   end interface
   interface curl
     module procedure vector_curl
@@ -390,6 +390,15 @@ FUNCTION vector_cross (in1, in2) RESULT (out)
   out%y = in1%z*in2%x - in1%x*in2%z
   out%z = in1%x*in2%y - in1%y*in2%x
 END FUNCTION vector_cross
+!> =============================================================================
+FUNCTION vector_cross_arr (f, g) RESULT (h)
+  real, dimension(:,:,:,:), intent(in):: f, g
+  real, dimension(size(f,1),size(f,2),size(f,3),size(f,4)):: h
+  !-----------------------------------------------------------------------------
+  h(:,:,:,1) = f(:,:,:,2)*g(:,:,:,3)-f(:,:,:,3)*g(:,:,:,2)
+  h(:,:,:,2) = f(:,:,:,3)*g(:,:,:,1)-f(:,:,:,1)*g(:,:,:,3)
+  h(:,:,:,3) = f(:,:,:,1)*g(:,:,:,2)-f(:,:,:,2)*g(:,:,:,1)
+END FUNCTION vector_cross_arr
 !> =============================================================================
 FUNCTION vector_curl (in) RESULT (out)
   type(vector_t):: out

@@ -13,9 +13,12 @@ END FUNCTION
 !> =============================================================================
 SUBROUTINE cross1 (f, g, h)
   real, dimension(:,:,:,:), pointer:: f, g, h
-  h(:,:,:,1) = f(:,:,:,2)*g(:,:,:,3)-f(:,:,:,3)*g(:,:,:,2)
-  h(:,:,:,2) = f(:,:,:,3)*g(:,:,:,1)-f(:,:,:,1)*g(:,:,:,3)
-  h(:,:,:,3) = f(:,:,:,1)*g(:,:,:,2)-f(:,:,:,2)*g(:,:,:,1)
+  integer:: i1, i2, i3
+  do i1=1,3
+    i2=mod(i1,3)+1
+    i3=mod(i2,3)+1
+    h(:,:,:,i1) = f(:,:,:,i2)*g(:,:,:,i3)-f(:,:,:,i3)*g(:,:,:,i2)
+  end do
 END SUBROUTINE cross1
 !> =============================================================================
 SUBROUTINE cross2 (f, g, h)
@@ -42,8 +45,8 @@ PROGRAM test
   type(scalar_t):: a, b
   type(vector_t):: u, v
   type(mesh_t):: m
-  real, dimension(:,:,:,:), pointer:: f, g, h
-  integer:: n
+  real, dimension(:,:,:,:), pointer:: f, g, h, h0
+  integer:: i, n
   namelist/test_params/ n
   !-----------------------------------------------------------------------------
   call io%init
@@ -53,18 +56,37 @@ PROGRAM test
   call tic
   call m%init (n=[n,n,n],ng=[2,2,2])
   call toc("init",n**3)
-  allocate (f(n,n,n,3), g(n,n,n,3), h(n,n,n,3))
+  allocate (f(n,n,n,3), g(n,n,n,3), h(n,n,n,3), h0(n,n,n,3))
   call toc("allocate",3*n**3)
-  f = 1.0
-  g = 2.0
+  do i=1,3
+    f(:,:,:,i) = 1.0+i
+    g(:,:,:,i) = 2.0-i
+  end do
   call toc("set",3*n**3)
   call cross1 (f, g, h)
   call toc("cross1",3*n**3)
+  print*,minval(h),maxval(h)
+  call tic
+  h0 = h
+  call toc("copy",3*n**3)
+  call tic
   call cross2 (f, g, h)
   call toc("cross2",3*n**3)
+  print*,minval(h),maxval(h)
+  call tic
   call cross1 (f, g, h)
-  f = h
   call toc("cross1",3*n**3)
+  print*,minval(h),maxval(h)
+  call tic
   h =  crossf (f, g)
   call toc("crossf",3*n**3)
+  print*,minval(h-h0),maxval(h-h0)
+  call tic
+  h =  cross (f, g)
+  call toc("cross",3*n**3)
+  print*,minval(h-h0),maxval(h-h0)
+  call tic
+  h =  crossf (f, g)
+  call toc("crossf",3*n**3)
+  print*,minval(h-h0),maxval(h-h0)
 END PROGRAM

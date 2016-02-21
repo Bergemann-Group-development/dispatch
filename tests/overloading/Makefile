@@ -1,9 +1,9 @@
 # This Makefile is a templater for simple tests, which do not need the complete DISPATCH list of object files
 
 # Option groups
-OPTS = debug
+#OPTS = debug
 #OPTS = full_debug
-#OPTS = optimized
+OPTS = optimized
 #OPTS = 
 
 # This should be different from dispatch.x for simpe tests, to disable the normal OBJ list
