@@ -12,25 +12,35 @@
  LEVELMAX        =          10
  /
  &TEST_PARAMS
- N       =         300
+ N       =         200
  /
-         300         300         300
+         200         200         200
            2           2           2
    1.00000000000000        1.00000000000000        1.00000000000000     
   0.000000000000000E+000  0.000000000000000E+000  0.000000000000000E+000
-             init:           0.629E-04 sec           0.233E-02 ns/upd,  2.70E+07 updates
-         allocate:           0.262E-02 sec           0.323E-01 ns/upd,  8.10E+07 updates
-              set:           0.339     sec            4.18     ns/upd,  8.10E+07 updates
-           cross1:           0.374     sec            4.61     ns/upd,  8.10E+07 updates
-  -3.000000       6.000000    
-             copy:           0.298     sec            3.67     ns/upd,  8.10E+07 updates
-           cross2:           0.209     sec            2.58     ns/upd,  8.10E+07 updates
-  -3.000000       6.000000    
-           cross1:           0.209     sec            2.58     ns/upd,  8.10E+07 updates
-  -3.000000       6.000000    
-           crossf:           0.214     sec            2.64     ns/upd,  8.10E+07 updates
+             init:           0.889E-04 sec           0.111E-01 ns/upd,  8.00E+06 updates
+         allocate:           0.107E-02 sec           0.133     ns/upd,  8.00E+06 updates
+              set:           0.657E-01 sec            8.22     ns/upd,  8.00E+06 updates
+           cross1:           0.158     sec            19.7     ns/upd,  8.00E+06 updates
+             copy:           0.108     sec            13.5     ns/upd,  8.00E+06 updates
+           cross2:           0.120     sec            15.1     ns/upd,  8.00E+06 updates
+           cross1:           0.116     sec            14.5     ns/upd,  8.00E+06 updates
+           crossf:           0.916E-01 sec            11.4     ns/upd,  8.00E+06 updates
   0.0000000E+00  0.0000000E+00
-            cross:           0.213     sec            2.63     ns/upd,  8.10E+07 updates
+            cross:           0.104     sec            13.0     ns/upd,  8.00E+06 updates
   0.0000000E+00  0.0000000E+00
-           crossf:           0.211     sec            2.60     ns/upd,  8.10E+07 updates
+           crossf:           0.964E-01 sec            12.0     ns/upd,  8.00E+06 updates
   0.0000000E+00  0.0000000E+00
+ mk1 T  v2         200         200         200           1           1
+           1
+             curl:           0.205     sec            25.6     ns/upd,  8.00E+06 updates
+ mk2 T  v2         200         200         200           1           1
+           1
+ mk3 T  v2         200         200         200           1           1
+           1
+ mk3 T  v3         200         200         200           1           1
+           1
+ mk3 T  s1         200         200         200           1           1
+           1
+              div:           0.951E-01 sec            11.9     ns/upd,  8.00E+06 updates
+             grad:           0.926E-01 sec            11.6     ns/upd,  8.00E+06 updates

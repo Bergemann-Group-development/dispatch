@@ -2,5 +2,5 @@
  verbose=0
 /
 &test_params
- n=300
+ n=200
 /

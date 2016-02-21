@@ -1,5 +1,6 @@
 !> =============================================================================
 MODULE operators_mod
+  USE scalar_mod
   implicit none
 CONTAINS
 !> =============================================================================
@@ -41,52 +42,84 @@ PROGRAM test
   USE io_mod
   USE omp_timer_mod
   USE operators_mod
+  USE stagger_mod
   implicit none
   type(scalar_t):: a, b
   type(vector_t):: u, v
   type(mesh_t):: m
   real, dimension(:,:,:,:), pointer:: f, g, h, h0
-  integer:: i, n
+  type(vector_t):: v1, v2, v3, v4
+  type(scalar_t):: s1, s2
+  type(stagger_t):: d
+  integer:: i, n, dims(3)
+  real:: ds(3)
   namelist/test_params/ n
   !-----------------------------------------------------------------------------
   call io%init
   n = 20
+  ds = 1.0
   read (io%input, test_params)
   write (*,test_params)
+  dims = n
   call tic
-  call m%init (n=[n,n,n],ng=[2,2,2])
+  call m%init (n=dims,ng=[2,2,2])
   call toc("init",n**3)
   allocate (f(n,n,n,3), g(n,n,n,3), h(n,n,n,3), h0(n,n,n,3))
-  call toc("allocate",3*n**3)
+  call toc("allocate",n**3)
   do i=1,3
     f(:,:,:,i) = 1.0+i
     g(:,:,:,i) = 2.0-i
   end do
-  call toc("set",3*n**3)
+  call toc("set",n**3)
   call cross1 (f, g, h)
-  call toc("cross1",3*n**3)
-  print*,minval(h),maxval(h)
+  call toc("cross1",n**3)
   call tic
   h0 = h
-  call toc("copy",3*n**3)
+  call toc("copy",n**3)
   call tic
   call cross2 (f, g, h)
-  call toc("cross2",3*n**3)
-  print*,minval(h),maxval(h)
+  call toc("cross2",n**3)
   call tic
   call cross1 (f, g, h)
-  call toc("cross1",3*n**3)
-  print*,minval(h),maxval(h)
+  call toc("cross1",n**3)
   call tic
   h =  crossf (f, g)
-  call toc("crossf",3*n**3)
+  call toc("crossf",n**3)
   print*,minval(h-h0),maxval(h-h0)
   call tic
   h =  cross (f, g)
-  call toc("cross",3*n**3)
+  call toc("cross",n**3)
   print*,minval(h-h0),maxval(h-h0)
   call tic
   h =  crossf (f, g)
-  call toc("crossf",3*n**3)
+  call toc("crossf",n**3)
   print*,minval(h-h0),maxval(h-h0)
+  !-----------------------------------------------------------------------------
+  call v1%init(dims,ds,'v1')
+  call v2%init(dims,ds,'v2')
+  print*,'mk1',v2%allocated,' ',trim(v2%name),v2%x%n,v2%x%l
+  v1 = 1.0
+  v2 = 1.0
+  call tic
+  v2 = curl(v1)
+  call toc("curl",n**3)
+  print*,'mk2',v2%allocated,' ',trim(v2%name),v2%x%n,v2%x%l
+  !-----------------------------------------------------------------------------
+  call v3%init(dims,ds,'v3')
+  call s1%init(dims,ds,'s1')
+  call tic
+  s1 = div(v3)
+  print*,'mk3',v2%allocated,' ',trim(v2%name),v2%x%n,v2%x%l
+  print*,'mk3',v3%allocated,' ',trim(v3%name),v3%x%n,v3%x%l
+  print*,'mk3',s1%allocated,' ',trim(s1%name),s1%n,s1%l
+  call toc("div",n**3)
+  !call scalar_cleanup
+  v3 = v2
+  !-----------------------------------------------------------------------------
+  call tic
+  v1 = grad(s1)
+  call toc("grad",n**3)
+  call scalar_cleanup
+  !-----------------------------------------------------------------------------
+
 END PROGRAM

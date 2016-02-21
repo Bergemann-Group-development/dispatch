@@ -13,4 +13,7 @@ EXEC = test.x
 TOP = ../..
 include $(TOP)/config/Makefile
 
-$(EXEC): scalar_mod.o vector_mod.o mesh_mod.o
+vector_mod.o: scalar_mod.o
+stagger_mod.o: scalar_mod.o vector_mod.o
+
+$(EXEC): mesh_mod.o stagger_mod.o
