@@ -1,0 +1,6 @@
+&io_params
+ verbose=0
+/
+&test_params
+ n=100
+/

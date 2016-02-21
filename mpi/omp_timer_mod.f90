@@ -57,8 +57,9 @@ SUBROUTINE toc_r (label, n)
     print 1, label, wt,  'sec', wt/n*1e3, 'ms/upd,', n, 'updates'
   else
     print 1, label, wt,  'sec', wt/n, 's/upd,', n, 'updates'
-    1 format(1x,a,1h:,2(g20.3,1x,a),1p,e10.2,1x,a)
+    1 format(1x,a16,1h:,2(g20.3,1x,a),1p,e10.2,1x,a)
   end if
+  wt = omp_get_wtime()
 END SUBROUTINE toc_r
 
 !> =============================================================================
