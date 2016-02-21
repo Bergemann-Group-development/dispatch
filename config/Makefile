@@ -43,6 +43,7 @@ sinclude $(TOP)/meshes/$(MESH)/Makefile
 sinclude $(TOP)/patches/$(MESH)/Makefile
 sinclude $(TOP)/timestep/$(UPD)/Makefile
 sinclude $(TOP)/particles/Makefile
+sinclude $(TOP)/states/Makefile
 
 #############################################################################
 # Optional patches and extra dependencies
