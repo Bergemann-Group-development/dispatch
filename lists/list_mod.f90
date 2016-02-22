@@ -178,7 +178,7 @@ END SUBROUTINE remove_head
 !> =============================================================================
 SUBROUTINE remove_task (self, task)
   class(list_t):: self
-  class(link_t), pointer:: link, prev
+  type(link_t), pointer:: link, prev
   class(task_t), pointer:: task
   integer:: i
   !.............................................................................
@@ -304,13 +304,14 @@ END SUBROUTINE insert
 
 !> =============================================================================
 !> Run through neighbor list and pick up guard cells, after which the whole 
-!> patch is valid for download into other patches guard cells
+!> task is valid for download into other taskes guard cells
 !> =============================================================================
 SUBROUTINE download (self, all_cells)
   implicit none
   class (link_t):: self
   logical, optional:: all_cells
   class (link_t),  pointer:: nbor
+  class (patch_t), pointer:: patch, nbor_patch
   class (task_t), pointer:: task
   integer :: nguard, special
   real:: dmin
@@ -318,28 +319,29 @@ SUBROUTINE download (self, all_cells)
   call trace_begin('link_t%download')
   nbor => self%nbor
   task => self%task
+  !
+  select type (task)
+  class is (patch_t)
+  patch => task
+  end select
+  !
   nguard=0
   do while (associated (nbor))
-    print*,'nbor',nbor%task%id,self%task%id
-    if (abs(self%task%level-task%level) < 2) then
-      !dmin = minval(nbor%patch%mem(:,:,:,1,nbor%patch%it,1))
-      !if (dmin <= 0.0) print*,'MK1',nbor%patch%id,dmin
-      call trace('1')
-      if (nbor%task%level == task%level+1) special = 6
-      call trace('2')
-      !call nbor%task%download_to (task, special, all_cells)
-      call trace('3')
+    task => nbor%task
+    select type (task)
+    class is (patch_t)
+    nbor_patch => task
+    end select
+    !
+    if (abs(patch%level-nbor_patch%level) < 2) then
+      if (nbor_patch%level == patch%level+1) special = 6
+      call nbor_patch%download_to (task, special, all_cells)
+      nguard = nguard+1
     end if
-    call trace('4')
-    !dmin = minval(self%task%mem(:,:,:,1,self%task%it,1))
-    !if (dmin <= 0.0) print*,'MK2',self%task%id,dmin
     nbor => nbor%next
-    call trace('5')
   end do
-  !print*,'MK', self%task%id, self%task%it, minval(self%task%mem(:,:,:,1,self%task%it,1))
-  !if (io%verbose > 5) &
+  if (io%verbose > 5) &
     print *, 'download: Number of neighbors with guard cells:', nguard
-  call trace('6')
   call trace_end
 END SUBROUTINE download
 

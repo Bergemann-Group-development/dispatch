@@ -63,6 +63,9 @@ MODULE scalar_mod
   interface maxval
     module procedure scalar_maxval
   end interface
+  interface maxloc
+    module procedure scalar_maxloc
+  end interface
   interface max
     module procedure scalar_max
   end interface
@@ -183,6 +186,13 @@ FUNCTION scalar_maxval (in) RESULT (out)
   out = maxval(in%f)
   call in%tempdealloc
 END FUNCTION scalar_maxval
+!> =============================================================================
+FUNCTION scalar_maxloc (in) RESULT (out)
+  type(scalar_t), intent(in):: in
+  integer, dimension(3):: out
+  out = maxloc(in%f)
+  call in%tempdealloc
+END FUNCTION scalar_maxloc
 !> =============================================================================
 FUNCTION scalar_max (in1, in2) RESULT (out)
   type(scalar_t), intent(in):: in1

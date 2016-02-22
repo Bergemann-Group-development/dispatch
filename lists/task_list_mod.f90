@@ -101,6 +101,10 @@ SUBROUTINE init (self, name)
     link => link%next
   end do
   call self%print
+  !call self%consistency(99)
+  call trace('OK')
+  call self%qconsistency(99)
+  call trace('qOK')
   call trace_end
 END SUBROUTINE init
 
@@ -115,7 +119,7 @@ SUBROUTINE update (self)
   class(task_t), pointer:: task
   integer:: n1
   !.............................................................................
-  call trace_begin('task_list_t%update '//self%name)
+  call trace_begin('task_list_t%update')
   if (self%nq < 1) then
     n1 = self%nq
     call self%check_all
@@ -127,21 +131,13 @@ SUBROUTINE update (self)
     self%nq = self%nq-1
     call self%check_mpi                                 ! check incoming MPI
     task => head%task                                   ! head task
-    call trace('1')
     call head%download (all_cells=.false.)              ! guard cells
-    call trace('2')
-    if (refine%needed (task)) then                      ! if refinement needed
-      call trace('2a')
-      call self%split (head)                            ! refined tasks go back to queue
-      call trace('2b')
-    end if
-    call trace('3')
+    !if (refine%needed (task)) then                      ! if refinement needed
+    !  call self%split (head)                            ! refined tasks go back to queue
+    !end if
     call task%output(self%name)                         ! check output
-    call trace('4')
     call task%update                                    ! update the task
-    call trace('5')
     call task%output(self%name)                         ! check output
-    call trace('6')
     call self%check_nbors (head)                        ! any nbor ready?
     if (task%time+0.5*task%dtime > task%end_time) then  ! finished:
       call self%remove_task (task)                      ! remove from self
@@ -152,8 +148,6 @@ SUBROUTINE update (self)
     print*,'ERROR: no self%queue', self%nq, self%n
     call mpi%abort ('ERROR: ready queue empty')
   end if
-  print '(i8,f10.6,2x,3f10.6,i6,i6,2x,a)', task%id, task%time, task%position, &
-    task%status, self%nq !, task%name
   call trace_end
 END SUBROUTINE update
 
@@ -238,7 +232,7 @@ SUBROUTINE check_nbors (self, link)
     if (nbtask%is_clear(bits%ready)) then             ! needs checking?
       nbors(inbor) = nbtask%id
       !call self%check_ready (nbor%link)               ! nbor ready?
-      call self%check_ready (nbor%nbor)              ! pointer back
+      call self%check_ready (nbor%link)              ! pointer back
     else
       nbors(inbor) = -nbtask%id
     end if
@@ -275,7 +269,7 @@ SUBROUTINE check_nbors_off (self, link)
     inbor = min(inbor+1,mnbor)
     if (nbtask%is_clear(bits%ready)) then            ! needs checking?
       nbors(inbor) = nbtask%id
-      call self%check_ready (nbor%nbor)              ! pointer back
+      call self%check_ready (nbor%link)              ! pointer back
     else
       nbors(inbor) = -nbtask%id
     end if
@@ -342,7 +336,6 @@ SUBROUTINE check_ready (self, link, set_debug)
   task => link%task                                   ! already checked?
   if (task%is_set(bits%ready)) return
   call trace_begin('task_list_t%check_ready '//self%name,2)
-  !nbor => link%nbor                                   ! start on nbor list
   nbor => link%nbor                                    ! start on nbor list
   inbor = 0
   do while (associated (nbor))                        ! keep going until end
@@ -432,7 +425,7 @@ SUBROUTINE consistency (self, link, i)
   do while (associated (nbor))                        ! keep going until end
     id2 = nbor%task%id
     !print*,id2
-    nbor => nbor%nbor                                 ! next nbor
+    nbor => nbor%next                                 ! next nbor
     n = n+1
   end do
   if (n /= link%task%n_nbors) then
@@ -483,14 +476,13 @@ END SUBROUTINE qconsistency
 SUBROUTINE init_nbors (self)
   class(task_list_t):: self
   type(link_t), pointer:: link, scan
-  class(link_t), pointer:: head, nbor
+  class(link_t), pointer:: nbor
   integer:: n_add = 0
   !.............................................................................
   call trace_begin('task_list_t%init_nbors ')
   link => self%head                                     ! start checking links
   do while (associated(link))
     nullify (link%nbor)                                 ! initially no nbor
-    head => link%nbor
     n_add = 0
     scan => self%head                                   ! scan all links (FIXME)
     do while (associated(scan))                         ! until end
@@ -499,7 +491,7 @@ SUBROUTINE init_nbors (self)
           allocate (nbor)
           nbor%task => scan%task
           nbor%link => scan
-          nbor%nbor => link%nbor
+          nbor%next => link%nbor
           link%nbor => nbor
           n_add = n_add+1
         end if
@@ -518,7 +510,7 @@ END SUBROUTINE init_nbors
 !> =============================================================================
 FUNCTION distance (self, task1, task2)
   class(task_list_t):: self
-  type(task_t), pointer:: task1, task2
+  class(task_t), pointer:: task1, task2
   real(8):: distance(3), size(3)
   !.............................................................................
   size = self%size
@@ -532,12 +524,14 @@ FUNCTION overlaps (self, task1, task2)
   class(task_list_t):: self
   class(task_t), pointer:: task1, task2
   logical:: overlaps
+  real(8):: dist(3)
   !.............................................................................
   call trace_begin ('task_lis_t%overlap', 3)
+  dist = self%distance(task1,task2)
   overlaps = (all(self%distance(task1,task2) < 0.501*(task1%size+task2%size)))
   if (self%debug>3) &
-    print'(a,2i4,3f8.2,3x,l3)', 'overlap:', task1%id, task2%id, &
-     task1%position/task1%size-task2%position/task2%size, overlaps
+    print'(a,2i4,2(3f8.2,3x),l3)', 'overlap:', task1%id, task2%id, &
+     task1%position/task1%size-task2%position/task2%size, dist, overlaps
   call trace_end
 END FUNCTION overlaps
 
@@ -588,6 +582,7 @@ SUBROUTINE init_cartesian (self)
   real:: position(3)
   type(experiment_t), pointer:: patch
   type(link_t) , pointer:: prev=>null(), link
+  class(task_t), pointer:: task
   integer:: i, j, k, i1, j1, k1, i2, j2, k2
   namelist /box_params/ size, dims, origin
   !.............................................................................
@@ -617,28 +612,30 @@ SUBROUTINE init_cartesian (self)
     !---------------------------------------------------------------------------
     ! Add to a list of links, with pointers from patch to patch
     !---------------------------------------------------------------------------
-    self%n = self%n + 1
-    allocate (link)
-    link%task => patches(i,j,k)
-    if (associated(self%head)) then
-      prev%next => link
-    else
-      self%head => link
-    end if
-    prev => link
+    task => patches(i,j,k)
+    call self%append (task)
+    !self%n = self%n + 1
+    !allocate (link)
+    !link%task => patches(i,j,k)
+    !if (associated(self%head)) then
+    !  prev%next => link
+    !else
+    !  self%head => link
+    !end if
+    !prev => link
   end do
   end do
   end do
-  call self%init_nbors_by_overlap
-  self%tail => link
+  !call self%init_nbors_by_overlap
+  !self%tail => link
   call trace_end
 END SUBROUTINE init_cartesian
 
 !> =============================================================================
 SUBROUTINE remove_task (self, task)
   class(task_list_t):: self
+  class(task_t), pointer:: task
   class(link_t), pointer:: link, prev
-  class(task_t):: task
   !.............................................................................
   call trace_begin('task_list_t%remove_task')
   link => self%head
@@ -949,7 +946,7 @@ END SUBROUTINE search_nbors_by_overlap
 !> =============================================================================
 SUBROUTINE queue_by_time (self, this)
   class(task_list_t):: self
-  type(link_t), pointer:: this
+  class(link_t), pointer:: this
   type(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%queue_by_time '//self%name)
@@ -1034,50 +1031,6 @@ SUBROUTINE add_by_quality (self, this)
 END SUBROUTINE add_by_quality
 
 !> =============================================================================
-!> Run through neighbor list and pick up guard cells, after which the whole 
-!> task is valid for download into other taskes guard cells
-!> =============================================================================
-SUBROUTINE download (self, all_cells)
-  implicit none
-  class (link_t):: self
-  logical, optional:: all_cells
-  class (link_t),  pointer:: nbor
-  class (patch_t), pointer:: patch, nbor_patch
-  class (task_t), pointer:: task
-  integer :: nguard, special
-  real:: dmin
-  !.............................................................................
-  call trace_begin('link_t%download')
-  nbor => self%nbor
-  task => self%task
-  select type (task)
-  class is (patch_t)
-  patch => task
-  end select
-  task => nbor%task
-  select type (task)
-  class is (patch_t)
-  nbor_patch => task
-  end select
-  nguard=0
-  do while (associated (nbor))
-    if (abs(patch%level-patch%level) < 2) then
-      !dmin = minval(nbor_patch%mem(:,:,:,1,nbor_patch%it,1))
-      !if (dmin <= 0.0) print*,'MK1',nbor_patch%id,dmin
-      if (nbor_patch%level == patch%level+1) special = 6
-      call nbor_patch%download_to (task, special, all_cells)
-    end if
-    !dmin = minval(patch%mem(:,:,:,1,patch%it,1))
-    !if (dmin <= 0.0) print*,'MK2',patch%id,dmin
-    nbor => nbor%next
-  end do
-  !print*,'MK', patch%id, patch%it, minval(patch%mem(:,:,:,1,patch%it,1))
-  if (io%verbose > 5) &
-    print *, 'download: Number of neighbors with guard cells:', nguard
-  call trace_end
-END SUBROUTINE download
-
-!> =============================================================================
 !> Print a table with patch id, positions, and all neighbors
 !> =============================================================================
 SUBROUTINE output (self)
@@ -1117,25 +1070,6 @@ SUBROUTINE check_queue (self)
 END SUBROUTINE check_queue
 
 !> =============================================================================
-!> Print a list of nbors
-!> =============================================================================
-SUBROUTINE print_nbors (self, label)
-  class (link_t):: self
-  character(len=*):: label
-  type(link_t) , pointer:: link, nbor
-  !.............................................................................
-  if (io%verbose < 2) return
-  if (label /= '') print'(a)', label
-  print'(2(a,i5,2x),a,$)', 'task', self%task%id, 'level', self%task%level, 'nbors:'
-  link => self%nbor
-  do while (associated(link))
-    print '(i4,$)', link%task%id
-    link => link%next
-  end do
-  print*,''
-END SUBROUTINE print_nbors
-
-!> =============================================================================
 !> Print a table with task id, positions, and all neighbors
 !> =============================================================================
 SUBROUTINE print_lists (self)
@@ -1158,6 +1092,25 @@ SUBROUTINE print_lists (self)
   end do
     print*,''
 END SUBROUTINE print_lists
+
+!> =============================================================================
+!> Print a list of nbors
+!> =============================================================================
+SUBROUTINE print_nbors (self, label)
+  class (link_t):: self
+  character(len=*):: label
+  type(link_t) , pointer:: link, nbor
+  !.............................................................................
+  if (io%verbose < 2) return
+  if (label /= '') print'(a)', label
+  print'(2(a,i5,2x),a,$)', 'task', self%task%id, 'level', self%task%level, 'nbors:'
+  link => self%nbor
+  do while (associated(link))
+    print '(i4,$)', link%task%id
+    link => link%next
+  end do
+  print*,''
+END SUBROUTINE print_nbors
 
 !> =============================================================================
 !> Print a table with task id and all neighbors

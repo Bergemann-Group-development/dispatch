@@ -28,7 +28,7 @@ CONTAINS
 !> =============================================================================
 FUNCTION overlaps (self, task)
   class(tasks_t):: self
-  class(task_t):: task
+  class(task_t), pointer:: task
   logical:: overlaps
   call trace_begin ('task_t%overlap')
   overlaps = .true.
@@ -39,7 +39,7 @@ END FUNCTION overlaps
 !> =============================================================================
 SUBROUTINE send_to (self, task)
   class(tasks_t):: self
-  class(task_t):: task
+  class(task_t), pointer:: task
   call trace_begin ('tasks_t%send_to')
   print *, 'tasks_t%send_to', task%rank
   call trace_end

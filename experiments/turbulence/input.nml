@@ -1,0 +1,23 @@
+&io_params
+ do_trace=f
+ verbose=-1
+/
+&box_params
+ size=1,1,1
+ dims=2,2,2
+ origin=0,0,0
+/
+&experiment_params
+/
+&patch_params
+ n=20,20,20
+ courant=0.2
+!dt_fixed=5e-4
+ end_time=0.2
+ out_time=0.05
+/
+&mhd_params
+/
+&timestep_params
+ time_order=2
+/

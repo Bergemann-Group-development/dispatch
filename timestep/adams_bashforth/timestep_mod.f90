@@ -75,10 +75,10 @@ SUBROUTINE update (self, id, iit, dt, mem)
   class(timestep_t):: self
   integer:: id, nt
   integer, dimension(:):: iit
-  real, dimension(:):: dt
+  real(8), dimension(:):: dt
   real, dimension(:,:,:,:,:,:):: mem            ! memory buffer
   !......................................................................
-  call trace_begin ('timestep_t%update', 1)
+  call trace_begin ('timestep_t%update')
   call self%init                                ! auto-initialize
   nt = size(iit)                                ! number of time slots
   select case (self%time_order)
@@ -105,13 +105,15 @@ SUBROUTINE update (self, id, iit, dt, mem)
     mem(:,:,:,:,iit(nt-3),2)*(self%wt(3)*dt(iit(nt-3))) + &
     mem(:,:,:,:,iit(nt-4),2)*(self%wt(4)*dt(iit(nt-4)))
   end select
-  if (self%verbose>0) then
-    print'(a,i4,2x,a,1p,6e10.2)', 'timestep, id:', &
+  if (self%verbose>3) then
+    print'(a,i4,2x,a,1p,6e10.2,2x,6i5)', 'timestep, id:', &
       id, 'minmax:', &
       minval(mem(:,:,:,1,iit(nt-1),2)), &
       maxval(mem(:,:,:,1,iit(nt-1),2)), &
+      minval(mem(:,:,:,1,iit(nt-1),1)), &
+      maxval(mem(:,:,:,1,iit(nt-1),1)), &
       minval(mem(:,:,:,1,iit(nt  ),1)), &
-      maxval(mem(:,:,:,1,iit(nt  ),1))
+      maxval(mem(:,:,:,1,iit(nt  ),1)), shape(mem)
   end if
   call trace_end
 END SUBROUTINE update

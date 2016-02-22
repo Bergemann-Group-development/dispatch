@@ -17,11 +17,11 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: log_density
-    procedure:: log_pressure
-    procedure:: gas_pressure
-    procedure:: velocity_magnitude
-    procedure:: magnetic_field_magnitude
+    procedure:: log_density => void
+    procedure:: log_pressure => void
+    procedure:: gas_pressure => void
+    procedure:: velocity_magnitude => void
+    procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
   end type
   logical, save:: first_time=.true.
@@ -35,7 +35,7 @@ SUBROUTINE init (self)
   namelist /mhd_params/ nu, courant, gamma
   !----------------------------------------------------------------------------
   call trace_begin('mhd_t%init')
-  !$omp critical (mhd_cr)
+  !x!$omp critical (mhd_cr)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
@@ -45,7 +45,7 @@ SUBROUTINE init (self)
     self%nu = nu
     self%gamma = gamma
   end if
-  !$omp end critical (mhd_cr)
+  !x!$omp end critical (mhd_cr)
   call trace_end
 END SUBROUTINE init
 
@@ -55,34 +55,27 @@ SUBROUTINE update (self)
   !.............................................................................
   type(vector_t):: U, E, J                              ! velocity, electric field
   type(vector_t):: fx, fy, fz, fd, ld, dd               ! extra vector temporaries
-  type(scalar_t):: du, lnd, ss, cs, pg, pa, pp          ! extra scalar temporaries
+  type(scalar_t):: du, lnd, ss, cs, pg, pa, pp, pb      ! extra scalar temporaries
   !.............................................................................
   real:: ds
   !-----------------------------------------------------------------------------
-  associate(d=>self%d,dddt=>self%dddt,s=>self%s,dsdt=>self%dsdt,p=>self%p,dpdt=>self%dpdt,B=>self%B,dBdt=>self%dBdt)
   call trace_begin('mhd_t%update')
   if (first_time) call self%init
   call init_vectors (self%mesh%gn, self%ds, ld, dd, U, E, fd, fx, fy, fz)
-  call init_scalars (self%mesh%gn, self%ds, lnd, pg, pa, du, ss, cs, pp)
+  call init_scalars (self%mesh%gn, self%ds, lnd, pg, pa, du, ss, cs, pp, pb)
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below
   !-----------------------------------------------------------------------------
-  call trace('1')
+  associate(d=>self%d,dddt=>self%dddt,s=>self%s,dsdt=>self%dsdt,p=>self%p,dpdt=>self%dpdt,B=>self%B,dBdt=>self%dBdt)
   lnd = log(d)
-  call trace('2')
   ld = down(lnd)
-  call trace('3')
   dd = exp(ld)
-  call trace('4')
-  print*,p%x%n,p%x%l,p%x%ds
-  print*,dd%x%n,dd%x%l,dd%x%ds
   U = p/dd
-  call trace('5')
   !-----------------------------------------------------------------------------
   ! Gas pressure
   !-----------------------------------------------------------------------------
-  pg = self%gas_pressure()
+  !pg = self%gas_pressure()
   cs = sqrt(self%gamma*pg/d)                            ! sound speed
   !-----------------------------------------------------------------------------
   ! Diffusion coefficient; the result 'nu' is cell centered, and may be staggered
@@ -115,7 +108,10 @@ SUBROUTINE update (self)
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   !-----------------------------------------------------------------------------
   if (self%mhd) then
-    pp = d*norm2(U) + pg + pa - 0.5*norm2(B)
+    pb = 0.5*norm2(B)
+    pp = norm2(U)
+    self%u_max = maxval(sqrt((self%gamma*pg+pb)/d) + sqrt(pp)) 
+    pp = d*pp + pg + pa - pb
   else
     pp = d*norm2(U) + pg + pa
   end if
@@ -182,7 +178,7 @@ SUBROUTINE update (self)
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, U, E, fd, fx, fy, fz)
-  call deallocate_scalars (lnd, pg, pa, du, ss, cs, pp)
+  call deallocate_scalars (lnd, pg, pa, du, ss, cs, pp, pb)
   !call cleanup_temp
   end associate
   call trace_end
@@ -215,7 +211,7 @@ SUBROUTINE log_pressure (self, v)
   real, dimension(:,:,:), pointer:: v
   !-----------------------------------------------------------------------------
   call s%init (self%d%n, self%d%ds)
-  s = self%gas_pressure()
+  !s = self%gas_pressure()
   v = log(s%f)
   call s%deallocate()
 END SUBROUTINE

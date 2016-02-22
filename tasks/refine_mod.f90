@@ -76,32 +76,23 @@ FUNCTION needed (self, task)
   select type (task)
   class is (experiment_t)
   patch => task
-  call trace('1')
   !if (io%verbose>1) &
   !  print*, 'needed:', patch%is_set(bits%not_leaf), patch%level >= self%levelmax, &
   !          patch%time < self%refine_from, patch%time > self%refine_until, &
   !          patch%time, self%refine_until
-  call trace('2')
-  print*,patch%level
-  print*,self%levelmax
-  print*,patch%is_set(bits%not_leaf)
   if (patch%is_set(bits%not_leaf) .or. patch%level >= self%levelmax) then
-    call trace('3')
     call trace_end
     return
   end if
   if (patch%time < self%refine_from .or. patch%time > self%refine_until) then
-    call trace('4')
     call trace_end
     return
   end if
-  call trace('5')
   if (io%verbose>2) print*,'refine%needed? patch:', patch%id, patch%it, patch%new
   !
   !needed = check_log_density    (self, patch)
   !needed = self%check_potential (patch)
-  if (self%min_jeans   > 0.0) needed = needed.or.self%check_Jeans (task)
-  call trace('6')
+  if (self%min_jeans   > 0.0) needed = needed.or.self%check_Jeans (patch)
 !  if (self%max_dln_rho > 0.0) needed = needed.or.self%check_max_diff (patch)
   if (needed) then
     call trace_end

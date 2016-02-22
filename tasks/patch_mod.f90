@@ -33,6 +33,7 @@ MODULE patch_mod
     logical:: mem_allocated=.false.
   contains
     procedure:: init
+    procedure:: update
     procedure:: output
     procedure:: distance        ! return the distance btw two patches
     procedure:: overlaps        ! return true if they overlap (incl. ghost zones)
@@ -150,7 +151,7 @@ END SUBROUTINE init
 !> dt(1). Then the current slot (it) becomes 2, and the new one becomes 3, etc.
 !> This way, there is no need to copy memory btw time steps.
 !> =============================================================================
-SUBROUTINE update_patch (self)
+SUBROUTINE update (self)
   class(patch_t):: self
   !.............................................................................
   call trace_begin ('patch_t%update')
@@ -167,11 +168,11 @@ SUBROUTINE update_patch (self)
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
-  if (self%id==1) then
-    call self%periodic_grid                     ! periodic root grid
-  else
-    call self%extrapolate_guards                ! time-extrapolate guard cells
-  end if
+  !if (self%id==1) then
+  !  call self%periodic_grid                     ! periodic root grid
+  !else
+  !  call self%extrapolate_guards                ! time-extrapolate guard cells
+  !end if
   !-----------------------------------------------------------------------------
   ! One line summary
   !-----------------------------------------------------------------------------
@@ -184,12 +185,20 @@ SUBROUTINE update_patch (self)
       minval(self%mem(:,:,:,1,self%new,1)), &
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
+  print '(i8,f10.6,f9.6,f7.2,2x,1p,2e10.2,2x,2e14.6,i6,2x,7i3,2x,2i3)', self%id, &
+    self%time, self%dtime, self%courant, &
+    minval(self%mem(:,:,:,1,self%it ,2)), &
+    maxval(self%mem(:,:,:,1,self%it ,2)), &
+    minval(self%mem(:,:,:,1,self%new,1)), &
+    maxval(self%mem(:,:,:,1,self%new,1)), &
+    self%status, self%iit, self%it, self%new
   !-----------------------------------------------------------------------------
   ! Time slot rotation
   !-----------------------------------------------------------------------------
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = self%time                          ! initial time
+  self%iit(self%nt) = self%new                          ! right-most slot
   self%it = self%new                                    ! update time slot
   self%new = mod(self%new,self%nt)+1                    ! increment / rotate
   self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
@@ -202,7 +211,7 @@ SUBROUTINE update_patch (self)
   if (io%verbose>3) &
    print*,'patch t(iit):', self%t(self%iit)
   call trace_end
-END SUBROUTINE update_patch
+END SUBROUTINE update
 
 !> =============================================================================
 !> Download values from the source (self) to the target (patch), trying to get
@@ -223,10 +232,6 @@ SUBROUTINE download_to (self, task, special, all_cells)
   integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), ntot, nuse
   integer, dimension(3):: l1, u1, l2, u2
   real:: f(3), pos(3), weight
-  !.............................................................................
-!  if (self%id==patch%id .and. all(patch%size /= box%size)) return
-  if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','download_to:self,patch=', &
-    self%id,self%position,patch%id,patch%position, self%mesh%li, self%mesh%ui
   !-----------------------------------------------------------------------------
   ! Upgrade to a patch link
   !-----------------------------------------------------------------------------
@@ -234,6 +239,9 @@ SUBROUTINE download_to (self, task, special, all_cells)
   class is (patch_t)
   patch => task
   end select
+!  if (self%id==patch%id .and. all(patch%size /= box%size)) return
+  if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','download_to:self,patch=', &
+    self%id,self%position,patch%id,patch%position, self%mesh%li, self%mesh%ui
 associate (source=>self%mem, target=>patch%mem)
   it = patch%it
   !-----------------------------------------------------------------------------
@@ -396,6 +404,7 @@ associate (source=>self%mem, target=>patch%mem)
       'self:', self%id, self%t(self%it), patch%it, patch%new, patch%iit, patch%t
 end associate
 END SUBROUTINE download_to
+
 !> =============================================================================
 !> This function gives the physical position of an index triple (patch point)
 !> =============================================================================
@@ -658,6 +667,8 @@ SUBROUTINE courant_condition (self)
   else
     self%dtime = self%courant*minval(self%ds)/self%u_max
   endif
+  if (io%verbose>4) &
+    print'(a,i7,f12.6,f8.4)', 'courant:', self%id, self%dtime, self%courant
 END SUBROUTINE courant_condition
 
 !> =============================================================================
@@ -694,7 +705,7 @@ FUNCTION overlaps (self, task)
   patch => task
   end select
   ! FIXME
-  !overlaps = all(abs(distance(self,patch)) <= 0.5000000001_8*(self%gsize+patch%gsize))
+  overlaps = all(abs(distance(self,task)) <= 0.5000000001_8*(self%gsize+patch%gsize))
 END FUNCTION overlaps
 
 !> =============================================================================

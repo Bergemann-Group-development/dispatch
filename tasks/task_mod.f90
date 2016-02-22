@@ -107,7 +107,7 @@ END FUNCTION
 !> =============================================================================
 FUNCTION distance (self, task)
   class(task_t):: self
-  class(task_t):: task
+  class(task_t), pointer:: task
   real(8):: distance(3)
   !.............................................................................
   call trace_begin('task_t%overlaps')
@@ -119,7 +119,7 @@ END FUNCTION
 !> =============================================================================
 FUNCTION overlaps (self, task)
   class(task_t):: self
-  class(task_t):: task
+  class(task_t), pointer:: task
   logical:: overlaps
   !.............................................................................
   call trace_begin('task_t%overlaps')
@@ -141,7 +141,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE download_to (self, task, special, all_cells)
   class (task_t):: self
-  class (task_t):: task
+  class (task_t), pointer:: task
   integer:: special
   logical, optional:: all_cells
   !.............................................................................
@@ -153,7 +153,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE send_to (self, task)
   class(task_t):: self
-  class(task_t):: task
+  class(task_t), pointer:: task
   call trace_begin ('tasks_t%send_to')
   print *, 'tasks_t%send_to', task%rank
   call trace_end
