@@ -7,8 +7,8 @@ MODULE patches_mod
   USE io_mod
   USE omp_timer_mod
   USE bits_mod
-  USE timestep_mod
   USE mesh_mod
+  USE timestep_mod
   implicit none
   integer, parameter:: ntime=7
   private
@@ -20,15 +20,14 @@ MODULE patches_mod
     integer:: i, j, k
     integer:: status
     integer, pointer:: iit(:)
-    type(mesh_t):: mesh(3)
-    real, dimension(3):: position, size, gsize, box=1, ds, offset, origin
+    real, dimension(3):: position, size, gsize, box=1, ds, offset
     real, pointer:: t(:)
     real, pointer:: dt(:)
     real(8):: time=0.0, dtime=0.1, end_time=1.0, grace=0.0
     real(8):: out_time=0.1, out_next=0.0           ! controls output
     real:: courant=0.2                          ! courant constant
-    real:: gamma=1.0                            ! gas gamma
     real:: u_max, u_fixed=-1.0, dt_fixed=-1.0   ! courant options
+    real:: gamma=1.0
     integer:: istep=0                           ! time step counter
     integer:: iout=0                            ! output counter
     integer:: level
@@ -38,6 +37,7 @@ MODULE patches_mod
     logical:: mem_allocated = .false.
     character(len=64), pointer:: experiment_name
     type(timestep_t):: timestep
+    type(mesh_t):: mesh(3)
   contains
     procedure:: init
     procedure:: update => update_patch

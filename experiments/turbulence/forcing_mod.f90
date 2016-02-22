@@ -1,9 +1,10 @@
 !> =============================================================================
+!> This is a start on a module that could become a general turbulence forcing
+!> module, where the standard forcing we have been using in RAMSES is implemented
 !> =============================================================================
 MODULE forcing_mod
   USE io_mod
   USE trace_mod
-  USE scalar_mod
   USE vector_mod
   USE mesh_mod
   USE random_mod
@@ -45,6 +46,8 @@ SUBROUTINE init (self)
    !$omp end critical (experiment_cr)
 END SUBROUTINE init
 
+!> =============================================================================
+!> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
 !> =============================================================================
 FUNCTION single_solenoidal (self, time, m) RESULT (ff)
   class(force_t)        :: self

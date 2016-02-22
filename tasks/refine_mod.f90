@@ -65,10 +65,12 @@ END SUBROUTINE init
 !> =============================================================================
 FUNCTION needed (self, patch)
   class(refine_t):: self
-  class(experiment_t), pointer:: patch
+  class(patch_t), pointer:: patch
   logical:: needed
   !.............................................................................
   needed = .false.
+  select type (patch)
+  class is (experiment_t)
   if (io%verbose>1) &
     print*, 'needed:', patch%is_set(bits%not_leaf), patch%level >= self%levelmax, &
             patch%time < self%refine_from, patch%time > self%refine_until, &
@@ -89,6 +91,7 @@ FUNCTION needed (self, patch)
   !needed = check_log_pressure   (self, patch); if (needed) return
   !needed = check_velocity       (self, patch); if (needed) return
   !needed = check_magnetic_field (self, patch)
+  end select
   call trace_end
 END FUNCTION
 !> =============================================================================

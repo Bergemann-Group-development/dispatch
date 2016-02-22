@@ -29,9 +29,3 @@ refine_mod.o            : trace_mod.o experiment_mod.o io_mod.o patches_mod.o bi
 # These depend oni -- or are -- local solver/compastro files for now:
 mhd_mod.o               : patches_mod.o io_mod.o vector_mod.o trace_mod.o stagger_mod.o scalar_mod.o
 #                         -------------
-patch_list_mod.o        : io_mod.o patches_mod.o experiment_mod.o trace_mod.o refine_mod.o timestep_mod.o bits_mod.o
-#                                  -------------                              ------------
-patches_mod.o           : bits_mod.o timestep_mod.o mesh_mod.o omp_timer_mod.o trace_mod.o io_mod.o
-# -----------
-refine_mod.o            : trace_mod.o experiment_mod.o io_mod.o patches_mod.o bits_mod.o
-# ----------                                                    -------------
