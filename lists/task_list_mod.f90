@@ -20,6 +20,7 @@ MODULE task_list_mod
   USE bits_mod
   USE trace_mod
   USE refine_mod
+  USE experiment_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
@@ -63,7 +64,7 @@ MODULE task_list_mod
     procedure:: print
   end type
   integer, parameter:: mnbor=100
-  type(patch_t), pointer, dimension(:,:,:):: patches
+  type(experiment_t), pointer, dimension(:,:,:):: patches
 CONTAINS
 
 !> =============================================================================
@@ -81,21 +82,13 @@ SUBROUTINE init (self, name)
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
   if (present(name)) self%name = name
-  call trace_begin('task_list_t%init '//self%name)
+  call trace_begin('task_list_t%init ')
   rewind (io%input); read(io%input, task_list_params, iostat=iostat)
   if (iostat==0 .and. io%master) then
     self%debug = debug
     if (io%master) write (*,task_list_params)
   end if
-  !-----------------------------------------------------------------------------
-  ! Call the task%init routines, which normally set initial conditions
-  !-----------------------------------------------------------------------------
-  call trace ('call link%task%init')
-  link => self%head
-  do while (associated(link))
-    call link%task%init
-    link => link%next
-  end do
+  call self%init_cartesian
   !-----------------------------------------------------------------------------
   ! Compute neighbor list used to perform checks for ready status
   !-----------------------------------------------------------------------------
@@ -485,9 +478,8 @@ SUBROUTINE init_nbors (self)
   class(link_t), pointer:: head, nbor
   integer:: n_add = 0
   !.............................................................................
-  call trace_begin('task_list_t%init_nbors '//self%name)
+  call trace_begin('task_list_t%init_nbors ')
   link => self%head                                     ! start checking links
-  nullify (link%nbor)                                   ! make sure!
   do while (associated(link))
     nullify (link%nbor)                                 ! initially no nbor
     head => link%nbor
@@ -586,7 +578,7 @@ SUBROUTINE init_cartesian (self)
   real:: origin(3) = [-0.5,-0.5,-0.5]
   real:: size(3) = [1.0,1.0,1.0]
   real:: position(3)
-  type(patch_t), pointer:: patch
+  type(experiment_t), pointer:: patch
   type(link_t) , pointer:: prev=>null(), link
   integer:: i, j, k, i1, j1, k1, i2, j2, k2
   namelist /box_params/ size, dims, origin
@@ -609,7 +601,8 @@ SUBROUTINE init_cartesian (self)
     patch%size = self%size/self%dims
     call patch%init
     if (io%verbose>1) &
-      print*,'init_cartesian: id, size, pos =', patch%id, patch%size, patch%position
+      print'(a,i6,2(2x,3f10.6))', 'init_cartesian: id, size, pos =', &
+        patch%id, patch%size, patch%position
     patch%i = i; patch%j = j; patch%k = k
     if (io%verbose > 2) &
       print'(i5,3(3f9.4,3x))', patch%id, patch%position, patch%size
@@ -1083,11 +1076,13 @@ SUBROUTINE output (self)
   class (task_list_t):: self
   type(link_t) , pointer:: link, nbor
   !.............................................................................
+  call trace_begin('task_list%output')
   link => self%head
   do while (associated(link))
     call link%task%output(self%name)
     link => link%next
   end do
+  call trace_end
 END SUBROUTINE output
 
 !> =============================================================================

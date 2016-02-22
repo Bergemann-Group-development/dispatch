@@ -34,6 +34,7 @@ SUBROUTINE init (self)
   namelist /mhd_parameters/ nu, courant
   namelist /mhd_params/ nu, courant, gamma
   !----------------------------------------------------------------------------
+  call trace_begin('mhd_t%init')
   !$omp critical (mhd_cr)
   if (first_time) then
     first_time = .false.
@@ -45,6 +46,7 @@ SUBROUTINE init (self)
     self%gamma = gamma
   end if
   !$omp end critical (mhd_cr)
+  call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -73,10 +75,15 @@ SUBROUTINE pde (self)
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below
   !-----------------------------------------------------------------------------
+  call trace('1')
   lnd = log(d)
+  call trace('1')
   ld = down(lnd)
+  call trace('1')
   dd = exp(ld)
+  call trace('1')
   U = p/dd
+  call trace('1')
   !-----------------------------------------------------------------------------
   ! Gas pressure
   !-----------------------------------------------------------------------------

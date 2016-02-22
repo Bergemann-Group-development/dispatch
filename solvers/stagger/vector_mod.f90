@@ -6,7 +6,7 @@ MODULE vector_mod
   USE scalar_mod
   implicit none
   public
-  integer, private:: verbose=0
+  integer, private:: verbose=1
   type:: vector_t
     type(scalar_t):: x, y, z
     logical:: allocated=.false.
@@ -64,6 +64,11 @@ SUBROUTINE init_vector (self, dims, ds, name)
   integer, save:: id=0
   character(len=*), optional:: name
   !.............................................................................
+  if (present(name)) then
+    call trace_begin('init_vector '//trim(name),3)
+  else
+    call trace_begin('init_vector',3)
+  end if
   !$omp atomic
   id = id+1
   self%id = id
@@ -75,6 +80,7 @@ SUBROUTINE init_vector (self, dims, ds, name)
   call self%y%init (dims, ds, 'y')
   call self%z%init (dims, ds, 'z')
   self%allocated = .true.
+  call trace_end
 END SUBROUTINE init_vector
 !> =============================================================================
 SUBROUTINE init_vectors (dims, ds, v1, v2, v3, v4, v5, v6, v7, v8, v9)
@@ -82,6 +88,7 @@ SUBROUTINE init_vectors (dims, ds, v1, v2, v3, v4, v5, v6, v7, v8, v9)
   real:: ds(3)
   type(vector_t), optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9
   !.............................................................................
+  call trace_begin('init_vectors')
   if (present(v1)) call init_vector (v1, dims, ds)
   if (present(v2)) call init_vector (v2, dims, ds)
   if (present(v3)) call init_vector (v3, dims, ds)
@@ -91,6 +98,7 @@ SUBROUTINE init_vectors (dims, ds, v1, v2, v3, v4, v5, v6, v7, v8, v9)
   if (present(v7)) call init_vector (v7, dims, ds)
   if (present(v8)) call init_vector (v8, dims, ds)
   if (present(v9)) call init_vector (v9, dims, ds)
+  call trace_end
 END SUBROUTINE init_vectors
 !> =============================================================================
 !> Map an array to the array of a vector variable

@@ -11,16 +11,18 @@ MODULE patch_mod
   USE mesh_mod
   USE io_mod
   implicit none
+  private
   integer, parameter:: ndim = 3
-  type, extends(tasks_t):: patch_t
+  type, extends(tasks_t), public:: patch_t
     real, dimension(:,:,:,:,:,:), pointer:: mem
-    type(mesh_t), dimension(:), pointer:: mesh
+    type(mesh_t), dimension(3):: mesh
     real:: courant
     real:: gamma=1.0
     integer:: ndim = ndim           ! Number of dimensions
-    integer:: nvar                  ! Number of variables
-    integer:: nv                        ! FIXME
+    !integer:: nvar                  ! Number of variables
+    integer:: nv                    ! FIXME
     integer:: n(3)
+    integer:: msplit=2
     !---------------------------------------------------------------------------
     ! HACK below
     !---------------------------------------------------------------------------
@@ -30,6 +32,7 @@ MODULE patch_mod
     real:: dt_fixed, u_fixed, u_max
     logical:: mem_allocated=.false.
   contains
+    procedure:: init
     procedure:: output
     procedure:: distance        ! return the distance btw two patches
     procedure:: overlaps        ! return true if they overlap (incl. ghost zones)
@@ -60,66 +63,86 @@ MODULE patch_mod
     real:: num(3)
     integer:: dim(3)
   end type
-  type template_t
-    type(box_t):: box, mpi, task
-    real(8):: position(3)
-    integer:: itask
-    integer:: rank
-  contains
-    procedure:: init => init_template
-  end type
-PRIVATE
-PUBLIC patch_t, template_t
+  integer:: id=0
 CONTAINS
 
 !> =============================================================================
-!> Compute a task position, based on the linear index itask (0-indexed).
-!>
-!> The 3-D array template%mpi%num should be set to the desired MPI-geometry =
-!> the number of MPI-ranks per direction.   The product(mpi%num) should thus
-!> be equal to mpi%size
-!>
-!> The template%task%dim should be set to the desired task dimensions; i.e.,
-!> the number of task points per direction (not counting guard cells).  The
-!> box dimensions need to be divisible with the task dimensions, obviously.
+!> Initialize the patch memory and patch dimensions.  For this we need to be told the
+!> patch dimensions (which include the number of variable and the number of time
+!> slices), the patch position, and the patch size
 !> =============================================================================
-SUBROUTINE init_template (self)
-  class(template_t):: self
-  type(mpi_t):: mpi
-  integer:: tasks_per_dir(3), task_pos(3), ranks_per_dir(3), mpi_pos(3)
+SUBROUTINE init (self)
+  class(patch_t):: self
+  integer:: n(3)=16, ng=2, nt=7, i
+  logical:: first_time = .true.
+  real:: position(3)
+  real, save:: courant=0.2, u_fixed=-1.0, dt_fixed=-1.0
+  real, save:: end_time=1.0, out_time=0.1
+  namelist /patch_params/ n, ng, nt, courant, u_fixed, dt_fixed, end_time, out_time
+  !.............................................................................
+  call trace_begin ('patch_t%init', 3)
+  !$omp atomic
+  id = id + 1                                   ! increment global
+  if (io%verbose>2) &
+    print*,'patch_t%init: id=', id
+  self%id = id                                  ! new patch id
   !-----------------------------------------------------------------------------
-  ! The number of tasks per direction gives the physicals size from the box size
+  ! Read and set patch parameters
   !-----------------------------------------------------------------------------
-  call mpi%init
-  tasks_per_dir = self%box%dim/self%task%dim
-  self%task%size = self%box%size/tasks_per_dir
-  !-----------------------------------------------------------------------------
-  ! The accumulated number of tasks per direction gives the task position, first
-  ! as an integer 3-D index, then as a physical position
-  !-----------------------------------------------------------------------------
-  tasks_per_dir(2) = tasks_per_dir(2)*tasks_per_dir(1)
-  tasks_per_dir(3) = tasks_per_dir(3)*tasks_per_dir(3)
-  task_pos = self%itask/tasks_per_dir
-  self%position = (task_pos+0.5d0)*self%task%size
-  if (product(self%mpi%num) /= mpi%size) then
-    print*,'rank%num, mpi%size', self%mpi%num, mpi%size
-    call mpi%abort ('wrong size')
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, patch_params)
+    if (io%master) write (*, patch_params)
   end if
+  self%courant = courant
+  self%dt_fixed = dt_fixed
+  self%u_fixed = u_fixed
+  self%status=0
+  self%end_time=end_time
+  self%out_time=out_time
+  self%n  = n                                   ! patch dimensions
+  self%ds = real(self%size,kind=8) / self%n     ! ds in patch
+  self%mesh%n  = n
+  self%mesh%ng = ng
+  self%mesh%s  = self%size
+  where (self%n==1)                             ! for collapsed dimensions
+    self%mesh%ng = 0                            ! no guard zones
+    self%size = 0.0                             ! zero size
+    self%ds = 0.0                               ! first zero
+    self%box = 1                                ! make sure it is non-zero
+    self%ds = maxval(self%ds)                   ! then set to reasonable val
+  end where
   !-----------------------------------------------------------------------------
-  ! The number of ranks per direction gives the MPI-position and the mpi rank
+  ! Initialize the meshes
   !-----------------------------------------------------------------------------
-  ranks_per_dir = self%box%dim/self%mpi%dim
+  do i=1,3
+    call self%mesh(i)%init
+  end do
+  self%offset = (self%mesh%lb+self%mesh%ub)/2.0 ! mid point index offset
+  self%nt = nt                                  ! number of time slices
+  self%level = log(maxval(self%box)/minval(self%ds))/log(real(self%msplit)) + 0.1
+  if (io%verbose>3) &
+    print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
   !-----------------------------------------------------------------------------
-  ranks_per_dir(2) = ranks_per_dir(2)*ranks_per_dir(1)
-  ranks_per_dir(3) = ranks_per_dir(3)*ranks_per_dir(3)
-  mpi_pos = self%itask/ranks_per_dir
-  self%rank = product(mpi_pos+1)-1
-  !
-  if (all(self%task%num*self%task%dim /= self%mpi%dim)) then
-    print'(3(3i8,2x))', self%task%num, self%task%dim, self%mpi%dim
-    call mpi%abort ('wrong size')
+  ! Allocate memory, if not allocated
+  !-----------------------------------------------------------------------------
+  if (.not.self%mem_allocated) then
+    allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
+!    if (associated(self%mem)) deallocate (self%mem)
+    allocate (self%mem(self%mesh(1)%gn, &
+                       self%mesh(2)%gn, &
+                       self%mesh(3)%gn, &
+                       self%nv,self%nt,2))
+    self%mem_allocated = .true.                 ! mark
   end if
-END SUBROUTINE init_template
+  self%t = 0.0                                  ! initial time
+  self%iit = 1                                  ! initial memory slots
+  self%iit(nt) = 2                              ! first output slot
+  self%it = self%iit(nt-1)                      ! short-hand
+  self%new = self%iit(nt)                       ! short-hand
+  call trace_end
+END SUBROUTINE init
 
 !> =============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time

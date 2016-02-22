@@ -7,15 +7,14 @@ MODULE tasks_mod
   USE trace_mod
   implicit none
   private
-  integer, public, parameter:: ntime=7
   !-----------------------------------------------------------------------------
   ! Time slot info and procedures added in tasks_t
   !-----------------------------------------------------------------------------
   type, public, extends(task_t):: tasks_t
-    real(8):: t(ntime) = 0d0
-    real(8):: dt(ntime) = 1d0
-    integer:: iit(ntime) = 1
-    integer:: nt = ntime
+    real(8), dimension(:), pointer:: t
+    real(8), dimension(:), pointer:: dt
+    integer, dimension(:), pointer:: iit
+    integer:: nt
     integer:: it = 1
     integer:: new = 2
     integer:: verbose = 1

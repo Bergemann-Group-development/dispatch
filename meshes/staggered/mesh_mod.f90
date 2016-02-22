@@ -36,7 +36,7 @@ CONTAINS
 
 !> =============================================================================
 !> The integer mesh is defined by specifying the number of points "n" and the
-!> number of guard cells "ng".  The real mesh is then fully specified by givin
+!> number of guard cells "ng".  The real mesh is then fully specified by giving
 !> the size "s".
 !> =============================================================================
 SUBROUTINE init_mesh (self)

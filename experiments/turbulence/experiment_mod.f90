@@ -32,6 +32,7 @@ SUBROUTINE init (self)
    real, dimension(:,:,:,:), pointer:: v
    namelist /experiment_params/ d0, B0
    !----------------------------------------------------------------------------
+   call trace_begin('experiment_t%init')
    !$omp critical (experiment_cr)
    if (first_time) then
      first_time = .false.
@@ -42,6 +43,15 @@ SUBROUTINE init (self)
      self%B0 = B0
    end if
    !$omp end critical (experiment_cr)
+   !----------------------------------------------------------------------------
+   ! Allocate memory and set default values
+   !----------------------------------------------------------------------------
+   self%nv = 8
+   self%nt = 7
+   call self%patch_t%init
+   !----------------------------------------------------------------------------
+   ! Map variables to memory
+   !----------------------------------------------------------------------------
    s=>self%mem(:,:,:,  1,1,1); call self%d%scalar_map (s)
    s=>self%mem(:,:,:,  2,1,1); call self%s%scalar_map (s)
    v=>self%mem(:,:,:,3:5,1,1); call self%p%vector_map (v)
@@ -50,9 +60,13 @@ SUBROUTINE init (self)
    s=>self%mem(:,:,:,  2,1,2); call self%dsdt%scalar_map (s)
    v=>self%mem(:,:,:,3:5,1,2); call self%dpdt%vector_map (v)
    v=>self%mem(:,:,:,6:8,1,2); call self%dBdt%vector_map (v)
+   !----------------------------------------------------------------------------
+   ! Initiall conditions
+   !----------------------------------------------------------------------------
    self%d = 1.0
    self%p = 0.0
    self%B = self%B0
+   call trace_end
 END SUBROUTINE init
 
 !> =============================================================================

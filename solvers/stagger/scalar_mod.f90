@@ -6,7 +6,7 @@ MODULE scalar_mod
   implicit none
   public
   !
-  integer, private:: verbose=0
+  integer, private:: verbose=1
   type, private:: node_t
     type(scalar_t), pointer:: scalar=>null()
     type(node_t), pointer:: next=>null()
@@ -92,6 +92,7 @@ SUBROUTINE init_scalars (dims, ds, v1, v2, v3, v4, v5, v6, v7, v8, v9)
   real:: ds(3)
   type(scalar_t), optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9
   !.............................................................................
+  call trace_begin('init_scalar')
   if (present(v1)) call init_scalar (v1, dims, ds)
   if (present(v2)) call init_scalar (v2, dims, ds)
   if (present(v3)) call init_scalar (v3, dims, ds)
@@ -101,6 +102,7 @@ SUBROUTINE init_scalars (dims, ds, v1, v2, v3, v4, v5, v6, v7, v8, v9)
   if (present(v7)) call init_scalar (v7, dims, ds)
   if (present(v8)) call init_scalar (v8, dims, ds)
   if (present(v9)) call init_scalar (v9, dims, ds)
+  call trace_end
 END SUBROUTINE init_scalars
 
 !> =============================================================================

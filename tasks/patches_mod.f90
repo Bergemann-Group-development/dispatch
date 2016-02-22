@@ -67,6 +67,7 @@ MODULE patches_mod
   integer, public:: msplit=2    ! shared with refine_mod and patch_list_mod
   integer:: id = 0
 CONTAINS
+
 !> =============================================================================
 !> Initialize the patch memory and patch dimensions.  For this we need to be told the
 !> patch dimensions (which include the number of variable and the number of time
