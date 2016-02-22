@@ -48,7 +48,7 @@ PROGRAM test
   type(vector_t):: u, v
   type(mesh_t):: m
   real, dimension(:,:,:,:), pointer:: f, g, h, h0
-  type(vector_t):: v1, v2, v3, v4
+  type(vector_t):: v1, v2, v3, v4, v5, v6, v7, v8, v9
   type(scalar_t):: s1, s2
   type(stagger_t):: d
   integer:: i, n, dims(3)
@@ -105,7 +105,8 @@ PROGRAM test
   call toc("curl",n**3)
   print*,'mk2',v2%allocated,' ',trim(v2%name),v2%x%n,v2%x%l
   !-----------------------------------------------------------------------------
-  call v3%init(dims,ds,'v3')
+  !call init_vectors (dims, ds, v1, v2, v3, v4, v5, v6, v7, v8, v9)
+  call init_vectors (dims, ds, v1, v2, v3)
   call s1%init(dims,ds,'s1')
   call tic
   s1 = div(v3)
@@ -113,13 +114,29 @@ PROGRAM test
   print*,'mk3',v3%allocated,' ',trim(v3%name),v3%x%n,v3%x%l
   print*,'mk3',s1%allocated,' ',trim(s1%name),s1%n,s1%l
   call toc("div",n**3)
-  !call scalar_cleanup
   v3 = v2
   !-----------------------------------------------------------------------------
   call tic
   v1 = grad(s1)
   call toc("grad",n**3)
-  call scalar_cleanup
   !-----------------------------------------------------------------------------
+  call tic
+  v1 = down(s1)
+  call toc("down",n**3)
+  !-----------------------------------------------------------------------------
+  v1 = 1.0
+  call tic
+  v1 = exp(v1)
+  call toc("exp",n**3)
+  !-----------------------------------------------------------------------------
+  call tic
+  v1 = log(v1)
+  call toc("log",n**3)
+  !-----------------------------------------------------------------------------
+  call tic
+  v1 = edge(s1)
+  call toc("edge",n**3)
+  !-----------------------------------------------------------------------------
+  call scalar_cleanup
 
 END PROGRAM

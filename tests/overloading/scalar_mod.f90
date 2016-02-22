@@ -37,7 +37,7 @@ MODULE scalar_mod
     module procedure scalar_power_int, scalar_power_real
   end interface
   interface operator(*)
-    module procedure scalar_real_mul, real_scalar_mul, scalar_int_mul, scalar_scalar_mul
+    module procedure scalar_real_mul, real_scalar_mul, real8_scalar_mul, scalar_int_mul, scalar_scalar_mul
   end interface
   interface operator(/)
     module procedure scalar_scalar_divide
@@ -59,6 +59,9 @@ MODULE scalar_mod
   end interface
   interface maxval
     module procedure scalar_maxval
+  end interface
+  interface max
+    module procedure scalar_max
   end interface
   public init_scalar
 CONTAINS
@@ -127,6 +130,15 @@ FUNCTION scalar_maxval (in) RESULT (out)
   call in%tempdealloc
 END FUNCTION scalar_maxval
 !> =============================================================================
+FUNCTION scalar_max (in1, in2) RESULT (out)
+  type(scalar_t), intent(in):: in1
+  real, intent(in):: in2
+  type(scalar_t):: out
+  call out%tempalloc (in1)
+  out%f = max(in1%f,in2)
+  call in1%tempdealloc
+END FUNCTION scalar_max
+!> =============================================================================
 FUNCTION scalar_minval (in) RESULT (out)
   real:: out
   type(scalar_t), intent(in):: in
@@ -186,6 +198,15 @@ FUNCTION scalar_scalar_add (in1, in2) RESULT (out)
   call in2%tempdealloc ('scalar add')
 END FUNCTION scalar_scalar_add
 
+!> =============================================================================
+FUNCTION real8_scalar_mul (in1, in2) RESULT (out)
+  type(scalar_t):: out
+  real(8), intent(in):: in1
+  type(scalar_t), intent(in):: in2
+  call out%tempalloc(in2)
+  out%f = in1 * in2%f
+  call in2%tempdealloc
+END FUNCTION real8_scalar_mul
 !> =============================================================================
 FUNCTION real_scalar_mul (in1, in2) RESULT (out)
   type(scalar_t):: out

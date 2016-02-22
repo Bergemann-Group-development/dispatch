@@ -34,13 +34,31 @@ MODULE stagger_mod
     procedure, nopass:: yup
     procedure, nopass:: zup
   end type
+  interface norm2
+    module procedure vector_norm2_scalar
+  end interface
+  interface edge
+    module procedure scalar_edge_vector
+  end interface
+  interface down
+    module procedure scalar_down_vector
+  end interface
+  interface up
+    module procedure scalar_up_vector
+  end interface
+  interface ddown
+    module procedure scalar_ddown_vector
+  end interface
+  interface dup
+    module procedure vector_dup_vector
+  end interface
   interface grad
     module procedure vector_real_grad, vector_int_grad, vector_scalar_grad
   end interface
   interface div
     module procedure vector_scalar_div
   end interface
-  interface minusdiv
+  interface minus_div
     module procedure vector_scalar_minusdiv
   end interface
   interface cross
@@ -52,125 +70,125 @@ MODULE stagger_mod
 CONTAINS
 
 !> =============================================================================
-FUNCTION ddxdn1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddxdn1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = ddxdn (self)
+  b = ddxdn (a)
 END FUNCTION ddxdn1
 
 !*******************************************************************************
-FUNCTION ddydn1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddydn1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = ddydn (self)
+  b = ddydn (a)
 END FUNCTION ddydn1
 
 !*******************************************************************************
-FUNCTION ddzdn1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddzdn1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = ddzdn (self)
+  b = ddzdn (a)
 END FUNCTION ddzdn1
 
 !*******************************************************************************
-FUNCTION ddxup1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddxup1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = ddxup (self)
+  b = ddxup (a)
 END FUNCTION ddxup1
 
 !*******************************************************************************
-FUNCTION ddyup1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddyup1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = ddyup (self)
+  b = ddyup (a)
 END FUNCTION ddyup1
 
 !*******************************************************************************
-FUNCTION ddzup1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddzup1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = ddzup (self)
+  b = ddzup (a)
 END FUNCTION ddzup1
 
 !*******************************************************************************
-FUNCTION xdn1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION xdn1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = xdn (self)
+  b = xdn (a)
 END FUNCTION xdn1
 
 !*******************************************************************************
-FUNCTION ydn1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ydn1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = ydn (self)
+  b = ydn (a)
 END FUNCTION ydn1
 
 !*******************************************************************************
-FUNCTION zdn1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION zdn1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = zdn (self)
+  b = zdn (a)
 END FUNCTION zdn1
 
 !*******************************************************************************
-FUNCTION xup1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION xup1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = xup (self)
+  b = xup (a)
 END FUNCTION xup1
 
 !*******************************************************************************
-FUNCTION yup1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION yup1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = yup (self)
+  b = yup (a)
 END FUNCTION yup1
 
 !*******************************************************************************
-FUNCTION zup1 (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION zup1 (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
-  b = zup (self)
+  b = zup (a)
 END FUNCTION zup1
 
 !*******************************************************************************
-FUNCTION ddxdn (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddxdn (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  call b%tempalloc (self,'ddxdn')
-  if (self%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    c = 1./self%ds(1)
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1)+1,self%u(1)
-      b%f(ix,iy,iz) = c*(self%f(ix  ,iy,iz) - self%f(ix-1,iy,iz))
+  call b%tempalloc (a,'ddxdn')
+  if (a%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 1./a%ds(1)
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1)+1,a%u(1)
+      b%f(ix,iy,iz) = c*(a%f(ix  ,iy,iz) - a%f(ix-1,iy,iz))
     end do
     end do
     end do
   endif
-  b%f(self%l(1),:,:) = 0.0
-  call self%tempdealloc('ddxdn')
+  b%f(a%l(1),:,:) = 0.0
+  call a%tempdealloc('ddxdn')
 END FUNCTION ddxdn
 
 !*******************************************************************************
-SUBROUTINE ddxdn_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE ddxdn_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  if (self%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    c = 1./self%ds(1)
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1)+1,self%u(1)
+  if (a%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 1./a%ds(1)
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1)+1,a%u(1)
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                c*(self%f(ix,iy,iz) - self%f(ix-1,iy,iz))
+                c*(a%f(ix,iy,iz) - a%f(ix-1,iy,iz))
     end do
     end do
     end do
@@ -178,42 +196,42 @@ SUBROUTINE ddxdn_add (self, b, sign)
 END SUBROUTINE ddxdn_add
 
 !*******************************************************************************
-FUNCTION ddydn (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddydn (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  call b%tempalloc (self,'ddydn')
-  if (self%n(2) > 1) then
-    c = 1./self%ds(2)
-    b%f(:,self%l(2),:) = 0.0
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2)+1,self%u(2)
-    do ix=self%l(1),self%u(1)
-      b%f(ix,iy,iz) = c*(self%f(ix,iy  ,iz) - self%f(ix,iy-1,iz))
+  call b%tempalloc (a,'ddydn')
+  if (a%n(2) > 1) then
+    c = 1./a%ds(2)
+    b%f(:,a%l(2),:) = 0.0
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2)+1,a%u(2)
+    do ix=a%l(1),a%u(1)
+      b%f(ix,iy,iz) = c*(a%f(ix,iy  ,iz) - a%f(ix,iy-1,iz))
     end do
     end do
     end do
   endif
-  b%f(:,self%l(2),:) = 0.0
-  call self%tempdealloc('ddydn')
+  b%f(:,a%l(2),:) = 0.0
+  call a%tempdealloc('ddydn')
 END FUNCTION ddydn
 
 !*******************************************************************************
-SUBROUTINE ddydn_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE ddydn_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  if (self%n(2) > 1) then
-    c = 1./self%ds(2)
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2)+1,self%u(2)
-    do ix=self%l(1),self%u(1)
+  if (a%n(2) > 1) then
+    c = 1./a%ds(2)
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2)+1,a%u(2)
+    do ix=a%l(1),a%u(1)
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                   c*(self%f(ix,iy  ,iz) - self%f(ix,iy-1,iz))
+                   c*(a%f(ix,iy  ,iz) - a%f(ix,iy-1,iz))
     end do
     end do
     end do
@@ -221,44 +239,44 @@ SUBROUTINE ddydn_add (self, b, sign)
 END SUBROUTINE ddydn_add
 
 !*******************************************************************************
-FUNCTION ddzdn (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddzdn (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  call b%tempalloc (self,'ddydn')
-  if (self%n(3) > 1) then
-    c = 1./self%ds(3)
-    b%f(:,:,self%l(3)) = 0.0
-    do iz=self%l(3)+1,self%u(3)
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)
-      b%f(ix,iy,iz) = c*(self%f(ix,iy,iz  ) - self%f(ix,iy,iz-1))
+  call b%tempalloc (a,'ddydn')
+  if (a%n(3) > 1) then
+    c = 1./a%ds(3)
+    b%f(:,:,a%l(3)) = 0.0
+    do iz=a%l(3)+1,a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)
+      b%f(ix,iy,iz) = c*(a%f(ix,iy,iz  ) - a%f(ix,iy,iz-1))
     end do
     end do
     end do
-    b%f(:,:,self%l(3)) = 0.0
+    b%f(:,:,a%l(3)) = 0.0
   else
     b%f = 0.0
   endif
-  call self%tempdealloc('ddzdn')
+  call a%tempdealloc('ddzdn')
 END FUNCTION ddzdn
 
 !*******************************************************************************
-SUBROUTINE ddzdn_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE ddzdn_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  if (self%n(3) > 1) then
-    c = 1./self%ds(3)
-    do iz=self%l(3)+1,self%u(3)
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)
+  if (a%n(3) > 1) then
+    c = 1./a%ds(3)
+    do iz=a%l(3)+1,a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                   c*(self%f(ix,iy,iz  ) - self%f(ix,iy,iz-1))
+                   c*(a%f(ix,iy,iz  ) - a%f(ix,iy,iz-1))
     end do
     end do
     end do
@@ -266,43 +284,43 @@ SUBROUTINE ddzdn_add (self, b, sign)
 END SUBROUTINE ddzdn_add
 
 !*******************************************************************************
-FUNCTION ddxup (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddxup (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  call b%tempalloc (self,'ddxup')
-  if (self%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    c = 1./self%ds(1)
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)-1
-      b%f(ix,iy,iz) = c*(self%f(ix+1,iy,iz) - self%f(ix  ,iy,iz))
+  call b%tempalloc (a,'ddxup')
+  if (a%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 1./a%ds(1)
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)-1
+      b%f(ix,iy,iz) = c*(a%f(ix+1,iy,iz) - a%f(ix  ,iy,iz))
     end do
     end do
     end do
-    b%f(self%u(1),:,:) = 0.0
+    b%f(a%u(1),:,:) = 0.0
   else
     b%f = 0.0
   endif
-  call self%tempdealloc('ddxup')
+  call a%tempdealloc('ddxup')
 END FUNCTION ddxup
 
 !*******************************************************************************
-SUBROUTINE ddxup_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE ddxup_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  if (self%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    c = 1./self%ds(1)
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)-1
+  if (a%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 1./a%ds(1)
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)-1
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                   c*(self%f(ix+1,iy,iz) - self%f(ix  ,iy,iz))
+                   c*(a%f(ix+1,iy,iz) - a%f(ix  ,iy,iz))
     end do
     end do
     end do
@@ -310,42 +328,44 @@ SUBROUTINE ddxup_add (self, b, sign)
 END SUBROUTINE ddxup_add
 
 !*******************************************************************************
-FUNCTION ddyup (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddyup (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  call b%tempalloc (self,'ddyup')
-  if (self%n(2) > 1) then
-    c = 1./self%ds(2)
-    b%f(:,self%u(2),:) = 0.0
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2),self%u(2)-1
-    do ix=self%l(1),self%u(1)
-      b%f(ix,iy,iz) = c*(self%f(ix,iy+1,iz) - self%f(ix,iy  ,iz))
+  call b%tempalloc (a,'ddyup')
+  if (a%n(2) > 1) then
+    c = 1./a%ds(2)
+    b%f(:,a%u(2),:) = 0.0
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)-1
+    do ix=a%l(1),a%u(1)
+      b%f(ix,iy,iz) = c*(a%f(ix,iy+1,iz) - a%f(ix,iy  ,iz))
     end do
     end do
     end do
+    b%f(:,a%u(2),:) = 0.0
+  else
+    b%f = 0.0
   endif
-  b%f(:,self%u(2),:) = 0.0
-  call self%tempdealloc('ddyup')
+  call a%tempdealloc('ddyup')
 END FUNCTION ddyup
 
 !*******************************************************************************
-SUBROUTINE ddyup_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE ddyup_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  if (self%n(2) > 1) then
-    c = 1./self%ds(2)
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2),self%u(2)-1
-    do ix=self%l(1),self%u(1)
+  if (a%n(2) > 1) then
+    c = 1./a%ds(2)
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)-1
+    do ix=a%l(1),a%u(1)
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                   c*(self%f(ix,iy+1,iz) - self%f(ix,iy  ,iz))
+                   c*(a%f(ix,iy+1,iz) - a%f(ix,iy  ,iz))
     end do
     end do
     end do
@@ -353,43 +373,43 @@ SUBROUTINE ddyup_add (self, b, sign)
 END SUBROUTINE ddyup_add
 
 !*******************************************************************************
-FUNCTION ddzup (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ddzup (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  call b%tempalloc (self,'ddzup')
-  if (self%n(3) > 1) then
-    c = 1./self%ds(3)
-    do iz=self%l(3),self%u(3)-1
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)
-      b%f(ix,iy,iz) = c*(self%f(ix,iy,iz+1) - self%f(ix,iy,iz  ))
+  call b%tempalloc (a,'ddzup')
+  if (a%n(3) > 1) then
+    c = 1./a%ds(3)
+    do iz=a%l(3),a%u(3)-1
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)
+      b%f(ix,iy,iz) = c*(a%f(ix,iy,iz+1) - a%f(ix,iy,iz  ))
     end do
     end do
     end do
-    b%f(:,:,self%u(3)) = 0.0
+    b%f(:,:,a%u(3)) = 0.0
   else
     b%f = 0.0
   endif
-  call self%tempdealloc('ddzup')
+  call a%tempdealloc('ddzup')
 END FUNCTION ddzup
 
 !*******************************************************************************
-SUBROUTINE ddzup_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE ddzup_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
-  if (self%n(3) > 1) then
-    c = 1./self%ds(3)
-    do iz=self%l(3),self%u(3)-1
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)
+  if (a%n(3) > 1) then
+    c = 1./a%ds(3)
+    do iz=a%l(3),a%u(3)-1
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                   c*(self%f(ix,iy,iz+1) - self%f(ix,iy,iz  ))
+                   c*(a%f(ix,iy,iz+1) - a%f(ix,iy,iz  ))
     end do
     end do
     end do
@@ -397,56 +417,62 @@ SUBROUTINE ddzup_add (self, b, sign)
 END SUBROUTINE ddzup_add
 
 !*******************************************************************************
-FUNCTION xdn (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION xdn (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   real:: c
   integer:: ix, iy, iz
 !...............................................................................
-  c = 0.5
-  do iz=self%l(3),self%u(3)
-  do iy=self%l(2),self%u(2)
-  do ix=self%l(1)+1,self%u(1)
-    b%f(ix,iy,iz) = c*(self%f(ix  ,iy,iz) + self%f(ix-1,iy,iz))
-  end do
-  end do
-  end do
-  b%f(self%l(1),:,:) = 0.0
+  call b%tempalloc (a,'xdn')
+  if (a%n(1) > 1) then
+    c = 0.5
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1)+1,a%u(1)
+      b%f(ix,iy,iz) = c*(a%f(ix  ,iy,iz) + a%f(ix-1,iy,iz))
+    end do
+    end do
+    end do
+    b%f(a%l(1),:,:) = 0.0
+  else
+    b%f=a%f
+  end if
+  call a%tempdealloc('xdn')
 END FUNCTION xdn
 
 !*******************************************************************************
-SUBROUTINE xdn_subr (self, b)
-  type(scalar_t), intent(in):: self
+SUBROUTINE xdn_subr (a, b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   real:: c
   integer:: ix, iy, iz
 !...............................................................................
   c = 0.5
-  do iz=self%l(3),self%u(3)
-  do iy=self%l(2),self%u(2)
-  do ix=self%l(1)+1,self%u(1)
-    b%f(ix,iy,iz) = c*(self%f(ix  ,iy,iz) + self%f(ix-1,iy,iz))
+  do iz=a%l(3),a%u(3)
+  do iy=a%l(2),a%u(2)
+  do ix=a%l(1)+1,a%u(1)
+    b%f(ix,iy,iz) = c*(a%f(ix  ,iy,iz) + a%f(ix-1,iy,iz))
   end do
   end do
   end do
-  b%f(self%l(1),:,:) = 0.0
+  b%f(a%l(1),:,:) = 0.0
 END SUBROUTINE
 
 !*******************************************************************************
-SUBROUTINE xdn_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE xdn_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
   c = 0.5
   !
-  if (self%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1)+1,self%u(1)
+  if (a%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1)+1,a%u(1)
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                   c*(self%f(ix  ,iy,iz) + self%f(ix-1,iy,iz))
+                   c*(a%f(ix  ,iy,iz) + a%f(ix-1,iy,iz))
     end do
     end do
     end do
@@ -454,37 +480,43 @@ SUBROUTINE xdn_add (self, b, sign)
 END SUBROUTINE xdn_add
 
 !*******************************************************************************
-FUNCTION ydn (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION ydn (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   real:: c
   integer:: ix, iy, iz
 !...............................................................................
-  c = 0.5
-  do iz=self%l(3),self%u(3)
-  do iy=self%l(2)+1,self%u(2)
-  do ix=self%l(1),self%u(1)
-    b%f(ix,iy,iz) = c*(self%f(ix,iy,iz) + self%f(ix,iy-1,iz))
-  end do
-  end do
-  end do
-  b%f(:,self%l(2),:) = 0.0
+  call b%tempalloc (a,'ydn')
+  if (a%n(2) > 1) then
+    c = 0.5
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2)+1,a%u(2)
+    do ix=a%l(1),a%u(1)
+      b%f(ix,iy,iz) = c*(a%f(ix,iy,iz) + a%f(ix,iy-1,iz))
+    end do
+    end do
+    end do
+    b%f(:,a%l(2),:) = 0.0
+  else
+    b%f = a%f
+  end if
+  call a%tempdealloc('ydn')
 END FUNCTION ydn
 
 !*******************************************************************************
-SUBROUTINE ydn_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE ydn_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
   c = 0.5
-  if (self%n(2) > 1) then
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2)+1,self%u(2)
-    do ix=self%l(1),self%u(1)
+  if (a%n(2) > 1) then
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2)+1,a%u(2)
+    do ix=a%l(1),a%u(1)
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                   c*(self%f(ix,iy  ,iz) + self%f(ix,iy-1,iz))
+                   c*(a%f(ix,iy  ,iz) + a%f(ix,iy-1,iz))
     end do
     end do
     end do
@@ -492,41 +524,43 @@ SUBROUTINE ydn_add (self, b, sign)
 END SUBROUTINE ydn_add
 
 !*******************************************************************************
-FUNCTION zdn (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION zdn (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   real:: c
   integer:: ix, iy, iz
 !...............................................................................
-  if (self%n(3) > 1) then
+  call b%tempalloc (a,'zdn')
+  if (a%n(3) > 1) then
     c = 0.5
-    do iz=self%l(3)+1,self%u(3)
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)
-      b%f(ix,iy,iz) = c*(self%f(ix,iy,iz) + self%f(ix,iy,iz-1))
+    do iz=a%l(3)+1,a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)
+      b%f(ix,iy,iz) = c*(a%f(ix,iy,iz) + a%f(ix,iy,iz-1))
     end do
     end do
     end do
-    b%f(:,:,self%l(3)) = 0.0
+    b%f(:,:,a%l(3)) = 0.0
   else
     b%f = 0.0
   end if
+  call a%tempdealloc('zdn')
 END FUNCTION zdn
 
 !*******************************************************************************
-SUBROUTINE zdn_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE zdn_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
   c = 0.5
-  if (self%n(3) > 1) then
-    do iz=self%l(3)+1,self%u(3)
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)
+  if (a%n(3) > 1) then
+    do iz=a%l(3)+1,a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                c*(self%f(ix,iy,iz) + self%f(ix,iy,iz-1))
+                c*(a%f(ix,iy,iz) + a%f(ix,iy,iz-1))
     end do
     end do
     end do
@@ -534,39 +568,43 @@ SUBROUTINE zdn_add (self, b, sign)
 END SUBROUTINE zdn_add
 
 !*******************************************************************************
-FUNCTION xup (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION xup (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
+  call b%tempalloc (a,'xup')
   c = 0.5
-  if (self%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)-1
-      b%f(ix,iy,iz) = c*(self%f(ix+1,iy,iz) + self%f(ix  ,iy,iz))
+  if (a%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)-1
+      b%f(ix,iy,iz) = c*(a%f(ix+1,iy,iz) + a%f(ix  ,iy,iz))
     end do
     end do
     end do
-  b%f(self%u(1),:,:) = 0.0
+    b%f(a%u(1),:,:) = 0.0
+  else
+    b%f=a%f
   endif
+  call a%tempdealloc('xup')
 END FUNCTION
 
 !*******************************************************************************
-SUBROUTINE xup_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE xup_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
   c = 0.5
-  if (self%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)-1
+  if (a%n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)-1
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                   c*(self%f(ix+1,iy,iz) + self%f(ix  ,iy,iz))
+                   c*(a%f(ix+1,iy,iz) + a%f(ix  ,iy,iz))
     end do
     end do
     end do
@@ -574,39 +612,43 @@ SUBROUTINE xup_add (self, b, sign)
 END SUBROUTINE xup_add
 
 !*******************************************************************************
-FUNCTION yup (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION yup (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
+  call b%tempalloc (a,'yup')
   c = 0.5
-  if (self%n(2) > 1) then
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2),self%u(2)-1
-    do ix=self%l(1),self%u(1)
-      b%f(ix,iy,iz) = c*(self%f(ix,iy+1,iz) + self%f(ix,iy  ,iz))
+  if (a%n(2) > 1) then
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)-1
+    do ix=a%l(1),a%u(1)
+      b%f(ix,iy,iz) = c*(a%f(ix,iy+1,iz) + a%f(ix,iy  ,iz))
     end do
     end do
     end do
+    b%f(:,a%u(2),:) = 0.0
+  else
+    b%f = a%f
   endif
-  b%f(:,self%u(2),:) = 0.0
+  call a%tempdealloc('yup')
 END FUNCTION
 
 !*******************************************************************************
-SUBROUTINE yup_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE yup_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, by, sign
 !...............................................................................
   c = 0.5
-  if (self%n(2) > 1) then
-    do iz=self%l(3),self%u(3)
-    do iy=self%l(2),self%u(2)-1
-    do ix=self%l(1),self%u(1)
+  if (a%n(2) > 1) then
+    do iz=a%l(3),a%u(3)
+    do iy=a%l(2),a%u(2)-1
+    do ix=a%l(1),a%u(1)
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                   c*(self%f(ix,iy+1,iz) + self%f(ix,iy  ,iz))
+                   c*(a%f(ix,iy+1,iz) + a%f(ix,iy  ,iz))
     end do
     end do
     end do
@@ -614,41 +656,43 @@ SUBROUTINE yup_add (self, b, sign)
 END SUBROUTINE yup_add
 
 !*******************************************************************************
-FUNCTION zup (self) RESULT (b)
-  type(scalar_t), intent(in):: self
+FUNCTION zup (a) RESULT (b)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
+  call b%tempalloc (a,'zup')
   c = 0.5
-  if (self%n(3) > 1) then
-    do iz=self%l(3),self%u(3)-1
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)
-      b%f(ix,iy,iz) = c*(self%f(ix,iy,iz+1) + self%f(ix,iy,iz  ))
+  if (a%n(3) > 1) then
+    do iz=a%l(3),a%u(3)-1
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)
+      b%f(ix,iy,iz) = c*(a%f(ix,iy,iz+1) + a%f(ix,iy,iz  ))
     end do
     end do
     end do
-    b%f(:,:,self%u(3)) = 0.0
+    b%f(:,:,a%u(3)) = 0.0
   else
     b%f = 0.0
   endif
+  call a%tempdealloc('zup')
 END FUNCTION
 
 !*******************************************************************************
-SUBROUTINE zup_add (self, b, sign)
-  type(scalar_t), intent(in):: self
+SUBROUTINE zup_add (a, b, sign)
+  type(scalar_t), intent(in):: a
   type(scalar_t):: b
   integer :: ix, iy, iz
   real    :: c, sign
 !...............................................................................
   c = 0.5
-  if (self%n(3) > 1) then
-    do iz=self%l(3),self%u(3)-1
-    do iy=self%l(2),self%u(2)
-    do ix=self%l(1),self%u(1)
+  if (a%n(3) > 1) then
+    do iz=a%l(3),a%u(3)-1
+    do iy=a%l(2),a%u(2)
+    do ix=a%l(1),a%u(1)
       b%f(ix,iy,iz) = b%f(ix,iy,iz) + sign* &
-                   c*(self%f(ix,iy,iz+1) + self%f(ix,iy,iz  ))
+                   c*(a%f(ix,iy,iz+1) + a%f(ix,iy,iz  ))
     end do
     end do
     end do
@@ -694,6 +738,65 @@ FUNCTION vector_scalar_grad (in) RESULT (out)
   out%z = ddzdn (in)
   call in%tempdealloc
 END FUNCTION vector_scalar_grad
+!> =============================================================================
+FUNCTION vector_norm2_scalar (in) RESULT (out)
+  type(vector_t), intent(inout):: in
+  type(scalar_t):: out
+  !-----------------------------------------------------------------------------
+  call out%tempalloc (in%x)
+  out = xup(in%x)**2 + yup(in%y)**2 + zup(in%z)**2
+  call in%tempdealloc
+END FUNCTION vector_norm2_scalar
+!> =============================================================================
+FUNCTION scalar_edge_vector (in) RESULT (out)
+  type(scalar_t), intent(inout):: in
+  type(vector_t):: out
+  !-----------------------------------------------------------------------------
+  out%x = ydn(zdn(in))
+  out%y = zdn(xdn(in))
+  out%z = xdn(ydn(in))
+  call in%tempdealloc
+END FUNCTION scalar_edge_vector
+!> =============================================================================
+FUNCTION scalar_down_vector (in) RESULT (out)
+  type(scalar_t), intent(inout):: in
+  type(vector_t):: out
+  !-----------------------------------------------------------------------------
+  out%x = xdn (in)
+  out%y = ydn (in)
+  out%z = zdn (in)
+  call in%tempdealloc
+END FUNCTION scalar_down_vector
+!> =============================================================================
+FUNCTION scalar_up_vector (in) RESULT (out)
+  type(scalar_t), intent(inout):: in
+  type(vector_t):: out
+  !-----------------------------------------------------------------------------
+  out%x = xup (in)
+  out%y = yup (in)
+  out%z = zup (in)
+  call in%tempdealloc
+END FUNCTION scalar_up_vector
+!> =============================================================================
+FUNCTION scalar_ddown_vector (in) RESULT (out)
+  type(scalar_t), intent(inout):: in
+  type(vector_t):: out
+  !-----------------------------------------------------------------------------
+  out%x = ddxdn (in)
+  out%y = ddydn (in)
+  out%z = ddzdn (in)
+  call in%tempdealloc
+END FUNCTION scalar_ddown_vector
+!> =============================================================================
+FUNCTION vector_dup_vector (in) RESULT (out)
+  type(vector_t), intent(inout):: in
+  type(vector_t):: out
+  !-----------------------------------------------------------------------------
+  out%x = ddxup (in%x)
+  out%y = ddyup (in%y)
+  out%z = ddzup (in%z)
+  call in%tempdealloc
+END FUNCTION vector_dup_vector
 !> =============================================================================
 FUNCTION grads (in) RESULT(out)
   type(vector_t):: out
