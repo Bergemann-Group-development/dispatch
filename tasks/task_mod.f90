@@ -17,8 +17,12 @@ MODULE task_mod
     integer:: rank = 0
     integer:: n_check = 0
     integer:: nbors = 0
+    integer:: istep = 0
+    integer:: iout = 0
     real(8):: time = 0d0
     real(8):: end_time = 1d0
+    real(8):: out_next = 0d0
+    real(8):: out_time = 1d0
     real(8):: dtime = 0.1d0
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0

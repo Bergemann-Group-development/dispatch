@@ -17,6 +17,7 @@ MODULE tasks_mod
     integer:: iit(ntime) = 1
     integer:: nt = ntime
     integer:: it = 1
+    integer:: new = 2
     integer:: verbose = 1
   contains
     procedure:: overlaps

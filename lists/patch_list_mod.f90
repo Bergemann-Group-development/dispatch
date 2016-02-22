@@ -7,7 +7,7 @@ MODULE patch_list_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
-  USE patches_mod
+  USE patch_mod
   USE refine_mod
   implicit none
   private
@@ -34,6 +34,7 @@ MODULE patch_list_mod
     character(len=120):: name = 'patch list'
     integer:: n=0, nq=0, n_nbor=0, n_check=0, n_ready=0, n_behind=0
     integer:: debug=0
+    character(len=32):: experiment_name
   contains
     procedure:: init
     procedure:: init_cartesian
@@ -164,9 +165,9 @@ SUBROUTINE update (self)
     if (refine%needed (patch)) then                     ! if refinement needed
       call self%split (head)                            ! refined patchs go back to queue
     end if
-    call patch%output                                   ! check output
+    call patch%output(self%experiment_name)             ! check output
     call patch%update                                   ! update the patch
-    call patch%output                                   ! check output
+    call patch%output(self%experiment_name)             ! check output
     call self%check_nbors (head)                        ! any nbor ready?
     if (patch%time+0.5*patch%dtime > patch%end_time) then ! finished:
       end_game = .true.
@@ -723,7 +724,7 @@ SUBROUTINE output (self)
   !.............................................................................
   link => self%head
   do while (associated(link))
-    call link%patch%output
+    call link%patch%output(self%experiment_name)
     link => link%next
   end do
 END SUBROUTINE output

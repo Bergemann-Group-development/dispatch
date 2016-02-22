@@ -8,7 +8,7 @@ MODULE refine_mod
   USE io_mod
   USE trace_mod
   USE bits_mod
-  USE patches_mod
+  USE patch_mod
   USE experiment_mod
   implicit none
   private
@@ -34,6 +34,7 @@ MODULE refine_mod
     procedure:: check_magnetic_field
   end type
   real, public:: max_change=100
+  integer, public:: msplit=2
   type(refine_t), public:: refine
 CONTAINS
 !> =============================================================================
@@ -105,7 +106,7 @@ FUNCTION check_jeans (self, patch) RESULT(out)
   call trace_begin ('refine_t%check_check_jeans', 2)
   c_sound = 1.0     ! FIXME
   jeans_length = c_sound/sqrt(maxval(patch%mem(:,:,:,patch%i_d,patch%it,1)*patch%G))
-  ratio = jeans_length/minval(patch%ds)
+  ratio = jeans_length/minval(patch%mesh%d)
   out = ratio < self%min_jeans
   if (io%verbose > 2) &
     print*,'Jeans:', patch%id, ratio, self%min_jeans, out
@@ -121,9 +122,9 @@ FUNCTION check_log_density (self, patch) RESULT(out)
   call trace_begin ('refine_t%check_log_densisty', 2)
   if (io%verbose>3) then
     print*, 'check_log', patch%id
-    print*, 'check_log', patch%li, patch%ui
+    print*, 'check_log', patch%mesh%li, patch%mesh%ui
   end if
-  !allocate (v(patch%li(1):patch%ui(1),patch%li(2):patch%ui(2),patch%li(3):patch%ui(3)))
+  !allocate (v(patch%mesh%li(1):patch%mesh%ui(1),patch%mesh%li(2):patch%mesh%ui(2),patch%mesh%li(3):patch%mesh%ui(3)))
   allocate (v(1:patch%n(1),1:patch%n(2),1:patch%n(3)))
   call patch%log_density (v)
   !print*, 'check_log', minval(v), maxval(v)
@@ -141,7 +142,7 @@ FUNCTION check_potential (self, patch) RESULT(out)
   call trace_begin ('refine_t%potential', 2)
   if (io%verbose>3) then
     print*, 'check_pot', patch%id
-    print*, 'check_pot', patch%li, patch%ui
+    print*, 'check_pot', patch%mesh%li, patch%mesh%ui
   end if
   allocate (v(1:patch%n(1),1:patch%n(2),1:patch%n(3)))
   call patch%grav_potential (v)
@@ -156,7 +157,9 @@ FUNCTION check_log_pressure (self, patch) RESULT(out)
   real, dimension(:,:,:), pointer:: p, v
   logical:: out
   !.............................................................................
-  allocate (v(patch%li(1):patch%ui(1),patch%li(2):patch%ui(2),patch%li(3):patch%ui(3)))
+  associate(m=>patch%mesh)
+  allocate (v(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui))
+  end associate
   call patch%log_pressure (v)
   out = check_max_diff (self, patch, v)
   deallocate (v)
@@ -168,7 +171,9 @@ FUNCTION check_velocity (self, patch) RESULT(out)
   real, dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
-  allocate (v(patch%li(1):patch%ui(1),patch%li(2):patch%ui(2),patch%li(3):patch%ui(3)))
+  associate(m=>patch%mesh)
+  allocate (v(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui))
+  end associate
   call patch%velocity_magnitude (v)
   out = check_max_diff (self, patch, v)
   deallocate (v)
@@ -180,7 +185,9 @@ FUNCTION check_magnetic_field (self, patch) RESULT(out)
   real, dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
-  allocate (v(patch%li(1):patch%ui(1),patch%li(2):patch%ui(2),patch%li(3):patch%ui(3)))
+  associate(m=>patch%mesh)
+  allocate (v(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui))
+  end associate
   call patch%magnetic_field_magnitude (v)
   out = check_max_diff (self, patch, v)
   deallocate (v)
@@ -190,7 +197,7 @@ FUNCTION check_max_diff (self, patch,v ) RESULT(out)
   class(refine_t):: self
   class(experiment_t), pointer:: patch
   real, dimension(:,:,:), pointer:: v
-  !real:: v(patch%li(1):patch%ui(1),patch%li(2):patch%ui(2),patch%li(3):patch%ui(3))
+  !real:: v(patch%mesh%li(1):patch%mesh%ui(1),patch%mesh%li(2):patch%mesh%ui(2),patch%mesh%li(3):patch%mesh%ui(3))
   integer:: n(3), i1, i2, i3, m(3)=1
   real:: max_diff, diff
   logical:: out

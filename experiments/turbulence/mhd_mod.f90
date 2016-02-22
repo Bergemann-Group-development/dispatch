@@ -6,7 +6,7 @@ MODULE mhd_mod
   USE scalar_mod
   USE vector_mod
   USE stagger_mod
-  USE patches_mod
+  USE patch_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
