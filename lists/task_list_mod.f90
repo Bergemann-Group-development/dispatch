@@ -127,13 +127,21 @@ SUBROUTINE update (self)
     self%nq = self%nq-1
     call self%check_mpi                                 ! check incoming MPI
     task => head%task                                   ! head task
+    call trace('1')
     call head%download (all_cells=.false.)              ! guard cells
+    call trace('2')
     if (refine%needed (task)) then                      ! if refinement needed
+      call trace('2a')
       call self%split (head)                            ! refined tasks go back to queue
+      call trace('2b')
     end if
-    call task%output(self%name)              ! check output
+    call trace('3')
+    call task%output(self%name)                         ! check output
+    call trace('4')
     call task%update                                    ! update the task
-    call task%output(self%name)              ! check output
+    call trace('5')
+    call task%output(self%name)                         ! check output
+    call trace('6')
     call self%check_nbors (head)                        ! any nbor ready?
     if (task%time+0.5*task%dtime > task%end_time) then  ! finished:
       call self%remove_task (task)                      ! remove from self

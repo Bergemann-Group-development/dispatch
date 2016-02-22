@@ -50,14 +50,7 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-SUBROUTINE update(self)
-  class(mhd_t):: self
-  !call pde (self%d, self%dddt, self%s, self%dsdt, self%p, self%dpdt, self%B, self%dBdt)
-  call pde (self)
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE pde (self)
+SUBROUTINE update (self)
   class(mhd_t):: self
   !.............................................................................
   type(vector_t):: U, E, J                              ! velocity, electric field
@@ -67,23 +60,25 @@ SUBROUTINE pde (self)
   real:: ds
   !-----------------------------------------------------------------------------
   associate(d=>self%d,dddt=>self%dddt,s=>self%s,dsdt=>self%dsdt,p=>self%p,dpdt=>self%dpdt,B=>self%B,dBdt=>self%dBdt)
-  call trace_begin('pde')
+  call trace_begin('mhd_t%update')
   if (first_time) call self%init
-  call init_vectors (d%n, d%ds, ld, dd, U, E, fd, fx, fy, fz)
-  call init_scalars (d%n, d%ds, lnd, pg, pa, du, ss, cs, pp)
+  call init_vectors (self%mesh%gn, self%ds, ld, dd, U, E, fd, fx, fy, fz)
+  call init_scalars (self%mesh%gn, self%ds, lnd, pg, pa, du, ss, cs, pp)
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below
   !-----------------------------------------------------------------------------
   call trace('1')
   lnd = log(d)
-  call trace('1')
+  call trace('2')
   ld = down(lnd)
-  call trace('1')
+  call trace('3')
   dd = exp(ld)
-  call trace('1')
+  call trace('4')
+  print*,p%x%n,p%x%l,p%x%ds
+  print*,dd%x%n,dd%x%l,dd%x%ds
   U = p/dd
-  call trace('1')
+  call trace('5')
   !-----------------------------------------------------------------------------
   ! Gas pressure
   !-----------------------------------------------------------------------------
@@ -188,10 +183,10 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, U, E, fd, fx, fy, fz)
   call deallocate_scalars (lnd, pg, pa, du, ss, cs, pp)
-  call cleanup_temp
-  call trace_end
+  !call cleanup_temp
   end associate
-END SUBROUTINE pde
+  call trace_end
+END SUBROUTINE update
 
 !> =============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)

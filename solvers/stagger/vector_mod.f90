@@ -6,7 +6,7 @@ MODULE vector_mod
   USE scalar_mod
   implicit none
   public
-  integer, private:: verbose=1
+  integer, private:: verbose=0
   type:: vector_t
     type(scalar_t):: x, y, z
     logical:: allocated=.false.
@@ -103,12 +103,17 @@ END SUBROUTINE init_vectors
 !> =============================================================================
 !> Map an array to the array of a vector variable
 !> =============================================================================
-SUBROUTINE vector_map (self, p)
+SUBROUTINE vector_map (self, p, dims, ds)
   class(vector_t):: self
   real, dimension(:,:,:,:), pointer:: p
-  self%x%f => p(:,:,:,1)
-  self%y%f => p(:,:,:,2)
-  self%z%f => p(:,:,:,3)
+  real, dimension(:,:,:), pointer:: s
+  integer:: dims(3)
+  real:: ds(3)
+  self%n = dims
+  self%ds = ds
+  s=>p(:,:,:,1); call self%x%scalar_map (s, dims, ds)
+  s=>p(:,:,:,2); call self%y%scalar_map (s, dims, ds)
+  s=>p(:,:,:,3); call self%z%scalar_map (s, dims, ds)
   self%allocated = .true.
 END SUBROUTINE vector_map
 !> =============================================================================

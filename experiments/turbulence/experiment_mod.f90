@@ -30,6 +30,7 @@ SUBROUTINE init (self)
    logical, save:: first_time=.true.
    real, dimension(:,:,:), pointer:: s
    real, dimension(:,:,:,:), pointer:: v
+   integer:: n(3)
    namelist /experiment_params/ d0, B0
    !----------------------------------------------------------------------------
    call trace_begin('experiment_t%init')
@@ -52,14 +53,15 @@ SUBROUTINE init (self)
    !----------------------------------------------------------------------------
    ! Map variables to memory
    !----------------------------------------------------------------------------
-   s=>self%mem(:,:,:,  1,1,1); call self%d%scalar_map (s)
-   s=>self%mem(:,:,:,  2,1,1); call self%s%scalar_map (s)
-   v=>self%mem(:,:,:,3:5,1,1); call self%p%vector_map (v)
-   v=>self%mem(:,:,:,6:8,1,1); call self%B%vector_map (v)
-   s=>self%mem(:,:,:,  1,1,2); call self%dddt%scalar_map (s)
-   s=>self%mem(:,:,:,  2,1,2); call self%dsdt%scalar_map (s)
-   v=>self%mem(:,:,:,3:5,1,2); call self%dpdt%vector_map (v)
-   v=>self%mem(:,:,:,6:8,1,2); call self%dBdt%vector_map (v)
+   n = self%mesh%gn
+   s=>self%mem(:,:,:,  1,1,1); call self%d%scalar_map    (s, n, self%ds)
+   s=>self%mem(:,:,:,  2,1,1); call self%s%scalar_map    (s, n, self%ds)
+   v=>self%mem(:,:,:,3:5,1,1); call self%p%vector_map    (v, n, self%ds)
+   v=>self%mem(:,:,:,6:8,1,1); call self%B%vector_map    (v, n, self%ds)
+   s=>self%mem(:,:,:,  1,1,2); call self%dddt%scalar_map (s, n, self%ds)
+   s=>self%mem(:,:,:,  2,1,2); call self%dsdt%scalar_map (s, n, self%ds)
+   v=>self%mem(:,:,:,3:5,1,2); call self%dpdt%vector_map (v, n, self%ds)
+   v=>self%mem(:,:,:,6:8,1,2); call self%dBdt%vector_map (v, n, self%ds)
    !----------------------------------------------------------------------------
    ! Initiall conditions
    !----------------------------------------------------------------------------

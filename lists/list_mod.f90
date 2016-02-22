@@ -320,19 +320,26 @@ SUBROUTINE download (self, all_cells)
   task => self%task
   nguard=0
   do while (associated (nbor))
+    print*,'nbor',nbor%task%id,self%task%id
     if (abs(self%task%level-task%level) < 2) then
       !dmin = minval(nbor%patch%mem(:,:,:,1,nbor%patch%it,1))
       !if (dmin <= 0.0) print*,'MK1',nbor%patch%id,dmin
+      call trace('1')
       if (nbor%task%level == task%level+1) special = 6
-      call nbor%task%download_to (task, special, all_cells)
+      call trace('2')
+      !call nbor%task%download_to (task, special, all_cells)
+      call trace('3')
     end if
+    call trace('4')
     !dmin = minval(self%task%mem(:,:,:,1,self%task%it,1))
     !if (dmin <= 0.0) print*,'MK2',self%task%id,dmin
     nbor => nbor%next
+    call trace('5')
   end do
   !print*,'MK', self%task%id, self%task%it, minval(self%task%mem(:,:,:,1,self%task%it,1))
-  if (io%verbose > 5) &
+  !if (io%verbose > 5) &
     print *, 'download: Number of neighbors with guard cells:', nguard
+  call trace('6')
   call trace_end
 END SUBROUTINE download
 

@@ -472,6 +472,7 @@ SUBROUTINE output (self, experiment_name)
   ! out_time's that have passed, plus one more
   !-----------------------------------------------------------------------------
   if (self%time+0.5*self%dtime < self%out_next) return
+  call trace_begin('patch:t%output')
   if (self%time==0.0) then
     self%out_next = self%out_time
   else
@@ -480,7 +481,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_t%output')
+  call trace ('1')
   call system ('mkdir -p data/')
   write (filename,'(a,i3.3,"_",i4.4)') &
     'data/'//trim(experiment_name)//'_', self%id, self%iout

@@ -778,9 +778,11 @@ FUNCTION scalar_down_vector (in) RESULT (out)
   type(scalar_t), intent(inout):: in
   type(vector_t):: out
   !-----------------------------------------------------------------------------
+  if (verbose>1) print*, 'down  (in):', in%id, in%n, in%temporary, in%allocated
   out%x = xdn (in)
   out%y = ydn (in)
   out%z = zdn (in)
+  if (verbose>1) print*, 'down (out):', out%id, out%n, out%temporary, out%allocated
   call in%tempdealloc
 END FUNCTION scalar_down_vector
 !> =============================================================================

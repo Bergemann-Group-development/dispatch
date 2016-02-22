@@ -6,7 +6,7 @@ MODULE scalar_mod
   implicit none
   public
   !
-  integer, private:: verbose=1
+  integer, private:: verbose=0
   type, private:: node_t
     type(scalar_t), pointer:: scalar=>null()
     type(node_t), pointer:: next=>null()
@@ -83,6 +83,7 @@ SUBROUTINE init_scalar (self, dims, ds, name)
   id = id+1
   self%id = id
   self%name=''; if (present(name)) self%name=name
+  if (verbose>0) print*, self%id, self%n, self%ds
   call self%allocate
   self%allocated = .true.
 END SUBROUTINE init_scalar
@@ -108,9 +109,16 @@ END SUBROUTINE init_scalars
 !> =============================================================================
 !> Map an array to the array of a scalar variable
 !> =============================================================================
-SUBROUTINE scalar_map (self, p)
+SUBROUTINE scalar_map (self, p, dims, ds)
   class(scalar_t):: self
   real, dimension(:,:,:), pointer:: p
+  integer:: dims(3)
+  real:: ds(3)
+  !.............................................................................
+  self%l = 1
+  self%u = dims
+  self%n = dims
+  self%ds = ds
   self%f => p
   self%allocated = .true.
 END SUBROUTINE scalar_map
@@ -353,9 +361,6 @@ SUBROUTINE allocate_scalar (self)
   class(scalar_t):: self
   !.............................................................................
   if (self%allocated) return
-  !$omp atomic
-  id = id+1
-  self%id = id
   allocate (self%f(self%n(1), self%n(2), self%n(3)))
   self%f = 1.0
   self%allocated = .true.
@@ -394,9 +399,10 @@ SUBROUTINE tempalloc (self, in, label)
   id = id+1
   self%id = id
   if (present(label)) then
-    if (verbose>0) print*,'  alloc: ', self%name, self%id, nalloc, ' '//label
+    if (verbose>0) print 1, '  alloc: '//trim(self%name), self%id, self%n, nalloc, ' '//label
+    1 format(a,i6,3i4,i6,a)
   else
-    if (verbose>0) print*,'  alloc: ', self%name, nalloc
+    if (verbose>0) print 1  , '  alloc: '//trim(self%name), self%id, self%n, nalloc
   end if
   allocate (self%f(self%n(1), self%n(2), self%n(3)))
   self%temporary = .true.
@@ -418,9 +424,10 @@ SUBROUTINE tempdealloc (self, label)
   !$omp atomic
   nalloc = nalloc-1
   if (present(label)) then
-    if (verbose>0) print*,'dealloc: ', self%name, self%id, nalloc, ' '//label
+    if (verbose>0) print 1, 'dealloc: '//trim(self%name), self%id, nalloc, ' '//label
+    1 format(a,i6,i6,a)
   else
-    if (verbose>0) print*,'dealloc: ', self%name, self%id, nalloc
+    if (verbose>0) print 1, 'dealloc: '//trim(self%name), self%id, nalloc
   end if
   deallocate (self%f)
   self%id = -self%id
