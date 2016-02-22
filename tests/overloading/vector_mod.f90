@@ -2,12 +2,15 @@
 !> $Id$
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE vector_mod
+  USE trace_mod
   USE scalar_mod
   implicit none
   public
+  integer, private:: verbose=0
   type:: vector_t
     type(scalar_t):: x, y, z
     logical:: allocated=.false.
+    logical:: temporary=.false.
     integer:: n(3)
     integer:: id
     real:: ds(3)
@@ -15,6 +18,7 @@ MODULE vector_mod
   contains
     procedure:: init => init_vector
     procedure:: allocate => allocate_vector
+    procedure:: tempalloc => tempalloc_vector
     procedure:: tempdealloc => tempdealloc_vector
   end type
   interface assignment(=)
@@ -94,12 +98,59 @@ SUBROUTINE allocate_vector (self)
   self%allocated = .true.
 END SUBROUTINE allocate_vector
 !> =============================================================================
-SUBROUTINE tempdealloc_vector (self)
+SUBROUTINE deallocate_vectors (v1, v2, v3, v4, v5, v6, v7, v8, v9)
+  type(vector_t), optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9
+  !.............................................................................
+  if (present(v1)) call deallocate_vector (v1)
+  if (present(v2)) call deallocate_vector (v2)
+  if (present(v3)) call deallocate_vector (v3)
+  if (present(v4)) call deallocate_vector (v4)
+  if (present(v5)) call deallocate_vector (v5)
+  if (present(v6)) call deallocate_vector (v6)
+  if (present(v7)) call deallocate_vector (v7)
+  if (present(v8)) call deallocate_vector (v8)
+  if (present(v9)) call deallocate_vector (v9)
+END SUBROUTINE deallocate_vectors
+!> =============================================================================
+SUBROUTINE deallocate_vector (self, label)
   class(vector_t):: self
-  call self%x%tempdealloc
-  call self%y%tempdealloc
-  call self%z%tempdealloc
+  character(len=*), optional:: label
+  !.............................................................................
+  if (.not.self%allocated) return
+  if (present(label).and.verbose>0) then
+    print*,'deallocate_vector', self%name, ' ', label
+  end if
+  call deallocate_scalar (self%x, label)
+  call deallocate_scalar (self%y, label)
+  call deallocate_scalar (self%z, label)
+  self%allocated = .false.
+END SUBROUTINE deallocate_vector
+!> =============================================================================
+SUBROUTINE tempdealloc_vector (self, label)
+  class(vector_t):: self
+  character(len=*), optional:: label
+  if (.not.self%temporary.or.self%allocated) return
+  call self%x%tempdealloc(label)
+  call self%y%tempdealloc(label)
+  call self%z%tempdealloc(label)
+  self%temporary = .false.
 END SUBROUTINE tempdealloc_vector
+
+!> =============================================================================
+SUBROUTINE tempalloc_vector (self, in, label)
+  class(vector_t), target:: self
+  type(scalar_t):: in
+  character(len=*), optional:: label
+  !.............................................................................
+  if (self%temporary.or.self%allocated) return
+  self%n = in%n
+  self%ds = in%ds
+  self%name = 'tmp'
+  call self%x%tempalloc(in)
+  call self%y%tempalloc(in)
+  call self%z%tempalloc(in)
+  self%temporary = .true.
+END SUBROUTINE tempalloc_vector
 
 !> =============================================================================
 SUBROUTINE minus_div (out, in)
@@ -126,10 +177,13 @@ END FUNCTION vector_power_int
 FUNCTION vector_exp (in) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in
+  call trace_begin('vector_exp')
+  call out%tempalloc(in%x,'vector_exp')
   out%x = exp(in%x)
   out%y = exp(in%y)
   out%z = exp(in%z)
-  call in%tempdealloc
+  call in%tempdealloc('vector_exp')
+  call trace_end
 END FUNCTION vector_exp
 !> =============================================================================
 FUNCTION vector_log (in) RESULT (out)
@@ -148,7 +202,6 @@ SUBROUTINE vector_assign_vector (out, in)
   out%x = in%x
   out%y = in%y
   out%z = in%z
-  call in%tempdealloc
 END SUBROUTINE vector_assign_vector
 !> =============================================================================
 SUBROUTINE vector_assign_array (out, in)
@@ -165,7 +218,6 @@ SUBROUTINE vector_assign_scalar (out, in)
   out%x = in
   out%y = in
   out%z = in
-  call in%tempdealloc
 END SUBROUTINE vector_assign_scalar
 !> =============================================================================
 SUBROUTINE vector_assign_real_3 (out, in)

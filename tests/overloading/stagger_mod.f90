@@ -743,9 +743,11 @@ FUNCTION vector_norm2_scalar (in) RESULT (out)
   type(vector_t), intent(inout):: in
   type(scalar_t):: out
   !-----------------------------------------------------------------------------
+  call trace_begin('norm2')
   call out%tempalloc (in%x)
   out = xup(in%x)**2 + yup(in%y)**2 + zup(in%z)**2
   call in%tempdealloc
+  call trace_end
 END FUNCTION vector_norm2_scalar
 !> =============================================================================
 FUNCTION scalar_edge_vector (in) RESULT (out)

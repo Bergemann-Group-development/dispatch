@@ -137,6 +137,18 @@ PROGRAM test
   v1 = edge(s1)
   call toc("edge",n**3)
   !-----------------------------------------------------------------------------
-  call scalar_cleanup
+  block
+  type(scalar_t):: d, s, dddt, dsdt
+  type(vector_t):: p, B, dpdt, dBdt
+  call init_scalars (dims, ds, d, s, dddt, dsdt)
+  call init_vectors (dims, ds, p, B, dpdt, dBdt)
+  call tic
+  do i=1,10
+    call pde (d, s, p, B, dddt, dsdt, dpdt, dBdt)
+  end do
+  call toc("pde",10*n**3)
+  end block
+  !-----------------------------------------------------------------------------
+  !call scalar_cleanup
 
 END PROGRAM

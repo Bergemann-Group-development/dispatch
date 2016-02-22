@@ -1,6 +1,7 @@
 
 !*******************************************************************************
 SUBROUTINE pde (d, s, p, B, dddt, dsdt, dpdt, dBdt)     ! conserved variables
+  USE trace_mod
   USE scalar_mod
   USE vector_mod
   USE stagger_mod
@@ -10,20 +11,21 @@ SUBROUTINE pde (d, s, p, B, dddt, dsdt, dpdt, dBdt)     ! conserved variables
   !.............................................................................
   type(vector_t):: U, E, J                              ! velocity, electric field
   type(vector_t):: Us, Bs, fx, fy, fz, fd, ld, dd       ! extra vector temporaries
-  type(scalar_t):: du, lnd, ss, cs, pg, pm, pa          ! extra scalar temporaries
+  type(scalar_t):: du, lnd, ss, cs, pg, pm, pa, pp      ! extra scalar temporaries
   !.............................................................................
   real:: nu(6)=1.0, ds, gamma=1.0
   logical:: mhd=.true.
   !-----------------------------------------------------------------------------
+  call trace_begin('pde')
   call init_vectors (d%n, d%ds, ld, dd, U, E, fd, fx, fy, fz)
-  call init_scalars (d%n, d%ds, lnd, pg, pa, du, ss, cs, pm)
+  call init_scalars (d%n, d%ds, lnd, pg, pa, du, ss, cs, pm, pp)
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below
   !-----------------------------------------------------------------------------
   lnd = log(d)
   ld = down(lnd)
-  dd = exp(lnd)
+  dd = exp(ld)
   U = p/dd
   !-----------------------------------------------------------------------------
   ! Advective electric field on cell edges
@@ -73,16 +75,20 @@ SUBROUTINE pde (d, s, p, B, dddt, dsdt, dpdt, dBdt)     ! conserved variables
   !-----------------------------------------------------------------------------
   if (mhd) then
     pm = 0.5*norm2(B)
-    fx = d*norm2(U) + pg - pm
+    pp = d*norm2(U) + pg - pm
   else
-    fx = d*norm2(U) + pg
+    pp = d*norm2(U) + pg
   end if
   !---------------------------------------------------------------------------
   ! Add diagonal part of viscous stress
   !---------------------------------------------------------------------------
-  fx = fx + pa - d*du*dup(U)
-  fy = fy + pa - d*du*dup(U)
-  fz = fz + pa - d*du*dup(U)
+  fx = 0.0
+  fy = 0.0
+  fz = 0.0
+  pp = pp + pa
+  fx%x = pp !- d*du*dup(U)
+  fy%y = pp !- d*du*dup(U)
+  fz%z = pp !- d*du*dup(U)
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, without the density factor
   !---------------------------------------------------------------------------
@@ -116,9 +122,9 @@ SUBROUTINE pde (d, s, p, B, dddt, dsdt, dpdt, dBdt)     ! conserved variables
   ! Consistent addition of mass flux related momentum flux, symmetrized
   !-----------------------------------------------------------------------------
   pa = d*du*nu(5)
-  fx = fx - pa*ddxup(ld%x)*xup(U%x)
-  fy = fy - pa*ddyup(ld%y)*yup(U%y)
-  fz = fz - pa*ddzup(ld%z)*zup(U%z)
+  fx%x = fx%x - pa*ddxup(ld%x)*xup(U%x)
+  fy%y = fy%y - pa*ddyup(ld%y)*yup(U%y)
+  fz%z = fz%z - pa*ddzup(ld%z)*zup(U%z)
   fx%y = fx%y - (xdn1(fd%y)*ydn(U%x)+ydn1(fd%x)*xdn(U%y))
   fx%z = fx%z - (xdn1(fd%z)*zdn(U%x)+zdn1(fd%x)*xdn(U%z))
   fy%z = fy%z - (zdn1(fd%y)*ydn(U%z)+ydn1(fd%z)*zdn(U%y))
@@ -135,5 +141,6 @@ SUBROUTINE pde (d, s, p, B, dddt, dsdt, dpdt, dBdt)     ! conserved variables
   dBdt = -curl(E)
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, U, E, fd, fx, fy, fz)
-  call deallocate_scalars (lnd, pg, pa, du, ss, cs, pm)
+  call deallocate_scalars (lnd, pg, pa, du, ss, cs, pm, pp)
+  call trace_end
 END SUBROUTINE pde

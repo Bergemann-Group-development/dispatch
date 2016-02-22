@@ -2,6 +2,7 @@
 !> $Id$
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE scalar_mod
+  USE trace_mod
   implicit none
   public
   !
@@ -84,10 +85,40 @@ SUBROUTINE init_scalar (self, dims, ds, name)
   self%allocated = .true.
 END SUBROUTINE init_scalar
 !> =============================================================================
+SUBROUTINE init_scalars (dims, ds, v1, v2, v3, v4, v5, v6, v7, v8, v9)
+  integer:: dims(3)
+  real:: ds(3)
+  type(scalar_t), optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9
+  !.............................................................................
+  if (present(v1)) call init_scalar (v1, dims, ds)
+  if (present(v2)) call init_scalar (v2, dims, ds)
+  if (present(v3)) call init_scalar (v3, dims, ds)
+  if (present(v4)) call init_scalar (v4, dims, ds)
+  if (present(v5)) call init_scalar (v5, dims, ds)
+  if (present(v6)) call init_scalar (v6, dims, ds)
+  if (present(v7)) call init_scalar (v7, dims, ds)
+  if (present(v8)) call init_scalar (v8, dims, ds)
+  if (present(v9)) call init_scalar (v9, dims, ds)
+END SUBROUTINE init_scalars
+!> =============================================================================
+SUBROUTINE deallocate_scalars (v1, v2, v3, v4, v5, v6, v7, v8, v9)
+  type(scalar_t), optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9
+  !.............................................................................
+  if (present(v1)) call deallocate_scalar (v1)
+  if (present(v2)) call deallocate_scalar (v2)
+  if (present(v3)) call deallocate_scalar (v3)
+  if (present(v4)) call deallocate_scalar (v4)
+  if (present(v5)) call deallocate_scalar (v5)
+  if (present(v6)) call deallocate_scalar (v6)
+  if (present(v7)) call deallocate_scalar (v7)
+  if (present(v8)) call deallocate_scalar (v8)
+  if (present(v9)) call deallocate_scalar (v9)
+END SUBROUTINE deallocate_scalars
+!> =============================================================================
 SUBROUTINE scalar_scalar_assign (out, in)
   type(scalar_t), intent(inout):: out
   type(scalar_t), intent(in):: in
-  if (verbose>0) print*,out%id,out%name,out%allocated
+  if (verbose>0) print*,'assign', out%id,trim(out%name),out%allocated, in%id,trim(in%name),in%allocated,associated(in%f)
   call out%tempalloc (in,'scalar =')
   out%ds = in%ds
   out%n  = in%n
@@ -149,9 +180,11 @@ END FUNCTION scalar_minval
 FUNCTION scalar_exp (in) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in
-  call out%tempalloc(in)
+  call trace_begin('scalar_exp')
+  call out%tempalloc(in,'scalar_exp')
   out%f = exp(in%f)
-  call in%tempdealloc
+  call in%tempdealloc('scalar_exp')
+  call trace_end
 END FUNCTION scalar_exp
 !> =============================================================================
 FUNCTION scalar_log (in) RESULT (out)
@@ -309,8 +342,23 @@ SUBROUTINE allocate_scalar (self)
   id = id+1
   self%id = id
   allocate (self%f(self%n(1), self%n(2), self%n(3)))
+  self%f = 1.0
   self%allocated = .true.
 END SUBROUTINE allocate_scalar
+!> =============================================================================
+SUBROUTINE deallocate_scalar (self, label)
+  class(scalar_t):: self
+  character(len=*), optional:: label
+  !.............................................................................
+  if (.not.self%allocated) return
+  deallocate (self%f)
+  self%allocated = .false.
+  if (present(label)) then
+    if (verbose>0) print*,'dealloc: ', self%name, self%id, nalloc, ' '//label
+  else
+    if (verbose>0) print*,'dealloc: ', self%name, nalloc
+  end if
+END SUBROUTINE deallocate_scalar
 
 !> =============================================================================
 SUBROUTINE tempalloc (self, in, label)
@@ -349,7 +397,7 @@ SUBROUTINE tempdealloc (self, label)
   class(scalar_t):: self
   character(len=*), optional:: label
   !.............................................................................
-  if (verbose>0) print*, self%id, self%temporary, self%allocated
+  !if (verbose>0) print*, 'scalar tempdealloc', self%id, self%temporary, self%allocated
   if (.not.self%temporary.or.self%allocated) return
   if (.not.associated(self%f)) return
   !$omp atomic
