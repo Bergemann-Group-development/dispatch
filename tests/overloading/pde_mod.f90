@@ -1,6 +1,6 @@
 
 !*******************************************************************************
-SUBROUTINE pde (d, s, p, B, dddt, dsdt, dpdt, dBdt)     ! conserved variables
+SUBROUTINE pde (d, dddt, s, dsdt, p, dpdt, B, dBdt)     ! conserved variables
   USE trace_mod
   USE scalar_mod
   USE vector_mod
@@ -8,15 +8,17 @@ SUBROUTINE pde (d, s, p, B, dddt, dsdt, dpdt, dBdt)     ! conserved variables
   implicit none
   type(scalar_t):: d, s, dddt, dsdt                     ! density, entropy
   type(vector_t):: p, B, dpdt, dBdt                     ! momentum, magnetic field
+  optional:: B, dBdt
   !.............................................................................
   type(vector_t):: U, E, J                              ! velocity, electric field
   type(vector_t):: Us, Bs, fx, fy, fz, fd, ld, dd       ! extra vector temporaries
   type(scalar_t):: du, lnd, ss, cs, pg, pm, pa, pp      ! extra scalar temporaries
   !.............................................................................
   real:: nu(6)=1.0, ds, gamma=1.0
-  logical:: mhd=.true.
+  logical:: mhd
   !-----------------------------------------------------------------------------
   call trace_begin('pde')
+  mhd = present(B)
   call init_vectors (d%n, d%ds, ld, dd, U, E, fd, fx, fy, fz)
   call init_scalars (d%n, d%ds, lnd, pg, pa, du, ss, cs, pm, pp)
   !-----------------------------------------------------------------------------
@@ -27,12 +29,6 @@ SUBROUTINE pde (d, s, p, B, dddt, dsdt, dpdt, dBdt)     ! conserved variables
   ld = down(lnd)
   dd = exp(ld)
   U = p/dd
-  !-----------------------------------------------------------------------------
-  ! Advective electric field on cell edges
-  !-----------------------------------------------------------------------------
-  E%x = ydn(U%z)*zdn(B%y) - zdn(U%y)*ydn(B%z)
-  E%y = zdn(U%x)*xdn(B%z) - xdn(U%z)*zdn(B%x)
-  E%z = xdn(U%y)*ydn(B%x) - ydn(U%x)*xdn(B%y)
   !-----------------------------------------------------------------------------
   ! Gas pressure
   !-----------------------------------------------------------------------------
@@ -134,11 +130,19 @@ SUBROUTINE pde (d, s, p, B, dddt, dsdt, dpdt, dBdt)     ! conserved variables
   dpdt%x = - ddxdn1(fx%x) - ddyup1(fx%y) - ddzup1(fx%z)
   dpdt%y = - ddydn1(fy%y) - ddxup1(fx%y) - ddzup1(fy%z)
   dpdt%z = - ddzdn1(fz%z) - ddxup1(fx%z) - ddyup1(fy%z)
-  !-----------------------------------------------------------------------------
-  ! Induction equation
-  !-----------------------------------------------------------------------------
-  E = E + nu(6)*edge(du)*curl(B)
-  dBdt = -curl(E)
+  if (mhd) then
+    !---------------------------------------------------------------------------
+    ! Advective electric field on cell edges
+    !---------------------------------------------------------------------------
+    E%x = ydn(U%z)*zdn(B%y) - zdn(U%y)*ydn(B%z)
+    E%y = zdn(U%x)*xdn(B%z) - xdn(U%z)*zdn(B%x)
+    E%z = xdn(U%y)*ydn(B%x) - ydn(U%x)*xdn(B%y)
+    !---------------------------------------------------------------------------
+    ! Induction equation, with resistive term
+    !---------------------------------------------------------------------------
+    E = E + nu(6)*edge(du)*curl(B)
+    dBdt = -curl(E)
+  end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, U, E, fd, fx, fy, fz)
   call deallocate_scalars (lnd, pg, pa, du, ss, cs, pm, pp)

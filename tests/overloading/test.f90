@@ -144,9 +144,14 @@ PROGRAM test
   call init_vectors (dims, ds, p, B, dpdt, dBdt)
   call tic
   do i=1,10
-    call pde (d, s, p, B, dddt, dsdt, dpdt, dBdt)
+    call pde (d, dddt, s, dsdt, p, dpdt, B, dBdt)
   end do
-  call toc("pde",10*n**3)
+  call toc("mhd",10*n**3)
+  call tic
+  do i=1,10
+    call pde (d, dddt, s, dsdt, p, dpdt)
+  end do
+  call toc("hd",10*n**3)
   end block
   !-----------------------------------------------------------------------------
   !call scalar_cleanup
