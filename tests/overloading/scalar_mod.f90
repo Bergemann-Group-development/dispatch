@@ -413,23 +413,23 @@ SUBROUTINE tempdealloc (self, label)
 END SUBROUTINE tempdealloc
 
 !> =============================================================================
-SUBROUTINE scalar_cleanup
+SUBROUTINE cleanup_temp
   type(node_t), pointer:: node, rm
   integer:: save
   !.............................................................................
   if (nalloc<=0) return
-  !save = verbose
-  !verbose = 1
+  print*,'cleanup_temp: nalloc =', nalloc
   node => head
   do while (associated(node))
+    if (node%scalar%temporary) print*,'cleanup found', &
+      node%scalar%id, node%scalar%name
     call tempdealloc (node%scalar, 'cleanup')
     rm => node
     node => node%next
     deallocate (rm)
   end do
   nullify (head, tail)
-  !verbose = save
-END SUBROUTINE scalar_cleanup
+END SUBROUTINE cleanup_temp
 
 !> =============================================================================
 END MODULE scalar_mod

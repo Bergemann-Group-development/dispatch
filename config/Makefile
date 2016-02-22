@@ -38,7 +38,7 @@ sinclude $(TOP)/io/Makefile
 #sinclude $(TOP)/operators/Makefile
 sinclude $(TOP)/solvers/$(SOLVERS)/Makefile
 sinclude $(TOP)/lists/Makefile
-sinclude $(TOP)/tasks/Makefile
+#sinclude $(TOP)/tasks/Makefile
 sinclude $(TOP)/meshes/$(MESH)/Makefile
 sinclude $(TOP)/patches/$(MESH)/Makefile
 sinclude $(TOP)/timestep/$(UPD)/Makefile

@@ -11,8 +11,8 @@ SUBROUTINE pde (d, dddt, s, dsdt, p, dpdt, B, dBdt)     ! conserved variables
   optional:: B, dBdt
   !.............................................................................
   type(vector_t):: U, E, J                              ! velocity, electric field
-  type(vector_t):: Us, Bs, fx, fy, fz, fd, ld, dd       ! extra vector temporaries
-  type(scalar_t):: du, lnd, ss, cs, pg, pm, pa, pp      ! extra scalar temporaries
+  type(vector_t):: fx, fy, fz, fd, ld, dd               ! extra vector temporaries
+  type(scalar_t):: du, lnd, ss, cs, pg, pa, pp          ! extra scalar temporaries
   !.............................................................................
   real:: nu(6)=1.0, ds, gamma=1.0
   logical:: mhd
@@ -20,7 +20,7 @@ SUBROUTINE pde (d, dddt, s, dsdt, p, dpdt, B, dBdt)     ! conserved variables
   call trace_begin('pde')
   mhd = present(B)
   call init_vectors (d%n, d%ds, ld, dd, U, E, fd, fx, fy, fz)
-  call init_scalars (d%n, d%ds, lnd, pg, pa, du, ss, cs, pm, pp)
+  call init_scalars (d%n, d%ds, lnd, pg, pa, du, ss, cs, pp)
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below
@@ -44,62 +44,52 @@ SUBROUTINE pde (d, dddt, s, dsdt, p, dpdt, B, dBdt)     ! conserved variables
   ! down without increasing the number of ghost zones needed
   !-----------------------------------------------------------------------------
   ds = minval(d%ds)                                     ! smallest {dx,dy,dz}
-  du = -div(U)
+  du = -div(U)                                          ! convergence rate
   du = ds*max(du,1e-20)                                 ! dimension: U
   pa = nu(3)*d*du**2                                    ! dimension: pressure
   du = (nu(1)*cs + nu(2)*du)*ds                         ! dimension: U*ds
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
-  fd = nu(5)*dd*ddown(lnd)*down(du)                     ! diffusive mass flux
-  fx = p-fd
-  dddt = -div (fx)                                 ! density derivative
+  fd = -(nu(5)*dd*down(du))*ddown(lnd)                  ! diffusive mass flux
+  fx = p+fd                                             ! mass flux
+  dddt = -div(fx)                                       ! density derivative
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
-  ! the diffusive entropy flux directly proportional to the diffusive mass flux.
-  ! For consistency, the same terms are added in the equations of motion below
+  ! the diffusive entropy flux directly proportional to the diffusive mass flux,
+  ! plus a contribution proportional to the gradient of specific entropy ss.
   !-----------------------------------------------------------------------------
   if (gamma==1.0) then
     dsdt = 0.0
   else
     ss = s/d
-    fx = fx*down(ss) - nu(6)*dd*ddown(ss)*down(du)
-    dsdt = -div (fx)
+    fx = fx*down(ss) - (nu(6)*dd*down(du))*ddown(ss)
+    dsdt = -div(fx)
   end if
   !-----------------------------------------------------------------------------
-  ! Conservation of momentum
+  ! Conservation of momentum -- first the diagonal part of the stress tensor
   !-----------------------------------------------------------------------------
   if (mhd) then
-    pm = 0.5*norm2(B)
-    pp = d*norm2(U) + pg - pm
+    pp = d*norm2(U) + pg + pa - 0.5*norm2(B)
   else
-    pp = d*norm2(U) + pg
+    pp = d*norm2(U) + pg + pa
   end if
+  fx%x = pp - d*du*ddxup(U%x)
+  fy%y = pp - d*du*ddyup(U%y)
+  fz%z = pp - d*du*ddzup(U%z)
   !---------------------------------------------------------------------------
-  ! Add diagonal part of viscous stress
-  !---------------------------------------------------------------------------
-  fx = 0.0
-  fy = 0.0
-  fz = 0.0
-  pp = pp + pa
-  fx%x = pp !- d*du*dup(U)
-  fy%y = pp !- d*du*dup(U)
-  fz%z = pp !- d*du*dup(U)
-  !---------------------------------------------------------------------------
-  ! Off-diagonal part of Reynolds stress, without the density factor
+  ! Off-diagonal part of Reynolds stress, for now without the density factor.
+  ! Note that, because of the symmmetry, we define only three components
   !---------------------------------------------------------------------------
   fx%y = ydn(U%x)*xdn(U%y)
   fx%z = zdn(U%x)*xdn(U%z)
   fy%z = zdn(U%y)*ydn(U%z)
   !---------------------------------------------------------------------------
-  ! Add viscous part. nu(4) is a multiplier ! (relative strength) in front of
-  ! the off-diagonal stresses.
+  ! Add viscous part -- edge-centered
   !---------------------------------------------------------------------------
-  if (nu(4)>0.0) then
-    fx%y = fx%y - nu(4)*xdn1(ydn1(du))*(ddxdn(U%y)+ddydn(U%x))
-    fx%z = fx%z - nu(4)*ydn1(zdn1(du))*(ddxdn(U%z)+ddzdn(U%x))
-    fy%z = fy%z - nu(4)*zdn1(xdn1(du))*(ddydn(U%z)+ddzdn(U%y))
-  end if
+  fx%y = fx%y - nu(4)*xdn1(ydn1(du))*(ddxdn(U%y)+ddydn(U%x))
+  fx%z = fx%z - nu(4)*ydn1(zdn1(du))*(ddxdn(U%z)+ddzdn(U%x))
+  fy%z = fy%z - nu(4)*zdn1(xdn1(du))*(ddydn(U%z)+ddzdn(U%y))
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
@@ -115,21 +105,23 @@ SUBROUTINE pde (d, dddt, s, dsdt, p, dpdt, B, dBdt)     ! conserved variables
     fy%z = fy%z - zdn(B%y)*ydn(B%z)
   end if
   !-----------------------------------------------------------------------------
-  ! Consistent addition of mass flux related momentum flux, symmetrized
+  ! Consistent addition of mass flux related momentum flux, symmetrized. The
+  ! diagonal part is analogous, a centered version of \nu \rho U_i \grad\ln\rho,
+  ! while the off-diagonal part needs to be properly symmetrized.
   !-----------------------------------------------------------------------------
   pa = d*du*nu(5)
   fx%x = fx%x - pa*ddxup(ld%x)*xup(U%x)
   fy%y = fy%y - pa*ddyup(ld%y)*yup(U%y)
   fz%z = fz%z - pa*ddzup(ld%z)*zup(U%z)
-  fx%y = fx%y - (xdn1(fd%y)*ydn(U%x)+ydn1(fd%x)*xdn(U%y))
-  fx%z = fx%z - (xdn1(fd%z)*zdn(U%x)+zdn1(fd%x)*xdn(U%z))
-  fy%z = fy%z - (zdn1(fd%y)*ydn(U%z)+ydn1(fd%z)*zdn(U%y))
+  fx%y = fx%y + (xdn1(fd%y)*ydn(U%x)+ydn1(fd%x)*xdn(U%y))
+  fx%z = fx%z + (xdn1(fd%z)*zdn(U%x)+zdn1(fd%x)*xdn(U%z))
+  fy%z = fy%z + (zdn1(fd%y)*ydn(U%z)+ydn1(fd%z)*zdn(U%y))
   !-----------------------------------------------------------------------------
   ! Momentum equations
   !-----------------------------------------------------------------------------
   dpdt%x = - ddxdn1(fx%x) - ddyup1(fx%y) - ddzup1(fx%z)
-  dpdt%y = - ddydn1(fy%y) - ddxup1(fx%y) - ddzup1(fy%z)
-  dpdt%z = - ddzdn1(fz%z) - ddxup1(fx%z) - ddyup1(fy%z)
+  dpdt%y = - ddxup1(fx%y) - ddydn1(fy%y) - ddzup1(fy%z)
+  dpdt%z = - ddxup1(fx%z) - ddyup1(fy%z) - ddzdn1(fz%z)
   if (mhd) then
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
@@ -145,6 +137,7 @@ SUBROUTINE pde (d, dddt, s, dsdt, p, dpdt, B, dBdt)     ! conserved variables
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, U, E, fd, fx, fy, fz)
-  call deallocate_scalars (lnd, pg, pa, du, ss, cs, pm, pp)
+  call deallocate_scalars (lnd, pg, pa, du, ss, cs, pp)
+  call cleanup_temp
   call trace_end
 END SUBROUTINE pde

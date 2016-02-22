@@ -158,6 +158,5 @@ PROGRAM test
   call toc("mhd",10*n**3)
   end block
   !-----------------------------------------------------------------------------
-  !call scalar_cleanup
-
+  call cleanup_temp
 END PROGRAM
