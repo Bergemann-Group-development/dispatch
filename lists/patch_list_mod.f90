@@ -21,9 +21,9 @@ MODULE patch_list_mod
     integer:: n_nbors
   contains
     procedure:: download
-    procedure:: add_nbor_by_quality
-    procedure:: make_new_nbors
     procedure:: make_new_nbor
+    procedure:: make_new_nbors
+    procedure:: add_nbor_by_quality
     procedure:: print_nbors
   end type
   !.............................................................................

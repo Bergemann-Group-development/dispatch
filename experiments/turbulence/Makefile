@@ -17,10 +17,10 @@ sinclude $(TOP)/config/Makefile
 sinclude $(PPCODE)/Experiments/DISPATCH/Makefile
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): patch_list_mod.o $(PICOBJ)
+$(EXEC): task_list_mod.o $(PICOBJ)
 
 # Dependencies
-dispatch.o              : patch_list_mod.o
+dispatch.o              : task_list_mod.o
 experiment_mod.o        : mhd_mod.o scalar_mod.o trace_mod.o vector_mod.o forcing_mod.o io_mod.o
 forcing_mod.o           : random_mod.o io_mod.o vector_mod.o mesh_mod.o trace_mod.o scalar_mod.o
 random_mod.o            : io_mod.o

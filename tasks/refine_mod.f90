@@ -8,6 +8,7 @@ MODULE refine_mod
   USE io_mod
   USE trace_mod
   USE bits_mod
+  USE task_mod
   USE patch_mod
   USE experiment_mod
   implicit none
@@ -64,13 +65,14 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 !> =============================================================================
-FUNCTION needed (self, patch)
+FUNCTION needed (self, task)
   class(refine_t):: self
+  class(task_t), pointer:: task
   class(patch_t), pointer:: patch
   logical:: needed
   !.............................................................................
   needed = .false.
-  select type (patch)
+  select type (task)
   class is (experiment_t)
   if (io%verbose>1) &
     print*, 'needed:', patch%is_set(bits%not_leaf), patch%level >= self%levelmax, &
@@ -83,7 +85,7 @@ FUNCTION needed (self, patch)
   !
   !needed = check_log_density    (self, patch)
   !needed = self%check_potential (patch)
-  if (self%min_jeans   > 0.0) needed = needed.or.self%check_Jeans (patch)
+  if (self%min_jeans   > 0.0) needed = needed.or.self%check_Jeans (task)
 !  if (self%max_dln_rho > 0.0) needed = needed.or.self%check_max_diff (patch)
   if (needed) then
     call trace_end

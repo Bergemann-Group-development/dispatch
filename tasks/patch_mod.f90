@@ -20,7 +20,6 @@ MODULE patch_mod
     integer:: ndim = ndim           ! Number of dimensions
     integer:: nvar                  ! Number of variables
     integer:: nv                        ! FIXME
-    integer:: level
     integer:: n(3)
     !---------------------------------------------------------------------------
     ! HACK below
@@ -191,19 +190,27 @@ END SUBROUTINE update_patch
 !> This is useful for both guard cell fill-in, and for "prolongation" = creating
 !> patches with higher resolution.
 !> =============================================================================
-SUBROUTINE download_to (self, patch, only_down, all_cells)
+SUBROUTINE download_to (self, task, special, all_cells)
   class(patch_t):: self
+  class(task_t), pointer:: task
   class(patch_t), pointer:: patch
-  logical:: all_cells
-  integer:: only_down
+  logical, optional:: all_cells
+  integer:: special
   logical:: all_target
-  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), ntot, nuse, only_down_
+  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), ntot, nuse
   integer, dimension(3):: l1, u1, l2, u2
   real:: f(3), pos(3), weight
   !.............................................................................
 !  if (self%id==patch%id .and. all(patch%size /= box%size)) return
   if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','download_to:self,patch=', &
     self%id,self%position,patch%id,patch%position, self%mesh%li, self%mesh%ui
+  !-----------------------------------------------------------------------------
+  ! Upgrade to a patch link
+  !-----------------------------------------------------------------------------
+  select type (task)
+  class is (patch_t)
+  patch => task
+  end select
 associate (source=>self%mem, target=>patch%mem)
   it = patch%it
   !-----------------------------------------------------------------------------
@@ -217,12 +224,12 @@ associate (source=>self%mem, target=>patch%mem)
     if (self%level <= patch%level) all_target = .false.   ! only upload from deeper levels
     if (all_cells) all_target = .true.                    ! unless told to do so
     if ((self%level-patch%level) > 1) return              ! upload at most 1 level
-    if (iv==only_down) then                               ! if the variable is phi
+    if (iv==special) then                               ! if the variable is phi
       if (self%level >= patch%level) cycle                ! only download phi from lower levels
       !all_target = .true.                                 ! interior + guard cells
       !if (io%verbose>0) &
       !  print'(10(1x,a,i6,3x))', 'patch', patch%id, 'at level', patch%level, &
-      !  'downloading variable', only_down, 'from patch', self%id, 'level', self%level
+      !  'downloading variable', special, 'from patch', self%id, 'level', self%level
     end if
 
     !---------------------------------------------------------------------------
@@ -538,7 +545,8 @@ SUBROUTINE dnload_range (p1, p2, l1, u1)
   l1 = p1%mesh%lb
   u1 = p1%mesh%ub
   if (p2%id>1) then
-    dist = p2%distance (p1)     ! positive if p2 (source) to the right of p1 (target)
+    ! FIXME
+    !dist = p2%distance (p1)     ! positive if p2 (source) to the right of p1 (target)
     where (dist >=0)
       l1 = max(l1,p1%nearest(p2,p2%mesh%lb))
       u1 = p1%mesh%ub
@@ -631,13 +639,20 @@ END SUBROUTINE courant_condition
 !> =============================================================================
 !> Signed distance between the centers of two patches in the periodic box
 !> =============================================================================
-FUNCTION distance (self, patch) RESULT (out)
-  class(patch_t):: self, patch
+FUNCTION distance (self, task) RESULT (out)
+  class(patch_t):: self
+  class(task_t), pointer:: task
+  class(patch_t), pointer:: patch
   real(8):: out(3)
   !.............................................................................
+  select type (task)
+  class is (patch_t)
+  patch => task
+  end select
   out = self%position-patch%position
   out = modulo(out+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box
 END FUNCTION distance
+
 !> =============================================================================
 !> Check if there is overlap, using the full size (including guard zones), since
 !> the guard zones may be used in interpolations for qualified time slices. The
@@ -646,13 +661,16 @@ END FUNCTION distance
 !> =============================================================================
 FUNCTION overlaps (self, task)
   class(patch_t):: self
-  class(task_t):: task
+  class(task_t), pointer:: task
+  class(patch_t), pointer:: patch
   logical:: overlaps
   !.............................................................................
   select type (task)
   class is (patch_t)
-  overlaps = all(abs(distance(self,task)) <= 0.5000000001_8*(self%gsize+task%gsize))
+  patch => task
   end select
+  ! FIXME
+  !overlaps = all(abs(distance(self,patch)) <= 0.5000000001_8*(self%gsize+patch%gsize))
 END FUNCTION overlaps
 
 !> =============================================================================

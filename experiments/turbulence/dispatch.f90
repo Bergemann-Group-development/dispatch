@@ -3,8 +3,8 @@ PROGRAM dispatch
 !> $Id$
 !> Setup a single patch with a density tophat and call the Poisson solver
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-  USE patch_list_mod
-  type (patch_list_t):: task_list
+  USE task_list_mod
+  type (task_list_t):: task_list
   real:: position(3)=0.0, size(3)=1.0
   !.............................................................................
   call task_list%init ('patch list')    ! Initialize the patch list and patches

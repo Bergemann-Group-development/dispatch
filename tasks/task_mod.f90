@@ -16,9 +16,10 @@ MODULE task_mod
     integer:: status = 0
     integer:: rank = 0
     integer:: n_check = 0
-    integer:: nbors = 0
+    integer:: n_nbors = 0
     integer:: istep = 0
     integer:: iout = 0
+    integer:: level
     real(8):: time = 0d0
     real(8):: end_time = 1d0
     real(8):: out_next = 0d0
@@ -32,7 +33,12 @@ MODULE task_mod
   contains
     procedure:: init
     procedure:: update
+    procedure:: output
     procedure:: ahead_of
+    procedure:: distance
+    procedure:: overlaps
+    procedure:: download
+    procedure:: download_to
     procedure:: set
     procedure:: clear
     procedure:: print
@@ -80,12 +86,68 @@ END SUBROUTINE
 
 !> =============================================================================
 !> =============================================================================
+SUBROUTINE output (self, experiment_name)
+  class (task_t):: self
+  character(len=32):: experiment_name
+  !.............................................................................
+  call trace_begin ('task_t%output')
+  call trace_end
+END SUBROUTINE
+
+!> =============================================================================
+!> =============================================================================
 LOGICAL FUNCTION ahead_of (self, task)
   class (task_t):: self, task
   !.............................................................................
   ahead_of = self%time > task%time + task%grace
 !  print*,'ahead_of: ', self%time, task%time, task%grace, ahead_of
 END FUNCTION
+
+!> =============================================================================
+!> =============================================================================
+FUNCTION distance (self, task)
+  class(task_t):: self
+  class(task_t):: task
+  real(8):: distance(3)
+  !.............................................................................
+  call trace_begin('task_t%overlaps')
+  distance = 1e10
+  call trace_end
+END FUNCTION
+
+!> =============================================================================
+!> =============================================================================
+FUNCTION overlaps (self, task)
+  class(task_t):: self
+  class(task_t):: task
+  logical:: overlaps
+  !.............................................................................
+  call trace_begin('task_t%overlaps')
+  overlaps = .true.
+  call trace_end
+END FUNCTION
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE download (self, all_cells)
+  class (task_t):: self
+  logical, optional:: all_cells
+  !.............................................................................
+  call trace_begin ('task_t%download')
+  call trace_end
+END SUBROUTINE
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE download_to (self, task, special, all_cells)
+  class (task_t):: self
+  class (task_t):: task
+  integer:: special
+  logical, optional:: all_cells
+  !.............................................................................
+  call trace_begin ('task_t%download_to')
+  call trace_end
+END SUBROUTINE
 
 !> =============================================================================
 !> =============================================================================
