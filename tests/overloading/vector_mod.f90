@@ -22,7 +22,7 @@ MODULE vector_mod
     procedure:: tempdealloc => tempdealloc_vector
   end type
   interface assignment(=)
-    module procedure vector_assign_array, vector_assign_real, vector_assign_int, &
+    module procedure vector_assign_real, vector_assign_int, &
                      vector_assign_vector, vector_assign_scalar, vector_assign_real_3
   end interface
   interface operator(*)
@@ -203,14 +203,6 @@ SUBROUTINE vector_assign_vector (out, in)
   out%y = in%y
   out%z = in%z
 END SUBROUTINE vector_assign_vector
-!> =============================================================================
-SUBROUTINE vector_assign_array (out, in)
-  type(vector_t), intent(inout):: out
-  real, dimension(:,:,:,:), intent(in), pointer:: in
-  out%x = in(:,:,:,1)
-  out%y = in(:,:,:,2)
-  out%z = in(:,:,:,3)
-END SUBROUTINE vector_assign_array
 !> =============================================================================
 SUBROUTINE vector_assign_scalar (out, in)
   type(vector_t), intent(inout):: out

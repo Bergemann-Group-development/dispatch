@@ -3,5 +3,5 @@
  do_trace=f
 /
 &test_params
- n=30
+ n=20
 /

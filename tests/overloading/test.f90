@@ -152,6 +152,10 @@ PROGRAM test
     call pde (d, dddt, s, dsdt, p, dpdt)
   end do
   call toc("hd",10*n**3)
+  do i=1,10
+    call pde (d, dddt, s, dsdt, p, dpdt, B, dBdt)
+  end do
+  call toc("mhd",10*n**3)
   end block
   !-----------------------------------------------------------------------------
   !call scalar_cleanup
