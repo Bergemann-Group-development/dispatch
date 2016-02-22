@@ -12,35 +12,40 @@
  LEVELMAX        =          10
  /
  &TEST_PARAMS
- N       =         200
+ N       =          30
  /
-         200         200         200
+          30          30          30
            2           2           2
    1.00000000000000        1.00000000000000        1.00000000000000     
   0.000000000000000E+000  0.000000000000000E+000  0.000000000000000E+000
-             init:           0.889E-04 sec           0.111E-01 ns/upd,  8.00E+06 updates
-         allocate:           0.107E-02 sec           0.133     ns/upd,  8.00E+06 updates
-              set:           0.657E-01 sec            8.22     ns/upd,  8.00E+06 updates
-           cross1:           0.158     sec            19.7     ns/upd,  8.00E+06 updates
-             copy:           0.108     sec            13.5     ns/upd,  8.00E+06 updates
-           cross2:           0.120     sec            15.1     ns/upd,  8.00E+06 updates
-           cross1:           0.116     sec            14.5     ns/upd,  8.00E+06 updates
-           crossf:           0.916E-01 sec            11.4     ns/upd,  8.00E+06 updates
+             init:           0.620E-04 sec            2.30     ns/upd,  2.70E+04 updates
+         allocate:           0.100E-04 sec           0.371     ns/upd,  2.70E+04 updates
+              set:           0.334E-03 sec            12.4     ns/upd,  2.70E+04 updates
+           cross1:           0.338E-03 sec            12.5     ns/upd,  2.70E+04 updates
+             copy:           0.265E-03 sec            9.82     ns/upd,  2.70E+04 updates
+           cross2:           0.168E-03 sec            6.23     ns/upd,  2.70E+04 updates
+           cross1:           0.158E-03 sec            5.85     ns/upd,  2.70E+04 updates
+           crossf:           0.102E-03 sec            3.78     ns/upd,  2.70E+04 updates
   0.0000000E+00  0.0000000E+00
-            cross:           0.104     sec            13.0     ns/upd,  8.00E+06 updates
+            cross:           0.101E-03 sec            3.74     ns/upd,  2.70E+04 updates
   0.0000000E+00  0.0000000E+00
-           crossf:           0.964E-01 sec            12.0     ns/upd,  8.00E+06 updates
+           crossf:           0.970E-04 sec            3.59     ns/upd,  2.70E+04 updates
   0.0000000E+00  0.0000000E+00
- mk1 T  v2         200         200         200           1           1
+ mk1 T  v2          30          30          30           1           1
            1
-             curl:           0.205     sec            25.6     ns/upd,  8.00E+06 updates
- mk2 T  v2         200         200         200           1           1
+             curl:           0.577E-03 sec            21.4     ns/upd,  2.70E+04 updates
+ mk2 T  v2          30          30          30           1           1
            1
- mk3 T  v2         200         200         200           1           1
+ mk3 T            30          30          30           1           1           1
+ mk3 T            30          30          30           1           1           1
+ mk3 T  s1          30          30          30           1           1
            1
- mk3 T  v3         200         200         200           1           1
-           1
- mk3 T  s1         200         200         200           1           1
-           1
-              div:           0.951E-01 sec            11.9     ns/upd,  8.00E+06 updates
-             grad:           0.926E-01 sec            11.6     ns/upd,  8.00E+06 updates
+              div:           0.249E-03 sec            9.22     ns/upd,  2.70E+04 updates
+             grad:           0.227E-03 sec            8.41     ns/upd,  2.70E+04 updates
+             down:           0.211E-03 sec            7.81     ns/upd,  2.70E+04 updates
+              exp:           0.782E-03 sec            29.0     ns/upd,  2.70E+04 updates
+              log:           0.904E-03 sec            33.5     ns/upd,  2.70E+04 updates
+             edge:           0.290E-03 sec            10.7     ns/upd,  2.70E+04 updates
+              mhd:           0.123     sec            457.     ns/upd,  2.70E+05 updates
+               hd:           0.694E-01 sec            257.     ns/upd,  2.70E+05 updates
+              mhd:           0.879E-01 sec            326.     ns/upd,  2.70E+05 updates
