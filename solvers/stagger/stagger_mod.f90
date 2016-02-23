@@ -248,7 +248,11 @@ FUNCTION ddzdn (a) RESULT (b)
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  call b%tempalloc (a,'ddydn')
+  print*,'b',b%id,b%temporary,b%allocated,associated(b%f)
+  call b%tempalloc (a,'ddzdn')
+  print*,'b',b%id,b%temporary,b%allocated,associated(b%f)
+  print*,'l',a%l,a%id,a%n
+  print*,'u',a%u
   if (a%n(3) > 1) then
     c = 1./a%ds(3)
     b%f(:,:,a%l(3)) = 0.0
@@ -383,6 +387,8 @@ FUNCTION ddzup (a) RESULT (b)
   real    :: c
 !...............................................................................
   call b%tempalloc (a,'ddzup')
+  print*,'l',a%l,a%id,a%n
+  print*,'u',a%u
   if (a%n(3) > 1) then
     c = 1./a%ds(3)
     do iz=a%l(3),a%u(3)-1

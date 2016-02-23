@@ -1,6 +1,6 @@
 &io_params
- do_trace=f
- verbose=-1
+ do_trace=t
+ verbose=0
 /
 &box_params
  size=1,1,1
@@ -10,6 +10,7 @@
 &experiment_params
 /
 &patch_params
+ nt=5
  n=20,20,20
  courant=0.2
 !dt_fixed=5e-4

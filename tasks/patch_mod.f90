@@ -32,6 +32,7 @@ MODULE patch_mod
     real:: dt_fixed, u_fixed, u_max
     logical:: mem_allocated=.false.
   contains
+    procedure:: check_error
     procedure:: init
     procedure:: update
     procedure:: output
@@ -66,6 +67,36 @@ MODULE patch_mod
   end type
   integer:: id=0
 CONTAINS
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE check_error (self,label,error)
+  class(patch_t):: self
+  character(len=*), optional:: label
+  integer, optional:: error(5)
+  integer:: loc(5), it
+  !-----------------------------------------------------------------------------
+  if (present(label)) print*,label
+  do it=1,self%nt
+    print*,it,self%mem(6,16,23:24,5,it,1:2)
+  end do
+  if (any(self%mem(3:22,3:22,3:22,:,:,2) /= 0.0)) then
+    if (present(label)) print*,label
+    loc = maxloc(abs(self%mem(3:22,3:22,3:22,:,:,2))) + [2,2,2,0,0]
+    print*,'loc:',loc
+    print*,'it,new:',self%it,self%new
+    print*,self%iit
+    do it=1,self%nt
+      print'(i4,1p,8e15.3)', it,self%mem(loc(1),loc(2),loc(3),1:8,it,2)
+    end do
+    if (present(error)) then
+      error=loc
+      return
+    else
+      stop
+    end if
+  end if
+END SUBROUTINE
 
 !> =============================================================================
 !> Initialize the patch memory and patch dimensions.  For this we need to be told the
@@ -145,6 +176,7 @@ SUBROUTINE init (self)
                        self%nv,self%nt,2))
     self%mem_allocated = .true.                 ! mark
   end if
+  print*,'shape',shape(self%mem)
   self%t = 0.0                                  ! initial time
   self%iit = 1                                  ! initial memory slots
   self%iit(nt) = 2                              ! first output slot
@@ -193,13 +225,16 @@ SUBROUTINE update (self)
       minval(self%mem(:,:,:,1,self%new,1)), &
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
-  print '(i8,f10.6,f9.6,f7.2,2x,1p,2e10.2,2x,2e14.6,i6,2x,7i3,2x,2i3)', self%id, &
+  print '(i8,f10.6,f9.6,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,7i3,2x,2i3)', self%id, &
     self%time, self%dtime, self%courant, &
     minval(self%mem(:,:,:,1,self%it ,2)), &
     maxval(self%mem(:,:,:,1,self%it ,2)), &
+    minval(self%mem(:,:,:,3,self%it ,2)), &
+    maxval(self%mem(:,:,:,3,self%it ,2)), &
     minval(self%mem(:,:,:,1,self%new,1)), &
     maxval(self%mem(:,:,:,1,self%new,1)), &
     self%status, self%iit, self%it, self%new
+  call self%check_error
   !-----------------------------------------------------------------------------
   ! Time slot rotation
   !-----------------------------------------------------------------------------
@@ -287,7 +322,7 @@ associate (source=>self%mem, target=>patch%mem)
       !-------------------------------------------------------------------------
       ! upload_range (p1, p2, li, ui, l1, u1, l2, u2) gives the index ranges in
       ! patches p1 and p2, respectively, corresponding to p2%li and p2%mesh%ui, of a
-      ! region inside p2%li-p2%mesh%ui, which is also inside p1%mesh%lb-p1%mesh%ub. In this 
+      ! region inside p2%li-p2%mesh%ui, which is also inside p1%mesh%lb-p1%mesh%ub. In this
       ! context p1 (patch) is the target patch, and p2 (self) is the source patch.
       !-------------------------------------------------------------------------
       call patch%upload_range (self, l1, u1, l2, u2)
@@ -613,7 +648,7 @@ FUNCTION index (self, other, oindex, f)
   pos = other%position + (oindex-other%offset)*other%ds         ! position in other
   pos = pos-self%position                                       ! relative
   pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
-  f = self%offset + pos/self%ds                                 ! floating integer 
+  f = self%offset + pos/self%ds                                 ! floating integer
   index = f                                                     ! smaller integer
   f = f - index                                                 ! remainder
 END FUNCTION index
@@ -629,7 +664,7 @@ FUNCTION nearest (self, other, index) RESULT (out)
   pos = other%position + (index-other%offset)*other%ds          ! position in other
   pos = pos-self%position                                       ! relative
   pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
-  f = self%offset + pos/self%ds                                 ! floating integer 
+  f = self%offset + pos/self%ds                                 ! floating integer
   out = nint(f)                                                 ! nearest integer
 END FUNCTION nearest
 !> =============================================================================
@@ -643,7 +678,7 @@ FUNCTION lowest (self, other, index) RESULT (out)
   pos = other%position + (index-other%offset-0.49)*other%ds     ! position in other
   pos = pos-self%position                                       ! relative
   pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
-  f = self%offset + pos/self%ds                                 ! floating integer 
+  f = self%offset + pos/self%ds                                 ! floating integer
   out = nint(f)                                                 ! lowest integer
 END FUNCTION lowest
 !> =============================================================================
@@ -657,7 +692,7 @@ FUNCTION highest (self, other, index) RESULT (out)
   pos = other%position + (index-other%offset+0.49)*other%ds     ! position in other
   pos = pos-self%position                                       ! relative
   pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
-  f = self%offset + pos/self%ds                                 ! floating integer 
+  f = self%offset + pos/self%ds                                 ! floating integer
   out = nint(f)                                                 ! highest integer
 END FUNCTION highest
 

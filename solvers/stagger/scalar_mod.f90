@@ -15,7 +15,7 @@ MODULE scalar_mod
   integer, private, save:: id=0
   !
   type, public:: scalar_t
-    real, dimension(:,:,:), pointer:: f=>null()
+    real, dimension(:,:,:), pointer:: f
     logical:: allocated=.false., temporary=.false.
     integer:: n(3), l(3), u(3)
     integer:: id
@@ -118,6 +118,9 @@ SUBROUTINE scalar_map (self, p, dims, ds)
   integer:: dims(3)
   real:: ds(3)
   !.............................................................................
+  !$omp atomic
+  id = id+1
+  self%id = id
   self%l = 1
   self%u = dims
   self%n = dims
@@ -144,7 +147,7 @@ END SUBROUTINE deallocate_scalars
 SUBROUTINE scalar_scalar_assign (out, in)
   type(scalar_t), intent(inout):: out
   type(scalar_t), intent(in):: in
-  if (verbose>0) print*,'assign', out%id,trim(out%name),out%allocated, in%id,trim(in%name),in%allocated,associated(in%f)
+  if (verbose>0) print*,'assign', out%id,trim(out%name),out%allocated, in%id,trim(in%name),in%allocated !associated(in%f)
   call out%tempalloc (in,'scalar =')
   out%ds = in%ds
   out%n  = in%n
@@ -430,7 +433,7 @@ SUBROUTINE tempdealloc (self, label)
   !.............................................................................
   !if (verbose>0) print*, 'scalar tempdealloc', self%id, self%temporary, self%allocated
   if (.not.self%temporary.or.self%allocated) return
-  if (.not.associated(self%f)) return
+  !if (.not.associated(self%f)) return
   !$omp atomic
   nalloc = nalloc-1
   if (present(label)) then
@@ -439,7 +442,7 @@ SUBROUTINE tempdealloc (self, label)
   else
     if (verbose>0) print 1, 'dealloc: '//trim(self%name), self%id, nalloc
   end if
-  deallocate (self%f)
+  !deallocate (self%f)
   self%id = -self%id
   self%temporary = .false.
 END SUBROUTINE tempdealloc
