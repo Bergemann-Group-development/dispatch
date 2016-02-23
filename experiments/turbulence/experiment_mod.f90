@@ -30,8 +30,8 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   real, save:: B0(3)=[0.0,0.0,1.0], d0=1.0
   integer:: n(3)
-  real, dimension(:,:,:),   pointer:: s
-  real, dimension(:,:,:,:), pointer:: v
+  real, dimension(:,:,:),   pointer:: d, s
+  real, dimension(:,:,:,:), pointer:: p, B
   namelist /experiment_params/ d0, B0
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
@@ -54,14 +54,12 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  s=>self%mem(:,:,:,  1,self%it,1); call self%d%scalar_map (s, n, self%ds)
-  s=>self%mem(:,:,:,  2,self%it,1); call self%s%scalar_map (s, n, self%ds)
-  v=>self%mem(:,:,:,3:5,self%it,1); call self%p%vector_map (v, n, self%ds)
-  v=>self%mem(:,:,:,6:8,self%it,1); call self%B%vector_map (v, n, self%ds)
-  self%d = self%d0
-  self%s = 0.0
-  self%p = 0.0
-  self%B = self%B0
+  self%mem(:,:,:,  1,1,1) = d0
+  self%mem(:,:,:,  2,1,1) = 0.0
+  self%mem(:,:,:,3:5,1,1) = 0.0
+  self%mem(:,:,:,  6,1,1) = B0(1)
+  self%mem(:,:,:,  7,1,1) = B0(2)
+  self%mem(:,:,:,  8,1,1) = B0(3)
 END SUBROUTINE init
 
 !> =============================================================================

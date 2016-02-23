@@ -61,6 +61,9 @@ MODULE stagger_mod
   interface div
     module procedure scalar_div_vector
   end interface
+  interface minusdiv
+    module procedure scalar_minusdiv_vector
+  end interface
   interface curl
     module procedure vector_curl_vector
   end interface
@@ -515,15 +518,15 @@ FUNCTION scalar_div_vector (ds, in) RESULT (out)
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
   real:: ds(3)
   !-----------------------------------------------------------------------------
-  print*,ds,shape(in),shape(out)
-  out = ddxup(ds, in(:,:,:,1))
-  print*,'x'
-  out = ddyup(ds, in(:,:,:,2))
-  print*,'y'
-  out = ddzup(ds, in(:,:,:,3))
-  print*,'z'
-  !out = ddxup(ds, in(:,:,:,1)) + ddyup(ds, in(:,:,:,2)) + ddzup(ds, in(:,:,:,3))
-  print*,'d'
+  out = ddxup(ds, in(:,:,:,1)) + ddyup(ds, in(:,:,:,2)) + ddzup(ds, in(:,:,:,3))
+END FUNCTION
+!> =============================================================================
+FUNCTION scalar_minusdiv_vector (ds, in) RESULT (out)
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3)):: out
+  real:: ds(3)
+  !-----------------------------------------------------------------------------
+  out = - ddxup(ds, in(:,:,:,1)) - ddyup(ds, in(:,:,:,2)) - ddzup(ds, in(:,:,:,3))
 END FUNCTION
 !> =============================================================================
 FUNCTION vector_curl_vector (ds, in) RESULT (out)

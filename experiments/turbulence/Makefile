@@ -1,12 +1,13 @@
 
 # Option groups
 #OPTS = debug
-OPTS = full_debug
+#OPTS = full_debug
 #OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
-SOLVERS         = stagger
+#SOLVER         = stagger
+SOLVER         = stagger2
 MESH            = staggered
 EXEC            = dispatch.x
 TOP             = ../..

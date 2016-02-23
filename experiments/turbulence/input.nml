@@ -1,5 +1,5 @@
 &io_params
- do_trace=t
+ do_trace=f
  verbose=0
 /
 &box_params

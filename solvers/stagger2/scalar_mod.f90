@@ -46,7 +46,6 @@ SUBROUTINE allocate_scalars (n, v1, v2, v3, v4, v5, v6, v7, v8, v9)
   real, dimension(:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9
   !.............................................................................
   call trace_begin('allocate_scalars')
-  print*,n
   if (present(v1)) allocate(v1(n(1),n(2),n(3)))
   if (present(v2)) allocate(v2(n(1),n(2),n(3)))
   if (present(v3)) allocate(v3(n(1),n(2),n(3)))

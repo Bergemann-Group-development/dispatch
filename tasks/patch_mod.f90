@@ -76,6 +76,7 @@ SUBROUTINE check_error (self,label,error)
   integer, optional:: error(5)
   integer:: loc(5), it
   !-----------------------------------------------------------------------------
+  if (io%verbose<1) return
   if (present(label)) print*,label
   do it=1,self%nt
     print*,it,self%mem(6,16,23:24,5,it,1:2)

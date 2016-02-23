@@ -70,24 +70,17 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%update')
   self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
-  call trace('1')
   self%s => self%mem(:,:,:,  2,self%it,1); self%dsdt => self%mem(:,:,:,  2,self%it,2)
-  call trace('1')
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
-  call trace('1')
   self%B => self%mem(:,:,:,6:8,self%it,1); self%dBdt => self%mem(:,:,:,6:8,self%it,2)
-  call trace('1')
   d=>self%d; dddt=>self%dddt; s=>self%s; dsdt=>self%dsdt;
   p=>self%p; dpdt=>self%dpdt; B=>self%B; dBdt=>self%dBdt
-  print*,shape(d),shape(self%d)
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
-  call trace('2')
   call allocate_vectors (self%gn, U, E, fx, fy, fz, fd, ld, dd)
   call allocate_scalars (self%gn, lnd, pg, pa, du, ss, cs, pp, pb)
-  print*,'lnd',associated(lnd),shape(lnd), shape(self%mem), shape(self%d)
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3);
   Ex=>E(:,:,:,1); Ey=>E(:,:,:,2); Ez=>E(:,:,:,3);
   fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2); fxz=>fx(:,:,:,3)
@@ -101,29 +94,15 @@ SUBROUTINE update (self)
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below
   !-----------------------------------------------------------------------------
-  print*,associated(d), shape(d)
   d = 1.0
-  print*,associated(d), shape(d)
-  print*,associated(lnd), shape(lnd)
   lnd = 1.0
-  print*,associated(lnd), shape(lnd)
-  block
-  integer iz
-  do iz=1,self%gn(3)
-    lnd(:,:,iz) = log(d(:,:,iz))
-  end do
-  print*,'mk1'
-  end block
-  !lnd = log(d)
+  lnd = log(d)
   ld = down(lnd)
-  print*,'mk2'
   dd = exp(ld)
-  print*,'mk3'
   U = p/dd
   !-----------------------------------------------------------------------------
   ! Gas pressure
   !-----------------------------------------------------------------------------
-  call trace('3')
   pg = self%gas_pressure()
   cs = sqrt(self%gamma*pg/d)                            ! sound speed
   !-----------------------------------------------------------------------------
@@ -136,17 +115,12 @@ SUBROUTINE update (self)
   du = dx*max(du,1e-20)                                 ! dimension: U
   pa = self%nu(3)*d*du**2                               ! dimension: pressure
   du = (self%nu(1)*cs + self%nu(2)*du)*dx               ! dimension: U*ds
-  call trace('4')
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
   fd = -(self%nu(5)*dd*down(du))*ddown(ds,lnd)             ! diffusive mass flux
-  call trace('6')
   fx = p+fd                                             ! mass flux
-  print*,ds
   dddt = div(ds,fx)                                ! density derivative
-  print*,'mk'
-  call trace('7')
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
@@ -159,7 +133,6 @@ SUBROUTINE update (self)
     fx = fx*down(ss) - (self%nu(6)*dd*down(du))*ddown(ds,ss)
     dsdt = -div(ds,fx)
   end if
-  call trace('5')
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   !-----------------------------------------------------------------------------
@@ -248,7 +221,6 @@ FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
-  print*,'gamma',self%gamma
   if (self%gamma==1.0) then
     pg = self%d
   else
