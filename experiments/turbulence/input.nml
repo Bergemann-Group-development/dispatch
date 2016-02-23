@@ -15,10 +15,17 @@
  courant=0.2
 !dt_fixed=5e-4
  end_time=0.2
- out_time=0.05
+ out_time=0.02
+ print_time=0.0
 /
 &mhd_params
+ nu=  0.05,  0.5, 2.0, 1.0,  0.1,  1.0
+ !     cs    du   pa   ofd   mas   eta
 /
 &timestep_params
  time_order=2
+/
+&force_params
+ k=1,2,2
+ ampl=5
 /

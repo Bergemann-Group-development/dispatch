@@ -60,6 +60,9 @@ SUBROUTINE init (self)
   self%mem(:,:,:,  6,1,1) = B0(1)
   self%mem(:,:,:,  7,1,1) = B0(2)
   self%mem(:,:,:,  8,1,1) = B0(3)
+  call self%force%init
+  !
+  call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -70,7 +73,9 @@ SUBROUTINE update (self)
   call trace_begin('experiment_t%update')
   call self%mhd_t%update
   call self%check_error('mhd_t%update')
-  !self%dpdt = self%dpdt + self%force%selected (self%time, self%mesh)
+  call trace('before force')
+  self%dpdt = self%dpdt + self%force%selected (self%time, self%mesh)
+  call trace('after force')
   call self%courant_condition
   call self%check_error('courant')
   call timestep%update (self%id, self%iit, self%dt, self%mem)

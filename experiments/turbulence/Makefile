@@ -7,7 +7,7 @@
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER         = stagger
-SOLVER         = stagger2
+SOLVER          = stagger2
 MESH            = staggered
 EXEC            = dispatch.x
 TOP             = ../..

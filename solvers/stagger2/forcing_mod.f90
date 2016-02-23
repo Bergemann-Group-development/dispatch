@@ -18,6 +18,8 @@ MODULE forcing_mod
     real:: t_turn, t_save=0.0
     real:: ampl(3), k(3)
     procedure(single_solenoidal), pointer:: selected=>null()
+  contains
+    procedure init
   end type
  logical, save:: first_time=.true.
 CONTAINS
@@ -27,24 +29,26 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
    class(force_t):: self
-   real:: t_turn=0.3, ampl(3)=0.0, k(3)=1.0
+   integer:: gn(3)
+   real, save:: t_turn=0.3, ampl(3)=0.1, k(3)=1.0
    namelist /force_params/ k, ampl, t_turn
    !----------------------------------------------------------------------------
-   !$omp critical (experiment_cr)
+   call trace_begin('force_t%init')
    if (first_time) then
-     first_time = .false.
-     rewind (io%input)
-     k      = self%k
-     ampl   = self%ampl
-     t_turn = self%t_turn
-     read (io%input, force_params)
-     if (io%master) write (*, force_params)
-     self%t_turn = t_turn
-     self%ampl   = ampl
-     self%k      = k
-     self%selected => single_solenoidal 
+    !$omp critical (experiment_cr)
+     if (first_time) then
+       first_time = .false.
+       rewind (io%input)
+       read (io%input, force_params)
+       if (io%master) write (*, force_params)
+     end if
+    !$omp end critical (experiment_cr)
    end if
-   !$omp end critical (experiment_cr)
+   self%t_turn = t_turn
+   self%ampl   = ampl
+   self%k      = k
+   self%selected => single_solenoidal
+   call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -53,17 +57,20 @@ END SUBROUTINE init
 FUNCTION single_solenoidal (self, time, m) RESULT (ff)
   class(force_t)        :: self
   real(8)               :: time
-  real, dimension(self%gn(1),self%gn(2),self%gn(3),3) :: ff
   type(mesh_t)          :: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
   real                  :: kx, ky, kz
   !-----------------------------------------------------------------------------
+  call trace_begin('force_t:single_solenoidal')
+  if (first_time) call self%init
   if (time >= self%t_save) then
     self%a = self%ampl*random%ran3()
     self%phi = pi2*random%ran3()
     self%t_save = self%t_save + self%t_turn
+    print *,'forcing', self%a, self%phi
   end if
 
   do iz=m(3)%lb,m(3)%ub
@@ -78,6 +85,7 @@ FUNCTION single_solenoidal (self, time, m) RESULT (ff)
       end do
     end do
   end do
+  call trace_end
 END FUNCTION single_solenoidal
 
 END MODULE
