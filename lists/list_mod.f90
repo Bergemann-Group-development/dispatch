@@ -45,8 +45,9 @@ MODULE list_mod
     procedure:: remove_link
     procedure:: remove_head
     procedure:: queue_by_time
-    procedure:: print
+    procedure:: print => print_list
   end type
+  public task2patch
 CONTAINS
 
 !> =============================================================================
@@ -303,8 +304,21 @@ SUBROUTINE insert (self, old, new)
 END SUBROUTINE insert
 
 !> =============================================================================
-!> Run through neighbor list and pick up guard cells, after which the whole 
-!> task is valid for download into other taskes guard cells
+FUNCTION task2patch (task) RESULT (patch)
+  class(task_t), pointer:: task
+  class(patch_t), pointer:: patch
+  select type (task)
+  class is (patch_t)
+  patch => task
+  class default
+  nullify(patch)
+  stop
+  end select
+END FUNCTION
+
+!> =============================================================================
+!> Run through neighbor list and pick up guard cells, after which the whole
+!> task is valid for download into other patches guard cells
 !> =============================================================================
 SUBROUTINE download (self, all_cells)
   implicit none
@@ -317,22 +331,12 @@ SUBROUTINE download (self, all_cells)
   real:: dmin
   !.............................................................................
   call trace_begin('link_t%download')
-  nbor => self%nbor
-  task => self%task
-  !
-  select type (task)
-  class is (patch_t)
-  patch => task
-  end select
-  !
+  patch => task2patch(self%task)
   nguard=0
+  nbor => self%nbor
   do while (associated (nbor))
     task => nbor%task
-    select type (task)
-    class is (patch_t)
-    nbor_patch => task
-    end select
-    !
+    nbor_patch => task2patch(task)
     if (abs(patch%level-nbor_patch%level) < 2) then
       if (nbor_patch%level == patch%level+1) special = 6
       call nbor_patch%download_to (task, special, all_cells)
@@ -354,13 +358,17 @@ END SUBROUTINE download
 SUBROUTINE make_new_nbors (self, selfp, parent)
   class(link_t):: self
   class(link_t), pointer:: selfp, parent, nbor
+  class(task_t), pointer:: t1, t2
+  class(patch_t), pointer:: p1, p2
   !> ...........................................................................
   call trace_begin('task_list_t%make_new_nbors', 1)
+  p1 => task2patch(self%task)
   call self%make_new_nbor (selfp, parent)         ! make me a neighbor of my parent
   nbor => parent%nbor                             ! start on parent's nbors chain
   do while (associated(nbor))
+    p2 => task2patch(nbor%task)
     if (.not.associated(self%task,nbor%task) &
-      .and. self%task%overlaps (nbor%task)) &   ! if my task overlaps with that task
+      .and. p1%overlaps(p2)) &   ! if my task overlaps with that task
       call self%make_new_nbor (selfp, nbor%nbor)  ! make a neighbor (and make me one)
     nbor => nbor%next                             ! continue on parents nbors chain
   end do
@@ -460,7 +468,7 @@ END SUBROUTINE print_nbors
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE print (self, label)
+SUBROUTINE print_list (self, label)
   class(list_t):: self
   character(len=*), optional:: label
   type(link_t), pointer:: link, prev
@@ -493,6 +501,6 @@ SUBROUTINE print (self, label)
     link => link%next
   end do
   call trace_end
-END SUBROUTINE print
+END SUBROUTINE print_list
 
 END MODULE list_mod

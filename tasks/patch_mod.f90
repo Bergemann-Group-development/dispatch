@@ -587,8 +587,7 @@ SUBROUTINE dnload_range (p1, p2, l1, u1)
   l1 = p1%mesh%lb
   u1 = p1%mesh%ub
   if (p2%id>1) then
-    ! FIXME
-    !dist = p2%distance (p1)     ! positive if p2 (source) to the right of p1 (target)
+    dist = p2%distance (p1)     ! positive if p2 (source) to the right of p1 (target)
     where (dist >=0)
       l1 = max(l1,p1%nearest(p2,p2%mesh%lb))
       u1 = p1%mesh%ub
@@ -683,16 +682,11 @@ END SUBROUTINE courant_condition
 !> =============================================================================
 !> Signed distance between the centers of two patches in the periodic box
 !> =============================================================================
-FUNCTION distance (self, task) RESULT (out)
+FUNCTION distance (self, patch) RESULT (out)
   class(patch_t):: self
-  class(task_t), pointer:: task
-  class(patch_t), pointer:: patch
+  class(patch_t):: patch
   real(8):: out(3)
   !.............................................................................
-  select type (task)
-  class is (patch_t)
-  patch => task
-  end select
   out = self%position-patch%position
   out = modulo(out+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box
 END FUNCTION distance
@@ -703,18 +697,12 @@ END FUNCTION distance
 !> definition of overlap also MUST be symmetric, since it is being used to define
 !> neighbor relations.
 !> =============================================================================
-FUNCTION overlaps (self, task)
+FUNCTION overlaps (self, patch)
   class(patch_t):: self
-  class(task_t), pointer:: task
-  class(patch_t), pointer:: patch
+  class(patch_t):: patch
   logical:: overlaps
   !.............................................................................
-  select type (task)
-  class is (patch_t)
-  patch => task
-  end select
-  ! FIXME
-  overlaps = all(abs(distance(self,task)) <= 0.5000000001_8*(self%gsize+patch%gsize))
+  overlaps = all(abs(distance(self,patch)) <= 0.5000000001_8*(self%gsize+patch%gsize))
 END FUNCTION overlaps
 
 !> =============================================================================

@@ -593,13 +593,16 @@ END SUBROUTINE split
 SUBROUTINE make_new_nbors (self, selfp, parent)
   class(link_t):: self
   class(link_t), pointer:: selfp, parent, nbor
+  class(patch_t), pointer:: p1, p2
   !> ...........................................................................
   call trace_begin('task_list_t%make_new_nbors', 1)
+  p1 => task2patch (self%task)
   call self%make_new_nbor (selfp, parent)       ! make me a neighbor of my parent
   nbor => parent%nbor                           ! start on parent's nbors chain
   do while (associated(nbor))
+    p2 => task2patch (nbor%task)
     if (.not.associated(self%task,nbor%task) &
-      .and. self%task%overlaps (nbor%task)) &   ! if my task overlaps with that task
+      .and. p1%overlaps (p2)) &   ! if my task overlaps with that task
       call self%make_new_nbor (selfp, nbor%nbor)! make a neighbor (and make me one)
     nbor => nbor%next                           ! continue on parents nbors chain
   end do
@@ -687,6 +690,7 @@ SUBROUTINE search_nbors_by_overlap (self, start)
   class(link_t), target:: self
   class(link_t), pointer:: link1, link2, start, prev
   type(link_t), pointer:: nbor
+  class(patch_t), pointer:: p1, p2
   !> ===========================================================================
   !> For each task link, make a list of neighbors, starting with link%nbor
   !> ===========================================================================
@@ -698,12 +702,14 @@ SUBROUTINE search_nbors_by_overlap (self, start)
     link2 => start                              ! start searching throuch nbor chain
     do while (associated(link2))
       if (.not.associated(link1%task,link2%task)) then
-        if (io%verbose>3) &
-          print'(2(i5,3(3f8.4,2x)),l3)', &
-            link1%task%id, link1%task%size, link1%task%position, link1%task%distance(link2%task), &
-            link2%task%id, link2%task%size, link2%task%position, link2%task%distance(link1%task), &
-            link1%task%overlaps(link2%task)
-        if (link1%task%overlaps(link2%task)) then
+        !if (io%verbose>3) &
+        !  print'(2(i5,3(3f8.4,2x)),l3)', &
+        !    link1%task%id, link1%task%size, link1%task%position, link1%task%distance(link2%task), &
+        !    link2%task%id, link2%task%size, link2%task%position, link2%task%distance(link1%task), &
+        !    link1%task%overlaps(link2%task)
+        p1 => task2patch(link1%task)
+        p2 => task2patch(link2%task)
+        if (p1%overlaps(p2)) then
           allocate (nbor)                       ! new nbor (has no nbor)
           nbor%nbor => link2                    ! pointer back to link2
           link1%task%n_nbors = link1%task%n_nbors+1
