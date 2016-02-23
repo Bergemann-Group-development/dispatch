@@ -26,6 +26,7 @@ MODULE patch_mod
     !---------------------------------------------------------------------------
     ! HACK below
     !---------------------------------------------------------------------------
+    integer:: li(3), ui(3), gn(3)
     integer:: i,j,k
     real:: box(3), ds(3), gsize(3)
     real(8):: offset(3)
@@ -120,7 +121,15 @@ SUBROUTINE init (self)
   do i=1,3
     call self%mesh(i)%init
   end do
+  !-----------------------------------------------------------------------------
+  ! Hack for backwards compatibility
+  !-----------------------------------------------------------------------------
+  self%gn = self%mesh%gn
+  self%li = self%mesh%li
+  self%ui = self%mesh%ui
   self%offset = (self%mesh%lb+self%mesh%ub)/2.0 ! mid point index offset
+  !-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   self%nt = nt                                  ! number of time slices
   self%level = log(maxval(self%box)/minval(self%ds))/log(real(self%msplit)) + 0.1
   if (io%verbose>3) &
@@ -473,6 +482,7 @@ END SUBROUTINE extrapolate_guards
 SUBROUTINE output (self, experiment_name)
   class(patch_t):: self
   character(len=32) filename, logname, experiment_name
+  optional:: experiment_name
   integer:: iv, li(3)=0, ui(3)=0, l(3), u(3)
   real:: ds(3)
   logical:: first_time=.true.

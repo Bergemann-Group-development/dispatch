@@ -75,6 +75,7 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
+  call io%init
   if (present(name)) self%name = name
   call trace_begin('task_list_t%init ')
   rewind (io%input); read(io%input, task_list_params, iostat=iostat)
@@ -731,7 +732,7 @@ END SUBROUTINE search_nbors_by_overlap
 SUBROUTINE queue_by_time (self, this)
   class(task_list_t):: self
   class(link_t), pointer:: this
-  type(link_t), pointer:: next, prev
+  class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%queue_by_time '//self%name)
   call this%task%set(bits%ready)                       ! mark as checked

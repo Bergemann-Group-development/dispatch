@@ -224,7 +224,7 @@ END SUBROUTINE remove_task
 !> =============================================================================
 SUBROUTINE queue_by_time (self, this)
   class(list_t):: self
-  type(link_t), pointer:: this, next, prev
+  class(link_t), pointer:: this, next, prev
   !.............................................................................
   call trace_begin ('list_t%queue_by_time '//self%name)
   nullify (this%next_time)

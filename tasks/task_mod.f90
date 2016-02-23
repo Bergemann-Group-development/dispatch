@@ -88,7 +88,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE output (self, experiment_name)
   class (task_t):: self
-  character(len=32):: experiment_name
+  character(len=32), optional:: experiment_name
   !.............................................................................
   call trace_begin ('task_t%output')
   call trace_end
