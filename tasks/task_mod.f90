@@ -35,20 +35,27 @@ MODULE task_mod
     procedure:: update
     procedure:: output
     procedure:: ahead_of
-    procedure:: distance
-    procedure:: overlaps
-    procedure:: download
-    procedure:: download_to
     procedure:: set
     procedure:: clear
     procedure:: print
     procedure:: is_set
     procedure:: is_clear
-    procedure:: send_to
     procedure:: allocate => void
     procedure:: deallocate => void
     procedure:: unique_id
     procedure:: load_balance
+  end type
+  !-----------------------------------------------------------------------------
+  ! Time slot info and procedures added in tasks_t
+  !-----------------------------------------------------------------------------
+  type, public, extends(task_t):: tasks_t
+    real(8), dimension(:), pointer:: t
+    real(8), dimension(:), pointer:: dt
+    integer, dimension(:), pointer:: iit
+    integer:: nt
+    integer:: it = 1
+    integer:: new = 2
+    integer:: verbose = 1
   end type
   integer:: id=0
 CONTAINS
@@ -103,63 +110,6 @@ LOGICAL FUNCTION ahead_of (self, task)
 !  print*,'ahead_of: ', self%time, task%time, task%grace, ahead_of
 END FUNCTION
 
-!> =============================================================================
-!> =============================================================================
-FUNCTION distance (self, task)
-  class(task_t):: self
-  class(task_t), pointer:: task
-  real(8):: distance(3)
-  !.............................................................................
-  call trace_begin('task_t%overlaps')
-  distance = 1e10
-  call trace_end
-END FUNCTION
-
-!> =============================================================================
-!> =============================================================================
-FUNCTION overlaps (self, task)
-  class(task_t):: self
-  class(task_t), pointer:: task
-  logical:: overlaps
-  !.............................................................................
-  call trace_begin('task_t%overlaps')
-  overlaps = .true.
-  call trace_end
-END FUNCTION
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE download (self, all_cells)
-  class (task_t):: self
-  logical, optional:: all_cells
-  !.............................................................................
-  call trace_begin ('task_t%download')
-  call trace_end
-END SUBROUTINE
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE download_to (self, task, special, all_cells)
-  class (task_t):: self
-  class (task_t), pointer:: task
-  integer:: special
-  logical, optional:: all_cells
-  !.............................................................................
-  call trace_begin ('task_t%download_to')
-  call trace_end
-END SUBROUTINE
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE send_to (self, task)
-  class(task_t):: self
-  class(task_t), pointer:: task
-  call trace_begin ('tasks_t%send_to')
-  print *, 'tasks_t%send_to', task%rank
-  call trace_end
-END SUBROUTINE send_to
-
-!> =============================================================================
 SUBROUTINE print (self)
   class (task_t):: self
 END SUBROUTINE

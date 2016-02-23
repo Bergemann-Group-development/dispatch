@@ -7,7 +7,6 @@ MODULE patch_mod
   USE trace_mod
   USE mpi_mod
   USE task_mod
-  USE tasks_mod
   USE mesh_mod
   USE io_mod
   implicit none
