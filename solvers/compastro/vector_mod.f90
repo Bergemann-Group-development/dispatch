@@ -71,7 +71,7 @@ END SUBROUTINE
 SUBROUTINE init_vector (self, dims, ds, name)
   class(vector_t):: self
   integer:: dims(3)
-  real:: ds(3)
+  real(8):: ds(3)
   character(len=*):: name
   !.............................................................................
   call trace_begin ('vector_t%init '//trim(self%name), 2)

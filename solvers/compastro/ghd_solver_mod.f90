@@ -60,7 +60,8 @@ MODULE ghd_solver_mod
   USE io_mod
   USE omp_timer_mod
   USE trace_mod
-  USE patches_mod
+  USE task_mod
+  USE patch_mod
   USE scalar_mod
   USE laplace_mod
   USE hd_solver_mod
@@ -131,14 +132,14 @@ END SUBROUTINE init
 !> forces a download from lower levels to higher levels (only) for that mem
 !> slot
 !> =============================================================================
-SUBROUTINE download_to (self, patch, only_down, all_cells)
+SUBROUTINE download_to (self, task, special, all_cells)
   class(ghd_t):: self
-  class(patch_t), pointer:: patch
-  integer:: only_down
-  logical:: all_cells
+  class(task_t), pointer:: task
+  integer:: special
+  logical, optional:: all_cells
   !.............................................................................
-  only_down = 6
-  call self%patch_t%download_to (patch, only_down, all_cells)
+  special = 6
+  call self%task_t%download_to (task, special, all_cells)
 END SUBROUTINE download_to
 
 !> =============================================================================

@@ -6,7 +6,7 @@ MODULE hd_solver_mod
   USE scalar_mod
   USE vector_mod
   USE tensor_mod
-  USE patches_mod
+  USE patch_mod
   USE operators_mod
   implicit none
   private
@@ -17,7 +17,6 @@ MODULE hd_solver_mod
     type(vector_t):: p, dpdt, rho_face
     integer:: i_d=i_d, i_s=i_s, i_px=i_px, i_py=i_py, i_pz=i_pz
     real:: nu(2)
-    real:: gamma
   contains
     procedure:: init
     procedure:: update

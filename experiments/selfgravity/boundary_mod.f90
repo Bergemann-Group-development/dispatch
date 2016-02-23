@@ -5,7 +5,7 @@
 !> =============================================================================
 MODULE boundary_mod
   USE trace_mod
-  USE patches_mod
+  USE patch_mod
   implicit none
   private
   type, public:: boundary_t

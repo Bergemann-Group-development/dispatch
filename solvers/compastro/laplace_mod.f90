@@ -5,7 +5,7 @@ MODULE laplace_mod
   USE mpi_mod
   USE io_mod
   USE trace_mod
-  USE patches_mod
+  USE patch_mod
   USE boundary_mod
   implicit none
   private

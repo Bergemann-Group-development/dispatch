@@ -5,7 +5,7 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
-  USE patches_mod
+  USE patch_mod
   USE scalar_mod
   USE ghd_solver_mod
   USE boundary_mod

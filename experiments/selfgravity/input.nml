@@ -5,6 +5,8 @@
  r_BE=0.48              ! phi(r)=0, rho(r)=constant, ..., for r > r_BE
  amplitude=1.0          ! density contrast
 /
+&patch_params
+/
 &ghd_params
  G=15                   ! strength of gravity
  tolerance=1e-3         ! tolerance on relative error

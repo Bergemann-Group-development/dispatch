@@ -44,7 +44,7 @@ CONTAINS
 SUBROUTINE init_tensor (self, dims, ds, name)
   class(tensor_t):: self
   integer:: dims(3)
-  real:: ds(3)
+  real(8):: ds(3)
   character(len=*):: name
   !.............................................................................
   call trace_begin ('tensor_t%init '//trim(self%name), 2)

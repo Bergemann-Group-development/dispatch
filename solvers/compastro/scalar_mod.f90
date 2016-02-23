@@ -60,7 +60,7 @@ CONTAINS
 SUBROUTINE init_scalar (self, dims, ds, name)
   class(scalar_t):: self
   integer:: dims(3)
-  real:: ds(3)
+  real(8):: ds(3)
   character(len=*):: name
   !.............................................................................
   call trace_begin ('scalar_t%init '//trim(self%name), 2)
