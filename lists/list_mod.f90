@@ -4,6 +4,7 @@
 MODULE list_mod
   USE io_mod
   USE task_mod
+  USE bits_mod
   USE particle_mod
   USE star_mod
   USE pebble_mod
@@ -456,11 +457,21 @@ SUBROUTINE print_nbors (self, label)
   type(link_t) , pointer:: link, nbor
   !.............................................................................
   if (io%verbose < 2) return
-  if (label /= '') print'(a)', label
-  print'(2(a,i5,2x),a,$)', 'task', self%task%id, 'level', self%task%level, 'nbors:'
+  if (present(label)) then
+    if (trim(label) /= '') print'(a)', label
+  end if
+  print'(a,i5,2x,a,f14.8,2x,a,l3,2x,a,i3,2x,a,$)', &
+    'task', self%task%id, 'time', self%task%time, &
+    'ready', self%task%is_set(bits%ready), 'level', self%task%level, 'nbors:'
+  if (io%verbose>4) print*,''
   link => self%nbor
   do while (associated(link))
-    print '(i4,$)', link%task%id
+    if (io%verbose>4) then
+      print '(i7,f14.8,l3)', &
+        link%task%id, link%task%time, link%task%is_set(bits%ready)
+    else
+      print '(i4,l2,$)', link%task%id, link%task%is_set(bits%ready)
+    end if
     link => link%next
   end do
   print*,''

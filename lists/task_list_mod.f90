@@ -55,6 +55,7 @@ MODULE task_list_mod
     procedure:: queue_by_time
     procedure:: output
     procedure:: check_queue
+    procedure:: print_queue
     procedure:: print
   end type
   integer, parameter:: mnbor=100
@@ -128,13 +129,11 @@ SUBROUTINE update (self)
     !end if
     call task%output(self%name)                         ! check output
     call task%update                                    ! update the task
+    call task%clear(bits%ready)                         ! needs new check
     call task%output(self%name)                         ! check output
     call self%check_nbors (head)                        ! any nbor ready?
-    if (task%time+0.5*task%dtime > task%end_time) then  ! finished:
+    if (task%time+0.5*task%dtime > task%end_time) &     ! finished:
       call self%remove_task (task)                      ! remove from self
-    else                                                ! not finished:
-      call task%clear(bits%ready)                       ! needs new check
-    end if
   else
     print*,'ERROR: no self%queue', self%nq, self%n
     call mpi%abort ('ERROR: ready queue empty')
@@ -162,21 +161,28 @@ SUBROUTINE check_nbors (self, link)
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
   integer:: nbors(mnbor), inbor
+  integer:: n_check, n_ready, n_blocked, n_cleared, n_remain
   !.............................................................................
   call trace_begin('task_list_t%check_nbors '//self%name)
   task => link%task                                   ! main task
-  nbor => link%nbor                                   ! first nbor
   inbor = 0
-  self%n_check = 0
-  self%n_ready = 0
-  self%n_behind = 0
+  n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
+  nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
     nbtask => nbor%task                               ! neighbor task
-    inbor = min(inbor+1,mnbor)
+    inbor = min(inbor+1,mnbor)                        ! index to diagnostic array
+    n_check = n_check+1
     if (nbtask%is_clear(bits%ready)) then             ! needs checking?
+      n_blocked = n_blocked+1
       nbors(inbor) = nbtask%id
       call self%check_ready (nbor%link)               ! pointer back
+      if (nbtask%is_set(bits%ready)) then
+        n_cleared = n_cleared+1
+      else
+        n_remain = n_remain+1
+      end if
     else
+      n_ready = n_ready+1
       nbors(inbor) = -nbtask%id
     end if
     nbor => nbor%next                                 ! next nbor
@@ -185,10 +191,11 @@ SUBROUTINE check_nbors (self, link)
     print'(i7,a,i4,2x,26i4)', task%id, ' nbors:', inbor, nbors(1:inbor)
   call self%check_ready (link)                        ! finally check link task
   self%n_nbor = self%n_nbor + 1
-  if (io%verbose>2) print '(9(1x,a,i6,1x))', &
-    'task',task%id,'on level',task%level,'has',link%task%n_nbors,'neighbors, checked', &
-    self%n_check,'nbor-nbors, of which', self%n_ready,'are ready, and',self%n_behind,&
-    'were behind'
+  if (io%verbose>2) print '(a,i6,l3,12(2x,a,i4))', &
+    'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
+    'neighbors:',n_check, 'blocked:',n_blocked, 'ready:', n_ready, &
+    'cleared:',n_cleared, 'remain:', n_remain
+  if (io%verbose>3) call self%print
   call trace_end
 END SUBROUTINE check_nbors
 
@@ -203,7 +210,7 @@ SUBROUTINE check_all (self)
   call trace_begin('task_list_t%check_all '//self%name)
   link => self%head
   do while (associated (link))                        ! keep going until end
-    call self%check_ready (link, 1)             ! link ready?
+    call self%check_ready (link, 1)                   ! link ready?
     link => link%next
   end do
   call trace_end
@@ -863,7 +870,7 @@ END SUBROUTINE check_queue
 !> =============================================================================
 !> Print a table with task id, positions, and all neighbors
 !> =============================================================================
-SUBROUTINE print_lists (self)
+SUBROUTINE print_tasks (self)
   class (task_list_t):: self
   type(link_t) , pointer:: link, nbor
   !.............................................................................
@@ -875,33 +882,24 @@ SUBROUTINE print_lists (self)
     link => link%next
   end do
   print*,''
+END SUBROUTINE print_tasks
+
+!> =============================================================================
+!> Print a table with task id, positions, and all neighbors
+!> =============================================================================
+SUBROUTINE print_queue (self)
+  class (task_list_t):: self
+  type(link_t) , pointer:: link, nbor
+  !.............................................................................
+  if (io%verbose < 2) return
   link => self%queue
   print'(a,i4,":",$)', 'ready_queue', self%nq
   do while (associated(link))
     print '(i4,$)', link%task%id
     link => link%next_time
   end do
-    print*,''
-END SUBROUTINE print_lists
-
-!> =============================================================================
-!> Print a list of nbors
-!> =============================================================================
-SUBROUTINE print_nbors (self, label)
-  class (link_t):: self
-  character(len=*):: label
-  type(link_t) , pointer:: link, nbor
-  !.............................................................................
-  if (io%verbose < 2) return
-  if (label /= '') print'(a)', label
-  print'(2(a,i5,2x),a,$)', 'task', self%task%id, 'level', self%task%level, 'nbors:'
-  link => self%nbor
-  do while (associated(link))
-    print '(i4,$)', link%task%id
-    link => link%next
-  end do
   print*,''
-END SUBROUTINE print_nbors
+END SUBROUTINE print_queue
 
 !> =============================================================================
 !> Print a table with task id and all neighbors
@@ -917,6 +915,7 @@ SUBROUTINE print (self, label)
     call link%print_nbors ('')
     link => link%next
   end do
+  call self%print_queue
 END SUBROUTINE print
 
 END MODULE
