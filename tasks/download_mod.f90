@@ -167,15 +167,14 @@ FUNCTION find_nbor (link, idir, o, time, jt1, jt2, pt, qt) RESULT (other)
   m => patch%mesh
   nt = patch%nt
   nv = patch%nv
-  nbor => link%nbor
-  nullify(other)
   adir = abs(idir)
   position = patch%position + patch%size(abs(idir))*idir/adir
+  nbor => link%nbor
   do while (associated(nbor))
     other => task2patch (nbor%task)
-    dist = point_distance(patch, other%position, position)
-    if (io%verbose>4) &
-      print*,patch%it,nbor%task%id, dist
+    dist = patch%point_distance(other%position, position)
+    !if (io%verbose>4) &
+      print*,'find_nbor:', patch%id, nbor%task%id, dist
     if (dist < patch%size(abs(idir))*0.5) then
       exit
     end if

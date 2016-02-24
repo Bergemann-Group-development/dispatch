@@ -5,13 +5,15 @@ PROGRAM dispatch
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
   USE mpi_mod
-  USE task_list_mod
-  type (task_list_t):: task_list
+  USE cartesian_mod
+  type (cartesian_t):: cartesian
+  type (task_list_t), pointer:: task_list
   real:: position(3)=0.0, size(3)=1.0
   !.............................................................................
   call io%init
   !call mpi%init
-  call task_list%init ('turbulence')    ! Initialize the patch list and patches
+  call cartesian%init('turbulence')     ! Initialize the patch list and patches
+  task_list => cartesian%task_list      ! for now, just short hand -- could assemble
   do while (task_list%n > 0)            ! As long as there are patches in the list
     call task_list%update               ! update the list = update member patches
   end do

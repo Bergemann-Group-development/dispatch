@@ -3,14 +3,10 @@
 !> *****************************************************************************
 MODULE list_mod
   USE io_mod
-  USE task_mod
-  USE bits_mod
-  USE particle_mod
-  USE star_mod
-  USE pebble_mod
-  USE planet_mod
-  USE patch_mod
   USE trace_mod
+  USE bits_mod
+  USE task_mod
+  USE patch_mod
   implicit none
   private
   type, public:: nbor_t
@@ -492,20 +488,20 @@ SUBROUTINE print_list (self, label)
   do while (associated(link))
     task => link%task
     type = ''
-    select type (task)
-    type is (task_t)
-      type = 'task_t'
-    type is (particle_t)
-      type = 'particle_t'
-    type is (planet_t)
-      type = 'planet_t'
-    type is (star_t)
-      type = 'star_t'
-    type is (pebble_t)
-      type = 'pebble_t'
-    class is (patch_t)
+    !select type (task)
+    !type is (task_t)
+    !  type = 'task_t'
+    !type is (particle_t)
+    !  type = 'particle_t'
+    !type is (planet_t)
+    !  type = 'planet_t'
+    !type is (star_t)
+    !  type = 'star_t'
+    !type is (pebble_t)
+    !  type = 'pebble_t'
+    !class is (patch_t)
       type = 'patch_t'
-    end select
+    !end select
     if (io%master) print '(a,i7,f10.6,3x,3f10.6,i4,i6,l5,2x,a)', 'list_t%print:', &
       task%id, task%time, task%position, task%status, task%n_nbors, associated(link%nbor), &
       type
