@@ -33,7 +33,8 @@ SUBROUTINE download_link (link, all_cells)
   if (patch%is_clear(bits%static)) static = .false.
   nbor => link%nbor
   do while (associated(nbor))
-    print*,patch%id,nbor%task%id,nbor%task%is_clear(bits%static),nbor%task%level
+    if (io%verbose>4) &
+      print*,patch%id,nbor%task%id,nbor%task%is_clear(bits%static),nbor%task%level
     if (nbor%task%is_clear(bits%static)) static = .false.
     if (nbor%task%level /= patch%level) same = .false.
     nbor => nbor%next
@@ -75,7 +76,6 @@ SUBROUTINE download_same_static (link)
   m => patch%mesh
   it = patch%it
   nv = patch%nv
-  print*,nv
   other => find_nbor (link, -3, o, patch%time, jt1, jt2, pt, qt)
   do iz=m(3)%lo,m(3)%li-1
     do iy=m(2)%lo,m(2)%uo
@@ -174,21 +174,22 @@ FUNCTION find_nbor (link, idir, o, time, jt1, jt2, pt, qt) RESULT (other)
   do while (associated(nbor))
     other => task2patch (nbor%task)
     dist = point_distance(patch, other%position, position)
-    print*,patch%it,nbor%task%id, dist
+    if (io%verbose>4) &
+      print*,patch%it,nbor%task%id, dist
     if (dist < patch%size(abs(idir))*0.5) then
       exit
     end if
     nbor => nbor%next
   end do
   o = -(other%mesh(adir)%ui+1-patch%mesh(adir)%lo)*idir/abs(idir)
-  print*,associated(other)
+  if (io%verbose>4) print*,associated(other)
   !-----------------------------------------------------------------------------
   ! Find the right time interval in the other patch
   !-----------------------------------------------------------------------------
   jt1=1
   do it=1,nt-2
     if (other%t(other%iit(it))<time) jt1=it
-    print*,it,time, other%t(other%iit(it))
+    if (io%verbose>4) print*,it,time, other%t(other%iit(it))
   end do
   jt2 = jt1+1
   jt1 = other%iit(jt1)

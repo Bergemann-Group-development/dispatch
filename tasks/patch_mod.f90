@@ -228,13 +228,13 @@ SUBROUTINE update (self)
       minval(self%mem(:,:,:,1,self%new,1)), &
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
-  if (io%verbose>0) &
+  if (io%verbose>-1) &
   print '(i8,f10.6,f9.6,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,7i3,2x,2i3)', self%id, &
     self%time, self%dtime, self%courant, &
     minval(self%mem(:,:,:,1,self%it ,2)), &
     maxval(self%mem(:,:,:,1,self%it ,2)), &
-    minval(self%mem(:,:,:,3,self%it ,2)), &
-    maxval(self%mem(:,:,:,3,self%it ,2)), &
+    minval(self%mem(:,:,:,3,self%it ,1)), &
+    maxval(self%mem(:,:,:,3,self%it ,1)), &
     minval(self%mem(:,:,:,1,self%new,1)), &
     maxval(self%mem(:,:,:,1,self%new,1)), &
     self%status, self%iit, self%it, self%new

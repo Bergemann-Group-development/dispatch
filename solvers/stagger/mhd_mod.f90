@@ -153,7 +153,7 @@ SUBROUTINE update (self)
   if (self%mhd) then
     pb = 0.5*norm2(B)
     pp = norm2(U)
-    self%u_max = maxval(sqrt((self%gamma*pg+pb)/d) + sqrt(pp))
+    self%u_max = maxval(sqrt((self%gamma*pg+2.*pb)/d) + sqrt(pp))
     pp = d*pp + pg + pa - pb
   else
     pp = d*norm2(U) + pg + pa
