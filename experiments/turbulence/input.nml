@@ -28,6 +28,12 @@
 /
 &force_params
  k=1,2,2
- ampl=3
+ a0=1,1,1 
  t_turn=0.10
+/
+&initial_params
+ k=3,4,5
+ a0=1,1,1
+ b0=0,0,0
+ type='single_compressive'
 /

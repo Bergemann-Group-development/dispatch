@@ -13,10 +13,9 @@ MODULE forcing_mod
   real, parameter:: pi2=8.0*atan(1.0)
   type, public:: force_t
     integer:: seed=-11
-    integer:: gn(3)
     real:: a(3), phi(3)
     real:: t_turn, t_save=0.0
-    real:: ampl(3), k(3)
+    real:: a0(3), k(3)
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure init
@@ -29,9 +28,9 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
    class(force_t):: self
-   integer:: gn(3)
-   real, save:: t_turn=0.3, ampl(3)=0.1, k(3)=1.0
-   namelist /force_params/ k, ampl, t_turn
+   integer,save:: seed=-11
+   real, save:: t_turn=0.3, a0(3)=0.1, k(3)=1.0
+   namelist /force_params/ k, a0, t_turn
    !----------------------------------------------------------------------------
    call trace_begin('force_t%init')
    if (first_time) then
@@ -44,8 +43,9 @@ SUBROUTINE init (self)
      end if
     !$omp end critical (experiment_cr)
    end if
+   self%seed   = seed
    self%t_turn = t_turn
-   self%ampl   = ampl
+   self%a0     = a0
    self%k      = k
    self%selected => single_solenoidal
    call trace_end
@@ -67,7 +67,7 @@ FUNCTION single_solenoidal (self, time, m) RESULT (ff)
   call trace_begin('force_t:single_solenoidal')
   if (first_time) call self%init
   if (time >= self%t_save) then
-    self%a = self%ampl*random%ran3()
+    self%a = self%a0*random%ran3()
     self%phi = pi2*random%ran3()
     self%t_save = self%t_save + self%t_turn
     print *,'forcing', self%a, self%phi

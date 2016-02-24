@@ -193,9 +193,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fxz)
   dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)
-  dpdtx = - ddxup1(ds,fxz)
-  dpdtx = - ddyup1(ds,fyz)
-  dpdtx = - ddzdn1(ds,fzz)
   dpdtz = - ddxup1(ds,fxz) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
   if (self%mhd) then
     !---------------------------------------------------------------------------

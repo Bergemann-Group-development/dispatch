@@ -8,6 +8,7 @@ MODULE experiment_mod
   USE vector_mod
   USE mhd_mod
   USE forcing_mod
+  USE initial_mod
   USE timestep_mod
   implicit none
   private
@@ -17,6 +18,7 @@ MODULE experiment_mod
     real:: d0, B0(3)
     real:: G
     type(force_t):: force
+    type(initial_t):: initial
   contains
     procedure init
     procedure update
@@ -56,14 +58,9 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  self%mem(:,:,:,  1,1,1) = d0
-  self%mem(:,:,:,  2,1,1) = 0.0
-  self%mem(:,:,:,3:5,1,1) = 0.0
-  self%mem(:,:,:,  6,1,1) = B0(1)
-  self%mem(:,:,:,  7,1,1) = B0(2)
-  self%mem(:,:,:,  8,1,1) = B0(3)
+  call self%initial%init
+  self%mem(:,:,:,:,1,1) = self%initial%selected(self%mesh)
   call self%force%init
-  !
   call trace_end
 END SUBROUTINE init
 
