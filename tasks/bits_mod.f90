@@ -18,6 +18,7 @@ MODULE bits_mod
   integer, parameter::         disk_bit=2**12
   integer, parameter::     particle_bit=2**13
   integer, parameter::        retry_bit=2**14
+  integer, parameter::       static_bit=2**15
   type bits_t
     integer:: remove       = remove_bit
     integer:: retry        = retry_bit
@@ -33,6 +34,7 @@ MODULE bits_mod
     integer:: particle     = particle_bit
     integer:: star         = star_bit
     integer:: planet       = planet_bit
+    integer:: static       = static_bit
   end type
   type(bits_t):: bits
 END MODULE bits_mod

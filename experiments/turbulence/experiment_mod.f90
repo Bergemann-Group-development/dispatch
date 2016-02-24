@@ -2,6 +2,7 @@
 !> =============================================================================
 MODULE experiment_mod
   USE io_mod
+  USE bits_mod
   USE trace_mod
   USE scalar_mod
   USE vector_mod
@@ -51,6 +52,7 @@ SUBROUTINE init (self)
   self%nv = 8
   self%nt = 7
   call self%patch_t%init
+  call self%set(bits%static)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------

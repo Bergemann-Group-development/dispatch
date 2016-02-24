@@ -10,3 +10,4 @@ hd_mod.o:               patch_mod.o trace_mod.o
 unigrid_mod.o:          patch_mod.o mpi_coords_mod.o
 refine_mod.o:           io_mod.o trace_mod.o patch_mod.o experiment_mod.o
 scaling_mod.o:          io_mod.o cgs_mod.o
+download_mod.o:         io_mod.o trace_mod.o task_mod.o patch_mod.o list_mod.o

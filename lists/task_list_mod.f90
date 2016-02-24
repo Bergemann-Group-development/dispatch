@@ -21,6 +21,7 @@ MODULE task_list_mod
   USE trace_mod
   USE refine_mod
   USE experiment_mod
+  USE download_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
@@ -123,7 +124,7 @@ SUBROUTINE update (self)
     self%nq = self%nq-1
     call self%check_mpi                                 ! check incoming MPI
     task => head%task                                   ! head task
-    call head%download (all_cells=.false.)              ! guard cells
+    call download_link (head, all_cells=.false.)        ! guard cells
     !if (refine%needed (task)) then                      ! if refinement needed
     !  call self%split (head)                            ! refined tasks go back to queue
     !end if
@@ -571,7 +572,7 @@ SUBROUTINE split (self, this)
         ! Download values from parent and neighbors, except at time==0.0, to
         ! allow recursive refinement there
         !------------------------------------------------------------------------
-        if (this_patch%time > 0.0) call link%download (all_cells=.true.)
+        if (this_patch%time > 0.0) call download_link (link, all_cells=.true.)
         !------------------------------------------------------------------------
         ! Insert the new patch at the head of the ready queue
         !------------------------------------------------------------------------

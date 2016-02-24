@@ -15,8 +15,8 @@
  courant=0.2
 !dt_fixed=5e-4
  end_time=0.2
- out_time=0.02
- print_time=0.0
+ out_time=6e-3
+!print_time=1e-4
 /
 &mhd_params
  nu=  0.05,  0.5, 2.0, 1.0,  0.1,  1.0
@@ -28,4 +28,5 @@
 &force_params
  k=1,2,2
  ampl=5
+ t_turn=0.01
 /

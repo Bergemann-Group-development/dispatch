@@ -37,6 +37,7 @@ MODULE patch_mod
     procedure:: update
     procedure:: output
     procedure:: distance        ! return the distance btw two patches
+    procedure:: point_distance  ! distance btw two points
     procedure:: overlaps        ! return true if they overlap (incl. ghost zones)
     procedure:: upload_range    ! returns the index ranges btw two points
     procedure:: dnload_range    ! returns the index ranges btw two points
@@ -66,6 +67,7 @@ MODULE patch_mod
     integer:: dim(3)
   end type
   integer:: id=0
+  public point_distance
 CONTAINS
 
 !> =============================================================================
@@ -94,7 +96,7 @@ SUBROUTINE check_error (self,label,error)
       error=loc
       return
     else
-      stop
+      if (io%do_debug) stop
     end if
   end if
 END SUBROUTINE
@@ -218,7 +220,7 @@ SUBROUTINE update (self)
   ! One line summary
   !-----------------------------------------------------------------------------
   self%time = self%time + self%dtime                    ! update self time
-  if (io%verbose>0) then
+  if (io%verbose>1) then
     print'(a,i4,2i3,2f11.6,2x,a,1p,6e10.2)', 'update: id,j,k,l,n,dt,t', &
       self%id, self%it, self%new, self%dtime, self%time, 'minmax:', &
       minval(self%mem(:,:,:,1,self%it ,2)), &
@@ -226,6 +228,7 @@ SUBROUTINE update (self)
       minval(self%mem(:,:,:,1,self%new,1)), &
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
+  if (io%verbose>0) &
   print '(i8,f10.6,f9.6,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,7i3,2x,2i3)', self%id, &
     self%time, self%dtime, self%courant, &
     minval(self%mem(:,:,:,1,self%it ,2)), &
@@ -726,6 +729,16 @@ FUNCTION distance (self, patch) RESULT (out)
   out = self%position-patch%position
   out = modulo(out+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box
 END FUNCTION distance
+
+!> =============================================================================
+!> Signed distance between the centers of two patches in the periodic box
+!> =============================================================================
+FUNCTION point_distance (self, p1, p2) RESULT (out)
+  class(patch_t):: self
+  real(8):: p1(3), p2(3), out
+  !.............................................................................
+  out = abs(maxval(modulo(p1-p2+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box))
+END FUNCTION point_distance
 
 !> =============================================================================
 !> Check if there is overlap, using the full size (including guard zones), since
