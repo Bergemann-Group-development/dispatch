@@ -9,6 +9,7 @@ MODULE mesh_mod
   ! Mesh for patches
   !-----------------------------------------------------------------------------
   type:: mesh_t
+    real(8):: b = 1d0
     real(8):: p = 0d0
     real(8):: s = 16d0
     real(8):: d = 1d0
@@ -46,11 +47,11 @@ SUBROUTINE init_mesh (self)
   call trace_begin ('mesh%init')
   self%lb = 1
   self%li = self%lb + self%ng
-  self%lo = self%li - 1
-  self%ui = self%lo + self%n
-  self%uo = self%ui + 1
+  self%gn = self%n + self%ng*2
+  self%lo = max(self%li-1,1)
+  self%ui = min(self%lo+self%n,self%gn)
+  self%uo = min(self%ui+1,self%gn)
   self%ub = self%ui + self%ng
-  self%gn = self%ub
   allocate (self%r(self%gn))
   self%d = self%s/self%n
   self%o = (self%n+1)*self%d*0.5
@@ -78,9 +79,9 @@ SUBROUTINE print_mesh (self)
   integer:: i
   if (io%verbose <= 0) return
   print*,'mesh%print:'
-  print'(3i8)', self%n, self%ng, self%gn
-  print'(6i8)', self%lb, self%lo, self%li, self%ui, self%uo, self%ub
-  print'(4x,2g16.8)', self%uf, self%lf
+  print'(a,3i8)',       '             n, ng, gn:', self%n, self%ng, self%gn
+  print'(a,6i8)',       'lb, lo, li, ui, uo, ub:', self%lb, self%lo, self%li, self%ui, self%uo, self%ub
+  print'(a,4x,4g16.8)', '        sz, ds, uf, lf:', self%s, self%d, self%uf, self%lf
   do i=1,self%gn
     print*,i,self%r(i)
   end do

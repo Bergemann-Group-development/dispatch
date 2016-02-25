@@ -77,77 +77,89 @@ SUBROUTINE download_same_static (link)
   it = patch%it
   nv = patch%nv
   other => find_nbor (link, -3, o, patch%time, jt1, jt2, pt, qt)
-  do iz=m(3)%lo,m(3)%li-1
-    do iy=m(2)%lo,m(2)%uo
-      do iv=1,nv
-        do ix=m(1)%lo,m(1)%uo
-          patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt1,1)*qt &
-                                      + other%mem(ix,iy,iz+o,iv,jt2,1)*pt
-        end do
-      end do
-    end do
-  end do
-  other => find_nbor (link, +3, o, patch%time, jt1, jt2, pt, qt)
-  do iz=m(3)%ui+1,m(3)%uo
-    do iy=m(3)%lo,m(3)%uo
-      do ix=m(1)%lo,m(1)%uo
+  if (associated(other)) then
+    do iz=m(3)%lb,m(3)%lo
+      do iy=m(2)%lb,m(2)%ub
         do iv=1,nv
-          patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt1,1)*qt &
-                                      + other%mem(ix,iy,iz+o,iv,jt2,1)*pt
+          do ix=m(1)%lb,m(1)%ub
+            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt1,1)*qt &
+                                        + other%mem(ix,iy,iz+o,iv,jt2,1)*pt
+          end do
         end do
       end do
     end do
-  end do
+  end if
+  other => find_nbor (link, +3, o, patch%time, jt1, jt2, pt, qt)
+  if (associated(other)) then
+    do iz=m(3)%uo,m(3)%ub
+      do iy=m(2)%lb,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          do iv=1,nv
+            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt1,1)*qt &
+                                        + other%mem(ix,iy,iz+o,iv,jt2,1)*pt
+          end do
+        end do
+      end do
+    end do
+  end if
   !-----------------------------------------------------------------------------
   ! XZ-planes in the two Y guard zones
   !-----------------------------------------------------------------------------
   other => find_nbor (link, -2, o, patch%time, jt1, jt2, pt, qt)
-  do iz=m(3)%li,m(3)%ui
-    do iy=m(2)%lo,m(2)%li-1
-      do iv=1,nv
-        do ix=m(1)%lo,m(1)%uo
-          patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt1,1)*qt &
-                                      + other%mem(ix,iy+o,iz,iv,jt2,1)*pt
+  if (associated(other)) then
+    do iz=m(3)%li,m(3)%ui
+      do iy=m(2)%lb,m(2)%lo
+        do iv=1,nv
+          do ix=m(1)%lb,m(1)%ub
+            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt1,1)*qt &
+                                        + other%mem(ix,iy+o,iz,iv,jt2,1)*pt
+          end do
         end do
       end do
     end do
-  end do
+  end if
   other => find_nbor (link, +2, o, patch%time, jt1, jt2, pt, qt)
-  do iz=m(3)%li,m(3)%ui
-    do iy=m(2)%ui+1,m(2)%uo
-      do iv=1,nv
-        do ix=m(1)%lo,m(1)%uo
-          patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt1,1)*qt &
-                                      + other%mem(ix,iy+o,iz,iv,jt2,1)*pt
+  if (associated(other)) then
+    do iz=m(3)%li,m(3)%ui
+      do iy=m(2)%uo,m(2)%ub
+        do iv=1,nv
+          do ix=m(1)%lb,m(1)%ub
+            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt1,1)*qt &
+                                        + other%mem(ix,iy+o,iz,iv,jt2,1)*pt
+          end do
         end do
       end do
     end do
-  end do
+  end if
   !-----------------------------------------------------------------------------
   ! YZ-planes in the two X guard zones
   !-----------------------------------------------------------------------------
   other => find_nbor (link, -1, o, patch%time, jt1, jt2, pt, qt)
-  do iz=m(3)%li,m(3)%ui
-    do iy=m(2)%lo,m(2)%li-1
-      do ix=m(1)%lo,m(1)%li-1
-        do iv=1,nv
-          patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt1,1)*qt &
-                                      + other%mem(ix+o,iy,iz,iv,jt2,1)*pt
+  if (associated(other)) then
+    do iz=m(3)%li,m(3)%ui
+      do iy=m(2)%li,m(2)%ui
+        do ix=m(1)%lb,m(1)%lo
+          do iv=1,nv
+            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt1,1)*qt &
+                                        + other%mem(ix+o,iy,iz,iv,jt2,1)*pt
+          end do
         end do
       end do
     end do
-  end do
+  end if
   other => find_nbor (link, +1, o, patch%time, jt1, jt2, pt, qt)
-  do iz=m(3)%li,m(3)%ui
-    do iy=m(2)%li,m(2)%ui
-      do ix=m(1)%ui+1,m(1)%uo
-        do iv=1,nv
-          patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt1,1)*qt &
-                                      + other%mem(ix+o,iy,iz,iv,jt2,1)*pt
+  if (associated(other)) then
+    do iz=m(3)%li,m(3)%ui
+      do iy=m(2)%li,m(2)%ui
+        do ix=m(1)%uo,m(1)%ub
+          do iv=1,nv
+            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt1,1)*qt &
+                                        + other%mem(ix+o,iy,iz,iv,jt2,1)*pt
+          end do
         end do
       end do
     end do
-  end do
+  end if
   call trace_end
 END SUBROUTINE download_same_static
 
@@ -168,20 +180,26 @@ FUNCTION find_nbor (link, idir, o, time, jt1, jt2, pt, qt) RESULT (other)
   nt = patch%nt
   nv = patch%nv
   adir = abs(idir)
-  position = patch%position + patch%size(abs(idir))*idir/adir
+  position = patch%position 
+  position(adir) = position(adir) + patch%size(adir)*idir/adir
   nbor => link%nbor
   do while (associated(nbor))
-    other => task2patch (nbor%task)
+    other => task2patch(nbor%task)
     dist = patch%point_distance(other%position, position)
-    !if (io%verbose>4) &
-      print*,'find_nbor:', patch%id, nbor%task%id, dist
-    if (dist < patch%size(abs(idir))*0.5) then
-      exit
-    end if
+    if (io%verbose>5) &
+      print'(a,2i5,f8.3,2(2x,3f8.3))', 'find_nbor:', &
+        patch%id, nbor%task%id, dist, (position-other%position)/patch%size
+    if (dist < patch%size(abs(idir))*0.5) exit
     nbor => nbor%next
   end do
-  o = -(other%mesh(adir)%ui+1-patch%mesh(adir)%lo)*idir/abs(idir)
-  if (io%verbose>4) print*,associated(other)
+  if (.not.associated(other)) then
+    print*,'find_nbors: ERROR'
+    stop
+  end if
+  !-----------------------------------------------------------------------------
+  ! The offset maps, when added to a target index uo, the source lb
+  !-----------------------------------------------------------------------------
+  o = (other%mesh(adir)%li-patch%mesh(adir)%uo)*idir/abs(idir)
   !-----------------------------------------------------------------------------
   ! Find the right time interval in the other patch
   !-----------------------------------------------------------------------------
@@ -196,9 +214,9 @@ FUNCTION find_nbor (link, idir, o, time, jt1, jt2, pt, qt) RESULT (other)
   dt = other%t(jt2)-other%t(jt1)
   pt = (time-other%t(jt1))/max(dt,1e-30)
   qt = 1.-pt
-  if (io%verbose>0) &
-    print '(a,i3,i7,i4,i4,i3,2f6.2)', 'download::find_nbor: idir, id, o, jt, pt', &
-      idir, other%id, o, jt1, jt2, pt
+  if (io%verbose>2) &
+    print '(a,i3,i7,i4,i4,i3,f6.2,2x,3i3)', 'download::find_nbor: idir, id, o, jt, pt', &
+      idir, other%id, o, jt1, jt2, pt, nint((other%position-patch%position)/patch%size)
   call trace_end
 END FUNCTION find_nbor
 

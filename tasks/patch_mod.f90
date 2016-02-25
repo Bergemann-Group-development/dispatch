@@ -747,11 +747,12 @@ FUNCTION highest (self, other, index) RESULT (out)
 END FUNCTION highest
 
 !> =============================================================================
-!> Signed distance between the centers of two patches in the periodic box
+!> Courant condition, one way or another
 !> =============================================================================
 SUBROUTINE courant_condition (self)
   class(patch_t):: self
   !.............................................................................
+  call trace_begin('patch_t%courant')
   if (self%dt_fixed > 0.0) then
     self%dtime = self%dt_fixed
     self%courant = self%dtime*self%u_max/minval(self%ds)
@@ -760,8 +761,10 @@ SUBROUTINE courant_condition (self)
   else
     self%dtime = self%courant*minval(self%ds)/self%u_max
   endif
+  self%dt(self%it) = self%dtime
   if (io%verbose>4) &
     print'(a,i7,f12.6,f8.4)', 'courant:', self%id, self%dtime, self%courant
+  call trace_end
 END SUBROUTINE courant_condition
 
 !> =============================================================================
@@ -783,7 +786,7 @@ FUNCTION point_distance (self, p1, p2) RESULT (out)
   class(patch_t):: self
   real(8):: p1(3), p2(3), out
   !.............................................................................
-  out = abs(maxval(modulo(p1-p2+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box))
+  out = maxval(abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box))
 END FUNCTION point_distance
 
 !> =============================================================================
