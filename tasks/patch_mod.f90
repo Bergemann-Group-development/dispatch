@@ -22,6 +22,7 @@ MODULE patch_mod
     integer:: nv                    ! FIXME
     integer:: n(3)
     integer:: msplit=2
+    logical:: guard_zones, time_derivs
     !---------------------------------------------------------------------------
     ! HACK below
     !---------------------------------------------------------------------------
@@ -67,7 +68,6 @@ MODULE patch_mod
     integer:: dim(3)
   end type
   integer:: id=0
-  public point_distance
 CONTAINS
 
 !> =============================================================================
@@ -76,16 +76,18 @@ SUBROUTINE check_error (self,label,error)
   class(patch_t):: self
   character(len=*), optional:: label
   integer, optional:: error(5)
-  integer:: loc(5), it
+  integer:: loc(5), it, l(3), u(3)
   !-----------------------------------------------------------------------------
   if (io%verbose<1) return
   if (present(label)) print*,label
-  do it=1,self%nt
-    print*,it,self%mem(6,16,23:24,5,it,1:2)
-  end do
-  if (any(self%mem(3:22,3:22,3:22,:,:,2) /= 0.0)) then
+  !do it=1,self%nt
+  !  print*,it,self%mem(6,16,23:24,5,it,1:2)
+  !end do
+  l = self%mesh%li
+  u = self%mesh%ui
+  if (any(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,:,2) /= 0.0)) then
     if (present(label)) print*,label
-    loc = maxloc(abs(self%mem(3:22,3:22,3:22,:,:,2))) + [2,2,2,0,0]
+    loc = maxloc(abs(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,:,2))) + [2,2,2,0,0]
     print*,'loc:',loc
     print*,'it,new:',self%it,self%new
     print*,self%iit
@@ -109,11 +111,13 @@ END SUBROUTINE
 SUBROUTINE init (self)
   class(patch_t):: self
   integer:: n(3)=16, ng=2, nt=7, i
-  logical:: first_time = .true.
+  logical, save:: first_time = .true.
+  logical, save:: guard_zones=.false., time_derivs=.false.
   real:: position(3)
   real, save:: courant=0.2, u_fixed=-1.0, dt_fixed=-1.0
   real, save:: end_time=1.0, out_time=0.1
-  namelist /patch_params/ n, ng, nt, courant, u_fixed, dt_fixed, end_time, out_time
+  namelist /patch_params/ n, ng, nt, courant, u_fixed, dt_fixed
+  namelist /out_params/ out_time, end_time, guard_zones, time_derivs
   !.............................................................................
   call trace_begin ('patch_t%init', 3)
   !$omp atomic
@@ -124,12 +128,19 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters
   !-----------------------------------------------------------------------------
+  !$omp critical (patch_cr)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, patch_params)
     if (io%master) write (*, patch_params)
+    rewind (io%input)
+    read (io%input, out_params)
+    if (io%master) write (*, out_params)
   end if
+  !$omp end critical (patch_cr)
+  self%guard_zones=guard_zones
+  self%time_derivs=time_derivs
   self%courant = courant
   self%dt_fixed = dt_fixed
   self%u_fixed = u_fixed
@@ -140,19 +151,23 @@ SUBROUTINE init (self)
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   self%mesh%n  = n
   self%mesh%ng = ng
-  self%mesh%s  = self%size
   where (self%n==1)                             ! for collapsed dimensions
     self%mesh%ng = 0                            ! no guard zones
-    self%size = 0.0                             ! zero size
-    self%ds = 0.0                               ! first zero
     self%box = 1                                ! make sure it is non-zero
-    self%ds = maxval(self%ds)                   ! then set to reasonable val
+    self%ds  = 1e30                             ! first huge
   end where
+  where (self%n==1)                             ! for collapsed dimensions
+    self%ds = minval(self%ds)                   ! then set to reasonable val
+    self%size = self%ds
+  end where
+  self%mesh%s  = self%size
   !-----------------------------------------------------------------------------
   ! Initialize the meshes
   !-----------------------------------------------------------------------------
   do i=1,3
     call self%mesh(i)%init
+    self%mesh(i)%b = self%box(i)
+    self%mesh(i)%p = self%position(i)
   end do
   !-----------------------------------------------------------------------------
   ! Hack for backwards compatibility
@@ -179,8 +194,8 @@ SUBROUTINE init (self)
                        self%nv,self%nt,2))
     self%mem_allocated = .true.                 ! mark
   end if
-  print*,'shape',shape(self%mem)
   self%t = 0.0                                  ! initial time
+  self%dt = 0.0
   self%iit = 1                                  ! initial memory slots
   self%iit(nt) = 2                              ! first output slot
   self%it = self%iit(nt-1)                      ! short-hand
@@ -196,6 +211,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(patch_t):: self
+  integer:: iv, nv
   !.............................................................................
   call trace_begin ('patch_t%update')
   !-----------------------------------------------------------------------------
@@ -228,16 +244,21 @@ SUBROUTINE update (self)
       minval(self%mem(:,:,:,1,self%new,1)), &
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
-  if (io%verbose>-1) &
-  print '(i8,f10.6,f9.6,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,7i3,2x,2i3)', self%id, &
-    self%time, self%dtime, self%courant, &
-    minval(self%mem(:,:,:,1,self%it ,2)), &
-    maxval(self%mem(:,:,:,1,self%it ,2)), &
-    minval(self%mem(:,:,:,3,self%it ,1)), &
-    maxval(self%mem(:,:,:,3,self%it ,1)), &
-    minval(self%mem(:,:,:,1,self%new,1)), &
-    maxval(self%mem(:,:,:,1,self%new,1)), &
-    self%status, self%iit, self%it, self%new
+  if (io%verbose>-1) then
+    nv = 1
+    if (io%verbose>2) nv = self%nv
+    do iv=1,nv
+      print '(i8,i3,f10.6,f9.6,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', self%id, &
+        iv, self%time, self%dtime, self%courant, &
+        minval(self%mem(:,:,:,iv,self%it ,2)), &
+        maxval(self%mem(:,:,:,iv,self%it ,2)), &
+        minval(self%mem(:,:,:,iv,self%it ,1)), &
+        maxval(self%mem(:,:,:,iv,self%it ,1)), &
+        minval(self%mem(:,:,:,iv,self%new,1)), &
+        maxval(self%mem(:,:,:,iv,self%new,1)), &
+        self%status, self%it, self%new, self%iit
+    end do
+  end if
   call self%check_error
   !-----------------------------------------------------------------------------
   ! Time slot rotation
@@ -519,15 +540,23 @@ END SUBROUTINE extrapolate_guards
 !> =============================================================================
 SUBROUTINE output (self, experiment_name)
   class(patch_t):: self
-  character(len=32) filename, logname, experiment_name
+  character(len=64) filename, logname, experiment_name
   optional:: experiment_name
-  integer:: iv, li(3)=0, ui(3)=0, l(3), u(3)
+  integer:: iv, li(3)=0, ui(3)=0, l(3), u(3), no, jo
   real:: ds(3)
   logical:: first_time=.true.
   !-----------------------------------------------------------------------------
   ! If the out_next time has passed, set a new time = the integer number of
-  ! out_time's that have passed, plus one more
+  ! out_time's that have passed, plus æone more
   !-----------------------------------------------------------------------------
+  if (present(experiment_name)) then
+    filename = experiment_name
+    print*,'experiment_name: ', filename
+  end if
+  if (trim(io%inputname) /= 'input') then
+    filename = io%inputname
+    print*,'input_name: ', filename
+  end if
   if (self%time+0.5*self%dtime < self%out_next) return
   call trace_begin('patch:t%output')
   if (self%time==0.0) then
@@ -536,12 +565,28 @@ SUBROUTINE output (self, experiment_name)
     self%out_next = self%out_time*int((self%time+0.5*self%dtime)/self%out_time) + self%out_time
   end if
   !-----------------------------------------------------------------------------
+  ! If guard_zones is true, include the guard zones.  If time_derivs is true,
+  ! write out the time derivatives also.
+  !-----------------------------------------------------------------------------
+  if (self%guard_zones) then
+    l = self%mesh%lb
+    u = self%mesh%ub
+  else
+    l = self%mesh%li
+    u = self%mesh%ui
+  end if
+  if (self%time_derivs) then
+    no = 2
+  else
+    no = 1
+  end if
+  !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   call trace ('1')
   call system ('mkdir -p data/')
   write (filename,'(a,i3.3,"_",i4.4)') &
-    'data/'//trim(experiment_name)//'_', self%id, self%iout
+    'data/'//trim(filename)//'_', self%id, self%iout
   if (io%verbose>=0) &
     print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%time
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
@@ -549,22 +594,23 @@ SUBROUTINE output (self, experiment_name)
     li = (self%position+0.5*(self%box-self%size))/self%ds
     ui = (self%position+0.5*(self%box+self%size))/self%ds - 1.0
   end where
+  !-----------------------------------------------------------------------------
+  ! Write a binary file with the data cube.
+  !-----------------------------------------------------------------------------
   write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
-  write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), self%n, li, ui
+  write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
   close (io%data_unit)
-  !-----------------------------------------------------------------------------
-  ! Write a binary file with the data cube
-  !-----------------------------------------------------------------------------
   open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
-    status='unknown', recl =sizeof(self%mem(1,1,1,1,1,1))*product(self%n))
-  l = self%mesh%li
-  u = self%mesh%ui
-  do iv=1,self%nv
-    if (io%verbose>1) &
-      print*,trim(filename),iv, &
-              minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)), &
-              maxval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1))
-    write (io%data_unit,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
+    status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(u-l+1))
+  do jo=1,no
+    do iv=1,self%nv
+      if (io%verbose>1) &
+        print'(1x,a,i5,i3,1p,2e10.3)',trim(filename),iv,jo, &
+          minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)), &
+          maxval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo))
+      write (io%data_unit,rec=iv+(jo-1)*self%nv) &
+                 self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
+    end do
   end do
   close (io%data_unit)
   !-----------------------------------------------------------------------------
@@ -585,7 +631,7 @@ SUBROUTINE output (self, experiment_name)
     ui = (self%position+0.5*(self%box+self%size))/ds - 1.0
   end where
   write (io%log_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
-  write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), self%n, li, ui
+  write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
   close (io%log_unit)
   self%iout = self%iout+1
   call trace_end

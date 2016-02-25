@@ -3,7 +3,7 @@
 !> Status bits for tasks
 !> =============================================================================
 MODULE bits_mod
-  integer, parameter::       remove_bit=1
+  integer, parameter::       static_bit=1
   integer, parameter::         leaf_bit=2
   integer, parameter::        ready_bit=2**2
   integer, parameter::     internal_bit=2**3
@@ -18,7 +18,7 @@ MODULE bits_mod
   integer, parameter::         disk_bit=2**12
   integer, parameter::     particle_bit=2**13
   integer, parameter::        retry_bit=2**14
-  integer, parameter::       static_bit=2**15
+  integer, parameter::       remove_bit=2**15
   type bits_t
     integer:: remove       = remove_bit
     integer:: retry        = retry_bit

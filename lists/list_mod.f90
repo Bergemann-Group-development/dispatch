@@ -27,7 +27,7 @@ MODULE list_mod
     procedure:: print_nbors
   end type
   type, public:: list_t
-    character(len=64):: name
+    character(len=64):: name=''
     type(link_t), pointer:: head => null()
     type(link_t), pointer:: tail => null()
     type(link_t), pointer:: queue => null()

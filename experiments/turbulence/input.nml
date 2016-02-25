@@ -8,13 +8,16 @@
  origin=0,0,0
 /
 &experiment_params
- B0=0.1,0.2,0.3
+ d0=1.2
+ B0=0.0,0.0,0.0
 /
 &patch_params
  nt=5
  n=20,20,20
  courant=0.2
 !dt_fixed=5e-4
+/
+&out_params
  end_time=0.5
  out_time=0.02
 !print_time=1e-4

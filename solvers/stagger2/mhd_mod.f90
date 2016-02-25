@@ -30,22 +30,21 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  real:: nu(6)=1.0, courant=0.2, gamma=1.0
-  namelist /mhd_parameters/ nu, courant
+  real, save:: nu(6)=1.0, courant=0.2, gamma=1.0
   namelist /mhd_params/ nu, courant, gamma
   !----------------------------------------------------------------------------
   call trace_begin('mhd_t%init')
-  !x!$omp critical (mhd_cr)
+  !$omp critical (mhd_cr)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, mhd_params)
     if (io%master) write (*, mhd_params)
-    self%courant = courant
-    self%nu = nu
-    self%gamma = gamma
   end if
-  !x!$omp end critical (mhd_cr)
+  !$omp end critical (mhd_cr)
+  self%courant = courant
+  self%nu = nu
+  self%gamma = gamma
   call trace_end
 END SUBROUTINE init
 
@@ -94,8 +93,6 @@ SUBROUTINE update (self)
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below
   !-----------------------------------------------------------------------------
-  d = 1.0
-  lnd = 1.0
   lnd = log(d)
   ld = down(lnd)
   dd = exp(ld)

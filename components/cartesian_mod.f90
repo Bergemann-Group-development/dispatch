@@ -41,9 +41,9 @@ SUBROUTINE init (self, label)
   self%size = size
   allocate (self%task_list)
   allocate (patches(self%dims(1),self%dims(2),self%dims(3)))
-  do i=1,self%dims(1)
-  do j=1,self%dims(2)
   do k=1,self%dims(3)
+  do j=1,self%dims(2)
+  do i=1,self%dims(1)
     !---------------------------------------------------------------------------
     ! Initialize each patch, via patch_t:init
     !---------------------------------------------------------------------------

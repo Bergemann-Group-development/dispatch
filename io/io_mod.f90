@@ -5,20 +5,20 @@ MODULE io_mod
   USE omp_timer_mod
   implicit none
   logical:: mpi_trace=.false.
+  integer, parameter:: mch=120
   type io_t
     integer:: verbose=0, input=1, output=2, data_unit=3, log_unit=4
     logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.false.
     integer:: levelmax=10
+    character(len=64):: inputname
   contains
     procedure:: init
     procedure:: print_id => print_id_
     procedure, nopass:: print_hl
   end type
-  integer, parameter:: mch=120
   type(io_t):: io
-  character(len=64), target:: experimentname
 PRIVATE
-PUBLIC io_t, io, print_id, mch, experimentname
+PUBLIC io_t, io, print_id, mch
 CONTAINS
 
 !> =============================================================================
@@ -33,7 +33,7 @@ SUBROUTINE init (self, name)
   'io_mod.f90 $Id$'
   integer:: verbose=0, levelmax
   character(len=*), optional:: name
-  character(len=mch):: inputfile, argfile
+  character(len=64):: inputfile, argfile
   logical:: first_time=.true.
   logical:: do_debug=.false., do_trace=.false., do_output=.false., exist
   namelist /io_params/ verbose, do_debug, do_trace, do_output, levelmax
@@ -51,7 +51,7 @@ SUBROUTINE init (self, name)
     do_debug = io%do_debug
     verbose  = io%verbose
     open (io%input, file=inputfile, form='formatted', status='old')               ! open for reading
-    experimentname = inputfile(1:index(inputfile,'.')-1)
+    io%inputname = inputfile(1:index(inputfile,'.')-1)
     if (io%master) then
       print*,'======================================================================='
       print*,'NOTE: Reading parameters from '//trim(inputfile)
@@ -74,6 +74,7 @@ SUBROUTINE init (self, name)
   self%do_output = io%do_output
   self%levelmax  = io%levelmax
   self%verbose   = io%verbose
+  self%inputname = io%inputname
 END SUBROUTINE init
 
 !> =============================================================================

@@ -116,26 +116,25 @@ SUBROUTINE update (self)
     print *,'WARNING: check_all (should not be needed), found', self%nq
   end if
   head => self%queue                                    ! queue start
-  if (associated(head)) then
-    self%queue => self%queue%next_time                  ! update the link
-    self%nq = self%nq-1
-    call self%check_mpi                                 ! check incoming MPI
-    task => head%task                                   ! head task
-    call download_link (head, all_cells=.false.)        ! guard cells
-    !if (refine%needed (task)) then                      ! if refinement needed
-    !  call self%split (head)                            ! refined tasks go back to queue
-    !end if
-    call task%output(self%name)                         ! check output
-    call task%update                                    ! update the task
-    call task%clear(bits%ready)                         ! needs new check
-    call task%output(self%name)                         ! check output
-    call self%check_nbors (head)                        ! any nbor ready?
-    if (task%time+0.5*task%dtime > task%end_time) &     ! finished:
-      call self%remove_task (task)                      ! remove from self
-  else
+  if (.not.associated(head)) then
     print*,'ERROR: no self%queue', self%nq, self%n
     call mpi%abort ('ERROR: ready queue empty')
   end if
+  self%queue => self%queue%next_time                  ! update the link
+  self%nq = self%nq-1
+  call self%check_mpi                                 ! check incoming MPI
+  task => head%task                                   ! head task
+  call download_link (head, all_cells=.false.)        ! guard cells
+ !if (refine%needed (task)) then                      ! if refinement needed
+ !  call self%split (head)                            ! refined tasks go back to queue
+ !end if
+  call task%output(self%name)                         ! check output
+  call task%update                                    ! update the task
+  call task%clear(bits%ready)                         ! needs new check
+  call task%output(self%name)                         ! check output
+  call self%check_nbors (head)                        ! any nbor ready?
+  if (task%time+0.5*task%dtime > task%end_time) &     ! finished:
+    call self%remove_task (task)                      ! remove from self
   call trace_end
 END SUBROUTINE update
 

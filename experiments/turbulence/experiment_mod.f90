@@ -15,7 +15,6 @@ MODULE experiment_mod
   real, parameter:: pi2=8.0*atan(1.0)
   type, public, extends(mhd_t):: experiment_t
     integer:: i_d=1
-    real:: d0, B0(3)
     real:: G
     type(force_t):: force
     type(initial_t):: initial
@@ -32,27 +31,12 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   real, save:: B0(3)=[0.0,0.0,1.0], d0=1.0
-  integer:: n(3)
-  real, dimension(:,:,:),   pointer:: d, s
-  real, dimension(:,:,:,:), pointer:: p, B
-  namelist /experiment_params/ d0, B0
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
-  !$omp critical (experiment_cr)
-  if (first_time) then
-    first_time = .false.
-    rewind (io%input)
-    read (io%input, experiment_params)
-    if (io%master) write (*, experiment_params)
-  end if
-  !$omp end critical (experiment_cr)
-  self%d0 = d0
-  self%B0 = B0
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
   self%nv = 8
-  self%nt = 7
   call self%patch_t%init
   call self%set(bits%static)
   !----------------------------------------------------------------------------

@@ -14,7 +14,7 @@ MODULE initial_mod
   type, public:: initial_t
     integer:: seed
     real:: a(3), b(3), phi(3), d0, s0
-    real:: a0(3), k(3), b0(3)
+    real:: a0(3), k(3), b0(3), u0(3)
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure init
@@ -28,9 +28,9 @@ CONTAINS
 SUBROUTINE init (self)
    class(initial_t):: self
    integer, save:: seed=-33
-   real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0
+   real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0
    character(len=32):: type='single_solenoidal'
-   namelist /initial_params/ seed, k, a0, b0, d0, s0, type
+   namelist /initial_params/ seed, k, a0, u0, b0, d0, s0, type
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    if (first_time) then
@@ -47,6 +47,7 @@ SUBROUTINE init (self)
    self%k      = k
    self%a0     = a0
    self%b0     = b0
+   self%u0     = u0
    self%d0     = d0
    self%s0     = s0
    select case (type)
@@ -54,6 +55,8 @@ SUBROUTINE init (self)
      self%selected => single_solenoidal
    case ('single_compressive')
      self%selected => single_compressive
+   case ('single_advection')
+     self%selected => single_advection
    case default
      print*,'UNKNOWN INITIAL CONDITION TYPE'
      stop
@@ -100,7 +103,7 @@ FUNCTION single_solenoidal (self, m) RESULT (ff)
 END FUNCTION single_solenoidal
 
 !> =============================================================================
-!> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
+!> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
 FUNCTION single_compressive (self, m) RESULT (ff)
   class(initial_t)        :: self
@@ -113,28 +116,64 @@ FUNCTION single_compressive (self, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive')
   if (first_time) call self%init
-  self%a = self%a0*random%ran3()
-  self%b = self%b0*random%ran3()
+  print*,self%k,self%a0
   self%phi = pi2*random%ran3()
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p) + self%phi(3)
+    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p) + self%phi(2)
+      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p) + self%phi(1)
+        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0
         ff(ix,iy,iz,2) = self%s0
-        ff(ix,iy,iz,3) = self%a(1)*sin(kx)
-        ff(ix,iy,iz,4) = self%a(2)*sin(ky)
+        ff(ix,iy,iz,3) = self%a0(1)*sin(kx)
+        ff(ix,iy,iz,4) = self%a0(2)*sin(ky)
         ff(ix,iy,iz,5) = self%a(3)*sin(kz)
-        ff(ix,iy,iz,6) = self%b(1)*sin(kx)
-        ff(ix,iy,iz,7) = self%b(2)*sin(ky)
-        ff(ix,iy,iz,8) = self%b(3)*sin(kz)
+        ff(ix,iy,iz,6) = self%b0(1)*sin(kx)
+        ff(ix,iy,iz,7) = self%b0(2)*sin(ky)
+        ff(ix,iy,iz,8) = self%b0(3)*sin(kz)
       end do
     end do
   end do
   print*,'MK',maxval(abs(ff(:,:,:,3:5)))
   call trace_end
 END FUNCTION single_compressive
+
+!> =============================================================================
+!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> =============================================================================
+FUNCTION single_advection (self, m) RESULT (ff)
+  class(initial_t)        :: self
+  type(mesh_t)          :: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  !.............................................................................
+  type(random_t)        :: random
+  integer               :: ix, iy, iz
+  real                  :: kx, ky, kz
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t:single_compressive')
+  if (first_time) call self%init
+  print*,'adv:',self%k,m%p
+  self%phi = 0.0
+  do iz=m(3)%lb,m(3)%ub
+    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        ff(ix,iy,iz,1) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
+        ff(ix,iy,iz,2) = self%s0
+        ff(ix,iy,iz,3) = self%d0*self%u0(1)
+        ff(ix,iy,iz,4) = self%d0*self%u0(2)
+        ff(ix,iy,iz,5) = self%d0*self%u0(3)
+        ff(ix,iy,iz,6) = self%b0(1)*sin(kx)
+        ff(ix,iy,iz,7) = self%b0(2)*sin(ky)
+        ff(ix,iy,iz,8) = self%b0(3)*sin(kz)
+      end do
+    end do
+  end do
+  print*,'MK',maxval(abs(ff(:,:,:,3:5)))
+  call trace_end
+END FUNCTION single_advection
 
 END MODULE
