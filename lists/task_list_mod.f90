@@ -124,7 +124,16 @@ SUBROUTINE update (self)
   self%nq = self%nq-1
   call self%check_mpi                                 ! check incoming MPI
   task => head%task                                   ! head task
+  select type (task)
+  class is (patch_t)
+  block
+    real, dimension(:,:,:), pointer:: px
+    px => task%mem(:,:,:,3,task%it,1)
+    call task%check_error(px,"before")                ! px before download
   call download_link (head, all_cells=.false.)        ! guard cells
+    call task%check_error(px,"after")                 ! px before download
+  end block
+  end select
  !if (refine%needed (task)) then                      ! if refinement needed
  !  call self%split (head)                            ! refined tasks go back to queue
  !end if

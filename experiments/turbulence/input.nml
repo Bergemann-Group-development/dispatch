@@ -1,6 +1,7 @@
 &io_params
  do_trace=f
  verbose=0
+ do_debug=f
 /
 &box_params
  size=1,1,1
@@ -15,12 +16,14 @@
  nt=5
  n=20,20,20
  courant=0.2
-!dt_fixed=5e-4
+!dt_fixed=0.03
 /
 &out_params
  end_time=0.5
- out_time=0.3
- print_time=0.1
+ out_time=0.01
+ print_time=0.002
+ guard_zones=t
+ time_derivs=f
 /
 &mhd_params
  nu=  0.10,  0.8, 2.0, 1.0,  0.2,  1.0
@@ -35,8 +38,9 @@
  t_turn=0.10
 /
 &initial_params
- k=3,4,5
- a0=0,0,0
+ k=3,3,3
+ a0=0.1,0.0,0.0
  b0=0,0,0
+ u0=0,0,0
  type='single_compressive'
 /

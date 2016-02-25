@@ -27,26 +27,30 @@ SUBROUTINE download_link (link, all_cells)
   !-----------------------------------------------------------------------------
   call trace_begin('download_t%download')
   patch => task2patch(link%task)
-  nt = patch%nt
-  nv = patch%nv
-  static = .true.; same = .true.
-  if (patch%is_clear(bits%static)) static = .false.
-  nbor => link%nbor
-  do while (associated(nbor))
-    if (io%verbose>4) &
-      print*,patch%id,nbor%task%id,nbor%task%is_clear(bits%static),nbor%task%level
-    if (nbor%task%is_clear(bits%static)) static = .false.
-    if (nbor%task%level /= patch%level) same = .false.
-    nbor => nbor%next
-  end do
-  if (static) then
-    if (same) then
-      call download_same_static (link)
-    else
-      print *, 'ERROR: different level patches'
-    end if
+  if (patch%is_set(bits%root_grid)) then
+    call patch%periodic_grid
   else
-    print *, 'ERROR: moving patches found'
+    nt = patch%nt
+    nv = patch%nv
+    static = .true.; same = .true.
+    if (patch%is_clear(bits%static)) static = .false.
+    nbor => link%nbor
+    do while (associated(nbor))
+      if (io%verbose>4) &
+        print*,patch%id,nbor%task%id,nbor%task%is_clear(bits%static),nbor%task%level
+      if (nbor%task%is_clear(bits%static)) static = .false.
+      if (nbor%task%level /= patch%level) same = .false.
+      nbor => nbor%next
+    end do
+    if (static) then
+      if (same) then
+        call download_same_static (link)
+      else
+        print *, 'ERROR: different level patches'
+      end if
+    else
+      print *, 'ERROR: moving patches found'
+    end if
   end if
   call trace_end
 END SUBROUTINE
@@ -89,6 +93,11 @@ SUBROUTINE download_same_static (link)
       end do
     end do
   end if
+  block
+    real, dimension(:,:,:), pointer:: px
+    px => patch%mem(:,:,:,3,it,1)
+    call patch%check_error(px,"XY1")
+  end block
   other => find_nbor (link, +3, o, patch%time, jt1, jt2, pt, qt)
   if (associated(other)) then
     do iz=m(3)%uo,m(3)%ub
@@ -102,6 +111,11 @@ SUBROUTINE download_same_static (link)
       end do
     end do
   end if
+  block
+    real, dimension(:,:,:), pointer:: px
+    px => patch%mem(:,:,:,3,it,1)
+    call patch%check_error(px,"XY2")
+  end block
   !-----------------------------------------------------------------------------
   ! XZ-planes in the two Y guard zones
   !-----------------------------------------------------------------------------
@@ -118,6 +132,11 @@ SUBROUTINE download_same_static (link)
       end do
     end do
   end if
+  block
+    real, dimension(:,:,:), pointer:: px
+    px => patch%mem(:,:,:,3,it,1)
+    call patch%check_error(px,"XZ1")
+  end block
   other => find_nbor (link, +2, o, patch%time, jt1, jt2, pt, qt)
   if (associated(other)) then
     do iz=m(3)%li,m(3)%ui
@@ -131,6 +150,17 @@ SUBROUTINE download_same_static (link)
       end do
     end do
   end if
+  block
+    real, dimension(:,:,:), pointer:: px
+    px => patch%mem(:,:,:,3,it,1)
+    call patch%check_error(px,"XZ2")
+  end block
+  if (io%verbose>2) &
+    print'(a,3i4,f5.2,1p,4e12.3)', 'DBG:', it, jt1, jt2, pt, patch%mem(19,10,19,1,it,1), &
+    patch%mem(19,23,19,1,it,1)-patch%mem(19,10,19,1,it,1), &
+    other%mem(19,3,19,1,jt1,1)-patch%mem(19,10,19,1,it,1), &
+    other%mem(19,3,19,1,jt2,1)-patch%mem(19,10,19,1,it,1)
+  call trace_end
   !-----------------------------------------------------------------------------
   ! YZ-planes in the two X guard zones
   !-----------------------------------------------------------------------------
@@ -147,6 +177,11 @@ SUBROUTINE download_same_static (link)
       end do
     end do
   end if
+  block
+    real, dimension(:,:,:), pointer:: px
+    px => patch%mem(:,:,:,3,it,1)
+    call patch%check_error(px,"YZ1")
+  end block
   other => find_nbor (link, +1, o, patch%time, jt1, jt2, pt, qt)
   if (associated(other)) then
     do iz=m(3)%li,m(3)%ui
@@ -160,7 +195,11 @@ SUBROUTINE download_same_static (link)
       end do
     end do
   end if
-  call trace_end
+  block
+    real, dimension(:,:,:), pointer:: px
+    px => patch%mem(:,:,:,3,it,1)
+    call patch%check_error(px,"YZ2")
+  end block
 END SUBROUTINE download_same_static
 
 !> =============================================================================
@@ -214,6 +253,13 @@ FUNCTION find_nbor (link, idir, o, time, jt1, jt2, pt, qt) RESULT (other)
   dt = other%t(jt2)-other%t(jt1)
   pt = (time-other%t(jt1))/max(dt,1e-30)
   qt = 1.-pt
+  if (abs(pt)< 1e-4) then
+    if (io%verbose>1) print*,'EXACT'
+    pt=0.0; qt=1.0
+  else if (abs(qt) < 1e-4) then
+    if (io%verbose>1) print*,'EXACT'
+    pt=1.0; qt=0.0
+  end if
   if (io%verbose>2) &
     print '(a,i3,i7,i4,i4,i3,f6.2,2x,3i3)', 'download::find_nbor: idir, id, o, jt, pt', &
       idir, other%id, o, jt1, jt2, pt, nint((other%position-patch%position)/patch%size)

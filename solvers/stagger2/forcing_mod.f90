@@ -10,12 +10,12 @@ MODULE forcing_mod
   USE random_mod
   implicit none
   private
-  real, parameter:: pi2=8.0*atan(1.0)
+  real(8), parameter:: pi2=8.0*atan(1.0)
   type, public:: force_t
     integer:: seed=-11
-    real:: a(3), phi(3)
-    real:: t_turn, t_save=0.0
-    real:: a0(3), k(3)
+    real(8):: a(3), phi(3)
+    real(8):: t_turn, t_save=0.0
+    real(8):: a0(3), k(3)
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure init
@@ -29,8 +29,9 @@ CONTAINS
 SUBROUTINE init (self)
    class(force_t):: self
    integer,save:: seed=-11
+   character(len=32):: type='single_solenoidal'
    real, save:: t_turn=0.3, a0(3)=0.1, k(3)=1.0
-   namelist /force_params/ k, a0, t_turn
+   namelist /force_params/ k, a0, t_turn, type
    !----------------------------------------------------------------------------
    call trace_begin('force_t%init')
    if (first_time) then
@@ -47,7 +48,15 @@ SUBROUTINE init (self)
    self%t_turn = t_turn
    self%a0     = a0
    self%k      = k
-   self%selected => single_solenoidal
+   select case (type)
+   case ('single_solenoidal')
+     self%selected => single_solenoidal
+   case ('zero')
+     self%selected => zero
+   case default
+     print*,'UNKNOWN INITIAL CONDITION TYPE'
+     stop
+   end select
    call trace_end
 END SUBROUTINE init
 
@@ -62,7 +71,7 @@ FUNCTION single_solenoidal (self, time, m) RESULT (ff)
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
-  real                  :: kx, ky, kz
+  real(8)               :: kx, ky, kz
   !-----------------------------------------------------------------------------
   call trace_begin('force_t:single_solenoidal')
   if (first_time) call self%init
@@ -87,5 +96,17 @@ FUNCTION single_solenoidal (self, time, m) RESULT (ff)
   end do
   call trace_end
 END FUNCTION single_solenoidal
+
+!> =============================================================================
+!> Zero force
+!> =============================================================================
+FUNCTION zero (self, time, m) RESULT (ff)
+  class(force_t)        :: self
+  real(8)               :: time
+  type(mesh_t)          :: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
+  !-----------------------------------------------------------------------------
+  ff = 0.0
+END FUNCTION zero
 
 END MODULE

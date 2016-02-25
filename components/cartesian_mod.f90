@@ -1,5 +1,6 @@
 MODULE cartesian_mod
   USE io_mod
+  USE bits_mod
   USE trace_mod
   USE task_mod
   USE task_list_mod
@@ -52,6 +53,7 @@ SUBROUTINE init (self, label)
     patch%position = ([i,j,k]-0.5_8)*self%size/self%dims + origin
     patch%size = self%size/self%dims
     call patch%init
+    if (all(self%dims==1)) call patch%set(bits%root_grid)
     if (io%verbose>1) &
       print'(a,i6,2(2x,3f10.6))', 'init_cartesian: id, size, pos =', &
         patch%id, patch%size, patch%position

@@ -55,16 +55,20 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%mhd_t%update
-  call self%check_error('mhd_t%update')
+  block
+    real, dimension(:,:,:), pointer:: px
+    px => self%mem(:,:,:,3,self%it,2)
   call trace('before force')
+    call self%check_error(px,"before force")
   self%dpdt = self%dpdt + self%force%selected (self%time, self%mesh)
+    call self%check_error(px,"after force")
+    px => self%mem(:,:,:,3,self%it,1)
   call trace('after force')
   call self%courant_condition
-  call self%check_error('courant')
   call timestep%update (self%id, self%iit, self%dt, self%mem)
-  call self%check_error('timestep')
+    call self%check_error(px,"after timestep")
+  end block
   call self%patch_t%update
-  call self%check_error('patch_t%update')
   call trace_end
 END SUBROUTINE update
 

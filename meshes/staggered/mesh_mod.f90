@@ -13,10 +13,10 @@ MODULE mesh_mod
     real(8):: p = 0d0
     real(8):: s = 16d0
     real(8):: d = 1d0
-    real(4):: o = 0.0
-    real(4):: lf = 0.0
-    real(4):: uf = 0.0
-    real(4), dimension(:), pointer:: r
+    real(8):: o = 0.0
+    real(8):: lf = 0.0
+    real(8):: uf = 0.0
+    real(8), dimension(:), pointer:: r
     integer:: n  = 16
     integer:: ng =  2
     integer:: lb =  1

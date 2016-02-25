@@ -40,19 +40,29 @@ def read_file (fileroot, verbose=False):
     fd = open(fileroot+'.dat','rb')
     n=patch.n
     shape = (n[0],n[1],n[2])
-    patch.rho = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
-    patch.ent = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.d   = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.s   = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
     patch.px  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
     patch.py  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
     patch.pz  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
-    patch.phi = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.bx  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.by  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.bz  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.dd   = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.ds   = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.dpx  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.dpy  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.dpz  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.dbx  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.dby  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+    patch.dbz  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
     if (verbose):
-        print "  density range:", [patch.rho.min(),patch.rho.max()]
-        print "  entropy range:", [patch.ent.min(),patch.ent.max()]
+        print "  density range:", [patch.d.min(),patch.d.max()]
+        print "  entropy range:", [patch.s.min(),patch.s.max()]
         print "       px range:", [patch.px.min(),patch.px.max()]
         print "       py range:", [patch.py.min(),patch.py.max()]
         print "       pz range:", [patch.pz.min(),patch.pz.max()]
-        print "      phi range:", [patch.phi.min(),patch.phi.max()]
+        print "      dpx range:", [patch.dpx.min(),patch.dpx.max()]
     fd.close
 
     return patch

@@ -10,11 +10,11 @@ MODULE initial_mod
   USE random_mod
   implicit none
   private
-  real, parameter:: pi2=8.0*atan(1.0)
+  real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     integer:: seed
-    real:: a(3), b(3), phi(3), d0, s0
-    real:: a0(3), k(3), b0(3), u0(3)
+    real(8):: a(3), b(3), phi(3), d0, s0
+    real(8):: a0(3), k(3), b0(3), u0(3)
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure init
@@ -68,37 +68,37 @@ END SUBROUTINE init
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
 FUNCTION single_solenoidal (self, m) RESULT (ff)
-  class(initial_t)        :: self
+  class(initial_t)      :: self
   type(mesh_t)          :: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
-  real                  :: kx, ky, kz
+  real(8)               :: kx, ky, kz
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal')
   if (first_time) call self%init
-  self%a = self%a0*random%ran3()
-  self%b = self%b0*random%ran3()
-  self%phi = pi2*random%ran3()
+  self%phi = 0.0
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p) + self%phi(3)
+    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p) + self%phi(2)
+      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p) + self%phi(1)
+        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0
         ff(ix,iy,iz,2) = self%s0
-        ff(ix,iy,iz,3) = self%a(1)*(sin(ky)+sin(kz))
-        ff(ix,iy,iz,4) = self%a(2)*(sin(kz)+sin(kx))
-        ff(ix,iy,iz,5) = self%a(3)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,6) = self%b(1)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,7) = self%b(2)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,8) = self%b(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,3) = self%a0(1)*(sin(ky)+sin(kz))
+        ff(ix,iy,iz,4) = self%a0(2)*(sin(kz)+sin(kx))
+        ff(ix,iy,iz,5) = self%a0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,6) = self%b0(1)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,7) = self%b0(2)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,8) = self%b0(3)*(sin(kx)+sin(ky))
       end do
     end do
   end do
-  print*,'MK1',maxval(abs(ff(:,:,:,3:5)))
+  do ix=m(1)%lb,m(1)%ub
+    print'(a,i4,f22.16)', 'initial:', ix, ff(ix,1,1,3)
+  end do
   call trace_end
 END FUNCTION single_solenoidal
 
@@ -112,12 +112,12 @@ FUNCTION single_compressive (self, m) RESULT (ff)
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
-  real                  :: kx, ky, kz
+  real(8)               :: kx, ky, kz
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive')
   if (first_time) call self%init
   print*,self%k,self%a0
-  self%phi = pi2*random%ran3()
+  self%phi = 0.0
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
     do iy=m(2)%lb,m(2)%ub
@@ -128,14 +128,16 @@ FUNCTION single_compressive (self, m) RESULT (ff)
         ff(ix,iy,iz,2) = self%s0
         ff(ix,iy,iz,3) = self%a0(1)*sin(kx)
         ff(ix,iy,iz,4) = self%a0(2)*sin(ky)
-        ff(ix,iy,iz,5) = self%a(3)*sin(kz)
+        ff(ix,iy,iz,5) = self%a0(3)*sin(kz)
         ff(ix,iy,iz,6) = self%b0(1)*sin(kx)
         ff(ix,iy,iz,7) = self%b0(2)*sin(ky)
         ff(ix,iy,iz,8) = self%b0(3)*sin(kz)
       end do
     end do
   end do
-  print*,'MK',maxval(abs(ff(:,:,:,3:5)))
+  do ix=m(1)%lb,m(1)%ub
+    print'(a,i4,f22.16)', 'initial:', ix, ff(ix,1,1,3)
+  end do
   call trace_end
 END FUNCTION single_compressive
 
@@ -149,7 +151,7 @@ FUNCTION single_advection (self, m) RESULT (ff)
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
-  real                  :: kx, ky, kz
+  real(8)               :: kx, ky, kz
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive')
   if (first_time) call self%init

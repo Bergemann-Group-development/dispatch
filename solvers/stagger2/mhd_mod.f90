@@ -88,15 +88,22 @@ SUBROUTINE update (self)
   fdx=>fd(:,:,:,1); fdy=>fd(:,:,:,2); fdz=>fd(:,:,:,3)
   ldx=>ld(:,:,:,1); ldy=>ld(:,:,:,2); ldz=>ld(:,:,:,3)
   ddx=>dd(:,:,:,1); ddy=>dd(:,:,:,2); ddz=>dd(:,:,:,3)
-  if (first_time) call self%init
+  call self%init
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below
   !-----------------------------------------------------------------------------
+  call self%check_error(d,'mhd_t%update d')
   lnd = log(d)
   ld = down(lnd)
   dd = exp(ld)
   U = p/dd
+  call self%check_error(px,'mhd_t%update px')
+  call self%check_error(py,'mhd_t%update py')
+  call self%check_error(pz,'mhd_t%update pz')
+  call self%check_error(Ux,'mhd_t%update Ux')
+  call self%check_error(Uy,'mhd_t%update Uy')
+  call self%check_error(Uz,'mhd_t%update Uz')
   !-----------------------------------------------------------------------------
   ! Gas pressure
   !-----------------------------------------------------------------------------
@@ -111,13 +118,18 @@ SUBROUTINE update (self)
   du = -div(ds,U)                                       ! convergence rate
   du = dx*max(du,1e-20)                                 ! dimension: U
   pa = self%nu(3)*d*du**2                               ! dimension: pressure
+  call self%check_error(pa,'mhd_t%update pa')
+  call self%check_error(d,'mhd_t%update d')
+  call self%check_error(cs,'mhd_t%update cs')
   du = (self%nu(1)*cs + self%nu(2)*du)*dx               ! dimension: U*ds
+  call self%check_error(du,'mhd_t%update du')
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
-  fd = -(self%nu(5)*dd*down(du))*ddown(ds,lnd)             ! diffusive mass flux
+  fd = -(self%nu(5)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux
   fx = p+fd                                             ! mass flux
-  dddt = div(ds,fx)                                ! density derivative
+  dddt = -div(ds,fx)                                    ! density derivative
+  call self%check_error(dddt,'mhd_t%update dddt')
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
@@ -130,21 +142,26 @@ SUBROUTINE update (self)
     fx = fx*down(ss) - (self%nu(6)*dd*down(du))*ddown(ds,ss)
     dsdt = -div(ds,fx)
   end if
+  call self%check_error(dsdt,'mhd_t%update dsdt')
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   !-----------------------------------------------------------------------------
   if (self%mhd) then
     pb = 0.5*norm2(B)
     pp = norm2(U)
+    call self%check_error(pp,'mhd_t%update pp')
+    call self%check_error(pb,'mhd_t%update pb')
+    call self%check_error(pg,'mhd_t%update pg')
+    call self%check_error(pa,'mhd_t%update pa')
     self%u_max = maxval(sqrt((self%gamma*pg+pb)/d) + sqrt(pp))
     pp = d*pp + pg + pa - pb
   else
     pp = d*norm2(U) + pg + pa
   end if
   fxx = pp - d*du*ddxup(ds,Ux)
+  call self%check_error(fxx,'mhd_t%update fxx1')
   fyy = pp - d*du*ddyup(ds,Uy)
   fzz = pp - d*du*ddzup(ds,Uz)
-  call self%check_error('mhd_t%update 2')
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -164,7 +181,6 @@ SUBROUTINE update (self)
   fxy = exp(ydn(ldx))*fxy
   fxz = exp(zdn(ldx))*fxz
   fyz = exp(zdn(ldy))*fyz
-  call self%check_error('mhd_t%update 3')
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Maxwell stress
   !---------------------------------------------------------------------------
@@ -191,6 +207,12 @@ SUBROUTINE update (self)
   dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fxz)
   dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)
   dpdtz = - ddxup1(ds,fxz) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
+  call self%check_error(fxx,'mhd_t%update fxx3')
+  call self%check_error(fxy,'mhd_t%update fxy')
+  call self%check_error(fxz,'mhd_t%update fxz')
+  call self%check_error(dpdtx,'mhd_t%update dpxdt')
+  call self%check_error(dpdty,'mhd_t%update dpydt')
+  call self%check_error(dpdtz,'mhd_t%update dpzdt')
   if (self%mhd) then
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
@@ -204,6 +226,9 @@ SUBROUTINE update (self)
     E = E + self%nu(6)*edge(du)*curl(ds,B)
     dBdt = -curl(ds,E)
   end if
+  call self%check_error(dBdtx,'mhd_t%update dBxdt')
+  call self%check_error(dBdty,'mhd_t%update dBydt')
+  call self%check_error(dBdtz,'mhd_t%update dBzdt')
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, U, E, fd, fx, fy, fz)
   call deallocate_scalars (lnd, pg, pa, du, ss, cs, pp, pb)

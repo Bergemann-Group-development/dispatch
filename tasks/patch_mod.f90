@@ -4,11 +4,12 @@
 !> to 3, since we can just choose the actual dimensions to get 2-D and 1-D.
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE patch_mod
+  USE io_mod
+  USE bits_mod
   USE trace_mod
   USE mpi_mod
   USE task_mod
   USE mesh_mod
-  USE io_mod
   implicit none
   private
   integer, parameter:: ndim = 3
@@ -71,36 +72,47 @@ MODULE patch_mod
 CONTAINS
 
 !> =============================================================================
+!> Check for y-redundancy
 !> =============================================================================
-SUBROUTINE check_error (self,label,error)
+SUBROUTINE check_error (self, a, label, error)
   class(patch_t):: self
   character(len=*), optional:: label
-  integer, optional:: error(5)
-  integer:: loc(5), it, l(3), u(3)
+  integer, optional:: error(3)
+  integer:: loc(3), it, l(3), u(3), n(3), iy
+  real, dimension(:,:,:), pointer:: a, b
+  integer, save:: nerror=4
   !-----------------------------------------------------------------------------
-  if (io%verbose<1) return
-  if (present(label)) print*,label
-  !do it=1,self%nt
-  !  print*,it,self%mem(6,16,23:24,5,it,1:2)
-  !end do
-  l = self%mesh%li
-  u = self%mesh%ui
-  if (any(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,:,2) /= 0.0)) then
-    if (present(label)) print*,label
-    loc = maxloc(abs(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,:,2))) + [2,2,2,0,0]
-    print*,'loc:',loc
-    print*,'it,new:',self%it,self%new
-    print*,self%iit
-    do it=1,self%nt
-      print'(i4,1p,8e15.3)', it,self%mem(loc(1),loc(2),loc(3),1:8,it,2)
+  if (.not.io%do_debug) return
+  l = self%mesh%lb
+  u = self%mesh%ub
+  n = u-l+1
+  allocate (b(n(1),n(2),n(3)))
+  do iy=l(2),u(2)
+    b(:,iy,:)=a(:,iy,:)-a(:,1,:)
+  end do
+  if (any(b /= 0.0)) then
+    loc = maxloc(abs(b)) + l-1
+    if (present(label)) print*,'patch_t::error ', label
+    print*,'patch_t::error loc        :', loc
+    print*,'patch_t::error it,new,iit :', self%it, self%new, self%iit
+    do iy=l(2),u(2)
+      print*,'patch_t::error iy, a:', iy, a(loc(1),iy,loc(3))
     end do
     if (present(error)) then
       error=loc
       return
     else
-      if (io%do_debug) stop
+      if (nerror<=0) stop
+      nerror=nerror-1
+    end if
+  else
+    if (present(label)) then
+      print*,'patch_t::check_error maxval ', label, maxval(abs(a))
+    else
+      print*,'patch_t::check_error maxval', maxval(abs(a))
     end if
   end if
+  deallocate(b)
 END SUBROUTINE
 
 !> =============================================================================
@@ -228,11 +240,11 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
-  !if (self%id==1) then
-  !  call self%periodic_grid                     ! periodic root grid
+  if (self%is_set(bits%root_grid)) then
+    call self%periodic_grid                     ! periodic root grid
   !else
-  !  call self%extrapolate_guards                ! time-extrapolate guard cells
-  !end if
+    !call self%extrapolate_guards                ! time-extrapolate guard cells
+  end if
   !-----------------------------------------------------------------------------
   ! One line summary
   !-----------------------------------------------------------------------------
@@ -261,7 +273,6 @@ SUBROUTINE update (self)
         self%status, self%it, self%new, self%iit
     end do
   end if
-  call self%check_error
   !-----------------------------------------------------------------------------
   ! Time slot rotation
   !-----------------------------------------------------------------------------
@@ -501,26 +512,26 @@ SUBROUTINE periodic_grid (self)
   do ix=lb(1),ub(1)
     i = [ix,iy,iz]
     if (all(i >= li .and. i <= ui)) cycle
-    j = modulo(i-lb,self%n)+lb
-    self%mem(ix,iy,iz,:,self%new,1) = self%mem(j(1),j(2),j(3),:,self%new,1)
+    j = modulo(i-li,self%n)+li
+    self%mem(ix,iy,iz,:,self%it,1) = self%mem(j(1),j(2),j(3),:,self%it,1)
   end do
   end do
   end do
 END SUBROUTINE periodic_grid
 !> =============================================================================
 !> Time extrapolate guard cell values, to allow using also guard zone values to
-!> get boundary conditions for higher level patches
+!> get boundary conditions for higher level patches.  This is done before time
+!> slot rotation, so the slot that has just been updated is iit(nt).
 !> =============================================================================
 SUBROUTINE extrapolate_guards (self)
   class(patch_t):: self
-  integer:: ix, iy, iz, i(3), it0, it1, it2
+  integer:: ix, iy, iz, i(3), it0, it1, it2, nt
   !.............................................................................
   call trace_begin ('patches_mod:extrapolate_guards', 3)
-  !print*,'it,new,iit(nt):',self%id,self%it,self%new,self%iit(self%nt)
-  !print*,'min,max:',minval(self%mem(:,:,:,1,self%it,1)),maxval(self%mem(:,:,:,1,self%it,1))
-  it0 = self%new                                        ! current time slot
-  it1 = modulo(it0-2,self%nt)+1                         ! previous time slot
-  it2 = modulo(it0-3,self%nt)+1                         ! the one before that
+  nt = self%nt
+  it0 = self%iit(nt)                                    ! current time slot
+  it1 = self%iit(nt-1)                                  ! previous time slot
+  it2 = self%iit(nt-2)                                  ! the one before that
   do iz=self%mesh(3)%lb,self%mesh(3)%ub                 ! loop over all cells
   do iy=self%mesh(2)%lb,self%mesh(2)%ub
   do ix=self%mesh(1)%lb,self%mesh(1)%ub
@@ -544,9 +555,12 @@ SUBROUTINE output (self, experiment_name)
   class(patch_t):: self
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
-  integer:: iv, li(3)=0, ui(3)=0, l(3), u(3), no, jo
+  integer:: iv, li(3)=0, ui(3)=0, l(3), u(3), no, jo, it
   real:: ds(3)
   logical:: first_time=.true.
+  !-----------------------------------------------------------------------------
+  if (self%time < self%out_next) return
+  call trace_begin('patch:t%output')
   !-----------------------------------------------------------------------------
   ! If the out_next time has passed, set a new time = the integer number of
   ! out_time's that have passed, plus æone more
@@ -557,9 +571,6 @@ SUBROUTINE output (self, experiment_name)
   if (trim(io%inputname) /= 'input') then
     filename = io%inputname
   end if
-  if (self%time+0.5*self%dtime < self%out_next) return
-  call trace_begin('patch:t%output')
-    self%out_next = (nint(self%time/self%out_time)+1)*self%out_time
   !-----------------------------------------------------------------------------
   ! If guard_zones is true, include the guard zones.  If time_derivs is true,
   ! write out the time derivatives also.
@@ -584,7 +595,7 @@ SUBROUTINE output (self, experiment_name)
   write (filename,'(a,i3.3,"_",i4.4)') &
     'data/'//trim(filename)//'_', self%id, self%iout
   if (io%verbose>=0) &
-    print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%time
+    print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%out_next
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   where (self%size > 0.0)
     li = (self%position+0.5*(self%box-self%size))/self%ds
@@ -600,15 +611,44 @@ SUBROUTINE output (self, experiment_name)
     status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(u-l+1))
   do jo=1,no
     do iv=1,self%nv
+    block
+      integer:: it1, it2, n(3)
+      real:: pt, qt
+      real, dimension(:,:,:), pointer:: buf
+      n = u-l+1
+      allocate (buf(n(1),n(2),n(3)))
+      !-------------------------------------------------------------------------
+      ! If we write out time derivatives we want a pair of consistent values
+      ! and time derivatives, which we have at iit(nt-2).
+      !-------------------------------------------------------------------------
+      it1 = self%iit(self%nt-2)
+      if (self%time_derivs) then
+        it = it1
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
+        call check_error(self, buf, "output 1")
+      !-------------------------------------------------------------------------
+      ! Normally, we write out only variable values, which can then be interpolated
+      ! to the exact output time, self%out_next, the update of which must come
+      ! after this point
+      !-------------------------------------------------------------------------
+      else
+        it2 = self%iit(self%nt-1)
+        it = it2
+        pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1e-30)
+        qt = 1.0-pt
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
+            + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
+        call check_error(self, buf, "output 2")
+      end if
       if (io%verbose>1) &
-        print'(1x,a,i5,i3,1p,2e10.3)',trim(filename),iv,jo, &
-          minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)), &
-          maxval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo))
-      write (io%data_unit,rec=iv+(jo-1)*self%nv) &
-                 self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
+        print'(1x,a,2i5,i3,1p,2e11.3)',trim(filename),iv,it,jo,minval(buf),maxval(buf)
+      write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
+      deallocate (buf)
+    end block
     end do
   end do
   close (io%data_unit)
+  self%out_next = (int(self%time/self%out_time)+1)*self%out_time
   !-----------------------------------------------------------------------------
   ! Write a log file, with files written by this rank
   !-----------------------------------------------------------------------------

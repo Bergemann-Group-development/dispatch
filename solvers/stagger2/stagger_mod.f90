@@ -166,12 +166,12 @@ FUNCTION ddxdn (ds, a) RESULT (b)
   real    :: ds(3), c
   integer :: ix, iy, iz
 !...............................................................................
-  if (size(b,1) > 1) then
+  if (size(a,1) > 1) then
     b(1,:,:) = 0.0
     c = 1./ds(1)
-    do iz=1,size(b,3)
-    do iy=1,size(b,2)
-    do ix=2,size(b,1)
+    do iz=1,size(a,3)
+    do iy=1,size(a,2)
+    do ix=2,size(a,1)
       b(ix,iy,iz) = c*(a(ix  ,iy,iz) - a(ix-1,iy,iz))
     end do
     end do
@@ -188,12 +188,12 @@ FUNCTION ddydn (ds, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: ds(3), c
 !...............................................................................
-  if (size(b,2) > 1) then
+  if (size(a,2) > 1) then
     b(:,1,:) = 0.0
     c = 1./ds(2)
-    do iz=1,size(b,3)
-    do iy=2,size(b,2)
-    do ix=1,size(b,1)
+    do iz=1,size(a,3)
+    do iy=2,size(a,2)
+    do ix=1,size(a,1)
       b(ix,iy,iz) = c*(a(ix,iy  ,iz) - a(ix,iy-1,iz))
     end do
     end do
@@ -210,12 +210,12 @@ FUNCTION ddzdn (ds, a) RESULT (b)
   real    :: ds(3), c
   integer :: ix, iy, iz
 !...............................................................................
-  if (size(b,3) > 1) then
+  if (size(a,3) > 1) then
     b(:,:,1) = 0.0
     c = 1./ds(3)
-    do iz=2,size(b,3)
-    do iy=1,size(b,2)
-    do ix=1,size(b,1)
+    do iz=2,size(a,3)
+    do iy=1,size(a,2)
+    do ix=1,size(a,1)
       b(ix,iy,iz) = c*(a(ix,iy,iz  ) - a(ix,iy,iz-1))
     end do
     end do
@@ -232,12 +232,12 @@ FUNCTION ddxup (ds, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: ds(3), c
 !...............................................................................
-  if (size(b,1) > 1) then
-    b(size(b,1),:,:) = 0.0
+  if (size(a,1) > 1) then
+    b(size(a,1),:,:) = 0.0
     c = 1./ds(1)
-    do iz=1,size(b,3)
-    do iy=1,size(b,2)
-    do ix=1,size(b,1)-1
+    do iz=1,size(a,3)
+    do iy=1,size(a,2)
+    do ix=1,size(a,1)-1
       b(ix,iy,iz) = c*(a(ix+1,iy,iz) - a(ix  ,iy,iz))
     end do
     end do
@@ -254,12 +254,12 @@ FUNCTION ddyup (ds, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: ds(3), c
 !...............................................................................
-  if (size(b,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,size(b,2),:) = 0.0
+  if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,size(a,2),:) = 0.0
     c = 1./ds(2)
-    do iz=1,size(b,3)
-    do iy=1,size(b,2)-1
-    do ix=1,size(b,1)
+    do iz=1,size(a,3)
+    do iy=1,size(a,2)-1
+    do ix=1,size(a,1)
       b(ix,iy,iz) = c*(a(ix,iy+1,iz) - a(ix,iy  ,iz))
     end do
     end do
@@ -276,12 +276,12 @@ FUNCTION ddzup (ds, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: ds(3), c
 !...............................................................................
-  if (size(b,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,:,size(b,3)) = 0.0
+  if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,:,size(a,3)) = 0.0
     c = 1./ds(3)
-    do iz=1,size(b,3)-1
-    do iy=1,size(b,2)
-    do ix=1,size(b,1)
+    do iz=1,size(a,3)-1
+    do iy=1,size(a,2)
+    do ix=1,size(a,1)
       b(ix,iy,iz) = c*(a(ix,iy,iz+1) - a(ix,iy,iz  ))
     end do
     end do
@@ -299,11 +299,11 @@ FUNCTION xdn (a) RESULT (b)
   integer :: ix, iy, iz
 !...............................................................................
   c = 0.5
-  if (size(b,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(1,:,:) = a(1,:,:)
-    do iz=1,size(b,3)
-    do iy=1,size(b,2)
-    do ix=2,size(b,1)
+    do iz=1,size(a,3)
+    do iy=1,size(a,2)
+    do ix=2,size(a,1)
       b(ix,iy,iz) = c*(a(ix  ,iy,iz) + a(ix-1,iy,iz))
     end do
     end do
@@ -321,11 +321,11 @@ FUNCTION ydn (a) RESULT (b)
   integer :: ix, iy, iz
 !...............................................................................
   c = 0.5
-  if (size(b,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,1,:) = a(:,1,:)
-    do iz=1,size(b,3)
-    do iy=2,size(b,2)
-    do ix=1,size(b,1)
+    do iz=1,size(a,3)
+    do iy=2,size(a,2)
+    do ix=1,size(a,1)
       b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy-1,iz))
     end do
     end do
@@ -343,11 +343,11 @@ FUNCTION zdn (a) RESULT (b)
   integer :: ix, iy, iz
 !...............................................................................
   c = 0.5
-  if (size(b,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,:,1) = a(:,:,1)
-    do iz=2,size(b,3)
-    do iy=1,size(b,2)
-    do ix=1,size(b,1)
+    do iz=2,size(a,3)
+    do iy=1,size(a,2)
+    do ix=1,size(a,1)
       b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy,iz-1))
     end do
     end do
@@ -365,11 +365,11 @@ FUNCTION xup (a) RESULT (b)
   integer :: ix, iy, iz
 !...............................................................................
   c = 0.5
-  if (size(b,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(size(b,1),:,:) = a(size(b,1),:,:)
-    do iz=1,size(b,3)
-    do iy=1,size(b,2)
-    do ix=1,size(b,1)-1
+  if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(size(a,1),:,:) = a(size(a,1),:,:)
+    do iz=1,size(a,3)
+    do iy=1,size(a,2)
+    do ix=1,size(a,1)-1
       b(ix,iy,iz) = c*(a(ix+1,iy,iz) + a(ix  ,iy,iz))
     end do
     end do
@@ -387,11 +387,11 @@ FUNCTION yup (a) RESULT (b)
   integer :: ix, iy, iz
 !...............................................................................
   c = 0.5
-  if (size(b,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,size(b,2),:) = a(:,size(b,2),:)
-    do iz=1,size(b,3)
-    do iy=1,size(b,2)-1
-    do ix=1,size(b,1)
+  if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,size(a,2),:) = a(:,size(a,2),:)
+    do iz=1,size(a,3)
+    do iy=1,size(a,2)-1
+    do ix=1,size(a,1)
       b(ix,iy,iz) = c*(a(ix,iy+1,iz) + a(ix,iy  ,iz))
     end do
     end do
@@ -409,11 +409,11 @@ FUNCTION zup (a) RESULT (b)
   integer :: ix, iy, iz
 !...............................................................................
   c = 0.5
-  if (size(b,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,:,size(b,3)) = a(:,:,size(b,3))
-    do iz=1,size(b,3)-2
-    do iy=1,size(b,2)
-    do ix=1,size(b,1)
+  if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,:,size(a,3)) = a(:,:,size(a,3))
+    do iz=1,size(a,3)-2
+    do iy=1,size(a,2)
+    do ix=1,size(a,1)
       b(ix,iy,iz) = c*(a(ix,iy,iz+1) + a(ix,iy,iz  ))
     end do
     end do
