@@ -115,9 +115,9 @@ SUBROUTINE init (self)
   logical, save:: guard_zones=.false., time_derivs=.false.
   real:: position(3)
   real, save:: courant=0.2, u_fixed=-1.0, dt_fixed=-1.0
-  real, save:: end_time=1.0, out_time=0.1
+  real, save:: end_time=1.0, out_time=0.1, print_time=0.1
   namelist /patch_params/ n, ng, nt, courant, u_fixed, dt_fixed
-  namelist /out_params/ out_time, end_time, guard_zones, time_derivs
+  namelist /out_params/ out_time, end_time, print_time, guard_zones, time_derivs
   !.............................................................................
   call trace_begin ('patch_t%init', 3)
   !$omp atomic
@@ -145,8 +145,9 @@ SUBROUTINE init (self)
   self%dt_fixed = dt_fixed
   self%u_fixed = u_fixed
   self%status=0
-  self%end_time=end_time
-  self%out_time=out_time
+  self%end_time = end_time
+  self%out_time = max(out_time,1e-30)           ! prevent divide fault when zero
+  self%print_time = max(print_time,1e-30)
   self%n  = n                                   ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   self%mesh%n  = n
@@ -244,7 +245,8 @@ SUBROUTINE update (self)
       minval(self%mem(:,:,:,1,self%new,1)), &
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
-  if (io%verbose>-1) then
+  if (io%verbose>0 .or. self%time>=self%print_next) then
+    self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
     nv = 1
     if (io%verbose>2) nv = self%nv
     do iv=1,nv
@@ -551,19 +553,13 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (present(experiment_name)) then
     filename = experiment_name
-    print*,'experiment_name: ', filename
   end if
   if (trim(io%inputname) /= 'input') then
     filename = io%inputname
-    print*,'input_name: ', filename
   end if
   if (self%time+0.5*self%dtime < self%out_next) return
   call trace_begin('patch:t%output')
-  if (self%time==0.0) then
-    self%out_next = self%out_time
-  else
-    self%out_next = self%out_time*int((self%time+0.5*self%dtime)/self%out_time) + self%out_time
-  end if
+    self%out_next = (nint(self%time/self%out_time)+1)*self%out_time
   !-----------------------------------------------------------------------------
   ! If guard_zones is true, include the guard zones.  If time_derivs is true,
   ! write out the time derivatives also.

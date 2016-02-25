@@ -19,8 +19,8 @@
 /
 &out_params
  end_time=0.5
- out_time=0.02
-!print_time=1e-4
+ out_time=0.3
+ print_time=0.1
 /
 &mhd_params
  nu=  0.10,  0.8, 2.0, 1.0,  0.2,  1.0
@@ -31,12 +31,12 @@
 /
 &force_params
  k=1,2,2
- a0=1,1,1 
+ a0=0,0,0
  t_turn=0.10
 /
 &initial_params
  k=3,4,5
- a0=1,1,1
+ a0=0,0,0
  b0=0,0,0
  type='single_compressive'
 /
