@@ -43,6 +43,7 @@ SUBROUTINE init (self)
   ! Initial conditions
   !----------------------------------------------------------------------------
   call self%initial%init
+  self%mhd = self%initial%mhd
   self%mem(:,:,:,:,1,1) = self%initial%selected(self%mesh)
   call self%force%init
   call trace_end
@@ -58,12 +59,11 @@ SUBROUTINE update (self)
   block
     real, dimension(:,:,:), pointer:: px
     px => self%mem(:,:,:,3,self%it,2)
-  call trace('before force')
     call self%check_error(px,"before force")
-  self%dpdt = self%dpdt + self%force%selected (self%time, self%mesh)
+  if (associated(self%force%selected)) &
+    self%dpdt = self%dpdt + self%force%selected (self%time, self%mesh)
     call self%check_error(px,"after force")
     px => self%mem(:,:,:,3,self%it,1)
-  call trace('after force')
   call self%courant_condition
   call timestep%update (self%id, self%iit, self%dt, self%mem)
     call self%check_error(px,"after timestep")

@@ -54,7 +54,7 @@ SUBROUTINE update (self)
   class(mhd_t):: self
   !.............................................................................
   real, dimension(:,:,:,:), pointer:: U, E, p, B, dpdt, dBdt
-  real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd
+  real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm
   real, dimension(:,:,:),   pointer:: d, s, dddt, dsdt
   real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
@@ -78,7 +78,7 @@ SUBROUTINE update (self)
   Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
-  call allocate_vectors (self%gn, U, E, fx, fy, fz, fd, ld, dd)
+  call allocate_vectors (self%gn, ld, dd, U, E, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pg, pa, du, ss, cs, pp, pb)
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3);
   Ex=>E(:,:,:,1); Ey=>E(:,:,:,2); Ez=>E(:,:,:,3);
@@ -93,43 +93,69 @@ SUBROUTINE update (self)
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below
   !-----------------------------------------------------------------------------
-  call self%check_error(d,'mhd_t%update d')
   lnd = log(d)
   ld = down(lnd)
   dd = exp(ld)
   U = p/dd
-  call self%check_error(px,'mhd_t%update px')
-  call self%check_error(py,'mhd_t%update py')
-  call self%check_error(pz,'mhd_t%update pz')
-  call self%check_error(Ux,'mhd_t%update Ux')
-  call self%check_error(Uy,'mhd_t%update Uy')
-  call self%check_error(Uz,'mhd_t%update Uz')
   !-----------------------------------------------------------------------------
   ! Gas pressure
   !-----------------------------------------------------------------------------
   pg = self%gas_pressure()
-  cs = sqrt(self%gamma*pg/d)                            ! sound speed
   !-----------------------------------------------------------------------------
-  ! Diffusion coefficient; the result 'nu' is cell centered, and may be staggered
-  ! down without increasing the number of ghost zones needed
+  ! Divergence of velocity, and artificial pressure
   !-----------------------------------------------------------------------------
   ds = self%mesh%d
   dx = minval(ds)                                       ! smallest {dx,dy,dz}
   du = -div(ds,U)                                       ! convergence rate
   du = dx*max(du,1e-20)                                 ! dimension: U
   pa = self%nu(3)*d*du**2                               ! dimension: pressure
-  call self%check_error(pa,'mhd_t%update pa')
-  call self%check_error(d,'mhd_t%update d')
-  call self%check_error(cs,'mhd_t%update cs')
+  !-----------------------------------------------------------------------------
+  ! Conservation of momentum -- first the diagonal part of the stress tensor
+  !-----------------------------------------------------------------------------
+  if (self%mhd) then
+    ! Diagonal Reynolds stress
+    fxx = xup(Ux)**2
+    fyy = yup(Uy)**2
+    fzz = zup(Uz)**2
+    pp = (fxx+fyy+fzz)
+    ! Diagonal (negative) Maxwell stress
+    fxx = xup(Bx)**2
+    fyy = yup(By)**2
+    fzz = zup(Bz)**2
+    ! Magnetic pressure
+    pb = 0.5*(fxx+fyy+fzz)
+    ! Fast mode speed + velocity
+    cs = sqrt((self%gamma*pg+2.0*pb)/d)
+    self%u_max = maxval(cs + sqrt(pp))
+    ! Isotropic pressure part
+    pp = d*pp + pg + pa + pb
+    ! Total diagondal stress
+    fxx = pp - fxx - d*du*ddxup(ds,Ux)
+    fyy = pp - fyy - d*du*ddyup(ds,Uy)
+    fzz = pp - fzz - d*du*ddzup(ds,Uz)
+  else
+    ! Diagonal Reynolds stress
+    fxx = xup(Ux)**2
+    fyy = yup(Uy)**2
+    fzz = zup(Uz)**2
+    pp = (fxx+fyy+fzz)
+    ! Sound speed + velocity
+    cs = sqrt(self%gamma*pg/d)
+    self%u_max = maxval(cs + sqrt(pp))
+    ! Isotropic pressure part
+    pp = d*pp + pg + pa
+    ! Total diagondal stress, with density factor
+    fxx = pp - d*du*ddxup(ds,Ux)
+    fyy = pp - d*du*ddyup(ds,Uy)
+    fzz = pp - d*du*ddzup(ds,Uz)
+  end if
   du = (self%nu(1)*cs + self%nu(2)*du)*dx               ! dimension: U*ds
-  call self%check_error(du,'mhd_t%update du')
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
   fd = -(self%nu(5)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux
-  fx = p+fd                                             ! mass flux
-  dddt = -div(ds,fx)                                    ! density derivative
-  call self%check_error(dddt,'mhd_t%update dddt')
+  fm = p+fd                                             ! mass flux
+  dddt = -div(ds,fm)                                    ! density derivative
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
@@ -139,29 +165,9 @@ SUBROUTINE update (self)
     dsdt = 0.0
   else
     ss = s/d
-    fx = fx*down(ss) - (self%nu(6)*dd*down(du))*ddown(ds,ss)
-    dsdt = -div(ds,fx)
+    fm = fm*down(ss) - (self%nu(6)*dd*down(du))*ddown(ds,ss)
+    dsdt = -div(ds,fm)
   end if
-  call self%check_error(dsdt,'mhd_t%update dsdt')
-  !-----------------------------------------------------------------------------
-  ! Conservation of momentum -- first the diagonal part of the stress tensor
-  !-----------------------------------------------------------------------------
-  if (self%mhd) then
-    pb = 0.5*norm2(B)
-    pp = norm2(U)
-    call self%check_error(pp,'mhd_t%update pp')
-    call self%check_error(pb,'mhd_t%update pb')
-    call self%check_error(pg,'mhd_t%update pg')
-    call self%check_error(pa,'mhd_t%update pa')
-    self%u_max = maxval(sqrt((self%gamma*pg+pb)/d) + sqrt(pp))
-    pp = d*pp + pg + pa - pb
-  else
-    pp = d*norm2(U) + pg + pa
-  end if
-  fxx = pp - d*du*ddxup(ds,Ux)
-  call self%check_error(fxx,'mhd_t%update fxx1')
-  fyy = pp - d*du*ddyup(ds,Uy)
-  fzz = pp - d*du*ddzup(ds,Uz)
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -182,7 +188,7 @@ SUBROUTINE update (self)
   fxz = exp(zdn(ldx))*fxz
   fyz = exp(zdn(ldy))*fyz
   !---------------------------------------------------------------------------
-  ! Off-diagonal part of Maxwell stress
+  ! Off-diagonal Maxwell stress
   !---------------------------------------------------------------------------
   if (self%mhd) then
     fxy = fxy - ydn(Bx)*xdn(By)
@@ -207,12 +213,6 @@ SUBROUTINE update (self)
   dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fxz)
   dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)
   dpdtz = - ddxup1(ds,fxz) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
-  call self%check_error(fxx,'mhd_t%update fxx3')
-  call self%check_error(fxy,'mhd_t%update fxy')
-  call self%check_error(fxz,'mhd_t%update fxz')
-  call self%check_error(dpdtx,'mhd_t%update dpxdt')
-  call self%check_error(dpdty,'mhd_t%update dpydt')
-  call self%check_error(dpdtz,'mhd_t%update dpzdt')
   if (self%mhd) then
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
@@ -223,14 +223,11 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     ! Induction equation, with resistive term
     !---------------------------------------------------------------------------
-    E = E + self%nu(6)*edge(du)*curl(ds,B)
-    dBdt = -curl(ds,E)
+    E = E + self%nu(6)*edge(du)*curl_dn(ds,B)
+    dBdt = -curl_up(ds,E)
   end if
-  call self%check_error(dBdtx,'mhd_t%update dBxdt')
-  call self%check_error(dBdty,'mhd_t%update dBydt')
-  call self%check_error(dBdtz,'mhd_t%update dBzdt')
   !-----------------------------------------------------------------------------
-  call deallocate_vectors (ld, dd, U, E, fd, fx, fy, fz)
+  call deallocate_vectors (ld, dd, U, E, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pg, pa, du, ss, cs, pp, pb)
   call trace_end
 END SUBROUTINE update

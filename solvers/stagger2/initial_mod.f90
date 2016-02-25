@@ -13,6 +13,7 @@ MODULE initial_mod
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     integer:: seed
+    logical:: mhd
     real(8):: a(3), b(3), phi(3), d0, s0
     real(8):: a0(3), k(3), b0(3), u0(3)
     procedure(single_solenoidal), pointer:: selected=>null()
@@ -28,9 +29,10 @@ CONTAINS
 SUBROUTINE init (self)
    class(initial_t):: self
    integer, save:: seed=-33
+   logical, save:: mhd=.true.
    real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0
    character(len=32):: type='single_solenoidal'
-   namelist /initial_params/ seed, k, a0, u0, b0, d0, s0, type
+   namelist /initial_params/ seed, k, a0, u0, b0, d0, s0, mhd, type
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    if (first_time) then
@@ -39,6 +41,7 @@ SUBROUTINE init (self)
        first_time = .false.
        rewind (io%input)
        read (io%input, initial_params)
+       mhd = any(self%b0 /= 0.0)
        if (io%master) write (*, initial_params)
      end if
     !$omp end critical (experiment_cr)
@@ -50,6 +53,7 @@ SUBROUTINE init (self)
    self%u0     = u0
    self%d0     = d0
    self%s0     = s0
+   self%mhd    = mhd
    select case (type)
    case ('single_solenoidal')
      self%selected => single_solenoidal
@@ -126,17 +130,17 @@ FUNCTION single_compressive (self, m) RESULT (ff)
         kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0
         ff(ix,iy,iz,2) = self%s0
-        ff(ix,iy,iz,3) = self%a0(1)*sin(kx)
-        ff(ix,iy,iz,4) = self%a0(2)*sin(ky)
-        ff(ix,iy,iz,5) = self%a0(3)*sin(kz)
-        ff(ix,iy,iz,6) = self%b0(1)*sin(kx)
-        ff(ix,iy,iz,7) = self%b0(2)*sin(ky)
-        ff(ix,iy,iz,8) = self%b0(3)*sin(kz)
+        ff(ix,iy,iz,3) = self%u0(1)*sin(kx)
+        ff(ix,iy,iz,4) = self%u0(2)*sin(ky)
+        ff(ix,iy,iz,5) = self%u0(3)*sin(kz)
+        ff(ix,iy,iz,6) = self%b0(1)
+        ff(ix,iy,iz,7) = self%b0(2)
+        ff(ix,iy,iz,8) = self%b0(3)
       end do
     end do
   end do
   do ix=m(1)%lb,m(1)%ub
-    print'(a,i4,f22.16)', 'initial:', ix, ff(ix,1,1,3)
+    print'(a,i4,f22.16)', 'initial:', ix, ff(ix,1,1,7)
   end do
   call trace_end
 END FUNCTION single_compressive
@@ -168,9 +172,9 @@ FUNCTION single_advection (self, m) RESULT (ff)
         ff(ix,iy,iz,3) = self%d0*self%u0(1)
         ff(ix,iy,iz,4) = self%d0*self%u0(2)
         ff(ix,iy,iz,5) = self%d0*self%u0(3)
-        ff(ix,iy,iz,6) = self%b0(1)*sin(kx)
-        ff(ix,iy,iz,7) = self%b0(2)*sin(ky)
-        ff(ix,iy,iz,8) = self%b0(3)*sin(kz)
+        ff(ix,iy,iz,6) = self%b0(3)*sin(kz)
+        ff(ix,iy,iz,7) = self%b0(1)*sin(kx)
+        ff(ix,iy,iz,8) = self%b0(2)*sin(ky)
       end do
     end do
   end do

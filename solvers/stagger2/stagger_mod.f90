@@ -64,8 +64,11 @@ MODULE stagger_mod
   interface minusdiv
     module procedure scalar_minusdiv_vector
   end interface
-  interface curl
-    module procedure vector_curl_vector
+  interface curl_dn
+    module procedure vector_curl_dn_vector
+  end interface
+  interface curl_up
+    module procedure vector_curl_up_vector
   end interface
 CONTAINS
 
@@ -529,7 +532,7 @@ FUNCTION scalar_minusdiv_vector (ds, in) RESULT (out)
   out = - ddxup(ds, in(:,:,:,1)) - ddyup(ds, in(:,:,:,2)) - ddzup(ds, in(:,:,:,3))
 END FUNCTION
 !> =============================================================================
-FUNCTION vector_curl_vector (ds, in) RESULT (out)
+FUNCTION vector_curl_dn_vector (ds, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
   real:: ds(3)
@@ -538,6 +541,15 @@ FUNCTION vector_curl_vector (ds, in) RESULT (out)
   out(:,:,:,2) = ddzdn(ds, in(:,:,:,1)) - ddxdn(ds, in(:,:,:,3))
   out(:,:,:,3) = ddxdn(ds, in(:,:,:,2)) - ddydn(ds, in(:,:,:,1))
 END FUNCTION
-
+!> =============================================================================
+FUNCTION vector_curl_up_vector (ds, in) RESULT (out)
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real:: ds(3)
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = ddyup(ds, in(:,:,:,3)) - ddzup(ds, in(:,:,:,2))
+  out(:,:,:,2) = ddzup(ds, in(:,:,:,1)) - ddxup(ds, in(:,:,:,3))
+  out(:,:,:,3) = ddxup(ds, in(:,:,:,2)) - ddyup(ds, in(:,:,:,1))
+END FUNCTION
 !*******************************************************************************
 END MODULE

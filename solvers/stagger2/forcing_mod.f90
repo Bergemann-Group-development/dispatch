@@ -29,7 +29,7 @@ CONTAINS
 SUBROUTINE init (self)
    class(force_t):: self
    integer,save:: seed=-11
-   character(len=32):: type='single_solenoidal'
+   character(len=32):: type='zero'
    real, save:: t_turn=0.3, a0(3)=0.1, k(3)=1.0
    namelist /force_params/ k, a0, t_turn, type
    !----------------------------------------------------------------------------
@@ -52,10 +52,9 @@ SUBROUTINE init (self)
    case ('single_solenoidal')
      self%selected => single_solenoidal
    case ('zero')
-     self%selected => zero
+     nullify(self%selected)
    case default
-     print*,'UNKNOWN INITIAL CONDITION TYPE'
-     stop
+     print*,'UNKNOWN FORCING TYPE'
    end select
    call trace_end
 END SUBROUTINE init
@@ -96,17 +95,5 @@ FUNCTION single_solenoidal (self, time, m) RESULT (ff)
   end do
   call trace_end
 END FUNCTION single_solenoidal
-
-!> =============================================================================
-!> Zero force
-!> =============================================================================
-FUNCTION zero (self, time, m) RESULT (ff)
-  class(force_t)        :: self
-  real(8)               :: time
-  type(mesh_t)          :: m(3)
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
-  !-----------------------------------------------------------------------------
-  ff = 0.0
-END FUNCTION zero
 
 END MODULE
