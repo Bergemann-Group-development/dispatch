@@ -139,9 +139,6 @@ FUNCTION single_compressive (self, m) RESULT (ff)
       end do
     end do
   end do
-  do ix=m(1)%lb,m(1)%ub
-    print'(a,i4,f22.16)', 'initial:', ix, ff(ix,1,1,7)
-  end do
   call trace_end
 END FUNCTION single_compressive
 

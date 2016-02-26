@@ -15,9 +15,11 @@ PROGRAM dispatch
   call cartesian%init('turbulence')     ! Initialize the patch list and patches
   task_list => cartesian%task_list      ! for now, just short hand -- could assemble
   task_list%n_tasks = product(cartesian%dims)
+  !$omp parallel
   do while (task_list%n > 0)            ! As long as there are patches in the list
     call task_list%update               ! update the list = update member patches
   end do
+  !$omp end parallel
   print*,'stopping: all tasks finished'
 !> =============================================================================
 END PROGRAM dispatch

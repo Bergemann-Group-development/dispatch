@@ -125,6 +125,7 @@ SUBROUTINE set (self, bit)
   integer:: bit
   !.............................................................................
 !  call trace_begin ('task_t%set')
+  !$omp atomic
   self%status = ior(self%status, bit)
 !  call trace_end
 END SUBROUTINE
@@ -134,6 +135,7 @@ SUBROUTINE clear (self, bit)
   integer:: bit
   !.............................................................................
 !  call trace_begin ('task_t%clear')
+  !$omp atomic
   self%status = iand(self%status, not(bit))
 !  call trace_end
 END SUBROUTINE
@@ -160,6 +162,7 @@ END FUNCTION
 FUNCTION unique_id (self)
   class (task_t):: self
   integer:: unique_id
+  !$omp atomic
   id = id+1             ! FIXME
   unique_id = id
 END FUNCTION unique_id

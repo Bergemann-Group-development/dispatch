@@ -7,6 +7,7 @@ MODULE mhd_mod
   USE vector_mod
   USE stagger_mod
   USE patch_mod
+  USE forcing_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
@@ -14,6 +15,7 @@ MODULE mhd_mod
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real:: nu(6)
     logical:: mhd=.true.
+    type(force_t):: force
   contains
     procedure:: init
     procedure:: update
@@ -45,6 +47,7 @@ SUBROUTINE init (self)
   self%courant = courant
   self%nu = nu
   self%gamma = gamma
+  call self%force%init
   call trace_end
 END SUBROUTINE init
 
@@ -213,6 +216,8 @@ SUBROUTINE update (self)
   dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fxz)
   dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)
   dpdtz = - ddxup1(ds,fxz) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
+  if (associated(self%force%selected)) &
+    dpdt = dpdt + dd*self%force%selected (self%time, self%mesh)
   if (self%mhd) then
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges

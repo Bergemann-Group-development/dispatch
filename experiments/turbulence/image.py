@@ -10,6 +10,6 @@ def image(f,title=''):
     pl.clf()
     pl.title(title)
     pl.imshow(f.squeeze().transpose(), 
-      origin='lower',interpolation='nearest')
+      origin='lower',interpolation='bicubic')
     pl.colorbar()
     pl.show(block=False)

@@ -16,7 +16,6 @@ MODULE experiment_mod
   type, public, extends(mhd_t):: experiment_t
     integer:: i_d=1
     real:: G
-    type(force_t):: force
     type(initial_t):: initial
   contains
     procedure init
@@ -45,7 +44,7 @@ SUBROUTINE init (self)
   call self%initial%init
   self%mhd = self%initial%mhd
   self%mem(:,:,:,:,1,1) = self%initial%selected(self%mesh)
-  call self%force%init
+  !call self%force%init
   call trace_end
 END SUBROUTINE init
 
@@ -60,8 +59,8 @@ SUBROUTINE update (self)
     real, dimension(:,:,:), pointer:: px
     px => self%mem(:,:,:,3,self%it,2)
     call self%check_error(px,"before force")
-  if (associated(self%force%selected)) &
-    self%dpdt = self%dpdt + self%force%selected (self%time, self%mesh)
+!  if (associated(self%force%selected)) &
+!    self%dpdt = self%dpdt + self%force%selected (self%time, self%mesh)
     call self%check_error(px,"after force")
     px => self%mem(:,:,:,3,self%it,1)
   call self%courant_condition

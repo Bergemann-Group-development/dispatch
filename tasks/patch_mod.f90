@@ -250,6 +250,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! One line summary
   !-----------------------------------------------------------------------------
+  !$omp atomic
   self%time = self%time + self%dtime                    ! update self time
   if (io%verbose>1) then
     print'(a,i4,2i3,2f11.6,2x,a,1p,6e10.2)', 'update: id,j,k,l,n,dt,t', &
@@ -278,6 +279,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Time slot rotation
   !-----------------------------------------------------------------------------
+  !$omp critical (time_cr)
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = self%time                          ! initial time
@@ -287,6 +289,7 @@ SUBROUTINE update (self)
   self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
   self%iit(self%nt) = self%new                          ! new right-most slot
   self%istep = self%istep + 1
+  !$omp end critical (time_cr)
   if (io%verbose>2) &
    print*,'patch id:',self%id,'  it:',self%it,'  new:',self%new
   if (io%verbose>3) &

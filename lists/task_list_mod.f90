@@ -117,6 +117,7 @@ SUBROUTINE update (self)
     call self%check_all
     print *,'WARNING: check_all (should not be needed), found', self%nq
   end if
+  !$omp critical (queue_cr)
   head => self%queue                                    ! queue start
   if (.not.associated(head)) then
     print*,'ERROR: no self%queue', self%nq, self%n
@@ -124,18 +125,10 @@ SUBROUTINE update (self)
   end if
   self%queue => self%queue%next_time                  ! update the link
   self%nq = self%nq-1
+  !$omp end critical (queue_cr)
   call self%check_mpi                                 ! check incoming MPI
   task => head%task                                   ! head task
-  select type (task)
-  class is (patch_t)
-  block
-    real, dimension(:,:,:), pointer:: px
-    px => task%mem(:,:,:,3,task%it,1)
-    call task%check_error(px,"before")                ! px before download
   call download_link (head, all_cells=.false.)        ! guard cells
-    call task%check_error(px,"after")                 ! px before download
-  end block
-  end select
  !if (refine%needed (task)) then                      ! if refinement needed
  !  call self%split (head)                            ! refined tasks go back to queue
  !end if
@@ -144,8 +137,10 @@ SUBROUTINE update (self)
   call task%clear(bits%ready)                         ! needs new check
   call task%output(self%name)                         ! check output
   call self%check_nbors (head)                        ! any nbor ready?
+  !$omp critical (queue_cr)
   if (task%time+0.5*task%dtime > task%end_time) &     ! finished:
     call self%remove_task (task)                      ! remove from self
+  !$omp end critical (queue_cr)
   call trace_end
 END SUBROUTINE update
 
@@ -717,6 +712,7 @@ SUBROUTINE queue_by_time (self, this)
   call this%task%set(bits%ready)                       ! mark as checked
   if (io%verbose>2) print'(1x,a,i6,a,f10.5)', 'list_t%queue_by_time: adding task', &
     this%task%id, ' at time', this%task%time
+  !$omp critical (queue_cr)
   nullify (prev)
   next => self%queue
   do while (associated(next))
@@ -743,6 +739,7 @@ SUBROUTINE queue_by_time (self, this)
     self%queue => this
   end if
   nullify (this%next_time)
+  !$omp end critical (queue_cr)
   call trace_end
 END SUBROUTINE queue_by_time
 
