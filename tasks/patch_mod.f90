@@ -157,7 +157,6 @@ SUBROUTINE init (self)
   self%max_files = max_files
   self%guard_zones=guard_zones
   self%time_derivs=time_derivs
-  self%courant = courant
   self%dt_fixed = dt_fixed
   self%u_fixed = u_fixed
   self%status=0
