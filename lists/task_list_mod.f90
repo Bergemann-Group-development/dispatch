@@ -339,7 +339,7 @@ END SUBROUTINE qconsistency
 !> =============================================================================
 SUBROUTINE init_nbors (self)
   class(task_list_t):: self
-  type(link_t), pointer:: link, scan
+  class(link_t), pointer:: link, scan
   class(link_t), pointer:: nbor
   integer:: n_add = 0
   !.............................................................................
@@ -414,7 +414,7 @@ END SUBROUTINE statistics
 SUBROUTINE append_list (self, task_list)
   class(task_list_t):: self
   class(task_list_t), pointer:: task_list
-  type(link_t), pointer:: link
+  class(link_t), pointer:: link
   integer:: n
   !-----------------------------------------------------------------------------
   call trace_begin ('task_list_t%append_list')
@@ -482,7 +482,7 @@ SUBROUTINE split (self, this)
   integer:: nsplit(3)
   type(patch_t), pointer:: patch, this_patch
   class(task_t), pointer:: task
-  type(link_t), pointer:: tail
+  class(link_t), pointer:: tail
   integer dir, i, ix, iy, iz
   real:: pos(3)
   !.............................................................................
@@ -611,7 +611,7 @@ END SUBROUTINE make_new_nbor
 SUBROUTINE add_nbor_by_quality (self, this)
   class(link_t):: self
   class(link_t), pointer:: this
-  type(link_t), pointer:: next, prev
+  class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_quality')
   nullify (prev)
@@ -657,7 +657,7 @@ END SUBROUTINE add_nbor_by_quality
 SUBROUTINE search_nbors_by_overlap (self, start)
   class(link_t), target:: self
   class(link_t), pointer:: link1, link2, start, prev
-  type(link_t), pointer:: nbor
+  class(link_t), pointer:: nbor
   class(patch_t), pointer:: p1, p2
   !> ===========================================================================
   !> For each task link, make a list of neighbors, starting with link%nbor
@@ -751,7 +751,7 @@ END SUBROUTINE queue_by_time
 SUBROUTINE add_by_quality (self, this)
   class(task_list_t):: self
   class(link_t), pointer:: this
-  type(link_t), pointer:: next, prev
+  class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_by_quality')
   nullify (prev)
@@ -798,7 +798,7 @@ END SUBROUTINE add_by_quality
 !> =============================================================================
 SUBROUTINE output (self)
   class (task_list_t):: self
-  type(link_t) , pointer:: link, nbor
+  class(link_t) , pointer:: link, nbor
   !.............................................................................
   call trace_begin('task_list%output')
   link => self%head
@@ -837,7 +837,7 @@ END SUBROUTINE check_queue
 !> =============================================================================
 SUBROUTINE print_tasks (self)
   class (task_list_t):: self
-  type(link_t) , pointer:: link, nbor
+  class(link_t) , pointer:: link, nbor
   !.............................................................................
   if (io%verbose < 2) return
   link => self%head
@@ -854,7 +854,7 @@ END SUBROUTINE print_tasks
 !> =============================================================================
 SUBROUTINE print_queue (self)
   class (task_list_t):: self
-  type(link_t) , pointer:: link, nbor
+  class(link_t) , pointer:: link, nbor
   !.............................................................................
   if (io%verbose < 2) return
   link => self%queue
@@ -872,7 +872,7 @@ END SUBROUTINE print_queue
 SUBROUTINE print_tasklist (self, label)
   class (task_list_t):: self
   character(len=*), optional:: label
-  type(link_t) , pointer:: link, nbor
+  class(link_t) , pointer:: link, nbor
   !.............................................................................
   print*, label
   link => self%head

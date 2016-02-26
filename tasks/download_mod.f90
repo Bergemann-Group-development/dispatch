@@ -18,9 +18,9 @@ CONTAINS
 !> patches at the same level, with no other types even allowed in the nbor list
 !> =============================================================================
 SUBROUTINE download_link (link, all_cells)
-  type(link_t), pointer:: link
+  class(link_t), pointer:: link
   logical, optional:: all_cells
-  type(link_t), pointer:: nbor
+  class(link_t), pointer:: nbor
   class(patch_t), pointer:: patch
   logical:: static, same
   integer:: nt, nv
@@ -67,7 +67,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE download_same_static (link)
   class(patch_t), pointer:: patch, other
-  type(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link, nbor
   class(task_t), pointer:: task
   integer:: ix, iy, iz, o, jt1, jt2, it, iv, nt, nv
   real:: pt, qt
@@ -206,7 +206,7 @@ END SUBROUTINE download_same_static
 !> Find the nbor task in direction idir (plus/minos)
 !> =============================================================================
 FUNCTION find_nbor (link, idir, o, time, jt1, jt2, pt, qt) RESULT (other)
-  type(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link, nbor
   class(patch_t), pointer:: patch, other
   type(mesh_t), pointer:: m(:)
   real(8):: time, position(3), dist
