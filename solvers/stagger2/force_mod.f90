@@ -2,7 +2,7 @@
 !> This is a start on a module that could become a general turbulence forcing
 !> module, where the standard forcing we have been using in RAMSES is implemented
 !> =============================================================================
-MODULE forcing_mod
+MODULE force_mod
   USE io_mod
   USE trace_mod
   USE vector_mod

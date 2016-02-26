@@ -21,8 +21,5 @@ sinclude $(PPCODE)/Experiments/DISPATCH/Makefile
 $(EXEC): cartesian_mod.o $(PICOBJ)
 
 # Dependencies
-experiment_mod.o        : mhd_mod.o scalar_mod.o trace_mod.o vector_mod.o forcing_mod.o io_mod.o timestep_mod.o initial_mod.o
-forcing_mod.o           : random_mod.o io_mod.o vector_mod.o mesh_mod.o trace_mod.o scalar_mod.o
-random_mod.o            : io_mod.o
-mhd_mod.o               : patch_mod.o io_mod.o vector_mod.o trace_mod.o stagger_mod.o scalar_mod.o
+experiment_mod.o        : mhd_mod.o scalar_mod.o trace_mod.o vector_mod.o force_mod.o io_mod.o timestep_mod.o initial_mod.o
 

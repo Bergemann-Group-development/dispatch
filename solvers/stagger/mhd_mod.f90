@@ -7,11 +7,13 @@ MODULE mhd_mod
   USE vector_mod
   USE stagger_mod
   USE patch_mod
+  USE force_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
     type(scalar_t):: d, dddt, s, dsdt
     type(vector_t):: p, dpdt, B, dBdt
+    type(force_t):: force
     real:: nu(6)
     logical:: mhd=.true.
   contains
@@ -54,13 +56,13 @@ SUBROUTINE update (self)
   class(mhd_t):: self
   !.............................................................................
   type(vector_t):: U, E, J                              ! velocity, electric field
-  type(vector_t):: fx, fy, fz, fd, ld, dd               ! extra vector temporaries
+  type(vector_t):: fx, fy, fz, fd, ld, dd, fm           ! extra vector temporaries
   type(scalar_t):: du, lnd, ss, cs, pg, pa, pp, pb      ! extra scalar temporaries
   real, dimension(:,:,:),   pointer:: s
   real, dimension(:,:,:,:), pointer:: v
   !.............................................................................
   integer:: n(3)
-  real:: ds
+  real:: dx, ds(3)
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%update')
   if (first_time) call self%init
@@ -76,7 +78,7 @@ SUBROUTINE update (self)
   s=>self%mem(:,:,:,  2,self%it,2); call self%dsdt%scalar_map (s, n, self%ds)
   v=>self%mem(:,:,:,3:5,self%it,2); call self%dpdt%vector_map (v, n, self%ds)
   v=>self%mem(:,:,:,6:8,self%it,2); call self%dBdt%vector_map (v, n, self%ds)
-  call init_vectors (self%mesh%gn, self%ds, ld, dd, U, E, fd, fx, fy, fz)
+  call init_vectors (self%mesh%gn, self%ds, ld, dd, U, E, fd, fm, fx, fy, fz)
   call init_scalars (self%mesh%gn, self%ds, lnd, pg, pa, du, ss, cs, pp, pb)
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
@@ -91,49 +93,63 @@ SUBROUTINE update (self)
   ! Gas pressure
   !-----------------------------------------------------------------------------
   pg = self%gas_pressure()
-  cs = sqrt(self%gamma*pg/d)                            ! sound speed
   !-----------------------------------------------------------------------------
   ! Diffusion coefficient; the result 'nu' is cell centered, and may be staggered
   ! down without increasing the number of ghost zones needed
   !-----------------------------------------------------------------------------
-  ds = minval(d%ds)                                     ! smallest {dx,dy,dz}
-  du = -div(U)                                          ! convergence rate
-  du = ds*max(du,1e-20)                                 ! dimension: U
-  pa = self%nu(3)*d*du**2                               ! dimension: pressure
-  du = (self%nu(1)*cs + self%nu(2)*du)*ds               ! dimension: U*ds
+  ds = self%mesh%d
+  dx = minval(ds)                                       ! smallest {dx,dy,dz}
+  du = -dx*div(U)                                    ! convergence rate
+  !-----------------------------------------------------------------------------
+  ! Conservation of momentum -- first the diagonal part of the stress tensor
+  !-----------------------------------------------------------------------------
+  if (self%mhd) then
+    ! Diagonal Reynolds stress
+    fx%x = xup(U%x)**2
+    fy%y = yup(U%y)**2
+    fz%z = zup(U%z)**2
+    pp = (fx%x+fy%y+fz%z)
+    ! Diagonal (negative) Maxwell stress
+    fx%x = xup(B%x)**2
+    fy%y = yup(B%y)**2
+    fz%z = zup(B%z)**2
+    ! Magnetic pressure
+    pb = 0.5*(fx%x+fy%y+fz%z)
+    ! Fast mode speed + velocity
+    pa = self%nu(3)*d*max(du,0.0)**2
+    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
+    self%u_max = maxval(cs + sqrt(pp) + abs(du))
+    du = max(du,0.0)
+    ! Isotropic pressure part
+    pp = d*pp + pg + pa + pb
+    ! Total diagondal stress
+    fx%x = pp - fx%x - d*du*ddxup(U%x)
+    fy%y = pp - fy%y - d*du*ddyup(U%y)
+    fz%z = pp - fz%z - d*du*ddzup(U%z)
+  else
+    ! Diagonal Reynolds stress
+    fx%x = xup(U%x)**2
+    fy%y = yup(U%y)**2
+    fz%z = zup(U%z)**2
+    pp = (fx%x+fy%y+fz%z)
+    ! Sound speed + velocity
+    cs = sqrt(self%gamma*pg/d)
+    self%u_max = maxval(cs + sqrt(pp) + du)
+    ! Isotropic pressure part
+    pa = self%nu(3)*d*du**2                               ! dimension: pressure
+    pp = d*pp + pg + pa
+    ! Total diagondal stress, with density factor
+    fx%x = pp - d*du*ddxup(U%x)
+    fy%y = pp - d*du*ddyup(U%y)
+    fz%z = pp - d*du*ddzup(U%z)
+  end if
+  du = (self%nu(1)*cs + self%nu(2)*du)*dx               ! dimension: U*ds
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
-  fd = -(self%nu(5)*dd*down(du))*ddown(lnd)             ! diffusive mass flux
-  fx = p+fd                                             ! mass flux
-  dddt = -div(fx)                                       ! density derivative
-  block
-    integer:: l(5)
-    l=0
-    call self%check_error('mhd_t%update dddt',l)
-    if (any(l>0)) then
-      print*,'dddt'
-      print 1,dddt%f(l(1),l(2),:)
-      print*,'fd'
-      print 1,fd%z%f(l(1),l(2),:)
-      print*,'fx'
-      print 1,fx%z%f(l(1),l(2),:)
-      print*,'dd'
-      print 1,dd%z%f(l(1),l(2),:)
-      print*,'p'
-      print 1,p%z%f(l(1),l(2),:)
-      print*,'du'
-      print 1,du%f(l(1),l(2),:)
-      print*,'lnd'
-      print 1,lnd%f(l(1),l(2),:)
-      print*,'U'
-      print 1,u%x%f(l(1),l(2),:)
-      print 1,u%y%f(l(1),l(2),:)
-      print 1,u%z%f(l(1),l(2),:)
-    1 format(1p,12e10.2)
-      stop
-    end if
-  end block
+  fd = -(self%nu(5)*dd*down(du))*ddown(lnd)          ! diffusive mass flux
+  fm = p+fd                                             ! mass flux
+  dddt = -div(fm)                                    ! density derivative
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
@@ -143,25 +159,9 @@ SUBROUTINE update (self)
     dsdt = 0.0
   else
     ss = s/d
-    fx = fx*down(ss) - (self%nu(6)*dd*down(du))*ddown(ss)
-    dsdt = -div(fx)
+    fm = fm*down(ss) - (self%nu(6)*dd*down(du))*ddown(ss)
+    dsdt = -div(fm)
   end if
-  call self%check_error('mhd_t%update 1')
-  !-----------------------------------------------------------------------------
-  ! Conservation of momentum -- first the diagonal part of the stress tensor
-  !-----------------------------------------------------------------------------
-  if (self%mhd) then
-    pb = 0.5*norm2(B)
-    pp = norm2(U)
-    self%u_max = maxval(sqrt((self%gamma*pg+2.*pb)/d) + sqrt(pp))
-    pp = d*pp + pg + pa - pb
-  else
-    pp = d*norm2(U) + pg + pa
-  end if
-  fx%x = pp - d*du*ddxup(U%x)
-  fy%y = pp - d*du*ddyup(U%y)
-  fz%z = pp - d*du*ddzup(U%z)
-  call self%check_error('mhd_t%update 2')
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -181,9 +181,8 @@ SUBROUTINE update (self)
   fx%y = exp(ydn(ld%x))*fx%y
   fx%z = exp(zdn(ld%x))*fx%z
   fy%z = exp(zdn(ld%y))*fy%z
-  call self%check_error('mhd_t%update 3')
   !---------------------------------------------------------------------------
-  ! Off-diagonal part of Maxwell stress
+  ! Off-diagonal Maxwell stress
   !---------------------------------------------------------------------------
   if (self%mhd) then
     fx%y = fx%y - ydn(B%x)*xdn(B%y)
@@ -205,20 +204,11 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Momentum equations
   !-----------------------------------------------------------------------------
-  call self%check_error('mhd_t%update 7')
   dpdt%x = - ddxdn1(fx%x) - ddyup1(fx%y) - ddzup1(fx%z)
-  call self%check_error('mhd_t%update 7x')
   dpdt%y = - ddxup1(fx%y) - ddydn1(fy%y) - ddzup1(fy%z)
-  call self%check_error('mhd_t%update 7y')
-  print*,dpdt%z%id,dpdt%z%temporary,dpdt%z%allocated,dpdt%z%n,dpdt%z%l,dpdt%z%u,dpdt%z%ds
-  dpdt%x = - ddxup1(fx%z)
-  call self%check_error('mhd_t%update 7a')
-  dpdt%x =- ddyup1(fy%z)
-  call self%check_error('mhd_t%update 7b')
-  dpdt%x = - ddzdn1(fz%z)
-  call self%check_error('mhd_t%update 7c')
   dpdt%z = - ddxup1(fx%z) - ddyup1(fy%z) - ddzdn1(fz%z)
-  call self%check_error('mhd_t%update 7z')
+  if (associated(self%force%selected)) &
+    dpdt = dpdt + dd*self%force%selected (self%time, self%mesh)
   if (self%mhd) then
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
@@ -229,17 +219,14 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     ! Induction equation, with resistive term
     !---------------------------------------------------------------------------
-    E = E + self%nu(6)*edge(du)*curl(B)
-    dBdt = -curl(E)
-    call self%check_error('mhd_t%update 8')
+    E = E + self%nu(6)*edge(du)*curl_dn(B)
+    dBdt = -curl_up(E)
   end if
   !-----------------------------------------------------------------------------
-  call deallocate_vectors (ld, dd, U, E, fd, fx, fy, fz)
+  call deallocate_vectors (ld, dd, U, E, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pg, pa, du, ss, cs, pp, pb)
-  call self%check_error('mhd_t%update 9')
-  !call cleanup_temp
-  end associate
   call trace_end
+  end associate
 END SUBROUTINE update
 
 !> =============================================================================

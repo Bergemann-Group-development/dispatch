@@ -67,8 +67,11 @@ MODULE stagger_mod
   interface cross
     module procedure real4_vector_cross, real8_vector_cross, vector_cross, real4_array_cross
   end interface
-  interface curl
-    module procedure vector_curl
+  interface curl_up
+    module procedure vector_curl_up
+  end interface
+  interface curl_dn
+    module procedure vector_curl_dn
   end interface
 CONTAINS
 
@@ -248,11 +251,11 @@ FUNCTION ddzdn (a) RESULT (b)
   integer :: ix, iy, iz
   real    :: c
 !...............................................................................
-  print*,'b',b%id,b%temporary,b%allocated,associated(b%f)
+  !print*,'b',b%id,b%temporary,b%allocated,associated(b%f)
   call b%tempalloc (a,'ddzdn')
-  print*,'b',b%id,b%temporary,b%allocated,associated(b%f)
-  print*,'l',a%l,a%id,a%n
-  print*,'u',a%u
+  !print*,'b',b%id,b%temporary,b%allocated,associated(b%f)
+  !print*,'l',a%l,a%id,a%n
+  !print*,'u',a%u
   if (a%n(3) > 1) then
     c = 1./a%ds(3)
     b%f(:,:,a%l(3)) = 0.0
@@ -387,8 +390,8 @@ FUNCTION ddzup (a) RESULT (b)
   real    :: c
 !...............................................................................
   call b%tempalloc (a,'ddzup')
-  print*,'l',a%l,a%id,a%n
-  print*,'u',a%u
+  !print*,'l',a%l,a%id,a%n
+  !print*,'u',a%u
   if (a%n(3) > 1) then
     c = 1./a%ds(3)
     do iz=a%l(3),a%u(3)-1
@@ -709,7 +712,7 @@ SUBROUTINE zup_add (a, b, sign)
 END SUBROUTINE zup_add
 
 !> =============================================================================
-FUNCTION vector_curl (in) RESULT (out)
+FUNCTION vector_curl_up (in) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in
   !-----------------------------------------------------------------------------
@@ -720,7 +723,20 @@ FUNCTION vector_curl (in) RESULT (out)
   if (verbose>0) print*,'curl_z'
   out%z = ddxup(in%y) - ddyup(in%x)
   if (verbose>0) print*,'curl_end'
-END FUNCTION vector_curl
+END FUNCTION vector_curl_up
+!> =============================================================================
+FUNCTION vector_curl_dn (in) RESULT (out)
+  type(vector_t):: out
+  type(vector_t), intent(in):: in
+  !-----------------------------------------------------------------------------
+  if (verbose>0) print*,'curl_x'
+  out%x = ddydn(in%z) - ddzdn(in%y)
+  if (verbose>0) print*,'curl_y'
+  out%y = ddzdn(in%x) - ddxdn(in%z)
+  if (verbose>0) print*,'curl_z'
+  out%z = ddxdn(in%y) - ddydn(in%x)
+  if (verbose>0) print*,'curl_end'
+END FUNCTION vector_curl_dn
 !> =============================================================================
 FUNCTION vector_real_grad (in) RESULT (out)
   type(vector_t):: out

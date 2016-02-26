@@ -114,7 +114,7 @@ FUNCTION check_jeans (self, patch) RESULT(out)
   !.............................................................................
   call trace_begin ('refine_t%check_check_jeans', 2)
   c_sound = 1.0     ! FIXME
-  jeans_length = c_sound/sqrt(maxval(patch%mem(:,:,:,patch%i_d,patch%it,1)*patch%G))
+  jeans_length = c_sound/sqrt(maxval(patch%mem(:,:,:,patch%i_d,patch%it,1)*patch%grav))
   ratio = jeans_length/minval(patch%mesh%d)
   out = ratio < self%min_jeans
   if (io%verbose > 2) &

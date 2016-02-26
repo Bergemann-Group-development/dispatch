@@ -1,21 +1,27 @@
 !> =============================================================================
+!> This module contains all experiment specific information.  The experiment_t
+!> object extends the generic MHD object mhd_t, which is again an extension of
+!> the basic patch_t object for tasks (object task_t) with meshes.
+!>
+!> The MHD object is chosen with the SOLVER macro in the Makefile in the curren
+!> directory, while the generic task_t and patch_t objects are defined in the
+!> $(TOP)/tasks/ directory, in task_mod.f90 and patch_mod.f90.
+!>
+!> The init procedure here (experiment_t::init) is called from the cartesian_mod
+!> module, which is specified as the patch distributor in the main program 
+!> dispatch.f90.   The update procedure here is called by the task_list_mod
+!> update procedure in $(TOP)/lists/task_list_mod.f90.
 !> =============================================================================
 MODULE experiment_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
-  USE scalar_mod
-  USE vector_mod
   USE mhd_mod
-  USE forcing_mod
   USE initial_mod
   USE timestep_mod
   implicit none
   private
-  real, parameter:: pi2=8.0*atan(1.0)
   type, public, extends(mhd_t):: experiment_t
-    integer:: i_d=1
-    real:: G
     type(initial_t):: initial
   contains
     procedure init
@@ -29,7 +35,6 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
-  real, save:: B0(3)=[0.0,0.0,1.0], d0=1.0
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   !----------------------------------------------------------------------------
@@ -44,10 +49,18 @@ SUBROUTINE init (self)
   call self%initial%init
   self%mhd = self%initial%mhd
   self%mem(:,:,:,:,1,1) = self%initial%selected(self%mesh)
-  !call self%force%init
   call trace_end
 END SUBROUTINE init
 
+!> =============================================================================
+!> The update procedure calls a (generic name) MHD update procedure, whose 
+!> actual implementation is in $(TOP)/solvers/$(SOLVER)/mhd_mod.f90.  It then
+!> calls a courant_condition procedure, which if not overloaded is the one in
+!> the patch_t object (but one can replace it at the mhd_t or experiment_t
+!> level, by simply adding a courant_condition procedure there).  The next step
+!> is to call a timestep%udpate, whose actual implementation is in a file
+!> $(TOP)/timestep/$(UPD)/timestep_mod.f90 -- currently an Adams-Bashforth
+!> method. 
 !> =============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
@@ -55,18 +68,13 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%mhd_t%update
-  block
-    real, dimension(:,:,:), pointer:: px
-    px => self%mem(:,:,:,3,self%it,2)
-    call self%check_error(px,"before force")
-!  if (associated(self%force%selected)) &
-!    self%dpdt = self%dpdt + self%force%selected (self%time, self%mesh)
-    call self%check_error(px,"after force")
-    px => self%mem(:,:,:,3,self%it,1)
   call self%courant_condition
   call timestep%update (self%id, self%iit, self%dt, self%mem)
-    call self%check_error(px,"after timestep")
-  end block
+  !----------------------------------------------------------------------------
+  ! The update procedure in the generic patch_t module is responsible for 
+  ! updating the time, and rotating the memory slots where information about
+  ! previous time steps are saved.
+  !----------------------------------------------------------------------------
   call self%patch_t%update
   call trace_end
 END SUBROUTINE update

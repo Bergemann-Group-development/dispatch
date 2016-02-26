@@ -13,42 +13,43 @@ MODULE patch_mod
   USE mesh_mod
   implicit none
   private
-  integer, parameter:: ndim = 3
+  integer, parameter:: ndim = 3, i_d=1
   type, extends(tasks_t), public:: patch_t
     real, dimension(:,:,:,:,:,:), pointer:: mem
     type(mesh_t), dimension(3):: mesh
-    real:: courant
-    real:: gamma=1.0
-    integer:: ndim = ndim           ! Number of dimensions
-    !integer:: nvar                  ! Number of variables
-    integer:: nv                    ! FIXME
-    integer:: n(3)
-    integer:: msplit=2
-    integer:: max_files
-    logical:: guard_zones, time_derivs
-    !---------------------------------------------------------------------------
-    ! HACK below
-    !---------------------------------------------------------------------------
-    integer:: li(3), ui(3), gn(3)
-    integer:: i,j,k
-    real:: box(3), ds(3), gsize(3)
-    real(8):: offset(3)
-    real:: dt_fixed, u_fixed, u_max
+    real:: courant                      ! courant number
+    real:: gamma=1.0                    ! gas gamma
+    real:: dt_fixed, u_fixed, u_max     ! for fixed time step Courant condition
+    integer:: ndim = ndim               ! number of dimensions
+    integer:: nv                        ! number of variables
+    integer:: msplit=2                  ! how to split a patch when refining
+    integer:: max_files                 ! prevent disk overrun when NaN happens
+    logical:: guard_zones, time_derivs  ! switches for I/O
     logical:: mem_allocated=.false.
+    !---------------------------------------------------------------------------
+    ! HACK below:  FIXME
+    !---------------------------------------------------------------------------
+    real:: grav                         ! gravitational consant (code units)
+    integer:: i_d                       ! density inddex
+    integer:: n(3)                      ! convience FIXME ?
+    integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
+    real:: box(3), ds(3), gsize(3)      ! convenience
+    integer:: i,j,k                     ! should go!  FIXME
+    real(8):: offset(3)                 ! is this needed anywhere?
   contains
     procedure:: check_error
     procedure:: init
     procedure:: update
     procedure:: output
-    procedure:: distance        ! return the distance btw two patches
-    procedure:: point_distance  ! distance btw two points
-    procedure:: overlaps        ! return true if they overlap (incl. ghost zones)
-    procedure:: upload_range    ! returns the index ranges btw two points
-    procedure:: dnload_range    ! returns the index ranges btw two points
-    procedure:: index           ! compute the index for a single point
-    procedure:: nearest         ! the nearest index that maps to patch point
-    procedure:: lowest          ! the lowest index that maps to patch point
-    procedure:: highest         ! the highest index that maps to patch point
+    procedure:: distance                ! return the distance btw two patches
+    procedure:: point_distance          ! distance btw two points
+    procedure:: overlaps                ! return true if they overlap (incl. ghost zones)
+    procedure:: upload_range            ! returns the index ranges btw two points
+    procedure:: dnload_range            ! returns the index ranges btw two points
+    procedure:: index                   ! compute the index for a single point
+    procedure:: nearest                 ! the nearest index that maps to patch point
+    procedure:: lowest                  ! the lowest index that maps to patch point
+    procedure:: highest                 ! the highest index that maps to patch point
     procedure:: set
     procedure:: clear
     procedure:: is_set
@@ -58,8 +59,8 @@ MODULE patch_mod
     procedure:: myposition
     procedure:: periodic_grid
     procedure:: extrapolate_guards
-    procedure:: fmaxval         ! interior max value
-    procedure:: fminval         ! interior min value
+    procedure:: fmaxval                 ! interior max value
+    procedure:: fminval                 ! interior min value
     procedure:: courant_condition
   end type
   !-----------------------------------------------------------------------------
@@ -157,7 +158,6 @@ SUBROUTINE init (self)
   self%max_files = max_files
   self%guard_zones=guard_zones
   self%time_derivs=time_derivs
-  self%courant = courant
   self%dt_fixed = dt_fixed
   self%u_fixed = u_fixed
   self%status=0

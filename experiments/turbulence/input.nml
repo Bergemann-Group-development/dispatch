@@ -14,12 +14,12 @@
 /
 &patch_params
  nt=5
- n=50,50,50
+ n=30,30,30
 !dt_fixed=0.03
 /
 &out_params
- end_time=10
- out_time=0.2
+ end_time=0.5
+ out_time=0.1
  print_time=0.02
  guard_zones=t
  time_derivs=f

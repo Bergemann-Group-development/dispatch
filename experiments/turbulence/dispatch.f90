@@ -1,7 +1,7 @@
 PROGRAM dispatch
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
-!> Setup a single patch with a density tophat and call the Poisson solver
+!> Setup a set of Cartesian patches on a task list, and update until finished
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
   USE mpi_mod

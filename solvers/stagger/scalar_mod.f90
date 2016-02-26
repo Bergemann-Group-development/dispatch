@@ -57,6 +57,9 @@ MODULE scalar_mod
   interface sqrt
     module procedure scalar_sqrt
   end interface
+  interface abs
+    module procedure scalar_abs
+  end interface
   interface minval
     module procedure scalar_minval
   end interface
@@ -238,6 +241,14 @@ FUNCTION scalar_sqrt (in) RESULT (out)
   out%f = sqrt(in%f)
   call in%tempdealloc
 END FUNCTION scalar_sqrt
+!> =============================================================================
+FUNCTION scalar_abs (in) RESULT (out)
+  type(scalar_t):: out
+  type(scalar_t), intent(in):: in
+  call out%tempalloc(in)
+  out%f = abs(in%f)
+  call in%tempdealloc
+END FUNCTION scalar_abs
 
 !> =============================================================================
 FUNCTION scalar_real_add (in1, in2) RESULT (out)
