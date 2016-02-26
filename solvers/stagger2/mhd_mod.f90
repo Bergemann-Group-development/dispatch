@@ -109,9 +109,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ds = self%mesh%d
   dx = minval(ds)                                       ! smallest {dx,dy,dz}
-  du = -div(ds,U)                                       ! convergence rate
-  du = dx*max(du,1e-20)                                 ! dimension: U
-  pa = self%nu(3)*d*du**2                               ! dimension: pressure
+  du = -dx*div(ds,U)                                    ! convergence rate
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   !-----------------------------------------------------------------------------
@@ -128,8 +126,10 @@ SUBROUTINE update (self)
     ! Magnetic pressure
     pb = 0.5*(fxx+fyy+fzz)
     ! Fast mode speed + velocity
-    cs = sqrt((self%gamma*pg+2.0*pb)/d)
-    self%u_max = maxval(cs + sqrt(pp))
+    pa = self%nu(3)*d*max(du,0.0)**2
+    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d) 
+    self%u_max = maxval(cs + sqrt(pp) + abs(du))
+    du = max(du,0.0)
     ! Isotropic pressure part
     pp = d*pp + pg + pa + pb
     ! Total diagondal stress
@@ -144,8 +144,9 @@ SUBROUTINE update (self)
     pp = (fxx+fyy+fzz)
     ! Sound speed + velocity
     cs = sqrt(self%gamma*pg/d)
-    self%u_max = maxval(cs + sqrt(pp))
+    self%u_max = maxval(cs + sqrt(pp) + du)
     ! Isotropic pressure part
+    pa = self%nu(3)*d*du**2                               ! dimension: pressure
     pp = d*pp + pg + pa
     ! Total diagondal stress, with density factor
     fxx = pp - d*du*ddxup(ds,Ux)

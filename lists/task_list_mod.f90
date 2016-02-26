@@ -712,7 +712,6 @@ SUBROUTINE queue_by_time (self, this)
   call this%task%set(bits%ready)                       ! mark as checked
   if (io%verbose>2) print'(1x,a,i6,a,f10.5)', 'list_t%queue_by_time: adding task', &
     this%task%id, ' at time', this%task%time
-  !$omp critical (queue_cr)
   nullify (prev)
   next => self%queue
   do while (associated(next))
@@ -723,7 +722,9 @@ SUBROUTINE queue_by_time (self, this)
       if (associated(prev)) then
         prev%next_time => this
       else
+        !$omp critical (queue_cr)
         self%queue => this
+        !$omp end critical (queue_cr)
       end if
       self%nq = self%nq+1
       call trace_end
@@ -736,10 +737,11 @@ SUBROUTINE queue_by_time (self, this)
   if (associated(prev)) then
     prev%next_time => this
   else
+    !$omp critical (queue_cr)
     self%queue => this
+    !$omp end critical (queue_cr)
   end if
   nullify (this%next_time)
-  !$omp end critical (queue_cr)
   call trace_end
 END SUBROUTINE queue_by_time
 

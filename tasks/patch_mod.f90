@@ -24,6 +24,7 @@ MODULE patch_mod
     integer:: nv                    ! FIXME
     integer:: n(3)
     integer:: msplit=2
+    integer:: max_files
     logical:: guard_zones, time_derivs
     !---------------------------------------------------------------------------
     ! HACK below
@@ -123,14 +124,15 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
-  integer:: n(3)=16, ng=2, nt=7, i
+  integer:: n(3)=16, ng=2, nt=7, i, max_files=100
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false.
   real:: position(3)
-  real, save:: courant=0.2, u_fixed=-1.0, dt_fixed=-1.0
+  real, save:: u_fixed=-1.0, dt_fixed=-1.0
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
-  namelist /patch_params/ n, ng, nt, courant, u_fixed, dt_fixed
-  namelist /out_params/ out_time, end_time, print_time, guard_zones, time_derivs
+  namelist /patch_params/ n, ng, nt, u_fixed, dt_fixed
+  namelist /out_params/ out_time, end_time, print_time, max_files, &
+    guard_zones, time_derivs
   !.............................................................................
   call trace_begin ('patch_t%init', 3)
   !$omp atomic
@@ -152,6 +154,7 @@ SUBROUTINE init (self)
     if (io%master) write (*, out_params)
   end if
   !$omp end critical (patch_cr)
+  self%max_files = max_files
   self%guard_zones=guard_zones
   self%time_derivs=time_derivs
   self%courant = courant
@@ -227,6 +230,7 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(patch_t):: self
   integer:: iv, nv
+  real(8):: time
   !.............................................................................
   call trace_begin ('patch_t%update')
   !-----------------------------------------------------------------------------
@@ -250,8 +254,8 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! One line summary
   !-----------------------------------------------------------------------------
-  !$omp atomic
-  self%time = self%time + self%dtime                    ! update self time
+  time = self%time + self%dtime                   ! update self time
+  self%time = time
   if (io%verbose>1) then
     print'(a,i4,2i3,2f11.6,2x,a,1p,6e10.2)', 'update: id,j,k,l,n,dt,t', &
       self%id, self%it, self%new, self%dtime, self%time, 'minmax:', &
@@ -566,6 +570,11 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next) return
   call trace_begin('patch:t%output')
+  self%max_files = self%max_files-1
+  if (self%max_files <= 0) then
+    print*,'TOO MANY FILES'
+    stop
+  end if
   !-----------------------------------------------------------------------------
   ! If the out_next time has passed, set a new time = the integer number of
   ! out_time's that have passed, plus æone more

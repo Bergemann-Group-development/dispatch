@@ -15,17 +15,17 @@
 &patch_params
  nt=5
  n=50,50,50
- courant=0.2
 !dt_fixed=0.03
 /
 &out_params
- end_time=5
- out_time=0.5
+ end_time=10
+ out_time=0.2
  print_time=0.02
  guard_zones=t
  time_derivs=f
 /
 &mhd_params
+ courant=0.1
  nu=  0.05,  0.6, 2.0, 1.0,  0.2,  1.0
  !     cs    du   pa   ofd   mas   eta
 /
@@ -34,7 +34,7 @@
 /
 &force_params
  k=1,1,2
- a0=1,1.2,1.5
+ a0=1,1.2,1.1
  t_turn=0.30
  type='single_solenoidal'
 /
