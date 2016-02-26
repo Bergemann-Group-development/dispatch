@@ -31,6 +31,7 @@ MODULE task_mod
     real(8):: position(3) = 0d0
     real(8):: velocity(3) = 0d0
     real(8):: size(3) = 0d0
+    real(8):: wallclock
     character(len=32), pointer:: name
   contains
     procedure:: init

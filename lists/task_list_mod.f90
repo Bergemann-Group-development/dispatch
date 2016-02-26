@@ -13,6 +13,7 @@
 !> =============================================================================
 MODULE task_list_mod
   USE io_mod
+  USE omp_timer_mod
   USE mpi_mod
   USE list_mod
   USE task_mod
@@ -27,6 +28,7 @@ MODULE task_list_mod
     real(8):: size(3) = 1.0_8
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0
     integer:: debug=0
+    integer:: n_tasks=1
     !---------------------------------------------------------------------------
     ! from patch_list_mod
     !---------------------------------------------------------------------------
@@ -55,7 +57,7 @@ MODULE task_list_mod
     procedure:: output
     procedure:: check_queue
     procedure:: print_queue
-    procedure:: print
+    procedure:: print => print_tasklist
   end type
   public link_t
   integer, parameter:: mnbor=100
@@ -449,13 +451,20 @@ SUBROUTINE remove_task (self, task)
   nullify (prev)
   do while (associated(link))
     if (link%task%id == task%id) then
+      task%wallclock = wallclock() - task%wallclock
       if (associated(prev)) then
         prev%next => link%next
-        print*,'removed task', task%id, '  after', prev%task%id
       else
         self%head => link%next
-        print*,'removed task at head', task%id
       end if
+      select type (task)
+      class is (patch_t)
+      print 1,'task', task%id, ' finished after', task%istep, &
+        ' steps with cost', task%wallclock*1e6/ &
+        (product(task%mesh%n)*task%istep*self%n_tasks), &
+        ' mus/pt'
+    1 format(1x,a,i6,a,i8,a,f6.2,a)
+      end select
       self%n = self%n - 1
       call trace_end
       return
@@ -861,7 +870,7 @@ END SUBROUTINE print_queue
 !> =============================================================================
 !> Print a table with task id and all neighbors
 !> =============================================================================
-SUBROUTINE print (self, label)
+SUBROUTINE print_tasklist (self, label)
   class (task_list_t):: self
   character(len=*), optional:: label
   type(link_t) , pointer:: link, nbor
@@ -873,6 +882,6 @@ SUBROUTINE print (self, label)
     link => link%next
   end do
   call self%print_queue
-END SUBROUTINE print
+END SUBROUTINE print_tasklist
 
 END MODULE

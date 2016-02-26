@@ -18,7 +18,7 @@ ampl=0.01
 y=(-ampl,ampl)
 tmp1=[]
 tmp2=[]
-for i in range(50):
+for i in range(100):
     file='data/fast_mode_001_{:04d}'.format(i)
     #print file
     f=read_file(file)

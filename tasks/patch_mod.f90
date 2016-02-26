@@ -5,6 +5,7 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE patch_mod
   USE io_mod
+  USE omp_timer_mod
   USE bits_mod
   USE trace_mod
   USE mpi_mod
@@ -213,6 +214,7 @@ SUBROUTINE init (self)
   self%iit(nt) = 2                              ! first output slot
   self%it = self%iit(nt-1)                      ! short-hand
   self%new = self%iit(nt)                       ! short-hand
+  self%wallclock = wallclock()                  ! starting time
   call trace_end
 END SUBROUTINE init
 
