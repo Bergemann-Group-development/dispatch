@@ -1,6 +1,6 @@
 &io_params
  do_trace=t
- verbose=5
+ verbose=0
  do_debug=f
 /
 &box_params
@@ -15,10 +15,10 @@
 &patch_params
  nt=5
  n=20,20,20
-!dt_fixed=0.03
+dt_fixed=0.001
 /
 &out_params
- end_time=0.006
+ end_time=0.010
  out_time=0.1
  print_time=0.0001
  guard_zones=t

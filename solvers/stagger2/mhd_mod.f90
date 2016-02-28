@@ -71,6 +71,7 @@ SUBROUTINE update (self)
   real:: ds(3), dx
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%update')
+  call self%init
   self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
   self%s => self%mem(:,:,:,  2,self%it,1); self%dsdt => self%mem(:,:,:,  2,self%it,2)
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
@@ -91,7 +92,6 @@ SUBROUTINE update (self)
   fdx=>fd(:,:,:,1); fdy=>fd(:,:,:,2); fdz=>fd(:,:,:,3)
   ldx=>ld(:,:,:,1); ldy=>ld(:,:,:,2); ldz=>ld(:,:,:,3)
   ddx=>dd(:,:,:,1); ddy=>dd(:,:,:,2); ddz=>dd(:,:,:,3)
-  call self%init
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below
@@ -127,7 +127,7 @@ SUBROUTINE update (self)
     pb = 0.5*(fxx+fyy+fzz)
     ! Fast mode speed + velocity
     pa = self%nu(3)*d*max(du,0.0)**2
-    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d) 
+    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
     self%u_max = maxval(cs + sqrt(pp) + abs(du))
     du = max(du,0.0)
     ! Isotropic pressure part

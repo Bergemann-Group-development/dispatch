@@ -5,6 +5,7 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE patch_mod
   USE io_mod
+  USE omp_mod
   USE omp_timer_mod
   USE bits_mod
   USE trace_mod
@@ -124,7 +125,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
-  integer:: n(3)=16, ng=2, nt=7, i, max_files=100
+  integer, save:: n(3)=16, ng=2, nt=7, i, max_files=100
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false.
   real:: position(3)
@@ -268,8 +269,8 @@ SUBROUTINE update (self)
     nv = 1
     if (io%verbose>2) nv = self%nv
     do iv=1,nv
-      print '(i8,i3,f10.6,f9.6,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', self%id, &
-        iv, self%time, self%dtime, self%courant, &
+      print '(a,i8,i4,i3,f10.6,f9.6,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
+        'upd',self%id, iv, omp_mythread(), self%time, self%dtime, self%courant, &
         minval(self%mem(:,:,:,iv,self%it ,2)), &
         maxval(self%mem(:,:,:,iv,self%it ,2)), &
         minval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -282,7 +283,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Time slot rotation
   !-----------------------------------------------------------------------------
-  !$omp critical (time_cr)
+  !x$omp critical (mem_cr)
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = self%time                          ! initial time
@@ -292,13 +293,13 @@ SUBROUTINE update (self)
   self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
   self%iit(self%nt) = self%new                          ! new right-most slot
   self%istep = self%istep + 1
-  !$omp end critical (time_cr)
   if (io%verbose>2) &
    print*,'patch id:',self%id,'  it:',self%it,'  new:',self%new
   if (io%verbose>3) &
    print*,'patch iit:', self%iit
   if (io%verbose>3) &
    print*,'patch t(iit):', self%t(self%iit)
+  !x$omp end critical (mem_cr)
   call trace_end
 END SUBROUTINE update
 
@@ -811,8 +812,9 @@ SUBROUTINE courant_condition (self)
     self%dtime = self%courant*minval(self%ds)/self%u_max
   endif
   self%dt(self%it) = self%dtime
-  if (io%verbose>4) &
-    print'(a,i7,f12.6,f8.4)', 'courant:', self%id, self%dtime, self%courant
+  if (io%verbose>3) &
+    print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
+      self%id, self%dtime, self%courant, self%u_max
   call trace_end
 END SUBROUTINE courant_condition
 
