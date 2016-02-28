@@ -13,6 +13,7 @@
 !> =============================================================================
 MODULE task_list_mod
   USE io_mod
+  USE omp_mod
   USE omp_timer_mod
   USE mpi_mod
   USE list_mod
@@ -27,6 +28,7 @@ MODULE task_list_mod
   type, public, extends(list_t):: task_list_t
   contains
     procedure:: init
+    procedure:: execute
     procedure:: update
     procedure:: check_mpi
     procedure:: split
@@ -72,6 +74,19 @@ SUBROUTINE init (self, name)
   call self%print
   call trace_end
 END SUBROUTINE init
+
+!> =============================================================================
+!> Execute the task list, updating it until it is empty.  Wth !$omp parallel here,
+!> everything local to self%update is thread private.
+!> =============================================================================
+SUBROUTINE execute (self)
+  class(task_list_t):: self
+  !$omp parallel
+  do while (self%n > 0)
+    call self%update
+  end do
+  !$omp end parallel
+END SUBROUTINE execute
 
 !> =============================================================================
 !> Update the state of the task list, taking the steps necessary to update the
