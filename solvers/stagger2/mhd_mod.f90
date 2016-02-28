@@ -59,7 +59,7 @@ SUBROUTINE update (self)
   real, dimension(:,:,:,:), pointer:: U, E, p, B, dpdt, dBdt
   real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm
   real, dimension(:,:,:),   pointer:: d, s, dddt, dsdt
-  real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb
+  real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, qv
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez
@@ -83,7 +83,7 @@ SUBROUTINE update (self)
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   call allocate_vectors (self%gn, ld, dd, U, E, fd, fx, fy, fz, fm)
-  call allocate_scalars (self%gn, lnd, pg, pa, du, ss, cs, pp, pb)
+  call allocate_scalars (self%gn, lnd, pg, pa, du, ss, cs, pp, pb, qv)
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3);
   Ex=>E(:,:,:,1); Ey=>E(:,:,:,2); Ez=>E(:,:,:,3);
   fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2); fxz=>fx(:,:,:,3)
@@ -119,23 +119,24 @@ SUBROUTINE update (self)
     fyy = yup(Uy)**2
     fzz = zup(Uz)**2
     pp = (fxx+fyy+fzz)
-    ! Diagonal (negative) Maxwell stress
-    fxx = xup(Bx)**2
-    fyy = yup(By)**2
-    fzz = zup(Bz)**2
+    ! Diagonal (negative) Maxwell stress (borrowing E for scratch)
+    Ex = xup(Bx)**2
+    Ey = yup(By)**2
+    Ez = zup(Bz)**2
     ! Magnetic pressure
-    pb = 0.5*(fxx+fyy+fzz)
+    pb = 0.5*(Ex+Ey+Ez)
     ! Fast mode speed + velocity
     pa = self%nu(3)*d*max(du,0.0)**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
     self%u_max = maxval(cs + sqrt(pp) + abs(du))
     du = max(du,0.0)
+    du = self%nu(1)*cs + self%nu(2)*du
     ! Isotropic pressure part
-    pp = d*pp + pg + pa + pb
-    ! Total diagondal stress
-    fxx = pp - fxx - d*du*ddxup(ds,Ux)
-    fyy = pp - fyy - d*du*ddyup(ds,Uy)
-    fzz = pp - fzz - d*du*ddzup(ds,Uz)
+    pp = pg + pa + pb
+    ! Total diagonal stress
+    fxx = pp + d*(fxx - du*ddxup(ds,Ux)) - Ex
+    fyy = pp + d*(fyy - du*ddyup(ds,Uy)) - Ey
+    fzz = pp + d*(fzz - du*ddzup(ds,Uz)) - Ex
   else
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -145,6 +146,7 @@ SUBROUTINE update (self)
     ! Sound speed + velocity
     cs = sqrt(self%gamma*pg/d)
     self%u_max = maxval(cs + sqrt(pp) + du)
+    du = self%nu(1)*cs + self%nu(2)*du
     ! Isotropic pressure part
     pa = self%nu(3)*d*du**2                               ! dimension: pressure
     pp = d*pp + pg + pa
@@ -152,6 +154,7 @@ SUBROUTINE update (self)
     fxx = pp - d*du*ddxup(ds,Ux)
     fyy = pp - d*du*ddyup(ds,Uy)
     fzz = pp - d*du*ddzup(ds,Uz)
+    qv = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
   end if
   du = (self%nu(1)*cs + self%nu(2)*du)*dx               ! dimension: U*ds
   !-----------------------------------------------------------------------------
@@ -169,8 +172,8 @@ SUBROUTINE update (self)
     dsdt = 0.0
   else
     ss = s/d
-    fm = fm*down(ss) - (self%nu(6)*dd*down(du))*ddown(ds,ss)
-    dsdt = -div(ds,fm)
+    fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)
+    dsdt = -div(ds,fm) !+ qv*d/pg
   end if
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.

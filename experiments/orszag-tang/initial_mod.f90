@@ -27,7 +27,7 @@ SUBROUTINE init (self)
   namelist /initial_params/ idirect, b0, p0, v0
   !.............................................................................
   call trace_begin ('initial_t%init')
-  
+
   ! default values for namelist parameters
   idirect = 3
   b0 = 0.5 / sqrt(pi)
@@ -46,7 +46,7 @@ SUBROUTINE init (self)
   self%p0 = p0
   self%v0 = v0
   self%b0 = b0
-  
+
   self%init_mhd_vars => initial_conditions
 
   call trace_end
@@ -73,11 +73,15 @@ FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
   d0 = gamma * self%p0
 
   ! "pre"-initialisation of all variables, independent of `idirect`.
+  if (gamma==1.0) then
+    entropy = 1.0
+  else
+    entropy = (log(self%p0)-log(d0)*gamma)/(gamma-1.0)
+  end if
   do iz=m(3)%lb,m(3)%ub
     do iy=m(2)%lb,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
         ff(ix,iy,iz,1) = d0
-        entropy = (log(self%p0)-log(d0*gamma)/(gamma-1.0))
         ff(ix,iy,iz,2) = entropy*d0
         ff(ix,iy,iz,3) = 0.0
         ff(ix,iy,iz,4) = 0.0
@@ -107,6 +111,7 @@ FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
     do iz=m(3)%lb,m(3)%ub
       do iy=m(2)%lb,m(2)%ub-1
         yb = m(2)%p + m(2)%r(iy)
+        print*,iy,yb
         do ix=m(1)%lb,m(1)%ub-1
           xb = m(1)%p + m(1)%r(ix)
           ff(ix,iy,iz,3) = -d0 * self%v0 * sin(twopi * yb)
@@ -116,6 +121,7 @@ FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
         end do
       end do
     end do
+    print*,'mk1', m(1:2)%p, minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
   end if
 
   ! ---- x2-x3 plane ----
@@ -159,7 +165,7 @@ FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
         end do
       end do
     end do
-    
+
     do iz=m(3)%lb,m(3)%ub-1
       zb = m(3)%p + m(3)%r(iz)
       do iy=m(2)%lb,m(2)%ub

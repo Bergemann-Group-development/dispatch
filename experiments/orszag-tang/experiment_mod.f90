@@ -33,13 +33,14 @@ SUBROUTINE init (self)
   call self%patch_t%init
   call self%set(bits%static)
   call self%mhd_t%init
-  ! 
+  !
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
   call self%initial%init()
   self%mhd = .true.
   self%mem(:,:,:,:,1,1) = self%initial%init_mhd_vars(self%mesh,self%gamma)
+  print*, 'mk2', minval(self%mem(:,:,:,3,1,1)), maxval(self%mem(:,:,:,3,1,1))
   !
   call trace_end
 END SUBROUTINE init

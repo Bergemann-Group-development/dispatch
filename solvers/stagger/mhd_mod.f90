@@ -159,7 +159,7 @@ SUBROUTINE update (self)
     dsdt = 0.0
   else
     ss = s/d
-    fm = fm*down(ss) - (self%nu(6)*dd*down(du))*ddown(ss)
+    fm = fm*down(ss) - (self%nu(3)*dd*down(du))*ddown(ss)
     dsdt = -div(fm)
   end if
   !---------------------------------------------------------------------------
@@ -195,9 +195,9 @@ SUBROUTINE update (self)
   ! while the off-diagonal part needs to be properly symmetrized.
   !-----------------------------------------------------------------------------
   pa = d*du*self%nu(5)
-  fx%x = fx%x - pa*ddxup(ld%x)*xup(U%x)
-  fy%y = fy%y - pa*ddyup(ld%y)*yup(U%y)
-  fz%z = fz%z - pa*ddzup(ld%z)*zup(U%z)
+  fx%x = fx%x - du*ddxup(ld%x)*xup(U%x)
+  fy%y = fy%y - du*ddyup(ld%y)*yup(U%y)
+  fz%z = fz%z - du*ddzup(ld%z)*zup(U%z)
   fx%y = fx%y + (xdn1(fd%y)*ydn(U%x)+ydn1(fd%x)*xdn(U%y))
   fx%z = fx%z + (xdn1(fd%z)*zdn(U%x)+zdn1(fd%x)*xdn(U%z))
   fy%z = fy%z + (zdn1(fd%y)*ydn(U%z)+ydn1(fd%z)*zdn(U%y))

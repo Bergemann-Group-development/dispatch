@@ -168,7 +168,6 @@ SUBROUTINE init (self)
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   self%mesh%n  = n
   self%mesh%ng = ng
-  print *,'MK', self%size, self%box
   if (all(self%size==self%box)) then
     print*,'task', self%id, ' is root grid'
     call self%set(bits%root_grid)
@@ -190,6 +189,7 @@ SUBROUTINE init (self)
     call self%mesh(i)%init
     self%mesh(i)%b = self%box(i)
     self%mesh(i)%p = self%position(i)
+    print*,'MK',self%id,i,self%mesh(i)%p
   end do
   !-----------------------------------------------------------------------------
   ! Hack for backwards compatibility
@@ -670,8 +670,11 @@ SUBROUTINE output (self, experiment_name)
     end do
   end do
   close (io%data_unit)
-  if (self%out_time > 0.0) &
+  if (self%out_time > 0.0) then
     self%out_next = (int(self%time/self%out_time)+1)*self%out_time
+  else
+    self%out_next = self%time
+  end if
   !-----------------------------------------------------------------------------
   ! Write a log file, with files written by this rank
   !-----------------------------------------------------------------------------
