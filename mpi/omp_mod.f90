@@ -34,6 +34,22 @@ INTEGER FUNCTION omp_mythread()
 END FUNCTION
 
 !> =============================================================================
+INTEGER FUNCTION omp_numthreads()
+  implicit none
+  integer omp_get_num_threads
+  logical omp_in_parallel
+#if defined (_OPENMP)
+  if (omp_in_parallel()) then
+    omp_numthreads = omp_get_num_threads()
+  else
+    omp_numthreads = 1
+  end if
+#else
+  omp_numthreads = 1
+#endif
+END FUNCTION
+
+!> =============================================================================
 SUBROUTINE init_omp
   implicit none
   integer omp_get_num_threads

@@ -3,6 +3,7 @@
 !> *****************************************************************************
 MODULE list_mod
   USE io_mod
+  USE omp_mod
   USE mpi_mod
   USE omp_timer_mod
   USE trace_mod
@@ -147,6 +148,7 @@ END SUBROUTINE append
 SUBROUTINE remove_link (self, link)
   class(list_t):: self
   type(link_t), pointer:: link, next
+  class(task_t), pointer:: task
   !.............................................................................
   call trace_begin ('list_t%remove_link '//self%name)
   !x$omp critical (list_cr)
@@ -167,6 +169,16 @@ SUBROUTINE remove_link (self, link)
   else                                      ! link was head
     self%head => next                       ! make head point to next
   end if
+  task => link%task
+  task%wallclock = wallclock() - task%wallclock
+  select type (task)
+  class is (patch_t)
+  print 1,'task', task%id, ' finished after', task%istep, &
+    ' steps with cost', omp_numthreads()*task%wallclock*1e6/ &
+    (product(task%mesh%n)*task%istep*self%n_tasks), &
+    ' mus/pt'
+1 format(1x,a,i6,a,i8,a,f6.2,a)
+  end select
   deallocate (link)                         ! free to remove link
   self%n = self%n-1
   !x$omp end critical (list_cr)

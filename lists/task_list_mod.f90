@@ -81,11 +81,18 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE execute (self)
   class(task_list_t):: self
+  class(link_t), pointer:: link, rem
   !$omp parallel
   do while (self%n > 0)
     call self%update
   end do
   !$omp end parallel
+  link => self%head
+  do while (associated(link))
+    rem => link
+    link => link%next
+    call self%remove_link (rem)
+  end do
 END SUBROUTINE execute
 
 !> =============================================================================
