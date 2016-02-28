@@ -25,8 +25,8 @@ SUBROUTINE init (self, label)
   character(len=*), optional:: label
   type(task_list_t):: task_list
   integer:: dims(3) = [4,4,1]
-  real:: origin(3) = [-0.5,-0.5,-0.5]
-  real:: size(3) = [1.0,1.0,1.0]
+  real(8):: origin(3) = [-0.5,-0.5,-0.5]
+  real(8):: size(3) = [1.0,1.0,1.0]
   real:: position(3)
   type(experiment_t), pointer:: patch
   type(link_t) , pointer:: prev=>null(), link

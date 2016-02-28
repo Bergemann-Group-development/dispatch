@@ -155,11 +155,6 @@ SUBROUTINE download_same_static (link)
     px => patch%mem(:,:,:,3,it,1)
     call patch%check_error(px,"XZ2")
   end block
-  if (io%verbose>2) &
-    print'(a,3i4,f5.2,1p,4e12.3)', 'DBG:', it, jt1, jt2, pt, patch%mem(19,10,19,1,it,1), &
-    patch%mem(19,23,19,1,it,1)-patch%mem(19,10,19,1,it,1), &
-    other%mem(19,3,19,1,jt1,1)-patch%mem(19,10,19,1,it,1), &
-    other%mem(19,3,19,1,jt2,1)-patch%mem(19,10,19,1,it,1)
   call trace_end
   !-----------------------------------------------------------------------------
   ! YZ-planes in the two X guard zones
@@ -219,7 +214,7 @@ FUNCTION find_nbor (link, idir, o, time, jt1, jt2, pt, qt) RESULT (other)
   nt = patch%nt
   nv = patch%nv
   adir = abs(idir)
-  position = patch%position 
+  position = patch%position
   position(adir) = position(adir) + patch%size(adir)*idir/adir
   nbor => link%nbor
   do while (associated(nbor))

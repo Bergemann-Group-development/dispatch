@@ -34,7 +34,7 @@ MODULE patch_mod
     integer:: i_d                       ! density inddex
     integer:: n(3)                      ! convience FIXME ?
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
-    real:: box(3), ds(3), gsize(3)      ! convenience
+    real(8):: box(3), ds(3), gsize(3)   ! convenience
     integer:: i,j,k                     ! should go!  FIXME
     real(8):: offset(3)                 ! is this needed anywhere?
   contains
@@ -162,12 +162,17 @@ SUBROUTINE init (self)
   self%u_fixed = u_fixed
   self%status=0
   self%end_time = end_time
-  self%out_time = max(out_time,1e-30)           ! prevent divide fault when zero
-  self%print_time = max(print_time,1e-30)
+  self%out_time = out_time
+  self%print_time = print_time
   self%n  = n                                   ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   self%mesh%n  = n
   self%mesh%ng = ng
+  print *,'MK', self%size, self%box
+  if (all(self%size==self%box)) then
+    print*,'task', self%id, ' is root grid'
+    call self%set(bits%root_grid)
+  end if
   where (self%n==1)                             ! for collapsed dimensions
     self%mesh%ng = 0                            ! no guard zones
     self%box = 1                                ! make sure it is non-zero
@@ -265,7 +270,8 @@ SUBROUTINE update (self)
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
   if (io%verbose>0 .or. self%time>=self%print_next) then
-    self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
+    if (self%print_time > 0) &
+      self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
     nv = 1
     if (io%verbose>2) nv = self%nv
     do iv=1,nv
@@ -512,6 +518,7 @@ SUBROUTINE periodic_grid (self)
   class(patch_t):: self
   integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3)
   !.............................................................................
+  call trace('patch_t%periodic_grid')
   lb = self%mesh%lb
   ub = self%mesh%ub
   li = self%mesh%li
@@ -526,6 +533,7 @@ SUBROUTINE periodic_grid (self)
   end do
   end do
   end do
+  call trace_end
 END SUBROUTINE periodic_grid
 !> =============================================================================
 !> Time extrapolate guard cell values, to allow using also guard zone values to
@@ -662,7 +670,8 @@ SUBROUTINE output (self, experiment_name)
     end do
   end do
   close (io%data_unit)
-  self%out_next = (int(self%time/self%out_time)+1)*self%out_time
+  if (self%out_time > 0.0) &
+    self%out_next = (int(self%time/self%out_time)+1)*self%out_time
   !-----------------------------------------------------------------------------
   ! Write a log file, with files written by this rank
   !-----------------------------------------------------------------------------

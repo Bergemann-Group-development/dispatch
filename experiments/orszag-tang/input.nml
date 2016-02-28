@@ -1,0 +1,40 @@
+&io_params
+ do_trace=f
+ verbose=0
+ do_debug=f
+ do_output=t
+/
+&box_params
+ size=1,1,1
+ dims=4,4,1
+ origin=0,0,0
+/
+&experiment_params
+ d0=1.2
+ B0=0.0,0.0,0.0
+/
+&patch_params
+ nt=5
+ n=16,16,1
+/
+&out_params
+ end_time=0.5
+ out_time=0.01
+ print_time=0
+ guard_zones=t
+ time_derivs=f
+/
+&mhd_params
+ courant=0.1
+ nu=  0.10,  0.6, 2.0, 1.0,  0.2,  1.0
+ !     cs    du   pa   ofd   mas   eta
+ gamma=1.6666666666667
+/
+&force_params
+/
+&timestep_params
+ time_order=2
+/
+&initial_params
+ idirect=3
+/

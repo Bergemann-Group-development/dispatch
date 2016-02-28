@@ -61,10 +61,11 @@ SUBROUTINE init (self, name)
     levelmax = io%levelmax
     rewind (io%input)
     read (io%input, io_params)
-    io%levelmax = levelmax
-    io%do_debug = do_debug
-    io%do_trace = do_trace
-    io%verbose  = verbose
+    io%verbose   = verbose
+    io%levelmax  = levelmax
+    io%do_debug  = do_debug
+    io%do_trace  = do_trace
+    io%do_output = do_output
     if (io%master.and.first_time) write (*,io_params)
     first_time=.false.
   end if
