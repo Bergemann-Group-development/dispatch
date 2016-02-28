@@ -54,7 +54,6 @@ MODULE patch_mod
     procedure:: clear
     procedure:: is_set
     procedure:: is_clear
-    procedure:: ahead_of
     procedure:: download_to
     procedure:: myposition
     procedure:: periodic_grid
@@ -568,7 +567,7 @@ SUBROUTINE output (self, experiment_name)
   real:: ds(3)
   logical:: first_time=.true.
   !-----------------------------------------------------------------------------
-  if (self%time < self%out_next) return
+  if (self%time < self%out_next .or. .not.io%do_output) return
   call trace_begin('patch:t%output')
   self%max_files = self%max_files-1
   if (self%max_files <= 0) then
@@ -890,14 +889,6 @@ LOGICAL FUNCTION is_clear (self, bit)
 !  call trace_begin ('patch_t%is_clear')
   is_clear = (iand(self%status, bit) == 0)
 !  call trace_end
-END FUNCTION
-!> =============================================================================
-LOGICAL FUNCTION ahead_of (self, task)
-  class (patch_t):: self
-  class (task_t):: task
-  !.............................................................................
-  ahead_of = self%time > task%time + task%grace
-!  print*,'ahead_of: ', self%time, patch%time, patch%grace, ahead_of
 END FUNCTION
 !> =============================================================================
 FUNCTION fmaxval (self, f)

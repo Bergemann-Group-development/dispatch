@@ -37,7 +37,7 @@ MODULE task_mod
     procedure:: init
     procedure:: update
     procedure:: output
-    procedure:: ahead_of
+    procedure:: is_ahead_of
     procedure:: set
     procedure:: clear
     procedure:: print
@@ -106,11 +106,11 @@ END SUBROUTINE
 
 !> =============================================================================
 !> =============================================================================
-LOGICAL FUNCTION ahead_of (self, task)
+LOGICAL FUNCTION is_ahead_of (self, task)
   class (task_t):: self, task
   !.............................................................................
-  ahead_of = self%time > task%time + task%grace
-!  print*,'ahead_of: ', self%time, task%time, task%grace, ahead_of
+  is_ahead_of = self%time + task%grace >= task%time
+!  print*,'is_ahead_of: ', self%time, task%time, task%grace, is_ahead_of
 END FUNCTION
 
 SUBROUTINE print (self)
