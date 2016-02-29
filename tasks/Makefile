@@ -12,3 +12,4 @@ refine_mod.o:           io_mod.o trace_mod.o patch_mod.o experiment_mod.o
 scaling_mod.o:          io_mod.o cgs_mod.o
 download_mod.o:         io_mod.o trace_mod.o task_mod.o patch_mod.o list_mod.o
 random_mod.o:           io_mod.o trace_mod.o
+lagrange_mod.o:         io_mod.o

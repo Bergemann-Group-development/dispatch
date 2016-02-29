@@ -127,11 +127,13 @@ cleanlog:
 	rm -f *.log log*
 cleandata:
 	rm -f *.dat fort.*
+cleandirs:
+	rm -rf data .d
 clean-deps:
 	rm -f .d/*.d
 cleaner: clean
 	rm -f *.x *.bak *.optrpt *.exe *.pyc
-cleanest: cleaner cleandata cleanlog clean-deps
+cleanest: cleaner cleandata cleanlog clean-deps cleandirs
 
 #############################################################################
 # Generate list of source files
