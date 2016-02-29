@@ -34,6 +34,16 @@ def read_file (fileroot, verbose=False, derivs=False):
         print "  partial patch:", patch.n
         print "  lower indices:", patch.li
         print "  upper indices:", patch.ui
+
+    # line 3: nu(1:6)
+    line = f.readline()
+    if line != '':
+        column = line.split()
+        nc = np.size(column)
+        patch.nu = np.zeros(nc,dtype=np.float32)
+        for i in range(nc): patch.nu[i]  = float(column[i])
+        if (verbose):
+            print "             nu:", patch.nu
     f.close
 
     # binary data

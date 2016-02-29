@@ -13,12 +13,13 @@ MODULE mhd_mod
   type, extends(patch_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
-    real:: nu(6)
+    real:: nu(7)
     logical:: mhd=.true.
     type(force_t):: force
   contains
     procedure:: init
     procedure:: update
+    procedure:: output
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure
@@ -32,7 +33,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  real, save:: nu(6)=1.0, courant=0.2, gamma=1.0
+  real, save:: nu(7)=1.0, courant=0.2, gamma=1.0
   namelist /mhd_params/ nu, courant, gamma
   !----------------------------------------------------------------------------
   call trace_begin('mhd_t%init')
@@ -131,7 +132,7 @@ SUBROUTINE update (self)
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
     self%u_max = maxval(cs + sqrt(pp) + abs(du))
     du = max(du,0.0)
-    du = self%nu(1)*cs + self%nu(2)*du
+    du = dx*(self%nu(1)*cs + self%nu(2)*du)
     ! Isotropic pressure part
     pp = pg + pa + pb
     ! Total diagonal stress
@@ -148,7 +149,7 @@ SUBROUTINE update (self)
     ! Sound speed + velocity
     cs = sqrt(self%gamma*pg/d)
     self%u_max = maxval(cs + sqrt(pp) + du)
-    du = self%nu(1)*cs + self%nu(2)*du
+    du = dx*(self%nu(1)*cs + self%nu(2)*du)
     ! Isotropic pressure part
     pa = self%nu(3)*d*du**2                               ! dimension: pressure
     pp = d*pp + pg + pa
@@ -186,9 +187,9 @@ SUBROUTINE update (self)
   !---------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !---------------------------------------------------------------------------
-  fxy = fxy - 0.5*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
-  fxz = fxz - 0.5*ydn1(zdn1(du))*(ddxdn(ds,Uz)+ddzdn(ds,Ux))
-  fyz = fyz - 0.5*zdn1(xdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
+  fxy = fxy - self%nu(7)*0.5*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
+  fxz = fxz - self%nu(7)*0.5*ydn1(zdn1(du))*(ddxdn(ds,Uz)+ddzdn(ds,Ux))
+  fyz = fyz - self%nu(7)*0.5*zdn1(xdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
@@ -208,7 +209,7 @@ SUBROUTINE update (self)
   ! diagonal part is analogous, a centered version of \nu \rho U_i \grad\ln\rho,
   ! while the off-diagonal part needs to be properly symmetrized.
   !-----------------------------------------------------------------------------
-  pa = d*du*self%nu(5)
+  pa = d*du*self%nu(4)
   fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)
   fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)
   fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)
@@ -244,6 +245,24 @@ SUBROUTINE update (self)
   call deallocate_scalars (lnd, pg, pa, du, ss, cs, pp, pb, Q)
   call trace_end
 END SUBROUTINE update
+
+!> =============================================================================
+!> Add extra, MHD-related information to the patch .txt output file
+!> =============================================================================
+SUBROUTINE output (self, experiment_name)
+  class(mhd_t):: self
+  character(len=64):: experiment_name, filename
+  optional:: experiment_name
+  !-----------------------------------------------------------------------------
+  if (self%time < self%out_next .or. .not.io%do_output) return
+  call self%patch_t%output (experiment_name)
+  write (filename,'("data/",a,"_",i3.3,"_",i4.4,".txt")') trim(io%outputname), &
+    self%id, self%iout-1
+  open (io%data_unit, file=trim(filename), form='formatted', status='old', &
+    position='append')
+  write (io%data_unit,'(8f10.4)') self%nu
+  close (io%data_unit)
+END SUBROUTINE output
 
 !> =============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)

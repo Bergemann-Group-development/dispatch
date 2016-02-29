@@ -8,7 +8,7 @@
 !> $(TOP)/tasks/ directory, in task_mod.f90 and patch_mod.f90.
 !>
 !> The init procedure here (experiment_t::init) is called from the cartesian_mod
-!> module, which is specified as the patch distributor in the main program 
+!> module, which is specified as the patch distributor in the main program
 !> dispatch.f90.   The update procedure here is called by the task_list_mod
 !> update procedure in $(TOP)/lists/task_list_mod.f90.
 !> =============================================================================
@@ -53,14 +53,14 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-!> The update procedure calls a (generic name) MHD update procedure, whose 
+!> The update procedure calls a (generic name) MHD update procedure, whose
 !> actual implementation is in $(TOP)/solvers/$(SOLVER)/mhd_mod.f90.  It then
 !> calls a courant_condition procedure, which if not overloaded is the one in
 !> the patch_t object (but one can replace it at the mhd_t or experiment_t
 !> level, by simply adding a courant_condition procedure there).  The next step
 !> is to call a timestep%udpate, whose actual implementation is in a file
 !> $(TOP)/timestep/$(UPD)/timestep_mod.f90 -- currently an Adams-Bashforth
-!> method. 
+!> method.
 !> =============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
@@ -71,7 +71,7 @@ SUBROUTINE update (self)
   call self%courant_condition
   call timestep%update (self%id, self%iit, self%dt, self%mem)
   !----------------------------------------------------------------------------
-  ! The update procedure in the generic patch_t module is responsible for 
+  ! The update procedure in the generic patch_t module is responsible for
   ! updating the time, and rotating the memory slots where information about
   ! previous time steps are saved.
   !----------------------------------------------------------------------------

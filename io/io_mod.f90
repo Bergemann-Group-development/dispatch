@@ -10,7 +10,7 @@ MODULE io_mod
     integer:: verbose=0, input=1, output=2, data_unit=3, log_unit=4
     logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.false.
     integer:: levelmax=10
-    character(len=64):: inputname
+    character(len=64):: inputname, outputname
   contains
     procedure:: init
     procedure:: print_id => print_id_

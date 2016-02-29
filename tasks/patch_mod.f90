@@ -588,10 +588,10 @@ SUBROUTINE output (self, experiment_name)
   ! out_time's that have passed, plus æone more
   !-----------------------------------------------------------------------------
   if (present(experiment_name)) then
-    filename = experiment_name
+    io%outputname = experiment_name
   end if
   if (trim(io%inputname) /= 'input') then
-    filename = io%inputname
+    io%outputname = io%inputname
   end if
   !-----------------------------------------------------------------------------
   ! If guard_zones is true, include the guard zones.  If time_derivs is true,
@@ -615,7 +615,7 @@ SUBROUTINE output (self, experiment_name)
   call trace ('1')
   call system ('mkdir -p data/')
   write (filename,'(a,i3.3,"_",i4.4)') &
-    'data/'//trim(filename)//'_', self%id, self%iout
+    'data/'//trim(io%outputname)//'_', self%id, self%iout
   if (io%verbose>=0) &
     print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%out_next
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
@@ -623,12 +623,12 @@ SUBROUTINE output (self, experiment_name)
     li = (self%position+0.5*(self%box-self%size))/self%ds
     ui = (self%position+0.5*(self%box+self%size))/self%ds - 1.0
   end where
-  !-----------------------------------------------------------------------------
-  ! Write a binary file with the data cube.
-  !-----------------------------------------------------------------------------
   write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
   write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
   close (io%data_unit)
+  !-----------------------------------------------------------------------------
+  ! Write a binary file with the data cube.
+  !-----------------------------------------------------------------------------
   open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
     status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(u-l+1))
   do jo=1,no
