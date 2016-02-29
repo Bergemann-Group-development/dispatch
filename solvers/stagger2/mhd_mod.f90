@@ -56,13 +56,13 @@ SUBROUTINE update (self)
   USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
-  real, dimension(:,:,:,:), pointer:: U, E, p, B, dpdt, dBdt
+  real, dimension(:,:,:,:), pointer:: U, E, J, p, B, dpdt, dBdt
   real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm
   real, dimension(:,:,:),   pointer:: d, s, dddt, dsdt
-  real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, qv
+  real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, Q
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz
-  real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez
+  real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez, Jx, Jy, Jz
   real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
   real, dimension(:,:,:),   pointer:: fxx, fxy, fxz
   real, dimension(:,:,:),   pointer:: fyx, fyy, fyz
@@ -82,10 +82,11 @@ SUBROUTINE update (self)
   Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
-  call allocate_vectors (self%gn, ld, dd, U, E, fd, fx, fy, fz, fm)
-  call allocate_scalars (self%gn, lnd, pg, pa, du, ss, cs, pp, pb, qv)
-  Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3);
-  Ex=>E(:,:,:,1); Ey=>E(:,:,:,2); Ez=>E(:,:,:,3);
+  call allocate_vectors (self%gn, ld, dd, U, E, J, fd, fx, fy, fz, fm)
+  call allocate_scalars (self%gn, lnd, pg, pa, du, ss, cs, pp, pb, Q)
+  Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
+  Ex=>E(:,:,:,1); Ey=>E(:,:,:,2); Ez=>E(:,:,:,3)
+  Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
   fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2); fxz=>fx(:,:,:,3)
   fyx=>fy(:,:,:,1); fyy=>fy(:,:,:,2); fyz=>fy(:,:,:,3)
   fzx=>fz(:,:,:,1); fzy=>fz(:,:,:,2); fzz=>fz(:,:,:,3)
@@ -137,6 +138,7 @@ SUBROUTINE update (self)
     fxx = pp + d*(fxx - du*ddxup(ds,Ux)) - Ex
     fyy = pp + d*(fyy - du*ddyup(ds,Uy)) - Ey
     fzz = pp + d*(fzz - du*ddzup(ds,Uz)) - Ex
+    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
   else
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -154,13 +156,12 @@ SUBROUTINE update (self)
     fxx = pp - d*du*ddxup(ds,Ux)
     fyy = pp - d*du*ddyup(ds,Uy)
     fzz = pp - d*du*ddzup(ds,Uz)
-    qv = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
+    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
   end if
-  du = (self%nu(1)*cs + self%nu(2)*du)*dx               ! dimension: U*ds
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
-  fd = -(self%nu(5)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux
+  fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux
   fm = p+fd                                             ! mass flux
   dddt = -div(ds,fm)                                    ! density derivative
   !-----------------------------------------------------------------------------
@@ -173,7 +174,7 @@ SUBROUTINE update (self)
   else
     ss = s/d
     fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)
-    dsdt = -div(ds,fm) !+ qv*d/pg
+    dsdt = -div(ds,fm) + Q*d/pg
   end if
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
@@ -185,9 +186,9 @@ SUBROUTINE update (self)
   !---------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !---------------------------------------------------------------------------
-  fxy = fxy - self%nu(4)*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
-  fxz = fxz - self%nu(4)*ydn1(zdn1(du))*(ddxdn(ds,Uz)+ddzdn(ds,Ux))
-  fyz = fyz - self%nu(4)*zdn1(xdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
+  fxy = fxy - 0.5*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
+  fxz = fxz - 0.5*ydn1(zdn1(du))*(ddxdn(ds,Uz)+ddzdn(ds,Ux))
+  fyz = fyz - 0.5*zdn1(xdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
@@ -224,20 +225,23 @@ SUBROUTINE update (self)
     dpdt = dpdt + dd*self%force%selected (self%time, self%mesh)
   if (self%mhd) then
     !---------------------------------------------------------------------------
+    ! Electric current and resistive electric field
+    !---------------------------------------------------------------------------
+    J = curl_dn(ds,B)
+    E = self%nu(6)*edge(du)*J
+    Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
+    !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
     !---------------------------------------------------------------------------
-    Ex = ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
-    Ey = zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
-    Ez = xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
-    !---------------------------------------------------------------------------
-    ! Induction equation, with resistive term
-    !---------------------------------------------------------------------------
-    E = E + self%nu(6)*edge(du)*curl_dn(ds,B)
+    Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
+    Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
+    Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
     dBdt = -curl_up(ds,E)
+    dsdt = dsdt + Q*d/pg
   end if
   !-----------------------------------------------------------------------------
-  call deallocate_vectors (ld, dd, U, E, fd, fx, fy, fz, fm)
-  call deallocate_scalars (lnd, pg, pa, du, ss, cs, pp, pb)
+  call deallocate_vectors (ld, dd, U, E, J, fd, fx, fy, fz, fm)
+  call deallocate_scalars (lnd, pg, pa, du, ss, cs, pp, pb, Q)
   call trace_end
 END SUBROUTINE update
 
