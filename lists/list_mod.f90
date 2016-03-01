@@ -126,7 +126,7 @@ SUBROUTINE append (self, task)
   class(link_t), pointer:: link
   !.............................................................................
   call trace_begin ('list_t%append '//self%name)
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   allocate (link)
   link%task => task
   if (associated(self%tail)) then
@@ -138,7 +138,7 @@ SUBROUTINE append (self, task)
     self%tail => link
   end if
   self%n = self%n+1
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE append
 
@@ -151,7 +151,7 @@ SUBROUTINE remove_link (self, link)
   class(task_t), pointer:: task
   !.............................................................................
   call trace_begin ('list_t%remove_link '//self%name)
-  !x$omp critical (list_cr)
+  !xomp critical (list_cr)
   next => link%next
   !-------------------------------------------------------------------------
   ! Check for tail task
@@ -181,7 +181,7 @@ SUBROUTINE remove_link (self, link)
   end select
   deallocate (link)                         ! free to remove link
   self%n = self%n-1
-  !x$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE
 
@@ -193,7 +193,7 @@ SUBROUTINE remove_head (self)
   type(link_t), pointer:: head, link, next
   !.............................................................................
   call trace_begin ('list_t%remove_head '//self%name)
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   head => self%head
   next => head%next
   !-------------------------------------------------------------------------
@@ -209,7 +209,7 @@ SUBROUTINE remove_head (self)
   !-------------------------------------------------------------------------
   self%head => next                         ! make head point to next
   self%n = self%n-1
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE remove_head
 
@@ -225,7 +225,7 @@ SUBROUTINE check_nbors (self, link)
   integer:: n_check, n_ready, n_blocked, n_cleared, n_remain
   !.............................................................................
   call trace_begin('list_t%check_nbors '//self%name)
-  !x$omp critical (list_cr)
+  !xomp critical (list_cr)
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
   nbor => link%nbor                                   ! first nbor
@@ -252,7 +252,7 @@ SUBROUTINE check_nbors (self, link)
     'neighbors:',n_check, 'blocked:',n_blocked, 'ready:', n_ready, &
     'cleared:',n_cleared, 'remain:', n_remain
   if (io%verbose>3) call self%print
-  !x$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE check_nbors
 
@@ -265,13 +265,13 @@ SUBROUTINE check_all (self)
   class(link_t), pointer:: link
   !.............................................................................
   call trace_begin('list_t%check_all '//self%name)
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   link => self%head
   do while (associated (link))                        ! keep going until end
     call self%check_ready (link, 1)                   ! link ready?
     link => link%next
   end do
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE check_all
 
@@ -460,7 +460,7 @@ SUBROUTINE append_list (self, task_list)
   integer:: n
   !-----------------------------------------------------------------------------
   call trace_begin ('list_t%append_list')
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   self%tail%next => task_list%head
   self%tail      => task_list%tail
   self%n = self%n + task_list%n
@@ -475,7 +475,7 @@ SUBROUTINE append_list (self, task_list)
   else
     print *, trim(self%name)//': inconsistent append of '//task_list%name
   end if
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE append_list
 
@@ -486,7 +486,7 @@ SUBROUTINE remove_task (self, task)
   class(link_t), pointer:: link, prev
   !.............................................................................
   call trace_begin('list_t%remove_task')
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   link => self%head
   nullify (prev)
   do while (associated(link))
@@ -513,7 +513,7 @@ SUBROUTINE remove_task (self, task)
   end do
   print*,'ERROR: failed to remove from task list, task', task%id
 9 continue
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE remove_task
 
@@ -530,7 +530,7 @@ SUBROUTINE make_new_nbors (self, selfp, parent)
   class(patch_t), pointer:: p1, p2
   !> ...........................................................................
   call trace_begin('list_t%make_new_nbors', 1)
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   p1 => task2patch (self%task)
   call self%make_new_nbor (selfp, parent)       ! make me a neighbor of my parent
   nbor => parent%nbor                           ! start on parent's nbors chain
@@ -541,7 +541,7 @@ SUBROUTINE make_new_nbors (self, selfp, parent)
       call self%make_new_nbor (selfp, nbor%nbor)! make a neighbor (and make me one)
     nbor => nbor%next                           ! continue on parents nbors chain
   end do
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE make_new_nbors
 
@@ -582,7 +582,7 @@ SUBROUTINE add_nbor_by_quality (self, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_quality')
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   nullify (prev)
   next => self%nbor
   do while (associated(next))
@@ -616,7 +616,7 @@ SUBROUTINE add_nbor_by_quality (self, this)
   end if
   self%task%n_nbors = self%task%n_nbors+1
 9 continue
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE add_nbor_by_quality
 
@@ -680,7 +680,7 @@ SUBROUTINE queue_by_time (self, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%queue_by_time '//self%name)
-  !x$omp critical (list_cr)
+  !xomp critical (list_cr)
   call this%task%set(bits%ready)                       ! mark as checked
   if (io%verbose>2) print'(1x,a,i6,a,f10.5)', 'list_t%queue_by_time: adding task', &
     this%task%id, ' at time', this%task%time
@@ -694,9 +694,9 @@ SUBROUTINE queue_by_time (self, this)
       if (associated(prev)) then
         prev%next_time => this
       else
-        !x$omp critical (queue_cr)
+        !xomp critical (queue_cr)
         self%queue => this
-        !x$omp end critical (queue_cr)
+        !xomp end critical (queue_cr)
       end if
       self%nq = self%nq+1
       call trace_end
@@ -709,13 +709,13 @@ SUBROUTINE queue_by_time (self, this)
   if (associated(prev)) then
     prev%next_time => this
   else
-    !x$omp critical (queue_cr)
+    !xomp critical (queue_cr)
     self%queue => this
-    !x$omp end critical (queue_cr)
+    !xomp end critical (queue_cr)
   end if
   nullify (this%next_time)
 9 continue
-  !x$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE queue_by_time
 
@@ -728,7 +728,7 @@ SUBROUTINE add_by_quality (self, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_by_quality')
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   nullify (prev)
   next => self%head
   do while (associated(next))
@@ -766,7 +766,7 @@ SUBROUTINE add_by_quality (self, this)
   self%tail => this
   self%n = self%n+1
 9 continue
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE add_by_quality
 
@@ -801,7 +801,7 @@ SUBROUTINE insert (self, old, new)
   class(link_t), pointer:: old, new
   !.............................................................................
   call trace_begin ('list_t%insert '//self%name)
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   if (associated(old%prev)) then
     new%prev => old%prev
     new%prev%next => new
@@ -811,7 +811,7 @@ SUBROUTINE insert (self, old, new)
   new%next => old
   new%next%prev => new
   self%n = self%n + 1
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE insert
 

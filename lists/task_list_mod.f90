@@ -115,53 +115,60 @@ SUBROUTINE update (self)
   ! Return and try again, if the queue is empty; this can happen if the one task
   ! that frees up the rest is still running, with no other task ready
   !-----------------------------------------------------------------------------
+  !$omp critical (list_cr)
+  call trace('list_cr 0 begin')
   if (self%nq < 1) then
     n1 = self%nq
     call self%check_all
-!    print *,'WARNING: check_all (should not be needed), found', self%nq, n1
-    call trace_end
-    return
   end if
+  call trace('list_cr 0 end')
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in a critical region
   !-----------------------------------------------------------------------------
-  !$omp critical (list_cr)
-  call trace('in list_cr')
+  call trace('list_cr 1 begin')
   head => self%queue                                    ! queue start
-  self%queue => self%queue%next_time                  ! update the link
-  self%nq = self%nq-1
-  task => head%task                                   ! head task
-  if (io%verbose>0) &
-    print'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)', &
-    'thread', omp_mythread(), 'task', task%id, &
-    'step', task%istep, 'n, nq', self%n, self%nq
+  if (associated(head)) then
+    self%queue => self%queue%next_time                    ! update the link
+    self%nq = self%nq-1
+  end if
+  call trace('list_cr 1 end')
   !$omp end critical (list_cr)
   !-----------------------------------------------------------------------------
-  ! Prepare it for update, by downloading data that it depends on.  During the
-  ! download we must prevent threads in the nbor list from rotating mem slots
+  ! Having secured a head, we need to check if it is at all associcated
   !-----------------------------------------------------------------------------
-  !$omp critical (mem_cr)
-  call trace('mem_cr')
-  select type (task)
-  class is (patch_t)
-  if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
-  call download_link (head, all_cells=.false.)        ! guard cells
-  if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
-  end select
-  !x$omp end critical (mem_cr)
-  !-----------------------------------------------------------------------------
-  ! Check if refinement is needed on the task; if so this will push new tasks
-  ! onto the queue, with the same task time; i.e., to the head of the queue
-  !-----------------------------------------------------------------------------
- !if (refine%needed (task)) then                      ! if refinement needed
- !  call self%split (head)                            ! refined tasks go back to queue
- !end if
-  !-----------------------------------------------------------------------------
-  ! To ensure the initial state is output, check for doing output, then update,
-  ! then check again.  The check is fast, but one could move the first call
-  !-----------------------------------------------------------------------------
-  call task%output(self%name)                         ! check output
-  call task%update                                    ! update the task
+  if (associated(head)) then
+    task => head%task                                   ! head task
+    !$omp critical (list_cr)
+    call trace('list_cr a begin')
+    if (io%verbose>0) &
+      print'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)', &
+      'thread', omp_mythread(), 'task', task%id, &
+      'step', task%istep, 'n, nq', self%n, self%nq
+    !-----------------------------------------------------------------------------
+    ! Prepare it for update, by downloading data that it depends on.  During the
+    ! download we must prevent threads in the nbor list from rotating mem slots
+    !-----------------------------------------------------------------------------
+    select type (task)
+    class is (patch_t)
+    if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
+    call download_link (head, all_cells=.false.)        ! guard cells
+    if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
+    end select
+    !-----------------------------------------------------------------------------
+    ! Check if refinement is needed on the task; if so this will push new tasks
+    ! onto the queue, with the same task time; i.e., to the head of the queue
+    !-----------------------------------------------------------------------------
+   !if (refine%needed (task)) then                      ! if refinement needed
+   !  call self%split (head)                            ! refined tasks go back to queue
+   !end if
+    !-----------------------------------------------------------------------------
+    ! To ensure the initial state is output, check for doing output, then update,
+    ! then check again.  The check is fast, but one could move the first call
+    !-----------------------------------------------------------------------------
+    call task%output(self%name)                         ! check output
+    call trace('list_cr a end')
+    !$omp end critical (list_cr)
+    call task%update                                    ! update the task
     !----------------------------------------------------------------------------
     ! The update procedure in the generic patch_t module is responsible for
     ! updating the time, and rotating the memory slots where information about
@@ -173,24 +180,24 @@ SUBROUTINE update (self)
     class is (patch_t)
     call task%rotate
     end select
-  !-----------------------------------------------------------------------------
-  ! The task should now again be checked, before it can be returned to the queue,
-  ! and its neighbors should be checked for return to the queue.
-  !-----------------------------------------------------------------------------
-  !x$omp critical (mem_cr)
-  !$omp critical (list_cr)
-  call task%clear(bits%ready)                         ! needs new check
-  call self%check_nbors (head)                        ! any nbor ready?
-  !$omp end critical (list_cr)
-  !x$omp end critical (mem_cr)
-  !$omp end critical (mem_cr)
-  !-----------------------------------------------------------------------------
-  ! Tasks that have finished are subtracted from the task list count
-  !-----------------------------------------------------------------------------
-  !$omp critical (list_cr)
-  if (task%time+0.5*task%dtime > task%end_time) &      ! finished:
-    self%n = self%n-1
-  !$omp end critical (list_cr)
+    !-----------------------------------------------------------------------------
+    ! The task should now again be checked, before it can be returned to the queue,
+    ! and its neighbors should be checked for return to the queue.
+    !-----------------------------------------------------------------------------
+    call task%clear(bits%ready)                         ! needs new check
+    call self%check_nbors (head)                        ! any nbor ready?
+    call trace('list_cr 2 end')
+    call task%output(self%name)                         ! check output
+    !-----------------------------------------------------------------------------
+    ! Tasks that have finished are subtracted from the task list count
+    !-----------------------------------------------------------------------------
+    if (task%time+0.5*task%dtime > task%end_time) then   ! finished:
+      call trace('list_cr 3 begin')
+      self%n = self%n-1
+      call trace('list_cr 3 end')
+    end if
+    !$omp end critical (list_cr)
+  end if
   call trace_end
 END SUBROUTINE update
 

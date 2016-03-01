@@ -245,9 +245,6 @@ SUBROUTINE rotate (self)
     print'(a,7i10)',   'experiment_t%update: iit =', self%iit
     print'(a,7f10.6)', 'experiment_t%update:   t =', self%t(self%iit)
   end if
-  ! FIXME
-  !call self%courant_condition
-  !call self%timestep%update (self%id, self%iit, self%dt, self%mem)
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
@@ -260,7 +257,6 @@ SUBROUTINE rotate (self)
   ! One line summary
   !-----------------------------------------------------------------------------
   time = self%time + self%dtime                   ! update self time
-  self%time = time
   if (io%verbose>1) then
     print'(a,i4,2i3,2f11.6,2x,a,1p,6e10.2)', 'update: id,j,k,l,n,dt,t', &
       self%id, self%it, self%new, self%dtime, self%time, 'minmax:', &
@@ -289,7 +285,8 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Time slot rotation
   !-----------------------------------------------------------------------------
-  !x$omp critical (mem_cr)
+  call trace ('patch_t%update mem_cr')
+  self%time = time
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = self%time                          ! initial time
@@ -305,7 +302,6 @@ SUBROUTINE rotate (self)
    print*,'patch iit:', self%iit
   if (io%verbose>3) &
    print*,'patch t(iit):', self%t(self%iit)
-  !x$omp end critical (mem_cr)
   call trace_end
 END SUBROUTINE rotate
 
