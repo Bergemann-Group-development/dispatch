@@ -129,9 +129,9 @@ SUBROUTINE init (self)
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false.
   real:: position(3)
-  real, save:: u_fixed=-1.0, dt_fixed=-1.0
+  real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
-  namelist /patch_params/ n, ng, nt, u_fixed, dt_fixed
+  namelist /patch_params/ n, ng, nt, u_fixed, dt_fixed, grace
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     guard_zones, time_derivs
   !.............................................................................
@@ -155,6 +155,7 @@ SUBROUTINE init (self)
     if (io%master) write (*, out_params)
   end if
   !$omp end critical (patch_cr)
+  self%grace     = grace
   self%max_files = max_files
   self%guard_zones=guard_zones
   self%time_derivs=time_derivs

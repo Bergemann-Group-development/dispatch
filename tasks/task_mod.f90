@@ -109,7 +109,7 @@ END SUBROUTINE
 LOGICAL FUNCTION is_ahead_of (self, task)
   class (task_t):: self, task
   !.............................................................................
-  is_ahead_of = self%time + task%grace >= task%time
+  is_ahead_of = self%time + self%dtime*task%grace >= task%time
 !  print*,'is_ahead_of: ', self%time, task%time, task%grace, is_ahead_of
 END FUNCTION
 

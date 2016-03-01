@@ -208,6 +208,7 @@ FUNCTION find_nbor (link, idir, o, time, jt1, jt2, pt, qt) RESULT (other)
   integer:: idir, adir, o, jt1, jt2, it, iv, nv, nt
   real:: pt, qt, dt
   !-----------------------------------------------------------------------------
+  !$omp critical (list_cr)
   call trace_begin('download::find_nbor',1)
   patch => task2patch (link%task)
   m => patch%mesh
@@ -259,6 +260,7 @@ FUNCTION find_nbor (link, idir, o, time, jt1, jt2, pt, qt) RESULT (other)
     print '(a,i3,i7,i4,i4,i3,f6.2,2x,3i3)', 'download::find_nbor: idir, id, o, jt, pt', &
       idir, other%id, o, jt1, jt2, pt, nint((other%position-patch%position)/patch%size)
   call trace_end
+  !$omp end critical (list_cr)
 END FUNCTION find_nbor
 
 END MODULE
