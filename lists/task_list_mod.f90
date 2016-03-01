@@ -162,7 +162,17 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call task%output(self%name)                         ! check output
   call task%update                                    ! update the task
-  call task%output(self%name)                         ! check output
+    !----------------------------------------------------------------------------
+    ! The update procedure in the generic patch_t module is responsible for
+    ! updating the time, and rotating the memory slots where information about
+    ! previous time steps are saved.
+    !----------------------------------------------------------------------------
+    !$omp critical (list_cr)
+    call trace('list_cr 2 begin')
+    select type (task)
+    class is (patch_t)
+    call task%rotate
+    end select
   !-----------------------------------------------------------------------------
   ! The task should now again be checked, before it can be returned to the queue,
   ! and its neighbors should be checked for return to the queue.

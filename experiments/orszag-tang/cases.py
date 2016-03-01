@@ -13,7 +13,7 @@ for i in range(8):
     f=read_file.read_file(file)
     pl.figure(i+1,figsize=(10,8))
     pl.ion()
-    pl.set_cmap('hsv')
+    pl.set_cmap('bone')
     pl.clf()
     pl.imshow(f.d[2:130,2:130,0].squeeze().transpose(),origin='lower')
     pl.title(case+'  nu ='+str(f.nu))

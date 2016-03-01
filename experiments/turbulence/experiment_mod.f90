@@ -70,12 +70,6 @@ SUBROUTINE update (self)
   call self%mhd_t%update
   call self%courant_condition
   call timestep%update (self%id, self%iit, self%dt, self%mem)
-  !----------------------------------------------------------------------------
-  ! The update procedure in the generic patch_t module is responsible for
-  ! updating the time, and rotating the memory slots where information about
-  ! previous time steps are saved.
-  !----------------------------------------------------------------------------
-  call self%patch_t%update
   call trace_end
 END SUBROUTINE update
 

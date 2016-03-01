@@ -72,6 +72,7 @@ SUBROUTINE trace_end
     if (io%master.and.io%verbose>=verbose) then
       write(*,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' end'
     end if
+    call flush(6)
   end if
   indent = max(indent-3,4)
 END SUBROUTINE trace_end

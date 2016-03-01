@@ -40,7 +40,7 @@ MODULE patch_mod
   contains
     procedure:: check_error
     procedure:: init
-    procedure:: update
+    procedure:: rotate
     procedure:: output
     procedure:: distance                ! return the distance btw two patches
     procedure:: point_distance          ! distance btw two points
@@ -232,7 +232,7 @@ END SUBROUTINE init
 !> dt(1). Then the current slot (it) becomes 2, and the new one becomes 3, etc.
 !> This way, there is no need to copy memory btw time steps.
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE rotate (self)
   class(patch_t):: self
   integer:: iv, nv
   real(8):: time
@@ -307,7 +307,7 @@ SUBROUTINE update (self)
    print*,'patch t(iit):', self%t(self%iit)
   !x$omp end critical (mem_cr)
   call trace_end
-END SUBROUTINE update
+END SUBROUTINE rotate
 
 !> =============================================================================
 !> Download values from the source (self) to the target (patch), trying to get

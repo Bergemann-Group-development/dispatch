@@ -146,11 +146,6 @@ associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
   end do
   !print*,'fraction outside:',nout/ntot, pos, ds
 end associate
-  !-----------------------------------------------------------------------------
-  ! The generic patch_t%update procedure calls the timestep procedure, wraps the
-  ! root grid patch periodically, and rotates the time slots
-  !-----------------------------------------------------------------------------
-  call self%patch_t%update
   !
   call trace_end
 END SUBROUTINE update

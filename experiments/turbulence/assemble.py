@@ -3,7 +3,7 @@ from image import image
 import matplotlib.pyplot as pl
 import numpy as np
 
-it=10
+it=9
 n=25
 nx=2
 ny=2
@@ -23,7 +23,7 @@ for i in range(nxy):
     print file, ix, iy
     ix=ix*n
     iy=iy*n
-    buf[ix:ix+n,iy:iy+n,:]=f.px[:,:,:]
+    buf[ix:ix+n,iy:iy+n,:]=f.d[:,:,:]
 for iz in range(20):
     image(buf[:,:,iz])
     pl.title(iz)
