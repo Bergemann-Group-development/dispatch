@@ -13,7 +13,7 @@ MODULE mhd_mod
   type, extends(patch_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
-    real:: nu(7)
+    real:: nu(6)
     logical:: mhd=.true.
     type(force_t):: force
   contains
@@ -33,7 +33,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  real, save:: nu(7)=1.0, courant=0.2, gamma=1.0
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], courant=0.2, gamma=1.0
   namelist /mhd_params/ nu, courant, gamma
   !----------------------------------------------------------------------------
   call trace_begin('mhd_t%init')
@@ -128,11 +128,11 @@ SUBROUTINE update (self)
     ! Magnetic pressure
     pb = 0.5*(Ex+Ey+Ez)
     ! Fast mode speed + velocity
-    pa = self%nu(3)*d*max(du,0.0)**2
+    pa = self%nu(2)*d*max(du,0.0)**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
     self%u_max = maxval(cs + sqrt(pp) + abs(du))
     du = max(du,0.0)
-    du = dx*(self%nu(1)*cs + self%nu(2)*du)
+    du = dx*self%nu(1)*cs
     ! Isotropic pressure part
     pp = pg + pa + pb
     ! Total diagonal stress
@@ -149,9 +149,9 @@ SUBROUTINE update (self)
     ! Sound speed + velocity
     cs = sqrt(self%gamma*pg/d)
     self%u_max = maxval(cs + sqrt(pp) + du)
-    du = dx*(self%nu(1)*cs + self%nu(2)*du)
+    du = dx*self%nu(1)*cs
     ! Isotropic pressure part
-    pa = self%nu(3)*d*du**2                               ! dimension: pressure
+    pa = self%nu(2)*d*du**2                               ! dimension: pressure
     pp = d*pp + pg + pa
     ! Total diagondal stress, with density factor
     fxx = pp - d*du*ddxup(ds,Ux)
@@ -187,9 +187,9 @@ SUBROUTINE update (self)
   !---------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !---------------------------------------------------------------------------
-  fxy = fxy - self%nu(7)*0.5*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
-  fxz = fxz - self%nu(7)*0.5*ydn1(zdn1(du))*(ddxdn(ds,Uz)+ddzdn(ds,Ux))
-  fyz = fyz - self%nu(7)*0.5*zdn1(xdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
+  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
+  fxz = fxz - self%nu(3)*0.5*ydn1(zdn1(du))*(ddxdn(ds,Uz)+ddzdn(ds,Ux))
+  fyz = fyz - self%nu(3)*0.5*zdn1(xdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
@@ -209,13 +209,15 @@ SUBROUTINE update (self)
   ! diagonal part is analogous, a centered version of \nu \rho U_i \grad\ln\rho,
   ! while the off-diagonal part needs to be properly symmetrized.
   !-----------------------------------------------------------------------------
-  pa = d*du*self%nu(4)
-  fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)
-  fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)
-  fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)
-  fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
-  fxz = fxz + (xdn1(fdz)*zdn(Ux)+zdn1(fdx)*xdn(Uz))
-  fyz = fyz + (zdn1(fdy)*ydn(Uz)+ydn1(fdz)*zdn(Uy))
+  if (self%nu(4) > 0.0) then
+    pa = d*du*self%nu(4)
+    fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)
+    fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)
+    fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)
+    fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
+    fxz = fxz + (xdn1(fdz)*zdn(Ux)+zdn1(fdx)*xdn(Uz))
+    fyz = fyz + (zdn1(fdy)*ydn(Uz)+ydn1(fdz)*zdn(Uy))
+  end if
   !-----------------------------------------------------------------------------
   ! Momentum equations
   !-----------------------------------------------------------------------------
@@ -224,13 +226,17 @@ SUBROUTINE update (self)
   dpdtz = - ddxup1(ds,fxz) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
   if (associated(self%force%selected)) &
     dpdt = dpdt + dd*self%force%selected (self%time, self%mesh)
+  !-----------------------------------------------------------------------------
+  ! Induction equation
+  !-----------------------------------------------------------------------------
   if (self%mhd) then
     !---------------------------------------------------------------------------
-    ! Electric current and resistive electric field
+    ! Electric current, resistive electric field and magnetic dissipation
     !---------------------------------------------------------------------------
     J = curl_dn(ds,B)
     E = self%nu(6)*edge(du)*J
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
+    dsdt = dsdt + Q*d/pg
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
     !---------------------------------------------------------------------------
@@ -238,7 +244,6 @@ SUBROUTINE update (self)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
     dBdt = -curl_up(ds,E)
-    dsdt = dsdt + Q*d/pg
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, U, E, J, fd, fx, fy, fz, fm)
