@@ -81,7 +81,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE execute (self)
   class(task_list_t):: self
-  type(link_t), pointer:: link, rem
+  class(link_t), pointer:: link, rem
   !$omp parallel
   do while (self%n > 0)
     call self%update
@@ -116,6 +116,7 @@ SUBROUTINE update (self)
   ! that frees up the rest is still running, with no other task ready
   !-----------------------------------------------------------------------------
   !$omp critical (list_cr)
+  !call self%lock
   call trace('list_cr 0 begin')
   if (self%nq < 1) then
     n1 = self%nq
@@ -132,6 +133,7 @@ SUBROUTINE update (self)
     self%nq = self%nq-1
   end if
   call trace('list_cr 1 end')
+  !call self%unlock
   !$omp end critical (list_cr)
   !-----------------------------------------------------------------------------
   ! Having secured a head, we need to check if it is at all associcated

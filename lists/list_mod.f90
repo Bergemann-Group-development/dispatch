@@ -18,10 +18,10 @@ MODULE list_mod
     class(link_t), pointer :: link => null()          ! nbor's link (maybe not needed)
   end type
   type, extends(nbor_t), public:: link_t
-    type(link_t),  pointer :: next => null()          ! next link in task list
-    type(link_t),  pointer :: prev => null()          ! previous link in task list
-    type(link_t),  pointer :: parent => null()        ! parent task link
-    type(link_t),  pointer :: next_time => null()     ! next link in time order
+    class(link_t),  pointer :: next => null()         ! next link in task list
+    class(link_t),  pointer :: prev => null()         ! previous link in task list
+    class(link_t),  pointer :: parent => null()       ! parent task link
+    class(link_t),  pointer :: next_time => null()    ! next link in time order
   contains
     procedure:: download
     procedure:: add_nbor_by_quality
@@ -31,9 +31,9 @@ MODULE list_mod
   end type
   type, public:: list_t
     character(len=64):: name=''
-    type(link_t), pointer:: head => null()
-    type(link_t), pointer:: tail => null()
-    type(link_t), pointer:: queue => null()
+    class(link_t), pointer:: head => null()
+    class(link_t), pointer:: tail => null()
+    class(link_t), pointer:: queue => null()
     integer:: n = 0
     integer:: nq = 0
     real(8):: size(3) = 1.0_8
@@ -98,7 +98,7 @@ END
 !> =============================================================================
 SUBROUTINE reset (self)
   class(list_t):: self
-  type(link_t), pointer:: link, old
+  class(link_t), pointer:: link, old
   class(task_t), pointer:: task
   !.............................................................................
   call trace_begin ('list_t%reset '//self%name)
@@ -147,7 +147,7 @@ END SUBROUTINE append
 !> =============================================================================
 SUBROUTINE remove_link (self, link)
   class(list_t):: self
-  type(link_t), pointer:: link, next
+  class(link_t), pointer:: link, next
   class(task_t), pointer:: task
   !.............................................................................
   call trace_begin ('list_t%remove_link '//self%name)
@@ -190,7 +190,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE remove_head (self)
   class(list_t):: self
-  type(link_t), pointer:: head, link, next
+  class(link_t), pointer:: head, link, next
   !.............................................................................
   call trace_begin ('list_t%remove_head '//self%name)
   !xomp critical (list_cr)
@@ -867,7 +867,7 @@ END SUBROUTINE download
 SUBROUTINE print_nbors (self, label)
   class (link_t):: self
   character(len=*), optional:: label
-  type(link_t) , pointer:: link, nbor
+  class(link_t) , pointer:: link, nbor
   !.............................................................................
   if (io%verbose < 2) return
   if (present(label)) then
@@ -912,7 +912,7 @@ END SUBROUTINE print_queue
 SUBROUTINE print_list (self, label)
   class(list_t):: self
   character(len=*), optional:: label
-  type(link_t), pointer:: link, prev
+  class(link_t), pointer:: link, prev
   class(task_t), pointer:: task
   character(len=32):: type
   !.............................................................................
