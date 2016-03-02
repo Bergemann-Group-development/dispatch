@@ -7,12 +7,12 @@ MODULE scaling_mod
   implicit none
   private
   type, public:: scaling_t
-    real(kind=8):: l, t, m, d, e, p, u, temp, mu, pi
+    real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu, pi
   contains
     procedure:: init
   end type
   type(scaling_t), public :: scaling
-  type(units_t), publice  :: code
+  type(const_t), public:: code
 CONTAINS
 !> =============================================================================
 !> Initialize code units:
@@ -41,7 +41,7 @@ SUBROUTINE init (self)
     print 1,'    density: ',self%d
     print 1,'   pressure: ',self%p
     print 1,'     energy: ',self%e
-    print 1,'    gravity: ',self%grav
+    print 1,'    gravity: ',code%grav
     print 1,'temperature: ',self%temp
   1 format(1x,a,1p,e11.3)
   end if

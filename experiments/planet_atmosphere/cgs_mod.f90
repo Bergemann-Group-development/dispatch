@@ -22,6 +22,7 @@ MODULE units_mod
     real(kind=8):: r_sun = 6.9598d10
     real(kind=8):: m_earth = 5.972d27
     real(kind=8):: r_earth = 6.371d8
+    real(kind=8):: mu = 2d0
     real(kind=8):: pi = asin(1.0) * 2.0
   end type
   type(const_t), public:: cgs

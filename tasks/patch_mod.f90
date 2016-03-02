@@ -190,7 +190,6 @@ SUBROUTINE init (self)
     call self%mesh(i)%init
     self%mesh(i)%b = self%box(i)
     self%mesh(i)%p = self%position(i)
-    print*,'MK',self%id,i,self%mesh(i)%p
   end do
   !-----------------------------------------------------------------------------
   ! Hack for backwards compatibility

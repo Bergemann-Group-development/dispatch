@@ -133,7 +133,7 @@ SUBROUTINE hydrostatic_balance (nr, rr, rho, pg, temp, mass)
         0.5*(rho(i+1)/pg(i+1)/rr(i+1)**2 + rho(i)/pg(i)/rr(i)**2)
       pg(i) = pg(i+1)*exp(dlnpg)
     end do
-    mass = mass + 4.*const%pi*(rr(i+1)**3-rr(i)**3)/3.*(rho(i+1)+rho(i))*0.5
+    mass = mass + 4.*cgs%pi*(rr(i+1)**3-rr(i)**3)/3.*(rho(i+1)+rho(i))*0.5
 !    print'("hydrostatic",i5,1p,8e11.3)',i,rr(i),pg(i),temp(i)*code%temp,rho(i),dr,dlnpg,planet%mass*code%grav/rr(i)**2
   end do
 END SUBROUTINE hydrostatic_balance

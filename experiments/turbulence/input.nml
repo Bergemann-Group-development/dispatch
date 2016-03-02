@@ -3,7 +3,7 @@
 ! This default input file runs turbulence at 50x50x50 resolution in 2x2x2 patches.
 ! It should take only a few minutes on a laptop, and produces 10 snapshots in time.
 !
-! Do not modify this particular file to make experiments with other parameters.
+! Do not modify the input.nml file to make experiments with other parameters.
 ! Instead, copy input.nml to othername.nml, and run ./dispatch.x other.nml, which
 ! produces data files named data/other_ppp_tttt.dat, where ppp is the patch number
 ! and tttt is the snapshot number.

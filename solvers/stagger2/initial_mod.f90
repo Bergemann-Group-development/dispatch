@@ -100,9 +100,6 @@ FUNCTION single_solenoidal (self, m) RESULT (ff)
       end do
     end do
   end do
-  do ix=m(1)%lb,m(1)%ub
-    print'(a,i4,f22.16)', 'initial:', ix, ff(ix,1,1,3)
-  end do
   call trace_end
 END FUNCTION single_solenoidal
 
@@ -120,7 +117,6 @@ FUNCTION single_compressive (self, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive')
   if (first_time) call self%init
-  print*,self%k,self%a0
   self%phi = 0.0
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
@@ -156,7 +152,6 @@ FUNCTION single_advection (self, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive')
   if (first_time) call self%init
-  print*,'adv:',self%k,m%p
   self%phi = 0.0
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
@@ -175,7 +170,6 @@ FUNCTION single_advection (self, m) RESULT (ff)
       end do
     end do
   end do
-  print*,'MK',maxval(abs(ff(:,:,:,3:5)))
   call trace_end
 END FUNCTION single_advection
 
