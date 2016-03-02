@@ -202,6 +202,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   self%nt = nt                                  ! number of time slices
   self%level = log(maxval(self%box)/minval(self%ds))/log(real(self%msplit)) + 0.1
+  if (io%verbose>0) &
+    print'(1x,a,i7,2(1p,3e12.4,2x))', 'patch_t%init: id, size, pos =', self%id, self%size, self%position
   if (io%verbose>3) &
     print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
   !-----------------------------------------------------------------------------

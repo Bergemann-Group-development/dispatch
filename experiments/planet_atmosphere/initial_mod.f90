@@ -7,7 +7,9 @@ MODULE initial_mod
   USE trace_mod
   USE vector_mod
   USE mesh_mod
-  USE lagrange_mod, only: lagrange_sequence
+  USE atmosphere_mod
+  USE planet_mod
+  USE lagrange_mod
   USE units_mod
   USE scaling_mod
   implicit none
@@ -23,8 +25,8 @@ MODULE initial_mod
   contains
     procedure init
   end type
-  logical, save:: first_time=.true.
   public planet_atmosphere
+  type(lagrange_t):: interp
 CONTAINS
 
 !> =============================================================================
@@ -32,56 +34,45 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
    class(initial_t):: self
-   logical, save:: mhd=.true.
+   logical, save:: first_time=.true.
    real, save:: b0(3) = 0.0
-   real, save:: size_re=1.0, surface_temperature_k=3000., surface_pressure_cgs=1e10
-   namelist /initial_params/ size_re, surface_temperature_k, surface_pressure_cgs, b0
+   namelist /initial_params/ b0
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
+   call scaling%init
    if (first_time) then
-    !$omp critical (experiment_cr)
-     if (first_time) then
-       first_time = .false.
-       rewind (io%input)
-       read (io%input, initial_params)
-       mhd = any(self%b0 /= 0.0)
-       if (io%master) write (*, initial_params)
-     end if
-    !$omp end critical (experiment_cr)
+     first_time = .false.
+     rewind (io%input); read (io%input, initial_params)
+     if (io%master) write (*, initial_params)
    end if
-   self%size = size_re*cgs%r_earth/scaling%l
    self%b0 = b0
-   self%surface_temperature = surface_temperature_k/scaling%temp
-   self%surface_pressure = surface_pressure_cgs/scaling%p
    self%selected => planet_atmosphere
    call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
-!> Integrate a hydrostatic and constant entropy planet atmosphere, with initially
-!> just a central gravitational field.
+!> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
 FUNCTION planet_atmosphere (self, m) RESULT (ff)
   class(initial_t)      :: self
   type(mesh_t)          :: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
-  integer               :: ix, iy, iz
+  integer               :: ix, iy, iz, nr
   real(8)               :: x, y, z, r, d, p
-  integer, parameter    :: nrad=1000
-  real(8), dimension(nrad) :: dd, pp, rr
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%planet_atmosphere')
-  if (first_time) call self%init
+  call self%init
+  nr = atmosphere%nr
   do iz=m(3)%lb,m(3)%ub
-    z = m(3)%p + m(3)%r(iz)
+    z = m(3)%p + m(3)%r(iz) - planet%position(3)
     do iy=m(2)%lb,m(2)%ub
-      y = m(2)%p + m(2)%r(iy)
+      y = m(2)%p + m(2)%r(iy) - planet%position(2)
       do ix=m(1)%lb,m(1)%ub
-        x = m(1)%p + m(1)%r(ix)
+        x = m(1)%p + m(1)%r(ix) - planet%position(1)
         r = sqrt(x**2+y**2+z**2)
-        d = interpolate(r,nrad,dd,rr)
-        p = interpolate(p,nrad,pp,rr)
+        d = interpolate (r, nr ,atmosphere%rr, atmosphere%rho)
+        p = interpolate (p, nr, atmosphere%rr, atmosphere%pg)
         ff(ix,iy,iz,1) = d
         ff(ix,iy,iz,3) = (log(p)-self%gamma*log(d))/(self%gamma-1.0)
         ff(ix,iy,iz,3) = 0.0
@@ -93,9 +84,11 @@ FUNCTION planet_atmosphere (self, m) RESULT (ff)
       end do
     end do
   end do
-  do ix=m(1)%lb,m(1)%ub
-    print'(a,i4,f22.16)', 'initial:', ix, ff(ix,1,1,3)
-  end do
+  if (io%verbose>1) then
+    do ix=m(1)%lb,m(1)%ub
+      print'(a,i4,f22.16)', 'initial:', ix, ff(ix,1,1,1)
+    end do
+  end if
   call trace_end
 END FUNCTION planet_atmosphere
 
@@ -107,7 +100,14 @@ FUNCTION interpolate (x0, n, x, y) RESULT(f)
   integer:: n
   real(kind=8):: x0, x(n), y(n), f
   !.............................................................................
-  f = lagrange_sequence (x0, x, y, n)
+  interp%verbose = max(io%verbose-4,0)
+  if (x0 < x(1)) then
+    f = y(1)
+  else if (x0 > x(n)) then
+    f = y(n)
+  else
+    f = interp%lagrange_sequence (x0, x, y, n)
+  end if
 END FUNCTION
 
 !> =============================================================================

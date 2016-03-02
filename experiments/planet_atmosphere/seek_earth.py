@@ -1,3 +1,9 @@
+'''
+   As these plots illustrate, whenever there is significant mass in the
+   atmosphere most of it is at large radii, within a small factor.  This
+   means one can get a decent structure by taking the mass to be constant,
+   which makes it possible to integrate from the outside in.
+'''
 import matplotlib.pyplot as pl
 import numpy as np
 

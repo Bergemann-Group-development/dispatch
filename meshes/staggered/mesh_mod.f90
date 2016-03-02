@@ -77,11 +77,13 @@ END SUBROUTINE
 SUBROUTINE print_mesh (self)
   class(mesh_t):: self
   integer:: i
-  if (io%verbose <= 0) return
-  print*,'mesh%print:'
+  if (io%verbose <= 1) return
+  print'(a,2(2x,1p,3e10.2))', 'mesh%print: size, position =', self%s, self%p
+  if (io%verbose <= 2) return
   print'(a,3i8)',       '             n, ng, gn:', self%n, self%ng, self%gn
   print'(a,6i8)',       'lb, lo, li, ui, uo, ub:', self%lb, self%lo, self%li, self%ui, self%uo, self%ub
   print'(a,4x,4g16.8)', '        sz, ds, uf, lf:', self%s, self%d, self%uf, self%lf
+  if (io%verbose <= 3) return
   do i=1,self%gn
     print*,i,self%r(i)
   end do

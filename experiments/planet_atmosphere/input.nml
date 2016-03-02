@@ -1,21 +1,20 @@
 &io_params
  do_trace=f
- verbose=0
+ verbose=1
  do_debug=f
 /
-&box_params
- size=1,1,1
- dims=2,2,2
- origin=0,0,0
+&planet_params
 /
-&experiment_params
- d0=1.2
- B0=0.0,0.0,0.0
+&setup_params
+ size_r_earth=1.0
+ position_au=1.0,0.0,0.0
+/
+&initial_params
 /
 &patch_params
  nt=5
  n=20,20,20
-dt_fixed=0.001
+!dt_fixed=0.001
 /
 &out_params
  end_time=0.010
@@ -26,22 +25,15 @@ dt_fixed=0.001
 /
 &mhd_params
  courant=0.1
- nu=  0.05,  0.6, 2.0, 1.0,  0.2,  1.0
- !     cs    du   pa   ofd   mas   eta
+ nu=  0.05, 2.0, 1.0, 0.2, 1.0, 1.0
+ !     cs   pa   ofd  mas  kap  eta
 /
 &timestep_params
  time_order=2
 /
-&force_params
- k=1,1,2
- a0=1,1.2,1.1
- t_turn=0.30
- type='single_solenoidal'
-/
-&initial_params
- k=3,3,3
- a0=0.0,0.0,0.0
- u0=0,0,0
- b0=0,0,0.3
- type='single_compressive'
+&atmosphere_params
+ densitY_cgs=1e-10
+ temperature_K=200.
+ mass_m_earth=0.9
+ orbit_au=1.0
 /

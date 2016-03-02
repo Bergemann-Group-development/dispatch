@@ -2,54 +2,37 @@
 !> Template module for planet task
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE planet_mod
+  USE io_mod
+  USE trace_mod
+  USE units_mod
+  USE scaling_mod
   USE task_mod
   USE particle_mod
   implicit none
+  private
   !-----------------------------------------------------------------------------
-  type, extends(particles_t):: planet_t
-    real:: mass, radius, surface_temperature
+  type, public, extends(particles_t):: planet_t
+    real(8):: mass, radius, temperature
     contains
-    procedure:: init       => init_planet
-    procedure:: allocate   => allocate_planet
-    procedure:: deallocate => deallocate_planet
-    procedure:: update     => update_planet
-    procedure:: print      => print_planet
+    procedure:: init
   end type
-!PRIVATE
-!PUBLIC planet_t
+  type(planet_t), public:: planet
 CONTAINS
 
 !> =============================================================================
-SUBROUTINE init_planet (self)
+SUBROUTINE init (self)
   class(planet_t):: self
   !.............................................................................
-END SUBROUTINE init_planet
-
-!> =============================================================================
-SUBROUTINE allocate_planet (self)
-  class(planet_t):: self
-  !.............................................................................
-END SUBROUTINE allocate_planet
-
-!> =============================================================================
-SUBROUTINE deallocate_planet (self)
-  class(planet_t):: self
-  !.............................................................................
-END SUBROUTINE deallocate_planet
-
-!> =============================================================================
-SUBROUTINE update_planet (self)
-  class(planet_t):: self
-  !.............................................................................
-  self%time = self%time + self%dtime
-END SUBROUTINE update_planet
-
-!> =============================================================================
-SUBROUTINE print_planet (self)
-  class(planet_t):: self
-  !.............................................................................
-  print*, self%id, self%time
-END SUBROUTINE print_planet
+  real(8):: position_au(3)=[0.0, 1.0, 0.0], radius_r_earth=1.0, mass_m_earth=1.0
+  real(8):: temperature_k=5500.
+  namelist /planet_params/ position_au, radius_r_earth, mass_m_earth, temperature_k
+  !-----------------------------------------------------------------------------
+  rewind (io%input); read (io%input, planet_params); write (*,planet_params)
+  self%radius = radius_r_earth*cgs%r_earth/scaling%l
+  self%mass = mass_m_earth*cgs%m_earth/scaling%m
+  self%position = position_au*cgs%au/scaling%l
+  self%temperature = temperature_k/scaling%temp
+END SUBROUTINE init
 
 !> =============================================================================
 END MODULE

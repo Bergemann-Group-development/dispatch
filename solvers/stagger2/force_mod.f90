@@ -28,7 +28,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
    class(force_t):: self
-   integer,save:: seed=-11
+   integer,save:: seed=-11, iostat
    character(len=32):: type='zero'
    real, save:: t_turn=0.3, a0(3)=0.1, k(3)=1.0
    namelist /force_params/ k, a0, t_turn, type
@@ -39,7 +39,7 @@ SUBROUTINE init (self)
      if (first_time) then
        first_time = .false.
        rewind (io%input)
-       read (io%input, force_params)
+       read (io%input, force_params, iostat=iostat)
        if (io%master) write (*, force_params)
      end if
     !$omp end critical (experiment_cr)

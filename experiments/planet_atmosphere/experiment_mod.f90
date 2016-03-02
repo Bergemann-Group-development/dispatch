@@ -14,7 +14,6 @@ MODULE experiment_mod
   private
   type, public, extends(mhd_t):: experiment_t
     type(initial_t):: initial
-    type(atmosphere_t):: atmosphere
   contains
     procedure init
     procedure update
@@ -33,10 +32,10 @@ SUBROUTINE init (self)
   ! Allocate memory and set IC values
   !----------------------------------------------------------------------------
   self%nv = 8
+  self%msplit = 3
   call self%initial%init
   call self%patch_t%init
   call self%set(bits%static)
-  call self%atmosphere%init
   self%mem(:,:,:,:,1,1) = self%initial%selected(self%mesh)
   call trace_end
 END SUBROUTINE init

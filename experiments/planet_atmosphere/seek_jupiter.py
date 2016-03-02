@@ -30,7 +30,7 @@ P0=k_B*T0*d0/(mu*m_u)
 print 'cgs density:', d0*kg/meter**3
 
 # Initial guess for iteration; surface and outer pressure
-P1=P0*1.55e6
+P1=P0*1.5e6
 P2=0
 while (P2<P0):
     P1=P1*1.02
