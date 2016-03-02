@@ -180,9 +180,16 @@ END FUNCTION scalar_minval
 FUNCTION scalar_exp (in) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in
+  integer:: ix, iy, iz
   call trace_begin('scalar_exp')
   call out%tempalloc(in,'scalar_exp')
-  out%f = exp(in%f)
+  do iz=1,in%n(3)
+  do iy=1,in%n(2)
+  do ix=1,in%n(1)
+    out%f(ix,iy,iz) = exp(in%f(ix,iy,iz))
+  end do
+  end do
+  end do
   call in%tempdealloc('scalar_exp')
   call trace_end
 END FUNCTION scalar_exp
