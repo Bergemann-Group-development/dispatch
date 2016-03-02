@@ -45,6 +45,7 @@ MODULE patch_mod
     procedure:: distance                ! return the distance btw two patches
     procedure:: point_distance          ! distance btw two points
     procedure:: overlaps                ! return true if they overlap (incl. ghost zones)
+    procedure:: overlaps_point          ! return true if they overlap (incl. ghost zones)
     procedure:: upload_range            ! returns the index ranges btw two points
     procedure:: dnload_range            ! returns the index ranges btw two points
     procedure:: index                   ! compute the index for a single point
@@ -504,11 +505,12 @@ END SUBROUTINE download_to
 !> =============================================================================
 FUNCTION myposition (self, ii) RESULT(out)
   class(patch_t):: self
-  real:: out(3)
+  real(8):: out(3)
   integer:: ii(3)
   !.............................................................................
   out = self%position + (ii-self%offset)*self%ds
 END FUNCTION
+
 !> =============================================================================
 !> Periodic mapping of a grid -- typically the root grid
 !> =============================================================================
@@ -863,6 +865,15 @@ FUNCTION overlaps (self, patch)
   !.............................................................................
   overlaps = all(abs(distance(self,patch)) <= 0.5000000001_8*(self%gsize+patch%gsize))
 END FUNCTION overlaps
+
+!> =============================================================================
+FUNCTION overlaps_point (self, point)
+  class(patch_t):: self
+  real(8):: point(3)
+  logical:: overlaps_point
+  !.............................................................................
+  overlaps_point = all(abs(point-self%position) < 0.5*self%size+self%ds)
+END FUNCTION overlaps_point
 
 !> =============================================================================
 !> Set and clear status bits

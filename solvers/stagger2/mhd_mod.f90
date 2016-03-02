@@ -34,6 +34,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], courant=0.2, gamma=1.0
+  integer:: i
   namelist /mhd_params/ nu, courant, gamma
   !----------------------------------------------------------------------------
   call trace_begin('mhd_t%init')
@@ -48,6 +49,10 @@ SUBROUTINE init (self)
   self%courant = courant
   self%nu = nu
   self%gamma = gamma
+  do i=1,3
+    self%mesh(i)%h(2+i) = -0.5*self%mesh(i)%d
+    self%mesh(i)%h(5+i) = -0.5*self%mesh(i)%d
+  end do
   call self%force%init
   call trace_end
 END SUBROUTINE init

@@ -9,23 +9,25 @@ MODULE mesh_mod
   ! Mesh for patches
   !-----------------------------------------------------------------------------
   type:: mesh_t
-    real(8):: b = 1d0
-    real(8):: p = 0d0
-    real(8):: s = 16d0
-    real(8):: d = 1d0
-    real(8):: o = 0.0
-    real(8):: lf = 0.0
-    real(8):: uf = 0.0
+    real(8):: b = 1d0           ! box size (periodic)
+    real(8):: p = 0d0           ! position
+    real(8):: s = 16d0          ! size
+    real(8):: d = 1d0           ! ds
+    real(8):: h(8) = 0d0        ! stagger offset for velocity and magnetic field
+    real(8):: o = 0.0           ! position offset in index space
+    real(8):: lf = 0.0          ! lower floating point boundary
+    real(8):: uf = 0.0          ! upper floating point boundary
     real(8), dimension(:), pointer:: r
-    integer:: n  = 16
-    integer:: ng =  2
-    integer:: lb =  1
-    integer:: lo =  2
-    integer:: li =  3
-    integer:: ui = 18
-    integer:: uo = 19
-    integer:: ub = 20
-    integer:: gn = 20
+    integer:: n  = 16           ! number of points
+    integer:: ng =  2           ! number of guard zones
+    integer:: lb =  1           ! lower index boundary 
+    integer:: lo =  2           ! lower index outside
+    integer:: li =  3           ! lower index inside
+    integer:: ui = 18           ! upper index inside
+    integer:: uo = 19           ! upper index outside
+    integer:: ub = 20           ! upper index boundary
+    integer:: gn = 20           ! global number of points
+    integer:: nh = 2            ! number of staggered variables
     contains
     procedure:: init       => init_mesh
     procedure:: deallocate => deallocate_mesh
