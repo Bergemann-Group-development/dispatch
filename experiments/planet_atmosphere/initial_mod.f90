@@ -19,11 +19,12 @@ MODULE initial_mod
     real:: surface_temperature, surface_pressure
     real(8):: size(3)
     logical:: mhd
-    procedure(planet_atmosphere), pointer:: selected => planet_atmosphere
+    procedure(planet_atmosphere), pointer:: selected => null()
   contains
     procedure init
   end type
   logical, save:: first_time=.true.
+  public planet_atmosphere
 CONTAINS
 
 !> =============================================================================
