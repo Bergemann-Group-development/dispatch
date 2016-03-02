@@ -5,36 +5,49 @@
 !> patch.
 !>
 !> =============================================================================
-MODULE read_ramses_mod
-  USE mpi_base,    only: master
-  USE plist_mod,   only: patch_list, wait_queue, x_list, add_patch_by_x, &
-                         add_patch_by_quality, append_to_plist, check_quality_order
-  USE patch_mod,   only: patch_t, init_patch_task, npatch, patch_table
-  USE task_mod,    only: task_t, t_now
-  USE state_mod,   only: gamma
-  USE scalar_mod,  only: scalar_stats
-  USE scaling_mod, only: code, cgs
-  USE star_mod,    only: star
-  USE mpi_base,    only: mpi_size
-  USE io_unig,     only: unig
-  USE io
+MODULE ramses_mod
+  USE io_mod
+  USE trace_mod
+  USE mpi_mod
+  USE task_mod
+  USE patch_mod
+  USE mhd_mod
+  USE scaling_mod
+  USE cgs_mod
+  USE star_mod
+  USE list_mod
+  USE task_list_mod
   implicit none
-  logical:: big_endian, double_precision, quad_precision
-  integer:: rank
-  real(kind=4), save:: scale_l, scale_d, scale_t
-  real(kind=8), save:: rank_load
-  integer, save:: nout, minlvl, maxlvl
-  real(kind=8), save:: size_au, size, d_min, tt_min
-  character(len=128):: path
-PRIVATE
-PUBLIC read_ramses
+  private
+  type, public:: ramses_t
+    logical:: big_endian, double_precision, quad_precision
+    integer:: rank
+    integer:: nout, minlvl, maxlvl
+    real(kind=4):: scale_l, scale_d, scale_t
+    real(kind=8):: gamma
+    real(kind=8):: rank_load
+    real(kind=8):: size_au, size, d_min, tt_min
+    character(len=128):: path
+    type(task_list_t):: task_list
+  contains
+    procedure init
+    procedure read
+    procedure entropy
+    procedure read_sink
+  end type
+  type(star_t), public:: star
 CONTAINS
 
-SUBROUTINE read_ramses
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE init (self)
+  class(ramses_t):: self
+  type(patch_t), pointer:: patch
+  logical:: error
+  integer:: nout, minlvt, maxlvl
+  real(8):: rank_load, dmin, tt_min, size_au
   namelist / init_params / nout, size_au, &
                            minlvl, maxlvl, rank_load, path, d_min, tt_min
-  logical:: error
-  type(patch_t), pointer:: patch
   !.............................................................................
   ! default values
   nout = -1
@@ -48,33 +61,36 @@ SUBROUTINE read_ramses
   size_au = size*code%l/cgs%au
   ! read namelist
   rewind (input); read (input,init_params); if (master) write(*, init_params)
-  size = size_au*cgs%au/code%l
+  self%size      = size_au*cgs%au/code%l
+  self%size_au   = size_au
+  self%d_min     = d_min/code%d
+  self%tt_min    = tt_min/code%temp
+  self%rank_load = rank_load
+  self%minlvl    = minlvl
+  self%maxlvl    = maxlvl
+  self%path      = path
   npatch = 1
-  d_min = d_min/code%d
-  tt_min = tt_min/code%temp
-  call read_ramses_snapshot (path, nout, size, &
-                             minlvl, maxlvl, d_min, tt_min)
-END SUBROUTINE read_ramses
+  call self%read 
+END SUBROUTINE init
 
 !> =============================================================================
 !> Read a RAMSES snapshot (likely split across multiple files), and create a
 !> patch for each "grid".
 !> =============================================================================
-SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
-                                 d_min, tt_min)
+SUBROUTINE read (self)
+  class(ramses_t):: self
 
   !---- variables for reading the snapshot ----
   ! scalars
   integer(kind=4):: ilun=10, ilun2=11, ilun3=12, nlevelmin, icpu, isentinel, ncpu, ndims, &
                     nx, ny, nz, nlevelmax, nboundary, ngrids, noutput, iout, ifout, &
-                    overload, ndomain, minlvl, maxlvl, ilevel, i, j, k, l, ivar, ioerr, &
+                    overload, ndomain, ilevel, i, j, k, l, ivar, ioerr, &
                     bit_length, maxdom, imin, imax, jmin, jmax, kmin, kmax, ngrid_act, &
-                    nx_full, ny_full, nz_full, ncpu_read, ix, iy, iz, nout, ncache, ndom, &
+                    nx_full, ny_full, nz_full, ncpu_read, ix, iy, iz, ncache, ndom, &
                     ncells, max_dom, nvar_mhd, twotondim, ngrids_max, ngrids_k, it
   real(kind=8):: boxlen, dx, dxnext, time, gamma_ramses, tmp_load, tot_load
   real(kind=16):: dmax, dkey, order_min, order_min_1d(1)
-  real(kind=8):: xmin, xmax, ymin, ymax, zmin, zmax, d_min, tt_min
-  real(kind=8):: size, xmn, xmx, ymn, ymx, zmn, zmx, r
+  real(kind=8):: xmn, xmx, ymn, ymx, zmn, zmx, r
 
   ! arrays
   integer(kind=4), dimension(1:8):: idom, jdom, kdom, cpu_min, cpu_max
@@ -95,7 +111,7 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
   real(kind=8), dimension(3):: pmin=1d30, pmax=-1d30
 
   character(len=80):: ordering
-  character(len=128):: datadir, filebase, filename, conv
+  character(len=128):: filebase, filename, conv
   integer(8), save:: n_passive=0, n_active=0, n_onrank=0, n_offrank=0, &
     n_d_min=0, n_tt_min=0
 
@@ -115,21 +131,21 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
 
   !.............................................................................
   call trace_begin('read_ramses_snapshot')
-  call read_sink (datadir, nout)
+  call self%read_sink (self%nout)
   xmin = 0.0; xmax = 1.0
   ymin = 0.0; ymax = 1.0
   zmin = 0.0; zmax = 1.0
-  xmn = star%position(1)-size*0.5d0
-  xmx = star%position(1)+size*0.5d0
-  ymn = star%position(2)-size*0.5d0
-  ymx = star%position(2)+size*0.5d0
-  zmn = star%position(3)-size*0.5d0
-  zmx = star%position(3)+size*0.5d0
-  rank = 0
+  xmn = star%position(1)-self%size*0.5d0
+  xmx = star%position(1)+self%size*0.5d0
+  ymn = star%position(2)-self%size*0.5d0
+  ymx = star%position(2)+self%size*0.5d0
+  zmn = star%position(3)-self%size*0.5d0
+  zmx = star%position(3)+self%size*0.5d0
+  self%rank = 0
   tmp_load = 0d0
   tot_load = 0d0
 
-  write(filebase, '(a,"/output_",i5.5,"/amr_",i5.5,".out")') trim(datadir), nout, nout
+  write(filebase, '(a,"/output_",i5.5,"/amr_",i5.5,".out")') trim(self%path), self%nout, self%nout
 
   ! We need some basic info about the snapshot; let's read the `info_` and `amr_` icpu = 1 files.
 
@@ -137,7 +153,7 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
   !if (master) then
     !---- read snapshot `info_` file ----
     ! note that the `info_` and `amr_` files contain some redundant information.
-    write(filename, '(a,"/output_",i5.5,"/info_",i5.5,".txt")') trim(datadir), nout, nout
+    write(filename, '(a,"/output_",i5.5,"/info_",i5.5,".txt")') trim(self%path), self%nout, self%nout
     open(unit=ilun,file=filename,status='old',form='formatted')
     read(ilun,*) ! SKIP ncpu
     read(ilun,*) ! SKIP ndims
@@ -166,10 +182,10 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
 #if __INTEL_COMPILER || defined(__GFORTRAN__)
     open(unit=ilun,file=filename,status='old',form='unformatted',access='stream')
     read(ilun) isentinel
-    big_endian = (isentinel .ne. 4)  ! the data is in big endian format.
+    self%big_endian = (isentinel .ne. 4)  ! the data is in big endian format.
     close(ilun)
 
-    if (big_endian) then
+    if (self%big_endian) then
       open(unit=ilun,file=filename,status='old',form='unformatted',convert='BIG_ENDIAN')
     else
       open(unit=ilun,file=filename,status='old',form='unformatted')
@@ -194,10 +210,10 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
     ! Try to read `r_boxlength` as a double precision variable; if an error occurs,
     ! then the data is single precision.
     read(ilun,iostat=ioerr) boxlen
-    double_precision = (ioerr == 0)
+    self%double_precision = (ioerr == 0)
 
     ! At this time, only double precision RAMSES data is supported.
-    if (.not. double_precision) then
+    if (.not. self%double_precision) then
       call die('Only double-precision RAMSES data is supported at this time.')
       close(ilun)
       stop
@@ -259,10 +275,10 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
         backspace(ilun)
         read(ilun,iostat=ioerr) bound_key_dp
         bound_key = bound_key_dp ! put the key into a quad precision variable.
-        quad_precision = .false.
+        self%quad_precision = .false.
       else
         backspace(ilun)
-        quad_precision = .true.
+        self%quad_precision = .true.
         allocate(bound_key_dpx2(2,0:ndomain))
         read(ilun,iostat=ioerr) bound_key_dpx2
         if (any( (abs( real(bound_key_dpx2(1,:),kind=16) + real(bound_key_dpx2(2,:),kind=16) - bound_key) &
@@ -306,10 +322,10 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
         backspace(ilun)
         read(ilun,iostat=ioerr) overload, ndomain, bound_key_dp, isub_domain, cpu_domain, map_domain
         bound_key = bound_key_dp ! put the key into a quad precision variable.
-        quad_precision = .false.
+        self%quad_precision = .false.
       else
         backspace(ilun)
-        quad_precision = .true.
+        self%quad_precision = .true.
         allocate(bound_key_dpx2(2,0:ndomain))
         read(ilun,iostat=ioerr) overload, ndomain, bound_key_dpx2, isub_domain, cpu_domain, map_domain
         if (any( (abs( real(bound_key_dpx2(1,:),kind=16) + real(bound_key_dpx2(2,:),kind=16) - bound_key) &
@@ -344,8 +360,8 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
     close(ilun)
 
     ! output info about snapshot to terminal
-    print *, 'Data is '//merge('double','single',double_precision)//' precision with '// &
-             trim(merge('quad  ','double',quad_precision))//' precision hilbert keys'
+    print *, 'Data is '//merge('double','single',self%double_precision)//' precision with '// &
+             trim(merge('quad  ','double',self%quad_precision))//' precision hilbert keys'
     print *, 'RAMSES snapshot time = ',time
     print *, 'ncpu = ',ncpu
     print *, 'nlevelmin = ',nlevelmin
@@ -358,8 +374,8 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
     !---- allocate arrays ----
     ! now that we have more information, we can set and allocate a few required variables.
     twotondim = 2**ndims
-    maxlvl = min(maxlvl, nlevelmax)
-    if (maxlvl == 0) maxlvl = nlevelmax
+    self%maxlvl = min(self%maxlvl, nlevelmax)
+    if (self%maxlvl == 0) self%maxlvl = nlevelmax
     ncells = nx * ny * nz + twotondim * ngrids
     allocate(ngrid_file(1:ncpu+nboundary,1:nlevelmax), ngrid_level(1:ncpu,1:nlevelmax), &
              cpu_list(1:ncpu), cpu_read(1:ncpu), xc(1:twotondim,1:3), &
@@ -371,7 +387,7 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
     ! uses the Hilbert-Peano curve to select which CPUs contain the relevant data
     dmax = max(xmax - xmin, ymax - ymin, zmax - zmin)
     ! for a given cut, what is the bare minimum level we need to consider.
-    do ilevel=1,maxlvl
+    do ilevel=1,self%maxlvl
       dx = 0.5_8**ilevel
       if (dx < dmax) exit
     enddo
@@ -476,7 +492,7 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
       ! open `amr_` file
       write(filename, '(a,i5.5)') trim(filebase), icpu
 #if __INTEL_COMPILER || defined(__GFORTRAN__)
-      if (big_endian) then
+      if (self%big_endian) then
         open(unit=ilun,file=filename,status='old',form='unformatted',convert='BIG_ENDIAN')
       else
         open(unit=ilun,file=filename,status='old',form='unformatted')
@@ -497,7 +513,7 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
       ! read grid numbers
       read(ilun) ngrid_level ! aka `numb_list`
       ngrid_file(1:ncpu,1:nlevelmax) = ngrid_level
-      if (rank==mpi_rank) &
+      if (self%rank==mpi_rank) &
         print'(a,i3,30i6)','ngr',k,ngrid_level(k,nlevelmin:nlevelmax)
       !
       read(ilun) ! SKIP numb_tot
@@ -523,10 +539,10 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
       read(ilun) ! SKIP cpu_map
 
       ! now we open the `hydro_` file to get access to the hydro data
-      write(filename, '(a,"/output_",i5.5,"/hydro_",i5.5,".out",i5.5)') trim(datadir), &
-            nout, nout, icpu
+      write(filename, '(a,"/output_",i5.5,"/hydro_",i5.5,".out",i5.5)') trim(self%path), &
+            self%nout, self%nout, icpu
 #if __INTEL_COMPILER || defined(__GFORTRAN__)
-      if (big_endian) then
+      if (self%big_endian) then
         open(unit=ilun2,file=filename,status='old',form='unformatted',convert='BIG_ENDIAN')
       else
         open(unit=ilun2,file=filename,status='old',form='unformatted')
@@ -540,13 +556,13 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
       read(ilun2) ! SKIP nlevelmax
       read(ilun2) ! SKIP nboundary
       read(ilun2) gamma_ramses
-      gamma = gamma_ramses
+      self%gamma = gamma_ramses
 
       ! open the `grav_` file to get access to the hydro data
-      write(filename, '(a,"/output_",i5.5,"/grav_",i5.5,".out",i5.5)') trim(datadir), &
-            nout, nout, icpu
+      write(filename, '(a,"/output_",i5.5,"/grav_",i5.5,".out",i5.5)') trim(self%path), &
+            self%nout, self%nout, icpu
 #if __INTEL_COMPILER || defined(__GFORTRAN__)
-      if (big_endian) then
+      if (self%big_endian) then
         open(unit=ilun3,file=filename,status='old',form='unformatted',convert='BIG_ENDIAN')
       else
         open(unit=ilun3,file=filename,status='old',form='unformatted')
@@ -560,7 +576,7 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
       read(ilun3) ! SKIP nboundary
 
       ! loop over levels for current file
-      do ilevel=1,maxlvl
+      do ilevel=1,self%maxlvl
         ! set cell geometry info
         dx = 0.5_8**ilevel
         dxnext = 0.5_8 * dx
@@ -657,12 +673,12 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
 
         ! compute cut-out
         ncellsum(ilevel,k) = 0
-        if (ngrid_act > 0 .and. ilevel >= max(minlvl,nlevelmin)) then
+        if (ngrid_act > 0 .and. ilevel >= max(self%minlvl,nlevelmin)) then
           do l=1,ngrid_act
             ! the grid centre is given by the `xg` variable.
             ! check if cell is in the cut-out region.
             r = sqrt(sum((xg(l,:)-star%position)**2))
-            ref(l) = r < size
+            ref(l) = r < self%size
             pmin = min(pmin,xg(l,:))
             pmax = max(pmax,xg(l,:))
             if (ref(l)) then
@@ -670,18 +686,18 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
               ! cells with data if we own the patch
               npatch = npatch+1
               patch => patch_table(npatch)
-              patch%rank = rank
+              patch%rank = self%rank
               patch%level = ilevel
               patch%pos(:) = xg(l,:)
               patch%n = 2
               patch%size = 2.0 * dx
               !> if the patch is at the very boundary, freeze it!
-              if (r+2d0*dx > size) then
+              if (r+2d0*dx > self%size) then
                 patch%status = ior(patch%status,frozen_bit)
                 if (nprint_f > 0) then
                   nprint_f = nprint_f-1
                   print '(a,i7,a,1p,3e16.9)', &
-                    'patch', patch%id, ' frozen', r, dx, size
+                    'patch', patch%id, ' frozen', r, dx, self%size
                 end if
               end if
               patch%time = time
@@ -714,16 +730,16 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
                   do iy=task%m(2)%li,task%m(2)%ui
                     do ix=task%m(1)%li,task%m(1)%ui
                       ! note that ghost cells are left *empty* at this stage.
-                      if (var(l,j,1) < d_min) then
-                        var(l,j,1) = d_min
+                      if (var(l,j,1) < self%d_min) then
+                        var(l,j,1) = self%d_min
                         n_d_min = n_d_min+1
                       end if
-                      if (var(l,j,11) < tt_min*var(l,j,1)) then
-                        var(l,j,11) = tt_min*var(l,j,1)
+                      if (var(l,j,11) < self%tt_min*var(l,j,1)) then
+                        var(l,j,11) = self%tt_min*var(l,j,1)
                         n_tt_min = n_tt_min+1
                       end if
                       task%mem(ix,iy,iz,1,task%it,1) = var(l,j,1)
-                      task%mem(ix,iy,iz,2,task%it,1) = calculate_entropy(gamma_ramses, var(l,j,:))
+                      task%mem(ix,iy,iz,2,task%it,1) = self%entropy(var(l,j,:))
                       task%mem(ix,iy,iz,3,task%it,1) = var(l,j,nvar_mhd+1)
                       !task%mem(ix,iy,iz,3,task%it,1) = 0.0
                       task%mem(ix,iy,iz,4,task%it,1) = var(l,j,1) * var(l,j,2) ! convert to momentum
@@ -759,20 +775,20 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
         endif ! end ngrid_act > 0 .and. ilevel >= nlevelmin
         if (ngrid_act > 0) deallocate(son, xg, var, ref, x)
 
-      enddo ! end loop ilevel=1,maxlvl
+      enddo ! end loop ilevel=1,self%maxlvl
       call check_quality_order (patch_list, 'loops')
 
       close(ilun) ! close `amr_` file
       close(ilun2) ! close `hydro_` file
-      if (rank==mpi_rank) print'(4(a,i8,3x),a,1p,e9.2)', &
+      if (self%rank==mpi_rank) print'(4(a,i8,3x),a,1p,e9.2)', &
         'n_active:',n_active,'n_passive:',n_passive,'n_onrank:',n_onrank, &
         'n_offrank:',n_offrank,'tmp_load:',tmp_load
       !
-      if (tmp_load > rank_load) then
-        if (rank<mpi_size-1) then
-          if (rank==mpi_rank) &
+      if (tmp_load > self%rank_load) then
+        if (self%rank<mpi_size-1) then
+          if (self%rank==mpi_rank) &
             print*,'bumping rank, with tmp_load =', tmp_load, n_active
-          rank = rank+1
+          self%rank = self%rank+1
           n_active=0
           n_passive=0
           n_onrank=0
@@ -794,27 +810,26 @@ SUBROUTINE read_ramses_snapshot (datadir, nout, size, minlvl, maxlvl, &
   code%d = scale_d
 
   ! output some diagnostics to the terminal.
-  allocate (fill(maxlvl))
-  do ilevel=nlevelmin,maxlvl
+  allocate (fill(self%maxlvl))
+  do ilevel=nlevelmin,self%maxlvl
     fill(ilevel)=sum(ncellsum(ilevel,:))/2.0**(3*(ilevel-1))
   enddo
   write (*,'(a,1p,2(3e10.2,2x))') 'pmin, pmax (AU) =', &
     (pmin-star%position)*code%l/cgs%au, (pmax-star%position)*code%l/cgs%au
-  write (*,'("fill:",30f7.3)') fill(nlevelmin:maxlvl)
+  write (*,'("fill:",30f7.3)') fill(nlevelmin:self%maxlvl)
   deallocate (fill)
 
   deallocate(ngrid_file, ngrid_level, cpu_list, cpu_read, xc, father, &
              neighbour, levels, ncellsum)
 
   call trace_end
-END SUBROUTINE read_ramses_snapshot
+END SUBROUTINE read
 
 !> =============================================================================
 !> Lifted directly from `amr2cell.f90`/`hilbert3d_qdp` (in the Copenhagen
 !> RAMSES repository.
 !> =============================================================================
 SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
-
   integer     , intent(in):: bit_length, npoint
   integer     , intent(in), dimension(1:npoint):: x, y, z
   integer:: i, ip, cstate, nstate, b0, b1, b2, sdigit, hdigit
@@ -854,7 +869,6 @@ SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
      print *,'ERROR in hilbert3d'
      stop
   endif
-
   do ip=1,npoint
      ! convert to binary
      do i=0,bit_length-1
@@ -862,14 +876,12 @@ SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
         y_bit_mask(i) = btest(y(ip), i)
         z_bit_mask(i) = btest(z(ip), i)
      enddo
-
      ! interleave bits
      do i=0,bit_length-1
         i_bit_mask(3*i+2) = x_bit_mask(i)
         i_bit_mask(3*i+1) = y_bit_mask(i)
         i_bit_mask(3*i  ) = z_bit_mask(i)
      enddo
-
      ! build Hilbert ordering using state diagram
      cstate = 0
      do i=bit_length-1,0,-1
@@ -884,42 +896,36 @@ SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
         i_bit_mask(3*i  ) = btest(hdigit,0)
         cstate = nstate
      enddo
-
      ! save Hilbert key as double/quad precision real
      order(ip) = 0.0_16
      do i=0,3*bit_length-1
         order(ip) = order(ip) + merge(1.0_16, 0.0_16, i_bit_mask(i)) * 2.0_16**i
      enddo
   enddo
-
 END SUBROUTINE hilbert3d
 
 !> =============================================================================
 !> Convenience function to calculate the entropy (because DISPATCH tracks the
 !> entropy rather than the internal energy/pressure or total energy.)
 !> =============================================================================
-FUNCTION calculate_entropy (gamma_ramses, vars) RESULT (s)
-  implicit none
-  real(kind=8):: gamma_ramses, s
+FUNCTION entropy (self, vars) RESULT (s)
+  class(ramses_t):: self
+  real(kind=8):: s
   real(kind=8), dimension(:):: vars
   !.............................................................................
-  ! vars(0) = rho
-  ! vars(10) = pressure
-  if (gamma==1d0) then
+  if (ramses%gamma==1d0) then
     s = vars(11)/vars(1)                ! temperature
   else
-    s = vars(1)*(log(vars(11))-log(vars(1))*gamma_ramses)/(gamma_ramses-1.0)
+    s = vars(1)*(log(vars(11))-log(vars(1))*ramses%gamma)/(ramses%gamma-1.0)
   end if
-END FUNCTION calculate_entropy
+END FUNCTION entropy
 
 !> =============================================================================
 !> Read sink particle information; the zoom-in sink is the last one, generally
 !> =============================================================================
- SUBROUTINE read_sink (datadir,nout)
-  implicit none
+ SUBROUTINE read_sink (self)
+  class(ramses_t):: self
   integer, parameter:: nmetal=2, sink_unit=9
-  character(len=*):: datadir
-  integer:: nout
   !.............................................................................
   integer, parameter::p8=kind(1.0D0)                                            ! double precision
   integer, parameter::dp=kind(1.0D0)                                            ! double precision
@@ -954,7 +960,7 @@ END FUNCTION calculate_entropy
   real(4):: t,beta_create,dtold
   real(8):: t8,tflush,r_translate(3),v_translate(3),x_refine,y_refine,z_refine
   !.............................................................................
-  write (fname,'(a,a,i5.5,a)') trim(datadir), '/output_', nout, '/stars_output.dat'
+  write (fname,'(a,a,i5.5,a)') trim(self%path), '/output_', self%nout, '/stars_output.dat'
   print*,fname
   open (sink_unit, file=fname,form='unformatted', status='unknown')
   read (sink_unit) version,nstars,t,szstar,sizeofstar
@@ -978,4 +984,4 @@ END FUNCTION calculate_entropy
   star%mass = sink%mass
 END SUBROUTINE read_sink
 
-END MODULE read_ramses_mod
+END MODULE ramses_mod
