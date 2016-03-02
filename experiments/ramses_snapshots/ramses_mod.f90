@@ -8,24 +8,28 @@
 MODULE ramses_mod
   USE io_mod
   USE trace_mod
+  USE bits_mod
   USE mpi_mod
   USE task_mod
   USE patch_mod
   USE mhd_mod
   USE scaling_mod
-  USE cgs_mod
+  USE units_mod
   USE star_mod
   USE list_mod
   USE task_list_mod
+  USE experiment_mod
   implicit none
   private
   type, public:: ramses_t
     logical:: big_endian, double_precision, quad_precision
     integer:: rank
     integer:: nout, minlvl, maxlvl
+    integer:: npatch
     real(kind=4):: scale_l, scale_d, scale_t
     real(kind=8):: gamma
     real(kind=8):: rank_load
+    real(kind=8):: xmin, xmax, ymin, ymax, zmin, zmax
     real(kind=8):: size_au, size, d_min, tt_min
     character(len=128):: path
     type(task_list_t):: task_list
@@ -39,38 +43,69 @@ MODULE ramses_mod
 CONTAINS
 
 !> =============================================================================
+!> Facilitate call to `ramses%read`.  All heavy lifting is done there
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, name)
   class(ramses_t):: self
-  type(patch_t), pointer:: patch
-  logical:: error
-  integer:: nout, minlvt, maxlvl
-  real(8):: rank_load, dmin, tt_min, size_au
-  namelist / init_params / nout, size_au, &
-                           minlvl, maxlvl, rank_load, path, d_min, tt_min
+  character(len=*), optional:: name
+  logical, save:: first_time=.true.
+  integer, save:: nout, minlvl, maxlvl
+  real, save:: xmin, xmax, ymin, ymax, zmin, zmax, rank_load
+  real, save:: d_min, tt_min, size, size_au
+  character(len=64), save:: path='.'
+  namelist / init_params / nout, xmin, xmax, ymin, ymax, zmin, zmax, &
+                           minlvl, maxlvl, rank_load, path
   !.............................................................................
-  ! default values
-  nout = -1
-  minlvl = 1
-  maxlvl = 1
-  d_min = 1d-30 ! cgs
-  tt_min = 5.   ! K
-  rank_load = 1.0
-  path = './'
-  size = 1d0
-  size_au = size*code%l/cgs%au
-  ! read namelist
-  rewind (input); read (input,init_params); if (master) write(*, init_params)
-  self%size      = size_au*cgs%au/code%l
+  call trace_begin('experiment_t%init')
+  !-----------------------------------------------------------------------------
+  ! The first thread reads the namelist parameters and save them
+  !-----------------------------------------------------------------------------
+  !$omp critical (init_cr)
+  if (first_time) then
+    first_time=.false.
+    ! default values
+    nout = -1
+    xmin = 0.0; xmax = 1.0
+    ymin = 0.0; ymax = 1.0
+    zmin = 0.0; zmax = 1.0
+    minlvl = 1
+    maxlvl = 1
+    rank_load = 1.0
+    d_min = 1d-30 ! cgs
+    tt_min = 5.   ! K
+    path = './'
+    size = 1d0
+    ! read namelist
+    rewind (io%input); read (io%input,init_params)
+    if (io%master) write(*, init_params)
+  end if
+  !$omp end critical (init_cr)
+  !-----------------------------------------------------------------------------
+  ! All threads save the parameters in their private parts, including the 
+  ! scaling information.  The selection of RAMSES data we read is based on
+  ! the parameters defined here.
+  !-----------------------------------------------------------------------------
   self%size_au   = size_au
-  self%d_min     = d_min/code%d
-  self%tt_min    = tt_min/code%temp
-  self%rank_load = rank_load
+  self%d_min     = d_min/scaling%d
+  self%tt_min    = tt_min/scaling%temp
+  self%xmin      = xmin
+  self%xmax      = xmax
+  self%ymin      = ymin
+  self%ymax      = ymax
+  self%zmin      = zmin
+  self%zmax      = zmax
   self%minlvl    = minlvl
   self%maxlvl    = maxlvl
   self%path      = path
-  npatch = 1
+  self%npatch    = 1
+  self%rank_load = rank_load
+  call scaling%init
+  !-----------------------------------------------------------------------------
+  ! Each thread reads the RAMSES grids belonging to it, filling in the data,
+  ! initializing the patch structure of every grid
+  !-----------------------------------------------------------------------------
   call self%read 
+  call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -126,15 +161,15 @@ SUBROUTINE read (self)
   integer, save:: nprint=100, nprint_f=100
 
   !---- dispatch variables ----
-  type(patch_t), pointer:: patch
-  type(task_t), pointer:: task, parent
+  class(task_t), pointer:: task, parent
+  class(patch_t), pointer:: patch
 
   !.............................................................................
   call trace_begin('read_ramses_snapshot')
-  call self%read_sink (self%nout)
-  xmin = 0.0; xmax = 1.0
-  ymin = 0.0; ymax = 1.0
-  zmin = 0.0; zmax = 1.0
+  call self%read_sink
+  self%xmin = 0.0; self%xmax = 1.0
+  self%ymin = 0.0; self%ymax = 1.0
+  self%zmin = 0.0; self%zmax = 1.0
   xmn = star%position(1)-self%size*0.5d0
   xmx = star%position(1)+self%size*0.5d0
   ymn = star%position(2)-self%size*0.5d0
@@ -150,7 +185,7 @@ SUBROUTINE read (self)
   ! We need some basic info about the snapshot; let's read the `info_` and `amr_` icpu = 1 files.
 
   !$omp master
-  !if (master) then
+  !if (io%master) then
     !---- read snapshot `info_` file ----
     ! note that the `info_` and `amr_` files contain some redundant information.
     write(filename, '(a,"/output_",i5.5,"/info_",i5.5,".txt")') trim(self%path), self%nout, self%nout
@@ -170,9 +205,9 @@ SUBROUTINE read (self)
     read(ilun,*) ! SKIP omega_l
     read(ilun,*) ! SKIP omega_k
     read(ilun,*) ! SKIP omega_b
-    read(ilun,'(13x,e23.15)') scale_l ! length scale factor
-    read(ilun,'(13x,e23.15)') scale_d ! density scale factor
-    read(ilun,'(13x,e23.15)') scale_t ! time scale factor
+    read(ilun,'(13x,e23.15)') self%scale_l ! length scale factor
+    read(ilun,'(13x,e23.15)') self%scale_d ! density scale factor
+    read(ilun,'(13x,e23.15)') self%scale_t ! time scale factor
     close(ilun)
 
     !---- read `amr_` file for icpu = 1 ----
@@ -197,7 +232,7 @@ SUBROUTINE read (self)
     read(ilun) ncpu
     read(ilun) ndims
     if (ndims < 3) then
-      call die('Only 3-D data is supported at this time.')
+      call mpi%abort('Only 3-D data is supported at this time.')
       close(ilun)
       stop
     endif
@@ -214,7 +249,7 @@ SUBROUTINE read (self)
 
     ! At this time, only double precision RAMSES data is supported.
     if (.not. self%double_precision) then
-      call die('Only double-precision RAMSES data is supported at this time.')
+      call mpi%abort('Only double-precision RAMSES data is supported at this time.')
       close(ilun)
       stop
     endif
@@ -253,7 +288,7 @@ SUBROUTINE read (self)
     read(ilun) ! SKIP headf, tailf, numbf, used_mem, used_mem_tot
     read(ilun) ordering
     if (ordering == 'bisection') then
-      call die('Only Peano-Hilbert ordered RAMSES data can be read at this time.')
+      call mpi%abort('Only Peano-Hilbert ordered RAMSES data can be read at this time.')
       close(ilun)
       stop
     endif
@@ -287,7 +322,7 @@ SUBROUTINE read (self)
           ! We are on BlueGene/Q and using the XLF90 compiler. These two numbers should be identical.
           ! Therefore we are trying to read little endian data, but will never have any luck doing that,
           ! since the little-endian quad-precision format is not supported with XLF.
-          call die('We are on an IBM big-endian platform trying to read little endian quad-precision data. This is not possible. Giving up.')
+          call mpi%abort('We are on an IBM big-endian platform trying to read little endian quad-precision data. This is not possible. Giving up.')
           close(ilun)
           stop
 #endif
@@ -334,7 +369,7 @@ SUBROUTINE read (self)
           ! We are on BlueGene/Q and using the XLF90 compiler. These two numbers should be identical.
           ! Therefore we are trying to read little endian data, but will never have any luck doing that,
           ! since the little-endian quad-precision format is not supported with XLF.
-          call die('We are on an IBM big-endian platform trying to read little endian quad-precision data. This is not possible. Giving up.')
+          call mpi%abort('We are on an IBM big-endian platform trying to read little endian quad-precision data. This is not possible. Giving up.')
           close(ilun)
           stop
 #endif
@@ -367,9 +402,8 @@ SUBROUTINE read (self)
     print *, 'nlevelmin = ',nlevelmin
     print *, 'nlevelmax = ',nlevelmax
     print *, 'boxlen = ',boxlen
-    t_now = time
     print *, 'time = ',time
-    unig%t_next = time
+    patch%time = time
 
     !---- allocate arrays ----
     ! now that we have more information, we can set and allocate a few required variables.
@@ -385,7 +419,7 @@ SUBROUTINE read (self)
 
     !---- given limits, make preparations to cut a sub-volume from the box ----
     ! uses the Hilbert-Peano curve to select which CPUs contain the relevant data
-    dmax = max(xmax - xmin, ymax - ymin, zmax - zmin)
+    dmax = max(self%xmax - self%xmin, self%ymax - self%ymin, self%zmax - self%zmin)
     ! for a given cut, what is the bare minimum level we need to consider.
     do ilevel=1,self%maxlvl
       dx = 0.5_8**ilevel
@@ -397,11 +431,11 @@ SUBROUTINE read (self)
     ndom = 1
     dkey = (2.0_16**(nlevelmax + 1) / real(max_dom,kind=16))**ndims
     if (bit_length > 0) then
-      imin = int(xmin * dble(max_dom))
+      imin = int(self%xmin * dble(max_dom))
       imax = imin + 1
-      jmin = int(ymin * dble(max_dom))
+      jmin = int(self%ymin * dble(max_dom))
       jmax = jmin + 1
-      kmin = int(zmin * dble(max_dom))
+      kmin = int(self%zmin * dble(max_dom))
       kmax = kmin + 1
       ndom = 8
     endif
@@ -460,12 +494,12 @@ SUBROUTINE read (self)
       nx_full = 2**ilevel
       ny_full = 2**ilevel
       nz_full = 2**ilevel
-      levels(ilevel)%imin = int(xmin * dble(nx_full)) + 1
-      levels(ilevel)%imax = int(xmax * dble(nx_full)) + 1
-      levels(ilevel)%jmin = int(ymin * dble(ny_full)) + 1
-      levels(ilevel)%jmax = int(ymax * dble(ny_full)) + 1
-      levels(ilevel)%kmin = int(zmin * dble(nz_full)) + 1
-      levels(ilevel)%kmax = int(zmax * dble(nz_full)) + 1
+      levels(ilevel)%imin = int(self%xmin * dble(nx_full)) + 1
+      levels(ilevel)%imax = int(self%xmax * dble(nx_full)) + 1
+      levels(ilevel)%jmin = int(self%ymin * dble(ny_full)) + 1
+      levels(ilevel)%jmax = int(self%ymax * dble(ny_full)) + 1
+      levels(ilevel)%kmin = int(self%zmin * dble(nz_full)) + 1
+      levels(ilevel)%kmax = int(self%zmax * dble(nz_full)) + 1
     enddo
 
     !---- create root grid ----
@@ -486,7 +520,7 @@ SUBROUTINE read (self)
     !call append_to_plist (wait_queue, patch)
 
     ! loop over CPU files
-    call barrier_mpi ('ncpu begin')
+    call mpi%barrier ('ncpu begin')
     do k=1,ncpu_read
       icpu = cpu_list(k)
       ! open `amr_` file
@@ -500,7 +534,7 @@ SUBROUTINE read (self)
 #else
       open(unit=ilun,file=filename,status='old',form='unformatted')
 #endif
-      if (master) print *, 'Reading file '//trim(filename)
+      if (io%master) print *, 'Reading file '//trim(filename)
 
       ! skip header
       do i=1,6
@@ -513,7 +547,7 @@ SUBROUTINE read (self)
       ! read grid numbers
       read(ilun) ngrid_level ! aka `numb_list`
       ngrid_file(1:ncpu,1:nlevelmax) = ngrid_level
-      if (self%rank==mpi_rank) &
+      if (self%rank==mpi%rank) &
         print'(a,i3,30i6)','ngr',k,ngrid_level(k,nlevelmin:nlevelmax)
       !
       read(ilun) ! SKIP numb_tot
@@ -684,16 +718,20 @@ SUBROUTINE read (self)
             if (ref(l)) then
               ! create a new DISPATCH patch/task for the current grid and fill with the
               ! cells with data if we own the patch
-              npatch = npatch+1
-              patch => patch_table(npatch)
+              self%npatch = self%npatch+1
+              allocate (patch_t:: task)
+              select type (task)
+              class is (patch_t)
+              patch => task
+              end select
               patch%rank = self%rank
               patch%level = ilevel
-              patch%pos(:) = xg(l,:)
+              patch%position(:) = xg(l,:)
               patch%n = 2
               patch%size = 2.0 * dx
               !> if the patch is at the very boundary, freeze it!
               if (r+2d0*dx > self%size) then
-                patch%status = ior(patch%status,frozen_bit)
+                patch%status = ior(patch%status,bits%frozen)
                 if (nprint_f > 0) then
                   nprint_f = nprint_f-1
                   print '(a,i7,a,1p,3e16.9)', &
@@ -704,17 +742,20 @@ SUBROUTINE read (self)
               patch%velocity = 0.0
               tmp_load = tmp_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
               tot_load = tot_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
-              if (patch%rank==mpi_rank) then
-                call init_patch_task(patch, task)
+              if (patch%rank==mpi%rank) then
+                call patch%init
                 if (nprint>0) then
                   nprint = nprint-1
                   print'("task:",i6,i3,1p,3(3e13.5,2x))', &
-                    patch%id, patch%level, patch%pos, task%m%p, task%m%s
+                    patch%id, patch%level, patch%position, patch%mesh%p, patch%mesh%s
                 end if
-                if (mod(npatch,1000)==0) &
-                  print'(a,2i7,3x,a,1p,2e10.2)','npatch:',npatch,n_active,'load:',tot_load,tmp_load
-                task%offset = patch%pos
-                task%parent => parent
+                if (mod(self%npatch,1000)==0) &
+                  print'(a,2i7,3x,a,1p,2e10.2)','npatch:',self%npatch,n_active,'load:',tot_load,tmp_load
+                patch%offset = patch%position
+                select type (patch)
+                class is (patch_t)
+                  patch%parent => parent
+                end select
                 ! loop over cells
                 j = 1
                 ! RAMSES variable mapping:
@@ -724,11 +765,10 @@ SUBROUTINE read (self)
                 ! DISPATCH variable mapping:
                 ! 1 = density; 2 = entropy; 3 = grav. potential; 4:6 = momentum components
                 ! 7:9 = magnetic field components
-                task%d_average = 0.0
-                it = task%it
-                do iz=task%m(3)%li,task%m(3)%ui
-                  do iy=task%m(2)%li,task%m(2)%ui
-                    do ix=task%m(1)%li,task%m(1)%ui
+                it = patch%it
+                do iz=patch%mesh(3)%li,patch%mesh(3)%ui
+                  do iy=patch%mesh(2)%li,patch%mesh(2)%ui
+                    do ix=patch%mesh(1)%li,patch%mesh(1)%ui
                       ! note that ghost cells are left *empty* at this stage.
                       if (var(l,j,1) < self%d_min) then
                         var(l,j,1) = self%d_min
@@ -738,28 +778,22 @@ SUBROUTINE read (self)
                         var(l,j,11) = self%tt_min*var(l,j,1)
                         n_tt_min = n_tt_min+1
                       end if
-                      task%mem(ix,iy,iz,1,task%it,1) = var(l,j,1)
-                      task%mem(ix,iy,iz,2,task%it,1) = self%entropy(var(l,j,:))
-                      task%mem(ix,iy,iz,3,task%it,1) = var(l,j,nvar_mhd+1)
-                      !task%mem(ix,iy,iz,3,task%it,1) = 0.0
-                      task%mem(ix,iy,iz,4,task%it,1) = var(l,j,1) * var(l,j,2) ! convert to momentum
-                      task%mem(ix,iy,iz,5,task%it,1) = var(l,j,1) * var(l,j,3)
-                      task%mem(ix,iy,iz,6,task%it,1) = var(l,j,1) * var(l,j,4)
-                      task%mem(ix,iy,iz,7,task%it,1) = var(l,j,5) ! only the "left" fields are used
-                      task%mem(ix,iy,iz,8,task%it,1) = var(l,j,6)
-                      task%mem(ix,iy,iz,9,task%it,1) = var(l,j,7)
-                      task%d_average = task%d_average + var(l,j,1)
-                      task%v(:,it) = task%v(:,it) + task%mem(ix,iy,iz,4:6,task%it,1)
+                      patch%mem(ix,iy,iz,1,patch%it,1) = var(l,j,1)
+                      patch%mem(ix,iy,iz,2,patch%it,1) = self%entropy(var(l,j,:))
+                      patch%mem(ix,iy,iz,3,patch%it,1) = var(l,j,nvar_mhd+1)
+                      !patch%mem(ix,iy,iz,3,patch%it,1) = 0.0
+                      patch%mem(ix,iy,iz,4,patch%it,1) = var(l,j,1) * var(l,j,2) ! convert to momentum
+                      patch%mem(ix,iy,iz,5,patch%it,1) = var(l,j,1) * var(l,j,3)
+                      patch%mem(ix,iy,iz,6,patch%it,1) = var(l,j,1) * var(l,j,4)
+                      patch%mem(ix,iy,iz,7,patch%it,1) = var(l,j,5) ! only the "left" fields are used
+                      patch%mem(ix,iy,iz,8,patch%it,1) = var(l,j,6)
+                      patch%mem(ix,iy,iz,9,patch%it,1) = var(l,j,7)
+                      !patch%v(:,it) = patch%v(:,it) + patch%mem(ix,iy,iz,4:6,patch%it,1)
                       j = j + 1
                     enddo
                   enddo
                 enddo
-                task%v(:,it) = task%v(:,it)/task%d_average
-                task%d_average = task%d_average/j
-                !call scalar_stats (task%m, task%f%d, 'd')
-                call add_patch_by_quality(patch_list, patch)
-                !call add_patch_by_x(x_list, patch)
-                call append_to_plist(wait_queue, patch)
+                call self%task_list%append (task)
 
                 ! diagnostic info
                 ncellsum(ilevel,k) = ncellsum(ilevel,k) + twotondim
@@ -776,17 +810,16 @@ SUBROUTINE read (self)
         if (ngrid_act > 0) deallocate(son, xg, var, ref, x)
 
       enddo ! end loop ilevel=1,self%maxlvl
-      call check_quality_order (patch_list, 'loops')
 
       close(ilun) ! close `amr_` file
       close(ilun2) ! close `hydro_` file
-      if (self%rank==mpi_rank) print'(4(a,i8,3x),a,1p,e9.2)', &
+      if (self%rank==mpi%rank) print'(4(a,i8,3x),a,1p,e9.2)', &
         'n_active:',n_active,'n_passive:',n_passive,'n_onrank:',n_onrank, &
         'n_offrank:',n_offrank,'tmp_load:',tmp_load
       !
       if (tmp_load > self%rank_load) then
-        if (self%rank<mpi_size-1) then
-          if (self%rank==mpi_rank) &
+        if (self%rank<mpi%size-1) then
+          if (self%rank==mpi%rank) &
             print*,'bumping rank, with tmp_load =', tmp_load, n_active
           self%rank = self%rank+1
           n_active=0
@@ -796,18 +829,18 @@ SUBROUTINE read (self)
           tmp_load = 0d0
         end if
       end if
-      call barrier_mpi ('ncpu loop')
+      call mpi%barrier ('ncpu loop')
     enddo ! end loop k=1,ncpu_read
     print*,'n_d_min, n_tt_min =',n_d_min,n_tt_min
 
-  !endif ! if (master)
+  !endif ! if (io%master)
   !$omp end master
   !$omp barrier
 
   ! set scale factors (other scale factors will be calculated)
-  code%l = scale_l
-  code%t = scale_t
-  code%d = scale_d
+  scaling%l = self%scale_l
+  scaling%t = self%scale_t
+  scaling%d = self%scale_d
 
   ! output some diagnostics to the terminal.
   allocate (fill(self%maxlvl))
@@ -815,7 +848,7 @@ SUBROUTINE read (self)
     fill(ilevel)=sum(ncellsum(ilevel,:))/2.0**(3*(ilevel-1))
   enddo
   write (*,'(a,1p,2(3e10.2,2x))') 'pmin, pmax (AU) =', &
-    (pmin-star%position)*code%l/cgs%au, (pmax-star%position)*code%l/cgs%au
+    (pmin-star%position)*scaling%l/cgs%au, (pmax-star%position)*scaling%l/cgs%au
   write (*,'("fill:",30f7.3)') fill(nlevelmin:self%maxlvl)
   deallocate (fill)
 
@@ -913,10 +946,10 @@ FUNCTION entropy (self, vars) RESULT (s)
   real(kind=8):: s
   real(kind=8), dimension(:):: vars
   !.............................................................................
-  if (ramses%gamma==1d0) then
+  if (self%gamma==1d0) then
     s = vars(11)/vars(1)                ! temperature
   else
-    s = vars(1)*(log(vars(11))-log(vars(1))*ramses%gamma)/(ramses%gamma-1.0)
+    s = vars(1)*(log(vars(11))-log(vars(1))*self%gamma)/(self%gamma-1.0)
   end if
 END FUNCTION entropy
 
@@ -979,7 +1012,6 @@ END FUNCTION entropy
                      sink%owner,sink%has_moved,sink%beta_create,sink%dtold
   enddo
   close(sink_unit)
-  allocate (star)
   star%position = [sink%x,sink%y,sink%z]
   star%mass = sink%mass
 END SUBROUTINE read_sink

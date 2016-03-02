@@ -12,13 +12,13 @@
  list_trace=f
 /
 
-&unigrid_params level=22 n=64 center=0.5,0.5,0.5 t_step=1 t_next=0.039 /
-
 &debug_params
  !debug_select=4 zap_value=0.0
 /
 
-&init_params nout=1500 minlvl=14 maxlvl=29 path='run17' rank_load=5e-3 /
+&ramses_params
+ nout=1500 minlvl=14 maxlvl=29 path='run17' rank_load=5e-3
+/
 
 &refine_params dynamic_refine=f /
 &refine_on_potential_params /
