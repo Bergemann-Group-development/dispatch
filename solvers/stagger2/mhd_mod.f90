@@ -50,8 +50,8 @@ SUBROUTINE init (self)
   self%nu = nu
   self%gamma = gamma
   do i=1,3
-    self%mesh(i)%h(2+i) = -0.5*self%mesh(i)%d
-    self%mesh(i)%h(5+i) = -0.5*self%mesh(i)%d
+    self%mesh(i)%h(2+i) = -0.5
+    self%mesh(i)%h(5+i) = -0.5
   end do
   call self%force%init
   call trace_end
@@ -77,7 +77,6 @@ SUBROUTINE update (self)
   real:: ds(3), dx
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%update')
-  call self%init
   self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
   self%s => self%mem(:,:,:,  2,self%it,1); self%dsdt => self%mem(:,:,:,  2,self%it,2)
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)

@@ -867,12 +867,23 @@ FUNCTION overlaps (self, patch)
 END FUNCTION overlaps
 
 !> =============================================================================
-FUNCTION overlaps_point (self, point)
+FUNCTION overlaps_point (self, idir, point)
   class(patch_t):: self
+  integer:: idir, adir
   real(8):: point(3)
   logical:: overlaps_point
   !.............................................................................
-  overlaps_point = all(abs(point-self%position) < 0.5*self%size+self%ds)
+  overlaps_point = all(abs(point-self%position) < 0.5*(self%gn-1)*self%ds)
+  if (overlaps_point.and.any(((point-self%position)/self%ds + self%offset) < 0.)) then
+    print*,'overlaps_point:', (point-self%position)/self%ds + self%offset, overlaps_point
+    print*,'     position:', point
+    print*,'self%position:', self%position
+    print*,'      self%gn:', self%gn
+    print*,'      self%ds:', self%ds
+    print*,'diff position:', (point-self%position)/self%ds
+    print*,'       offset:', self%offset
+    stop
+  end if
 END FUNCTION overlaps_point
 
 !> =============================================================================

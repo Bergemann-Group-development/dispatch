@@ -37,6 +37,7 @@ SUBROUTINE init (self)
   call self%patch_t%init
   call self%set(bits%static)
   self%mem(:,:,:,:,1,1) = self%initial%selected(self%mesh)
+  call self%mhd_t%init
   call trace_end
 END SUBROUTINE init
 

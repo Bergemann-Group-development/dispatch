@@ -400,6 +400,17 @@ SUBROUTINE init_nbors (self)
           nbor%next => link%nbor
           link%nbor => nbor
           n_add = n_add+1
+          !---------------------------------------------------------------------
+          ! Find the parent, as the patch on the next lower level that has the
+          ! current path position inside it
+          !---------------------------------------------------------------------
+          if (nbor%task%level==link%task%level-1) then
+            if (all(abs(nbor%task%position-link%task%position) < nbor%task%size*0.5)) then
+              link%parent => nbor
+              if (io%verbose>0) &
+                print*, 'patch', link%task%id, ' parent:', nbor%task%id
+            end if
+          end if
         end if
       end if
       scan => scan%next                                 ! continue search
