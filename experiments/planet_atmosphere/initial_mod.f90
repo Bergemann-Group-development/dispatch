@@ -53,13 +53,13 @@ END SUBROUTINE init
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-FUNCTION planet_atmosphere (self, m) RESULT (ff)
-  class(initial_t)      :: self
-  type(mesh_t)          :: m(3)
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+SUBROUTINE planet_atmosphere (self, mem, m)
+  class(initial_t)             :: self
+  real, dimension(:,:,:,:,:,:) :: mem
+  type(mesh_t)                 :: m(3)
   !.............................................................................
-  integer               :: ix, iy, iz, nr
-  real(8)               :: x, y, z, r, d, p
+  integer :: ix, iy, iz, nr
+  real(8) :: x, y, z, r, d, p
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%planet_atmosphere')
   call self%init
@@ -73,24 +73,19 @@ FUNCTION planet_atmosphere (self, m) RESULT (ff)
         r = sqrt(x**2+y**2+z**2)
         d = interpolate (r, nr ,atmosphere%rr, atmosphere%rho)
         p = interpolate (p, nr, atmosphere%rr, atmosphere%pg)
-        ff(ix,iy,iz,1) = d
-        ff(ix,iy,iz,3) = (log(p)-self%gamma*log(d))/(self%gamma-1.0)
-        ff(ix,iy,iz,3) = 0.0
-        ff(ix,iy,iz,4) = 0.0
-        ff(ix,iy,iz,5) = 0.0
-        ff(ix,iy,iz,6) = self%b0(1)
-        ff(ix,iy,iz,7) = self%b0(2)
-        ff(ix,iy,iz,8) = self%b0(3)
+        mem(ix,iy,iz,1,1,1) = d
+        mem(ix,iy,iz,3,1,1) = (log(p)-self%gamma*log(d))/(self%gamma-1.0)
+        mem(ix,iy,iz,3,1,1) = 0.0
+        mem(ix,iy,iz,4,1,1) = 0.0
+        mem(ix,iy,iz,5,1,1) = 0.0
+        mem(ix,iy,iz,6,1,1) = self%b0(1)
+        mem(ix,iy,iz,7,1,1) = self%b0(2)
+        mem(ix,iy,iz,8,1,1) = self%b0(3)
       end do
     end do
   end do
-  if (io%verbose>1) then
-    do ix=m(1)%lb,m(1)%ub
-      print'(a,i4,f22.16)', 'initial:', ix, ff(ix,1,1,1)
-    end do
-  end if
   call trace_end
-END FUNCTION planet_atmosphere
+END SUBROUTINE planet_atmosphere
 
 !> =============================================================================
 !> Use default Lagrange interpolation

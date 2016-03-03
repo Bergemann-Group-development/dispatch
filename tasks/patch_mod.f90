@@ -268,22 +268,24 @@ SUBROUTINE rotate (self)
       minval(self%mem(:,:,:,1,self%new,1)), &
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
-  if (io%verbose>0 .or. self%time>=self%print_next) then
-    if (self%print_time > 0) &
-      self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
-    nv = 1
-    if (io%verbose>2) nv = self%nv
-    do iv=1,nv
-      print '(a,i8,i4,i3,f10.6,f9.6,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
-        'upd',self%id, iv, omp_mythread(), self%time, self%dtime, self%courant, &
-        minval(self%mem(:,:,:,iv,self%it ,2)), &
-        maxval(self%mem(:,:,:,iv,self%it ,2)), &
-        minval(self%mem(:,:,:,iv,self%it ,1)), &
-        maxval(self%mem(:,:,:,iv,self%it ,1)), &
-        minval(self%mem(:,:,:,iv,self%new,1)), &
-        maxval(self%mem(:,:,:,iv,self%new,1)), &
-        self%status, self%it, self%new, self%iit
-    end do
+  if (io%verbose >= 0) then
+    if (io%verbose>0 .or. self%time>=self%print_next) then
+      if (self%print_time > 0) &
+        self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
+      nv = 1
+      if (io%verbose>2) nv = self%nv
+      do iv=1,nv
+        print '(a,i8,i4,i3,f10.6,f9.6,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
+          'upd',self%id, iv, omp_mythread(), self%time, self%dtime, self%courant, &
+          minval(self%mem(:,:,:,iv,self%it ,2)), &
+          maxval(self%mem(:,:,:,iv,self%it ,2)), &
+          minval(self%mem(:,:,:,iv,self%it ,1)), &
+          maxval(self%mem(:,:,:,iv,self%it ,1)), &
+          minval(self%mem(:,:,:,iv,self%new,1)), &
+          maxval(self%mem(:,:,:,iv,self%new,1)), &
+          self%status, self%it, self%new, self%iit
+      end do
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Time slot rotation
@@ -563,7 +565,6 @@ SUBROUTINE extrapolate_guards (self)
   !print*,'min,max:',minval(self%mem(:,:,:,1,self%new,1)),maxval(self%mem(:,:,:,1,self%new,1))
   call trace_end
 END SUBROUTINE extrapolate_guards
-!> =============================================================================
 
 !> =============================================================================
 !> Write results to disk
@@ -576,126 +577,128 @@ SUBROUTINE output (self, experiment_name)
   real:: ds(3)
   logical:: first_time=.true.
   !-----------------------------------------------------------------------------
-  if (self%time < self%out_next .or. .not.io%do_output) return
+  if (.not.io%do_output) return
   call trace_begin('patch:t%output')
-  self%max_files = self%max_files-1
-  if (self%max_files <= 0) then
-    print*,'TOO MANY FILES'
-    stop
-  end if
-  !-----------------------------------------------------------------------------
-  ! If the out_next time has passed, set a new time = the integer number of
-  ! out_time's that have passed, plus æone more
-  !-----------------------------------------------------------------------------
-  if (present(experiment_name)) then
-    io%outputname = experiment_name
-  end if
-  if (trim(io%inputname) /= 'input') then
-    io%outputname = io%inputname
-  end if
-  !-----------------------------------------------------------------------------
-  ! If guard_zones is true, include the guard zones.  If time_derivs is true,
-  ! write out the time derivatives also.
-  !-----------------------------------------------------------------------------
-  if (self%guard_zones) then
-    l = self%mesh%lb
-    u = self%mesh%ub
-  else
-    l = self%mesh%li
-    u = self%mesh%ui
-  end if
-  if (self%time_derivs) then
-    no = 2
-  else
-    no = 1
-  end if
-  !-----------------------------------------------------------------------------
-  ! Write a small text file with info
-  !-----------------------------------------------------------------------------
-  call trace ('1')
-  call system ('mkdir -p data/')
-  write (filename,'(a,i3.3,"_",i4.4)') &
-    'data/'//trim(io%outputname)//'_', self%id, self%iout
-  if (io%verbose>=0) &
-    print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%out_next
-  open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  where (self%size > 0.0)
-    li = (self%position+0.5*(self%box-self%size))/self%ds
-    ui = (self%position+0.5*(self%box+self%size))/self%ds - 1.0
-  end where
-  write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
-  write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
-  close (io%data_unit)
-  !-----------------------------------------------------------------------------
-  ! Write a binary file with the data cube.
-  !-----------------------------------------------------------------------------
-  open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
-    status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(u-l+1))
-  do jo=1,no
-    do iv=1,self%nv
-    block
-      integer:: it1, it2, n(3)
-      real:: pt, qt
-      real, dimension(:,:,:), pointer:: buf
-      n = u-l+1
-      allocate (buf(n(1),n(2),n(3)))
-      !-------------------------------------------------------------------------
-      ! If we write out time derivatives we want a pair of consistent values
-      ! and time derivatives, which we have at iit(nt-2).
-      !-------------------------------------------------------------------------
-      it1 = self%iit(self%nt-2)
-      if (self%time_derivs) then
-        it = it1
-        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
-        call check_error(self, buf, "output 1")
-      !-------------------------------------------------------------------------
-      ! Normally, we write out only variable values, which can then be interpolated
-      ! to the exact output time, self%out_next, the update of which must come
-      ! after this point
-      !-------------------------------------------------------------------------
-      else
-        it2 = self%iit(self%nt-1)
-        it = it2
-        pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1e-30)
-        qt = 1.0-pt
-        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
-            + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
-        call check_error(self, buf, "output 2")
-      end if
-      if (io%verbose>1) &
-        print'(1x,a,2i5,i3,1p,2e11.3)',trim(filename),iv,it,jo,minval(buf),maxval(buf)
-      write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
-      deallocate (buf)
-    end block
+  do while (self%time > self%out_next)
+    self%max_files = self%max_files-1
+    if (self%max_files <= 0) then
+      print*,'TOO MANY FILES'
+      stop
+    end if
+    !-----------------------------------------------------------------------------
+    ! If the out_next time has passed, set a new time = the integer number of
+    ! out_time's that have passed, plus æone more
+    !-----------------------------------------------------------------------------
+    if (present(experiment_name)) then
+      io%outputname = experiment_name
+    end if
+    if (trim(io%inputname) /= 'input') then
+      io%outputname = io%inputname
+    end if
+    !-----------------------------------------------------------------------------
+    ! If guard_zones is true, include the guard zones.  If time_derivs is true,
+    ! write out the time derivatives also.
+    !-----------------------------------------------------------------------------
+    if (self%guard_zones) then
+      l = self%mesh%lb
+      u = self%mesh%ub
+    else
+      l = self%mesh%li
+      u = self%mesh%ui
+    end if
+    if (self%time_derivs) then
+      no = 2
+    else
+      no = 1
+    end if
+    !-----------------------------------------------------------------------------
+    ! Write a small text file with info
+    !-----------------------------------------------------------------------------
+    call trace ('1')
+    call system ('mkdir -p data/')
+    write (filename,'(a,i3.3,"_",i4.4)') &
+      'data/'//trim(io%outputname)//'_', self%id, self%iout
+    if (io%verbose>=0) &
+      print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%out_next
+    open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
+    where (self%size > 0.0)
+      li = (self%position+0.5*(self%box-self%size))/self%ds
+      ui = (self%position+0.5*(self%box+self%size))/self%ds - 1.0
+    end where
+    write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
+    write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
+    close (io%data_unit)
+    !-----------------------------------------------------------------------------
+    ! Write a binary file with the data cube.
+    !-----------------------------------------------------------------------------
+    open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
+      status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(u-l+1))
+    do jo=1,no
+      do iv=1,self%nv
+      block
+        integer:: it1, it2, n(3)
+        real:: pt, qt
+        real, dimension(:,:,:), pointer:: buf
+        n = u-l+1
+        allocate (buf(n(1),n(2),n(3)))
+        !-------------------------------------------------------------------------
+        ! If we write out time derivatives we want a pair of consistent values
+        ! and time derivatives, which we have at iit(nt-2).
+        !-------------------------------------------------------------------------
+        it1 = self%iit(self%nt-2)
+        if (self%time_derivs) then
+          it = it1
+          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
+          call check_error(self, buf, "output 1")
+        !-------------------------------------------------------------------------
+        ! Normally, we write out only variable values, which can then be interpolated
+        ! to the exact output time, self%out_next, the update of which must come
+        ! after this point
+        !-------------------------------------------------------------------------
+        else
+          it2 = self%iit(self%nt-1)
+          it = it2
+          pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1e-30)
+          qt = 1.0-pt
+          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
+              + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
+          call check_error(self, buf, "output 2")
+        end if
+        if (io%verbose>1) &
+          print'(1x,a,2i5,i3,1p,2e11.3)',trim(filename),iv,it,jo,minval(buf),maxval(buf)
+        write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
+        deallocate (buf)
+      end block
+      end do
     end do
+    close (io%data_unit)
+    if (self%out_time > 0.0) then
+      self%out_next = (int(self%time/self%out_time)+1)*self%out_time
+    else
+      self%out_next = self%time
+    end if
+    !-----------------------------------------------------------------------------
+    ! Write a log file, with files written by this rank
+    !-----------------------------------------------------------------------------
+    write (logname,'(a)') 'data/'//trim(experiment_name)//'.log'
+    if (first_time) then
+      first_time = .false.
+      if (io%master) print*, 'output data file log written to '//trim(logname)
+      open (io%log_unit,file=trim(logname),status='unknown')
+    else
+      open (io%log_unit,file=trim(logname),status='unknown',position='append')
+    end if
+    write (io%log_unit,'(a)') trim(filename)
+    ds = self%box/2.0**io%levelmax
+    where (self%size > 0.0)
+      li = (self%position+0.5*(self%box-self%size))/ds
+      ui = (self%position+0.5*(self%box+self%size))/ds - 1.0
+    end where
+    write (io%log_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
+    write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
+    close (io%log_unit)
+    self%iout = self%iout+1
   end do
-  close (io%data_unit)
-  if (self%out_time > 0.0) then
-    self%out_next = (int(self%time/self%out_time)+1)*self%out_time
-  else
-    self%out_next = self%time
-  end if
-  !-----------------------------------------------------------------------------
-  ! Write a log file, with files written by this rank
-  !-----------------------------------------------------------------------------
-  write (logname,'(a)') 'data/'//trim(experiment_name)//'.log'
-  if (first_time) then
-    first_time = .false.
-    if (io%master) print*, 'output data file log written to '//trim(logname)
-    open (io%log_unit,file=trim(logname),status='unknown')
-  else
-    open (io%log_unit,file=trim(logname),status='unknown',position='append')
-  end if
-  write (io%log_unit,'(a)') trim(filename)
-  ds = self%box/2.0**io%levelmax
-  where (self%size > 0.0)
-    li = (self%position+0.5*(self%box-self%size))/ds
-    ui = (self%position+0.5*(self%box+self%size))/ds - 1.0
-  end where
-  write (io%log_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
-  write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
-  close (io%log_unit)
-  self%iout = self%iout+1
   call trace_end
 END SUBROUTINE output
 !> =============================================================================
@@ -874,16 +877,6 @@ FUNCTION overlaps_point (self, idir, point)
   logical:: overlaps_point
   !.............................................................................
   overlaps_point = all(abs(point-self%position) < 0.5*(self%gn-1)*self%ds)
-  if (overlaps_point.and.any(((point-self%position)/self%ds + self%offset) < 0.)) then
-    print*,'overlaps_point:', (point-self%position)/self%ds + self%offset, overlaps_point
-    print*,'     position:', point
-    print*,'self%position:', self%position
-    print*,'      self%gn:', self%gn
-    print*,'      self%ds:', self%ds
-    print*,'diff position:', (point-self%position)/self%ds
-    print*,'       offset:', self%offset
-    stop
-  end if
 END FUNCTION overlaps_point
 
 !> =============================================================================

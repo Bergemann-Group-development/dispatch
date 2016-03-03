@@ -56,7 +56,8 @@ SUBROUTINE init (self)
   self%external%temperature = temperature_K/scaling%temp
   self%external%pressure = density_cgs*cgs%k_B*temperature_K/(cgs%mu*cgs%m_u) &
     /scaling%p
-  self%hill_radius = self%orbit_radius*(planet%mass*scaling%m/(3.*cgs%m_sun))**0.33333
+  self%hill_radius = self%orbit_radius*(planet%mass*scaling%m/(3d0*cgs%m_sun))**(1d0/3d0)
+  planet%radius = cgs%r_earth/scaling%l*(planet%mass*cgs%m_earth)**(1d0/3d0)
   self%dlnr = log(self%hill_radius/planet%radius)/(self%nr-1.0)
   if (io%verbose>0) print*, 'dlnr:', planet%radius, self%hill_radius/planet%radius, self%dlnr
   call self%hydrostatic
@@ -87,7 +88,7 @@ SUBROUTINE hydrostatic (self)
     if (io%verbose>1) print*, &
       '              i         rr         pg       temp        rho         dr      dlnpg       grav'
     do i=nr-1,1,-1
-      self%rr(i) = exp(log(planet%radius) + (i-1)*log(self%hill_radius/planet%radius)/(nr-2))
+      self%rr(i) = exp(log(planet%radius) + (i-1)*log(self%hill_radius/planet%radius)/(nr-1))
       self%temp(i) = self%temp(i+1)
       self%rho(i) = self%rho(i+1)
       self%pg(i) = self%pg(i+1)

@@ -5,7 +5,6 @@ MODULE list_mod
   USE io_mod
   USE omp_mod
   USE mpi_mod
-  USE omp_timer_mod
   USE trace_mod
   USE bits_mod
   USE task_mod
@@ -170,15 +169,6 @@ SUBROUTINE remove_link (self, link)
     self%head => next                       ! make head point to next
   end if
   task => link%task
-  task%wallclock = wallclock() - task%wallclock
-  select type (task)
-  class is (patch_t)
-  print 1,'task', task%id, ' finished after', task%istep, &
-    ' steps with cost', omp_numthreads()*task%wallclock*1e6/ &
-    (product(task%mesh%n)*task%istep*self%n_tasks), &
-    ' mus/pt'
-1 format(1x,a,i6,a,i8,a,f6.2,a)
-  end select
   deallocate (link)                         ! free to remove link
   self%n = self%n-1
   !xomp end critical (list_cr)
@@ -502,20 +492,11 @@ SUBROUTINE remove_task (self, task)
   nullify (prev)
   do while (associated(link))
     if (link%task%id == task%id) then
-      task%wallclock = wallclock() - task%wallclock
       if (associated(prev)) then
         prev%next => link%next
       else
         self%head => link%next
       end if
-      select type (task)
-      class is (patch_t)
-      print 1,'task', task%id, ' finished after', task%istep, &
-        ' steps with cost', task%wallclock*1e6/ &
-        (product(task%mesh%n)*task%istep*self%n_tasks), &
-        ' mus/pt'
-    1 format(1x,a,i6,a,i8,a,f6.2,a)
-      end select
       self%n = self%n - 1
       goto 9
     end if

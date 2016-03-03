@@ -293,7 +293,7 @@ SUBROUTINE download_different_static (link)
   !-----------------------------------------------------------------------------
   ! XY-planes in the two Z guard zones
   !-----------------------------------------------------------------------------
-  call trace_begin('download::download_same_static')
+  call trace_begin('download::download_different_static')
   patch => task2patch (link%task)
   m => patch%mesh
   time = patch%time
@@ -443,6 +443,12 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time)
   nv = patch%nv
   !
   position = patch%myposition (ii)
+  !if (associated(best)) then
+  !  if (all(abs(position-best%position) < best%size*0.5d0)) then
+  !    call trace_end
+  !    return
+  !  end if
+  !end if
   nullify(best)
   best_dist = 1e30
   nbor => link%nbor

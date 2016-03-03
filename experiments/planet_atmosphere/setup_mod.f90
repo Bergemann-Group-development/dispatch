@@ -6,6 +6,7 @@ MODULE setup_mod
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
   USE trace_mod
+  USE units_mod
   USE scaling_mod
   USE planet_mod
   USE atmosphere_mod
@@ -28,8 +29,8 @@ SUBROUTINE init (self, label)
   call scaling%init
   call planet%init
   call atmosphere%init
-  print*,'atm', atmosphere%nr, atmosphere%rho(1)
   self%size = planet%radius*1.1
+  print*, 'size1', self%size*scaling%l/cgs%r_earth
   self%position = planet%position
   call self%rubiks_cube_t%init (label)
   call trace_end

@@ -1,7 +1,8 @@
 &io_params
  do_trace=f
- verbose=1
+ verbose=0
  do_debug=f
+ do_output=f
 /
 &planet_params
 /
@@ -12,19 +13,20 @@
 &initial_params
 /
 &patch_params
+ grace=0.05
  nt=5
- n=20,20,20
+ n=30,30,30
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.010
- out_time=0.1
- print_time=0.0001
- guard_zones=t
+ end_time=0.200
+ out_time=0.05
+ print_time=0.
+ guard_zones=f
  time_derivs=f
 /
 &mhd_params
- courant=0.1
+ courant=0.2
  nu=  0.05, 2.0, 1.0, 0.2, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta
 /

@@ -4,6 +4,7 @@
 !> OMP active.
 !> *****************************************************************************
 MODULE omp_timer_mod
+  USE omp_mod
   implicit none
   real(8), save:: wt=0d0
   interface toc
@@ -48,7 +49,7 @@ SUBROUTINE toc_r (label, n)
   real:: n
   real(8):: omp_get_wtime
   !.............................................................................
-  wt = (omp_get_wtime() - wt)
+  wt = (omp_get_wtime() - wt)*omp_numthreads()
   if (wt/n < 1d-6) then
     print 1, label, wt,  'sec', wt/n*1e9, 'ns/upd,', n, 'updates'
   else if (wt/n < 1d-3) then

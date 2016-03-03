@@ -12,6 +12,8 @@ MODULE rubiks_cube_mod
   USE patch_mod
   USE task_list_mod
   USE experiment_mod
+  USE units_mod
+  USE scaling_mod
   implicit none
   private
   type, public:: rubiks_cube_t
@@ -42,11 +44,12 @@ SUBROUTINE init (self, label)
   namelist /rubiks_params/ size, position, n_levels
   !-----------------------------------------------------------------------------
   ! Allow size and position to be set by an overloading data type, and allow
-  ! an empty namelist input here. If present, take the initial values from 
+  ! an empty namelist input here. If present, take the initial values from
   ! existing data type values
   !-----------------------------------------------------------------------------
   call trace_begin ('rubiks_cube_t%init')
   size = self%size
+  print*, 'size2', self%size*scaling%l/cgs%r_earth
   position = self%position
   n_levels = self%n_levels
   rewind (io%input); read (io%input, rubiks_params, iostat=iostat)
@@ -54,6 +57,7 @@ SUBROUTINE init (self, label)
   self%n_levels = n_levels
   self%position = position
   self%size = size
+  print*, 'size3', self%size*scaling%l/cgs%r_earth
   allocate (self%task_list)
   do level=1,n_levels
   do k=1,3

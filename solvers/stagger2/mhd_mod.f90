@@ -8,6 +8,7 @@ MODULE mhd_mod
   USE stagger_mod
   USE patch_mod
   USE force_mod
+  USE boundary_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
@@ -247,6 +248,9 @@ SUBROUTINE update (self)
     Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
+    call boundary%condition (Ex, self%mesh, [0d0,-0.5d0,-0.5d0], self%nv)
+    call boundary%condition (Ey, self%mesh, [-0.5d0,0d0,-0.5d0], self%nv)
+    call boundary%condition (Ez, self%mesh, [-0.5d0,-0.5d0,0d0], self%nv)
     dBdt = -curl_up(ds,E)
   end if
   !-----------------------------------------------------------------------------

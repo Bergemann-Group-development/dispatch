@@ -1,57 +1,34 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> Template module for planet task
+!> Template module for star task
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE star_mod
+  USE io_mod
   USE task_mod
   USE particle_mod
+  USE units_mod
+  USE scaling_mod
   implicit none
+  private
   !-----------------------------------------------------------------------------
-  type, extends(particles_t):: star_t
+  type, public, extends(particles_t):: star_t
     real:: mass, radius, surface_temperature
-    contains
-    procedure:: init       => init_star
-    procedure:: allocate   => allocate_star
-    procedure:: deallocate => deallocate_star
-    procedure:: update     => update_star
-    procedure:: print      => print_star
+  contains
+    procedure:: init
   end type
-PRIVATE
-PUBLIC star_t
+  type(star_t):: star
 CONTAINS
 
 !> =============================================================================
-SUBROUTINE init_star (self)
+SUBROUTINE init (self)
   class(star_t):: self
+  real:: mass_solar=1.0, radius_solar=1.0, surface_temperature=5900.0
+  namelist /star_params/ mass_solar, radius_solar, surface_temperature
   !.............................................................................
+  rewind (io%input); read (io%input, star_params); write (*, star_params)
+  self%mass   =   mass_solar*cgs%m_sun/scaling%m
+  self%radius = radius_solar*cgs%r_sun/scaling%l
   call self%task_t%init
-  print*,'star is ID', self%id
-END SUBROUTINE init_star
-
-!> =============================================================================
-SUBROUTINE allocate_star (self)
-  class(star_t):: self
-  !.............................................................................
-END SUBROUTINE allocate_star
-
-!> =============================================================================
-SUBROUTINE deallocate_star (self)
-  class(star_t):: self
-  !.............................................................................
-END SUBROUTINE deallocate_star
-
-!> =============================================================================
-SUBROUTINE update_star (self)
-  class(star_t):: self
-  !.............................................................................
-  self%time = self%time + self%dtime
-END SUBROUTINE update_star
-
-!> =============================================================================
-SUBROUTINE print_star (self)
-  class(star_t):: self
-  !.............................................................................
-  print*, self%id, self%time
-END SUBROUTINE print_star
+END SUBROUTINE init
 
 !> =============================================================================
 END MODULE

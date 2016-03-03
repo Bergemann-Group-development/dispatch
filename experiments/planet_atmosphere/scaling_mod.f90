@@ -22,8 +22,8 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   if (.not.first_time) return
   first_time = .false.
-  self%l = cgs%au                                       ! length = 1 AU
-  self%m = cgs%m_sun                                    ! mass
+  self%l = cgs%r_earth                                  ! length = 1 AU
+  self%m = cgs%m_earth                                  ! mass
   self%d = self%m/self%l**3                             ! mass density
   self%u = cgs%kms                                      ! speed = 1 km/s
   self%t = self%l/self%u                                ! time ~ 5 years
