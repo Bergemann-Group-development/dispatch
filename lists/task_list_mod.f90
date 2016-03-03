@@ -116,14 +116,14 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   !$omp critical (list_cr)
   !call self%lock
-  call trace('list_cr 1 begin')
+  !call trace('list_cr 1 begin')
   head => self%queue                                    ! queue start
   if (associated(head)) then
     task => head%task                                   ! head task
     self%queue => self%queue%next_time                  ! update the link
     self%nq = self%nq-1
   end if
-  call trace('list_cr 1 end')
+  !call trace('list_cr 1 end')
   !call self%unlock
   !$omp end critical (list_cr)
   !-----------------------------------------------------------------------------
@@ -131,7 +131,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   if (associated(head)) then
     !$omp critical (list_cr)
-    call trace('list_cr a begin')
+    !call trace('list_cr a begin')
     if (io%verbose>0) &
       print'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)', &
       'thread', omp_mythread(), 'task', task%id, &
@@ -160,7 +160,7 @@ SUBROUTINE update (self)
     ! then check again.  The check is fast, but one could move the first call
     !-----------------------------------------------------------------------------
     call task%output(self%name)                         ! check output
-    call trace('list_cr a end')
+    !call trace('list_cr a end')
     !$omp end critical (list_cr)
     call task%update                                    ! update the task
     !----------------------------------------------------------------------------
@@ -169,7 +169,7 @@ SUBROUTINE update (self)
     ! previous time steps are saved.
     !----------------------------------------------------------------------------
     !$omp critical (list_cr)
-    call trace('list_cr 2 begin')
+    !call trace('list_cr 2 begin')
     select type (task)
     class is (patch_t)
     call task%rotate
@@ -180,15 +180,15 @@ SUBROUTINE update (self)
     !-----------------------------------------------------------------------------
     call task%clear(bits%ready)                         ! needs new check
     call self%check_nbors (head)                        ! any nbor ready?
-    call trace('list_cr 2 end')
+    !call trace('list_cr 2 end')
     call task%output(self%name)                         ! check output
     !-----------------------------------------------------------------------------
     ! Tasks that have finished are subtracted from the task list count
     !-----------------------------------------------------------------------------
     if (task%time+0.5*task%dtime > task%end_time) then   ! finished:
-      call trace('list_cr 3 begin')
+      !call trace('list_cr 3 begin')
       self%n = self%n-1
-      call trace('list_cr 3 end')
+      !call trace('list_cr 3 end')
     end if
     !$omp end critical (list_cr)
   end if

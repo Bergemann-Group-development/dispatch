@@ -14,6 +14,7 @@
 MODULE timestep_mod
   USE io_mod
   USE trace_mod
+  USE mesh_mod
   implicit none
   private
   integer, parameter:: nslice = 4
@@ -71,49 +72,53 @@ END SUBROUTINE init
 !> than attempting to map into linear time space.  The time slot derivative
 !> values have already been multiplied with the individual time steps dt.
 !> =============================================================================
-SUBROUTINE update (self, id, iit, dt, mem)
+SUBROUTINE update (self, id, iit, dt, mem, mesh)
   class(timestep_t):: self
+  type(mesh_t):: mesh(:)
   integer:: id, nt
   integer, dimension(:):: iit
   real(8), dimension(:):: dt
   real, dimension(:,:,:,:,:,:):: mem            ! memory buffer
+  integer:: l(3), u(3)
   !......................................................................
   call trace_begin ('timestep_t%update')
   call self%init                                ! auto-initialize
   nt = size(iit)                                ! number of time slots
+  l = mesh%li
+  u = mesh%ui
   select case (self%time_order)
   case (1)
-    mem(:,:,:,:,iit(nt  ),1) = &
-    mem(:,:,:,:,iit(nt-1),1) + &
-    mem(:,:,:,:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1)))
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt  ),1) = &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-1),1) + &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1)))
   case (2)
-    mem(:,:,:,:,iit(nt  ),1) = &
-    mem(:,:,:,:,iit(nt-1),1) + &
-    mem(:,:,:,:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1))) + &
-    mem(:,:,:,:,iit(nt-2),2)*(self%wt(2)*dt(iit(nt-2)))
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt  ),1) = &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-1),1) + &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1))) + &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-2),2)*(self%wt(2)*dt(iit(nt-2)))
   case (3)
-    mem(:,:,:,:,iit(nt  ),1) = &
-    mem(:,:,:,:,iit(nt-1),1) + &
-    mem(:,:,:,:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1))) + &
-    mem(:,:,:,:,iit(nt-2),2)*(self%wt(2)*dt(iit(nt-2))) + &
-    mem(:,:,:,:,iit(nt-3),2)*(self%wt(3)*dt(iit(nt-3)))
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt  ),1) = &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-1),1) + &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1))) + &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-2),2)*(self%wt(2)*dt(iit(nt-2))) + &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-3),2)*(self%wt(3)*dt(iit(nt-3)))
   case (4)
-    mem(:,:,:,:,iit(nt  ),1) = &
-    mem(:,:,:,:,iit(nt-1),1) + &
-    mem(:,:,:,:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1))) + &
-    mem(:,:,:,:,iit(nt-2),2)*(self%wt(2)*dt(iit(nt-2))) + &
-    mem(:,:,:,:,iit(nt-3),2)*(self%wt(3)*dt(iit(nt-3))) + &
-    mem(:,:,:,:,iit(nt-4),2)*(self%wt(4)*dt(iit(nt-4)))
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt  ),1) = &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-1),1) + &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-1),2)*(self%wt(1)*dt(iit(nt-1))) + &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-2),2)*(self%wt(2)*dt(iit(nt-2))) + &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-3),2)*(self%wt(3)*dt(iit(nt-3))) + &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-4),2)*(self%wt(4)*dt(iit(nt-4)))
   end select
   if (self%verbose>3) then
     print'(a,i4,2x,a,1p,6e10.2,2x,6i5)', 'timestep, id:', &
       id, 'minmax:', &
-      minval(mem(:,:,:,1,iit(nt-1),2)), &
-      maxval(mem(:,:,:,1,iit(nt-1),2)), &
-      minval(mem(:,:,:,1,iit(nt-1),1)), &
-      maxval(mem(:,:,:,1,iit(nt-1),1)), &
-      minval(mem(:,:,:,1,iit(nt  ),1)), &
-      maxval(mem(:,:,:,1,iit(nt  ),1)), shape(mem)
+      minval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt-1),2)), &
+      maxval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt-1),2)), &
+      minval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt-1),1)), &
+      maxval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt-1),1)), &
+      minval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt  ),1)), &
+      maxval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt  ),1)), shape(mem)
   end if
   call trace_end
 END SUBROUTINE update

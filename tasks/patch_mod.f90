@@ -253,8 +253,8 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   if (self%is_set(bits%root_grid)) then
     call self%periodic_grid                     ! periodic root grid
-  !else
-    !call self%extrapolate_guards                ! time-extrapolate guard cells
+  else
+    call self%extrapolate_guards                ! time-extrapolate guard cells
   end if
   !-----------------------------------------------------------------------------
   ! One line summary

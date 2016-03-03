@@ -362,34 +362,38 @@ END SUBROUTINE download_different_static
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE interpolate_to (target, ii, source, jt, pt, idir)
-  class (patch_t):: target, source
+  class (patch_t):: target
+  class (patch_t), pointer:: source
   integer:: ii(3), jj(3), jt(2), iv, i, it, j, nmax, idir
   real(8):: pp(3), pos(3), pt
   real:: p(4), q(4)
   !-----------------------------------------------------------------------------
-  call trace_begin ('download_mod::interpolate_to')
+  if (.not.associated(source)) return
+  call trace_begin ('download_mod::interpolate_to',2)
   if (io%do_debug) print*,'interpolate_to',target%it,ii,source%id,jt,pt
   it = target%it
   jj = 0
   do iv=1,source%nv
     do i=1,3
-      pos(i) = target%position(i) + (ii(i)-target%offset(i)-target%mesh(i)%h(iv))*target%ds(i)      ! position of target ii
-      pp(i) = (pos(i)-source%position(i))/source%ds(i) + source%offset(i) + source%mesh(i)%h(iv)    ! float index in source
-      jj(i) = pp(i)                                                                                  ! integer part
+      pos(i) = target%position(i) + (ii(i)-target%offset(i)+target%mesh(i)%h(iv))*target%ds(i)      ! position of target ii
+      pp(i) = (pos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)    ! float index in source
+      jj(i) = pp(i)                                                                                 ! integer part
       jj(i) = max(1,min(source%mesh(i)%gn-1,jj(i)))
-      pp(i) = pp(i) - jj(i)                                                                          ! fractions
+      pp(i) = pp(i) - jj(i)                                                                         ! fractions
       if (pp(i)<-0.35d0 .or. pp(i)>1.35d0) then
-        pp(i) = source%offset(i) - source%mesh(i)%h(iv) + (pos(i) - source%position(i))/source%ds(i) ! float index in source
+        pp(i) = (pos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)  ! float index in source
         print '(a,2i3,2f6.1,2(2x,a,i6,i3," i:",i4,f13.8))', 'INDEX ERROR:', idir, i, &
-        target%mesh(i)%h(iv)/target%mesh(i)%d, source%mesh(i)%h(iv)/source%mesh(i)%d, &
-        'target: id,lv=',target%id, target%level, ii(i), pp(i), &
-        'source: id,lv=',source%id, source%level, jj(i), (source%position(i)-target%position(i))/source%mesh(i)%d
-        print*,(source%position-target%position)/source%mesh%d
-        print*,' patch position:', (target%position-planet%position)/target%ds
-        print*,'source position:', (source%position-planet%position)/source%ds
+        target%mesh(i)%h(iv), source%mesh(i)%h(iv), &
+        'target: id,lv=',target%id, target%level, ii(i), (source%position(i)-target%position(i))/source%mesh(i)%d, &
+        'source: id,lv=',source%id, source%level, jj(i), pp(i)
+        print*,'   source shift:', (target%position-source%position)/source%ds + source%offset
+        print*,'target position:', (target%position-planet%position)/target%ds
+        print*,'    target size:', target%size
         print*,'   target index:', (pos(i)-target%position(i))/target%ds(i) + target%offset(i)
+        print*,'source position:', (source%position-planet%position)/source%ds
+        print*,'    source size:', source%size
         print*,'   source index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i)
-        print*,'staggered index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i) + source%mesh(i)%h(iv)
+        print*,'staggered index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)
         stop
       end if
     end do
@@ -428,10 +432,10 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time)
   class(link_t), pointer:: nbor
   class(patch_t), pointer:: other, patch
   type(mesh_t), pointer:: m(:)
-  real(8):: time, position(3), dist, best_dist
+  real(8):: time, position(3), dist, best_dist, pp(3)
   integer:: it, iv, nv, nt
   !-----------------------------------------------------------------------------
-  call trace_begin('download_mod::find_best_nbor')
+  call trace_begin('download_mod::find_best_nbor',2)
   if (io%do_debug) print*,'find_best_nbor:', link%task%id, ii, time
   patch => task2patch (link%task)
   m => patch%mesh
@@ -448,27 +452,56 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time)
     !---------------------------------------------------------------------------
     other => task2patch(nbor%task)
     if (abs(patch%level-other%level)<2) then
-      if (.not.(associated(link%parent,nbor).or.all(patch%distance(other)<0.5*other%size))) then
+      pp = (position-other%position)
+      if (all(abs(pp) < other%size*0.5d0)) then
         !-----------------------------------------------------------------------
         ! Choose the "best" of the overlapping ones -- the smallest distance
         ! among those with the highest level
         !-----------------------------------------------------------------------
-        if (other%overlaps_point(idir,position)) then
-          if (.not.associated(best)) then
-            dist = maxval(patch%distance (other))
-          else if (other%level > best%level) then
-            dist = maxval(patch%distance (other))
-          end if
-          if (dist < best_dist) then
-            best => other
-            best_dist = dist
-          end if
+        if (.not.associated(best)) then
+          best => other
+        else if (other%level > best%level) then
+          best => other
         end if
+        if (io%verbose>1) &
+          print 1,'patch ',patch%id, patch%level, &
+            '   best nbor:', other%id, other%level, &
+            (other%position-patch%position)/other%ds, &
+            patch%distance(other)/other%size
+          1 format(a,i6,i4,a,i6,i4,2(2x,3f10.4))
+      else
+          if (io%verbose>2) &
+            print 1,'patch ',patch%id, patch%level, &
+              ' outside nbor:', other%id, other%level, &
+              (other%position-patch%position)/other%ds, &
+              patch%distance(other)/other%size
       end if
     end if
     nbor => nbor%next
   end do
-  if (.not.associated(best)) then
+  !-----------------------------------------------------------------------------
+  ! Find the right time interval in the other patch
+  !-----------------------------------------------------------------------------
+  if (associated(best)) then
+    jt(1)=1
+    do it=1,nt-2
+      if (best%t(best%iit(it))<time) jt(1)=it
+      if (io%verbose>4) print*,it,time, best%t(best%iit(it))
+    end do
+    jt(2) = jt(1)+1
+    jt(1) = best%iit(jt(1))
+    jt(2) = best%iit(jt(2))
+    dt = best%t(jt(2))-best%t(jt(1))
+    pt = (time-best%t(jt(1)))/max(dt,1e-30)
+    if (abs(pt)< 1e-4) then
+      if (io%verbose>2) print*,'EXACT'
+      pt=0.0
+    else if (abs(1.-pt) < 1d-4) then
+      if (io%verbose>2) print*,'EXACT'
+      pt=1.0
+    end if
+    if (io%do_debug) print*,'find_best_nbor:', patch%id, jt, pt
+  else if (io%verbose>1) then
     print*,'find_best_nbor: ERROR', patch%id, ii
     print*,'   level:', patch%level, patch%size/patch%ds
     print*,'patch%po:', (patch%position - planet%position)/patch%size
@@ -496,29 +529,7 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time)
       end if
       nbor => nbor%next
     end do
-    stop
   end if
-  !-----------------------------------------------------------------------------
-  ! Find the right time interval in the other patch
-  !-----------------------------------------------------------------------------
-  jt(1)=1
-  do it=1,nt-2
-    if (best%t(best%iit(it))<time) jt(1)=it
-    if (io%verbose>4) print*,it,time, best%t(best%iit(it))
-  end do
-  jt(2) = jt(1)+1
-  jt(1) = best%iit(jt(1))
-  jt(2) = best%iit(jt(2))
-  dt = best%t(jt(2))-best%t(jt(1))
-  pt = (time-best%t(jt(1)))/max(dt,1e-30)
-  if (abs(pt)< 1e-4) then
-    if (io%verbose>1) print*,'EXACT'
-    pt=0.0
-  else if (abs(1.-pt) < 1d-4) then
-    if (io%verbose>1) print*,'EXACT'
-    pt=1.0
-  end if
-  if (io%do_debug) print*,'find_best_nbor:', patch%id, jt, pt
   call trace_end
 END SUBROUTINE find_best_nbor
 
