@@ -20,13 +20,15 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=1.
- out_time=0.05
- print_time=2
+ end_time=1000.
+ out_time=1.
+ print_time=0.1
  guard_zones=f
  time_derivs=f
 /
 &mhd_params
+ gamma=1.6666667
+ omega_yr=0.0,0.0,1.0
  nu=  0.05, 2.0, 1.0, 0.2, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta
 /

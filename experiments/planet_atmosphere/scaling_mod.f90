@@ -23,11 +23,11 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   if (.not.first_time) return
   first_time = .false.
-  self%l = cgs%r_earth                                  ! length = 1 AU
+  self%l = cgs%r_earth                                  ! length = 1 R_Earth
   self%m = cgs%m_sun                                    ! mass
   self%d = self%m/self%l**3                             ! mass density
   self%u = cgs%kms                                      ! speed = 1 km/s
-  self%t = self%l/self%u                                ! time ~ 5 years
+  self%t = self%l/self%u                                ! time ~ 6700 sec < 2 hours
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
   self%temp = cgs%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e)  ! temperature for given mu
