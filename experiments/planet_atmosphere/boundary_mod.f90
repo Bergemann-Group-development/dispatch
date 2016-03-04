@@ -1,11 +1,11 @@
 !> =============================================================================
+!> Boundary conditions for a planet surface
 !> =============================================================================
 MODULE boundary_mod
   USE io_mod
   USE trace_mod
   USE planet_mod
   USE mesh_mod
-  USE atmosphere_mod
   implicit none
   private
   type, public:: boundary_t
@@ -27,7 +27,7 @@ SUBROUTINE condition (self, mem, m, h, nv)
   integer      :: ix, iy, iz, iv, nv
   real(8)      :: x, y, z, r
   !-----------------------------------------------------------------------------
-  call trace_begin('experiment_t%boundary_conditions')
+  call trace_begin('boundary_t%condition')
   do iv=1,nv
     do iz=m(3)%lb,m(3)%ub
       z = m(3)%p + m(3)%r(iz) + h(3)*m(3)%d - planet%position(3)

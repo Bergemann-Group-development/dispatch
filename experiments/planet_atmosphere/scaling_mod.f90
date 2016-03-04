@@ -14,6 +14,7 @@ MODULE scaling_mod
   type(scaling_t), public :: scaling
   type(const_t), public:: code
 CONTAINS
+
 !> =============================================================================
 !> Initialize code units:
 !> =============================================================================
@@ -23,7 +24,7 @@ SUBROUTINE init (self)
   if (.not.first_time) return
   first_time = .false.
   self%l = cgs%r_earth                                  ! length = 1 AU
-  self%m = cgs%m_earth                                  ! mass
+  self%m = cgs%m_sun                                    ! mass
   self%d = self%m/self%l**3                             ! mass density
   self%u = cgs%kms                                      ! speed = 1 km/s
   self%t = self%l/self%u                                ! time ~ 5 years
@@ -46,4 +47,5 @@ SUBROUTINE init (self)
   1 format(1x,a,1p,e11.3)
   end if
 END SUBROUTINE init
+
 END MODULE scaling_mod

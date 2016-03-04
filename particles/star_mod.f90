@@ -15,7 +15,7 @@ MODULE star_mod
   contains
     procedure:: init
   end type
-  type(star_t):: star
+  type(star_t), public:: star
 CONTAINS
 
 !> =============================================================================

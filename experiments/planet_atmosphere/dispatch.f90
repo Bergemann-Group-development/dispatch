@@ -6,7 +6,7 @@ PROGRAM dispatch
   USE io_mod
   USE mpi_mod
   USE setup_mod
-  USE experiment_mod
+  USE experiment_mod, only: n_update
   USE omp_timer_mod
   !.............................................................................
   call io%init

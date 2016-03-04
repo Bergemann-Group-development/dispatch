@@ -275,7 +275,7 @@ SUBROUTINE rotate (self)
       nv = 1
       if (io%verbose>2) nv = self%nv
       do iv=1,nv
-        print '(a,i8,i4,i3,f10.6,f9.6,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
+        print '(a,i8,i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
           'upd',self%id, iv, omp_mythread(), self%time, self%dtime, self%courant, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
           maxval(self%mem(:,:,:,iv,self%it ,2)), &
@@ -818,6 +818,8 @@ SUBROUTINE courant_condition (self)
   class(patch_t):: self
   !.............................................................................
   call trace_begin('patch_t%courant')
+  if (io%verbose>2) &
+    print*, 'courant: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
     self%dtime = self%dt_fixed
     self%courant = self%dtime*self%u_max/minval(self%ds)

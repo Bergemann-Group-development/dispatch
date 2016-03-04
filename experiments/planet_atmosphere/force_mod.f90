@@ -1,35 +1,37 @@
 !> =============================================================================
-!> This is a start on a module that could become a general turbulence forcing
-!> module, where the standard forcing we have been using in RAMSES is implemented
+!> Direct force of gravity
 !> =============================================================================
 MODULE force_mod
   USE io_mod
   USE trace_mod
   USE units_mod
   USE scaling_mod
-  USE vector_mod
+  !USE vector_mod
   USE mesh_mod
   USE planet_mod
   USE star_mod
   implicit none
   private
   type, public:: force_t
-    procedure(gravity), pointer:: selected=>null()
+    procedure(star_and_planet), pointer:: selected=>null()
   contains
     procedure init
   end type
-  type(star_t):: star
+  type(force_t), public:: force
 CONTAINS
 
+!> =============================================================================
+!> Select type of force -- could be more than one planet, for example
+!> =============================================================================
 SUBROUTINE init (self)
   class(force_t):: self
-  self%selected => gravity
+  self%selected => star_and_planet
 END SUBROUTINE
 
 !> =============================================================================
-!> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
+!> Force of gravity from a star and a planet
 !> =============================================================================
-FUNCTION gravity (self, time, m) RESULT (ff)
+FUNCTION star_and_planet (self, time, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
   type(mesh_t):: m(3)
@@ -69,6 +71,6 @@ FUNCTION gravity (self, time, m) RESULT (ff)
     end do
   end do
   call trace_end
-END FUNCTION gravity
+END FUNCTION star_and_planet
 
 END MODULE

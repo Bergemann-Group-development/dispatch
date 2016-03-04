@@ -1,4 +1,8 @@
 !> =============================================================================
+!> Solve the hydrostatic equilibrium for an extended planet atmosphere, 
+!> stretching from the planet surface to beyond the Hill radius.  The mass
+!> of the atmosphere is neglected, because the Python examples show that most
+!> of the mass is anyway at large radii, where the solution will not be exact.
 !> =============================================================================
 MODULE atmosphere_mod
   USE io_mod
@@ -14,6 +18,7 @@ MODULE atmosphere_mod
   end type
   type, public, extends(particle_t):: atmosphere_t
     integer:: nr, niter
+    real:: gamma(2), temp_gamma
     real(kind=8), dimension(:), pointer:: rho, pg, temp, rr
     real:: dlnr, hill_radius, orbit_radius
     type(conditions_t):: external, surface
@@ -25,16 +30,17 @@ MODULE atmosphere_mod
 CONTAINS
 
 !> =============================================================================
-!> Setup a uniform initial state, with density=d0 and B=B0
+!> Read parameters
 !> =============================================================================
 SUBROUTINE init (self)
   class(atmosphere_t):: self
   logical, save:: first_time=.true.
   real:: density_cgs=1e-10, temperature_K=200, delta_r=0.01, orbit_au=1.0
   real:: mass_m_earth=0.9
+  real:: gamma(2)=1.4, temp_gamma=2000.
   integer:: nr=500, niter=10
   namelist /atmosphere_params/ orbit_au, density_cgs, temperature_K, &
-    mass_m_earth, nr, niter
+    mass_m_earth, nr, niter, gamma, temp_gamma
   !----------------------------------------------------------------------------
   call trace_begin('atmosphere_t%init')
   call scaling%init
@@ -47,6 +53,8 @@ SUBROUTINE init (self)
   !$omp end critical (atm_cr)
   self%nr = nr
   self%niter = niter
+  self%gamma = gamma
+  self%temp_gamma = temp_gamma
   allocate (self%rr(self%nr))
   allocate (self%rho(self%nr))
   allocate (self%pg(self%nr))
@@ -57,7 +65,7 @@ SUBROUTINE init (self)
   self%external%pressure = density_cgs*cgs%k_B*temperature_K/(cgs%mu*cgs%m_u) &
     /scaling%p
   self%hill_radius = self%orbit_radius*(planet%mass*scaling%m/(3d0*cgs%m_sun))**(1d0/3d0)
-  planet%radius = cgs%r_earth/scaling%l*(planet%mass*cgs%m_earth)**(1d0/3d0)
+  planet%radius = cgs%r_earth/scaling%l*(planet%mass*scaling%m/cgs%m_earth)**(1d0/3d0)
   self%dlnr = log(self%hill_radius/planet%radius)/(self%nr-1.0)
   if (io%verbose>0) print*, 'dlnr:', planet%radius, self%hill_radius/planet%radius, self%dlnr
   call self%hydrostatic
@@ -66,12 +74,12 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> Solve the equations for hydrostatic balance, initially neglecting the mass
-!> of the pseudo-atmosphere -- later on we will include it.
+!> of the pseudo-atmosphere.
 !> =============================================================================
 SUBROUTINE hydrostatic (self)
   class(atmosphere_t):: self
   logical, save:: first_time=.true.
-  real(8):: dr, dlnr, dlnpg, temp_K, dlnT, gamma
+  real(8):: dr, dlnr, dlnpg, temp_K, dlnT, gamma, s
   integer:: nr, i, iter
   !-----------------------------------------------------------------------------
   ! Start with the external pressure and integrate inwards
@@ -99,29 +107,36 @@ SUBROUTINE hydrostatic (self)
         dlnpg = dr*code%grav*planet%mass* &
           0.5*(self%rho(i+1)/self%pg(i+1)/self%rr(i+1)**2 + &
                self%rho(i  )/self%pg(i  )/self%rr(i  )**2)
-        temp_K = self%temp(i+1)*scaling%temp
-        if (temp_K > 2000.) then
-          gamma = 5./3.
+        temp_K = self%temp(i)*scaling%temp
+        if (temp_K > self%temp_gamma) then
+          gamma = self%gamma(2)
         else
-          gamma = 7./5.
+          gamma = self%gamma(1)
         end if
         dlnT = dlnpg*(gamma-1.0)/gamma
         self%pg  (i) = self%pg  (i+1)*exp(dlnpg)
         self%temp(i) = self%temp(i+1)*exp(dlnT)
         if (io%verbose>2) print*, i, iter, self%rr(i), self%pg(i), self%rho(i), self%temp(i)
       end do
+      if (self%gamma(2)==1.0) then
+        s = 1.0
+      else
+        s = (log(self%pg(i))-gamma*log(self%rho(i)))/(self%gamma(2)-1.0)
+      end if
       if (io%verbose>1) print'("hydrostatic",i5,1p,9e11.3)', &
         i,self%rr(i)*scaling%l/cgs%r_earth, self%pg(i)*scaling%p, self%temp(i)*scaling%temp, &
-        self%rho(i)*scaling%d, dlnpg, dlnT, planet%mass*code%grav/self%rr(i)**2
+        self%rho(i)*scaling%d, s, dlnpg, planet%mass*code%grav/self%rr(i)**2
     end do
     if (io%verbose>1) print*, &
       '              i         rr         pg       temp        rho      dlnpg       dlnT       grav'
     self%surface%density     = self%rho(1)
     self%surface%pressure    = self%pg(1)
     self%surface%temperature = self%temp(1)
+    print '(a,f7.0," K")', 'atmosphere_mod::hydrostatic: surface%temperature =', &
+      self%surface%temperature*scaling%temp
     call trace_end
   end if
   !$omp end critical (init_cr)
 END SUBROUTINE hydrostatic
 
-END MODULE
+END MODULE atmosphere_mod

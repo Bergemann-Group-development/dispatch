@@ -72,9 +72,9 @@ SUBROUTINE planet_atmosphere (self, mem, m)
         x = m(1)%p + m(1)%r(ix) - planet%position(1)
         r = sqrt(x**2+y**2+z**2)
         d = interpolate (r, nr ,atmosphere%rr, atmosphere%rho)
-        p = interpolate (p, nr, atmosphere%rr, atmosphere%pg)
+        p = interpolate (r, nr, atmosphere%rr, atmosphere%pg)
         mem(ix,iy,iz,1,1,1) = d
-        mem(ix,iy,iz,3,1,1) = (log(p)-self%gamma*log(d))/(self%gamma-1.0)
+        mem(ix,iy,iz,2,1,1) = d*(log(p)-self%gamma*log(d))/(self%gamma-1.0)
         mem(ix,iy,iz,3,1,1) = 0.0
         mem(ix,iy,iz,4,1,1) = 0.0
         mem(ix,iy,iz,5,1,1) = 0.0

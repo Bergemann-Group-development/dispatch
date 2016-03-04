@@ -18,9 +18,10 @@ MODULE setup_mod
     procedure init
   end type
   type(setup_t), public:: setup
-!> =============================================================================
 CONTAINS
 
+!> =============================================================================
+!> =============================================================================
 SUBROUTINE init (self, label)
   class(setup_t):: self
   character(len=*), optional:: label

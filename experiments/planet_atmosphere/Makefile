@@ -1,9 +1,9 @@
 VPATH := .:$(VPATH)
 
 # Option groups
-OPTS = debug
+#OPTS = debug
 #OPTS = full_debug
-#OPTS = optimized
+OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
