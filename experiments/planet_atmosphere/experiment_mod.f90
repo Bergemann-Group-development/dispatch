@@ -55,9 +55,11 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%mhd_t%update
-  call boundary%condition (self%mem(:,:,:,4,self%it,2), self%mesh, [-0.5d0,0d0,0d0], self%nv)
-  call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,-0.5d0,0d0], self%nv)
-  call boundary%condition (self%mem(:,:,:,6,self%it,2), self%mesh, [0d0,0d0,-0.5d0], self%nv)
+  call boundary%condition (self%mem(:,:,:,1,self%it,2), self%mesh, [0d0,0d0,0d0], self%nv)
+  call boundary%condition (self%mem(:,:,:,2,self%it,2), self%mesh, [0d0,0d0,0d0], self%nv)
+  call boundary%condition (self%mem(:,:,:,3,self%it,2), self%mesh, [-0.5d0,0d0,0d0], self%nv)
+  call boundary%condition (self%mem(:,:,:,4,self%it,2), self%mesh, [0d0,-0.5d0,0d0], self%nv)
+  call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0], self%nv)
   call self%courant_condition
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%initial%selected(self%mem, self%mesh)
