@@ -7,7 +7,6 @@ MODULE download_mod
   USE trace_mod
   USE task_mod
   USE patch_mod
-  USE planet_mod
   USE list_mod
   implicit none
   private
@@ -97,11 +96,6 @@ SUBROUTINE download_same_static (link)
         end do
       end do
     end if
-    block
-      real, dimension(:,:,:), pointer:: px
-      px => patch%mem(:,:,:,3,it,1)
-      call patch%check_error(px,"XY1")
-    end block
     other => find_nbor (link, +3, o, patch%time, jt1, jt2, pt, qt)
     if (associated(other)) then
       do iz=m(3)%uo,m(3)%ub
@@ -115,11 +109,6 @@ SUBROUTINE download_same_static (link)
         end do
       end do
     end if
-    block
-      real, dimension(:,:,:), pointer:: px
-      px => patch%mem(:,:,:,3,it,1)
-      call patch%check_error(px,"XY2")
-    end block
   end if
   !-----------------------------------------------------------------------------
   ! XZ-planes in the two Y guard zones
@@ -138,11 +127,6 @@ SUBROUTINE download_same_static (link)
         end do
       end do
     end if
-    block
-      real, dimension(:,:,:), pointer:: px
-      px => patch%mem(:,:,:,3,it,1)
-      call patch%check_error(px,"XZ1")
-    end block
     other => find_nbor (link, +2, o, patch%time, jt1, jt2, pt, qt)
     if (associated(other)) then
       do iz=m(3)%li,m(3)%ui
@@ -156,11 +140,6 @@ SUBROUTINE download_same_static (link)
         end do
       end do
     end if
-    block
-      real, dimension(:,:,:), pointer:: px
-      px => patch%mem(:,:,:,3,it,1)
-      call patch%check_error(px,"XZ2")
-    end block
   end if
   !-----------------------------------------------------------------------------
   ! YZ-planes in the two X guard zones
@@ -179,11 +158,6 @@ SUBROUTINE download_same_static (link)
         end do
       end do
     end if
-    block
-      real, dimension(:,:,:), pointer:: px
-      px => patch%mem(:,:,:,3,it,1)
-      call patch%check_error(px,"YZ1")
-    end block
     other => find_nbor (link, +1, o, patch%time, jt1, jt2, pt, qt)
     if (associated(other)) then
       do iz=m(3)%li,m(3)%ui
@@ -197,13 +171,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
     end if
-    block
-      real, dimension(:,:,:), pointer:: px
-      px => patch%mem(:,:,:,3,it,1)
-      call patch%check_error(px,"YZ2")
-    end block
   end if
-
   call trace_end
 END SUBROUTINE download_same_static
 
@@ -395,10 +363,8 @@ SUBROUTINE interpolate_to (target, ii, source, jt, pt, idir)
         'target: id,lv=',target%id, target%level, ii(i), (source%position(i)-target%position(i))/source%mesh(i)%d, &
         'source: id,lv=',source%id, source%level, jj(i), pp(i)
         print*,'   source shift:', (target%position-source%position)/source%ds + source%offset
-        print*,'target position:', (target%position-planet%position)/target%ds
         print*,'    target size:', target%size
         print*,'   target index:', (pos(i)-target%position(i))/target%ds(i) + target%offset(i)
-        print*,'source position:', (source%position-planet%position)/source%ds
         print*,'    source size:', source%size
         print*,'   source index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i)
         print*,'staggered index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)
@@ -518,15 +484,12 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time)
   else if (io%verbose>1) then
     print*,'find_best_nbor: ERROR', patch%id, ii
     print*,'   level:', patch%level, patch%size/patch%ds
-    print*,'patch%po:', (patch%position - planet%position)/patch%size
-    print*,'position:', (position - planet%position)/patch%size
     nullify(best)
     nbor => link%nbor
     do while (associated(nbor))
       other => task2patch(nbor%task)
       if (abs(patch%level-other%level)<2) then
         print*,'other%lv:', other%level
-        print*,'other%po:', (other%position - planet%position)/other%size
         print*,'   index:', (position-other%position)/other%ds + other%offset
         print'(2(i5,i3,3f12.4),l4)', &
           patch%id, patch%level, (patch%position-other%position)/other%size, &

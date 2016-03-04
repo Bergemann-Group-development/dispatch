@@ -56,7 +56,7 @@ SUBROUTINE update (self)
   !
   call self%mhd_t%update
   call self%courant_condition
-  call timestep%update (self%id, self%iit, self%dt, self%mem)
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   !
   call trace_end
 END SUBROUTINE update

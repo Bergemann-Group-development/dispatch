@@ -1,5 +1,5 @@
 &io_params
- do_trace=f
+ do_trace=t
  verbose=0
  do_debug=f
  do_output=t
@@ -14,8 +14,9 @@
  B0=0.0,0.0,0.0
 /
 &patch_params
- nt=5
  n=128,128,1
+ nt=5
+ courant=0.20
 /
 &out_params
  end_time=0.600
@@ -25,7 +26,6 @@
  time_derivs=f
 /
 &mhd_params
- courant=0.20
  nu=  0.001,  0.0, 1.0, 0.0,  0.0,  1.0
  !     cs    du   pa   ofd   mas   eta
  gamma=1.6666666666667

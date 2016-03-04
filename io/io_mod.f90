@@ -8,7 +8,7 @@ MODULE io_mod
   integer, parameter:: mch=120
   type io_t
     integer:: verbose=0, input=1, output=2, data_unit=3, log_unit=4
-    logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.false.
+    logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.true.
     integer:: levelmax=10
     character(len=64):: inputname, outputname
   contains
