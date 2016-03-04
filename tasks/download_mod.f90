@@ -75,128 +75,136 @@ SUBROUTINE download_same_static (link)
   real:: pt, qt
   type(mesh_t), pointer:: m(:)
   !-----------------------------------------------------------------------------
-  ! XY-planes in the two Z guard zones
-  !-----------------------------------------------------------------------------
   call trace_begin('download::download_same_static')
   patch => task2patch (link%task)
   m => patch%mesh
   it = patch%it
   nv = patch%nv
-  other => find_nbor (link, -3, o, patch%time, jt1, jt2, pt, qt)
-  if (associated(other)) then
-    do iz=m(3)%lb,m(3)%lo
-      do iy=m(2)%lb,m(2)%ub
-        do iv=1,nv
-          do ix=m(1)%lb,m(1)%ub
-            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt1,1)*qt &
-                                        + other%mem(ix,iy,iz+o,iv,jt2,1)*pt
-          end do
-        end do
-      end do
-    end do
-  end if
-  block
-    real, dimension(:,:,:), pointer:: px
-    px => patch%mem(:,:,:,3,it,1)
-    call patch%check_error(px,"XY1")
-  end block
-  other => find_nbor (link, +3, o, patch%time, jt1, jt2, pt, qt)
-  if (associated(other)) then
-    do iz=m(3)%uo,m(3)%ub
-      do iy=m(2)%lb,m(2)%ub
-        do ix=m(1)%lb,m(1)%ub
+  !-----------------------------------------------------------------------------
+  ! XY-planes in the two Z guard zones
+  !-----------------------------------------------------------------------------
+  if (m(3)%n > 1) then
+    other => find_nbor (link, -3, o, patch%time, jt1, jt2, pt, qt)
+    if (associated(other)) then
+      do iz=m(3)%lb,m(3)%lo
+        do iy=m(2)%lb,m(2)%ub
           do iv=1,nv
-            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt1,1)*qt &
-                                        + other%mem(ix,iy,iz+o,iv,jt2,1)*pt
+            do ix=m(1)%lb,m(1)%ub
+              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt1,1)*qt &
+                                          + other%mem(ix,iy,iz+o,iv,jt2,1)*pt
+            end do
           end do
         end do
       end do
-    end do
+    end if
+    block
+      real, dimension(:,:,:), pointer:: px
+      px => patch%mem(:,:,:,3,it,1)
+      call patch%check_error(px,"XY1")
+    end block
+    other => find_nbor (link, +3, o, patch%time, jt1, jt2, pt, qt)
+    if (associated(other)) then
+      do iz=m(3)%uo,m(3)%ub
+        do iy=m(2)%lb,m(2)%ub
+          do ix=m(1)%lb,m(1)%ub
+            do iv=1,nv
+              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt1,1)*qt &
+                                          + other%mem(ix,iy,iz+o,iv,jt2,1)*pt
+            end do
+          end do
+        end do
+      end do
+    end if
+    block
+      real, dimension(:,:,:), pointer:: px
+      px => patch%mem(:,:,:,3,it,1)
+      call patch%check_error(px,"XY2")
+    end block
   end if
-  block
-    real, dimension(:,:,:), pointer:: px
-    px => patch%mem(:,:,:,3,it,1)
-    call patch%check_error(px,"XY2")
-  end block
   !-----------------------------------------------------------------------------
   ! XZ-planes in the two Y guard zones
   !-----------------------------------------------------------------------------
-  other => find_nbor (link, -2, o, patch%time, jt1, jt2, pt, qt)
-  if (associated(other)) then
-    do iz=m(3)%li,m(3)%ui
-      do iy=m(2)%lb,m(2)%lo
-        do iv=1,nv
-          do ix=m(1)%lb,m(1)%ub
-            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt1,1)*qt &
-                                        + other%mem(ix,iy+o,iz,iv,jt2,1)*pt
+  if (m(2)%n > 1) then
+    other => find_nbor (link, -2, o, patch%time, jt1, jt2, pt, qt)
+    if (associated(other)) then
+      do iz=m(3)%li,m(3)%ui
+        do iy=m(2)%lb,m(2)%lo
+          do iv=1,nv
+            do ix=m(1)%lb,m(1)%ub
+              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt1,1)*qt &
+                                          + other%mem(ix,iy+o,iz,iv,jt2,1)*pt
+            end do
           end do
         end do
       end do
-    end do
-  end if
-  block
-    real, dimension(:,:,:), pointer:: px
-    px => patch%mem(:,:,:,3,it,1)
-    call patch%check_error(px,"XZ1")
-  end block
-  other => find_nbor (link, +2, o, patch%time, jt1, jt2, pt, qt)
-  if (associated(other)) then
-    do iz=m(3)%li,m(3)%ui
-      do iy=m(2)%uo,m(2)%ub
-        do iv=1,nv
-          do ix=m(1)%lb,m(1)%ub
-            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt1,1)*qt &
-                                        + other%mem(ix,iy+o,iz,iv,jt2,1)*pt
+    end if
+    block
+      real, dimension(:,:,:), pointer:: px
+      px => patch%mem(:,:,:,3,it,1)
+      call patch%check_error(px,"XZ1")
+    end block
+    other => find_nbor (link, +2, o, patch%time, jt1, jt2, pt, qt)
+    if (associated(other)) then
+      do iz=m(3)%li,m(3)%ui
+        do iy=m(2)%uo,m(2)%ub
+          do iv=1,nv
+            do ix=m(1)%lb,m(1)%ub
+              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt1,1)*qt &
+                                          + other%mem(ix,iy+o,iz,iv,jt2,1)*pt
+            end do
           end do
         end do
       end do
-    end do
+    end if
+    block
+      real, dimension(:,:,:), pointer:: px
+      px => patch%mem(:,:,:,3,it,1)
+      call patch%check_error(px,"XZ2")
+    end block
   end if
-  block
-    real, dimension(:,:,:), pointer:: px
-    px => patch%mem(:,:,:,3,it,1)
-    call patch%check_error(px,"XZ2")
-  end block
-  call trace_end
   !-----------------------------------------------------------------------------
   ! YZ-planes in the two X guard zones
   !-----------------------------------------------------------------------------
-  other => find_nbor (link, -1, o, patch%time, jt1, jt2, pt, qt)
-  if (associated(other)) then
-    do iz=m(3)%li,m(3)%ui
-      do iy=m(2)%li,m(2)%ui
-        do ix=m(1)%lb,m(1)%lo
-          do iv=1,nv
-            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt1,1)*qt &
-                                        + other%mem(ix+o,iy,iz,iv,jt2,1)*pt
+  if (m(1)%n > 1) then
+    other => find_nbor (link, -1, o, patch%time, jt1, jt2, pt, qt)
+    if (associated(other)) then
+      do iz=m(3)%li,m(3)%ui
+        do iy=m(2)%li,m(2)%ui
+          do ix=m(1)%lb,m(1)%lo
+            do iv=1,nv
+              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt1,1)*qt &
+                                          + other%mem(ix+o,iy,iz,iv,jt2,1)*pt
+            end do
           end do
         end do
       end do
-    end do
-  end if
-  block
-    real, dimension(:,:,:), pointer:: px
-    px => patch%mem(:,:,:,3,it,1)
-    call patch%check_error(px,"YZ1")
-  end block
-  other => find_nbor (link, +1, o, patch%time, jt1, jt2, pt, qt)
-  if (associated(other)) then
-    do iz=m(3)%li,m(3)%ui
-      do iy=m(2)%li,m(2)%ui
-        do ix=m(1)%uo,m(1)%ub
-          do iv=1,nv
-            patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt1,1)*qt &
-                                        + other%mem(ix+o,iy,iz,iv,jt2,1)*pt
+    end if
+    block
+      real, dimension(:,:,:), pointer:: px
+      px => patch%mem(:,:,:,3,it,1)
+      call patch%check_error(px,"YZ1")
+    end block
+    other => find_nbor (link, +1, o, patch%time, jt1, jt2, pt, qt)
+    if (associated(other)) then
+      do iz=m(3)%li,m(3)%ui
+        do iy=m(2)%li,m(2)%ui
+          do ix=m(1)%uo,m(1)%ub
+            do iv=1,nv
+              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt1,1)*qt &
+                                          + other%mem(ix+o,iy,iz,iv,jt2,1)*pt
+            end do
           end do
         end do
       end do
-    end do
+    end if
+    block
+      real, dimension(:,:,:), pointer:: px
+      px => patch%mem(:,:,:,3,it,1)
+      call patch%check_error(px,"YZ2")
+    end block
   end if
-  block
-    real, dimension(:,:,:), pointer:: px
-    px => patch%mem(:,:,:,3,it,1)
-    call patch%check_error(px,"YZ2")
-  end block
+
+  call trace_end
 END SUBROUTINE download_same_static
 
 !> =============================================================================
