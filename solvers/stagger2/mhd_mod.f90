@@ -39,6 +39,7 @@ SUBROUTINE init (self)
   namelist /mhd_params/ nu, courant, gamma
   !----------------------------------------------------------------------------
   call trace_begin('mhd_t%init')
+  if (first_time) then
   !$omp critical (mhd_cr)
   if (first_time) then
     first_time = .false.
@@ -48,6 +49,7 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (mhd_cr)
   self%courant = courant
+  end if
   self%nu = nu
   self%gamma = gamma
   do i=1,3
@@ -78,6 +80,7 @@ SUBROUTINE update (self)
   real:: ds(3), dx
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%update')
+  call self%init
   self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
   self%s => self%mem(:,:,:,  2,self%it,1); self%dsdt => self%mem(:,:,:,  2,self%it,2)
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
