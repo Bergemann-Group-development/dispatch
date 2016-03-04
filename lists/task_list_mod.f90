@@ -23,9 +23,11 @@ MODULE task_list_mod
   USE trace_mod
   USE refine_mod
   USE download_mod
+  USE timestep_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
+    integer(8):: n_update=0
   contains
     procedure:: init
     procedure:: execute
@@ -80,13 +82,17 @@ END SUBROUTINE init
 !> everything local to self%update is thread private.
 !> =============================================================================
 SUBROUTINE execute (self)
+  USE omp_timer_mod
   class(task_list_t):: self
   class(link_t), pointer:: link, rem
+  !-----------------------------------------------------------------------------
+  call tic
   !$omp parallel
   do while (self%n > 0)
     call self%update
   end do
   !$omp end parallel
+  call toc ('rank time', self%n_update)
   link => self%head
   do while (associated(link))
     rem => link
@@ -112,67 +118,51 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call self%check_mpi                                 ! check incoming MPI
   !-----------------------------------------------------------------------------
-  ! Pick a task off the queue, in a critical region
+  ! Pick a task off the queue, in a very brief critical region
   !-----------------------------------------------------------------------------
   !$omp critical (list_cr)
-  !call self%lock
-  !call trace('list_cr 1 begin')
+  call trace('list_cr 1 begin')
   head => self%queue                                    ! queue start
   if (associated(head)) then
     task => head%task                                   ! head task
     self%queue => self%queue%next_time                  ! update the link
     self%nq = self%nq-1
   end if
-  !call trace('list_cr 1 end')
-  !call self%unlock
+  call trace('list_cr 1 end')
   !$omp end critical (list_cr)
   !-----------------------------------------------------------------------------
   ! Having secured a head, we need to check if it is at all associcated
   !-----------------------------------------------------------------------------
   if (associated(head)) then
-    !$omp critical (list_cr)
-    !call trace('list_cr a begin')
-    if (io%verbose>0) &
-      print'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)', &
-      'thread', omp_mythread(), 'task', task%id, &
-      'step', task%istep, 'n, nq', self%n, self%nq
     !-----------------------------------------------------------------------------
-    ! Prepare it for update, by downloading data that it depends on.  During the
+    ! Prepare for update, by downloading data that it depends on.  During the
     ! download we must prevent threads in the nbor list from rotating mem slots
     !-----------------------------------------------------------------------------
-    !$omp end critical (list_cr)
     select type (task)
     class is (patch_t)
     if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
     call download_link (head, all_cells=.false.)        ! guard cells
     if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
     end select
-    !$omp critical (list_cr)
-    !-----------------------------------------------------------------------------
-    ! Check if refinement is needed on the task; if so this will push new tasks
-    ! onto the queue, with the same task time; i.e., to the head of the queue
-    !-----------------------------------------------------------------------------
-   !if (refine%needed (task)) then                      ! if refinement needed
-   !  call self%split (head)                            ! refined tasks go back to queue
-   !end if
-    !-----------------------------------------------------------------------------
-    ! To ensure the initial state is output, check for doing output, then update,
-    ! then check again.  The check is fast, but one could move the first call
-    !-----------------------------------------------------------------------------
-    call task%output(self%name)                         ! check output
-    !call trace('list_cr a end')
-    !$omp end critical (list_cr)
+    !----------------------------------------------------------------------------
+    ! Update the task, whatever that means
+    !----------------------------------------------------------------------------
     call task%update                                    ! update the task
     !----------------------------------------------------------------------------
-    ! The update procedure in the generic patch_t module is responsible for
+    ! The rotate procedure in the generic patch_t module is responsible for
     ! updating the time, and rotating the memory slots where information about
     ! previous time steps are saved.
     !----------------------------------------------------------------------------
     !$omp critical (list_cr)
-    !call trace('list_cr 2 begin')
+    call trace('list_cr 2 begin')
+    if (io%verbose>0) &
+      print'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)', &
+      'thread', omp_mythread(), 'task', task%id, &
+      'step', task%istep, 'n, nq', self%n, self%nq
     select type (task)
     class is (patch_t)
     call task%rotate
+    self%n_update = self%n_update + product(task%n)
     end select
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the queue,
@@ -180,16 +170,14 @@ SUBROUTINE update (self)
     !-----------------------------------------------------------------------------
     call task%clear(bits%ready)                         ! needs new check
     call self%check_nbors (head)                        ! any nbor ready?
-    !call trace('list_cr 2 end')
     call task%output(self%name)                         ! check output
     !-----------------------------------------------------------------------------
     ! Tasks that have finished are subtracted from the task list count
     !-----------------------------------------------------------------------------
-    if (task%time+0.5*task%dtime > task%end_time) then   ! finished:
-      !call trace('list_cr 3 begin')
+    if (task%time-0.1*task%dtime > task%end_time) then  ! finished:
       self%n = self%n-1
-      !call trace('list_cr 3 end')
     end if
+    call trace('list_cr 2 end')
     !$omp end critical (list_cr)
   end if
   call trace_end

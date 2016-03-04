@@ -23,7 +23,6 @@ MODULE experiment_mod
     procedure init
     procedure update
   end type
-  integer(8), public:: n_update=0
   logical, save:: first_time=.true.
 CONTAINS
 
@@ -62,8 +61,6 @@ SUBROUTINE update (self)
   call self%courant_condition
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%initial%selected(self%mem, self%mesh)
-  !$omp atomic
-  n_update = n_update + product(self%n)
   call trace_end
 END SUBROUTINE update
 

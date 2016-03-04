@@ -130,9 +130,9 @@ SUBROUTINE init (self)
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false.
   real:: position(3)
-  real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0
+  real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
-  namelist /patch_params/ n, ng, nt, u_fixed, dt_fixed, grace
+  namelist /patch_params/ n, ng, nt, courant, u_fixed, dt_fixed, grace
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     guard_zones, time_derivs
   !.............................................................................
@@ -156,17 +156,18 @@ SUBROUTINE init (self)
     if (io%master) write (*, out_params)
   end if
   !$omp end critical (patch_cr)
-  self%grace     = grace
-  self%max_files = max_files
-  self%guard_zones=guard_zones
-  self%time_derivs=time_derivs
-  self%dt_fixed = dt_fixed
-  self%u_fixed = u_fixed
-  self%status=0
-  self%end_time = end_time
-  self%out_time = out_time
-  self%print_time = print_time
-  self%n  = n                                   ! patch dimensions
+  self%courant     = courant
+  self%grace       = grace
+  self%max_files   = max_files
+  self%guard_zones = guard_zones
+  self%time_derivs = time_derivs
+  self%dt_fixed    = dt_fixed
+  self%u_fixed     = u_fixed
+  self%status      = 0
+  self%end_time    = end_time
+  self%out_time    = out_time
+  self%print_time  = print_time
+  self%n           = n                          ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   self%mesh%n  = n
   self%mesh%ng = ng
@@ -579,7 +580,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace_begin('patch:t%output')
-  do while (self%time > self%out_next)
+  do while (self%time >= self%out_next)
     self%max_files = self%max_files-1
     if (self%max_files <= 0) then
       print*,'TOO MANY FILES'

@@ -21,6 +21,7 @@ MODULE mhd_mod
     procedure:: init
     procedure:: update
     procedure:: output
+    procedure:: check_density
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure
@@ -32,23 +33,25 @@ MODULE mhd_mod
 CONTAINS
 
 !> =============================================================================
+!> The construction with a double test on first_time avoids entering a critical
+!> region once the variable has been set.
+!> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], courant=0.2, gamma=1.0
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0
   integer:: i
-  namelist /mhd_params/ nu, courant, gamma
+  namelist /mhd_params/ nu, gamma
   !----------------------------------------------------------------------------
   call trace_begin('mhd_t%init')
   if (first_time) then
-  !$omp critical (mhd_cr)
-  if (first_time) then
-    first_time = .false.
-    rewind (io%input)
-    read (io%input, mhd_params)
-    if (io%master) write (*, mhd_params)
-  end if
-  !$omp end critical (mhd_cr)
-  self%courant = courant
+    !$omp critical (mhd_cr)
+    if (first_time) then
+      first_time = .false.
+      rewind (io%input)
+      read (io%input, mhd_params)
+      if (io%master) write (*, mhd_params)
+    end if
+    !$omp end critical (mhd_cr)
   end if
   self%nu = nu
   self%gamma = gamma
@@ -279,6 +282,41 @@ SUBROUTINE output (self, experiment_name)
   write (io%data_unit,'(8f10.4)') self%nu
   close (io%data_unit)
 END SUBROUTINE output
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE check_density (self, label)
+  class(mhd_t):: self
+  character(len=*), optional:: label
+  real:: mind
+  integer:: ix, iy, iz, ii(3), ntot, nins
+  logical:: inside
+  !-----------------------------------------------------------------------------
+  mind = minval(self%mem(:,:,:,1,self%it,1))
+  if (mind <= 0.0) then
+    ntot = 0
+    nins = 0
+    do iz=1,self%gn(3)
+    do iy=1,self%gn(2)
+    do ix=1,self%gn(1)
+      ii = [ix,iy,iz]
+      inside = all([ix,iy,iz]>self%mesh%lo.and.ii<self%mesh%lo)
+      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0)
+      nins = nins + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0.and.inside)
+    end do
+    end do
+    end do
+    if (present(label)) then
+      print 1, &
+         'WARNING: density non-positive in',ntot,' points,',nins,' inside'// &
+         trim(label)
+      1 format(a,i8,a,i8,a)
+    else
+      print 1, &
+         'WARNING: density non-positive in',ntot,' points,',nins,' inside'
+    end if
+  end if
+END SUBROUTINE
 
 !> =============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)
