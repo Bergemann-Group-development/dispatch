@@ -383,7 +383,7 @@ SUBROUTINE init_nbors (self)
     scan => self%head                                   ! scan all links (FIXME)
     do while (associated(scan))                         ! until end
       if (.not.associated(scan,link)) then
-        if (self%overlaps (scan%task, link%task,'init_nbor')) then  ! if its task overlaps
+        if (self%overlaps (scan%task, link%task)) then  ! if its task overlaps
           allocate (nbor)
           nbor%task => scan%task
           nbor%link => scan
@@ -433,15 +433,19 @@ FUNCTION overlaps (self, task1, task2, label)
   class(task_t), pointer:: task1, task2
   character(len=*), optional:: label
   logical:: overlaps
-  real(8):: dist(3), limit(3)
+  real(8):: dist(3)
   !.............................................................................
   call trace_begin ('task_lis_t%overlap', 3)
   dist = self%distance(task1,task2)
-  overlaps = all(self%distance(task1,task2) < 0.501*(task1%size+task2%size))
-  if (self%debug>3.or.present(label)) &
+  overlaps = all(self%distance(task1,task2) < 0.50000001_8*(task1%size+task2%size))
+  if (self%debug>3.or.present(label)) then
+    block
+    real(8):: limit(3)
     limit = 0.501*(task1%size+task2%size)
     print'(a,2i4,2(3f8.2,3x),l3)', 'overlap:', task1%id, task2%id, &
      (task1%position-task2%position)/limit, dist/limit, overlaps
+    end block
+  end if
   call trace_end
 END FUNCTION overlaps
 

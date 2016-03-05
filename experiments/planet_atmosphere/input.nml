@@ -13,16 +13,16 @@
 &initial_params
 /
 &patch_params
- n=30,30,30
+ n=20,20,20
  nt=5
  grace=0.05
  courant=0.2
 !dt_fixed=0.001
 /
 &out_params
- end_time=1000.
- out_time=1.
- print_time=0.1
+ end_time=1
+ out_time=0.1
+ print_time=0
  guard_zones=f
  time_derivs=f
 /

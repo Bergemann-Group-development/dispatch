@@ -73,7 +73,7 @@ SUBROUTINE init (self, label)
     patch%size = self%size*3d0**(level-1)
     patch%position = ([i,j,k]-2)*patch%size + position
     call patch%init
-    !if (io%verbose>1) &
+    if (io%verbose>1) &
       print'(a,i6,i4,2(2x,3f10.6))', 'rubiks_cube%init: id, level, size, pos =', &
         patch%id, level, patch%size, patch%position - position
     !---------------------------------------------------------------------------
