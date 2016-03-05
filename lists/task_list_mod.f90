@@ -138,14 +138,12 @@ SUBROUTINE update (self)
     ! Prepare for update, by downloading data that it depends on.  During the
     ! download we must prevent threads in the nbor list from rotating mem slots
     !-----------------------------------------------------------------------------
-    !$omp critical (list_cr)
     select type (task)
     class is (patch_t)
     if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
     call download_link (head, all_cells=.false.)        ! guard cells
     if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
     end select
-    !$omp end critical (list_cr)
     !----------------------------------------------------------------------------
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
@@ -156,7 +154,6 @@ SUBROUTINE update (self)
     ! previous time steps are saved.
     !----------------------------------------------------------------------------
     !$omp critical (list_cr)
-    call trace('list_cr 2 begin')
     if (io%verbose>0) &
       print'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)', &
       'thread', omp_mythread(), 'task', task%id, &
@@ -170,8 +167,11 @@ SUBROUTINE update (self)
     ! The task should now again be checked, before it can be returned to the queue,
     ! and its neighbors should be checked for return to the queue.
     !-----------------------------------------------------------------------------
+    call trace('list_cr 2 begin')
     call task%clear(bits%ready)                         ! needs new check
     call self%check_nbors (head)                        ! any nbor ready?
+    call trace('list_cr 2 end')
+    !$omp end critical (list_cr)
     call task%output(self%name)                         ! check output
     !-----------------------------------------------------------------------------
     ! Tasks that have finished are subtracted from the task list count
@@ -179,8 +179,6 @@ SUBROUTINE update (self)
     if (task%time-0.1*task%dtime > task%end_time) then  ! finished:
       self%n = self%n-1
     end if
-    call trace('list_cr 2 end')
-    !$omp end critical (list_cr)
   end if
   call trace_end
 END SUBROUTINE update

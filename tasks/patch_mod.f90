@@ -575,11 +575,15 @@ SUBROUTINE output (self, experiment_name)
   class(patch_t):: self
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
-  integer:: iv, li(3)=0, ui(3)=0, l(3), u(3), no, jo, it
+  integer:: iv, li(3)=0, ui(3)=0, l(3), u(3), no, jo, it, i
   real:: ds(3)
   logical:: first_time=.true.
+  integer:: it1, it2, n(3)
+  real:: pt, qt
+  real, dimension(:,:,:), pointer:: buf
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
+  !$omp critical (out_cr)
   call trace_begin('patch:t%output')
   do while (self%time >= self%out_next .and. self%out_next <= self%end_time)
     self%max_files = self%max_files-1
@@ -623,10 +627,12 @@ SUBROUTINE output (self, experiment_name)
     if (io%verbose>=0) &
       print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%out_next
     open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-    where (self%size > 0.0)
-      li = (self%position+0.5*(self%box-self%size))/self%ds
-      ui = (self%position+0.5*(self%box+self%size))/self%ds - 1.0
-    end where
+    do i=1,3
+      if (self%size(i) > 0.0) then
+        li(i) = (self%position(i)+0.5*(self%box(i)-self%size(i)))/self%ds(i)
+        ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/self%ds(i) - 1.0
+      end if
+    end do
     write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
     write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
     close (io%data_unit)
@@ -637,10 +643,6 @@ SUBROUTINE output (self, experiment_name)
       status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(u-l+1))
     do jo=1,no
       do iv=1,self%nv
-      block
-        integer:: it1, it2, n(3)
-        real:: pt, qt
-        real, dimension(:,:,:), pointer:: buf
         n = u-l+1
         allocate (buf(n(1),n(2),n(3)))
         !-------------------------------------------------------------------------
@@ -670,7 +672,6 @@ SUBROUTINE output (self, experiment_name)
           print'(1x,a,2i5,i3,1p,2e11.3)',trim(filename),iv,it,jo,minval(buf),maxval(buf)
         write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
         deallocate (buf)
-      end block
       end do
     end do
     close (io%data_unit)
@@ -692,16 +693,19 @@ SUBROUTINE output (self, experiment_name)
     end if
     write (io%log_unit,'(a)') trim(filename)
     ds = self%box/2.0**io%levelmax
-    where (self%size > 0.0)
-      li = (self%position+0.5*(self%box-self%size))/ds
-      ui = (self%position+0.5*(self%box+self%size))/ds - 1.0
-    end where
+    do i=1,3
+      if (self%size(i) > 0.0) then
+        li(i) = (self%position(i)+0.5*(self%box(i)-self%size(i)))/ds(i)
+        ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/ds(i) - 1.0
+      end if
+    end do
     write (io%log_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
     write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
     close (io%log_unit)
     self%iout = self%iout+1
   end do
   call trace_end
+  !$omp end critical (out_cr)
 END SUBROUTINE output
 !> =============================================================================
 !> Find the p1 target and p2 source index ranges that correspond to the overlap

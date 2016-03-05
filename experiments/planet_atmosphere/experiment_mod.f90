@@ -32,7 +32,6 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
-  print*,'INITIALIZING', self%id
   call trace_begin('experiment_t%init')
   call scaling%init
   !----------------------------------------------------------------------------
