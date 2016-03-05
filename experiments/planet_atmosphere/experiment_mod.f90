@@ -31,6 +31,8 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
+  if (self%mem_allocated) return
+  print*,'INITIALIZING', self%id
   call trace_begin('experiment_t%init')
   call scaling%init
   !----------------------------------------------------------------------------
@@ -62,7 +64,6 @@ SUBROUTINE update (self)
   call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0], self%nv)
   call self%courant_condition
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  call self%initial%selected(self%mem, self%mesh)
   call trace_end
 END SUBROUTINE update
 

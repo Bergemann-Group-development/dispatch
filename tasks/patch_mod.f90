@@ -185,6 +185,7 @@ SUBROUTINE init (self)
     self%size = self%ds
   end where
   self%mesh%s  = self%size
+  self%mesh%id = self%id
   !-----------------------------------------------------------------------------
   ! Initialize the meshes
   !-----------------------------------------------------------------------------
@@ -580,7 +581,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace_begin('patch:t%output')
-  do while (self%time >= self%out_next)
+  do while (self%time >= self%out_next .and. self%out_next <= self%end_time)
     self%max_files = self%max_files-1
     if (self%max_files <= 0) then
       print*,'TOO MANY FILES'
@@ -674,7 +675,7 @@ SUBROUTINE output (self, experiment_name)
     end do
     close (io%data_unit)
     if (self%out_time > 0.0) then
-      self%out_next = (int(self%time/self%out_time)+1)*self%out_time
+      self%out_next = (int(self%out_next/self%out_time)+1)*self%out_time
     else
       self%out_next = self%time
     end if

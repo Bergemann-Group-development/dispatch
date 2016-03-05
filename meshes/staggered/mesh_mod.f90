@@ -28,7 +28,8 @@ MODULE mesh_mod
     integer:: ub = 20           ! upper index boundary
     integer:: gn = 20           ! global number of points
     integer:: nh = 2            ! number of staggered variables
-    contains
+    integer:: id = 0
+  contains
     procedure:: init       => init_mesh
     procedure:: deallocate => deallocate_mesh
     procedure:: print      => print_mesh

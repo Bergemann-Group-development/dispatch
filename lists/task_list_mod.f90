@@ -138,12 +138,14 @@ SUBROUTINE update (self)
     ! Prepare for update, by downloading data that it depends on.  During the
     ! download we must prevent threads in the nbor list from rotating mem slots
     !-----------------------------------------------------------------------------
+    !$omp critical (list_cr)
     select type (task)
     class is (patch_t)
     if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
     call download_link (head, all_cells=.false.)        ! guard cells
     if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
     end select
+    !$omp end critical (list_cr)
     !----------------------------------------------------------------------------
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------

@@ -90,8 +90,8 @@ SUBROUTINE toc_r (label, n)
   real:: n
   real(8):: omp_get_wtime
   !.............................................................................
-  wt = (omp_get_wtime() - wt)*omp_numthreads()
-  print 1, label, trim(time_str(wt)), trim(time_str(wt/n)), '/upd,', n, 'updates'
+  wt = (omp_get_wtime() - wt)
+  print 1, label, trim(time_str(wt)), trim(time_str(wt*omp_nthreads/n)), '/upd,', n, 'updates'
 1 format (1x, a16, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a)
   !if (wt/n < 1d-6) then
   !else if (wt/n < 1d-3) then
