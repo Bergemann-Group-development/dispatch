@@ -49,7 +49,6 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   call trace_begin ('rubiks_cube_t%init')
   size = self%size
-  print*, 'size2', self%size*scaling%l/cgs%r_earth
   position = self%position
   n_levels = self%n_levels
   rewind (io%input); read (io%input, rubiks_params, iostat=iostat)
@@ -57,7 +56,6 @@ SUBROUTINE init (self, label)
   self%n_levels = n_levels
   self%position = position
   self%size = size
-  print*, 'size3', self%size*scaling%l/cgs%r_earth
   allocate (self%task_list)
   do level=1,n_levels
   do k=1,3
@@ -71,13 +69,13 @@ SUBROUTINE init (self, label)
     class is (experiment_t)
     patch => task
     end select
-    patch%box = self%size*3d0**(n_levels+1)
+    patch%box = self%size*3d0**(n_levels+2)
     patch%size = self%size*3d0**(level-1)
     patch%position = ([i,j,k]-2)*patch%size + position
     call patch%init
-    if (io%verbose>1) &
+    !if (io%verbose>1) &
       print'(a,i6,i4,2(2x,3f10.6))', 'rubiks_cube%init: id, level, size, pos =', &
-        patch%id, level, patch%size, patch%position
+        patch%id, level, patch%size, patch%position - position
     !---------------------------------------------------------------------------
     ! Add to a list of links, with pointers from patch to patch
     !---------------------------------------------------------------------------
@@ -86,6 +84,11 @@ SUBROUTINE init (self, label)
   end do
   end do
   end do
+  !-----------------------------------------------------------------------------
+  ! Save the outer size of the hierarchy as the task list size, for distance
+  ! measurements
+  !-----------------------------------------------------------------------------
+  self%task_list%size = size*3d0**(n_levels+2)
   call self%task_list%init (label)
   call trace_end
 END SUBROUTINE init
