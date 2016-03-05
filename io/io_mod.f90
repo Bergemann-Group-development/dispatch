@@ -2,6 +2,7 @@
 !> $Id$
 !> =============================================================================
 MODULE io_mod
+  USE omp_mod
   USE omp_timer_mod
   implicit none
   logical:: mpi_trace=.false.
@@ -40,6 +41,7 @@ SUBROUTINE init (self, name)
   real:: test
   !.............................................................................
   call print_id (id)
+  call init_omp
   !$omp critical (io_cr)
   if (first_time) then
     if (present(name)) inputfile = trim(name)//'.nml'                             ! experiment_name given?

@@ -55,7 +55,6 @@ SUBROUTINE allocate_scalars (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   if (present(v7)) allocate(v7(n(1),n(2),n(3)))
   if (present(v8)) allocate(v8(n(1),n(2),n(3)))
   if (present(v9)) allocate(v9(n(1),n(2),n(3)))
-  if (present(v9)) allocate(v9(n(1),n(2),n(3)))
   if (present(v10)) allocate(v10(n(1),n(2),n(3)))
   call trace_end
 END SUBROUTINE
@@ -74,6 +73,7 @@ SUBROUTINE deallocate_scalars (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   if (present(v6)) deallocate(v6)
   if (present(v7)) deallocate(v7)
   if (present(v8)) deallocate(v8)
+  if (present(v9)) deallocate(v9)
   if (present(v10)) deallocate(v10)
   call trace_end
 END SUBROUTINE

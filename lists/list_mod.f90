@@ -421,24 +421,31 @@ FUNCTION distance (self, task1, task2)
   real(8):: distance(3), size(3)
   !.............................................................................
   size = self%size
-  distance = task1%position - task2%position + 1.5*size
-  distance = abs(modulo(distance, size) - 0.5*size)
+  distance = task1%position - task2%position
+  !distance = abs(distance)
+  distance = abs(modulo(distance + 0.5*size, size) - 0.5*size)
 END FUNCTION distance
 
 !> =============================================================================
 !> =============================================================================
-FUNCTION overlaps (self, task1, task2)
+FUNCTION overlaps (self, task1, task2, label)
   class(list_t):: self
   class(task_t), pointer:: task1, task2
+  character(len=*), optional:: label
   logical:: overlaps
   real(8):: dist(3)
   !.............................................................................
   call trace_begin ('task_lis_t%overlap', 3)
   dist = self%distance(task1,task2)
-  overlaps = (all(self%distance(task1,task2) < 0.501*(task1%size+task2%size)))
-  if (self%debug>3) &
+  overlaps = all(self%distance(task1,task2) < 0.50000001_8*(task1%size+task2%size))
+  if (self%debug>3.or.present(label)) then
+    block
+    real(8):: limit(3)
+    limit = 0.501*(task1%size+task2%size)
     print'(a,2i4,2(3f8.2,3x),l3)', 'overlap:', task1%id, task2%id, &
-     task1%position/task1%size-task2%position/task2%size, dist, overlaps
+     (task1%position-task2%position)/limit, dist/limit, overlaps
+    end block
+  end if
   call trace_end
 END FUNCTION overlaps
 
