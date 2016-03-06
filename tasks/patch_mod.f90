@@ -17,26 +17,31 @@ MODULE patch_mod
   integer, parameter:: ndim = 3, i_d=1
   type, extends(tasks_t), public:: patch_t
     real, dimension(:,:,:,:,:,:), pointer:: mem
+    real, dimension(:,:,:,:,:), pointer:: vgas
+    real, dimension(:,:,:,:), pointer:: density
+    real, dimension(:,:,:,:), pointer:: pressure
     type(mesh_t), dimension(3):: mesh
     real:: courant                      ! courant number
     real:: gamma=1.0                    ! gas gamma
     real:: dt_fixed, u_fixed, u_max     ! for fixed time step Courant condition
     integer:: ndim = ndim               ! number of dimensions
-    integer:: nv                        ! number of variables
+    integer:: nv=5                      ! number of variables
     integer:: msplit=2                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
     logical:: guard_zones, time_derivs  ! switches for I/O
     logical:: mem_allocated=.false.
+    logical:: do_pebbles=.false.
     !---------------------------------------------------------------------------
     ! HACK below:  FIXME
     !---------------------------------------------------------------------------
     real:: grav                         ! gravitational consant (code units)
     integer:: i_d                       ! density inddex
-    integer:: n(3)                      ! convience FIXME ?
+    real(8):: box(3)=1d0                ! the periodic wrapping size
+    real(8):: ds(3), gsize(3)           ! convenience
+    integer:: n(3)=16, ng(3)=2          ! convient default
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
-    real(8):: box(3), ds(3), gsize(3)   ! convenience
     integer:: i,j,k                     ! should go!  FIXME
-    real(8):: offset(3)                 ! is this needed anywhere?
+    real(8):: offset(3)                 ! this is used to compute indices
   contains
     procedure:: check_error
     procedure:: init
@@ -68,11 +73,10 @@ MODULE patch_mod
   ! Template task, with procedure to place it it MPI-space
   !-----------------------------------------------------------------------------
   type box_t
-    real:: size(3)
+    real:: size(3)=1d0
     real:: num(3)
     integer:: dim(3)
   end type
-  integer:: id=0
 CONTAINS
 
 !> =============================================================================
@@ -126,69 +130,78 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
-  integer, save:: n(3)=16, ng=2, nt=7, i, max_files=100
+  integer, save:: n(3), ng(3), nv, nt, i, max_files=100
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false.
-  real:: position(3)
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
-  namelist /patch_params/ n, ng, nt, courant, u_fixed, dt_fixed, grace
+  real(8):: position(3), size(3)
+  integer:: iostat
+  namelist /patch_params/ size, n, nv, ng, nt, courant, u_fixed, dt_fixed, grace
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     guard_zones, time_derivs
   !.............................................................................
-  call trace_begin ('patch_t%init', 3)
-  !$omp atomic
-  id = id + 1                                   ! increment global
-  if (io%verbose>2) &
-    print*,'patch_t%init: id=', id
-  self%id = id                                  ! new patch id
+  call trace_begin ('patch_t%init', 2)
+  call self%task_t%init                         ! sets unique id
   !-----------------------------------------------------------------------------
-  ! Read and set patch parameters
+  ! Read and set patch parameters; these may have been set by the calling code
   !-----------------------------------------------------------------------------
+  size = self%size
+  n    = self%n
+  ng   = self%ng
+  nv   = self%nv
+  nt   = self%nt
   !$omp critical (patch_cr)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, patch_params)
+    read (io%input, patch_params, iostat=iostat)
     if (io%master) write (*, patch_params)
     rewind (io%input)
-    read (io%input, out_params)
+    read (io%input, out_params, iostat=iostat)
     if (io%master) write (*, out_params)
   end if
   !$omp end critical (patch_cr)
-  self%courant     = courant
-  self%grace       = grace
-  self%max_files   = max_files
-  self%guard_zones = guard_zones
-  self%time_derivs = time_derivs
+  self%n           = n                          ! patch dimensions
+  self%ng          = ng                         ! patch dimensions
+  self%nv          = nv                         ! patch dimensions
+  self%nt          = nt                         ! patch dimensions
+  self%courant     = courant                    ! courant number
+  self%grace       = grace                      ! grace fraction of dtime
   self%dt_fixed    = dt_fixed
   self%u_fixed     = u_fixed
+  self%max_files   = max_files                  ! prevent run-away NaN
   self%status      = 0
+  !-----------------------------------------------------------------------------
+  ! Output related parameters (should they go to io% ?)
+  !-----------------------------------------------------------------------------
+  self%guard_zones = guard_zones
+  self%time_derivs = time_derivs
   self%end_time    = end_time
   self%out_time    = out_time
   self%print_time  = print_time
-  self%n           = n                          ! patch dimensions
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
-  self%mesh%n  = n
-  self%mesh%ng = ng
   if (all(self%size==self%box)) then
     print*,'task', self%id, ' is root grid'
     call self%set(bits%root_grid)
   end if
+  !-----------------------------------------------------------------------------
+  ! Special handling of collapsed dimensions
+  !-----------------------------------------------------------------------------
+  self%mesh%ng = self%ng
   where (self%n==1)                             ! for collapsed dimensions
     self%mesh%ng = 0                            ! no guard zones
     self%box = 1                                ! make sure it is non-zero
-    self%ds  = 1e30                             ! first huge
-  end where
-  where (self%n==1)                             ! for collapsed dimensions
     self%ds = minval(self%ds)                   ! then set to reasonable val
-    self%size = self%ds
+    self%size = self%ds                         ! one cell thick
   end where
-  self%mesh%s  = self%size
+  !-----------------------------------------------------------------------------
+  ! Initialize the meshes, afterwards imposing the external values box size and
+  ! position
+  !-----------------------------------------------------------------------------
   self%mesh%id = self%id
-  !-----------------------------------------------------------------------------
-  ! Initialize the meshes
-  !-----------------------------------------------------------------------------
+  self%mesh%n  = self%n
+  self%mesh%s  = self%size
   do i=1,3
     call self%mesh(i)%init
     self%mesh(i)%b = self%box(i)
@@ -202,15 +215,15 @@ SUBROUTINE init (self)
   self%ui = self%mesh%ui
   self%offset = (self%mesh%lb+self%mesh%ub)/2.0 ! mid point index offset
   !-----------------------------------------------------------------------------
+  ! Measure levels in terms of the reinement factor
   !-----------------------------------------------------------------------------
-  self%nt = nt                                  ! number of time slices
   self%level = log(maxval(self%box)/minval(self%ds))/log(real(self%msplit)) + 0.1
   if (io%verbose>0) &
     print'(1x,a,i7,2(1p,3e12.4,2x))', 'patch_t%init: id, size, pos =', self%id, self%size, self%position
   if (io%verbose>3) &
     print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
   !-----------------------------------------------------------------------------
-  ! Allocate memory, if not allocated
+  ! Allocate memory, if not already allocated
   !-----------------------------------------------------------------------------
   if (.not.self%mem_allocated) then
     allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))

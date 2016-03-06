@@ -30,7 +30,7 @@ MODULE task_mod
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0
     real(8):: velocity(3) = 0d0
-    real(8):: size(3) = 0d0
+    real(8):: size(3) = 1d0
     real(8):: wallclock
     character(len=32), pointer:: name
     class(task_t), pointer:: parent
@@ -56,10 +56,10 @@ MODULE task_mod
     real(8), dimension(:), pointer:: t
     real(8), dimension(:), pointer:: dt
     integer, dimension(:), pointer:: iit
-    integer:: nt
-    integer:: it = 1
-    integer:: new = 2
-    integer:: verbose = 1
+    integer:: nt=3
+    integer:: it=1
+    integer:: new=2
+    integer:: verbose=1
   end type
   integer:: id=0
 CONTAINS

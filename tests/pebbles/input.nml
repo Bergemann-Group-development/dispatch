@@ -1,0 +1,7 @@
+&io_params
+ verbose=4
+ do_trace=t
+/
+&pebble_params
+ t_max=1e4
+/
