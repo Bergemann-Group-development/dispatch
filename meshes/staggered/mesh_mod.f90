@@ -20,7 +20,7 @@ MODULE mesh_mod
     real(8), dimension(:), pointer:: r
     integer:: n  = 16           ! number of points
     integer:: ng =  2           ! number of guard zones
-    integer:: lb =  1           ! lower index boundary 
+    integer:: lb =  1           ! lower index boundary
     integer:: lo =  2           ! lower index outside
     integer:: li =  3           ! lower index inside
     integer:: ui = 18           ! upper index inside
@@ -57,7 +57,7 @@ SUBROUTINE init_mesh (self)
   self%ub = self%ui + self%ng
   allocate (self%r(self%gn))
   self%d = self%s/self%n
-  self%o = (self%n+1)*self%d*0.5
+  self%o = (self%li+self%ui)*0.5
   do i=1,self%gn
     self%r(i) = (real(i,kind=8)-(self%gn+1)*0.5d0)*self%d
   end do

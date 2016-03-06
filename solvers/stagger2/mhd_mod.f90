@@ -98,8 +98,16 @@ SUBROUTINE update (self)
   Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
-  call allocate_vectors (self%gn, ld, dd, U, E, J, fd, fx, fy, fz, fm)
-  call allocate_scalars (self%gn, lnd, pg, pa, du, ss, cs, pp, pb, Q)
+  call allocate_vectors (self%gn, ld, dd, E, J, fd, fx, fy, fz, fm)
+  call allocate_scalars (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
+  if (self%do_pebbles) then
+    U => self%vgas(:,:,:,:,self%it)
+    pg => self%pressure(:,:,:,self%it)
+    self%density => self%mem(:,:,:,1,:,1)
+  else
+    call allocate_scalars (self%gn, pg)
+    call allocate_vectors (self%gn, U)
+  end if
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
   Ex=>E(:,:,:,1); Ey=>E(:,:,:,2); Ez=>E(:,:,:,3)
   Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
@@ -276,8 +284,12 @@ SUBROUTINE update (self)
     dBdt = -curl_up(ds,E)
   end if
   !-----------------------------------------------------------------------------
-  call deallocate_vectors (ld, dd, U, E, J, fd, fx, fy, fz, fm)
-  call deallocate_scalars (lnd, pg, pa, du, ss, cs, pp, pb, Q)
+  call deallocate_vectors (ld, dd, E, J, fd, fx, fy, fz, fm)
+  call deallocate_scalars (lnd, pa, du, ss, cs, pp, pb, Q)
+  if (.not.self%do_pebbles) then
+    call deallocate_vectors (U)
+    call deallocate_scalars (pg)
+  end if
   call trace_end
 END SUBROUTINE update
 

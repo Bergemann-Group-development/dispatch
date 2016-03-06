@@ -15,6 +15,7 @@ MODULE planet_mod
     real(8):: mass, radius, temperature
     contains
     procedure:: init
+    procedure:: inside
   end type
   type(planet_t), public:: planet
 CONTAINS
@@ -33,6 +34,14 @@ SUBROUTINE init (self)
   self%position = position_au*cgs%au/scaling%l
   self%temperature = temperature_k/scaling%temp
 END SUBROUTINE init
+
+!> =============================================================================
+FUNCTION inside (self, p) RESULT (out)
+  class (planet_t):: self
+  real:: p(3)
+  logical:: out
+  out = all(abs(p) < self%size*0.5)
+END FUNCTION inside
 
 !> =============================================================================
 END MODULE

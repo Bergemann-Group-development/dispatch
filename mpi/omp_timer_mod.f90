@@ -8,7 +8,7 @@ MODULE omp_timer_mod
   implicit none
   real(8), save:: wt=0d0
   interface toc
-    module procedure toc_i4, toc_i8
+    module procedure toc_i4, toc_i8, toc_1
   end interface
 CONTAINS
 
@@ -20,6 +20,16 @@ SUBROUTINE tic
   real(8):: omp_get_wtime
   wt = omp_get_wtime()
 END SUBROUTINE tic
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE toc_1 (label)
+  implicit none
+  character(len=*):: label
+  integer:: n
+  !.............................................................................
+  call toc_r (label, 1.0)
+END SUBROUTINE toc_1
 
 !> =============================================================================
 !> =============================================================================
