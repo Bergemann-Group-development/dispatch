@@ -1,7 +1,10 @@
 &io_params
- verbose=4
+ verbose=0
  do_trace=t
 /
 &pebble_params
- t_max=1e4
+/
+&test_params
+ gas_density_cgs=1e-10
+ it_max = 10000
 /
