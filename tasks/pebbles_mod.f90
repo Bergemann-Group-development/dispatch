@@ -35,30 +35,34 @@ MODULE pebbles_mod
     real:: c                            ! drag acceleration rate
     real:: dt                           ! time step
     real(8):: t                         ! particle time
-    type(pebble_t), pointer:: prev, next
+    type(pebble_t), pointer:: prev=>null(), next=>null()
   end type
   !-----------------------------------------------------------------------------
   ! A linked list of pebbles
   !-----------------------------------------------------------------------------
   type, public:: pebbles_t
     integer:: n                                 ! number of active pebbles
-    integer:: n_old = 0                         ! has accreted
-    integer:: n_accrete = 0                     ! has accreted
-    integer:: n_outside(3) = 0                  ! has accreted
+    integer:: n_old = 0                         ! have stepped to many times
+    integer:: n_accrete = 0                     ! have accreted
+    integer:: n_outside(3) = 0                  ! have left the patch
+    integer:: n_behind = 0                      ! are behind self%time
+    integer:: it_max                            ! max life time
     integer(8):: n_update = 0                   ! speed counter
     real:: mass                                 ! representative pebble mass
     real:: size                                 ! representative pebble size
     real:: density                              ! mass density
     real:: drag_coeff                           ! drag coefficient
+    real:: dt_min, dt_max                       ! dt extrema
     real:: gamma                                ! gamma for sound speed
     real:: courant=0.1                          ! courant number for motion
-    real:: it_max                               ! max life time
     real:: position(3)                          ! relative to star
     type(pebble_t), pointer:: head, tail        ! first & last pebble
     logical:: initialized=.false.               ! initialize flag
   contains
     procedure append                            ! append a pebble
     procedure remove                            ! remove a pebble
+    procedure export                            ! export to other patches (or remove)
+    procedure delete                            ! delete pebbles
   end type
   !-----------------------------------------------------------------------------
   ! A patch with pebbles
@@ -66,6 +70,7 @@ MODULE pebbles_mod
   type, public, extends(patch_t):: pebble_patch_t
     real:: omega(3)=0.0
     class(pebbles_t), pointer:: pebbles=>null()
+    class(pebbles_t), pointer:: not_done=>null()
     procedure(kdk), pointer:: move=>null()      ! particle mover
   contains
     procedure init                              ! initialize the position and size
@@ -73,8 +78,10 @@ MODULE pebbles_mod
     procedure drag                              ! compute gas drag
     procedure kdk                               ! kick-drift-kick, no drag
     procedure kdk_drag                          ! kick-drift-kick with drag
-    procedure update_pebbles
-    procedure export                            ! export to other patches (or remove)
+    procedure step_pebbles                      ! single step on all pebbles
+    procedure scatter                           ! scatter to not_done
+    procedure gather                            ! gather from not_done
+    procedure update_pebbles                    ! advance until self%time
     procedure test                              ! run a test
     procedure index_r4                          ! compute interpolation index
     procedure inside_r4                         ! is it inside?
@@ -112,9 +119,6 @@ SUBROUTINE init (self)
     allocate (self%pressure(mx,my,mz,mt))
     allocate (self%vgas(mx,my,mz,3,mt))
   end associate
-  print*,'shape',shape(self%density)
-  print*,'shape',shape(self%pressure)
-  print*,'shape',shape(self%vgas)
   !-----------------------------------------------------------------------------
   ! Read parameters, but only from one thread
   !-----------------------------------------------------------------------------
@@ -139,9 +143,6 @@ SUBROUTINE init (self)
   self%pebbles%density = solid_density_cgs/scaling%d
   self%pebbles%mass = self%pebbles%density*self%pebbles%size**3
   self%pebbles%drag_coeff = scaling%d/(scaling%l*density_yr_cgs*cgs%yr/scaling%t)
-  if (io%master) &
-    print*,'pebbles: size, density, mass =', &
-    self%pebbles%size, self%pebbles%density, self%pebbles%mass
   !-----------------------------------------------------------------------------
   ! Select mover
   !-----------------------------------------------------------------------------
@@ -210,6 +211,26 @@ SUBROUTINE add (self, n)
 END SUBROUTINE add
 
 !> =============================================================================
+!> Create a number of particles proportional at the left hand side wall,
+!> with initially a velocity interpolated from the argument velocity field
+!> =============================================================================
+SUBROUTINE delete (self)
+  class(pebbles_t):: self
+  !.............................................................................
+  class(pebble_t), pointer:: pebble, old
+  !-----------------------------------------------------------------------------
+  call trace_begin ('pebbles_t%delete', 2)
+  pebble => self%head
+  do while (associated(pebble))
+    old => pebble
+    pebble => pebble%next
+    deallocate (old)
+  end do
+  self%n = 0
+  call trace_end
+END SUBROUTINE delete
+
+!> =============================================================================
 !> Kick step of kick-drift-kick (KDK), with gravity from star and planet
 !> =============================================================================
 SUBROUTINE kdk (self, p)
@@ -228,6 +249,7 @@ SUBROUTINE kdk (self, p)
   p%ag(1) = p%ag(1) + 2.*self%omega(3)*p%v(2)
   p%ag(2) = p%ag(2) - 2.*self%omega(3)*p%v(1) + self%omega(3)**2*p%p(2)
   p%dt = self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
+  p%dt = min(p%dt,minval(self%ds/max(1e-20,abs(p%v))))
   if (io%verbose>0 .and. p%id==1 .and. nprint>0) then
     nprint = nprint-1
     print'(" kdk",1p,4(3e11.2,2x))', p%p, p%v, p%ag, p%t, p%dt
@@ -256,44 +278,58 @@ END SUBROUTINE kdk
 !> Look up gas velocity components, given positions, and compute the drag rate
 !> (inverse stopping time)
 !> =============================================================================
-SUBROUTINE drag (self, pebble)
+SUBROUTINE drag (self, pebble, warning)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: pebble
   !.............................................................................
   real:: w(3), d, p, temp, gamma, v(3), speed2, sound2
   integer:: ii(3), j, k
   integer, save:: nprint=10
+  integer:: w1, w2, warning
   !-----------------------------------------------------------------------------
   ii        = self%index_r4 (pebble%p, w, self%mesh%gn)
   d         = self%interpolate_r4 (self%density , ii, w)
   p         = self%interpolate_r4 (self%pressure, ii, w)
-  if (any(w<0.0 .or. w>1.0)) &
-    print*,'WARNING 1', ii, w
+  w1 = count(w<0.0 .or. w>1.0)
   !-----------------------------------------------------------------------------
   ! By using a 4-D pointer we can treat the velocity component as a 3D+time
   ! array, which can be passed to interpolate_r4.
   !-----------------------------------------------------------------------------
   block
     real, dimension(:,:,:,:), pointer:: velocity
+    w2 = 0
     do j=1,3
       do k=1,3
-        w(k) = (pebble%p(k) - self%mesh(k)%h(k+2))/self%mesh(k)%d + self%mesh(k)%o
+        w(k) = pebble%p(k)/self%mesh(k)%d - self%mesh(k)%h(k+2) + self%mesh(k)%o
         ii(k) = w(k)
         ii(k) = max(1,min(ii(k),self%mesh(k)%gn))
         w(k) = w(k) - ii(k)
+        if (w(k)<0.0 .or. w(k)>1.0) then
+          print '("w:p,p1,p2,v*dt/ds,h,o=",1p,10e12.3))', &
+            pebble%p(k), &
+            pebble%p(k)-pebble%dt*pebble%v(k), &
+            pebble%p(k)-pebble%dt*pebble%v(k)*2., &
+            pebble%v(k)*pebble%dt/self%ds(k), &
+            self%mesh(k)%h(k+2), self%mesh(k)%o
+        end if
       end do
-      if (any(w<0.0 .or. w>1.0)) &
-        print*,'WARNING 2', ii, w, j
-      velocity => self%vgas(:,:,:,j,:)
-      pebble%vg = self%interpolate_r4 (velocity, ii, w)
+      w2 = w2 + count(w<0.0 .or. w>1.0)
     end do
   end block
+  warning = w1+w2
   speed2    = sum((pebble%v-pebble%vg)**2)
   temp      = p/d
   gamma     = merge(1.6666667,1.4,temp>2000.)
   sound2    = gamma*p/d
   pebble%c  = self%pebbles%drag_coeff*d/pebble%s*sqrt((speed2+sound2)/sound2)
   pebble%ad = (pebble%vg-pebble%v)*pebble%c
+  if (w1+w2>0) &
+    print '("w",2i1,1p,9(3e10.2,1x))', &
+      w1,w2, &
+      pebble%p, &
+      pebble%p+2.*pebble%dt*pebble%v, &
+      pebble%v*pebble%dt/self%ds, &
+      pebble%ag, pebble%dt, pebble%c*pebble%dt
   if (io%verbose>0 .and. nprint>0) then
     nprint = nprint-1
     print *,'                  id:', pebble%id
@@ -307,6 +343,8 @@ SUBROUTINE drag (self, pebble)
     print *,'relative speed (cgs):', sqrt(speed2)*scaling%u
     print *,'   drag acceleration:', pebble%ad*scaling%l/scaling%t**2
     print *,'gravity acceleration:', pebble%ag*scaling%l/scaling%t**2
+    print *,'       time step (s):', pebble%dt*scaling%t
+    print *,'           stiffness:', pebble%dt*pebble%c
   end if
 END SUBROUTINE drag
 
@@ -319,6 +357,7 @@ SUBROUTINE kdk_drag (self, p)
   !.............................................................................
   real:: rp(3), ar
   integer, save:: nprint=20
+  integer:: warn
   !-----------------------------------------------------------------------------
   ! Get acceleration from planet and Coriolis force from star, ag(t)
   !---------------------------------------------------------------------------
@@ -331,6 +370,7 @@ SUBROUTINE kdk_drag (self, p)
   p%ag(1) = p%ag(1) + 2.*self%omega(3)*p%v(2)
   p%ag(2) = p%ag(2) - 2.*self%omega(3)*p%v(1) + self%omega(3)**2*p%p(2)
   p%dt = self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
+  p%dt = min(p%dt,minval(self%ds/max(1e-20,abs(p%v))))
   if (io%verbose>0 .and. p%id==1 .and. nprint>0) then
     nprint = nprint-1
     print'("kdkd",1p,4(3e11.2,2x))', p%p, p%v, p%ag, p%t, p%dt
@@ -341,13 +381,22 @@ SUBROUTINE kdk_drag (self, p)
   !---------------------------------------------------------------------------
   p%p = p%p + p%dt*p%v
   p%t = p%t + p%dt
-  call self%drag (p)
+  call self%drag (p,warn)
+  if (warn>0) then
+    print *,'  dt',p%dt,1
+    print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
+    print *,' dt2',minval(self%ds/max(1e-20,abs(p%v)))
+    print *,' dt3',min(p%dt,minval(self%ds/max(1e-20,abs(p%v))))
+    print'(1x,a,1p,9(3e11.2,2x))', 'dt3', self%ds, abs(p%v), self%ds/max(1e-20,abs(p%v))
+    print *,'  ds',self%ds
+    print *,'v*dt',p%v*p%dt
+  end if
   p%p = p%p - p%dt*p%v
 
   !---------------------------------------------------------------------------
   ! First kick, with drag, v(t) -> v(t+dt)
   !---------------------------------------------------------------------------
-  p%v = p%v + p%dt*(p%ag+p%c*p%dt*p%ad)/(1.+p%c*p%dt)
+  p%v = p%v + p%dt*(p%ag+p%ad)/(1.+p%c*p%dt)
 
   !---------------------------------------------------------------------------
   ! Drift, r -> r+2*dt*v(t+dt*a), with v -> vg(t+dt) if drag dominates
@@ -370,12 +419,21 @@ SUBROUTINE kdk_drag (self, p)
   !---------------------------------------------------------------------------
   ! Get the drag acceleration, at t+2*dt
   !---------------------------------------------------------------------------
-  call self%drag (p)
+  call self%drag (p,warn)
+  if (warn>0) then
+    print *,'  dt',p%dt,2
+    print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
+    print *,' dt2',minval(self%ds/max(1e-20,abs(p%v)))
+    print *,' dt3',min(p%dt,minval(self%ds/max(1e-20,abs(p%v))))
+    print'(1x,a,1p,9(3e11.2,2x))', 'dt3', self%ds, abs(p%v), self%ds/max(1e-20,abs(p%v))
+    print *,'  ds',self%ds
+    print *,'v*dt',p%v*p%dt
+  end if
 
   !---------------------------------------------------------------------------
   ! Second kick, with drag, moving v to v(t+2*dt)
   !---------------------------------------------------------------------------
-  p%v = p%v + p%dt*(p%ag+p%c*p%dt*p%ad)/(1.+p%c*p%dt)
+  p%v = p%v + p%dt*(p%ag+p%ad)/(1.+p%c*p%dt)
   if (io%verbose>0 .and. p%id==1 .and. nprint>0) then
     nprint = nprint-1
     print'("kdkd",1p,4(3e11.2,2x))', p%p, p%v, p%ag, p%t
@@ -392,6 +450,7 @@ SUBROUTINE append (self, pebble)
   pebble%prev => self%tail
   if (.not.associated(self%head)) self%head => pebble
   if (associated(self%tail)) self%tail%next => pebble
+  nullify (pebble%next)
   self%tail => pebble
   self%n = self%n + 1
 END SUBROUTINE append
@@ -401,7 +460,7 @@ END SUBROUTINE append
 !> =============================================================================
 SUBROUTINE remove (self, pebble)
   class(pebbles_t):: self
-  class(pebble_t), pointer:: pebble
+  class(pebble_t), pointer:: pebble, p
   !.............................................................................
   if (associated(pebble%next)) then
     pebble%next%prev => pebble%prev
@@ -418,12 +477,20 @@ END SUBROUTINE remove
 
 !> =============================================================================
 SUBROUTINE export (self, pebble, nbor_list)
-  class(pebble_patch_t):: self
+  class(pebbles_t):: self
   class(pebble_t), pointer:: pebble
   class(pebbles_t), pointer:: nbor_list
+  integer, save:: nprint=20
   !.............................................................................
-  call self%pebbles%remove (pebble)
-  call nbor_list%append (pebble)
+  call self%remove (pebble)
+  if (associated(nbor_list)) then
+    call nbor_list%append (pebble)
+  else
+    if (nprint > 0) then
+      nprint = nprint-1
+      print *,'exporting pebble to a black hole ...'
+    end if
+  end if
 END SUBROUTINE export
 
 !> =============================================================================
@@ -431,7 +498,7 @@ END SUBROUTINE export
 !> If not, search our neighbor list, and export to the neighbor pebble list.
 !> Also check if it has hit the planet, and count that as an accretion
 !> =============================================================================
-SUBROUTINE update_pebbles (self, nbors)
+SUBROUTINE step_pebbles (self, nbors)
   class(pebble_patch_t):: self
   class(link_t), pointer:: nbors
   !.............................................................................
@@ -440,12 +507,16 @@ SUBROUTINE update_pebbles (self, nbors)
   class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
   pebble => self%pebbles%head
+  self%pebbles%dt_min = 1e30
+  self%pebbles%dt_max = 0.0
   do while (associated(pebble))
     call self%move (pebble)
+    self%pebbles%dt_min = min(pebble%dt,self%pebbles%dt_min)
+    self%pebbles%dt_max = max(pebble%dt,self%pebbles%dt_max)
     if (pebble%it > self%pebbles%it_max) then
       call self%pebbles%remove (pebble)
       self%pebbles%n_old = self%pebbles%n_old + 1
-    else if (.not. self%inside_r4 (pebble%p)) then
+    else if (.not. self%inside_r4 (pebble%p+pebble%dt*pebble%v)) then
       if (associated(nbors)) then
         nbor => nbors
         do while (associated(nbor))
@@ -455,7 +526,7 @@ SUBROUTINE update_pebbles (self, nbors)
           select type (task)
           class is (pebble_patch_t)
             if (task%inside_r4(pebble%p)) then
-              call self%export (pebble, task%pebbles)
+              call self%pebbles%export (pebble, task%pebbles)
               exit
             end if
           class is (patch_t)
@@ -478,11 +549,151 @@ SUBROUTINE update_pebbles (self, nbors)
       self%pebbles%n_accrete = self%pebbles%n_accrete + 1
     end if
     pebble%it = pebble%it+1
+    if (pebble%t > self%time) then
+      call self%pebbles%remove (pebble)
+    end if
     pebble => pebble%next
   end do
   self%pebbles%n_update = self%pebbles%n_update + self%pebbles%n
-END SUBROUTINE update_pebbles
+END SUBROUTINE step_pebbles
 
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE scatter (self, pebbles, nbors, not_done)
+  class(pebble_patch_t):: self
+  class(pebbles_t), pointer:: pebbles
+  class(link_t), pointer:: nbors
+  !.............................................................................
+  class(link_t), pointer:: nbor
+  class(pebbles_t), pointer:: not_done
+  class(pebble_t), pointer:: pebble
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  pebble => pebbles%head
+  self%pebbles%dt_min = 1e30
+  self%pebbles%dt_max = 0.0
+  do while (associated(pebble))
+    call self%move (pebble)
+    self%pebbles%dt_min = min(pebble%dt,self%pebbles%dt_min)
+    self%pebbles%dt_max = max(pebble%dt,self%pebbles%dt_max)
+    if (.not. self%inside_r4 (pebble%p+2.*pebble%dt*pebble%v)) then
+      if (associated(nbors)) then
+        nbor => nbors
+        do while (associated(nbor))
+          task => nbor%task
+          select type (task)
+          class is (pebble_patch_t)
+            if (task%inside_r4(pebble%p)) then
+              call pebbles%export (pebble, task%pebbles)
+              exit
+            end if
+          nbor => nbor%next
+          end select
+        end do
+        call pebbles%remove (pebble)
+      else
+        call pebbles%remove (pebble)
+        if (abs(pebble%p(1)) > self%size(1)*0.5) &
+          pebbles%n_outside(1) = pebbles%n_outside(1) + 1
+        if (abs(pebble%p(2)) > self%size(2)*0.5) &
+          pebbles%n_outside(2) = pebbles%n_outside(2) + 1
+        if (abs(pebble%p(3)) > self%size(3)*0.5) &
+          pebbles%n_outside(3) = pebbles%n_outside(3) + 1
+      end if
+    else if (planet%inside(pebble%p)) then
+      call pebbles%remove (pebble)
+      pebbles%n_accrete = pebbles%n_accrete + 1
+    else if (pebble%t < self%time) then
+      call pebbles%export (pebble, not_done)
+    end if
+    pebble => pebble%next
+  end do
+  pebbles%n_update = pebbles%n_update + pebbles%n
+END SUBROUTINE scatter
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE gather (self, pebbles, nbors, done)
+  class(pebble_patch_t):: self
+  class(pebbles_t), pointer:: pebbles
+  class(link_t), pointer:: nbors
+  !.............................................................................
+  class(link_t), pointer:: nbor
+  class(pebbles_t), pointer:: done
+  class(pebble_t), pointer:: pebble
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  pebble => pebbles%head
+  self%pebbles%dt_min = 1e30
+  self%pebbles%dt_max = 0.0
+  do while (associated(pebble))
+    call self%move (pebble)
+    self%pebbles%dt_min = min(pebble%dt,self%pebbles%dt_min)
+    self%pebbles%dt_max = max(pebble%dt,self%pebbles%dt_max)
+    if (.not. self%inside_r4 (pebble%p+3.*pebble%dt*pebble%v)) then
+      if (associated(nbors)) then
+        nbor => nbors
+        do while (associated(nbor))
+          task => nbor%task
+          select type (task)
+          class is (pebble_patch_t)
+            if (task%inside_r4(pebble%p)) then
+              call pebbles%export (pebble, task%pebbles)
+              exit
+            end if
+          nbor => nbor%next
+          end select
+        end do
+        call pebbles%remove (pebble)
+      else
+        call pebbles%remove (pebble)
+        if (abs(pebble%p(1)) > self%size(1)*0.5) &
+          pebbles%n_outside(1) = pebbles%n_outside(1) + 1
+        if (abs(pebble%p(2)) > self%size(2)*0.5) &
+          pebbles%n_outside(2) = pebbles%n_outside(2) + 1
+        if (abs(pebble%p(3)) > self%size(3)*0.5) &
+          pebbles%n_outside(3) = pebbles%n_outside(3) + 1
+      end if
+    else if (planet%inside(pebble%p)) then
+      if (io%verbose>1) &
+        print*,'removing accreted pebble', pebble%id
+      call pebbles%remove (pebble)
+      pebbles%n_accrete = pebbles%n_accrete + 1
+    else if (pebble%t >= self%time) then
+      call pebbles%export (pebble, done)
+    end if
+    pebble => pebble%next
+  end do
+  pebbles%n_update = pebbles%n_update + pebbles%n
+END SUBROUTINE gather
+
+!> =============================================================================
+!> Bring all (remaining) pebbles up-to-date with respect to current time, by
+!> running through update update sweeps until all pebbles are up-to-date.  We
+!> first scatter all pebbles to a "not_done" buffer, and then gather them back
+!> to the self%pebbles as they finish (some may be exported to neighbor ranks
+!> in the process).
+!> =============================================================================
+SUBROUTINE update_pebbles (self, nbors)
+  class (pebble_patch_t):: self
+  class (link_t), pointer:: nbors
+  !.............................................................................
+  allocate (self%not_done)
+  if (io%verbose>1) &
+    print*,'pebbles  in =', self%pebbles%n
+  call self%scatter (self%pebbles, nbors, self%not_done)
+  if (io%verbose>2) &
+    print*, 'not_done =', self%not_done%n, self%pebbles%dt_min, self%pebbles%dt_max
+  do while (self%not_done%n > 0)
+    if (io%verbose>2) &
+      print*, 'not_done =', self%not_done%n, self%pebbles%dt_min, self%pebbles%dt_max
+    call self%gather (self%not_done, nbors, self%pebbles)
+  end do
+  if (io%verbose>1) &
+    print*,'pebbles out =', self%pebbles%n, self%pebbles%dt_min, self%pebbles%dt_max
+  deallocate (self%not_done)
+END SUBROUTINE update_pebbles
+  
 !> =============================================================================
 !> =============================================================================
 FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
@@ -552,9 +763,9 @@ SUBROUTINE test (self, link)
   class(pebble_t), pointer:: pebble
   class(link_t), pointer:: link
   real:: position(3), size(3)
-  real:: gas_density_cgs=1e-10
-  integer:: k, it, ignore, it_max=2**20
-  namelist /test_params/ gas_density_cgs, it_max
+  real:: gas_density_cgs=1e-10, gas_temperature_k=1000.
+  integer:: k, it, ignore, it_max=2**20, niter, n_pebbles=10000
+  namelist /test_params/ gas_density_cgs, gas_temperature_k, it_max, n_pebbles
   !-----------------------------------------------------------------------------
   call trace_begin ('pebbles_t%test')
   rewind (io%input)
@@ -586,17 +797,15 @@ SUBROUTINE test (self, link)
   ! Gas properties
   !-----------------------------------------------------------------------------
   self%density = gas_density_cgs/scaling%d
-  self%pressure = self%density*10.
-  print*,'TEMPERATURE',self%pressure(3,3,3,1)/self%density(3,3,3,1)*scaling%temp
-  print*,shape(self%vgas)
+  self%pressure = self%density*gas_temperature_k/scaling%temp
   do it=1,self%nt
     self%vgas(:,:,:,1,it) = 0.5*cgs%kms/scaling%u*it
     self%vgas(:,:,:,2,it) = 0.0
     self%vgas(:,:,:,3,it) = 0.0
   end do
-  block
+  if (io%verbose>1) then
+    block
     real, dimension(:,:,:,:), pointer:: velocity
-    print*,associated(self%vgas)
     do it=1,self%nt
       velocity => self%vgas(:,:,:,1,:)
       print*,velocity(3,3,3,it)
@@ -604,8 +813,11 @@ SUBROUTINE test (self, link)
       print*, 'vg_min,max', minval(self%vgas(:,:,:,1,it)), maxval(self%vgas(:,:,:,1,it))
       print*, 've_min,max', minval(velocity(:,:,:,it)), maxval(velocity(:,:,:,it))
     end do
-  end block
-  if (io%master) then
+    end block
+  end if
+  if (io%master.and.io%verbose>0) then
+    print *,'PEBBLE_PATCH PROPERTIES'
+    print *,'position:', self%position
     print *,'position:', self%position
     print *,'    size:', self%size
     print *,'      ds:', self%ds
@@ -618,16 +830,20 @@ SUBROUTINE test (self, link)
   ! Test the simple KDK
   !-----------------------------------------------------------------------------
   random%seed = 11
-  call self%add (3000)
+  self%time = 0.0
+  call self%add (n_pebbles)
   self%move => kdk
+  self%dtime = self%ds(1)/2.
+  niter = 50
   call tic
-  do while (self%pebbles%n > 0)
+  do it=1,niter
+    self%time = self%time + self%dtime
     call self%update_pebbles (link%nbor)
   end do
   call toc ('kdk', self%pebbles%n_update)
   print 1, &
     'KDK   accreted:', self%pebbles%n_accrete, self%pebbles%n_outside, self%pebbles%n_old
-  1 format(1x,a,i5,10x,"walls:",3i5,10x,"old:",i5)
+  1 format(1x,a,i7,10x,"walls:",3i7,10x,"old:",i7)
   !-----------------------------------------------------------------------------
   ! Test the KDK + drag, with a 0.5 km/s head wind, blowing left to right
   !-----------------------------------------------------------------------------
@@ -637,10 +853,13 @@ SUBROUTINE test (self, link)
   self%pebbles%n_old = 0
   random%seed = 11
   id = 0
-  call self%add (3000)
+  self%time = 0.0
+  call self%pebbles%delete
+  call self%add (n_pebbles)
   self%move => kdk_drag
   call tic
-  do while (self%pebbles%n > 0)
+  do it=1,niter
+    self%time = self%time + self%dtime
     call self%update_pebbles (link%nbor)
   end do
   call toc ('kdk_drag', self%pebbles%n_update)

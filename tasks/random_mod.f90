@@ -34,10 +34,6 @@ SUBROUTINE init (self, seed)
   else
     self%seed = 11
   end if
-  a = self%ran1()
-  if (io%master) print*,'1st random number:', a
-  a = self%ran1()
-  if (io%master) print*,'2nd random number:', a
   call random_seed
   !call random_number (a)
   !call random_number (b)

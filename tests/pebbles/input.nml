@@ -1,10 +1,11 @@
 &io_params
- verbose=0
- do_trace=t
+ verbose=1
+ do_trace=f
 /
 &pebble_params
 /
 &test_params
- gas_density_cgs=1e-10
+ gas_density_cgs=3e-11
  it_max = 10000
+ n_pebbles=300000
 /

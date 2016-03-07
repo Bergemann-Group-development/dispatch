@@ -40,7 +40,8 @@ FUNCTION inside (self, p) RESULT (out)
   class (planet_t):: self
   real:: p(3)
   logical:: out
-  out = all(abs(p) < self%size*0.5)
+  !.............................................................................
+  out = sqrt(sum(p**2)) < self%radius
 END FUNCTION inside
 
 !> =============================================================================
