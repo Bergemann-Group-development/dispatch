@@ -9,6 +9,7 @@ MODULE pebbles_mod
   USE omp_timer_mod
   USE task_mod
   USE patch_mod
+  USE mhd_mod
   USE list_mod
   USE planet_mod
   USE star_mod
@@ -67,8 +68,7 @@ MODULE pebbles_mod
   !-----------------------------------------------------------------------------
   ! A patch with pebbles
   !-----------------------------------------------------------------------------
-  type, public, extends(patch_t):: pebble_patch_t
-    real:: omega(3)=0.0
+  type, public, extends(mhd_t):: pebble_patch_t
     class(pebbles_t), pointer:: pebbles=>null()
     class(pebbles_t), pointer:: not_done=>null()
     procedure(kdk), pointer:: move=>null()      ! particle mover
