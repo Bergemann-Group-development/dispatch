@@ -54,6 +54,7 @@ MODULE pebbles_mod
     integer:: n_outside(3) = 0                  ! have left the patch
     integer:: n_behind = 0                      ! are behind self%time
     integer:: n_export = 0                      ! number of exported pebbles
+    integer:: n_remove = 0                      ! number of removed pebbles
     integer:: it_max                            ! max life time
     integer(8):: n_update = 0                   ! speed counter
     real:: mass                                 ! representative pebble mass
@@ -223,12 +224,6 @@ SUBROUTINE add (self, n)
     call self%pebbles%append (pebble)
     self%pebbles%z_min = min(self%pebbles%z_min,abs(pebble%p(3)))
   end do
-  if (io%verbose>0) &
-    print '(4(1x,i8,a,2x),1p,e11.2)', &
-      self%id,' now has', self%pebbles%n, ' pebbles, had', &
-      self%pebbles%n-n_local, ' exported', self%pebbles%n_export, &
-      '  min z', self%pebbles%z_min
-    self%pebbles%n_export = 0
   call trace_end
 END SUBROUTINE add
 
@@ -461,28 +456,27 @@ SUBROUTINE export (self, pebble, nbor_list)
   call self%remove (pebble)
   if (associated(nbor_list)) then
     call nbor_list%append (pebble)
+    self%n_export = self%n_export+1
   else
     if (nprint > 0) then
       nprint = nprint-1
       print *,'exporting pebble to a black hole ...'
     end if
-    self%n_export = self%n_export+1
   end if
 END SUBROUTINE export
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE scatter (self, pebbles, nbors, not_done)
+SUBROUTINE scatter (self, nbors, not_done)
   class(pebble_patch_t):: self
-  class(pebbles_t), pointer:: pebbles
   class(link_t), pointer:: nbors
   !.............................................................................
-  class(link_t), pointer:: nbor
   class(pebbles_t), pointer:: not_done
   class(pebble_t), pointer:: pebble
+  class(link_t), pointer:: nbor
   class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
-  pebble => pebbles%head
+  pebble => self%pebbles%head
   self%pebbles%dt_min = 1e30
   self%pebbles%dt_max = 0.0
   self%pebbles%z_min = 1e30
@@ -502,7 +496,7 @@ SUBROUTINE scatter (self, pebbles, nbors, not_done)
           select type (task)
           class is (pebble_patch_t)
             if (task%inside_r4(pebble%p)) then
-              call pebbles%export (pebble, task%pebbles)
+              call self%pebbles%export (pebble, task%pebbles)
               exit
             end if
           end select
@@ -511,26 +505,27 @@ SUBROUTINE scatter (self, pebbles, nbors, not_done)
         !-----------------------------------------------------------------------
         ! If not inside, and not inside a neighbor, kill it
         !-----------------------------------------------------------------------
-        call pebbles%remove (pebble)
+        call self%pebbles%remove (pebble)
+       self%pebbles%n_remove = self%pebbles%n_remove+1
       else
         !-----------------------------------------------------------------------
         ! No neighbors???
         !-----------------------------------------------------------------------
         print *,'WARNING: pebble_patch without neighbors', self%id
-        call pebbles%remove (pebble)
+        call self%pebbles%remove (pebble)
         if (abs(pebble%p(1)) > self%size(1)*0.5) &
-          pebbles%n_outside(1) = pebbles%n_outside(1) + 1
+          self%pebbles%n_outside(1) = self%pebbles%n_outside(1) + 1
         if (abs(pebble%p(2)) > self%size(2)*0.5) &
-          pebbles%n_outside(2) = pebbles%n_outside(2) + 1
+          self%pebbles%n_outside(2) = self%pebbles%n_outside(2) + 1
         if (abs(pebble%p(3)) > self%size(3)*0.5) &
-          pebbles%n_outside(3) = pebbles%n_outside(3) + 1
+          self%pebbles%n_outside(3) = self%pebbles%n_outside(3) + 1
       end if
     else if (planet%inside(pebble%p)) then
       !-------------------------------------------------------------------------
       ! The pebble hit the planet; accreted
       !-------------------------------------------------------------------------
-      call pebbles%remove (pebble)
-      pebbles%n_accrete = pebbles%n_accrete + 1
+      call self%pebbles%remove (pebble)
+      self%pebbles%n_accrete = self%pebbles%n_accrete + 1
     else if (pebble%t < self%time) then
       !-------------------------------------------------------------------------
       ! Finally, check if the pebble is inside a neighbor with higher level
@@ -543,7 +538,7 @@ SUBROUTINE scatter (self, pebbles, nbors, not_done)
             select type (task)
             class is (pebble_patch_t)
               if (task%inside_r4(pebble%p)) then
-                call pebbles%export (pebble, task%pebbles)
+                call self%pebbles%export (pebble, task%pebbles)
                 exit
               end if
             end select
@@ -553,12 +548,12 @@ SUBROUTINE scatter (self, pebbles, nbors, not_done)
         !-----------------------------------------------------------------------
         ! If it wasn't, export to the 'not_done' list
         !-----------------------------------------------------------------------
-        call pebbles%export (pebble, not_done)
+        call self%pebbles%export (pebble, not_done)
       end if
     end if
     pebble => pebble%next
   end do
-  pebbles%n_update = pebbles%n_update + pebbles%n
+  self%pebbles%n_update = self%pebbles%n_update + self%pebbles%n
 END SUBROUTINE scatter
 
 !> =============================================================================
@@ -655,7 +650,7 @@ SUBROUTINE update_pebbles (self)
   allocate (self%not_done)
   if (io%verbose>1) &
     print*,'pebbles  in =', self%pebbles%n
-  call self%scatter (self%pebbles, nbors, self%not_done)
+  call self%scatter (nbors, self%not_done)
   if (io%verbose>2) &
     print*, 'not_done =', self%not_done%n, self%pebbles%dt_min, self%pebbles%dt_max
   do while (self%not_done%n > 0)
@@ -696,6 +691,16 @@ SUBROUTINE info (self, nq, experiment_name)
           self%status, nq
       end do
     end if
+  end if
+  if (io%verbose>0 .and. self%pebbles%n>0) then
+    print '(5(1x,i8,a,2x),1p,e11.2,0p,f11.3)', &
+      self%id,               ' now has', &
+      self%pebbles%n,        ' pebbles, exported', &
+      self%pebbles%n_export, ', removed', &
+      self%pebbles%n_remove, ', accreted', &
+      self%pebbles%n_accrete,', min z', &
+      self%pebbles%z_min, self%time
+    self%pebbles%n_export = 0
   end if
 END SUBROUTINE info
 

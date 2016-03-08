@@ -148,7 +148,6 @@ SUBROUTINE update (self)
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
     call task%update                                    ! update the task
-    call task%info (self%nq)                            ! print info on stdout
     !----------------------------------------------------------------------------
     ! The rotate procedure in the generic patch_t module is responsible for
     ! updating the time, and rotating the memory slots where information about
@@ -164,6 +163,7 @@ SUBROUTINE update (self)
     call task%rotate
     self%n_update = self%n_update + product(task%n)
     end select
+    call task%info (self%nq)                            ! print info on stdout
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the queue,
     ! and its neighbors should be checked for return to the queue.

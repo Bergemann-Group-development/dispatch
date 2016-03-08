@@ -42,7 +42,7 @@ SUBROUTINE init (self)
   call self%initial%init
   call self%patch_t%init
   call self%set(bits%static)
-  call self%initial%selected(self%mem, self%mesh)
+  call self%initial%selected(self%mem, self%mesh, self%omega)
   call force%init
   call self%pebble_patch_t%init
   call trace_end
@@ -63,7 +63,7 @@ SUBROUTINE update (self)
   call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0], self%nv)
   call self%courant_condition
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  if (self%level==1)&
+  if (self%level==1 .and. abs(self%position(3))>self%ds(3))&
     call self%pebble_patch_t%add
   call self%pebble_patch_t%update_pebbles
   call trace_end
