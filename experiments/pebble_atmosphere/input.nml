@@ -1,11 +1,14 @@
 &io_params
  do_trace=f
- verbose=0
+ verbose=1
  do_debug=f
  do_output=f
 /
 &rubiks_params
- n_levels=6
+ n_levels=5
+/
+&pebble_params
+ pebble_rate_cgs=0.1
 /
 &planet_params
 /

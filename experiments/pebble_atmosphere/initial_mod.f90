@@ -75,6 +75,16 @@ SUBROUTINE planet_atmosphere (self, mem, m)
         p = interpolate (r, nr, atmosphere%rr, atmosphere%pg)
         mem(ix,iy,iz,1,1,1) = d
         mem(ix,iy,iz,2,1,1) = d*(log(p)-self%gamma*log(d))/(self%gamma-1.0)
+        !-----------------------------------------------------------------------
+        ! A rotation profile, where the rotation center is at -1 AU, and
+        ! the direction of rotation is -x, so the head wind is in the +x 
+        ! direction.  The slower rotation at larger radii means that Ux is
+        ! proportional to -y.  This gives a speed difference of only 130 cm/s
+        ! across the Earth, and plus/minus 0.15 km/s across two Hill radii.
+        ! The effect is not enough to significantly flatten the outer part of 
+        ! the Hill sphere, so we will probably only be seing effects of the
+        ! Coriolis force beyond the Hill radius.
+        !-----------------------------------------------------------------------
         mem(ix,iy,iz,3,1,1) = 0.0
         mem(ix,iy,iz,4,1,1) = 0.0
         mem(ix,iy,iz,5,1,1) = 0.0

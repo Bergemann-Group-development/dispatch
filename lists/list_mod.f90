@@ -128,6 +128,7 @@ SUBROUTINE append (self, task)
   !xomp critical (list_cr)
   allocate (link)
   link%task => task
+  task%link => link
   if (associated(self%tail)) then
     link%prev => self%tail
     link%prev%next => link

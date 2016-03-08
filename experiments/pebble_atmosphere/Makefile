@@ -25,7 +25,7 @@ experiment_mod.o        : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o pebbles_m
 initial_mod.o           : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o lagrange_mod.o atmosphere_mod.o planet_mod.o
 scaling_mod.o           : io_mod.o trace_mod.o cgs_mod.o
 cgs_mod.o               : io_mod.o
-force_mod.o             : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o planet_mod.o star_mod.o
+force_mod.o             : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o planet_mod.o star_mod.o stagger_mod.o
 star_mod.o              : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o
 planet_mod.o            : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o
 boundary_mod.o          : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o atmosphere_mod.o

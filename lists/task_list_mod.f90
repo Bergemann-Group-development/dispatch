@@ -154,7 +154,7 @@ SUBROUTINE update (self)
     ! previous time steps are saved.
     !----------------------------------------------------------------------------
     !$omp critical (list_cr)
-    if (io%verbose>0) &
+    if (io%verbose>1) &
       print'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)', &
       'thread', omp_mythread(), 'task', task%id, &
       'step', task%istep, 'n, nq', self%n, self%nq

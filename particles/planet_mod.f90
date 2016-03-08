@@ -13,6 +13,7 @@ MODULE planet_mod
   !-----------------------------------------------------------------------------
   type, public, extends(particles_t):: planet_t
     real(8):: mass, radius, temperature
+    real:: orbit_radius
     contains
     procedure:: init
     procedure:: inside
@@ -24,14 +25,19 @@ CONTAINS
 SUBROUTINE init (self)
   class(planet_t):: self
   !.............................................................................
-  real(8):: position_au(3)=[0.0, 1.0, 0.0], radius_r_earth=1.0, mass_m_earth=1.0
-  real(8):: temperature_k=5500.
-  namelist /planet_params/ position_au, radius_r_earth, mass_m_earth, temperature_k
+  real:: position_orbit_radii(3)=[0.0, 1.0, 0.0]
+  real:: radius_r_earth=1.0
+  real:: mass_m_earth=1.0
+  real:: temperature_k=5500.
+  real:: orbit_radius_au=1.0
+  namelist /planet_params/ orbit_radius_au, position_orbit_radii, radius_r_earth, &
+    mass_m_earth, temperature_k
   !-----------------------------------------------------------------------------
   rewind (io%input); read (io%input, planet_params); write (*,planet_params)
   self%radius = radius_r_earth*cgs%r_earth/scaling%l
   self%mass = mass_m_earth*cgs%m_earth/scaling%m
-  self%position = position_au*cgs%au/scaling%l
+  self%orbit_radius = orbit_radius_au*cgs%au/scaling%l
+  self%position = position_orbit_radii*self%orbit_radius
   self%temperature = temperature_k/scaling%temp
 END SUBROUTINE init
 

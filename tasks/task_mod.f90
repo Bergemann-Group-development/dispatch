@@ -34,6 +34,7 @@ MODULE task_mod
     real(8):: wallclock
     character(len=32), pointer:: name
     class(task_t), pointer:: parent
+    class(*), pointer:: link            ! this could be useful
   contains
     procedure:: init
     procedure:: update

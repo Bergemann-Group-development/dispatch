@@ -39,7 +39,6 @@ MODULE ramses_mod
     procedure entropy
     procedure read_sink
   end type
-  type(star_t), public:: star
 CONTAINS
 
 !> =============================================================================
