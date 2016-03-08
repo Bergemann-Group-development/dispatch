@@ -40,10 +40,14 @@ SUBROUTINE init (self)
   self%nv = 8
   self%msplit = 3
   call self%initial%init
+  call self%mhd_t%init
   call self%patch_t%init
   call self%set(bits%static)
   call self%initial%selected(self%mem, self%mesh, self%omega)
   call force%init
+  call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [-0.5d0,0d0,0d0], self%nv)
+  call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,0d0], self%nv)
+  call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,0d0,-0.5d0], self%nv)
   call self%pebble_patch_t%init
   call trace_end
 END SUBROUTINE init

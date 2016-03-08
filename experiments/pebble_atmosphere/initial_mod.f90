@@ -123,33 +123,4 @@ FUNCTION interpolate (x0, n, x, y) RESULT(f)
   end if
 END FUNCTION
 
-!> =============================================================================
-!> Solve the equations for hydrostatic balance, initially neglecting the mass
-!> of the pseudo-atmosphere -- later on we will include it.
-!> =============================================================================
-SUBROUTINE hydrostatic_balance (nr, rr, rho, pg, temp, mass)
-  implicit none
-  integer:: nr, i, iter
-  real(kind=8), dimension(nr):: lnr, rho, pg, temp, rr
-  real(kind=8):: rho1, dr, dlnpg, mass
-  integer, parameter:: niter=10
-  !-----------------------------------------------------------------------------
-  ! Start with the external pressure and integrate inwards
-  !-----------------------------------------------------------------------------
-  rho(nr) = pg(nr)/temp(nr)
-  mass = 0.0
-  do i=nr-1,1,-1
-    pg(i) = pg(i+1)
-    do iter=1,niter
-      dr = rr(i+1)-rr(i)
-      rho(i) = pg(i)/temp(i)
-      dlnpg = dr*code%grav*mass* &
-        0.5*(rho(i+1)/pg(i+1)/rr(i+1)**2 + rho(i)/pg(i)/rr(i)**2)
-      pg(i) = pg(i+1)*exp(dlnpg)
-    end do
-    mass = mass + 4.*cgs%pi*(rr(i+1)**3-rr(i)**3)/3.*(rho(i+1)+rho(i))*0.5
-!    print'("hydrostatic",i5,1p,8e11.3)',i,rr(i),pg(i),temp(i)*code%temp,rho(i),dr,dlnpg,planet%mass*code%grav/rr(i)**2
-  end do
-END SUBROUTINE hydrostatic_balance
-
 END MODULE
