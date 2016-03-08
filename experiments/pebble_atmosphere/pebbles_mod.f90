@@ -1,6 +1,12 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> A self-contained data type for pebbles, to which one needs to  pass the
-!> density, velocity, and patch information in argument lists
+!> A patch extension with pebbles.  There are so many patch properties that the
+!> pebbles need, that it is much simpler to use an extension of an mhd_t, rather
+!> than to pass (or/and recompute) those properties.  The key flag is do_pebbles,
+!> which modifies slightly the variable allocations in mhd_mod.f90, so that 
+!> gas pressure and gas velocities are permanently allocated, and are available
+!> to the pebble procedures.  To simplify neighbor access, the patch also has
+!> an anonymous pointer to its primary list node, which has the nbor head of the
+!> neighbor list.
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE pebbles_mod
   USE io_mod
