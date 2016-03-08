@@ -14,7 +14,7 @@ F90 = mpifort -x f95-cpp-input -ffree-line-length-0 $(W) $(D)
 LD  = mpifort
 else
 F90 = gfortran -x f95-cpp-input -ffree-line-length-0 $(W) $(D)
-LD  = mpifort
+LD  = gfortran
 endif
 
 # Set openmp compiler flags if needed
