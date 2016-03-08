@@ -104,7 +104,7 @@ SUBROUTINE hydrostatic (self)
       do iter=1,self%niter
         self%rho(i) = self%pg(i)/self%temp(i)
         dr = self%rr(i+1) - self%rr(i)
-        dlnpg = dr*code%grav*planet%mass* &
+        dlnpg = dr*scaling%grav*planet%mass* &
           0.5*(self%rho(i+1)/self%pg(i+1)/self%rr(i+1)**2 + &
                self%rho(i  )/self%pg(i  )/self%rr(i  )**2)
         temp_K = self%temp(i)*scaling%temp
@@ -125,7 +125,7 @@ SUBROUTINE hydrostatic (self)
       end if
       if (io%verbose>1) print'("hydrostatic",i5,1p,9e11.3)', &
         i,self%rr(i)*scaling%l/cgs%r_earth, self%pg(i)*scaling%p, self%temp(i)*scaling%temp, &
-        self%rho(i)*scaling%d, s, dlnpg, planet%mass*code%grav/self%rr(i)**2
+        self%rho(i)*scaling%d, s, dlnpg, planet%mass*scaling%grav/self%rr(i)**2
     end do
     if (io%verbose>1) print*, &
       '              i         rr         pg       temp        rho      dlnpg       dlnT       grav'
