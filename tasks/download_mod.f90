@@ -319,6 +319,7 @@ SUBROUTINE download_different_static (link)
   do iz=m(3)%li,m(3)%ui
     do iy=m(2)%uo,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
+        ii = [ix,iy,iz]
         call find_best_nbor  (link, ii, other, jt, pt, +2, time)
         call interpolate_to (patch, ii, other, jt, pt, +2)
         if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
