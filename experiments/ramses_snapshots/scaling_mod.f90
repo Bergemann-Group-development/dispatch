@@ -4,6 +4,7 @@
 MODULE scaling_mod
   USE units_mod
   USE io_mod
+  USE trace_mod
   implicit none
   private
   type, public:: scaling_t
@@ -20,6 +21,8 @@ CONTAINS
 SUBROUTINE init (self)
   class(scaling_t):: self
   logical, save:: first_time=.true.
+  !----------------------------------------------------------------------------
+  call trace_begin('scaling_t%init')
   if (.not.first_time) return
   first_time = .false.
   self%l = cgs%au                                       ! length = 1 AU
@@ -29,6 +32,7 @@ SUBROUTINE init (self)
   self%t = self%l/self%u                                ! time ~ 5 years
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
+  self%mu = 2d0
   self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for given mu
   code%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
   code%r_earth = cgs%r_earth/self%l
@@ -45,5 +49,8 @@ SUBROUTINE init (self)
     print 1,'temperature: ',self%temp
   1 format(1x,a,1p,e11.3)
   end if
+
+  call trace_end
 END SUBROUTINE init
+
 END MODULE scaling_mod
