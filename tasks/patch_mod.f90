@@ -214,6 +214,7 @@ SUBROUTINE init (self)
   self%gn = self%mesh%gn
   self%li = self%mesh%li
   self%ui = self%mesh%ui
+  self%gsize = (self%size*self%gn/self%n)
   self%offset = (self%mesh%lb+self%mesh%ub)/2.0 ! mid point index offset
   !-----------------------------------------------------------------------------
   ! Measure levels in terms of the reinement factor

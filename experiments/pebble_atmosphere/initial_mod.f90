@@ -61,7 +61,7 @@ SUBROUTINE planet_atmosphere (self, mem, m, omega)
   real:: omega(3), gamma
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, p, csound2
+  real(8) :: x, y, z, r, d, d0, p, csound2
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%planet_atmosphere')
   call self%init
@@ -75,13 +75,16 @@ SUBROUTINE planet_atmosphere (self, mem, m, omega)
         r = sqrt(x**2+y**2+z**2)
         d = interpolate (r, nr ,atmosphere%rr, atmosphere%rho)
         p = interpolate (r, nr, atmosphere%rr, atmosphere%pg)
+        csound2 = self%gamma*p/d
         !-----------------------------------------------------------------------
         ! Vertical stratification is added by adding Gaussian profile and
         ! subtracting off the otherwise constant external density
         !-----------------------------------------------------------------------
-        csound2 = self%gamma*p/d
-        mem(ix,iy,iz,1,1,1) = d + &
+        d0 = d
+        d = d + &
           atmosphere%external%density*(exp(-(omega(3)**2/csound2*z**2))-1d0)
+        p = p*(d/d0)
+        mem(ix,iy,iz,1,1,1) = d
         mem(ix,iy,iz,2,1,1) = d*(log(p)-self%gamma*log(d))/(self%gamma-1.0)
         !-----------------------------------------------------------------------
         ! A rotation profile, where the rotation center is at -1 AU, and
