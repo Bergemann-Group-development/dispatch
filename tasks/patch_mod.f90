@@ -147,13 +147,13 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
   !-----------------------------------------------------------------------------
-  size = self%size
-  n    = self%n
-  ng   = self%ng
-  nv   = self%nv
-  nt   = self%nt
   !$omp critical (patch_cr)
   if (first_time) then
+    size = self%size
+    n    = self%n
+    ng   = self%ng
+    nv   = self%nv
+    nt   = self%nt
     first_time = .false.
     rewind (io%input)
     read (io%input, patch_params, iostat=iostat)
@@ -254,7 +254,6 @@ END SUBROUTINE init
 SUBROUTINE rotate (self)
   class(patch_t):: self
   integer:: iv, nv
-  real(8):: time
   !.............................................................................
   call trace_begin ('patch_t%update')
   !-----------------------------------------------------------------------------
@@ -275,7 +274,6 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! One line summary
   !-----------------------------------------------------------------------------
-  time = self%time + self%dtime                   ! update self time
   if (io%verbose>1) then
     print'(a,i4,2i3,2f11.6,2x,a,1p,6e10.2)', 'update: id,j,k,l,n,dt,t', &
       self%id, self%it, self%new, self%dtime, self%time, 'minmax:', &
@@ -288,7 +286,6 @@ SUBROUTINE rotate (self)
   ! Time slot rotation
   !-----------------------------------------------------------------------------
   call trace ('patch_t%update mem_cr')
-  self%time = time
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = self%time                          ! initial time
