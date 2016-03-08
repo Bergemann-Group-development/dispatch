@@ -2,7 +2,7 @@
 !> A patch extension with pebbles.  There are so many patch properties that the
 !> pebbles need, that it is much simpler to use an extension of an mhd_t, rather
 !> than to pass (or/and recompute) those properties.  The key flag is do_pebbles,
-!> which modifies slightly the variable allocations in mhd_mod.f90, so that 
+!> which modifies slightly the variable allocations in mhd_mod.f90, so that
 !> gas pressure and gas velocities are permanently allocated, and are available
 !> to the pebble procedures.  To simplify neighbor access, the patch also has
 !> an anonymous pointer to its primary list node, which has the nbor head of the
@@ -343,11 +343,11 @@ SUBROUTINE kdk_drag (self, p)
   p%ag = scaling%grav*planet%mass*rp*ar**3
   rp = self%pebbles%position - p%p
   ar = 1./sqrt(sum(rp**2))
-  !p%ag = p%ag + scaling%grav*star%mass*rp*ar**3
   p%ag(1) = p%ag(1) + 2.*self%omega(3)*p%v(2)
   p%ag(2) = p%ag(2) - 2.*self%omega(3)*p%v(1) + self%omega(3)**2*p%p(2)
   p%ag(3) = p%ag(3)                           - self%omega(3)**2*p%p(3)
-  p%dt = self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
+  !p%ag = p%ag + scaling%grav*star%mass*rp*ar**3
+  p%dt = self%pebbles%courant*sqrt(sum(p%p**2)/sqrt(sum(p%ag**2)))
   p%dt = min(p%dt,minval(self%ds/max(1e-20,abs(p%v))))
   !
   if (p%id==self%pebbles%id_dbg) then
@@ -639,6 +639,9 @@ SUBROUTINE update_pebbles (self)
   class(*), pointer:: link
   logical, save:: first_time
   !-----------------------------------------------------------------------------
+  ! Add pebbles on the top and bottom surfaces
+  !-----------------------------------------------------------------------------
+  if (self%level==1 .and. abs(self%position(3))>self%ds(3)) call self%add
   if (self%pebbles%n>0) then
     if (associated(self%pebbles%head)) then
       print*,'update_pebbles: id, n=', self%id, self%pebbles%n, &
@@ -650,10 +653,10 @@ SUBROUTINE update_pebbles (self)
   else
     return
   end if
+  !-----------------------------------------------------------------------------
   ! By using an anonymous task%link, which points back to the link that "owns"
   ! the task, we can get access the neighbor list.
   !-----------------------------------------------------------------------------
-  if (self%pebbles%n==0) return
   link => self%link
   select type (link)
   type is (link_t)
