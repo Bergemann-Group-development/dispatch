@@ -79,7 +79,7 @@ MODULE pebbles_mod
   type, public, extends(mhd_t):: pebble_patch_t
     class(pebbles_t), pointer:: pebbles=>null()
     class(pebbles_t), pointer:: not_done=>null()
-    procedure(kdk_drag), pointer:: move=>null()      ! particle mover
+    procedure(kdk_drag), pointer:: move=>null() ! particle mover
     real:: pebble_rate = 1e3                    ! pebble arrival rate
     real:: vz_pebble
   contains
@@ -90,6 +90,7 @@ MODULE pebbles_mod
     procedure scatter                           ! scatter to not_done
     procedure gather                            ! gather from not_done
     procedure update_pebbles                    ! advance until self%time
+    procedure info                              ! print info to stdout
     procedure index_r4                          ! compute interpolation index
     procedure inside_r4                         ! is it inside?
     procedure interpolate_r4                    ! interpolation
@@ -666,6 +667,37 @@ SUBROUTINE update_pebbles (self)
     print*,'pebbles out =', self%pebbles%n, self%pebbles%dt_min, self%pebbles%dt_max
   deallocate (self%not_done)
 END SUBROUTINE update_pebbles
+
+!> =============================================================================
+!> Print info to stdout
+!> =============================================================================
+SUBROUTINE info (self, nq, experiment_name)
+  class(pebble_patch_t):: self
+  integer, optional:: nq
+  character(len=64), optional:: experiment_name
+  !.............................................................................
+  integer:: iv, nv
+  !-----------------------------------------------------------------------------
+  if (io%verbose >= 0) then
+    if (self%time>=self%print_next) then
+      if (self%print_time > 0) &
+        self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
+      nv = 1
+      if (io%verbose>2) nv = self%nv
+      do iv=1,nv
+        print '(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
+          'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
+          minval(self%mem(:,:,:,iv,self%it ,2)), &
+          maxval(self%mem(:,:,:,iv,self%it ,2)), &
+          minval(self%mem(:,:,:,iv,self%it ,1)), &
+          maxval(self%mem(:,:,:,iv,self%it ,1)), &
+          minval(self%mem(:,:,:,iv,self%new,1)), &
+          maxval(self%mem(:,:,:,iv,self%new,1)), &
+          self%status, nq
+      end do
+    end if
+  end if
+END SUBROUTINE info
 
 !> =============================================================================
 !> =============================================================================

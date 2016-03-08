@@ -148,6 +148,7 @@ SUBROUTINE update (self)
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
     call task%update                                    ! update the task
+    call task%info (self%nq)                            ! print info on stdout
     !----------------------------------------------------------------------------
     ! The rotate procedure in the generic patch_t module is responsible for
     ! updating the time, and rotating the memory slots where information about
@@ -172,7 +173,7 @@ SUBROUTINE update (self)
     call self%check_nbors (head)                        ! any nbor ready?
     call trace('list_cr 2 end')
     !$omp end critical (list_cr)
-    call task%output(self%name)                         ! check output
+    call task%output (self%name)                        ! check output
     !-----------------------------------------------------------------------------
     ! Tasks that have finished are subtracted from the task list count
     !-----------------------------------------------------------------------------

@@ -47,6 +47,7 @@ MODULE patch_mod
     procedure:: init
     procedure:: rotate
     procedure:: output
+    procedure:: info                    ! print info to stdout
     procedure:: distance                ! return the distance btw two patches
     procedure:: point_distance          ! distance btw two points
     procedure:: overlaps                ! return true if they overlap (incl. ghost zones)
@@ -282,25 +283,6 @@ SUBROUTINE rotate (self)
       maxval(self%mem(:,:,:,1,self%it ,2)), &
       minval(self%mem(:,:,:,1,self%new,1)), &
       maxval(self%mem(:,:,:,1,self%new,1))
-  end if
-  if (io%verbose >= 0) then
-    if (io%verbose>0 .or. self%time>=self%print_next) then
-      if (self%print_time > 0) &
-        self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
-      nv = 1
-      if (io%verbose>2) nv = self%nv
-      do iv=1,nv
-        print '(a,i8,i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
-          'upd',self%id, iv, omp_mythread(), self%time, self%dtime, self%courant, &
-          minval(self%mem(:,:,:,iv,self%it ,2)), &
-          maxval(self%mem(:,:,:,iv,self%it ,2)), &
-          minval(self%mem(:,:,:,iv,self%it ,1)), &
-          maxval(self%mem(:,:,:,iv,self%it ,1)), &
-          minval(self%mem(:,:,:,iv,self%new,1)), &
-          maxval(self%mem(:,:,:,iv,self%new,1)), &
-          self%status, self%it, self%new, self%iit
-      end do
-    end if
   end if
   !-----------------------------------------------------------------------------
   ! Time slot rotation
@@ -588,6 +570,7 @@ SUBROUTINE output (self, experiment_name)
   class(patch_t):: self
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
+  !.............................................................................
   integer:: iv, li(3)=0, ui(3)=0, l(3), u(3), no, jo, it, i
   real:: ds(3)
   logical:: first_time=.true.
@@ -720,6 +703,38 @@ SUBROUTINE output (self, experiment_name)
   call trace_end
   !$omp end critical (out_cr)
 END SUBROUTINE output
+
+!> =============================================================================
+!> Print info to stdout
+!> =============================================================================
+SUBROUTINE info (self, nq, experiment_name)
+  class(patch_t):: self
+  integer, optional:: nq
+  character(len=64), optional:: experiment_name
+  !.............................................................................
+  integer:: iv, nv
+  !-----------------------------------------------------------------------------
+  if (io%verbose >= 0) then
+    if (self%time>=self%print_next) then
+      if (self%print_time > 0) &
+        self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
+      nv = 1
+      if (io%verbose>2) nv = self%nv
+      do iv=1,nv
+        print '(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
+          'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
+          minval(self%mem(:,:,:,iv,self%it ,2)), &
+          maxval(self%mem(:,:,:,iv,self%it ,2)), &
+          minval(self%mem(:,:,:,iv,self%it ,1)), &
+          maxval(self%mem(:,:,:,iv,self%it ,1)), &
+          minval(self%mem(:,:,:,iv,self%new,1)), &
+          maxval(self%mem(:,:,:,iv,self%new,1)), &
+          self%status, nq
+      end do
+    end if
+  end if
+END SUBROUTINE info
+
 !> =============================================================================
 !> Find the p1 target and p2 source index ranges that correspond to the overlap
 !> region, for upload from p2 to p1 (p1 has lower level than p2)
