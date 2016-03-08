@@ -225,13 +225,13 @@ FUNCTION find_nbor (link, idir, o, time, jt1, jt2, pt, qt) RESULT (other)
   pt = (time-other%t(jt1))/max(dt,1e-30)
   qt = 1.-pt
   if (abs(pt)< 1e-4) then
-    if (io%verbose>1) print*,'EXACT'
+    if (io%verbose>2) print*,'EXACT'
     pt=0.0; qt=1.0
   else if (abs(qt) < 1e-4) then
-    if (io%verbose>1) print*,'EXACT'
+    if (io%verbose>2) print*,'EXACT'
     pt=1.0; qt=0.0
   end if
-  if (io%verbose>2) &
+  if (io%verbose>3) &
     print '(a,i3,i7,i4,i4,i3,f6.2,2x,3i3)', 'download::find_nbor: idir, id, o, jt, pt', &
       idir, other%id, o, jt1, jt2, pt, nint((other%position-patch%position)/patch%size)
   call trace_end
@@ -478,7 +478,7 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
           best => other
           best_score = score
       end if
-      if (io%verbose>1.or.present(debug)) &
+      if (io%verbose>2.or.present(debug)) &
         print 1,'patch ',patch%id, patch%level, &
           '   best nbor:', other%id, other%level, &
           (other%position-patch%position)/other%size, &
@@ -513,14 +513,14 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
     dt = best%t(jt(2))-best%t(jt(1))
     pt = (time-best%t(jt(1)))/max(dt,1e-30)
     if (abs(pt)< 1e-4) then
-      if (io%verbose>2) print*,'EXACT'
+      if (io%verbose>3) print*,'EXACT'
       pt=0.0
     else if (abs(1.-pt) < 1d-4) then
-      if (io%verbose>2) print*,'EXACT'
+      if (io%verbose>3) print*,'EXACT'
       pt=1.0
     end if
     if (io%do_debug) print*,'find_best_nbor:', patch%id, jt, pt
-  else if (io%verbose>1) then
+  else if (io%verbose>2) then
     print*,'find_best_nbor: ERROR', patch%id, ii
     print*,'   level:', patch%level, patch%size/patch%ds
     nullify(best)
@@ -545,6 +545,7 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
       end if
       nbor => nbor%next
     end do
+    nullify(best)
   end if
   call trace_end
 END SUBROUTINE find_best_nbor

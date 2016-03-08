@@ -56,11 +56,13 @@ MODULE pebbles_mod
     integer:: n_export = 0                      ! number of exported pebbles
     integer:: n_remove = 0                      ! number of removed pebbles
     integer:: it_max                            ! max life time
+    integer:: id_dbg = 0                        ! follow this pebble
     integer(8):: n_update = 0                   ! speed counter
     real:: mass                                 ! representative pebble mass
     real:: size                                 ! representative pebble size
     real:: density                              ! mass density
     real:: drag_coeff                           ! drag coefficient
+    real:: t_min                                ! oldest t
     real:: dt_min, dt_max                       ! dt extrema
     real:: z_min                                ! smallest positive z
     real:: gamma                                ! gamma for sound speed
@@ -109,12 +111,12 @@ SUBROUTINE init (self)
   real:: density_yr_cgs = 1e-12, solid_density_cgs=3., size(3), pebble_size_cm=1.
   real:: pebble_rate_cgs = 1e3  ! about one pebble per second (3e7 per year)
   real:: vz_pebble_cgs = 3e6    ! about 30 km/s vertically
-  integer:: it_max=1000000
+  integer:: it_max=1000000, id_dbg=0
   logical:: do_pebbles
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
-    solid_density_cgs, size, it_max, pebble_rate_cgs, vz_pebble_cgs
+    solid_density_cgs, size, it_max, pebble_rate_cgs, vz_pebble_cgs, id_dbg
   !-----------------------------------------------------------------------------
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
@@ -155,6 +157,7 @@ SUBROUTINE init (self)
   ! a gas density of 1 g/cm**3, in the sub-sonic Epstein regime, specified in
   ! terms of the cgs gas density that gives one year stopping time.
   !-----------------------------------------------------------------------------
+  self%pebbles%id_dbg = id_dbg
   self%pebbles%size = pebble_size_cm/scaling%l
   self%pebbles%it_max = it_max
   self%pebbles%density = solid_density_cgs/scaling%d
@@ -346,6 +349,11 @@ SUBROUTINE kdk_drag (self, p)
   p%ag(3) = p%ag(3)                           - self%omega(3)**2*p%p(3)
   p%dt = self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
   p%dt = min(p%dt,minval(self%ds/max(1e-20,abs(p%v))))
+  !
+  if (p%id==self%pebbles%id_dbg) then
+    print'("kdkd1",1p,4(3e11.2,2x))', p%p, p%v, p%ag, p%t
+  end if
+  !
   if (io%verbose>0 .and. p%id==1 .and. nprint>0) then
     nprint = nprint-1
     print'("kdkd:p,v,ag,ds,t,dt",1p,6(3e10.2,2x))', &
@@ -405,9 +413,9 @@ SUBROUTINE kdk_drag (self, p)
   ! Second kick, with drag, moving v to v(t+2*dt)
   !---------------------------------------------------------------------------
   p%v = p%v + p%dt*(p%ag+p%ad)/(1.+p%c*p%dt)
-  if (io%verbose>0 .and. p%id==1 .and. nprint>0) then
+  if (p%id==self%pebbles%id_dbg .or. (io%verbose>0 .and. p%id==1 .and. nprint>0)) then
     nprint = nprint-1
-    print'("kdkd",1p,4(3e11.2,2x))', p%p, p%v, p%ag, p%t
+    print'("kdkd2",1p,4(3e11.2,2x))', p%p, p%v, p%ag, p%t
   end if
 END SUBROUTINE kdk_drag
 
@@ -539,7 +547,8 @@ SUBROUTINE scatter (self, nbors, not_done)
             class is (pebble_patch_t)
               if (task%inside_r4(pebble%p)) then
                 call self%pebbles%export (pebble, task%pebbles)
-                exit
+                nullify(nbor)
+                cycle
               end if
             end select
           end if
@@ -554,6 +563,7 @@ SUBROUTINE scatter (self, nbors, not_done)
     pebble => pebble%next
   end do
   self%pebbles%n_update = self%pebbles%n_update + self%pebbles%n
+  print*,'scatter: n, not_done=', self%pebbles%n, self%not_done%n
 END SUBROUTINE scatter
 
 !> =============================================================================
@@ -571,8 +581,10 @@ SUBROUTINE gather (self, pebbles, nbors, done)
   pebble => pebbles%head
   self%pebbles%dt_min = 1e30
   self%pebbles%dt_max = 0.0
+  self%pebbles%t_min = 1e30
   do while (associated(pebble))
     call self%move (pebble)
+    self%pebbles%t_min  = min(pebble%t ,self%pebbles%t_min)
     self%pebbles%dt_min = min(pebble%dt,self%pebbles%dt_min)
     self%pebbles%dt_max = max(pebble%dt,self%pebbles%dt_max)
     if (.not. self%inside_r4 (pebble%p+3.*pebble%dt*pebble%v)) then
@@ -609,6 +621,7 @@ SUBROUTINE gather (self, pebbles, nbors, done)
     end if
     pebble => pebble%next
   end do
+  print*,'gather: n=', pebbles%n, self%pebbles%t_min, self%pebbles%dt_min
   pebbles%n_update = pebbles%n_update + pebbles%n
 END SUBROUTINE gather
 
@@ -626,6 +639,17 @@ SUBROUTINE update_pebbles (self)
   class(*), pointer:: link
   logical, save:: first_time
   !-----------------------------------------------------------------------------
+  if (self%pebbles%n>0) then
+    if (associated(self%pebbles%head)) then
+      print*,'update_pebbles: id, n=', self%id, self%pebbles%n, &
+        self%time, self%pebbles%head%t
+    else
+      print *,'ERROR, no head'
+      stop
+    end if
+  else
+    return
+  end if
   ! By using an anonymous task%link, which points back to the link that "owns"
   ! the task, we can get access the neighbor list.
   !-----------------------------------------------------------------------------
