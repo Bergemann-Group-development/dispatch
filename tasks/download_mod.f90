@@ -370,7 +370,10 @@ SUBROUTINE interpolate_to (target, ii, source, jt, pt, idir)
   real(8):: pp(3), pos(3), pt
   real:: p(4), q(4)
   !-----------------------------------------------------------------------------
-  if (.not.associated(source)) return
+  if (.not.associated(source)) then
+    if (io%verbose>1) print*,'WARNING, no source in interpolate_to!'
+    return
+  end if
   call trace_begin ('download_mod::interpolate_to',2)
   if (io%do_debug) print*,'interpolate_to',target%it,ii,source%id,jt,pt
   it = target%it
@@ -397,6 +400,10 @@ SUBROUTINE interpolate_to (target, ii, source, jt, pt, idir)
         stop
       end if
     end do
+    if (ii(3)==source%mesh(3)%gn/2 .and. ii(2)==source%mesh(2)%gn/2) &
+      print '(a,i3,2(5x,a,i4,3x,a,i2,3x,a,i3),3x,a,f5.2)', 'DOWNLOAD: iv', iv, &
+      'source id', source%id, 'lev', source%level, 'ix', ii(1), &
+      'target id', target%id, 'lev', target%level, 'jx', jj(1), 'px', pp(1)
     p(1:3)=pp; p(4)=pt
     q = 1.-p
     target%mem(ii(1),ii(2),ii(3),iv,it,1) = &
@@ -435,7 +442,8 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
   type(mesh_t), pointer:: m(:)
   real(8):: time, position(3), dist, pp(3)
   real:: score, best_score
-  integer:: i, it, iv, nv, nt, adir
+  integer:: i, it, iv, nv, nt, adir, best_id
+  logical dbg
   !-----------------------------------------------------------------------------
   call trace_begin('download_mod::find_best_nbor',2)
   if (io%do_debug) print*,'find_best_nbor:', link%task%id, ii, time
@@ -453,6 +461,7 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
   !  end if
   !end if
   nullify(best)
+  best_id = 0
   best_score = 0.0
   nbor => link%nbor
   do while (associated(nbor))
@@ -477,13 +486,28 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
       if (score > best_score) then
           best => other
           best_score = score
+          best_id = best%id
       end if
-      if (io%verbose>2.or.present(debug)) &
-        print 1,'patch ',patch%id, patch%level, &
-          '   best nbor:', other%id, other%level, &
-          (other%position-patch%position)/other%size, &
-          patch%distance(other)/other%size
-      1 format(a,i6,i4,a,i6,i4,2(2x,3f10.4))
+      if (io%verbose>2.or.present(debug)) then
+        dbg = (abs(idir)==1 .and. ii(2)==m(2)%gn/2 .and. ii(3)==m(3)%gn/2) &
+         .or. (abs(idir)==2 .and. ii(1)==m(1)%gn/2 .and. ii(3)==m(3)%gn/2) &
+         .or. (abs(idir)==3 .and. ii(1)==m(1)%gn/2 .and. ii(2)==m(2)%gn/2)
+        if (dbg) then
+          print'(i3," pos:",2(i6,1p,3e11.2,2x),0p,2(3f9.2,2x))', &
+          idir, patch%id, position, other%id, other%position, pp/other%size, pp/other%gsize
+          if (io%verbose>3) then
+            if (associated(best)) then
+              print 1,'patch ',patch%id, patch%level, idir, &
+                      'nbor:', other%id, other%level, score, &
+                      'best:',  best%id,  best%level, best_score
+            1 format(a,i6,i4,i3,2(4x,a,i6,i4,f10.4))
+            else
+              print 1,'patch ',patch%id, patch%level, idir, &
+                '   nbor:', other%id, other%level, score
+            end if
+          end if
+        end if
+      end if
     end if
     nbor => nbor%next
   end do
@@ -500,15 +524,17 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
         exit
       end if
     end do
-    if (present(debug)) then
-      print'(a,3i3,2x,2(i7,i3,1p,e11.2),2i3,2x,a)','find_best:', &
-        ii, patch%id, patch%level, patch%time, best%id, best%level, best%time, jt, debug
-      print*,best%t
-      print*,best%iit
-    else
-      print'(a,3i3,2x,2(i7,i3,1p,e11.2),2x,3e11.2,2i3,2x,a)','find_best:', &
-        ii, patch%id, patch%level, patch%time, best%id, best%level, best%time, &
-        (position-best%position)/best%size, jt
+    if (io%verbose>1) then
+      if (present(debug)) then
+        print'(a,3i3,2x,2(i7,i3,1p,e11.2),2i3,2x,a)','find_best:', &
+          ii, patch%id, patch%level, patch%time, best%id, best%level, best%time, jt, debug
+        print*,best%t
+        print*,best%iit
+      else
+        print'(a,3i3,2x,2(i7,i3,1p,e11.2),2x,3e11.2,2i3,2x,a)','find_best:', &
+          ii, patch%id, patch%level, patch%time, best%id, best%level, best%time, &
+          (position-best%position)/best%size, jt
+      end if
     end if
     dt = best%t(jt(2))-best%t(jt(1))
     pt = (time-best%t(jt(1)))/max(dt,1e-30)
@@ -520,32 +546,6 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
       pt=1.0
     end if
     if (io%do_debug) print*,'find_best_nbor:', patch%id, jt, pt
-  else if (io%verbose>2) then
-    print*,'find_best_nbor: ERROR', patch%id, ii
-    print*,'   level:', patch%level, patch%size/patch%ds
-    nullify(best)
-    nbor => link%nbor
-    do while (associated(nbor))
-      other => task2patch(nbor%task)
-      if (abs(patch%level-other%level)<2) then
-        print*,'other%lv:', other%level
-        print*,'   index:', (position-other%position)/other%ds + other%offset
-        print'(2(i5,i3,3f12.4),l4)', &
-          patch%id, patch%level, (patch%position-other%position)/other%size, &
-          other%id, other%level, &
-          other%offset+(position-other%position)/other%ds, &
-          other%overlaps_point(idir,position)
-        if (other%overlaps_point(idir,position)) then
-          if (.not.associated(best)) then
-            best => other
-          else if (other%level > best%level) then
-            best => other
-          end if
-        end if
-      end if
-      nbor => nbor%next
-    end do
-    nullify(best)
   end if
   call trace_end
 END SUBROUTINE find_best_nbor
