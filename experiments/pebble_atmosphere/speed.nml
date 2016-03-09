@@ -7,6 +7,10 @@
 &rubiks_params
  n_levels=2
 /
+&pebble_params
+ do_pebbles=t
+ ppc=1
+/
 &planet_params
 /
 &setup_params

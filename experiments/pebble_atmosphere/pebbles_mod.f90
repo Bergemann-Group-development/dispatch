@@ -111,11 +111,11 @@ SUBROUTINE init (self)
   class(pebble_patch_t):: self
   !.............................................................................
   character(len=8), save:: type='kdk_drag'
-  real:: density_yr_cgs = 1e-12, solid_density_cgs=3., size(3), pebble_size_cm=1.
-  real:: pebble_rate_cgs = 1e3  ! about one pebble per second (3e7 per year)
-  real:: vz_pebble_cgs = 3e6    ! about 30 km/s vertically
-  integer:: it_max=1000000, id_dbg=0, ppc=5
-  logical:: do_pebbles
+  real, save:: density_yr_cgs = 1e-12, solid_density_cgs=3., size(3), pebble_size_cm=1.
+  real, save:: pebble_rate_cgs = 1e3  ! about one pebble per second (3e7 per year)
+  real, save:: vz_pebble_cgs = 3e6    ! about 30 km/s vertically
+  integer, save:: it_max=1000000, id_dbg=0, ppc=5
+  logical, save:: do_pebbles
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
@@ -131,7 +131,6 @@ SUBROUTINE init (self)
   call random%init
   random%seed = 11
   call self%patch_t%init
-  do_pebbles = .true.
   associate (mx=>self%mesh(1)%gn,my=>self%mesh(2)%gn,mz=>self%mesh(3)%gn,mt=>self%nt)
     allocate (self%density(mx,my,mz,mt))
     allocate (self%pressure(mx,my,mz,mt))
@@ -143,6 +142,7 @@ SUBROUTINE init (self)
   !$omp barrier
   !$omp single
   if (first_time) then
+    do_pebbles = .true.
     first_time = .false.
     size = self%size
     if (io%verbose>1) &
@@ -192,6 +192,7 @@ SUBROUTINE initial_add (self, n)
   real:: w(3), sign
   integer, save:: nprint=10 
   !-----------------------------------------------------------------------------
+  if (.not.self%do_pebbles) return
   call trace_begin ('pebbles_t%add', 3)
   pebbles => self%pebbles
   if (present(n)) then
@@ -253,6 +254,7 @@ SUBROUTINE add (self, n)
   real:: w(3), sign
   integer, save:: nprint=10
   !-----------------------------------------------------------------------------
+  if (.not.self%do_pebbles) return
   call trace_begin ('pebbles_t%add', 3)
   pebbles => self%pebbles
   if (present(n)) then
@@ -718,6 +720,7 @@ SUBROUTINE update_pebbles (self)
   !-----------------------------------------------------------------------------
   ! Add pebbles initially, and on the top and bottom surfaces
   !-----------------------------------------------------------------------------
+  if (.not.self%do_pebbles) return
   if (self%time == 0d0) call self%initial_add
   if (self%level==1 .and. abs(self%position(3))>self%ds(3)) call self%add
   if (self%pebbles%n>0) then
@@ -819,12 +822,11 @@ FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
   !-----------------------------------------------------------------------------
   w  = self%offset + (p+real(planet%position-self%position,kind=4))/self%ds
   ii = w
+  w  = w-ii
   if (any(ii<1 .or. ii>gn-1)) then
     print*,'index_r4: warning', ii, w
     ii = max(1,min(ii,gn-1))
   end if
-  ii = max(1,min(ii,gn))
-  w  = w-ii
 END FUNCTION
 
 !> =============================================================================
@@ -875,7 +877,8 @@ SUBROUTINE output (self, experiment_name)
   integer:: i, j, np
   class(pebble_t), pointer:: p
   !-----------------------------------------------------------------------------
-  if (self%time < self%out_next) return
+  if (.not.self%do_pebbles) return
+  if (.not.io%do_output .or. self%time < self%out_next) return
   !
   !
   if (present(experiment_name)) then
