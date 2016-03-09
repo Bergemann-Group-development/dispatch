@@ -20,6 +20,7 @@ MODULE rubiks_mod
     real(8):: size(3) = [1.0, 1.0, 1.0]
     real(8):: position(3) = [0.0, 0.0, 0.0]
     integer:: n_levels = 5
+    integer:: n_patch, m_zoom
     type(task_list_t), pointer:: task_list
   contains
     procedure init_hierarchy
@@ -30,19 +31,19 @@ CONTAINS
 !> =============================================================================
 !> Distribute patches in a Rubik's cube arrangement around a box
 !> =============================================================================
-SUBROUTINE init_hierarchy (self, n, m, label)
+SUBROUTINE init_hierarchy (self, label)
   class(rubiks_t):: self
-  integer:: n, m
   character(len=*), optional:: label
   !.............................................................................
   type(task_list_t):: task_list
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  integer:: n_levels, iostat
-  real(8):: position(3)
-  real(8):: size(3)
+  integer, save:: n_patch=3, m_zoom=3, n_levels=5
+  integer:: iostat
+  real(8), save:: position(3)
+  real(8), save:: size(3)
   integer:: i, j, k, i1, j1, k1, i2, j2, k2, level
-  namelist /rubiks_params/ size, position, n_levels
+  namelist /rubiks_params/ size, position, n_levels, n_patch, m_zoom
   !-----------------------------------------------------------------------------
   ! Allow size and position to be set by an overloading data type, and allow
   ! an empty namelist input here. If present, take the initial values from
@@ -57,11 +58,13 @@ SUBROUTINE init_hierarchy (self, n, m, label)
   self%n_levels = n_levels
   self%position = position
   self%size = size
+  self%n_patch = n_patch
+  self%m_zoom = m_zoom
   allocate (self%task_list)
   do level=1,n_levels
-  do k=1,n
-  do j=1,n
-  do i=1,n
+  do k=1,n_patch
+  do j=1,n_patch
+  do i=1,n_patch
     !---------------------------------------------------------------------------
     ! Initialize each patch, via patch_t:init
     !---------------------------------------------------------------------------
@@ -70,9 +73,9 @@ SUBROUTINE init_hierarchy (self, n, m, label)
     class is (experiment_t)
     patch => task
     end select
-    patch%box = self%size*m**(n_levels+2)
-    patch%size = self%size*m**(n_levels-level)
-    patch%position = ([i,j,k]-(1.+n)/2.0)*patch%size + position
+    patch%box = self%size*m_zoom**(n_levels+2)
+    patch%size = self%size*m_zoom**(n_levels-level)
+    patch%position = ([i,j,k]-(1.+n_patch)/2.0)*patch%size + position
     call patch%init
     patch%level = level
     call patch%set (bits%static)
@@ -91,7 +94,7 @@ SUBROUTINE init_hierarchy (self, n, m, label)
   ! Save the outer size of the hierarchy as the task list size, for distance
   ! measurements
   !-----------------------------------------------------------------------------
-  self%task_list%size = size*m**(n_levels+2)
+  self%task_list%size = size*m_zoom**(n_levels+2)
   call self%task_list%init (label)
   call trace_end
 END SUBROUTINE init_hierarchy

@@ -2,15 +2,17 @@
  do_trace=f
  verbose=1
  do_debug=f
- do_output=t
+ do_output=f
 /
 &rubiks_params
- n_levels=6
+ n_levels=7
+ n_patch=3
+ m_zoom=3
 /
 &pebble_params
  vz_pebble_cgs=1.5e6
- pebble_rate_cgs=10
- initial_density=1e-10
+ !pebble_rate_cgs=10
+ !initial_density=1e-10
 /
 &planet_params
 /
@@ -23,8 +25,8 @@
 &patch_params
  n=20,20,20
  nt=5
- grace=0.20
- courant=0.1
+ grace=0.50
+ courant=0.2
 !dt_fixed=0.001
 /
 &out_params
@@ -38,7 +40,7 @@
 &mhd_params
  gamma=1.4
  omega_yr=0.0,0.0,1.0
- nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
+ nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta
 /
 &timestep_params
