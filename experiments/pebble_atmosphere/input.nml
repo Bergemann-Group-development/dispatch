@@ -8,7 +8,9 @@
  n_levels=6
 /
 &pebble_params
- pebble_rate_cgs=1
+ vz_pebble_cgs=1.5e6
+ pebble_rate_cgs=10
+ initial_density=1e-10
 /
 &planet_params
 /
@@ -26,9 +28,9 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=10
- out_time=0.05
- print_time=0.005
+ end_time=30
+ out_time=0.10
+ print_time=0.01
  guard_zones=t
  time_derivs=f
  max_files=9000
@@ -43,7 +45,7 @@
  time_order=2
 /
 &atmosphere_params
- densitY_cgs=1e-10
+ densitY_cgs=3e-12
  temperature_K=200.
  mass_m_earth=0.9
  orbit_au=1.0
