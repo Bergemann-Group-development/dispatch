@@ -346,12 +346,12 @@ SUBROUTINE check_density (self, label)
     end do
     end do
     if (present(label)) then
-      print 1, &
-         'WARNING: density non-positive in',ntot,' points,',nins,' inside'// &
+      print 1, self%id, &
+         'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
          trim(label)
-      1 format(a,i8,a,i8,a)
+      1 format(i8,3x,a,i8,a,i8,a)
     else
-      print 1, &
+      print 1, self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside'
     end if
   end if

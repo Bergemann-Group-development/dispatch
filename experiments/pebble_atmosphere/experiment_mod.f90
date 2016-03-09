@@ -59,16 +59,48 @@ SUBROUTINE update (self)
   type(timestep_t):: timestep
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
+  call self%check_density ('before update')
   call self%mhd_t%update
   call boundary%condition (self%mem(:,:,:,1,self%it,2), self%mesh, [0d0,0d0,0d0], self%nv)
   call boundary%condition (self%mem(:,:,:,2,self%it,2), self%mesh, [0d0,0d0,0d0], self%nv)
   call boundary%condition (self%mem(:,:,:,3,self%it,2), self%mesh, [-0.5d0,0d0,0d0], self%nv)
   call boundary%condition (self%mem(:,:,:,4,self%it,2), self%mesh, [0d0,-0.5d0,0d0], self%nv)
   call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0], self%nv)
+  block
+  !.............................................................................
+  integer      :: ix, iy, iz, iv, nv
+  real(8)      :: x, y, z, r, dr, damp
+  type(mesh_t), pointer:: m(:)
+  !-----------------------------------------------------------------------------
+  associate(m => self%mesh)
+  do iv=3,5
+    do iz=m(3)%lb,m(3)%ub
+      z = m(3)%p + m(3)%r(iz) + m(3)%h(3)*m(3)%d - planet%position(3)
+      do iy=m(2)%lb,m(2)%ub
+        y = m(2)%p + m(2)%r(iy) + m(2)%h(2)*m(2)%d - planet%position(2)
+        do ix=m(1)%lb,m(1)%ub
+          x = m(1)%p + m(1)%r(ix) + m(1)%h(1)*m(1)%d - planet%position(1)
+          r = sqrt(x**2+y**2+z**2)
+          dr = r-planet%radius
+          damp = exp(-dr/(0.1*planet%radius))
+          if (dr>0.0) then
+            self%mem(ix,iy,iz,iv,self%it,2) = &
+            self%mem(ix,iy,iz,iv,self%it,2) - 300*damp* &
+            self%mem(ix,iy,iz,iv,self%it,1)
+          end if
+          if (r-planet%radius < self%ds(1)*2) then
+            self%mem(ix,iy,iz,iv,self%it,1) = 0.0
+          end if
+        end do
+      end do
+    end do
+  end do
+  end associate
+  end block
   call self%courant_condition
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  self%time = self%time + self%dtime
   call self%pebble_patch_t%update_pebbles
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density ('after timestep')
   call trace_end
 END SUBROUTINE update
 

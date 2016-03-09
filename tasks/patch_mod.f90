@@ -236,12 +236,13 @@ SUBROUTINE init (self)
                        self%nv,self%nt,2))
     self%mem_allocated = .true.                 ! mark
   end if
-  self%t = 0.0                                  ! initial time
   self%dt = 0.0
+  self%t = -1.0                                 ! mark as invalid
   self%iit = 1                                  ! initial memory slots
   self%iit(nt) = 2                              ! first output slot
-  self%it = self%iit(nt-1)                      ! short-hand
+  self%it = self%iit(nt-1)                      ! short-hand (=1 initially)
   self%new = self%iit(nt)                       ! short-hand
+  self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
   call trace_end
 END SUBROUTINE init
@@ -255,6 +256,7 @@ END SUBROUTINE init
 SUBROUTINE rotate (self)
   class(patch_t):: self
   integer:: iv, nv
+  real(8):: time
   !.............................................................................
   call trace_begin ('patch_t%update')
   !-----------------------------------------------------------------------------
@@ -284,18 +286,22 @@ SUBROUTINE rotate (self)
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
   !-----------------------------------------------------------------------------
-  ! Time slot rotation
+  ! Time slot rotation.  Note that self%time should be the LAST of these 
+  ! updates, since we do not want to enforce a critical region, and the
+  ! new self%time is what a task is judged on!
   !-----------------------------------------------------------------------------
   call trace ('patch_t%update mem_cr')
+  time = self%time + self%dtime
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
-  self%t(self%new) = self%time                          ! initial time
+  self%t(self%new) = time                               ! initial time
   self%iit(self%nt) = self%new                          ! right-most slot
   self%it = self%new                                    ! update time slot
   self%new = mod(self%new,self%nt)+1                    ! increment / rotate
   self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
   self%iit(self%nt) = self%new                          ! new right-most slot
   self%istep = self%istep + 1
+  self%time = time
   if (io%verbose>2) &
    print*,'patch id:',self%id,'  it:',self%it,'  new:',self%new
   if (io%verbose>3) &

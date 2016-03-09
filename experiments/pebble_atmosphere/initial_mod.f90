@@ -82,7 +82,7 @@ SUBROUTINE planet_atmosphere (self, mem, m, omega)
         !-----------------------------------------------------------------------
         d0 = d
         d = d + &
-          atmosphere%external%density*(exp(-(omega(3)**2/csound2*z**2))-1d0)
+          atmosphere%external%density*(exp(-(omega(3)**2/csound2*0.5*z**2))-1d0)
         p = p*(d/d0)
         mem(ix,iy,iz,1,1,1) = d
         mem(ix,iy,iz,2,1,1) = d*(log(p)-self%gamma*log(d))/(self%gamma-1.0)

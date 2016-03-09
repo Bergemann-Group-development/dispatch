@@ -277,9 +277,9 @@ SUBROUTINE download_different_static (link)
         call interpolate_to (patch, ii, other, jt, pt, -3)
         if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
           call find_best_nbor  (link, ii, other, jt, pt, -3, time, 'XY1')
-          print 2, ii, patch%mem(ix,iy,iz,1,patch%it,1)
+          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1), 'XY1'
         end if
-        2 format(40x,3i4,1p,e11.2)
+        2 format(40x,i8,3i4,i8,1p,e11.2,3x,a)
       end do
     end do
   end do
@@ -291,11 +291,7 @@ SUBROUTINE download_different_static (link)
         call interpolate_to (patch, ii, other, jt, pt, +3)
         if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
           call find_best_nbor  (link, ii, other, jt, pt, +3, time, 'XY2')
-          print 2, ii, patch%mem(ix,iy,iz,1,patch%it,1)
-          print*, 'mypos', patch%id, (patch%myposition(ii)-patch%position)/patch%size
-          print*, 'otpos', other%id, (other%position-patch%position)/other%size
-          print*,abs(patch%myposition(ii)-other%position)/other%size
-          stop
+          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1), 'XY2'
         end if
       end do
     end do
@@ -311,7 +307,7 @@ SUBROUTINE download_different_static (link)
         call interpolate_to (patch, ii, other, jt, pt, -2)
         if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
           call find_best_nbor  (link, ii, other, jt, pt, -2, time, 'XZ1')
-          print 2, ii, patch%mem(ix,iy,iz,1,patch%it,1)
+          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1), 'XZ1'
         end if
       end do
     end do
@@ -324,7 +320,7 @@ SUBROUTINE download_different_static (link)
         call interpolate_to (patch, ii, other, jt, pt, +2)
         if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
           call find_best_nbor  (link, ii, other, jt, pt, +2, time, 'XZ2')
-          print 2, ii, patch%mem(ix,iy,iz,1,patch%it,1)
+          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1), 'XZ2'
         end if
       end do
     end do
@@ -340,7 +336,7 @@ SUBROUTINE download_different_static (link)
         call interpolate_to (patch, ii, other, jt, pt, -1)
         if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
           call find_best_nbor  (link, ii, other, jt, pt, -1, time, 'YZ1')
-          print 2, ii, patch%mem(ix,iy,iz,1,patch%it,1)
+          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1)
         end if
       end do
     end do
@@ -353,7 +349,7 @@ SUBROUTINE download_different_static (link)
         call interpolate_to (patch, ii, other, jt, pt, +1)
         if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
           call find_best_nbor  (link, ii, other, jt, pt, +1, time, 'YZ2')
-          print 2, ii, patch%mem(ix,iy,iz,1,patch%it,1)
+          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1)
         end if
       end do
     end do
@@ -366,9 +362,10 @@ END SUBROUTINE download_different_static
 SUBROUTINE interpolate_to (target, ii, source, jt, pt, idir)
   class (patch_t):: target
   class (patch_t), pointer:: source
-  integer:: ii(3), jj(3), jt(2), iv, i, it, j, nmax, idir
+  integer:: ii(3), jj(3), jt(2), iv, i, it, j, nmax, idir, adir
   real(8):: pp(3), pos(3), pt
   real:: p(4), q(4)
+  logical:: dbg
   !-----------------------------------------------------------------------------
   if (.not.associated(source)) then
     if (io%verbose>1) print*,'WARNING, no source in interpolate_to!'
@@ -400,10 +397,7 @@ SUBROUTINE interpolate_to (target, ii, source, jt, pt, idir)
         stop
       end if
     end do
-    if (ii(3)==source%mesh(3)%gn/2 .and. ii(2)==source%mesh(2)%gn/2) &
-      print '(a,i3,2(5x,a,i4,3x,a,i2,3x,a,i3),3x,a,f5.2)', 'DOWNLOAD: iv', iv, &
-      'source id', source%id, 'lev', source%level, 'ix', ii(1), &
-      'target id', target%id, 'lev', target%level, 'jx', jj(1), 'px', pp(1)
+    adir = abs(idir)
     p(1:3)=pp; p(4)=pt
     q = 1.-p
     target%mem(ii(1),ii(2),ii(3),iv,it,1) = &
@@ -488,23 +482,19 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
           best_score = score
           best_id = best%id
       end if
-      if (io%verbose>2.or.present(debug)) then
+      if (io%verbose>1.or.present(debug)) then
         dbg = (abs(idir)==1 .and. ii(2)==m(2)%gn/2 .and. ii(3)==m(3)%gn/2) &
          .or. (abs(idir)==2 .and. ii(1)==m(1)%gn/2 .and. ii(3)==m(3)%gn/2) &
          .or. (abs(idir)==3 .and. ii(1)==m(1)%gn/2 .and. ii(2)==m(2)%gn/2)
         if (dbg) then
-          print'(i3," pos:",2(i6,1p,3e11.2,2x),0p,2(3f9.2,2x))', &
-          idir, patch%id, position, other%id, other%position, pp/other%size, pp/other%gsize
-          if (io%verbose>3) then
-            if (associated(best)) then
-              print 1,'patch ',patch%id, patch%level, idir, &
-                      'nbor:', other%id, other%level, score, &
-                      'best:',  best%id,  best%level, best_score
-            1 format(a,i6,i4,i3,2(4x,a,i6,i4,f10.4))
-            else
-              print 1,'patch ',patch%id, patch%level, idir, &
-                '   nbor:', other%id, other%level, score
-            end if
+          if (associated(best)) then
+            print 1,'patch ',patch%id, patch%level, idir, &
+                    'nbor:', other%id, other%level, score, &
+                    'best:',  best%id,  best%level, best_score
+          1 format(a,i6,i4,i3,2(4x,a,i6,i4,f10.4))
+          else
+            print 1,'patch ',patch%id, patch%level, idir, &
+              '   nbor:', other%id, other%level, score
           end if
         end if
       end if
@@ -517,13 +507,32 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
   !-----------------------------------------------------------------------------
   if (associated(best)) then
     jt = 1
-    do it=1,nt-2
-      if (best%t(it)>time) then
+    !---------------------------------------------------------------------------
+    ! First search for a time w/o using the grace parameter
+    !---------------------------------------------------------------------------
+    do it=1,nt
+      if (best%t(it) >=time) then
         jt(2) = it
-        jt(1) = modulo(jt(2)-2,best%nt-1)+1
+        jt(1) = modulo(jt(2)-2,best%nt)+1
         exit
       end if
     end do
+    !---------------------------------------------------------------------------
+    ! If that fails, search with the grace parameter on the suggested source
+    !---------------------------------------------------------------------------
+    if (jt(2)==jt(1)) then
+      do it=1,nt
+        if (best%t(it) + best%grace*best%dtime >= time) then
+          jt(2) = it
+          jt(1) = modulo(jt(2)-2,best%nt)+1
+          exit
+        end if
+      end do
+    end if
+    !---------------------------------------------------------------------------
+    ! If time is still zero, the wrap-around-previous slot is not valid
+    !---------------------------------------------------------------------------
+    if (best%t(jt(2)) < 0.0) jt(2)=1
     if (io%verbose>1) then
       if (present(debug)) then
         print'(a,3i3,2x,2(i7,i3,1p,e11.2),2i3,2x,a)','find_best:', &
@@ -537,7 +546,61 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
       end if
     end if
     dt = best%t(jt(2))-best%t(jt(1))
-    pt = (time-best%t(jt(1)))/max(dt,1e-30)
+    if (dt==0.0) then
+      pt=0.0
+      if (patch%time /= best%t(jt(2))) then
+        print '(a,i6,1p,4e15.7)', 'WARNING: time extrapolation with dt=0.0, '// &
+         'patch%id, patch%time, best%t, best%time =', &
+          patch%id, patch%time, best%t(jt), best%time
+        print*, 'best%time ', best%time
+        print*, 'best%dtime', best%dtime
+        print*, 'best%t    ', best%t
+        print*, 'best%dt   ', best%dt
+        print*, 'best%iit  ', best%iit
+        jt = 1
+        print*,'setting initial jt to', jt
+        !-----------------------------------------------------------------------
+        ! First search for a time w/o using the grace parameter
+        !-----------------------------------------------------------------------
+        do it=1,nt
+          print*,it,time,best%t(it)
+          if (best%t(it)  >= time) then
+            jt(2) = it
+            jt(1) = modulo(jt(2)-2,best%nt)+1
+            print*,'setting jt to', jt
+            exit
+          end if
+        end do
+        !--------------------------------------------------------------------------
+        ! If that fails, search with the grace parameter on the suggested source
+        !----------------------------------------------------------------------
+        print *,'after first loop jt =',jt
+        if (jt(2)==jt(1)) then
+          print*, 'trying with grace'
+          do it=1,nt
+            print*,it, time, best%t(it), best%t(it) + best%grace*best%dtime
+            if (best%t(it) + best%grace*best%dtime >= time) then
+              jt(2) = it
+              jt(1) = modulo(jt(2)-2,best%nt)+1
+              print*,'in 2nd attempt setting jt to', jt
+              exit
+            end if
+          end do
+        end if
+        if (best%t(jt(2)) < 0.0) then
+          print*, 'since the jt(2) time is not valid, set jt(2)=1'
+          jt(2)=1
+        end if
+        if (time==0.0) then
+          jt = 1
+          print *,'because time=0.0, resetting jt to', jt
+        end if
+        dt = best%t(jt(2))-best%t(jt(1))
+        print *,'the resulting dt =', dt, best%t(jt)
+      end if
+    else
+      pt = (time-best%t(jt(1)))/max(dt,1e-30)
+    end if
     if (abs(pt)< 1e-4) then
       if (io%verbose>3) print*,'EXACT'
       pt=0.0
