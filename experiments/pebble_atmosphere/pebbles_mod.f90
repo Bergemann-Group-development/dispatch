@@ -57,6 +57,7 @@ MODULE pebbles_mod
     integer:: n_remove = 0                      ! number of removed pebbles
     integer:: it_max                            ! max life time
     integer:: id_dbg = 0                        ! follow this pebble
+    integer:: ppc = 5                           ! particles per cell
     integer(8):: n_update = 0                   ! speed counter
     real:: mass                                 ! representative pebble mass
     real:: size                                 ! representative pebble size
@@ -68,7 +69,6 @@ MODULE pebbles_mod
     real:: gamma                                ! gamma for sound speed
     real:: courant=0.1                          ! courant number for motion
     real:: position(3)                          ! relative to star
-    real:: initial_density                      ! initial pebbble_density
     type(pebble_t), pointer:: head, tail        ! first & last pebble
     logical:: initialized=.false.               ! initialize flag
   contains
@@ -114,14 +114,13 @@ SUBROUTINE init (self)
   real:: density_yr_cgs = 1e-12, solid_density_cgs=3., size(3), pebble_size_cm=1.
   real:: pebble_rate_cgs = 1e3  ! about one pebble per second (3e7 per year)
   real:: vz_pebble_cgs = 3e6    ! about 30 km/s vertically
-  real:: initial_density = 1.0
-  integer:: it_max=1000000, id_dbg=0
+  integer:: it_max=1000000, id_dbg=0, ppc=5
   logical:: do_pebbles
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
     solid_density_cgs, size, it_max, pebble_rate_cgs, vz_pebble_cgs, id_dbg, &
-    initial_density
+    ppc
   !-----------------------------------------------------------------------------
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
@@ -162,7 +161,7 @@ SUBROUTINE init (self)
   ! a gas density of 1 g/cm**3, in the sub-sonic Epstein regime, specified in
   ! terms of the cgs gas density that gives one year stopping time.
   !-----------------------------------------------------------------------------
-  self%pebbles%initial_density = initial_density*scaling%d
+  self%pebbles%ppc = ppc
   self%pebbles%id_dbg = id_dbg
   self%pebbles%size = pebble_size_cm/scaling%l
   self%pebbles%it_max = it_max
@@ -189,9 +188,9 @@ SUBROUTINE initial_add (self, n)
   !.............................................................................
   class(pebbles_t), pointer:: pebbles
   class(pebble_t), pointer:: pebble
-  integer:: ix, iy, iz, n_local, iter
+  integer:: ix, iy, iz, n_local, iter, warn
   real:: w(3), sign
-  integer, save:: nprint=10
+  integer, save:: nprint=10 
   !-----------------------------------------------------------------------------
   call trace_begin ('pebbles_t%add', 3)
   pebbles => self%pebbles
@@ -216,24 +215,22 @@ SUBROUTINE initial_add (self, n)
   do iz=self%mesh(3)%li,self%mesh(3)%ui
   do iy=self%mesh(2)%li,self%mesh(2)%ui
   do ix=self%mesh(1)%li,self%mesh(1)%ui
-    do iter=1,100
-      if (random%ran1() < self%mem(ix,iy,iz,1,1,1)*product(self%ds)/self%pebbles%initial_density) then
-        !$omp atomic
-        id = id+1
-        allocate (pebble)
-        pebble%id= id
-        pebble%t = self%time
-        pebble%s = self%pebbles%size*random%ran1()
-        pebble%d = self%pebbles%density
-        pebble%m = pebble%s**3*pebble%d
-        pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
-        pebble%p(2) =   (self%position(2) - planet%position(2)) + self%size(2)*(0.5-random%ran1())
-        pebble%p(3) =   (self%position(3) - planet%position(3)) + self%size(3)*(0.5-random%ran1())
-        pebble%v(1) =   0.0
-        pebble%v(2) =   0.0
-        pebble%v(3) =   0.0
-        call self%pebbles%append (pebble)
-      end if
+    do iter=1,self%pebbles%ppc
+      !$omp atomic
+      id = id+1
+      allocate (pebble)
+      pebble%id= id
+      pebble%t = self%time
+      pebble%s = self%pebbles%size*random%ran1()
+      pebble%d = self%pebbles%density
+      pebble%m = pebble%s**3*pebble%d
+      pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
+      pebble%p(2) =   (self%position(2) - planet%position(2)) + self%size(2)*(0.5-random%ran1())
+      pebble%p(3) =   (self%position(3) - planet%position(3)) + self%size(3)*(0.5-random%ran1())
+      call interpolate_vg (self, pebble, warn)
+      pebble%v = pebble%vg
+      pebble%d = self%mem(ix,iy,iz,1,1,1)
+      call self%pebbles%append (pebble)
     end do
   end do
   end do
@@ -320,6 +317,34 @@ SUBROUTINE delete (self)
 END SUBROUTINE delete
 
 !> =============================================================================
+!> =============================================================================
+SUBROUTINE interpolate_vg (self, pebble, warn)
+  class(pebble_patch_t):: self
+  class(pebble_t), pointer:: pebble
+  integer:: warn
+  !.............................................................................
+  real:: w(3), pos(3), v(3)
+  integer:: ii(3), j, k
+  real, dimension(:,:,:,:), pointer:: velocity
+  !-----------------------------------------------------------------------------
+  ! By using a 4-D pointer we can treat the velocity component as a 3D+time
+  ! array, which can be passed to interpolate_r4.
+  !-----------------------------------------------------------------------------
+  pos = pebble%p + real(planet%position-self%position,kind=4)
+  warn = 0
+  do j=1,3
+    do k=1,3
+      w(k) = pos(k)/self%mesh(k)%d - self%mesh(k)%h(k+2) + self%mesh(k)%o
+      ii(k) = w(k)
+      warn = warn + merge (1, 0, ii(k)<1 .or. ii(k)>self%mesh(k)%gn-1)
+      ii(k) = max(1,min(ii(k),self%mesh(k)%gn-1))
+    end do
+    velocity => self%vgas(:,:,:,j,:)
+    pebble%vg(j) = self%interpolate_r4 (velocity, ii, w)
+  end do
+END SUBROUTINE interpolate_vg
+
+!> =============================================================================
 !> Look up gas velocity components, given positions, and compute the drag rate
 !> (inverse stopping time)
 !> =============================================================================
@@ -332,50 +357,28 @@ SUBROUTINE drag (self, pebble, warning)
   integer, save:: nprint=10
   integer:: w1, w2, warning
   !-----------------------------------------------------------------------------
-  ii        = self%index_r4 (pebble%p, w, self%mesh%gn)
-  d         = self%interpolate_r4 (self%density , ii, w)
-  p         = self%interpolate_r4 (self%pressure, ii, w)
-  w1 = count(w<0.0 .or. w>1.0)
-  !-----------------------------------------------------------------------------
-  ! By using a 4-D pointer we can treat the velocity component as a 3D+time
-  ! array, which can be passed to interpolate_r4.
-  !-----------------------------------------------------------------------------
-  block
-    real, dimension(:,:,:,:), pointer:: velocity
-    pos = pebble%p + real(planet%position-self%position,kind=4)
-    w2 = 0
-    do j=1,3
-      do k=1,3
-        w(k) = pos(k)/self%mesh(k)%d - self%mesh(k)%h(k+2) + self%mesh(k)%o
-        ii(k) = w(k)
-        ii(k) = max(1,min(ii(k),self%mesh(k)%gn))
-        w(k) = w(k) - ii(k)
-        if (w(k)<0.0 .or. w(k)>1.0) then
-          print '("w:p,p1,p2,v*dt/ds,h,o=",1p,10e12.3))', &
-            pos(k), &
-            pos(k)-pebble%dt*pebble%v(k), &
-            pos(k)-pebble%dt*pebble%v(k)*2., &
-            pos(k)*pebble%dt/self%ds(k), &
-            self%mesh(k)%h(k+2), self%mesh(k)%o
-        end if
-      end do
-      w2 = w2 + count(w<0.0 .or. w>1.0)
-    end do
-  end block
+  ii  = self%index_r4 (pebble%p, w, self%mesh%gn)
+  d   = self%interpolate_r4 (self%density , ii, w)
+  p   = self%interpolate_r4 (self%pressure, ii, w)
+  w1  = count(w<0.0 .or. w>1.0)
+  call interpolate_vg (self, pebble, w2)
   warning = w1+w2
+  !
   speed2    = sum((pebble%v-pebble%vg)**2)
   temp      = p/d
   gamma     = merge(1.6666667,1.4,temp>2000.)
   sound2    = gamma*p/d
   pebble%c  = self%pebbles%drag_coeff*d/pebble%s*sqrt((speed2+sound2)/sound2)
   pebble%ad = (pebble%vg-pebble%v)*pebble%c
-  if (w1+w2>0) &
-    print '("w",2i1,1p,9(3e10.2,1x))', &
+  if (w1+w2>0) then
+    pos = pebble%p + real(planet%position-self%position,kind=4)
+    print '("ww",2i1,1p,9(3e10.2,1x))', &
       w1,w2, &
       pos, &
       pos+2.*pebble%dt*pebble%v, &
       pebble%v*pebble%dt/self%ds, &
       pebble%ag, pebble%dt, pebble%c*pebble%dt
+  end if
   if (io%verbose>0 .and. nprint>0) then
     nprint = nprint-1
     print *,'                  id:', pebble%id
@@ -391,6 +394,7 @@ SUBROUTINE drag (self, pebble, warning)
     print *,'gravity acceleration:', pebble%ag*scaling%l/scaling%t**2
     print *,'       time step (s):', pebble%dt*scaling%t
     print *,'           stiffness:', pebble%dt*pebble%c
+    print *,'     cells traversed:', pebble%dt*pebble%v/self%ds
   end if
 END SUBROUTINE drag
 
@@ -631,8 +635,10 @@ SUBROUTINE scatter (self, nbors, not_done)
     end if
     pebble => pebble%next
   end do
-  self%pebbles%n_update = self%pebbles%n_update + self%pebbles%n
-  print*,'scatter: n, not_done=', self%pebbles%n, self%not_done%n
+  if (self%pebbles%n>0) then
+    print*,'scatter: n, not_done=', self%pebbles%n, self%not_done%n
+    self%pebbles%n_update = self%pebbles%n_update + self%pebbles%n
+  end if
 END SUBROUTINE scatter
 
 !> =============================================================================
@@ -690,8 +696,10 @@ SUBROUTINE gather (self, pebbles, nbors, done)
     end if
     pebble => pebble%next
   end do
-  print*,'gather: n=', pebbles%n, self%pebbles%t_min, self%pebbles%dt_min
-  pebbles%n_update = pebbles%n_update + pebbles%n
+  if (pebbles%n>0) then
+    print*,'gather: n=', pebbles%n, self%pebbles%t_min, self%pebbles%dt_min
+    pebbles%n_update = pebbles%n_update + pebbles%n
+  end if
 END SUBROUTINE gather
 
 !> =============================================================================
@@ -717,8 +725,8 @@ SUBROUTINE update_pebbles (self)
       print*,'update_pebbles: id, n=', self%id, self%pebbles%n, &
         self%time, self%pebbles%head%t
     else
-      print *,'ERROR, no head'
-      stop
+      print *,'ERROR, no head, patch id', self%id,'  n should be', self%pebbles%n>0
+      return
     end if
   else
     return
