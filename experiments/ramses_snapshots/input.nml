@@ -6,10 +6,10 @@
 /
 
 &init_params
- nout=1500
+ nout=550
  minlvl=7
  maxlvl=9
- path='run17'
+ path='run16'
  rank_load=5e-3
  size=0.5
  centre_on_sink=t
