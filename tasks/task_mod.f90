@@ -39,6 +39,7 @@ MODULE task_mod
     procedure:: init
     procedure:: update
     procedure:: output
+    procedure:: info
     procedure:: is_ahead_of
     procedure:: set
     procedure:: clear
@@ -105,6 +106,16 @@ SUBROUTINE output (self, experiment_name)
   call trace_begin ('task_t%output')
   call trace_end
 END SUBROUTINE
+
+!> =============================================================================
+!> Print info to stdout
+!> =============================================================================
+SUBROUTINE info (self, nq, experiment_name)
+  class(task_t):: self
+  integer, optional:: nq
+  character(len=64), optional:: experiment_name
+  !.............................................................................
+END SUBROUTINE info
 
 !> =============================================================================
 !> =============================================================================

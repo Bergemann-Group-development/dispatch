@@ -35,8 +35,8 @@ CONTAINS
 SUBROUTINE init (self)
    class(initial_t):: self
    logical, save:: first_time=.true.
-   real, save:: b0(3) = 0.0
-   namelist /initial_params/ b0
+   real, save:: b0(3) = 0.0, gamma=1.4
+   namelist /initial_params/ b0, gamma
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    call scaling%init
@@ -46,6 +46,7 @@ SUBROUTINE init (self)
      if (io%master) write (*, initial_params)
    end if
    self%b0 = b0
+   self%gamma = gamma
    self%selected => planet_atmosphere
    call trace_end
 END SUBROUTINE init
@@ -53,13 +54,14 @@ END SUBROUTINE init
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-SUBROUTINE planet_atmosphere (self, mem, m)
+SUBROUTINE planet_atmosphere (self, mem, m, omega)
   class(initial_t)             :: self
   real, dimension(:,:,:,:,:,:) :: mem
   type(mesh_t)                 :: m(3)
+  real:: omega(3), gamma
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, p
+  real(8) :: x, y, z, r, d, d0, p, csound2
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%planet_atmosphere')
   call self%init
@@ -73,19 +75,28 @@ SUBROUTINE planet_atmosphere (self, mem, m)
         r = sqrt(x**2+y**2+z**2)
         d = interpolate (r, nr ,atmosphere%rr, atmosphere%rho)
         p = interpolate (r, nr, atmosphere%rr, atmosphere%pg)
+        csound2 = self%gamma*p/d
+        !-----------------------------------------------------------------------
+        ! Vertical stratification is added by adding Gaussian profile and
+        ! subtracting off the otherwise constant external density
+        !-----------------------------------------------------------------------
+        d0 = d
+        d = d + &
+          atmosphere%external%density*(exp(-(omega(3)**2/csound2*0.5*z**2))-1d0)
+        p = p*(d/d0)
         mem(ix,iy,iz,1,1,1) = d
         mem(ix,iy,iz,2,1,1) = d*(log(p)-self%gamma*log(d))/(self%gamma-1.0)
         !-----------------------------------------------------------------------
         ! A rotation profile, where the rotation center is at -1 AU, and
-        ! the direction of rotation is -x, so the head wind is in the +x 
+        ! the direction of rotation is -x, so the head wind is in the +x
         ! direction.  The slower rotation at larger radii means that Ux is
         ! proportional to -y.  This gives a speed difference of only 130 cm/s
         ! across the Earth, and plus/minus 0.15 km/s across two Hill radii.
-        ! The effect is not enough to significantly flatten the outer part of 
-        ! the Hill sphere, so we will probably only be seing effects of the
+        ! The effect is not enough to significantly flatten the outer part of
+        ! the Hill sphere, so we will probably only be seeing effects of the
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
-        mem(ix,iy,iz,3,1,1) = 0.0
+        mem(ix,iy,iz,3,1,1) = -d*0.5*omega(3)*y
         mem(ix,iy,iz,4,1,1) = 0.0
         mem(ix,iy,iz,5,1,1) = 0.0
         mem(ix,iy,iz,6,1,1) = self%b0(1)
@@ -114,34 +125,5 @@ FUNCTION interpolate (x0, n, x, y) RESULT(f)
     f = interp%lagrange_sequence (x0, x, y, n)
   end if
 END FUNCTION
-
-!> =============================================================================
-!> Solve the equations for hydrostatic balance, initially neglecting the mass
-!> of the pseudo-atmosphere -- later on we will include it.
-!> =============================================================================
-SUBROUTINE hydrostatic_balance (nr, rr, rho, pg, temp, mass)
-  implicit none
-  integer:: nr, i, iter
-  real(kind=8), dimension(nr):: lnr, rho, pg, temp, rr
-  real(kind=8):: rho1, dr, dlnpg, mass
-  integer, parameter:: niter=10
-  !-----------------------------------------------------------------------------
-  ! Start with the external pressure and integrate inwards
-  !-----------------------------------------------------------------------------
-  rho(nr) = pg(nr)/temp(nr)
-  mass = 0.0
-  do i=nr-1,1,-1
-    pg(i) = pg(i+1)
-    do iter=1,niter
-      dr = rr(i+1)-rr(i)
-      rho(i) = pg(i)/temp(i)
-      dlnpg = dr*code%grav*mass* &
-        0.5*(rho(i+1)/pg(i+1)/rr(i+1)**2 + rho(i)/pg(i)/rr(i)**2)
-      pg(i) = pg(i+1)*exp(dlnpg)
-    end do
-    mass = mass + 4.*cgs%pi*(rr(i+1)**3-rr(i)**3)/3.*(rho(i+1)+rho(i))*0.5
-!    print'("hydrostatic",i5,1p,8e11.3)',i,rr(i),pg(i),temp(i)*code%temp,rho(i),dr,dlnpg,planet%mass*code%grav/rr(i)**2
-  end do
-END SUBROUTINE hydrostatic_balance
 
 END MODULE

@@ -31,6 +31,7 @@ SUBROUTINE init (self, label)
   call init_omp
   call scaling%init
   call planet%init
+  planet%position = 0.0
   call atmosphere%init
   self%size = planet%radius*2.2
   print*, 'size1', self%size*scaling%l/cgs%r_earth

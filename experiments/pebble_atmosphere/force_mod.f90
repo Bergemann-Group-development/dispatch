@@ -63,8 +63,8 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations
         !-----------------------------------------------------------------------
-        ff(ix,iy,iz,3) = - self%omega(3)**2*(zp-m(3)%d)
-        ff(ix,iy,iz,2) =   self%omega(3)**2*(yp-m(2)%d)
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - self%omega(3)**2*(zp-m(3)%d)
+        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + self%omega(3)**2*(yp-m(2)%d)
       end do
     end do
   end do

@@ -163,6 +163,7 @@ SUBROUTINE update (self)
     call task%rotate
     self%n_update = self%n_update + product(task%n)
     end select
+    call task%info (self%nq)                            ! print info on stdout
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the queue,
     ! and its neighbors should be checked for return to the queue.
@@ -172,7 +173,7 @@ SUBROUTINE update (self)
     call self%check_nbors (head)                        ! any nbor ready?
     call trace('list_cr 2 end')
     !$omp end critical (list_cr)
-    call task%output(self%name)                         ! check output
+    call task%output (self%name)                        ! check output
     !-----------------------------------------------------------------------------
     ! Tasks that have finished are subtracted from the task list count
     !-----------------------------------------------------------------------------

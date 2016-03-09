@@ -12,7 +12,7 @@ MODULE scaling_mod
     procedure:: init
   end type
   type(scaling_t), public :: scaling
-  type(const_t), public:: code
+  !type(const_t), public:: code
 CONTAINS
 
 !> =============================================================================
@@ -31,8 +31,8 @@ SUBROUTINE init (self)
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
   self%temp = cgs%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e)  ! temperature for given mu
-  code%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
-  code%r_earth = cgs%r_earth/self%l
+  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
+  !code%r_earth = cgs%r_earth/self%l
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
     print 1,'     length: ',self%l
@@ -42,7 +42,7 @@ SUBROUTINE init (self)
     print 1,'    density: ',self%d
     print 1,'   pressure: ',self%p
     print 1,'     energy: ',self%e
-    print 1,'    gravity: ',code%grav
+    print 1,'    gravity: ',self%grav
     print 1,'temperature: ',self%temp
   1 format(1x,a,1p,e11.3)
   end if

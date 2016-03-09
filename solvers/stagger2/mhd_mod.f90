@@ -24,6 +24,7 @@ MODULE mhd_mod
     procedure:: init
     procedure:: update
     procedure:: output
+    procedure:: info
     procedure:: check_density
     procedure:: log_density => void
     procedure:: log_pressure => void
@@ -312,6 +313,16 @@ SUBROUTINE output (self, experiment_name)
 END SUBROUTINE output
 
 !> =============================================================================
+!> Print info to stdout
+!> =============================================================================
+SUBROUTINE info (self, nq, experiment_name)
+  class(mhd_t):: self
+  integer, optional:: nq
+  character(len=64), optional:: experiment_name
+  !.............................................................................
+END SUBROUTINE info
+
+!> =============================================================================
 !> =============================================================================
 SUBROUTINE check_density (self, label)
   class(mhd_t):: self
@@ -335,12 +346,12 @@ SUBROUTINE check_density (self, label)
     end do
     end do
     if (present(label)) then
-      print 1, &
-         'WARNING: density non-positive in',ntot,' points,',nins,' inside'// &
+      print 1, self%id, &
+         'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
          trim(label)
-      1 format(a,i8,a,i8,a)
+      1 format(i8,3x,a,i8,a,i8,a)
     else
-      print 1, &
+      print 1, self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside'
     end if
   end if

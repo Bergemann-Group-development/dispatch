@@ -47,12 +47,13 @@ SUBROUTINE trace (id)
   implicit none
   character(len=*) id
   character(len=mch):: fmt
-  integer:: verbose
-  verbose = verbosity(max(1,level-1))
+  integer:: verbose, level
+  level = max(1,level-1)
+  verbose = verbosity(level)
   if (io%do_trace) then
     write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
     if (io%master.and.io%verbose>=verbose) then
-      write(*,fmt) omp_mythread(), wallclock(), trim(tracing(level-1))//' '//trim(id)
+      write(*,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' '//trim(id)
     end if
   end if
 END SUBROUTINE trace

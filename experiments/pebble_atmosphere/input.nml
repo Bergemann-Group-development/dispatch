@@ -2,13 +2,13 @@
  do_trace=f
  verbose=1
  do_debug=f
- do_output=f
+ do_output=t
 /
 &rubiks_params
- n_levels=5
+ n_levels=6
 /
 &pebble_params
- pebble_rate_cgs=0.1
+ pebble_rate_cgs=1
 /
 &planet_params
 /
@@ -19,24 +19,24 @@
 &initial_params
 /
 &patch_params
- n=40,40,40
+ n=20,20,20
  nt=5
- grace=0.33
- courant=0.2
+ grace=0.20
+ courant=0.1
 !dt_fixed=0.001
 /
 &out_params
- end_time=1
- out_time=0.1
- print_time=0.02
- guard_zones=f
+ end_time=10
+ out_time=0.05
+ print_time=0.005
+ guard_zones=t
  time_derivs=f
  max_files=9000
 /
 &mhd_params
- gamma=1.6666667
+ gamma=1.4
  omega_yr=0.0,0.0,1.0
- nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
+ nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta
 /
 &timestep_params

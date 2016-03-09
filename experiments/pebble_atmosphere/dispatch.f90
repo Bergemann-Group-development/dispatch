@@ -9,7 +9,7 @@ PROGRAM dispatch
   !.............................................................................
   call io%init
  !call mpi%init
-  call setup%init('planet_atmosphere')  ! initialize the patch list and patches
+  call setup%init('pebble_atmosphere')  ! initialize the patch list and patches
   call setup%task_list%execute          ! execute the list = update member patches
   print*,'stopping: all tasks finished'
 !> =============================================================================

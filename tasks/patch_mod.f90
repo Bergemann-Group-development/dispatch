@@ -47,6 +47,7 @@ MODULE patch_mod
     procedure:: init
     procedure:: rotate
     procedure:: output
+    procedure:: info                    ! print info to stdout
     procedure:: distance                ! return the distance btw two patches
     procedure:: point_distance          ! distance btw two points
     procedure:: overlaps                ! return true if they overlap (incl. ghost zones)
@@ -146,13 +147,13 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
   !-----------------------------------------------------------------------------
-  size = self%size
-  n    = self%n
-  ng   = self%ng
-  nv   = self%nv
-  nt   = self%nt
   !$omp critical (patch_cr)
   if (first_time) then
+    size = self%size
+    n    = self%n
+    ng   = self%ng
+    nv   = self%nv
+    nt   = self%nt
     first_time = .false.
     rewind (io%input)
     read (io%input, patch_params, iostat=iostat)
@@ -213,6 +214,7 @@ SUBROUTINE init (self)
   self%gn = self%mesh%gn
   self%li = self%mesh%li
   self%ui = self%mesh%ui
+  self%gsize = (self%size*self%gn/self%n)
   self%offset = (self%mesh%lb+self%mesh%ub)/2.0 ! mid point index offset
   !-----------------------------------------------------------------------------
   ! Measure levels in terms of the reinement factor
@@ -234,12 +236,13 @@ SUBROUTINE init (self)
                        self%nv,self%nt,2))
     self%mem_allocated = .true.                 ! mark
   end if
-  self%t = 0.0                                  ! initial time
   self%dt = 0.0
+  self%t = -1.0                                 ! mark as invalid
   self%iit = 1                                  ! initial memory slots
   self%iit(nt) = 2                              ! first output slot
-  self%it = self%iit(nt-1)                      ! short-hand
+  self%it = self%iit(nt-1)                      ! short-hand (=1 initially)
   self%new = self%iit(nt)                       ! short-hand
+  self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
   call trace_end
 END SUBROUTINE init
@@ -274,7 +277,6 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! One line summary
   !-----------------------------------------------------------------------------
-  time = self%time + self%dtime                   ! update self time
   if (io%verbose>1) then
     print'(a,i4,2i3,2f11.6,2x,a,1p,6e10.2)', 'update: id,j,k,l,n,dt,t', &
       self%id, self%it, self%new, self%dtime, self%time, 'minmax:', &
@@ -283,39 +285,23 @@ SUBROUTINE rotate (self)
       minval(self%mem(:,:,:,1,self%new,1)), &
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
-  if (io%verbose >= 0) then
-    if (io%verbose>0 .or. self%time>=self%print_next) then
-      if (self%print_time > 0) &
-        self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
-      nv = 1
-      if (io%verbose>2) nv = self%nv
-      do iv=1,nv
-        print '(a,i8,i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
-          'upd',self%id, iv, omp_mythread(), self%time, self%dtime, self%courant, &
-          minval(self%mem(:,:,:,iv,self%it ,2)), &
-          maxval(self%mem(:,:,:,iv,self%it ,2)), &
-          minval(self%mem(:,:,:,iv,self%it ,1)), &
-          maxval(self%mem(:,:,:,iv,self%it ,1)), &
-          minval(self%mem(:,:,:,iv,self%new,1)), &
-          maxval(self%mem(:,:,:,iv,self%new,1)), &
-          self%status, self%it, self%new, self%iit
-      end do
-    end if
-  end if
   !-----------------------------------------------------------------------------
-  ! Time slot rotation
+  ! Time slot rotation.  Note that self%time should be the LAST of these 
+  ! updates, since we do not want to enforce a critical region, and the
+  ! new self%time is what a task is judged on!
   !-----------------------------------------------------------------------------
   call trace ('patch_t%update mem_cr')
-  self%time = time
+  time = self%time + self%dtime
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
-  self%t(self%new) = self%time                          ! initial time
+  self%t(self%new) = time                               ! initial time
   self%iit(self%nt) = self%new                          ! right-most slot
   self%it = self%new                                    ! update time slot
   self%new = mod(self%new,self%nt)+1                    ! increment / rotate
   self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
   self%iit(self%nt) = self%new                          ! new right-most slot
   self%istep = self%istep + 1
+  self%time = time
   if (io%verbose>2) &
    print*,'patch id:',self%id,'  it:',self%it,'  new:',self%new
   if (io%verbose>3) &
@@ -588,6 +574,7 @@ SUBROUTINE output (self, experiment_name)
   class(patch_t):: self
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
+  !.............................................................................
   integer:: iv, li(3)=0, ui(3)=0, l(3), u(3), no, jo, it, i
   real:: ds(3)
   logical:: first_time=.true.
@@ -720,6 +707,38 @@ SUBROUTINE output (self, experiment_name)
   call trace_end
   !$omp end critical (out_cr)
 END SUBROUTINE output
+
+!> =============================================================================
+!> Print info to stdout
+!> =============================================================================
+SUBROUTINE info (self, nq, experiment_name)
+  class(patch_t):: self
+  integer, optional:: nq
+  character(len=64), optional:: experiment_name
+  !.............................................................................
+  integer:: iv, nv
+  !-----------------------------------------------------------------------------
+  if (io%verbose >= 0) then
+    if (self%time>=self%print_next) then
+      if (self%print_time > 0) &
+        self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
+      nv = 1
+      if (io%verbose>2) nv = self%nv
+      do iv=1,nv
+        print '(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
+          'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
+          minval(self%mem(:,:,:,iv,self%it ,2)), &
+          maxval(self%mem(:,:,:,iv,self%it ,2)), &
+          minval(self%mem(:,:,:,iv,self%it ,1)), &
+          maxval(self%mem(:,:,:,iv,self%it ,1)), &
+          minval(self%mem(:,:,:,iv,self%new,1)), &
+          maxval(self%mem(:,:,:,iv,self%new,1)), &
+          self%status, nq
+      end do
+    end if
+  end if
+END SUBROUTINE info
+
 !> =============================================================================
 !> Find the p1 target and p2 source index ranges that correspond to the overlap
 !> region, for upload from p2 to p1 (p1 has lower level than p2)
