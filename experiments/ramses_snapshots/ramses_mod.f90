@@ -21,6 +21,12 @@ MODULE ramses_mod
   USE experiment_mod
   implicit none
   private
+
+  integer, parameter :: dp=kind(1.0D0)                        ! double precision
+  integer, parameter :: d1=kind(kind(1d0))                    ! kind of a kind
+
+  integer, parameter :: nmetal=2
+
   type, public:: ramses_t
     logical:: big_endian, double_precision, quad_precision
     integer:: rank
@@ -29,18 +35,44 @@ MODULE ramses_mod
     real(kind=4):: scale_l, scale_d, scale_t
     real(kind=8):: gamma
     real(kind=8):: rank_load
-    real(kind=8):: xmin, xmax, ymin, ymax, zmin, zmax
-    real(kind=8):: size_au, size, d_min, tt_min
+    real(kind=8):: xmin, xmax, ymin, ymax, zmin, zmax         ! corners of the cutout
+    real(kind=8):: size, d_min, tt_min
+    logical :: centre_on_sink
     character(len=128):: path
     type(task_list_t):: task_list
   contains
     procedure init
-    procedure read
+    procedure read_snapshot
     procedure entropy
     procedure read_sink
   end type
-CONTAINS
 
+  type :: sink_t                        ! star data type
+    SEQUENCE
+    real(dp) x,y,z                      ! positions
+    real(dp) px,py,pz                   ! momenta
+    real(dp) ux,uy,uz                   ! velocities
+    real(dp) dpx,dpy,dpz                ! momenta
+    real(dp) mass                       ! mass
+    real(dp) dmass                      ! mass
+    real(dp) potential                  ! gravitational potential
+    real(dp) density                    ! neigborhood density
+    real(dp) t_create                   ! creation time
+    real(dp) t_explode                  ! explosion time
+    real(dp) metal(nmetal)              ! metal density
+    real(dp) dmetal(nmetal)             ! metal density
+    real(dp) beta_create                ! Beta at creation
+    integer gid                         ! pointer to grid cell
+    integer father                      ! pointer to father cell
+    integer ilevel                      ! level of AMR hierachy where star lives
+    integer old_ilevel                  ! level of hierachy star used to have, if changed
+    integer owner                       ! owner thread
+    integer has_moved
+    real(dp) dtold
+  end type
+  type(sink_t):: sink
+
+CONTAINS
 !> =============================================================================
 !> Facilitate call to `ramses%read`.  All heavy lifting is done there
 !> =============================================================================
@@ -51,9 +83,10 @@ SUBROUTINE init (self, name)
   integer, save:: nout, minlvl, maxlvl
   real, save:: xmin, xmax, ymin, ymax, zmin, zmax, rank_load
   real, save:: d_min, tt_min, size, size_au
+  logical, save :: centre_on_sink
   character(len=64), save:: path='.'
   namelist / init_params / nout, xmin, xmax, ymin, ymax, zmin, zmax, &
-                           minlvl, maxlvl, rank_load, path
+                           size, minlvl, maxlvl, rank_load, path, centre_on_sink
   !.............................................................................
   call trace_begin('experiment_t%init')
   !-----------------------------------------------------------------------------
@@ -73,7 +106,8 @@ SUBROUTINE init (self, name)
     d_min = 1d-30 ! cgs
     tt_min = 5.   ! K
     path = './'
-    size = 1d0
+    size = -1d0
+    centre_on_sink = .false.
     ! read namelist
     rewind (io%input); read (io%input,init_params)
     if (io%master) write(*, init_params)
@@ -84,7 +118,7 @@ SUBROUTINE init (self, name)
   ! scaling information.  The selection of RAMSES data we read is based on
   ! the parameters defined here.
   !-----------------------------------------------------------------------------
-  self%size_au   = size_au
+  call scaling%init()
   self%d_min     = d_min/scaling%d
   self%tt_min    = tt_min/scaling%temp
   self%xmin      = xmin
@@ -98,12 +132,15 @@ SUBROUTINE init (self, name)
   self%path      = path
   self%npatch    = 1
   self%rank_load = rank_load
-  call scaling%init
+  self%nout      = nout
+  self%size      = size
+  self%centre_on_sink = centre_on_sink
+
   !-----------------------------------------------------------------------------
-  ! Each thread reads the RAMSES grids belonging to it, filling in the data,
-  ! initializing the patch structure of every grid
+  ! Each rank reads the RAMSES grids belonging to it, filling in the data,
+  ! and initializing the patch structure of every grid.
   !-----------------------------------------------------------------------------
-  call self%read 
+  call self%read_snapshot()
   call trace_end
 END SUBROUTINE init
 
@@ -111,7 +148,7 @@ END SUBROUTINE init
 !> Read a RAMSES snapshot (likely split across multiple files), and create a
 !> patch for each "grid".
 !> =============================================================================
-SUBROUTINE read (self)
+SUBROUTINE read_snapshot (self)
   class(ramses_t):: self
 
   !---- variables for reading the snapshot ----
@@ -142,12 +179,10 @@ SUBROUTINE read (self)
   real(kind=8), allocatable, dimension(:,:):: xc, xg, x
   real(kind=8), allocatable, dimension(:,:):: bound_key_dpx2
   real(kind=8), allocatable, dimension(:,:,:):: var
-  real(kind=8), dimension(3):: pmin=1d30, pmax=-1d30
+  real(kind=8), dimension(3):: pmin=1d30, pmax=-1d30, xg_plus
 
   character(len=80):: ordering
   character(len=128):: filebase, filename, conv
-  integer(8), save:: n_passive=0, n_active=0, n_onrank=0, n_offrank=0, &
-    n_d_min=0, n_tt_min=0
 
   ! derived types
   type level
@@ -157,7 +192,9 @@ SUBROUTINE read (self)
 
   ! diagnostic variables
   integer, allocatable, dimension(:,:):: ncellsum
-  integer, save:: nprint=100, nprint_f=100
+  integer, save:: nprint_f=100
+  integer(8), save:: n_passive=0, n_active=0, n_onrank=0, n_offrank=0, &
+    n_d_min=0, n_tt_min=0, sum_active=0, sum_passive=0, n_frozen=0
 
   !---- dispatch variables ----
   class(task_t), pointer:: task, parent
@@ -165,16 +202,16 @@ SUBROUTINE read (self)
 
   !.............................................................................
   call trace_begin('read_ramses_snapshot')
-  call self%read_sink
-  self%xmin = 0.0; self%xmax = 1.0
-  self%ymin = 0.0; self%ymax = 1.0
-  self%zmin = 0.0; self%zmax = 1.0
-  xmn = star%position(1)-self%size*0.5d0
-  xmx = star%position(1)+self%size*0.5d0
-  ymn = star%position(2)-self%size*0.5d0
-  ymx = star%position(2)+self%size*0.5d0
-  zmn = star%position(3)-self%size*0.5d0
-  zmx = star%position(3)+self%size*0.5d0
+
+  if (self%centre_on_sink .and. self%size > 0) then
+    call self%read_sink
+    xmn = star%position(1)-self%size*0.5d0
+    xmx = star%position(1)+self%size*0.5d0
+    ymn = star%position(2)-self%size*0.5d0
+    ymx = star%position(2)+self%size*0.5d0
+    zmn = star%position(3)-self%size*0.5d0
+    zmx = star%position(3)+self%size*0.5d0
+  end if
   self%rank = 0
   tmp_load = 0d0
   tot_load = 0d0
@@ -184,8 +221,7 @@ SUBROUTINE read (self)
   ! We need some basic info about the snapshot; let's read the `info_` and `amr_` icpu = 1 files.
 
   !$omp master
-  !if (io%master) then
-    !---- read snapshot `info_` file ----
+    !------ read snapshot `info_` file ------
     ! note that the `info_` and `amr_` files contain some redundant information.
     write(filename, '(a,"/output_",i5.5,"/info_",i5.5,".txt")') trim(self%path), self%nout, self%nout
     open(unit=ilun,file=filename,status='old',form='formatted')
@@ -209,7 +245,7 @@ SUBROUTINE read (self)
     read(ilun,'(13x,e23.15)') self%scale_t ! time scale factor
     close(ilun)
 
-    !---- read `amr_` file for icpu = 1 ----
+    !------ read `amr_` file for icpu = 1 ------
     icpu = 1
     write(filename, '(a,i5.5)') trim(filebase), icpu
 
@@ -294,8 +330,8 @@ SUBROUTINE read (self)
     read(ilun) overload, ndomain
     backspace(ilun) ! rewind one entry (why?)
 
-    ! read (double or quad precision) Peano-Hilbert keys;
-    ! incl. precision and endianness checking.
+    ! ------ read (double or quad precision) Peano-Hilbert keys ------
+    ! includes precision and endianness checking.
     if (ndomain /= ncpu * overload .or. ndomain == 0 .or. overload == 0) then
       ! "old" format
       overload = 1
@@ -389,6 +425,7 @@ SUBROUTINE read (self)
       print *,'Using new format for key storage.'
     endif
     deallocate(bound_key_dp)
+    ! ------ finished reading Peano-Hilbert keys ------
 
     ! we have extracted enough information; close the file (for the time being).
     close(ilun)
@@ -404,7 +441,7 @@ SUBROUTINE read (self)
     print *, 'time = ',time
     patch%time = time
 
-    !---- allocate arrays ----
+    !------ allocate arrays ------
     ! now that we have more information, we can set and allocate a few required variables.
     twotondim = 2**ndims
     self%maxlvl = min(self%maxlvl, nlevelmax)
@@ -416,7 +453,7 @@ SUBROUTINE read (self)
              ncellsum(1:nlevelmax,1:ncpu))
     if (nboundary > 0) allocate(ngrid_bound(1:nboundary,1:nlevelmax))
 
-    !---- given limits, make preparations to cut a sub-volume from the box ----
+    !------ given limits, make preparations to cut a sub-volume from the box ------
     ! uses the Hilbert-Peano curve to select which CPUs contain the relevant data
     dmax = max(self%xmax - self%xmin, self%ymax - self%ymin, self%zmax - self%zmin)
     ! for a given cut, what is the bare minimum level we need to consider.
@@ -437,7 +474,7 @@ SUBROUTINE read (self)
       kmin = int(self%zmin * dble(max_dom))
       kmax = kmin + 1
       ndom = 8
-    endif
+    end if
 
     idom(1) = imin; idom(2) = imax
     idom(3) = imin; idom(4) = imax
@@ -501,24 +538,7 @@ SUBROUTINE read (self)
       levels(ilevel)%kmax = int(self%zmax * dble(nz_full)) + 1
     enddo
 
-    !---- create root grid ----
-    ! at this point, we also have enough information to create the *root* grid, but
-    ! *not* enough to fill the MHD variables with data; we want data to be downloaded
-    ! from `nlevelmin` patches (`download` is called in `worker`).
-    !call get_new_patch (patch)
-    !patch%size = boxlen
-    !patch%pos = 0.5 * boxlen
-    !patch%n = 2**nlevelmin
-    !patch%level = nlevelmin
-    !patch%time = time
-    !patch%velocity = 0.0
-    !call init_patch_task (patch, task)
-    !parent => task
-    ! leave field variables empty for the time being; will download data later
-    !call add_patch_by_quality (patch_list, patch)
-    !call append_to_plist (wait_queue, patch)
-
-    ! loop over CPU files
+    ! ------ loop over CPU files ------
     call mpi%barrier ('ncpu begin')
     do k=1,ncpu_read
       icpu = cpu_list(k)
@@ -547,7 +567,7 @@ SUBROUTINE read (self)
       read(ilun) ngrid_level ! aka `numb_list`
       ngrid_file(1:ncpu,1:nlevelmax) = ngrid_level
       if (self%rank==mpi%rank) &
-        print'(a,i3,30i6)','ngr',k,ngrid_level(k,nlevelmin:nlevelmax)
+        print'(a,i3,a,/,40i6)','ngrids(cpu=',k,')',ngrid_level(k,nlevelmin:nlevelmax)
       !
       read(ilun) ! SKIP numb_tot
       if (nboundary > 0) then
@@ -710,31 +730,50 @@ SUBROUTINE read (self)
           do l=1,ngrid_act
             ! the grid centre is given by the `xg` variable.
             ! check if cell is in the cut-out region.
-            r = sqrt(sum((xg(l,:)-star%position)**2))
-            ref(l) = r < self%size
+            if (self%size > 0d0 .and. self%centre_on_sink) then
+              r = sqrt(sum((xg(l,:)-star%position)**2))
+              ref(l) = r < self%size
+            else
+              ref(l) = (xg(l,1) > self%xmin .and. xg(l,1) < self%xmax .and. &
+                        xg(l,2) > self%ymin .and. xg(l,2) < self%ymax .and. &
+                        xg(l,3) > self%zmin .and. xg(l,3) < self%zmax)
+            end if
             pmin = min(pmin,xg(l,:))
             pmax = max(pmax,xg(l,:))
             if (ref(l)) then
               ! create a new DISPATCH patch/task for the current grid and fill with the
               ! cells with data if we own the patch
               self%npatch = self%npatch+1
-              allocate (patch_t:: task)
+              allocate (patch_t :: task)
               select type (task)
               class is (patch_t)
               patch => task
               end select
+              patch%nv = 8
               patch%rank = self%rank
               patch%level = ilevel
               patch%position(:) = xg(l,:)
               patch%n = 2
               patch%size = 2.0 * dx
-              !> if the patch is at the very boundary, freeze it!
-              if (r+2d0*dx > self%size) then
+              ! if the patch is at the very boundary, freeze it!
+              xg_plus = xg(l,:) + 2d0 * dx
+              if (self%size > 0d0 .and. self%centre_on_sink) then
+                if (r + 2d0 * dx > self%size) then
+                  patch%status = ior(patch%status,bits%frozen)
+                  n_frozen = n_frozen + 1
+                  if (nprint_f > 0) then
+                    nprint_f = nprint_f - 1
+                    print '(a,i7.1,a,1e16.9,1x,i3.1)', 'patch', patch%id, ' frozen', r, ilevel
+                  end if
+                end if
+              else if (xg_plus(1) < self%xmin .or. xg_plus(1) > self%xmax .or. &
+                       xg_plus(2) < self%ymin .or. xg_plus(2) > self%ymax .or. &
+                       xg_plus(3) < self%zmin .or. xg_plus(3) > self%zmax) then
                 patch%status = ior(patch%status,bits%frozen)
+                n_frozen = n_frozen + 1
                 if (nprint_f > 0) then
-                  nprint_f = nprint_f-1
-                  print '(a,i7,a,1p,3e16.9)', &
-                    'patch', patch%id, ' frozen', r, dx, self%size
+                  nprint_f = nprint_f - 1
+                  print '(a,i7.1,a,1p,3e16.9,i3.1)', 'patch', patch%id, ' frozen', xg(l,:), ilevel
                 end if
               end if
               patch%time = time
@@ -742,12 +781,7 @@ SUBROUTINE read (self)
               tmp_load = tmp_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
               tot_load = tot_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
               if (patch%rank==mpi%rank) then
-                call patch%init
-                if (nprint>0) then
-                  nprint = nprint-1
-                  print'("task:",i6,i3,1p,3(3e13.5,2x))', &
-                    patch%id, patch%level, patch%position, patch%mesh%p, patch%mesh%s
-                end if
+                call patch%init()
                 if (mod(self%npatch,1000)==0) &
                   print'(a,2i7,3x,a,1p,2e10.2)','npatch:',self%npatch,n_active,'load:',tot_load,tmp_load
                 patch%offset = patch%position
@@ -777,17 +811,15 @@ SUBROUTINE read (self)
                         var(l,j,11) = self%tt_min*var(l,j,1)
                         n_tt_min = n_tt_min+1
                       end if
-                      patch%mem(ix,iy,iz,1,patch%it,1) = var(l,j,1)
-                      patch%mem(ix,iy,iz,2,patch%it,1) = self%entropy(var(l,j,:))
-                      patch%mem(ix,iy,iz,3,patch%it,1) = var(l,j,nvar_mhd+1)
-                      !patch%mem(ix,iy,iz,3,patch%it,1) = 0.0
-                      patch%mem(ix,iy,iz,4,patch%it,1) = var(l,j,1) * var(l,j,2) ! convert to momentum
-                      patch%mem(ix,iy,iz,5,patch%it,1) = var(l,j,1) * var(l,j,3)
-                      patch%mem(ix,iy,iz,6,patch%it,1) = var(l,j,1) * var(l,j,4)
-                      patch%mem(ix,iy,iz,7,patch%it,1) = var(l,j,5) ! only the "left" fields are used
-                      patch%mem(ix,iy,iz,8,patch%it,1) = var(l,j,6)
-                      patch%mem(ix,iy,iz,9,patch%it,1) = var(l,j,7)
-                      !patch%v(:,it) = patch%v(:,it) + patch%mem(ix,iy,iz,4:6,patch%it,1)
+                      patch%mem(ix,iy,iz,1,patch%it,1) = var(l,j,1) ! density
+                      patch%mem(ix,iy,iz,2,patch%it,1) = self%entropy(var(l,j,:)) ! entropy
+                      patch%mem(ix,iy,iz,3,patch%it,1) = var(l,j,1) * var(l,j,2) ! convert to momentum
+                      patch%mem(ix,iy,iz,4,patch%it,1) = var(l,j,1) * var(l,j,3)
+                      patch%mem(ix,iy,iz,5,patch%it,1) = var(l,j,1) * var(l,j,4)
+                      patch%mem(ix,iy,iz,6,patch%it,1) = var(l,j,5) ! only the "left" fields are kept
+                      patch%mem(ix,iy,iz,7,patch%it,1) = var(l,j,6)
+                      patch%mem(ix,iy,iz,8,patch%it,1) = var(l,j,7)
+                      !!!patch%mem(ix,iy,iz,3,patch%it,1) = var(l,j,nvar_mhd+1) ! grav. pot; SKIP!
                       j = j + 1
                     enddo
                   enddo
@@ -796,13 +828,13 @@ SUBROUTINE read (self)
 
                 ! diagnostic info
                 ncellsum(ilevel,k) = ncellsum(ilevel,k) + twotondim
-                n_onrank=n_onrank+1
+                n_onrank = n_onrank + 1
               else
-                n_offrank=n_offrank+1
+                n_offrank = n_offrank + 1
               endif
-              n_active=n_active+1
+              n_active = n_active + 1
             else
-              n_passive=n_passive+1
+              n_passive = n_passive + 1
             endif
           enddo
         endif ! end ngrid_act > 0 .and. ilevel >= nlevelmin
@@ -815,12 +847,14 @@ SUBROUTINE read (self)
       if (self%rank==mpi%rank) print'(4(a,i8,3x),a,1p,e9.2)', &
         'n_active:',n_active,'n_passive:',n_passive,'n_onrank:',n_onrank, &
         'n_offrank:',n_offrank,'tmp_load:',tmp_load
+      sum_active = sum_active + n_active
+      sum_passive = sum_passive + n_passive
       !
       if (tmp_load > self%rank_load) then
         if (self%rank<mpi%size-1) then
           if (self%rank==mpi%rank) &
             print*,'bumping rank, with tmp_load =', tmp_load, n_active
-          self%rank = self%rank+1
+          self%rank = self%rank + 1
           n_active=0
           n_passive=0
           n_onrank=0
@@ -830,9 +864,11 @@ SUBROUTINE read (self)
       end if
       call mpi%barrier ('ncpu loop')
     enddo ! end loop k=1,ncpu_read
-    print*,'n_d_min, n_tt_min =',n_d_min,n_tt_min
+    write (*,'(a)') '=================================================='
+    write (*,'(a,2(i6.1,1x))') 'n_d_min, n_tt_min =',n_d_min,n_tt_min
+    write (*,'(a,2(i11.1,1x))') 'total active, passive = ', sum_active, sum_passive
+    write (*,'(a,i11.1)') 'n_frozen = ', n_frozen
 
-  !endif ! if (io%master)
   !$omp end master
   !$omp barrier
 
@@ -846,20 +882,23 @@ SUBROUTINE read (self)
   do ilevel=nlevelmin,self%maxlvl
     fill(ilevel)=sum(ncellsum(ilevel,:))/2.0**(3*(ilevel-1))
   enddo
-  write (*,'(a,1p,2(3e10.2,2x))') 'pmin, pmax (AU) =', &
-    (pmin-star%position)*scaling%l/cgs%au, (pmax-star%position)*scaling%l/cgs%au
-  write (*,'("fill:",30f7.3)') fill(nlevelmin:self%maxlvl)
+  write (*,'(a)') '=================================================='
+  if (self%size > 0 .and. self%centre_on_sink) then
+    write (*,'(a,1p,2(3e10.2,2x))') 'pmin, pmax (AU) =', &
+      (pmin-star%position)*scaling%l/cgs%au, (pmax-star%position)*scaling%l/cgs%au
+  end if
+  write (*,'("fill (by level):",30f7.3)') fill(nlevelmin:self%maxlvl)
   deallocate (fill)
 
   deallocate(ngrid_file, ngrid_level, cpu_list, cpu_read, xc, father, &
              neighbour, levels, ncellsum)
 
   call trace_end
-END SUBROUTINE read
+END SUBROUTINE read_snapshot
 
 !> =============================================================================
 !> Lifted directly from `amr2cell.f90`/`hilbert3d_qdp` (in the Copenhagen
-!> RAMSES repository.
+!> RAMSES repository).
 !> =============================================================================
 SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
   integer     , intent(in):: bit_length, npoint
@@ -937,8 +976,9 @@ SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
 END SUBROUTINE hilbert3d
 
 !> =============================================================================
-!> Convenience function to calculate the entropy (because DISPATCH tracks the
-!> entropy rather than the internal energy/pressure or total energy.)
+!> Convenience function to calculate the entropy (because the STAGGER solver in
+!> DISPATCH uses the entropy rather than the internal energy/pressure or total
+!> energy.)
 !> =============================================================================
 FUNCTION entropy (self, vars) RESULT (s)
   class(ramses_t):: self
@@ -957,41 +997,16 @@ END FUNCTION entropy
 !> =============================================================================
  SUBROUTINE read_sink (self)
   class(ramses_t):: self
-  integer, parameter:: nmetal=2, sink_unit=9
-  !.............................................................................
-  integer, parameter::p8=kind(1.0D0)                                            ! double precision
-  integer, parameter::dp=kind(1.0D0)                                            ! double precision
-  integer, parameter:: d1=kind(kind(1d0))                                       ! kind of a kind
-  type :: sink_t                                                                ! star data type
-    SEQUENCE
-    real(p8) x,y,z                                                              ! positions
-    real(dp) px,py,pz                                                           ! momenta
-    real(dp) ux,uy,uz                                                           ! velocities
-    real(dp) dpx,dpy,dpz                                                        ! momenta
-    real(dp) mass                                                               ! mass
-    real(dp) dmass                                                              ! mass
-    real(dp) potential                                                          ! gravitational potential
-    real(dp) density                                                            ! neigborhood density
-    real(dp) t_create                                                           ! creation time
-    real(dp) t_explode                                                          ! explosion time
-    real(dp) metal(nmetal)                                                      ! metal density
-    real(dp) dmetal(nmetal)                                                     ! metal density
-    real(dp) beta_create                                                        ! Beta at creation
-    integer gid                                                                 ! pointer to grid cell
-    integer father                                                              ! pointer to father cell
-    integer ilevel                                                              ! level of AMR hierachy where star lives
-    integer old_ilevel                                                          ! level of hierachy star used to have, if changed
-    integer owner                                                               ! owner thread
-    integer has_moved
-    real(dp) dtold
-  end type
-  type(sink_t):: sink
+  integer, parameter:: sink_unit=9
   character(len=80):: fname
   logical:: do_translate
   integer:: center_star, version, nstar, szstar, sizeofstar, i, nstars, nmet, dp1
   real(4):: t,beta_create,dtold
   real(8):: t8,tflush,r_translate(3),v_translate(3),x_refine,y_refine,z_refine
   !.............................................................................
+  call trace_begin('ramses_t%read_sink')
+
+  print*,'=================================================='
   write (fname,'(a,a,i5.5,a)') trim(self%path), '/output_', self%nout, '/stars_output.dat'
   print*,fname
   open (sink_unit, file=fname,form='unformatted', status='unknown')
@@ -1000,6 +1015,7 @@ END FUNCTION entropy
   read (sink_unit) dp1,nmet,t8
   print*,'dp, nmetal =',dp1,nmet
   print*,'t8 =',t8
+  print*,'nstars =',nstars
   read (sink_unit) do_translate, center_star, r_translate, v_translate,  &
                    x_refine, y_refine, z_refine
   do i=1,nstars
@@ -1013,6 +1029,10 @@ END FUNCTION entropy
   close(sink_unit)
   star%position = [sink%x,sink%y,sink%z]
   star%mass = sink%mass
+  print*,'type(sink_t) :: star => last sink in file'
+  print*,'=================================================='
+  
+  call trace_end
 END SUBROUTINE read_sink
 
 END MODULE ramses_mod
