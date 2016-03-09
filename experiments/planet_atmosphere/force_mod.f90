@@ -31,10 +31,11 @@ END SUBROUTINE
 !> =============================================================================
 !> Force of gravity from a star and a planet
 !> =============================================================================
-FUNCTION star_and_planet (self, time, m) RESULT (ff)
+FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
   type(mesh_t):: m(3)
+  real, dimension(:,:,:):: Ux, Uy, Uz
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
   !.............................................................................
   integer:: ix, iy, iz, iv

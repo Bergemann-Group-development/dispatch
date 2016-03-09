@@ -384,7 +384,7 @@ SUBROUTINE init_nbors (self)
     scan => self%head                                   ! scan all links (FIXME)
     do while (associated(scan))                         ! until end
       if (.not.associated(scan,link)) then
-        if (self%overlaps (scan%task, link%task)) then  ! if its task overlaps
+        !if (self%overlaps (scan%task, link%task)) then  ! if its task overlaps
           allocate (nbor)
           nbor%task => scan%task
           nbor%link => scan
@@ -396,13 +396,16 @@ SUBROUTINE init_nbors (self)
           ! current path position inside it
           !---------------------------------------------------------------------
           if (nbor%task%level==link%task%level-1) then
-            if (all(abs(nbor%task%position-link%task%position) < nbor%task%size*0.5)) then
+            if (nbor%task%id == 22) &
+              print'(2i6,3f10.2,3l3)',link%task%id, nbor%task%id, abs(nbor%task%position-link%task%position)/ &
+              (link%task%size*0.50d0),  abs(nbor%task%position-link%task%position) < link%task%size*0.5d0 
+            if (all(abs(nbor%task%position-link%task%position) < link%task%size*0.55d0)) then
               link%parent => nbor
               if (io%verbose>0) &
                 print*, 'patch', link%task%id, ' parent:', nbor%task%id
             end if
           end if
-        end if
+        !end if
       end if
       scan => scan%next                                 ! continue search
     end do
