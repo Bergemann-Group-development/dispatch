@@ -11,10 +11,10 @@ MODULE setup_mod
   USE scaling_mod
   USE planet_mod
   USE atmosphere_mod
-  USE rubiks_cube_mod
+  USE rubiks_mod
   implicit none
   private
-  type, public, extends(rubiks_cube_t):: setup_t
+  type, public, extends(rubiks_t):: setup_t
   contains
     procedure init
   end type
@@ -22,8 +22,35 @@ MODULE setup_mod
 CONTAINS
 
 !> =============================================================================
+!> Setup a general Rubik hierarchy: NxNzN patches per level, and zoom factor M
+!> Rubik's cube has N=3, M=3
+!> Rubik's revenge has N=4, M=2
 !> =============================================================================
 SUBROUTINE init (self, label)
+  class(setup_t):: self
+  character(len=*), optional:: label
+  integer, save:: n_patch=3, m_zoom=3
+  integer:: iostat
+  namelist /rubiks_params/ n_patch, m_zoom
+  !-----------------------------------------------------------------------------
+  call trace_begin ('setup_t%init')
+  call io%init
+  rewind (io%input)
+  read (io%input, rubiks_params, iostat=iostat)
+  if (io%master) write (*, rubiks_params)
+  call scaling%init
+  call planet%init
+  call atmosphere%init
+  self%size = planet%radius*2.2
+  print*, 'Rubik hierarchy size:', self%size*scaling%l/cgs%r_earth
+  self%position = planet%position
+  call self%rubiks_t%init_hierarchy (n_patch, m_zoom, label)
+  call trace_end
+END SUBROUTINE init
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE init2 (self, label)
   class(setup_t):: self
   character(len=*), optional:: label
   !-----------------------------------------------------------------------------
@@ -36,8 +63,8 @@ SUBROUTINE init (self, label)
   self%size = planet%radius*2.2
   print*, 'size1', self%size*scaling%l/cgs%r_earth
   self%position = planet%position
-  call self%rubiks_cube_t%init (label)
+  !call self%rubiks_t%init (label)
   call trace_end
-END SUBROUTINE init
+END SUBROUTINE init2
 
 END MODULE setup_mod
