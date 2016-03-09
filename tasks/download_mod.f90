@@ -10,7 +10,7 @@ MODULE download_mod
   USE list_mod
   implicit none
   private
-  public download_link
+  public download_link, find_nbor
 CONTAINS
 
 !> =============================================================================
