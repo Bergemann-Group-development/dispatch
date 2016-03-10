@@ -447,7 +447,6 @@ SUBROUTINE read_snapshot (self)
     print *, 'nlevelmax = ',nlevelmax
     print *, 'boxlen = ',boxlen
     print *, 'time = ',time
-    patch%time = time
 
     !------ allocate arrays ------
     ! now that we have more information, we can set and allocate a few required variables.
