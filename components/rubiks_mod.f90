@@ -24,6 +24,7 @@ MODULE rubiks_mod
     type(task_list_t), pointer:: task_list
   contains
     procedure init_hierarchy
+    procedure init_level
   end type
   public task_list_t                    ! export, to avoid excessive USE
 CONTAINS
@@ -38,12 +39,12 @@ SUBROUTINE init_hierarchy (self, label)
   type(task_list_t):: task_list
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  integer, save:: n_patch=3, m_zoom=3, n_levels=5
+  integer, save:: n_patch=3, m_zoom=3, n_levels=5, n_repeat=1
   integer:: iostat
   real(8), save:: position(3)
   real(8), save:: size(3)
-  integer:: i, j, k, i1, j1, k1, i2, j2, k2, level
-  namelist /rubiks_params/ size, position, n_levels, n_patch, m_zoom
+  integer:: i, j, k, ir, level, levels
+  namelist /rubiks_params/ size, position, n_levels, n_patch, m_zoom, n_repeat
   !-----------------------------------------------------------------------------
   ! Allow size and position to be set by an overloading data type, and allow
   ! an empty namelist input here. If present, take the initial values from
@@ -60,11 +61,55 @@ SUBROUTINE init_hierarchy (self, label)
   self%size = size
   self%n_patch = n_patch
   self%m_zoom = m_zoom
+  !-----------------------------------------------------------------------------
+  ! Save the outer size of the hierarchy as the task list size, for distance
+  ! measurements
+  !-----------------------------------------------------------------------------
   allocate (self%task_list)
-  do level=1,n_levels
-  do k=1,n_patch
-  do j=1,n_patch
-  do i=1,n_patch
+  self%task_list%size = self%size*self%m_zoom**(n_levels+2)
+  n_repeat = (n_repeat/2)*2 + 1
+  !box%size = n_repeat*self%size*self%n_patch
+  position(1) = (ir-n_repeat/2)*self%size(1)*self%n_patch
+  do ir=0,n_repeat-1
+    print*,ir
+    if (ir==n_repeat/2) then
+      levels = n_levels
+      print*,'generating a hiearchy of ',n_patch,' patches',' at position', position
+    else
+      levels = 1
+      print*,'generating a cube of ',n_patch,' patches',' at position', position
+    end if
+    do level=1,levels
+      call self%init_level (level, position)
+    end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Initialize the task list
+  !-----------------------------------------------------------------------------
+  call self%task_list%init (label)
+  call trace_end
+END SUBROUTINE init_hierarchy
+
+!> =============================================================================
+!> Distribute patches in a Rubik's cube arrangement around a box
+!> =============================================================================
+SUBROUTINE init_level (self, level, position)
+  class(rubiks_t):: self
+  integer:: level
+  real(8):: position(3)
+  !.............................................................................
+  class(experiment_t), pointer:: patch
+  class(task_t), pointer:: task
+  integer:: i, j, k
+  !-----------------------------------------------------------------------------
+  ! Allow size and position to be set by an overloading data type, and allow
+  ! an empty namelist input here. If present, take the initial values from
+  ! existing data type values
+  !-----------------------------------------------------------------------------
+  call trace_begin ('rubiks_revenge_t%init_level')
+  do k=1,self%n_patch
+  do j=1,self%n_patch
+  do i=1,self%n_patch
     !---------------------------------------------------------------------------
     ! Initialize each patch, via patch_t:init
     !---------------------------------------------------------------------------
@@ -73,14 +118,14 @@ SUBROUTINE init_hierarchy (self, label)
     class is (experiment_t)
     patch => task
     end select
-    patch%box = self%size*m_zoom**(n_levels+2)
-    patch%size = self%size*m_zoom**(n_levels-level)
-    patch%position = ([i,j,k]-(1.+n_patch)/2.0)*patch%size + position
+    patch%size = self%size*self%m_zoom**(self%n_levels-level)
+    patch%box = self%task_list%size
+    patch%position = ([i,j,k]-(1.+self%n_patch)/2.0)*patch%size + position
     call patch%init
     patch%level = level
     call patch%set (bits%static)
     if (io%verbose>1) &
-      print'(a,i6,i4,2(2x,3f10.6))', 'rubiks_revenge%init: id, level, size, pos =', &
+      print'(a,i6,i4,2(2x,3f10.6))', 'rubiks_revenge%init_level: id, level, size, pos =', &
         patch%id, level, patch%size, patch%position - position
     !---------------------------------------------------------------------------
     ! Add to a list of links, with pointers from patch to patch
@@ -89,14 +134,8 @@ SUBROUTINE init_hierarchy (self, label)
   end do
   end do
   end do
-  end do
   !-----------------------------------------------------------------------------
-  ! Save the outer size of the hierarchy as the task list size, for distance
-  ! measurements
-  !-----------------------------------------------------------------------------
-  self%task_list%size = size*m_zoom**(n_levels+2)
-  call self%task_list%init (label)
   call trace_end
-END SUBROUTINE init_hierarchy
+END SUBROUTINE init_level
 
 END MODULE rubiks_mod
