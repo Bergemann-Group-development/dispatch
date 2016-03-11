@@ -327,12 +327,17 @@ END SUBROUTINE info
 SUBROUTINE check_density (self, label)
   class(mhd_t):: self
   character(len=*), optional:: label
-  real:: mind
+  real:: mind, posd
   integer:: ix, iy, iz, ii(3), ntot, nins
   logical:: inside
   !-----------------------------------------------------------------------------
   mind = minval(self%mem(:,:,:,1,self%it,1))
   if (mind <= 0.0) then
+    !---------------------------------------------------------------------------
+    ! Negative densities appear to develop at a few points in the guard zones,
+    ! so this tries to patch up, sampling densitites in the guard zone.
+    !---------------------------------------------------------------------------
+    posd = self%mem(3,3,2,1,self%it,1)
     ntot = 0
     nins = 0
     do iz=1,self%gn(3)
@@ -340,8 +345,15 @@ SUBROUTINE check_density (self, label)
     do ix=1,self%gn(1)
       ii = [ix,iy,iz]
       inside = all([ix,iy,iz]>self%mesh%lo.and.ii<self%mesh%lo)
+      posd = merge (posd, max(posd,self%mem(ix,iy,iz,1,self%it,1)), inside)
       ntot = ntot + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0)
       nins = nins + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0.and.inside)
+      !-------------------------------------------------------------------------
+      ! Pick the sampled positive value if a negative one is found in the
+      ! guard zone
+      !-------------------------------------------------------------------------
+      self%mem(ix,iy,iz,1,self%it,1) = merge (self%mem(ix,iy,iz,1,self%it,1), &
+        posd, self%mem(ix,iy,iz,1,self%it,1) > 0.0 .or. inside)
     end do
     end do
     end do

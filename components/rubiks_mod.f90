@@ -68,16 +68,19 @@ SUBROUTINE init_hierarchy (self, label)
   allocate (self%task_list)
   self%task_list%size = self%size*self%m_zoom**(n_levels+2)
   n_repeat = (n_repeat/2)*2 + 1
-  !box%size = n_repeat*self%size*self%n_patch
-  position(1) = (ir-n_repeat/2)*self%size(1)*self%n_patch
+  !$omp parallel do private (ir,levels,level)
   do ir=0,n_repeat-1
-    print*,ir
+    position(1) = (ir-n_repeat/2)*self%size(1)*self%n_patch
+    if (io%verbose>0) &
+      print'("repeated Rubiks Cubes: ir, position =", i4, 1p, 3g14.4)', ir, position
     if (ir==n_repeat/2) then
       levels = n_levels
-      print*,'generating a hiearchy of ',n_patch,' patches',' at position', position
+      if (io%verbose>1) &
+        print*,'generating a hiearchy of ',n_patch,' patches',' at position', position
     else
       levels = 1
-      print*,'generating a cube of ',n_patch,' patches',' at position', position
+      if (io%verbose>1) &
+        print*,'generating a cube of ',n_patch,' patches',' at position', position
     end if
     do level=1,levels
       call self%init_level (level, position)
@@ -119,13 +122,19 @@ SUBROUTINE init_level (self, level, position)
     patch => task
     end select
     patch%size = self%size*self%m_zoom**(self%n_levels-level)
-    patch%box = self%task_list%size
     patch%position = ([i,j,k]-(1.+self%n_patch)/2.0)*patch%size + position
+    !---------------------------------------------------------------------------
+    ! The patch%box value is used in periodic wrap-around, so this implements
+    ! peroidic conditions along the x-direction (= phi-direction in cylindrical
+    ! coordinates).
+    !---------------------------------------------------------------------------
+    patch%box = self%task_list%size
     call patch%init
     patch%level = level
     call patch%set (bits%static)
+    if (k==1.or.k==self%n_patch) call patch%set (bits%top_bottom)
     if (io%verbose>1) &
-      print'(a,i6,i4,2(2x,3f10.6))', 'rubiks_revenge%init_level: id, level, size, pos =', &
+      print'(a,i6,i4,2(2x,3g16.6))', 'rubiks_revenge%init_level: id, level, size, pos =', &
         patch%id, level, patch%size, patch%position - position
     !---------------------------------------------------------------------------
     ! Add to a list of links, with pointers from patch to patch

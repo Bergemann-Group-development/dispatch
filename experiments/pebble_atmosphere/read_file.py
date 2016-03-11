@@ -15,8 +15,8 @@ def read_file (fileroot, verbose=False, derivs=False):
     line = f.readline()
     column = line.split()
     patch.time = float(column[0])
-    patch.pos  = [float(column[1]),float(column[2]),float(column[3])]
-    patch.size = [float(column[4]),float(column[5]),float(column[6])]
+    patch.pos  = np.array(column[1:4],dtype=np.float64)
+    patch.size = np.array(column[4:7],dtype=np.float64)
     if (verbose):
         print "           time:", patch.time
         print "       position:", patch.pos

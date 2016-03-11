@@ -93,7 +93,7 @@ SUBROUTINE hydrostatic (self)
     self%rho(nr)  = self%external%density
     self%pg(nr)   = self%external%pressure
     self%rr(nr)   = self%hill_radius
-    if (io%verbose>1) print*, &
+    if (io%verbose>0) print*, &
       '              i         rr         pg       temp        rho         dr      dlnpg       grav'
     do i=nr-1,1,-1
       self%rr(i) = exp(log(planet%radius) + (i-1)*log(self%hill_radius/planet%radius)/(nr-1))
@@ -116,18 +116,18 @@ SUBROUTINE hydrostatic (self)
         dlnT = dlnpg*(gamma-1.0)/gamma
         self%pg  (i) = self%pg  (i+1)*exp(dlnpg)
         self%temp(i) = self%temp(i+1)*exp(dlnT)
-        if (io%verbose>2) print*, i, iter, self%rr(i), self%pg(i), self%rho(i), self%temp(i)
+        if (io%verbose>1) print*, i, iter, self%rr(i), self%pg(i), self%rho(i), self%temp(i)
       end do
       if (self%gamma(2)==1.0) then
         s = 1.0
       else
         s = (log(self%pg(i))-gamma*log(self%rho(i)))/(self%gamma(2)-1.0)
       end if
-      if (io%verbose>1) print'("hydrostatic",i5,1p,9e11.3)', &
+      if (io%verbose>0) print'("hydrostatic",i5,1p,9e11.3)', &
         i,self%rr(i)*scaling%l/cgs%r_earth, self%pg(i)*scaling%p, self%temp(i)*scaling%temp, &
         self%rho(i)*scaling%d, s, dlnpg, planet%mass*scaling%grav/self%rr(i)**2
     end do
-    if (io%verbose>1) print*, &
+    if (io%verbose>0) print*, &
       '              i         rr         pg       temp        rho      dlnpg       dlnT       grav'
     self%surface%density     = self%rho(1)
     self%surface%pressure    = self%pg(1)

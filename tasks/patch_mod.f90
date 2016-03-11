@@ -866,6 +866,11 @@ SUBROUTINE courant_condition (self)
   else
     self%dtime = self%courant*minval(self%ds)/self%u_max
   endif
+  !-----------------------------------------------------------------------------
+  ! Prevent large (cheap) patches from taking time steps longer than the out_time
+  !-----------------------------------------------------------------------------
+  if (self%out_time > 0.0) &
+    self%dtime = min (self%dtime, self%out_time)
   self%dt(self%it) = self%dtime
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &

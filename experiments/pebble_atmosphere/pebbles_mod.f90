@@ -11,6 +11,7 @@
 MODULE pebbles_mod
   USE io_mod
   USE trace_mod
+  USE bits_mod
   USE omp_mod
   USE omp_timer_mod
   USE task_mod
@@ -60,6 +61,7 @@ MODULE pebbles_mod
     integer:: ppc = 5                           ! particles per cell
     integer(8):: n_update = 0                   ! speed counter
     real:: mass                                 ! representative pebble mass
+    real:: power                                ! random distribution
     real:: size                                 ! representative pebble size
     real:: density                              ! mass density
     real:: drag_coeff                           ! drag coefficient
@@ -68,6 +70,7 @@ MODULE pebbles_mod
     real:: z_min                                ! smallest positive z
     real:: gamma                                ! gamma for sound speed
     real:: courant=0.1                          ! courant number for motion
+    real:: cell_probability
     real:: position(3)                          ! relative to star
     type(pebble_t), pointer:: head, tail        ! first & last pebble
     logical:: initialized=.false.               ! initialize flag
@@ -76,7 +79,7 @@ MODULE pebbles_mod
     procedure remove                            ! remove a pebble
     procedure export                            ! export to other patches (or remove)
     procedure delete                            ! delete pebbles
-    procedure check_list
+    procedure check_list                        ! check list consistency
   end type
   !-----------------------------------------------------------------------------
   ! A patch with pebbles
@@ -86,7 +89,8 @@ MODULE pebbles_mod
     class(pebbles_t), pointer:: not_done=>null()
     procedure(kdk_drag), pointer:: move=>null() ! particle mover
     real:: pebble_rate = 1e3                    ! pebble arrival rate
-    real:: vz_pebble
+    real:: vz_pebble                            ! vertical in-fall speed
+    logical:: only_pebbles                      ! freeze the MHD conditions (for tests)
   contains
     procedure init                              ! initialize the position and size
     procedure initial_add                       ! add pebbles
@@ -103,6 +107,7 @@ MODULE pebbles_mod
     procedure output                            ! pebble output
   end type
   integer:: id=0
+  logical:: debug=.false.
 CONTAINS
 
 !> =============================================================================
@@ -115,13 +120,15 @@ SUBROUTINE init (self)
   real, save:: density_yr_cgs = 1e-12, solid_density_cgs=3., size(3), pebble_size_cm=1.
   real, save:: pebble_rate_cgs = 1e3  ! about one pebble per second (3e7 per year)
   real, save:: vz_pebble_cgs = 3e6    ! about 30 km/s vertically
+  real, save:: power = 1.0            ! random number power
+  real, save:: cell_probability = 0.02
   integer, save:: it_max=1000000, id_dbg=0, ppc=5
-  logical, save:: do_pebbles
+  logical, save:: do_pebbles=.true., only_pebbles=.false.
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
     solid_density_cgs, size, it_max, pebble_rate_cgs, vz_pebble_cgs, id_dbg, &
-    ppc
+    only_pebbles, ppc, cell_probability, power
   !-----------------------------------------------------------------------------
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
@@ -140,8 +147,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read parameters, but only from one thread
   !-----------------------------------------------------------------------------
-  !$omp barrier
-  !$omp single
+  !$omp critical (pebble_cr)
   if (first_time) then
     do_pebbles = .true.
     first_time = .false.
@@ -152,9 +158,9 @@ SUBROUTINE init (self)
     read (io%input, pebble_params, iostat=iostat)
     if (io%master) write(*, pebble_params)
   end if
-  !$omp end single
-  !$omp barrier
+  !$omp end critical (pebble_cr)
   self%do_pebbles = do_pebbles
+  self%only_pebbles = only_pebbles
   self%pebble_rate = pebble_rate_cgs*scaling%t
   self%vz_pebble = vz_pebble_cgs/scaling%u
   !-----------------------------------------------------------------------------
@@ -162,7 +168,9 @@ SUBROUTINE init (self)
   ! a gas density of 1 g/cm**3, in the sub-sonic Epstein regime, specified in
   ! terms of the cgs gas density that gives one year stopping time.
   !-----------------------------------------------------------------------------
+  self%pebbles%power = power
   self%pebbles%ppc = ppc
+  self%pebbles%cell_probability = cell_probability
   self%pebbles%id_dbg = id_dbg
   self%pebbles%size = pebble_size_cm/scaling%l
   self%pebbles%it_max = it_max
@@ -180,8 +188,8 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-!> Create a number of particles proportional at the left hand side wall,
-!> with initially a velocity interpolated from the argument velocity field
+!> Create a number of particles distributed randomly, with the velocity initially 
+!> equal to the gas velocity
 !> =============================================================================
 SUBROUTINE initial_add (self, n)
   class(pebble_patch_t):: self
@@ -218,33 +226,39 @@ SUBROUTINE initial_add (self, n)
   do iy=self%mesh(2)%li,self%mesh(2)%ui
   do ix=self%mesh(1)%li,self%mesh(1)%ui
     do iter=1,self%pebbles%ppc
-      !$omp atomic
-      id = id+1
-      allocate (pebble)
-      pebble%id= id
-      pebble%t = self%time
-      pebble%s = self%pebbles%size*random%ran1()
-      pebble%d = self%pebbles%density
-      pebble%m = pebble%s**3*pebble%d
-      pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
-      pebble%p(2) =   (self%position(2) - planet%position(2)) + self%size(2)*(0.5-random%ran1())
-      pebble%p(3) =   (self%position(3) - planet%position(3)) + self%size(3)*(0.5-random%ran1())
-      call interpolate_vg (self, pebble, warn)
-      pebble%v = pebble%vg
-      pebble%d = self%mem(ix,iy,iz,1,1,1)
-      call self%pebbles%append (pebble)
+      if (random%ran1() < self%pebbles%cell_probability) then
+        !$omp atomic
+        id = id+1
+        allocate (pebble)
+        pebble%id= id
+        pebble%t = self%time
+        pebble%s = self%pebbles%size*random%ran1()
+        pebble%d = self%pebbles%density
+        pebble%m = pebble%s**3*pebble%d
+        pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
+        pebble%p(2) =   (self%position(2) - planet%position(2)) + self%size(2)*(0.5-random%ran1())
+        pebble%p(3) =   (self%position(3) - planet%position(3)) + self%size(3)*(0.5-random%ran1())
+        call interpolate_vg (self, pebble, warn)
+        pebble%v = pebble%vg
+        pebble%d = self%mem(ix,iy,iz,1,1,1)
+        call self%pebbles%append (pebble)
+      end if
     end do
   end do
   end do
   end do
-  print *, 'initial_add:', self%id, self%position(3), self%pebbles%n
-  !call self%pebbles%check_list ('after initial_add')
+  if (io%verbose>1) &
+    print *, 'initial_add:', self%id, self%position(3), self%pebbles%n
+  call self%pebbles%check_list ('after initial_add')
   call trace_end
 END SUBROUTINE initial_add
 
 !> =============================================================================
-!> Create a number of particles proportional at the left hand side wall,
-!> with initially a velocity interpolated from the argument velocity field
+!> Create a number of particles proportional at the top and bottom walls,
+!> with initially a velocity interpolated from the argument velocity field.
+!> Depending on the call, either add a fixedd number, or a number proportional
+!> to the time step (and hence very much larger in the large, cold, outer
+!> patches.  Building the rate into the weight factor may be a better strategy.
 !> =============================================================================
 SUBROUTINE add (self, n)
   class(pebble_patch_t):: self
@@ -284,8 +298,8 @@ SUBROUTINE add (self, n)
     allocate (pebble)
     pebble%id= id
     pebble%t = self%time
-    pebble%s = self%pebbles%size
-    pebble%d = self%pebbles%density
+    pebble%s = self%pebbles%size*random%ran1()**self%pebbles%power
+    pebble%d = self%pebbles%density*self%dtime/n_local
     pebble%m = pebble%s**3*pebble%d
     sign = merge(1.0,-1.0,self%position(3)>0.0)
     pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
@@ -506,6 +520,8 @@ SUBROUTINE check_list (self, label)
   class(pebble_t), pointer:: p
   !.............................................................................
   integer:: n
+  !-----------------------------------------------------------------------------
+  if (io%verbose<2) return
   n=0
   p => self%head
   do while (associated(p))
@@ -572,7 +588,6 @@ SUBROUTINE export (self, pebble, nbor_list)
   call self%remove (pebble)
   if (associated(nbor_list)) then
     call nbor_list%append (pebble)
-    self%n_export = self%n_export+1
   else
     if (nprint > 0) then
       nprint = nprint-1
@@ -606,7 +621,9 @@ SUBROUTINE scatter (self, nbors, not_done)
     self%pebbles%z_min = min(self%pebbles%z_min,abs(pebble%p(3)))
     self%pebbles%dt_min = min(pebble%dt,self%pebbles%dt_min)
     self%pebbles%dt_max = max(pebble%dt,self%pebbles%dt_max)
-    if (.not. self%inside_r4 (pebble%p+2.*pebble%dt*pebble%v)) then
+    if (debug) print *,'pebble id:', pebble%id
+    if (.not. self%inside_r4 (pebble%p)) then
+      if (debug) print *,'not inside'
       !-------------------------------------------------------------------------
       ! Check if it should be exported to a neighbor
       !-------------------------------------------------------------------------
@@ -617,7 +634,9 @@ SUBROUTINE scatter (self, nbors, not_done)
           select type (task)
           class is (pebble_patch_t)
             if (task%inside_r4(pebble%p)) then
+              if (debug) print *,'inside patch', task%id, ', exported from scatter'
               call self%pebbles%export (pebble, task%pebbles)
+              self%pebbles%n_export = self%pebbles%n_export+1
               goto 9
             end if
           end select
@@ -633,7 +652,7 @@ SUBROUTINE scatter (self, nbors, not_done)
         !-----------------------------------------------------------------------
         ! No neighbors???
         !-----------------------------------------------------------------------
-        print *,'WARNING: pebble_patch without neighbors', self%id
+        if (debug) print *,'WARNING: pebble_patch without neighbors', self%id
         call self%pebbles%remove (pebble)
         if (abs(pebble%p(1)) > self%size(1)*0.5) &
           self%pebbles%n_outside(1) = self%pebbles%n_outside(1) + 1
@@ -644,6 +663,7 @@ SUBROUTINE scatter (self, nbors, not_done)
         goto 9
       end if
     else if (planet%inside(pebble%p)) then
+      if (debug) print *,'inside planet'
       !-------------------------------------------------------------------------
       ! The pebble hit the planet; accreted
       !-------------------------------------------------------------------------
@@ -651,6 +671,7 @@ SUBROUTINE scatter (self, nbors, not_done)
       self%pebbles%n_accrete = self%pebbles%n_accrete + 1
       goto 9
     else if (pebble%t < self%time) then
+      if (debug) print *,'inside'
       !-------------------------------------------------------------------------
       ! Finally, check if the pebble is inside a neighbor with higher level
       !-------------------------------------------------------------------------
@@ -662,7 +683,9 @@ SUBROUTINE scatter (self, nbors, not_done)
             select type (task)
             class is (pebble_patch_t)
               if (task%inside_r4(pebble%p)) then
+                print *,'inside patch', task%id, ', exported'
                 call self%pebbles%export (pebble, task%pebbles)
+                self%pebbles%n_export = self%pebbles%n_export+1
                 goto 9
               end if
             end select
@@ -672,13 +695,14 @@ SUBROUTINE scatter (self, nbors, not_done)
         !-----------------------------------------------------------------------
         ! If it wasn't, export to the 'not_done' list
         !-----------------------------------------------------------------------
+        if (debug) print *,'not done: t < self%time'
         call self%pebbles%export (pebble, not_done)
       end if
     end if
   9 pebble => next
   end do
-  !call self%pebbles%check_list ('after scatter')
-  if (self%pebbles%n>0) then
+  call self%pebbles%check_list ('after scatter')
+  if (io%verbose>1 .and. self%pebbles%n>1) then
     print*,'scatter: n, self%pebbles%n, not_done=', self%pebbles%n, n, self%not_done%n
     self%pebbles%n_update = self%pebbles%n_update + self%pebbles%n
   end if
@@ -717,6 +741,8 @@ SUBROUTINE gather (self, pebbles, nbors, done)
           class is (pebble_patch_t)
             if (task%inside_r4(pebble%p)) then
               call pebbles%export (pebble, task%pebbles)
+              print *,'inside patch', task%id, ', exported from scatter', task%pebbles%n
+              self%pebbles%n_export = self%pebbles%n_export+1
               goto 9
             end if
           nbor => nbor%next
@@ -746,7 +772,7 @@ SUBROUTINE gather (self, pebbles, nbors, done)
     print*,'gather: n, n, t_min=', pebbles%n, pebbles%t_min, pebbles%dt_min
     pebbles%n_update = pebbles%n_update + pebbles%n
   end if
-  !call self%pebbles%check_list ('after gather')
+  call self%pebbles%check_list ('after gather')
 END SUBROUTINE gather
 
 !> =============================================================================
@@ -767,14 +793,16 @@ SUBROUTINE update_pebbles (self)
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles) return
   if (self%time == 0d0) call self%initial_add
-  if (self%level==1 .and. abs(self%position(3))>self%ds(3)) call self%add
+  if (self%level==1 .and. self%is_set(bits%top_bottom)) call self%add
   if (self%pebbles%n>0) then
-    if (associated(self%pebbles%head)) then
-      print*,'update_pebbles: id, n=', self%id, self%pebbles%n, &
-        self%time, self%pebbles%head%t
-    else
-      print *,'ERROR, no head, patch id', self%id,'  n should be', self%pebbles%n>0
-      return
+    if (io%verbose>1) then
+      if (associated(self%pebbles%head)) then
+        print'(a,2i8,1p,2e15.6)', 'update_pebbles: id, n, t, head%t=', self%id, self%pebbles%n, &
+          self%time, self%pebbles%head%t
+      else
+        print *,'ERROR, no head, patch id', self%id,'  n should be', self%pebbles%n>0
+        return
+      end if
     end if
   else
     return
@@ -869,8 +897,16 @@ FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
   ii = w
   w  = w-ii
   if (any(ii<1 .or. ii>gn-1) .and. io%verbose>1) then
-    print*,'index_r4: warning', ii, w
-    ii = max(1,min(ii,gn-1))
+    debug = .true.
+    print*,'index_r4: warning', ii, w, inside_r4 (self, p)
+  end if
+  ii = max(1,min(ii,gn-1))
+  if (debug) then
+    print *,'planet position:', planet%position
+    print *,'  self position:', self%position
+    print *,'pebble position:', p
+    print *,'          index:', ii
+    print *,'        weights:', w
   end if
 END FUNCTION
 
@@ -917,7 +953,7 @@ SUBROUTINE output (self, experiment_name)
   character(len=64), optional:: experiment_name
   !.............................................................................
   character(len=128):: filename
-  integer, parameter:: data_format=2, n_var=9
+  integer, parameter:: data_format=3, n_var=9
   real, dimension(:,:), pointer:: buffer
   integer, dimension(:), pointer:: idbuf
   integer:: i, j, np, n_not
@@ -935,8 +971,8 @@ SUBROUTINE output (self, experiment_name)
     io%outputname = io%inputname
   end if
   write (filename,'(a,i3.3,"_",i4.4,".peb")') &
-      'data/'//trim(io%outputname)//'_', self%id, self%iout
-  print *,'PEBBLE OUTPUT: ', trim(filename), self%pebbles%n
+      'data/'//trim(io%outputname)//'/', self%id, self%iout
+  print *,'PEBBLE FILE: ', trim(filename), self%pebbles%n
   open  (io%data_unit, file=filename, form='unformatted', status='unknown')
   write (io%data_unit) data_format
   !
@@ -957,10 +993,10 @@ SUBROUTINE output (self, experiment_name)
     buffer(i,7:9) = [real(p%t,kind=4),p%s,p%c]
     p => p%next
   end do
-  print *,'PEBBLE OUTPUT 1', np, n_not
+  print *,'PEBBLE OUTPUT', self%id, np, n_not
   write (io%data_unit) np, n_var
-  write (io%data_unit) idbuf
   write (io%data_unit) buffer
+  write (io%data_unit) idbuf
   !
   close (io%data_unit)
   deallocate (buffer,idbuf)

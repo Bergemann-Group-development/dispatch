@@ -365,7 +365,6 @@ SUBROUTINE interpolate_to (target, ii, source, jt, pt, idir)
   integer:: ii(3), jj(3), jt(2), iv, i, it, j, nmax, idir, adir
   real(8):: pp(3), pos(3), pt
   real:: p(4), q(4)
-  logical:: dbg
   !-----------------------------------------------------------------------------
   if (.not.associated(source)) then
     if (io%verbose>1) print*,'WARNING, no source in interpolate_to!'
@@ -384,17 +383,20 @@ SUBROUTINE interpolate_to (target, ii, source, jt, pt, idir)
       pp(i) = pp(i) - jj(i)                                                                         ! fractions
       if (pp(i)<-0.35d0 .or. pp(i)>1.35d0) then
         pp(i) = (pos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)  ! float index in source
+        if (io%verbose > 1) &
         print '(a,2i3,2f6.1,2(2x,a,i6,i3," i:",i4,f13.8))', 'INDEX ERROR:', idir, i, &
-        target%mesh(i)%h(iv), source%mesh(i)%h(iv), &
-        'target: id,lv=',target%id, target%level, ii(i), (source%position(i)-target%position(i))/source%mesh(i)%d, &
-        'source: id,lv=',source%id, source%level, jj(i), pp(i)
-        print*,'   source shift:', (target%position-source%position)/source%ds + source%offset
-        print*,'    target size:', target%size
-        print*,'   target index:', (pos(i)-target%position(i))/target%ds(i) + target%offset(i)
-        print*,'    source size:', source%size
-        print*,'   source index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i)
-        print*,'staggered index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)
-        stop
+          target%mesh(i)%h(iv), source%mesh(i)%h(iv), &
+          'target: id,lv=',target%id, target%level, ii(i), (source%position(i)-target%position(i))/source%mesh(i)%d, &
+          'source: id,lv=',source%id, source%level, jj(i), pp(i)
+        if (io%verbose > 2) then
+          print*,'   source shift:', (target%position-source%position)/source%ds + source%offset
+          print*,'    target size:', target%size
+          print*,'   target index:', (pos(i)-target%position(i))/target%ds(i) + target%offset(i)
+          print*,'    source size:', source%size
+          print*,'   source index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i)
+          print*,'staggered index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)
+        end if
+        pp = max(-0.35d0,min(pp,1.35d0))
       end if
     end do
     adir = abs(idir)
@@ -437,7 +439,6 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
   real(8):: time, position(3), dist, pp(3)
   real:: score, best_score
   integer:: i, it, iv, nv, nt, adir, best_id
-  logical dbg
   !-----------------------------------------------------------------------------
   call trace_begin('download_mod::find_best_nbor',2)
   if (io%do_debug) print*,'find_best_nbor:', link%task%id, ii, time
@@ -483,20 +484,23 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
           best_id = best%id
       end if
       if (io%verbose>1.or.present(debug)) then
-        dbg = (abs(idir)==1 .and. ii(2)==m(2)%gn/2 .and. ii(3)==m(3)%gn/2) &
-         .or. (abs(idir)==2 .and. ii(1)==m(1)%gn/2 .and. ii(3)==m(3)%gn/2) &
-         .or. (abs(idir)==3 .and. ii(1)==m(1)%gn/2 .and. ii(2)==m(2)%gn/2)
-        if (dbg) then
-          if (associated(best)) then
-            print 1,'patch ',patch%id, patch%level, idir, &
-                    'nbor:', other%id, other%level, score, &
-                    'best:',  best%id,  best%level, best_score
-          1 format(a,i6,i4,i3,2(4x,a,i6,i4,f10.4))
-          else
-            print 1,'patch ',patch%id, patch%level, idir, &
-              '   nbor:', other%id, other%level, score
+        block
+          logical dbg
+          dbg = (abs(idir)==1 .and. ii(2)==m(2)%gn/2 .and. ii(3)==m(3)%gn/2) &
+           .or. (abs(idir)==2 .and. ii(1)==m(1)%gn/2 .and. ii(3)==m(3)%gn/2) &
+           .or. (abs(idir)==3 .and. ii(1)==m(1)%gn/2 .and. ii(2)==m(2)%gn/2)
+          if (dbg) then
+            if (associated(best)) then
+              print 1,'patch ',patch%id, patch%level, idir, &
+                      'nbor:', other%id, other%level, score, &
+                      'best:',  best%id,  best%level, best_score
+            1 format(a,i6,i4,i3,2(4x,a,i6,i4,f10.4))
+            else
+              print 1,'patch ',patch%id, patch%level, idir, &
+                '   nbor:', other%id, other%level, score
+            end if
           end if
-        end if
+        end block
       end if
     end if
     nbor => nbor%next

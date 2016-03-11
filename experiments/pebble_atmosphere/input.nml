@@ -5,17 +5,17 @@
  do_output=f
 /
 &rubiks_params
- n_levels=4
+ n_levels=7
  n_patch=3
  m_zoom=3
- n_repeat=3
+ n_repeat=15
 /
 &pebble_params
  vz_pebble_cgs=1.5e6
- !pebble_rate_cgs=10
- !initial_density=1e-10
- ppc=1
+ pebble_rate_cgs=1
+ initial_density=1e-12
  cell_probability=0.1
+ ppc=1
 /
 &planet_params
 /
@@ -28,8 +28,8 @@
 &patch_params
  n=20,20,20
  nt=5
- grace=0.50
- courant=0.2
+ grace=0.0
+ courant=0.15
 !dt_fixed=0.001
 /
 &out_params
