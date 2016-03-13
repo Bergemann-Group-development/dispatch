@@ -69,6 +69,7 @@ MODULE patch_mod
     procedure:: fmaxval                 ! interior max value
     procedure:: fminval                 ! interior min value
     procedure:: courant_condition
+    procedure:: check_density
   end type
   !-----------------------------------------------------------------------------
   ! Template task, with procedure to place it it MPI-space
@@ -220,7 +221,7 @@ SUBROUTINE init (self)
   ! Measure levels in terms of the reinement factor
   !-----------------------------------------------------------------------------
   self%level = log(maxval(self%box)/minval(self%ds))/log(real(self%msplit)) + 0.1
-  if (io%verbose>0) &
+  if (io%verbose>2) &
     print'(1x,a,i7,2(1p,3e12.4,2x))', 'patch_t%init: id, size, pos =', self%id, self%size, self%position
   if (io%verbose>3) &
     print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
@@ -585,7 +586,7 @@ SUBROUTINE output (self, experiment_name)
   if (.not.io%do_output) return
   !$omp critical (out_cr)
   call trace_begin('patch:t%output')
-  do while (self%time >= self%out_next .and. self%out_next <= self%end_time)
+  do while (self%time > self%out_next .and. self%out_next <= self%end_time)
     self%max_files = self%max_files-1
     if (self%max_files <= 0) then
       print*,'TOO MANY FILES'
@@ -977,5 +978,52 @@ FUNCTION fminval (self, f)
   real, dimension(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn):: f
   fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui,self%mesh(2)%li:self%mesh(2)%ui,self%mesh(3)%li:self%mesh(3)%ui))
 END FUNCTION
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE check_density (self, label)
+  class(patch_t):: self
+  character(len=*), optional:: label
+  real:: mind, posd
+  integer:: ix, iy, iz, ii(3), ntot, nins
+  logical:: inside
+  !-----------------------------------------------------------------------------
+  mind = minval(self%mem(:,:,:,1,self%it,1))
+  if (mind <= 0.0) then
+    !---------------------------------------------------------------------------
+    ! Negative densities appear to develop at a few points in the guard zones,
+    ! so this tries to patch up, sampling densitites in the guard zone.
+    !---------------------------------------------------------------------------
+    posd = self%mem(3,3,2,1,self%it,1)
+    ntot = 0
+    nins = 0
+    do iz=1,self%gn(3)
+    do iy=1,self%gn(2)
+    do ix=1,self%gn(1)
+      ii = [ix,iy,iz]
+      inside = all([ix,iy,iz]>self%mesh%lo.and.ii<self%mesh%lo)
+      posd = merge (posd, max(posd,self%mem(ix,iy,iz,1,self%it,1)), inside)
+      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0)
+      nins = nins + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0.and.inside)
+      !-------------------------------------------------------------------------
+      ! Pick the sampled positive value if a negative one is found in the
+      ! guard zone
+      !-------------------------------------------------------------------------
+      self%mem(ix,iy,iz,1,self%it,1) = merge (self%mem(ix,iy,iz,1,self%it,1), &
+        posd, self%mem(ix,iy,iz,1,self%it,1) > 0.0 .or. inside)
+    end do
+    end do
+    end do
+    if (present(label)) then
+      print 1, self%id, &
+         'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
+         trim(label)
+      1 format(i8,3x,a,i8,a,i8,a)
+    else
+      print 1, self%id, &
+         'WARNING: density non-positive in',ntot,' points,',nins,' inside'
+    end if
+  end if
+END SUBROUTINE
 
 END MODULE

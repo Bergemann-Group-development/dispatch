@@ -25,7 +25,6 @@ MODULE mhd_mod
     procedure:: update
     procedure:: output
     procedure:: info
-    procedure:: check_density
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure
@@ -321,53 +320,6 @@ SUBROUTINE info (self, nq, experiment_name)
   character(len=64), optional:: experiment_name
   !.............................................................................
 END SUBROUTINE info
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE check_density (self, label)
-  class(mhd_t):: self
-  character(len=*), optional:: label
-  real:: mind, posd
-  integer:: ix, iy, iz, ii(3), ntot, nins
-  logical:: inside
-  !-----------------------------------------------------------------------------
-  mind = minval(self%mem(:,:,:,1,self%it,1))
-  if (mind <= 0.0) then
-    !---------------------------------------------------------------------------
-    ! Negative densities appear to develop at a few points in the guard zones,
-    ! so this tries to patch up, sampling densitites in the guard zone.
-    !---------------------------------------------------------------------------
-    posd = self%mem(3,3,2,1,self%it,1)
-    ntot = 0
-    nins = 0
-    do iz=1,self%gn(3)
-    do iy=1,self%gn(2)
-    do ix=1,self%gn(1)
-      ii = [ix,iy,iz]
-      inside = all([ix,iy,iz]>self%mesh%lo.and.ii<self%mesh%lo)
-      posd = merge (posd, max(posd,self%mem(ix,iy,iz,1,self%it,1)), inside)
-      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0)
-      nins = nins + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0.and.inside)
-      !-------------------------------------------------------------------------
-      ! Pick the sampled positive value if a negative one is found in the
-      ! guard zone
-      !-------------------------------------------------------------------------
-      self%mem(ix,iy,iz,1,self%it,1) = merge (self%mem(ix,iy,iz,1,self%it,1), &
-        posd, self%mem(ix,iy,iz,1,self%it,1) > 0.0 .or. inside)
-    end do
-    end do
-    end do
-    if (present(label)) then
-      print 1, self%id, &
-         'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
-         trim(label)
-      1 format(i8,3x,a,i8,a,i8,a)
-    else
-      print 1, self%id, &
-         'WARNING: density non-positive in',ntot,' points,',nins,' inside'
-    end if
-  end if
-END SUBROUTINE
 
 !> =============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)
