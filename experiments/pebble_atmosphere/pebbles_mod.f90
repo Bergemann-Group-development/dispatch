@@ -23,6 +23,7 @@ MODULE pebbles_mod
   USE scaling_mod
   USE units_mod
   USE random_mod
+  USE scene_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -88,7 +89,7 @@ MODULE pebbles_mod
     class(pebbles_t), pointer:: pebbles=>null()
     class(pebbles_t), pointer:: not_done=>null()
     procedure(kdk_drag), pointer:: move=>null() ! particle mover
-    real:: pebble_rate = 1e3                    ! pebble arrival rate
+    real:: pebble_rate                          ! pebble arrival rate
     real:: vz_pebble                            ! vertical in-fall speed
     logical:: only_pebbles                      ! freeze the MHD conditions (for tests)
   contains
@@ -118,7 +119,7 @@ SUBROUTINE init (self)
   !.............................................................................
   character(len=8), save:: type='kdk_drag'
   real, save:: density_yr_cgs = 1e-12, solid_density_cgs=3., size(3), pebble_size_cm=1.
-  real, save:: pebble_rate_cgs = 1e3  ! about one pebble per second (3e7 per year)
+  real, save:: pebble_rate_cgs = 1e2  ! about one pebble per 10 second (3e6 per year)
   real, save:: vz_pebble_cgs = 3e6    ! about 30 km/s vertically
   real, save:: power = 1.0            ! random number power
   real, save:: cell_probability = 0.02
@@ -972,7 +973,6 @@ SUBROUTINE output (self, experiment_name)
   end if
   write (filename,'(a,i3.3,"_",i4.4,".peb")') &
       'data/'//trim(io%outputname)//'/', self%id, self%iout
-  print *,'PEBBLE FILE: ', trim(filename), self%pebbles%n
   open  (io%data_unit, file=filename, form='unformatted', status='unknown')
   write (io%data_unit) data_format
   !
@@ -986,15 +986,14 @@ SUBROUTINE output (self, experiment_name)
       n_not = n_not+1
       cycle
     end if
-    if (i<20) print*,p%id,p%p,p%v
     idbuf(i) = p%id
     buffer(i,1:3) = p%p
     buffer(i,4:6) = p%v
     buffer(i,7:9) = [real(p%t,kind=4),p%s,p%c]
     p => p%next
   end do
-  print *,'PEBBLE OUTPUT', self%id, np, n_not
-  write (io%data_unit) np, n_var
+  print *,'PEBBLE FILE: ', trim(filename), self%pebbles%n, np, n_not
+  write (io%data_unit) np, n_var, scene%n_repeat
   write (io%data_unit) buffer
   write (io%data_unit) idbuf
   !

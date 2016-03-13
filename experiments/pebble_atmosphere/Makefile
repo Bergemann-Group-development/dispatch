@@ -29,5 +29,5 @@ force_mod.o             : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o planet_mo
 star_mod.o              : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o
 planet_mod.o            : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o
 boundary_mod.o          : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o atmosphere_mod.o
-pebble_mod.o            : io_mod.o trace_mod.o omp_mod.o omp_timer_mod.o task_mod.o patch_mod.o list_mod.o planet_mod.o \
-                          star_mod.o scaling_mod.o units_mod.o random_mod.o
+pebbles_mod.o           : io_mod.o trace_mod.o omp_mod.o omp_timer_mod.o task_mod.o patch_mod.o list_mod.o planet_mod.o \
+                          star_mod.o scaling_mod.o cgs_mod.o random_mod.o scene_mod.o

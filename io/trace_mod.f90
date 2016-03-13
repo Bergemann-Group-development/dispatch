@@ -7,8 +7,9 @@ MODULE trace_mod
   USE io_mod
   implicit none
   private
-  character(len=80), dimension(30), save:: tracing                              ! active routine
-  integer, save:: verbosity(30)
+  integer, parameter:: maxlev=30
+  character(len=80), dimension(maxlev), save:: tracing                          ! active routine
+  integer, save:: verbosity(maxlev)
   integer, private, save:: indent=4                                             ! trace indent
   integer, private, save:: level=1                                              ! trace level
   !$omp threadprivate(indent,level,tracing,verbosity)
@@ -32,8 +33,10 @@ SUBROUTINE trace_begin (id, set_verbose)
     verbosity(level) = 0
   end if
   verbose = verbosity(level)
-  indent = indent + 3
-  level = level+1
+  if (level<maxlev) then
+    level = level+1
+    indent = indent + 3
+  end if
   write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
   if (io%master.and.io%verbose>=verbose) then
     write(*,fmt) omp_mythread(), wallclock(), trim(id)//' begin'

@@ -384,7 +384,7 @@ SUBROUTINE init_nbors (self)
     scan => self%head                                   ! scan all links (FIXME)
     do while (associated(scan))                         ! until end
       if (.not.associated(scan,link)) then
-        !if (self%overlaps (scan%task, link%task)) then  ! if its task overlaps
+        if (self%overlaps (scan%task, link%task)) then  ! if its task overlaps
           allocate (nbor)
           nbor%task => scan%task
           nbor%link => scan
@@ -393,19 +393,16 @@ SUBROUTINE init_nbors (self)
           n_add = n_add+1
           !---------------------------------------------------------------------
           ! Find the parent, as the patch on the next lower level that has the
-          ! current path position inside it
+          ! current patch position inside it
           !---------------------------------------------------------------------
           if (nbor%task%level==link%task%level-1) then
-            if (nbor%task%id == 22) &
-              print'(2i6,3f10.2,3l3)',link%task%id, nbor%task%id, abs(nbor%task%position-link%task%position)/ &
-              (link%task%size*0.50d0),  abs(nbor%task%position-link%task%position) < link%task%size*0.5d0 
             if (all(abs(nbor%task%position-link%task%position) < link%task%size*0.55d0)) then
               link%parent => nbor
               if (io%verbose>0) &
                 print*, 'patch', link%task%id, ' parent:', nbor%task%id
             end if
           end if
-        !end if
+        end if
       end if
       scan => scan%next                                 ! continue search
     end do
@@ -426,7 +423,6 @@ FUNCTION distance (self, task1, task2)
   !.............................................................................
   size = self%size
   distance = task1%position - task2%position
-  !distance = abs(distance)
   distance = abs(modulo(distance + 0.5*size, size) - 0.5*size)
 END FUNCTION distance
 
@@ -439,7 +435,7 @@ FUNCTION overlaps (self, task1, task2, label)
   logical:: overlaps
   real(8):: dist(3)
   !.............................................................................
-  call trace_begin ('task_lis_t%overlap', 3)
+  call trace_begin ('task_list_t%overlap', 3)
   dist = self%distance(task1,task2)
   overlaps = all(self%distance(task1,task2) < 0.50000001_8*(task1%size+task2%size))
   if (self%debug>3.or.present(label)) then
