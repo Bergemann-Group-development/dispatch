@@ -16,20 +16,20 @@ def read_file (fileroot, verbose=False, derivs=False):
     column = line.split()
     patch.time = float(column[0])
     patch.pos  = np.array(column[1:4],dtype=np.float64)
-    patch.size = np.array(column[4:7],dtype=np.float64)
-    if (verbose):
-        print "           time:", patch.time
-        print "       position:", patch.pos
-        print "           size:", patch.size
+    patch.ds   = np.array(column[4:7],dtype=np.float64)
 
     # line 2: m(1:3) n(1:3) li(1:3) ui(1:3)
     line = f.readline()
     column = line.split()
-    patch.m  = [int(column[0]),int(column[1]),int(column[2])]
-    patch.n  = [int(column[3]),int(column[4]),int(column[5])]
-    patch.li = [int(column[6]),int(column[7]),int(column[8])]
-    patch.ui = [int(column[9]),int(column[10]),int(column[11])]
+    patch.m  = np.array(column[0:3],dtype=np.int32)
+    patch.n  = np.array(column[3:6],dtype=np.int32)
+    patch.li = np.array(column[6:9],dtype=np.int32)
+    patch.ui = np.array(column[9:12],dtype=np.int32)
+    patch.size = patch.ds*patch.n
     if (verbose):
+        print "           time:", patch.time
+        print "       position:", patch.pos
+        print "           size:", patch.size
         print "     full patch:", patch.m
         print "  partial patch:", patch.n
         print "  lower indices:", patch.li

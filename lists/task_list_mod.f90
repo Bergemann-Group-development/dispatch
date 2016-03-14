@@ -123,6 +123,9 @@ SUBROUTINE update (self)
   !$omp critical (list_cr)
   call trace('list_cr 1 begin')
   head => self%queue                                    ! queue start
+  !-----------------------------------------------------------------------------
+  ! Having secured a head, we need to check if it is at all associcated
+  !-----------------------------------------------------------------------------
   if (associated(head)) then
     task => head%task                                   ! head task
     self%queue => self%queue%next_time                  ! update the link
@@ -130,9 +133,6 @@ SUBROUTINE update (self)
   end if
   call trace('list_cr 1 end')
   !$omp end critical (list_cr)
-  !-----------------------------------------------------------------------------
-  ! Having secured a head, we need to check if it is at all associcated
-  !-----------------------------------------------------------------------------
   if (associated(head)) then
     !-----------------------------------------------------------------------------
     ! Prepare for update, by downloading data that it depends on.  During the
@@ -141,7 +141,9 @@ SUBROUTINE update (self)
     select type (task)
     class is (patch_t)
     if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
+    call task%check_density ("before download")
     call download_link (head, all_cells=.false.)        ! guard cells
+    call task%check_density ("after download")
     if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
     end select
     !----------------------------------------------------------------------------

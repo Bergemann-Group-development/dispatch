@@ -20,25 +20,23 @@
  origin=0,0,0
 /
 &experiment_params
- d0=1.2
- B0=0.0,0.0,0.0
 /
 &patch_params
  nt=5
- n=25,25,25
  courant=0.2
- grace=0.03
+ grace=0.3
+ n=20,20,20
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.3
- out_time=0.10
- print_time=0.01
+ end_time=0.501
+ out_time=0.05
+ print_time=1.0
  guard_zones=f
  time_derivs=f
 /
 &mhd_params
- nu=  0.10, 2.0, 1.0, 0.2, 1.0, 1.0
+ nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
 /
 &timestep_params

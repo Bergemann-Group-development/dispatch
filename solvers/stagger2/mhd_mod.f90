@@ -2,6 +2,7 @@
 !> =============================================================================
 MODULE mhd_mod
   USE io_mod
+  USE omp_mod
   USE trace_mod
   USE units_mod
   USE scaling_mod
@@ -24,7 +25,6 @@ MODULE mhd_mod
     procedure:: init
     procedure:: update
     procedure:: output
-    procedure:: info
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure
@@ -310,16 +310,6 @@ SUBROUTINE output (self, experiment_name)
   write (io%data_unit,'(8f10.4)') self%nu
   close (io%data_unit)
 END SUBROUTINE output
-
-!> =============================================================================
-!> Print info to stdout
-!> =============================================================================
-SUBROUTINE info (self, nq, experiment_name)
-  class(mhd_t):: self
-  integer, optional:: nq
-  character(len=64), optional:: experiment_name
-  !.............................................................................
-END SUBROUTINE info
 
 !> =============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)

@@ -1,14 +1,14 @@
 &io_params
  do_trace=f
- verbose=0
+ verbose=1
  do_debug=f
  do_output=f
 /
 &rubiks_params
- n_levels=7
+ n_levels=3
  n_patch=3
  m_zoom=3
- n_repeat=15
+ n_repeat=3
 /
 &pebble_params
  vz_pebble_cgs=1.5e6
@@ -18,10 +18,6 @@
  ppc=1
 /
 &planet_params
-/
-&setup_params
- size_r_earth=1.0
- position_au=1.0,0.0,0.0
 /
 &initial_params
 /

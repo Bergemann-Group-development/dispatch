@@ -1,45 +1,44 @@
-import fortranfile as ff
+import fortranfile as ftf
 import numpy as np
 
 def read_pebbles(ip=1,it=0,verbose=0,run='pebble_atmosphere',dir='data'):
     name=dir+'/'+run+'/{:03d}_{:04d}.peb'.format(ip,it)
-    f=open(name,"rb")
-    #f=ff.FortranFile(name)
+
+    # open the file
+    f=ftf.FortranFile(name,'rb')
     if not f:
         name=dir+'/'+run+'/{:04d}_{:04d}.peb'.format(ip,it)
-        f=open(name,"rb")
-    len=np.fromfile(f,dtype=np.int32,count=1)
-    fmt=np.fromfile(f,dtype=np.int32,count=1)
-    len=np.fromfile(f,dtype=np.int32,count=1)
+        f=ftf.FortranFile(name,'rb')
 
-    len=np.fromfile(f,dtype=np.int32,count=1)
-    dim=np.fromfile(f,dtype=np.int32,count=2)
-    len=np.fromfile(f,dtype=np.int32,count=1)
+    # read the format key
+    fmt = f.readInts()
 
+    # read the dimension info
+    dim=f.readInts()
+
+    # xxxxxx
+    n_repeat=dim[2]
+    dim=dim[0:2]
+
+    # verbose info
     if verbose:
         print "file:", name
         print " fmt:",fmt
         print "dims:",dim
     
-    if fmt==2:
-        len=np.fromfile(f,dtype=np.int32,count=1)
-        idx=np.fromfile(f,dtype=np.int32,count=dim[0])
-        len=np.fromfile(f,dtype=np.int32,count=1)
-
-    len=np.fromfile(f,dtype=np.int32,count=1)
-    a=np.fromfile(f,dtype=np.float32,count=np.product(dim))
-    len=np.fromfile(f,dtype=np.int32,count=1)
+    # read the pebble data
+    a = f.readReals()
     a=a.reshape(dim[1],dim[0]).transpose()
     
-    if fmt==3:
-        len=np.fromfile(f,dtype=np.int32,count=1)
-        idx=np.fromfile(f,dtype=np.int32,count=dim[0])
-        len=np.fromfile(f,dtype=np.int32,count=1)
+    # read the index data
+    idx = f.readInts()
 
+    # sort on increasing indices
     s=idx.argsort()
     idx=idx[s]
     a=a[s,:]
-    
+
+    # save in a structure 
     class p:
         i=idx
         p=a[:,0:3]
@@ -47,6 +46,7 @@ def read_pebbles(ip=1,it=0,verbose=0,run='pebble_atmosphere',dir='data'):
         t=a[:,6]
         s=a[:,7]
         c=a[:,8]
+
     if verbose:
         print "   index range: [", p.i.min(), ",", p.i.max(), "]"
         print "position range: [", p.p.min(), ",", p.p.max(), "]"
