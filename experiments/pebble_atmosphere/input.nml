@@ -2,13 +2,13 @@
  do_trace=f
  verbose=1
  do_debug=f
- do_output=f
+ do_output=t
 /
 &rubiks_params
- n_levels=3
+ n_levels=7
  n_patch=3
  m_zoom=3
- n_repeat=3
+ n_repeat=29
 /
 &pebble_params
  vz_pebble_cgs=1.5e6

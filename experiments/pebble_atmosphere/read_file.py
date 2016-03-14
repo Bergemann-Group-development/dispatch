@@ -21,7 +21,7 @@ def read_file (fileroot, verbose=False, derivs=False):
     # line 2: m(1:3) n(1:3) li(1:3) ui(1:3)
     line = f.readline()
     column = line.split()
-    patch.m  = np.array(column[0:3],dtype=np.int32)
+    #patch.m  = np.array(column[0:3],dtype=np.int64)
     patch.n  = np.array(column[3:6],dtype=np.int32)
     patch.li = np.array(column[6:9],dtype=np.int32)
     patch.ui = np.array(column[9:12],dtype=np.int32)
