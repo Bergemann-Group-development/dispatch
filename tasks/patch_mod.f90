@@ -132,13 +132,13 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
-  integer, save:: n(3), ng(3), nv, nt, i, max_files=100
+  integer, save:: n(3), ng(3), nv, nt, max_files=100
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false.
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
   real(8):: position(3), size(3)
-  integer:: iostat
+  integer:: iostat, i
   namelist /patch_params/ size, n, nv, ng, nt, courant, u_fixed, dt_fixed, grace
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     guard_zones, time_derivs
@@ -990,6 +990,9 @@ SUBROUTINE check_density (self, label)
   !-----------------------------------------------------------------------------
   mind = minval(self%mem(:,:,:,1,self%it,1))
   if (mind <= 0.0) then
+    !write (io%debug_unit) self%id, self%mesh%gn
+    !write (io%debug_unit) self%mem(:,:,:,1,self%it,1)
+    !flush (io%debug_unit)
     !---------------------------------------------------------------------------
     ! Negative densities appear to develop at a few points in the guard zones,
     ! so this tries to patch up, sampling densitites in the guard zone.
