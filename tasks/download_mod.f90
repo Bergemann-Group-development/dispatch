@@ -67,12 +67,16 @@ END SUBROUTINE download_link
 !>      need 6 of the 26 neighbor patches in 3D!
 !> =============================================================================
 SUBROUTINE download_same_static (link)
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(link_t), pointer:: nbor
   class(patch_t), pointer:: patch, other
-  class(link_t), pointer:: link, nbor
   class(task_t), pointer:: task
   integer:: ix, iy, iz, o, jt(2), it, iv, nt, nv, neg
   real:: pt(2)
   type(mesh_t), pointer:: m(:)
+  real, dimension(:,:,:,:), pointer:: guard
+  logical:: restore(-3:3)
   !-----------------------------------------------------------------------------
   call trace_begin('download::download_same_static')
   patch => task2patch (link%task)
@@ -80,40 +84,58 @@ SUBROUTINE download_same_static (link)
   it = patch%it
   nv = patch%nv
   !-----------------------------------------------------------------------------
+  ! Save guard zone values and restore the planes that have no neighbors; they
+  ! serve as static boundary conditions, but may be overwritten in the corners,
+  ! since we only download from 6 neighbors.
+  !-----------------------------------------------------------------------------
+  allocate (guard(m(1)%gn,m(2)%gn,m(3)%gn,nv))
+  restore = .false.
+  guard = patch%mem(:,:,:,:,it,1)
+  !-----------------------------------------------------------------------------
   ! XY-planes in the two Z guard zones
   !-----------------------------------------------------------------------------
   if (m(3)%n > 1) then
     other => find_nbor (link, -3, o, patch%time, jt, pt)
     if (associated(other)) then
-      neg = 0.0
+      neg = 0
       do iz=m(3)%lb,m(3)%lo
         do iy=m(2)%lb,m(2)%ub
           do iv=1,nv
             do ix=m(1)%lb,m(1)%ub
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy,iz+o,iv,jt(2),1)*pt(2)
-              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)==0.0)
+              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
           end do
         end do
       end do
+      if (neg>0) print*, other%id, 'MK: -3, neg, o =', neg, o
       call patch%check_density ('after -3')
+    else
+      restore(-3) = .true.
+          guard(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:) = &
+      patch%mem(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:,it,1)
     end if
     other => find_nbor (link, +3, o, patch%time, jt, pt)
     if (associated(other)) then
-      neg = 0.0
+      neg = 0
       do iz=m(3)%uo,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%ub
             do iv=1,nv
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy,iz+o,iv,jt(2),1)*pt(2)
-              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)==0.0)
+              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
           end do
         end do
       end do
+      if (neg>0) print*, other%id, 'MK: +3, neg, o =', neg, o
       call patch%check_density ('after +3')
+    else
+      restore(+3) = .true.
+          guard(1:m(1)%gn,1:m(2)%gn,m(3)%uo:m(3)%ub,:) = &
+      patch%mem(1:m(1)%gn,1:m(2)%gn,m(3)%uo:m(3)%ub,:,it,1)
     end if
   end if
   !-----------------------------------------------------------------------------
@@ -122,31 +144,45 @@ SUBROUTINE download_same_static (link)
   if (m(2)%n > 1) then
     other => find_nbor (link, -2, o, patch%time, jt, pt)
     if (associated(other)) then
-      do iz=m(3)%li,m(3)%ui
+      neg = 0
+      do iz=m(3)%lb,m(3)%ub
         do iy=m(2)%lb,m(2)%lo
           do iv=1,nv
             do ix=m(1)%lb,m(1)%ub
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy+o,iz,iv,jt(2),1)*pt(2)
+              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
           end do
         end do
       end do
+      if (neg>0) print*, other%id, 'MK: -2, neg, o =', neg, o
       call patch%check_density ('after -2')
+    else
+      restore(-2) = .true.
+          guard(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:) = &
+      patch%mem(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:,it,1)
     end if
     other => find_nbor (link, +2, o, patch%time, jt, pt)
     if (associated(other)) then
-      do iz=m(3)%li,m(3)%ui
+      neg = 0
+      do iz=m(3)%lb,m(3)%ub
         do iy=m(2)%uo,m(2)%ub
           do iv=1,nv
             do ix=m(1)%lb,m(1)%ub
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy+o,iz,iv,jt(2),1)*pt(2)
+              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
           end do
         end do
       end do
+      if (neg>0) print*, other%id, 'MK: +2, neg, o =', neg, o
       call patch%check_density ('after +2')
+    else
+      restore(+2) = .true.
+          guard(1:m(1)%gn,m(2)%uo:m(2)%ub,1:m(3)%gn,:) = &
+      patch%mem(1:m(1)%gn,m(2)%uo:m(2)%ub,1:m(3)%gn,:,it,1)
     end if
   end if
   !-----------------------------------------------------------------------------
@@ -155,33 +191,63 @@ SUBROUTINE download_same_static (link)
   if (m(1)%n > 1) then
     other => find_nbor (link, -1, o, patch%time, jt, pt)
     if (associated(other)) then
-      do iz=m(3)%li,m(3)%ui
-        do iy=m(2)%li,m(2)%ui
+      neg = 0
+      do iz=m(3)%lb,m(3)%ub
+        do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%lb,m(1)%lo
             do iv=1,nv
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix+o,iy,iz,iv,jt(2),1)*pt(2)
+              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
           end do
         end do
       end do
+      if (neg>0) print*, other%id, 'MK: -1, neg, o =', neg, o
       call patch%check_density ('after -1')
+    else
+      restore(-1) = .true.
+          guard(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:) = &
+      patch%mem(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:,it,1)
     end if
     other => find_nbor (link, +1, o, patch%time, jt, pt)
     if (associated(other)) then
-      do iz=m(3)%li,m(3)%ui
-        do iy=m(2)%li,m(2)%ui
+      neg = 0
+      do iz=m(3)%lb,m(3)%ub
+        do iy=m(2)%lb,m(2)%ub
           do ix=m(1)%uo,m(1)%ub
             do iv=1,nv
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix+o,iy,iz,iv,jt(2),1)*pt(2)
+              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
           end do
         end do
       end do
+      if (neg>0) print*, other%id, 'MK: +1, neg, o =', neg, o
       call patch%check_density ('after +1')
+    else
+      restore(+1) = .true.
+          guard(m(1)%uo:m(1)%ub,1:m(2)%gn,1:m(3)%gn,:) = &
+      patch%mem(m(1)%uo:m(1)%ub,1:m(2)%gn,1:m(3)%gn,:,it,1)
     end if
   end if
+  !-----------------------------------------------------------------------------
+  ! Restore the guard zones that may have been affected by corner downloads
+  !-----------------------------------------------------------------------------
+  if (restore(-3)) patch%mem(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:,it,1) = &
+                       guard(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:)
+  if (restore(+3)) patch%mem(1:m(1)%gn,1:m(2)%gn,m(3)%uo:m(3)%ub,:,it,1) = &
+                       guard(1:m(1)%gn,1:m(2)%gn,m(3)%uo:m(3)%ub,:)
+  if (restore(-2)) patch%mem(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:,it,1) = &
+                       guard(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:)
+  if (restore(+2)) patch%mem(1:m(1)%gn,m(2)%uo:m(2)%ub,1:m(3)%gn,:,it,1) = &
+                       guard(1:m(1)%gn,m(2)%uo:m(2)%ub,1:m(3)%gn,:)
+  if (restore(-1)) patch%mem(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:,it,1) = &
+                       guard(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:)
+  if (restore(+1)) patch%mem(m(1)%uo:m(1)%ub,1:m(2)%gn,1:m(3)%gn,:,it,1) = &
+                       guard(m(1)%uo:m(1)%ub,1:m(2)%gn,1:m(3)%gn,:)
+  deallocate (guard)
   call trace_end
 END SUBROUTINE download_same_static
 
