@@ -971,7 +971,7 @@ SUBROUTINE output (self, experiment_name)
   if (trim(io%inputname) /= 'input') then
     io%outputname = io%inputname
   end if
-  write (filename,'(a,i3.3,"_",i4.4,".peb")') &
+  write (filename,'(a,i4.4,"_",i4.4,".peb")') &
       'data/'//trim(io%outputname)//'/', self%id, self%iout
   open  (io%data_unit, file=filename, form='unformatted', status='unknown')
   write (io%data_unit) data_format

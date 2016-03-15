@@ -303,7 +303,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output) return
   call self%patch_t%output (experiment_name)
-  write (filename,'("data/",a,"/",i3.3,"_",i4.4,".txt")') trim(io%outputname), &
+  write (filename,'("data/",a,"/",i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout-1
   open (io%data_unit, file=trim(filename), form='formatted', status='old', &
     position='append')
