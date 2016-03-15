@@ -4,6 +4,7 @@
 MODULE list_mod
   USE io_mod
   USE omp_mod
+  USE omp_lock_mod
   USE mpi_mod
   USE trace_mod
   USE bits_mod
@@ -39,6 +40,8 @@ MODULE list_mod
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0
     integer:: debug=0
     integer:: n_tasks=1
+    type(lock_t):: lock
+    character(len=4):: kind='list'
     !---------------------------------------------------------------------------
     ! from patch_list_mod
     !---------------------------------------------------------------------------
@@ -82,6 +85,7 @@ SUBROUTINE init (self, name)
     self%name = name
     print*,'init_list: ', name
   end if
+  call self%lock%init (self%kind)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -214,16 +218,17 @@ SUBROUTINE check_nbors (self, link)
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
   integer:: n_check, n_ready, n_blocked, n_cleared, n_remain
+  logical:: is_clear
   !.............................................................................
   call trace_begin('list_t%check_nbors '//self%name)
-  !xomp critical (list_cr)
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
   nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
     nbtask => nbor%task                               ! neighbor task
     n_check = n_check+1
-    if (nbtask%is_clear(bits%ready)) then             ! needs checking?
+    is_clear = nbtask%is_clear(bits%ready)
+    if (is_clear) then                                ! needs checking?
       n_blocked = n_blocked+1
       call self%check_ready (nbor%link)               ! pointer back
       if (nbtask%is_set(bits%ready)) then
@@ -243,7 +248,6 @@ SUBROUTINE check_nbors (self, link)
     'neighbors:',n_check, 'blocked:',n_blocked, 'ready:', n_ready, &
     'cleared:',n_cleared, 'remain:', n_remain
   if (io%verbose>3) call self%print
-  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE check_nbors
 
@@ -256,13 +260,11 @@ SUBROUTINE check_all (self)
   class(link_t), pointer:: link
   !.............................................................................
   call trace_begin('list_t%check_all '//self%name)
-  !xomp critical (list_cr)
   link => self%head
   do while (associated (link))                        ! keep going until end
     call self%check_ready (link, 1)                   ! link ready?
     link => link%next
   end do
-  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE check_all
 
@@ -280,27 +282,27 @@ SUBROUTINE check_ready (self, link, set_debug)
   call self%qconsistency(1)
   task => link%task                                     ! already checked?
   if (task%is_set(bits%ready)) return
-  call trace_begin('list_t%check_ready '//self%name,2)
-  nbor => link%nbor                                     ! start on nbor list
-  do while (associated (nbor))                          ! keep going until end
-    nbtask => nbor%task
+    call trace_begin('list_t%check_ready '//self%name,2)
+    nbor => link%nbor                                   ! start on nbor list
+    do while (associated (nbor))                        ! keep going until end
+      nbtask => nbor%task
     if (nbtask%is_ahead_of(task)) then
-      nbor => nbor%next                                 ! next nbor
-    else
-      self%n_check = self%n_check+1
-      if (self%debug==1) &
-        print*, task%id, ' check_ready failed on task', nbtask%id
-      call trace_end
-      return                                            ! give up -- do nothing
-    end if
-  end do
-  call task%set(bits%ready)                             ! mark as checked
+        nbor => nbor%next                               ! next nbor
+      else
+        self%n_check = self%n_check+1
+        if (self%debug==1) &
+          print*, task%id, ' check_ready failed on task', nbtask%id
+        call trace_end
+        return                                          ! give up -- do nothing
+      end if
+    end do
+    call task%set(bits%ready)                           ! mark as checked
   call self%qconsistency(2)
-  call self%queue_by_time (link)                        ! add task to queue
-  self%n_ready = self%n_ready+1
-  if (self%debug>0) print *, task%id, ' found by check_ready, nq =', self%nq
+    call self%queue_by_time (link)                      ! add task to queue
+    self%n_ready = self%n_ready+1
+    if (self%debug>0) print *, task%id, ' found by check_ready, nq =', self%nq
   call self%qconsistency(3)
-  call trace_end
+    call trace_end
 END SUBROUTINE check_ready
 
 !> =============================================================================
@@ -377,6 +379,7 @@ SUBROUTINE init_nbors (self)
   integer:: n_add = 0
   !.............................................................................
   call trace_begin('list_t%init_nbors ')
+  call self%lock%set('init_bors')
   link => self%head                                     ! start checking links
   do while (associated(link))
     nullify (link%nbor)                                 ! initially no nbor
@@ -411,6 +414,7 @@ SUBROUTINE init_nbors (self)
       'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
     link => link%next                                   ! continue list
   end do
+  call self%lock%unset('init_nbors')
   call trace_end
 END SUBROUTINE init_nbors
 
@@ -468,7 +472,7 @@ SUBROUTINE append_list (self, task_list)
   integer:: n
   !-----------------------------------------------------------------------------
   call trace_begin ('list_t%append_list')
-  !xomp critical (list_cr)
+  call self%lock%set ('append_list')
   self%tail%next => task_list%head
   self%tail      => task_list%tail
   self%n = self%n + task_list%n
@@ -483,7 +487,7 @@ SUBROUTINE append_list (self, task_list)
   else
     print *, trim(self%name)//': inconsistent append of '//task_list%name
   end if
-  !xomp end critical (list_cr)
+  call self%lock%unset ('append_list')
   call trace_end
 END SUBROUTINE append_list
 
@@ -494,7 +498,7 @@ SUBROUTINE remove_task (self, task)
   class(link_t), pointer:: link, prev
   !.............................................................................
   call trace_begin('list_t%remove_task')
-  !xomp critical (list_cr)
+  call self%lock%set('remove_task')
   link => self%head
   nullify (prev)
   do while (associated(link))
@@ -512,7 +516,7 @@ SUBROUTINE remove_task (self, task)
   end do
   print*,'ERROR: failed to remove from task list, task', task%id
 9 continue
-  !xomp end critical (list_cr)
+  call self%lock%unset('remove_task')
   call trace_end
 END SUBROUTINE remove_task
 
@@ -679,7 +683,7 @@ SUBROUTINE queue_by_time (self, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%queue_by_time '//self%name)
-  !xomp critical (list_cr)
+  call self%lock%set ('queue_by_time')
   call this%task%set(bits%ready)                       ! mark as checked
   if (io%verbose>2) print'(1x,a,i6,a,f10.5)', 'list_t%queue_by_time: adding task', &
     this%task%id, ' at time', this%task%time
@@ -687,15 +691,13 @@ SUBROUTINE queue_by_time (self, this)
   next => self%queue
   do while (associated(next))
     if (associated(next%task, this%task)) then
-      print*,'WARNMING: task', this%task%id, ' is already on ready queue'
+      print*, omp_mythread(), ' WARNING: task', this%task%id, ' is already on ready queue'
     else if (next%task%time > this%task%time) then
       this%next_time => next
       if (associated(prev)) then
         prev%next_time => this
       else
-        !xomp critical (queue_cr)
         self%queue => this
-        !xomp end critical (queue_cr)
       end if
       self%nq = self%nq+1
       call trace_end
@@ -708,13 +710,11 @@ SUBROUTINE queue_by_time (self, this)
   if (associated(prev)) then
     prev%next_time => this
   else
-    !xomp critical (queue_cr)
     self%queue => this
-    !xomp end critical (queue_cr)
   end if
   nullify (this%next_time)
 9 continue
-  !xomp end critical (list_cr)
+  call self%lock%unset ('queue_by_time')
   call trace_end
 END SUBROUTINE queue_by_time
 
@@ -727,7 +727,7 @@ SUBROUTINE add_by_quality (self, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_by_quality')
-  !xomp critical (list_cr)
+  call self%lock%set ('add_by_quality')
   nullify (prev)
   next => self%head
   do while (associated(next))
@@ -765,7 +765,7 @@ SUBROUTINE add_by_quality (self, this)
   self%tail => this
   self%n = self%n+1
 9 continue
-  !xomp end critical (list_cr)
+  call self%lock%unset ('add_by_quality')
   call trace_end
 END SUBROUTINE add_by_quality
 
@@ -800,7 +800,7 @@ SUBROUTINE insert (self, old, new)
   class(link_t), pointer:: old, new
   !.............................................................................
   call trace_begin ('list_t%insert '//self%name)
-  !xomp critical (list_cr)
+  call self%lock%set ('insert')
   if (associated(old%prev)) then
     new%prev => old%prev
     new%prev%next => new
@@ -810,7 +810,7 @@ SUBROUTINE insert (self, old, new)
   new%next => old
   new%next%prev => new
   self%n = self%n + 1
-  !xomp end critical (list_cr)
+  call self%lock%unset ('insert')
   call trace_end
 END SUBROUTINE insert
 

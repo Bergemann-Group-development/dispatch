@@ -42,18 +42,12 @@ SUBROUTINE set (self, label)
   if (omp_test_lock (self%lock)) then
     if (debug) &
       print '(i12,a,i14,1x,a)', omp_mythread(),'  set lock', self%id, self%kind//': '//trim(label)
-    !if (debug) &
-    !  print*, ' was set'
   else
-    !if (debug) &
-    !  print*, ' could not be set; waiting ...'
     if (debug) &
       print '(i12,a,i14,1x,a)', omp_mythread(),' wait lock', self%id, self%kind//': '//trim(label)
     call omp_set_lock (self%lock)
     if (debug) &
       print '(i12,a,i14,1x,a)', omp_mythread(),'  set lock', self%id, self%kind//': '//trim(label)
-    !if (debug) &
-    !  print*, ' is set'
   end if
 END SUBROUTINE set
 

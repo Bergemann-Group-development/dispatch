@@ -14,6 +14,7 @@
 MODULE task_list_mod
   USE io_mod
   USE omp_mod
+  USE omp_lock_mod
   USE omp_timer_mod
   USE mpi_mod
   USE list_mod
@@ -55,7 +56,7 @@ SUBROUTINE init (self, name)
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
   call io%init
-  if (present(name)) self%name = name
+  call self%list_t%init (name)
   call trace_begin('task_list_t%init ')
   rewind (io%input); read(io%input, task_list_params, iostat=iostat)
   if (iostat==0 .and. io%master) then
@@ -120,20 +121,22 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in a very brief critical region
   !-----------------------------------------------------------------------------
-  !$omp critical (list_cr)
-  call trace('list_cr 1 begin')
+  call self%lock%set ('task_list::update')
   head => self%queue                                    ! queue start
-  !-----------------------------------------------------------------------------
-  ! Having secured a head, we need to check if it is at all associcated
-  !-----------------------------------------------------------------------------
   if (associated(head)) then
+    !---------------------------------------------------------------------------
+    ! Set the head of the queue to the next task in time.  The ready bit needs
+    ! to remain on for now, to prevent other threads from checking this task
+    ! before it is updated.  After the update, the clearing of the ready bit
+    ! allows the state of the current task to be evaluated by other threads, as
+    ! well as by the current thread.  Locking should be used to allow only a
+    ! single thread and task to check and change the ready bit status, at any
+    ! one time.
+    !---------------------------------------------------------------------------
     task => head%task                                   ! head task
-    self%queue => self%queue%next_time                  ! update the link
-    self%nq = self%nq-1
-  end if
-  call trace('list_cr 1 end')
-  !$omp end critical (list_cr)
-  if (associated(head)) then
+    self%queue => self%queue%next_time                  ! new head task
+    self%nq = self%nq-1                                 ! decrement queue count
+    call self%lock%unset ('task_list::update')          ! allow list updates
     !-----------------------------------------------------------------------------
     ! Prepare for update, by downloading data that it depends on.  During the
     ! download we must prevent threads in the nbor list from rotating mem slots
@@ -155,7 +158,6 @@ SUBROUTINE update (self)
     ! updating the time, and rotating the memory slots where information about
     ! previous time steps are saved.
     !----------------------------------------------------------------------------
-    !$omp critical (list_cr)
     if (io%verbose>1) &
       print'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)', &
       'thread', omp_mythread(), 'task', task%id, &
@@ -168,13 +170,10 @@ SUBROUTINE update (self)
     call task%info (self%nq)                            ! print info on stdout
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the queue,
-    ! and its neighbors should be checked for return to the queue.
+    ! and its neighbors should also be checked for return to the queue.
     !-----------------------------------------------------------------------------
-    call trace('list_cr 2 begin')
     call task%clear(bits%ready)                         ! needs new check
     call self%check_nbors (head)                        ! any nbor ready?
-    call trace('list_cr 2 end')
-    !$omp end critical (list_cr)
     call task%output (self%name)                        ! check output
     !-----------------------------------------------------------------------------
     ! Tasks that have finished are subtracted from the task list count
@@ -182,6 +181,8 @@ SUBROUTINE update (self)
     if (task%time-0.1*task%dtime > task%end_time) then  ! finished:
       self%n = self%n-1
     end if
+  else
+    call self%lock%unset ('task_list::update')
   end if
   call trace_end
 END SUBROUTINE update

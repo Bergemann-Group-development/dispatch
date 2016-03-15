@@ -624,7 +624,7 @@ SUBROUTINE output (self, experiment_name)
     call trace ('1')
     call system ('mkdir -p data/')
     call system ('mkdir -p data/'//trim(io%outputname))
-    write (filename,'(a,i3.3,"_",i4.4)') &
+    write (filename,'(a,i4.4,"_",i4.4)') &
       'data/'//trim(io%outputname)//'/', self%id, self%iout
     if (io%verbose>=0) &
       print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%out_next
