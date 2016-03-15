@@ -6,6 +6,7 @@
 MODULE patch_mod
   USE io_mod
   USE omp_mod
+  USE omp_lock_mod
   USE omp_timer_mod
   USE bits_mod
   USE trace_mod
@@ -238,7 +239,7 @@ SUBROUTINE init (self)
     self%mem_allocated = .true.                 ! mark
   end if
   self%dt = 0.0
-  self%t = -1.0                                 ! mark as invalid
+  self%t =  0.0
   self%iit = 1                                  ! initial memory slots
   self%iit(nt) = 2                              ! first output slot
   self%it = self%iit(nt-1)                      ! short-hand (=1 initially)
@@ -270,6 +271,7 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
+  call self%lock%set ('rotate')
   if (self%is_set(bits%root_grid)) then
     call self%periodic_grid                     ! periodic root grid
   else
@@ -309,6 +311,7 @@ SUBROUTINE rotate (self)
    print*,'patch iit:', self%iit
   if (io%verbose>3) &
    print*,'patch t(iit):', self%t(self%iit)
+  call self%lock%unset ('rotate')
   call trace_end
 END SUBROUTINE rotate
 

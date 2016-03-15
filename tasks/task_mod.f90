@@ -3,6 +3,8 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE task_mod
   USE io_mod
+  USE omp_mod
+  USE omp_lock_mod
   USE mpi_mod
   USE bits_mod
   USE trace_mod
@@ -26,7 +28,7 @@ MODULE task_mod
     real(8):: out_time = 1d0
     real(8):: print_next = 0d0
     real(8):: print_time = 1d0
-    real(8):: dtime = 0.1d0
+    real(8):: dtime = 0d0
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0
     real(8):: velocity(3) = 0d0
@@ -35,6 +37,8 @@ MODULE task_mod
     character(len=32), pointer:: name
     class(task_t), pointer:: parent
     class(*), pointer:: link            ! this could be useful
+    type(lock_t):: lock                 ! OMP lock
+    character(len=4):: kind='task'
   contains
     procedure:: init
     procedure:: update
@@ -82,6 +86,8 @@ SUBROUTINE init (self)
     id = self%unique_id()
     self%id = id
   end if
+  call self%lock%init (self%kind)
+  self%lock%id = self%id
   call trace_end
 END SUBROUTINE
 
@@ -123,7 +129,8 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   class (task_t):: self, task
   !.............................................................................
   is_ahead_of = self%time + self%dtime*task%grace >= task%time
-!  print*,'is_ahead_of: ', self%time, task%time, task%grace, is_ahead_of
+  !print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread(), 'is_ahead_of: ', &
+  !  task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of
 END FUNCTION
 
 SUBROUTINE print (self)

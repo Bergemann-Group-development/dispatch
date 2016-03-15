@@ -278,31 +278,38 @@ SUBROUTINE check_ready (self, link, set_debug)
   class(link_t), pointer:: nbor
   integer:: set_debug, debug
   optional:: set_debug
+  logical:: ahead, is_clear
   !.............................................................................
   call self%qconsistency(1)
   task => link%task                                     ! already checked?
-  if (task%is_set(bits%ready)) return
+  call task%lock%set ('check_ready')                    ! one at a time
+  if (task%is_clear(bits%ready)) then
     call trace_begin('list_t%check_ready '//self%name,2)
     nbor => link%nbor                                   ! start on nbor list
     do while (associated (nbor))                        ! keep going until end
       nbtask => nbor%task
-    if (nbtask%is_ahead_of(task)) then
+      ahead = nbtask%is_ahead_of(task)
+      if (ahead) then
         nbor => nbor%next                               ! next nbor
       else
         self%n_check = self%n_check+1
         if (self%debug==1) &
           print*, task%id, ' check_ready failed on task', nbtask%id
         call trace_end
+        call task%lock%unset ('check_ready')            ! one at a time
         return                                          ! give up -- do nothing
       end if
     end do
     call task%set(bits%ready)                           ! mark as checked
-  call self%qconsistency(2)
+    !print *, task%id, ' ready bit set by', omp_mythread()
+    !call self%qconsistency(2)
     call self%queue_by_time (link)                      ! add task to queue
     self%n_ready = self%n_ready+1
     if (self%debug>0) print *, task%id, ' found by check_ready, nq =', self%nq
-  call self%qconsistency(3)
+    !call self%qconsistency(3)
     call trace_end
+  end if
+  call task%lock%unset ('check_ready')                  ! one at a time
 END SUBROUTINE check_ready
 
 !> =============================================================================

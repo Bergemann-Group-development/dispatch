@@ -2,6 +2,7 @@
 !> =============================================================================
 MODULE download_mod
   USE io_mod
+  USE omp_mod
   USE bits_mod
   USE mesh_mod
   USE trace_mod
@@ -98,6 +99,7 @@ SUBROUTINE download_same_static (link)
     other => find_nbor (link, -3, o, patch%time, jt, pt)
     if (associated(other)) then
       neg = 0
+      call other%lock%set ('download_same -3')
       do iz=m(3)%lb,m(3)%lo
         do iy=m(2)%lb,m(2)%ub
           do iv=1,nv
@@ -109,7 +111,8 @@ SUBROUTINE download_same_static (link)
           end do
         end do
       end do
-      if (neg>0) print*, other%id, 'MK: -3, neg, o =', neg, o
+      call other%lock%unset ('download_same -3')
+      if (neg>0) print*, other%id, 'MK: -3, neg, o =', neg, o, jt, pt
       call patch%check_density ('after -3')
     else
       restore(-3) = .true.
@@ -118,6 +121,7 @@ SUBROUTINE download_same_static (link)
     end if
     other => find_nbor (link, +3, o, patch%time, jt, pt)
     if (associated(other)) then
+      call other%lock%set ('download_same +3')
       neg = 0
       do iz=m(3)%uo,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
@@ -130,7 +134,8 @@ SUBROUTINE download_same_static (link)
           end do
         end do
       end do
-      if (neg>0) print*, other%id, 'MK: +3, neg, o =', neg, o
+      if (neg>0) print*, other%id, 'MK: +3, neg, o =', neg, o, jt, pt
+      call other%lock%unset ('download_same +3')
       call patch%check_density ('after +3')
     else
       restore(+3) = .true.
@@ -144,6 +149,7 @@ SUBROUTINE download_same_static (link)
   if (m(2)%n > 1) then
     other => find_nbor (link, -2, o, patch%time, jt, pt)
     if (associated(other)) then
+      call other%lock%set ('download_same -2')
       neg = 0
       do iz=m(3)%lb,m(3)%ub
         do iy=m(2)%lb,m(2)%lo
@@ -156,7 +162,8 @@ SUBROUTINE download_same_static (link)
           end do
         end do
       end do
-      if (neg>0) print*, other%id, 'MK: -2, neg, o =', neg, o
+      call other%lock%unset ('download_same -2')
+      if (neg>0) print*, other%id, 'MK: -2, neg, o =', neg, o, jt, pt
       call patch%check_density ('after -2')
     else
       restore(-2) = .true.
@@ -165,6 +172,7 @@ SUBROUTINE download_same_static (link)
     end if
     other => find_nbor (link, +2, o, patch%time, jt, pt)
     if (associated(other)) then
+      call other%lock%set ('download_same +2')
       neg = 0
       do iz=m(3)%lb,m(3)%ub
         do iy=m(2)%uo,m(2)%ub
@@ -177,7 +185,8 @@ SUBROUTINE download_same_static (link)
           end do
         end do
       end do
-      if (neg>0) print*, other%id, 'MK: +2, neg, o =', neg, o
+      call other%lock%unset ('download_same +2')
+      if (neg>0) print*, other%id, 'MK: +2, neg, o =', neg, o, jt, pt
       call patch%check_density ('after +2')
     else
       restore(+2) = .true.
@@ -191,6 +200,7 @@ SUBROUTINE download_same_static (link)
   if (m(1)%n > 1) then
     other => find_nbor (link, -1, o, patch%time, jt, pt)
     if (associated(other)) then
+      call other%lock%set ('download_same -1')
       neg = 0
       do iz=m(3)%lb,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
@@ -203,7 +213,8 @@ SUBROUTINE download_same_static (link)
           end do
         end do
       end do
-      if (neg>0) print*, other%id, 'MK: -1, neg, o =', neg, o
+      call other%lock%unset ('download_same -1')
+      if (neg>0) print*, other%id, 'MK: -1, neg, o =', neg, o, jt, pt
       call patch%check_density ('after -1')
     else
       restore(-1) = .true.
@@ -212,6 +223,7 @@ SUBROUTINE download_same_static (link)
     end if
     other => find_nbor (link, +1, o, patch%time, jt, pt)
     if (associated(other)) then
+      call other%lock%set ('download_same +1')
       neg = 0
       do iz=m(3)%lb,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
@@ -224,7 +236,8 @@ SUBROUTINE download_same_static (link)
           end do
         end do
       end do
-      if (neg>0) print*, other%id, 'MK: +1, neg, o =', neg, o
+      call other%lock%unset ('download_same +1')
+      if (neg>0) print*, other%id, 'MK: +1, neg, o =', neg, o, jt, pt
       call patch%check_density ('after +1')
     else
       restore(+1) = .true.
@@ -265,29 +278,47 @@ SUBROUTINE find_time (other, time, jt, pt)
   integer:: it1, it2, it
   real(8):: t1, t2
   real:: dt, pt2
+  logical:: found
   !-----------------------------------------------------------------------------
+  call other%lock%set ('find_time')
   jt = 1
+  found = .false.
   if (time==0.0) then
+    found = .true.
     pt(2) = 0.0
   else
-    pt(2) = 1e10
-    do it=1,other%nt-1
-      it1 = it
-      it2 = mod(it1,other%nt)+1
-      !$omp atomic read
+    pt(2) = 1+other%grace
+    !---------------------------------------------------------------------------
+    ! Check all nt-2 time intervals, and settle for the one that gives the
+    ! smallest extrapolation factor pt(2).  Initially, when all time slots
+    ! have time=0.0,
+    !---------------------------------------------------------------------------
+    do it=1,other%nt-2
+      it1 = other%iit(it)
+      it2 = other%iit(it+1)
       t1 = other%t(it1)
-      !$omp atomic read
       t2 = other%t(it2)
       dt = t2 - t1
-      pt2 = (time-other%t(it1))/max(dt,1e-30)
-      if (pt2 < pt(2) .and. dt >= 0.0) then
-        pt(2) = pt2
-        jt(1) = it1
-        jt(2) = it2
+      if (dt > 0.0) then
+        pt2 = (time-other%t(it1))/dt
+        if (pt2 < pt(2)) then
+          found = .true.
+          pt(2) = pt2
+          jt(1) = it1
+          jt(2) = it2
+          !print*,omp_mythread(),' MK1: id, it', other%id, it, jt, dt, pt2
+        else
+          !print*,omp_mythread(),' MK2: id, it', other%id, it, jt, dt, pt2
+        end if
       end if
     end do
   end if
   pt(1) = 1.0-pt(2)
+  if (.not.found) then
+    print '(i6,i4,2x,a,2i4,2f9.4,3x,"time",f9.4,3x,"other%t",7f9.5)', other%id, &
+      omp_mythread(), &
+      'WARNING: using fall-back', jt, pt, time, other%t(other%iit(1:other%nt-1))
+  end if
   if (abs(pt(1))< 1e-4) then
     if (io%verbose>2) print*,'EXACT'
     pt(1)=0.0; pt(2)=1.0
@@ -295,8 +326,9 @@ SUBROUTINE find_time (other, time, jt, pt)
     if (io%verbose>2) print*,'EXACT'
     pt(1)=1.0; pt(2)=0.0
   end if
-  if (io%verbose>1) & 
+  if (io%verbose>1) &
     print'(a,i6,f9.4,2i4,2f7.3,10f9.4)', 'find_time: ', other%id, time, jt, pt, other%t
+  call other%lock%unset ('find_time')
 END SUBROUTINE find_time
 
 !> =============================================================================
@@ -312,6 +344,7 @@ FUNCTION find_nbor (link, idir, o, time, jt, pt) RESULT (other)
   !-----------------------------------------------------------------------------
   call trace_begin('download::find_nbor')
   patch => task2patch (link%task)
+  !print*, patch%id, 'looking at nbors'
   m => patch%mesh
   nt = patch%nt
   nv = patch%nv
@@ -328,6 +361,7 @@ FUNCTION find_nbor (link, idir, o, time, jt, pt) RESULT (other)
         idir, patch%id, nbor%task%id, dist/patch%size(adir), (position-try%position)/patch%size
     if (dist < patch%size(adir)*0.1) then
       other => try
+      !print '(i6,a,f9.5,3x,"other%t:",7f9.5)', patch%id, ' found nbor, times =', patch%time, other%t(1:nt-1)
       exit
     end if
     nbor => nbor%next
