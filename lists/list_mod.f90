@@ -129,7 +129,6 @@ SUBROUTINE append (self, task)
   class(link_t), pointer:: link
   !.............................................................................
   call trace_begin ('list_t%append '//self%name)
-  !xomp critical (list_cr)
   allocate (link)
   link%task => task
   task%link => link
@@ -142,7 +141,6 @@ SUBROUTINE append (self, task)
     self%tail => link
   end if
   self%n = self%n+1
-  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE append
 
@@ -155,7 +153,6 @@ SUBROUTINE remove_link (self, link)
   class(task_t), pointer:: task
   !.............................................................................
   call trace_begin ('list_t%remove_link '//self%name)
-  !xomp critical (list_cr)
   next => link%next
   !-------------------------------------------------------------------------
   ! Check for tail task
@@ -176,7 +173,6 @@ SUBROUTINE remove_link (self, link)
   task => link%task
   deallocate (link)                         ! free to remove link
   self%n = self%n-1
-  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE
 
@@ -188,7 +184,6 @@ SUBROUTINE remove_head (self)
   class(link_t), pointer:: head, link, next
   !.............................................................................
   call trace_begin ('list_t%remove_head '//self%name)
-  !xomp critical (list_cr)
   head => self%head
   next => head%next
   !-------------------------------------------------------------------------
@@ -204,7 +199,6 @@ SUBROUTINE remove_head (self)
   !-------------------------------------------------------------------------
   self%head => next                         ! make head point to next
   self%n = self%n-1
-  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE remove_head
 
@@ -540,7 +534,6 @@ SUBROUTINE make_new_nbors (self, selfp, parent)
   class(patch_t), pointer:: p1, p2
   !> ...........................................................................
   call trace_begin('list_t%make_new_nbors', 1)
-  !xomp critical (list_cr)
   p1 => task2patch (self%task)
   call self%make_new_nbor (selfp, parent)       ! make me a neighbor of my parent
   nbor => parent%nbor                           ! start on parent's nbors chain
@@ -551,7 +544,6 @@ SUBROUTINE make_new_nbors (self, selfp, parent)
       call self%make_new_nbor (selfp, nbor%nbor)! make a neighbor (and make me one)
     nbor => nbor%next                           ! continue on parents nbors chain
   end do
-  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE make_new_nbors
 
@@ -592,7 +584,6 @@ SUBROUTINE add_nbor_by_quality (self, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_quality')
-  !xomp critical (list_cr)
   nullify (prev)
   next => self%nbor
   do while (associated(next))
@@ -626,7 +617,6 @@ SUBROUTINE add_nbor_by_quality (self, this)
   end if
   self%task%n_nbors = self%task%n_nbors+1
 9 continue
-  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE add_nbor_by_quality
 

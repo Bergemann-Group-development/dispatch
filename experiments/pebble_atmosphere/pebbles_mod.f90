@@ -10,6 +10,7 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE pebbles_mod
   USE io_mod
+  USE omp_lock_mod
   USE trace_mod
   USE bits_mod
   USE omp_mod
@@ -75,6 +76,7 @@ MODULE pebbles_mod
     real:: position(3)                          ! relative to star
     type(pebble_t), pointer:: head, tail        ! first & last pebble
     logical:: initialized=.false.               ! initialize flag
+    type(lock_t):: lock
   contains
     procedure append                            ! append a pebble
     procedure remove                            ! remove a pebble
@@ -135,6 +137,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   if (.not.associated(self%pebbles)) allocate (self%pebbles)
   if (self%pebbles%initialized) return
+  call self%pebbles%lock%init ('pebb')
   self%pebbles%initialized = .true.
   call trace_begin ('pebbles_t%init', 3)
   call random%init
@@ -148,7 +151,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read parameters, but only from one thread
   !-----------------------------------------------------------------------------
-  !$omp critical (pebble_cr)
+  call self%lock%set ('init')
   if (first_time) then
     do_pebbles = .true.
     first_time = .false.
@@ -159,7 +162,7 @@ SUBROUTINE init (self)
     read (io%input, pebble_params, iostat=iostat)
     if (io%master) write(*, pebble_params)
   end if
-  !$omp end critical (pebble_cr)
+  call self%lock%unset ('init')
   self%do_pebbles = do_pebbles
   self%only_pebbles = only_pebbles
   self%pebble_rate = pebble_rate_cgs*scaling%t
@@ -545,14 +548,14 @@ SUBROUTINE append (self, pebble)
   class(pebbles_t):: self
   class(pebble_t), pointer:: pebble
   !.............................................................................
-  !$omp critical (pebble_cr)
+  call self%lock%set ('append')
   pebble%prev => self%tail
   if (.not.associated(self%head)) self%head => pebble
   if (associated(self%tail)) self%tail%next => pebble
   nullify (pebble%next)
   self%tail => pebble
   self%n = self%n + 1
-  !$omp end critical (pebble_cr)
+  call self%lock%unset ('append')
 END SUBROUTINE append
 
 !> =============================================================================
@@ -562,7 +565,7 @@ SUBROUTINE remove (self, pebble)
   class(pebbles_t):: self
   class(pebble_t), pointer:: pebble, p
   !.............................................................................
-  !$omp critical (pebble_cr)
+  call self%lock%set ('remove')
   if (associated(pebble%prev)) then
     pebble%prev%next => pebble%next
   else
@@ -576,7 +579,7 @@ SUBROUTINE remove (self, pebble)
     if (associated(self%tail)) nullify(self%tail%next)
   end if
   self%n = self%n - 1
-  !$omp end critical (pebble_cr)
+  call self%lock%unset ('remove')
 END SUBROUTINE remove
 
 !> =============================================================================
@@ -962,7 +965,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles) return
   if (.not.io%do_output .or. self%time < self%out_next) return
-  !$omp critical (pebble_cr)
+  call self%lock%set ('output')
   !
   !
   if (present(experiment_name)) then
@@ -1001,7 +1004,7 @@ SUBROUTINE output (self, experiment_name)
   deallocate (buffer,idbuf)
   !
   call self%patch_t%output (experiment_name)
-  !$omp end critical (pebble_cr)
+  call self%lock%unset ('output')
 END SUBROUTINE output
 
 END MODULE pebbles_mod

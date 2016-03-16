@@ -6,7 +6,7 @@ MODULE omp_lock_mod
   implicit none
   private
   type, public:: lock_t
-    integer:: id
+    integer:: id=0
     integer(kind=omp_lock_kind):: lock
     character(len=4):: kind
   contains
@@ -25,6 +25,7 @@ SUBROUTINE init (self, kind)
   class(lock_t):: self
   character(len=4):: kind
   !-----------------------------------------------------------------------------
+  if (self%id > 0) return
   call omp_init_lock (self%lock)
   !$omp atomic
   id = id+1

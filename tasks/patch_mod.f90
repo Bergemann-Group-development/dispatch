@@ -150,7 +150,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
   !-----------------------------------------------------------------------------
-  !$omp critical (patch_cr)
+  call self%lock%set ('init')
   if (first_time) then
     size = self%size
     n    = self%n
@@ -165,7 +165,7 @@ SUBROUTINE init (self)
     read (io%input, out_params, iostat=iostat)
     if (io%master) write (*, out_params)
   end if
-  !$omp end critical (patch_cr)
+  call self%lock%unset ('init')
   self%n           = n                          ! patch dimensions
   self%ng          = ng                         ! patch dimensions
   self%nv          = nv                         ! patch dimensions
@@ -588,9 +588,9 @@ SUBROUTINE output (self, experiment_name)
   real, dimension(:,:,:), pointer:: buf
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
-  !$omp critical (out_cr)
   call trace_begin('patch:t%output')
   do while (self%time > self%out_next .and. self%out_next <= self%end_time)
+    call self%lock%set ('output')
     self%max_files = self%max_files-1
     if (self%max_files <= 0) then
       print*,'TOO MANY FILES'
@@ -709,9 +709,9 @@ SUBROUTINE output (self, experiment_name)
     write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
     close (io%log_unit)
     self%iout = self%iout+1
+    call self%lock%unset ('output')
   end do
   call trace_end
-  !$omp end critical (out_cr)
 END SUBROUTINE output
 
 !> =============================================================================
