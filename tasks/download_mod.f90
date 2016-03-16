@@ -123,6 +123,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: -3, neg, o =', neg, o, jt, pt
+      !$omp flush
       call other%lock%unset ('download_same -3')
       call patch%check_density ('after -3')
     else
@@ -145,6 +146,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: +3, neg, o =', neg, o, jt, pt
+      !$omp flush
       call other%lock%unset ('download_same +3')
       call patch%check_density ('after +3')
     else
@@ -172,6 +174,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: -2, neg, o =', neg, o, jt, pt
+      !$omp flush
       call other%lock%unset ('download_same -2')
       call patch%check_density ('after -2')
     else
@@ -194,6 +197,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: +2, neg, o =', neg, o, jt, pt
+      !$omp flush
       call other%lock%unset ('download_same +2')
       call patch%check_density ('after +2')
     else
@@ -221,6 +225,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: -1, neg, o =', neg, o, jt, pt
+      !$omp flush
       call other%lock%unset ('download_same -1')
       call patch%check_density ('after -1')
     else
@@ -243,6 +248,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: +1, neg, o =', neg, o, jt, pt
+      !$omp flush
       call other%lock%unset ('download_same +1')
       call patch%check_density ('after +1')
     else
@@ -472,6 +478,7 @@ SUBROUTINE download_different_static (link)
 contains
   subroutine reset
     if (associated(source)) then
+      !$omp flush
       call source%lock%unset ('download_different_static')
       nullify (source)
     end if
@@ -573,6 +580,7 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
     if (all(best%point_distances (position, best%position)  < best%size*0.5d0)) then
       return
     else
+      !$omp flush
       call best%lock%unset ('current_score')
       nullify (best)
     end if

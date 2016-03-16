@@ -42,14 +42,14 @@ SUBROUTINE init (self, label)
   self%size = size
   allocate (self%task_list)
   call self%task_list%init
-  allocate (patches(self%dims(1),self%dims(2),self%dims(3)))
+  !$omp parallel do private(i,j,k,patch,task)
   do k=1,self%dims(3)
   do j=1,self%dims(2)
   do i=1,self%dims(1)
     !---------------------------------------------------------------------------
     ! Initialize each patch, via patch_t:init
     !---------------------------------------------------------------------------
-    patch => patches(i,j,k)
+    allocate (patch)
     patch%box = self%size
     patch%position = ([i,j,k]-0.5_8)*self%size/self%dims + origin
     patch%size = self%size/self%dims
@@ -65,7 +65,7 @@ SUBROUTINE init (self, label)
     !---------------------------------------------------------------------------
     ! Add to a list of links, with pointers from patch to patch
     !---------------------------------------------------------------------------
-    task => patches(i,j,k)
+    task => patch
     call self%task_list%append (task)
   end do
   end do

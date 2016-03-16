@@ -151,7 +151,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read parameters, but only from one thread
   !-----------------------------------------------------------------------------
-  call self%lock%set ('init')
+  !$omp critical (init_cr)
   if (first_time) then
     do_pebbles = .true.
     first_time = .false.
@@ -162,7 +162,7 @@ SUBROUTINE init (self)
     read (io%input, pebble_params, iostat=iostat)
     if (io%master) write(*, pebble_params)
   end if
-  call self%lock%unset ('init')
+  !$omp end critical (init_cr)
   self%do_pebbles = do_pebbles
   self%only_pebbles = only_pebbles
   self%pebble_rate = pebble_rate_cgs*scaling%t

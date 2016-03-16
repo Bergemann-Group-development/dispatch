@@ -150,7 +150,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
   !-----------------------------------------------------------------------------
-  call self%lock%set ('init')
+  !$omp critical (init_cr)
   if (first_time) then
     size = self%size
     n    = self%n
@@ -160,12 +160,15 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io%input)
     read (io%input, patch_params, iostat=iostat)
+    if (iostat>0) print*,'WARNING: namelist read error on thread, id =', &
+      omp_mythread(), self%id
     if (io%master) write (*, patch_params)
     rewind (io%input)
     read (io%input, out_params, iostat=iostat)
     if (io%master) write (*, out_params)
   end if
-  call self%lock%unset ('init')
+  !print *, 'MK', omp_mythread(), self%id, self%nt, nt
+  !$omp end critical (init_cr)
   self%n           = n                          ! patch dimensions
   self%ng          = ng                         ! patch dimensions
   self%nv          = nv                         ! patch dimensions
@@ -312,6 +315,7 @@ SUBROUTINE rotate (self)
    print*,'patch iit:', self%iit
   if (io%verbose>3) &
    print*,'patch t(iit):', self%t(self%iit)
+  !$omp flush
   call self%lock%unset ('rotate')
   call trace_end
 END SUBROUTINE rotate
@@ -709,6 +713,7 @@ SUBROUTINE output (self, experiment_name)
     write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
     close (io%log_unit)
     self%iout = self%iout+1
+    !$omp flush
     call self%lock%unset ('output')
   end do
   call trace_end

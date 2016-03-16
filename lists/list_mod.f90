@@ -290,6 +290,7 @@ SUBROUTINE check_ready (self, link, set_debug)
         if (self%debug==1) &
           print*, task%id, ' check_ready failed on task', nbtask%id
         call trace_end
+        !$omp flush
         call task%lock%unset ('check_ready')            ! one at a time
         return                                          ! give up -- do nothing
       end if
@@ -303,6 +304,7 @@ SUBROUTINE check_ready (self, link, set_debug)
     !call self%qconsistency(3)
     call trace_end
   end if
+  !$omp flush
   call task%lock%unset ('check_ready')                  ! one at a time
 END SUBROUTINE check_ready
 
@@ -415,6 +417,7 @@ SUBROUTINE init_nbors (self)
       'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
     link => link%next                                   ! continue list
   end do
+  !$omp flush
   call self%lock%unset('init_nbors')
   call trace_end
 END SUBROUTINE init_nbors
@@ -488,6 +491,7 @@ SUBROUTINE append_list (self, task_list)
   else
     print *, trim(self%name)//': inconsistent append of '//task_list%name
   end if
+  !$omp flush
   call self%lock%unset ('append_list')
   call trace_end
 END SUBROUTINE append_list
@@ -517,6 +521,7 @@ SUBROUTINE remove_task (self, task)
   end do
   print*,'ERROR: failed to remove from task list, task', task%id
 9 continue
+  !$omp flush
   call self%lock%unset('remove_task')
   call trace_end
 END SUBROUTINE remove_task
@@ -711,6 +716,7 @@ SUBROUTINE queue_by_time (self, this)
   end if
   nullify (this%next_time)
 9 continue
+  !$omp flush
   call self%lock%unset ('queue_by_time')
   call trace_end
 END SUBROUTINE queue_by_time
@@ -762,6 +768,7 @@ SUBROUTINE add_by_quality (self, this)
   self%tail => this
   self%n = self%n+1
 9 continue
+  !$omp flush
   call self%lock%unset ('add_by_quality')
   call trace_end
 END SUBROUTINE add_by_quality
@@ -807,6 +814,7 @@ SUBROUTINE insert (self, old, new)
   new%next => old
   new%next%prev => new
   self%n = self%n + 1
+  !$omp flush
   call self%lock%unset ('insert')
   call trace_end
 END SUBROUTINE insert

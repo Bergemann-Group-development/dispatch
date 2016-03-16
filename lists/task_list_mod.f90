@@ -137,6 +137,7 @@ SUBROUTINE update (self)
     task => head%task                                   ! head task
     self%queue => self%queue%next_time                  ! new head task
     self%nq = self%nq-1                                 ! decrement queue count
+    !$omp flush
     call self%lock%unset ('task_list::update')          ! allow list updates
     !-----------------------------------------------------------------------------
     ! Prepare for update, by downloading data that it depends on.  During the
@@ -166,6 +167,7 @@ SUBROUTINE update (self)
     select type (task)
     class is (patch_t)
     call task%rotate
+    !$omp atomic
     self%n_update = self%n_update + product(task%n)
     end select
     call task%info (self%nq)                            ! print info on stdout
