@@ -207,7 +207,7 @@ SUBROUTINE split (self, this)
   class(task_list_t):: self
   class(link_t), pointer:: this, link
   integer:: nsplit(3)
-  type(patch_t), pointer:: patch, this_patch
+  class(patch_t), pointer:: patch, this_patch
   class(task_t), pointer:: task
   class(link_t), pointer:: tail
   integer dir, i, ix, iy, iz
