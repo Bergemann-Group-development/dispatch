@@ -305,6 +305,7 @@ SUBROUTINE output (self, experiment_name)
   optional:: experiment_name
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output) return
+  !$omp critical (output_cr)
   call self%patch_t%output (experiment_name)
   write (filename,'("data/",a,"/",i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout-1
@@ -312,6 +313,7 @@ SUBROUTINE output (self, experiment_name)
     position='append')
   write (io%data_unit,'(8f10.4)') self%nu
   close (io%data_unit)
+  !$omp end critical (output_cr)
 END SUBROUTINE output
 
 !> =============================================================================

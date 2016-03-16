@@ -315,7 +315,7 @@ SUBROUTINE rotate (self)
    print*,'patch iit:', self%iit
   if (io%verbose>3) &
    print*,'patch t(iit):', self%t(self%iit)
-  !$omp flush
+  !$omp flush (self)
   call self%lock%unset ('rotate')
   call trace_end
 END SUBROUTINE rotate
@@ -594,7 +594,6 @@ SUBROUTINE output (self, experiment_name)
   if (.not.io%do_output) return
   call trace_begin('patch:t%output')
   do while (self%time > self%out_next .and. self%out_next <= self%end_time)
-    call self%lock%set ('output')
     self%max_files = self%max_files-1
     if (self%max_files <= 0) then
       print*,'TOO MANY FILES'
@@ -630,7 +629,7 @@ SUBROUTINE output (self, experiment_name)
     ! Write a small text file with info
     !-----------------------------------------------------------------------------
     call trace ('1')
-    call system ('mkdir -p data/')
+    !call system ('mkdir -p data/')
     call system ('mkdir -p data/'//trim(io%outputname))
     write (filename,'(a,i4.4,"_",i4.4)') &
       'data/'//trim(io%outputname)//'/', self%id, self%iout
@@ -649,11 +648,11 @@ SUBROUTINE output (self, experiment_name)
     !-----------------------------------------------------------------------------
     ! Write a binary file with the data cube.
     !-----------------------------------------------------------------------------
+    n = u-l+1
     open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
-      status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(u-l+1))
+      status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(n))
     do jo=1,no
       do iv=1,self%nv
-        n = u-l+1
         allocate (buf(n(1),n(2),n(3)))
         !-------------------------------------------------------------------------
         ! If we write out time derivatives we want a pair of consistent values
@@ -713,8 +712,6 @@ SUBROUTINE output (self, experiment_name)
     write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
     close (io%log_unit)
     self%iout = self%iout+1
-    !$omp flush
-    call self%lock%unset ('output')
   end do
   call trace_end
 END SUBROUTINE output
@@ -999,6 +996,8 @@ FUNCTION fminval (self, f)
 END FUNCTION
 
 !> =============================================================================
+!> Check if the density is negative somewhere, counting points in the interior
+!> and guard zones separately.  Attempt to patch the guard zones, if applicable.
 !> =============================================================================
 SUBROUTINE check_density (self, label)
   class(patch_t):: self
@@ -1007,6 +1006,7 @@ SUBROUTINE check_density (self, label)
   integer:: ix, iy, iz, ii(3), ntot, nins
   logical:: inside
   !-----------------------------------------------------------------------------
+  if (io%verbose < 1) return
   mind = minval(self%mem(:,:,:,1,self%it,1))
   if (mind <= 0.0) then
     !write (io%debug_unit) self%id, self%mesh%gn
