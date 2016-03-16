@@ -99,7 +99,7 @@ SUBROUTINE download_same_static (link)
   !-----------------------------------------------------------------------------
   allocate (guard(m(1)%gn,m(2)%gn,m(3)%gn,nv))
   restore = .false.
-  guard = patch%mem(:,:,:,:,it,1)
+  !guard = patch%mem(:,:,:,:,it,1)
   !-----------------------------------------------------------------------------
   ! XY-planes in the two Z guard zones
   !-----------------------------------------------------------------------------
@@ -117,13 +117,15 @@ SUBROUTINE download_same_static (link)
             do ix=m(1)%lb,m(1)%ub
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy,iz+o,iv,jt(2),1)*pt(2)
-              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
+          end do
+          do ix=m(1)%lb,m(1)%ub
+            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
           end do
         end do
       end do
       if (neg>0) print*, other%id, 'MK: -3, neg, o =', neg, o, jt, pt
-      !$omp flush
+      !xomp flush
       call other%lock%unset ('download_same -3')
       call patch%check_density ('after -3')
     else
@@ -136,17 +138,19 @@ SUBROUTINE download_same_static (link)
       neg = 0
       do iz=m(3)%uo,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
-          do ix=m(1)%lb,m(1)%ub
-            do iv=1,nv
+          do iv=1,nv
+            do ix=m(1)%lb,m(1)%ub
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy,iz+o,iv,jt(2),1)*pt(2)
-              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
+          end do
+          do ix=m(1)%lb,m(1)%ub
+            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
           end do
         end do
       end do
       if (neg>0) print*, other%id, 'MK: +3, neg, o =', neg, o, jt, pt
-      !$omp flush
+      !xomp flush
       call other%lock%unset ('download_same +3')
       call patch%check_density ('after +3')
     else
@@ -168,13 +172,15 @@ SUBROUTINE download_same_static (link)
             do ix=m(1)%lb,m(1)%ub
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy+o,iz,iv,jt(2),1)*pt(2)
-              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
+          end do
+          do ix=m(1)%lb,m(1)%ub
+            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
           end do
         end do
       end do
       if (neg>0) print*, other%id, 'MK: -2, neg, o =', neg, o, jt, pt
-      !$omp flush
+      !xomp flush
       call other%lock%unset ('download_same -2')
       call patch%check_density ('after -2')
     else
@@ -191,13 +197,15 @@ SUBROUTINE download_same_static (link)
             do ix=m(1)%lb,m(1)%ub
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy+o,iz,iv,jt(2),1)*pt(2)
-              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
+          end do
+          do ix=m(1)%lb,m(1)%ub
+            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
           end do
         end do
       end do
       if (neg>0) print*, other%id, 'MK: +2, neg, o =', neg, o, jt, pt
-      !$omp flush
+      !xomp flush
       call other%lock%unset ('download_same +2')
       call patch%check_density ('after +2')
     else
@@ -219,13 +227,15 @@ SUBROUTINE download_same_static (link)
             do iv=1,nv
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix+o,iy,iz,iv,jt(2),1)*pt(2)
-              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
+          end do
+          do ix=m(1)%lb,m(1)%lo
+            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
           end do
         end do
       end do
       if (neg>0) print*, other%id, 'MK: -1, neg, o =', neg, o, jt, pt
-      !$omp flush
+      !xomp flush
       call other%lock%unset ('download_same -1')
       call patch%check_density ('after -1')
     else
@@ -242,13 +252,15 @@ SUBROUTINE download_same_static (link)
             do iv=1,nv
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix+o,iy,iz,iv,jt(2),1)*pt(2)
-              neg = neg+merge(1,0,iv==1.and.patch%mem(ix,iy,iz,iv,it,1)<=0.0)
             end do
+          end do
+          do ix=m(1)%uo,m(1)%ub
+            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
           end do
         end do
       end do
       if (neg>0) print*, other%id, 'MK: +1, neg, o =', neg, o, jt, pt
-      !$omp flush
+      !xomp flush
       call other%lock%unset ('download_same +1')
       call patch%check_density ('after +1')
     else
