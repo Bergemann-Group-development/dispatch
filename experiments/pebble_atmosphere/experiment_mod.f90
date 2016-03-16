@@ -45,9 +45,9 @@ SUBROUTINE init (self)
   call self%set(bits%static)
   call self%initial%selected(self%mem, self%mesh, self%omega)
   call force%init
-  call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [-0.5d0,0d0,0d0], self%nv)
-  call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,0d0], self%nv)
-  call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,0d0,-0.5d0], self%nv)
+  call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
+  call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
+  call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,0d0,-0.5d0])
   call self%pebble_patch_t%init
   call trace_end
 END SUBROUTINE init
@@ -74,11 +74,13 @@ SUBROUTINE update (self)
     self%mem(:,:,:,:,self%it,2) = 0.0
   else
     call self%mhd_t%update
-    call boundary%condition (self%mem(:,:,:,1,self%it,2), self%mesh, [0d0,0d0,0d0], self%nv)
-    call boundary%condition (self%mem(:,:,:,2,self%it,2), self%mesh, [0d0,0d0,0d0], self%nv)
-    call boundary%condition (self%mem(:,:,:,3,self%it,2), self%mesh, [-0.5d0,0d0,0d0], self%nv)
-    call boundary%condition (self%mem(:,:,:,4,self%it,2), self%mesh, [0d0,-0.5d0,0d0], self%nv)
-    call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0], self%nv)
+    if (self%is_set (bits%has_BC)) then
+      call boundary%condition (self%mem(:,:,:,1,self%it,2), self%mesh, [0d0,0d0,0d0])
+      call boundary%condition (self%mem(:,:,:,2,self%it,2), self%mesh, [0d0,0d0,0d0])
+      call boundary%condition (self%mem(:,:,:,3,self%it,2), self%mesh, [-0.5d0,0d0,0d0])
+      call boundary%condition (self%mem(:,:,:,4,self%it,2), self%mesh, [0d0,-0.5d0,0d0])
+      call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0])
+    end if
   end if
   block
   !.............................................................................
@@ -86,7 +88,7 @@ SUBROUTINE update (self)
   real(8)      :: x, y, z, r, dr, damp
   type(mesh_t), pointer:: m(:)
   !-----------------------------------------------------------------------------
-  if (.not.self%only_pebbles) then
+  if (.not.self%only_pebbles .and. self%is_set (bits%has_BC)) then
     associate(m => self%mesh)
     do iv=3,5
       do iz=m(3)%lb,m(3)%ub

@@ -102,16 +102,7 @@ SUBROUTINE toc_r (label, n)
   !.............................................................................
   wt = (omp_get_wtime() - wt)
   print 1, label, trim(time_str(wt)), trim(time_str(wt*omp_nthreads/n)), '/upd,', n, 'updates'
-1 format (1x, a16, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a)
-  !if (wt/n < 1d-6) then
-  !else if (wt/n < 1d-3) then
-  !  print 1, label, wt,  'sec', wt/n*1e6, 'mus/upd,', n, 'updates'
-  !else if (wt/n < 1d0) then
-  !  print 1, label, wt,  'sec', wt/n*1e3, 'ms/upd,', n, 'updates'
-  !else
-  !  print 1, label, wt,  'sec', wt/n, 's/upd,', n, 'updates'
-  !  1 format(1x,a16,1h:,2(g20.3,1x,a),1p,e10.2,1x,a)
-  !end if
+1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a)
   wt = omp_get_wtime()
 END SUBROUTINE toc_r
 

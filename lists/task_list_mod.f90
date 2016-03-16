@@ -94,6 +94,7 @@ SUBROUTINE execute (self)
   end do
   !$omp end parallel
   call toc ('rank time', self%n_update)
+  print *, 'download_differ % =', 100.*download%n_differ/(download%n_differ+download%n_same)
   link => self%head
   do while (associated(link))
     rem => link
@@ -145,7 +146,7 @@ SUBROUTINE update (self)
     class is (patch_t)
     if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
     call task%check_density ("before download")
-    call download_link (head, all_cells=.false.)        ! guard cells
+    call download%download_link (head, all_cells=.false.)        ! guard cells
     call task%check_density ("after download")
     if (io%verbose>2) print*,'dmin',omp_mythread(),minval(task%mem(:,:,:,1,task%it,1)),1
     end select
@@ -258,7 +259,7 @@ SUBROUTINE split (self, this)
         ! Download values from parent and neighbors, except at time==0.0, to
         ! allow recursive refinement there
         !------------------------------------------------------------------------
-        if (this_patch%time > 0.0) call download_link (link, all_cells=.true.)
+        if (this_patch%time > 0.0) call download%download_link (link, all_cells=.true.)
         !------------------------------------------------------------------------
         ! Insert the new patch at the head of the ready queue
         !------------------------------------------------------------------------

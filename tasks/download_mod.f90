@@ -11,7 +11,12 @@ MODULE download_mod
   USE list_mod
   implicit none
   private
-  public download_link
+  type, public:: download_t
+    integer(8):: n_same=0, n_differ=0
+  contains
+    procedure, nopass:: download_link
+  end type
+  type(download_t), public:: download
 CONTAINS
 
 !> =============================================================================
@@ -47,8 +52,11 @@ SUBROUTINE download_link (link, all_cells)
     if (static) then
       if (same) then
         call download_same_static (link)
+        !$omp atomic
+        download%n_same = download%n_same+1
       else
         call download_different_static (link)
+        download%n_differ = download%n_differ+1
       end if
     else
       print *, 'ERROR: moving patches found'
@@ -490,7 +498,7 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
   if (.not.associated(source)) then
     return
   end if
-  call trace_begin ('download_mod::interpolate_to',2)
+  !call trace_begin ('download_mod::interpolate_to',2)
   if (io%do_debug) print*,'interpolate_to',target%it,ii,source%id,jt,pt
   it = target%it
   jj = 0
@@ -539,7 +547,7 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
                   p(2)*(q(1)*source%mem(jj(1)  ,jj(2)+1,jj(3)+1,iv,jt(2),1)    + &
                         p(1)*source%mem(jj(1)+1,jj(2)+1,jj(3)+1,iv,jt(2),1))))
   end do
-  call trace_end
+  !call trace_end
 END SUBROUTINE interpolate_to
 
 !> =============================================================================
@@ -558,20 +566,18 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
   real:: score, best_score
   integer:: i, it, iv, adir, best_id
   !-----------------------------------------------------------------------------
-  call trace_begin('download_mod::find_best_nbor',2)
-  !-----------------------------------------------------------------------------
   ! Check if the new point is fully inside the previous best patch.  If not,
   ! unlock the previous one, and try finding a new one
   !-----------------------------------------------------------------------------
   if (associated(best)) then
     if (all(best%point_distances (position, best%position)  < best%size*0.5d0)) then
-      call trace_end
       return
     else
       call best%lock%unset ('current_score')
       nullify (best)
     end if
   end if
+  call trace_begin('download_mod::find_best_nbor',2)
   adir = abs(idir)
   best_id = 0
   best_score = 0.0

@@ -16,12 +16,11 @@ CONTAINS
 !> =============================================================================
 !> Impose boundary conditions, taking staggering into account
 !> =============================================================================
-SUBROUTINE condition (self, mem, m, h, nv)
+SUBROUTINE condition (self, mem, m, h)
   class(boundary_t)      :: self
   real, dimension(:,:,:) :: mem
   type(mesh_t)           :: m(3)
   real(8)                :: h(3)
-  integer                :: nv
   !-----------------------------------------------------------------------------
 END SUBROUTINE condition
 

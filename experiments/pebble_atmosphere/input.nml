@@ -2,7 +2,7 @@
  do_trace=f
  verbose=1
  do_debug=f
- do_output=t
+ do_output=f
 /
 &rubiks_params
  n_levels=7
@@ -31,7 +31,7 @@
 &out_params
  end_time=30
  out_time=0.10
- print_time=0.01
+ print_time=0.1
  guard_zones=t
  time_derivs=f
  max_files=9000

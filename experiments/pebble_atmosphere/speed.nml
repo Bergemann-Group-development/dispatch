@@ -8,9 +8,10 @@
  n_levels=3
  n_patch=3
  m_zoom=3
- n_repeat=3
+ n_repeat=15
 /
 &pebble_params
+ do_pebbles=f
  vz_pebble_cgs=1.5e6
  pebble_rate_cgs=1
  !initial_density=1e-10
@@ -33,11 +34,11 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.10
+ end_time=0.20
  out_time=0.10
- print_time=0
+ print_time=0.20
 !print_time=0.005
- guard_zones=t
+ guard_zones=f
  time_derivs=f
  max_files=9000
 /

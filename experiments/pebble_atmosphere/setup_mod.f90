@@ -5,13 +5,16 @@ MODULE setup_mod
 !> surrounding it, representing its extended atmosphere.
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
+  USE bits_mod
   USE omp_mod
   USE trace_mod
   USE units_mod
   USE scaling_mod
   USE planet_mod
   USE atmosphere_mod
+  USE patch_mod
   USE rubiks_mod
+  USE list_mod
   implicit none
   private
   type, public, extends(rubiks_t):: setup_t
@@ -35,6 +38,9 @@ CONTAINS
 SUBROUTINE init (self, label)
   class(setup_t):: self
   character(len=*), optional:: label
+  !.............................................................................
+  class(link_t), pointer:: link
+  class(patch_t), pointer:: patch
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
   call io%init
@@ -45,6 +51,12 @@ SUBROUTINE init (self, label)
   planet%position = 0.0
   self%position = planet%position
   call self%rubiks_t%init_hierarchy (label)
+  link => self%task_list%head
+  do while (associated(link))
+    patch => task2patch (link%task)
+    if (all(abs(patch%position) < patch%ds)) call patch%set (bits%has_BC)
+    link => link%next
+  end do
   call trace_end
 END SUBROUTINE init
 
