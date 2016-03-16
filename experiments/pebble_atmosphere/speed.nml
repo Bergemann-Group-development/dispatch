@@ -8,7 +8,7 @@
  n_levels=3
  n_patch=3
  m_zoom=3
- n_repeat=15
+ n_repeat=3
 /
 &pebble_params
  vz_pebble_cgs=1.5e6
@@ -35,7 +35,8 @@
 &out_params
  end_time=0.20
  out_time=0.10
- print_time=0.005
+ print_time=0
+!print_time=0.005
  guard_zones=t
  time_derivs=f
  max_files=9000

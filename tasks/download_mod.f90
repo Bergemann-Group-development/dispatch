@@ -96,10 +96,13 @@ SUBROUTINE download_same_static (link)
   ! XY-planes in the two Z guard zones
   !-----------------------------------------------------------------------------
   if (m(3)%n > 1) then
+    !---------------------------------------------------------------------------
+    ! The find_other procedure finds, and locks, the nbor needed for the guard
+    ! zones.  The lock must be removed in each case before treating the next nbor.
+    !---------------------------------------------------------------------------
     other => find_nbor (link, -3, o, patch%time, jt, pt)
     if (associated(other)) then
       neg = 0
-      call other%lock%set ('download_same -3')
       do iz=m(3)%lb,m(3)%lo
         do iy=m(2)%lb,m(2)%ub
           do iv=1,nv
@@ -111,8 +114,8 @@ SUBROUTINE download_same_static (link)
           end do
         end do
       end do
-      call other%lock%unset ('download_same -3')
       if (neg>0) print*, other%id, 'MK: -3, neg, o =', neg, o, jt, pt
+      call other%lock%unset ('download_same -3')
       call patch%check_density ('after -3')
     else
       restore(-3) = .true.
@@ -121,7 +124,6 @@ SUBROUTINE download_same_static (link)
     end if
     other => find_nbor (link, +3, o, patch%time, jt, pt)
     if (associated(other)) then
-      call other%lock%set ('download_same +3')
       neg = 0
       do iz=m(3)%uo,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
@@ -149,7 +151,6 @@ SUBROUTINE download_same_static (link)
   if (m(2)%n > 1) then
     other => find_nbor (link, -2, o, patch%time, jt, pt)
     if (associated(other)) then
-      call other%lock%set ('download_same -2')
       neg = 0
       do iz=m(3)%lb,m(3)%ub
         do iy=m(2)%lb,m(2)%lo
@@ -162,8 +163,8 @@ SUBROUTINE download_same_static (link)
           end do
         end do
       end do
-      call other%lock%unset ('download_same -2')
       if (neg>0) print*, other%id, 'MK: -2, neg, o =', neg, o, jt, pt
+      call other%lock%unset ('download_same -2')
       call patch%check_density ('after -2')
     else
       restore(-2) = .true.
@@ -172,7 +173,6 @@ SUBROUTINE download_same_static (link)
     end if
     other => find_nbor (link, +2, o, patch%time, jt, pt)
     if (associated(other)) then
-      call other%lock%set ('download_same +2')
       neg = 0
       do iz=m(3)%lb,m(3)%ub
         do iy=m(2)%uo,m(2)%ub
@@ -185,8 +185,8 @@ SUBROUTINE download_same_static (link)
           end do
         end do
       end do
-      call other%lock%unset ('download_same +2')
       if (neg>0) print*, other%id, 'MK: +2, neg, o =', neg, o, jt, pt
+      call other%lock%unset ('download_same +2')
       call patch%check_density ('after +2')
     else
       restore(+2) = .true.
@@ -200,7 +200,6 @@ SUBROUTINE download_same_static (link)
   if (m(1)%n > 1) then
     other => find_nbor (link, -1, o, patch%time, jt, pt)
     if (associated(other)) then
-      call other%lock%set ('download_same -1')
       neg = 0
       do iz=m(3)%lb,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
@@ -213,8 +212,8 @@ SUBROUTINE download_same_static (link)
           end do
         end do
       end do
-      call other%lock%unset ('download_same -1')
       if (neg>0) print*, other%id, 'MK: -1, neg, o =', neg, o, jt, pt
+      call other%lock%unset ('download_same -1')
       call patch%check_density ('after -1')
     else
       restore(-1) = .true.
@@ -223,7 +222,6 @@ SUBROUTINE download_same_static (link)
     end if
     other => find_nbor (link, +1, o, patch%time, jt, pt)
     if (associated(other)) then
-      call other%lock%set ('download_same +1')
       neg = 0
       do iz=m(3)%lb,m(3)%ub
         do iy=m(2)%lb,m(2)%ub
@@ -236,8 +234,8 @@ SUBROUTINE download_same_static (link)
           end do
         end do
       end do
-      call other%lock%unset ('download_same +1')
       if (neg>0) print*, other%id, 'MK: +1, neg, o =', neg, o, jt, pt
+      call other%lock%unset ('download_same +1')
       call patch%check_density ('after +1')
     else
       restore(+1) = .true.
@@ -280,7 +278,6 @@ SUBROUTINE find_time (other, time, jt, pt)
   real:: dt, pt2
   logical:: found
   !-----------------------------------------------------------------------------
-  call other%lock%set ('find_time')
   jt = 1
   found = .false.
   if (time==0.0) then
@@ -328,7 +325,6 @@ SUBROUTINE find_time (other, time, jt, pt)
   end if
   if (io%verbose>1) &
     print'(a,i6,f9.4,2i4,2f7.3,10f9.4)', 'find_time: ', other%id, time, jt, pt, other%t
-  call other%lock%unset ('find_time')
 END SUBROUTINE find_time
 
 !> =============================================================================
@@ -360,6 +356,7 @@ FUNCTION find_nbor (link, idir, o, time, jt, pt) RESULT (other)
       print'(a,i3,2i5,f8.2,2(2x,3f8.3))', 'find_nbor:', &
         idir, patch%id, nbor%task%id, dist/patch%size(adir), (position-try%position)/patch%size
     if (dist < patch%size(adir)*0.1) then
+      call try%lock%set ('find_nbor')
       other => try
       !print '(i6,a,f9.5,3x,"other%t:",7f9.5)', patch%id, ' found nbor, times =', patch%time, other%t(1:nt-1)
       exit
@@ -392,25 +389,9 @@ SUBROUTINE download_different_static (link)
   class(patch_t), pointer:: patch, other
   class(link_t), pointer:: link, nbor
   class(task_t), pointer:: task
-  type:: target_t
-    integer:: ix        ! index in x
-    integer:: iy        ! index in y
-    integer:: iz        ! index in z
-    real:: time         ! target time
-  end type
-  type:: source_t
-    integer:: jx(2)     ! indices in x
-    integer:: jy(2)     ! indices in y
-    integer:: jz(2)     ! indices in z
-    integer:: jt(2)     ! indices in t
-    real:: px(2)        ! weights in x
-    real:: py(2)        ! weights in y
-    real:: pz(2)        ! weights in z
-    real:: pt(2)        ! weights in t
-  end type
   integer:: ix, iy, iz, jx(2), jy(2), jz(2), ii(3), jt(2)
   real(8):: time
-  real:: pt(2)
+  real:: pt(2), old_score
   type(mesh_t), pointer:: m(:)
   !-----------------------------------------------------------------------------
   ! XY-planes in the two Z guard zones
@@ -419,29 +400,30 @@ SUBROUTINE download_different_static (link)
   patch => task2patch (link%task)
   m => patch%mesh
   time = patch%time
+  nullify(other)
+  old_score = -1.
   do iz=m(3)%lb,m(3)%lo
     do iy=m(2)%lb,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
         ii = [ix,iy,iz]
-        call find_best_nbor  (link, ii, other, jt, pt, -3, time)
-        call interpolate_to (patch, ii, other, jt, pt, -3)
-        if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
-          call find_best_nbor  (link, ii, other, jt, pt, -3, time, 'XY1')
-          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1), 'XY1'
+        call find_best_nbor  (link, ii, other, jt, pt, -3, time, old_score)
+        if (associated(other)) then
+          call interpolate_to (patch, ii, other, jt, pt, -3)
+          call other%lock%unset ('download_different_static')
         end if
         2 format(40x,i8,3i4,i8,1p,e11.2,3x,a)
       end do
     end do
   end do
+  old_score = -1.
   do iz=m(3)%uo,m(3)%ub
     do iy=m(2)%lb,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
         ii = [ix,iy,iz]
-        call find_best_nbor  (link, ii, other, jt, pt, +3, time)
-        call interpolate_to (patch, ii, other, jt, pt, +3)
-        if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
-          call find_best_nbor  (link, ii, other, jt, pt, +3, time, 'XY2')
-          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1), 'XY2'
+        call find_best_nbor  (link, ii, other, jt, pt, +3, time, old_score)
+        if (associated(other)) then
+          call interpolate_to (patch, ii, other, jt, pt, +3)
+          call other%lock%unset ('download_different_static')
         end if
       end do
     end do
@@ -449,28 +431,28 @@ SUBROUTINE download_different_static (link)
   !-----------------------------------------------------------------------------
   ! XZ-planes in the two Y guard zones
   !-----------------------------------------------------------------------------
+  old_score = -1.
   do iz=m(3)%li,m(3)%ui
     do iy=m(2)%lb,m(2)%lo
       do ix=m(1)%lb,m(1)%ub
         ii = [ix,iy,iz]
-        call find_best_nbor  (link, ii, other, jt, pt, -2, time)
-        call interpolate_to (patch, ii, other, jt, pt, -2)
-        if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
-          call find_best_nbor  (link, ii, other, jt, pt, -2, time, 'XZ1')
-          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1), 'XZ1'
+        call find_best_nbor  (link, ii, other, jt, pt, -2, time, old_score)
+        if (associated(other)) then
+          call interpolate_to (patch, ii, other, jt, pt, -2)
+          call other%lock%unset ('download_different_static')
         end if
       end do
     end do
   end do
+  old_score = -1.
   do iz=m(3)%li,m(3)%ui
     do iy=m(2)%uo,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
         ii = [ix,iy,iz]
-        call find_best_nbor  (link, ii, other, jt, pt, +2, time)
-        call interpolate_to (patch, ii, other, jt, pt, +2)
-        if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
-          call find_best_nbor  (link, ii, other, jt, pt, +2, time, 'XZ2')
-          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1), 'XZ2'
+        call find_best_nbor  (link, ii, other, jt, pt, +2, time, old_score)
+        if (associated(other)) then
+          call interpolate_to (patch, ii, other, jt, pt, +2)
+          call other%lock%unset ('download_different_static')
         end if
       end do
     end do
@@ -478,28 +460,28 @@ SUBROUTINE download_different_static (link)
   !-----------------------------------------------------------------------------
   ! YZ-planes in the two X guard zones
   !-----------------------------------------------------------------------------
+  old_score = -1.
   do iz=m(3)%li,m(3)%ui
     do ix=m(1)%lb,m(1)%lo
       do iy=m(2)%li,m(2)%ui
         ii = [ix,iy,iz]
-        call find_best_nbor  (link, ii, other, jt, pt, -1, time)
-        call interpolate_to (patch, ii, other, jt, pt, -1)
-        if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
-          call find_best_nbor  (link, ii, other, jt, pt, -1, time, 'YZ1')
-          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1)
+        call find_best_nbor  (link, ii, other, jt, pt, -1, time, old_score)
+        if (associated(other)) then
+          call interpolate_to (patch, ii, other, jt, pt, -1)
+          call other%lock%unset ('download_different_static')
         end if
       end do
     end do
   end do
+  old_score = -1.
   do iz=m(3)%li,m(3)%ui
     do ix=m(1)%uo,m(1)%ub
       do iy=m(2)%li,m(2)%ui
         ii = [ix,iy,iz]
-        call find_best_nbor  (link, ii, other, jt, pt, +1, time)
-        call interpolate_to (patch, ii, other, jt, pt, +1)
-        if (patch%mem(ix,iy,iz,1,patch%it,1) <= 0.0) then
-          call find_best_nbor  (link, ii, other, jt, pt, +1, time, 'YZ2')
-          print 2, patch%id, ii, other%id, patch%mem(ix,iy,iz,1,patch%it,1)
+        call find_best_nbor  (link, ii, other, jt, pt, +1, time, old_score)
+        if (associated(other)) then
+          call interpolate_to (patch, ii, other, jt, pt, +1)
+          call other%lock%unset ('download_different_static')
         end if
       end do
     end do
@@ -577,11 +559,11 @@ END SUBROUTINE interpolate_to
 !> =============================================================================
 !> Find the best nbor patch overlapping the point with indices ii in link%patch
 !> =============================================================================
-SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
+SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, old_score, debug)
   class(link_t), pointer:: link
   class(patch_t), pointer:: best
   integer:: ii(3), jt(2), idir
-  real:: pt(2)
+  real:: pt(2), old_score
   real(8):: time
   character(len=*), optional:: debug
   !.............................................................................
@@ -594,7 +576,21 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
   !-----------------------------------------------------------------------------
   call trace_begin('download_mod::find_best_nbor',2)
   if (io%do_debug) print*,'find_best_nbor:', link%task%id, ii, time
+  !-----------------------------------------------------------------------------
+  ! Check if the new point is fully inside the previous best patch.  If not,
+  ! unlock the previous one, and try finding a new one
+  !-----------------------------------------------------------------------------
   patch => task2patch (link%task)
+  if (associated(best)) then
+    if (all(abs(position-best%position) < best%size*0.5d0)) then
+      print *,'keeping nbor patch', other%id
+      call trace_end
+      return
+    else
+      call best%lock%unset ('current_score')
+      nullify (best)
+    end if
+  end if
   m => patch%mesh
   nt = patch%nt
   nv = patch%nv
@@ -602,7 +598,6 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
   !
   position = patch%myposition (ii)
   !if (associated(best)) then
-  !  if (all(abs(position-best%position) < best%size*0.5d0)) then
   !    call trace_end
   !    return
   !  end if
@@ -661,7 +656,9 @@ SUBROUTINE find_best_nbor (link, ii, best, jt, pt, idir, time, debug)
   ! Find the right time interval in the other patch
   !-----------------------------------------------------------------------------
   if (associated(best)) &
+    call best%lock%set ('find_best_nbor')
     call find_time (best, time, jt, pt)
+    old_score = best_score
   !
   call trace_end
 END SUBROUTINE find_best_nbor
