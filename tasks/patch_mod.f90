@@ -51,6 +51,7 @@ MODULE patch_mod
     procedure:: info                    ! print info to stdout
     procedure:: distance                ! return the distance btw two patches
     procedure:: point_distance          ! distance btw two points
+    procedure:: point_distances         ! distances btw two points
     procedure:: overlaps                ! return true if they overlap (incl. ghost zones)
     procedure:: overlaps_point          ! return true if they overlap (incl. ghost zones)
     procedure:: upload_range            ! returns the index ranges btw two points
@@ -896,7 +897,7 @@ FUNCTION distance (self, patch) RESULT (out)
 END FUNCTION distance
 
 !> =============================================================================
-!> Signed distance between the centers of two patches in the periodic box
+!> Max absolute distance between two points in the periodic box
 !> =============================================================================
 FUNCTION point_distance (self, p1, p2) RESULT (out)
   class(patch_t):: self
@@ -904,6 +905,16 @@ FUNCTION point_distance (self, p1, p2) RESULT (out)
   !.............................................................................
   out = maxval(abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box))
 END FUNCTION point_distance
+
+!> =============================================================================
+!> Max absolute distance between two points in the periodic box
+!> =============================================================================
+FUNCTION point_distances (self, p1, p2) RESULT (out)
+  class(patch_t):: self
+  real(8):: p1(3), p2(3), out(3)
+  !.............................................................................
+  out = abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box)
+END FUNCTION point_distances
 
 !> =============================================================================
 !> Check if there is overlap, using the full size (including guard zones), since

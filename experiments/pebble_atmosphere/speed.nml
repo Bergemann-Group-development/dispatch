@@ -33,7 +33,7 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.20
+ end_time=0.10
  out_time=0.10
  print_time=0
 !print_time=0.005
