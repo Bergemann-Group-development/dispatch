@@ -965,7 +965,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles) return
   if (.not.io%do_output .or. self%time < self%out_next) return
-  call self%lock%set ('output')
+  !$omp critical (output_cr)
   !
   !
   if (present(experiment_name)) then
@@ -1004,7 +1004,7 @@ SUBROUTINE output (self, experiment_name)
   deallocate (buffer,idbuf)
   !
   call self%patch_t%output (experiment_name)
-  call self%lock%unset ('output')
+  !$omp end critical (output_cr)
 END SUBROUTINE output
 
 END MODULE pebbles_mod
