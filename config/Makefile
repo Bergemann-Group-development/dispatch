@@ -47,6 +47,7 @@ sinclude $(TOP)/tasks/Makefile
 sinclude $(TOP)/meshes/$(MESH)/Makefile
 sinclude $(TOP)/patches/$(MESH)/Makefile
 sinclude $(TOP)/timestep/$(UPD)/Makefile
+sinclude $(TOP)/data/opacities/$(OPACITY)/Makefile
 sinclude $(TOP)/particles/Makefile
 sinclude $(TOP)/states/Makefile
 
@@ -66,6 +67,7 @@ E = @
 ifeq ($(AUTO),yes)
 #############################################################################
 # Infrastructure to automatically determine dependencies
+.SUFFIXES: .x.mic .x .o .f90 .f .w
 DEPDIR := .d
 $(shell mkdir -p $(DEPDIR) >/dev/null)
 ifeq ($(COMPILER),gfortran)
@@ -84,7 +86,16 @@ FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
 	$(E)$(F90) $(FFLAGS) $(DEPFLAGS) -c $< -o $@
 	$(E)$(POSTCOMPILE)
 	$(eval OBJS+=$@)
+%.o: %.f $(DEPDIR)/%.d
+	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
+	$(E)$(F90) $(FFLAGS) $(DEPFLAGS) -c $< -o $@
+	$(E)$(POSTCOMPILE)
+	$(eval OBJS+=$@)
 %.x: %.f90
+	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
+	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
+	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJS)) -o $@ $(LIBS)
+%.x: %.f
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
 	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJS)) -o $@ $(LIBS)
@@ -93,6 +104,8 @@ FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
 	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJS)) -o $@ $(LIBS)
 %.w: %.f90
+	@echo $<
+%.w: %.f
 	@echo $<
 $(DEPDIR)/%.d: ;
 
@@ -114,7 +127,12 @@ else
 .f90.o:
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
 	$(E)$(F90) $(FFLAGS) -c $< -o $@
+.f.o:
+	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
+	$(E)$(F90) $(FFLAGS) -c $< -o $@
 .f90.w:
+	@echo $<
+.f.w:
 	@echo $<
 $(EXEC): $(OBJ)
 endif
