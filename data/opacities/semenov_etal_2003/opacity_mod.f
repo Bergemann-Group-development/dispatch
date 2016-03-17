@@ -38,8 +38,8 @@ C
 !$omp end critical (opac_cr)
       c = scaling%m/scaling%l**2
       do i=1,size(rho)
-        rho8 = rho(i)
-        T8 = T(i)
+        rho8 = rho(i)/scaling%d
+        T8 = T(i)/scaling%temp
         CALL cop(eD,eG,rho8,T8,kap8)
         kap(i) = kap8*c
       end do
