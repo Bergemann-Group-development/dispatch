@@ -67,7 +67,6 @@ E = @
 ifeq ($(AUTO),yes)
 #############################################################################
 # Infrastructure to automatically determine dependencies
-.SUFFIXES: .x.mic .x .o .f90 .f .w
 DEPDIR := .d
 $(shell mkdir -p $(DEPDIR) >/dev/null)
 ifeq ($(COMPILER),gfortran)
@@ -79,6 +78,8 @@ endif
 POSTCOMPILE= mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
 FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
 
+# Remove default rule for .f files.
+%.o: %.f
 #############################################################################
 # Pattern rules to get .o files from .f90 files
 %.o: %.f90 $(DEPDIR)/%.d
@@ -92,10 +93,6 @@ FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
 	$(E)$(POSTCOMPILE)
 	$(eval OBJS+=$@)
 %.x: %.f90
-	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
-	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
-	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJS)) -o $@ $(LIBS)
-%.x: %.f
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
 	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJS)) -o $@ $(LIBS)

@@ -12,5 +12,3 @@ TOP = ../..
 include $(TOP)/config/Makefile
 
 $(EXEC): opacity_mod.o opacity
-
-opacity_mod.o: opacity
