@@ -832,6 +832,9 @@ SUBROUTINE update_pebbles (self)
   ! Now scatter the existing pebbles onto a "not_done" list, and gather them
   ! back as they reach the desired time.
   !-----------------------------------------------------------------------------
+  self%pebbles%n_accrete = 0
+  self%pebbles%n_export = 0
+  self%pebbles%n_remove = 0
   allocate (self%not_done)
   if (io%verbose>1) &
     print*,'pebbles  in =', self%pebbles%n

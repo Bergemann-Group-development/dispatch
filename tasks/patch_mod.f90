@@ -643,7 +643,7 @@ SUBROUTINE output (self, experiment_name)
       end if
     end do
     write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
-    write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
+    write (io%data_unit,'(4(3i9,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
     close (io%data_unit)
     !-----------------------------------------------------------------------------
     ! Write a binary file with the data cube.

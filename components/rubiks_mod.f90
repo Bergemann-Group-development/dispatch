@@ -73,11 +73,9 @@ SUBROUTINE init_hierarchy (self, label)
   self%task_list%size = self%size*self%n_patch*self%m_zoom**(n_levels-1)*n_repeat
   n_repeat = (n_repeat/2)*2 + 1
   scene%n_repeat = n_repeat
-  !$omp parallel do private (ir,levels,level)
+  !xomp parallel do private (ir,levels,level)
   do ir=0,n_repeat-1
     position(1) = ((ir-n_repeat/2)*self%task_list%size(1))/n_repeat
-    if (io%verbose>0) &
-      print'("repeated Rubiks Cubes: ir, position =", i4, 1p, 3g14.4)', ir, position
     if (ir==n_repeat/2) then
       levels = n_levels
       if (io%verbose>1) &
@@ -87,6 +85,9 @@ SUBROUTINE init_hierarchy (self, label)
       if (io%verbose>1) &
         print*,'generating a cube of ',n_patch,' patches',' at position', position
     end if
+    if (io%verbose>0) &
+      print'("repeated Rubiks Cubes: ir, levels, position =",i4,i3,1p,3g14.4)', &
+      ir, levels, position
     do level=1,levels
       call self%init_level (level, position)
     end do
