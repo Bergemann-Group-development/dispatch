@@ -63,7 +63,7 @@ MODULE task_mod
     integer:: new=2
     integer:: verbose=1
   end type
-  integer:: id=0
+  integer, save:: id=0
 CONTAINS
 
 !> =============================================================================
