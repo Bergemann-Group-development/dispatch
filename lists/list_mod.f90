@@ -58,6 +58,7 @@ MODULE list_mod
     procedure:: check_all
     procedure:: check_queue
     procedure:: init_nbors
+    procedure:: remove_parents
     procedure:: overlaps
     procedure:: distance
     procedure:: consistency
@@ -68,6 +69,8 @@ MODULE list_mod
     procedure:: add_by_quality
     procedure:: queue_by_time
     procedure:: print_queue
+    procedure:: print_queue_until
+    procedure:: print_queue_times
     procedure:: print => print_list
   end type
   integer, parameter:: mnbor=100
@@ -230,12 +233,14 @@ SUBROUTINE check_nbors (self, link)
       else
         n_remain = n_remain+1
       end if
+      if (nbtask%id==id_debug) print*, id_debug, 'mk checked by:', task%id, nbtask%is_set(bits%ready)
     else
       n_ready = n_ready+1
     end if
     nbor => nbor%next                                 ! next nbor
   end do
   call self%check_ready (link)                        ! finally check link task
+  if (task%id==id_debug) print*, id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
   self%n_nbor = self%n_nbor + 1
   if (io%verbose>2) print '(a,i6,l3,12(2x,a,i4))', &
     'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
@@ -277,18 +282,28 @@ SUBROUTINE check_ready (self, link, set_debug)
   call self%qconsistency(1)
   task => link%task                                     ! already checked?
   call task%lock%set ('check_ready')                    ! one at a time
+  !$omp flush (task)
+  !write(io%debug_unit,*) id_debug, 'check_ready:', task%time
   if (task%is_clear(bits%ready)) then
     call trace_begin('list_t%check_ready '//self%name,2)
     nbor => link%nbor                                   ! start on nbor list
     do while (associated (nbor))                        ! keep going until end
       nbtask => nbor%task
+      !$omp flush (nbtask)
       ahead = nbtask%is_ahead_of(task)
+      if (task%id==id_debug) print*, id_debug, 'mk checking nbor', nbtask%id, ahead, nbtask%time-task%time
+      !write(io%debug_unit,*) id_debug, 'check_ready:', nbtask%id, nbtask%time-task%time, ahead
       if (ahead) then
         nbor => nbor%next                               ! next nbor
       else
         self%n_check = self%n_check+1
         if (self%debug==1) &
           print*, task%id, ' check_ready failed on task', nbtask%id
+        if (task%id==id_debug) then
+          call self%print_queue_until (nbtask)
+          print*, id_debug, 'mk failed on task, switching', nbtask%id
+          id_debug = nbtask%id
+        end if
         call trace_end
         !$omp flush
         call task%lock%unset ('check_ready')            ! one at a time
@@ -296,12 +311,16 @@ SUBROUTINE check_ready (self, link, set_debug)
       end if
     end do
     call task%set(bits%ready)                           ! mark as checked
+    !$omp flush (task)
     !print *, task%id, ' ready bit set by', omp_mythread()
-    !call self%qconsistency(2)
+    call self%qconsistency(2)
+    if (task%id==id_debug) print*, id_debug, 'mk being queued at time', task%time
     call self%queue_by_time (link)                      ! add task to queue
+    !write(io%debug_unit,*) id_debug, 'check_ready: queued', task%time
+    if (task%id==id_debug) print*, id_debug, 'mk was   queued at time', task%time
     self%n_ready = self%n_ready+1
     if (self%debug>0) print *, task%id, ' found by check_ready, nq =', self%nq
-    !call self%qconsistency(3)
+    call self%qconsistency(3)
     call trace_end
   end if
   !$omp flush
@@ -347,14 +366,22 @@ SUBROUTINE qconsistency (self, i)
   class(task_t), pointer:: task
   class(link_t), pointer:: nbor
   integer:: n, id1=0, id2=0, i
+  real(8):: time
   !.............................................................................
   if (self%debug < 2) return
   call trace_begin ('list_t%qconsistency',0)
   n = 0
   link => self%queue
+  time = 0d0
   do while (associated(link))
     n = n+1
     link => link%next_time
+    if (n > self%nq+1) exit
+    if (link%task%time < time) then
+      print*,'ERROR: queue out of order'
+      exit
+    end if
+    time = link%task%time
 !    print*,n
   end do
   if (n /= self%nq) then
@@ -363,8 +390,9 @@ SUBROUTINE qconsistency (self, i)
     link => self%queue
     do while (associated(link))
       n = n+1
-      print*,n,link%task%id
+      print*, n, link%task%id, link%task%time
       link => link%next_time
+      if (n > self%nq+1) exit
     end do
     call mpi%end ('error')
   end if
@@ -397,13 +425,17 @@ SUBROUTINE init_nbors (self)
           nbor%next => link%nbor
           link%nbor => nbor
           n_add = n_add+1
+          if (nbor%task%id==id_debug) print*, id_debug, 'mk is nbor:', link%task%id
+          if (link%task%id==id_debug) print*, id_debug, 'mk has nbor:', nbor%task%id
+          !write(io%debug_unit,*) link%task%id, ' init_nbor:', nbor%task%id
           !---------------------------------------------------------------------
-          ! Find the parent, as the patch on the next lower level that has the
-          ! current patch position inside it
+          ! Find parents, as patches on the next lower level that have the
+          ! current patch position inside
           !---------------------------------------------------------------------
           if (nbor%task%level==link%task%level-1) then
-            if (all(abs(nbor%task%position-link%task%position) < link%task%size*0.55d0)) then
+            if (all(abs(nbor%task%position-link%task%position) < nbor%task%size*0.55d0)) then
               link%parent => nbor
+              call nbor%task%set (bits%not_leaf)
               if (io%verbose>0) &
                 print*, 'patch', link%task%id, ' parent:', nbor%task%id
             end if
@@ -421,6 +453,40 @@ SUBROUTINE init_nbors (self)
   call self%lock%unset('init_nbors')
   call trace_end
 END SUBROUTINE init_nbors
+
+!> =============================================================================
+!> Remove parent patches, which have higher level patches inside
+!> =============================================================================
+SUBROUTINE remove_parents (self)
+  class(list_t):: self
+  class(link_t), pointer:: link, scan, parent
+  !.............................................................................
+  call trace_begin('list_t%remove_parents')
+  link => self%head                                     ! start checking links
+  do while (associated(link))
+    scan => self%head                                   ! scan all links (FIXME)
+    do while (associated(scan))                         ! until end
+      !---------------------------------------------------------------------
+      ! Find parents, as patches on the next lower level that have the
+      ! current patch position inside
+      !---------------------------------------------------------------------
+      nullify (parent)
+      if (scan%task%level==link%task%level-1) then
+        if (all(abs(scan%task%position-link%task%position) < scan%task%size*0.55d0)) then
+          parent => scan
+        end if
+      end if
+      scan => scan%next                                 ! continue search
+      if (associated(parent)) then
+        print '(2(1x,a,i8,5x))', &
+          'remove parent task', parent%task%id, 'level', parent%task%level
+        call self%remove_link (parent)
+      end if
+    end do
+    link => link%next                                   ! continue list
+  end do
+  call trace_end
+END SUBROUTINE remove_parents
 
 !> =============================================================================
 !> =============================================================================
@@ -910,6 +976,39 @@ SUBROUTINE print_queue (self)
   end do
   print*,''
 END SUBROUTINE print_queue
+
+!> =============================================================================
+!> Print the queue until and including a given task
+!> =============================================================================
+SUBROUTINE print_queue_until (self, task)
+  class(list_t):: self
+  class(task_t):: task
+  class(link_t) , pointer:: link, nbor
+  !.............................................................................
+  link => self%queue
+  print*,'print_queue_until:'
+  do while (associated(link))
+    print '("queue: id, t0, t, t0-t =",i7,1p,3e12.3)', &
+      link%task%id, task%time, link%task%time, task%time-link%task%time
+    if (link%task%id==task%id) exit
+    link => link%next_time
+  end do
+END SUBROUTINE print_queue_until
+
+!> =============================================================================
+!> Print the queue until and including a given task
+!> =============================================================================
+SUBROUTINE print_queue_times (self)
+  class(list_t):: self
+  class(link_t) , pointer:: link, nbor
+  !.............................................................................
+  link => self%queue
+  print*,'print_queue_times:'
+  do while (associated(link))
+    print '("queue: id, time =",i7,1p,e14.5)', link%task%id, link%task%time
+    link => link%next_time
+  end do
+END SUBROUTINE print_queue_times
 
 !> =============================================================================
 !> =============================================================================

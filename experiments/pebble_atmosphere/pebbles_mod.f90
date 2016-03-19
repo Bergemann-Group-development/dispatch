@@ -32,7 +32,7 @@ MODULE pebbles_mod
   !-----------------------------------------------------------------------------
   type, public:: pebble_t
     integer:: id                        ! pebble nr
-    integer:: it=0                      ! time step
+    integer:: status=0                  ! status bits
     real::  p(3)                        ! position
     real::  v(3)                        ! velocity
     real:: vg(3)                        ! gas velocity
@@ -57,7 +57,7 @@ MODULE pebbles_mod
     integer:: n_outside(3) = 0                  ! have left the patch
     integer:: n_behind = 0                      ! are behind self%time
     integer:: n_export = 0                      ! number of exported pebbles
-    integer:: n_remove = 0                      ! number of removed pebbles
+    integer:: n_frozen = 0                      ! number of removed pebbles
     integer:: it_max                            ! max life time
     integer:: id_dbg = 0                        ! follow this pebble
     integer:: ppc = 5                           ! particles per cell
@@ -74,12 +74,14 @@ MODULE pebbles_mod
     real:: courant=0.1                          ! courant number for motion
     real:: cell_probability
     real:: position(3)                          ! relative to star
-    type(pebble_t), pointer:: head, tail        ! first & last pebble
+    type(pebble_t), pointer:: head => null()    ! first & last pebble
+    type(pebble_t), pointer:: tail => null()    ! first & last pebble
     logical:: initialized=.false.               ! initialize flag
     type(lock_t):: lock
   contains
     procedure append                            ! append a pebble
     procedure remove                            ! remove a pebble
+    procedure freeze                            ! freeze a pebble
     procedure export                            ! export to other patches (or remove)
     procedure delete                            ! delete pebbles
     procedure check_list                        ! check list consistency
@@ -434,6 +436,7 @@ SUBROUTINE kdk_drag (self, p)
   !-----------------------------------------------------------------------------
   ! Get acceleration from planet and Coriolis force from star, ag(t)
   !---------------------------------------------------------------------------
+  if (iand(p%status,bits%frozen) /= 0) return
   rp = - p%p
   ar = 1./sqrt(sum(rp**2))
   p%ag = scaling%grav*planet%mass*rp*ar**3
@@ -534,9 +537,9 @@ SUBROUTINE check_list (self, label)
   end do
   if (n /= self%n) then
     if (present(label)) then
-      print*, 'inconsistent pebble list ', label, n, self%n
+      print*, 'ERROR: inconsistent pebble list ', label, n, self%n
     else
-      print*, 'inconsistent pebble list ', n, self%n
+      print*, 'ERROR: inconsistent pebble list ', n, self%n
     end if
   end if
 END SUBROUTINE check_list
@@ -555,6 +558,7 @@ SUBROUTINE append (self, pebble)
   nullify (pebble%next)
   self%tail => pebble
   self%n = self%n + 1
+  !$omp flush
   call self%lock%unset ('append')
 END SUBROUTINE append
 
@@ -579,8 +583,19 @@ SUBROUTINE remove (self, pebble)
     if (associated(self%tail)) nullify(self%tail%next)
   end if
   self%n = self%n - 1
+  !$omp flush
   call self%lock%unset ('remove')
 END SUBROUTINE remove
+
+!> =============================================================================
+!> Remove a pebble from the list
+!> =============================================================================
+SUBROUTINE freeze (self, pebble)
+  class(pebbles_t):: self
+  class(pebble_t), pointer:: pebble, p
+  !.............................................................................
+  p%status = ior(p%status, bits%frozen)
+END SUBROUTINE freeze
 
 !> =============================================================================
 SUBROUTINE export (self, pebble, nbor_list)
@@ -611,75 +626,94 @@ SUBROUTINE scatter (self, nbors, not_done)
   class(pebble_t), pointer:: pebble, next
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task
-  integer:: n
+  integer:: n, m
   !-----------------------------------------------------------------------------
   self%pebbles%dt_min = 1e30
   self%pebbles%dt_max = 0.0
   self%pebbles%z_min = 1e30
   n = 0
   pebble => self%pebbles%head
-  do while (associated(pebble))
+  do while (associated(pebble) .and. self%pebbles%n>0)
     n = n+1
+    !---------------------------------------------------------------------------
+    ! Lock access to the pebble list while getting the next pointer, since some
+    ! other patch may be trying exporting to us at the same time.
+    !---------------------------------------------------------------------------
+    call self%pebbles%lock%set ('scatter next')
     next => pebble%next
+    !$omp flush
+    call self%pebbles%lock%unset ('scatter next')
+    !---------------------------------------------------------------------------
+    ! If the pebble is already frozed, just skip it
+    !---------------------------------------------------------------------------
+    if (iand(pebble%status,bits%frozen) /= 0) goto 9
     call self%move (pebble)
     self%pebbles%z_min = min(self%pebbles%z_min,abs(pebble%p(3)))
     self%pebbles%dt_min = min(pebble%dt,self%pebbles%dt_min)
     self%pebbles%dt_max = max(pebble%dt,self%pebbles%dt_max)
     if (debug) print *,'pebble id:', pebble%id
-    if (.not. self%inside_r4 (pebble%p)) then
+    !---------------------------------------------------------------------------
+    ! Check if it should be exported to a neighbor, either because it is 
+    ! outside, or because there is a higher resolution child patch.
+    !---------------------------------------------------------------------------
+    if (.not. self%inside_r4 (pebble%p) .or. self%is_set(bits%not_leaf)) then
       if (debug) print *,'not inside'
-      !-------------------------------------------------------------------------
-      ! Check if it should be exported to a neighbor
-      !-------------------------------------------------------------------------
       if (associated(nbors)) then
+        m = 0
         nbor => nbors
         do while (associated(nbor))
           task => nbor%task
           select type (task)
           class is (pebble_patch_t)
             if (task%inside_r4(pebble%p)) then
-              if (debug) print *,'inside patch', task%id, ', exported from scatter'
-              call self%pebbles%export (pebble, task%pebbles)
-              self%pebbles%n_export = self%pebbles%n_export+1
-              goto 9
+              if (.not.(self%is_set(bits%not_leaf)) .or. task%level>self%level) then
+                if (debug) print *,'inside patch', task%id, ', exported from scatter'
+                call self%pebbles%export (pebble, task%pebbles)
+                self%pebbles%n_export = self%pebbles%n_export+1
+                goto 9
+              end if
             end if
           end select
           nbor => nbor%next
+          m = m+1
+          if (m > 200) then
+            print*, self%id, 'ERROR: stuck in nbor loop'
+            exit
+          end if
         end do
         !-----------------------------------------------------------------------
-        ! If not inside, and not inside a neighbor, kill it
+        ! If not inside, and not inside a neighbor, freeze it, and go on
         !-----------------------------------------------------------------------
-        call self%pebbles%remove (pebble)
-        self%pebbles%n_remove = self%pebbles%n_remove+1
-        goto 9
+        pebble%status = ior(pebble%status, bits%frozen)
+        self%pebbles%n_frozen = self%pebbles%n_frozen+1
       else
         !-----------------------------------------------------------------------
         ! No neighbors???
         !-----------------------------------------------------------------------
         if (debug) print *,'WARNING: pebble_patch without neighbors', self%id
-        call self%pebbles%remove (pebble)
+        pebble%status = ior(pebble%status, bits%frozen)
+        self%pebbles%n_frozen = self%pebbles%n_frozen+1
         if (abs(pebble%p(1)) > self%size(1)*0.5) &
           self%pebbles%n_outside(1) = self%pebbles%n_outside(1) + 1
         if (abs(pebble%p(2)) > self%size(2)*0.5) &
           self%pebbles%n_outside(2) = self%pebbles%n_outside(2) + 1
         if (abs(pebble%p(3)) > self%size(3)*0.5) &
           self%pebbles%n_outside(3) = self%pebbles%n_outside(3) + 1
-        goto 9
       end if
     else if (planet%inside(pebble%p)) then
       if (debug) print *,'inside planet'
       !-------------------------------------------------------------------------
       ! The pebble hit the planet; accreted
       !-------------------------------------------------------------------------
-      call self%pebbles%remove (pebble)
+      pebble%status = ior(pebble%status, bits%frozen)
       self%pebbles%n_accrete = self%pebbles%n_accrete + 1
-      goto 9
     else if (pebble%t < self%time) then
       if (debug) print *,'inside'
       !-------------------------------------------------------------------------
       ! Finally, check if the pebble is inside a neighbor with higher level
       !-------------------------------------------------------------------------
       if (associated(nbors)) then
+      m = 0
         nbor => nbors
         do while (associated(nbor))
           task => nbor%task
@@ -695,6 +729,11 @@ SUBROUTINE scatter (self, nbors, not_done)
             end select
           end if
           nbor => nbor%next
+          m = m+1
+          if (m > 200) then
+            print*, self%id, 'ERROR: stuck in nbor loop'
+            exit
+          end if
         end do
         !-----------------------------------------------------------------------
         ! If it wasn't, export to the 'not_done' list
@@ -704,6 +743,10 @@ SUBROUTINE scatter (self, nbors, not_done)
       end if
     end if
   9 pebble => next
+    if (n > 5*self%pebbles%n) then
+      print*,'ERROR: stuck in scatter loop, moves, pebbles%n =', n, self%pebbles%n
+      exit
+    end if
   end do
   call self%pebbles%check_list ('after scatter')
   if (io%verbose>1 .and. self%pebbles%n>1) then
@@ -714,9 +757,9 @@ END SUBROUTINE scatter
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE gather (self, pebbles, nbors, done)
+SUBROUTINE gather (self, not_done, nbors, done)
   class(pebble_patch_t):: self
-  class(pebbles_t), pointer:: pebbles
+  class(pebbles_t), pointer:: not_done
   class(link_t), pointer:: nbors
   !.............................................................................
   class(link_t), pointer:: nbor
@@ -725,18 +768,25 @@ SUBROUTINE gather (self, pebbles, nbors, done)
   class(task_t), pointer:: task
   integer:: n
   !-----------------------------------------------------------------------------
-  pebbles%dt_min = 1e30
-  pebbles%dt_max = 0.0
-  pebbles%t_min = 1e30
+  not_done%dt_min = 1e30
+  not_done%dt_max = 0.0
+  not_done%t_min = 1e30
   n = 0
-  pebble => pebbles%head
-  do while (associated(pebble))
+  pebble => not_done%head
+  do while (associated(pebble) .and. not_done%n>0)
+    if (iand(pebble%status,bits%frozen) /= 0) then
+      call not_done%export (pebble, done)
+    end if
     n = n+1
     call self%move (pebble)
-    pebbles%t_min  = min(pebble%t ,pebbles%t_min)
-    pebbles%dt_min = min(pebble%dt,pebbles%dt_min)
-    pebbles%dt_max = max(pebble%dt,pebbles%dt_max)
-    if (.not. self%inside_r4 (pebble%p+3.*pebble%dt*pebble%v)) then
+    self%pebbles%t_min  = min(pebble%t ,self%pebbles%t_min)
+    self%pebbles%dt_min = min(pebble%dt,self%pebbles%dt_min)
+    self%pebbles%dt_max = max(pebble%dt,self%pebbles%dt_max)
+    if (.not. self%inside_r4 (pebble%p) .or. self%is_set(bits%not_leaf)) then
+      !-------------------------------------------------------------------------
+      ! Check if it should be exported to a neighbor, either because it is 
+      ! outside, or because there is a higher resolution child patch.
+      !-------------------------------------------------------------------------
       if (associated(nbors)) then
         nbor => nbors
         do while (associated(nbor))
@@ -744,38 +794,42 @@ SUBROUTINE gather (self, pebbles, nbors, done)
           select type (task)
           class is (pebble_patch_t)
             if (task%inside_r4(pebble%p)) then
-              call pebbles%export (pebble, task%pebbles)
-              print *,'inside patch', task%id, ', exported from scatter', task%pebbles%n
-              self%pebbles%n_export = self%pebbles%n_export+1
-              goto 9
+              if (.not.(self%is_set(bits%not_leaf)) .or. task%level>self%level) then
+                if (debug) print *,'inside patch', task%id, ', exported from gather'
+                call not_done%export (pebble, task%pebbles)
+                self%pebbles%n_export = self%pebbles%n_export+1
+                goto 9
+              end if
             end if
-          nbor => nbor%next
           end select
+          nbor => nbor%next
         end do
-        call pebbles%remove (pebble)
       else
-        call pebbles%remove (pebble)
+        pebble%status = ior(pebble%status, bits%frozen)
+        self%pebbles%n_frozen = self%pebbles%n_frozen+1
         if (abs(pebble%p(1)) > self%size(1)*0.5) &
-          pebbles%n_outside(1) = pebbles%n_outside(1) + 1
+          self%pebbles%n_outside(1) = self%pebbles%n_outside(1) + 1
         if (abs(pebble%p(2)) > self%size(2)*0.5) &
-          pebbles%n_outside(2) = pebbles%n_outside(2) + 1
+          self%pebbles%n_outside(2) = self%pebbles%n_outside(2) + 1
         if (abs(pebble%p(3)) > self%size(3)*0.5) &
-          pebbles%n_outside(3) = pebbles%n_outside(3) + 1
+          self%pebbles%n_outside(3) = self%pebbles%n_outside(3) + 1
+        call not_done%export (pebble, done)
       end if
     else if (planet%inside(pebble%p)) then
       if (io%verbose>1) &
-        print*,'removing accreted pebble', pebble%id
-      call pebbles%remove (pebble)
-      pebbles%n_accrete = pebbles%n_accrete + 1
+        print*,'freezing accreted pebble', pebble%id
+      pebble%status = ior(pebble%status, bits%frozen)
+      self%pebbles%n_accrete = self%pebbles%n_accrete + 1
+      call not_done%export (pebble, done)
     else if (pebble%t >= self%time) then
-      call pebbles%export (pebble, done)
+      call not_done%export (pebble, done)
     end if
   9 pebble => pebble%next
   end do
-  if (pebbles%n>0) then
-    print*,'gather: n, n, t_min=', pebbles%n, pebbles%t_min, pebbles%dt_min
-    pebbles%n_update = pebbles%n_update + pebbles%n
+  if (not_done%n>0) then
+    print*,'gather: n, n, t_min=', not_done%n, self%pebbles%t_min, self%pebbles%dt_min
   end if
+  self%pebbles%n_update = self%pebbles%n_update + n
   call self%pebbles%check_list ('after gather')
 END SUBROUTINE gather
 
@@ -796,6 +850,7 @@ SUBROUTINE update_pebbles (self)
   ! Add pebbles initially, and on the top and bottom surfaces
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles) return
+  call trace_begin ('pebbles_mod::update_pebbles')
   if (self%time == 0d0) call self%initial_add
   if (self%level==1 .and. self%is_set(bits%top_bottom)) call self%add
   if (self%pebbles%n>0) then
@@ -805,10 +860,12 @@ SUBROUTINE update_pebbles (self)
           self%time, self%pebbles%head%t
       else
         print *,'ERROR, no head, patch id', self%id,'  n should be', self%pebbles%n>0
+        call trace_end
         return
       end if
     end if
   else
+    call trace_end
     return
   end if
   !-----------------------------------------------------------------------------
@@ -834,21 +891,34 @@ SUBROUTINE update_pebbles (self)
   !-----------------------------------------------------------------------------
   self%pebbles%n_accrete = 0
   self%pebbles%n_export = 0
-  self%pebbles%n_remove = 0
+  self%pebbles%n_frozen = 0
   allocate (self%not_done)
+  call self%not_done%lock%init ('not_done')
+  self%not_done%initialized = .true.
   if (io%verbose>1) &
     print*,'pebbles  in =', self%pebbles%n
+  !write(io%debug_unit,*) self%id,' pebble scatter begin', self%pebbles%n
+  !flush (io%debug_unit)
   call self%scatter (nbors, self%not_done)
+  !write(io%debug_unit,*) self%id,' pebble scatter end', self%not_done%n
+  !flush (io%debug_unit)
   if (io%verbose>2) &
     print*, 'not_done =', self%not_done%n, self%pebbles%dt_min, self%pebbles%dt_max
   do while (self%not_done%n > 0)
     if (io%verbose>2) &
       print*, 'not_done =', self%not_done%n, self%pebbles%dt_min, self%pebbles%dt_max
     call self%gather (self%not_done, nbors, self%pebbles)
+    !write(io%debug_unit,*) self%id,' pebble gather end', self%not_done%n, self%pebbles%n
   end do
+  !write(io%debug_unit,*) self%id, ' update_pebbles: n =', self%pebbles%n
+  !write(io%debug_unit,*) self%id,' pebble gather end', self%pebbles%n_export, &
+    !self%pebbles%n_frozen, self%pebbles%n_accrete
+  !flush (io%debug_unit)
   if (io%verbose>1) &
     print*,'pebbles out =', self%pebbles%n, self%pebbles%dt_min, self%pebbles%dt_max
+  call self%not_done%lock%destroy
   deallocate (self%not_done)
+  call trace_end
 END SUBROUTINE update_pebbles
 
 !> =============================================================================
@@ -868,7 +938,7 @@ SUBROUTINE info (self, nq, experiment_name)
       nv = 1
       if (io%verbose>2) nv = self%nv
       do iv=1,nv
-        print '(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
+        print '(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,o8,i6)', &
           'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
           maxval(self%mem(:,:,:,iv,self%it ,2)), &
@@ -884,8 +954,8 @@ SUBROUTINE info (self, nq, experiment_name)
     print '(5(1x,i8,a,2x),1p,e11.2,0p,f11.3)', &
       self%id,               ' now has', &
       self%pebbles%n,        ' pebbles, exported', &
-      self%pebbles%n_export, ', removed', &
-      self%pebbles%n_remove, ', accreted', &
+      self%pebbles%n_export, ', frozen', &
+      self%pebbles%n_frozen, ', accreted', &
       self%pebbles%n_accrete,', min z', &
       self%pebbles%z_min, self%time
     self%pebbles%n_export = 0
@@ -960,51 +1030,46 @@ SUBROUTINE output (self, experiment_name)
   character(len=64), optional:: experiment_name
   !.............................................................................
   character(len=128):: filename
-  integer, parameter:: data_format=3, n_var=9
+  integer, parameter:: data_format=4, n_var=9
   real, dimension(:,:), pointer:: buffer
   integer, dimension(:), pointer:: idbuf
   integer:: i, j, np, n_not
   class(pebble_t), pointer:: p
   !-----------------------------------------------------------------------------
-  if (.not.self%do_pebbles) return
   if (.not.io%do_output .or. self%time < self%out_next) return
   !$omp critical (output_cr)
   !
+  call self%patch_t%output (experiment_name)
   !
-  if (present(experiment_name)) then
-    io%outputname = experiment_name
-  end if
-  if (trim(io%inputname) /= 'input') then
-    io%outputname = io%inputname
-  end if
-  write (filename,'(a,i4.4,"_",i4.4,".peb")') &
-      'data/'//trim(io%outputname)//'/', self%id, self%iout
-  open  (io%data_unit, file=filename, form='unformatted', status='unknown')
-  write (io%data_unit) data_format
-  !
-  np = max(self%pebbles%n,1)
-  allocate (buffer(np,n_var), idbuf(np))
-  buffer = 0.0
-  p => self%pebbles%head
-  n_not = 0
-  do i=1,np
-    if (.not.associated(p)) then
-      n_not = n_not+1
-      cycle
-    end if
-    idbuf(i) = p%id
-    buffer(i,1:3) = p%p
-    buffer(i,4:6) = p%v
-    buffer(i,7:9) = [real(p%t,kind=4),p%s,p%c]
-    p => p%next
-  end do
-  print *,'PEBBLE FILE: ', trim(filename), self%pebbles%n, np, n_not
+  if (self%do_pebbles) then
+    write (filename,'(a,i4.4,"_",i4.4,".peb")') &
+        'data/'//trim(io%outputname)//'/', self%id, self%iout
+    open  (io%data_unit, file=filename, form='unformatted', status='unknown')
+    write (io%data_unit) data_format
+    !
+    np = max(self%pebbles%n,1)
+    allocate (buffer(np,n_var), idbuf(np))
+    buffer = 0.0
+    p => self%pebbles%head
+    n_not = 0
+    do i=1,np
+      if (.not.associated(p)) then
+        n_not = n_not+1
+        cycle
+      end if
+      idbuf(i) = p%id
+      buffer(i,1:3) = p%p
+      buffer(i,4:6) = p%v
+      buffer(i,7:9) = [real(p%t,kind=4),p%s,p%c]
+      p => p%next
+    end do
+    print *,'PEBBLE FILE: ', trim(filename), self%pebbles%n, np, n_not
     write (io%data_unit) np, n_var, scene%n_repeat, scene%n_patch
-  write (io%data_unit) buffer
-  write (io%data_unit) idbuf
-  !
-  close (io%data_unit)
-  deallocate (buffer,idbuf)
+    write (io%data_unit) buffer
+    write (io%data_unit) idbuf
+    !
+    close (io%data_unit)
+    deallocate (buffer,idbuf)
   end if
   !
   !$omp end critical (output_cr)

@@ -310,7 +310,7 @@ SUBROUTINE find_time (other, time, jt, pt)
     found = .true.
     pt(2) = 0.0
   else
-    pt(2) = 1+other%grace
+    pt(2) = 1.0001+other%grace
     !---------------------------------------------------------------------------
     ! Check all nt-2 time intervals, and settle for the one that gives the
     ! smallest extrapolation factor pt(2).  Initially, when all time slots
@@ -324,7 +324,7 @@ SUBROUTINE find_time (other, time, jt, pt)
       dt = t2 - t1
       if (dt > 0.0) then
         pt2 = (time-other%t(it1))/dt
-        if (pt2 < pt(2)) then
+        if (pt2 <= pt(2)) then
           found = .true.
           pt(2) = pt2
           jt(1) = it1
