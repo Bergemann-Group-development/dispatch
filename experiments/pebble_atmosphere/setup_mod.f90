@@ -43,7 +43,7 @@ SUBROUTINE init (self, label)
   class(patch_t), pointer:: patch
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
-  call io%init
+  call io%init (label)
   call scaling%init
   call planet%init
   call atmosphere%init

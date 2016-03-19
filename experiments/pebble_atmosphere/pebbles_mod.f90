@@ -999,14 +999,14 @@ SUBROUTINE output (self, experiment_name)
     p => p%next
   end do
   print *,'PEBBLE FILE: ', trim(filename), self%pebbles%n, np, n_not
-  write (io%data_unit) np, n_var, scene%n_repeat
+    write (io%data_unit) np, n_var, scene%n_repeat, scene%n_patch
   write (io%data_unit) buffer
   write (io%data_unit) idbuf
   !
   close (io%data_unit)
   deallocate (buffer,idbuf)
+  end if
   !
-  call self%patch_t%output (experiment_name)
   !$omp end critical (output_cr)
 END SUBROUTINE output
 

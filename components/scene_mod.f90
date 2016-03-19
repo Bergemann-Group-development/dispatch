@@ -9,6 +9,7 @@ MODULE scene_mod
   public
   type, public:: scene_t
     integer:: n_repeat = 1
+    integer:: n_patch
   end type
   type(scene_t):: scene
 END MODULE scene_mod

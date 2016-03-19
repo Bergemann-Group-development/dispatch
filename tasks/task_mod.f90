@@ -8,6 +8,7 @@ MODULE task_mod
   USE mpi_mod
   USE bits_mod
   USE trace_mod
+  USE scene_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -68,6 +69,7 @@ MODULE task_mod
     integer:: verbose=1
   end type
   integer:: id=0
+  integer, public:: id_debug=0
 CONTAINS
 
 !> =============================================================================
@@ -88,6 +90,7 @@ SUBROUTINE init (self)
   end if
   call self%lock%init (self%kind)
   self%lock%id = self%id
+  scene%n_patch = self%id
   call trace_end
 END SUBROUTINE
 
@@ -129,8 +132,9 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   class (task_t):: self, task
   !.............................................................................
   is_ahead_of = self%time + self%dtime*task%grace >= task%time
-  !print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread(), 'is_ahead_of: ', &
-  !  task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of
+  if (task%id==id_debug) &
+    print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread(), 'mk is_ahead_of: ', &
+    task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of
 END FUNCTION
 
 SUBROUTINE print (self)

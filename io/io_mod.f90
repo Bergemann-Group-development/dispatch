@@ -8,8 +8,10 @@ MODULE io_mod
   logical:: mpi_trace=.false.
   integer, parameter:: mch=120
   type io_t
-    integer:: verbose=0, input=1, output=2, data_unit=3, log_unit=4, debug_unit=7
+    integer:: verbose=0, input=1, output=2, data_unit=3, log_unit=4, debug_unit=7, &
+      flag_unit=8
     logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.true.
+    logical:: do_flags
     integer:: levelmax=10
     character(len=64):: inputname, outputname
   contains
@@ -34,29 +36,35 @@ SUBROUTINE init (self, name)
   'io_mod.f90 $Id$'
   integer:: verbose=0, levelmax
   character(len=*), optional:: name
-  character(len=64):: inputfile, argfile
+  character(len=64):: argfile
   logical:: first_time=.true.
-  logical:: do_debug=.false., do_trace=.false., do_output=.false., exist
-  namelist /io_params/ verbose, do_debug, do_trace, do_output, levelmax
+  logical:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
+    do_flags=.false.
+  namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, levelmax
   real:: test
   !.............................................................................
   call print_id (id)
   call init_omp
   !$omp critical (io_cr)
   if (first_time) then
-    if (present(name)) inputfile = trim(name)//'.nml'                             ! experiment_name given?
-    inquire (file=inputfile, exist=exist)                                         ! experiment.nml ?
-    if (.not.exist) inputfile = 'input.nml'                                       ! default
-    call getarg(1,argfile)                                                        ! command line argument
-    if (argfile /= ' ') inputfile = argfile                                       ! use, if present
+    !---------------------------------------------------------------------------
+    ! The input filename is input.nml, or as given on the command line
+    !---------------------------------------------------------------------------
+    call getarg(1,argfile)                                      ! command line
+    if (argfile /= ' ') then
+      io%inputname = argfile                                    ! file root name
+      io%outputname = argfile(1:index(argfile,'.')-1)           ! file root name
+    else
+      io%inputname = 'input.nml'
+      io%outputname = ''
+    end if
     do_trace = io%do_trace
     do_debug = io%do_debug
     verbose  = io%verbose
-    open (io%input, file=inputfile, form='formatted', status='old')               ! open for reading
-    io%inputname = inputfile(1:index(inputfile,'.')-1)
+    open (io%input, file=io%inputname, form='formatted', status='old')
     if (io%master) then
       print*,'======================================================================='
-      print*,'NOTE: Reading parameters from '//trim(inputfile)
+      print*,'NOTE: Reading parameters from '//trim(io%inputname)
       print'(a,i1)', ' This version was compiled with default real KIND=', kind(test)
       print*,'======================================================================='
     end if
@@ -68,6 +76,7 @@ SUBROUTINE init (self, name)
     io%do_debug  = do_debug
     io%do_trace  = do_trace
     io%do_output = do_output
+    io%do_flags  = do_flags
     if (io%master.and.first_time) write (*,io_params)
     first_time=.false.
   end if
@@ -75,6 +84,7 @@ SUBROUTINE init (self, name)
   self%do_debug  = io%do_debug
   self%do_trace  = io%do_trace
   self%do_output = io%do_output
+  self%do_flags  = io%do_flags
   self%levelmax  = io%levelmax
   self%verbose   = io%verbose
   self%inputname = io%inputname

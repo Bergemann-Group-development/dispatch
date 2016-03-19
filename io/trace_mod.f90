@@ -40,6 +40,7 @@ SUBROUTINE trace_begin (id, set_verbose)
   write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
   if (io%master.and.io%verbose>=verbose) then
     write(*,fmt) omp_mythread(), wallclock(), trim(id)//' begin'
+    call flush(6)
   end if
 END SUBROUTINE trace_begin
 
@@ -53,11 +54,10 @@ SUBROUTINE trace (id)
   if (.not.io%do_trace) return
   level = max(1,level-1)
   verbose = verbosity(level)
-  if (io%do_trace) then
-    write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
-    if (io%master.and.io%verbose>=verbose) then
-      write(*,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' '//trim(id)
-    end if
+  write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
+  if (io%master.and.io%verbose>=verbose) then
+    write(*,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' '//trim(id)
+    call flush(6)
   end if
 END SUBROUTINE trace
 
@@ -72,13 +72,11 @@ SUBROUTINE trace_end
   level  = max(level-1,1)
   indent = max(indent,4)
   verbose = verbosity(level)
-  if (io%do_trace) then
-    write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
-    if (io%master.and.io%verbose>=verbose) then
-      write(*,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' end'
-    end if
-    call flush(6)
+  write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
+  if (io%master.and.io%verbose>=verbose) then
+    write(*,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' end'
   end if
+  call flush(6)
   indent = max(indent-3,4)
 END SUBROUTINE trace_end
 

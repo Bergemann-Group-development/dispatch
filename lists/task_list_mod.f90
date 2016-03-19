@@ -36,6 +36,7 @@ MODULE task_list_mod
     procedure:: check_mpi
     procedure:: split
     procedure:: output
+    procedure:: check_flags
     procedure:: print => print_tasklist
   end type
   public link_t
@@ -115,6 +116,7 @@ SUBROUTINE update (self)
   integer:: n1
   !.............................................................................
   call trace_begin('task_list_t%update')
+  call self%check_flags
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
@@ -185,6 +187,7 @@ SUBROUTINE update (self)
       self%n = self%n-1
     end if
   else
+    !$omp flush
     call self%lock%unset ('task_list::update')
   end if
   call trace_end
@@ -330,5 +333,54 @@ SUBROUTINE print_tasklist (self, label)
   end do
   call self%print_queue
 END SUBROUTINE print_tasklist
+
+!> =============================================================================
+!> Check debug flag files
+!> =============================================================================
+SUBROUTINE check_flags (self)
+  class (task_list_t):: self
+  logical:: changed
+  !.............................................................................
+  if (io%verbose <= 0 .or. .not.io%do_flags) return             ! avoid speed impact
+  call icheck ('id_debug.flag', id_debug   , changed)
+  call icheck ('verbose.flag' , io%verbose , changed)
+  call lcheck ('do_trace.flag', io%do_trace, changed)
+contains
+  !=============================================================================
+  logical function exists(file)
+  character(len=*):: file
+  inquire (file=file, exist=exists)
+  end function
+  !=============================================================================
+  subroutine icheck (file, value, changed)
+  character(len=*):: file
+  integer:: value
+  logical:: changed
+  if (exists(trim(file))) then
+    open (io%flag_unit, file=trim(file), form='formatted', status='old')
+    read (io%flag_unit,*) value
+    close (io%flag_unit,status='delete')
+    print*, 'flag check:', file, value
+    changed = .true.
+  else
+    changed = .false.
+  end if
+  end subroutine
+  !=============================================================================
+  subroutine lcheck (file, value, changed)
+  character(len=*):: file
+  logical:: value
+  logical:: changed
+  if (exists(trim(file))) then
+    open (io%flag_unit, file=trim(file), form='formatted', status='old')
+    read (io%flag_unit,*) value
+    close (io%flag_unit,status='delete')
+    print*, 'flag check:', file, value
+    changed = .true.
+  else
+    changed = .false.
+  end if
+  end subroutine
+END SUBROUTINE check_flags
 
 END MODULE

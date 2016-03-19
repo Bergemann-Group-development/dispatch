@@ -10,9 +10,9 @@ PROGRAM dispatch
   type (task_list_t), pointer:: task_list
   real:: position(3)=0.0, size(3)=1.0
   !.............................................................................
-  call io%init
-  !call mpi%init
-  call cartesian%init('turbulence')     ! Initialize the patch list and patches
+  call io%init('turbulence')
+ !call mpi%init
+  call cartesian%init                   ! Initialize the patch list and patches
   task_list => cartesian%task_list      ! for now, just short hand -- could assemble
   task_list%n_tasks = product(cartesian%dims)
   call task_list%execute                ! update the list = update member patches

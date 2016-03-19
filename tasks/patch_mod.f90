@@ -600,16 +600,6 @@ SUBROUTINE output (self, experiment_name)
       stop
     end if
     !-----------------------------------------------------------------------------
-    ! If the out_next time has passed, set a new time = the integer number of
-    ! out_time's that have passed, plus æone more
-    !-----------------------------------------------------------------------------
-    if (present(experiment_name)) then
-      io%outputname = experiment_name
-    end if
-    if (trim(io%inputname) /= 'input') then
-      io%outputname = io%inputname
-    end if
-    !-----------------------------------------------------------------------------
     ! If guard_zones is true, include the guard zones.  If time_derivs is true,
     ! write out the time derivatives also.
     !-----------------------------------------------------------------------------
@@ -733,7 +723,7 @@ SUBROUTINE info (self, nq, experiment_name)
       nv = 1
       if (io%verbose>2) nv = self%nv
       do iv=1,nv
-        print '(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,i6,2x,2i3,2x,9i3)', &
+        print '(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,o8,2x,i4)', &
           'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
           maxval(self%mem(:,:,:,iv,self%it ,2)), &
