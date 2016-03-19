@@ -96,6 +96,7 @@ MODULE pebbles_mod
     real:: pebble_rate                          ! pebble arrival rate
     real:: vz_pebble                            ! vertical in-fall speed
     logical:: only_pebbles                      ! freeze the MHD conditions (for tests)
+    real:: omega(3)                             ! angular rate of rotation
   contains
     procedure init                              ! initialize the position and size
     procedure initial_add                       ! add pebbles
@@ -123,17 +124,18 @@ SUBROUTINE init (self)
   !.............................................................................
   character(len=8), save:: type='kdk_drag'
   real, save:: density_yr_cgs = 1e-12, solid_density_cgs=3., size(3), pebble_size_cm=1.
-  real, save:: pebble_rate_cgs = 1e2  ! about one pebble per 10 second (3e6 per year)
-  real, save:: vz_pebble_cgs = 3e6    ! about 30 km/s vertically
-  real, save:: power = 1.0            ! random number power
-  real, save:: cell_probability = 0.02
+  real, save:: pebble_rate_cgs = 1e2    ! about one pebble per 10 second (3e6 per year)
+  real, save:: vz_pebble_cgs = 3e6      ! about 30 km/s vertically
+  real, save:: power = 1.0              ! random number power
+  real, save:: cell_probability = 0.02  ! probability of making a pebble
+  real, save:: omega_yr(3)=0.0          ! omega in units where 1 = 1/yr
   integer, save:: it_max=1000000, id_dbg=0, ppc=5
   logical, save:: do_pebbles=.true., only_pebbles=.false.
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
     solid_density_cgs, size, it_max, pebble_rate_cgs, vz_pebble_cgs, id_dbg, &
-    only_pebbles, ppc, cell_probability, power
+    only_pebbles, ppc, cell_probability, power, omega_yr
   !-----------------------------------------------------------------------------
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
@@ -165,6 +167,7 @@ SUBROUTINE init (self)
     if (io%master) write(*, pebble_params)
   end if
   !$omp end critical (init_cr)
+  self%omega = omega_yr*2.*cgs%pi*scaling%t/cgs%yr
   self%do_pebbles = do_pebbles
   self%only_pebbles = only_pebbles
   self%pebble_rate = pebble_rate_cgs*scaling%t
@@ -588,7 +591,7 @@ SUBROUTINE remove (self, pebble)
 END SUBROUTINE remove
 
 !> =============================================================================
-!> Remove a pebble from the list
+!> Freeze a pebble in place, to maintain indices in output files
 !> =============================================================================
 SUBROUTINE freeze (self, pebble)
   class(pebbles_t):: self

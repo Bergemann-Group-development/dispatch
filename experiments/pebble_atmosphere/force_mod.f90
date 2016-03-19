@@ -30,7 +30,10 @@ SUBROUTINE init (self)
 END SUBROUTINE
 
 !> =============================================================================
-!> Force of gravity from a star and a planet
+!> Force of gravity from a star and a planet.  To interprete the local forces,
+!> we choose a position such that the star is in the positive y-direction, and
+!> hence a positive Omega_z corresponds to positive rotation speed in the x-
+!> direction
 !> =============================================================================
 FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t):: self
@@ -54,6 +57,10 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + m(1)%r(ix)
         xp = planet%position(1) - x
+        !-----------------------------------------------------------------------
+        ! The force from the planet is included explicitly.  Since the [xyz]p
+        ! vector is twoards the planet, the staggered mesh adjustment is positive
+        !-----------------------------------------------------------------------
         rp1 = sqrt((xp+ds2(1))**2+yp**2+zp**2)
         ff(ix,iy,iz,1) = planet%mass*scaling%grav*(xp+ds2(1))/rp1**3
         rp1 = sqrt(xp**2+(yp+ds2(2))**2+zp**2)
@@ -61,15 +68,23 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
         rp1 = sqrt(xp**2+yp**2+(zp-ds2(3))**2)
         ff(ix,iy,iz,3) = planet%mass*scaling%grav*(zp+ds2(3))/rp1**3
         !-----------------------------------------------------------------------
-        ! Add the vertical and radial rotating coordinate frame accelerations
+        ! Add the vertical and radial rotating coordinate frame accelerations.
+        ! The force in the radial direction increases with increasing y, 
+        ! giving an equilbrium velocity in the x-direction that is positive
+        ! (faster rotation) for a positive y-displacement
         !-----------------------------------------------------------------------
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - self%omega(3)**2*(zp-m(3)%d)
-        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + self%omega(3)**2*(yp-m(2)%d)
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - self%omega(3)**2*(zp+ds2(3))
+        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + self%omega(3)**2*(yp+ds2(2))
       end do
     end do
   end do
   !-----------------------------------------------------------------------------
-  ! Add the classical Coriolis force terms, correctly centered (not important)
+  ! Add the classical Coriolis force terms, correctly centered (not important),
+  ! assuming (as above) that the motion is in the x-y plane.  A positive omega(3)
+  ! is motion in the negative x-direction, if y points in the radial direction.
+  ! Hence, a positive velocity in the x-direction reduces the centripetal force,
+  ! and leads to acceleration in the negative y-direction -- vice versa for 
+  ! motion in the y-direction
   !-----------------------------------------------------------------------------
   ff(:,:,:,1) = ff(:,:,:,1) + 2.*self%omega(3)*xdn(yup(Uy))
   ff(:,:,:,2) = ff(:,:,:,2) - 2.*self%omega(3)*ydn(xup(Ux))

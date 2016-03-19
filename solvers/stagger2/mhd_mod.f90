@@ -19,7 +19,6 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real:: nu(6)
-    real:: omega(3)
     logical:: mhd=.true.
     type(force_t):: force
   contains
@@ -42,9 +41,9 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, omega_yr(3)=0.0
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0
   integer:: i
-  namelist /mhd_params/ nu, gamma, omega_yr
+  namelist /mhd_params/ nu, gamma
   !----------------------------------------------------------------------------
   call trace_begin('mhd_t%init')
   if (first_time) then
@@ -57,7 +56,6 @@ SUBROUTINE init (self)
     end if
     !$omp end critical (mhd_cr)
   end if
-  self%omega = omega_yr*2.*cgs%pi*scaling%t/cgs%yr
   self%nu = nu
   self%gamma = gamma
   do i=1,3
@@ -254,14 +252,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) &
     dpdt = dpdt + dd*self%force%selected (self%time, Ux, Uy, Uz, self%mesh)
-  !-----------------------------------------------------------------------------
-  ! Coriolis force
-  !-----------------------------------------------------------------------------
-  if (any(self%omega/=0)) then
-    dpdtx = dpdtx + 2.0*ddx*xdn(self%omega(3)*yup(Uy) - self%omega(2)*zup(Uz))
-    dpdty = dpdty + 2.0*ddy*ydn(self%omega(1)*zup(Uz) - self%omega(3)*xup(Ux))
-    dpdtz = dpdtz + 2.0*ddz*zdn(self%omega(2)*xup(Ux) - self%omega(1)*yup(Uy))
-  end if
   !-----------------------------------------------------------------------------
   ! Induction equation
   !-----------------------------------------------------------------------------
