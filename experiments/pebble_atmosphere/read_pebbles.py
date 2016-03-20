@@ -1,8 +1,8 @@
 import fortranfile as ftf
 import numpy as np
 
-def read_pebbles(ip=1,it=0,verbose=0,run='pebble_atmosphere',dir='data'):
-    name=dir+'/'+run+'/{:03d}_{:04d}.peb'.format(ip,it)
+def read_pebbles(ip=1,it=0,verbose=0,run='',dir='data'):
+    name=dir+'/'+run+'/{:04d}_{:04d}.peb'.format(ip,it)
 
     # open the file
     f=ftf.FortranFile(name,'rb')

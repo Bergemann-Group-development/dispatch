@@ -51,30 +51,33 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + m(3)%r(iz)
     zp = planet%position(3) - z
+    zs = zp + ds2(3)
     do iy=m(2)%lb,m(2)%ub
       y = m(2)%p + m(2)%r(iy)
       yp = planet%position(2) - y
+      ys = yp + ds2(2)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + m(1)%r(ix)
         xp = planet%position(1) - x
+        xs = xp + ds2(1)
         !-----------------------------------------------------------------------
         ! The force from the planet is included explicitly.  Since the [xyz]p
         ! vector is twoards the planet, the staggered mesh adjustment is positive
         !-----------------------------------------------------------------------
-        rp1 = sqrt((xp+ds2(1))**2+yp**2+zp**2)
-        ff(ix,iy,iz,1) = planet%mass*scaling%grav*(xp+ds2(1))/rp1**3
-        rp1 = sqrt(xp**2+(yp+ds2(2))**2+zp**2)
-        ff(ix,iy,iz,2) = planet%mass*scaling%grav*(yp+ds2(2))/rp1**3
-        rp1 = sqrt(xp**2+yp**2+(zp-ds2(3))**2)
-        ff(ix,iy,iz,3) = planet%mass*scaling%grav*(zp+ds2(3))/rp1**3
+        rp1 = sqrt(xs**2+yp**2+zp**2)
+        ff(ix,iy,iz,1) = planet%mass*scaling%grav*xs/rp1**3
+        rp1 = sqrt(xp**2+ys**2+zp**2)
+        ff(ix,iy,iz,2) = planet%mass*scaling%grav*ys/rp1**3
+        rp1 = sqrt(xp**2+yp**2+zs**2)
+        ff(ix,iy,iz,3) = planet%mass*scaling%grav*zs/rp1**3
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
         ! The force in the radial direction increases with increasing y, 
         ! giving an equilbrium velocity in the x-direction that is positive
         ! (faster rotation) for a positive y-displacement
         !-----------------------------------------------------------------------
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - self%omega(3)**2*(zp+ds2(3))
-        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + self%omega(3)**2*(yp+ds2(2))
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - self%omega(3)**2*zs
+        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + self%omega(3)**2*ys
       end do
     end do
   end do

@@ -35,7 +35,7 @@ SUBROUTINE condition (self, mem, m, h)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + m(1)%r(ix) + h(1)*m(1)%d - planet%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < planet%radius) then
+        if (r < planet%radius+m(1)%d*0.1) then
           mem(ix,iy,iz) = 0.0
         end if
       end do

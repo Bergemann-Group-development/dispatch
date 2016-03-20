@@ -8,12 +8,13 @@
  n_levels=7
  n_patch=3
  m_zoom=3
- n_repeat=29
+ n_repeat=5
 /
 &pebble_params
+ omega_yr=0.0,0.0,1.0
+ do_pebbles=f
  vz_pebble_cgs=1.5e6
  pebble_rate_cgs=1
- initial_density=1e-12
  cell_probability=0.1
  ppc=1
 /
@@ -29,16 +30,16 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=30
- out_time=0.10
- print_time=0.1
+ end_time=2
+ out_time=0.02
+ !out_time=0
+ print_time=0
  guard_zones=t
  time_derivs=f
  max_files=9000
 /
 &mhd_params
  gamma=1.4
- omega_yr=0.0,0.0,1.0
  nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta
 /

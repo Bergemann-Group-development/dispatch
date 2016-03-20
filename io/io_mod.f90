@@ -9,11 +9,13 @@ MODULE io_mod
   integer, parameter:: mch=120
   type io_t
     integer:: verbose=0, input=1, output=2, data_unit=3, log_unit=4, debug_unit=7, &
-      flag_unit=8
+      flag_unit=8, index_unit=9, dump_unit=10
     logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.true.
     logical:: do_flags
     integer:: levelmax=10
-    character(len=64):: inputname, outputname
+    integer:: word_size=4
+    character(len=64):: inputname, outputname, datadir='data'
+    character(len=1):: sep = '/'
   contains
     procedure:: init
     procedure:: print_id => print_id_
@@ -34,7 +36,7 @@ SUBROUTINE init (self, name)
   class(io_t):: self
   character(len=120), save:: id = &
   'io_mod.f90 $Id$'
-  integer:: verbose=0, levelmax
+  integer:: verbose=0, levelmax, iostat
   character(len=*), optional:: name
   character(len=64):: argfile
   logical:: first_time=.true.
@@ -58,6 +60,7 @@ SUBROUTINE init (self, name)
       io%inputname = 'input.nml'
       io%outputname = ''
     end if
+    call system('mkdir -p '//trim(io%datadir))
     do_trace = io%do_trace
     do_debug = io%do_debug
     verbose  = io%verbose
@@ -70,7 +73,7 @@ SUBROUTINE init (self, name)
     end if
     levelmax = io%levelmax
     rewind (io%input)
-    read (io%input, io_params)
+    read (io%input, io_params,iostat=iostat)
     io%verbose   = verbose
     io%levelmax  = levelmax
     io%do_debug  = do_debug

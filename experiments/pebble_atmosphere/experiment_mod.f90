@@ -27,6 +27,22 @@ MODULE experiment_mod
 CONTAINS
 
 !> =============================================================================
+!> The initialization must be done in the right order.  The rotation speed
+!> omega must be known before the initial%init runs, for example.
+!>
+!> dispatch
+!>   setup::init
+!>     scaling::init                            ! code units
+!>     planet::init                             ! planet size, orbit
+!>     atmosphere::init                         ! construct hydrostatic state
+!>     rubiks_mod::init                         ! makes all patches
+!>       experiment_mod::init                   ! calls other inits
+!>         mhd_mod::init                        ! reads gamma
+!>         pebbles_mod::init                    ! reads omega
+!>         initial_mod::init                    ! selects ICs
+!>         initial_mod::selected                ! computes ICs
+!>         force_mod::init                      ! initialize forcing
+!>         boundary_mod::condition              ! apply BCs to ICs
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
@@ -39,16 +55,16 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   self%nv = 8
   self%msplit = 3
-  call self%initial%init
-  call self%mhd_t%init
-  call self%patch_t%init
+  call self%mhd_t%init                        ! reads gamma
+  call self%pebble_patch_t%init               ! reads omega
   call self%set(bits%static)
+  call self%initial%init
   call self%initial%selected(self%mem, self%mesh, self%omega)
   call force%init
   call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
   call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
   call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,0d0,-0.5d0])
-  call self%pebble_patch_t%init
+  call self%output
   call trace_end
 END SUBROUTINE init
 
@@ -73,7 +89,10 @@ SUBROUTINE update (self)
     end if
     self%mem(:,:,:,:,self%it,2) = 0.0
   else
+    if  (self%id==86) print*,'MK:d    ',self%mem(12,12,4:8,1,self%it,1)
     call self%mhd_t%update
+    if  (self%id==86) print*,'MK:dddt ',self%mem(12,12,4:8,1,self%it,2)
+    if  (self%id==86) print*,'MK:dpdtz',self%mem(12,12,4:8,5,self%it,2)
     if (self%is_set (bits%has_BC)) then
       call boundary%condition (self%mem(:,:,:,1,self%it,2), self%mesh, [0d0,0d0,0d0])
       call boundary%condition (self%mem(:,:,:,2,self%it,2), self%mesh, [0d0,0d0,0d0])
@@ -82,39 +101,8 @@ SUBROUTINE update (self)
       call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0])
     end if
   end if
-  block
-  !.............................................................................
-  integer      :: ix, iy, iz, iv, nv
-  real(8)      :: x, y, z, r, dr, damp
-  type(mesh_t), pointer:: m(:)
-  !-----------------------------------------------------------------------------
-  if (.not.self%only_pebbles .and. self%is_set (bits%has_BC)) then
-    associate(m => self%mesh)
-    do iv=3,5
-      do iz=m(3)%lb,m(3)%ub
-        z = m(3)%p + m(3)%r(iz) + m(3)%h(3)*m(3)%d - planet%position(3)
-        do iy=m(2)%lb,m(2)%ub
-          y = m(2)%p + m(2)%r(iy) + m(2)%h(2)*m(2)%d - planet%position(2)
-          do ix=m(1)%lb,m(1)%ub
-            x = m(1)%p + m(1)%r(ix) + m(1)%h(1)*m(1)%d - planet%position(1)
-            r = sqrt(x**2+y**2+z**2)
-            dr = r-planet%radius
-            damp = exp(-dr/(0.1*planet%radius))
-            if (dr>0.0) then
-              self%mem(ix,iy,iz,iv,self%it,2) = &
-              self%mem(ix,iy,iz,iv,self%it,2) - 300*damp* &
-              self%mem(ix,iy,iz,iv,self%it,1)
-            end if
-            if (r-planet%radius < self%ds(1)*2) then
-              self%mem(ix,iy,iz,iv,self%it,1) = 0.0
-            end if
-          end do
-        end do
-      end do
-    end do
-    end associate
-  end if
-  end block
+  if  (self%id==86) print*,'MK:dddt ',self%mem(12,12,4:8,1,self%it,2)
+  if  (self%id==86) print*,'MK:dpdtz',self%mem(12,12,4:8,5,self%it,2)
   call self%courant_condition
   call self%pebble_patch_t%update_pebbles
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)

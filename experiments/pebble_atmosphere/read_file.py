@@ -4,7 +4,7 @@
 '''
 import numpy as np
 
-def read_file (fileroot, verbose=False, derivs=False):
+def read_file (fileroot, verbose=False,derivs=False,nodata=0):
     if (verbose): 
         print '          files:', fileroot+'{.txt,.dat}'
     class patch:
@@ -35,6 +35,7 @@ def read_file (fileroot, verbose=False, derivs=False):
         print "  lower indices:", patch.li
         print "  upper indices:", patch.ui
     f.close
+    if nodata: return patch
 
     # binary data
     fd = open(fileroot+'.dat','rb')
@@ -50,7 +51,7 @@ def read_file (fileroot, verbose=False, derivs=False):
     patch.bz  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
     if derivs:
         patch.dd   = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
-        patch.ds   = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+        patch.dss  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
         patch.dpx  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
         patch.dpy  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
         patch.dpz  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
