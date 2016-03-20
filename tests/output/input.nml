@@ -1,0 +1,4 @@
+&io_params
+ do_trace=f
+ verbose=1
+/
