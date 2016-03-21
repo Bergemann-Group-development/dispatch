@@ -55,6 +55,7 @@ MODULE task_mod
     procedure:: deallocate => void
     procedure:: unique_id
     procedure:: load_balance
+    procedure:: has_finished
   end type
   !-----------------------------------------------------------------------------
   ! Time slot info and procedures added in tasks_t
@@ -180,6 +181,15 @@ LOGICAL FUNCTION is_clear (self, bit)
 !  call trace_begin ('task_t%is_clear')
   is_clear = (iand(self%status, bit) == 0)
 !  call trace_end
+END FUNCTION
+
+!> =============================================================================
+LOGICAL FUNCTION has_finished (self)
+  class (task_t):: self
+  integer:: bit
+  !.............................................................................
+  has_finished = self%time + 1e-6*self%dtime > self%end_time
+  if (has_finished) call self%set (bits%frozen)
 END FUNCTION
 
 !> =============================================================================

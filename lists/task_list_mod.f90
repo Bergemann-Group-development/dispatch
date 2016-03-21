@@ -143,6 +143,13 @@ SUBROUTINE update (self)
     self%nq = self%nq-1                                 ! decrement queue count
     !$omp flush
     call self%lock%unset ('task_list::update')          ! allow list updates
+    !---------------------------------------------------------------------------
+    ! If the task is frozen (e.g. because it has finished), return
+    !---------------------------------------------------------------------------
+    if (task%is_set (bits%frozen)) then
+      call trace_end
+      return
+    end if
     !-----------------------------------------------------------------------------
     ! Prepare for update, by downloading data that it depends on.  During the
     ! download we must prevent threads in the nbor list from rotating mem slots
@@ -183,9 +190,11 @@ SUBROUTINE update (self)
     call self%check_nbors (head)                        ! any nbor ready?
     call task%output (self%name)                        ! check output
     !-----------------------------------------------------------------------------
-    ! Tasks that have finished are subtracted from the task list count
+    ! Tasks that have finished are subtracted from the task list count but are
+    ! not removed, since their data may be needed by other tasks.  They are,
+    ! however, not added back onto the ready queue.
     !-----------------------------------------------------------------------------
-    if (task%time-0.1*task%dtime > task%end_time) then  ! finished:
+    if (task%has_finished()) then  ! finished:
       self%n = self%n-1
     end if
   else

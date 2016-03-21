@@ -750,6 +750,7 @@ SUBROUTINE queue_by_time (self, this)
   class(link_t), pointer:: this
   class(link_t), pointer:: next, prev
   !.............................................................................
+  if (this%task%has_finished()) return
   call trace_begin ('list_t%queue_by_time '//self%name)
   call self%lock%set ('queue_by_time')
   call this%task%set(bits%ready)                       ! mark as checked
