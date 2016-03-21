@@ -10,25 +10,10 @@ MODULE list_mod
   USE bits_mod
   USE task_mod
   USE patch_mod
+  USE link_mod
+  USE download_mod
   implicit none
   private
-  type, public:: nbor_t
-    class(task_t), pointer :: task => null()          ! task
-    class(link_t), pointer :: nbor => null()          ! next nbor
-    class(link_t), pointer :: link => null()          ! nbor's link (maybe not needed)
-  end type
-  type, extends(nbor_t), public:: link_t
-    class(link_t),  pointer :: next => null()         ! next link in task list
-    class(link_t),  pointer :: prev => null()         ! previous link in task list
-    class(link_t),  pointer :: parent => null()       ! parent task link
-    class(link_t),  pointer :: next_time => null()    ! next link in time order
-  contains
-    procedure:: download
-    procedure:: add_nbor_by_quality
-    procedure:: make_new_nbors
-    procedure:: make_new_nbor
-    procedure:: print_nbors
-  end type
   type, public:: list_t
     character(len=64):: name=''
     class(link_t), pointer:: head => null()
@@ -74,7 +59,7 @@ MODULE list_mod
     procedure:: print => print_list
   end type
   integer, parameter:: mnbor=100
-  public task2patch
+  public link_t, task2patch
 CONTAINS
 
 !> =============================================================================
@@ -312,6 +297,7 @@ SUBROUTINE check_ready (self, link, set_debug)
     end do
     call task%set(bits%ready)                           ! mark as checked
     !$omp flush (task)
+    call task%lock%unset ('check_ready')
     !print *, task%id, ' ready bit set by', omp_mythread()
     call self%qconsistency(2)
     if (task%id==id_debug) print*, id_debug, 'mk being queued at time', task%time
@@ -322,6 +308,7 @@ SUBROUTINE check_ready (self, link, set_debug)
     if (self%debug>0) print *, task%id, ' found by check_ready, nq =', self%nq
     call self%qconsistency(3)
     call trace_end
+    return
   end if
   !$omp flush
   call task%lock%unset ('check_ready')                  ! one at a time
@@ -592,105 +579,6 @@ SUBROUTINE remove_task (self, task)
   call trace_end
 END SUBROUTINE remove_task
 
-
-!> =============================================================================
-!> Initialize the nbors chain of a new patch (self), by
-!> 1) adding the parent
-!> 2) searching the parent nbors, adding patches that overlap
-!> Each time it adds an nbor, it should also add itself to that nbor's nbor list
-!> =============================================================================
-SUBROUTINE make_new_nbors (self, selfp, parent)
-  class(link_t):: self
-  class(link_t), pointer:: selfp, parent, nbor
-  class(patch_t), pointer:: p1, p2
-  !> ...........................................................................
-  call trace_begin('list_t%make_new_nbors', 1)
-  p1 => task2patch (self%task)
-  call self%make_new_nbor (selfp, parent)       ! make me a neighbor of my parent
-  nbor => parent%nbor                           ! start on parent's nbors chain
-  do while (associated(nbor))
-    p2 => task2patch (nbor%task)
-    if (.not.associated(self%task,nbor%task) &
-      .and. p1%overlaps (p2)) &   ! if my task overlaps with that task
-      call self%make_new_nbor (selfp, nbor%nbor)! make a neighbor (and make me one)
-    nbor => nbor%next                           ! continue on parents nbors chain
-  end do
-  call trace_end
-END SUBROUTINE make_new_nbors
-
-!> =============================================================================
-!> Add a link to a new neighbor to my nbors chain, and add myself into that
-!> neighbor's neighbor chain.  An nbor chain link has three pointers: a pointer
-!> to its task, a pointer to the next link in the chain, and a pointer back to
-!> the task list link to the task.  We need to make and add two now nbor chain
-!> links; one for our own nbors chain, and one for that's nbors chain.  Both
-!> are added in quality order
-!> =============================================================================
-SUBROUTINE make_new_nbor (self, selfp, that)
-  class(link_t):: self
-  class(link_t), pointer:: selfp, that
-  class(link_t), pointer:: link1, link2
-  !> ...........................................................................
-  call trace_begin('list_t%make_new_nbor', 1)
-  allocate (link1)                              ! for our own nbors chain
-  link1%task => that%task                       ! the link points to that task
-  link1%nbor => that                            ! link to the nbor link
-  link1%parent => that%parent                   ! direct link to task parent
-  call self%add_nbor_by_quality (link1)         ! add to that chain in quality order
-  allocate (link2)                              ! for that's nbors chain
-  link2%task => self%task                       ! that's new link points to my task
-  link2%nbor => selfp                           ! pointer back to self
-  link2%parent => selfp%parent                  ! direct link to self parent
-  call that%add_nbor_by_quality (link2)         ! add to my nbors chain in quality order
-  call trace_end
-END SUBROUTINE make_new_nbor
-
-!> =============================================================================
-!> Add a link node into the nbors list of self, in increasing quality order.
-!> self must be a link whose 'nbors' points to a chain of nbors
-!> =============================================================================
-SUBROUTINE add_nbor_by_quality (self, this)
-  class(link_t):: self
-  class(link_t), pointer:: this
-  class(link_t), pointer:: next, prev
-  !.............................................................................
-  call trace_begin ('list_t%add_nbor_by_quality')
-  nullify (prev)
-  next => self%nbor
-  do while (associated(next))
-    if (.not.associated(next%task,this%task)) then
-      if (next%task%level >= this%task%level) then
-        !-------------------------------------------------------------------------
-        ! Found a task we should be ahead of, so insert here
-        !-------------------------------------------------------------------------
-        this%next => next
-        if (associated(prev)) then
-          prev%next => this
-        else
-          self%nbor => this
-        end if
-        self%task%n_nbors = self%task%n_nbors+1
-        call trace_end
-        goto 9
-      end if
-    end if
-    prev => next
-    next => next%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! This task has the highest quality, so append it
-  !-----------------------------------------------------------------------------
-  if (associated(prev)) then
-    prev%next => this
-    nullify (this%next)
-  else
-    self%nbor => this
-  end if
-  self%task%n_nbors = self%task%n_nbors+1
-9 continue
-  call trace_end
-END SUBROUTINE add_nbor_by_quality
-
 !> =============================================================================
 !> Update the nbor chains in the self list (possibly already existing) by,
 !> for each link in that list, searching from the given start point for new
@@ -749,9 +637,24 @@ SUBROUTINE queue_by_time (self, this)
   class(list_t):: self
   class(link_t), pointer:: this
   class(link_t), pointer:: next, prev
+  class(task_t), pointer:: task
   !.............................................................................
   if (this%task%has_finished()) return
   call trace_begin ('list_t%queue_by_time '//self%name)
+  !-----------------------------------------------------------------------------
+  ! Prepare for update, by pro-actively downloading data that it depends on.
+  ! By doing it immediately, the guard zone data becomes available to neighbors
+  !-----------------------------------------------------------------------------
+  task => this%task
+  select type (task)
+  class is (patch_t)
+  call task%check_density ("before download")
+  call download%download_link (this, all_cells=.false.)
+  call task%check_density ("after download")
+  end select
+  !-----------------------------------------------------------------------------
+  ! Lock the queue while inserting the task
+  !-----------------------------------------------------------------------------
   call self%lock%set ('queue_by_time')
   call this%task%set(bits%ready)                       ! mark as checked
   if (io%verbose>2) print'(1x,a,i6,a,f10.5)', 'list_t%queue_by_time: adding task', &
@@ -885,81 +788,6 @@ SUBROUTINE insert (self, old, new)
   call self%lock%unset ('insert')
   call trace_end
 END SUBROUTINE insert
-
-!> =============================================================================
-FUNCTION task2patch (task) RESULT (patch)
-  class(task_t), pointer:: task
-  class(patch_t), pointer:: patch
-  select type (task)
-  class is (patch_t)
-  patch => task
-  class default
-  nullify(patch)
-  stop
-  end select
-END FUNCTION
-
-!> =============================================================================
-!> Run through neighbor list and pick up guard cells, after which the whole
-!> task is valid for download into other patches guard cells
-!> =============================================================================
-SUBROUTINE download (self, all_cells)
-  implicit none
-  class (link_t):: self
-  logical, optional:: all_cells
-  class (link_t),  pointer:: nbor
-  class (patch_t), pointer:: patch, nbor_patch
-  class (task_t), pointer:: task
-  integer :: nguard, special
-  real:: dmin
-  !.............................................................................
-  call trace_begin('link_t%download')
-  patch => task2patch(self%task)
-  nguard=0
-  nbor => self%nbor
-  do while (associated (nbor))
-    task => nbor%task
-    nbor_patch => task2patch(task)
-    if (abs(patch%level-nbor_patch%level) < 2) then
-      if (nbor_patch%level == patch%level+1) special = 6
-      call nbor_patch%download_to (task, special, all_cells)
-      nguard = nguard+1
-    end if
-    nbor => nbor%next
-  end do
-  if (io%verbose > 5) &
-    print *, 'download: Number of neighbors with guard cells:', nguard
-  call trace_end
-END SUBROUTINE download
-
-!> =============================================================================
-!> Print a list of nbors
-!> =============================================================================
-SUBROUTINE print_nbors (self, label)
-  class (link_t):: self
-  character(len=*), optional:: label
-  class(link_t) , pointer:: link, nbor
-  !.............................................................................
-  if (io%verbose < 2) return
-  if (present(label)) then
-    if (trim(label) /= '') print'(a)', label
-  end if
-  print'(a,i5,2x,a,f14.8,2x,a,l3,2x,a,i3,2x,a,$)', &
-    'task', self%task%id, 'time', self%task%time, &
-    'ready', self%task%is_set(bits%ready), 'level', self%task%level, 'nbors:'
-  if (io%verbose>4) print*,''
-  link => self%nbor
-  do while (associated(link))
-    if (io%verbose>4) then
-      print '(i7,f14.8,l3)', &
-        link%task%id, link%task%time, link%task%is_set(bits%ready)
-    else
-      print '(i4,l2,$)', link%task%id, link%task%is_set(bits%ready)
-    end if
-    link => link%next
-  end do
-  print*,''
-END SUBROUTINE print_nbors
 
 !> =============================================================================
 !> Print a table with task id, positions, and all neighbors

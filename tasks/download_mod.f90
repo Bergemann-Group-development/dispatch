@@ -8,7 +8,7 @@ MODULE download_mod
   USE trace_mod
   USE task_mod
   USE patch_mod
-  USE list_mod
+  USE link_mod
   implicit none
   private
   type, public:: download_t
