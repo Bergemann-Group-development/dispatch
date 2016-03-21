@@ -32,6 +32,7 @@ MODULE buffered_output_mod
   !-----------------------------------------------------------------------------
   type, public:: buffered_output_t
     integer:: ndata
+    integer:: iout = -1
     integer(8):: record  = 0
     integer:: n_buffer   = 0
     integer:: max_buffer = 10
@@ -54,28 +55,45 @@ CONTAINS
 !> Open an index file and a data file.  The first record of the index file starts
 !> with the data format revision number and the buffer size.
 !> =============================================================================
-SUBROUTINE open (self, nwords)
+SUBROUTINE open (self, nwords, iout)
   class(buffered_output_t):: self
-  integer:: nwords
-  logical, save:: first_time=.true.
+  integer:: nwords, iout
+  logical, save:: first_time=.true., exist
+  character(len=64):: filename
   !-----------------------------------------------------------------------------
-  if (first_time) then
-    first_time = .false.
-    call trace_begin('buffered_output_mod::open')
-    self%ndata = nwords
-    if (io%verbose>0) &
-      print*, 'index file: ', trim(io%outputname)//'index.dat'
-    open (io%index_unit, file=trim(io%outputname)//'index.dat', &
+  call trace_begin('buffered_output_mod::open')
+  self%iout= iout
+  self%ndata = nwords
+  write (filename,'(a,i4.4)') trim(io%outputname), iout
+  if (io%verbose>0) &
+    print'(a)', 'OPEN: '//trim(filename)
+  !---------------------------------------------------------------------------
+  ! Check if the index file exists.  If it does, read the record counter, and
+  ! if not, reset the counter and write it out.
+  !---------------------------------------------------------------------------
+  if (io%verbose>1) &
+    print*, 'index file: ', trim(filename)//'.idx'
+  inquire (file=trim(filename)//'.idx', exist=exist)
+  if (exist) then
+    open (io%index_unit, file=trim(filename)//'.idx', &
       form='unformatted', access='direct', status='unknown', recl=2*io%word_size)
-    if (io%verbose>0) &
-      print*, ' dump file: ', trim(io%outputname)//'dumps.dat'
-    open (io%dump_unit,  file=trim(io%outputname)//'dumps.dat', &
-      form='unformatted', access='direct', status='unknown', recl=nwords*io%word_size)
-    write (io%index_unit, rec=1) revision
-    write (io%index_unit, rec=2) int(nwords,kind=8)
+    read (io%index_unit, rec=3) self%record
+  else
+    open (io%index_unit, file=trim(filename)//'.idx', &
+      form='unformatted', access='direct', status='unknown', recl=2*io%word_size)
     self%record = 0
-    call trace_end
+    write (io%index_unit, rec=3) self%record
   end if
+  write (io%index_unit, rec=1) revision
+  write (io%index_unit, rec=2) int(nwords,kind=8)
+  !---------------------------------------------------------------------------
+  ! Open the data file for writing
+  !---------------------------------------------------------------------------
+  if (io%verbose>1) &
+    print*, ' dump file: ', trim(filename)//'.dat'
+  open (io%dump_unit,  file=trim(filename)//'.dat', &
+    form='unformatted', access='direct', status='unknown', recl=nwords*io%word_size)
+  call trace_end
 END SUBROUTINE open
 
 !> =============================================================================
@@ -137,8 +155,20 @@ SUBROUTINE write (self)
     print'(a,i7,i6,i9,g15.6)', 'output: it, nbuf, ndata, time', &
         dump%id, self%n_buffer, dump%ndata, dump%time
   do while (associated(dump))
+    !---------------------------------------------------------------------------
+    ! If time slot differs, close the previous one and open the current one
+    !---------------------------------------------------------------------------
+    if (dump%iout /= self%iout) then
+      if (self%iout >= 0) call self%close
+      call self%open (dump%ndata, dump%iout)
+    end if
+    !---------------------------------------------------------------------------
+    ! Increment the record counter, record its value, and write the data 
+    !---------------------------------------------------------------------------
+    !$omp atomic
     self%record = self%record+1
-    write (io%index_unit,  rec=self%record+3) dump%id, dump%iout
+    write (io%index_unit, rec=3) self%record
+    write (io%index_unit, rec=self%record+3) dump%id, dump%iout
     flush (io%index_unit)
     write (io%dump_unit, rec=self%record) dump%data
     flush (io%dump_unit)
@@ -147,6 +177,9 @@ SUBROUTINE write (self)
     if (io%verbose>1) &
       print'(a,i7,i6,i9,g15.6)', 'output: id, it, ndata, time', &
         dump%id, dump%iout, dump%ndata, dump%time
+    !---------------------------------------------------------------------------
+    ! Delete the buffer data, and the buffer
+    !---------------------------------------------------------------------------
     old => dump
     dump => dump%next
     deallocate (old%data)
@@ -165,8 +198,6 @@ SUBROUTINE close (self)
   class (buffered_output_t):: self
   !-----------------------------------------------------------------------------
   call trace_begin('buffered_output_mod::close')
-  call self%write
-  write (io%index_unit,rec=3) self%record
   close (io%index_unit)
   close (io%dump_unit)
   call trace_end
@@ -234,7 +265,7 @@ SUBROUTINE test (self)
   !-----------------------------------------------------------------------------
   call trace_begin ('buffered_output_mod::test')
   ndata = n**3*nv+n**2
-  call self%open (ndata)
+  call self%open (ndata,0)
   do it=1,3
     time = it-1d0
     do id=1,9

@@ -324,12 +324,6 @@ SUBROUTINE init (self)
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
   !
-  block
-    integer:: nwords
-    type(header_t):: header
-    nwords = sizeof(header)/4 + self%nv*product(self%gn)
-    call buffered_output%open (nwords)
-  end block
   call trace_end
 END SUBROUTINE init
 
