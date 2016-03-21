@@ -13,6 +13,7 @@ MODULE patch_mod
   USE mpi_mod
   USE task_mod
   USE mesh_mod
+  USE buffered_output_mod
   implicit none
   private
   integer, parameter:: ndim = 3, i_d=1
@@ -47,7 +48,9 @@ MODULE patch_mod
     procedure:: check_error
     procedure:: init
     procedure:: rotate
-    procedure:: output
+    procedure:: output                  ! legacy output
+    procedure:: output_new              ! new output
+    procedure:: output_legacy           ! legacy output
     procedure:: info                    ! print info to stdout
     procedure:: distance                ! return the distance btw two patches
     procedure:: point_distance          ! distance btw two points
@@ -72,6 +75,42 @@ MODULE patch_mod
     procedure:: fminval                 ! interior min value
     procedure:: courant_condition
     procedure:: check_density
+    procedure:: patch_to_header
+  end type
+  !-----------------------------------------------------------------------------
+  ! Sequential header, for MPI and I/O
+  !-----------------------------------------------------------------------------
+  type header_t
+    sequence
+    integer:: n_header
+    integer:: n_data
+    integer:: id
+    integer:: status
+    integer:: rank
+    integer:: istep
+    integer:: iout
+    integer:: level
+    real(8):: time
+    real(8):: end_time
+    real(8):: out_next
+    real(8):: out_time
+    real(8):: print_next
+    real(8):: print_time
+    real(8):: dtime
+    real(8):: position(3)
+    real(8):: velocity(3)
+    real(8):: size(3)
+    real(8), dimension(8):: t
+    real(8), dimension(8):: dt
+    integer, dimension(8):: iit
+    integer:: nt
+    integer:: it
+    integer:: nv                        ! number of variables
+    real(8):: box(3)                    ! the periodic wrapping size
+    real(8):: ds(3)
+    real(8):: gsize(3)                  ! convenience
+    integer:: n(3)=16                   ! convenience
+    integer:: ng(3)=2                   ! convenience
   end type
   !-----------------------------------------------------------------------------
   ! Template task, with procedure to place it it MPI-space
@@ -81,8 +120,42 @@ MODULE patch_mod
     real:: num(3)
     integer:: dim(3)
   end type
+  logical:: legacy=.false.
 CONTAINS
 
+!> =============================================================================
+!> Copy he most important fields to a sequenced header, for communication and I/O
+!> =============================================================================
+SUBROUTINE patch_to_header (self, head)
+  class(patch_t):: self
+  type(header_t):: head
+  integer:: nt
+  !-----------------------------------------------------------------------------
+  head%n_header   = sizeof(head)/4
+  head%n_data     = product(self%gn)*self%nv
+  head%id         = self%id
+  head%status     = self%status
+  head%rank       = self%rank
+  head%istep      = self%istep
+  head%iout       = self%iout
+  head%level      = self%level
+  head%time       = self%time
+  head%end_time   = self%end_time
+  head%out_next   = self%out_next
+  head%out_time   = self%out_time
+  head%print_next = self%print_next
+  head%print_time = self%print_time
+  head%dtime      = self%dtime
+  head%position   = self%position
+  head%velocity   = self%velocity
+  head%size       = self%size
+  head%nt         = self%nt
+  nt              = self%nt
+  head%it         = self%it
+  head%t(1:nt)    = self%t
+  head%dt(1:nt)   = self%dt
+  head%iit(1:nt)  = self%iit
+END SUBROUTINE patch_to_header
 !> =============================================================================
 !> Check for y-redundancy
 !> =============================================================================
@@ -143,7 +216,7 @@ SUBROUTINE init (self)
   integer:: iostat, i
   namelist /patch_params/ size, n, nv, ng, nt, courant, u_fixed, dt_fixed, grace
   namelist /out_params/ out_time, end_time, print_time, max_files, &
-    guard_zones, time_derivs
+    guard_zones, time_derivs, legacy
   !.............................................................................
   call trace_begin ('patch_t%init', 2)
   call self%task_t%init                         ! sets unique id
@@ -250,6 +323,13 @@ SUBROUTINE init (self)
   self%new = self%iit(nt)                       ! short-hand
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
+  !
+  block
+    integer:: nwords
+    type(header_t):: header
+    nwords = sizeof(header)/4 + self%nv*product(self%gn)
+    call buffered_output%open (nwords)
+  end block
   call trace_end
 END SUBROUTINE init
 
@@ -293,7 +373,7 @@ SUBROUTINE rotate (self)
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
   !-----------------------------------------------------------------------------
-  ! Time slot rotation.  Note that self%time should be the LAST of these 
+  ! Time slot rotation.  Note that self%time should be the LAST of these
   ! updates, since we do not want to enforce a critical region, and the
   ! new self%time is what a task is judged on!
   !-----------------------------------------------------------------------------
@@ -594,117 +674,184 @@ SUBROUTINE output (self, experiment_name)
   if (.not.io%do_output) return
   call trace_begin('patch:t%output')
   do while (self%time > self%out_next .and. self%out_next <= self%end_time)
-    self%max_files = self%max_files-1
-    if (self%max_files <= 0) then
-      print*,'TOO MANY FILES'
-      stop
-    end if
-    !-----------------------------------------------------------------------------
-    ! If guard_zones is true, include the guard zones.  If time_derivs is true,
-    ! write out the time derivatives also.
-    !-----------------------------------------------------------------------------
-    if (self%guard_zones) then
-      l = self%mesh%lb
-      u = self%mesh%ub
+    if (legacy) then
+      call self%output_legacy
     else
-      l = self%mesh%li
-      u = self%mesh%ui
+      call self%output_new
     end if
-    if (self%time_derivs) then
-      no = 2
-    else
-      no = 1
-    end if
-    !-----------------------------------------------------------------------------
-    ! Write a small text file with info
-    !-----------------------------------------------------------------------------
-    call trace ('1')
-    !call system ('mkdir -p data/')
-    call system ('mkdir -p data/'//trim(io%outputname))
-    write (filename,'(a,i4.4,"_",i4.4)') &
-      'data/'//trim(io%outputname)//'/', self%id, self%iout
-    if (io%verbose>=0) &
-      print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%out_next
-    open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-    do i=1,3
-      if (self%size(i) > 0.0) then
-        li(i) = (self%position(i)+0.5*(self%box(i)-self%size(i)))/self%ds(i)
-        ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/self%ds(i) - 1.0
-      end if
-    end do
-    write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
-    write (io%data_unit,'(4(3i9,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
-    close (io%data_unit)
-    !-----------------------------------------------------------------------------
-    ! Write a binary file with the data cube.
-    !-----------------------------------------------------------------------------
-    n = u-l+1
-    open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
-      status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(n))
-    do jo=1,no
-      do iv=1,self%nv
-        allocate (buf(n(1),n(2),n(3)))
-        !-------------------------------------------------------------------------
-        ! If we write out time derivatives we want a pair of consistent values
-        ! and time derivatives, which we have at iit(nt-2).
-        !-------------------------------------------------------------------------
-        it1 = self%iit(self%nt-2)
-        if (self%time_derivs) then
-          it = it1
-          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
-          call check_error(self, buf, "output 1")
-        !-------------------------------------------------------------------------
-        ! Normally, we write out only variable values, which can then be interpolated
-        ! to the exact output time, self%out_next, the update of which must come
-        ! after this point
-        !-------------------------------------------------------------------------
-        else
-          it2 = self%iit(self%nt-1)
-          it = it2
-          pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1e-30)
-          qt = 1.0-pt
-          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
-              + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
-          call check_error(self, buf, "output 2")
-        end if
-        if (io%verbose>1) &
-          print'(1x,a,2i5,i3,1p,2e11.3)',trim(filename),iv,it,jo,minval(buf),maxval(buf)
-        write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
-        deallocate (buf)
-      end do
-    end do
-    close (io%data_unit)
     if (self%out_time > 0.0) then
       self%out_next = (int(self%out_next/self%out_time)+1)*self%out_time
     else
       self%out_next = self%time
     end if
-    !-----------------------------------------------------------------------------
-    ! Write a log file, with files written by this rank
-    !-----------------------------------------------------------------------------
-    write (logname,'(a)') 'data/'//trim(experiment_name)//'.log'
-    if (first_time) then
-      first_time = .false.
-      if (io%master) print*, 'output data file log written to '//trim(logname)
-      open (io%log_unit,file=trim(logname),status='unknown')
-    else
-      open (io%log_unit,file=trim(logname),status='unknown',position='append')
-    end if
-    write (io%log_unit,'(a)') trim(filename)
-    ds = self%box/2.0**io%levelmax
-    do i=1,3
-      if (self%size(i) > 0.0) then
-        li(i) = (self%position(i)+0.5*(self%box(i)-self%size(i)))/ds(i)
-        ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/ds(i) - 1.0
-      end if
-    end do
-    write (io%log_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
-    write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
-    close (io%log_unit)
     self%iout = self%iout+1
   end do
   call trace_end
 END SUBROUTINE output
+
+!> =============================================================================
+!> Write results to disk, using the buffered I/O in output_mod
+!> =============================================================================
+SUBROUTINE output_new (self)
+  class(patch_t):: self
+  !.............................................................................
+  type(header_t):: header
+  integer:: n_header, n_buf, n_data, ibuf, it1, it2, iv
+  integer, dimension(:), pointer:: buffer
+  real, dimension(:,:,:), pointer:: var
+  real:: pt
+  !-----------------------------------------------------------------------------
+  ! Compute size of buffer and allocate -- it will be freed by the writer
+  !-----------------------------------------------------------------------------
+  call trace_begin ('patch_mod::output_new')
+  n_header = sizeof(header)/4
+  n_buf = product(self%gn)
+  n_data = n_header + self%nv*n_buf
+  allocate (buffer(n_data), var(self%gn(1),self%gn(2),self%gn(3)))
+  !-----------------------------------------------------------------------------
+  ! Copy relevant patch info to sequenced header, and copy that to the buffer
+  !-----------------------------------------------------------------------------
+  call patch_to_header (self, header)
+  ibuf = 1
+  call anonymous_copy (n_header, header, buffer(ibuf))
+  ibuf = ibuf + n_header
+  !-----------------------------------------------------------------------------
+  ! Copy the variables to the output buffer; these are first interpolated in time
+  !-----------------------------------------------------------------------------
+  it1 = self%iit(self%nt-2)
+  it2 = self%iit(self%nt-1)
+  pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1e-30)
+  do iv=1,self%nv
+    var = self%mem(:,:,:,iv,it1,1)*(1.-pt) + self%mem(:,:,:,iv,it2,1)*pt
+    call anonymous_copy (n_buf, var, buffer(ibuf))
+    ibuf = ibuf + n_buf
+  end do
+  deallocate (var)
+  call buffered_output%buffer (self%id, self%iout, self%out_next, buffer)
+  call buffered_output%check
+  call trace_end
+END SUBROUTINE output_new
+
+!> =============================================================================
+!> Write results to disk
+!> =============================================================================
+SUBROUTINE output_legacy (self, experiment_name)
+  class(patch_t):: self
+  character(len=64) filename, logname, experiment_name
+  optional:: experiment_name
+  !.............................................................................
+  integer:: iv, li(3)=0, ui(3)=0, l(3), u(3), no, jo, it, i
+  real:: ds(3)
+  logical:: first_time=.true.
+  integer:: it1, it2, n(3)
+  real:: pt, qt
+  real, dimension(:,:,:), pointer:: buf
+  !-----------------------------------------------------------------------------
+  call trace_begin('patch_mod::output_legacy')
+  self%max_files = self%max_files-1
+  if (self%max_files <= 0) then
+    print*,'TOO MANY FILES'
+    stop
+  end if
+  !-----------------------------------------------------------------------------
+  ! If guard_zones is true, include the guard zones.  If time_derivs is true,
+  ! write out the time derivatives also.
+  !-----------------------------------------------------------------------------
+  if (self%guard_zones) then
+    l = self%mesh%lb
+    u = self%mesh%ub
+  else
+    l = self%mesh%li
+    u = self%mesh%ui
+  end if
+  if (self%time_derivs) then
+    no = 2
+  else
+    no = 1
+  end if
+
+  !-----------------------------------------------------------------------------
+  ! Write a log file, with files written by this rank
+  !-----------------------------------------------------------------------------
+  write (logname,'(a)') trim(io%outputname)//'log'
+  if (first_time) then
+    first_time = .false.
+    if (io%master) print*, 'output data file log written to '//trim(logname)
+    open (io%log_unit,file=trim(logname),status='unknown')
+  else
+    open (io%log_unit,file=trim(logname),status='unknown',position='append')
+  end if
+  write (io%log_unit,'(a)') trim(filename)
+  ds = self%box/2.0**io%levelmax
+  do i=1,3
+    if (self%size(i) > 0.0) then
+      li(i) = (self%position(i)+0.5*(self%box(i)-self%size(i)))/ds(i)
+      ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/ds(i) - 1.0
+    end if
+  end do
+  write (io%log_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
+  write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
+  close (io%log_unit)
+
+  !-----------------------------------------------------------------------------
+  ! Write a small text file with info
+  !-----------------------------------------------------------------------------
+  write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout
+  if (io%verbose>=0) &
+    print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%out_next
+  open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
+  do i=1,3
+    if (self%size(i) > 0.0) then
+      li(i) = (self%position(i)+0.5*(self%box(i)-self%size(i)))/self%ds(i)
+      ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/self%ds(i) - 1.0
+    end if
+  end do
+  write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
+  write (io%data_unit,'(4(3i9,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
+  close (io%data_unit)
+
+  !-----------------------------------------------------------------------------
+  ! Write a binary file with the data cube.
+  !-----------------------------------------------------------------------------
+  n = u-l+1
+  open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
+    status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(n))
+  do jo=1,no
+    do iv=1,self%nv
+      allocate (buf(n(1),n(2),n(3)))
+      !-------------------------------------------------------------------------
+      ! If we write out time derivatives we want a pair of consistent values
+      ! and time derivatives, which we have at iit(nt-2).
+      !-------------------------------------------------------------------------
+      it1 = self%iit(self%nt-2)
+      if (self%time_derivs) then
+        it = it1
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
+        call check_error(self, buf, "output 1")
+      !-------------------------------------------------------------------------
+      ! Normally, we write out only variable values, which can then be interpolated
+      ! to the exact output time, self%out_next, the update of which must come
+      ! after this point
+      !-------------------------------------------------------------------------
+      else
+        it2 = self%iit(self%nt-1)
+        it = it2
+        pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1e-30)
+        qt = 1.0-pt
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
+            + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
+        call check_error(self, buf, "output 2")
+      end if
+      if (io%verbose>1) &
+        print'(1x,a,2i5,i3,1p,2e11.3)',trim(filename),iv,it,jo,minval(buf),maxval(buf)
+      write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
+      deallocate (buf)
+    end do
+  end do
+  close (io%data_unit)
+
+  call trace_end
+END SUBROUTINE output_legacy
 
 !> =============================================================================
 !> Print info to stdout

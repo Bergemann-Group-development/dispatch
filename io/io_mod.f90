@@ -54,13 +54,14 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     call getarg(1,argfile)                                      ! command line
     if (argfile /= ' ') then
-      io%inputname = argfile                                    ! file root name
-      io%outputname = argfile(1:index(argfile,'.')-1)           ! file root name
+      io%inputname = argfile                                    ! run_name.nml
+      io%outputname = trim(io%datadir)//io%sep// &              ! data/run_name/
+        trim(argfile(1:index(argfile,'.')-1))//io%sep
     else
       io%inputname = 'input.nml'
-      io%outputname = ''
+      io%outputname = trim(io%datadir)//io%sep                  ! data/
     end if
-    call system('mkdir -p '//trim(io%datadir))
+    call system ('mkdir -p '//trim(io%outputname))
     do_trace = io%do_trace
     do_debug = io%do_debug
     verbose  = io%verbose

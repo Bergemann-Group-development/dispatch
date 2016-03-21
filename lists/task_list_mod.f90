@@ -25,6 +25,7 @@ MODULE task_list_mod
   USE refine_mod
   USE download_mod
   USE timestep_mod
+  USE buffered_output_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
@@ -94,6 +95,7 @@ SUBROUTINE execute (self)
     call self%update
   end do
   !$omp end parallel
+  call buffered_output%close
   call toc ('rank time', self%n_update)
   print *, 'download_differ % =', 100.*download%n_differ/(download%n_differ+download%n_same)
   link => self%head

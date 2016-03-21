@@ -89,10 +89,7 @@ SUBROUTINE update (self)
     end if
     self%mem(:,:,:,:,self%it,2) = 0.0
   else
-    if  (self%id==86) print*,'MK:d    ',self%mem(12,12,4:8,1,self%it,1)
     call self%mhd_t%update
-    if  (self%id==86) print*,'MK:dddt ',self%mem(12,12,4:8,1,self%it,2)
-    if  (self%id==86) print*,'MK:dpdtz',self%mem(12,12,4:8,5,self%it,2)
     if (self%is_set (bits%has_BC)) then
       call boundary%condition (self%mem(:,:,:,1,self%it,2), self%mesh, [0d0,0d0,0d0])
       call boundary%condition (self%mem(:,:,:,2,self%it,2), self%mesh, [0d0,0d0,0d0])
@@ -101,8 +98,6 @@ SUBROUTINE update (self)
       call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0])
     end if
   end if
-  if  (self%id==86) print*,'MK:dddt ',self%mem(12,12,4:8,1,self%it,2)
-  if  (self%id==86) print*,'MK:dpdtz',self%mem(12,12,4:8,5,self%it,2)
   call self%courant_condition
   call self%pebble_patch_t%update_pebbles
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)

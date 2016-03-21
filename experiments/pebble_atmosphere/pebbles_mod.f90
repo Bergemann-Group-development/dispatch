@@ -1046,7 +1046,7 @@ SUBROUTINE output (self, experiment_name)
   !
   if (self%do_pebbles) then
     write (filename,'(a,i4.4,"_",i4.4,".peb")') &
-        'data/'//trim(io%outputname)//'/', self%id, self%iout
+        trim(io%outputname)//'/', self%id, self%iout
     open  (io%data_unit, file=filename, form='unformatted', status='unknown')
     write (io%data_unit) data_format
     !
