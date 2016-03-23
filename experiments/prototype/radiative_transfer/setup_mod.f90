@@ -2,7 +2,8 @@ MODULE setup_mod
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
 !> Setup a planet at a given position, and a set of Rubik's Cube patches
-!> surrounding it, representing its extended atmosphere.
+!> surrounding it, representing its extended atmosphere.  Then add the 3*nray
+!> radiative transfer tasks
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
   USE bits_mod
@@ -65,12 +66,12 @@ SUBROUTINE init (self, label)
   !----------------------------------------------------------------------------
   ! Loop over the existing MHD patches and construct RT tasks for each
   !----------------------------------------------------------------------------
-  link => self%task_list%head
-  do while (associated(link))
-    do iray=1,self%nray
-      call self%rt_setup (link, iray)
+  link => self%task_list%head                   ! loop variable
+  do while (associated(link))                   ! task list loop
+    do iray=1,self%nray                         ! loop over ray directions
+      call self%rt_setup (link, iray)           ! setup for that direction
     end do
-    link => link%next
+    link => link%next                           ! next task list link
   end do
   call trace_end
 END SUBROUTINE init
