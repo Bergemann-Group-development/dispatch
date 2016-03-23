@@ -10,16 +10,15 @@ MODULE link_mod
   USE patch_mod
   implicit none
   private
-  type, public:: nbor_t
+
+  type, public:: link_t
     class(task_t), pointer :: task => null()          ! task
     class(link_t), pointer :: nbor => null()          ! next nbor
-    class(link_t), pointer :: link => null()          ! nbor's link (maybe not needed)
-  end type
-  type, extends(nbor_t), public:: link_t
-    class(link_t),  pointer :: next => null()         ! next link in task list
-    class(link_t),  pointer :: prev => null()         ! previous link in task list
-    class(link_t),  pointer :: parent => null()       ! parent task link
-    class(link_t),  pointer :: next_time => null()    ! next link in time order
+    class(link_t), pointer :: link => null()         ! nbor's link (maybe not needed)
+    class(link_t), pointer :: next => null()         ! next link in task list
+    class(link_t), pointer :: prev => null()         ! previous link in task list
+    class(link_t), pointer :: parent => null()       ! parent task link
+    class(link_t), pointer :: next_time => null()    ! next link in time order
   contains
     procedure:: add_nbor_by_quality
     procedure:: make_new_nbors
