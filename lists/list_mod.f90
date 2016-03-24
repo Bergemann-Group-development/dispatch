@@ -11,16 +11,15 @@ MODULE list_mod
   USE patch_mod
   implicit none
   private
-  type, public:: nbor_t
+
+  type, public:: link_t
     class(task_t), pointer :: task => null()          ! task
-    class(link_t), pointer :: nbor => null()          ! next nbor
+    class(link_t), pointer :: nbor => null()          ! next nbor; wouldn't `nbor_head` be a better name?
     class(link_t), pointer :: link => null()          ! nbor's link (maybe not needed)
-  end type
-  type, extends(nbor_t), public:: link_t
-    class(link_t),  pointer :: next => null()         ! next link in task list
-    class(link_t),  pointer :: prev => null()         ! previous link in task list
-    class(link_t),  pointer :: parent => null()       ! parent task link
-    class(link_t),  pointer :: next_time => null()    ! next link in time order
+    class(link_t), pointer :: next => null()         ! next link in task list
+    class(link_t), pointer :: prev => null()         ! previous link in task list
+    class(link_t), pointer :: parent => null()       ! parent task link
+    class(link_t), pointer :: next_time => null()    ! next link in time order
   contains
     procedure:: download
     procedure:: add_nbor_by_quality
@@ -389,6 +388,8 @@ SUBROUTINE init_nbors (self)
           nbor%task => scan%task
           nbor%link => scan
           nbor%next => link%nbor
+          nbor%prev => null()            ! new neighbours are placed at the head
+          if (associated(nbor%next)) nbor%next%prev => nbor
           link%nbor => nbor
           n_add = n_add+1
           !---------------------------------------------------------------------
@@ -875,7 +876,7 @@ SUBROUTINE print_nbors (self, label)
   end if
   print'(a,i5,2x,a,f14.8,2x,a,l3,2x,a,i3,2x,a,$)', &
     'task', self%task%id, 'time', self%task%time, &
-    'ready', self%task%is_set(bits%ready), 'level', self%task%level, 'nbors:'
+    'ready', self%task%is_set(bits%ready), 'level', self%task%level, 'nbors: '
   if (io%verbose>4) print*,''
   link => self%nbor
   do while (associated(link))
@@ -883,7 +884,7 @@ SUBROUTINE print_nbors (self, label)
       print '(i7,f14.8,l3)', &
         link%task%id, link%task%time, link%task%is_set(bits%ready)
     else
-      print '(i4,l2,$)', link%task%id, link%task%is_set(bits%ready)
+      print '(i7,l3,$)', link%task%id, link%task%is_set(bits%ready)
     end if
     link => link%next
   end do

@@ -163,7 +163,10 @@ SUBROUTINE init (self)
     if (io%master) write (*, out_params)
   end if
   !$omp end critical (patch_cr)
-  self%n           = n                          ! patch dimensions
+  ! reasonable values of self%n should take precedence over a saved value of `n`.
+  if (any(self%n <= 0)) then  
+    self%n           = n                        ! patch dimensions
+  end if
   self%ng          = ng                         ! patch dimensions
   self%nv          = nv                         ! patch dimensions
   self%nt          = nt                         ! patch dimensions
