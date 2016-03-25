@@ -371,7 +371,7 @@ SUBROUTINE rotate (self)
   ! updates, since we do not want to enforce a critical region, and the
   ! new self%time is what a task is judged on!
   !-----------------------------------------------------------------------------
-  call trace ('patch_t%update mem_cr')
+  call trace_tag ('patch_t%update mem_cr')
   time = self%time + self%dtime
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
@@ -604,7 +604,7 @@ SUBROUTINE periodic_grid (self)
   class(patch_t):: self
   integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3)
   !.............................................................................
-  call trace('patch_t%periodic_grid')
+  call trace_begin ('patch_t%periodic_grid')
   lb = self%mesh%lb
   ub = self%mesh%ub
   li = self%mesh%li
@@ -691,7 +691,7 @@ SUBROUTINE output_new (self)
   !.............................................................................
   type(header_t):: header
   integer:: n_header, n_buf, n_data, ibuf, it1, it2, iv
-  integer, dimension(:), pointer:: buffer
+  real(4), dimension(:), pointer:: buffer
   real, dimension(:,:,:), pointer:: var
   real:: pt
   !-----------------------------------------------------------------------------

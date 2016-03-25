@@ -23,7 +23,7 @@ MODULE buffered_output_mod
     integer:: id, iout
     real(8):: time
     integer:: ndata
-    integer, dimension(:), pointer:: data
+    real(4), dimension(:), pointer:: data
   end type
   !-----------------------------------------------------------------------------
   ! The output object contains procedures for opening, buffering, writing, and
@@ -103,7 +103,7 @@ SUBROUTINE buffer (self, id, iout, time, data)
   class(buffered_output_t):: self
   integer:: id, iout
   real(8):: time
-  integer, dimension(:), pointer:: data
+  real(4), dimension(:), pointer:: data
   class(dump_t), pointer:: dump
   !-----------------------------------------------------------------------------
   call trace_begin('buffered_output_mod::buffer')
@@ -163,7 +163,7 @@ SUBROUTINE write (self)
       call self%open (dump%ndata, dump%iout)
     end if
     !---------------------------------------------------------------------------
-    ! Increment the record counter, record its value, and write the data 
+    ! Increment the record counter, record its value, and write the data
     !---------------------------------------------------------------------------
     !$omp atomic
     self%record = self%record+1
@@ -258,7 +258,7 @@ END FUNCTION find
 !> =============================================================================
 SUBROUTINE test (self)
   class (buffered_output_t):: self
-  integer, dimension(:), pointer:: data
+  real(4), dimension(:), pointer:: data
   integer, dimension(:), pointer:: p
   integer:: n=20, nv=8, id, it, ndata, record
   real(8):: time
@@ -286,6 +286,6 @@ END MODULE buffered_output_mod
 !> =============================================================================
 SUBROUTINE anonymous_copy (n, a, b)
   integer:: n
-  integer:: a(n), b(n)
+  real(4):: a(n), b(n)
   b = a
 END SUBROUTINE anonymous_copy

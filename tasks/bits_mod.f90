@@ -21,6 +21,7 @@ MODULE bits_mod
   integer, parameter::       remove_bit=2**15
   integer, parameter::   top_bottom_bit=2**16
   integer, parameter::       has_BC_bit=2**17
+  integer, parameter::        trace_bit=2**18
   type bits_t
     integer:: remove       = remove_bit
     integer:: retry        = retry_bit
@@ -39,6 +40,7 @@ MODULE bits_mod
     integer:: static       = static_bit
     integer:: top_bottom   = top_bottom_bit
     integer:: has_BC       = has_BC_bit
+    integer:: trace        = trace_bit
   end type
   type(bits_t):: bits
 END MODULE bits_mod

@@ -25,15 +25,14 @@
 &patch_params
  n=20,20,20
  nt=5
- grace=0.0
- courant=0.15
-!dt_fixed=0.001
+ grace=0.1
+ courant=0.2
 /
 &out_params
- end_time=2
- out_time=0.02
+ end_time=10            ! outer scale = 1500 R_E => 1500 time units at 1 km/s
+ out_time=0.05          ! pebble speed 30 => 1.5 l.u. per snapshot
  !out_time=0
- print_time=0
+ print_time=0.1
  guard_zones=t
  time_derivs=f
  max_files=9000

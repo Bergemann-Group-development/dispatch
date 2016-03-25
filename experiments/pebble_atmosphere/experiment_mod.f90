@@ -5,7 +5,7 @@ MODULE experiment_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
-  USE pebbles_mod
+  USE pebble_patch_mod
   USE initial_mod
   USE timestep_mod
   USE atmosphere_mod
@@ -87,6 +87,11 @@ SUBROUTINE update (self)
     if (self%istep<self%nt+1) then
       call self%mhd_t%update
     end if
+    if (self%is_set (bits%has_BC)) then
+      call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
+      call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
+      call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,0d0,-0.5d0])
+    end if
     self%mem(:,:,:,:,self%it,2) = 0.0
   else
     call self%mhd_t%update
@@ -96,6 +101,9 @@ SUBROUTINE update (self)
       call boundary%condition (self%mem(:,:,:,3,self%it,2), self%mesh, [-0.5d0,0d0,0d0])
       call boundary%condition (self%mem(:,:,:,4,self%it,2), self%mesh, [0d0,-0.5d0,0d0])
       call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0])
+      call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
+      call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
+      call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,0d0,-0.5d0])
     end if
   end if
   call self%courant_condition

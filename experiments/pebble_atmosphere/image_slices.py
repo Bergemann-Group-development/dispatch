@@ -1,14 +1,17 @@
 from read_data import read_data
+import stagger
+reload(stagger)
 from stagger import fux,fuy,fuz
 import matplotlib.pyplot as pl
 
-it=50
-ip=14+27*4
+run='pebbles3'
+it=4
+ip=14+27*6
 i=11
-slice=1
-w=0.1
+slice=3
+w=0.5
 
-f=read_data(ip,it)
+f=read_data(ip,it,run=run)
 ux=fux(f)
 uy=fuy(f)
 uz=fuz(f)

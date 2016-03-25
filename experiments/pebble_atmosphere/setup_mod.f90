@@ -13,13 +13,16 @@ MODULE setup_mod
   USE planet_mod
   USE atmosphere_mod
   USE patch_mod
+  USE pebble_patch_mod
+  USE pebble_trace_mod
   USE rubiks_mod
   USE list_mod
   implicit none
   private
   type, public, extends(rubiks_t):: setup_t
   contains
-    procedure init
+    procedure:: init
+    procedure, nopass:: close
   end type
   type(setup_t), public:: setup
 CONTAINS
@@ -59,5 +62,9 @@ SUBROUTINE init (self, label)
   end do
   call trace_end
 END SUBROUTINE init
+
+SUBROUTINE close
+  call pebble_trace%close_all
+END SUBROUTINE close
 
 END MODULE setup_mod

@@ -7,13 +7,28 @@ MODULE trace_mod
   USE io_mod
   implicit none
   private
-  integer, parameter:: maxlev=30
-  character(len=80), dimension(maxlev), save:: tracing                          ! active routine
-  integer, save:: verbosity(maxlev)
-  integer, private, save:: indent=4                                             ! trace indent
-  integer, private, save:: level=1                                              ! trace level
+  !-----------------------------------------------------------------------------
+  ! The public instance of the trace data type allows trace_begin calls to be
+  ! replaced by trace%begin calls, for consistency
+  !-----------------------------------------------------------------------------
+  type trace_t
+  contains
+    procedure, nopass:: begin => trace_begin
+    procedure, nopass:: tag   => trace_tag
+    procedure, nopass:: end   => trace_end
+  end type
+  type(trace_t), public:: trace
+  !-----------------------------------------------------------------------------
+  ! The data manipulated by the trace routines are thread private, and do not
+  ! need to be visible from the calling code.
+  !-----------------------------------------------------------------------------
+  integer, parameter:: maxlev=30                                ! max number of levels
+  character(len=80), dimension(maxlev), save:: tracing          ! active routine
+  integer, save:: verbosity(maxlev)                             ! verbosity level
+  integer, private, save:: indent=4                             ! trace indent
+  integer, private, save:: level=1                              ! trace level
   !$omp threadprivate(indent,level,tracing,verbosity)
-PUBLIC trace_begin, trace, trace_end
+PUBLIC trace_begin, trace_tag, trace_end
 CONTAINS
 
 !> =============================================================================
@@ -46,7 +61,7 @@ END SUBROUTINE trace_begin
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE trace (id)
+SUBROUTINE trace_tag (id)
   implicit none
   character(len=*) id
   character(len=mch):: fmt
@@ -59,7 +74,7 @@ SUBROUTINE trace (id)
     write(*,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' '//trim(id)
     call flush(6)
   end if
-END SUBROUTINE trace
+END SUBROUTINE trace_tag
 
 !> =============================================================================
 !> =============================================================================

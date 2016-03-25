@@ -69,8 +69,8 @@ MODULE task_mod
     integer:: new=2
     integer:: verbose=1
   end type
-  integer:: id=0
-  integer, public:: id_debug=0
+  integer, save:: id=0
+  integer, save, public:: id_debug=0
 CONTAINS
 
 !> =============================================================================
@@ -90,7 +90,6 @@ SUBROUTINE init (self)
     self%id = id
   end if
   call self%lock%init (self%kind)
-  self%lock%id = self%id
   scene%n_patch = self%id
   call trace_end
 END SUBROUTINE

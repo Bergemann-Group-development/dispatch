@@ -2,7 +2,7 @@
  do_trace=f
  verbose=1
  do_debug=f
- do_output=t
+ do_output=f
 /
 &rubiks_params
  n_levels=3

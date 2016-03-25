@@ -16,8 +16,8 @@ MODULE omp_lock_mod
     procedure:: unset
     procedure:: destroy
   end type
-  integer:: id=0
-  logical:: debug=.false.
+  integer,save:: id=0
+  logical,save:: debug=.false.
 CONTAINS
 
 !> =============================================================================
@@ -31,7 +31,7 @@ SUBROUTINE init (self, kind)
   id = id+1
   self%id = id
   self%kind = kind
-  if (debug) &
+  !if (debug) &
     print*, omp_mythread(),' initialized lock', self%id, ' '//kind
 END SUBROUTINE init
 
@@ -41,14 +41,20 @@ SUBROUTINE set (self, label)
   character(len=*):: label
   !-----------------------------------------------------------------------------
   if (omp_test_lock (self%lock)) then
-    if (debug) &
+    if (debug) then
       print '(i12,a,i14,1x,a)', omp_mythread(),'  set lock', self%id, self%kind//': '//trim(label)
+      flush(6)
+    end if
   else
-    if (debug) &
+    if (debug) then
       print '(i12,a,i14,1x,a)', omp_mythread(),' wait lock', self%id, self%kind//': '//trim(label)
+      flush(6)
+    end if
     call omp_set_lock (self%lock)
-    if (debug) &
+    if (debug) then
       print '(i12,a,i14,1x,a)', omp_mythread(),'  set lock', self%id, self%kind//': '//trim(label)
+      flush(6)
+    end if
   end if
 END SUBROUTINE set
 
@@ -57,8 +63,10 @@ FUNCTION test (self) RESULT (out)
   class(lock_t):: self
   logical:: out
   !-----------------------------------------------------------------------------
-  if (debug) &
+  if (debug) then
     print*, omp_mythread(),'  test lock', self%id, self%kind
+    flush(6)
+  end if
   out =  omp_test_lock (self%lock)
 END FUNCTION test
 
@@ -67,8 +75,10 @@ SUBROUTINE unset (self, label)
   class(lock_t):: self
   character(len=*):: label
   !-----------------------------------------------------------------------------
-  if (debug) &
+  if (debug) then
     print*, omp_mythread(),' unset lock', self%id, self%kind//': '//trim(label)
+    flush(6)
+  end if
   call omp_unset_lock (self%lock)
 END SUBROUTINE unset
 
@@ -76,8 +86,10 @@ END SUBROUTINE unset
 SUBROUTINE destroy (self)
   class(lock_t):: self
   !-----------------------------------------------------------------------------
-  if (debug) &
+  if (debug) then
     print*, omp_mythread(),' destr lock', self%id, self%kind
+    flush(6)
+  end if
   call omp_destroy_lock (self%lock)
 END SUBROUTINE destroy
 

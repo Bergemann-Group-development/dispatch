@@ -68,7 +68,7 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   ! Compute neighbor list used to perform checks for ready status
   !-----------------------------------------------------------------------------
-  call trace ('call self%init_nbors')
+  call trace_tag ('call self%init_nbors')
   call self%init_nbors
   link => self%head
   do while (associated(link))

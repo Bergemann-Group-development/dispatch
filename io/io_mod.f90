@@ -9,7 +9,7 @@ MODULE io_mod
   integer, parameter:: mch=120
   type io_t
     integer:: verbose=0, input=1, output=2, data_unit=3, log_unit=4, debug_unit=7, &
-      flag_unit=8, index_unit=9, dump_unit=10
+      flag_unit=8, index_unit=9, dump_unit=10, trace_unit=11
     logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.true.
     logical:: do_flags
     integer:: levelmax=10
