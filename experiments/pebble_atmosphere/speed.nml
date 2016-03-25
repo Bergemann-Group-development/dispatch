@@ -1,14 +1,14 @@
 &io_params
  do_trace=f
- verbose=1
+ verbose=0
  do_debug=f
  do_output=f
 /
 &rubiks_params
  n_levels=3
- n_patch=3
- m_zoom=3
- n_repeat=5
+ n_patch=5
+ m_zoom=5
+ n_repeat=7
 /
 &pebble_params
  do_pebbles=f

@@ -90,6 +90,7 @@ SUBROUTINE trace_output (self, i, close_key)
   integer:: j, n
   !-----------------------------------------------------------------------------
   if (i>self%nbuffer) return
+  if (.not.associated(self%buffer)) return
   if (self%buffer(i)%n==0) return
   call trace_begin ('pebbles_mod::trace_output')
   call self%lock%set ('trace_output')

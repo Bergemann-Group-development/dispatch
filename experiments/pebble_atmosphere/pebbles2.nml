@@ -37,7 +37,7 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=100
+ end_time=200
  out_time=0.20
  print_time=0
  guard_zones=t

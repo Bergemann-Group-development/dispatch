@@ -84,7 +84,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
-  call trace_begin ('pebbles_t%init', 3)
+  call trace_begin ('pebble_patch_mod::init', 3)
   call random%init
   random%seed = 11
   call self%patch_t%init
@@ -266,16 +266,16 @@ SUBROUTINE add (self, n)
     pebble%v(1) = - self%omega(3)*planet%orbit_radius
     pebble%v(2) =   0.0
     pebble%v(3) = - self%vz_pebble*sign
+    self%pebbles%z_min = min(self%pebbles%z_min,abs(pebble%p(3)))
     x0 = pebble%p(1) - pebble%v(1)*pebble%p(3)/pebble%v(3)
     if (x0 > -100.*planet%radius .and. &
         x0 < 1000.*planet%radius .and. &
         abs(pebble%p(2)) < 250*planet%radius) then
       call self%pebbles%append (pebble)
+      if (debug.or.pebble%id==id_dbg) print*,'dbg: add', i, n_local, pebble%id
     else
       deallocate (pebble)
     end if
-    self%pebbles%z_min = min(self%pebbles%z_min,abs(pebble%p(3)))
-    if (debug.or.pebble%id==id_dbg) print*,'dbg: add', i, n_local, pebble%id
   end do
   call self%pebbles%check_list ('after add')
   call trace_end

@@ -78,7 +78,8 @@ SUBROUTINE init (self, id)
     print *,  self%id, 'ERROR: second init attempted'
     stop
   else
-    print*,'pebble_patch::init', self%id
+    if (io%verbose>0) &
+      print*,'pebble_patch::init', self%id
   end if
   self%initialized = .true.
 END SUBROUTINE init

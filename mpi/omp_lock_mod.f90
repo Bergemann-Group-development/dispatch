@@ -31,7 +31,7 @@ SUBROUTINE init (self, kind)
   id = id+1
   self%id = id
   self%kind = kind
-  !if (debug) &
+  if (debug) &
     print*, omp_mythread(),' initialized lock', self%id, ' '//kind
 END SUBROUTINE init
 
