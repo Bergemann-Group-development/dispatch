@@ -45,7 +45,7 @@ SUBROUTINE init (self)
   integer:: i
   namelist /mhd_params/ nu, gamma
   !----------------------------------------------------------------------------
-  call trace_begin('mhd_t%init')
+  call trace%begin('mhd_t%init')
   if (first_time) then
     !$omp critical (mhd_cr)
     if (first_time) then
@@ -63,7 +63,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h(5+i) = -0.5
   end do
   call self%force%init
-  call trace_end
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================

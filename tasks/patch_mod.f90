@@ -90,6 +90,10 @@ MODULE patch_mod
     integer:: istep
     integer:: iout
     integer:: level
+    integer:: nt
+    integer:: nv                        ! number of variables
+    integer:: it
+    integer:: padding                   ! for alignment
     real(8):: time
     real(8):: end_time
     real(8):: out_next
@@ -103,9 +107,6 @@ MODULE patch_mod
     real(8), dimension(8):: t
     real(8), dimension(8):: dt
     integer, dimension(8):: iit
-    integer:: nt
-    integer:: it
-    integer:: nv                        ! number of variables
     real(8):: box(3)                    ! the periodic wrapping size
     real(8):: ds(3)
     real(8):: gsize(3)                  ! convenience
