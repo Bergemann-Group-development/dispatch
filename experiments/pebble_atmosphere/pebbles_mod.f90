@@ -263,7 +263,6 @@ SUBROUTINE check_list (self, label)
       print*, self%id,  'ERROR: inconsistent pebble list ', n, self%n
     end if
     call self%print_list_n (max(n,self%n))
-    stop
     self%n = n
   else if (io%verbose>3) then
     if (present(label)) then

@@ -222,7 +222,7 @@ SUBROUTINE add (self, n)
   class(pebbles_t), pointer:: pebbles
   class(pebble_t), pointer:: pebble
   integer:: i, j, k, ii(3), n_local
-  real:: w(3), sign
+  real:: w(3), sign, x0
   integer, save:: nprint=10
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles) return
@@ -263,10 +263,17 @@ SUBROUTINE add (self, n)
     pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
     pebble%p(2) =   (self%position(2) - planet%position(2)) + self%size(2)*(0.5-random%ran1())
     pebble%p(3) =   (self%position(3) - planet%position(3)) + self%size(3)*0.5*sign
-    pebble%v(1) =  -self%omega(3)*planet%orbit_radius
+    pebble%v(1) = - self%omega(3)*planet%orbit_radius
     pebble%v(2) =   0.0
     pebble%v(3) = - self%vz_pebble*sign
-    call self%pebbles%append (pebble)
+    x0 = pebble%p(1) - pebble%v(1)*pebble%p(3)/pebble%v(3)
+    if (x0 > -100.*planet%radius .and. &
+        x0 < 1000.*planet%radius .and. &
+        abs(pebble%p(2)) < 250*planet%radius) then
+      call self%pebbles%append (pebble)
+    else
+      deallocate (pebble)
+    end if
     self%pebbles%z_min = min(self%pebbles%z_min,abs(pebble%p(3)))
     if (debug.or.pebble%id==id_dbg) print*,'dbg: add', i, n_local, pebble%id
   end do

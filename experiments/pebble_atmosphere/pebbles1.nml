@@ -2,23 +2,24 @@
  do_trace=f
  verbose=1
  do_debug=f
- do_output=f
+ do_output=t
 /
 &rubiks_params
- n_levels=7
+ n_levels=5
  n_patch=3
  m_zoom=3
- n_repeat=5
+ n_repeat=3
 /
 &pebble_params
  do_pebbles=t
- trace_every=300
+ trace_every=50
  omega_yr=0.0,0.0,1.0
- vz_pebble_cgs=1.5e6
- pebble_rate_cgs=0.1
- ppc=1
-!id_dbg=89000
+ vz_pebble_cgs=3.0e6
+ pebble_size_cm=0.1
+ pebble_rate_cgs=0.01
+ ppc=0
  cell_probability=0.1
+ id_dbg=185700
 /
 &planet_params
 /
@@ -37,12 +38,13 @@
 /
 &out_params
  legacy=f
- end_time=10.00
- out_time=0.10
+ end_time=50
+ out_time=0.20
  print_time=0
- guard_zones=f
+ guard_zones=t
  time_derivs=f
  max_files=9000
+ legacy=t
 /
 &mhd_params
  gamma=1.4
