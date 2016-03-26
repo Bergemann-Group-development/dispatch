@@ -148,7 +148,6 @@ SUBROUTINE init (self, name)
 
   ! attempt to merge RAMSES 2**3 octs into larger patches
   call self%merge_ramses_octs(nmerged_max)
-  stop
 
   call trace_end
 END SUBROUTINE init
@@ -1066,13 +1065,17 @@ END SUBROUTINE read_sink
 !> - Only existing octs are used; no interpolation is performed.
 !> - It is assumed that the neighbour list only contains octs which abut the
 !>   current patch.
+!> - Even with `merge_nbor_lists`, the neighbour list will still need to be
+!>   reconstructed at the end of this procedure to ensure the new, merged patches
+!>   are properly accounted for.
 !> =============================================================================
 SUBROUTINE merge_ramses_octs (self, n_max)
   class(ramses_t) :: self
   integer, intent(in) :: n_max
   class(task_t), pointer :: task, nbor_task, merged_task
   class(link_t), pointer :: link, nbor, old_link, new_link
-  integer :: n_now(3), n_nbor(3), n_updated(3), n_merges, idir, merge_count, patch_count
+  integer :: n_now(3), n_nbor(3), n_updated(3), iterations, adir, n_merges, &
+             merge_count, patch_count, diff_count
   real :: dpos(3)
   logical :: merged
   !.............................................................................
@@ -1080,85 +1083,124 @@ SUBROUTINE merge_ramses_octs (self, n_max)
 
   patch_count = 0
   merge_count = 0
-  link => self%task_list%head
-  do while (associated(link))
-    merged = .false.
-    task => link%task
-    select type (task)
-    class is (patch_t)
-      n_now = task%n
-    end select
-    patch_count = patch_count + 1
-
-    ! only proceed if no. of patch cells is less than `n_max`.
-    if (any(n_now >= n_max)) then
-      link => link%next
-      cycle
-    end if
-
-    nbor => link%nbor
-    n_merges = 0
-    do while (associated(nbor))
-      ! skip if neighbour is not at the same level
-      if (task%level /= nbor%task%level) then
-        nbor => nbor%next
-        cycle
-      end if
-
-      ! only allow merges between octs that share a face.
-      dpos = task%position - nbor%task%position
-      if (count(abs(dpos) > 0.0) > 1) then
-        nbor => nbor%next
-        cycle
-      end if
-
-      nbor_task => nbor%task
-      select type (nbor_task)
-      class is (patch_t)
-        n_nbor = nbor_task%n
-      end select
-      if (all(n_nbor < n_max)) then
-        ! try to merge two patches; includes inheritence of existing neighbours
-        merged_task => merge_neighbours(link, nbor, dpos)
-        ! add new merged patch to the *end* of the list
-        call self%task_list%append(merged_task)
-        ! merge the neighbour lists of the merged patches (and give it the
-        ! result to the new task).
-        associate (back_link => merged_task%link)
-        select type (back_link)
-        type is (link_t)
-          new_link => back_link
-        end select
-        call merge_nbor_lists(link, nbor, new_link)
-        end associate
-
-        ! prepare to remove neighbour and current patch from task list
-        merged = .true.
-        n_merges = n_merges + 1
-        merge_count = merge_count + 1
-        select type (merged_task)
-        type is (patch_t)
-          n_updated = merged_task%n
-        end select
-        write (*,'(a,i10.1,a,i10.1,a,i10.1,a,3(i3.1,1x),a)') 'patches merged: ids = ', &
-          link%task%id, ', ', nbor%task%id,' => ', merged_task%id, ' (', n_updated, ')'
-
-        ! let's be conservative: only allow one merge at a given time; this will
-        ! be slower, but safer.
-        call self%task_list%remove_link(nbor)
-        exit ! exit do while over nbor
-      end if
-      nbor => nbor%next
-    end do
-    old_link => link
-    link => link%next
-    if (merged) call self%task_list%remove_link(old_link) ! now it's safe to remove current link
-  end do
+  iterations = 0
   
-  write (*,'(a,i10.1)') 'total no. of merges = ', merge_count
-  write (*,'(a,i10.1)') 'no. of patches examined = ', patch_count
+  do while (n_merges > 0)
+    n_merges = 0
+    link => self%task_list%head
+    do while (associated(link))
+      merged = .false.
+      task => link%task
+      if (task%is_set(bits%remove)) then
+        if (io%verbose > 1) print*,'Skipping link ID = ',task%id
+        link => link%next
+        cycle
+      end if
+    
+      select type (task)
+      class is (patch_t)
+        n_now = task%n
+      end select
+      patch_count = patch_count + 1
+    
+      ! only proceed if no. of patch cells is less than `n_max`.
+      if (any(n_now >= n_max)) then
+        link => link%next
+        cycle
+      end if
+    
+      nbor => link%nbor
+      do while (associated(nbor))
+        nbor_task => nbor%task
+        if (nbor_task%is_set(bits%remove)) then
+          if (io%verbose > 1) print*,'Skipping nbor ID = ',nbor_task%id
+          nbor => nbor%next
+          cycle
+        end if
+    
+        ! skip if neighbour is not at the same level
+        if (task%level /= nbor%task%level) then
+          nbor => nbor%next
+          cycle
+        end if
+    
+        ! only allow merges between octs that share a face.
+        dpos = task%position - nbor%task%position
+        if (count(abs(dpos) > 0.0) > 1) then
+          nbor => nbor%next
+          cycle
+        end if
+        adir = maxloc(abs(dpos),dim=1)
+    
+        select type (nbor_task)
+        class is (patch_t)
+          n_nbor = nbor_task%n
+        end select
 
-  ! last but not least, check the ready state of all patches.
+        diff_count = count(abs(n_nbor - n_now) > 0)
+        if (n_nbor(adir) - n_now(adir) > 0) diff_count = diff_count - 1
+        ! don't permit merges of patches with different sizes (except along
+        ! the direction of the proposed merge, that's okay).
+        if (diff_count > 0) then
+          nbor => nbor%next
+          cycle
+        end if
+
+        if (all(n_nbor < n_max)) then
+          ! try to merge two patches; includes inheritence of existing neighbours
+          merged_task => merge_neighbours(link, nbor, dpos)
+          ! add new merged patch to the *end* of the list
+          call self%task_list%append(merged_task)
+          ! merge the neighbour lists of the merged patches (and give it the
+          ! result to the new task).
+          associate (back_link => merged_task%link)
+          select type (back_link)
+          type is (link_t)
+            new_link => back_link
+          end select
+          !!!call merge_nbor_lists(link, nbor, new_link)
+          end associate
+    
+          ! prepare to remove neighbour and current patch from task list
+          merged = .true.
+          n_merges = n_merges + 1
+          merge_count = merge_count + 1
+          select type (merged_task)
+          type is (patch_t)
+            n_updated = merged_task%n
+          end select
+          write (*,'(a,i10.1,a,i10.1,a,i10.1,a,3(i3.1,1x),a)') 'patches merged: ids = ', &
+            link%task%id, ', ', nbor%task%id,' => ', merged_task%id, ' (', n_updated, ')'
+    
+          ! let's be conservative: only allow one merge at a given time; this will
+          ! be slower, but safer.
+          call nbor%task%set(bits%remove)  ! flag task for removal.
+          exit ! exit do while over nbor
+        end if
+        nbor => nbor%next
+      end do
+      old_link => link
+      link => link%next
+      ! now it's safe to remove current link
+      if (merged) then
+        call old_link%task%set(bits%remove)  ! flag task for removal.
+      end if
+    end do
+    
+    iterations = iterations + 1
+    write (*,'(a,i3.1)')  'iteration = ', iterations
+    write (*,'(a,i10.1)') 'no. of merges = ', n_merges
+    write (*,'(a,i10.1)') 'total no. of merges = ', merge_count
+    write (*,'(a,i10.1)') 'no. of patches examined = ', patch_count
+    
+    ! Last but not least, tidy up. To ensure the merged patches have the
+    ! correct neighbours, we need to search for neighbours again.
+    call tidy_up(self%task_list)
+    write (*,'(a,i10.1)') 'current no. of patches = ', self%task_list%n
+    call self%task_list%init_nbors()
+  end do
+
+  ! Finished. Check the ready state of all patches.
   call self%task_list%check_all()
 
   call trace_end
@@ -1229,78 +1271,35 @@ FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
 END FUNCTION merge_neighbours
 
 !> =============================================================================
-!> Merge the neighbour lists of `linka` and `linkb`, assigning the result to
-!> `linkc`. Ensure neighbours are not added twice.
-!> Note that `linka` and `linkb` should be deallocated in `merge_neighbours`.
+!> Walk through the task list, deallocating tasks which are flagged for removal
+!> (using `bits%remove`) while also removing the associated link in the task list.
 !> =============================================================================
-SUBROUTINE merge_nbor_lists(a_link, b_nbor, newlink)
-  class(link_t), pointer :: a_link, b_nbor
-  class(link_t), pointer :: newlink
-  class(link_t), pointer :: nbor, curr, check
+SUBROUTINE tidy_up (task_list)
+  class(task_list_t) :: task_list
+  class(task_t), pointer :: task
+  class(link_t), pointer :: link, prev_link
+  integer :: n_removed
   !.............................................................................
-  if (io%verbose > 1) then
-    print*,'==== n_nbors: ', a_link%task%n_nbors
-    call a_link%print_nbors()
-    print*,'==== n_nbors: ', b_nbor%task%n_nbors
-    call b_nbor%link%print_nbors()
-  end if
+  call trace_begin('ramses_mod::tidy_up')
 
-  ! assume that the neighbour list of `linkc` is currently empty.
-  nullify(newlink%nbor)
-  
-  ! give `a_link` neighbours to `newlink` first.
-  newlink%nbor => a_link%nbor
-  newlink%task%n_nbors = a_link%task%n_nbors
-  ! walk through list.
-  nbor => newlink%nbor
-  do while (associated(nbor))
-    ! remove `b_nbor` from the neighbour list.
-    if (associated(nbor,b_nbor)) then
-      nbor%next%prev => nbor%prev
-      if (associated(nbor%prev)) nbor%prev%next => nbor%next
-      newlink%task%n_nbors = newlink%task%n_nbors - 1
+  ! deallocate tasks (and associated links) that are marked for removal.
+  n_removed = 0
+  link => task_list%head
+  do while (associated(link))
+    task => link%task
+    prev_link => link
+    link => link%next
+    if (task%is_set(bits%remove)) then
+      if (io%verbose > 1) print*,'removing task id ',task%id
+      call task_list%remove_link(prev_link)
+      deallocate(task)
+      n_removed = n_removed + 1
     end if
-    curr => nbor  ! save current position in list
-    nbor => nbor%next
   end do
 
-  ! append the neighbour list of `b_nbor`, but ensure `a_link` is not in the list.
-  nbor => curr
-  nbor%next => b_nbor%link%nbor
-  nbor%next%prev => nbor
-  newlink%task%n_nbors = newlink%task%n_nbors + b_nbor%task%n_nbors
-  nbor => nbor%next
-  do while (associated(nbor))
-    ! remove `a_link` from neighbour list
-    if (associated(nbor,a_link)) then
-      nbor%next%prev => nbor%prev
-      if (associated(nbor%prev)) nbor%prev%next => nbor%next
-      newlink%task%n_nbors = newlink%task%n_nbors - 1
-    end if
-    nbor => nbor%next
-  end do
+  write (*,'(a,i8.1)') 'no. of tasks removed = ', n_removed
 
-  ! finally, cut out any duplicates.
-  nbor => newlink%nbor
-  do while (associated(nbor))
-    check => nbor%next
-    do while (associated(check))
-      ! if a duplicate is found, cut it out.
-      if (associated(nbor%task,check%task)) then
-        check%next%prev => nbor%prev
-        if (associated(check%prev)) check%prev%next => check%next
-        newlink%task%n_nbors = newlink%task%n_nbors - 1
-      end if
-      check => check%next
-    end do
-    nbor => nbor%next
-  end do
-
-  if (io%verbose > 1) then
-    print*,'----> new: n_nbors: ', newlink%task%n_nbors
-    call newlink%print_nbors()
-  end if
-
-END SUBROUTINE merge_nbor_lists
+  call trace_end
+END SUBROUTINE tidy_up
 
 END MODULE ramses_mod
