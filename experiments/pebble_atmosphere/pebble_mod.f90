@@ -19,7 +19,7 @@ MODULE pebble_mod
     real:: m                            ! mass
     real:: s                            ! size
     real:: d                            ! solid density
-    real:: dg                           ! gas density
+    real:: w                            ! weight factor
     real:: c                            ! drag acceleration rate
     real:: dt                           ! time step
     real(8):: t                         ! particle time

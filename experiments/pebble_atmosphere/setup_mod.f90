@@ -16,6 +16,7 @@ MODULE setup_mod
   USE pebble_patch_mod
   USE pebble_trace_mod
   USE rubiks_mod
+  USE scene_mod
   USE list_mod
   implicit none
   private
@@ -54,6 +55,7 @@ SUBROUTINE init (self, label)
   planet%position = 0.0
   self%position = planet%position
   call self%rubiks_t%init_hierarchy (label)
+  print*, 'n_initial, n_add =', scene%n_initial, scene%n_add
   link => self%task_list%head
   do while (associated(link))
     patch => task2patch (link%task)

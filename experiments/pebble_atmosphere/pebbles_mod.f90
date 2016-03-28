@@ -31,8 +31,8 @@ MODULE pebbles_mod
     integer:: n_frozen = 0                      ! number of frozen pebbles
     integer:: it_max                            ! max life time
     integer:: id_dbg = 0                        ! follow this pebble
-    integer:: ppc = 5                           ! particles per cell
     integer(8):: n_update = 0                   ! speed counter
+    real:: ppc                                  ! particles per cell
     real:: mass                                 ! representative pebble mass
     real:: power                                ! random distribution
     real:: size                                 ! representative pebble size

@@ -13,7 +13,7 @@ MODULE planet_mod
   !-----------------------------------------------------------------------------
   type, public, extends(particles_t):: planet_t
     real(8):: mass, radius, temperature
-    real:: orbit_radius
+    real:: orbit_radius, hill_radius
     contains
     procedure:: init
     procedure:: inside

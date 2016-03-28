@@ -20,6 +20,7 @@ MODULE pebble_patch_mod
   USE mhd_mod
   USE list_mod
   USE planet_mod
+  USE atmosphere_mod
   USE star_mod
   USE scaling_mod
   USE units_mod
@@ -58,6 +59,7 @@ MODULE pebble_patch_mod
   end type
   logical, save:: debug = .false.
   integer, save:: id_dbg = 0
+  real, save:: xmin=1e10, xmax=-1e10
 CONTAINS
 
 !> =============================================================================
@@ -70,7 +72,7 @@ SUBROUTINE init (self)
   real, save:: density_yr_cgs = 1e-12, solid_density_cgs=3., size(3), pebble_size_cm=1.
   real, save:: pebble_rate_cgs = 1e2    ! about one pebble per 10 second (3e6 per year)
   real, save:: vz_pebble_cgs = 3e6      ! about 30 km/s vertically
-  real, save:: power = 1.0              ! random number power
+  real, save:: power = 2.0              ! random number range in power of 10
   real, save:: cell_probability = 0.02  ! probability of making a pebble
   real, save:: omega_yr(3)=0.0          ! omega in units where 1 = 1/yr
   integer, save:: trace_every=0         ! trace pebble frequency
@@ -152,18 +154,13 @@ SUBROUTINE initial_add (self, n)
   !.............................................................................
   class(pebbles_t), pointer:: pebbles
   class(pebble_t), pointer:: pebble
-  integer:: ix, iy, iz, n_local, iter, warn
-  real:: w(3), sign
+  integer:: ix, iy, iz, ippc, iter, warn
+  real:: w(3), sign, ppc
   integer, save:: nprint=10
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles) return
   call trace_begin ('pebbles_t%add', 3)
   pebbles => self%pebbles
-  if (present(n)) then
-    n_local = n
-  else
-    n_local = self%pebble_rate*self%dtime
-  end if
   if (io%verbose>1 .or. (io%verbose>0.and.nprint>0)) then
     nprint = nprint-1
     print *, ' ADDING PEBBLES TO PATCH', self%id
@@ -180,28 +177,49 @@ SUBROUTINE initial_add (self, n)
   do iz=self%mesh(3)%li,self%mesh(3)%ui
   do iy=self%mesh(2)%li,self%mesh(2)%ui
   do ix=self%mesh(1)%li,self%mesh(1)%ui
-    do iter=1,self%pebbles%ppc
-      if (random%ran1() < self%pebbles%cell_probability) then
+    ppc = self%pebbles%ppc*self%pebbles%cell_probability*product(self%ds) &
+        * self%density(ix,iy,iz,self%it)/atmosphere%surface%density
+    ippc = ppc
+    ppc = ppc-ippc
+    do iter=1,ippc+1
+      if (iter<=ippc .or. random%ran1() < ppc) then
         allocate (pebble)
         call pebble%init
         if (mod(pebble%id,pebble_trace%every)==0) &
           pebble%status = ior(pebble%status,bits%trace+bits%has_BC)
         pebble%t = self%time
-        pebble%s = self%pebbles%size*random%ran1()
-        pebble%d = self%pebbles%density
+        pebble%s = self%pebbles%size*10**(-self%pebbles%power*random%ran1())
+        pebble%d = self%density(ix,iy,iz,self%it)
         pebble%m = pebble%s**3*pebble%d
         pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
         pebble%p(2) =   (self%position(2) - planet%position(2)) + self%size(2)*(0.5-random%ran1())
         pebble%p(3) =   (self%position(3) - planet%position(3)) + self%size(3)*(0.5-random%ran1())
         call interpolate_vg (self, pebble, warn)
         pebble%v = pebble%vg
-        pebble%d = self%mem(ix,iy,iz,1,1,1)
+        pebble%v = self%vgas(ix,iy,iz,:,self%it)
+        pebble%d = self%mem(ix,iy,iz,1,self%it,1)
+        pebble%w = product(self%ds)/self%pebbles%cell_probability       ! volume and probability weight factor
+        pebble%w = pebble%w*pebble%d                                    ! normalize by gas density
+        if (pebble_trace%every > 0) then
+          if (mod(pebble%id,pebble_trace%every)==0 .and. &
+            pebble%p(1) >   - planet%hill_radius .and. &
+            pebble%p(1) < 2.0*planet%hill_radius .and. &
+        abs(pebble%p(2)) <    planet%hill_radius) then
+            pebble%status = ior(pebble%status,bits%trace)               ! trace some
+            !$omp atomic
+            scene%n_initial = scene%n_initial+1
+          end if
+        end if
+        pebble%t = self%time                                            ! time
         call self%pebbles%append (pebble)
       end if
     end do
   end do
   end do
   end do
+  if (io%verbose>0) &
+    print '(a,i7,i3,2i6,2f10.2)', 'initial_trace: id, level, n_initial, n_add =', &
+      self%id, self%level, scene%n_initial, scene%n_add, xmin, xmax
   if (io%verbose>1) &
     print *, 'initial_add:', self%id, self%position(3), self%pebbles%n
   call self%pebbles%check_list ('after initial_add')
@@ -251,13 +269,8 @@ SUBROUTINE add (self, n)
   do i=1,n_local
     allocate (pebble)
     call pebble%init
-    if (pebble_trace%every > 0) then
-      if (mod(pebble%id,pebble_trace%every)==0) &
-        pebble%status = ior(pebble%status,bits%trace)
-    end if
     pebble%t = self%time
-    pebble%s = self%pebbles%size*random%ran1()**self%pebbles%power
-    pebble%d = self%pebbles%density*self%dtime/n_local
+    pebble%s = self%pebbles%size*10.**(-self%pebbles%power*random%ran1())
     pebble%m = pebble%s**3*pebble%d
     sign = merge(1.0,-1.0,self%position(3)>0.0)
     pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
@@ -266,16 +279,30 @@ SUBROUTINE add (self, n)
     pebble%v(1) = - self%omega(3)*planet%orbit_radius
     pebble%v(2) =   0.0
     pebble%v(3) = - self%vz_pebble*sign
+    ii = self%index_r4 (pebble%p, w, self%mesh%gn)
+    pebble%d = self%interpolate_r4 (self%density , ii, w)
+    pebble%w = product(self%size)/n_local                               ! probability density
+    pebble%w = pebble%w*pebble%d                                        ! normalize by gas density
     self%pebbles%z_min = min(self%pebbles%z_min,abs(pebble%p(3)))
+    !---------------------------------------------------------------------------
+    ! If the particle has a chance to reach the planet it is a candidate for
+    ! tracing -- select every pebble_trace%every particle for tracing
+    !---------------------------------------------------------------------------
     x0 = pebble%p(1) - pebble%v(1)*pebble%p(3)/pebble%v(3)
-    if (x0 > -100.*planet%radius .and. &
-        x0 < 1000.*planet%radius .and. &
-        abs(pebble%p(2)) < 250*planet%radius) then
-      call self%pebbles%append (pebble)
-      if (debug.or.pebble%id==id_dbg) print*,'dbg: add', i, n_local, pebble%id
-    else
-      deallocate (pebble)
+    if (x0 > -1.0*planet%hill_radius .and. &
+        x0 <  3.0*planet%hill_radius .and. &
+        abs(pebble%p(2)) < planet%hill_radius .and. &
+        pebble_trace%every > 0) then
+      if (mod(pebble%id,pebble_trace%every)==0) then
+        pebble%status = ior(pebble%status,bits%trace)
+        !$omp atomic
+        scene%n_add = scene%n_add+1
+        xmin = min(xmin,x0)
+        xmax = max(xmax,x0)
+      end if
     end if
+    if (debug.or.pebble%id==id_dbg) print*,'dbg: add', i, n_local, pebble%id
+    call self%pebbles%append (pebble)
   end do
   call self%pebbles%check_list ('after add')
   call trace_end
@@ -434,7 +461,7 @@ SUBROUTINE kdk_drag (self, p)
   if (p%id == id_dbg) &
     print*,'dbg: kdk_drag:', p%p
   if (iand(p%status,bits%trace)/=0) then
-    call pebble_trace%trace_pebble (p, self%id)
+    call pebble_trace%trace_pebble (p, self%id, self%level)
   end if
 END SUBROUTINE kdk_drag
 
@@ -702,8 +729,10 @@ SUBROUTINE update_pebbles (self)
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles) return
   call trace_begin ('pebbles_mod::update_pebbles')
-  if (self%time == 0d0) call self%initial_add
-  if (self%level==1 .and. self%is_set(bits%top_bottom)) call self%add
+  if (self%time == 0d0) then
+    if (self%level==1 .and. self%is_set(bits%top_bottom)) call self%add
+    call self%initial_add
+  end if
   if (self%pebbles%n>0) then
     if (io%verbose>1) then
       if (associated(self%pebbles%head)) then
@@ -794,7 +823,7 @@ SUBROUTINE info (self, nq, experiment_name)
       nv = 1
       if (io%verbose>2) nv = self%nv
       do iv=1,nv
-        print '(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,o8,i6)', &
+        print '(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,o8,i6)', &
           'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
           maxval(self%mem(:,:,:,iv,self%it ,2)), &

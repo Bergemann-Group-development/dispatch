@@ -17,7 +17,8 @@ MODULE initial_mod
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     real:: b0(3)
-    real:: gamma=1.4
+    real:: gamma
+    real:: v_head, v_accrete
     real:: surface_temperature, surface_pressure
     real(8):: size(3)
     logical:: mhd
@@ -30,13 +31,13 @@ MODULE initial_mod
 CONTAINS
 
 !> =============================================================================
-!> Setup a uniform initial state, with density=d0 and B=B0
+!> Setup an initial state, with head wind speed and accretion speed
 !> =============================================================================
 SUBROUTINE init (self)
    class(initial_t):: self
    logical, save:: first_time=.true.
-   real, save:: b0(3) = 0.0, gamma=1.4
-   namelist /initial_params/ b0, gamma
+   real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0
+   namelist /initial_params/ b0, gamma, v_head_cgs, v_accrete_cgs
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    call scaling%init
@@ -47,6 +48,8 @@ SUBROUTINE init (self)
    end if
    self%b0 = b0
    self%gamma = gamma
+   self%v_head = v_head_cgs/scaling%u
+   self%v_accrete = v_accrete_cgs/scaling%u
    self%selected => planet_atmosphere
    call trace_end
 END SUBROUTINE init
@@ -97,9 +100,9 @@ SUBROUTINE planet_atmosphere (self, mem, m, omega)
         ! the Hill sphere, so we will probably only be seeing effects of the
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
-        mem(ix,iy,iz,3,1,1) = d*0.5*omega(3)*y
-        mem(ix,iy,iz,4,1,1) = 0.0
-        mem(ix,iy,iz,5,1,1) = 0.0
+        mem(ix,iy,iz,3,1,1) = d*(0.5*omega(3)*y + self%v_head)  ! azimuthal speed
+        mem(ix,iy,iz,4,1,1) = d*self%v_accrete                  ! accretion speed
+        mem(ix,iy,iz,5,1,1) = 0.0                               ! vertical speed
         mem(ix,iy,iz,6,1,1) = self%b0(1)
         mem(ix,iy,iz,7,1,1) = self%b0(2)
         mem(ix,iy,iz,8,1,1) = self%b0(3)

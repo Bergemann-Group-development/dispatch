@@ -66,6 +66,7 @@ SUBROUTINE init (self)
   self%external%pressure = density_cgs*cgs%k_B*temperature_K/(cgs%mu*cgs%m_u) &
     /scaling%p
   self%hill_radius = self%orbit_radius*(planet%mass*scaling%m/(3d0*cgs%m_sun))**(1d0/3d0)
+  planet%hill_radius = self%hill_radius
   !-----------------------------------------------------------------------------
   ! Make sure the pressure force is contiuous at the surface, by continuing the
   ! integration to half the planet radius
