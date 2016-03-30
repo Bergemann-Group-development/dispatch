@@ -83,12 +83,16 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE init (self)
   class (task_t):: self
+  logical:: first_time=.true.
   !.............................................................................
   call trace_begin ('task_t%init')
-  if (self%id==0) then
-    id = self%unique_id()
-    self%id = id
+  if (first_time) then
+    first_time = .false.
+    call mpi%win_create (id)
   end if
+  call mpi%win_increment (id)
+  self%id = id
+  write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)
   scene%n_patch = self%id
   call trace_end

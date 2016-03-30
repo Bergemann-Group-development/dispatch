@@ -25,7 +25,6 @@
 !>
 !> =============================================================================
 MODULE mpi_mod
-  USE io_mod
   implicit none
   include 'mpif.h'              ! some systems require this instead of 'use mpi'
   integer:: mpi_err             ! MPI error status
@@ -35,7 +34,9 @@ MODULE mpi_mod
   integer:: mpi_comm            ! short hand for mpi_comm_world
   integer:: mpi_size            ! number of MPI processes
   integer:: mpi_rank            ! process number (zero-based)
+  integer:: win                 ! MPI window to "id"
   integer:: output=2
+  integer, parameter:: mch=120
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   ! Object that returns the most important MPI parameters
@@ -46,6 +47,8 @@ MODULE mpi_mod
     logical:: ok = .false.
   contains
     procedure:: init
+    procedure:: win_create
+    procedure:: win_increment
     procedure:: barrier => barrier_
     procedure:: print => print_
     procedure:: assert
@@ -77,7 +80,6 @@ SUBROUTINE init (mp, mpi_dims, dims)
   mpi%comm   = mpi_comm_world
   mpi%master = mpi_rank==0
   mpi%ok     = .true.
-  io%master  = mpi%rank==0
   !-----------------------------------------------------------------------------
   ! For some reason, this must be done element by element.  Turning it around,
   ! and doing mpi = mp (which is syntactically correct), values are screwed
@@ -88,6 +90,31 @@ SUBROUTINE init (mp, mpi_dims, dims)
   mp%master = mpi%master
   mp%ok     = mpi%ok
 END SUBROUTINE init
+
+!> =============================================================================
+!> Open an MPI window to the task id counter on rank 0
+!> =============================================================================
+SUBROUTINE win_create (mp, id)
+  class(mpi_t):: mp
+  integer:: id, ierr
+  !-----------------------------------------------------------------------------
+  call MPI_Win_create (id, 4_8, 1, MPI_INFO_NULL, mp%comm, win, ierr)
+END SUBROUTINE
+
+!> =============================================================================
+!> Increment the task id counter on rank 0 and return the value
+!> =============================================================================
+SUBROUTINE win_increment (mp, id)
+  class(mpi_t):: mp
+  integer:: id, ierr
+  !-----------------------------------------------------------------------------
+  call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, 0, 0, win, ierr)
+  call MPI_Accumulate(1, 1, MPI_INTEGER, 0, 0_8, &
+                         1, MPI_INTEGER, MPI_SUM, win, ierr)
+  call MPI_Get (id,      1, MPI_INTEGER, 0, 0_8, &
+                         1, MPI_INTEGER, win, ierr)
+  call MPI_Win_unlock (0, win, ierr)
+END SUBROUTINE
 
 !> =============================================================================
 !> =============================================================================
@@ -169,8 +196,6 @@ SUBROUTINE end_mpi (mp, label)
   if (mpi_rank==0) then
     if (present(label)) then
       print*,'MPI finalized with message: "'//trim(label)//'"'
-    else
-      print*,'MPI finalized'
     end if
   end if
   call MPI_Finalize (mpi_err)
