@@ -288,7 +288,6 @@ SUBROUTINE init (self)
   self%dt_fixed    = dt_fixed
   self%u_fixed     = u_fixed
   self%max_files   = max_files                  ! prevent run-away NaN
-  self%status      = 0
   !-----------------------------------------------------------------------------
   ! Output related parameters (should they go to io% ?)
   !-----------------------------------------------------------------------------
