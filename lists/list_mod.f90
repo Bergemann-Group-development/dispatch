@@ -128,6 +128,7 @@ SUBROUTINE append (self, task)
 END SUBROUTINE append
 
 !> =============================================================================
+!> Append to the task list, counting active tasks only
 !> =============================================================================
 SUBROUTINE append_link (self, link)
   class(list_t):: self
@@ -142,7 +143,8 @@ SUBROUTINE append_link (self, link)
     self%head => link
     self%tail => link
   end if
-  self%n = self%n+1
+  if (link%task%is_clear(bits%virtual)) &
+    self%n = self%n+1
   call trace_end
 END SUBROUTINE append_link
 
@@ -290,13 +292,15 @@ SUBROUTINE check_ready (self, link, set_debug)
       nbtask => nbor%task
       !$omp flush (nbtask)
       ahead = nbtask%is_ahead_of(task)
-      if (task%id==id_debug) print*, id_debug, 'mk checking nbor', nbtask%id, ahead, nbtask%time-task%time
+      if (task%id==id_debug.or.io%verbose>3) &
+        print*, task%id, 'checking nbor', &
+        nbtask%id, ahead, nbtask%time-task%time
       !write(io%debug_unit,*) id_debug, 'check_ready:', nbtask%id, nbtask%time-task%time, ahead
       if (ahead) then
         nbor => nbor%next                               ! next nbor
       else
         self%n_check = self%n_check+1
-        if (self%debug==1) &
+        if (self%debug==1.or.io%verbose>4) &
           print*, task%id, ' check_ready failed on task', nbtask%id
         if (task%id==id_debug) then
           call self%print_queue_until (nbtask)
@@ -418,6 +422,11 @@ SUBROUTINE init_nbors (self, link)
   do while (associated(scan))                         ! until end
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       if (self%overlaps (scan%task, link%task)) then  ! if its task overlaps
+        write (io%log_unit, '(3(i6,2(3f8.4,2x)),l4)') &
+          scan%task%id, scan%task%position, scan%task%size, &
+          link%task%id, link%task%position, link%task%size, &
+          0, self%distance (scan%task, link%task), self%size, &
+          self%overlaps (scan%task, link%task)
         allocate (nbor)
         nbor%task => scan%task
         nbor%link => scan
@@ -439,12 +448,19 @@ SUBROUTINE init_nbors (self, link)
               print*, 'patch', link%task%id, ' parent:', nbor%task%id
           end if
         end if
+        !-----------------------------------------------------------------------
+        ! If one or more of the nbors is virtual, set the boundary bit
+        !-----------------------------------------------------------------------
+        if (nbor%task%is_set(bits%virtual)) &
+          call link%task%set(bits%boundary)
       end if
     end if
     scan => scan%next                                 ! continue search
   end do
   link%task%n_nbors = n_add
   if (io%master .and. io%verbose>1) print*, &
+    'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
+  if (io%verbose>1) write (io%log_unit,*) &
     'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
   !$omp flush
   call self%lock%unset('init_nbors')
@@ -469,50 +485,35 @@ SUBROUTINE init_all_nbors (self)
 END SUBROUTINE init_all_nbors
 
 !> =============================================================================
-!> Update the nbor list of self, adding self to the each nbor's nbor list
-!> =============================================================================
-SUBROUTINE update_nbors (self)
-  class(link_t):: self
-  class(link_t), pointer:: nbor, new
-  class(link_t), pointer:: nbor
-  !.............................................................................
-  call trace_begin('list_t%init_all_nbors')
-  nbor => self%nbor                                     ! start checking nbors
-  do while (associated(nbor))                           ! loop over nbor list
-    allocate (new)                                      ! new link for nbor's nbor list
-    new%task => self%task                               ! its task is the link task
-    new%next => nbor%nbor                               ! its nbor is the nbor head
-    nbor%nbor => new                                    ! the nbor head is new
-    nbor => nbor%next                                   ! continue on nbor list
-  end do
-  call trace_end
-END SUBROUTINE update_nbors
-
-!> =============================================================================
 !> Clear and then set the virtual and boundary bits
 !> =============================================================================
 SUBROUTINE reset_status (self)
   class(list_t):: self
   class(link_t), pointer:: link, nbor
-  link => self%head
+  integer:: n_internal, n_boundary, n_virtual
   !-----------------------------------------------------------------------------
   ! Clear virtual and boundary bits
   !-----------------------------------------------------------------------------
+  write (io%log_unit,*) 'reset_status'
+  n_internal = 0
+  n_boundary = 0
+  n_virtual = 0
+  link => self%head
   do while (associated(link))
     call link%task%clear(bits%virtual+bits%boundary)
     link => link%next
   end do
-  link => self%head
   !-----------------------------------------------------------------------------
   ! Set virtual bit
   !-----------------------------------------------------------------------------
+  link => self%head
   do while (associated(link))
-    nbor => link%nbor
-    do while (associated(nbor))
-      if (nbor%task%rank /= mpi%rank) then
-        call link%task%set(bits%virtual)
-      end if
-    end do
+    n_internal = n_internal + 1
+    if (link%task%rank /= mpi%rank) then
+      call link%task%set(bits%virtual)
+      n_virtual  = n_virtual  + 1
+      n_internal = n_internal - 1
+    end if
     link => link%next
   end do
   !-----------------------------------------------------------------------------
@@ -527,8 +528,21 @@ SUBROUTINE reset_status (self)
       end if
       nbor => nbor%next
     end do
+    if (link%task%is_set(bits%boundary)) then
+      n_boundary = n_boundary + 1
+      n_internal = n_internal - 1
+    end if
+    write (io%log_unit,'(a,i7,2(5x,a,l4))') &
+      'id:', link%task%id, 'boundary:', link%task%is_set(bits%boundary), &
+      'virtual:', link%task%is_set(bits%virtual)
     link => link%next
   end do
+  write (io%log_unit,'(4(a,i7,5x))') &
+    'rank:',mpi%rank, &
+    'n_internal:', n_internal, &
+    'n_boundary:', n_boundary, &
+    'n_virtual:' , n_virtual
+  flush (io%log_unit)
 END SUBROUTINE reset_status
 
 !> =============================================================================
@@ -728,8 +742,10 @@ SUBROUTINE queue_by_time (self, this)
   class(link_t), pointer:: this
   class(link_t), pointer:: next, prev
   class(task_t), pointer:: task
-  !.............................................................................
-  if (this%task%has_finished()) return
+  !-----------------------------------------------------------------------------
+  ! Refuse to queue virtual tasks and finished tasks
+  !-----------------------------------------------------------------------------
+  if (this%task%is_set(bits%virtual) .or. this%task%has_finished()) return
   call trace_begin ('list_t%queue_by_time '//self%name)
   !-----------------------------------------------------------------------------
   ! Prepare for update, by pro-actively downloading data that it depends on.
@@ -888,7 +904,7 @@ SUBROUTINE print_queue (self)
   !.............................................................................
   if (io%verbose < 2) return
   link => self%queue
-  print'(a,i4,":",$)', 'ready_queue', self%nq
+  print'(a,2i4,":",$)', 'ready_queue', self%nq, self%n
   do while (associated(link))
     print '(i4,$)', link%task%id
     link => link%next_time

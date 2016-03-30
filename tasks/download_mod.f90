@@ -290,8 +290,7 @@ END SUBROUTINE download_same_static
 
 !> =============================================================================
 !> Scan the available times, and set jt(1),jt(2) to the pair that gives the
-!> smallest interpolation / extrapolation weight pt, without using the iit()
-!> array, and taking care to access the other%t times in atomic read statements
+!> smallest interpolation / extrapolation weight pt
 !> =============================================================================
 SUBROUTINE find_time (other, time, jt, pt)
   class(patch_t), pointer:: other
@@ -313,8 +312,7 @@ SUBROUTINE find_time (other, time, jt, pt)
     pt(2) = 1.0001+other%grace
     !---------------------------------------------------------------------------
     ! Check all nt-2 time intervals, and settle for the one that gives the
-    ! smallest extrapolation factor pt(2).  Initially, when all time slots
-    ! have time=0.0,
+    ! smallest extrapolation factor pt(2).
     !---------------------------------------------------------------------------
     do it=1,other%nt-2
       it1 = other%iit(it)
@@ -336,12 +334,14 @@ SUBROUTINE find_time (other, time, jt, pt)
       end if
     end do
   end if
-  pt(1) = 1.0-pt(2)
   if (.not.found) then
-    print '(i6,i4,2x,a,2i4,2f9.4,3x,"time",f9.4,3x,"other%t",7f9.5)', other%id, &
-      omp_mythread(), &
-      'WARNING: using fall-back', jt, pt, time, other%t(other%iit(1:other%nt-1))
+    pt(2) = 0.0
+    if (other%is_clear(bits%virtual)) &
+      print '(i6,i4,2x,a,2i4,2f9.4,3x,"time",f9.4,3x,"other%t",7f9.5)', &
+      other%id, omp_mythread(), 'WARNING: using fall-back', &
+      jt, pt, time, other%t(other%iit(1:other%nt-1))
   end if
+  pt(1) = 1.0-pt(2)
   if (abs(pt(1))< 1e-4) then
     if (io%verbose>2) print*,'EXACT'
     pt(1)=0.0; pt(2)=1.0

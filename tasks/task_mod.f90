@@ -135,8 +135,8 @@ END SUBROUTINE info
 LOGICAL FUNCTION is_ahead_of (self, task)
   class (task_t):: self, task
   !.............................................................................
-  is_ahead_of = self%time + self%dtime*task%grace >= task%time
-  if (task%id==id_debug) &
+  is_ahead_of = self%time + max(self%dtime,task%dtime)*task%grace >= task%time
+  if (task%id==id_debug.or.io%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread(), 'mk is_ahead_of: ', &
     task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of
 END FUNCTION
@@ -191,7 +191,8 @@ LOGICAL FUNCTION has_finished (self)
   class (task_t):: self
   integer:: bit
   !.............................................................................
-  has_finished = self%time + 1e-6*self%dtime > self%end_time
+  has_finished = (self%time + 1e-6*self%dtime > self%end_time) &
+    .or. self%is_set(bits%virtual)
   if (has_finished) call self%set (bits%frozen)
 END FUNCTION
 
