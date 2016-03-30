@@ -101,7 +101,8 @@ SUBROUTINE execute (self)
   !$omp end parallel
   call buffered_output%close
   call toc ('rank time', self%n_update)
-  print *, 'download_differ % =', 100.*download%n_differ/(download%n_differ+download%n_same)
+  if (io%master) &
+    print *, 'download_differ % =', 100.*download%n_differ/(download%n_differ+download%n_same)
   link => self%head
   do while (associated(link))
     rem => link
@@ -150,7 +151,7 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     ! If the task is frozen (e.g. because it has finished), return
     !---------------------------------------------------------------------------
-    if (task%is_set (bits%frozen)) then
+    if (task%is_set (bits%frozen+bits%virtual)) then
       call trace_end
       return
     end if
@@ -224,7 +225,7 @@ FUNCTION find_task (self, id) RESULT (link)
   ! the link to the task list
   !-----------------------------------------------------------------------------
   call self%init_nbors (link)
-  call self%update_nbors (link)
+  call link%update_nbors
   call self%append_link (link)
 END FUNCTION find_task
 

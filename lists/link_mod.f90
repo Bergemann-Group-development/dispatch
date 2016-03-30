@@ -23,6 +23,7 @@ MODULE link_mod
     procedure:: add_nbor_by_quality
     procedure:: make_new_nbors
     procedure:: make_new_nbor
+    procedure:: update_nbors
     procedure:: print_nbors
   end type
   public task2patch
@@ -138,6 +139,25 @@ FUNCTION task2patch (task) RESULT (patch)
   stop
   end select
 END FUNCTION
+
+!> =============================================================================
+!> Update the nbor list of self, adding self to the each nbor's nbor list
+!> =============================================================================
+SUBROUTINE update_nbors (self)
+  class(link_t):: self
+  class(link_t), pointer:: nbor, new
+  !.............................................................................
+  call trace_begin('list_t%init_all_nbors')
+  nbor => self%nbor                                     ! start checking nbors
+  do while (associated(nbor))                           ! loop over nbor list
+    allocate (new)                                      ! new link for nbor's nbor list
+    new%task => self%task                               ! its task is the link task
+    new%next => nbor%nbor                               ! its nbor is the nbor head
+    nbor%nbor => new                                    ! the nbor head is new
+    nbor => nbor%next                                   ! continue on nbor list
+  end do
+  call trace_end
+END SUBROUTINE update_nbors
 
 !> =============================================================================
 !> Print a list of nbors
