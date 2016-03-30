@@ -4,6 +4,7 @@
 MODULE io_mod
   USE omp_mod
   USE omp_timer_mod
+  USE mpi_mod
   implicit none
   logical:: mpi_trace=.false.
   integer, parameter:: mch=120
@@ -38,7 +39,7 @@ SUBROUTINE init (self, name)
   'io_mod.f90 $Id$'
   integer:: verbose=0, levelmax, iostat
   character(len=*), optional:: name
-  character(len=64):: argfile
+  character(len=64):: filename
   logical:: first_time=.true.
   logical:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_flags=.false.
@@ -47,21 +48,28 @@ SUBROUTINE init (self, name)
   !.............................................................................
   call print_id (id)
   call init_omp
+  io%master = io%master .and. (mpi%rank==0)
   !$omp critical (io_cr)
   if (first_time) then
     !---------------------------------------------------------------------------
     ! The input filename is input.nml, or as given on the command line
     !---------------------------------------------------------------------------
-    call getarg(1,argfile)                                      ! command line
-    if (argfile /= ' ') then
-      io%inputname = argfile                                    ! run_name.nml
+    call getarg(1,filename)                                     ! command line
+    if (filename /= ' ') then
+      io%inputname = filename                                   ! run_name.nml
       io%outputname = trim(io%datadir)//io%sep// &              ! data/run_name/
-        trim(argfile(1:index(argfile,'.')-1))//io%sep
+        trim(filename(1:index(filename,'.')-1))//io%sep
     else
       io%inputname = 'input.nml'
       io%outputname = trim(io%datadir)//io%sep                  ! data/
     end if
     call system ('mkdir -p '//trim(io%outputname))
+    !---------------------------------------------------------------------------
+    ! Open an MPI rank specific log file
+    !---------------------------------------------------------------------------
+    write (filename,'(a,i4.4,".log")') trim(io%outputname), mpi%rank
+    if (io%master) print*, 'logfile:', filename
+    open (io%log_unit, file=filename, form='formatted', status='unknown')
     do_trace = io%do_trace
     do_debug = io%do_debug
     verbose  = io%verbose
