@@ -185,8 +185,10 @@ SUBROUTINE initial_add (self, n)
       if (iter<=ippc .or. random%ran1() < ppc) then
         allocate (pebble)
         call pebble%init
-        if (mod(pebble%id,pebble_trace%every)==0) &
-          pebble%status = ior(pebble%status,bits%trace+bits%has_BC)
+        if (pebble_trace%every > 0) then
+          if (mod(pebble%id,pebble_trace%every)==0) &
+            pebble%status = ior(pebble%status,bits%trace+bits%has_BC)
+        end if
         pebble%t = self%time
         pebble%s = self%pebbles%size*10**(-self%pebbles%power*random%ran1())
         pebble%d = self%density(ix,iy,iz,self%it)
@@ -291,7 +293,8 @@ SUBROUTINE add (self, n)
     x0 = pebble%p(1) - pebble%v(1)*pebble%p(3)/pebble%v(3)
     if (x0 > -1.0*planet%hill_radius .and. &
         x0 <  3.0*planet%hill_radius .and. &
-        abs(pebble%p(2)) < planet%hill_radius .and. &
+        pebble%p(2) > -2.0*planet%hill_radius .and. &
+        pebble%p(2) <  1.0*planet%hill_radius .and. &
         pebble_trace%every > 0) then
       if (mod(pebble%id,pebble_trace%every)==0) then
         pebble%status = ior(pebble%status,bits%trace)

@@ -17,9 +17,11 @@ MODULE task_list_mod
   USE omp_lock_mod
   USE omp_timer_mod
   USE mpi_mod
+  USE mpi_mesg_mod
   USE list_mod
   USE task_mod
   USE patch_mod
+  USE experiment_mod
   USE bits_mod
   USE trace_mod
   USE refine_mod
@@ -34,6 +36,8 @@ MODULE task_list_mod
     procedure:: init
     procedure:: execute
     procedure:: update
+    procedure:: find_task
+    procedure:: unpack
     procedure:: check_mpi
     procedure:: split
     procedure:: output
@@ -69,7 +73,7 @@ SUBROUTINE init (self, name)
   ! Compute neighbor list used to perform checks for ready status
   !-----------------------------------------------------------------------------
   call trace_tag ('call self%init_nbors')
-  call self%init_nbors
+  call self%init_all_nbors
   link => self%head
   do while (associated(link))
     call link%task%clear(bits%ready)
@@ -193,12 +197,80 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !> =============================================================================
-!> Check for MPI messages
+!> Find the link with a specified task id.  If there isn't any, create one!
+!> =============================================================================
+FUNCTION find_task (self, id) RESULT (link)
+  class(task_list_t):: self
+  integer:: id
+  class(link_t), pointer:: link
+  class(experiment_t), pointer:: task
+  !.............................................................................
+  link => self%head
+  do while (associated(link))
+    if (link%task%id == id) then
+      return
+    end if
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! No task found, which means it's a new virtual task that needs to be created
+  !-----------------------------------------------------------------------------
+  allocate (link)
+  allocate (task)
+  task%id = id
+  call task%init
+  !-----------------------------------------------------------------------------
+  ! Create a neighbor list, and update the nbor lists of the nbors, before adding
+  ! the link to the task list
+  !-----------------------------------------------------------------------------
+  call self%init_nbors (link)
+  call self%update_nbors (link)
+  call self%append_link (link)
+END FUNCTION find_task
+
+!> =============================================================================
+!> Unpack a buffer, where the first word is the task id.  Use that to search
+!> for the task, apply its unpack method, and check if any nbors become ready.
+!> =============================================================================
+SUBROUTINE unpack (self, buffer)
+  class(task_list_t):: self
+  integer, dimension(:), pointer:: buffer
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  class(experiment_t), pointer:: patch
+  integer:: id
+  !-----------------------------------------------------------------------------
+  id = buffer(1)
+  link => self%find_task (id)
+  task => link%task
+  select type (task)
+  class is (experiment_t)
+    patch => task
+    call patch%unpack (buffer)
+  end select
+  call self%check_nbors (link)
+END SUBROUTINE unpack
+
+!> =============================================================================
+!> Check for and unpack MPI messages
 !> =============================================================================
 SUBROUTINE check_mpi (self)
   class(task_list_t):: self
+  integer, dimension(:), pointer:: buffer
   !.............................................................................
-  call trace_begin ('check_mpi',2)
+  call trace_begin ('check_mpi',1)
+  !-----------------------------------------------------------------------------
+  ! Check for new or completed incoming messages
+  !-----------------------------------------------------------------------------
+  call mpi_mesg%check
+  !-----------------------------------------------------------------------------
+  ! Get and unpack available message buffers
+  !-----------------------------------------------------------------------------
+  call mpi_mesg%get (buffer)
+  do while (associated(buffer))
+    call self%unpack (buffer)
+    call mpi_mesg%get (buffer)
+  end do
   call trace_end
 END SUBROUTINE check_mpi
 
@@ -340,10 +412,13 @@ SUBROUTINE check_flags (self)
   class (task_list_t):: self
   logical:: changed
   !.............................................................................
-  if (io%verbose <= 0 .or. .not.io%do_flags) return             ! avoid speed impact
-  call icheck ('id_debug.flag', id_debug   , changed)
-  call icheck ('verbose.flag' , io%verbose , changed)
-  call lcheck ('do_trace.flag', io%do_trace, changed)
+  if (io%verbose > 0 .and. io%do_flags) then             ! avoid speed impact
+    call trace_begin ('task_list_mod::check_flags')
+    call icheck ('id_debug.flag', id_debug   , changed)
+    call icheck ('verbose.flag' , io%verbose , changed)
+    call lcheck ('do_trace.flag', io%do_trace, changed)
+    call trace_end
+  end if
 contains
   !=============================================================================
   logical function exists(file)

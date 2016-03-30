@@ -1,6 +1,6 @@
 &io_params
- do_trace=f
- verbose=0
+ do_trace=t
+ verbose=1
  do_debug=f
  do_output=f
 /
@@ -37,7 +37,6 @@
 /
 &mhd_params
  gamma=1.6666667
- omega_yr=0.0,0.0,1.0
  nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta
 /

@@ -51,6 +51,8 @@ MODULE patch_mod
     procedure:: output                  ! legacy output
     procedure:: output_new              ! new output
     procedure:: output_legacy           ! legacy output
+    procedure:: pack                    ! pack patch into buffer
+    procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
     procedure:: distance                ! return the distance btw two patches
     procedure:: point_distance          ! distance btw two points
@@ -76,6 +78,7 @@ MODULE patch_mod
     procedure:: courant_condition
     procedure:: check_density
     procedure:: patch_to_header
+    procedure:: header_to_patch
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -150,13 +153,46 @@ SUBROUTINE patch_to_header (self, head)
   head%position   = self%position
   head%velocity   = self%velocity
   head%size       = self%size
+  head%it         = self%it
   head%nt         = self%nt
   nt              = self%nt
-  head%it         = self%it
   head%t(1:nt)    = self%t
   head%dt(1:nt)   = self%dt
   head%iit(1:nt)  = self%iit
 END SUBROUTINE patch_to_header
+
+!> =============================================================================
+!> Copy he most important fields to a sequenced header, for communication and I/O
+!> =============================================================================
+SUBROUTINE header_to_patch (self, head)
+  class(patch_t):: self
+  type(header_t):: head
+  integer:: nt
+  !-----------------------------------------------------------------------------
+  self%id         = head%id
+  self%status     = head%status
+  self%rank       = head%rank
+  self%istep      = head%istep
+  self%iout       = head%iout
+  self%level      = head%level
+  self%time       = head%time
+  self%end_time   = head%end_time
+  self%out_next   = head%out_next
+  self%out_time   = head%out_time
+  self%print_next = head%print_next
+  self%print_time = head%print_time
+  self%dtime      = head%dtime
+  self%position   = head%position
+  self%velocity   = head%velocity
+  self%size       = head%size
+  self%it         = head%it
+  self%nt         = head%nt
+  nt              = head%nt
+  self%t          = head%t(1:nt)
+  self%dt         = head%dt(1:nt)
+  self%iit        = head%iit(1:nt)
+END SUBROUTINE header_to_patch
+
 !> =============================================================================
 !> Check for y-redundancy
 !> =============================================================================
@@ -726,6 +762,76 @@ SUBROUTINE output_new (self)
   call buffered_output%check
   call trace_end
 END SUBROUTINE output_new
+
+!> =============================================================================
+!> Pack patch info into a buffer, for MPI communication
+!> =============================================================================
+SUBROUTINE pack (self, buffer)
+  class(patch_t):: self
+  !.............................................................................
+  type(header_t):: header
+  integer:: n_header, n_buf, n_data, ibuf, iv
+  integer, dimension(:), pointer:: buffer
+  real, dimension(:,:,:), pointer:: var
+  real:: pt
+  !-----------------------------------------------------------------------------
+  ! Compute size of buffer and allocate -- it will be freed by the writer
+  !-----------------------------------------------------------------------------
+  call trace_begin ('patch_mod::pack')
+  n_header = sizeof(header)/4
+  n_buf = product(self%gn)
+  n_data = n_header + self%nv*n_buf
+  allocate (buffer(n_data))
+  !-----------------------------------------------------------------------------
+  ! Copy relevant patch info to sequenced header, and copy that to the buffer
+  !-----------------------------------------------------------------------------
+  call patch_to_header (self, header)
+  ibuf = 1
+  call anonymous_copy (n_header, header, buffer(ibuf))
+  ibuf = ibuf + n_header
+  !-----------------------------------------------------------------------------
+  ! Copy the variables to the output buffer
+  !-----------------------------------------------------------------------------
+  do iv=1,self%nv
+    call anonymous_copy (n_buf, self%mem(:,:,:,iv,self%it,1), buffer(ibuf))
+    ibuf = ibuf + n_buf
+  end do
+  call trace_end
+END SUBROUTINE pack
+
+!> =============================================================================
+!> Pack patch info into a buffer, for MPI communication
+!> =============================================================================
+SUBROUTINE unpack (self, buffer)
+  class(patch_t):: self
+  !.............................................................................
+  type(header_t):: header
+  integer:: n_header, n_buf, ibuf, iv
+  integer, dimension(:), pointer:: buffer
+  real, dimension(:,:,:), pointer:: var
+  real:: pt
+  !-----------------------------------------------------------------------------
+  ! Compute size of buffer
+  !-----------------------------------------------------------------------------
+  call trace_begin ('patch_mod::pack')
+  n_header = sizeof(header)/4
+  n_buf = product(self%gn)
+  !-----------------------------------------------------------------------------
+  ! Copy relevant patch info from sequenced header
+  !-----------------------------------------------------------------------------
+  call header_to_patch (self, header)
+  ibuf = 1
+  call anonymous_copy (n_header, buffer(ibuf), header)
+  ibuf = ibuf + n_header
+  !-----------------------------------------------------------------------------
+  ! Copy the variables from the output buffer
+  !-----------------------------------------------------------------------------
+  do iv=1,self%nv
+    call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
+    ibuf = ibuf + n_buf
+  end do
+  call trace_end
+END SUBROUTINE unpack
 
 !> =============================================================================
 !> Write results to disk

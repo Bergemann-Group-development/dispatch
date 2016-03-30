@@ -36,6 +36,7 @@ MODULE list_mod
     procedure:: update
     procedure:: reset
     procedure:: append
+    procedure:: append_link
     procedure:: remove_link
     procedure:: remove_head
     procedure:: check_nbors
@@ -43,6 +44,7 @@ MODULE list_mod
     procedure:: check_all
     procedure:: check_queue
     procedure:: init_nbors
+    procedure:: init_all_nbors
     procedure:: remove_parents
     procedure:: overlaps
     procedure:: distance
@@ -51,6 +53,7 @@ MODULE list_mod
     procedure:: statistics
     procedure:: append_list
     procedure:: remove_task
+    procedure:: reset_status
     procedure:: add_by_quality
     procedure:: queue_by_time
     procedure:: print_queue
@@ -120,6 +123,17 @@ SUBROUTINE append (self, task)
   allocate (link)
   link%task => task
   task%link => link
+  call self%append_link (link)
+  call trace_end
+END SUBROUTINE append
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE append_link (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  !.............................................................................
+  call trace_begin ('list_t%append_link '//self%name)
   if (associated(self%tail)) then
     link%prev => self%tail
     link%prev%next => link
@@ -130,7 +144,7 @@ SUBROUTINE append (self, task)
   end if
   self%n = self%n+1
   call trace_end
-END SUBROUTINE append
+END SUBROUTINE append_link
 
 !> =============================================================================
 !> Remove a link from the list, taking special care with the head and tail
@@ -390,56 +404,132 @@ END SUBROUTINE qconsistency
 !> The very first initialization of the neighbor lists.  After this, it can be
 !> maintained without a global search.
 !> =============================================================================
-SUBROUTINE init_nbors (self)
+SUBROUTINE init_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link, scan
   class(link_t), pointer:: nbor
-  integer:: n_add = 0
+  integer:: n_add
   !.............................................................................
   call trace_begin('list_t%init_nbors ')
   call self%lock%set('init_bors')
-  link => self%head                                     ! start checking links
-  do while (associated(link))
-    nullify (link%nbor)                                 ! initially no nbor
-    n_add = 0
-    scan => self%head                                   ! scan all links (FIXME)
-    do while (associated(scan))                         ! until end
-      if (.not.associated(scan,link)) then
-        if (self%overlaps (scan%task, link%task)) then  ! if its task overlaps
-          allocate (nbor)
-          nbor%task => scan%task
-          nbor%link => scan
-          nbor%next => link%nbor
-          link%nbor => nbor
-          n_add = n_add+1
-          if (nbor%task%id==id_debug) print*, id_debug, 'mk is nbor:', link%task%id
-          if (link%task%id==id_debug) print*, id_debug, 'mk has nbor:', nbor%task%id
-          !write(io%debug_unit,*) link%task%id, ' init_nbor:', nbor%task%id
-          !---------------------------------------------------------------------
-          ! Find parents, as patches on the next lower level that have the
-          ! current patch position inside
-          !---------------------------------------------------------------------
-          if (nbor%task%level==link%task%level-1) then
-            if (all(abs(nbor%task%position-link%task%position) < nbor%task%size*0.55d0)) then
-              link%parent => nbor
-              call nbor%task%set (bits%not_leaf)
-              if (io%verbose>0) &
-                print*, 'patch', link%task%id, ' parent:', nbor%task%id
-            end if
+  nullify (link%nbor)                                 ! initially no nbor
+  n_add = 0
+  scan => self%head                                   ! scan all links (FIXME)
+  do while (associated(scan))                         ! until end
+    if (.not.associated(scan,link) .and. associated(scan%task)) then
+      if (self%overlaps (scan%task, link%task)) then  ! if its task overlaps
+        allocate (nbor)
+        nbor%task => scan%task
+        nbor%link => scan
+        nbor%next => link%nbor
+        link%nbor => nbor
+        n_add = n_add+1
+        if (nbor%task%id==id_debug) print*, id_debug, 'mk is nbor:', link%task%id
+        if (link%task%id==id_debug) print*, id_debug, 'mk has nbor:', nbor%task%id
+        !write(io%debug_unit,*) link%task%id, ' init_nbor:', nbor%task%id
+        !---------------------------------------------------------------------
+        ! Find parents, as patches on the next lower level that have the
+        ! current patch position inside
+        !---------------------------------------------------------------------
+        if (nbor%task%level==link%task%level-1) then
+          if (all(abs(nbor%task%position-link%task%position) < nbor%task%size*0.55d0)) then
+            link%parent => nbor
+            call nbor%task%set (bits%not_leaf)
+            if (io%verbose>0) &
+              print*, 'patch', link%task%id, ' parent:', nbor%task%id
           end if
         end if
       end if
-      scan => scan%next                                 ! continue search
-    end do
-    link%task%n_nbors = n_add
-    if (io%master .and. io%verbose>1) print*, &
-      'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
-    link => link%next                                   ! continue list
+    end if
+    scan => scan%next                                 ! continue search
   end do
+  link%task%n_nbors = n_add
+  if (io%master .and. io%verbose>1) print*, &
+    'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
   !$omp flush
   call self%lock%unset('init_nbors')
   call trace_end
 END SUBROUTINE init_nbors
+
+!> =============================================================================
+!> The very first initialization of the neighbor lists.  After this, it can be
+!> maintained without a global search.
+!> =============================================================================
+SUBROUTINE init_all_nbors (self)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  !.............................................................................
+  call trace_begin('list_t%init_all_nbors')
+  link => self%head                                     ! start checking links
+  do while (associated(link))
+    call self%init_nbors (link)
+    link => link%next                                   ! continue list
+  end do
+  call trace_end
+END SUBROUTINE init_all_nbors
+
+!> =============================================================================
+!> Update the nbor list of self, adding self to the each nbor's nbor list
+!> =============================================================================
+SUBROUTINE update_nbors (self)
+  class(link_t):: self
+  class(link_t), pointer:: nbor, new
+  class(link_t), pointer:: nbor
+  !.............................................................................
+  call trace_begin('list_t%init_all_nbors')
+  nbor => self%nbor                                     ! start checking nbors
+  do while (associated(nbor))                           ! loop over nbor list
+    allocate (new)                                      ! new link for nbor's nbor list
+    new%task => self%task                               ! its task is the link task
+    new%next => nbor%nbor                               ! its nbor is the nbor head
+    nbor%nbor => new                                    ! the nbor head is new
+    nbor => nbor%next                                   ! continue on nbor list
+  end do
+  call trace_end
+END SUBROUTINE update_nbors
+
+!> =============================================================================
+!> Clear and then set the virtual and boundary bits
+!> =============================================================================
+SUBROUTINE reset_status (self)
+  class(list_t):: self
+  class(link_t), pointer:: link, nbor
+  link => self%head
+  !-----------------------------------------------------------------------------
+  ! Clear virtual and boundary bits
+  !-----------------------------------------------------------------------------
+  do while (associated(link))
+    call link%task%clear(bits%virtual+bits%boundary)
+    link => link%next
+  end do
+  link => self%head
+  !-----------------------------------------------------------------------------
+  ! Set virtual bit
+  !-----------------------------------------------------------------------------
+  do while (associated(link))
+    nbor => link%nbor
+    do while (associated(nbor))
+      if (nbor%task%rank /= mpi%rank) then
+        call link%task%set(bits%virtual)
+      end if
+    end do
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Set boundary bit
+  !-----------------------------------------------------------------------------
+  link => self%head
+  do while (associated(link))
+    nbor => link%nbor
+    do while (associated(nbor))
+      if (nbor%task%is_set(bits%virtual)) then
+        call link%task%set(bits%boundary)
+      end if
+      nbor => nbor%next
+    end do
+    link => link%next
+  end do
+END SUBROUTINE reset_status
 
 !> =============================================================================
 !> Remove parent patches, which have higher level patches inside
