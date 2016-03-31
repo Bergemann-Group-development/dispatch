@@ -26,18 +26,20 @@ SUBROUTINE init (self, label)
   class(cartesian_t):: self
   character(len=*), optional:: label
   type(task_list_t):: task_list
-  integer:: dims(3) = [4,4,4]
-  integer:: mpi_dims(3) = [1,1,1]
   integer:: patches_per_mpi(3)
-  real(8):: origin(3) = [-0.5,-0.5,-0.5]
-  real(8):: size(3) = [1.0,1.0,1.0]
   real:: position(3)
   type(experiment_t), pointer:: patch
   type(link_t) , pointer:: prev=>null(), link
   class(task_t), pointer:: task
   integer:: i, j, k, i1, j1, k1, i2, j2, k2, rank, dim, nn(2,3)
   type(experiment_t), pointer, dimension(:,:,:):: patches
-  namelist /box_params/ size, dims, mpi_dims, origin
+  !
+  real(8):: size(3) = [1.0,1.0,1.0]
+  integer:: dims(3) = [4,4,4]
+  integer:: mpi_dims(3) = [1,1,1]
+  real(8):: origin(3) = [-0.5,-0.5,-0.5]
+  logical:: face_nbors=.true.
+  namelist /box_params/ size, dims, mpi_dims, origin, face_nbors
   !.............................................................................
   call trace_begin ('task_list_t%init_cartesian')
   rewind (io%input); read (io%input, box_params)
@@ -53,6 +55,7 @@ SUBROUTINE init (self, label)
   call self%task_list%init
   self%task_list%size = self%size
   self%task_list%n_tasks = product(self%dims)
+  self%task_list%face_nbors = face_nbors
   !$omp parallel do private(i,j,k,patch,task)
   do k=1,self%dims(3)
   do j=1,self%dims(2)

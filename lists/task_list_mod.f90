@@ -174,6 +174,8 @@ SUBROUTINE update (self)
     !$omp atomic
     self%n_update = self%n_update + product(task%n)
     end select
+    if (task%is_set(bits%boundary)) &                   ! boundary patch?
+      call head%send_to_vnbors                          ! send to virtual nbors
     call task%info (self%nq)                            ! print info on stdout
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the queue,

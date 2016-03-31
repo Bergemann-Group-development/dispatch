@@ -9,22 +9,29 @@ MODULE mpi_mesg_mod
   private
   include "mpif.h"
   !
-  type:: mesg_t
+  type, public:: mesg_t
     type(mesg_t), pointer:: next => null()
     integer, dimension(:), pointer:: buffer
-    integer:: req, sender, tag
+    integer, pointer:: reqs(:)
+    integer:: nbuf, nreq, req, sender, tag
+  contains
+    procedure:: send
+    procedure:: test_all
   end type
   !
-  type:: mesg_list_t
+  type, public:: mesg_list_t
     type(mesg_t), pointer:: head => null()
     type(mesg_t), pointer:: tail => null()
     integer:: n=0
     type(lock_t):: lock
+  contains
+    procedure:: add
+    procedure:: remove
   end type
   !
   type, public:: mpi_mesg_t
     logical:: initialized=.false.
-    type(mesg_list_t):: recv_list, unpack_list
+    type(mesg_list_t):: sent_list, recv_list, unpack_list
   contains
     procedure:: init
     procedure:: check
@@ -34,15 +41,69 @@ MODULE mpi_mesg_mod
 CONTAINS
 
 !> =============================================================================
+!> Send a buffer, already prepared with size and tag, returning a request id
+!> =============================================================================
+SUBROUTINE send (self, rank)
+  class(mesg_t):: self
+  integer:: rank, req, ierr
+  !.............................................................................
+  call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%tag, &
+    mpi%comm, req, ierr)
+  self%nreq = self%nreq+1                                   ! count reqs
+  self%reqs(self%nreq) = req                                ! collect reqs
+END SUBROUTINE send
+
+!> =============================================================================
+!> Test if all requests are comlete
+!> =============================================================================
+SUBROUTINE test_all (self, flag)
+  class(mesg_t):: self
+  logical:: flag
+  integer:: rank, req, ierr
+  !.............................................................................
+  call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+END SUBROUTINE test_all
+
+!> =============================================================================
+!> Append a mesg at the end of the message list
+!> =============================================================================
+SUBROUTINE add (self, mesg)
+  class(mesg_list_t):: self
+  type(mesg_t), pointer:: mesg
+  !.............................................................................
+  nullify (mesg%next)
+  if (associated(self%tail)) self%tail%next => mesg
+  self%tail => mesg
+END SUBROUTINE add
+
+!> =============================================================================
+!> Remove the message at the head of the message list, and deallocate its
+!> allocatable parts
+!> =============================================================================
+SUBROUTINE remove (self, mesg)
+  class(mesg_list_t):: self
+  type(mesg_t), pointer:: mesg
+  !.............................................................................
+  self%head => mesg%next
+  deallocate (mesg%buffer)
+  deallocate (mesg%reqs)
+END SUBROUTINE remove
+
+!> =============================================================================
+!> Initialize the three message lists
+!> =============================================================================
 SUBROUTINE init (self)
   class(mpi_mesg_t):: self
   !.............................................................................
   if (self%initialized) return
+  call self%sent_list%lock%init ('mpi_mesg')
   call self%recv_list%lock%init ('mpi_mesg')
   call self%unpack_list%lock%init ('mpi_mesg')
   self%initialized = .true.
 END SUBROUTINE init
 
+!> =============================================================================
+!> Check for new incoming messages
 !> =============================================================================
 SUBROUTINE check (self)
   class(mpi_mesg_t):: self

@@ -4,10 +4,12 @@
 MODULE link_mod
   USE io_mod
   USE mpi_mod
+  USE mpi_mesg_mod
   USE trace_mod
   USE bits_mod
   USE task_mod
   USE patch_mod
+  USE experiment_mod
   implicit none
   private
 
@@ -21,9 +23,11 @@ MODULE link_mod
     class(link_t), pointer :: next_time => null()    ! next link in time order
   contains
     procedure:: add_nbor_by_quality
+    procedure:: add_nbor_by_rank
     procedure:: make_new_nbors
     procedure:: make_new_nbor
     procedure:: update_nbors
+    procedure:: send_to_vnbors
     procedure:: print_nbors
   end type
   public task2patch
@@ -128,6 +132,52 @@ SUBROUTINE add_nbor_by_quality (self, this)
 END SUBROUTINE add_nbor_by_quality
 
 !> =============================================================================
+!> Add a link node into the nbors list of self, in increasing quality order.
+!> self must be a link whose 'nbors' points to a chain of nbors
+!> =============================================================================
+SUBROUTINE add_nbor_by_rank (self, this)
+  class(link_t):: self
+  class(link_t), pointer:: this
+  class(link_t), pointer:: next, prev
+  !.............................................................................
+  call trace_begin ('list_t%add_nbor_by_rank')
+  nullify (prev)
+  next => self%nbor
+  do while (associated(next))
+    if (.not.associated(next%task,this%task)) then
+      if (next%task%rank >= this%task%rank) then
+        !-------------------------------------------------------------------------
+        ! Found a task we should be ahead of, so insert here
+        !-------------------------------------------------------------------------
+        this%next => next
+        if (associated(prev)) then
+          prev%next => this
+        else
+          self%nbor => this
+        end if
+        self%task%n_nbors = self%task%n_nbors+1
+        call trace_end
+        goto 9
+      end if
+    end if
+    prev => next
+    next => next%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! This task has the highest rank, so append it
+  !-----------------------------------------------------------------------------
+  if (associated(prev)) then
+    prev%next => this
+    nullify (this%next)
+  else
+    self%nbor => this
+  end if
+  self%task%n_nbors = self%task%n_nbors+1
+9 continue
+  call trace_end
+END SUBROUTINE add_nbor_by_rank
+
+!> =============================================================================
 FUNCTION task2patch (task) RESULT (patch)
   class(task_t), pointer:: task
   class(patch_t), pointer:: patch
@@ -147,17 +197,79 @@ SUBROUTINE update_nbors (self)
   class(link_t):: self
   class(link_t), pointer:: nbor, new
   !.............................................................................
-  call trace_begin('list_t%init_all_nbors')
+  call trace_begin('list_mod::init_all_nbors')
   nbor => self%nbor                                     ! start checking nbors
   do while (associated(nbor))                           ! loop over nbor list
     allocate (new)                                      ! new link for nbor's nbor list
     new%task => self%task                               ! its task is the link task
-    new%next => nbor%nbor                               ! its nbor is the nbor head
-    nbor%nbor => new                                    ! the nbor head is new
+    call nbor%add_nbor_by_rank (new)                    ! add a new nbor link
     nbor => nbor%next                                   ! continue on nbor list
   end do
   call trace_end
 END SUBROUTINE update_nbors
+
+!> =============================================================================
+!> Send a package with updated time slice info to neighbor ranks.
+!>
+!> 1) assemble patch data into a message
+!> 3) send the message to the nbors rank (only once per rank)
+!> 4) add the message to a sent_list
+!> 5) check the sent list for completed sends
+!> 6) remove the message from the sent_list and disassemble the message
+!> =============================================================================
+SUBROUTINE send_to_vnbors (self)
+  class(link_t):: self
+  class(link_t), pointer:: nbor
+  class(task_t), pointer:: task
+  type(mesg_t), pointer:: mesg, next
+  logical:: flag
+  integer:: ierr, rank
+  !.............................................................................
+  call trace_begin('list_mod::send_to_vnbors')
+  !-----------------------------------------------------------------------------
+  ! Pack the experiment patch data into a mesg (and allocate mesg%rews),
+  ! elevating the task type to make sure to use the most comprehensive pack
+  ! procedure (in case there is an experiment specific one)
+  !-----------------------------------------------------------------------------
+  task => self%task
+  select type (task)
+  class is (experiment_t)
+    call task%pack (mesg)
+  end select
+  !-----------------------------------------------------------------------------
+  ! Send to all unique ranks in the nbor list (which is sorted by rank)
+  !-----------------------------------------------------------------------------
+  allocate (mesg)
+  allocate (mesg%reqs(task%n_nbors))                            ! at most this many
+  rank = -1                                                     ! previous rank
+  nbor => self%nbor                                             ! first nbor
+  do while (associated(nbor))                                   ! until end
+    task => nbor%task
+    if (task%rank/=mpi%rank .and. task%rank/=rank) then         ! new rank?
+      rank = nbor%task%rank                                     ! current rank
+      call mesg%send (rank)                                     ! send it
+    end if
+    nbor => nbor%next                                           ! next nbor
+  end do
+  !-----------------------------------------------------------------------------
+  ! Add the message to a list of sent messages, and check which previously sent
+  ! messages that may now be deallocated.  The test is fast, so we can leave the
+  ! list locked while updating.
+  !-----------------------------------------------------------------------------
+  call mpi_mesg%sent_list%lock%set ('send')
+  call mpi_mesg%sent_list%add (mesg)                            ! add to sent_list
+  mesg => mpi_mesg%sent_list%head                               ! top of list
+  do while (associated(mesg))
+    next => mesg%next
+    call mesg%test_all (flag)
+    if (flag) then
+      call mpi_mesg%sent_list%remove (mesg)
+    end if
+    mesg => next
+  end do
+  call mpi_mesg%sent_list%lock%unset ('send')
+  call trace_end
+END SUBROUTINE send_to_vnbors
 
 !> =============================================================================
 !> Print a list of nbors

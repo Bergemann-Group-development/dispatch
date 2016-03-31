@@ -8,6 +8,7 @@ MODULE patch_mod
   USE omp_mod
   USE omp_lock_mod
   USE omp_timer_mod
+  USE mpi_mesg_mod
   USE bits_mod
   USE trace_mod
   USE mpi_mod
@@ -765,11 +766,12 @@ END SUBROUTINE output_new
 !> =============================================================================
 !> Pack patch info into a buffer, for MPI communication
 !> =============================================================================
-SUBROUTINE pack (self, buffer)
+SUBROUTINE pack (self, mesg)
   class(patch_t):: self
+  type(mesg_t):: mesg
   !.............................................................................
   type(header_t):: header
-  integer:: n_header, n_buf, n_data, ibuf, iv
+  integer:: n_header, n_var, ibuf, iv
   integer, dimension(:), pointer:: buffer
   real, dimension(:,:,:), pointer:: var
   real:: pt
@@ -778,9 +780,11 @@ SUBROUTINE pack (self, buffer)
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::pack')
   n_header = sizeof(header)/4
-  n_buf = product(self%gn)
-  n_data = n_header + self%nv*n_buf
-  allocate (buffer(n_data))
+  n_var = product(self%gn)
+  mesg%nbuf = n_header + self%nv*n_var
+  allocate (mesg%buffer(mesg%nbuf))
+  mesg%tag = self%id
+  mesg%nreq = 0                                                 ! reset counting
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info to sequenced header, and copy that to the buffer
   !-----------------------------------------------------------------------------
@@ -792,8 +796,8 @@ SUBROUTINE pack (self, buffer)
   ! Copy the variables to the output buffer
   !-----------------------------------------------------------------------------
   do iv=1,self%nv
-    call anonymous_copy (n_buf, self%mem(:,:,:,iv,self%it,1), buffer(ibuf))
-    ibuf = ibuf + n_buf
+    call anonymous_copy (n_var, self%mem(:,:,:,iv,self%it,1), buffer(ibuf))
+    ibuf = ibuf + n_var
   end do
   call trace_end
 END SUBROUTINE pack
@@ -1293,6 +1297,6 @@ SUBROUTINE check_density (self, label)
          'WARNING: density non-positive in',ntot,' points,',nins,' inside'
     end if
   end if
-END SUBROUTINE
+END SUBROUTINE check_density
 
 END MODULE

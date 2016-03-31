@@ -27,10 +27,7 @@ MODULE list_mod
     integer:: n_tasks=1
     type(lock_t):: lock
     character(len=4):: kind='list'
-    !---------------------------------------------------------------------------
-    ! from patch_list_mod
-    !---------------------------------------------------------------------------
-    !integer:: dims(3)
+    logical:: face_nbors=.true.
   contains
     procedure:: init
     procedure:: update
@@ -48,6 +45,7 @@ MODULE list_mod
     procedure:: remove_parents
     procedure:: overlaps
     procedure:: distance
+    procedure:: intpos
     procedure:: consistency
     procedure:: qconsistency
     procedure:: statistics
@@ -430,8 +428,7 @@ SUBROUTINE init_nbors (self, link)
         allocate (nbor)
         nbor%task => scan%task
         nbor%link => scan
-        nbor%next => link%nbor
-        link%nbor => nbor
+        call link%add_nbor_by_rank (nbor)
         n_add = n_add+1
         if (nbor%task%id==id_debug) print*, id_debug, 'mk is nbor:', link%task%id
         if (link%task%id==id_debug) print*, id_debug, 'mk has nbor:', nbor%task%id
@@ -451,13 +448,13 @@ SUBROUTINE init_nbors (self, link)
         !-----------------------------------------------------------------------
         ! If one or more of the nbors is virtual, set the boundary bit
         !-----------------------------------------------------------------------
-        if (nbor%task%is_set(bits%virtual)) &
+        if (link%task%rank==mpi%rank .and. nbor%task%is_set(bits%virtual)) &
           call link%task%set(bits%boundary)
       end if
     end if
     scan => scan%next                                 ! continue search
   end do
-  link%task%n_nbors = n_add
+  link%task%n_nbors = n_add                           ! remember n_nbors
   if (io%master .and. io%verbose>1) print*, &
     'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
   if (io%verbose>1) write (io%log_unit,*) &
@@ -523,18 +520,24 @@ SUBROUTINE reset_status (self)
   do while (associated(link))
     nbor => link%nbor
     do while (associated(nbor))
-      if (nbor%task%is_set(bits%virtual)) then
+      if (link%task%rank==mpi%rank .and. nbor%task%is_set(bits%virtual)) then
         call link%task%set(bits%boundary)
       end if
+      write (io%log_unit,'(2(a,i7,i4,2l4,5x,a,3i4,10x))') &
+        'link:', link%task%id, link%task%rank, &
+                 link%task%is_set(bits%boundary), &
+                 link%task%is_set(bits%virtual), &
+        'pos:', self%intpos(link%task), &
+        'nbor:', nbor%task%id, nbor%task%rank, &
+                 nbor%task%is_set(bits%boundary), &
+                 nbor%task%is_set(bits%virtual), &
+        'pos:', self%intpos(nbor%task,link%task)
       nbor => nbor%next
     end do
     if (link%task%is_set(bits%boundary)) then
       n_boundary = n_boundary + 1
       n_internal = n_internal - 1
     end if
-    write (io%log_unit,'(a,i7,2(5x,a,l4))') &
-      'id:', link%task%id, 'boundary:', link%task%is_set(bits%boundary), &
-      'virtual:', link%task%is_set(bits%virtual)
     link => link%next
   end do
   write (io%log_unit,'(4(a,i7,5x))') &
@@ -593,6 +596,24 @@ END FUNCTION distance
 
 !> =============================================================================
 !> =============================================================================
+FUNCTION intpos (self, task1, task2) RESULT (out)
+  class(list_t):: self
+  class(task_t), pointer:: task1
+  class(task_t), pointer, optional:: task2
+  real:: dist(3)
+  integer:: out(3)
+  !.............................................................................
+  if (present(task2)) then
+    dist = task1%position - task2%position
+    dist = modulo (dist + 0.5*self%size, self%size) - 0.5*self%size
+    out = floor(dist/task1%size + 0.5)
+  else
+    out = floor(task1%position/task1%size + 0.5)
+  end if
+END FUNCTION intpos
+
+!> =============================================================================
+!> =============================================================================
 FUNCTION overlaps (self, task1, task2, label)
   class(list_t):: self
   class(task_t), pointer:: task1, task2
@@ -602,7 +623,12 @@ FUNCTION overlaps (self, task1, task2, label)
   !.............................................................................
   call trace_begin ('task_list_t%overlap', 3)
   dist = self%distance(task1,task2)
-  overlaps = all(self%distance(task1,task2) < 0.50000001_8*(task1%size+task2%size))
+  if (self%face_nbors) then
+    overlaps = sum(self%distance(task1,task2)/(task1%size+task2%size)) &
+             < 0.50000001_8
+  else
+    overlaps = all(self%distance(task1,task2) < 0.50000001_8*(task1%size+task2%size))
+  end if
   if (self%debug>3.or.present(label)) then
     block
     real(8):: limit(3)
