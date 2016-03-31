@@ -31,21 +31,19 @@ SUBROUTINE init (self)
    integer, save:: seed=-33
    logical, save:: mhd=.true.
    real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0
-   character(len=32):: type='single_solenoidal'
+   character(len=32), save:: type='single_solenoidal'
    namelist /initial_params/ seed, k, a0, u0, b0, d0, s0, mhd, type
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
+   !$omp critical (input_cr)
    if (first_time) then
-    !$omp critical (experiment_cr)
-     if (first_time) then
-       first_time = .false.
-       rewind (io%input)
-       read (io%input, initial_params)
-       mhd = any(self%b0 /= 0.0)
-       if (io%master) write (*, initial_params)
-     end if
-    !$omp end critical (experiment_cr)
+     first_time = .false.
+     rewind (io%input)
+     read (io%input, initial_params)
+     mhd = any(self%b0 /= 0.0)
+     if (io%master) write (*, initial_params)
    end if
+   !$omp end critical (input_cr)
    self%seed   = seed
    self%k      = k
    self%a0     = a0
@@ -81,7 +79,6 @@ FUNCTION single_solenoidal (self, m) RESULT (ff)
   real(8)               :: kx, ky, kz
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal')
-  if (first_time) call self%init
   self%phi = 0.0
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
@@ -116,7 +113,6 @@ FUNCTION single_compressive (self, m) RESULT (ff)
   real(8)               :: kx, ky, kz
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive')
-  if (first_time) call self%init
   self%phi = 0.0
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
@@ -151,7 +147,6 @@ FUNCTION single_advection (self, m) RESULT (ff)
   real(8)               :: kx, ky, kz
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive')
-  if (first_time) call self%init
   self%phi = 0.0
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)

@@ -29,21 +29,19 @@ CONTAINS
 SUBROUTINE init (self)
    class(force_t):: self
    integer,save:: seed=-11, iostat
-   character(len=32):: type='zero'
+   character(len=32), save:: type='zero'
    real, save:: t_turn=0.3, a0(3)=0.1, k(3)=1.0
    namelist /force_params/ k, a0, t_turn, type
    !----------------------------------------------------------------------------
    call trace_begin('force_t%init')
+   !$omp critical (input_cr)
    if (first_time) then
-    !$omp critical (experiment_cr)
-     if (first_time) then
-       first_time = .false.
-       rewind (io%input)
-       read (io%input, force_params, iostat=iostat)
-       if (io%master) write (*, force_params)
-     end if
-    !$omp end critical (experiment_cr)
+     first_time = .false.
+     rewind (io%input)
+     read (io%input, force_params, iostat=iostat)
+     if (io%master) write (*, force_params)
    end if
+   !$omp end critical (input_cr)
    self%seed   = seed
    self%t_turn = t_turn
    self%a0     = a0
@@ -74,7 +72,6 @@ FUNCTION single_solenoidal (self, time, Ux, Uy, Uz, m) RESULT (ff)
   real(8)               :: kx, ky, kz
   !-----------------------------------------------------------------------------
   call trace_begin('force_t:single_solenoidal')
-  if (first_time) call self%init
   if (time >= self%t_save) then
     self%a = self%a0*random%ran3()
     self%phi = pi2*random%ran3()

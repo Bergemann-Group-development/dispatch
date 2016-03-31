@@ -32,7 +32,6 @@ MODULE mhd_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
   end type
-  logical, save:: first_time=.true.
 CONTAINS
 
 !> =============================================================================
@@ -43,19 +42,18 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0
   integer:: i
+  logical, save:: first_time=.true.
   namelist /mhd_params/ nu, gamma
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
+  !$omp critical (input_cr)
   if (first_time) then
-    !$omp critical (mhd_cr)
-    if (first_time) then
-      first_time = .false.
-      rewind (io%input)
-      read (io%input, mhd_params)
-      if (io%master) write (*, mhd_params)
-    end if
-    !$omp end critical (mhd_cr)
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, mhd_params)
+    if (io%master) write (*, mhd_params)
   end if
+  !$omp end critical (input_cr)
   self%nu = nu
   self%gamma = gamma
   do i=1,3
@@ -86,7 +84,6 @@ SUBROUTINE update (self)
   real:: ds(3), dx
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%update')
-  call self%init
   self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
   self%s => self%mem(:,:,:,  2,self%it,1); self%dsdt => self%mem(:,:,:,  2,self%it,2)
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
