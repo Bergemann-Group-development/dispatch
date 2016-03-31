@@ -88,9 +88,11 @@ SUBROUTINE init (self)
   call trace_begin ('task_t%init')
   if (first_time) then
     first_time = .false.
-    call mpi%win_create (id)
+    id = mpi%rank+1
+  else
+    !$omp atomic
+    id = id+mpi%size
   end if
-  call mpi%win_increment (id)
   self%id = id
   write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)
