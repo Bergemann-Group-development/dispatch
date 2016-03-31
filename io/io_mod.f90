@@ -46,9 +46,9 @@ SUBROUTINE init (self, name)
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, levelmax
   real:: test
   !.............................................................................
-  call print_id (id)
   call init_omp
   io%master = io%master .and. (mpi%rank==0)
+  call print_id (id)
   !$omp critical (io_cr)
   if (first_time) then
     !---------------------------------------------------------------------------

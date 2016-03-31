@@ -101,7 +101,7 @@ SUBROUTINE toc_r (label, n)
   real(8):: omp_get_wtime
   !.............................................................................
   wt = (omp_get_wtime() - wt)
-  print 1, label, trim(time_str(wt)), trim(time_str(wt*omp_nthreads/n)), '/upd,', n, 'updates'
+  print 1, label, trim(time_str(wt)), trim(time_str(wt*omp_nthreads/max(n,1.))), '/upd,', n, 'updates'
 1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a)
   wt = omp_get_wtime()
 END SUBROUTINE toc_r

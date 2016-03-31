@@ -58,8 +58,8 @@ SUBROUTINE trace_begin (id, set_verbose)
     write(*,fmt) omp_mythread(), wallclock(), trim(id)//' begin'
     call flush(6)
   end if
-  write (io%log_unit,fmt) omp_mythread(), wallclock(), trim(id)//' begin'
-  call flush(io%log_unit)
+  !write (io%log_unit,fmt) omp_mythread(), wallclock(), trim(id)//' begin'
+  !call flush(io%log_unit)
 END SUBROUTINE trace_begin
 
 !> =============================================================================
@@ -95,8 +95,8 @@ SUBROUTINE trace_end
     write(*,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' end'
   end if
   call flush(6)
-  write (io%log_unit,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' end'
-  call flush(io%log_unit)
+  !write (io%log_unit,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' end'
+  !call flush(io%log_unit)
   indent = max(indent-3,4)
 END SUBROUTINE trace_end
 

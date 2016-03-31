@@ -260,7 +260,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
   !-----------------------------------------------------------------------------
-  !$omp critical (init_cr)
+  !$omp critical (input_cr)
   if (first_time) then
     size = self%size
     n    = self%n
@@ -278,7 +278,7 @@ SUBROUTINE init (self)
     if (io%master) write (*, out_params)
   end if
   !print *, 'MK', omp_mythread(), self%id, self%nt, nt
-  !$omp end critical (init_cr)
+  !$omp end critical (input_cr)
   self%n           = n                          ! patch dimensions
   self%ng          = ng                         ! patch dimensions
   self%nv          = nv                         ! patch dimensions
@@ -970,7 +970,17 @@ SUBROUTINE info (self, nq, experiment_name)
       nv = 1
       if (io%verbose>2) nv = self%nv
       do iv=1,nv
-        print '(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,o8,2x,i4)', &
+        1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,o8,2x,i4)
+        print 1, &
+          'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
+          minval(self%mem(:,:,:,iv,self%it ,2)), &
+          maxval(self%mem(:,:,:,iv,self%it ,2)), &
+          minval(self%mem(:,:,:,iv,self%it ,1)), &
+          maxval(self%mem(:,:,:,iv,self%it ,1)), &
+          minval(self%mem(:,:,:,iv,self%new,1)), &
+          maxval(self%mem(:,:,:,iv,self%new,1)), &
+          self%status, nq
+        write (io%log_unit,1) &
           'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
           maxval(self%mem(:,:,:,iv,self%it ,2)), &

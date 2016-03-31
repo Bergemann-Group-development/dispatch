@@ -10,9 +10,9 @@
 
 &io_params
  verbose=0
- do_trace=t
+ do_trace=f
  do_debug=f
- do_output=t
+ do_output=f
 /
 &box_params
  size=1,1,1
@@ -25,6 +25,7 @@
 /
 &patch_params
  nt=5
+ courant=0.2
  n=25,25,25
 !dt_fixed=0.001
 /
@@ -36,7 +37,6 @@
  time_derivs=f
 /
 &mhd_params
- courant=0.2
  nu=  0.10, 2.0, 1.0, 0.2, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
 /

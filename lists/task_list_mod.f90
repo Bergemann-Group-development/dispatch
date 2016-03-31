@@ -397,7 +397,7 @@ SUBROUTINE print_tasklist (self, label)
   character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
   !.............................................................................
-  print*, label
+  if (io%master) print*, label
   link => self%head
   do while (associated(link))
     call link%print_nbors ('')

@@ -909,7 +909,7 @@ SUBROUTINE print_queue (self)
     print '(i4,$)', link%task%id
     link => link%next_time
   end do
-  print*,''
+  if (io%master) print*,''
 END SUBROUTINE print_queue
 
 !> =============================================================================
@@ -921,7 +921,7 @@ SUBROUTINE print_queue_until (self, task)
   class(link_t) , pointer:: link, nbor
   !.............................................................................
   link => self%queue
-  print*,'print_queue_until:'
+  if (io%master) print*,'print_queue_until:'
   do while (associated(link))
     print '("queue: id, t0, t, t0-t =",i7,1p,3e12.3)', &
       link%task%id, task%time, link%task%time, task%time-link%task%time
@@ -938,7 +938,7 @@ SUBROUTINE print_queue_times (self)
   class(link_t) , pointer:: link, nbor
   !.............................................................................
   link => self%queue
-  print*,'print_queue_times:'
+  if (io%master) print*,'print_queue_times:'
   do while (associated(link))
     print '("queue: id, time =",i7,1p,e14.5)', link%task%id, link%task%time
     link => link%next_time
@@ -955,7 +955,7 @@ SUBROUTINE print_list (self, label)
   character(len=32):: type
   !.............................................................................
   call trace_begin ('list_t%print')
-  print*,'list_t%print: ',trim(self%name), self%n
+  if (io%master) print*,'list_t%print: ',trim(self%name), self%n
   link => self%head
   do while (associated(link))
     task => link%task
