@@ -299,7 +299,7 @@ SUBROUTINE init (self)
   self%print_time  = print_time
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   if (all(self%size==self%box)) then
-    print*,'task', self%id, ' is root grid'
+    print *, mpi%rank, 'task', self%id, ' is root grid'
     call self%set(bits%root_grid)
   end if
   !-----------------------------------------------------------------------------

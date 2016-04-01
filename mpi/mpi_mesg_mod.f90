@@ -22,6 +22,7 @@ MODULE mpi_mesg_mod
   type, public:: mesg_list_t
     type(mesg_t), pointer:: head => null()
     type(mesg_t), pointer:: tail => null()
+    character(len=16):: name
     integer:: n=0
     type(lock_t):: lock
   contains
@@ -79,7 +80,7 @@ SUBROUTINE add (self, mesg)
   end if
   self%tail => mesg
   self%n = self%n+1
-  print *, mpi%rank, ' added mesg', mesg%id, ' list size is', self%n; flush(6)
+  print *, mpi%rank, trim(self%name)//' added mesg', mesg%id, self%n; flush(6)
 END SUBROUTINE add
 
 !> =============================================================================
@@ -91,11 +92,22 @@ SUBROUTINE remove (self, this)
   type(mesg_t), pointer:: this, mesg, next
   !.............................................................................
   mesg => self%head                                     ! list start
+  if (associated(mesg,this)) then
+    self%head => mesg%next                            ! skip this
+    deallocate (this%buffer)                          ! free to dealloc
+    deallocate (this%reqs)
+    self%n = self%n-1                                 ! count down
+print *, mpi%rank, trim(self%name)//' remove mesg OK', this%id; flush(6)
+    return
+  end if
   do while (associated(mesg))                           ! as long as ..
     next => mesg%next                                   ! tentative
     if (associated(next,this)) then                     ! is it this?
+print *, mpi%rank, trim(self%name)//' remove mesg OK', this%id; flush(6)
       next => next%next                                 ! skip this
       mesg%next => next                                 ! bypass this
+      if (associated(self%head,this)) self%head => next ! case this==head
+      if (associated(self%tail,this)) self%tail => mesg ! case this==tail
       deallocate (this%buffer)                          ! free to dealloc
       deallocate (this%reqs)
       self%n = self%n-1                                 ! count down
@@ -103,6 +115,7 @@ SUBROUTINE remove (self, this)
     end if
     mesg => next                                        ! next in list
   end do
+print *, mpi%rank, trim(self%name)//' remove mesg FAIL', this%id; flush(6)
 END SUBROUTINE remove
 
 !> =============================================================================
@@ -115,6 +128,9 @@ SUBROUTINE init (self)
   call self%sent_list%lock%init ('mpi_mesg')
   call self%recv_list%lock%init ('mpi_mesg')
   call self%unpack_list%lock%init ('mpi_mesg')
+  self%sent_list%name = 'sent_list'
+  self%recv_list%name = 'recv_list'
+  self%unpack_list%name = 'unpk_list'
   self%initialized = .true.
 END SUBROUTINE init
 
@@ -140,12 +156,9 @@ SUBROUTINE check (self)
     mesg%req = req
     mesg%id = stat(MPI_TAG)
     mesg%sender = stat(MPI_SOURCE)
-    print*, mpi%rank, 'rcvd', mesg%id, ' from', mesg%sender; flush(6)
     call self%recv_list%lock%set ('check')
-    if (associated(self%recv_list%tail)) &
-      self%recv_list%tail%next => mesg
-    self%recv_list%tail => mesg
-    self%recv_list%n = self%recv_list%n + 1
+    call self%recv_list%add (mesg)
+print*, mpi%rank, 'rcvd', mesg%id, self%recv_list%n, ' from', mesg%sender; flush(6)
     call self%recv_list%lock%unset ('check')
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   end do
@@ -163,13 +176,12 @@ SUBROUTINE check (self)
       self%recv_list%head => mesg%next
       self%recv_list%n = self%recv_list%n - 1
       call self%unpack_list%lock%set ('check')
-      self%unpack_list%tail%next => mesg
-      self%unpack_list%tail => mesg
-      self%unpack_list%n = self%unpack_list%n + 1
+      call self%unpack_list%add (mesg)
       call self%unpack_list%lock%unset ('check')
-      print*, mpi%rank, 'rcvd', mesg%id, ' from', mesg%sender, ' complete'; flush(6)
+print*, mpi%rank, 'rcvd', mesg%id, self%recv_list%n, self%unpack_list%n, &
+  ' from', mesg%sender, ' complete'; flush(6)
     else
-      print*, mpi%rank, 'rcvd', mesg%id, ' from', mesg%sender, ' complete'; flush(6)
+!      print*, mpi%rank, 'rcvd', mesg%id, mesg%req, ' from', mesg%sender, ' incomplete'; flush(6)
     end if
     mesg => mesg%next
   end do

@@ -210,7 +210,9 @@ FUNCTION find_task (self, id) RESULT (link)
   !.............................................................................
   link => self%head
   do while (associated(link))
+!print *,mpi%rank,' find task: id, link%id, virtual =', id, link%task%id, link%task%is_set(bits%virtual)
     if (link%task%id == id) then
+print *,mpi%rank,' find task: match', id; flush(6)
       return
     end if
     link => link%next
@@ -221,6 +223,8 @@ FUNCTION find_task (self, id) RESULT (link)
   allocate (link)
   allocate (task)
   task%id = id
+  task%box = self%size
+print *,mpi%rank,' find task: new task', id, task%box; flush(6)
   call task%init
   !-----------------------------------------------------------------------------
   ! Create a neighbor list, and update the nbor lists of the nbors, before adding

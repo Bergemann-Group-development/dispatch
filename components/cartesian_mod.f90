@@ -100,6 +100,7 @@ SUBROUTINE init (self, label)
       deallocate (patch)
     else
       call patch%init
+      patch%id = patch%id - mpi%rank + patch%rank             ! adjust id of vpatch
       patch%i = i; patch%j = j; patch%k = k
       if (all(self%dims==1)) call patch%set(bits%root_grid)
       if (io%verbose>1) &

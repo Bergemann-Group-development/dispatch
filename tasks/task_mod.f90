@@ -33,7 +33,7 @@ MODULE task_mod
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0
     real(8):: velocity(3) = 0d0
-    real(8):: size(3) = 1d0
+    real(8):: size(3) = 0.9999d0
     real(8):: wallclock
     character(len=32), pointer:: name
     class(task_t), pointer:: parent
@@ -89,11 +89,12 @@ SUBROUTINE init (self)
   if (first_time) then
     first_time = .false.
     id = mpi%rank+1
-  else
+    self%id = id
+  else if (self%id==0) then
     !$omp atomic
     id = id+mpi%size
+    self%id = id
   end if
-  self%id = id
   write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)
   scene%n_patch = self%id

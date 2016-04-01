@@ -298,9 +298,9 @@ SUBROUTINE send_to_vnbors (self)
     next => mesg%next                                           ! in case removed
     call mesg%test_all (flag)                                   ! done with?
     if (flag) then
-      if (debug) write(io%log_unit,*) 'sent_list%remove mesg', mesg%id
+      if (debug) write(io%log_unit,*) 'sent_list remove mesg', mesg%id
       if (debug) flush(io%log_unit)
-      print *, mpi%rank, 'sent_list%remove mesg', mesg%id; flush(6)
+print *, mpi%rank, 'sent_list remove mesg', mesg%id; flush(6)
       call mpi_mesg%sent_list%remove (mesg)                     ! yes, remove
     else
 !      print *, mpi%rank, 'send_to_vnbors mesg', mesg%id, 'not removed'; flush(6)
