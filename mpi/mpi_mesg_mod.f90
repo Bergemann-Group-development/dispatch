@@ -72,9 +72,14 @@ SUBROUTINE add (self, mesg)
   type(mesg_t), pointer:: mesg
   !.............................................................................
   nullify (mesg%next)
-  if (associated(self%tail)) self%tail%next => mesg
+  if (associated(self%tail)) then
+    self%tail%next => mesg
+  else
+    self%head => mesg
+  end if
   self%tail => mesg
   self%n = self%n+1
+  print *, mpi%rank, ' added mesg', mesg%id, ' list size is', self%n; flush(6)
 END SUBROUTINE add
 
 !> =============================================================================
@@ -90,6 +95,7 @@ SUBROUTINE remove (self, this)
     next => mesg%next                                   ! tentative
     if (associated(next,this)) then                     ! is it this?
       next => next%next                                 ! skip this
+      mesg%next => next                                 ! bypass this
       deallocate (this%buffer)                          ! free to dealloc
       deallocate (this%reqs)
       self%n = self%n-1                                 ! count down
@@ -161,6 +167,8 @@ SUBROUTINE check (self)
       self%unpack_list%tail => mesg
       self%unpack_list%n = self%unpack_list%n + 1
       call self%unpack_list%lock%unset ('check')
+      print*, mpi%rank, 'rcvd', mesg%id, ' from', mesg%sender, ' complete'; flush(6)
+    else
       print*, mpi%rank, 'rcvd', mesg%id, ' from', mesg%sender, ' complete'; flush(6)
     end if
     mesg => mesg%next

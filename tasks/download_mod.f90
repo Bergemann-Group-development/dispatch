@@ -336,7 +336,7 @@ SUBROUTINE find_time (other, time, jt, pt)
   end if
   if (.not.found) then
     pt(2) = 0.0
-    if (other%is_clear(bits%virtual)) &
+    if (other%is_clear(bits%virtual) .and. io%verbose>2) &
       print '(i6,i4,2x,a,2i4,2f9.4,3x,"time",f9.4,3x,"other%t",7f9.5)', &
       other%id, omp_mythread(), 'WARNING: using fall-back', &
       jt, pt, time, other%t(other%iit(1:other%nt-1))

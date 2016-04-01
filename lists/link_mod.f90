@@ -302,6 +302,8 @@ SUBROUTINE send_to_vnbors (self)
       if (debug) flush(io%log_unit)
       print *, mpi%rank, 'sent_list%remove mesg', mesg%id; flush(6)
       call mpi_mesg%sent_list%remove (mesg)                     ! yes, remove
+    else
+!      print *, mpi%rank, 'send_to_vnbors mesg', mesg%id, 'not removed'; flush(6)
     end if
     mesg => next                                                ! true next
   end do

@@ -76,7 +76,7 @@ FUNCTION single_solenoidal (self, time, Ux, Uy, Uz, m) RESULT (ff)
     self%a = self%a0*random%ran3()
     self%phi = pi2*random%ran3()
     self%t_save = self%t_save + self%t_turn
-    if (io%verbose>0) print *,'forcing', self%a, self%phi
+!     if (io%verbose>3) print *,'forcing', self%a, self%phi
   end if
 
   do iz=m(3)%lb,m(3)%ub
