@@ -222,6 +222,7 @@ print *,mpi%rank,' find task: match', id; flush(6)
   !-----------------------------------------------------------------------------
   allocate (link)
   allocate (task)
+  link%task => task
   task%id = id
   task%box = self%size
 print *,mpi%rank,' find task: new task', id, task%box; flush(6)

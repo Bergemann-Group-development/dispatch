@@ -70,7 +70,7 @@ END SUBROUTINE test_all
 !> =============================================================================
 SUBROUTINE add (self, mesg)
   class(mesg_list_t):: self
-  type(mesg_t), pointer:: mesg
+  class(mesg_t), pointer:: mesg
   !.............................................................................
   nullify (mesg%next)
   if (associated(self%tail)) then
@@ -80,7 +80,7 @@ SUBROUTINE add (self, mesg)
   end if
   self%tail => mesg
   self%n = self%n+1
-  print *, mpi%rank, trim(self%name)//' added mesg', mesg%id, self%n; flush(6)
+!print *, mpi%rank, trim(self%name)//' added mesg', mesg%id, self%n; flush(6)
 END SUBROUTINE add
 
 !> =============================================================================
@@ -89,7 +89,7 @@ END SUBROUTINE add
 !> =============================================================================
 SUBROUTINE remove (self, this)
   class(mesg_list_t):: self
-  type(mesg_t), pointer:: this, mesg, next
+  class(mesg_t), pointer:: this, mesg, next
   !.............................................................................
   mesg => self%head                                     ! list start
   if (associated(mesg,this)) then
@@ -97,13 +97,13 @@ SUBROUTINE remove (self, this)
     deallocate (this%buffer)                          ! free to dealloc
     deallocate (this%reqs)
     self%n = self%n-1                                 ! count down
-print *, mpi%rank, trim(self%name)//' remove mesg OK', this%id; flush(6)
+!print *, mpi%rank, trim(self%name)//' remove mesg OK', this%id; flush(6)
     return
   end if
   do while (associated(mesg))                           ! as long as ..
     next => mesg%next                                   ! tentative
     if (associated(next,this)) then                     ! is it this?
-print *, mpi%rank, trim(self%name)//' remove mesg OK', this%id; flush(6)
+!print *, mpi%rank, trim(self%name)//' remove mesg OK', this%id; flush(6)
       next => next%next                                 ! skip this
       mesg%next => next                                 ! bypass this
       if (associated(self%head,this)) self%head => next ! case this==head
@@ -115,7 +115,7 @@ print *, mpi%rank, trim(self%name)//' remove mesg OK', this%id; flush(6)
     end if
     mesg => next                                        ! next in list
   end do
-print *, mpi%rank, trim(self%name)//' remove mesg FAIL', this%id; flush(6)
+!print *, mpi%rank, trim(self%name)//' remove mesg FAIL', this%id; flush(6)
 END SUBROUTINE remove
 
 !> =============================================================================
@@ -158,7 +158,7 @@ SUBROUTINE check (self)
     mesg%sender = stat(MPI_SOURCE)
     call self%recv_list%lock%set ('check')
     call self%recv_list%add (mesg)
-print*, mpi%rank, 'rcvd', mesg%id, self%recv_list%n, ' from', mesg%sender; flush(6)
+!print*, mpi%rank, 'rcvd', mesg%id, self%recv_list%n, ' from', mesg%sender; flush(6)
     call self%recv_list%lock%unset ('check')
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   end do
@@ -178,10 +178,9 @@ print*, mpi%rank, 'rcvd', mesg%id, self%recv_list%n, ' from', mesg%sender; flush
       call self%unpack_list%lock%set ('check')
       call self%unpack_list%add (mesg)
       call self%unpack_list%lock%unset ('check')
-print*, mpi%rank, 'rcvd', mesg%id, self%recv_list%n, self%unpack_list%n, &
-  ' from', mesg%sender, ' complete'; flush(6)
+!print*, mpi%rank, 'rcvd', mesg%id, self%recv_list%n, self%unpack_list%n, & ' from', mesg%sender, ' complete'; flush(6)
     else
-!      print*, mpi%rank, 'rcvd', mesg%id, mesg%req, ' from', mesg%sender, ' incomplete'; flush(6)
+!print*, mpi%rank, 'rcvd', mesg%id, mesg%req, ' from', mesg%sender, ' incomplete'; flush(6)
     end if
     mesg => mesg%next
   end do
@@ -202,7 +201,7 @@ SUBROUTINE get (self, mesg)
   if (associated(mesg)) then
     self%unpack_list%head => mesg%next
     self%unpack_list%n = self%unpack_list%n - 1
-    print*, mpi%rank, 'get ', mesg%id, ' from', mesg%sender; flush(6)
+!print*, mpi%rank, 'get ', mesg%id, ' from', mesg%sender; flush(6)
   end if
   call self%unpack_list%lock%unset ('get')
   call trace_end

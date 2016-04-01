@@ -31,7 +31,7 @@ MODULE link_mod
     procedure:: print_nbors
   end type
   public task2patch
-  logical, save:: debug=.true.
+  logical, save:: debug=.false.
 CONTAINS
 
 !> =============================================================================
@@ -251,7 +251,7 @@ SUBROUTINE send_to_vnbors (self)
   class(link_t):: self
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task
-  type(mesg_t), pointer:: mesg, next
+  class(mesg_t), pointer:: mesg, next
   logical:: flag
   integer:: ierr, rank
   !.............................................................................
@@ -279,7 +279,7 @@ SUBROUTINE send_to_vnbors (self)
       rank = nbor%task%rank                                     ! current rank
       if (debug) write(io%log_unit,*) 'mesg%send to rank', rank
       if (debug) flush(io%log_unit)
-      print *, mpi%rank, 'mesg%send', mesg%id, ' to rank', rank; flush(6)
+!print *, mpi%rank, 'mesg%send', mesg%id, ' to rank', rank; flush(6)
       call mesg%send (rank)                                     ! send it
     end if
     nbor => nbor%next                                           ! next nbor
@@ -300,10 +300,10 @@ SUBROUTINE send_to_vnbors (self)
     if (flag) then
       if (debug) write(io%log_unit,*) 'sent_list remove mesg', mesg%id
       if (debug) flush(io%log_unit)
-print *, mpi%rank, 'sent_list remove mesg', mesg%id; flush(6)
+!print *, mpi%rank, 'sent_list remove mesg', mesg%id; flush(6)
       call mpi_mesg%sent_list%remove (mesg)                     ! yes, remove
     else
-!      print *, mpi%rank, 'send_to_vnbors mesg', mesg%id, 'not removed'; flush(6)
+!print *, mpi%rank, 'send_to_vnbors mesg', mesg%id, 'not removed'; flush(6)
     end if
     mesg => next                                                ! true next
   end do

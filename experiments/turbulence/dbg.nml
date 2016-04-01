@@ -10,7 +10,7 @@
  size=1,1,1
  dims=8,8,8
  origin=0,0,0
- mpi_dims=2,1,1
+ mpi_dims=2,2,2
  face_nbors=f
 /
 &experiment_params

@@ -622,7 +622,6 @@ FUNCTION overlaps (self, task1, task2, label)
   real(8):: dist(3)
   !.............................................................................
   call trace_begin ('task_list_t%overlap', 3)
-  dist = self%distance(task1,task2)
   if (self%face_nbors) then
     overlaps = sum(self%distance(task1,task2)/(task1%size+task2%size)) &
              < 0.50000001_8

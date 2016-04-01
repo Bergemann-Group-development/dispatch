@@ -768,7 +768,7 @@ END SUBROUTINE output_new
 !> =============================================================================
 SUBROUTINE pack (self, mesg)
   class(patch_t):: self
-  type(mesg_t), pointer:: mesg
+  class(mesg_t), pointer:: mesg
   !.............................................................................
   type(header_t):: header
   integer:: n_header, n_var, ibuf, iv
