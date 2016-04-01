@@ -31,6 +31,7 @@ MODULE link_mod
     procedure:: print_nbors
   end type
   public task2patch
+  logical, save:: debug=.true.
 CONTAINS
 
 !> =============================================================================
@@ -209,69 +210,6 @@ SUBROUTINE update_nbors (self)
 END SUBROUTINE update_nbors
 
 !> =============================================================================
-!> Send a package with updated time slice info to neighbor ranks.
-!>
-!> 1) assemble patch data into a message
-!> 3) send the message to the nbors rank (only once per rank)
-!> 4) add the message to a sent_list
-!> 5) check the sent list for completed sends
-!> 6) remove the message from the sent_list and disassemble the message
-!> =============================================================================
-SUBROUTINE send_to_vnbors (self)
-  class(link_t):: self
-  class(link_t), pointer:: nbor
-  class(task_t), pointer:: task
-  type(mesg_t), pointer:: mesg, next
-  logical:: flag
-  integer:: ierr, rank
-  !.............................................................................
-  call trace_begin('list_mod::send_to_vnbors')
-  !-----------------------------------------------------------------------------
-  ! Pack the experiment patch data into a mesg (and allocate mesg%rews),
-  ! elevating the task type to make sure to use the most comprehensive pack
-  ! procedure (in case there is an experiment specific one)
-  !-----------------------------------------------------------------------------
-  task => self%task
-  select type (task)
-  class is (experiment_t)
-    call task%pack (mesg)
-  end select
-  !-----------------------------------------------------------------------------
-  ! Send to all unique ranks in the nbor list (which is sorted by rank)
-  !-----------------------------------------------------------------------------
-  allocate (mesg)
-  allocate (mesg%reqs(task%n_nbors))                            ! at most this many
-  rank = -1                                                     ! previous rank
-  nbor => self%nbor                                             ! first nbor
-  do while (associated(nbor))                                   ! until end
-    task => nbor%task
-    if (task%rank/=mpi%rank .and. task%rank/=rank) then         ! new rank?
-      rank = nbor%task%rank                                     ! current rank
-      call mesg%send (rank)                                     ! send it
-    end if
-    nbor => nbor%next                                           ! next nbor
-  end do
-  !-----------------------------------------------------------------------------
-  ! Add the message to a list of sent messages, and check which previously sent
-  ! messages that may now be deallocated.  The test is fast, so we can leave the
-  ! list locked while updating.
-  !-----------------------------------------------------------------------------
-  call mpi_mesg%sent_list%lock%set ('send')
-  call mpi_mesg%sent_list%add (mesg)                            ! add to sent_list
-  mesg => mpi_mesg%sent_list%head                               ! top of list
-  do while (associated(mesg))
-    next => mesg%next
-    call mesg%test_all (flag)
-    if (flag) then
-      call mpi_mesg%sent_list%remove (mesg)
-    end if
-    mesg => next
-  end do
-  call mpi_mesg%sent_list%lock%unset ('send')
-  call trace_end
-END SUBROUTINE send_to_vnbors
-
-!> =============================================================================
 !> Print a list of nbors
 !> =============================================================================
 SUBROUTINE print_nbors (self, label)
@@ -299,5 +237,76 @@ SUBROUTINE print_nbors (self, label)
   end do
   print*,''
 END SUBROUTINE print_nbors
+
+!> =============================================================================
+!> Send a package with updated time slice info to neighbor ranks.
+!>
+!> 1) assemble patch data into a message
+!> 3) send the message to the nbors rank (only once per rank)
+!> 4) add the message to a sent_list
+!> 5) check the sent list for completed sends
+!> 6) remove the message from the sent_list and disassemble the message
+!> =============================================================================
+SUBROUTINE send_to_vnbors (self)
+  class(link_t):: self
+  class(link_t), pointer:: nbor
+  class(task_t), pointer:: task
+  type(mesg_t), pointer:: mesg, next
+  logical:: flag
+  integer:: ierr, rank
+  !.............................................................................
+  call trace_begin('list_mod::send_to_vnbors')
+  !-----------------------------------------------------------------------------
+  ! Pack the experiment patch data into a mesg (and allocate mesg%rews),
+  ! elevating the task type to make sure to use the most comprehensive pack
+  ! procedure (in case there is an experiment specific one)
+  !-----------------------------------------------------------------------------
+  task => self%task
+  select type (task)
+  class is (experiment_t)
+    if (debug) write(io%log_unit,*) 'pack: id to mesg', task%id
+    if (debug) flush(io%log_unit)
+    call task%pack (mesg)                                       ! allocates mesg
+  end select
+  !-----------------------------------------------------------------------------
+  ! Send to all unique ranks in the nbor list (which is sorted by rank)
+  !-----------------------------------------------------------------------------
+  rank = -1                                                     ! previous rank
+  nbor => self%nbor                                             ! first nbor
+  do while (associated(nbor))                                   ! until end
+    task => nbor%task
+    if (task%rank/=mpi%rank .and. task%rank/=rank) then         ! new rank?
+      rank = nbor%task%rank                                     ! current rank
+      if (debug) write(io%log_unit,*) 'mesg%send to rank', rank
+      if (debug) flush(io%log_unit)
+      print *, mpi%rank, 'mesg%send', mesg%id, ' to rank', rank; flush(6)
+      call mesg%send (rank)                                     ! send it
+    end if
+    nbor => nbor%next                                           ! next nbor
+  end do
+  !-----------------------------------------------------------------------------
+  ! Add the message to a list of sent messages, and check which previously sent
+  ! messages that may now be deallocated.  The test is fast, so we can leave the
+  ! list locked while updating.
+  !-----------------------------------------------------------------------------
+  call mpi_mesg%sent_list%lock%set ('send')
+  if (debug) write(io%log_unit,*) 'sent_list%add mesg', mesg%id
+  if (debug) flush(io%log_unit)
+  call mpi_mesg%sent_list%add (mesg)                            ! add to sent_list
+  mesg => mpi_mesg%sent_list%head                               ! top of list
+  do while (associated(mesg))
+    next => mesg%next                                           ! in case removed
+    call mesg%test_all (flag)                                   ! done with?
+    if (flag) then
+      if (debug) write(io%log_unit,*) 'sent_list%remove mesg', mesg%id
+      if (debug) flush(io%log_unit)
+      print *, mpi%rank, 'sent_list%remove mesg', mesg%id; flush(6)
+      call mpi_mesg%sent_list%remove (mesg)                     ! yes, remove
+    end if
+    mesg => next                                                ! true next
+  end do
+  call mpi_mesg%sent_list%lock%unset ('send')
+  call trace_end
+END SUBROUTINE send_to_vnbors
 
 END MODULE link_mod

@@ -13,7 +13,7 @@ MODULE mpi_mesg_mod
     type(mesg_t), pointer:: next => null()
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:)
-    integer:: nbuf, nreq, req, sender, tag
+    integer:: nbuf, nreq, req, sender, id
   contains
     procedure:: send
     procedure:: test_all
@@ -41,20 +41,20 @@ MODULE mpi_mesg_mod
 CONTAINS
 
 !> =============================================================================
-!> Send a buffer, already prepared with size and tag, returning a request id
+!> Send a buffer, already prepared with size and id tag, returning a request id
 !> =============================================================================
 SUBROUTINE send (self, rank)
   class(mesg_t):: self
   integer:: rank, req, ierr
   !.............................................................................
-  call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%tag, &
+  call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
     mpi%comm, req, ierr)
   self%nreq = self%nreq+1                                   ! count reqs
   self%reqs(self%nreq) = req                                ! collect reqs
 END SUBROUTINE send
 
 !> =============================================================================
-!> Test if all requests are comlete
+!> Test if all requests are complete
 !> =============================================================================
 SUBROUTINE test_all (self, flag)
   class(mesg_t):: self
@@ -74,19 +74,29 @@ SUBROUTINE add (self, mesg)
   nullify (mesg%next)
   if (associated(self%tail)) self%tail%next => mesg
   self%tail => mesg
+  self%n = self%n+1
 END SUBROUTINE add
 
 !> =============================================================================
-!> Remove the message at the head of the message list, and deallocate its
-!> allocatable parts
+!> Remove a message from a message list, and deallocate the beffer and reqs
+!> The list has no prev pointers, so we need to search for the message first.
 !> =============================================================================
-SUBROUTINE remove (self, mesg)
+SUBROUTINE remove (self, this)
   class(mesg_list_t):: self
-  type(mesg_t), pointer:: mesg
+  type(mesg_t), pointer:: this, mesg, next
   !.............................................................................
-  self%head => mesg%next
-  deallocate (mesg%buffer)
-  deallocate (mesg%reqs)
+  mesg => self%head                                     ! list start
+  do while (associated(mesg))                           ! as long as ..
+    next => mesg%next                                   ! tentative
+    if (associated(next,this)) then                     ! is it this?
+      next => next%next                                 ! skip this
+      deallocate (this%buffer)                          ! free to dealloc
+      deallocate (this%reqs)
+      self%n = self%n-1                                 ! count down
+      return                                            ! done
+    end if
+    mesg => next                                        ! next in list
+  end do
 END SUBROUTINE remove
 
 !> =============================================================================
@@ -122,17 +132,19 @@ SUBROUTINE check (self)
     allocate (mesg%buffer(nbuf))
     call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
     mesg%req = req
-    mesg%tag = stat(MPI_TAG)
+    mesg%id = stat(MPI_TAG)
     mesg%sender = stat(MPI_SOURCE)
+    print*, mpi%rank, 'rcvd', mesg%id, ' from', mesg%sender; flush(6)
     call self%recv_list%lock%set ('check')
-    self%recv_list%tail%next => mesg
+    if (associated(self%recv_list%tail)) &
+      self%recv_list%tail%next => mesg
     self%recv_list%tail => mesg
     self%recv_list%n = self%recv_list%n + 1
     call self%recv_list%lock%unset ('check')
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   end do
   !-----------------------------------------------------------------------------
-  ! Check the recv_list for completed receives
+  ! Check the recv_list for completed receives, adding them to unpack_list
   !-----------------------------------------------------------------------------
   call trace_tag ('check')
   call self%recv_list%lock%set ('check')
@@ -149,6 +161,7 @@ SUBROUTINE check (self)
       self%unpack_list%tail => mesg
       self%unpack_list%n = self%unpack_list%n + 1
       call self%unpack_list%lock%unset ('check')
+      print*, mpi%rank, 'rcvd', mesg%id, ' from', mesg%sender, ' complete'; flush(6)
     end if
     mesg => mesg%next
   end do
@@ -157,25 +170,22 @@ SUBROUTINE check (self)
 END SUBROUTINE check
 
 !> =============================================================================
-!> Return the first buffer from the unpack_list, if non-empty
+!> Get the head mesg from the unpack_list, if non-empty, and move the head.
 !> =============================================================================
-SUBROUTINE get (self, buffer)
+SUBROUTINE get (self, mesg)
   class(mpi_mesg_t):: self
-  integer, dimension(:), pointer:: buffer
   class(mesg_t), pointer:: mesg
   !-----------------------------------------------------------------------------
+  call trace_begin('mpi_mesg_mod::get')
   call self%unpack_list%lock%set ('get')
   mesg => self%unpack_list%head
   if (associated(mesg)) then
-    buffer => mesg%buffer
     self%unpack_list%head => mesg%next
     self%unpack_list%n = self%unpack_list%n - 1
-    call self%unpack_list%lock%unset ('get')
-    deallocate (mesg)
-  else
-    call self%unpack_list%lock%unset ('get')
-    nullify(buffer)
+    print*, mpi%rank, 'get ', mesg%id, ' from', mesg%sender; flush(6)
   end if
+  call self%unpack_list%lock%unset ('get')
+  call trace_end
 END SUBROUTINE get
 
 END MODULE mpi_mesg_mod

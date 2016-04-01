@@ -768,35 +768,36 @@ END SUBROUTINE output_new
 !> =============================================================================
 SUBROUTINE pack (self, mesg)
   class(patch_t):: self
-  type(mesg_t):: mesg
+  type(mesg_t), pointer:: mesg
   !.............................................................................
   type(header_t):: header
   integer:: n_header, n_var, ibuf, iv
-  integer, dimension(:), pointer:: buffer
   real, dimension(:,:,:), pointer:: var
   real:: pt
   !-----------------------------------------------------------------------------
   ! Compute size of buffer and allocate -- it will be freed by the writer
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::pack')
+  allocate (mesg)
   n_header = sizeof(header)/4
   n_var = product(self%gn)
   mesg%nbuf = n_header + self%nv*n_var
   allocate (mesg%buffer(mesg%nbuf))
-  mesg%tag = self%id
-  mesg%nreq = 0                                                 ! reset counting
+  allocate (mesg%reqs(self%n_nbors))
+  mesg%id = self%id                                             ! MPI message tag
+  mesg%nreq = 0                                                 ! reset counter
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info to sequenced header, and copy that to the buffer
   !-----------------------------------------------------------------------------
   call patch_to_header (self, header)
   ibuf = 1
-  call anonymous_copy (n_header, header, buffer(ibuf))
+  call anonymous_copy (n_header, header, mesg%buffer(ibuf))
   ibuf = ibuf + n_header
   !-----------------------------------------------------------------------------
   ! Copy the variables to the output buffer
   !-----------------------------------------------------------------------------
   do iv=1,self%nv
-    call anonymous_copy (n_var, self%mem(:,:,:,iv,self%it,1), buffer(ibuf))
+    call anonymous_copy (n_var, self%mem(:,:,:,iv,self%it,1), mesg%buffer(ibuf))
     ibuf = ibuf + n_var
   end do
   call trace_end
@@ -822,10 +823,10 @@ SUBROUTINE unpack (self, buffer)
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info from sequenced header
   !-----------------------------------------------------------------------------
-  call header_to_patch (self, header)
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
+  call self%header_to_patch (header)
   !-----------------------------------------------------------------------------
   ! Copy the variables from the output buffer
   !-----------------------------------------------------------------------------

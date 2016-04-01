@@ -232,24 +232,22 @@ FUNCTION find_task (self, id) RESULT (link)
 END FUNCTION find_task
 
 !> =============================================================================
-!> Unpack a buffer, where the first word is the task id.  Use that to search
+!> Unpack a message, where the MPI tag is the task id.  Use that to search
 !> for the task, apply its unpack method, and check if any nbors become ready.
 !> =============================================================================
-SUBROUTINE unpack (self, buffer)
+SUBROUTINE unpack (self, mesg)
   class(task_list_t):: self
-  integer, dimension(:), pointer:: buffer
+  class(mesg_t), pointer:: mesg
   class(link_t), pointer:: link
   class(task_t), pointer:: task
   class(experiment_t), pointer:: patch
-  integer:: id
   !-----------------------------------------------------------------------------
-  id = buffer(1)
-  link => self%find_task (id)
+  link => self%find_task (mesg%id)
   task => link%task
   select type (task)
   class is (experiment_t)
     patch => task
-    call patch%unpack (buffer)
+    call patch%unpack (mesg%buffer)
   end select
   call self%check_nbors (link)
 END SUBROUTINE unpack
@@ -259,7 +257,7 @@ END SUBROUTINE unpack
 !> =============================================================================
 SUBROUTINE check_mpi (self)
   class(task_list_t):: self
-  integer, dimension(:), pointer:: buffer
+  class(mesg_t), pointer:: mesg
   !.............................................................................
   call trace_begin ('check_mpi',1)
   !-----------------------------------------------------------------------------
@@ -269,10 +267,10 @@ SUBROUTINE check_mpi (self)
   !-----------------------------------------------------------------------------
   ! Get and unpack available message buffers
   !-----------------------------------------------------------------------------
-  call mpi_mesg%get (buffer)
-  do while (associated(buffer))
-    call self%unpack (buffer)
-    call mpi_mesg%get (buffer)
+  call mpi_mesg%get (mesg)
+  do while (associated(mesg))
+    call self%unpack (mesg)
+    call mpi_mesg%get (mesg)
   end do
   call trace_end
 END SUBROUTINE check_mpi

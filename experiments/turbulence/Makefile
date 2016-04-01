@@ -1,6 +1,6 @@
 
 # Option groups
-#OPTS = debug
+OPTS = debug
 #OPTS = full_debug
 #OPTS = optimized
 
