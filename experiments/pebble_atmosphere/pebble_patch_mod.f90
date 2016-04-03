@@ -18,7 +18,7 @@ MODULE pebble_patch_mod
   USE task_mod
   USE patch_mod
   USE mhd_mod
-  USE list_mod
+  USE link_mod
   USE planet_mod
   USE atmosphere_mod
   USE star_mod
@@ -89,7 +89,6 @@ SUBROUTINE init (self)
   call trace_begin ('pebble_patch_mod::init', 3)
   call random%init
   random%seed = 11
-  call self%patch_t%init
   allocate (self%pebbles,self%not_done)
   call self%pebbles%init (self%id)
   call self%not_done%init (self%id)

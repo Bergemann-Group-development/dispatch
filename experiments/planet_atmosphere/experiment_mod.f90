@@ -39,12 +39,11 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   self%nv = 8
   self%msplit = 3
-  call self%initial%init
-  call self%patch_t%init
-  call self%set(bits%static)
-  call self%initial%selected(self%mem, self%mesh)
-  call force%init
   call self%mhd_t%init
+  call self%set (bits%static)
+  call self%initial%init
+  call self%initial%selected (self%mem, self%mesh)
+  call force%init
   call trace_end
 END SUBROUTINE init
 

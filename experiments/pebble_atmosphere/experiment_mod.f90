@@ -14,7 +14,6 @@ MODULE experiment_mod
   USE planet_mod
   USE mesh_mod
   USE boundary_mod
-  USE force_mod
   implicit none
   private
   type, public, extends(pebble_patch_t):: experiment_t
@@ -38,10 +37,10 @@ CONTAINS
 !>     rubiks_mod::init                         ! makes all patches
 !>       experiment_mod::init                   ! calls other inits
 !>         mhd_mod::init                        ! reads gamma
+!>           force_mod::init                    ! initialize forcing
 !>         pebbles_mod::init                    ! reads omega
 !>         initial_mod::init                    ! selects ICs
 !>         initial_mod::selected                ! computes ICs
-!>         force_mod::init                      ! initialize forcing
 !>         boundary_mod::condition              ! apply BCs to ICs
 !> =============================================================================
 SUBROUTINE init (self)
@@ -49,18 +48,17 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
-  call scaling%init
   !----------------------------------------------------------------------------
   ! Allocate memory and set IC values
   !----------------------------------------------------------------------------
   self%nv = 8
   self%msplit = 3
+  call scaling%init
   call self%mhd_t%init                        ! reads gamma
   call self%pebble_patch_t%init               ! reads omega
-  call self%set(bits%static)
+  call self%set (bits%static)
   call self%initial%init
-  call self%initial%selected(self%mem, self%mesh, self%omega)
-  call force%init
+  call self%initial%selected (self%mem, self%mesh, self%omega)
   call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
   call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
   call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,0d0,-0.5d0])
