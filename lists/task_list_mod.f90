@@ -120,6 +120,7 @@ SUBROUTINE update (self)
   !.............................................................................
   class(link_t), pointer:: head
   class(task_t), pointer:: task
+  class(mesg_t), pointer:: mesg
   integer:: n1
   !.............................................................................
   call trace_begin('task_list_t%update')
@@ -174,8 +175,18 @@ SUBROUTINE update (self)
     !$omp atomic
     self%n_update = self%n_update + product(task%n)
     end select
-    if (task%is_set(bits%boundary)) &                   ! boundary patch?
-      call head%send_to_vnbors                          ! send to virtual nbors
+    if (task%is_set(bits%boundary)) then                ! boundary patch?
+      !-------------------------------------------------------------------------
+      ! Pack the experiment patch data into a mesg (allocates mesg and mesg%reqs),
+      ! elevating the task type to make sure to use the most comprehensive pack
+      ! procedure (in case there is an experiment specific one)
+      !-------------------------------------------------------------------------
+      select type (task)
+      class is (experiment_t)
+        call task%pack (mesg)                           ! allocates mesg
+      end select
+      call head%send_to_vnbors (mesg)                   ! send to virtual nbors
+    end if
     call task%info (self%nq)                            ! print info on stdout
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the queue,
@@ -264,6 +275,7 @@ SUBROUTINE check_mpi (self)
   class(task_list_t):: self
   class(mesg_t), pointer:: mesg
   !.............................................................................
+  if (mpi%size <= 1) return
   call trace_begin ('check_mpi',1)
   !-----------------------------------------------------------------------------
   ! Check for new or completed incoming messages

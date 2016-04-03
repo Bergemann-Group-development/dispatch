@@ -149,7 +149,7 @@ cleandata:
 cleandirs:
 	rm -rf data .d
 clean-deps:
-	rm -f .d/*.d
+	rm -f .d/*.*d
 cleaner: clean
 	rm -f *.x *.bak *.optrpt *.exe *.pyc
 cleanest: cleaner cleandata cleanlog clean-deps cleandirs

@@ -9,7 +9,6 @@ MODULE link_mod
   USE bits_mod
   USE task_mod
   USE patch_mod
-  USE experiment_mod
   implicit none
   private
 
@@ -247,7 +246,7 @@ END SUBROUTINE print_nbors
 !> 5) check the sent list for completed sends
 !> 6) remove the message from the sent_list and disassemble the message
 !> =============================================================================
-SUBROUTINE send_to_vnbors (self)
+SUBROUTINE send_to_vnbors (self, mesg)
   class(link_t):: self
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task
@@ -256,18 +255,6 @@ SUBROUTINE send_to_vnbors (self)
   integer:: ierr, rank
   !.............................................................................
   call trace_begin('list_mod::send_to_vnbors')
-  !-----------------------------------------------------------------------------
-  ! Pack the experiment patch data into a mesg (and allocate mesg%rews),
-  ! elevating the task type to make sure to use the most comprehensive pack
-  ! procedure (in case there is an experiment specific one)
-  !-----------------------------------------------------------------------------
-  task => self%task
-  select type (task)
-  class is (experiment_t)
-    if (debug) write(io%log_unit,*) 'pack: id to mesg', task%id
-    if (debug) flush(io%log_unit)
-    call task%pack (mesg)                                       ! allocates mesg
-  end select
   !-----------------------------------------------------------------------------
   ! Send to all unique ranks in the nbor list (which is sorted by rank)
   !-----------------------------------------------------------------------------
