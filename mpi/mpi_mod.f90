@@ -34,7 +34,6 @@ MODULE mpi_mod
   integer:: mpi_comm            ! short hand for mpi_comm_world
   integer:: mpi_size            ! number of MPI processes
   integer:: mpi_rank            ! process number (zero-based)
-  integer:: win                 ! MPI window to "id"
   integer:: output=2
   integer, parameter:: mch=120
   logical:: first_time = .true.
@@ -47,8 +46,6 @@ MODULE mpi_mod
     logical:: ok = .false.
   contains
     procedure:: init
-    procedure:: win_create
-    procedure:: win_increment
     procedure:: barrier => barrier_
     procedure:: print => print_
     procedure:: assert
@@ -90,31 +87,6 @@ SUBROUTINE init (mp, mpi_dims, dims)
   mp%master = mpi%master
   mp%ok     = mpi%ok
 END SUBROUTINE init
-
-!> =============================================================================
-!> Open an MPI window to the task id counter on rank 0
-!> =============================================================================
-SUBROUTINE win_create (mp, id)
-  class(mpi_t):: mp
-  integer:: id, ierr
-  !-----------------------------------------------------------------------------
-  call MPI_Win_create (id, 4_8, 1, MPI_INFO_NULL, mp%comm, win, ierr)
-END SUBROUTINE
-
-!> =============================================================================
-!> Increment the task id counter on rank 0 and return the value
-!> =============================================================================
-SUBROUTINE win_increment (mp, id)
-  class(mpi_t):: mp
-  integer:: id, ierr
-  !-----------------------------------------------------------------------------
-  call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, 0, 0, win, ierr)
-  call MPI_Accumulate(1, 1, MPI_INTEGER, 0, 0_8, &
-                         1, MPI_INTEGER, MPI_SUM, win, ierr)
-  call MPI_Get (id,      1, MPI_INTEGER, 0, 0_8, &
-                         1, MPI_INTEGER, win, ierr)
-  call MPI_Win_unlock (0, win, ierr)
-END SUBROUTINE
 
 !> =============================================================================
 !> =============================================================================
