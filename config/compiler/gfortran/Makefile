@@ -7,6 +7,7 @@ HW =
 PREC = 4
 W = -Wline-truncation -Wno-surprising -w
 D = -DPREC=$(PREC)
+DEBUG = -g -fbacktrace 
 
 # Depending on MPI use mpif90 or not
 ifeq ($(strip $(MPI)),mpi)
