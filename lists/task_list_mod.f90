@@ -437,9 +437,9 @@ contains
   integer:: value
   logical:: changed
   if (exists(trim(file))) then
-    open (io%flag_unit, file=trim(file), form='formatted', status='old')
-    read (io%flag_unit,*) value
-    close (io%flag_unit,status='delete')
+    open (io_unit%flag, file=trim(file), form='formatted', status='old')
+    read (io_unit%flag,*) value
+    close (io_unit%flag,status='delete')
     print*, 'flag check:', file, value
     changed = .true.
   else
@@ -452,9 +452,9 @@ contains
   logical:: value
   logical:: changed
   if (exists(trim(file))) then
-    open (io%flag_unit, file=trim(file), form='formatted', status='old')
-    read (io%flag_unit,*) value
-    close (io%flag_unit,status='delete')
+    open (io_unit%flag, file=trim(file), form='formatted', status='old')
+    read (io_unit%flag,*) value
+    close (io_unit%flag,status='delete')
     print*, 'flag check:', file, value
     changed = .true.
   else

@@ -46,6 +46,7 @@ SUBROUTINE init (self)
   namelist /mhd_params/ nu, gamma
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
+  call self%patch_t%init
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -291,7 +292,7 @@ SUBROUTINE output (self, experiment_name)
   character(len=64):: experiment_name, filename
   optional:: experiment_name
   !-----------------------------------------------------------------------------
-  if (self%time < self%out_next .or. .not.io%do_output) return
+  if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
   !$omp critical (output_cr)
   call self%patch_t%output (experiment_name)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &

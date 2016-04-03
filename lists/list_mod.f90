@@ -282,7 +282,6 @@ SUBROUTINE check_ready (self, link, set_debug)
   task => link%task                                     ! already checked?
   call task%lock%set ('check_ready')                    ! one at a time
   !$omp flush (task)
-  !write(io%debug_unit,*) id_debug, 'check_ready:', task%time
   if (task%is_clear(bits%ready)) then
     call trace_begin('list_t%check_ready '//self%name,2)
     nbor => link%nbor                                   ! start on nbor list
@@ -293,7 +292,6 @@ SUBROUTINE check_ready (self, link, set_debug)
       if (task%id==id_debug.or.io%verbose>3) &
         print*, task%id, 'checking nbor', &
         nbtask%id, ahead, nbtask%time-task%time
-      !write(io%debug_unit,*) id_debug, 'check_ready:', nbtask%id, nbtask%time-task%time, ahead
       if (ahead) then
         nbor => nbor%next                               ! next nbor
       else
@@ -318,7 +316,6 @@ SUBROUTINE check_ready (self, link, set_debug)
     call self%qconsistency(2)
     if (task%id==id_debug) print*, id_debug, 'mk being queued at time', task%time
     call self%queue_by_time (link)                      ! add task to queue
-    !write(io%debug_unit,*) id_debug, 'check_ready: queued', task%time
     if (task%id==id_debug) print*, id_debug, 'mk was   queued at time', task%time
     self%n_ready = self%n_ready+1
     if (self%debug>0) print *, task%id, ' found by check_ready, nq =', self%nq
@@ -432,7 +429,6 @@ SUBROUTINE init_nbors (self, link)
         n_add = n_add+1
         if (nbor%task%id==id_debug) print*, id_debug, 'mk is nbor:', link%task%id
         if (link%task%id==id_debug) print*, id_debug, 'mk has nbor:', nbor%task%id
-        !write(io%debug_unit,*) link%task%id, ' init_nbor:', nbor%task%id
         !---------------------------------------------------------------------
         ! Find parents, as patches on the next lower level that have the
         ! current patch position inside

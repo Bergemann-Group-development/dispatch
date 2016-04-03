@@ -116,26 +116,26 @@ SUBROUTINE trace_output (self, i, close_key)
   if (io%verbose>0) &
     print*,'pebble_trace: ', trim(filename), self%buffer(i)%record, self%buffer(i)%n
   if (self%buffer(i)%record == 0) then
-    open (io%trace_unit, file=trim(filename), form='unformatted', &
+    open (io_unit%trace, file=trim(filename), form='unformatted', &
       status='unknown')
-    close (io%trace_unit, status='delete')
-    open (io%trace_unit, file=trim(filename), form='unformatted', &
+    close (io_unit%trace, status='delete')
+    open (io_unit%trace, file=trim(filename), form='unformatted', &
       status='new')
-    write (io%trace_unit) key, self%buffer(i)%status
-    write (io%trace_unit) self%buffer(i)%s
+    write (io_unit%trace) key, self%buffer(i)%status
+    write (io_unit%trace) self%buffer(i)%s
   else
-    open (io%trace_unit, file=trim(filename), form='unformatted', &
+    open (io_unit%trace, file=trim(filename), form='unformatted', &
       status='unknown', position = 'append')
-    backspace (io%trace_unit)
+    backspace (io_unit%trace)
   end if
   n =  self%buffer(i)%n
   self%buffer(i)%record = self%buffer(i)%record+1
-  write (io%trace_unit) self%buffer(i)%id, self%buffer(i)%record, self%buffer(i)%n
-  write (io%trace_unit) self%buffer(i)%ip(1:n)
-  write (io%trace_unit) self%buffer(i)%v(:,1:n)
+  write (io_unit%trace) self%buffer(i)%id, self%buffer(i)%record, self%buffer(i)%n
+  write (io_unit%trace) self%buffer(i)%ip(1:n)
+  write (io_unit%trace) self%buffer(i)%v(:,1:n)
   self%buffer(i)%n = 0
-  write (io%trace_unit) 0,0,0,0
-  close (io%trace_unit)
+  write (io_unit%trace) 0,0,0,0
+  close (io_unit%trace)
   call self%lock%unset ('trace_output')
   call trace_end
 END SUBROUTINE trace_output

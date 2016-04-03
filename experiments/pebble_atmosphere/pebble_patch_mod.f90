@@ -786,7 +786,6 @@ SUBROUTINE update_pebbles (self)
     if (io%verbose>3) &
       print*, 'not_done =', self%not_done%n, self%pebbles%dt_min, self%pebbles%dt_max
     call self%gather (self%not_done, nbors)
-    !write(io%debug_unit,*) self%id,' pebble gather end', self%not_done%n, self%pebbles%n
     n = n+1
     if (n > 1000) then
       print*,'ERROR: gather loop stuck, removing these pebbles:'
@@ -800,10 +799,6 @@ SUBROUTINE update_pebbles (self)
       self%not_done%n = 0
     end if
   end do
-  !write(io%debug_unit,*) self%id, ' update_pebbles: n =', self%pebbles%n
-  !write(io%debug_unit,*) self%id,' pebble gather end', self%pebbles%n_export, &
-    !self%pebbles%n_frozen, self%pebbles%n_accrete
-  !flush (io%debug_unit)
   if (io%verbose>3) &
     print*,'pebbles out =', self%pebbles%n, self%pebbles%dt_min, self%pebbles%dt_max
   call trace_end

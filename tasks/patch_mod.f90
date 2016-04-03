@@ -125,7 +125,6 @@ MODULE patch_mod
     real:: num(3)
     integer:: dim(3)
   end type
-  logical:: legacy=.false.
 CONTAINS
 
 !> =============================================================================
@@ -254,7 +253,7 @@ SUBROUTINE init (self)
   integer:: iostat, i
   namelist /patch_params/ size, n, nv, ng, nt, courant, u_fixed, dt_fixed, grace
   namelist /out_params/ out_time, end_time, print_time, max_files, &
-    guard_zones, time_derivs, legacy
+    guard_zones, time_derivs
   !.............................................................................
   call trace_begin ('patch_t%init', 2)
   call self%task_t%init                         ! sets unique id
@@ -705,7 +704,7 @@ SUBROUTINE output (self, experiment_name)
   if (.not.io%do_output) return
   call trace_begin('patch:t%output')
   do while (self%time > self%out_next .and. self%out_next <= self%end_time)
-    if (legacy) then
+    if (io%do_legacy) then
       call self%output_legacy
     else
       call self%output_new
@@ -1261,9 +1260,6 @@ SUBROUTINE check_density (self, label)
   if (io%verbose < 1) return
   mind = minval(self%mem(:,:,:,1,self%it,1))
   if (mind <= 0.0) then
-    !write (io%debug_unit) self%id, self%mesh%gn
-    !write (io%debug_unit) self%mem(:,:,:,1,self%it,1)
-    !flush (io%debug_unit)
     !---------------------------------------------------------------------------
     ! Negative densities appear to develop at a few points in the guard zones,
     ! so this tries to patch up, sampling densitites in the guard zone.

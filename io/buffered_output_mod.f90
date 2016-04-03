@@ -75,23 +75,23 @@ SUBROUTINE open (self, nwords, iout)
     print*, 'index file: ', trim(filename)//'.idx'
   inquire (file=trim(filename)//'.idx', exist=exist)
   if (exist) then
-    open (io%index_unit, file=trim(filename)//'.idx', &
+    open (io_unit%index, file=trim(filename)//'.idx', &
       form='unformatted', access='direct', status='unknown', recl=2*io%word_size)
-    read (io%index_unit, rec=3) self%record
+    read (io_unit%index, rec=3) self%record
   else
-    open (io%index_unit, file=trim(filename)//'.idx', &
+    open (io_unit%index, file=trim(filename)//'.idx', &
       form='unformatted', access='direct', status='unknown', recl=2*io%word_size)
     self%record = 0
-    write (io%index_unit, rec=3) self%record
+    write (io_unit%index, rec=3) self%record
   end if
-  write (io%index_unit, rec=1) revision
-  write (io%index_unit, rec=2) int(nwords,kind=8)
+  write (io_unit%index, rec=1) revision
+  write (io_unit%index, rec=2) int(nwords,kind=8)
   !---------------------------------------------------------------------------
   ! Open the data file for writing
   !---------------------------------------------------------------------------
   if (io%verbose>1) &
     print*, ' dump file: ', trim(filename)//'.dat'
-  open (io%dump_unit,  file=trim(filename)//'.dat', &
+  open (io_unit%dump,  file=trim(filename)//'.dat', &
     form='unformatted', access='direct', status='unknown', recl=nwords*io%word_size)
   call trace_end
 END SUBROUTINE open
@@ -167,11 +167,11 @@ SUBROUTINE write (self)
     !---------------------------------------------------------------------------
     !$omp atomic
     self%record = self%record+1
-    write (io%index_unit, rec=3) self%record
-    write (io%index_unit, rec=self%record+3) dump%id, dump%iout
-    flush (io%index_unit)
-    write (io%dump_unit, rec=self%record) dump%data
-    flush (io%dump_unit)
+    write (io_unit%index, rec=3) self%record
+    write (io_unit%index, rec=self%record+3) dump%id, dump%iout
+    flush (io_unit%index)
+    write (io_unit%dump, rec=self%record) dump%data
+    flush (io_unit%dump)
     !$omp atomic
     self%n_buffer = self%n_buffer-1
     if (io%verbose>1) &
@@ -198,8 +198,8 @@ SUBROUTINE close (self)
   class (buffered_output_t):: self
   !-----------------------------------------------------------------------------
   call trace_begin('buffered_output_mod::close')
-  close (io%index_unit)
-  close (io%dump_unit)
+  close (io_unit%index)
+  close (io_unit%dump)
   call trace_end
 END SUBROUTINE close
 
@@ -218,21 +218,21 @@ FUNCTION find (self, id, iout)
   !-----------------------------------------------------------------------------
   ! Read the number of records and the buffer size
   !-----------------------------------------------------------------------------
-  open (io%index_unit, file=trim(io%outputname)//'index.dat', &
+  open (io_unit%index, file=trim(io%outputname)//'index.dat', &
     form='unformatted', access='direct', status='old', recl=8)
-  read (io%index_unit,rec=1) revision
-  read (io%index_unit,rec=2) ndata
-  read (io%index_unit,rec=3) nrecord
+  read (io_unit%index,rec=1) revision
+  read (io_unit%index,rec=2) ndata
+  read (io_unit%index,rec=3) nrecord
   print *, revision, ndata, nrecord
-  close (io%index_unit)
+  close (io_unit%index)
   !-----------------------------------------------------------------------------
   ! Get the entire index in one read
   !-----------------------------------------------------------------------------
   allocate (index(nrecord))
-  open (io%index_unit, file=trim(io%outputname)//'index.dat', &
+  open (io_unit%index, file=trim(io%outputname)//'index.dat', &
     form='unformatted', access='direct', status='old', recl=8*(nrecord+3))
-  read (io%index_unit,rec=1) revision, ndata, nrecord, index
-  close (io%index_unit)
+  read (io_unit%index,rec=1) revision, ndata, nrecord, index
+  close (io_unit%index)
   !-----------------------------------------------------------------------------
   ! Find the id+iout combo
   !-----------------------------------------------------------------------------
