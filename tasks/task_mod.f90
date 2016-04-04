@@ -3,9 +3,12 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE task_mod
   USE io_mod
+  USE omp_mod
+  USE omp_lock_mod
   USE mpi_mod
   USE bits_mod
   USE trace_mod
+  USE scene_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -26,15 +29,17 @@ MODULE task_mod
     real(8):: out_time = 1d0
     real(8):: print_next = 0d0
     real(8):: print_time = 1d0
-    real(8):: dtime = 0.1d0
+    real(8):: dtime = 0d0
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0
     real(8):: velocity(3) = 0d0
-    real(8):: size(3) = 1d0
+    real(8):: size(3) = 0.9999d0
     real(8):: wallclock
     character(len=32), pointer:: name
     class(task_t), pointer:: parent
     class(*), pointer:: link            ! this could be useful
+    type(lock_t):: lock                 ! OMP lock
+    character(len=4):: kind='task'
   contains
     procedure:: init
     procedure:: update
@@ -50,6 +55,7 @@ MODULE task_mod
     procedure:: deallocate => void
     procedure:: unique_id
     procedure:: load_balance
+    procedure:: has_finished
   end type
   !-----------------------------------------------------------------------------
   ! Time slot info and procedures added in tasks_t
@@ -64,6 +70,7 @@ MODULE task_mod
     integer:: verbose=1
   end type
   integer, save:: id=0
+  integer, save, public:: id_debug=0
 CONTAINS
 
 !> =============================================================================
@@ -76,12 +83,21 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE init (self)
   class (task_t):: self
+  logical:: first_time=.true.
   !.............................................................................
   call trace_begin ('task_t%init')
-  if (self%id==0) then
-    id = self%unique_id()
+  if (first_time) then
+    first_time = .false.
+    id = mpi%rank+1
+    self%id = id
+  else if (self%id==0) then
+    !$omp atomic
+    id = id+mpi%size
     self%id = id
   end if
+  write (io%log_unit,*) 'obtained patch id', self%id
+  call self%lock%init (self%kind)
+  scene%n_patch = self%id
   call trace_end
 END SUBROUTINE
 
@@ -122,8 +138,10 @@ END SUBROUTINE info
 LOGICAL FUNCTION is_ahead_of (self, task)
   class (task_t):: self, task
   !.............................................................................
-  is_ahead_of = self%time + self%dtime*task%grace >= task%time
-!  print*,'is_ahead_of: ', self%time, task%time, task%grace, is_ahead_of
+  is_ahead_of = self%time + max(self%dtime,task%dtime)*task%grace >= task%time
+  if (task%id==id_debug.or.io%verbose>4) &
+    print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread(), 'mk is_ahead_of: ', &
+    task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of
 END FUNCTION
 
 SUBROUTINE print (self)
@@ -169,6 +187,16 @@ LOGICAL FUNCTION is_clear (self, bit)
 !  call trace_begin ('task_t%is_clear')
   is_clear = (iand(self%status, bit) == 0)
 !  call trace_end
+END FUNCTION
+
+!> =============================================================================
+LOGICAL FUNCTION has_finished (self)
+  class (task_t):: self
+  integer:: bit
+  !.............................................................................
+  has_finished = (self%time + 1e-6*self%dtime > self%end_time) &
+    .or. self%is_set(bits%virtual)
+  if (has_finished) call self%set (bits%frozen)
 END FUNCTION
 
 !> =============================================================================
