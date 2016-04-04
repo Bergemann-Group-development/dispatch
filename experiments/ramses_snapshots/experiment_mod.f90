@@ -32,7 +32,9 @@ SUBROUTINE update (self)
   type(timestep_t):: timestep
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-  ! time evolution for this experiment has been intentionally disabled.
+  ! the update procedure for this experiment has been intentionally disabled;
+  ! it is not designed to be evolved on its own, but rather used as a set up for
+  ! another experiment.
   call trace_end
 END SUBROUTINE update
 

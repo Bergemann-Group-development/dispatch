@@ -150,7 +150,6 @@ SUBROUTINE init (self, name)
 
   ! attempt to merge RAMSES 2**3 octs into larger patches
   if (self%merge_octs) call self%merge_ramses_octs(nmerged_max)
-  stop
 
   call trace_end
 END SUBROUTINE init
@@ -800,6 +799,7 @@ SUBROUTINE read_snapshot (self)
               end if
               patch%time = time
               patch%velocity = 0.0
+              call patch%set(bits%static)
               tmp_load = tmp_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
               tot_load = tot_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
               if (patch%rank==mpi%rank) then

@@ -49,10 +49,10 @@ SUBROUTINE init (mp, mpi_dims, dims)
   if (first_time) then
     first_time = .false.
   end if
-  mpi%size   = mpi_size
-  mpi%rank   = mpi_rank
+  mpi%size   = 1
+  mpi%rank   = 0
   mpi%comm   = 0
-  mpi%master = mpi_rank==0
+  mpi%master = (mpi_rank==0)
   mpi%ok     = .true.
   !-----------------------------------------------------------------------------
   ! For some reason, this must be done element by element.  Turning it around,
