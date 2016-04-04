@@ -13,6 +13,7 @@
  rank_load=5e-3
  size=0.001
  centre_on_sink=t
+ merge_octs=t
 /
 
 &patch_params

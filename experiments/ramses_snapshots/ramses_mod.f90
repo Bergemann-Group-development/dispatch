@@ -38,7 +38,7 @@ MODULE ramses_mod
     real(kind=8):: rank_load
     real(kind=8):: xmin, xmax, ymin, ymax, zmin, zmax         ! corners of the cutout
     real(kind=8):: size, d_min, tt_min
-    logical :: centre_on_sink
+    logical :: centre_on_sink, merge_octs
     character(len=128):: path
     type(task_list_t):: task_list
   contains
@@ -85,10 +85,11 @@ SUBROUTINE init (self, name)
   integer, save:: nout, minlvl, maxlvl, nmerged_max
   real, save:: xmin, xmax, ymin, ymax, zmin, zmax, rank_load
   real, save:: d_min, tt_min, size, size_au
-  logical, save :: centre_on_sink
+  logical, save :: centre_on_sink, merge_octs
   character(len=64), save:: path='.'
   namelist / init_params / nout, xmin, xmax, ymin, ymax, zmin, zmax, size, &
-                           nmerged_max, minlvl, maxlvl, rank_load, path, centre_on_sink
+                           nmerged_max, minlvl, maxlvl, rank_load, path, &
+                           centre_on_sink, merge_octs
   !.............................................................................
   call trace_begin('experiment_t%init')
   !-----------------------------------------------------------------------------
@@ -110,6 +111,7 @@ SUBROUTINE init (self, name)
     path = './'
     size = -1d0
     centre_on_sink = .false.
+    merge_octs = .true.
     nmerged_max = 16
     ! read namelist
     rewind (io%input); read (io%input,init_params)
@@ -139,6 +141,7 @@ SUBROUTINE init (self, name)
   self%size      = size
   self%centre_on_sink = centre_on_sink
   self%nmerged_max = nmerged_max
+  self%merge_octs = merge_octs
 
   !-----------------------------------------------------------------------------
   ! Each rank reads the RAMSES grids belonging to it, filling in the data,
@@ -147,7 +150,8 @@ SUBROUTINE init (self, name)
   call self%read_snapshot()
 
   ! attempt to merge RAMSES 2**3 octs into larger patches
-  call self%merge_ramses_octs(nmerged_max)
+  if (self%merge_octs) call self%merge_ramses_octs(nmerged_max)
+  stop
 
   call trace_end
 END SUBROUTINE init
