@@ -20,7 +20,7 @@ MODULE atmosphere_mod
     integer:: nr, niter
     real:: gamma(2), temp_gamma
     real(kind=8), dimension(:), pointer:: rho, pg, temp, rr
-    real:: dlnr, hill_radius, orbit_radius
+    real(8):: dlnr, hill_radius, orbit_radius
     type(conditions_t):: external, surface
   contains
     procedure init
@@ -38,6 +38,7 @@ SUBROUTINE init (self)
   real:: density_cgs=1e-10, temperature_K=200, delta_r=0.01, orbit_au=1.0
   real:: mass_m_earth=0.9
   real:: gamma(2)=1.4, temp_gamma=2000.
+  real(8):: inner_radius
   integer:: nr=500, niter=10
   namelist /atmosphere_params/ orbit_au, density_cgs, temperature_K, &
     mass_m_earth, nr, niter, gamma, temp_gamma
@@ -65,8 +66,14 @@ SUBROUTINE init (self)
   self%external%pressure = density_cgs*cgs%k_B*temperature_K/(cgs%mu*cgs%m_u) &
     /scaling%p
   self%hill_radius = self%orbit_radius*(planet%mass*scaling%m/(3d0*cgs%m_sun))**(1d0/3d0)
+  planet%hill_radius = self%hill_radius
+  !-----------------------------------------------------------------------------
+  ! Make sure the pressure force is contiuous at the surface, by continuing the
+  ! integration to half the planet radius
+  !-----------------------------------------------------------------------------
   planet%radius = cgs%r_earth/scaling%l*(planet%mass*scaling%m/cgs%m_earth)**(1d0/3d0)
-  self%dlnr = log(self%hill_radius/planet%radius)/(self%nr-1.0)
+  inner_radius = planet%radius*0.5
+  self%dlnr = log(self%hill_radius/inner_radius)/(self%nr-1.0)
   if (io%verbose>0) print*, 'dlnr:', planet%radius, self%hill_radius/planet%radius, self%dlnr
   call self%hydrostatic
   call trace_end
@@ -93,7 +100,7 @@ SUBROUTINE hydrostatic (self)
     self%rho(nr)  = self%external%density
     self%pg(nr)   = self%external%pressure
     self%rr(nr)   = self%hill_radius
-    if (io%verbose>1) print*, &
+    if (io%verbose>0) print*, &
       '              i         rr         pg       temp        rho         dr      dlnpg       grav'
     do i=nr-1,1,-1
       self%rr(i) = exp(log(planet%radius) + (i-1)*log(self%hill_radius/planet%radius)/(nr-1))
@@ -116,18 +123,18 @@ SUBROUTINE hydrostatic (self)
         dlnT = dlnpg*(gamma-1.0)/gamma
         self%pg  (i) = self%pg  (i+1)*exp(dlnpg)
         self%temp(i) = self%temp(i+1)*exp(dlnT)
-        if (io%verbose>2) print*, i, iter, self%rr(i), self%pg(i), self%rho(i), self%temp(i)
+        if (io%verbose>1) print*, i, iter, self%rr(i), self%pg(i), self%rho(i), self%temp(i)
       end do
       if (self%gamma(2)==1.0) then
         s = 1.0
       else
         s = (log(self%pg(i))-gamma*log(self%rho(i)))/(self%gamma(2)-1.0)
       end if
-      if (io%verbose>1) print'("hydrostatic",i5,1p,9e11.3)', &
+      if (io%verbose>0) print'("hydrostatic",i5,1p,9e11.3)', &
         i,self%rr(i)*scaling%l/cgs%r_earth, self%pg(i)*scaling%p, self%temp(i)*scaling%temp, &
         self%rho(i)*scaling%d, s, dlnpg, planet%mass*scaling%grav/self%rr(i)**2
     end do
-    if (io%verbose>1) print*, &
+    if (io%verbose>0) print*, &
       '              i         rr         pg       temp        rho      dlnpg       dlnT       grav'
     self%surface%density     = self%rho(1)
     self%surface%pressure    = self%pg(1)

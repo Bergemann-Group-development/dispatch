@@ -17,7 +17,7 @@ MODULE mesh_mod
     real(8):: o = 0.0           ! position offset in index space
     real(8):: lf = 0.0          ! lower floating point boundary
     real(8):: uf = 0.0          ! upper floating point boundary
-    real(8), dimension(:), pointer:: r
+    real(8), dimension(:), pointer:: r => null()
     integer:: n  = 16           ! number of points
     integer:: ng =  2           ! number of guard zones
     integer:: lb =  1           ! lower index boundary
@@ -55,6 +55,7 @@ SUBROUTINE init_mesh (self)
   self%ui = min(self%lo+self%n,self%gn)
   self%uo = min(self%ui+1,self%gn)
   self%ub = self%ui + self%ng
+  if (associated(self%r)) deallocate (self%r)
   allocate (self%r(self%gn))
   self%d = self%s/self%n
   self%o = (self%li+self%ui)*0.5

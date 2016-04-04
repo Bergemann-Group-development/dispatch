@@ -414,7 +414,7 @@ FUNCTION zup (a) RESULT (b)
   c = 0.5
   if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,:,size(a,3)) = a(:,:,size(a,3))
-    do iz=1,size(a,3)-2
+    do iz=1,size(a,3)-1
     do iy=1,size(a,2)
     do ix=1,size(a,1)
       b(ix,iy,iz) = c*(a(ix,iy,iz+1) + a(ix,iy,iz  ))

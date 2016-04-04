@@ -29,22 +29,17 @@ CONTAINS
 SUBROUTINE init (self, label)
   class(setup_t):: self
   character(len=*), optional:: label
-  integer, save:: n_patch=3, m_zoom=3
-  integer:: iostat
-  namelist /rubiks_params/ n_patch, m_zoom
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
   call io%init
-  rewind (io%input)
-  read (io%input, rubiks_params, iostat=iostat)
-  if (io%master) write (*, rubiks_params)
   call scaling%init
   call planet%init
   call atmosphere%init
   self%size = planet%radius*2.2
   print*, 'Rubik hierarchy size:', self%size*scaling%l/cgs%r_earth
+  planet%position = 0.0
   self%position = planet%position
-  call self%rubiks_t%init_hierarchy (n_patch, m_zoom, label)
+  call self%rubiks_t%init_hierarchy (label)
   call trace_end
 END SUBROUTINE init
 

@@ -18,19 +18,19 @@
 &patch_params
  nt=5
  n=32,32,32
+ courant=0.2
  grace=0.03
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.051
+ end_time=2.00
  out_time=0.10
- print_time=0.01
+ print_time=0.05
  guard_zones=f
  time_derivs=f
 /
 &mhd_params
- courant=0.2
- nu=  0.10, 2.0, 1.0, 0.2, 1.0, 1.0
+ nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
 /
 &timestep_params

@@ -4,12 +4,17 @@
 !> OMP active.
 !> *****************************************************************************
 MODULE omp_timer_mod
+  USE io_unit_mod
   USE omp_mod
+  USE mpi_mod
   implicit none
+  private
+  integer, save:: n_core = 0
   real(8), save:: wt=0d0
   interface toc
     module procedure toc_i4, toc_i8, toc_1
   end interface
+  public tic, toc, wallclock
 CONTAINS
 
 !> =============================================================================
@@ -97,23 +102,52 @@ END FUNCTION
 SUBROUTINE toc_r (label, n)
   implicit none
   character(len=*):: label
-  real:: n
+  real:: n, n_tmp
   real(8):: omp_get_wtime
   !.............................................................................
+  call detect_cores
   wt = (omp_get_wtime() - wt)
-  print 1, label, trim(time_str(wt)), trim(time_str(wt*omp_nthreads/n)), '/upd,', n, 'updates'
-1 format (1x, a16, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a)
-  !if (wt/n < 1d-6) then
-  !else if (wt/n < 1d-3) then
-  !  print 1, label, wt,  'sec', wt/n*1e6, 'mus/upd,', n, 'updates'
-  !else if (wt/n < 1d0) then
-  !  print 1, label, wt,  'sec', wt/n*1e3, 'ms/upd,', n, 'updates'
-  !else
-  !  print 1, label, wt,  'sec', wt/n, 's/upd,', n, 'updates'
-  !  1 format(1x,a16,1h:,2(g20.3,1x,a),1p,e10.2,1x,a)
-  !end if
+  n_tmp = merge(omp_nthreads, min(n_core,omp_nthreads), n_core==0)
+  write (io_unit%log,1) label, trim(time_str(wt)), &
+    trim(time_str(wt*n_tmp/max(n,1.))), '/upd,', n, 'updates'
+  1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a)
+  flush (io_unit%log)
+  if (mpi%rank==0) &
+    print 1, label, trim(time_str(wt)), &
+      trim(time_str(wt*n_tmp/max(n,1.))), '/upd,', n, 'updates'
+  flush (6)
   wt = omp_get_wtime()
 END SUBROUTINE toc_r
+
+!> =============================================================================
+!> Attempt to determine the actual number of cores
+!> =============================================================================
+SUBROUTINE detect_cores
+  character(len=32):: file="/proc/cpuinfo"
+  character(len=32):: line
+  logical:: exist
+  integer:: i, iostat
+  !.............................................................................
+  inquire (file=file, exist=exist)
+  if (exist) then
+    open (file=file, unit=io_unit%os, form='formatted', status='old')
+    do while (.true.)
+      read (io_unit%os,'(a32)',iostat=iostat) line
+      if (iostat/=0) then
+        exit
+      else
+        if (line(1:8)=='cpu core') then
+          i = index(line,':')
+          read (line(i+1:),*) n_core
+          if (mpi%rank==0) print'(a,i4)', '   n_core =', n_core
+          exit
+        end if
+      end if
+    end do
+    close (io_unit%os)
+  end if
+  if (mpi%rank==0) print'(a,i4)', ' n_thread =', omp_nthreads
+END SUBROUTINE detect_cores
 
 !> =============================================================================
 FUNCTION wallclock() result (delta)

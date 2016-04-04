@@ -2,6 +2,8 @@
 !> =============================================================================
 MODULE mhd_mod
   USE io_mod
+  USE bits_mod
+  USE omp_mod
   USE trace_mod
   USE units_mod
   USE scaling_mod
@@ -17,15 +19,12 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real:: nu(6)
-    real:: omega(3)
     logical:: mhd=.true.
     type(force_t):: force
   contains
     procedure:: init
     procedure:: update
     procedure:: output
-    procedure:: info
-    procedure:: check_density
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure
@@ -33,7 +32,6 @@ MODULE mhd_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
   end type
-  logical, save:: first_time=.true.
 CONTAINS
 
 !> =============================================================================
@@ -42,22 +40,21 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, omega_yr(3)=0.0
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0
   integer:: i
-  namelist /mhd_params/ nu, gamma, omega_yr
+  logical, save:: first_time=.true.
+  namelist /mhd_params/ nu, gamma
   !----------------------------------------------------------------------------
-  call trace_begin('mhd_t%init')
+  call trace%begin('mhd_t%init')
+  call self%patch_t%init
+  !$omp critical (input_cr)
   if (first_time) then
-    !$omp critical (mhd_cr)
-    if (first_time) then
-      first_time = .false.
-      rewind (io%input)
-      read (io%input, mhd_params)
-      if (io%master) write (*, mhd_params)
-    end if
-    !$omp end critical (mhd_cr)
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, mhd_params)
+    if (io%master) write (*, mhd_params)
   end if
-  self%omega = omega_yr*2.*cgs%pi*scaling%t/cgs%yr
+  !$omp end critical (input_cr)
   self%nu = nu
   self%gamma = gamma
   do i=1,3
@@ -65,7 +62,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h(5+i) = -0.5
   end do
   call self%force%init
-  call trace_end
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -88,7 +85,6 @@ SUBROUTINE update (self)
   real:: ds(3), dx
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%update')
-  call self%init
   self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
   self%s => self%mem(:,:,:,  2,self%it,1); self%dsdt => self%mem(:,:,:,  2,self%it,2)
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
@@ -255,14 +251,6 @@ SUBROUTINE update (self)
   if (associated(self%force%selected)) &
     dpdt = dpdt + dd*self%force%selected (self%time, Ux, Uy, Uz, self%mesh)
   !-----------------------------------------------------------------------------
-  ! Coriolis force
-  !-----------------------------------------------------------------------------
-  if (any(self%omega/=0)) then
-    dpdtx = dpdtx + 2.0*ddx*xdn(self%omega(3)*yup(Uy) - self%omega(2)*zup(Uz))
-    dpdty = dpdty + 2.0*ddy*ydn(self%omega(1)*zup(Uz) - self%omega(3)*xup(Ux))
-    dpdtz = dpdtz + 2.0*ddz*zdn(self%omega(2)*xup(Ux) - self%omega(1)*yup(Uy))
-  end if
-  !-----------------------------------------------------------------------------
   ! Induction equation
   !-----------------------------------------------------------------------------
   if (self%mhd) then
@@ -279,9 +267,11 @@ SUBROUTINE update (self)
     Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
-    call boundary%condition (Ex, self%mesh, [0d0,-0.5d0,-0.5d0], self%nv)
-    call boundary%condition (Ey, self%mesh, [-0.5d0,0d0,-0.5d0], self%nv)
-    call boundary%condition (Ez, self%mesh, [-0.5d0,-0.5d0,0d0], self%nv)
+    if (self%is_set (bits%has_BC)) then
+      call boundary%condition (Ex, self%mesh, [0d0,-0.5d0,-0.5d0])
+      call boundary%condition (Ey, self%mesh, [-0.5d0,0d0,-0.5d0])
+      call boundary%condition (Ez, self%mesh, [-0.5d0,-0.5d0,0d0])
+    end if
     dBdt = -curl_up(ds,E)
   end if
   !-----------------------------------------------------------------------------
@@ -302,60 +292,17 @@ SUBROUTINE output (self, experiment_name)
   character(len=64):: experiment_name, filename
   optional:: experiment_name
   !-----------------------------------------------------------------------------
-  if (self%time < self%out_next .or. .not.io%do_output) return
+  if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
+  !$omp critical (output_cr)
   call self%patch_t%output (experiment_name)
-  write (filename,'("data/",a,"_",i3.3,"_",i4.4,".txt")') trim(io%outputname), &
+  write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout-1
   open (io%data_unit, file=trim(filename), form='formatted', status='old', &
     position='append')
   write (io%data_unit,'(8f10.4)') self%nu
   close (io%data_unit)
+  !$omp end critical (output_cr)
 END SUBROUTINE output
-
-!> =============================================================================
-!> Print info to stdout
-!> =============================================================================
-SUBROUTINE info (self, nq, experiment_name)
-  class(mhd_t):: self
-  integer, optional:: nq
-  character(len=64), optional:: experiment_name
-  !.............................................................................
-END SUBROUTINE info
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE check_density (self, label)
-  class(mhd_t):: self
-  character(len=*), optional:: label
-  real:: mind
-  integer:: ix, iy, iz, ii(3), ntot, nins
-  logical:: inside
-  !-----------------------------------------------------------------------------
-  mind = minval(self%mem(:,:,:,1,self%it,1))
-  if (mind <= 0.0) then
-    ntot = 0
-    nins = 0
-    do iz=1,self%gn(3)
-    do iy=1,self%gn(2)
-    do ix=1,self%gn(1)
-      ii = [ix,iy,iz]
-      inside = all([ix,iy,iz]>self%mesh%lo.and.ii<self%mesh%lo)
-      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0)
-      nins = nins + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0.and.inside)
-    end do
-    end do
-    end do
-    if (present(label)) then
-      print 1, self%id, &
-         'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
-         trim(label)
-      1 format(i8,3x,a,i8,a,i8,a)
-    else
-      print 1, self%id, &
-         'WARNING: density non-positive in',ntot,' points,',nins,' inside'
-    end if
-  end if
-END SUBROUTINE
 
 !> =============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)

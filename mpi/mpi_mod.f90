@@ -25,7 +25,6 @@
 !>
 !> =============================================================================
 MODULE mpi_mod
-  USE io_mod
   implicit none
   include 'mpif.h'              ! some systems require this instead of 'use mpi'
   integer:: mpi_err             ! MPI error status
@@ -36,6 +35,7 @@ MODULE mpi_mod
   integer:: mpi_size            ! number of MPI processes
   integer:: mpi_rank            ! process number (zero-based)
   integer:: output=2
+  integer, parameter:: mch=120
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   ! Object that returns the most important MPI parameters
@@ -77,7 +77,6 @@ SUBROUTINE init (mp, mpi_dims, dims)
   mpi%comm   = mpi_comm_world
   mpi%master = mpi_rank==0
   mpi%ok     = .true.
-  io%master  = mpi%rank==0
   !-----------------------------------------------------------------------------
   ! For some reason, this must be done element by element.  Turning it around,
   ! and doing mpi = mp (which is syntactically correct), values are screwed
@@ -169,8 +168,6 @@ SUBROUTINE end_mpi (mp, label)
   if (mpi_rank==0) then
     if (present(label)) then
       print*,'MPI finalized with message: "'//trim(label)//'"'
-    else
-      print*,'MPI finalized'
     end if
   end if
   call MPI_Finalize (mpi_err)

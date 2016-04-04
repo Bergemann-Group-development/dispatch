@@ -47,6 +47,7 @@ sinclude $(TOP)/tasks/Makefile
 sinclude $(TOP)/meshes/$(MESH)/Makefile
 sinclude $(TOP)/patches/$(MESH)/Makefile
 sinclude $(TOP)/timestep/$(UPD)/Makefile
+sinclude $(TOP)/data/opacities/$(OPACITY)/Makefile
 sinclude $(TOP)/particles/Makefile
 sinclude $(TOP)/states/Makefile
 
@@ -77,9 +78,16 @@ endif
 POSTCOMPILE= mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
 FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
 
+# Remove default rule for .f files.
+%.o: %.f
 #############################################################################
 # Pattern rules to get .o files from .f90 files
 %.o: %.f90 $(DEPDIR)/%.d
+	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
+	$(E)$(F90) $(FFLAGS) $(DEPFLAGS) -c $< -o $@
+	$(E)$(POSTCOMPILE)
+	$(eval OBJS+=$@)
+%.o: %.f $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
 	$(E)$(F90) $(FFLAGS) $(DEPFLAGS) -c $< -o $@
 	$(E)$(POSTCOMPILE)
@@ -93,6 +101,8 @@ FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
 	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJS)) -o $@ $(LIBS)
 %.w: %.f90
+	@echo $<
+%.w: %.f
 	@echo $<
 $(DEPDIR)/%.d: ;
 
@@ -114,7 +124,12 @@ else
 .f90.o:
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
 	$(E)$(F90) $(FFLAGS) -c $< -o $@
+.f.o:
+	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
+	$(E)$(F90) $(FFLAGS) -c $< -o $@
 .f90.w:
+	@echo $<
+.f.w:
 	@echo $<
 $(EXEC): $(OBJ)
 endif
@@ -134,7 +149,7 @@ cleandata:
 cleandirs:
 	rm -rf data .d
 clean-deps:
-	rm -f .d/*.d
+	rm -f .d/*.*d
 cleaner: clean
 	rm -f *.x *.bak *.optrpt *.exe *.pyc
 cleanest: cleaner cleandata cleanlog clean-deps cleandirs

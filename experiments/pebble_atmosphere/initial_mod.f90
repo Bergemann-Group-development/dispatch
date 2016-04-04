@@ -17,7 +17,8 @@ MODULE initial_mod
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     real:: b0(3)
-    real:: gamma=1.4
+    real:: gamma
+    real:: v_head, v_accrete
     real:: surface_temperature, surface_pressure
     real(8):: size(3)
     logical:: mhd
@@ -30,13 +31,13 @@ MODULE initial_mod
 CONTAINS
 
 !> =============================================================================
-!> Setup a uniform initial state, with density=d0 and B=B0
+!> Setup an initial state, with head wind speed and accretion speed
 !> =============================================================================
 SUBROUTINE init (self)
    class(initial_t):: self
    logical, save:: first_time=.true.
-   real, save:: b0(3) = 0.0, gamma=1.4
-   namelist /initial_params/ b0, gamma
+   real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0
+   namelist /initial_params/ b0, gamma, v_head_cgs, v_accrete_cgs
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    call scaling%init
@@ -47,6 +48,8 @@ SUBROUTINE init (self)
    end if
    self%b0 = b0
    self%gamma = gamma
+   self%v_head = v_head_cgs/scaling%u
+   self%v_accrete = v_accrete_cgs/scaling%u
    self%selected => planet_atmosphere
    call trace_end
 END SUBROUTINE init
@@ -65,6 +68,7 @@ SUBROUTINE planet_atmosphere (self, mem, m, omega)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%planet_atmosphere')
   call self%init
+  csound2 = self%gamma*atmosphere%pg(1)/atmosphere%rho(1)
   nr = atmosphere%nr
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + m(3)%r(iz) - planet%position(3)
@@ -87,18 +91,18 @@ SUBROUTINE planet_atmosphere (self, mem, m, omega)
         mem(ix,iy,iz,1,1,1) = d
         mem(ix,iy,iz,2,1,1) = d*(log(p)-self%gamma*log(d))/(self%gamma-1.0)
         !-----------------------------------------------------------------------
-        ! A rotation profile, where the rotation center is at -1 AU, and
-        ! the direction of rotation is -x, so the head wind is in the +x
+        ! A rotation profile, where the rotation center is at y=+1 AU, and
+        ! the direction of rotation is +x, so the head wind is in the -x
         ! direction.  The slower rotation at larger radii means that Ux is
-        ! proportional to -y.  This gives a speed difference of only 130 cm/s
+        ! proportional to +y.  This gives a speed difference of only 130 cm/s
         ! across the Earth, and plus/minus 0.15 km/s across two Hill radii.
         ! The effect is not enough to significantly flatten the outer part of
         ! the Hill sphere, so we will probably only be seeing effects of the
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
-        mem(ix,iy,iz,3,1,1) = -d*0.5*omega(3)*y
-        mem(ix,iy,iz,4,1,1) = 0.0
-        mem(ix,iy,iz,5,1,1) = 0.0
+        mem(ix,iy,iz,3,1,1) = d*(0.5*omega(3)*y + self%v_head)  ! azimuthal speed
+        mem(ix,iy,iz,4,1,1) = d*self%v_accrete                  ! accretion speed
+        mem(ix,iy,iz,5,1,1) = 0.0                               ! vertical speed
         mem(ix,iy,iz,6,1,1) = self%b0(1)
         mem(ix,iy,iz,7,1,1) = self%b0(2)
         mem(ix,iy,iz,8,1,1) = self%b0(3)

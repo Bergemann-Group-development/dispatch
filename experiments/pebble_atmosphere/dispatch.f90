@@ -7,10 +7,11 @@ PROGRAM dispatch
   USE mpi_mod
   USE setup_mod
   !.............................................................................
-  call io%init
- !call mpi%init
-  call setup%init('pebble_atmosphere')  ! initialize the patch list and patches
+  call io%init ('pebble_atmosphere')
+  call mpi%init
+  call setup%init                       ! initialize the patch list and patches
   call setup%task_list%execute          ! execute the list = update member patches
+  call setup%close                      ! close the experiment
   print*,'stopping: all tasks finished'
 !> =============================================================================
 END PROGRAM dispatch

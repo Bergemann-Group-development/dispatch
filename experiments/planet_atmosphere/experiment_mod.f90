@@ -39,12 +39,11 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   self%nv = 8
   self%msplit = 3
-  call self%initial%init
-  call self%patch_t%init
-  call self%set(bits%static)
-  call self%initial%selected(self%mem, self%mesh)
-  call force%init
   call self%mhd_t%init
+  call self%set (bits%static)
+  call self%initial%init
+  call self%initial%selected (self%mem, self%mesh)
+  call force%init
   call trace_end
 END SUBROUTINE init
 
@@ -56,11 +55,11 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%mhd_t%update
-  call boundary%condition (self%mem(:,:,:,1,self%it,2), self%mesh, [0d0,0d0,0d0], self%nv)
-  call boundary%condition (self%mem(:,:,:,2,self%it,2), self%mesh, [0d0,0d0,0d0], self%nv)
-  call boundary%condition (self%mem(:,:,:,3,self%it,2), self%mesh, [-0.5d0,0d0,0d0], self%nv)
-  call boundary%condition (self%mem(:,:,:,4,self%it,2), self%mesh, [0d0,-0.5d0,0d0], self%nv)
-  call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0], self%nv)
+  call boundary%condition (self%mem(:,:,:,1,self%it,2), self%mesh, [0d0,0d0,0d0])
+  call boundary%condition (self%mem(:,:,:,2,self%it,2), self%mesh, [0d0,0d0,0d0])
+  call boundary%condition (self%mem(:,:,:,3,self%it,2), self%mesh, [-0.5d0,0d0,0d0])
+  call boundary%condition (self%mem(:,:,:,4,self%it,2), self%mesh, [0d0,-0.5d0,0d0])
+  call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0])
   call self%courant_condition
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call trace_end

@@ -407,7 +407,7 @@ SUBROUTINE init_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link, scan
   class(link_t), pointer:: nbor
-  integer:: n_add = 0
+  integer:: n_add
   !.............................................................................
   call trace_begin('list_t%init_nbors ')
   call self%lock%set('init_bors')

@@ -79,4 +79,29 @@ SUBROUTINE deallocate_scalars (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
 END SUBROUTINE
 
 !> =============================================================================
+SUBROUTINE scalar_stats (f, label)
+  real, dimension(:,:,:):: f
+  character(len=*):: label
+  integer:: ix, iy, iz
+  real(8):: s0, s1, s2, s3
+  s1 = 0d0
+  s2 = 0d0
+  s0 = f(1,1,1)
+  s3 = f(1,1,1)
+  do iz=1,size(f,3)
+  do iy=1,size(f,2)
+  do ix=1,size(f,1)
+    s1 = s1 + f(ix,iy,iz)
+    s2 = s2 + f(ix,iy,iz)**2
+    s0 = min(s0,f(ix,iy,iz))
+    s3 = max(s3,f(ix,iy,iz))
+  end do
+  end do
+  end do
+  s1 = s1/size(f)
+  s2 = sqrt(s2/size(f)-s1**2)
+  print*,'scalar_stats:', trim(label), ': min, aver, rms, max =', s0, s1, s2, s3
+END SUBROUTINE
+
+!> =============================================================================
 END MODULE scalar_mod

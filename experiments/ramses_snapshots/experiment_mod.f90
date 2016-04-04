@@ -22,7 +22,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
-  call self%patch_t%init
+  call self%mhd_t%init
 END SUBROUTINE init
 
 !> =============================================================================

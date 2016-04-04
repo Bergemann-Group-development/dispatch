@@ -277,7 +277,8 @@ SUBROUTINE init (self)
     read (io%input, out_params, iostat=iostat)
     if (io%master) write (*, out_params)
   end if
-  !$omp end critical (patch_cr)
+  !print *, 'MK', omp_mythread(), self%id, self%nt, nt
+  !$omp end critical (input_cr)
   ! reasonable values of self%n should take precedence over a saved value of `n`.
   if (any(self%n <= 0)) then  
     self%n           = n                        ! patch dimensions

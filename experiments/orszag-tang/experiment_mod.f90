@@ -30,9 +30,8 @@ SUBROUTINE init (self)
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
   self%nv = 8
-  call self%patch_t%init
-  call self%set(bits%static)
   call self%mhd_t%init
+  call self%set (bits%static)
   !
   !----------------------------------------------------------------------------
   ! Initial conditions

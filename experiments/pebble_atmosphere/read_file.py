@@ -4,7 +4,7 @@
 '''
 import numpy as np
 
-def read_file (fileroot, verbose=False, derivs=False):
+def read_file (fileroot, verbose=False,derivs=False,nodata=0):
     if (verbose): 
         print '          files:', fileroot+'{.txt,.dat}'
     class patch:
@@ -15,26 +15,27 @@ def read_file (fileroot, verbose=False, derivs=False):
     line = f.readline()
     column = line.split()
     patch.time = float(column[0])
-    patch.pos  = [float(column[1]),float(column[2]),float(column[3])]
-    patch.size = [float(column[4]),float(column[5]),float(column[6])]
-    if (verbose):
-        print "           time:", patch.time
-        print "       position:", patch.pos
-        print "           size:", patch.size
+    patch.pos  = np.array(column[1:4],dtype=np.float64)
+    patch.ds   = np.array(column[4:7],dtype=np.float64)
 
     # line 2: m(1:3) n(1:3) li(1:3) ui(1:3)
     line = f.readline()
     column = line.split()
-    patch.m  = [int(column[0]),int(column[1]),int(column[2])]
-    patch.n  = [int(column[3]),int(column[4]),int(column[5])]
-    patch.li = [int(column[6]),int(column[7]),int(column[8])]
-    patch.ui = [int(column[9]),int(column[10]),int(column[11])]
+    #patch.m  = np.array(column[0:3],dtype=np.int64)
+    patch.n  = np.array(column[3:6],dtype=np.int32)
+    patch.li = np.array(column[6:9],dtype=np.int32)
+    patch.ui = np.array(column[9:12],dtype=np.int32)
+    patch.size = patch.ds*patch.n
     if (verbose):
+        print "           time:", patch.time
+        print "       position:", patch.pos
+        print "           size:", patch.size
         print "     full patch:", patch.m
         print "  partial patch:", patch.n
         print "  lower indices:", patch.li
         print "  upper indices:", patch.ui
     f.close
+    if nodata: return patch
 
     # binary data
     fd = open(fileroot+'.dat','rb')
@@ -50,7 +51,7 @@ def read_file (fileroot, verbose=False, derivs=False):
     patch.bz  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
     if derivs:
         patch.dd   = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
-        patch.ds   = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
+        patch.dss  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
         patch.dpx  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
         patch.dpy  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)
         patch.dpz  = np.fromfile(file=fd, dtype=np.float32, count=np.prod(shape)).reshape(shape).transpose(2,1,0)

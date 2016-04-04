@@ -366,6 +366,7 @@ FUNCTION find_nbor (link, idir, o, time, jt, pt) RESULT (other)
   !-----------------------------------------------------------------------------
   call trace_begin('download::find_nbor')
   patch => task2patch (link%task)
+  !print*, patch%id, 'looking at nbors'
   m => patch%mesh
   nt = patch%nt
   nv = patch%nv

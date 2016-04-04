@@ -5,66 +5,68 @@ MODULE setup_mod
 !> surrounding it, representing its extended atmosphere.
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
+  USE bits_mod
   USE omp_mod
   USE trace_mod
   USE units_mod
   USE scaling_mod
   USE planet_mod
   USE atmosphere_mod
+  USE patch_mod
+  USE pebble_patch_mod
+  USE pebble_trace_mod
   USE rubiks_mod
+  USE scene_mod
+  USE list_mod
   implicit none
   private
   type, public, extends(rubiks_t):: setup_t
   contains
-    procedure init
+    procedure:: init
+    procedure, nopass:: close
   end type
   type(setup_t), public:: setup
 CONTAINS
 
 !> =============================================================================
 !> Setup a general Rubik hierarchy: NxNzN patches per level, and zoom factor M
+!>
 !> Rubik's cube has N=3, M=3
 !> Rubik's revenge has N=4, M=2
+!>
+!> We set the position of the planet as the origin of the coordinate system,
+!> which is natural when treating the gravitational influence of the Sun by going
+!> into a comoving and rotating coordinate system.  The basic size unit is the
+!> size of the central patch, which is taken to be 10% larger than the planet.
 !> =============================================================================
 SUBROUTINE init (self, label)
   class(setup_t):: self
   character(len=*), optional:: label
-  integer, save:: n_patch=3, m_zoom=3
-  integer:: iostat
-  namelist /rubiks_params/ n_patch, m_zoom
+  !.............................................................................
+  class(link_t), pointer:: link
+  class(patch_t), pointer:: patch
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
-  call io%init
-  rewind (io%input)
-  read (io%input, rubiks_params, iostat=iostat)
-  if (io%master) write (*, rubiks_params)
+  call io%init (label)
   call scaling%init
   call planet%init
   call atmosphere%init
   self%size = planet%radius*2.2
-  print*, 'Rubik hierarchy size:', self%size*scaling%l/cgs%r_earth
+  planet%position = 0.0
   self%position = planet%position
-  call self%rubiks_t%init_hierarchy (n_patch, m_zoom, label)
+  call self%rubiks_t%init_hierarchy (label)
+  print*, 'n_initial, n_add =', scene%n_initial, scene%n_add
+  link => self%task_list%head
+  do while (associated(link))
+    patch => task2patch (link%task)
+    if (all(abs(patch%position) < patch%ds)) call patch%set (bits%has_BC)
+    link => link%next
+  end do
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE init2 (self, label)
-  class(setup_t):: self
-  character(len=*), optional:: label
-  !-----------------------------------------------------------------------------
-  call trace_begin ('setup_t%init')
-  call init_omp
-  call scaling%init
-  call planet%init
-  planet%position = 0.0
-  call atmosphere%init
-  self%size = planet%radius*2.2
-  print*, 'size1', self%size*scaling%l/cgs%r_earth
-  self%position = planet%position
-  !call self%rubiks_t%init (label)
-  call trace_end
-END SUBROUTINE init2
+SUBROUTINE close
+  call pebble_trace%close_all
+END SUBROUTINE close
 
 END MODULE setup_mod

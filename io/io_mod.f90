@@ -4,22 +4,27 @@
 MODULE io_mod
   USE omp_mod
   USE omp_timer_mod
+  USE mpi_mod
+  USE io_unit_mod
   implicit none
+  private
   logical:: mpi_trace=.false.
-  integer, parameter:: mch=120
   type io_t
-    integer:: verbose=0, input=1, output=2, data_unit=3, log_unit=4
+    integer:: verbose=0, input, output, data_unit, log_unit
     logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.true.
+    logical:: do_flags, do_legacy
     integer:: levelmax=10
-    character(len=64):: inputname, outputname
+    integer:: word_size=4
+    character(len=64):: inputname, outputname, datadir='data'
+    character(len=1):: sep = '/'
   contains
     procedure:: init
     procedure:: print_id => print_id_
     procedure, nopass:: print_hl
   end type
-  type(io_t):: io
-PRIVATE
-PUBLIC io_t, io, print_id, mch
+  character(len=64), save:: inputname, outputname
+  type(io_t), public:: io
+  public print_id, mch,io_unit
 CONTAINS
 
 !> =============================================================================
@@ -32,52 +37,71 @@ SUBROUTINE init (self, name)
   class(io_t):: self
   character(len=120), save:: id = &
   'io_mod.f90 $Id$'
-  integer:: verbose=0, levelmax
+  integer:: verbose=0, levelmax, iostat
   character(len=*), optional:: name
-  character(len=64):: inputfile, argfile
+  character(len=64):: filename
   logical:: first_time=.true.
-  logical:: do_debug=.false., do_trace=.false., do_output=.false., exist
-  namelist /io_params/ verbose, do_debug, do_trace, do_output, levelmax
+  logical:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
+    do_legacy=.true., do_flags=.false.
+  namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
+    do_legacy, levelmax
   real:: test
   !.............................................................................
-  call print_id (id)
   call init_omp
-  !$omp critical (io_cr)
+  io%master = io%master .and. (mpi%rank==0)
+  call print_id (id)
+  !-----------------------------------------------------------------------------
+  ! I/O unit numbers, for convenience and backwards compatibility.  All other
+  ! unit numbers should be taken directly from io_unit_mod
+  !-----------------------------------------------------------------------------
+  self%input     = io_unit%input
+  self%output    = io_unit%output
+  self%log_unit  = io_unit%log
+  self%data_unit = io_unit%data
+  !-----------------------------------------------------------------------------
+  ! Use critical region to avoid threads using the input file simultaneously
+  !-----------------------------------------------------------------------------
+  !$omp critical (input_cr)
   if (first_time) then
-    if (present(name)) inputfile = trim(name)//'.nml'                             ! experiment_name given?
-    inquire (file=inputfile, exist=exist)                                         ! experiment.nml ?
-    if (.not.exist) inputfile = 'input.nml'                                       ! default
-    call getarg(1,argfile)                                                        ! command line argument
-    if (argfile /= ' ') inputfile = argfile                                       ! use, if present
-    do_trace = io%do_trace
-    do_debug = io%do_debug
-    verbose  = io%verbose
-    open (io%input, file=inputfile, form='formatted', status='old')               ! open for reading
-    io%inputname = inputfile(1:index(inputfile,'.')-1)
-    if (io%master) then
+    !---------------------------------------------------------------------------
+    ! The input filename is input.nml, or as given on the command line
+    !---------------------------------------------------------------------------
+    call getarg(1,filename)                                     ! command line
+    if (filename /= ' ') then
+      self%inputname = filename                                 ! run_name.nml
+      self%outputname = trim(self%datadir)//self%sep// &        ! data/run_name/
+        trim(filename(1:index(filename,'.')-1))//self%sep
+    else
+      self%inputname = 'input.nml'
+      self%outputname = trim(self%datadir)//self%sep            ! data/
+    end if
+    call system ('mkdir -p '//trim(self%outputname))
+    !---------------------------------------------------------------------------
+    ! Open an MPI rank specific log file
+    !---------------------------------------------------------------------------
+    write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
+    if (self%master) print*, 'logfile:', filename
+    open (self%log_unit, file=filename, form='formatted', status='unknown')
+    open (self%input, file=self%inputname, form='formatted', status='old')
+    if (self%master) then
       print*,'======================================================================='
-      print*,'NOTE: Reading parameters from '//trim(inputfile)
+      print*,'NOTE: Reading parameters from '//trim(self%inputname)
       print'(a,i1)', ' This version was compiled with default real KIND=', kind(test)
       print*,'======================================================================='
     end if
-    levelmax = io%levelmax
-    rewind (io%input)
-    read (io%input, io_params)
-    io%verbose   = verbose
-    io%levelmax  = levelmax
-    io%do_debug  = do_debug
-    io%do_trace  = do_trace
-    io%do_output = do_output
-    if (io%master.and.first_time) write (*,io_params)
+    rewind (io_unit%input)
+    read (io_unit%input, io_params,iostat=iostat)
+    if (self%master.and.first_time) write (*,io_params)
     first_time=.false.
   end if
-  !$omp end critical (io_cr)
-  self%do_debug  = io%do_debug
-  self%do_trace  = io%do_trace
-  self%do_output = io%do_output
-  self%levelmax  = io%levelmax
-  self%verbose   = io%verbose
-  self%inputname = io%inputname
+  !$omp end critical (input_cr)
+  self%do_debug  = do_debug
+  self%do_trace  = do_trace
+  self%do_output = do_output
+  self%do_flags  = do_flags
+  self%do_legacy = do_legacy
+  self%levelmax  = levelmax
+  self%inputname = inputname
 END SUBROUTINE init
 
 !> =============================================================================
