@@ -4,7 +4,6 @@
 !>
 !> =============================================================================
 MODULE mpi_mod
-  USE io_mod
   implicit none
   integer:: mpi_err             ! MPI error status
   logical:: mpi_master          ! true on MPI master (rank 0)
@@ -14,6 +13,7 @@ MODULE mpi_mod
   integer:: mpi_size            ! number of MPI processes
   integer:: mpi_rank            ! process number (zero-based)
   integer:: output=2
+  integer, parameter:: mch=120
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   ! Object that returns the most important MPI parameters
@@ -54,7 +54,6 @@ SUBROUTINE init (mp, mpi_dims, dims)
   mpi%comm   = 0
   mpi%master = mpi_rank==0
   mpi%ok     = .true.
-  io%master  = mpi%rank==0
   !-----------------------------------------------------------------------------
   ! For some reason, this must be done element by element.  Turning it around,
   ! and doing mpi = mp (which is syntactically correct), values are screwed

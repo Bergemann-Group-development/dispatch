@@ -19,7 +19,6 @@ MODULE ramses_mod
   USE list_mod
   USE task_list_mod
   USE experiment_mod
-  USE download_mod, only : find_nbor
   implicit none
   private
 
@@ -1201,7 +1200,7 @@ SUBROUTINE merge_ramses_octs (self, n_max)
     ! correct neighbours, we need to search for neighbours again.
     call tidy_up(self%task_list)
     write (*,'(a,i10.1)') 'current no. of patches = ', self%task_list%n
-    call self%task_list%init_nbors()
+    call self%task_list%init_all_nbors()
   end do
 
   ! Finished. Check the ready state of all patches.
