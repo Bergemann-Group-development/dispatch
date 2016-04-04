@@ -1078,7 +1078,7 @@ SUBROUTINE merge_ramses_octs (self, n_max)
   integer, intent(in) :: n_max
   class(task_t), pointer :: task, nbor_task, merged_task
   class(link_t), pointer :: link, nbor, old_link, new_link
-  integer :: n_now(3), n_nbor(3), n_updated(3), iterations, adir, n_merges, &
+  integer :: n_now(3), n_nbor(3), n_updated(3), iterations, adir, n_merges=1, &
              merge_count, patch_count, diff_count
   real :: dpos(3)
   logical :: merged
