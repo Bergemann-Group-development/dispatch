@@ -543,7 +543,7 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
           print*,'   source index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i)
           print*,'staggered index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)
         end if
-        pp = max(-0.35d0,min(pp,1.35d0))
+        pp(i) = max(-0.35d0,min(pp(i),1.35d0))
       end if
     end do
     p(1:3)=pp; p(4)=pt(2)
