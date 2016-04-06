@@ -144,6 +144,7 @@ SUBROUTINE check (self)
   logical:: flag
   class(mesg_t), pointer:: mesg
   !-----------------------------------------------------------------------------
+  if (mpi%size <= 1) return
   call trace_begin ('mpi_mesg_mod::check')
   call self%init
   call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
@@ -195,6 +196,7 @@ SUBROUTINE get (self, mesg)
   class(mpi_mesg_t):: self
   class(mesg_t), pointer:: mesg
   !-----------------------------------------------------------------------------
+  if (mpi%size <= 1) return
   call trace_begin('mpi_mesg_mod::get')
   call self%unpack_list%lock%set ('get')
   mesg => self%unpack_list%head

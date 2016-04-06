@@ -32,6 +32,7 @@ MODULE patch_mod
     integer:: msplit=2                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
     logical:: guard_zones, time_derivs  ! switches for I/O
+    logical:: root_grid=.false.
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     !---------------------------------------------------------------------------
@@ -289,16 +290,18 @@ SUBROUTINE init (self)
   self%u_fixed     = u_fixed
   self%max_files   = max_files                  ! prevent run-away NaN
   !-----------------------------------------------------------------------------
-  ! Output related parameters (should they go to io% ?)
+  ! Output related parameters
   !-----------------------------------------------------------------------------
   self%guard_zones = guard_zones
   self%time_derivs = time_derivs
   self%end_time    = end_time
   self%out_time    = out_time
   self%print_time  = print_time
+  self%print_next  = print_time
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   if (all(self%size==self%box)) then
     print *, mpi%rank, 'task', self%id, ' is root grid'
+    self%root_grid = .true.
     call self%set(bits%root_grid)
   end if
   !-----------------------------------------------------------------------------
@@ -385,8 +388,7 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
-  call self%lock%set ('rotate')
-  if (self%is_set(bits%root_grid)) then
+  if (self%root_grid) then
     call self%periodic_grid                     ! periodic root grid
   else
     call self%extrapolate_guards                ! time-extrapolate guard cells
@@ -408,6 +410,8 @@ SUBROUTINE rotate (self)
   ! new self%time is what a task is judged on!
   !-----------------------------------------------------------------------------
   call trace_tag ('patch_t%update mem_cr')
+  call self%lock%set ('rotate')
+  !$omp flush
   time = self%time + self%dtime
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
@@ -425,7 +429,7 @@ SUBROUTINE rotate (self)
    print*,'patch iit:', self%iit
   if (io%verbose>3) &
    print*,'patch t(iit):', self%t(self%iit)
-  !$omp flush (self)
+  !$omp flush
   call self%lock%unset ('rotate')
   call trace_end
 END SUBROUTINE rotate
@@ -960,9 +964,9 @@ END SUBROUTINE output_legacy
 !> =============================================================================
 !> Print info to stdout
 !> =============================================================================
-SUBROUTINE info (self, nq, experiment_name)
+SUBROUTINE info (self, nq, ntask, experiment_name)
   class(patch_t):: self
-  integer, optional:: nq
+  integer, optional:: nq, ntask
   character(len=64), optional:: experiment_name
   !.............................................................................
   integer:: iv, nv
@@ -974,7 +978,7 @@ SUBROUTINE info (self, nq, experiment_name)
       nv = 1
       if (io%verbose>2) nv = self%nv
       do iv=1,nv
-        1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,o8,2x,i4)
+        1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,o8,2x,2i4)
         print 1, &
           'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
@@ -983,7 +987,7 @@ SUBROUTINE info (self, nq, experiment_name)
           maxval(self%mem(:,:,:,iv,self%it ,1)), &
           minval(self%mem(:,:,:,iv,self%new,1)), &
           maxval(self%mem(:,:,:,iv,self%new,1)), &
-          self%status, nq
+          self%status, nq, ntask
         write (io%log_unit,1) &
           'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
@@ -992,7 +996,7 @@ SUBROUTINE info (self, nq, experiment_name)
           maxval(self%mem(:,:,:,iv,self%it ,1)), &
           minval(self%mem(:,:,:,iv,self%new,1)), &
           maxval(self%mem(:,:,:,iv,self%new,1)), &
-          self%status, nq
+          self%status, nq, ntask
       end do
     end if
   end if

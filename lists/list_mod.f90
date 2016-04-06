@@ -133,6 +133,8 @@ SUBROUTINE append_link (self, link)
   class(link_t), pointer:: link
   !.............................................................................
   call trace_begin ('list_t%append_link '//self%name)
+  call self%lock%set ('append_link')
+  !$omp flush(self)
   if (associated(self%tail)) then
     link%prev => self%tail
     link%prev%next => link
@@ -143,6 +145,8 @@ SUBROUTINE append_link (self, link)
   end if
   if (link%task%is_clear(bits%virtual)) &
     self%n = self%n+1
+  !$omp flush(self)
+  call self%lock%unset ('append_link')
   call trace_end
 END SUBROUTINE append_link
 
@@ -240,7 +244,7 @@ SUBROUTINE check_nbors (self, link)
   end do
   call self%check_ready (link)                        ! finally check link task
   if (task%id==id_debug) print*, id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
-  self%n_nbor = self%n_nbor + 1
+  !self%n_nbor = self%n_nbor + 1
   if (io%verbose>2) print '(a,i6,l3,12(2x,a,i4))', &
     'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
     'neighbors:',n_check, 'blocked:',n_blocked, 'ready:', n_ready, &
@@ -273,11 +277,16 @@ SUBROUTINE check_ready (self, link, set_debug)
   class(list_t):: self
   class(link_t), pointer:: link
   class(task_t), pointer:: task, nbtask
-  class(link_t), pointer:: nbor
-  integer:: set_debug, debug
+  class(link_t), pointer:: nbor, scan
+  integer:: set_debug, debug=0
   optional:: set_debug
   logical:: ahead, is_clear
   !.............................................................................
+  if (present(set_debug)) then
+    debug = set_debug
+  else
+    debug = 0
+  end if
   call self%qconsistency(1)
   task => link%task                                     ! already checked?
   call task%lock%set ('check_ready')                    ! one at a time
@@ -295,8 +304,8 @@ SUBROUTINE check_ready (self, link, set_debug)
       if (ahead) then
         nbor => nbor%next                               ! next nbor
       else
-        self%n_check = self%n_check+1
-        if (self%debug==1.or.io%verbose>4) &
+        !self%n_check = self%n_check+1
+        if (debug>0 .or. self%debug==1.or.io%verbose>4) &
           print*, task%id, ' check_ready failed on task', nbtask%id
         if (task%id==id_debug) then
           call self%print_queue_until (nbtask)
@@ -314,14 +323,25 @@ SUBROUTINE check_ready (self, link, set_debug)
     call task%lock%unset ('check_ready')
     !print *, task%id, ' ready bit set by', omp_mythread()
     call self%qconsistency(2)
-    if (task%id==id_debug) print*, id_debug, 'mk being queued at time', task%time
+    if (debug>0 .or. task%id==id_debug) print*, id_debug, 'mk being queued at time', task%time
     call self%queue_by_time (link)                      ! add task to queue
     if (task%id==id_debug) print*, id_debug, 'mk was   queued at time', task%time
-    self%n_ready = self%n_ready+1
-    if (self%debug>0) print *, task%id, ' found by check_ready, nq =', self%nq
+    !self%n_ready = self%n_ready+1
+    if (debug>0 .or. self%debug>0) print *, task%id, ' found by check_ready, nq =', self%nq
     call self%qconsistency(3)
     call trace_end
     return
+  else
+    scan => self%queue
+    do while (associated(scan))
+      if (associated(scan,link)) then
+        call task%lock%unset ('check_ready')
+        return
+      end if
+      scan => scan%next_time
+    end do
+    print *,'ERROR: ready task missing in queue', link%task%id
+    call self%queue_by_time (link)                      ! add task to queue
   end if
   !$omp flush
   call task%lock%unset ('check_ready')                  ! one at a time
@@ -368,20 +388,25 @@ SUBROUTINE qconsistency (self, i)
   integer:: n, id1=0, id2=0, i
   real(8):: time
   !.............................................................................
-  if (self%debug < 2) return
+  !if (self%debug < 1) return
   call trace_begin ('list_t%qconsistency',0)
+  call self%lock%set ('qconsistency')
   n = 0
   link => self%queue
-  time = 0d0
+  if (associated(link)) then
+    time = link%task%time
+    link => link%next_time
+    n = n+1
+  end if
   do while (associated(link))
     n = n+1
-    link => link%next_time
-    if (n > self%nq+1) exit
+    if (n > self%nq) exit
     if (link%task%time < time) then
       print*,'ERROR: queue out of order'
       exit
     end if
     time = link%task%time
+    link => link%next_time
 !    print*,n
   end do
   if (n /= self%nq) then
@@ -396,6 +421,7 @@ SUBROUTINE qconsistency (self, i)
     end do
     call mpi%end ('error')
   end if
+  call self%lock%unset ('qconsistency')
   call trace_end
 END SUBROUTINE qconsistency
 
@@ -952,16 +978,22 @@ SUBROUTINE print_queue_until (self, task)
 END SUBROUTINE print_queue_until
 
 !> =============================================================================
-!> Print the queue until and including a given task
+!> Print the queue
 !> =============================================================================
-SUBROUTINE print_queue_times (self)
+SUBROUTINE print_queue_times (self, label)
   class(list_t):: self
+  character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
   !.............................................................................
   link => self%queue
-  if (io%master) print*,'print_queue_times:'
+  if (present(label)) then
+     print*,'print_queue_times: '//trim(label)
+  else
+     print*,'print_queue_times:'
+  end if
   do while (associated(link))
-    print '("queue: id, time =",i7,1p,e14.5)', link%task%id, link%task%time
+    print '("queue: id, time =",i7,1p,g14.5,l5)', link%task%id, link%task%time, &
+      link%task%is_set(bits%ready)
     link => link%next_time
   end do
 END SUBROUTINE print_queue_times

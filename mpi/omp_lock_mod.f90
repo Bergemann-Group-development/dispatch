@@ -21,18 +21,36 @@ MODULE omp_lock_mod
 CONTAINS
 
 !> =============================================================================
+!> Initialize a lock, taking care not to do it more than once, and to do it
+!> inside a parallel region (in case this matters)
+!> =============================================================================
 SUBROUTINE init (self, kind)
   class(lock_t):: self
   character(len=4):: kind
+  logical omp_in_parallel
   !-----------------------------------------------------------------------------
   if (self%id > 0) return
-  call omp_init_lock (self%lock)
-  !$omp atomic
-  id = id+1
-  self%id = id
-  self%kind = kind
-  if (debug) &
-    print*, omp_mythread(),' initialized lock', self%id, ' '//kind
+  if (omp_in_parallel()) then
+    !$omp single
+    call omp_init_lock (self%lock)
+    id = id+1
+    self%id = id
+    self%kind = kind
+    if (debug) &
+      print*, omp_mythread(),' initialized lock inside parallel region:', self%id, ' '//kind
+    !$omp end single
+  else
+    !$omp parallel
+    !$omp single
+    call omp_init_lock (self%lock)
+    id = id+1
+    self%id = id
+    self%kind = kind
+    if (debug) &
+      print*, omp_mythread(),' initialized lock outside parallel region:', self%id, ' '//kind
+    !$omp end single
+    !$omp end parallel
+  end if
 END SUBROUTINE init
 
 !> =============================================================================

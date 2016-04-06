@@ -10,7 +10,7 @@
 
 &io_params
  verbose=0
- do_trace=f
+ do_trace=t
  do_debug=f
  do_output=t
 /
@@ -24,12 +24,12 @@
 &patch_params
  nt=5
  courant=0.2
- grace=0.3
+ grace=0
  n=20,20,20
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.501
+ end_time=10.001
  out_time=0.05
  print_time=1.0
  guard_zones=f

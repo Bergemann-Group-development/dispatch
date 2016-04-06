@@ -125,7 +125,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: -3, neg, o =', neg, o, jt, pt
-      !xomp flush
+      !$omp flush
       call other%lock%unset ('download_same -3')
       call patch%check_density ('after -3')
     else
@@ -150,7 +150,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: +3, neg, o =', neg, o, jt, pt
-      !xomp flush
+      !$omp flush
       call other%lock%unset ('download_same +3')
       call patch%check_density ('after +3')
     else
@@ -180,7 +180,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: -2, neg, o =', neg, o, jt, pt
-      !xomp flush
+      !$omp flush
       call other%lock%unset ('download_same -2')
       call patch%check_density ('after -2')
     else
@@ -205,7 +205,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: +2, neg, o =', neg, o, jt, pt
-      !xomp flush
+      !$omp flush
       call other%lock%unset ('download_same +2')
       call patch%check_density ('after +2')
     else
@@ -235,7 +235,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: -1, neg, o =', neg, o, jt, pt
-      !xomp flush
+      !$omp flush
       call other%lock%unset ('download_same -1')
       call patch%check_density ('after -1')
     else
@@ -260,7 +260,7 @@ SUBROUTINE download_same_static (link)
         end do
       end do
       if (neg>0) print*, other%id, 'MK: +1, neg, o =', neg, o, jt, pt
-      !xomp flush
+      !$omp flush
       call other%lock%unset ('download_same +1')
       call patch%check_density ('after +1')
     else
@@ -383,6 +383,7 @@ FUNCTION find_nbor (link, idir, o, time, jt, pt) RESULT (other)
         idir, patch%id, nbor%task%id, dist/patch%size(adir), (position-try%position)/patch%size
     if (dist < patch%size(adir)*0.1) then
       call try%lock%set ('find_nbor')
+      !$omp flush
       other => try
       !print '(i6,a,f9.5,3x,"other%t:",7f9.5)', patch%id, ' found nbor, times =', patch%time, other%t(1:nt-1)
       exit
@@ -634,6 +635,7 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
   !-----------------------------------------------------------------------------
   if (associated(best)) then
     call best%lock%set ('find_best_nbor')
+    !$omp flush
     call find_time (best, target%time, jt, pt)
     old_score = best_score
   end if

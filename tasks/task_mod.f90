@@ -80,24 +80,26 @@ SUBROUTINE void (self)
 END SUBROUTINE
 
 !> =============================================================================
+!> Define unique patch ids.  A critical region is OK; this is only done once.
 !> =============================================================================
 SUBROUTINE init (self)
   class (task_t):: self
   logical:: first_time=.true.
   !.............................................................................
   call trace_begin ('task_t%init')
+  !$omp critical
   if (first_time) then
     first_time = .false.
     id = mpi%rank+1
     self%id = id
   else if (self%id==0) then
-    !$omp atomic
     id = id+mpi%size
     self%id = id
   end if
+  scene%n_patch = self%id
+  !$omp end critical
   write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)
-  scene%n_patch = self%id
   call trace_end
 END SUBROUTINE
 
@@ -126,9 +128,9 @@ END SUBROUTINE
 !> =============================================================================
 !> Print info to stdout
 !> =============================================================================
-SUBROUTINE info (self, nq, experiment_name)
+SUBROUTINE info (self, nq, ntask, experiment_name)
   class(task_t):: self
-  integer, optional:: nq
+  integer, optional:: nq, ntask
   character(len=64), optional:: experiment_name
   !.............................................................................
 END SUBROUTINE info
@@ -138,6 +140,7 @@ END SUBROUTINE info
 LOGICAL FUNCTION is_ahead_of (self, task)
   class (task_t):: self, task
   !.............................................................................
+  !$omp flush
   is_ahead_of = self%time + max(self%dtime,task%dtime)*task%grace >= task%time
   if (task%id==id_debug.or.io%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread(), 'mk is_ahead_of: ', &

@@ -56,7 +56,9 @@ SUBROUTINE init_omp
 !...............................................................................
 #if defined (_OPENMP)
 !$omp parallel
+!$omp single
   omp_nthreads = omp_get_num_threads()
+!$omp end single
 !$omp end parallel
 #else
   omp_nthreads = 1
