@@ -507,13 +507,13 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
   real:: pt(2), old_score
   !.............................................................................
   integer:: jj(3), iv, i, it, j
-  real(8):: pp(3), pos(3)
+  real(8):: pp(3), cellpos(3)
   real:: p(4), q(4)
   !-----------------------------------------------------------------------------
   ! Find the best nbor patch.  If found, the patch will already be locked
   !-----------------------------------------------------------------------------
-  pos = target%myposition (ii)
-  call find_best_nbor  (link, target, pos, source, jt, pt, -2, old_score)
+  cellpos = target%myposition (ii)
+  call find_best_nbor  (link, target, cellpos, source, jt, pt, idir, old_score)
   if (.not.associated(source)) then
     return
   end if
@@ -523,13 +523,16 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
   jj = 0
   do iv=1,source%nv
     do i=1,3
-      pos(i) = target%position(i) + (ii(i)-target%offset(i)+target%mesh(i)%h(iv))*target%ds(i)      ! position of target ii
-      pp(i) = (pos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)    ! float index in source
+      cellpos(i) = target%position(i) + (ii(i)-target%offset(i)+target%mesh(i)%h(iv))*target%ds(i)      ! position of target ii
+      pp(i) = (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)    ! float index in source
       jj(i) = pp(i)                                                                                 ! integer part
       jj(i) = max(1,min(source%mesh(i)%gn-1,jj(i)))
+      ! do not try to interpolate from ghost cells!
+      ! FIXME: what happens if a ghost cell isn't filled?
+      if ((jj(i) .lt. target%mesh(i)%li) .or. (jj(i) .gt. target%mesh(i)%ui)) return
       pp(i) = pp(i) - jj(i)                                                                         ! fractions
       if (pp(i)<-0.35d0 .or. pp(i)>1.35d0) then
-        pp(i) = (pos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)  ! float index in source
+        pp(i) = (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)  ! float index in source
         if (io%verbose > 1) &
         print '(a,2i3,2f6.1,2(2x,a,i6,i3," i:",i4,f13.8))', 'INDEX ERROR:', idir, i, &
           target%mesh(i)%h(iv), source%mesh(i)%h(iv), &
@@ -538,10 +541,10 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
         if (io%verbose > 2) then
           print*,'   source shift:', (target%position-source%position)/source%ds + source%offset
           print*,'    target size:', target%size
-          print*,'   target index:', (pos(i)-target%position(i))/target%ds(i) + target%offset(i)
+          print*,'   target index:', (cellpos(i)-target%position(i))/target%ds(i) + target%offset(i)
           print*,'    source size:', source%size
-          print*,'   source index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i)
-          print*,'staggered index:', (pos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)
+          print*,'   source index:', (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i)
+          print*,'staggered index:', (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)
         end if
         pp(i) = max(-0.35d0,min(pp(i),1.35d0))
       end if
