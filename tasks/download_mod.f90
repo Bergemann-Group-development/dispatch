@@ -112,9 +112,9 @@ SUBROUTINE download_same_static (link)
     if (associated(other)) then
       neg = 0
       do iz=m(3)%lb,m(3)%lo
-        do iy=m(2)%lb,m(2)%ub
+        do iy=m(2)%lb,min(m(2)%ub,other%mesh(2)%ub)
           do iv=1,nv
-            do ix=m(1)%lb,m(1)%ub
+            do ix=m(1)%lb,min(m(1)%ub,other%mesh(1)%ub)
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy,iz+o,iv,jt(2),1)*pt(2)
             end do
@@ -133,13 +133,14 @@ SUBROUTINE download_same_static (link)
           guard(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:) = &
       patch%mem(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:,it,1)
     end if
+
     other => find_nbor (link, +3, o, patch%time, jt, pt)
     if (associated(other)) then
       neg = 0
       do iz=m(3)%uo,m(3)%ub
-        do iy=m(2)%lb,m(2)%ub
+        do iy=m(2)%lb,min(m(2)%ub,other%mesh(2)%ub)
           do iv=1,nv
-            do ix=m(1)%lb,m(1)%ub
+            do ix=m(1)%lb,min(m(1)%ub,other%mesh(1)%ub)
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy,iz+o,iv,jt(2),1)*pt(2)
             end do
@@ -166,10 +167,10 @@ SUBROUTINE download_same_static (link)
     other => find_nbor (link, -2, o, patch%time, jt, pt)
     if (associated(other)) then
       neg = 0
-      do iz=m(3)%lb,m(3)%ub
+      do iz=m(3)%lb,min(m(3)%ub,other%mesh(3)%ub)
         do iy=m(2)%lb,m(2)%lo
           do iv=1,nv
-            do ix=m(1)%lb,m(1)%ub
+            do ix=m(1)%lb,min(m(1)%ub,other%mesh(1)%ub)
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy+o,iz,iv,jt(2),1)*pt(2)
             end do
@@ -188,13 +189,14 @@ SUBROUTINE download_same_static (link)
           guard(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:) = &
       patch%mem(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:,it,1)
     end if
+
     other => find_nbor (link, +2, o, patch%time, jt, pt)
     if (associated(other)) then
       neg = 0
-      do iz=m(3)%lb,m(3)%ub
+      do iz=m(3)%lb,min(m(3)%ub,other%mesh(3)%ub)
         do iy=m(2)%uo,m(2)%ub
           do iv=1,nv
-            do ix=m(1)%lb,m(1)%ub
+            do ix=m(1)%lb,min(m(1)%ub,other%mesh(1)%ub)
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt(1),1)*pt(1) &
                                           + other%mem(ix,iy+o,iz,iv,jt(2),1)*pt(2)
             end do
@@ -221,8 +223,8 @@ SUBROUTINE download_same_static (link)
     other => find_nbor (link, -1, o, patch%time, jt, pt)
     if (associated(other)) then
       neg = 0
-      do iz=m(3)%lb,m(3)%ub
-        do iy=m(2)%lb,m(2)%ub
+      do iz=m(3)%lb,min(m(3)%ub,other%mesh(3)%ub)
+        do iy=m(2)%lb,min(m(2)%ub,other%mesh(2)%ub)
           do ix=m(1)%lb,m(1)%lo
             do iv=1,nv
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt(1),1)*pt(1) &
@@ -243,11 +245,12 @@ SUBROUTINE download_same_static (link)
           guard(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:) = &
       patch%mem(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:,it,1)
     end if
+
     other => find_nbor (link, +1, o, patch%time, jt, pt)
     if (associated(other)) then
       neg = 0
-      do iz=m(3)%lb,m(3)%ub
-        do iy=m(2)%lb,m(2)%ub
+      do iz=m(3)%lb,min(m(3)%ub,other%mesh(3)%ub)
+        do iy=m(2)%lb,min(m(2)%ub,other%mesh(2)%ub)
           do ix=m(1)%uo,m(1)%ub
             do iv=1,nv
               patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt(1),1)*pt(1) &
