@@ -377,11 +377,13 @@ SUBROUTINE qconsistency (self, i)
     n = n+1
     link => link%next_time
     if (n > self%nq+1) exit
-    if (link%task%time < time) then
-      print*,'ERROR: queue out of order'
-      exit
+    if (associated(link)) then
+      if (link%task%time < time) then
+        print*,'ERROR: queue out of order'
+        exit
+      end if
+      time = link%task%time
     end if
-    time = link%task%time
 !    print*,n
   end do
   if (n /= self%nq) then
