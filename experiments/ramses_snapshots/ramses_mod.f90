@@ -202,7 +202,7 @@ SUBROUTINE read_snapshot (self)
 
   ! diagnostic variables
   integer, allocatable, dimension(:,:):: ncellsum
-  integer, save:: nprint_f=100
+  integer, save:: nprint_f=1000
   integer(8), save:: n_passive=0, n_active=0, n_onrank=0, n_offrank=0, &
     n_d_min=0, n_tt_min=0, n_frozen=0
 
@@ -806,7 +806,7 @@ SUBROUTINE read_snapshot (self)
                 call patch%init()
                 if (mod(self%npatch,1000)==0) &
                   print'(a,2i7,3x,a,1p,2e10.2)','npatch:',self%npatch,n_active,'load:',tot_load,tmp_load
-                patch%offset = patch%position
+                !!!patch%offset = patch%position ! why did I put this here? it causes issues later...
                 ! loop over cells
                 j = 1
                 ! RAMSES variable mapping:
@@ -817,6 +817,12 @@ SUBROUTINE read_snapshot (self)
                 ! 1 = density; 2 = entropy; 3 = grav. potential; 4:6 = momentum components
                 ! 7:9 = magnetic field components
                 it = patch%it
+                ! the RAMSES snapshot does not contain any information to fill boundary
+                ! cells; this needs to be done by DISPATCH. To prevent the boundary cells
+                ! from containing garbage, initialise them.
+                ! Note: should `patch%init()` do this by default?
+                patch%mem(:,:,:,:,patch%it,1) = 0.0
+
                 do iz=patch%mesh(3)%li,patch%mesh(3)%ui
                   do iy=patch%mesh(2)%li,patch%mesh(2)%ui
                     do ix=patch%mesh(1)%li,patch%mesh(1)%ui
@@ -1094,6 +1100,14 @@ SUBROUTINE merge_ramses_octs (self, n_max)
     do while (associated(link))
       merged = .false.
       task => link%task
+
+      ! all tasks should have their ready status reset to ensure the list and
+      ! queue can be properly reconstructed at the end of the merger process.
+      if (task%is_set(bits%ready)) then
+        call task%clear(bits%ready)
+        self%task_list%n_ready = self%task_list%n_ready - 1
+      end if
+
       if (task%is_set(bits%remove)) then
         if (io%verbose > 1) print*,'Skipping link ID = ',task%id
         link => link%next
@@ -1236,6 +1250,7 @@ FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
   merger%n = patch%n
   merger%n(adir) = patch%n(adir) + nbor_patch%n(adir)
   merger%id = 0 ! will result in the assignment of an ID
+  call merger%clear(bits%ready) ! clear ready bit so that checks are made by `task_list%check_all`.
   call merger%init()
 
   ! fill variable array
@@ -1246,6 +1261,7 @@ FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
   ! this offset formula reasonably assumes edges of RAMSES octs are co-spatial.
   o = 0
   o(adir) = int(((pm%p + pm%r(pm%li)) - (mm%p + mm%r(mm%li)))/mm%d)
+  merger%mem(:,:,:,:,it,1) = 0.0
   do iz=patch%mesh(3)%li,patch%mesh(3)%ui
     do iy=patch%mesh(2)%li,patch%mesh(2)%ui
       do ix=patch%mesh(1)%li,patch%mesh(1)%ui
@@ -1299,6 +1315,9 @@ SUBROUTINE tidy_up (task_list)
       n_removed = n_removed + 1
     end if
   end do
+  ! we want to remake the queue from scratch.
+  nullify(task_list%queue)
+  task_list%nq = 0
 
   write (*,'(a,i8.1)') 'no. of tasks removed = ', n_removed
 
