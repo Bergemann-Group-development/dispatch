@@ -13,7 +13,7 @@ MODULE io_mod
     integer:: verbose=0, input, output, data_unit, log_unit
     logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.true.
     logical:: do_flags, do_legacy
-    integer:: levelmax=10
+    integer:: levelmax
     integer:: word_size=4
     character(len=64):: inputname, outputname, datadir='data'
     character(len=1):: sep = '/'
@@ -37,7 +37,7 @@ SUBROUTINE init (self, name)
   class(io_t):: self
   character(len=120), save:: id = &
   'io_mod.f90 $Id$'
-  integer:: verbose=0, levelmax, iostat
+  integer:: verbose=0, levelmax=10, iostat
   character(len=*), optional:: name
   character(len=64):: filename
   logical:: first_time=.true.
