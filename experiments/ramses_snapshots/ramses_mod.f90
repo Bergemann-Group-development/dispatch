@@ -208,7 +208,7 @@ SUBROUTINE read_snapshot (self)
 
   !---- dispatch variables ----
   class(task_t), pointer:: task, parent
-  class(patch_t), pointer:: patch
+  class(experiment_t), pointer:: patch
 
   !.............................................................................
   call trace_begin('read_ramses_snapshot')
@@ -764,10 +764,10 @@ SUBROUTINE read_snapshot (self)
               ! create a new DISPATCH patch/task for the current grid and fill with the
               ! cells with data if we own the patch
               self%npatch = self%npatch+1
-              allocate (patch_t :: task)
+              allocate (experiment_t :: task)
               select type (task)
-              class is (patch_t)
-              patch => task
+              class is (experiment_t)
+                patch => task
               end select
               patch%nv = 8
               patch%rank = self%rank
@@ -798,6 +798,7 @@ SUBROUTINE read_snapshot (self)
                 end if
               end if
               patch%time = time
+              patch%out_next = 0.999 * time ! output to file immediately
               patch%velocity = 0.0
               call patch%set(bits%static)
               tmp_load = tmp_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
@@ -821,7 +822,7 @@ SUBROUTINE read_snapshot (self)
                 ! cells; this needs to be done by DISPATCH. To prevent the boundary cells
                 ! from containing garbage, initialise them.
                 ! Note: should `patch%init()` do this by default?
-                patch%mem(:,:,:,:,patch%it,1) = 0.0
+                patch%mem(:,:,:,:,:,:) = 0.0
 
                 do iz=patch%mesh(3)%li,patch%mesh(3)%ui
                   do iy=patch%mesh(2)%li,patch%mesh(2)%ui
@@ -1261,7 +1262,7 @@ FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
   ! this offset formula reasonably assumes edges of RAMSES octs are co-spatial.
   o = 0
   o(adir) = int(((pm%p + pm%r(pm%li)) - (mm%p + mm%r(mm%li)))/mm%d)
-  merger%mem(:,:,:,:,it,1) = 0.0
+  merger%mem(:,:,:,:,:,:) = 0.0
   do iz=patch%mesh(3)%li,patch%mesh(3)%ui
     do iy=patch%mesh(2)%li,patch%mesh(2)%ui
       do ix=patch%mesh(1)%li,patch%mesh(1)%ui
