@@ -153,6 +153,7 @@ SUBROUTINE update (self)
     ! If the task is frozen (e.g. because it has finished), return
     !---------------------------------------------------------------------------
     if (task%is_set (bits%frozen+bits%virtual)) then
+      if (task%iout == 0) call task%output(self%name)
       call trace_end
       return
     end if
