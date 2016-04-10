@@ -131,11 +131,12 @@ SUBROUTINE detect_cores
   logical:: exist
   integer:: i, iostat, id, oid, n_socket
   type:: socket_t
-    type(socket_t), pointer:: next
+    type(socket_t), pointer:: next => null()
     integer:: id
   end type
-  type(socket_t), pointer:: p, o, head => null()
+  type(socket_t), pointer:: p, o, head
   !.............................................................................
+  nullify(head)
   n_socket = 0
   oid = -1
   inquire (file=file, exist=exist)
@@ -177,7 +178,7 @@ CONTAINS
     p => head
     o => p
     !---------------------------------------------------------------------------
-    ! If the id alreadt exist, return false
+    ! If the id already exists, return false
     !---------------------------------------------------------------------------
     do while (associated(p))
       o => p
