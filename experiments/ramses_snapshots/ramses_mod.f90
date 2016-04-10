@@ -31,20 +31,21 @@ MODULE ramses_mod
     logical:: big_endian, double_precision, quad_precision
     integer:: rank
     integer:: nout, minlvl, maxlvl
-    integer:: npatch
+    integer:: npatch, nmerged_max
     real(kind=4):: scale_l, scale_d, scale_t
     real(kind=8):: gamma
     real(kind=8):: rank_load
     real(kind=8):: xmin, xmax, ymin, ymax, zmin, zmax         ! corners of the cutout
     real(kind=8):: size, d_min, tt_min
-    logical :: centre_on_sink
+    logical :: centre_on_sink, merge_octs
     character(len=128):: path
     type(task_list_t):: task_list
   contains
-    procedure init
-    procedure read_snapshot
-    procedure entropy
-    procedure read_sink
+    procedure :: init
+    procedure :: read_snapshot
+    procedure :: entropy
+    procedure :: read_sink
+    procedure :: merge_ramses_octs
   end type
 
   type :: sink_t                        ! star data type
@@ -80,13 +81,14 @@ SUBROUTINE init (self, name)
   class(ramses_t):: self
   character(len=*), optional:: name
   logical, save:: first_time=.true.
-  integer, save:: nout, minlvl, maxlvl
+  integer, save:: nout, minlvl, maxlvl, nmerged_max
   real, save:: xmin, xmax, ymin, ymax, zmin, zmax, rank_load
   real, save:: d_min, tt_min, size, size_au
-  logical, save :: centre_on_sink
+  logical, save :: centre_on_sink, merge_octs
   character(len=64), save:: path='.'
-  namelist / init_params / nout, xmin, xmax, ymin, ymax, zmin, zmax, &
-                           size, minlvl, maxlvl, rank_load, path, centre_on_sink
+  namelist / init_params / nout, xmin, xmax, ymin, ymax, zmin, zmax, size, &
+                           nmerged_max, minlvl, maxlvl, rank_load, path, &
+                           centre_on_sink, merge_octs
   !.............................................................................
   call trace_begin('experiment_t%init')
   !-----------------------------------------------------------------------------
@@ -108,6 +110,8 @@ SUBROUTINE init (self, name)
     path = './'
     size = -1d0
     centre_on_sink = .false.
+    merge_octs = .true.
+    nmerged_max = 16
     ! read namelist
     rewind (io%input); read (io%input,init_params)
     if (io%master) write(*, init_params)
@@ -135,12 +139,18 @@ SUBROUTINE init (self, name)
   self%nout      = nout
   self%size      = size
   self%centre_on_sink = centre_on_sink
+  self%nmerged_max = nmerged_max
+  self%merge_octs = merge_octs
 
   !-----------------------------------------------------------------------------
   ! Each rank reads the RAMSES grids belonging to it, filling in the data,
   ! and initializing the patch structure of every grid.
   !-----------------------------------------------------------------------------
   call self%read_snapshot()
+
+  ! attempt to merge RAMSES 2**3 octs into larger patches
+  if (self%merge_octs) call self%merge_ramses_octs(nmerged_max)
+
   call trace_end
 END SUBROUTINE init
 
@@ -192,13 +202,13 @@ SUBROUTINE read_snapshot (self)
 
   ! diagnostic variables
   integer, allocatable, dimension(:,:):: ncellsum
-  integer, save:: nprint_f=100
+  integer, save:: nprint_f=1000
   integer(8), save:: n_passive=0, n_active=0, n_onrank=0, n_offrank=0, &
-    n_d_min=0, n_tt_min=0, sum_active=0, sum_passive=0, n_frozen=0
+    n_d_min=0, n_tt_min=0, n_frozen=0
 
   !---- dispatch variables ----
   class(task_t), pointer:: task, parent
-  class(patch_t), pointer:: patch
+  class(experiment_t), pointer:: patch
 
   !.............................................................................
   call trace_begin('read_ramses_snapshot')
@@ -439,7 +449,6 @@ SUBROUTINE read_snapshot (self)
     print *, 'nlevelmax = ',nlevelmax
     print *, 'boxlen = ',boxlen
     print *, 'time = ',time
-    patch%time = time
 
     !------ allocate arrays ------
     ! now that we have more information, we can set and allocate a few required variables.
@@ -567,7 +576,7 @@ SUBROUTINE read_snapshot (self)
       read(ilun) ngrid_level ! aka `numb_list`
       ngrid_file(1:ncpu,1:nlevelmax) = ngrid_level
       if (self%rank==mpi%rank) &
-        print'(a,i3,a,/,40i6)','ngrids(cpu=',k,')',ngrid_level(k,nlevelmin:nlevelmax)
+        print'(a,i4.1,a,/,40i6)','ngrids(cpu=',k,')',ngrid_level(k,1:nlevelmax)
       !
       read(ilun) ! SKIP numb_tot
       if (nboundary > 0) then
@@ -649,8 +658,7 @@ SUBROUTINE read_snapshot (self)
         ngrid_act = ngrid_file(icpu,ilevel)
         levels(ilevel)%ngrid = ngrid_act
         if (ngrid_act > 0) allocate(xg(1:ngrid_act,1:ndims), son(1:ngrid_act,1:twotondim), &
-                                    x(1:ndims,1:ngrid_act), var(1:ngrid_act,1:twotondim,1:nvar_mhd+1), &
-                                    ref(1:ngrid_act))
+                                    x(1:ndims,1:ngrid_act), var(1:ngrid_act,1:twotondim,1:nvar_mhd+1), ref(1:ngrid_act))
 
         ! loop over domains
         do j=1,nboundary+ncpu
@@ -659,7 +667,11 @@ SUBROUTINE read_snapshot (self)
           ! read relevant AMR tree data
           if (ncache > 0) then
             allocate(index_grid(1:ncache), iig(1:ncache))
-            read(ilun) index_grid ! read grid index
+            if (j == icpu) then
+              read(ilun) index_grid ! read grid index
+            else
+              read(ilun) ! SKIP
+            endif
             read(ilun) ! SKIP next index
             read(ilun) ! SKIP prev index
             ! read grid centre
@@ -670,11 +682,19 @@ SUBROUTINE read_snapshot (self)
                 read(ilun) ! SKIP
               endif
             enddo
-            read(ilun) iig ! read father index
-            father(index_grid(1:ncache)) = iig(1:ncache)
+            if (j == icpu) then
+              read(ilun) iig ! read father index
+              father(index_grid(1:ncache)) = iig(1:ncache)
+            else
+              read(ilun) ! SKIP
+            endif
             do i=1,2*ndims
-              read(ilun) iig ! read neighbour index
-              neighbour(index_grid(1:ncache),i) = iig(1:ncache)
+              if (j == icpu) then
+                read(ilun) iig ! read neighbour index
+                neighbour(index_grid(1:ncache),i) = iig(1:ncache)
+              else
+                read(ilun) ! SKIP
+              endif
             enddo
             do i=1,twotondim
               if (j == icpu) then
@@ -695,7 +715,7 @@ SUBROUTINE read_snapshot (self)
           ! read HYDRO data
           read(ilun2) ! SKIP ilevel
           read(ilun2) ! SKIP ncache
-          if (ngrid_file(j,ilevel) > 0) then
+          if (ncache > 0) then
             do i=1,twotondim
               do ivar=1,nvar_mhd
                 if (j == icpu) then
@@ -710,7 +730,7 @@ SUBROUTINE read_snapshot (self)
           ! read GRAV data
           read(ilun3) ! SKIP ilevel
           read(ilun3) ! SKIP ncache
-          if (ngrid_file(j,ilevel) > 0) then
+          if (ncache > 0) then
             do i=1,twotondim
               do ivar=1,4
                 if (j == icpu .and. i==4) then
@@ -744,10 +764,10 @@ SUBROUTINE read_snapshot (self)
               ! create a new DISPATCH patch/task for the current grid and fill with the
               ! cells with data if we own the patch
               self%npatch = self%npatch+1
-              allocate (patch_t :: task)
+              allocate (experiment_t :: task)
               select type (task)
-              class is (patch_t)
-              patch => task
+              class is (experiment_t)
+                patch => task
               end select
               patch%nv = 8
               patch%rank = self%rank
@@ -755,6 +775,7 @@ SUBROUTINE read_snapshot (self)
               patch%position(:) = xg(l,:)
               patch%n = 2
               patch%size = 2.0 * dx
+              call patch%init()
               ! if the patch is at the very boundary, freeze it!
               xg_plus = xg(l,:) + 2d0 * dx
               if (self%size > 0d0 .and. self%centre_on_sink) then
@@ -777,18 +798,16 @@ SUBROUTINE read_snapshot (self)
                 end if
               end if
               patch%time = time
+              patch%out_next = 0.999 * time ! output to file immediately
               patch%velocity = 0.0
+              call patch%set(bits%static)
               tmp_load = tmp_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
               tot_load = tot_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
               if (patch%rank==mpi%rank) then
                 call patch%init()
                 if (mod(self%npatch,1000)==0) &
                   print'(a,2i7,3x,a,1p,2e10.2)','npatch:',self%npatch,n_active,'load:',tot_load,tmp_load
-                patch%offset = patch%position
-                select type (patch)
-                class is (patch_t)
-                  patch%parent => parent
-                end select
+                !!!patch%offset = patch%position ! why did I put this here? it causes issues later...
                 ! loop over cells
                 j = 1
                 ! RAMSES variable mapping:
@@ -799,6 +818,12 @@ SUBROUTINE read_snapshot (self)
                 ! 1 = density; 2 = entropy; 3 = grav. potential; 4:6 = momentum components
                 ! 7:9 = magnetic field components
                 it = patch%it
+                ! the RAMSES snapshot does not contain any information to fill boundary
+                ! cells; this needs to be done by DISPATCH. To prevent the boundary cells
+                ! from containing garbage, initialise them.
+                ! Note: should `patch%init()` do this by default?
+                patch%mem(:,:,:,:,:,:) = 0.0
+
                 do iz=patch%mesh(3)%li,patch%mesh(3)%ui
                   do iy=patch%mesh(2)%li,patch%mesh(2)%ui
                     do ix=patch%mesh(1)%li,patch%mesh(1)%ui
@@ -824,6 +849,7 @@ SUBROUTINE read_snapshot (self)
                     enddo
                   enddo
                 enddo
+                ! note that neighbour lists still need to be determined (see below).
                 call self%task_list%append (task)
 
                 ! diagnostic info
@@ -847,8 +873,6 @@ SUBROUTINE read_snapshot (self)
       if (self%rank==mpi%rank) print'(4(a,i8,3x),a,1p,e9.2)', &
         'n_active:',n_active,'n_passive:',n_passive,'n_onrank:',n_onrank, &
         'n_offrank:',n_offrank,'tmp_load:',tmp_load
-      sum_active = sum_active + n_active
-      sum_passive = sum_passive + n_passive
       !
       if (tmp_load > self%rank_load) then
         if (self%rank<mpi%size-1) then
@@ -866,8 +890,8 @@ SUBROUTINE read_snapshot (self)
     enddo ! end loop k=1,ncpu_read
     write (*,'(a)') '=================================================='
     write (*,'(a,2(i6.1,1x))') 'n_d_min, n_tt_min =',n_d_min,n_tt_min
-    write (*,'(a,2(i11.1,1x))') 'total active, passive = ', sum_active, sum_passive
     write (*,'(a,i11.1)') 'n_frozen = ', n_frozen
+    write (*,'(a,i11.1)') 'n_patch = ',self%npatch
 
   !$omp end master
   !$omp barrier
@@ -884,14 +908,21 @@ SUBROUTINE read_snapshot (self)
   enddo
   write (*,'(a)') '=================================================='
   if (self%size > 0 .and. self%centre_on_sink) then
-    write (*,'(a,1p,2(3e10.2,2x))') 'pmin, pmax (AU) =', &
-      (pmin-star%position)*scaling%l/cgs%au, (pmax-star%position)*scaling%l/cgs%au
+    write (*,'(a,1p,3(1e14.7,2x))') 'pmin (AU) =', &
+      (pmin-star%position)*scaling%l/cgs%au
+    write (*,'(a,1p,3(1e14.7,2x))')'pmax (AU) =', &
+      (pmax-star%position)*scaling%l/cgs%au
   end if
   write (*,'("fill (by level):",30f7.3)') fill(nlevelmin:self%maxlvl)
   deallocate (fill)
 
   deallocate(ngrid_file, ngrid_level, cpu_list, cpu_read, xc, father, &
              neighbour, levels, ncellsum)
+
+  ! finish task list initialisation
+  print*,'Finishing task list initialisation (including neighbour determination).'
+  print*,'This could take a while...'
+  call self%task_list%init ('ramses_snapshot')
 
   call trace_end
 END SUBROUTINE read_snapshot
@@ -1029,10 +1060,269 @@ END FUNCTION entropy
   close(sink_unit)
   star%position = [sink%x,sink%y,sink%z]
   star%mass = sink%mass
-  print*,'type(sink_t) :: star => last sink in file'
+  write (*,*) 'type(sink_t) :: star => last sink in file'
+  write (*,'(a,3(1e11.5,1x),a,1i3.1)') ' pos = ',star%position,'; level = ',sink%ilevel
   print*,'=================================================='
   
   call trace_end
 END SUBROUTINE read_sink
+
+!> =============================================================================
+!> Attempt to merge 2**3 RAMSES octs into large patches (up to nmax**3 cells).
+!>
+!> - This subroutine is specific to RAMSES data; it does not cover the possibility
+!>   of overlapping patches.
+!> - Only existing octs are used; no interpolation is performed.
+!> - It is assumed that the neighbour list only contains octs which abut the
+!>   current patch.
+!> - Even with `merge_nbor_lists`, the neighbour list will still need to be
+!>   reconstructed at the end of this procedure to ensure the new, merged patches
+!>   are properly accounted for.
+!> =============================================================================
+SUBROUTINE merge_ramses_octs (self, n_max)
+  class(ramses_t) :: self
+  integer, intent(in) :: n_max
+  class(task_t), pointer :: task, nbor_task, merged_task
+  class(link_t), pointer :: link, nbor, old_link, new_link
+  integer :: n_now(3), n_nbor(3), n_updated(3), iterations, adir, n_merges=1, &
+             merge_count, patch_count, diff_count
+  real :: dpos(3)
+  logical :: merged
+  !.............................................................................
+  call trace_begin('ramses_mod::merge_ramses_octs')
+
+  patch_count = 0
+  merge_count = 0
+  iterations = 0
+  
+  do while (n_merges > 0)
+    n_merges = 0
+    link => self%task_list%head
+    do while (associated(link))
+      merged = .false.
+      task => link%task
+
+      ! all tasks should have their ready status reset to ensure the list and
+      ! queue can be properly reconstructed at the end of the merger process.
+      if (task%is_set(bits%ready)) then
+        call task%clear(bits%ready)
+        self%task_list%n_ready = self%task_list%n_ready - 1
+      end if
+
+      if (task%is_set(bits%remove)) then
+        if (io%verbose > 1) print*,'Skipping link ID = ',task%id
+        link => link%next
+        cycle
+      end if
+    
+      select type (task)
+      class is (patch_t)
+        n_now = task%n
+      end select
+      patch_count = patch_count + 1
+    
+      ! only proceed if no. of patch cells is less than `n_max`.
+      if (any(n_now >= n_max)) then
+        link => link%next
+        cycle
+      end if
+    
+      nbor => link%nbor
+      do while (associated(nbor))
+        nbor_task => nbor%task
+        if (nbor_task%is_set(bits%remove)) then
+          if (io%verbose > 1) print*,'Skipping nbor ID = ',nbor_task%id
+          nbor => nbor%next
+          cycle
+        end if
+    
+        ! skip if neighbour is not at the same level
+        if (task%level /= nbor%task%level) then
+          nbor => nbor%next
+          cycle
+        end if
+    
+        ! only allow merges between octs that share a face.
+        dpos = task%position - nbor%task%position
+        if (count(abs(dpos) > 0.0) > 1) then
+          nbor => nbor%next
+          cycle
+        end if
+        adir = maxloc(abs(dpos),dim=1)
+    
+        select type (nbor_task)
+        class is (patch_t)
+          n_nbor = nbor_task%n
+        end select
+
+        diff_count = count(abs(n_nbor - n_now) > 0)
+        if (n_nbor(adir) - n_now(adir) > 0) diff_count = diff_count - 1
+        ! don't permit merges of patches with different sizes (except along
+        ! the direction of the proposed merge, that's okay).
+        if (diff_count > 0) then
+          nbor => nbor%next
+          cycle
+        end if
+
+        if (all(n_nbor < n_max)) then
+          ! try to merge two patches; includes inheritence of existing neighbours
+          merged_task => merge_neighbours(link, nbor, dpos)
+          ! add new merged patch to the *end* of the list
+          call self%task_list%append(merged_task)
+          ! merge the neighbour lists of the merged patches (and give it the
+          ! result to the new task).
+          associate (back_link => merged_task%link)
+          select type (back_link)
+          type is (link_t)
+            new_link => back_link
+          end select
+          !!!call merge_nbor_lists(link, nbor, new_link)
+          end associate
+    
+          ! prepare to remove neighbour and current patch from task list
+          merged = .true.
+          n_merges = n_merges + 1
+          merge_count = merge_count + 1
+          select type (merged_task)
+          type is (patch_t)
+            n_updated = merged_task%n
+          end select
+          write (*,'(a,i10.1,a,i10.1,a,i10.1,a,3(i3.1,1x),a)') 'patches merged: ids = ', &
+            link%task%id, ', ', nbor%task%id,' => ', merged_task%id, ' (', n_updated, ')'
+    
+          ! let's be conservative: only allow one merge at a given time; this will
+          ! be slower, but safer.
+          call nbor%task%set(bits%remove)  ! flag task for removal.
+          exit ! exit do while over nbor
+        end if
+        nbor => nbor%next
+      end do
+      old_link => link
+      link => link%next
+      ! now it's safe to remove current link
+      if (merged) then
+        call old_link%task%set(bits%remove)  ! flag task for removal.
+      end if
+    end do
+    
+    iterations = iterations + 1
+    write (*,'(a,i3.1)')  'iteration = ', iterations
+    write (*,'(a,i10.1)') 'no. of merges = ', n_merges
+    write (*,'(a,i10.1)') 'total no. of merges = ', merge_count
+    write (*,'(a,i10.1)') 'no. of patches examined = ', patch_count
+    
+    ! Last but not least, tidy up. To ensure the merged patches have the
+    ! correct neighbours, we need to search for neighbours again.
+    call tidy_up(self%task_list)
+    write (*,'(a,i10.1)') 'current no. of patches = ', self%task_list%n
+    call self%task_list%init_all_nbors()
+  end do
+
+  ! Finished. Check the ready state of all patches.
+  call self%task_list%check_all()
+
+  call trace_end
+END SUBROUTINE merge_ramses_octs
+
+!> =============================================================================
+!> Perform the actual merger of two patches; does not carry over the neighbour
+!> lists of the two patches.
+!> =============================================================================
+FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
+  class(link_t), pointer :: link, nbor
+  class(patch_t), pointer :: patch, nbor_patch, merger
+  real, intent(in) :: dpos(3)
+  integer :: it, ix, iy, iz, iv, idir, adir, dum(1), o(3)
+  !.............................................................................
+  patch => task2patch(link%task)
+  nbor_patch => task2patch(nbor%task)
+
+  adir = maxloc(abs(dpos),dim=1)
+  idir = int(sign(float(adir), dpos(adir)))
+
+  ! create new patch
+  allocate (merger, source=patch)
+  merger%mem_allocated = .false.
+  nullify (merger%mem)
+  ! the merged patch only grows in the `idir`-direction
+  merger%size = patch%size
+  merger%size(adir) = patch%size(adir) + nbor_patch%size(adir)
+  merger%position = (patch%position + nbor_patch%position) / 2
+  merger%n = patch%n
+  merger%n(adir) = patch%n(adir) + nbor_patch%n(adir)
+  merger%id = 0 ! will result in the assignment of an ID
+  call merger%clear(bits%ready) ! clear ready bit so that checks are made by `task_list%check_all`.
+  call merger%init()
+
+  ! fill variable array
+  it = merger%it
+  associate (pm => patch%mesh(adir), nm => nbor_patch%mesh(adir), &
+             mm => merger%mesh(adir))
+  ! first copy over `patch`
+  ! this offset formula reasonably assumes edges of RAMSES octs are co-spatial.
+  o = 0
+  o(adir) = int(((pm%p + pm%r(pm%li)) - (mm%p + mm%r(mm%li)))/mm%d)
+  merger%mem(:,:,:,:,:,:) = 0.0
+  do iz=patch%mesh(3)%li,patch%mesh(3)%ui
+    do iy=patch%mesh(2)%li,patch%mesh(2)%ui
+      do ix=patch%mesh(1)%li,patch%mesh(1)%ui
+        do iv=1,patch%nv
+          merger%mem(ix+o(1),iy+o(2),iz+o(3),iv,it,1) = patch%mem(ix,iy,iz,iv,it,1)
+        end do
+      end do
+    end do
+  end do
+
+  ! then copy `nbor_patch`
+  o = 0
+  o(adir) = int(((nm%p + nm%r(nm%li)) - (mm%p + mm%r(mm%li)))/mm%d)
+  do iz=nbor_patch%mesh(3)%li,nbor_patch%mesh(3)%ui
+    do iy=nbor_patch%mesh(2)%li,nbor_patch%mesh(2)%ui
+      do ix=nbor_patch%mesh(1)%li,nbor_patch%mesh(1)%ui
+        do iv=1,patch%nv
+          merger%mem(ix+o(1),iy+o(2),iz+o(3),iv,it,1) = nbor_patch%mem(ix,iy,iz,iv,it,1)
+        end do
+      end do
+    end do
+  end do
+  ! done.
+  end associate
+
+END FUNCTION merge_neighbours
+
+!> =============================================================================
+!> Walk through the task list, deallocating tasks which are flagged for removal
+!> (using `bits%remove`) while also removing the associated link in the task list.
+!> =============================================================================
+SUBROUTINE tidy_up (task_list)
+  class(task_list_t) :: task_list
+  class(task_t), pointer :: task
+  class(link_t), pointer :: link, prev_link
+  integer :: n_removed
+  !.............................................................................
+  call trace_begin('ramses_mod::tidy_up')
+
+  ! deallocate tasks (and associated links) that are marked for removal.
+  n_removed = 0
+  link => task_list%head
+  do while (associated(link))
+    task => link%task
+    prev_link => link
+    link => link%next
+    if (task%is_set(bits%remove)) then
+      if (io%verbose > 1) print*,'removing task id ',task%id
+      call task_list%remove_link(prev_link)
+      deallocate(task)
+      n_removed = n_removed + 1
+    end if
+  end do
+  ! we want to remake the queue from scratch.
+  nullify(task_list%queue)
+  task_list%nq = 0
+
+  write (*,'(a,i8.1)') 'no. of tasks removed = ', n_removed
+
+  call trace_end
+END SUBROUTINE tidy_up
 
 END MODULE ramses_mod

@@ -279,7 +279,10 @@ SUBROUTINE init (self)
   end if
   !print *, 'MK', omp_mythread(), self%id, self%nt, nt
   !$omp end critical (input_cr)
-  self%n           = n                          ! patch dimensions
+  ! reasonable values of self%n should take precedence over a saved value of `n`.
+  if (any(self%n <= 0)) then  
+    self%n           = n                        ! patch dimensions
+  end if
   self%ng          = ng                         ! patch dimensions
   self%nv          = nv                         ! patch dimensions
   self%nt          = nt                         ! patch dimensions
@@ -359,7 +362,6 @@ SUBROUTINE init (self)
   self%new = self%iit(nt)                       ! short-hand
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
-  !
   call trace_end
 END SUBROUTINE init
 

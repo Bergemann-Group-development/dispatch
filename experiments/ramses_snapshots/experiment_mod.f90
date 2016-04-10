@@ -32,9 +32,9 @@ SUBROUTINE update (self)
   type(timestep_t):: timestep
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-  call self%mhd_t%update
-  call self%courant_condition
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  ! the update procedure for this experiment has been intentionally disabled;
+  ! it is not designed to be evolved on its own, but rather used as a set up for
+  ! another experiment.
   call trace_end
 END SUBROUTINE update
 

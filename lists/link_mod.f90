@@ -13,9 +13,9 @@ MODULE link_mod
   private
 
   type, public:: link_t
-    class(task_t), pointer :: task => null()          ! task
-    class(link_t), pointer :: nbor => null()          ! next nbor
-    class(link_t), pointer :: link => null()         ! nbor's link (maybe not needed)
+    class(task_t), pointer :: task => null()         ! task
+    class(link_t), pointer :: nbor => null()         ! next nbor; wouldn't `nbor_head` be a better name?
+    class(link_t), pointer :: link => null()         ! pointer from nbor link to task list link (can be useful)
     class(link_t), pointer :: next => null()         ! next link in task list
     class(link_t), pointer :: prev => null()         ! previous link in task list
     class(link_t), pointer :: parent => null()       ! parent task link
