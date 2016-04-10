@@ -117,6 +117,7 @@ SUBROUTINE update (self)
   class(task_t), pointer:: task
   class(mesg_t), pointer:: mesg
   integer:: n
+  real(8):: w
   !.............................................................................
   call trace_begin('task_list_t%update')
   call self%check_flags
@@ -127,14 +128,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in a very brief critical region
   !-----------------------------------------------------------------------------
-  call self%lock%set ('task_list::update')
-  !$omp flush (self)
-  if (self%nq==0) then
-    call self%print_tasks ('nq==0')
-    !call self%print_queue_times ('nq==0 (a)')
-    !call self%check_all
-    !call self%print_queue_times ('nq==0 (b)')
-  end if
+  !$omp critical (list_cr)
   head => self%queue                                    ! queue start
   if (associated(head)) then
     !---------------------------------------------------------------------------
@@ -148,8 +142,9 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     self%queue => head%next_time
     self%nq = self%nq-1                                 ! decrement queue count
-    !$omp flush (self)
-    call self%lock%unset ('task_list::update')          ! allow list updates
+  end if
+  !$omp end critical (list_cr)
+  if (associated(head)) then
     task => head%task                                   ! head task
     !---------------------------------------------------------------------------
     ! If the task is frozen (e.g. because it has finished), return
@@ -161,7 +156,9 @@ SUBROUTINE update (self)
     !----------------------------------------------------------------------------
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
+    w = wallclock()
     call task%update                                    ! update the task
+    w = wallclock()-w
     !----------------------------------------------------------------------------
     ! The rotate procedure in the generic patch_t module is responsible for
     ! updating the time, and rotating the memory slots where information about
@@ -201,7 +198,6 @@ SUBROUTINE update (self)
     ! not removed, since their data may be needed by other tasks.  They are,
     ! however, not added back onto the ready queue.
     !-----------------------------------------------------------------------------
-    !xomp flush
     if (task%has_finished()) then  ! finished:
       !$omp atomic
       self%n = self%n-1
@@ -209,14 +205,7 @@ SUBROUTINE update (self)
     else
       n = self%n
     end if
-    !xomp flush
     call task%info (self%nq, n)                         ! print info on stdout
-  else
-    !$omp flush (self)
-    call self%print_tasks ('no head')
-    call self%print_queue_times ('no head')
-    call self%lock%unset ('task_list::update')
-    call self%check_all
   end if
   call trace_end
 END SUBROUTINE update
