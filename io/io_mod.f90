@@ -48,7 +48,8 @@ SUBROUTINE init (self, name)
   real:: test
   !.............................................................................
   call init_omp
-  io%master = io%master .and. (mpi%rank==0)
+  self%master = self%master .and. (mpi%rank==0)
+  io%master = self%master
   call print_id (id)
   !-----------------------------------------------------------------------------
   ! I/O unit numbers, for convenience and backwards compatibility.  All other
@@ -102,6 +103,7 @@ SUBROUTINE init (self, name)
   self%do_legacy = do_legacy
   self%levelmax  = levelmax
   self%inputname = inputname
+  self%master = self%master .and. (mpi%rank==0)
 END SUBROUTINE init
 
 !> =============================================================================

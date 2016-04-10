@@ -16,7 +16,7 @@ endif
 
 # Set openmp compiler flags if needed
 ifeq ($(strip $(OMP)),yes)
-PAR = -openmp
+PAR = -qopenmp
 endif
 
 # Pick up sub-options in the right order
