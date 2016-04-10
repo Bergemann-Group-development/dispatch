@@ -1119,6 +1119,7 @@ SUBROUTINE courant_condition (self)
   class(patch_t):: self
   !.............................................................................
   call trace_begin('patch_t%courant')
+  call self%lock%set ('courant')
   if (io%verbose>2) &
     print*, 'courant: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
@@ -1138,6 +1139,7 @@ SUBROUTINE courant_condition (self)
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
+  call self%lock%unset ('courant')
   call trace_end
 END SUBROUTINE courant_condition
 

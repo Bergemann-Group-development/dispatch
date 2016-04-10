@@ -290,7 +290,7 @@ SUBROUTINE check_ready (self, link, set_debug)
   call self%qconsistency(1)
   task => link%task                                     ! already checked?
   call task%lock%set ('check_ready')                    ! one at a time
-  !$omp flush (task)
+  !$omp flush (task,self)
   if (task%is_clear(bits%ready)) then
     call trace_begin('list_t%check_ready '//self%name,2)
     nbor => link%nbor                                   ! start on nbor list
@@ -332,9 +332,10 @@ SUBROUTINE check_ready (self, link, set_debug)
     call trace_end
     return
   else
+    !$omp flush(self)
     scan => self%queue
     do while (associated(scan))
-      if (associated(scan,link)) then
+      if (scan%task%id==link%task%id) then
         call task%lock%unset ('check_ready')
         return
       end if
@@ -809,6 +810,7 @@ SUBROUTINE queue_by_time (self, this)
   ! Lock the queue while inserting the task
   !-----------------------------------------------------------------------------
   call self%lock%set ('queue_by_time')
+  !$omp flush (self)
   call this%task%set(bits%ready)                       ! mark as checked
   if (io%verbose>2) print'(1x,a,i6,a,f10.5)', 'list_t%queue_by_time: adding task', &
     this%task%id, ' at time', this%task%time
@@ -839,7 +841,7 @@ SUBROUTINE queue_by_time (self, this)
   end if
   nullify (this%next_time)
 9 continue
-  !$omp flush
+  !$omp flush (self)
   call self%lock%unset ('queue_by_time')
   call trace_end
 END SUBROUTINE queue_by_time
@@ -996,6 +998,7 @@ SUBROUTINE print_queue_times (self, label)
       link%task%is_set(bits%ready)
     link => link%next_time
   end do
+  print*,'done'
 END SUBROUTINE print_queue_times
 
 !> =============================================================================

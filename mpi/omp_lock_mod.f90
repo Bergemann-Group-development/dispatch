@@ -29,28 +29,16 @@ SUBROUTINE init (self, kind)
   character(len=4):: kind
   logical omp_in_parallel
   !-----------------------------------------------------------------------------
-  if (self%id > 0) return
-  if (omp_in_parallel()) then
-    !$omp single
+  !$omp critical
+  if (self%id == 0) then
     call omp_init_lock (self%lock)
     id = id+1
     self%id = id
     self%kind = kind
     if (debug) &
-      print*, omp_mythread(),' initialized lock inside parallel region:', self%id, ' '//kind
-    !$omp end single
-  else
-    !$omp parallel
-    !$omp single
-    call omp_init_lock (self%lock)
-    id = id+1
-    self%id = id
-    self%kind = kind
-    if (debug) &
-      print*, omp_mythread(),' initialized lock outside parallel region:', self%id, ' '//kind
-    !$omp end single
-    !$omp end parallel
+      print*, omp_mythread(),' initialized lock:', self%id, ' '//kind
   end if
+  !$omp end critical
 END SUBROUTINE init
 
 !> =============================================================================

@@ -128,12 +128,12 @@ SUBROUTINE update (self)
   ! Pick a task off the queue, in a very brief critical region
   !-----------------------------------------------------------------------------
   call self%lock%set ('task_list::update')
-  !$omp flush
+  !$omp flush (self)
   if (self%nq==0) then
     call self%print_tasks ('nq==0')
-    call self%print_queue_times ('nq==0 (a)')
-    call self%check_all
-    call self%print_queue_times ('nq==0 (b)')
+    !call self%print_queue_times ('nq==0 (a)')
+    !call self%check_all
+    !call self%print_queue_times ('nq==0 (b)')
   end if
   head => self%queue                                    ! queue start
   if (associated(head)) then
@@ -146,11 +146,11 @@ SUBROUTINE update (self)
     ! single thread and task to check and change the ready bit status, at any
     ! one time.
     !---------------------------------------------------------------------------
-    task => head%task                                   ! head task
-    self%queue => self%queue%next_time                  ! new head task
+    self%queue => head%next_time
     self%nq = self%nq-1                                 ! decrement queue count
-    !$omp flush
+    !$omp flush (self)
     call self%lock%unset ('task_list::update')          ! allow list updates
+    task => head%task                                   ! head task
     !---------------------------------------------------------------------------
     ! If the task is frozen (e.g. because it has finished), return
     !---------------------------------------------------------------------------
@@ -212,7 +212,7 @@ SUBROUTINE update (self)
     !xomp flush
     call task%info (self%nq, n)                         ! print info on stdout
   else
-    !$omp flush
+    !$omp flush (self)
     call self%print_tasks ('no head')
     call self%print_queue_times ('no head')
     call self%lock%unset ('task_list::update')
