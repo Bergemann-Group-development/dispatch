@@ -102,7 +102,8 @@ SUBROUTINE execute (self)
   call buffered_output%close
   call toc ('rank time', self%n_update)
   if (io%master) &
-    print *, 'download_differ % =', 100.*download%n_differ/(download%n_differ+download%n_same)
+    print *, 'download_differ % =', &
+      100.*download%n_differ/max(download%n_differ+download%n_same,1)
   link => self%head
   do while (associated(link))
     rem => link
