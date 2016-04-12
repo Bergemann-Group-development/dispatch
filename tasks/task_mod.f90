@@ -128,9 +128,9 @@ END SUBROUTINE
 !> =============================================================================
 !> Print info to stdout
 !> =============================================================================
-SUBROUTINE info (self, nq, experiment_name)
+SUBROUTINE info (self, nq, ntask, experiment_name)
   class(task_t):: self
-  integer, optional:: nq
+  integer, optional:: nq, ntask
   character(len=64), optional:: experiment_name
   !.............................................................................
 END SUBROUTINE info
