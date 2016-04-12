@@ -99,7 +99,7 @@ SUBROUTINE append (self, pebble)
   ! pointer becomes null, as it should be.  If not, it points to the currently
   ! last item
   !-----------------------------------------------------------------------------
-  self%tail => pebble%prev 
+  pebble%prev => self%tail  
   !-----------------------------------------------------------------------------
   ! If the head is null, then this is the first pebble and head should point to it.
   !-----------------------------------------------------------------------------
@@ -107,7 +107,7 @@ SUBROUTINE append (self, pebble)
   !-----------------------------------------------------------------------------
   ! If the tail exists, the new item should be the next item after it
   !-----------------------------------------------------------------------------
-  if (associated(self%tail)) pebble => self%tail%next
+  if (associated(self%tail)) self%tail%next => pebble 
   nullify (pebble%next)
   self%tail => pebble
   self%n = self%n + 1

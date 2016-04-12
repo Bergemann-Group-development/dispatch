@@ -23,7 +23,7 @@ MODULE pebble_mod
     real:: c                            ! drag acceleration rate
     real:: dt                           ! time step
     real(8):: t                         ! particle time
-    type(pebble_t), pointer:: prev=>null(), next=>null()
+    class(pebble_t), pointer:: prev=>null(), next=>null()
   contains
     procedure:: init
   end type
