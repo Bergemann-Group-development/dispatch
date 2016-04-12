@@ -23,6 +23,10 @@ MODULE task_mod
     integer:: istep = 0
     integer:: iout = 0
     integer:: level
+    integer:: nt=3
+    integer:: it=1
+    integer:: new=2
+    integer:: verbose=1
     real(8):: time = 0d0
     real(8):: end_time = 1d0
     real(8):: out_next = 0d0
@@ -35,6 +39,9 @@ MODULE task_mod
     real(8):: velocity(3) = 0d0
     real(8):: size(3) = 0.9999d0
     real(8):: wallclock
+    integer, dimension(:), pointer:: iit
+    real(8), dimension(:), pointer:: t
+    real(8), dimension(:), pointer:: dt
     character(len=32), pointer:: name
     class(task_t), pointer:: parent
     class(*), pointer:: link            ! this could be useful
@@ -57,18 +64,7 @@ MODULE task_mod
     procedure:: load_balance
     procedure:: has_finished
   end type
-  !-----------------------------------------------------------------------------
-  ! Time slot info and procedures added in tasks_t
-  !-----------------------------------------------------------------------------
-  type, public, extends(task_t):: tasks_t
-    real(8), dimension(:), pointer:: t
-    real(8), dimension(:), pointer:: dt
-    integer, dimension(:), pointer:: iit
-    integer:: nt=3
-    integer:: it=1
-    integer:: new=2
-    integer:: verbose=1
-  end type
+
   integer, save:: id=0
   integer, save, public:: id_debug=0
 CONTAINS

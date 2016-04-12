@@ -34,7 +34,7 @@ SUBROUTINE init (self, name, list, item)
   do while (associated(link))                     ! until end
     item => link%item                             ! get the task point
     select type (item)                            ! determine the type
-    class is (tasks_t)                            ! select only items
+    class is (task_t)                             ! select only items
       if (item%overlaps (item)) then
         if (item%rank == mpi%rank) then
           call item%clear (bits%virtual)          ! item is not virtual

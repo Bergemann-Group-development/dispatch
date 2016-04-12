@@ -1,5 +1,5 @@
 !> *****************************************************************************
-!> Module with list handling for generic class tasks_t objects
+!> Module with list handling for generic class task_t objects
 !> *****************************************************************************
 MODULE list_mod
   USE io_mod

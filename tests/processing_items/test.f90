@@ -12,7 +12,7 @@ MODULE experiment_mod
   USE task_list_mod
   implicit none
   private
-  type, public, extends(tasks_t):: experiment_t
+  type, public, extends(task_t):: experiment_t
   contains
     procedure:: init
     procedure:: output
