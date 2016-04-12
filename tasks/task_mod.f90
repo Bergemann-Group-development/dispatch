@@ -140,6 +140,7 @@ END SUBROUTINE info
 LOGICAL FUNCTION is_ahead_of (self, task)
   class (task_t):: self, task
   !.............................................................................
+  !$omp flush
   is_ahead_of = self%time + max(self%dtime,task%dtime)*task%grace >= task%time
   if (task%id==id_debug.or.io%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread(), 'mk is_ahead_of: ', &

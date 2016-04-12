@@ -32,6 +32,7 @@ MODULE patch_mod
     integer:: msplit=2                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
     logical:: guard_zones, time_derivs  ! switches for I/O
+    logical:: root_grid=.false.
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     !---------------------------------------------------------------------------
@@ -292,16 +293,18 @@ SUBROUTINE init (self)
   self%u_fixed     = u_fixed
   self%max_files   = max_files                  ! prevent run-away NaN
   !-----------------------------------------------------------------------------
-  ! Output related parameters (should they go to io% ?)
+  ! Output related parameters
   !-----------------------------------------------------------------------------
   self%guard_zones = guard_zones
   self%time_derivs = time_derivs
   self%end_time    = end_time
   self%out_time    = out_time
   self%print_time  = print_time
+  self%print_next  = print_time
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   if (all(self%size==self%box)) then
     print *, mpi%rank, 'task', self%id, ' is root grid'
+    self%root_grid = .true.
     call self%set(bits%root_grid)
   end if
   !-----------------------------------------------------------------------------
@@ -387,8 +390,7 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
-  call self%lock%set ('rotate')
-  if (self%is_set(bits%root_grid)) then
+  if (self%root_grid) then
     call self%periodic_grid                     ! periodic root grid
   else
     call self%extrapolate_guards                ! time-extrapolate guard cells
@@ -410,6 +412,8 @@ SUBROUTINE rotate (self)
   ! new self%time is what a task is judged on!
   !-----------------------------------------------------------------------------
   call trace_tag ('patch_t%update mem_cr')
+  call self%lock%set ('rotate')
+  !$omp flush
   time = self%time + self%dtime
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
@@ -427,7 +431,7 @@ SUBROUTINE rotate (self)
    print*,'patch iit:', self%iit
   if (io%verbose>3) &
    print*,'patch t(iit):', self%t(self%iit)
-  !$omp flush (self)
+  !$omp flush
   call self%lock%unset ('rotate')
   call trace_end
 END SUBROUTINE rotate
@@ -1117,6 +1121,7 @@ SUBROUTINE courant_condition (self)
   class(patch_t):: self
   !.............................................................................
   call trace_begin('patch_t%courant')
+  call self%lock%set ('courant')
   if (io%verbose>2) &
     print*, 'courant: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
@@ -1136,6 +1141,7 @@ SUBROUTINE courant_condition (self)
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
+  call self%lock%unset ('courant')
   call trace_end
 END SUBROUTINE courant_condition
 
