@@ -80,24 +80,26 @@ SUBROUTINE void (self)
 END SUBROUTINE
 
 !> =============================================================================
+!> Define unique patch ids.  A critical region is OK; this is only done once.
 !> =============================================================================
 SUBROUTINE init (self)
   class (task_t):: self
   logical:: first_time=.true.
   !.............................................................................
   call trace_begin ('task_t%init')
+  !$omp critical
   if (first_time) then
     first_time = .false.
     id = mpi%rank+1
     self%id = id
   else if (self%id==0) then
-    !$omp atomic
     id = id+mpi%size
     self%id = id
   end if
+  scene%n_patch = self%id
+  !$omp end critical
   write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)
-  scene%n_patch = self%id
   call trace_end
 END SUBROUTINE
 

@@ -21,18 +21,23 @@ MODULE omp_lock_mod
 CONTAINS
 
 !> =============================================================================
+!> Initialize a lock, taking care not to do it more than once
+!> =============================================================================
 SUBROUTINE init (self, kind)
   class(lock_t):: self
   character(len=4):: kind
+  logical omp_in_parallel
   !-----------------------------------------------------------------------------
-  if (self%id > 0) return
-  call omp_init_lock (self%lock)
-  !$omp atomic
-  id = id+1
-  self%id = id
-  self%kind = kind
-  if (debug) &
-    print*, omp_mythread(),' initialized lock', self%id, ' '//kind
+  !$omp critical
+  if (self%id == 0) then
+    call omp_init_lock (self%lock)
+    id = id+1
+    self%id = id
+    self%kind = kind
+    if (debug) &
+      print*, omp_mythread(),' initialized lock:', self%id, ' '//kind
+  end if
+  !$omp end critical
 END SUBROUTINE init
 
 !> =============================================================================
