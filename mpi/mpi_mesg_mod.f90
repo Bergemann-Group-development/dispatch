@@ -10,7 +10,7 @@ MODULE mpi_mesg_mod
   include "mpif.h"
   !
   type, public:: mesg_t
-    type(mesg_t), pointer:: next => null()
+    class(mesg_t), pointer:: next => null()
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:)
     integer:: nbuf, nreq, req, sender, id
@@ -20,8 +20,8 @@ MODULE mpi_mesg_mod
   end type
   !
   type, public:: mesg_list_t
-    type(mesg_t), pointer:: head => null()
-    type(mesg_t), pointer:: tail => null()
+    class(mesg_t), pointer:: head => null()
+    class(mesg_t), pointer:: tail => null()
     character(len=16):: name
     integer:: n=0
     type(lock_t):: lock
