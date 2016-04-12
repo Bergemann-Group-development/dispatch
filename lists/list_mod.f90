@@ -133,6 +133,7 @@ SUBROUTINE append_link (self, link)
   class(link_t), pointer:: link
   !.............................................................................
   call trace_begin ('list_t%append_link '//self%name)
+  !$omp critical (list_cr)
   if (associated(self%tail)) then
     link%prev => self%tail
     link%prev%next => link
@@ -143,6 +144,7 @@ SUBROUTINE append_link (self, link)
   end if
   if (link%task%is_clear(bits%virtual)) &
     self%n = self%n+1
+  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE append_link
 
@@ -240,7 +242,7 @@ SUBROUTINE check_nbors (self, link)
   end do
   call self%check_ready (link)                        ! finally check link task
   if (task%id==id_debug) print*, id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
-  self%n_nbor = self%n_nbor + 1
+  !self%n_nbor = self%n_nbor + 1
   if (io%verbose>2) print '(a,i6,l3,12(2x,a,i4))', &
     'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
     'neighbors:',n_check, 'blocked:',n_blocked, 'ready:', n_ready, &
@@ -273,21 +275,25 @@ SUBROUTINE check_ready (self, link, set_debug)
   class(list_t):: self
   class(link_t), pointer:: link
   class(task_t), pointer:: task, nbtask
-  class(link_t), pointer:: nbor
-  integer:: set_debug, debug
+  class(link_t), pointer:: nbor, scan
+  integer:: set_debug, debug=0
   optional:: set_debug
-  logical:: ahead, is_clear
+  logical:: ahead, is_clear, do_download
   !.............................................................................
+  call trace_begin('list_t%check_ready '//self%name,2)
+  if (present(set_debug)) then
+    debug = set_debug
+  else
+    debug = 0
+  end if
+  !$omp critical (list_cr)
+  do_download = .false.
   call self%qconsistency(1)
   task => link%task                                     ! already checked?
-  call task%lock%set ('check_ready')                    ! one at a time
-  !$omp flush (task)
   if (task%is_clear(bits%ready)) then
-    call trace_begin('list_t%check_ready '//self%name,2)
     nbor => link%nbor                                   ! start on nbor list
     do while (associated (nbor))                        ! keep going until end
       nbtask => nbor%task
-      !$omp flush (nbtask)
       ahead = nbtask%is_ahead_of(task)
       if (task%id==id_debug.or.io%verbose>3) &
         print*, task%id, 'checking nbor', &
@@ -295,36 +301,31 @@ SUBROUTINE check_ready (self, link, set_debug)
       if (ahead) then
         nbor => nbor%next                               ! next nbor
       else
-        self%n_check = self%n_check+1
-        if (self%debug==1.or.io%verbose>4) &
-          print*, task%id, ' check_ready failed on task', nbtask%id
-        if (task%id==id_debug) then
-          call self%print_queue_until (nbtask)
-          print*, id_debug, 'mk failed on task, switching', nbtask%id
-          id_debug = nbtask%id
-        end if
-        call trace_end
-        !$omp flush
-        call task%lock%unset ('check_ready')            ! one at a time
-        return                                          ! give up -- do nothing
+        goto 9
       end if
     end do
     call task%set(bits%ready)                           ! mark as checked
-    !$omp flush (task)
-    call task%lock%unset ('check_ready')
-    !print *, task%id, ' ready bit set by', omp_mythread()
     call self%qconsistency(2)
-    if (task%id==id_debug) print*, id_debug, 'mk being queued at time', task%time
     call self%queue_by_time (link)                      ! add task to queue
-    if (task%id==id_debug) print*, id_debug, 'mk was   queued at time', task%time
-    self%n_ready = self%n_ready+1
-    if (self%debug>0) print *, task%id, ' found by check_ready, nq =', self%nq
     call self%qconsistency(3)
-    call trace_end
-    return
+    do_download = .true.
   end if
-  !$omp flush
-  call task%lock%unset ('check_ready')                  ! one at a time
+9 continue
+  !$omp end critical (list_cr)
+  if (do_download) then
+    !-----------------------------------------------------------------------------
+    ! Prepare for update, by pro-actively downloading data that it depends on.
+    ! By doing it immediately, the guard zone data becomes available to neighbors
+    !-----------------------------------------------------------------------------
+    task => link%task
+    select type (task)
+    class is (patch_t)
+      call task%check_density ("before download")
+      call download%download_link (link, all_cells=.false.)
+      call task%check_density ("after download")
+    end select
+  end if
+  call trace_end
 END SUBROUTINE check_ready
 
 !> =============================================================================
@@ -339,6 +340,7 @@ SUBROUTINE consistency (self, link, i)
   !.............................................................................
   if (self%debug < 2) return
   call trace_begin ('list_t%consitency',1)
+  !$omp critical (list_cr)
   n = 0
   task => link%task
   nbor => link%nbor                                   ! start on nbor list
@@ -354,11 +356,13 @@ SUBROUTINE consistency (self, link, i)
   else
 !    print*, task%id, 'consistent', id1, id2, i
   end if
+  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE consistency
 
 !> =============================================================================
-!> Check if the number of queued tasks is consistent
+!> Check if the number of queued tasks is consistent; i.e., of the number of 
+!> tasks linked at self%queue is the same as nq
 !> =============================================================================
 SUBROUTINE qconsistency (self, i)
   class(list_t):: self
@@ -368,23 +372,24 @@ SUBROUTINE qconsistency (self, i)
   integer:: n, id1=0, id2=0, i
   real(8):: time
   !.............................................................................
-  if (self%debug < 2) return
+  !if (self%debug < 1) return
   call trace_begin ('list_t%qconsistency',0)
   n = 0
   link => self%queue
-  time = 0d0
+  if (associated(link)) then
+    time = link%task%time
+    link => link%next_time
+    n = n+1
+  end if
   do while (associated(link))
     n = n+1
-    link => link%next_time
-    if (n > self%nq+1) exit
-    if (associated(link)) then
-      if (link%task%time < time) then
-        print*,'ERROR: queue out of order'
-        exit
-      end if
-      time = link%task%time
+    if (n > self%nq) exit
+    if (link%task%time < time) then
+      print*,'ERROR: queue out of order'
+      exit
     end if
-!    print*,n
+    time = link%task%time
+    link => link%next_time
   end do
   if (n /= self%nq) then
     print *, 'ERROR: qconsistency:', n, self%nq, i
@@ -412,7 +417,7 @@ SUBROUTINE init_nbors (self, link)
   integer:: n_add
   !.............................................................................
   call trace_begin('list_t%init_nbors ')
-  call self%lock%set('init_bors')
+  !$omp critical (list_cr)
   nullify (link%nbor)                                 ! initially no nbor
   n_add = 0
   scan => self%head                                   ! scan all links (FIXME)
@@ -457,8 +462,7 @@ SUBROUTINE init_nbors (self, link)
     'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
   if (io%verbose>1) write (io%log_unit,*) &
     'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
-  !$omp flush
-  call self%lock%unset('init_nbors')
+  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE init_nbors
 
@@ -493,6 +497,7 @@ SUBROUTINE reset_status (self)
   n_internal = 0
   n_boundary = 0
   n_virtual = 0
+  !$omp critical (list_cr)
   link => self%head
   do while (associated(link))
     call link%task%clear(bits%virtual+bits%boundary)
@@ -544,6 +549,7 @@ SUBROUTINE reset_status (self)
     'n_boundary:', n_boundary, &
     'n_virtual:' , n_virtual
   flush (io%log_unit)
+  !$omp end critical (list_cr)
 END SUBROUTINE reset_status
 
 !> =============================================================================
@@ -554,6 +560,7 @@ SUBROUTINE remove_parents (self)
   class(link_t), pointer:: link, scan, parent
   !.............................................................................
   call trace_begin('list_t%remove_parents')
+  !$omp critical (list_cr)
   link => self%head                                     ! start checking links
   do while (associated(link))
     scan => self%head                                   ! scan all links (FIXME)
@@ -577,6 +584,7 @@ SUBROUTINE remove_parents (self)
     end do
     link => link%next                                   ! continue list
   end do
+  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE remove_parents
 
@@ -656,7 +664,7 @@ SUBROUTINE append_list (self, task_list)
   integer:: n
   !-----------------------------------------------------------------------------
   call trace_begin ('list_t%append_list')
-  call self%lock%set ('append_list')
+  !$omp critical (list_cr)
   self%tail%next => task_list%head
   self%tail      => task_list%tail
   self%n = self%n + task_list%n
@@ -671,8 +679,7 @@ SUBROUTINE append_list (self, task_list)
   else
     print *, trim(self%name)//': inconsistent append of '//task_list%name
   end if
-  !$omp flush
-  call self%lock%unset ('append_list')
+  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE append_list
 
@@ -683,7 +690,7 @@ SUBROUTINE remove_task (self, task)
   class(link_t), pointer:: link, prev
   !.............................................................................
   call trace_begin('list_t%remove_task')
-  call self%lock%set('remove_task')
+  !$omp critical (list_cr)
   link => self%head
   nullify (prev)
   do while (associated(link))
@@ -701,8 +708,7 @@ SUBROUTINE remove_task (self, task)
   end do
   print*,'ERROR: failed to remove from task list, task', task%id
 9 continue
-  !$omp flush
-  call self%lock%unset('remove_task')
+  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE remove_task
 
@@ -771,20 +777,8 @@ SUBROUTINE queue_by_time (self, this)
   if (this%task%is_set(bits%virtual) .or. this%task%has_finished()) return
   call trace_begin ('list_t%queue_by_time '//self%name)
   !-----------------------------------------------------------------------------
-  ! Prepare for update, by pro-actively downloading data that it depends on.
-  ! By doing it immediately, the guard zone data becomes available to neighbors
-  !-----------------------------------------------------------------------------
-  task => this%task
-  select type (task)
-  class is (patch_t)
-  call task%check_density ("before download")
-  call download%download_link (this, all_cells=.false.)
-  call task%check_density ("after download")
-  end select
-  !-----------------------------------------------------------------------------
   ! Lock the queue while inserting the task
   !-----------------------------------------------------------------------------
-  call self%lock%set ('queue_by_time')
   call this%task%set(bits%ready)                       ! mark as checked
   if (io%verbose>2) print'(1x,a,i6,a,f10.5)', 'list_t%queue_by_time: adding task', &
     this%task%id, ' at time', this%task%time
@@ -802,7 +796,7 @@ SUBROUTINE queue_by_time (self, this)
       end if
       self%nq = self%nq+1
       call trace_end
-      goto 9
+      return
     end if
     prev => next
     next => next%next_time
@@ -814,9 +808,6 @@ SUBROUTINE queue_by_time (self, this)
     self%queue => this
   end if
   nullify (this%next_time)
-9 continue
-  !$omp flush
-  call self%lock%unset ('queue_by_time')
   call trace_end
 END SUBROUTINE queue_by_time
 
@@ -829,7 +820,7 @@ SUBROUTINE add_by_quality (self, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_by_quality')
-  call self%lock%set ('add_by_quality')
+  !$omp critical (list_cr)
   nullify (prev)
   next => self%head
   do while (associated(next))
@@ -867,8 +858,7 @@ SUBROUTINE add_by_quality (self, this)
   self%tail => this
   self%n = self%n+1
 9 continue
-  !$omp flush
-  call self%lock%unset ('add_by_quality')
+  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE add_by_quality
 
@@ -881,6 +871,7 @@ SUBROUTINE check_queue (self)
   real:: previous
   integer:: nq
   !.............................................................................
+  !$omp critical (list_cr)
   link => self%queue
   previous = -1.0
   nq = 0
@@ -893,6 +884,7 @@ SUBROUTINE check_queue (self)
     nq = nq+1
   end do
   if (nq /= self%nq) print*,'ERROR: inconsistent number of tasks in queue', nq, self%nq
+  !$omp end critical (list_cr)
 END SUBROUTINE check_queue
 
 !> =============================================================================
@@ -903,7 +895,7 @@ SUBROUTINE insert (self, old, new)
   class(link_t), pointer:: old, new
   !.............................................................................
   call trace_begin ('list_t%insert '//self%name)
-  call self%lock%set ('insert')
+  !$omp critical (list_cr)
   if (associated(old%prev)) then
     new%prev => old%prev
     new%prev%next => new
@@ -913,8 +905,7 @@ SUBROUTINE insert (self, old, new)
   new%next => old
   new%next%prev => new
   self%n = self%n + 1
-  !$omp flush
-  call self%lock%unset ('insert')
+  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE insert
 
@@ -926,12 +917,14 @@ SUBROUTINE print_queue (self)
   class(link_t) , pointer:: link, nbor
   !.............................................................................
   if (io%verbose < 2) return
+  !$omp critical (list_cr)
   link => self%queue
   print'(a,2i4,":",$)', 'ready_queue', self%nq, self%n
   do while (associated(link))
     print '(i4,$)', link%task%id
     link => link%next_time
   end do
+  !$omp end critical (list_cr)
   if (io%master) print*,''
 END SUBROUTINE print_queue
 
@@ -943,6 +936,7 @@ SUBROUTINE print_queue_until (self, task)
   class(task_t):: task
   class(link_t) , pointer:: link, nbor
   !.............................................................................
+  !$omp critical (list_cr)
   link => self%queue
   if (io%master) print*,'print_queue_until:'
   do while (associated(link))
@@ -951,21 +945,31 @@ SUBROUTINE print_queue_until (self, task)
     if (link%task%id==task%id) exit
     link => link%next_time
   end do
+  !$omp end critical (list_cr)
 END SUBROUTINE print_queue_until
 
 !> =============================================================================
-!> Print the queue until and including a given task
+!> Print the queue
 !> =============================================================================
-SUBROUTINE print_queue_times (self)
+SUBROUTINE print_queue_times (self, label)
   class(list_t):: self
+  character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
   !.............................................................................
+  !$omp critical (list_cr)
   link => self%queue
-  if (io%master) print*,'print_queue_times:'
+  if (present(label)) then
+     print*,'print_queue_times: '//trim(label)
+  else
+     print*,'print_queue_times:'
+  end if
   do while (associated(link))
-    print '("queue: id, time =",i7,1p,e14.5)', link%task%id, link%task%time
+    print '("queue: id, time =",i7,1p,g14.5,l5)', link%task%id, link%task%time, &
+      link%task%is_set(bits%ready)
     link => link%next_time
   end do
+  !$omp end critical (list_cr)
+  print*,'done'
 END SUBROUTINE print_queue_times
 
 !> =============================================================================
@@ -979,6 +983,7 @@ SUBROUTINE print_list (self, label)
   !.............................................................................
   call trace_begin ('list_t%print')
   if (io%master) print*,'list_t%print: ',trim(self%name), self%n
+  !$omp critical (list_cr)
   link => self%head
   do while (associated(link))
     task => link%task
@@ -1002,6 +1007,7 @@ SUBROUTINE print_list (self, label)
       type
     link => link%next
   end do
+  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE print_list
 

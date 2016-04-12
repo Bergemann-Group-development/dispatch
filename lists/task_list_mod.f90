@@ -43,6 +43,7 @@ MODULE task_list_mod
     procedure:: output
     procedure:: check_flags
     procedure:: print => print_tasklist
+    procedure:: print_tasks
   end type
   public link_t
 CONTAINS
@@ -99,17 +100,10 @@ SUBROUTINE execute (self)
     call self%update
   end do
   !$omp end parallel
-  call buffered_output%close
   call toc ('rank time', self%n_update)
   if (io%master) &
-    print *, 'download_differ % =', &
-      100.*download%n_differ/max(download%n_differ+download%n_same,1)
-  link => self%head
-  do while (associated(link))
-    rem => link
-    link => link%next
-    call self%remove_link (rem)
-  end do
+    print *, 'download_differ % =', 100.*download%n_differ/(download%n_differ+download%n_same)
+  call buffered_output%close
 END SUBROUTINE execute
 
 !> =============================================================================
@@ -122,7 +116,6 @@ SUBROUTINE update (self)
   class(link_t), pointer:: head
   class(task_t), pointer:: task
   class(mesg_t), pointer:: mesg
-  integer:: n1
   !.............................................................................
   call trace_begin('task_list_t%update')
   call self%check_flags
@@ -133,7 +126,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in a very brief critical region
   !-----------------------------------------------------------------------------
-  call self%lock%set ('task_list::update')
+  !$omp critical (list_cr)
   head => self%queue                                    ! queue start
   if (associated(head)) then
     !---------------------------------------------------------------------------
@@ -145,11 +138,12 @@ SUBROUTINE update (self)
     ! single thread and task to check and change the ready bit status, at any
     ! one time.
     !---------------------------------------------------------------------------
-    task => head%task                                   ! head task
-    self%queue => self%queue%next_time                  ! new head task
+    self%queue => head%next_time
     self%nq = self%nq-1                                 ! decrement queue count
-    !$omp flush
-    call self%lock%unset ('task_list::update')          ! allow list updates
+  end if
+  !$omp end critical (list_cr)
+  if (associated(head)) then
+    task => head%task                                   ! head task
     !---------------------------------------------------------------------------
     ! If the task is frozen (e.g. because it has finished), return
     !---------------------------------------------------------------------------
@@ -189,7 +183,6 @@ SUBROUTINE update (self)
       end select
       call head%send_to_vnbors (mesg)                   ! send to virtual nbors
     end if
-    call task%info (self%nq)                            ! print info on stdout
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the queue,
     ! and its neighbors should also be checked for return to the queue.
@@ -203,11 +196,11 @@ SUBROUTINE update (self)
     ! however, not added back onto the ready queue.
     !-----------------------------------------------------------------------------
     if (task%has_finished()) then  ! finished:
+      !$omp atomic
       self%n = self%n-1
+      !$omp flush
     end if
-  else
-    !$omp flush
-    call self%lock%unset ('task_list::update')
+    call task%info (self%nq, self%n)                    ! print info on stdout
   end if
   call trace_end
 END SUBROUTINE update
@@ -394,15 +387,20 @@ END SUBROUTINE output
 !> =============================================================================
 !> Print a table with task id, positions, and all neighbors
 !> =============================================================================
-SUBROUTINE print_tasks (self)
+SUBROUTINE print_tasks (self, label)
   class (task_list_t):: self
+  character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
   !.............................................................................
-  if (io%verbose < 2) return
+  !if (io%verbose < 2) return
+  if (present(label)) then
+    print'(a,i4,":")', 'task_list: '//trim(label), self%n
+  else
+    print'(a,i4,":")', 'task_list', self%n
+  end if
   link => self%head
-  print'(a,i4,":",$)', 'task_list', self%n
   do while (associated(link))
-    print '(i4,$)', link%task%id
+    print '(i4,g15.6,l5)', link%task%id, link%task%time, link%task%is_set(bits%ready)
     link => link%next
   end do
   print*,''
