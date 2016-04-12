@@ -45,8 +45,8 @@ MODULE pebbles_mod
     real:: courant=0.1                          ! courant number for motion
     real:: cell_probability
     real:: position(3)                          ! relative to star
-    type(pebble_t), pointer:: head => null()    ! first & last pebble
-    type(pebble_t), pointer:: tail => null()    ! first & last pebble
+    class(pebble_t), pointer:: head => null()    ! first & last pebble
+    class(pebble_t), pointer:: tail => null()    ! first & last pebble
     logical:: initialized=.false.               ! initialize flag
     type(lock_t):: lock
   contains
@@ -99,7 +99,7 @@ SUBROUTINE append (self, pebble)
   ! pointer becomes null, as it should be.  If not, it points to the currently
   ! last item
   !-----------------------------------------------------------------------------
-  pebble%prev => self%tail
+  self%tail => pebble%prev 
   !-----------------------------------------------------------------------------
   ! If the head is null, then this is the first pebble and head should point to it.
   !-----------------------------------------------------------------------------
@@ -107,7 +107,7 @@ SUBROUTINE append (self, pebble)
   !-----------------------------------------------------------------------------
   ! If the tail exists, the new item should be the next item after it
   !-----------------------------------------------------------------------------
-  if (associated(self%tail)) self%tail%next => pebble
+  if (associated(self%tail)) pebble => self%tail%next
   nullify (pebble%next)
   self%tail => pebble
   self%n = self%n + 1
