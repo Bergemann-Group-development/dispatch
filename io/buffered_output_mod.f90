@@ -19,7 +19,7 @@ MODULE buffered_output_mod
   ! which is deallocated once the data has been written to disk.
   !-----------------------------------------------------------------------------
   type, public:: dump_t
-    type(dump_t), pointer:: next => null()
+    class(dump_t), pointer:: next => null()
     integer:: id, iout
     real(8):: time
     integer:: ndata
@@ -36,8 +36,8 @@ MODULE buffered_output_mod
     integer(8):: record  = 0
     integer:: n_buffer   = 0
     integer:: max_buffer = 10
-    type(dump_t), pointer:: head  => null()
-    type(dump_t), pointer:: tail  => null()
+    class(dump_t), pointer:: head  => null()
+    class(dump_t), pointer:: tail  => null()
   contains
     procedure:: open
     procedure:: buffer
