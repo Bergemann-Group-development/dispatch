@@ -18,7 +18,7 @@ MODULE patch_mod
   implicit none
   private
   integer, parameter:: ndim = 3, i_d=1
-  type, extends(tasks_t), public:: patch_t
+  type, extends(task_t), public:: patch_t
     real, dimension(:,:,:,:,:,:), pointer:: mem
     real, dimension(:,:,:,:,:), pointer:: vgas
     real, dimension(:,:,:,:), pointer:: density

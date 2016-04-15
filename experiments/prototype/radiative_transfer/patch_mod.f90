@@ -1,6 +1,6 @@
 
 MODULE patch_mod
-  type, extends(tasks_t), public:: patch_t
+  type, extends(task_t), public:: patch_t
   contains
     procedure:: init
   end type

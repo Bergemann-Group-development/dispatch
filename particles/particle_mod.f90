@@ -13,11 +13,10 @@ MODULE particle_mod
   type, public, extends(task_t):: particle_t
     real(4), dimension(:,:), pointer:: p, v     ! position, velocity
     real(4), dimension(:),   pointer:: m, s     ! mass, size
-    real(4), dimension(:),   pointer:: t, dt    ! position, velocity
   contains
     procedure:: init
   end type
-  type, public, extends(tasks_t):: particles_t
+  type, public, extends(task_t):: particles_t
     type(particle_t), dimension(:,:), pointer:: particles
   contains
     procedure:: allocate
