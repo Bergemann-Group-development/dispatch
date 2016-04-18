@@ -1184,7 +1184,7 @@ SUBROUTINE merge_ramses_octs (self, n_max)
           n_merges = n_merges + 1
           merge_count = merge_count + 1
           select type (merged_task)
-          type is (patch_t)
+          class is (patch_t)
             n_updated = merged_task%n
           end select
           write (*,'(a,i10.1,a,i10.1,a,i10.1,a,3(i3.1,1x),a)') 'patches merged: ids = ', &
