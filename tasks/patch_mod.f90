@@ -42,7 +42,7 @@ MODULE patch_mod
     integer:: i_d                       ! density inddex
     real(8):: box(3)=1d0                ! the periodic wrapping size
     real(8):: ds(3), gsize(3)           ! convenience
-    integer:: n(3)=16, ng(3)=2          ! convient default
+    integer:: n(3)=0, ng(3)=2          ! convient default
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
     integer:: i,j,k                     ! should go!  FIXME
     real(8):: offset(3)                 ! this is used to compute indices
@@ -281,7 +281,7 @@ SUBROUTINE init (self)
   !print *, 'MK', omp_mythread(), self%id, self%nt, nt
   !$omp end critical (input_cr)
   ! reasonable values of self%n should take precedence over a saved value of `n`.
-  if (any(self%n <= 0)) then  
+  if (any(self%n == 0)) then
     self%n           = n                        ! patch dimensions
   end if
   self%ng          = ng                         ! patch dimensions
