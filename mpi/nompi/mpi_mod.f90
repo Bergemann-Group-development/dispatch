@@ -48,6 +48,7 @@ SUBROUTINE init (mp, mpi_dims, dims)
   !.............................................................................
   if (first_time) then
     first_time = .false.
+    call init_mpi (mp)
   end if
   mpi%size   = 1
   mpi%rank   = 0

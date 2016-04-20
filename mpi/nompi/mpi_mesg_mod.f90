@@ -9,7 +9,7 @@ MODULE mpi_mesg_mod
   private
   !
   type, public:: mesg_t
-    type(mesg_t), pointer:: next => null()
+    class(mesg_t), pointer:: next => null()
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:)
     integer:: nbuf, nreq, req, sender, id
@@ -19,8 +19,8 @@ MODULE mpi_mesg_mod
   end type
   !
   type, public:: mesg_list_t
-    type(mesg_t), pointer:: head => null()
-    type(mesg_t), pointer:: tail => null()
+    class(mesg_t), pointer:: head => null()
+    class(mesg_t), pointer:: tail => null()
     character(len=16):: name
     integer:: n=0
     type(lock_t):: lock
@@ -139,6 +139,7 @@ SUBROUTINE check (self)
   logical:: flag
   class(mesg_t), pointer:: mesg
   !-----------------------------------------------------------------------------
+  if (mpi%size <= 1) return
   call trace_begin ('mpi_mesg_mod::check')
   call self%init
   do while (flag)
@@ -185,6 +186,7 @@ SUBROUTINE get (self, mesg)
   class(mpi_mesg_t):: self
   class(mesg_t), pointer:: mesg
   !-----------------------------------------------------------------------------
+  if (mpi%size <= 1) return
   call trace_begin('mpi_mesg_mod::get')
   call self%unpack_list%lock%set ('get')
   mesg => self%unpack_list%head
