@@ -3,12 +3,11 @@
 #OPTS = full_debug
 #OPTS = optimized
 
-#AUTO = no
-OPACITY = semenov_etal_2003
+OPACITY = bell_lin_1994
 
 # Common configuration
 EXEC = test.x
-TOP = ../..
+TOP = ../../..
 include $(TOP)/config/Makefile
 
-$(EXEC): opacity_mod.o opacity
+$(EXEC): opacity_mod.o
