@@ -270,12 +270,10 @@ SUBROUTINE init (self)
     nt   = self%nt
     first_time = .false.
     rewind (io%input)
-    read (io%input, patch_params, iostat=iostat)
-    if (iostat>0) print*,'WARNING: namelist read error on thread, id =', &
-      omp_mythread(), self%id
+    read (io%input, patch_params)
     if (io%master) write (*, patch_params)
     rewind (io%input)
-    read (io%input, out_params, iostat=iostat)
+    read (io%input, out_params)
     if (io%master) write (*, out_params)
   end if
   !print *, 'MK', omp_mythread(), self%id, self%nt, nt

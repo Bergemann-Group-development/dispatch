@@ -37,14 +37,12 @@
 !dt_fixed=0.001
 /
 &out_params
- legacy=f
  end_time=50
  out_time=0.20
  print_time=0
  guard_zones=t
  time_derivs=f
  max_files=9000
- legacy=t
 /
 &mhd_params
  gamma=1.4

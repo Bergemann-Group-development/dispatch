@@ -3,6 +3,7 @@
  verbose=0
  do_debug=f
  do_output=f
+!do_legacy=f
 /
 &rubiks_params
  n_levels=3
@@ -34,7 +35,6 @@
 !dt_fixed=0.001
 /
 &out_params
- legacy=f
  end_time=0.20
  out_time=0.10
  print_time=0.20

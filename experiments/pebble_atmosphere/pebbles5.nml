@@ -43,7 +43,6 @@
  guard_zones=t
  time_derivs=f
  max_files=9000
- legacy=t
 /
 &mhd_params
  gamma=1.4
