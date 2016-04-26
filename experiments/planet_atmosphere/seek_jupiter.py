@@ -13,12 +13,13 @@ m_u=1.67e-27
 mu=2.
 gamma=1.4
 
-m1=m_earth*3
+m1=3*m_earth
+a=5*au
 r1=r_earth*(m1/m_earth)**(1./3.)
 T0=200.
 d0=3e-9
 
-r_hill=5.*au*(m1/(3.*m_sun))**(1./3.)
+r_hill=a*(m1/(3.*m_sun))**(1./3.)
 print ' Surface acceleration:', grav*m1/r_earth**2
 print 'Hill radius [R_Earth]:', r_hill/r_earth
 
@@ -28,9 +29,10 @@ meter=100.
 P0=k_B*T0*d0/(mu*m_u)
 
 print 'cgs density:', d0*kg/meter**3
+print ' M/M_Earth R/R_Earth  R/R_hill T_surface   P/P0     H_P/R_Earth'
 
 # Initial guess for iteration; surface and outer pressure
-P1=P0*1.5e6
+P1=P0*1.6e6
 P2=0
 while (P2<P0):
     P1=P1*1.02
@@ -59,10 +61,11 @@ while (P2<P0):
         m.append(m[i])
         m[i+1]=m[i]+dr*4.*np.pi*r[i]**2*d[i]
         i=i+1
-        r_hill=5.*au*(m[i]/(3.*m_sun))**(1./3.)
+        r_hill=a*(m[i]/(3.*m_sun))**(1./3.)
     P2=P[i]
-    fmt="{:10.2e}{:10.2f}{:10.2f}{:10.2f}{:10.2e}"
-    print fmt.format ((m[i]-m[0])/m_earth, r[i]/r_earth, r_hill/r_earth, T1, P[0]/P0)
+    fmt="{:10.2e}{:10.2f}{:10.2f}{:10.2f}{:10.2e}{:10.2e}"
+    Hp=k_B*T[0]/(grav*m[0]/r[0]**2*mu*m_u)
+    print fmt.format ((m[i]-m[0])/m_earth, r[i]/r_earth, r_hill/r_earth, T1, P[0]/P0, Hp/r[0])
     nr=i
     pl.ion()
     pl.figure(2)
