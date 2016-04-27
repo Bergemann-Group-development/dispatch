@@ -1265,6 +1265,7 @@ SUBROUTINE check_density (self, label)
   !-----------------------------------------------------------------------------
   if (io%verbose < 1) return
   mind = minval(self%mem(:,:,:,1,self%it,1))
+  if (present(label) .and. io%verbose>1) print*, label, self%id, mind
   if (mind <= 0.0) then
     !---------------------------------------------------------------------------
     ! Negative densities appear to develop at a few points in the guard zones,

@@ -96,6 +96,7 @@ SUBROUTINE init (self, name)
     first_time=.false.
   end if
   !$omp end critical (input_cr)
+  self%verbose   = verbose
   self%do_debug  = do_debug
   self%do_trace  = do_trace
   self%do_output = do_output
