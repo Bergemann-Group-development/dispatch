@@ -519,7 +519,10 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
   cellpos = target%myposition (ii)
   call find_best_nbor  (link, target, cellpos, source, jt, pt, idir, old_score)
   if (.not.associated(source)) then
+    !if (target%id==121) print*,'WARNING: no best_nbor for 121', ii, idir, old_score
     return
+  else
+    !if (target%id==121) print*,'best_nbor for 121', source%id, ii, idir, old_score
   end if
   !call trace_begin ('download_mod::interpolate_to',2)
   if (io%do_debug) print*,'interpolate_to',target%it,ii,source%id,jt,pt
@@ -533,7 +536,7 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
       jj(i) = max(1,min(source%mesh(i)%gn-1,jj(i)))
       ! do not try to interpolate from ghost cells!
       ! FIXME: what happens if a ghost cell isn't filled?
-      if ((jj(i) .lt. target%mesh(i)%li) .or. (jj(i) .gt. target%mesh(i)%ui)) return
+      !if ((jj(i) .lt. target%mesh(i)%li) .or. (jj(i) .gt. target%mesh(i)%ui)) return
       pp(i) = pp(i) - jj(i)                                                                         ! fractions
       if (pp(i)<-0.35d0 .or. pp(i)>1.35d0) then
         pp(i) = (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)  ! float index in source
@@ -595,15 +598,15 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
   ! Check if the new point is fully inside the previous best patch.  If not,
   ! unlock the previous one, and try finding a new one
   !-----------------------------------------------------------------------------
-  if (associated(best)) then
-    if (all(best%point_distances (position, best%position)  < best%size*0.5d0)) then
-      return
-    else
+  !if (associated(best)) then
+    !if (all(best%point_distances (position, best%position)  < best%size*0.5d0)) then
+      !return
+    !else
       !$omp flush
       call best%lock%unset ('current_score')
       nullify (best)
-    end if
-  end if
+    !end if
+  !end if
   call trace_begin('download_mod::find_best_nbor',2)
   adir = abs(idir)
   best_id = 0
@@ -622,7 +625,7 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
       ! an inside secondary coordinate.  Levels count less, but enough to favor
       ! the higher level against a lower level
       !-----------------------------------------------------------------------
-      score = other%level*0.25
+      score = other%level*2.5
       do i=1,3
         score = score + merge(3.0,1.0,i==adir)* &
           merge(1.0,0.0,abs(pp(i)) < other%size(i)*0.5d0) - &
@@ -634,6 +637,9 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
           best_id = best%id
       end if
     end if
+    !if (target%id==121.and.idir==1) print'(a,i6,2i4,3f8.2,4(3x,3f8.2))', &
+      !'search best_nbor for 121', other%id, target%level, other%level, &
+      !score, best_score, old_score, abs(pp)/other%size, abs(pp)/other%gsize, pp
     nbor => nbor%next
   end do
   !-----------------------------------------------------------------------------
