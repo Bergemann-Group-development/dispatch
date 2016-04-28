@@ -598,7 +598,7 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
   ! Check if the new point is fully inside the previous best patch.  If not,
   ! unlock the previous one, and try finding a new one
   !-----------------------------------------------------------------------------
-  !if (associated(best)) then
+  if (associated(best)) then
     !if (all(best%point_distances (position, best%position)  < best%size*0.5d0)) then
       !return
     !else
@@ -606,7 +606,7 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
       call best%lock%unset ('current_score')
       nullify (best)
     !end if
-  !end if
+  end if
   call trace_begin('download_mod::find_best_nbor',2)
   adir = abs(idir)
   best_id = 0

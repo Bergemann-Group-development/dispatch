@@ -41,7 +41,7 @@
  courant=0.2
 /
 &out_params
- end_time=200
+ end_time=20000
  out_time=2.0
  print_time=0
  guard_zones=t
