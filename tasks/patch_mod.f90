@@ -889,6 +889,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   else
     open (io%log_unit,file=trim(logname),status='unknown',position='append')
   end if
+  write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout
   write (io%log_unit,'(a)') trim(filename)
   ds = self%box/2.0**io%levelmax
   do i=1,3
@@ -904,16 +905,9 @@ SUBROUTINE output_legacy (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
-  write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout
   if (io%verbose>=0) &
     print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%out_next
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  do i=1,3
-    if (self%size(i) > 0.0) then
-      li(i) = (self%position(i)+0.5*(self%box(i)-self%size(i)))/self%ds(i)
-      ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/self%ds(i) - 1.0
-    end if
-  end do
   write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
   write (io%data_unit,'(4(3i9,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
   close (io%data_unit)
