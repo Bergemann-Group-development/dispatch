@@ -51,11 +51,13 @@ SUBROUTINE download_link (link, all_cells)
     end do
     if (static) then
       if (same) then
-        call download_same_static (link)
+        !call download_same_static (link)               ! FIXME
+        call download_different_static (link)
         !$omp atomic
         download%n_same = download%n_same+1
       else
         call download_different_static (link)
+        !$omp atomic
         download%n_differ = download%n_differ+1
       end if
     else
@@ -602,9 +604,9 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
     !if (all(best%point_distances (position, best%position)  < best%size*0.5d0)) then
       !return
     !else
-      !$omp flush
-      call best%lock%unset ('current_score')
-      nullify (best)
+    !$omp flush
+    call best%lock%unset ('current_score')
+    nullify (best)
     !end if
   end if
   call trace_begin('download_mod::find_best_nbor',2)
@@ -628,8 +630,7 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
       score = other%level*2.5
       do i=1,3
         score = score + merge(3.0,1.0,i==adir)* &
-          merge(1.0,0.0,abs(pp(i)) < other%size(i)*0.5d0) - &
-          merge(99.,0.0,abs(pp(i)) > other%gsize(i)*0.5d0)
+          merge(1.0,-9.0,abs(pp(i)) < other%size(i)*0.5d0)
       end do
       if (score > best_score) then
           best => other
