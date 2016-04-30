@@ -973,7 +973,7 @@ SUBROUTINE output (self, experiment_name)
       buffer(i,7:9) = [real(p%t,kind=4),p%s,p%c]
       p => p%next
     end do
-    print *,'PEBBLE FILE: ', trim(filename), self%pebbles%n, np, n_not
+    if (io%verbose>1) print *,'PEBBLE FILE: ', trim(filename), self%pebbles%n, np, n_not
     write (io%data_unit) np, n_var, scene%n_repeat, scene%n_patch
     write (io%data_unit) buffer
     write (io%data_unit) idbuf

@@ -81,7 +81,7 @@ SUBROUTINE update (self)
   ! sure to wrap around in the time buffer before freezing, so the value needed
   ! by the pebbles have been computed and stored everywhere.
   !-----------------------------------------------------------------------------
-  if (self%only_pebbles) then
+  if (self%only_pebbles .or. self%is_set(bits%not_leaf)) then
     if (self%istep<self%nt+1) then
       call self%mhd_t%update
     end if

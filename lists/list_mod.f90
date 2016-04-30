@@ -361,7 +361,7 @@ SUBROUTINE consistency (self, link, i)
 END SUBROUTINE consistency
 
 !> =============================================================================
-!> Check if the number of queued tasks is consistent; i.e., of the number of 
+!> Check if the number of queued tasks is consistent; i.e., of the number of
 !> tasks linked at self%queue is the same as nq
 !> =============================================================================
 SUBROUTINE qconsistency (self, i)
@@ -407,6 +407,46 @@ SUBROUTINE qconsistency (self, i)
 END SUBROUTINE qconsistency
 
 !> =============================================================================
+!> Set non_leaf flag on non-leaf patches
+!> =============================================================================
+SUBROUTINE init_nonleaf (self)
+  class(list_t):: self
+  class(link_t), pointer:: link, scan
+  class(link_t), pointer:: nbor
+  integer:: n_add
+  !.............................................................................
+  call trace_begin('list_t%init_nonleaf ')
+  !$omp critical (list_cr)
+  !-----------------------------------------------------------------------------
+  ! First find and mark all non-leaf patches; these are patches that the link
+  ! patch is fully contained inside -- we *assume* that finer level patches
+  ! cover the whole parent patch!
+  !-----------------------------------------------------------------------------
+  link => self%head                                     ! start checking links
+  do while (associated(link))
+    scan => self%head                                   ! scan all links (FIXME)
+    do while (associated(scan))                         ! until end
+      if (.not.associated(scan,link).and. &             ! skip same patch
+        .not.scan%task%is_set(bits%not_leaf)) then      ! skip non-leaf patch
+        if (self%overlaps (scan%task, link%task)) then  ! if patches overlap
+          if (scan%task%level==link%task%level-1) then  ! and level is one below
+            if (all(abs(scan%task%position-link%task%position) < scan%task%size*0.55d0)) then
+              call scan%task%set (bits%not_leaf)        ! mark non-leaf
+              if (io%verbose>0) &
+                print*, 'patch', link%task%id, ' parent:', scan%task%id
+            end if
+          end if
+        end if
+      end if
+      scan => scan%next                                 ! continue search
+    end do
+    link => link%next                                   ! continue list
+  end do
+  !$omp end critical (list_cr)
+  call trace_end
+END SUBROUTINE init_nonleaf
+
+!> =============================================================================
 !> The very first initialization of the neighbor lists.  After this, it can be
 !> maintained without a global search.
 !> =============================================================================
@@ -436,23 +476,6 @@ SUBROUTINE init_nbors (self, link)
         n_add = n_add+1
         if (nbor%task%id==id_debug) print*, id_debug, 'mk is nbor:', link%task%id
         if (link%task%id==id_debug) print*, id_debug, 'mk has nbor:', nbor%task%id
-        !---------------------------------------------------------------------
-        ! Find parents, as patches on the next lower level that have the
-        ! current patch position inside
-        !---------------------------------------------------------------------
-        if (nbor%task%level==link%task%level-1) then
-          if (all(abs(nbor%task%position-link%task%position) < nbor%task%size*0.55d0)) then
-            link%parent => nbor
-            call nbor%task%set (bits%not_leaf)
-            if (io%verbose>0) &
-              print*, 'patch', link%task%id, ' parent:', nbor%task%id
-          end if
-        end if
-        !-----------------------------------------------------------------------
-        ! If one or more of the nbors is virtual, set the boundary bit
-        !-----------------------------------------------------------------------
-        if (link%task%rank==mpi%rank .and. nbor%task%is_set(bits%virtual)) &
-          call link%task%set(bits%boundary)
       end if
     end if
     scan => scan%next                                 ! continue search
@@ -475,6 +498,7 @@ SUBROUTINE init_all_nbors (self)
   class(link_t), pointer:: link
   !.............................................................................
   call trace_begin('list_t%init_all_nbors')
+  call init_nonleaf (self)                              ! set non_leaf bit
   link => self%head                                     ! start checking links
   do while (associated(link))
     call self%init_nbors (link)
