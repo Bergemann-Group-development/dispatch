@@ -10,7 +10,6 @@ MODULE bits_mod
   integer, parameter::      virtual_bit=2**4
   integer, parameter::     boundary_bit=2**5
   integer, parameter::     external_bit=2**6
-  integer, parameter::       frozen_bit=2**7
   integer, parameter:: swap_request_bit=2**8
   integer, parameter::    root_grid_bit=2**9
   integer, parameter::         star_bit=2**10
@@ -20,8 +19,9 @@ MODULE bits_mod
   integer, parameter::        retry_bit=2**14
   integer, parameter::       remove_bit=2**15
   integer, parameter::   top_bottom_bit=2**16
-  integer, parameter::       has_BC_bit=2**17
-  integer, parameter::        trace_bit=2**18
+  integer, parameter::       has_BC_bit=2**30
+  integer, parameter::        trace_bit=2**29
+  integer, parameter::       frozen_bit=2**28
   type bits_t
     integer:: remove       = remove_bit
     integer:: retry        = retry_bit

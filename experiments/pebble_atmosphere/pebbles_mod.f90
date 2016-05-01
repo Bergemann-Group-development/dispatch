@@ -93,7 +93,7 @@ SUBROUTINE append (self, pebble)
   !.............................................................................
   if (debug) print *,self%id,'dbg: append pebble',pebble%id,self%lock%id,self%n
   call self%lock%set ('append')
-  !$omp flush (pebble,self)
+  !$omp flush
   !-----------------------------------------------------------------------------
   ! Place the pebble at the tail, which might be empty, in which case the prev
   ! pointer becomes null, as it should be.  If not, it points to the currently
@@ -111,7 +111,7 @@ SUBROUTINE append (self, pebble)
   nullify (pebble%next)
   self%tail => pebble
   self%n = self%n + 1
-  !$omp flush (pebble,self)
+  !$omp flush
   call self%lock%unset ('append')
 END SUBROUTINE append
 
@@ -124,18 +124,18 @@ SUBROUTINE remove (self, pebble)
   !.............................................................................
   if (debug) print *,self%id,'dbg: remove pebble',pebble%id,self%lock%id,self%n
   call self%lock%set ('remove')
-  !$omp flush (self)
+  !$omp flush
   !-----------------------------------------------------------------------------
   ! If the pebble is the head item, its %prev should be null, and head should
   ! be pointed to the next item, which could be null(), if removing last item.
   !-----------------------------------------------------------------------------
   if (associated(pebble,self%head)) then
     if (associated(pebble,self%tail)) then
-      nullify (self%head, self%tail, pebble%prev, pebble%next)
+      nullify (self%head, self%tail)
       if (io%verbose>1) print*,'removing last item'
       self%n = self%n - 1
       if (self%n /= 0) then
-        print*,'ERROR: pebble list has non-zero size', self%n
+        print*,'ERROR: empty pebble list has non-zero size', self%n
         self%n = 0
       end if
       call self%lock%unset ('remove')
@@ -145,16 +145,12 @@ SUBROUTINE remove (self, pebble)
     self%head => pebble%next
     if (associated(self%head)) nullify(self%head%prev)
   end if
+  !-----------------------------------------------------------------------------
+  ! This bridges over the pebble, effectvely removing it in the forward direction
+  !-----------------------------------------------------------------------------
   if (associated(pebble%prev)) then
     pebble%prev%next => pebble%next
   end if
-!  print *,'head =', associated(self%head)
-!  if (associated(self%head)) then
-!    print *,'head%id =', self%head%id
-!    print *,'head%next =', associated(self%head%next)
-!    if (associated(self%head%next)) &
-!      print *,'head%next%id =', self%head%next%id
-!  end if
   !-----------------------------------------------------------------------------
   ! If the pebble is the tail item, its next should be null, and tail should
   ! be pointed to the previous item, which could be null(), if removing last item.
@@ -164,15 +160,18 @@ SUBROUTINE remove (self, pebble)
     self%tail => pebble%prev
     if (associated(self%tail)) nullify(self%tail%next)
   end if
+  !-----------------------------------------------------------------------------
+  ! This bridges over the pebble, effectvely removing it in the reverse direction
+  !-----------------------------------------------------------------------------
   if (associated(pebble%next)) then
     pebble%next%prev => pebble%prev
   end if
+  !-----------------------------------------------------------------------------
+  ! Could it hurt to leave pebble%next, so loops can continue more easily?
+  !-----------------------------------------------------------------------------
   nullify (pebble%next,pebble%prev)
-!  print *,'tail =', associated(self%tail)
-!  if (associated(self%tail)) print *,'tail%id =', self%tail%id
   self%n = self%n - 1
-  !$omp flush (self,pebble)
-!  call self%print_list_n (3, 'after remove')
+  !$omp flush
   call self%check_list ('after remove')
   call self%lock%unset ('remove')
 END SUBROUTINE remove
@@ -184,6 +183,7 @@ SUBROUTINE freeze (self, pebble)
   class(pebbles_t):: self
   class(pebble_t), pointer:: pebble, p
   !.............................................................................
+  print*,'MK freeze', pebble%id
   p%status = ior(p%status, bits%frozen)
 END SUBROUTINE freeze
 

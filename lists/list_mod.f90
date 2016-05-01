@@ -120,7 +120,6 @@ SUBROUTINE append (self, task)
   call trace_begin ('list_t%append '//self%name)
   allocate (link)
   link%task => task
-  task%link => link
   call self%append_link (link)
   call trace_end
 END SUBROUTINE append
@@ -131,6 +130,8 @@ END SUBROUTINE append
 SUBROUTINE append_link (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
+  class(*), pointer:: anon
+  logical, save:: first_time=.true.
   !.............................................................................
   call trace_begin ('list_t%append_link '//self%name)
   !$omp critical (list_cr)
@@ -144,6 +145,21 @@ SUBROUTINE append_link (self, link)
   end if
   if (link%task%is_clear(bits%virtual)) &
     self%n = self%n+1
+  if (associated(link%task)) then
+    link%task%link => link
+    if (first_time) then
+      first_time = .false.
+      anon => link%task%link
+      select type (anon)
+      type is (link_t)
+        print*,'MK type is link_t'
+      class is (link_t)
+        print*,'MK class is link_t'
+      class default
+        print*,'MK class is unknown'
+      end select
+    end if
+  end if
   !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE append_link
