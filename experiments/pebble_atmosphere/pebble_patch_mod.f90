@@ -18,7 +18,7 @@ MODULE pebble_patch_mod
   USE task_mod
   USE patch_mod
   USE mhd_mod
-  USE link_mod
+  USE list_mod
   USE planet_mod
   USE atmosphere_mod
   USE star_mod
@@ -59,6 +59,7 @@ MODULE pebble_patch_mod
   end type
   logical, save:: debug = .false.
   integer, save:: id_dbg = 0
+  integer, save:: n_vol=0, n_bdry=0
   real, save:: xmin=1e10, xmax=-1e10
 CONTAINS
 
@@ -87,8 +88,7 @@ SUBROUTINE init (self)
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
   call trace_begin ('pebble_patch_mod::init', 3)
-  call random%init
-  random%seed = 11
+  call self%patch_t%init
   allocate (self%pebbles,self%not_done)
   call self%pebbles%init (self%id)
   call self%not_done%init (self%id)
@@ -102,6 +102,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   !$omp critical (init_cr)
   if (first_time) then
+    call random%init
+    random%seed = 11
     do_pebbles = .true.
     first_time = .false.
     size = self%size
@@ -153,11 +155,11 @@ SUBROUTINE initial_add (self, n)
   !.............................................................................
   class(pebbles_t), pointer:: pebbles
   class(pebble_t), pointer:: pebble
-  integer:: ix, iy, iz, ippc, iter, warn
-  real:: w(3), sign, ppc
+  integer:: ix, iy, iz, ippc, iter, warn, l(3), u(3)
+  real:: w(3), sign, ppc, average_density
   integer, save:: nprint=10
   !-----------------------------------------------------------------------------
-  if (.not.self%do_pebbles) return
+  if (.not.self%do_pebbles .or. self%is_set(bits%not_leaf)) return
   call trace_begin ('pebbles_t%add', 3)
   pebbles => self%pebbles
   if (io%verbose>1 .or. (io%verbose>0.and.nprint>0)) then
@@ -173,20 +175,25 @@ SUBROUTINE initial_add (self, n)
     print 1, '      pebbles added:', self%pebble_rate*self%dtime, self%pebble_rate, self%dtime
     1 format(a,1p,3e11.2)
   end if
+  l = self%mesh%li
+  u = self%mesh%ui
+  average_density = sum(self%density(l(1):u(1),l(2):u(2),l(3):u(3),self%it))/product(u-l+1)
   do iz=self%mesh(3)%li,self%mesh(3)%ui
   do iy=self%mesh(2)%li,self%mesh(2)%ui
   do ix=self%mesh(1)%li,self%mesh(1)%ui
-    ppc = self%pebbles%ppc*self%pebbles%cell_probability*product(self%ds) &
-        * self%density(ix,iy,iz,self%it)/atmosphere%surface%density
+    ppc = self%pebbles%ppc*self%pebbles%cell_probability &
+        * self%density(ix,iy,iz,self%it)/average_density
     ippc = ppc
     ppc = ppc-ippc
     do iter=1,ippc+1
       if (iter<=ippc .or. random%ran1() < ppc) then
         allocate (pebble)
+        !$omp atomic
+        n_bdry = n_bdry+1
         call pebble%init
         if (pebble_trace%every > 0) then
-          if (mod(pebble%id,pebble_trace%every)==0) &
-            pebble%status = ior(pebble%status,bits%trace+bits%has_BC)
+        if (mod(pebble%id,pebble_trace%every)==0) &
+          pebble%status = ior(pebble%status,bits%trace+bits%has_BC)
         end if
         pebble%t = self%time
         pebble%s = self%pebbles%size*10**(-self%pebbles%power*random%ran1())
@@ -199,8 +206,7 @@ SUBROUTINE initial_add (self, n)
         pebble%v = pebble%vg
         pebble%v = self%vgas(ix,iy,iz,:,self%it)
         pebble%d = self%mem(ix,iy,iz,1,self%it,1)
-        pebble%w = product(self%ds)/self%pebbles%cell_probability       ! volume and probability weight factor
-        pebble%w = pebble%w*pebble%d                                    ! normalize by gas density
+        pebble%w = average_density*product(self%ds)
         if (pebble_trace%every > 0) then
           if (mod(pebble%id,pebble_trace%every)==0 .and. &
             pebble%p(1) >   - planet%hill_radius .and. &
@@ -271,6 +277,8 @@ SUBROUTINE add (self, n)
     allocate (pebble)
     call pebble%init
     pebble%t = self%time
+    !$omp atomic
+    n_vol = n_vol+1
     pebble%s = self%pebbles%size*10.**(-self%pebbles%power*random%ran1())
     pebble%m = pebble%s**3*pebble%d
     sign = merge(1.0,-1.0,self%position(3)>0.0)
@@ -292,8 +300,7 @@ SUBROUTINE add (self, n)
     x0 = pebble%p(1) - pebble%v(1)*pebble%p(3)/pebble%v(3)
     if (x0 > -1.0*planet%hill_radius .and. &
         x0 <  3.0*planet%hill_radius .and. &
-        pebble%p(2) > -2.0*planet%hill_radius .and. &
-        pebble%p(2) <  1.0*planet%hill_radius .and. &
+        abs(pebble%p(2)) < planet%hill_radius .and. &
         pebble_trace%every > 0) then
       if (mod(pebble%id,pebble_trace%every)==0) then
         pebble%status = ior(pebble%status,bits%trace)
@@ -391,7 +398,7 @@ SUBROUTINE kdk_drag (self, p)
   !ar = 1./sqrt(sum(rp**2))
   !p%ag = p%ag + scaling%grav*star%mass*rp*ar**3
   p%dt = sqrt(sum(p%p**2)/sqrt(sum(p%ag**2)))*self%pebbles%courant
-  p%dt = 0.5*min(p%dt,self%out_time,minval(self%ds/max(1e-20,abs(p%v))))
+  p%dt = min(p%dt,self%out_time,minval(self%ds/max(1e-20,abs(p%v))))
   !
   if (p%id==self%pebbles%id_dbg) then
     print'("kdkd1",1p,5(3e10.2,2x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t
@@ -477,7 +484,7 @@ SUBROUTINE scatter (self, nbors, not_done)
   class(pebble_t), pointer:: pebble, next
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task
-  integer:: n, m, n_done
+  integer:: n, m
   !-----------------------------------------------------------------------------
   self%pebbles%dt_min = 1e30
   self%pebbles%dt_max = 0.0
@@ -486,12 +493,9 @@ SUBROUTINE scatter (self, nbors, not_done)
   nullify(not_done%head)
   nullify(not_done%tail)
   pebble => self%pebbles%head
-  if (debug.or.pebble%id==id_dbg) &
-    print *, self%id, 'scatter: pebbles%n', self%pebbles%n, associated(nbors), associated(pebble)
-  n_done = 0
+    if (debug.or.pebble%id==id_dbg) print *,'scatter: patch pos, size:', pebble%id, self%position, self%size
   do while (associated(pebble) .and. self%pebbles%n>0)
     n = n+1
-    !print*, self%id, 'MK', pebble%id, iand(pebble%status,bits%frozen) /= 0, pebble%t>=self%time, pebble%t, self%time
     !---------------------------------------------------------------------------
     ! Lock access to the pebble list while getting the next pointer, since some
     ! other patch may be trying exporting to us at the same time.
@@ -514,6 +518,7 @@ SUBROUTINE scatter (self, nbors, not_done)
     ! outside, or because there is a higher resolution child patch.
     !---------------------------------------------------------------------------
     if (.not. self%inside_r4 (pebble%p) .or. self%is_set(bits%not_leaf)) then
+      if (debug.or.pebble%id==id_dbg) print *, pebble%id, 'scatter: not inside its patch', self%id
       if (associated(nbors)) then
         m = 0
         nbor => nbors
@@ -605,16 +610,15 @@ SUBROUTINE scatter (self, nbors, not_done)
         end do
       end if
       !-------------------------------------------------------------------------
-      ! If it wasn't, export to the 'not_done' list
+        ! If it wasn't, export to the 'not_done' list
       !-------------------------------------------------------------------------
       if (debug.or.pebble%id==id_dbg) &
         print*, self%id, 'dbg: exporting to not_done', pebble%id, not_done%id, not_done%n
-      call self%pebbles%export (pebble, not_done)
+        call self%pebbles%export (pebble, not_done)
     else
       if (debug.or.pebble%id==id_dbg) print*, self%id, &
        'dbg: done, time, self%time =', pebble%id, pebble%t, self%time
-      n_done = n_done+1
-    end if
+      end if
   9 continue
     pebble => next
 !    if (n > 50*self%pebbles%n) then
@@ -623,8 +627,8 @@ SUBROUTINE scatter (self, nbors, not_done)
 !    end if
   end do
   if (debug) &
-    print*,self%id,'scatter, pebbles%n, n_done, not_done%n, n_accrete, n_remove, n_export', &
-    self%pebbles%n, n_done, not_done%n, self%pebbles%n_accrete, self%pebbles%n_remove, &
+    print*,self%id,'scatter, pebbles%n, not_done%n, n_accrete, n_remove, n_export', &
+    self%pebbles%n, not_done%n, self%pebbles%n_accrete, self%pebbles%n_remove, &
     self%pebbles%n_export
   call self%pebbles%check_list ('after scatter')
   if (n > self%pebbles%n + &
@@ -678,25 +682,25 @@ SUBROUTINE gather (self, not_done, nbors, verbose)
       ! Check if it should be exported to a neighbor, either because it is
       ! outside, or because there is a higher resolution child patch.
       !-------------------------------------------------------------------------
-      nbor => nbors
-      do while (associated(nbor))
-        task => nbor%task
-        select type (task)
-        class is (pebble_patch_t)
-          if (task%inside_r4(pebble%p)) then
-            if (.not.(self%is_set(bits%not_leaf)) .or. task%level>self%level) then
+        nbor => nbors
+        do while (associated(nbor))
+          task => nbor%task
+          select type (task)
+          class is (pebble_patch_t)
+            if (task%inside_r4(pebble%p)) then
+              if (.not.(self%is_set(bits%not_leaf)) .or. task%level>self%level) then
               if (verbose>0 .or. debug.or.pebble%id==id_dbg) print*, self%id, &
                 'gather: exporting to other task', pebble%id, task%id, task%pebbles%id, task%pebbles%n
-              call not_done%export (pebble, task%pebbles)
-              not_done%n_export = not_done%n_export+1
-              goto 9
+                call not_done%export (pebble, task%pebbles)
+                not_done%n_export = not_done%n_export+1
+                goto 9
+              end if
             end if
-          end if
-        end select
-        nbor => nbor%next
-      end do
+          end select
+          nbor => nbor%next
+        end do
       call not_done%remove (pebble)
-      not_done%n_remove = not_done%n_remove + 1
+        not_done%n_remove = not_done%n_remove + 1
       if (verbose>0 .or. debug.or.pebble%id==id_dbg) print*, self%id, 'gather: no nbor: removed'
     else if (planet%inside(pebble%p)) then
       call pebble_trace%check (pebble)
@@ -745,6 +749,10 @@ SUBROUTINE update_pebbles (self)
   if (self%time == 0d0) then
     if (self%level==1 .and. self%is_set(bits%top_bottom)) call self%add
     call self%initial_add
+  else if (first_time) then
+    first_time = .false.
+    print*,'initialized particles: n_vol, n_bdry, tr_vol, tr_bdry =', &
+      n_vol, n_bdry, scene%n_add, scene%n_initial
   end if
   if (self%pebbles%n>0) then
     if (io%verbose>1) then
@@ -768,16 +776,8 @@ SUBROUTINE update_pebbles (self)
   link => self%link
   select type (link)
   type is (link_t)
-    nbors => link%nbor
-    if (first_time) &
-      print*,'MK picked up nbors', associated(nbors)
-  class default
-    print *,'ERROR: MK could not retrieve nbors'
+  nbors => link%nbor
   end select
-  if (first_time) then
-    first_time = .false.
-    print*,'MK has nbors', associated(nbors)
-  end if
   !-----------------------------------------------------------------------------
   ! Now scatter the existing pebbles onto a "not_done" list, and gather them
   ! back as they reach the desired time.
