@@ -15,10 +15,10 @@ MODULE pebble_patch_mod
   USE bits_mod
   USE omp_mod
   USE omp_timer_mod
+  USE link_mod
   USE task_mod
   USE patch_mod
   USE mhd_mod
-  USE list_mod
   USE planet_mod
   USE atmosphere_mod
   USE star_mod
