@@ -13,3 +13,5 @@
 * If you have read access: fork this repository and use pull requests to contribute
 
 ### Contribution guidelines ###
+
+* If you want your pull request to have a chance, you need to merge from `master` before making the pull request.
