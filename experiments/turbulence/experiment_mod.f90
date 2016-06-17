@@ -49,6 +49,7 @@ SUBROUTINE init (self)
   call self%initial%init
   self%mhd = self%initial%mhd
   self%mem(:,:,:,:,1,1) = self%initial%selected(self%mesh)
+  call self%periodic_grid
   call trace_end
 END SUBROUTINE init
 

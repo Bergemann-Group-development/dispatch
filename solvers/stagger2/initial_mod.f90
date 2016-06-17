@@ -8,6 +8,7 @@ MODULE initial_mod
   USE vector_mod
   USE mesh_mod
   USE random_mod
+  USE stagger_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -59,6 +60,8 @@ SUBROUTINE init (self)
      self%selected => single_compressive
    case ('single_advection')
      self%selected => single_advection
+   case ('read_raw')
+     self%selected => read_raw
    case default
      print*,'UNKNOWN INITIAL CONDITION TYPE'
      stop
@@ -167,5 +170,41 @@ FUNCTION single_advection (self, m) RESULT (ff)
   end do
   call trace_end
 END FUNCTION single_advection
+
+!> =============================================================================
+!> Initialize from a raw data file
+!> =============================================================================
+FUNCTION read_raw (self, m) RESULT (ff)
+  USE io_unit_mod
+  class(initial_t)      :: self
+  type(mesh_t)          :: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  real, dimension(:,:,:), allocatable:: u, d
+  !.............................................................................
+  integer               :: ix, iy, iz
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t::read_raw')
+  ff(:,:,:,:) = 0.0
+  allocate (u(m(1)%n,m(2)%n,m(3)%n))
+  allocate (d(m(1)%n,m(2)%n,m(3)%n))
+  open (io_unit%data, file='data/t0.02.raw', form='unformatted', access='direct', &
+    recl=256**3*4)
+  read (io_unit%data,rec=1) d
+  print*,'min,max =', minval(d), maxval(d)
+  ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1) = d
+  read (io_unit%data,rec=2) u
+  u = xdn(u)*exp(xdn(log(d)))
+  ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,4) = u
+  read (io_unit%data,rec=3) u
+  u = ydn(u)*exp(ydn(log(d)))
+  ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,5) = u
+  read (io_unit%data,rec=4) u
+  u = zdn(u)*exp(zdn(log(d)))
+  ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,6) = u
+  ff(:,:,:,6) = self%b0(1)
+  ff(:,:,:,7) = self%b0(2)
+  ff(:,:,:,8) = self%b0(3)
+  call trace_end
+END FUNCTION read_raw
 
 END MODULE
