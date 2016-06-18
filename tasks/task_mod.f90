@@ -51,6 +51,7 @@ MODULE task_mod
     procedure:: init
     procedure:: update
     procedure:: output
+    procedure:: time_interpolate
     procedure:: info
     procedure:: is_ahead_of
     procedure:: set
@@ -108,6 +109,44 @@ SUBROUTINE update (self)
   self%time = self%time + self%dtime
   if (io%master .and. io%verbose > 1) &
     print *, 'task_t%update: id, time =', self%id, self%time, self%name
+  call trace_end
+END SUBROUTINE
+
+!> =============================================================================
+!> Find the right time interval in source%t(source%iit), which are the source
+!> times in increasing order.
+!> =============================================================================
+SUBROUTINE time_interpolate (self, source, it, pt)
+  class (task_t):: self, source
+  integer:: it(2), i
+  real(8):: pt(2), dt
+  !.............................................................................
+  call trace_begin ('task_t::time_interpolate',3)
+  !-----------------------------------------------------------------------------
+  ! In case all source times are equal, and possibly differ totally from the
+  ! target time (e.g. because of an error in initial condition setup), choose
+  ! a valid default interval
+  !-----------------------------------------------------------------------------
+  it = source%iit(1:2)
+  !-----------------------------------------------------------------------------
+  ! As long as the first source time is smaller than the target time, renew
+  ! the interval
+  !-----------------------------------------------------------------------------
+  do i=2,source%nt-2
+    if (source%t(source%iit(i)) < self%time) then
+      it = source%iit(i:i+1)
+    end if
+  end do
+  !-----------------------------------------------------------------------------
+  ! A vanishing source time interval happens only at the initial condition ...
+  !-----------------------------------------------------------------------------
+  dt = source%t(it(2))-source%t(it(1))
+  if (dt==0d0) then
+    pt(2)=0d0
+  else
+    pt(2) = (self%time - source%t(it(1)))/dt
+  end if
+  pt(1) = 1d0-pt(2)
   call trace_end
 END SUBROUTINE
 

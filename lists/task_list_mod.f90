@@ -86,7 +86,7 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !> =============================================================================
-!> Execute the task list, updating it until it is empty.  Wth !$omp parallel here,
+!> Execute the task list, updating it until it is empty.  With !$omp parallel here,
 !> everything local to self%update is thread private.
 !> =============================================================================
 SUBROUTINE execute (self)
@@ -155,6 +155,7 @@ SUBROUTINE update (self)
     !----------------------------------------------------------------------------
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
+    call task%output (self%name)                        ! check output
     call task%update                                    ! update the task
     !----------------------------------------------------------------------------
     ! The rotate procedure in the generic patch_t module is responsible for
@@ -189,13 +190,13 @@ SUBROUTINE update (self)
     !-----------------------------------------------------------------------------
     call task%clear(bits%ready)                         ! needs new check
     call self%check_nbors (head)                        ! any nbor ready?
-    call task%output (self%name)                        ! check output
     !-----------------------------------------------------------------------------
     ! Tasks that have finished are subtracted from the task list count but are
     ! not removed, since their data may be needed by other tasks.  They are,
     ! however, not added back onto the ready queue.
     !-----------------------------------------------------------------------------
     if (task%has_finished()) then  ! finished:
+      call task%output (self%name)                      ! check output
       !$omp atomic
       self%n = self%n-1
       !$omp flush

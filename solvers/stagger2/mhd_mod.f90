@@ -132,6 +132,7 @@ SUBROUTINE update (self)
   ds = self%mesh%d
   dx = minval(ds)                                       ! smallest {dx,dy,dz}
   du = -dx*div(ds,U)                                    ! convergence rate
+  du = max(du,0.0)                                      ! positive part
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   !-----------------------------------------------------------------------------
@@ -148,14 +149,18 @@ SUBROUTINE update (self)
     ! Magnetic pressure
     pb = 0.5*(Ex+Ey+Ez)
     ! Fast mode speed + velocity
-    pa = self%nu(2)*d*max(du,0.0)**2
+    pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
-    self%u_max = maxval(cs + sqrt(pp) + abs(du))
-    du = max(du,0.0)
-    du = dx*self%nu(1)*cs
+    self%u_max = self%fmaxval(cs)
+    if (io%verbose>0) print*,'u_max',self%u_max
+    self%u_max = self%fmaxval(cs + sqrt(pp))
+    if (io%verbose>0) print*,'u_max',self%u_max
+    self%u_max = self%fmaxval(cs + sqrt(pp) + du)
+    if (io%verbose>0) print*,'u_max',self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb
     ! Total diagonal stress
+    du = dx*self%nu(1)*cs
     fxx = pp + d*(fxx - du*ddxup(ds,Ux)) - Ex
     fyy = pp + d*(fyy - du*ddyup(ds,Uy)) - Ey
     fzz = pp + d*(fzz - du*ddzup(ds,Uz)) - Ex
@@ -166,17 +171,22 @@ SUBROUTINE update (self)
     fyy = yup(Uy)**2
     fzz = zup(Uz)**2
     pp = (fxx+fyy+fzz)
-    ! Sound speed + velocity
-    cs = sqrt(self%gamma*pg/d)
-    self%u_max = maxval(cs + sqrt(pp) + du)
-    du = dx*self%nu(1)*cs
     ! Isotropic pressure part
     pa = self%nu(2)*d*du**2                               ! dimension: pressure
-    pp = d*pp + pg + pa
+    ! Sound speed + velocity
+    cs = sqrt((self%gamma*pg+pa)/d)
+    self%u_max = self%fmaxval(cs)
+    if (io%verbose>0) print*,'u_max',self%u_max
+    self%u_max = self%fmaxval(cs + sqrt(pp))
+    if (io%verbose>0) print*,'u_max',self%u_max
+    self%u_max = self%fmaxval(cs + sqrt(pp) + du)
+    if (io%verbose>0) print*,'u_max',self%u_max
+    pp = pg + pa
     ! Total diagondal stress, with density factor
-    fxx = pp - d*du*ddxup(ds,Ux)
-    fyy = pp - d*du*ddyup(ds,Uy)
-    fzz = pp - d*du*ddzup(ds,Uz)
+    du = dx*self%nu(1)*cs
+    fxx = pp + d*(fxx - du*ddxup(ds,Ux))
+    fyy = pp + d*(fyy - du*ddyup(ds,Uy))
+    fzz = pp + d*(fzz - du*ddzup(ds,Uz))
     Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
   end if
   !-----------------------------------------------------------------------------
@@ -185,6 +195,10 @@ SUBROUTINE update (self)
   fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux
   fm = p+fd                                             ! mass flux
   dddt = -div(ds,fm)                                    ! density derivative
+  self%u_max = max(self%u_max,-0.5*dx*self%fminval(dddt/d))
+  if (io%verbose>0) print*,'u_max',self%u_max
+  !self%u_max = max(self%u_max,-dx*self%fminval(dddt/d))
+  !print*,'u_max',dx*self%fmaxval(div(ds,p)/d)
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,

@@ -17,6 +17,7 @@ MODULE initial_mod
     logical:: mhd
     real(8):: a(3), b(3), phi(3), d0, s0
     real(8):: a0(3), k(3), b0(3), u0(3)
+    real(8):: time
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure init
@@ -53,6 +54,7 @@ SUBROUTINE init (self)
    self%d0     = d0
    self%s0     = s0
    self%mhd    = mhd
+   self%time   = 0d0
    select case (type)
    case ('single_solenoidal')
      self%selected => single_solenoidal
@@ -60,8 +62,8 @@ SUBROUTINE init (self)
      self%selected => single_compressive
    case ('single_advection')
      self%selected => single_advection
-   case ('read_raw')
-     self%selected => read_raw
+   case ('exa256')
+     self%selected => exa256
    case default
      print*,'UNKNOWN INITIAL CONDITION TYPE'
      stop
@@ -174,37 +176,57 @@ END FUNCTION single_advection
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-FUNCTION read_raw (self, m) RESULT (ff)
+FUNCTION exa256 (self, m) RESULT (ff)
   USE io_unit_mod
   class(initial_t)      :: self
   type(mesh_t)          :: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
-  real, dimension(:,:,:), allocatable:: u, d
+  real, dimension(:), allocatable:: u, d
   !.............................................................................
-  integer               :: ix, iy, iz
+  integer               :: ix, iy, iz, jy, jz, rec
+  integer(8)            :: nx, ny, nz
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t::read_raw')
+  call trace_begin('initial_t::exa256')
+  self%mhd = .false.
   ff(:,:,:,:) = 0.0
-  allocate (u(m(1)%n,m(2)%n,m(3)%n))
-  allocate (d(m(1)%n,m(2)%n,m(3)%n))
-  open (io_unit%data, file='data/t0.02.raw', form='unformatted', access='direct', &
-    recl=256**3*4)
-  read (io_unit%data,rec=1) d
-  print*,'min,max =', minval(d), maxval(d)
-  ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1) = d
-  read (io_unit%data,rec=2) u
-  u = xdn(u)*exp(xdn(log(d)))
-  ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,4) = u
-  read (io_unit%data,rec=3) u
-  u = ydn(u)*exp(ydn(log(d)))
-  ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,5) = u
-  read (io_unit%data,rec=4) u
-  u = zdn(u)*exp(zdn(log(d)))
-  ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,6) = u
+  allocate (u(m(1)%n))
+  allocate (d(m(1)%n))
+  open (io_unit%data, file='data/exa256/t0.02.dat', form='unformatted', &
+    access='direct', recl=m(1)%n*4)
+  self%time = 0.02
+  ix=m(1)%p/m(1)%d+0.5-m(1)%n/2
+  iy=m(2)%p/m(2)%d+0.5-m(2)%n/2
+  iz=m(3)%p/m(3)%d+0.5-m(3)%n/2
+  nx = m(1)%b/m(1)%d + 0.5
+  ny = m(2)%b/m(2)%d + 0.5
+  nz = m(3)%b/m(3)%d + 0.5
+  do jz=m(3)%li,m(3)%ui
+  do jy=m(2)%li,m(2)%ui
+    rec = 1   + (ix           )      /m(1)%n
+    rec = rec + (iy+jy-m(2)%li)*nx   /m(1)%n
+    rec = rec + (iz+jz-m(3)%li)*nx*ny/m(1)%n
+    !print*,ix,iy,iz,rec
+    read (io_unit%data,rec=rec) d
+    ff(m(1)%li:m(1)%ui,jy,jz,1) = d
+    rec = rec + nx*ny*nz/m(1)%n
+    read (io_unit%data,rec=rec) u
+    ff(m(1)%li:m(1)%ui,jy,jz,3) = u
+    rec = rec + nx*ny*nz/m(1)%n
+    read (io_unit%data,rec=rec) u
+    ff(m(1)%li:m(1)%ui,jy,jz,4) = u
+    rec = rec + nx*ny*nz/m(1)%n
+    read (io_unit%data,rec=rec) u
+    ff(m(1)%li:m(1)%ui,jy,jz,5) = u
+  end do
+  end do
+  if (io%verbose > 0) &
+    print *,'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
+      minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
+      maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
   ff(:,:,:,6) = self%b0(1)
   ff(:,:,:,7) = self%b0(2)
   ff(:,:,:,8) = self%b0(3)
   call trace_end
-END FUNCTION read_raw
+END FUNCTION exa256
 
 END MODULE

@@ -51,8 +51,8 @@ SUBROUTINE download_link (link, all_cells)
     end do
     if (static) then
       if (same) then
-        !call download_same_static (link)               ! FIXME
-        call download_different_static (link)
+        call download_same_static (link)               ! FIXME
+        !call download_different_static (link)
         !$omp atomic
         download%n_same = download%n_same+1
       else
@@ -131,6 +131,7 @@ SUBROUTINE download_same_static (link)
       call other%lock%unset ('download_same -3')
       call patch%check_density ('after -3')
     else
+      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
       restore(-3) = .true.
           guard(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:) = &
       patch%mem(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:,it,1)
@@ -157,6 +158,7 @@ SUBROUTINE download_same_static (link)
       call other%lock%unset ('download_same +3')
       call patch%check_density ('after +3')
     else
+      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
       restore(+3) = .true.
           guard(1:m(1)%gn,1:m(2)%gn,m(3)%uo:m(3)%ub,:) = &
       patch%mem(1:m(1)%gn,1:m(2)%gn,m(3)%uo:m(3)%ub,:,it,1)
@@ -187,6 +189,7 @@ SUBROUTINE download_same_static (link)
       call other%lock%unset ('download_same -2')
       call patch%check_density ('after -2')
     else
+      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
       restore(-2) = .true.
           guard(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:) = &
       patch%mem(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:,it,1)
@@ -213,6 +216,7 @@ SUBROUTINE download_same_static (link)
       call other%lock%unset ('download_same +2')
       call patch%check_density ('after +2')
     else
+      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
       restore(+2) = .true.
           guard(1:m(1)%gn,m(2)%uo:m(2)%ub,1:m(3)%gn,:) = &
       patch%mem(1:m(1)%gn,m(2)%uo:m(2)%ub,1:m(3)%gn,:,it,1)
@@ -243,6 +247,7 @@ SUBROUTINE download_same_static (link)
       call other%lock%unset ('download_same -1')
       call patch%check_density ('after -1')
     else
+      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
       restore(-1) = .true.
           guard(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:) = &
       patch%mem(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:,it,1)
@@ -269,6 +274,7 @@ SUBROUTINE download_same_static (link)
       call other%lock%unset ('download_same +1')
       call patch%check_density ('after +1')
     else
+      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
       restore(+1) = .true.
           guard(m(1)%uo:m(1)%ub,1:m(2)%gn,1:m(3)%gn,:) = &
       patch%mem(m(1)%uo:m(1)%ub,1:m(2)%gn,1:m(3)%gn,:,it,1)

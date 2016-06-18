@@ -443,23 +443,17 @@ END SUBROUTINE rotate
 !> This is useful for both guard cell fill-in, and for "prolongation" = creating
 !> patches with higher resolution.
 !> =============================================================================
-SUBROUTINE download_to (self, task, special, all_cells)
+SUBROUTINE download_to (self, patch, all_cells, guard_cells, special)
   class(patch_t):: self
-  class(task_t), pointer:: task
   class(patch_t), pointer:: patch
-  logical, optional:: all_cells
-  integer:: special
+  logical, optional:: all_cells, guard_cells
+  integer, optional:: special
   logical:: all_target
-  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), ntot, nuse
-  integer, dimension(3):: l1, u1, l2, u2
+  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), ntot, nuse, jt(2)
+  integer, dimension(3):: l1, u1, l2, u2, o
   real:: f(3), pos(3), weight
+  real(8):: pt(2)
   !-----------------------------------------------------------------------------
-  ! Upgrade to a patch link
-  !-----------------------------------------------------------------------------
-  select type (task)
-  class is (patch_t)
-  patch => task
-  end select
 !  if (self%id==patch%id .and. all(patch%size /= box%size)) return
   if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','download_to:self,patch=', &
     self%id,self%position,patch%id,patch%position, self%mesh%li, self%mesh%ui
@@ -476,14 +470,15 @@ associate (source=>self%mem, target=>patch%mem)
     if (self%level <= patch%level) all_target = .false.   ! only upload from deeper levels
     if (all_cells) all_target = .true.                    ! unless told to do so
     if ((self%level-patch%level) > 1) return              ! upload at most 1 level
-    if (iv==special) then                               ! if the variable is phi
-      if (self%level >= patch%level) cycle                ! only download phi from lower levels
-      !all_target = .true.                                 ! interior + guard cells
-      !if (io%verbose>0) &
-      !  print'(10(1x,a,i6,3x))', 'patch', patch%id, 'at level', patch%level, &
-      !  'downloading variable', special, 'from patch', self%id, 'level', self%level
+    if (present(special)) then
+      if (iv==special) then                               ! if the variable is phi
+        if (self%level >= patch%level) cycle              ! only download phi from lower levels
+       !all_target = .true.                               ! interior + guard cells
+       !if (io%verbose>0) &
+       !  print'(10(1x,a,i6,3x))', 'patch', patch%id, 'at level', patch%level, &
+       !  'downloading variable', special, 'from patch', self%id, 'level', self%level
+      end if
     end if
-
     !---------------------------------------------------------------------------
     ! When the source resolution is higher than the target resolution, all cells
     ! in the source need to be distributed over the nearest cells in the target.
@@ -504,8 +499,8 @@ associate (source=>self%mem, target=>patch%mem)
       ! context p1 (patch) is the target patch, and p2 (self) is the source patch.
       !-------------------------------------------------------------------------
       call patch%upload_range (self, l1, u1, l2, u2)
-      !print '(2(a,i4,2(2x,3i4)))', &
-        !'uploading to patch', patch%id, l1, u1, ' from patch', self%id, l2, u2
+      print '(2(a,i4,2(2x,3i4)))', &
+        'uploading to patch', patch%id, l1, u1, ' from patch', self%id, l2, u2
       target(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),iv,it,1) = 0.0
       weight = product(self%ds)/product(patch%ds)
       !-------------------------------------------------------------------------
@@ -544,14 +539,30 @@ associate (source=>self%mem, target=>patch%mem)
         end do
         end do
       end if
-    else
-      call patch%dnload_range (self, l1, u1)
-      !if (iv==1) then
+    else if (self%level == patch%level) then
+      call patch%dnload_range (self, l1, u1, o)
+      call patch%time_interpolate (self, jt, pt)
+      if (iv==1 .and. io%verbose>2) then
+        print'(a,3(3i4,3x),i6)','target ranges: l1, u1, o, n =', l1, u1, o, product(u1-l1+1)
+      end if
+      ntot = product(u1-l1+1)
+      nuse = ntot
+      do iz=l1(3),u1(3)
+      do iy=l1(2),u1(2)
+      do ix=l1(1),u1(1)
+        target(ix,iy,iz,iv,it,1) = source(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)*pt(1) &
+                                 + source(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)*pt(2)
+      end do
+      end do
+      end do
+    else ! source (self) has the same as, or lower level than the target
+      call patch%dnload_range (self, l1, u1, o)
+      if (iv==1) then
       !  print 1, self%id , ' source position, size:', self%position , self%size , self%ub , self%it , minval(self%mem(:,:,:,1,self%it,1))
       !  print 1, patch%id, ' target position, size:', patch%position, patch%size, patch%ub, patch%it, minval(self%mem(:,:,:,1,patch%it,1))
       !  1 format(i4,a,2(3f8.3,2x),3i4,i5,f8.3)
-      !  print*,'l1, u1', l1, u1
-      !end if
+        print'(a,3(3i4,3x),i6)','target ranges: l1, u1, o, n =', l1, u1, o, product(u1-l1+1)
+      end if
       ntot = 0
       nuse = 0
       do iz=l1(3),u1(3)
@@ -620,9 +631,6 @@ associate (source=>self%mem, target=>patch%mem)
       ' picked up', nuse, 'of', ntot, ' points from patch', self%id, ' at level', self%level, &
       all_target, all_cells
   end do
-  if (patch%t(patch%it)/=self%t(patch%it)) &
-    print'(2(a,i4,f9.4,4x),2i3,2x,5i3,7f8.3)','ERROR: patch:', patch%id, patch%t(patch%it), &
-      'self:', self%id, self%t(self%it), patch%it, patch%new, patch%iit, patch%t
 end associate
 END SUBROUTINE download_to
 
@@ -945,13 +953,14 @@ SUBROUTINE output_legacy (self, experiment_name)
         it2 = self%iit(self%nt-1)
         it = it2
         pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1e-30)
+        if (self%t(it2)==self%t(it1)) pt=0.0
         qt = 1.0-pt
         buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
             + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
         call check_error(self, buf, "output 2")
       end if
       if (io%verbose>1) &
-        print'(1x,a,2i5,i3,1p,2e11.3)',trim(filename),iv,it,jo,minval(buf),maxval(buf)
+        print'(1x,a,2i5,i3,1p,3e11.3)',trim(filename),iv,it,jo,minval(buf),maxval(buf),pt
       write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
       deallocate (buf)
     end do
@@ -976,11 +985,11 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       if (self%print_time > 0) &
         self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
       nv = 1
-      if (io%verbose>2) nv = self%nv
+      if (io%verbose>1) nv = self%nv
       do iv=1,nv
         1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,o8,2x,2i4)
         print 1, &
-          'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
+          'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%u_max, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
           maxval(self%mem(:,:,:,iv,self%it ,2)), &
           minval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -989,7 +998,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           maxval(self%mem(:,:,:,iv,self%new,1)), &
           self%status, nq, ntask
         write (io%log_unit,1) &
-          'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
+          'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%u_max, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
           maxval(self%mem(:,:,:,iv,self%it ,2)), &
           minval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -1027,25 +1036,29 @@ END SUBROUTINE upload_range
 !> Find the p1 target index ranges that correspond to the overlap region, for
 !> download from p2 to p1 (p1 has higher or the same level as p2)
 !> =============================================================================
-SUBROUTINE dnload_range (p1, p2, l1, u1)
-  class(patch_t):: p1
-  class(patch_t):: p2
-  integer, dimension(3):: l1, u1
+SUBROUTINE dnload_range (target, source, l, u, o)
+  class(patch_t):: target
+  class(patch_t):: source
+  integer, dimension(3):: l, u, o
   real, dimension(3):: f, pos1, pos2, dist
   !-----------------------------------------------------------------------------
-  ! Index limits
-  !-----------------------------------------------------------------------------
-  l1 = p1%mesh%lb
-  u1 = p1%mesh%ub
-  if (p2%id>1) then
-    dist = p2%distance (p1)     ! positive if p2 (source) to the right of p1 (target)
-    where (dist >=0)
-      l1 = max(l1,p1%nearest(p2,p2%mesh%lb))
-      u1 = p1%mesh%ub
-    else where
-      l1 = p1%mesh%lb
-      u1 = min(u1,p1%nearest(p2,p2%mesh%ub))
+  if (target%level == source%level) then
+    l = target%mesh%li
+    u = target%mesh%ui
+    o = 0
+    dist = source%distance(target)  ! positive if source to the right of target
+    where (dist > 0.0)
+      l = target%mesh%uo
+      u = target%mesh%ub
+      o = -target%mesh%n
+    else where (dist < 0)
+      l = target%mesh%lb
+      u = target%mesh%lo
+      o = target%mesh%n
     end where
+  else
+    print*,'dnload_range: ERROR, not implemented yet'
+    stop
   end if
 END SUBROUTINE dnload_range
 !> =============================================================================
@@ -1241,15 +1254,19 @@ END FUNCTION
 FUNCTION fmaxval (self, f)
   real:: fmaxval
   class(patch_t):: self
-  real, dimension(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn):: f
-  fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui,self%mesh(2)%li:self%mesh(2)%ui,self%mesh(3)%li:self%mesh(3)%ui))
+  real, dimension(:,:,:):: f
+  fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui))
 END FUNCTION
 !> =============================================================================
 FUNCTION fminval (self, f)
   real:: fminval
   class(patch_t):: self
   real, dimension(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn):: f
-  fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui,self%mesh(2)%li:self%mesh(2)%ui,self%mesh(3)%li:self%mesh(3)%ui))
+  fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui))
 END FUNCTION
 
 !> =============================================================================
@@ -1286,8 +1303,8 @@ SUBROUTINE check_density (self, label)
       ! Pick the sampled positive value if a negative one is found in the
       ! guard zone
       !-------------------------------------------------------------------------
-      self%mem(ix,iy,iz,1,self%it,1) = merge (self%mem(ix,iy,iz,1,self%it,1), &
-        posd, self%mem(ix,iy,iz,1,self%it,1) > 0.0 .or. inside)
+      !self%mem(ix,iy,iz,1,self%it,1) = merge (self%mem(ix,iy,iz,1,self%it,1), &
+      !  posd, self%mem(ix,iy,iz,1,self%it,1) > 0.0 .or. inside)
     end do
     end do
     end do

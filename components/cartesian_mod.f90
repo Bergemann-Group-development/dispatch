@@ -39,7 +39,7 @@ SUBROUTINE init (self, label)
   integer:: dims(3) = [4,4,4]
   integer:: mpi_dims(3) = [1,1,1]
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
-  logical:: face_nbors=.true.
+  logical:: face_nbors=.false.
   namelist /box_params/ size, dims, mpi_dims, origin, face_nbors
   !.............................................................................
   call trace_begin ('task_list_t%init_cartesian')

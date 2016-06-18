@@ -27,7 +27,7 @@ MODULE list_mod
     integer:: n_tasks=1
     type(lock_t):: lock
     character(len=4):: kind='list'
-    logical:: face_nbors=.true.
+    logical:: face_nbors=.false.
   contains
     procedure:: init
     procedure:: update
@@ -337,8 +337,9 @@ SUBROUTINE check_ready (self, link, set_debug)
     select type (task)
     class is (patch_t)
       call task%check_density ("before download")
-      call download%download_link (link, all_cells=.false.)
-      call task%check_density ("after download")
+     !call download%download_link (link, all_cells=.false.)
+      call link%download (all_cells=.false.)
+      call task%check_density (" after download")
     end select
   end if
   call trace_end
