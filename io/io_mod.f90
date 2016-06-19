@@ -6,6 +6,7 @@ MODULE io_mod
   USE omp_timer_mod
   USE mpi_mod
   USE io_unit_mod
+  USE timer_mod
   implicit none
   private
   logical:: mpi_trace=.false.
@@ -50,6 +51,7 @@ SUBROUTINE init (self, name)
   call init_omp
   self%master = self%master .and. (mpi%rank==0)
   io%master = self%master
+  io_unit%master = self%master
   call print_id (id)
   !-----------------------------------------------------------------------------
   ! I/O unit numbers, for convenience and backwards compatibility.  All other
@@ -105,6 +107,7 @@ SUBROUTINE init (self, name)
   self%levelmax  = levelmax
   self%inputname = inputname
   self%master = self%master .and. (mpi%rank==0)
+  call timer%init
 END SUBROUTINE init
 
 !> =============================================================================

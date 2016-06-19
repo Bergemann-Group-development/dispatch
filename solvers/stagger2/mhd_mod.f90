@@ -83,8 +83,9 @@ SUBROUTINE update (self)
   real, dimension(:,:,:),   pointer:: fzx, fzy, fzz
   !.............................................................................
   real:: ds(3), dx
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('mhd_t%update')
+  call trace_begin('mhd_t%update',itimer=itimer)
   self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
   self%s => self%mem(:,:,:,  2,self%it,1); self%dsdt => self%mem(:,:,:,  2,self%it,2)
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
@@ -297,7 +298,7 @@ SUBROUTINE update (self)
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================

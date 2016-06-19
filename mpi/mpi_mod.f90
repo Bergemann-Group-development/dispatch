@@ -25,6 +25,7 @@
 !>
 !> =============================================================================
 MODULE mpi_mod
+  USE omp_mod
   implicit none
   include 'mpif.h'              ! some systems require this instead of 'use mpi'
   integer:: mpi_err             ! MPI error status
@@ -71,6 +72,7 @@ SUBROUTINE init (mp, mpi_dims, dims)
   if (first_time) then
     first_time = .false.
     call init_mpi (mp)
+    call omp%init
   end if
   mpi%size   = mpi_size
   mpi%rank   = mpi_rank

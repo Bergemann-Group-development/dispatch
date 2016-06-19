@@ -19,6 +19,7 @@ MODULE experiment_mod
   USE mhd_mod
   USE initial_mod
   USE timestep_mod
+  USE timer_mod
   implicit none
   private
   type, public, extends(mhd_t):: experiment_t
@@ -35,8 +36,9 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
+  integer, save:: itimer=0
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_t%init')
+  call trace_begin('experiment_t%init', itimer=itimer)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
@@ -56,7 +58,7 @@ SUBROUTINE init (self)
   self%time = self%initial%time
   self%t(self%it) = self%initial%time
   !call self%periodic_grid
-  call trace_end
+  call trace_end (itimer=itimer)
 END SUBROUTINE init
 
 !> =============================================================================

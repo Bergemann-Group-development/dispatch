@@ -11,8 +11,8 @@ MODULE omp_mod
     logical:: master=.true.
   contains
     procedure:: init
-    procedure, nopass:: my_thread => omp_mythread
-    procedure, nopass:: num_theads => omp_numthreads
+    procedure, nopass:: mythread => omp_mythread
+    procedure, nopass:: numthreads => omp_numthreads
   end type
   public:: init_omp, omp_mythread, omp_numthreads
   logical, public, save:: omp_master

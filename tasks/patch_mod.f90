@@ -453,7 +453,9 @@ SUBROUTINE download_to (self, patch, all_cells, guard_cells, special)
   integer, dimension(3):: l1, u1, l2, u2, o
   real:: f(3), pos(3), weight
   real(8):: pt(2)
+  integer, save:: itimer
   !-----------------------------------------------------------------------------
+  call trace_begin ('patch_mod::download_to', itimer=itimer)
 !  if (self%id==patch%id .and. all(patch%size /= box%size)) return
   if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','download_to:self,patch=', &
     self%id,self%position,patch%id,patch%position, self%mesh%li, self%mesh%ui
@@ -632,6 +634,7 @@ associate (source=>self%mem, target=>patch%mem)
       all_target, all_cells
   end do
 end associate
+  call trace_end (itimer=itimer)
 END SUBROUTINE download_to
 
 !> =============================================================================
@@ -987,7 +990,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       nv = 1
       if (io%verbose>1) nv = self%nv
       do iv=1,nv
-        1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,o8,2x,2i4)
+        1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,2x,2i5,o12)
         print 1, &
           'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%u_max, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
@@ -996,7 +999,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           maxval(self%mem(:,:,:,iv,self%it ,1)), &
           minval(self%mem(:,:,:,iv,self%new,1)), &
           maxval(self%mem(:,:,:,iv,self%new,1)), &
-          self%status, nq, ntask
+          ntask, nq, self%status
         write (io%log_unit,1) &
           'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%u_max, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
@@ -1005,7 +1008,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           maxval(self%mem(:,:,:,iv,self%it ,1)), &
           minval(self%mem(:,:,:,iv,self%new,1)), &
           maxval(self%mem(:,:,:,iv,self%new,1)), &
-          self%status, nq, ntask
+          ntask, nq, self%status
       end do
     end if
   end if

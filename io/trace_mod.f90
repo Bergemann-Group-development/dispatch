@@ -6,6 +6,7 @@ MODULE trace_mod
   USE omp_timer_mod
   USE io_mod
   USE mpi_mod
+  USE timer_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -34,13 +35,16 @@ CONTAINS
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE trace_begin (id, set_verbose)
+SUBROUTINE trace_begin (id, set_verbose, itimer)
   implicit none
-  integer, optional:: set_verbose
+  integer, optional:: set_verbose, itimer
   character(len=*) id
   character(len=mch):: fmt
   integer:: verbose
   !.............................................................................
+  if (present(itimer)) then
+    call timer%begin (id, itimer)
+  end if
   if (.not.io%do_trace) return
   tracing(level) = trim(id)
   if (present(set_verbose)) then
@@ -58,8 +62,6 @@ SUBROUTINE trace_begin (id, set_verbose)
     write(*,fmt) omp_mythread(), wallclock(), trim(id)//' begin'
     call flush(6)
   end if
-  !write (io%log_unit,fmt) omp_mythread(), wallclock(), trim(id)//' begin'
-  !call flush(io%log_unit)
 END SUBROUTINE trace_begin
 
 !> =============================================================================
@@ -81,11 +83,14 @@ END SUBROUTINE trace_tag
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE trace_end
+SUBROUTINE trace_end (itimer)
   implicit none
+  integer, optional:: itimer
   integer i
   character(len=mch):: fmt
   integer:: verbose
+  !.............................................................................
+  if (present(itimer)) call timer%end(itimer)
   if (.not.io%do_trace) return
   level  = max(level-1,1)
   indent = max(indent,4)
@@ -95,8 +100,6 @@ SUBROUTINE trace_end
     write(*,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' end'
   end if
   call flush(6)
-  !write (io%log_unit,fmt) omp_mythread(), wallclock(), trim(tracing(level))//' end'
-  !call flush(io%log_unit)
   indent = max(indent-3,4)
 END SUBROUTINE trace_end
 
