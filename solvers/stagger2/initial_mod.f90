@@ -42,7 +42,7 @@ SUBROUTINE init (self)
      first_time = .false.
      rewind (io%input)
      read (io%input, initial_params)
-     mhd = any(self%b0 /= 0.0)
+     mhd = any(b0 /= 0.0)
      if (io%master) write (*, initial_params)
    end if
    !$omp end critical (input_cr)
@@ -206,26 +206,19 @@ FUNCTION exa256 (self, m) RESULT (ff)
     rec = rec + (iy+jy-m(2)%li)*nx   /m(1)%n
     rec = rec + (iz+jz-m(3)%li)*nx*ny/m(1)%n
     !print*,ix,iy,iz,rec
-    read (io_unit%data,rec=rec) d
-    ff(m(1)%li:m(1)%ui,jy,jz,1) = d
+    read (io_unit%data,rec=rec) d; ff(m(1)%li:m(1)%ui,jy,jz,1) = d
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u
-    ff(m(1)%li:m(1)%ui,jy,jz,3) = u
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,3) = u
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u
-    ff(m(1)%li:m(1)%ui,jy,jz,4) = u
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,4) = u
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u
-    ff(m(1)%li:m(1)%ui,jy,jz,5) = u
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,5) = u
   end do
   end do
   if (io%verbose > 0) &
     print *,'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
-  ff(:,:,:,6) = self%b0(1)
-  ff(:,:,:,7) = self%b0(2)
-  ff(:,:,:,8) = self%b0(3)
   call trace_end
 END FUNCTION exa256
 

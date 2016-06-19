@@ -40,13 +40,17 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
-  self%nv = 8
+  call self%initial%init
+  if (self%initial%mhd) then
+    self%nv = 8
+  else
+    self%nv = 5
+  end if
   call self%mhd_t%init
   call self%set(bits%static)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  call self%initial%init
   self%mem(:,:,:,:,1,1) = self%initial%selected(self%mesh)
   self%mhd = self%initial%mhd
   self%time = self%initial%time

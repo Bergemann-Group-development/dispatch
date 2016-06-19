@@ -88,13 +88,15 @@ SUBROUTINE update (self)
   self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
   self%s => self%mem(:,:,:,  2,self%it,1); self%dsdt => self%mem(:,:,:,  2,self%it,2)
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
-  self%B => self%mem(:,:,:,6:8,self%it,1); self%dBdt => self%mem(:,:,:,6:8,self%it,2)
   d=>self%d; dddt=>self%dddt; s=>self%s; dsdt=>self%dsdt;
   p=>self%p; dpdt=>self%dpdt; B=>self%B; dBdt=>self%dBdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
-  Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
-  dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
+  if (self%mhd) then
+    self%B => self%mem(:,:,:,6:8,self%it,1); self%dBdt => self%mem(:,:,:,6:8,self%it,2)
+    Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
+    dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
+  end if
   call allocate_vectors (self%gn, ld, dd, E, J, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
   if (self%do_pebbles) then
