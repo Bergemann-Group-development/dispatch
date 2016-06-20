@@ -102,7 +102,8 @@ SUBROUTINE execute (self)
   !$omp end parallel
   call toc ('rank time', self%n_update)
   if (io%master) &
-    print *, 'download_differ % =', 100.*download%n_differ/(download%n_differ+download%n_same)
+    print *, 'download_differ % =', 100.*download%n_differ/ &
+      max(1,(download%n_differ+download%n_same))
   call buffered_output%close
 END SUBROUTINE execute
 

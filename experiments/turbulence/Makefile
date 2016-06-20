@@ -8,6 +8,7 @@ OPTS = optimized
 UPD             = adams_bashforth
 #SOLVER         = stagger
 SOLVER          = stagger2
+#SOLVER          = ramses
 MESH            = staggered
 EXEC            = dispatch.x
 TOP             = ../..
@@ -21,5 +22,5 @@ sinclude $(PPCODE)/Experiments/DISPATCH/Makefile
 $(EXEC): cartesian_mod.o $(PICOBJ)
 
 # Dependencies
-experiment_mod.o        : mhd_mod.o scalar_mod.o trace_mod.o vector_mod.o force_mod.o io_mod.o timestep_mod.o initial_mod.o
+experiment_mod.o        : mhd_mod.o trace_mod.o io_mod.o timestep_mod.o initial_mod.o
 

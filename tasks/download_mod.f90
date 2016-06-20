@@ -1,4 +1,9 @@
 !> =============================================================================
+!> download_link             : takes care of downloads to link%task
+!>   download_same_static    : called for static patches on the same level
+!>   download_differ_static  : called for static patches on different levels
+!>     interpolate_to        : called for nbors on different levels
+!>       find_time           : computes time interpolation parameters
 !> =============================================================================
 MODULE download_mod
   USE io_mod
@@ -68,235 +73,46 @@ SUBROUTINE download_link (link, all_cells)
 END SUBROUTINE download_link
 
 !> =============================================================================
-!> We speed up the simple case when nbor patches have the same resolution, and
-!> are static, in several ways:
-!>   1) linear interpolation in time, with fixed weights
-!>   2) vectorizing over the x-direction, using as long vectors as possible
-!>   3) looping instead over iv when the x-loop is too short
-!>   4) using the "end"-patches also for edge- and corner- patches -- this is
-!>      ok, since we only need these values to be sensible. This way, we only
-!>      need 6 of the 26 neighbor patches in 3D!
+!> Run through neighbor list and pick up guard cells
 !> =============================================================================
-SUBROUTINE download_same_static (link)
-  class(link_t), pointer:: link
+SUBROUTINE download_same_static (self)
+  class (link_t):: self
+  class (link_t),  pointer:: nbor
+  class (patch_t), pointer:: source, target
+  integer:: it, iv, l1(3), u1(3), o(3), jt(2), ntot, nuse, ix, iy, iz
+  real(8):: pt(2)
+  integer, save:: itimer=0
   !.............................................................................
-  class(link_t), pointer:: nbor
-  class(patch_t), pointer:: patch, other
-  class(task_t), pointer:: task
-  integer:: ix, iy, iz, o, jt(2), it, iv, nt, nv, neg
-  real:: pt(2)
-  type(mesh_t), pointer:: m(:)
-  real, dimension(:,:,:,:), pointer:: guard
-  logical:: restore(-3:3)
-  !-----------------------------------------------------------------------------
-  call trace_begin('download::download_same_static')
-  patch => task2patch (link%task)
-  m => patch%mesh
-  it = patch%it
-  nv = patch%nv
-  !-----------------------------------------------------------------------------
-  ! Save guard zone values and restore the planes that have no neighbors; they
-  ! serve as static boundary conditions, but may be overwritten in the corners,
-  ! since we only download from 6 neighbors.
-  !-----------------------------------------------------------------------------
-  allocate (guard(m(1)%gn,m(2)%gn,m(3)%gn,nv))
-  restore = .false.
-  !guard = patch%mem(:,:,:,:,it,1)
-  !-----------------------------------------------------------------------------
-  ! XY-planes in the two Z guard zones
-  !-----------------------------------------------------------------------------
-  if (m(3)%n > 1) then
-    !---------------------------------------------------------------------------
-    ! The find_other procedure finds, and locks, the nbor needed for the guard
-    ! zones.  The lock must be removed in each case before treating the next nbor.
-    !---------------------------------------------------------------------------
-    other => find_nbor (link, -3, o, patch%time, jt, pt)
-    if (associated(other)) then
-      neg = 0
-      do iz=m(3)%lb,m(3)%lo
-        do iy=m(2)%lb,min(m(2)%ub,other%mesh(2)%ub)
-          do iv=1,nv
-            do ix=m(1)%lb,min(m(1)%ub,other%mesh(1)%ub)
-              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt(1),1)*pt(1) &
-                                          + other%mem(ix,iy,iz+o,iv,jt(2),1)*pt(2)
-            end do
-          end do
-          do ix=m(1)%lb,m(1)%ub
-            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
-          end do
-        end do
+  call trace_begin('download_mod::download_same_static',itimer=itimer)
+  target => task2patch(self%task)
+  nbor => self%nbor
+  do while (associated (nbor))
+    source => task2patch(nbor%task)
+    it = target%it
+    call self%task%time_interpolate (nbor%task, jt, pt)
+    do iv=1,source%nv
+      call target%dnload_range (source, l1, u1, o)
+      ntot = product(u1-l1+1)
+      nuse = ntot
+      if (iv==1 .and. io%verbose>2) then
+        print'(a,3(3i4,3x),i6)','target ranges: l1, u1, o, n =', l1, u1, o, ntot
+      end if
+      do iz=l1(3),u1(3)
+      do iy=l1(2),u1(2)
+      do ix=l1(1),u1(1)
+        target%mem(ix,iy,iz,iv,it,1) = source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)*pt(1) &
+                                     + source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)*pt(2)
       end do
-      if (neg>0) print*, other%id, 'MK: -3, neg, o =', neg, o, jt, pt
-      !$omp flush
-      call other%lock%unset ('download_same -3')
-      call patch%check_density ('after -3')
-    else
-      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-      restore(-3) = .true.
-          guard(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:) = &
-      patch%mem(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:,it,1)
-    end if
-
-    other => find_nbor (link, +3, o, patch%time, jt, pt)
-    if (associated(other)) then
-      neg = 0
-      do iz=m(3)%uo,m(3)%ub
-        do iy=m(2)%lb,min(m(2)%ub,other%mesh(2)%ub)
-          do iv=1,nv
-            do ix=m(1)%lb,min(m(1)%ub,other%mesh(1)%ub)
-              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy,iz+o,iv,jt(1),1)*pt(1) &
-                                          + other%mem(ix,iy,iz+o,iv,jt(2),1)*pt(2)
-            end do
-          end do
-          do ix=m(1)%lb,m(1)%ub
-            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
-          end do
-        end do
       end do
-      if (neg>0) print*, other%id, 'MK: +3, neg, o =', neg, o, jt, pt
-      !$omp flush
-      call other%lock%unset ('download_same +3')
-      call patch%check_density ('after +3')
-    else
-      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-      restore(+3) = .true.
-          guard(1:m(1)%gn,1:m(2)%gn,m(3)%uo:m(3)%ub,:) = &
-      patch%mem(1:m(1)%gn,1:m(2)%gn,m(3)%uo:m(3)%ub,:,it,1)
-    end if
-  end if
-  !-----------------------------------------------------------------------------
-  ! XZ-planes in the two Y guard zones
-  !-----------------------------------------------------------------------------
-  if (m(2)%n > 1) then
-    other => find_nbor (link, -2, o, patch%time, jt, pt)
-    if (associated(other)) then
-      neg = 0
-      do iz=m(3)%lb,min(m(3)%ub,other%mesh(3)%ub)
-        do iy=m(2)%lb,m(2)%lo
-          do iv=1,nv
-            do ix=m(1)%lb,min(m(1)%ub,other%mesh(1)%ub)
-              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt(1),1)*pt(1) &
-                                          + other%mem(ix,iy+o,iz,iv,jt(2),1)*pt(2)
-            end do
-          end do
-          do ix=m(1)%lb,m(1)%ub
-            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
-          end do
-        end do
       end do
-      if (neg>0) print*, other%id, 'MK: -2, neg, o =', neg, o, jt, pt
-      !$omp flush
-      call other%lock%unset ('download_same -2')
-      call patch%check_density ('after -2')
-    else
-      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-      restore(-2) = .true.
-          guard(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:) = &
-      patch%mem(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:,it,1)
-    end if
-
-    other => find_nbor (link, +2, o, patch%time, jt, pt)
-    if (associated(other)) then
-      neg = 0
-      do iz=m(3)%lb,min(m(3)%ub,other%mesh(3)%ub)
-        do iy=m(2)%uo,m(2)%ub
-          do iv=1,nv
-            do ix=m(1)%lb,min(m(1)%ub,other%mesh(1)%ub)
-              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix,iy+o,iz,iv,jt(1),1)*pt(1) &
-                                          + other%mem(ix,iy+o,iz,iv,jt(2),1)*pt(2)
-            end do
-          end do
-          do ix=m(1)%lb,m(1)%ub
-            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
-          end do
-        end do
-      end do
-      if (neg>0) print*, other%id, 'MK: +2, neg, o =', neg, o, jt, pt
-      !$omp flush
-      call other%lock%unset ('download_same +2')
-      call patch%check_density ('after +2')
-    else
-      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-      restore(+2) = .true.
-          guard(1:m(1)%gn,m(2)%uo:m(2)%ub,1:m(3)%gn,:) = &
-      patch%mem(1:m(1)%gn,m(2)%uo:m(2)%ub,1:m(3)%gn,:,it,1)
-    end if
-  end if
-  !-----------------------------------------------------------------------------
-  ! YZ-planes in the two X guard zones
-  !-----------------------------------------------------------------------------
-  if (m(1)%n > 1) then
-    other => find_nbor (link, -1, o, patch%time, jt, pt)
-    if (associated(other)) then
-      neg = 0
-      do iz=m(3)%lb,min(m(3)%ub,other%mesh(3)%ub)
-        do iy=m(2)%lb,min(m(2)%ub,other%mesh(2)%ub)
-          do ix=m(1)%lb,m(1)%lo
-            do iv=1,nv
-              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt(1),1)*pt(1) &
-                                          + other%mem(ix+o,iy,iz,iv,jt(2),1)*pt(2)
-            end do
-          end do
-          do ix=m(1)%lb,m(1)%lo
-            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
-          end do
-        end do
-      end do
-      if (neg>0) print*, other%id, 'MK: -1, neg, o =', neg, o, jt, pt
-      !$omp flush
-      call other%lock%unset ('download_same -1')
-      call patch%check_density ('after -1')
-    else
-      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-      restore(-1) = .true.
-          guard(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:) = &
-      patch%mem(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:,it,1)
-    end if
-
-    other => find_nbor (link, +1, o, patch%time, jt, pt)
-    if (associated(other)) then
-      neg = 0
-      do iz=m(3)%lb,min(m(3)%ub,other%mesh(3)%ub)
-        do iy=m(2)%lb,min(m(2)%ub,other%mesh(2)%ub)
-          do ix=m(1)%uo,m(1)%ub
-            do iv=1,nv
-              patch%mem(ix,iy,iz,iv,it,1) = other%mem(ix+o,iy,iz,iv,jt(1),1)*pt(1) &
-                                          + other%mem(ix+o,iy,iz,iv,jt(2),1)*pt(2)
-            end do
-          end do
-          do ix=m(1)%uo,m(1)%ub
-            neg = neg+merge(1,0,patch%mem(ix,iy,iz,1,it,1)<=0.0)
-          end do
-        end do
-      end do
-      if (neg>0) print*, other%id, 'MK: +1, neg, o =', neg, o, jt, pt
-      !$omp flush
-      call other%lock%unset ('download_same +1')
-      call patch%check_density ('after +1')
-    else
-      print*,'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-      restore(+1) = .true.
-          guard(m(1)%uo:m(1)%ub,1:m(2)%gn,1:m(3)%gn,:) = &
-      patch%mem(m(1)%uo:m(1)%ub,1:m(2)%gn,1:m(3)%gn,:,it,1)
-    end if
-  end if
-  !-----------------------------------------------------------------------------
-  ! Restore the guard zones that may have been affected by corner downloads
-  !-----------------------------------------------------------------------------
-  if (restore(-3)) patch%mem(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:,it,1) = &
-                       guard(1:m(1)%gn,1:m(2)%gn,m(3)%lb:m(3)%lo,:)
-  if (restore(+3)) patch%mem(1:m(1)%gn,1:m(2)%gn,m(3)%uo:m(3)%ub,:,it,1) = &
-                       guard(1:m(1)%gn,1:m(2)%gn,m(3)%uo:m(3)%ub,:)
-  if (restore(-2)) patch%mem(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:,it,1) = &
-                       guard(1:m(1)%gn,m(2)%lb:m(2)%lo,1:m(3)%gn,:)
-  if (restore(+2)) patch%mem(1:m(1)%gn,m(2)%uo:m(2)%ub,1:m(3)%gn,:,it,1) = &
-                       guard(1:m(1)%gn,m(2)%uo:m(2)%ub,1:m(3)%gn,:)
-  if (restore(-1)) patch%mem(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:,it,1) = &
-                       guard(m(1)%lb:m(1)%lo,1:m(2)%gn,1:m(3)%gn,:)
-  if (restore(+1)) patch%mem(m(1)%uo:m(1)%ub,1:m(2)%gn,1:m(3)%gn,:,it,1) = &
-                       guard(m(1)%uo:m(1)%ub,1:m(2)%gn,1:m(3)%gn,:)
-  deallocate (guard)
-  call trace_end
+      if (iv==1.and.io%verbose==1) print'(7(1x,a,i7,1x))', 'patch', target%id, ' level', target%level, &
+        ' picked up', nuse, 'of', ntot, ' points from patch', source%id, ' at level', source%level
+      if (io%verbose>2) print'(7(1x,a,i7,1x),2l4)', 'patch', target%id, ' level', target%level, 'var', iv, &
+        ' picked up', nuse, 'of', ntot, ' points from patch', source%id, ' at level', source%level
+    end do
+    nbor => nbor%next
+  end do
+  call trace_end(itimer)
 END SUBROUTINE download_same_static
 
 !> =============================================================================
@@ -363,63 +179,6 @@ SUBROUTINE find_time (other, time, jt, pt)
   if (io%verbose>1) &
     print'(a,i6,f9.4,2i4,2f7.3,10f9.4)', 'find_time: ', other%id, time, jt, pt, other%t
 END SUBROUTINE find_time
-
-!> =============================================================================
-!> Find the nbor task in direction idir (plus/minos)
-!> =============================================================================
-FUNCTION find_nbor (link, idir, o, time, jt, pt) RESULT (other)
-  class(link_t), pointer:: link, nbor
-  class(patch_t), pointer:: patch, other, try
-  type(mesh_t), pointer:: m(:)
-  real(8):: time, position(3), dist
-  integer:: idir, adir, o, jt(2), it, iv, nv, nt
-  real:: pt(2), dt
-  !-----------------------------------------------------------------------------
-  call trace_begin('download::find_nbor')
-  patch => task2patch (link%task)
-  !print*, patch%id, 'looking at nbors'
-  m => patch%mesh
-  nt = patch%nt
-  nv = patch%nv
-  adir = abs(idir)
-  position = patch%position
-  position(adir) = position(adir) + patch%size(adir)*idir/adir
-  nbor => link%nbor
-  nullify (other)
-  do while (associated(nbor))
-    try => task2patch(nbor%task)
-    dist = patch%point_distance(try%position, position)
-    if (io%verbose>2) &
-      print'(a,i3,2i5,f8.2,2(2x,3f8.3))', 'find_nbor:', &
-        idir, patch%id, nbor%task%id, dist/patch%size(adir), (position-try%position)/patch%size
-    if (dist < patch%size(adir)*0.1) then
-      call try%lock%set ('find_nbor')
-      !$omp flush
-      other => try
-      !print '(i6,a,f9.5,3x,"other%t:",7f9.5)', patch%id, ' found nbor, times =', patch%time, other%t(1:nt-1)
-      exit
-    end if
-    nbor => nbor%next
-  end do
-  if (.not.associated(other)) then
-    if (io%verbose>1) &
-      print*, patch%id, 'find_nbors: not found in direction', idir
-    call trace_end
-    return
-  end if
-  !-----------------------------------------------------------------------------
-  ! The offset maps, when added to a target index uo, the source lb
-  !-----------------------------------------------------------------------------
-  o = (other%mesh(adir)%li-patch%mesh(adir)%uo)*idir/abs(idir)
-  !-----------------------------------------------------------------------------
-  ! Find the time interval to interpolate in / extrapolate from
-  !-----------------------------------------------------------------------------
-  call find_time (other, time, jt, pt)
-  if (io%verbose>3) &
-    print '(a,i3,i7,i4,i4,i3,2f6.2,2x,3i3)', 'download::find_nbor: idir, id, o, jt, pt', &
-      idir, other%id, o, jt, pt, nint((other%position-patch%position)/patch%size)
-  call trace_end
-END FUNCTION find_nbor
 
 !> =============================================================================
 !> =============================================================================

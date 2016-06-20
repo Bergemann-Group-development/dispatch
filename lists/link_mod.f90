@@ -21,7 +21,6 @@ MODULE link_mod
     class(link_t), pointer :: parent => null()       ! parent task link
     class(link_t), pointer :: next_time => null()    ! next link in time order
   contains
-    procedure:: download
     procedure:: add_nbor_by_quality
     procedure:: add_nbor_by_rank
     procedure:: make_new_nbors
@@ -33,37 +32,6 @@ MODULE link_mod
   public task2patch
   logical, save:: debug=.false.
 CONTAINS
-
-!> =============================================================================
-!> Run through neighbor list and pick up guard cells
-!> =============================================================================
-SUBROUTINE download (self, all_cells, guard_cells)
-  implicit none
-  class (link_t):: self
-  logical, optional:: guard_cells, all_cells
-  class (link_t),  pointer:: nbor
-  class (task_t),  pointer:: source, target
-  integer :: nguard
-  !.............................................................................
-  call trace_begin('link_t%download')
-  target => self%task
-  select type (target)
-  class is (patch_t)
-    nguard=0
-    nbor => self%nbor
-    do while (associated (nbor))
-      source => nbor%task
-      select type (source)
-      class is (patch_t)
-        call source%download_to (target, all_cells, guard_cells)
-      end select
-      nbor => nbor%next
-    end do
-    if (io%verbose > 5) &
-      print *, 'download: Number of neighbors with guard cells:', nguard
-  end select
-  call trace_end
-END SUBROUTINE download
 
 !> =============================================================================
 !> Initialize the nbors chain of a new patch (self), by

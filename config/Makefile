@@ -178,7 +178,7 @@ info:
 	@echo "$B  MPI         $N= $(MPI)"
 	@echo "$B  PATCH       $N= $(PATCH)"
 	@echo "$B  VPATH       $N= $(VPATH)"
-	@echo "$B  MHD         $N= $(MHD)"
+	@echo "$B  SOLVER      $N= $(SOLVER)"
 	@echo "$B  PROG        $N= $(PROG).o"
 	@echo "$B  OPTS        $N= $(OPTS)"
 	@echo "$B  OPT         $N= $(OPT)"

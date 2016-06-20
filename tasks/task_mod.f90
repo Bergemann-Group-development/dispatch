@@ -123,14 +123,11 @@ SUBROUTINE time_interpolate (self, source, it, pt)
   !.............................................................................
   call trace_begin ('task_t::time_interpolate',3)
   !-----------------------------------------------------------------------------
-  ! In case all source times are equal, and possibly differ totally from the
-  ! target time (e.g. because of an error in initial condition setup), choose
-  ! a valid default interval
+  ! In case of e.g. an error in initial conditions, choose a valid interval
   !-----------------------------------------------------------------------------
   it = source%iit(1:2)
   !-----------------------------------------------------------------------------
-  ! As long as the first source time is smaller than the target time, renew
-  ! the interval
+  ! As long as the first source is earlier than the target, renew the interval
   !-----------------------------------------------------------------------------
   do i=2,source%nt-2
     if (source%t(source%iit(i)) < self%time) then
@@ -142,11 +139,21 @@ SUBROUTINE time_interpolate (self, source, it, pt)
   !-----------------------------------------------------------------------------
   dt = source%t(it(2))-source%t(it(1))
   if (dt==0d0) then
-    pt(2)=0d0
+    pt(2) = 0d0
   else
     pt(2) = (self%time - source%t(it(1)))/dt
   end if
   pt(1) = 1d0-pt(2)
+  !-----------------------------------------------------------------------------
+  ! Facilitate exact time evolution when dt_fixes is being used
+  !-----------------------------------------------------------------------------
+  if (abs(pt(1))< 1d-5) then
+    if (io%verbose>2) print*,'EXACT'
+    pt(1)=0d0; pt(2)=1d0
+  else if (abs(pt(2)) < 1d-5) then
+    if (io%verbose>2) print*,'EXACT'
+    pt(1)=1d0; pt(2)=0d0
+  end if
   call trace_end
 END SUBROUTINE
 

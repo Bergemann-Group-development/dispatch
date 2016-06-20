@@ -145,21 +145,8 @@ SUBROUTINE append_link (self, link)
   end if
   if (link%task%is_clear(bits%virtual)) &
     self%n = self%n+1
-  if (associated(link%task)) then
+  if (associated(link%task)) &
     link%task%link => link
-    if (first_time) then
-      first_time = .false.
-      anon => link%task%link
-      select type (anon)
-      type is (link_t)
-        print*,'MK type is link_t'
-      class is (link_t)
-        print*,'MK class is link_t'
-      class default
-        print*,'MK class is unknown'
-      end select
-    end if
-  end if
   !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE append_link
@@ -337,8 +324,8 @@ SUBROUTINE check_ready (self, link, set_debug)
     select type (task)
     class is (patch_t)
       call task%check_density ("before download")
-     !call download%download_link (link, all_cells=.false.)
-      call link%download (all_cells=.false.)
+      call download%download_link (link, all_cells=.false.)
+     !call link%download (all_cells=.false.)
       call task%check_density (" after download")
     end select
   end if

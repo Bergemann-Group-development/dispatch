@@ -71,7 +71,6 @@ MODULE patch_mod
     procedure:: clear
     procedure:: is_set
     procedure:: is_clear
-    procedure:: download_to
     procedure:: myposition
     procedure:: periodic_grid
     procedure:: extrapolate_guards
@@ -376,8 +375,9 @@ SUBROUTINE rotate (self)
   class(patch_t):: self
   integer:: iv, nv
   real(8):: time
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin ('patch_t%update')
+  call trace_begin ('patch_t%update',itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Call timestep update procedure to fill the next time slot with values
   !-----------------------------------------------------------------------------
@@ -431,211 +431,8 @@ SUBROUTINE rotate (self)
    print*,'patch t(iit):', self%t(self%iit)
   !$omp flush
   call self%lock%unset ('rotate')
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE rotate
-
-!> =============================================================================
-!> Download values from the source (self) to the target (patch), trying to get
-!> all cells in the target if "all_target" is true, and only guard cells if not.
-!> We use myposition() to map an index position in the target patch to an
-!> absolute position, and then index() to get the integer and floating point
-!> position in the source patch.  With that, we make a tri-linear interpolation.
-!> This is useful for both guard cell fill-in, and for "prolongation" = creating
-!> patches with higher resolution.
-!> =============================================================================
-SUBROUTINE download_to (self, patch, all_cells, guard_cells, special)
-  class(patch_t):: self
-  class(patch_t), pointer:: patch
-  logical, optional:: all_cells, guard_cells
-  integer, optional:: special
-  logical:: all_target
-  integer:: ii(3), ix, iy, iz, it, iv, j0(3), j1(3), ntot, nuse, jt(2)
-  integer, dimension(3):: l1, u1, l2, u2, o
-  real:: f(3), pos(3), weight
-  real(8):: pt(2)
-  integer, save:: itimer
-  !-----------------------------------------------------------------------------
-  call trace_begin ('patch_mod::download_to', itimer=itimer)
-!  if (self%id==patch%id .and. all(patch%size /= box%size)) return
-  if (io%verbose>2) print'(a,2(i3,3f8.3),2(3x,3i4))','download_to:self,patch=', &
-    self%id,self%position,patch%id,patch%position, self%mesh%li, self%mesh%ui
-associate (source=>self%mem, target=>patch%mem)
-  it = patch%it
-  !-----------------------------------------------------------------------------
-  ! Download rules:  1) Always download guard cells.  2) Download all cells if
-  ! a) all_cells is set, and the source level is at most one level higher. In
-  !    this case (first fill-in), the source level may be lower than target level
-  ! b) the level is one level higher
-  !-----------------------------------------------------------------------------
-  do iv=1,self%nv
-    all_target = .true.                                   ! default: use all points
-    if (self%level <= patch%level) all_target = .false.   ! only upload from deeper levels
-    if (all_cells) all_target = .true.                    ! unless told to do so
-    if ((self%level-patch%level) > 1) return              ! upload at most 1 level
-    if (present(special)) then
-      if (iv==special) then                               ! if the variable is phi
-        if (self%level >= patch%level) cycle              ! only download phi from lower levels
-       !all_target = .true.                               ! interior + guard cells
-       !if (io%verbose>0) &
-       !  print'(10(1x,a,i6,3x))', 'patch', patch%id, 'at level', patch%level, &
-       !  'downloading variable', special, 'from patch', self%id, 'level', self%level
-      end if
-    end if
-    !---------------------------------------------------------------------------
-    ! When the source resolution is higher than the target resolution, all cells
-    ! in the source need to be distributed over the nearest cells in the target.
-    ! First, we need to find the index ranges in the source that map entirely
-    ! into the target. For simplicity, we first ignore the periodic mapping of
-    ! the box, and assume all patches are inside the box.  Then the range of an
-    ! index is the cross section of the whole source range with the range of
-    ! target mapped into the source. Since this is to be used for uploading,
-    ! there is no need to go the very limit, so to keep things simple we require
-    ! a target point to exist both above and below a source point, for it to be
-    ! included in the range.
-    !---------------------------------------------------------------------------
-    if (self%level > patch%level) then                    ! source has finer cells
-      !-------------------------------------------------------------------------
-      ! upload_range (p1, p2, li, ui, l1, u1, l2, u2) gives the index ranges in
-      ! patches p1 and p2, respectively, corresponding to p2%li and p2%mesh%ui, of a
-      ! region inside p2%li-p2%mesh%ui, which is also inside p1%mesh%lb-p1%mesh%ub. In this
-      ! context p1 (patch) is the target patch, and p2 (self) is the source patch.
-      !-------------------------------------------------------------------------
-      call patch%upload_range (self, l1, u1, l2, u2)
-      print '(2(a,i4,2(2x,3i4)))', &
-        'uploading to patch', patch%id, l1, u1, ' from patch', self%id, l2, u2
-      target(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),iv,it,1) = 0.0
-      weight = product(self%ds)/product(patch%ds)
-      !-------------------------------------------------------------------------
-      ! If we are using all target points, this is a straight loop, in which
-      ! the calculation of the target index is the most costly part, so it may
-      ! be a good idea to use an inline expression here.
-      !-------------------------------------------------------------------------
-      if (all_target) then
-        do iz=l2(3),u2(3)
-        do iy=l2(2),u2(2)
-        do ix=l2(1),u2(1)
-          ii = [ix,iy,iz]
-          j0 = patch%nearest (self, ii)
-         !j0 = nint(patch%offset+(self%position+(index-self%offset)*self%ds-patch%position)/patch%ds)
-          target(j0(1),j0(2),j0(3),iv,it,1) = &
-          target(j0(1),j0(2),j0(3),iv,it,1) + weight*source(ix,iy,iz,iv,it,1)
-        end do
-        end do
-        end do
-      !-------------------------------------------------------------------------
-      ! If we are only using guard cells we just need to exclude the interior of
-      ! the target.  This is much simpler and cheaper than treating all 26 guard
-      ! zone regions separately. For 15-16 cell interiors with 2+2 guard cells
-      ! the number of excluded points is roughly half of all points considered.
-      !-------------------------------------------------------------------------
-      else
-        do iz=l2(3),u2(3)
-        do iy=l2(2),u2(2)
-        do ix=l2(1),u2(1)
-          ii = [ix,iy,iz]
-          j0 = patch%nearest (self, ii)
-          if (any(j0 >= patch%mesh%li .or. j0 <= patch%mesh%ui)) cycle
-          target(j0(1),j0(2),j0(3),iv,it,1) = &
-          target(j0(1),j0(2),j0(3),iv,it,1) + weight*source(ix,iy,iz,iv,it,1)
-        end do
-        end do
-        end do
-      end if
-    else if (self%level == patch%level) then
-      call patch%dnload_range (self, l1, u1, o)
-      call patch%time_interpolate (self, jt, pt)
-      if (iv==1 .and. io%verbose>2) then
-        print'(a,3(3i4,3x),i6)','target ranges: l1, u1, o, n =', l1, u1, o, product(u1-l1+1)
-      end if
-      ntot = product(u1-l1+1)
-      nuse = ntot
-      do iz=l1(3),u1(3)
-      do iy=l1(2),u1(2)
-      do ix=l1(1),u1(1)
-        target(ix,iy,iz,iv,it,1) = source(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)*pt(1) &
-                                 + source(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)*pt(2)
-      end do
-      end do
-      end do
-    else ! source (self) has the same as, or lower level than the target
-      call patch%dnload_range (self, l1, u1, o)
-      if (iv==1) then
-      !  print 1, self%id , ' source position, size:', self%position , self%size , self%ub , self%it , minval(self%mem(:,:,:,1,self%it,1))
-      !  print 1, patch%id, ' target position, size:', patch%position, patch%size, patch%ub, patch%it, minval(self%mem(:,:,:,1,patch%it,1))
-      !  1 format(i4,a,2(3f8.3,2x),3i4,i5,f8.3)
-        print'(a,3(3i4,3x),i6)','target ranges: l1, u1, o, n =', l1, u1, o, product(u1-l1+1)
-      end if
-      ntot = 0
-      nuse = 0
-      do iz=l1(3),u1(3)
-      do iy=l1(2),u1(2)
-      do ix=l1(1),u1(1)
-        ntot = ntot+1
-        ii = [ix,iy,iz]
-        !---------------------------------------------------------------------------
-        ! Check if the target point is in the guard zone region (= not inside)
-        !---------------------------------------------------------------------------
-        if (all_target .or. .not.all((ii >= patch%mesh%li) .and. (ii <= patch%mesh%ui))) then
-          j0 = self%index (patch, ii, f)
-          !---------------------------------------------------------------------------
-          ! Check that the source is in the valid region
-          !---------------------------------------------------------------------------
-          if (all((j0+f >= self%mesh%lb-0.01 .and. j0+f <= self%mesh%ub+0.01) .or. self%n==1)) then
-            j1 = j0+1
-            where (j1 > self%mesh%ub)
-              j0 = j0-1
-              j1 = j1-1
-              f  = f+1.0
-            end where
-            where (j0 < self%mesh%lb)
-              j0 = j0+1
-              j1 = j1+1
-              f  = f-1.0
-            end where
-            where (self%n==1)
-              j0 = 1
-              j1 = 1
-            end where
-            target(ix,iy,iz,iv,it,1) = &
-              (1.-f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j0(3),iv,it,1)    &
-                                     + f(1) *source(j1(1),j0(2),j0(3),iv,it,1)) + &
-              (1.-f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j0(3),iv,it,1)    &
-                                     + f(1) *source(j1(1),j1(2),j0(3),iv,it,1)) + &
-              (   f(3))*(1.-f(2))*((1.-f(1))*source(j0(1),j0(2),j1(3),iv,it,1)    &
-                                     + f(1) *source(j1(1),j0(2),j1(3),iv,it,1)) + &
-              (   f(3))*(   f(2))*((1.-f(1))*source(j0(1),j1(2),j1(3),iv,it,1)    &
-                                     + f(1) *source(j1(1),j1(2),j1(3),iv,it,1))
-            !if (patch%id==3 .and. iv==1) &
-            !  print'(a,2(i4,2x,3i3),3f8.2,2x,8f8.2,3x,f8.2)','download:',self%id,ix,iy,iz,it,j0,f, &
-            !                                 source(j0(1),j0(2),j0(3),iv,it,1), &
-            !                                 source(j1(1),j0(2),j0(3),iv,it,1), &
-            !                                 source(j0(1),j1(2),j0(3),iv,it,1), &
-            !                                 source(j1(1),j1(2),j0(3),iv,it,1), &
-            !                                 source(j0(1),j0(2),j1(3),iv,it,1), &
-            !                                 source(j1(1),j0(2),j1(3),iv,it,1), &
-            !                                 source(j0(1),j1(2),j1(3),iv,it,1), &
-            !                                 source(j1(1),j1(2),j1(3),iv,it,1), &
-            !                                 target(ix,iy,iz,iv,it,1)
-            nuse = nuse+1
-          else
-            if (iv==1) print'("outside",i4,2x,3i4,2x,i4,3f8.3,3(2x,3i4))',patch%id,ix,iy,iz,self%id,j0+f,j0,self%mesh%lb,self%mesh%ub
-          end if
-        end if
-      end do
-      end do
-      end do
-    end if
-    !if (patch%id==1) print'(7(1x,a,i7,1x))', 'patch 1, var', iv, ' at level', patch%level, &
-    !  ' picked up', nuse, 'of', ntot, ' points from patch', self%id, ' at level', self%level
-    if (iv==1.and.io%verbose>1) print'(7(1x,a,i7,1x))', 'patch', patch%id, ' level', patch%level, &
-      ' picked up', nuse, 'of', ntot, ' points from patch', self%id, ' at level', self%level
-    if (io%verbose>2) print'(7(1x,a,i7,1x),2l4)', 'patch', patch%id, ' level', patch%level, 'var', iv+10*self%nv, &
-      ' picked up', nuse, 'of', ntot, ' points from patch', self%id, ' at level', self%level, &
-      all_target, all_cells
-  end do
-end associate
-  call trace_end (itimer=itimer)
-END SUBROUTINE download_to
 
 !> =============================================================================
 !> This function gives the physical position of an index triple (patch point)
@@ -1035,6 +832,7 @@ SUBROUTINE upload_range (p1, p2, l1, u1, l2, u2)
   !print*,'l1,l2', l1, l2
   !print*,'u1,u2', u1, u2
 END SUBROUTINE upload_range
+
 !> =============================================================================
 !> Find the p1 target index ranges that correspond to the overlap region, for
 !> download from p2 to p1 (p1 has higher or the same level as p2)
