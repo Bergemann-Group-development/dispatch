@@ -128,7 +128,7 @@ SUBROUTINE find_time (other, time, jt, pt)
   integer:: jt(2)
   real:: pt(2)
   !.............................................................................
-  integer:: it1, it2, it
+  integer:: it1, it2, it, iit(other%nt)
   real(8):: t1, t2
   real:: dt, pt2
   logical:: found
@@ -144,9 +144,10 @@ SUBROUTINE find_time (other, time, jt, pt)
     ! Check all nt-2 time intervals, and settle for the one that gives the
     ! smallest extrapolation factor pt(2).
     !---------------------------------------------------------------------------
+    iit = other%local_iit()
     do it=1,other%nt-2
-      it1 = other%iit(it)
-      it2 = other%iit(it+1)
+      it1 = iit(it)
+      it2 = iit(it+1)
       t1 = other%t(it1)
       t2 = other%t(it2)
       dt = t2 - t1
@@ -169,7 +170,7 @@ SUBROUTINE find_time (other, time, jt, pt)
     if (other%is_clear(bits%virtual) .and. io%verbose>2) &
       print '(i6,i4,2x,a,2i4,2f9.4,3x,"time",f9.4,3x,"other%t",7f9.5)', &
       other%id, omp_mythread(), 'WARNING: using fall-back', &
-      jt, pt, time, other%t(other%iit(1:other%nt-1))
+      jt, pt, time, other%t(iit(1:other%nt-1))
   end if
   pt(1) = 1.0-pt(2)
   if (abs(pt(1))< 1e-4) then

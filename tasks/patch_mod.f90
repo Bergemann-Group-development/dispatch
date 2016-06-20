@@ -80,6 +80,7 @@ MODULE patch_mod
     procedure:: check_density
     procedure:: patch_to_header
     procedure:: header_to_patch
+    procedure:: local_iit
     procedure:: time_interpolate
   end type
   !-----------------------------------------------------------------------------
@@ -472,6 +473,7 @@ SUBROUTINE periodic_grid (self)
   end do
   call trace_end
 END SUBROUTINE periodic_grid
+
 !> =============================================================================
 !> Time extrapolate guard cell values, to allow using also guard zone values to
 !> get boundary conditions for higher level patches.  This is done before time
@@ -479,13 +481,14 @@ END SUBROUTINE periodic_grid
 !> =============================================================================
 SUBROUTINE extrapolate_guards (self)
   class(patch_t):: self
-  integer:: ix, iy, iz, i(3), it0, it1, it2, nt
+  integer:: ix, iy, iz, i(3), it0, it1, it2, nt, iit(self%nt)
   !.............................................................................
   call trace_begin ('patches_mod:extrapolate_guards', 3)
   nt = self%nt
-  it0 = self%iit(nt)                                    ! current time slot
-  it1 = self%iit(nt-1)                                  ! previous time slot
-  it2 = self%iit(nt-2)                                  ! the one before that
+  iit = self%local_iit()
+  it0 = iit(nt)                                         ! current time slot
+  it1 = iit(nt-1)                                       ! previous time slot
+  it2 = iit(nt-2)                                       ! the one before that
   do iz=self%mesh(3)%lb,self%mesh(3)%ub                 ! loop over all cells
   do iy=self%mesh(2)%lb,self%mesh(2)%ub
   do ix=self%mesh(1)%lb,self%mesh(1)%ub
@@ -1125,6 +1128,21 @@ SUBROUTINE check_density (self, label)
 END SUBROUTINE check_density
 
 !> =============================================================================
+!> =============================================================================
+FUNCTION local_iit (self) RESULT (iit)
+  class(patch_t):: self
+  integer:: i, it, iit(self%nt)
+  !-----------------------------------------------------------------------------
+  ! Make a consistent local copy of self%iit, based on self%new, which is
+  ! written and read in atomic operations.  The array iit is such that its last
+  ! value, iit(self%nt) is equal to self%new.
+  !-----------------------------------------------------------------------------
+  !$omp atomic read
+  it = self%it
+  iit = [(1+mod(it+i,self%nt), i=1,self%nt)]
+END FUNCTION local_iit
+
+!> =============================================================================
 !> Find the right time interval in source%t(source%iit), which are the source
 !> times in increasing order.  To avoid having to lock access to source%iit while 
 !> reading it, we read instead (with an atomic read) source%new, from which a
@@ -1138,16 +1156,9 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   !.............................................................................
   call trace_begin ('task_t::time_interpolate',3)
   !-----------------------------------------------------------------------------
-  ! Make a consistent local copy of source%iit, based on source%new, which is
-  ! written and read in atomic operations.  The array iit is such that its last
-  ! value, iit(self%nt) is equal to source%new.
-  !-----------------------------------------------------------------------------
-  !$omp atomic read
-  it = source%it
-  iit = [(1+mod(it+i,self%nt), i=1,self%nt)]
-  !-----------------------------------------------------------------------------
   ! In case of e.g. an error in initial conditions, choose a valid default
   !-----------------------------------------------------------------------------
+  iit = source%local_iit()
   jt = iit(1:2)
   !-----------------------------------------------------------------------------
   ! As long as the first source time is earlier than, or equal to the target
