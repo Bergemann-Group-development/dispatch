@@ -73,7 +73,10 @@ SUBROUTINE download_link (link, all_cells)
 END SUBROUTINE download_link
 
 !> =============================================================================
-!> Run through neighbor list and pick up guard cells
+!> Run through neighbor list and pick up guard cells. A crucial question is if
+!> it is necessary to use OMP locks to pick up the guard zone values. As long as
+!> the iit array is reconstucted from the single value source%it, which is atomic,
+!> there should be no need for locking.  This is in patch_mod::time_interpolate.
 !> =============================================================================
 SUBROUTINE download_same_static (self)
   class (link_t):: self
@@ -89,7 +92,7 @@ SUBROUTINE download_same_static (self)
   do while (associated (nbor))
     source => task2patch(nbor%task)
     it = target%it
-    call self%task%time_interpolate (nbor%task, jt, pt)
+    call target%time_interpolate (source, jt, pt)
     do iv=1,source%nv
       call target%dnload_range (source, l1, u1, o)
       ntot = product(u1-l1+1)

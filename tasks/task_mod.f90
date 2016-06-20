@@ -51,7 +51,6 @@ MODULE task_mod
     procedure:: init
     procedure:: update
     procedure:: output
-    procedure:: time_interpolate
     procedure:: info
     procedure:: is_ahead_of
     procedure:: set
@@ -113,51 +112,6 @@ SUBROUTINE update (self)
 END SUBROUTINE
 
 !> =============================================================================
-!> Find the right time interval in source%t(source%iit), which are the source
-!> times in increasing order.
-!> =============================================================================
-SUBROUTINE time_interpolate (self, source, it, pt)
-  class (task_t):: self, source
-  integer:: it(2), i
-  real(8):: pt(2), dt
-  !.............................................................................
-  call trace_begin ('task_t::time_interpolate',3)
-  !-----------------------------------------------------------------------------
-  ! In case of e.g. an error in initial conditions, choose a valid interval
-  !-----------------------------------------------------------------------------
-  it = source%iit(1:2)
-  !-----------------------------------------------------------------------------
-  ! As long as the first source is earlier than the target, renew the interval
-  !-----------------------------------------------------------------------------
-  do i=2,source%nt-2
-    if (source%t(source%iit(i)) < self%time) then
-      it = source%iit(i:i+1)
-    end if
-  end do
-  !-----------------------------------------------------------------------------
-  ! A vanishing source time interval happens only at the initial condition ...
-  !-----------------------------------------------------------------------------
-  dt = source%t(it(2))-source%t(it(1))
-  if (dt==0d0) then
-    pt(2) = 0d0
-  else
-    pt(2) = (self%time - source%t(it(1)))/dt
-  end if
-  pt(1) = 1d0-pt(2)
-  !-----------------------------------------------------------------------------
-  ! Facilitate exact time evolution when dt_fixes is being used
-  !-----------------------------------------------------------------------------
-  if (abs(pt(1))< 1d-5) then
-    if (io%verbose>2) print*,'EXACT'
-    pt(1)=0d0; pt(2)=1d0
-  else if (abs(pt(2)) < 1d-5) then
-    if (io%verbose>2) print*,'EXACT'
-    pt(1)=1d0; pt(2)=0d0
-  end if
-  call trace_end
-END SUBROUTINE
-
-!> =============================================================================
 !> =============================================================================
 SUBROUTINE output (self, experiment_name)
   class (task_t):: self
@@ -178,12 +132,16 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
 END SUBROUTINE info
 
 !> =============================================================================
+!> Check if self (which is a nbor task) is ahead of task (which is the one to
+!> possibly move to the ready queue), using self%dtime*task%grace as the grace
+!> period, since we want to limit the extrapolation in the nbor task to at most
+!> task%grace*self%dtime.
 !> =============================================================================
 LOGICAL FUNCTION is_ahead_of (self, task)
   class (task_t):: self, task
   !.............................................................................
   !$omp flush
-  is_ahead_of = self%time + max(self%dtime,task%dtime)*task%grace >= task%time
+  is_ahead_of = self%time + self%dtime*task%grace >= task%time
   if (task%id==id_debug.or.io%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread(), 'mk is_ahead_of: ', &
     task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of

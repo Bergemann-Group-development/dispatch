@@ -80,6 +80,7 @@ MODULE patch_mod
     procedure:: check_density
     procedure:: patch_to_header
     procedure:: header_to_patch
+    procedure:: time_interpolate
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -373,7 +374,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE rotate (self)
   class(patch_t):: self
-  integer:: iv, nv
+  integer:: iv, nv, new
   real(8):: time
   integer, save:: itimer=0
   !.............................................................................
@@ -410,14 +411,16 @@ SUBROUTINE rotate (self)
   ! new self%time is what a task is judged on!
   !-----------------------------------------------------------------------------
   call trace_tag ('patch_t%update mem_cr')
-  call self%lock%set ('rotate')
-  !$omp flush
+  !call self%lock%set ('rotate')
+  !!$omp flush
   time = self%time + self%dtime
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = time                               ! initial time
   self%iit(self%nt) = self%new                          ! right-most slot
-  self%it = self%new                                    ! update time slot
+  new = self%new
+  !$omp atomic write
+  self%it = new                                         ! update time slot, new
   self%new = mod(self%new,self%nt)+1                    ! increment / rotate
   self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
   self%iit(self%nt) = self%new                          ! new right-most slot
@@ -429,8 +432,8 @@ SUBROUTINE rotate (self)
    print*,'patch iit:', self%iit
   if (io%verbose>3) &
    print*,'patch t(iit):', self%t(self%iit)
-  !$omp flush
-  call self%lock%unset ('rotate')
+  !!$omp flush
+  !call self%lock%unset ('rotate')
   call trace_end (itimer)
 END SUBROUTINE rotate
 
@@ -1120,5 +1123,66 @@ SUBROUTINE check_density (self, label)
     end if
   end if
 END SUBROUTINE check_density
+
+!> =============================================================================
+!> Find the right time interval in source%t(source%iit), which are the source
+!> times in increasing order.  To avoid having to lock access to source%iit while 
+!> reading it, we read instead (with an atomic read) source%new, from which a
+!> consisten local copy of itt can be constructed.
+!> =============================================================================
+SUBROUTINE time_interpolate (self, source, jt, pt)
+  class(patch_t):: self, source
+  integer:: jt(2)
+  integer:: i, it, iit(self%nt)
+  real(8):: pt(2), dt
+  !.............................................................................
+  call trace_begin ('task_t::time_interpolate',3)
+  !-----------------------------------------------------------------------------
+  ! Make a consistent local copy of source%iit, based on source%new, which is
+  ! written and read in atomic operations.  The array iit is such that its last
+  ! value, iit(self%nt) is equal to source%new.
+  !-----------------------------------------------------------------------------
+  !$omp atomic read
+  it = source%it
+  iit = [(1+mod(it+i,self%nt), i=1,self%nt)]
+  !-----------------------------------------------------------------------------
+  ! In case of e.g. an error in initial conditions, choose a valid default
+  !-----------------------------------------------------------------------------
+  jt = iit(1:2)
+  !-----------------------------------------------------------------------------
+  ! As long as the first source time is earlier than, or equal to the target
+  ! time, renew the interval.  Initially, when all times are zero, we are left
+  ! with the interval nt-2:nt-1 and dt=0d0, which means slot nt-1 is used.
+  !-----------------------------------------------------------------------------
+  do i=2,source%nt-2
+    if (source%t(iit(i)) <= self%time) then
+      jt = iit(i:i+1)
+    end if
+  end do
+  !-----------------------------------------------------------------------------
+  ! A vanishing source time interval happens only at the initial condition ...
+  !-----------------------------------------------------------------------------
+  dt = source%t(jt(2))-source%t(jt(1))
+  if (dt==0d0) then
+    pt(2) = 1d0
+  else
+    pt(2) = (self%time - source%t(jt(1)))/dt
+  end if
+  pt(1) = 1d0-pt(2)
+  !print'(a,5i3,3x,2i3,2x,2f7.3)', 'MK:', iit-source%iit, jt, pt
+  !-----------------------------------------------------------------------------
+  ! Facilitate exact time evolution when dt_fixed is being used
+  !-----------------------------------------------------------------------------
+  if (self%dt_fixed > 0.0) then
+    if (abs(pt(1))< 1d-5) then
+      if (io%verbose>2) print*,'EXACT'
+      pt(1)=0d0; pt(2)=1d0
+    else if (abs(pt(2)) < 1d-5) then
+      if (io%verbose>2) print*,'EXACT'
+      pt(1)=1d0; pt(2)=0d0
+    end if
+  end if
+  call trace_end
+END SUBROUTINE
 
 END MODULE
