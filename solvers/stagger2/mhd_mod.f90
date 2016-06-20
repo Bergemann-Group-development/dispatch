@@ -154,10 +154,10 @@ SUBROUTINE update (self)
     ! Fast mode speed + velocity
     pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
-    self%u_max = self%fmaxval(cs)
-    if (io%verbose>0) print*,'u_max',self%u_max
-    self%u_max = self%fmaxval(cs + sqrt(pp))
-    if (io%verbose>0) print*,'u_max',self%u_max
+    !self%u_max = self%fmaxval(cs)
+    !if (io%verbose>0) print*,'u_max',self%u_max
+    !self%u_max = self%fmaxval(cs + sqrt(pp))
+    !if (io%verbose>0) print*,'u_max',self%u_max
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
     if (io%verbose>0) print*,'u_max',self%u_max
     ! Isotropic pressure part
@@ -178,10 +178,10 @@ SUBROUTINE update (self)
     pa = self%nu(2)*d*du**2                               ! dimension: pressure
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)
-    self%u_max = self%fmaxval(cs)
-    if (io%verbose>0) print*,'u_max',self%u_max
-    self%u_max = self%fmaxval(cs + sqrt(pp))
-    if (io%verbose>0) print*,'u_max',self%u_max
+    !self%u_max = self%fmaxval(cs)
+    !if (io%verbose>0) print*,'u_max',self%u_max
+    !self%u_max = self%fmaxval(cs + sqrt(pp))
+    !if (io%verbose>0) print*,'u_max',self%u_max
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
     if (io%verbose>0) print*,'u_max',self%u_max
     pp = pg + pa
@@ -198,7 +198,7 @@ SUBROUTINE update (self)
   fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux
   fm = p+fd                                             ! mass flux
   dddt = -div(ds,fm)                                    ! density derivative
-  self%u_max = max(self%u_max,-0.5*dx*self%fminval(dddt/d))
+  self%u_max = max(self%u_max,-0.4*dx*self%fminval(dddt/d))
   if (io%verbose>0) print*,'u_max',self%u_max
   !self%u_max = max(self%u_max,-dx*self%fminval(dddt/d))
   !print*,'u_max',dx*self%fmaxval(div(ds,p)/d)
