@@ -379,7 +379,7 @@ SUBROUTINE rotate (self)
   real(8):: time
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin ('patch_t%update',itimer=itimer)
+  call trace_begin ('patch_mod::rotate',itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Call timestep update procedure to fill the next time slot with values
   !-----------------------------------------------------------------------------
@@ -1116,12 +1116,14 @@ SUBROUTINE check_density (self, label)
     end do
     end do
     if (present(label)) then
-      print 1, self%id, &
+      if (io%verbose>1 .or. nins>0) &
+        print 1, self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
          trim(label)
       1 format(i8,3x,a,i8,a,i8,a)
     else
-      print 1, self%id, &
+      if (io%verbose>1 .or. nins>0) &
+        print 1, self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside'
     end if
   end if
@@ -1194,6 +1196,6 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
     end if
   end if
   call trace_end
-END SUBROUTINE
+END SUBROUTINE time_interpolate
 
 END MODULE

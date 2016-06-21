@@ -315,21 +315,14 @@ SUBROUTINE check_ready (self, link, set_debug)
   end if
 9 continue
   !$omp end critical (list_cr)
+  call trace_end
   if (do_download) then
     !-----------------------------------------------------------------------------
     ! Prepare for update, by pro-actively downloading data that it depends on.
     ! By doing it immediately, the guard zone data becomes available to neighbors
     !-----------------------------------------------------------------------------
-    task => link%task
-    select type (task)
-    class is (patch_t)
-      call task%check_density ("before download")
-      call download%download_link (link, all_cells=.false.)
-     !call link%download (all_cells=.false.)
-      call task%check_density (" after download")
-    end select
+    call download%download_link (link, all_cells=.false.)
   end if
-  call trace_end
 END SUBROUTINE check_ready
 
 !> =============================================================================

@@ -28,6 +28,7 @@ MODULE task_list_mod
   USE download_mod
   USE timestep_mod
   USE buffered_output_mod
+  USE timer_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
@@ -105,6 +106,7 @@ SUBROUTINE execute (self)
     print *, 'download_differ % =', 100.*download%n_differ/ &
       max(1,(download%n_differ+download%n_same))
   call buffered_output%close
+  call timer%print
 END SUBROUTINE execute
 
 !> =============================================================================

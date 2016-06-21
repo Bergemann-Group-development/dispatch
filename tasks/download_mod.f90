@@ -38,6 +38,7 @@ SUBROUTINE download_link (link, all_cells)
   !-----------------------------------------------------------------------------
   call trace_begin('download_t%download')
   patch => task2patch(link%task)
+  call patch%check_density ("before download")
   if (patch%is_set(bits%root_grid)) then
     call patch%periodic_grid
   else
@@ -69,6 +70,7 @@ SUBROUTINE download_link (link, all_cells)
       print *, 'ERROR: moving patches found'
     end if
   end if
+  call patch%check_density (" after download")
   call trace_end
 END SUBROUTINE download_link
 
@@ -108,7 +110,7 @@ SUBROUTINE download_same_static (self)
       end do
       end do
       end do
-      if (iv==1.and.io%verbose==1) print'(7(1x,a,i7,1x))', 'patch', target%id, ' level', target%level, &
+      if (iv==1.and.io%verbose==2) print'(7(1x,a,i7,1x))', 'patch', target%id, ' level', target%level, &
         ' picked up', nuse, 'of', ntot, ' points from patch', source%id, ' at level', source%level
       if (io%verbose>2) print'(7(1x,a,i7,1x),2l4)', 'patch', target%id, ' level', target%level, 'var', iv, &
         ' picked up', nuse, 'of', ntot, ' points from patch', source%id, ' at level', source%level

@@ -159,7 +159,7 @@ SUBROUTINE update (self)
     !self%u_max = self%fmaxval(cs + sqrt(pp))
     !if (io%verbose>0) print*,'u_max',self%u_max
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
-    if (io%verbose>0) print*,'u_max',self%u_max
+    if (io%verbose>2) print*,'u_max',self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb
     ! Total diagonal stress
@@ -183,7 +183,7 @@ SUBROUTINE update (self)
     !self%u_max = self%fmaxval(cs + sqrt(pp))
     !if (io%verbose>0) print*,'u_max',self%u_max
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
-    if (io%verbose>0) print*,'u_max',self%u_max
+    if (io%verbose>2) print*,'u_max',self%u_max
     pp = pg + pa
     ! Total diagondal stress, with density factor
     du = dx*self%nu(1)*cs
@@ -199,7 +199,7 @@ SUBROUTINE update (self)
   fm = p+fd                                             ! mass flux
   dddt = -div(ds,fm)                                    ! density derivative
   self%u_max = max(self%u_max,-0.4*dx*self%fminval(dddt/d))
-  if (io%verbose>0) print*,'u_max',self%u_max
+  if (io%verbose>1) print*,'u_max',self%u_max
   !self%u_max = max(self%u_max,-dx*self%fminval(dddt/d))
   !print*,'u_max',dx*self%fmaxval(div(ds,p)/d)
   !-----------------------------------------------------------------------------
