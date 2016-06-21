@@ -1,0 +1,223 @@
+!> =============================================================================
+!> This is a start on a module that could become a general turbulence forcing
+!> module, where the standard forcing we have been using in RAMSES is implemented
+!> =============================================================================
+MODULE initial_mod
+  USE io_mod
+  USE trace_mod
+  USE mesh_mod
+  USE random_mod
+  implicit none
+  private
+  real(8), parameter:: pi2=8d0*atan(1d0)
+  type, public:: initial_t
+    integer:: seed
+    logical:: mhd
+    real(8):: a(3), b(3), phi(3), d0, s0
+    real(8):: a0(3), k(3), b0(3), u0(3)
+    real(8):: time
+    procedure(single_solenoidal), pointer:: selected=>null()
+  contains
+    procedure init
+  end type
+  logical, save:: first_time=.true.
+CONTAINS
+
+!> =============================================================================
+!> Setup a uniform initial state, with density=d0 and B=B0
+!> =============================================================================
+SUBROUTINE init (self)
+   class(initial_t):: self
+   integer, save:: seed=-33
+   logical, save:: mhd=.true.
+   real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0
+   character(len=32), save:: type='single_solenoidal'
+   namelist /initial_params/ seed, k, a0, u0, b0, d0, s0, mhd, type
+   !----------------------------------------------------------------------------
+   call trace_begin('initial_t%init')
+   !$omp critical (input_cr)
+   if (first_time) then
+     first_time = .false.
+     rewind (io%input)
+     read (io%input, initial_params)
+     mhd = any(b0 /= 0.0)
+     if (io%master) write (*, initial_params)
+   end if
+   !$omp end critical (input_cr)
+   self%seed   = seed
+   self%k      = k
+   self%a0     = a0
+   self%b0     = b0
+   self%u0     = u0
+   self%d0     = d0
+   self%s0     = s0
+   self%mhd    = mhd
+   self%time   = 0d0
+   select case (type)
+   case ('single_solenoidal')
+     self%selected => single_solenoidal
+   case ('single_compressive')
+     self%selected => single_compressive
+   case ('single_advection')
+     self%selected => single_advection
+   case ('exa256')
+     self%selected => exa256
+   case default
+     print*,'UNKNOWN INITIAL CONDITION TYPE'
+     stop
+   end select
+   call trace_end
+END SUBROUTINE init
+
+!> =============================================================================
+!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> =============================================================================
+FUNCTION single_solenoidal (self, m) RESULT (ff)
+  class(initial_t)      :: self
+  type(mesh_t)          :: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  !.............................................................................
+  type(random_t)        :: random
+  integer               :: ix, iy, iz
+  real(8)               :: kx, ky, kz
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t:single_solenoidal')
+  self%phi = 0.0
+  do iz=m(3)%lb,m(3)%ub
+    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        ff(ix,iy,iz,1) = self%d0
+        ff(ix,iy,iz,2) = self%s0
+        ff(ix,iy,iz,3) = self%a0(1)*(sin(ky)+sin(kz))
+        ff(ix,iy,iz,4) = self%a0(2)*(sin(kz)+sin(kx))
+        ff(ix,iy,iz,5) = self%a0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,6) = self%b0(1)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,7) = self%b0(2)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,8) = self%b0(3)*(sin(kx)+sin(ky))
+      end do
+    end do
+  end do
+  call trace_end
+END FUNCTION single_solenoidal
+
+!> =============================================================================
+!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> =============================================================================
+FUNCTION single_compressive (self, m) RESULT (ff)
+  class(initial_t)        :: self
+  type(mesh_t)          :: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  !.............................................................................
+  type(random_t)        :: random
+  integer               :: ix, iy, iz
+  real(8)               :: kx, ky, kz
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t:single_compressive')
+  self%phi = 0.0
+  do iz=m(3)%lb,m(3)%ub
+    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        ff(ix,iy,iz,1) = self%d0
+        ff(ix,iy,iz,2) = self%s0
+        ff(ix,iy,iz,3) = self%u0(1)*sin(kx)
+        ff(ix,iy,iz,4) = self%u0(2)*sin(ky)
+        ff(ix,iy,iz,5) = self%u0(3)*sin(kz)
+        ff(ix,iy,iz,6) = self%b0(1)
+        ff(ix,iy,iz,7) = self%b0(2)
+        ff(ix,iy,iz,8) = self%b0(3)
+      end do
+    end do
+  end do
+  call trace_end
+END FUNCTION single_compressive
+
+!> =============================================================================
+!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> =============================================================================
+FUNCTION single_advection (self, m) RESULT (ff)
+  class(initial_t)        :: self
+  type(mesh_t)          :: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  !.............................................................................
+  type(random_t)        :: random
+  integer               :: ix, iy, iz
+  real(8)               :: kx, ky, kz
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t:single_compressive')
+  self%phi = 0.0
+  do iz=m(3)%lb,m(3)%ub
+    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        ff(ix,iy,iz,1) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
+        ff(ix,iy,iz,2) = self%s0
+        ff(ix,iy,iz,3) = self%d0*self%u0(1)
+        ff(ix,iy,iz,4) = self%d0*self%u0(2)
+        ff(ix,iy,iz,5) = self%d0*self%u0(3)
+        ff(ix,iy,iz,6) = self%b0(3)*sin(kz)
+        ff(ix,iy,iz,7) = self%b0(1)*sin(kx)
+        ff(ix,iy,iz,8) = self%b0(2)*sin(ky)
+      end do
+    end do
+  end do
+  call trace_end
+END FUNCTION single_advection
+
+!> =============================================================================
+!> Initialize from a raw data file
+!> =============================================================================
+FUNCTION exa256 (self, m) RESULT (ff)
+  USE io_unit_mod
+  class(initial_t)      :: self
+  type(mesh_t)          :: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  real, dimension(:), allocatable:: u, d
+  !.............................................................................
+  integer               :: ix, iy, iz, jy, jz, rec
+  integer(8)            :: nx, ny, nz
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t::exa256')
+  self%mhd = .false.
+  ff(:,:,:,:) = 0.0
+  allocate (u(m(1)%n))
+  allocate (d(m(1)%n))
+  open (io_unit%data, file='data/exa256/t0.02.dat', form='unformatted', &
+    access='direct', recl=m(1)%n*4)
+  self%time = 0.02
+  ix=m(1)%p/m(1)%d+0.5-m(1)%n/2
+  iy=m(2)%p/m(2)%d+0.5-m(2)%n/2
+  iz=m(3)%p/m(3)%d+0.5-m(3)%n/2
+  nx = m(1)%b/m(1)%d + 0.5
+  ny = m(2)%b/m(2)%d + 0.5
+  nz = m(3)%b/m(3)%d + 0.5
+  do jz=m(3)%li,m(3)%ui
+  do jy=m(2)%li,m(2)%ui
+    rec = 1   + (ix           )      /m(1)%n
+    rec = rec + (iy+jy-m(2)%li)*nx   /m(1)%n
+    rec = rec + (iz+jz-m(3)%li)*nx*ny/m(1)%n
+    !print*,ix,iy,iz,rec
+    read (io_unit%data,rec=rec) d; ff(m(1)%li:m(1)%ui,jy,jz,1) = d
+    rec = rec + nx*ny*nz/m(1)%n
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,3) = u
+    rec = rec + nx*ny*nz/m(1)%n
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,4) = u
+    rec = rec + nx*ny*nz/m(1)%n
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,5) = u
+  end do
+  end do
+  if (io%verbose > 0) &
+    print *,'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
+      minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
+      maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
+  call trace_end
+END FUNCTION exa256
+
+END MODULE
