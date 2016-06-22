@@ -1,26 +1,32 @@
-!###########################################################
-!###########################################################
-!###########################################################
-!###########################################################
-subroutine riemann_approx(qleft,qright,qgdnv,fgdnv,ngrid)
+module riemann_mod
   use amr_parameters
   use hydro_parameters
-  use const
   implicit none
-
-  ! dummy arguments
-  integer::ngrid
-  real(dp),dimension(1:nvector,1:nvar)::qleft,qright,qgdnv,fgdnv
+  private
+  real(dp), parameter:: half=0.0_dp, zero=0.0_dp, one=1.0_dp, two=2.0_dp
+  type riemann_t
+  contains
+    procedure, nopass:: approx
+    procedure, nopass:: acoustic
+    procedure, nopass:: llf
+    procedure, nopass:: hll
+    procedure, nopass:: hllc
+  end type
+  type(riemann_t), public:: riemann
+contains
+subroutine approx(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+  integer::ngrid,nvar
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
 
   ! local arrays
-  real(dp),dimension(1:nvector),save::rl   ,ul   ,pl   ,cl
-  real(dp),dimension(1:nvector),save::rr   ,ur   ,pr   ,cr   
-  real(dp),dimension(1:nvector),save::ro   ,uo   ,po   ,co   
-  real(dp),dimension(1:nvector),save::rstar,ustar,pstar,cstar
-  real(dp),dimension(1:nvector),save::wl   ,wr   ,wo   
-  real(dp),dimension(1:nvector),save::sgnm ,spin ,spout,ushock
-  real(dp),dimension(1:nvector),save::frac ,delp ,pold  
-  integer ,dimension(1:nvector),save::ind  ,ind2
+  real(dp),dimension(1:ngrid)::rl   ,ul   ,pl   ,cl
+  real(dp),dimension(1:ngrid)::rr   ,ur   ,pr   ,cr
+  real(dp),dimension(1:ngrid)::ro   ,uo   ,po   ,co
+  real(dp),dimension(1:ngrid)::rstar,ustar,pstar,cstar
+  real(dp),dimension(1:ngrid)::wl   ,wr   ,wo
+  real(dp),dimension(1:ngrid)::sgnm ,spin ,spout,ushock
+  real(dp),dimension(1:ngrid)::frac ,delp ,pold
+  integer ,dimension(1:ngrid)::ind  ,ind2
 
   ! local variables
   real(dp)::smallp, gamma6, ql, qr, usr, usl, wwl, wwr, smallpp, entho, etot
@@ -62,7 +68,7 @@ subroutine riemann_approx(qleft,qright,qgdnv,fgdnv,ngrid)
 
   ! Newton-Raphson iterations to find pstar at the required accuracy
   ! for a two-shock Riemann problem
-  do iter = 1,niter_riemann 
+  do iter = 1,niter_riemann
      do i=1,n
         wwl=sqrt(cl(ind(i))*(one+gamma6*(pold(i)-pl(ind(i)))/pl(ind(i))))
         wwr=sqrt(cr(ind(i))*(one+gamma6*(pold(i)-pr(ind(i)))/pr(ind(i))))
@@ -76,10 +82,10 @@ subroutine riemann_approx(qleft,qright,qgdnv,fgdnv,ngrid)
         pold(i)=pold(i)+delp(i)
      end do
      ! Convergence indicator
-     do i=1,n 
+     do i=1,n
         uo(i)=ABS(delp(i)/(pold(i)+smallpp))
      end do
-     n_new=0    
+     n_new=0
      do i=1,n
         if(uo(i)>1.d-06)then
            n_new=n_new+1
@@ -118,7 +124,7 @@ subroutine riemann_approx(qleft,qright,qgdnv,fgdnv,ngrid)
   end do
 
   ! Left going or right going contact wave
-  do i=1,ngrid   
+  do i=1,ngrid
      sgnm(i) = sign(one,ustar(i))
   end do
 
@@ -205,12 +211,8 @@ subroutine riemann_approx(qleft,qright,qgdnv,fgdnv,ngrid)
      fgdnv(i,1) = qgdnv(i,1)*qgdnv(i,2)  ! Mass density
      fgdnv(i,2) = qgdnv(i,3)+qgdnv(i,1)*qgdnv(i,2)**2  ! Normal momentum
      etot = qgdnv(i,3)*entho + half*qgdnv(i,1)*qgdnv(i,2)**2
-#if NDIM>1
      etot = etot + half*qgdnv(i,1)*qgdnv(i,4)**2
-#endif
-#if NDIM>2
      etot = etot + half*qgdnv(i,1)*qgdnv(i,5)**2
-#endif
      fgdnv(i,3) = qgdnv(i,2)*(etot+qgdnv(i,3))     ! Total energy
   end do
   ! Other advected quantities
@@ -219,34 +221,24 @@ subroutine riemann_approx(qleft,qright,qgdnv,fgdnv,ngrid)
         fgdnv(i,n) = fgdnv(i,1)*qgdnv(i,n)
      end do
   end do
+end subroutine approx
 
-end subroutine riemann_approx
-!###########################################################
-!###########################################################
-!###########################################################
-!###########################################################
-subroutine riemann_acoustic(qleft,qright,qgdnv,fgdnv,ngrid)
-  use amr_parameters
-  use hydro_parameters
-  use const
-  implicit none
-
-  ! dummy arguments
-  integer::ngrid
-  real(dp),dimension(1:nvector,1:nvar)::qleft,qright,qgdnv,fgdnv
+subroutine acoustic(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+  integer::ngrid,nvar
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
 
   ! local variables
   integer::i,n
   real(dp)::smallp, entho, etot
 
   ! local arrays
-  real(dp),dimension(1:nvector),save::rl   ,ul   ,pl   ,cl
-  real(dp),dimension(1:nvector),save::rr   ,ur   ,pr   ,cr   
-  real(dp),dimension(1:nvector),save::ro   ,uo   ,po   ,co   
-  real(dp),dimension(1:nvector),save::rstar,ustar,pstar,cstar
-  real(dp),dimension(1:nvector),save::wl   ,wr   ,wo   
-  real(dp),dimension(1:nvector),save::sgnm ,spin ,spout,ushock
-  real(dp),dimension(1:nvector),save::frac
+  real(dp),dimension(1:ngrid)::rl   ,ul   ,pl   ,cl
+  real(dp),dimension(1:ngrid)::rr   ,ur   ,pr   ,cr
+  real(dp),dimension(1:ngrid)::ro   ,uo   ,po   ,co
+  real(dp),dimension(1:ngrid)::rstar,ustar,pstar,cstar
+  real(dp),dimension(1:ngrid)::wl   ,wr   ,wo
+  real(dp),dimension(1:ngrid)::sgnm ,spin ,spout,ushock
+  real(dp),dimension(1:ngrid)::frac
 
   ! constants
   smallp = smallc**2/gamma
@@ -276,7 +268,7 @@ subroutine riemann_acoustic(qleft,qright,qgdnv,fgdnv,ngrid)
   end do
 
   ! Left going or right going contact wave
-  do i=1,ngrid   
+  do i=1,ngrid
      sgnm(i) = sign(one,ustar(i))
   end do
 
@@ -357,12 +349,8 @@ subroutine riemann_acoustic(qleft,qright,qgdnv,fgdnv,ngrid)
      fgdnv(i,1) = qgdnv(i,1)*qgdnv(i,2)  ! Mass density
      fgdnv(i,2) = qgdnv(i,3)+qgdnv(i,1)*qgdnv(i,2)**2  ! Normal momentum
      etot = qgdnv(i,3)*entho + half*qgdnv(i,1)*qgdnv(i,2)**2
-#if NDIM>1
      etot = etot             + half*qgdnv(i,1)*qgdnv(i,4)**2
-#endif
-#if NDIM>2
      etot = etot             + half*qgdnv(i,1)*qgdnv(i,5)**2
-#endif
      fgdnv(i,3) = qgdnv(i,2)*(etot+qgdnv(i,3))     ! Total energy
   end do
   ! Other advected quantities
@@ -371,31 +359,21 @@ subroutine riemann_acoustic(qleft,qright,qgdnv,fgdnv,ngrid)
         fgdnv(i,n) = fgdnv(i,1)*qgdnv(i,n)
      end do
   end do
+end subroutine acoustic
 
-end subroutine riemann_acoustic
-!###########################################################
-!###########################################################
-!###########################################################
-!###########################################################
-subroutine riemann_llf(qleft,qright,qgdnv,fgdnv,ngrid)
-  use amr_parameters
-  use hydro_parameters
-  use const
-  implicit none
-
-  ! dummy arguments
-  integer::ngrid
-  real(dp),dimension(1:nvector,1:nvar)::qleft,qright,qgdnv,fgdnv
+subroutine llf(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+  integer::ngrid,nvar
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
 
   ! local arrays
-  real(dp),dimension(1:nvector,1:nvar),save::fleft,fright,uleft,uright
-  real(dp),dimension(1:nvector),save::cmax
+  real(dp),dimension(1:ngrid,1:nvar)::fleft,fright,uleft,uright
+  real(dp),dimension(1:ngrid)::cmax
 
   ! local variables
   integer::i,n
   real(dp)::smallp, entho
   real(dp)::rl   ,ul   ,pl   ,cl
-  real(dp)::rr   ,ur   ,pr   ,cr   
+  real(dp)::rr   ,ur   ,pr   ,cr
 
   ! constants
   smallp = smallc**2/gamma
@@ -419,8 +397,8 @@ subroutine riemann_llf(qleft,qright,qgdnv,fgdnv,ngrid)
      qgdnv(i,2) = half*(qleft(i,2)+qright(i,2))
   end do
 
-  ! Compute conservative variables  
-  do i = 1, ngrid 
+  ! Compute conservative variables
+  do i = 1, ngrid
      ! Mass density
      uleft (i,1) = qleft (i,1)
      uright(i,1) = qright(i,1)
@@ -447,8 +425,8 @@ subroutine riemann_llf(qleft,qright,qgdnv,fgdnv,ngrid)
      end do
   end do
 
-  ! Compute left and right fluxes  
-  do i = 1, ngrid 
+  ! Compute left and right fluxes
+  do i = 1, ngrid
      ! Mass density
      fleft (i,1) = uleft (i,2)
      fright(i,1) = uright(i,2)
@@ -469,30 +447,15 @@ subroutine riemann_llf(qleft,qright,qgdnv,fgdnv,ngrid)
 
   ! Compute Lax-Friedrich fluxes
   do n = 1, nvar
-     do i = 1, ngrid 
+     do i = 1, ngrid
         fgdnv(i,n) = half*(fleft(i,n)+fright(i,n)-cmax(i)*(uright(i,n)-uleft(i,n)))
      end do
   end do
+end subroutine llf
 
-end subroutine riemann_llf
-!###########################################################
-!###########################################################
-!###########################################################
-!###########################################################
-!###########################################################
-!###########################################################
-!###########################################################
-!###########################################################
-subroutine riemann_hllc(qleft,qright,qgdnv,fgdnv,ngrid)
-  use amr_parameters
-  use hydro_parameters
-  use const
-  implicit none
-
-  ! HLLC Riemann solver (Toro)
-  integer::ngrid
-  real(dp),dimension(1:nvector,1:nvar)::qleft,qright,qgdnv,fgdnv
-
+subroutine hllc(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+  integer::ngrid,nvar
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
   REAL(dp)::SL,SR
   REAL(dp)::entho
   REAL(dp)::rl,pl,ul,ecinl,etotl,ptotl
@@ -503,7 +466,6 @@ subroutine riemann_hllc(qleft,qright,qgdnv,fgdnv,ngrid)
   REAL(dp)::ustar,ptotstar
   REAL(dp)::ro,uo,ptoto,etoto
   REAL(dp)::smallp
-
   INTEGER ::ivar, i
 
   ! constants
@@ -517,13 +479,7 @@ subroutine riemann_hllc(qleft,qright,qgdnv,fgdnv,ngrid)
      Pl=max(qleft (i,3),rl*smallp)
      ul=    qleft (i,2)
 
-     ecinl = half*rl*ul*ul
-#if NDIM>1
-     ecinl=ecinl+half*rl*qleft(i,4)**2
-#endif
-#if NDIM>2
-     ecinl=ecinl+half*rl*qleft(i,5)**2
-#endif
+     ecinl = half*rl*(ul*ul+qleft(i,4)**2+qleft(i,5)**2)
      etotl = Pl*entho+ecinl
      Ptotl = Pl
 
@@ -532,13 +488,7 @@ subroutine riemann_hllc(qleft,qright,qgdnv,fgdnv,ngrid)
      Pr=max(qright(i,3),rr*smallp)
      ur=    qright(i,2)
 
-     ecinr = half*rr*ur*ur
-#if NDIM>1
-     ecinr=ecinr+half*rr*qright(i,4)**2
-#endif
-#if NDIM>2
-     ecinr=ecinr+half*rr*qright(i,5)**2
-#endif
+     ecinr = half*rr*(ur*ur+qright(i,4)**2+qright(i,5)**2)
      etotr = Pr*entho+ecinr
      Ptotr = Pr
 
@@ -603,28 +553,18 @@ subroutine riemann_hllc(qleft,qright,qgdnv,fgdnv,ngrid)
 
      ! Compute the Godunov velocity
      qgdnv(i,2) = uo
-
   end do
+end subroutine hllc
 
-end subroutine riemann_hllc
-!###########################################################
-!###########################################################
-!###########################################################
-!###########################################################
-subroutine riemann_hll(qleft,qright,qgdnv,fgdnv,ngrid)
-  USE amr_parameters
-  USE const
-  USE hydro_parameters
-  ! 1D HLL Riemann solver
-  IMPLICIT NONE
-  integer::ngrid
-  real(dp),dimension(1:nvector,1:nvar)::qleft,qright,qgdnv,fgdnv
-  real(dp),dimension(1:nvector,1:nvar),save::fleft,fright,uleft,uright
-  real(dp),dimension(1:nvector),save::SL,SR
+subroutine hll(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+  integer::ngrid,nvar
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
+  real(dp),dimension(1:ngrid,1:nvar)::fleft,fright,uleft,uright
+  real(dp),dimension(1:ngrid)::SL,SR
   integer::i,n
   real(dp)::smallp, entho
   real(dp)::rl   ,ul   ,pl   ,cl
-  real(dp)::rr   ,ur   ,pr   ,cr   
+  real(dp)::rr   ,ur   ,pr   ,cr
 
   ! constants
   smallp = smallc**2/gamma
@@ -657,14 +597,10 @@ subroutine riemann_hll(qleft,qright,qgdnv,fgdnv,ngrid)
      uright(i,2) = qright(i,1)*qright(i,2)
      uleft (i,3) = qleft (i,3)*entho + half*qleft (i,1)*qleft (i,2)**2
      uright(i,3) = qright(i,3)*entho + half*qright(i,1)*qright(i,2)**2
-#if NDIM>1
      uleft (i,3) = uleft (i,3)       + half*qleft (i,1)*qleft (i,4)**2
      uright(i,3) = uright(i,3)       + half*qright(i,1)*qright(i,4)**2
-#endif
-#if NDIM>2
      uleft (i,3) = uleft (i,3)       + half*qleft (i,1)*qleft (i,5)**2
      uright(i,3) = uright(i,3)       + half*qright(i,1)*qright(i,5)**2
-#endif
   end do
   ! Other advected quantities
   do n = 4, nvar
@@ -698,12 +634,6 @@ subroutine riemann_hll(qleft,qright,qgdnv,fgdnv,ngrid)
              & + SR(i)*SL(i)*(uright(i,n)-uleft(i,n)))/(SR(i)-SL(i))
      end do
   end do
+end subroutine hll
 
-end subroutine riemann_hll
-!###########################################################
-!###########################################################
-!###########################################################
-!###########################################################
-  
-
-
+end module riemann_mod

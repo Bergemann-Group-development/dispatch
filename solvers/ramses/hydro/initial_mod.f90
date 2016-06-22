@@ -60,8 +60,8 @@ SUBROUTINE init (self)
      self%selected => single_compressive
    case ('single_advection')
      self%selected => single_advection
-   case ('exa256')
-     self%selected => exa256
+   case ('ramses256')
+     self%selected => ramses256
    case default
      print*,'UNKNOWN INITIAL CONDITION TYPE'
      stop
@@ -174,7 +174,7 @@ END FUNCTION single_advection
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-FUNCTION exa256 (self, m) RESULT (ff)
+FUNCTION ramses256 (self, m) RESULT (ff)
   USE io_unit_mod
   class(initial_t)      :: self
   type(mesh_t)          :: m(3)
@@ -184,12 +184,12 @@ FUNCTION exa256 (self, m) RESULT (ff)
   integer               :: ix, iy, iz, jy, jz, rec
   integer(8)            :: nx, ny, nz
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t::exa256')
+  call trace_begin('initial_t::ramses256')
   self%mhd = .false.
   ff(:,:,:,:) = 0.0
   allocate (u(m(1)%n))
   allocate (d(m(1)%n))
-  open (io_unit%data, file='data/exa256/t0.02.dat', form='unformatted', &
+  open (io_unit%data, file='data/ramses256/t0.02.raw', form='unformatted', &
     access='direct', recl=m(1)%n*4)
   self%time = 0.02
   ix=m(1)%p/m(1)%d+0.5-m(1)%n/2
@@ -218,6 +218,6 @@ FUNCTION exa256 (self, m) RESULT (ff)
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
   call trace_end
-END FUNCTION exa256
+END FUNCTION ramses256
 
 END MODULE

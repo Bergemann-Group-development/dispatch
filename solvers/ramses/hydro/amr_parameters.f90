@@ -20,7 +20,7 @@ module amr_parameters
   integer,parameter::nvector=16
   logical::hydro   =.true.   ! Hydro activated
   logical ::pressure_fix=.false.
-  integer,parameter::MAXLEVEL=100
+  !integer,parameter::MAXLEVEL=100
 
   logical::debug   =.false.   ! Debug mode activated
   logical::cosmo   =.false.   ! Cosmology activated
