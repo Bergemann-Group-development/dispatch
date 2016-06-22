@@ -188,7 +188,7 @@ subroutine uslope(self)
   class(mhd_t):: self
   integer::ngrid
   integer::i, j, k, n, l(3), u(3)
-  real(dp)::dsgn, dlim, dcen, dlft, drgt, slop
+  real(dp)::dsgn, dlim, dcen, dlft, drgt, slop, c1, c2
   real(dp)::dfll,dflm,dflr,dfml,dfmm,dfmr,dfrl,dfrm,dfrr
   real(dp)::dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml,dfrrl
   real(dp)::dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm,dfrrm
@@ -227,30 +227,36 @@ associate (q=>self%q, dq=>self%dq)
         end do
      end do
   else if (slope_type==2) then ! moncen
+    c1 = slope_type
+    c2 = 0.5_dp/c1
     do n = 1, self%nv
       do k = l(3),u(3)
         do j = l(2),u(2)
           do i = l(1),u(1)
             ! slopes in first coordinate direction
-            dlft = slope_type*(q(i  ,j,k,n) - q(i-1,j,k,n))
-            drgt = slope_type*(q(i+1,j,k,n) - q(i  ,j,k,n))
-            dcen = half*(dlft+drgt)/slope_type
+            dlft = c1*(q(i  ,j,k,n) - q(i-1,j,k,n))
+            drgt = c1*(q(i+1,j,k,n) - q(i  ,j,k,n))
+            dcen = c2*(dlft+drgt)
             dsgn = sign(one, dcen)
             slop = min(abs(dlft),abs(drgt))
             dlim = merge(zero,slop,(dlft*drgt)<=zero)
             dq(i,j,k,n,1) = dsgn*min(dlim,abs(dcen))
+          end do
+          do i = l(1),u(1)
             ! slopes in second coordinate direction
-            dlft = slope_type*(q(i,j  ,k,n) - q(i,j-1,k,n))
-            drgt = slope_type*(q(i,j+1,k,n) - q(i,j  ,k,n))
-            dcen = half*(dlft+drgt)/slope_type
+            dlft = c1*(q(i,j  ,k,n) - q(i,j-1,k,n))
+            drgt = c1*(q(i,j+1,k,n) - q(i,j  ,k,n))
+            dcen = c2*(dlft+drgt)
             dsgn = sign(one,dcen)
             slop = min(abs(dlft),abs(drgt))
             dlim = merge(zero,slop,(dlft*drgt)<=zero)
             dq(i,j,k,n,2) = dsgn*min(dlim,abs(dcen))
+          end do
+          do i = l(1),u(1)
             ! slopes in third coordinate direction
-            dlft = slope_type*(q(i,j,k  ,n) - q(i,j,k-1,n))
-            drgt = slope_type*(q(i,j,k+1,n) - q(i,j,k  ,n))
-            dcen = half*(dlft+drgt)/slope_type
+            dlft = c1*(q(i,j,k  ,n) - q(i,j,k-1,n))
+            drgt = c1*(q(i,j,k+1,n) - q(i,j,k  ,n))
+            dcen = c2*(dlft+drgt)
             dsgn = sign(one,dcen)
             slop = min(abs(dlft),abs(drgt))
             dlim = merge(zero,slop,(dlft*drgt)<=zero)
