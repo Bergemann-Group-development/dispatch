@@ -419,6 +419,13 @@ subroutine llf(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
      uleft (i,3) = uleft (i,3)       + half*qleft (i,1)*qleft (i,5)**2
      uright(i,3) = uright(i,3)       + half*qright(i,1)*qright(i,5)**2
   end do
+  ! Other advected quantities
+  do n = 4, nvar
+     do i = 1, ngrid
+        uleft (i,n) = qleft (i,1)*qleft (i,n)
+        uright(i,n) = qright(i,1)*qright(i,n)
+     end do
+  end do
 
   ! Compute left and right fluxes
   do i = 1, ngrid
@@ -431,6 +438,13 @@ subroutine llf(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
      ! Total energy
      fleft (i,3) = qleft (i,2)*(uleft (i,3)+qleft (i,3))
      fright(i,3) = qright(i,2)*(uright(i,3)+qright(i,3))
+  end do
+  ! Other advected quantities
+  do n = 4, nvar
+     do i = 1, ngrid
+        fleft (i,n) = fleft (i,1)*qleft (i,n)
+        fright(i,n) = fright(i,1)*qright(i,n)
+     end do
   end do
 
   ! Compute Lax-Friedrich fluxes
