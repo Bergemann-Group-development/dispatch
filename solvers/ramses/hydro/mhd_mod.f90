@@ -28,7 +28,7 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:):: fx        ! 1D fluxes
     real, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
     real, pointer, dimension(:,:,:,:,:):: dq      ! slopes
-    real, pointer, dimension(:,:,:,:,:):: flux    ! 3D fluxes
+    real, pointer, dimension(:,:,:,:,:):: fl      ! 3D fluxes
     real, pointer, dimension(:,:,:):: c, s        ! scratch
   contains
     procedure:: init
@@ -47,7 +47,6 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  integer:: n(3)
   character(len=10):: riemann='hllc'
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, smallc
 !...............................................................................
@@ -63,33 +62,35 @@ SUBROUTINE init (self)
   !$omp end critical (pde)
   self%riemann = riemann
   self%courant = courant_factor
-  n = self%mesh%gn
-  !allocate (self%unew(n(1),n(2),n(3),self%nv))
-  allocate (self%q(n(1),n(2),n(3),self%nv))
-  allocate (self%fx(n(1),n(2),n(3),self%nv))
-  allocate (self%qp(n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%qm(n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%dq(n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%flux(n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%c(n(1),n(2),n(3)))
-  allocate (self%s(n(1),n(2),n(3)))
+  self%gamma = gamma
   call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
+  integer:: n(3)
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::update', itimer=itimer)
   self%uin => self%mem(:,:,:,:,self%it,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
-  call godunov_fine (self)
+  n = self%mesh%gn
+  allocate (self%q (n(1),n(2),n(3),self%nv))
+  allocate (self%fx(n(1),n(2),n(3),self%nv))
+  allocate (self%qp(n(1),n(2),n(3),self%nv,ndim))
+  allocate (self%qm(n(1),n(2),n(3),self%nv,ndim))
+  allocate (self%dq(n(1),n(2),n(3),self%nv,ndim))
+  allocate (self%fl(n(1),n(2),n(3),self%nv,ndim))
+  allocate (self%c(n(1),n(2),n(3)))
+  allocate (self%s(n(1),n(2),n(3)))
+  call godunov (self)
+  deallocate (self%q,self%fx,self%qp,self%qm,self%dq,self%fl,self%c,self%s)
   call trace_end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================
-subroutine godunov_fine (self)
+subroutine godunov (self)
   class(mhd_t)::self
   !-----------------------------------------------------------------------------
   ! This routine accesses the conserved variables in self. It then calls
@@ -102,6 +103,7 @@ subroutine godunov_fine (self)
   integer::i0,j0,k0,i,j,k,idim,ivar,lo(3),uo(3),n_smalld,n_smallp
   real(dp):: d,u,v,w,p,ekin
   integer,save:: itimer=0
+  associate (unew=>self%unew, uin=>self%uin, fl=>self%fl)
   !-----------------------------------------------------------------------------
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
@@ -121,9 +123,9 @@ subroutine godunov_fine (self)
       do j=lo(2),uo(2)
       do i=lo(1),uo(1)
         ! Update conservative variables
-        self%unew(i,j,k,ivar)=self%uin(i,j,k,ivar)+ &
-          & (self%flux(i   ,j   ,k   ,ivar,idim) &
-          & -self%flux(i+i0,j+j0,k+k0,ivar,idim))
+        unew(i,j,k,ivar)=uin(i,j,k,ivar)+ &
+          & (fl(i   ,j   ,k   ,ivar,idim) &
+          & -fl(i+i0,j+j0,k+k0,ivar,idim))
       end do
       end do
       end do
@@ -134,21 +136,21 @@ subroutine godunov_fine (self)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   do i=lo(1),uo(1)
-    if (self%unew(i,j,k,1) < smallr) then
-      self%unew(i,j,k,1) = smallr
+    if (unew(i,j,k,1) < smallr) then
+      unew(i,j,k,1) = smallr
       n_smalld = n_smalld+1
     end if
-    d = 1./self%unew(i,j,k,1)
-    u =  self%unew(i,j,k,2)*d
-    v =  self%unew(i,j,k,3)*d
-    w =  self%unew(i,j,k,4)*d
-    ekin = 0.5*d*(self%unew(i,j,k,2)**2 &
-                 +self%unew(i,j,k,3)**2 &
-                 +self%unew(i,j,k,4)**2)
-    p = (self%unew(i,j,k,5)-ekin)*(gamma-one)
+    d = 1./unew(i,j,k,1)
+    u =  unew(i,j,k,2)*d
+    v =  unew(i,j,k,3)*d
+    w =  unew(i,j,k,4)*d
+    ekin = 0.5*d*(unew(i,j,k,2)**2 &
+                 +unew(i,j,k,3)**2 &
+                 +unew(i,j,k,4)**2)
+    p = (unew(i,j,k,5)-ekin)*(gamma-one)
     if (p < smallr*smallc**2) then
       p = smallr*smallc**2
-      self%unew(i,j,k,5) = p/(gamma-one)+ekin
+      unew(i,j,k,5) = p/(gamma-one)+ekin
       n_smallp = n_smallp+1
     end if
   end do
@@ -158,7 +160,8 @@ subroutine godunov_fine (self)
     print*,'small: id,nr,np', self%id,n_smalld,n_smallp
   end if
   call trace_end (itimer)
-end subroutine godunov_fine
+  end associate
+end subroutine godunov
 
 !> =============================================================================
 !>  UNSPLIT     Unsplit second order Godunov integrator for
@@ -168,8 +171,8 @@ subroutine unsplit(self)
   class(mhd_t):: self
   real(dp):: dtds(3)
   integer,save:: itimer=0
+  associate (fl=>self%fl, fx=>self%fx)
   !-----------------------------------------------------------------------------
-associate (flux=>self%flux, fx=>self%fx)
   call ctoprim(self)                  ! Primitive variables, sound speeds
   call self%courant_condition         ! compute dt
   dtds = self%dtime/self%mesh%d       ! needed here
@@ -177,13 +180,13 @@ associate (flux=>self%flux, fx=>self%fx)
   call trace3d(self)                  ! predictor step
   call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
   call cmpflxm(self,2,3,4)            ! Solve for 1D flux in X direction
-  flux(:,:,:,:,1)=fx(:,:,:,:)*dtds(1) ! 1D to 3D flux
+  fl(:,:,:,:,1)=fx(:,:,:,:)*dtds(1)   ! 1D to 3D flux
   call cmpflxm(self,3,2,4)            ! Solve for 1D flux in Y direction
-  flux(:,:,:,:,2)=fx(:,:,:,:)*dtds(3) ! 1D to 3D flux
+  fl(:,:,:,:,2)=fx(:,:,:,:)*dtds(3)   ! 1D to 3D flux
   call cmpflxm(self,4,2,3)            ! Solve for 1D flux in Z direction
-  flux(:,:,:,:,3)=fx(:,:,:,:)*dtds(3) ! 1D to 3D flux
-end associate
+  fl(:,:,:,:,3)=fx(:,:,:,:)*dtds(3)   ! 1D to 3D flux
   call trace_end (itimer)
+  end associate
 end subroutine unsplit
 
 !> =============================================================================
@@ -193,9 +196,9 @@ subroutine ctoprim (self)
   class(mhd_t):: self
   real(dp):: smalle, dtxhalf
   integer,save:: itimer=0
+  associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::ctoprim', itimer=itimer)
-associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
   smalle = smallc**2/gamma/(gamma-one)
   q(:,:,:,1) = max(uin(:,:,:,1),smallr)
   s = 1.d0/q(:,:,:,1)
@@ -206,8 +209,8 @@ associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
   q(:,:,:,5)=(gamma-one)*max(uin(:,:,:,5)-half*q(:,:,:,1)*s(:,:,:),smalle)
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
   self%u_max = self%fmaxval(c + sqrt(s))
-end associate
   call trace_end (itimer)
+  end associate
 end subroutine ctoprim
 
 !> =============================================================================
@@ -224,9 +227,9 @@ subroutine uslope(self)
   real(dp)::dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr,dfrrr
   real(dp)::vmin,vmax,dfx,dfy,dfz,dff
   integer,save:: itimer=0
+  associate (q=>self%q, dq=>self%dq)
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::uslope', itimer=itimer)
-associate (q=>self%q, dq=>self%dq)
   if(slope_type==0)then
      dq=0.0_dp
      return
@@ -355,8 +358,8 @@ associate (q=>self%q, dq=>self%dq)
      write(*,*)'Unknown slope type'
      stop
   endif
-end associate
   call trace_end (itimer)
+  end associate
 end subroutine uslope
 
 !> =============================================================================
@@ -373,6 +376,7 @@ subroutine trace3d(self)
   real(dp)::drz, duz, dvz, dwz, dpz, daz
   real(dp)::sr0, su0, sv0, sw0, sp0, sa0
   integer,save:: itimer=0
+  associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::trace3d', itimer=itimer)
   dtdx = self%dtime/self%mesh(1)%d
@@ -381,8 +385,6 @@ subroutine trace3d(self)
   !-----------------------------------------------------------------------------
   lb = self%mesh%lb
   ub = self%mesh%ub-1
-  print*,'gamma, self%gamma =', gamma, self%gamma
-associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       do i = lb(1),ub(1)
@@ -469,8 +471,8 @@ associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
       end do
     end do
   end do
-end associate
   call trace_end (itimer)
+  end associate
 end subroutine trace3d
 
 !> =============================================================================
@@ -484,7 +486,7 @@ subroutine cmpflxm(self,ln,lt1,lt2)
   real(dp),dimension(self%mesh(1)%gn,1:self%nv)::qleft,qright,qgdnv,fgdnv
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
-associate (qp=>self%qp, qm=>self%qm, flux=>self%flux, fx=>self%fx)
+  associate (qp=>self%qp, qm=>self%qm, fx=>self%fx)
   xdim=ln-1
   ngrid = self%mesh(1)%gn
   !
@@ -536,7 +538,7 @@ associate (qp=>self%qp, qm=>self%qm, flux=>self%flux, fx=>self%fx)
       fx(:,j,k,ndim+2) = fgdnv(:,3)
     end do
   end do
-end associate
+  end associate
 end subroutine cmpflxm
 
 !*******************************************************************************
