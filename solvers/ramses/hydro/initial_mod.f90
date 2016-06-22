@@ -206,13 +206,14 @@ FUNCTION ramses256 (self, m) RESULT (ff)
     !print*,ix,iy,iz,rec
     read (io_unit%data,rec=rec) d; ff(m(1)%li:m(1)%ui,jy,jz,1) = d
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,3) = u
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,2) = u*d
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,4) = u
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,3) = u*d
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,5) = u
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,4) = u*d
   end do
   end do
+  ff(:,:,:,5) = ff(:,:,:,1)+0.5*(ff(:,:,:,2)**2+ff(:,:,:,3)**2+ff(:,:,:,4)**2)/ff(:,:,:,1)
   if (io%verbose > 0) &
     print *,'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &

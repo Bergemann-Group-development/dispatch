@@ -11,6 +11,7 @@
 !> =============================================================================
 MODULE mhd_mod
   !.............................................................................
+  USE io_unit_mod
   USE patch_mod
   USE riemann_mod
   use hydro_parameters
@@ -48,14 +49,21 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer:: n(3)
+  character(len=10):: riemann='hllc'
+  namelist /ramses_params/ gamma, riemann, slope_type, courant_factor
 !...............................................................................
   call trace_begin('mhd_mod::init')
+  call self%patch_t%init
   !$omp critical (pde)
-  !print'(a,i4,3(2x,6f8.3))','MK',m(1)%id,(m(i)%h(4:9),i=1,3)
   if (first_time) then
     first_time = .false.
+    rewind (io_unit%input)
+    read (io_unit%input, ramses_params)
+    if (io_unit%master) write (*, ramses_params)
   end if
   !$omp end critical (pde)
+  self%riemann = riemann
+  self%courant = courant_factor
   n = self%mesh%gn
   allocate (self%unew(n(1),n(2),n(3),self%nv))
   allocate (self%q(n(1),n(2),n(3),self%nv))
@@ -94,14 +102,13 @@ subroutine godunov_fine (self)
   integer::i0,j0,k0,i,j,k,idim,ivar,l(3),u(3)
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_mod::godunov', itimer=itimer)
-  !-----------------------------------------------------------------------------
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
   call unsplit (self)
   !-----------------------------------------------------------------------------
   ! Conservative update, looping over internal cells only
   !-----------------------------------------------------------------------------
+  call trace_begin ('mhd_mod::godunov', itimer=itimer)
   l = self%mesh%li
   u = self%mesh%ui
   do idim=1,self%ndim
@@ -133,17 +140,18 @@ subroutine unsplit(self)
   real(dp):: dtds(3)
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_mod::unsplit', itimer=itimer)
 associate (flux=>self%flux, fx=>self%fx)
-  dtds = self%dtime/self%mesh%d
   call ctoprim(self)                  ! Primitive variables, sound speeds
+  call self%courant_condition         ! compute dt
+  dtds = self%dtime/self%mesh%d       ! needed here
   call uslope(self)                   ! TVD slopes
   call trace3d(self)                  ! predictor step
+  call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
   call cmpflxm(self,2,3,4)            ! Solve for 1D flux in X direction
   flux(:,:,:,:,1)=fx(:,:,:,:)*dtds(1) ! 1D to 3D flux
-  call cmpflxm(self,2,3,4)            ! Solve for 1D flux in Y direction
+  call cmpflxm(self,3,2,4)            ! Solve for 1D flux in Y direction
   flux(:,:,:,:,2)=fx(:,:,:,:)*dtds(3) ! 1D to 3D flux
-  call cmpflxm(self,2,3,4)            ! Solve for 1D flux in Z direction
+  call cmpflxm(self,4,2,3)            ! Solve for 1D flux in Z direction
   flux(:,:,:,:,3)=fx(:,:,:,:)*dtds(3) ! 1D to 3D flux
 end associate
   call trace_end (itimer)
@@ -158,16 +166,17 @@ subroutine ctoprim (self)
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::ctoprim', itimer=itimer)
-associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s, gamma=>self%gamma)
+associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
   smalle = smallc**2/gamma/(gamma-one)
   q(:,:,:,1) = max(uin(:,:,:,1),smallr)
   s = 1.d0/q(:,:,:,1)
   q(:,:,:,2) = uin(:,:,:,2)*s
   q(:,:,:,3) = uin(:,:,:,3)*s
   q(:,:,:,4) = uin(:,:,:,4)*s
-  q(:,:,:,5)=(gamma-one)*q(:,:,:,1)*MAX(uin(:,:,:,5)* &
-    s-half*(q(:,:,:,2)**2+q(:,:,:,3)**2+q(:,:,:,4)**2),smalle)
-  c(:,:,:)=sqrt(gamma*q(:,:,:,5)*s)
+  s = q(:,:,:,2)**2+q(:,:,:,3)**2+q(:,:,:,4)**2
+  q(:,:,:,5)=(gamma-one)*max(uin(:,:,:,5)-half*q(:,:,:,1)*s(:,:,:),smalle)
+  c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
+  self%u_max = self%fmaxval(c + sqrt(s))
 end associate
   call trace_end (itimer)
 end subroutine ctoprim
@@ -178,7 +187,6 @@ end subroutine ctoprim
 subroutine uslope(self)
   class(mhd_t):: self
   integer::ngrid
-  real(dp)::dx,dt
   integer::i, j, k, n, l(3), u(3)
   real(dp)::dsgn, dlim, dcen, dlft, drgt, slop
   real(dp)::dfll,dflm,dflr,dfml,dfmm,dfmr,dfrl,dfrm,dfrr
@@ -194,8 +202,6 @@ associate (q=>self%q, dq=>self%dq)
      dq=0.0_dp
      return
   end if
-  dx = self%mesh(1)%d
-  dt = self%dtime
   !
   l = self%mesh%lb+1
   u = self%mesh%ub-1
@@ -443,7 +449,6 @@ subroutine cmpflxm(self,ln,lt1,lt2)
   real(dp),dimension(self%mesh(1)%gn,1:self%nv)::qleft,qright,qgdnv,fgdnv
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
 associate (qp=>self%qp, qm=>self%qm, flux=>self%flux, fx=>self%fx)
   entho=one/(self%gamma-one)
   xdim=ln-1
@@ -498,7 +503,6 @@ associate (qp=>self%qp, qm=>self%qm, flux=>self%flux, fx=>self%fx)
     end do
   end do
 end associate
-  call trace_end (itimer)
 end subroutine cmpflxm
 
 !*******************************************************************************

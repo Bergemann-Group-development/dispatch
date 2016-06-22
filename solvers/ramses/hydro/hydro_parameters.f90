@@ -10,7 +10,7 @@ module hydro_parameters
 
   ! Hydro solver parameters
   integer ::niter_riemann=10
-  integer ::slope_type=3
+  integer ::slope_type=2
   real(dp)::gamma=1.01d0
   real(dp)::courant_factor=0.8d0
   !real(dp)::difmag=0.0d0
