@@ -21,7 +21,7 @@ MODULE timestep_mod
   type, public:: timestep_t
     integer:: id                                        ! task id
     integer:: verbose=0                                 ! verbosity
-    integer:: time_order=0                              ! time order of integration
+    integer:: time_order=-1                             ! time order of integration
     integer, dimension(:), pointer:: iit                ! time slot order
     real:: wt(nslice)                                   ! time slot weights
   contains
@@ -40,7 +40,7 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace_begin ('timestep_t%init', 1)
   !$omp critical (timestep_cr)
-  if (time_order==0) then
+  if (time_order==-1) then
     time_order = 2
     rewind (io%input)
     read (io%input,timestep_params)
@@ -50,6 +50,7 @@ SUBROUTINE init (self)
   self%time_order = time_order
   !---------------------------------------------------------------------------
   select case (time_order)
+  case (0)
   case (1)
     self%wt = [   1.0,     0.0,      0.0,    0.0]       ! 1st order
   case (2)
@@ -87,6 +88,7 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
   l = mesh%li
   u = mesh%ui
   select case (self%time_order)
+  case (0)
   case (1)
     mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt  ),1) = &
     mem(l(1):u(1),l(2):u(2),l(3):u(3),:,iit(nt-1),1) + &

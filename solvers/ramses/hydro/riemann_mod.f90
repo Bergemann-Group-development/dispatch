@@ -3,7 +3,6 @@ module riemann_mod
   use hydro_parameters
   implicit none
   private
-  real(dp), parameter:: half=0.0_dp, zero=0.0_dp, one=1.0_dp, two=2.0_dp
   type riemann_t
   contains
     procedure, nopass:: approx
@@ -14,6 +13,9 @@ module riemann_mod
   end type
   type(riemann_t), public:: riemann
 contains
+
+!> =============================================================================
+!> =============================================================================
 subroutine approx(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
@@ -223,6 +225,8 @@ subroutine approx(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
   end do
 end subroutine approx
 
+!> =============================================================================
+!> =============================================================================
 subroutine acoustic(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
@@ -361,6 +365,8 @@ subroutine acoustic(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
   end do
 end subroutine acoustic
 
+!> =============================================================================
+!> =============================================================================
 subroutine llf(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
@@ -408,21 +414,10 @@ subroutine llf(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
      ! Total energy
      uleft (i,3) = qleft (i,3)*entho + half*qleft (i,1)*qleft (i,2)**2
      uright(i,3) = qright(i,3)*entho + half*qright(i,1)*qright(i,2)**2
-#if NDIM>1
      uleft (i,3) = uleft (i,3)       + half*qleft (i,1)*qleft (i,4)**2
      uright(i,3) = uright(i,3)       + half*qright(i,1)*qright(i,4)**2
-#endif
-#if NDIM>2
      uleft (i,3) = uleft (i,3)       + half*qleft (i,1)*qleft (i,5)**2
      uright(i,3) = uright(i,3)       + half*qright(i,1)*qright(i,5)**2
-#endif
-  end do
-  ! Other advected quantities
-  do n = 4, nvar
-     do i = 1, ngrid
-        uleft (i,n) = qleft (i,1)*qleft (i,n)
-        uright(i,n) = qright(i,1)*qright(i,n)
-     end do
   end do
 
   ! Compute left and right fluxes
@@ -437,13 +432,6 @@ subroutine llf(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
      fleft (i,3) = qleft (i,2)*(uleft (i,3)+qleft (i,3))
      fright(i,3) = qright(i,2)*(uright(i,3)+qright(i,3))
   end do
-  ! Other advected quantities
-  do n = 4, nvar
-     do i = 1, ngrid
-        fleft (i,n) = fleft (i,1)*qleft (i,n)
-        fright(i,n) = fright(i,1)*qright(i,n)
-     end do
-  end do
 
   ! Compute Lax-Friedrich fluxes
   do n = 1, nvar
@@ -453,6 +441,8 @@ subroutine llf(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
   end do
 end subroutine llf
 
+!> =============================================================================
+!> =============================================================================
 subroutine hllc(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
@@ -556,6 +546,8 @@ subroutine hllc(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
   end do
 end subroutine hllc
 
+!> =============================================================================
+!> =============================================================================
 subroutine hll(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv

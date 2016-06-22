@@ -176,12 +176,13 @@ END FUNCTION single_advection
 !> =============================================================================
 FUNCTION ramses256 (self, m) RESULT (ff)
   USE io_unit_mod
+  USE hydro_parameters
   class(initial_t)      :: self
   type(mesh_t)          :: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   real, dimension(:), allocatable:: u, d
   !.............................................................................
-  integer               :: ix, iy, iz, jy, jz, rec
+  integer               :: ix, iy, iz, jy, jz, rec, i
   integer(8)            :: nx, ny, nz
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t::ramses256')
@@ -206,14 +207,20 @@ FUNCTION ramses256 (self, m) RESULT (ff)
     !print*,ix,iy,iz,rec
     read (io_unit%data,rec=rec) d; ff(m(1)%li:m(1)%ui,jy,jz,1) = d
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,2) = u*d
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,2) = u
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,3) = u*d
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,3) = u
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,4) = u*d
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,4) = u
   end do
   end do
-  ff(:,:,:,5) = ff(:,:,:,1)+0.5*(ff(:,:,:,2)**2+ff(:,:,:,3)**2+ff(:,:,:,4)**2)/ff(:,:,:,1)
+  ff(:,:,:,5) = 0.5*ff(:,:,:,1)*(ff(:,:,:,2)**2+ &
+                                 ff(:,:,:,3)**2+ &
+                                 ff(:,:,:,4)**2) &
+              + ff(:,:,:,1)/(gamma-1.0_dp)
+  do i=2,4
+    ff(:,:,:,i) = ff(:,:,:,1)*ff(:,:,:,i)
+  end do
   if (io%verbose > 0) &
     print *,'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &

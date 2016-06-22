@@ -39,7 +39,6 @@ MODULE mhd_mod
     procedure:: velocity_magnitude
     procedure:: magnetic_field_magnitude
   end type
-  real(dp), parameter:: half=0.0_dp, zero=0.0_dp, one=1.0_dp, two=2.0_dp
   logical:: first_time=.true.
   character(len=16):: eqn='mhd'
   real(kind=8):: courant_number=0.2
@@ -50,7 +49,7 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   integer:: n(3)
   character(len=10):: riemann='hllc'
-  namelist /ramses_params/ gamma, riemann, slope_type, courant_factor
+  namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, smallc
 !...............................................................................
   call trace_begin('mhd_mod::init')
   call self%patch_t%init
@@ -65,7 +64,7 @@ SUBROUTINE init (self)
   self%riemann = riemann
   self%courant = courant_factor
   n = self%mesh%gn
-  allocate (self%unew(n(1),n(2),n(3),self%nv))
+  !allocate (self%unew(n(1),n(2),n(3),self%nv))
   allocate (self%q(n(1),n(2),n(3),self%nv))
   allocate (self%fx(n(1),n(2),n(3),self%nv))
   allocate (self%qp(n(1),n(2),n(3),self%nv,ndim))
@@ -84,6 +83,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::update', itimer=itimer)
   self%uin => self%mem(:,:,:,:,self%it,1)
+  self%unew => self%mem(:,:,:,:,self%new,1)
   call godunov_fine (self)
   call trace_end (itimer)
 END SUBROUTINE update
@@ -99,7 +99,8 @@ subroutine godunov_fine (self)
   ! and stored in array unew(:), both at the current level and at the
   ! coarser level if necessary.
   !-----------------------------------------------------------------------------
-  integer::i0,j0,k0,i,j,k,idim,ivar,l(3),u(3)
+  integer::i0,j0,k0,i,j,k,idim,ivar,lo(3),uo(3),n_smalld,n_smallp
+  real(dp):: d,u,v,w,p,ekin
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Compute flux using second-order Godunov method
@@ -109,18 +110,18 @@ subroutine godunov_fine (self)
   ! Conservative update, looping over internal cells only
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::godunov', itimer=itimer)
-  l = self%mesh%li
-  u = self%mesh%ui
+  lo = self%mesh%lo
+  uo = self%mesh%uo
   do idim=1,self%ndim
     i0 = merge(1,0,idim==1)
     j0 = merge(1,0,idim==2)
     k0 = merge(1,0,idim==3)
     do ivar=1,self%nv
-      do k=l(3),u(3)
-      do j=l(2),u(2)
-      do i=l(1),u(1)
+      do k=lo(3),uo(3)
+      do j=lo(2),uo(2)
+      do i=lo(1),uo(1)
         ! Update conservative variables
-        self%unew(i,j,k,ivar)=self%unew(i,j,k,ivar)+ &
+        self%unew(i,j,k,ivar)=self%uin(i,j,k,ivar)+ &
           & (self%flux(i   ,j   ,k   ,ivar,idim) &
           & -self%flux(i+i0,j+j0,k+k0,ivar,idim))
       end do
@@ -128,6 +129,34 @@ subroutine godunov_fine (self)
       end do
     end do
   end do
+  n_smalld = 0
+  n_smallp = 0
+  do k=lo(3),uo(3)
+  do j=lo(2),uo(2)
+  do i=lo(1),uo(1)
+    if (self%unew(i,j,k,1) < smallr) then
+      self%unew(i,j,k,1) = smallr
+      n_smalld = n_smalld+1
+    end if
+    d = 1./self%unew(i,j,k,1)
+    u =  self%unew(i,j,k,2)*d
+    v =  self%unew(i,j,k,3)*d
+    w =  self%unew(i,j,k,4)*d
+    ekin = 0.5*d*(self%unew(i,j,k,2)**2 &
+                 +self%unew(i,j,k,3)**2 &
+                 +self%unew(i,j,k,4)**2)
+    p = (self%unew(i,j,k,5)-ekin)*(gamma-one)
+    if (p < smallr*smallc**2) then
+      p = smallr*smallc**2
+      self%unew(i,j,k,5) = p/(gamma-one)+ekin
+      n_smallp = n_smallp+1
+    end if
+  end do
+  end do
+  end do
+  if (n_smalld+n_smallp > 0) then
+    print*,'small: id,nr,np', self%id,n_smalld,n_smallp
+  end if
   call trace_end (itimer)
 end subroutine godunov_fine
 
@@ -223,9 +252,9 @@ associate (q=>self%q, dq=>self%dq)
             drgt = q(i,j,k+1,n) - q(i,j,k  ,n)
             dq(i,j,k,n,3) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
           end do
-           end do
         end do
-     end do
+      end do
+    end do
   else if (slope_type==2) then ! moncen
     c1 = slope_type
     c2 = 0.5_dp/c1
@@ -351,8 +380,9 @@ subroutine trace3d(self)
   dtdz = self%dtime/self%mesh(3)%d
   !-----------------------------------------------------------------------------
   lb = self%mesh%lb
-  ub = self%mesh%ub
-associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm, gamma=>self%gamma)
+  ub = self%mesh%ub-1
+  print*,'gamma, self%gamma =', gamma, self%gamma
+associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       do i = lb(1),ub(1)
@@ -397,13 +427,13 @@ associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm, gamma=>self%gamma)
         qp(i,j,k,iw,1) = w - half*dwx + sw0*dtdx*half
         qp(i,j,k,ir,1) = max(smallr, qp(i,j,k,ir,1))
 
-        ! Left state at left interface
-        qm(i,j,k,ir,1) = r + half*drx + sr0*dtdx*half
-        qm(i,j,k,ip,1) = p + half*dpx + sp0*dtdx*half
-        qm(i,j,k,iu,1) = u + half*dux + su0*dtdx*half
-        qm(i,j,k,iv,1) = v + half*dvx + sv0*dtdx*half
-        qm(i,j,k,iw,1) = w + half*dwx + sw0*dtdx*half
-        qm(i,j,k,ir,1) = max(smallr, qm(i,j,k,ir,1))
+        ! Left state at right interface
+        qm(i+1,j,k,ir,1) = r + half*drx + sr0*dtdx*half
+        qm(i+1,j,k,ip,1) = p + half*dpx + sp0*dtdx*half
+        qm(i+1,j,k,iu,1) = u + half*dux + su0*dtdx*half
+        qm(i+1,j,k,iv,1) = v + half*dvx + sv0*dtdx*half
+        qm(i+1,j,k,iw,1) = w + half*dwx + sw0*dtdx*half
+        qm(i+1,j,k,ir,1) = max(smallr, qm(i+1,j,k,ir,1))
 
         ! Top state at bottom interface
         qp(i,j,k,ir,2) = r - half*dry + sr0*dtdy*half
@@ -414,12 +444,12 @@ associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm, gamma=>self%gamma)
         qp(i,j,k,ir,2) = max(smallr, qp(i,j,k,ir,2))
 
         ! Bottom state at top interface
-        qm(i,j,k,ir,2) = r + half*dry + sr0*dtdy*half
-        qm(i,j,k,ip,2) = p + half*dpy + sp0*dtdy*half
-        qm(i,j,k,iu,2) = u + half*duy + su0*dtdy*half
-        qm(i,j,k,iv,2) = v + half*dvy + sv0*dtdy*half
-        qm(i,j,k,iw,2) = w + half*dwy + sw0*dtdy*half
-        qm(i,j,k,ir,2) = max(smallr, qm(i,j,k,ir,2))
+        qm(i,j+1,k,ir,2) = r + half*dry + sr0*dtdy*half
+        qm(i,j+1,k,ip,2) = p + half*dpy + sp0*dtdy*half
+        qm(i,j+1,k,iu,2) = u + half*duy + su0*dtdy*half
+        qm(i,j+1,k,iv,2) = v + half*dvy + sv0*dtdy*half
+        qm(i,j+1,k,iw,2) = w + half*dwy + sw0*dtdy*half
+        qm(i,j+1,k,ir,2) = max(smallr, qm(i,j+1,k,ir,2))
 
         ! Back state at front interface
         qp(i,j,k,ir,3) = r - half*drz + sr0*dtdz*half
@@ -430,12 +460,12 @@ associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm, gamma=>self%gamma)
         qp(i,j,k,ir,3) = max(smallr, qp(i,j,k,ir,3))
 
         ! Front state at back interface
-        qm(i,j,k,ir,3) = r + half*drz + sr0*dtdz*half
-        qm(i,j,k,ip,3) = p + half*dpz + sp0*dtdz*half
-        qm(i,j,k,iu,3) = u + half*duz + su0*dtdz*half
-        qm(i,j,k,iv,3) = v + half*dvz + sv0*dtdz*half
-        qm(i,j,k,iw,3) = w + half*dwz + sw0*dtdz*half
-        qm(i,j,k,ir,3) = max(smallr, qm(i,j,k,ir,3))
+        qm(i,j,k+1,ir,3) = r + half*drz + sr0*dtdz*half
+        qm(i,j,k+1,ip,3) = p + half*dpz + sp0*dtdz*half
+        qm(i,j,k+1,iu,3) = u + half*duz + su0*dtdz*half
+        qm(i,j,k+1,iv,3) = v + half*dvz + sv0*dtdz*half
+        qm(i,j,k+1,iw,3) = w + half*dwz + sw0*dtdz*half
+        qm(i,j,k+1,ir,3) = max(smallr, qm(i,j,k+1,ir,3))
       end do
     end do
   end do
@@ -451,12 +481,10 @@ subroutine cmpflxm(self,ln,lt1,lt2)
   integer ::ln,lt1,lt2
   ! local variables
   integer ::i, j, k, n, l, idim, xdim, lb(3), ub(3), ngrid
-  real(dp)::entho
   real(dp),dimension(self%mesh(1)%gn,1:self%nv)::qleft,qright,qgdnv,fgdnv
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
 associate (qp=>self%qp, qm=>self%qm, flux=>self%flux, fx=>self%fx)
-  entho=one/(self%gamma-one)
   xdim=ln-1
   ngrid = self%mesh(1)%gn
   !
