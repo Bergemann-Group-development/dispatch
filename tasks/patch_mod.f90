@@ -695,6 +695,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a log file, with files written by this rank
   !-----------------------------------------------------------------------------
+  !$omp critical (io_cr)
   write (logname,'(a)') trim(io%outputname)//'log'
   if (first_time) then
     first_time = .false.
@@ -731,10 +732,12 @@ SUBROUTINE output_legacy (self, experiment_name)
   write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
   write (io%data_unit,'(4(3i9,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
   close (io%data_unit)
+  !$omp end critical (io_cr)
 
   !-----------------------------------------------------------------------------
   ! Write a binary file with the data cube.
   !-----------------------------------------------------------------------------
+  !$omp critical (io_cr)
   n = u-l+1
   open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
     status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(n))
@@ -772,6 +775,7 @@ SUBROUTINE output_legacy (self, experiment_name)
     end do
   end do
   close (io%data_unit)
+  !$omp end critical (io_cr)
 
   call trace_end
 END SUBROUTINE output_legacy

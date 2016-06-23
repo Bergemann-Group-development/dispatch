@@ -229,6 +229,7 @@ subroutine uslope(self)
   integer,save:: itimer=0
   associate (q=>self%q, dq=>self%dq)
   !-----------------------------------------------------------------------------
+  if (slope_type < 0) return
   call trace_begin ('mhd_mod::uslope', itimer=itimer)
   if(slope_type==0)then
      dq=0.0_dp
