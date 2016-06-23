@@ -48,7 +48,8 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hllc'
-  namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, smallc
+  namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
+    smallc, do_isothermal, csound_isothermal
 !...............................................................................
   call trace_begin('mhd_mod::init')
   call self%patch_t%init
@@ -147,11 +148,16 @@ subroutine godunov (self)
     ekin = 0.5*d*(unew(i,j,k,2)**2 &
                  +unew(i,j,k,3)**2 &
                  +unew(i,j,k,4)**2)
-    p = (unew(i,j,k,5)-ekin)*(gamma-one)
-    if (p < smallr*smallc**2) then
-      p = smallr*smallc**2
+    if (do_isothermal) then
+      p = d*csound_isothermal**2
       unew(i,j,k,5) = p/(gamma-one)+ekin
-      n_smallp = n_smallp+1
+    else
+      p = (unew(i,j,k,5)-ekin)*(gamma-one)
+      if (p < smallr*smallc**2) then
+        p = smallr*smallc**2
+        unew(i,j,k,5) = p/(gamma-one)+ekin
+        n_smallp = n_smallp+1
+      end if
     end if
   end do
   end do

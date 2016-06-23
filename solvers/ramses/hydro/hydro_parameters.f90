@@ -15,5 +15,7 @@ module hydro_parameters
   real(dp)::gamma=1.01d0
   real(dp)::courant_factor=0.8d0
   real(dp)::smallc=0.2
-  real(dp)::smallr=1.d-3
+  real(dp)::smallr=1.0d-3
+  logical:: do_isothermal
+  real(dp):: csound_isothermal=1.0d0
 end module
