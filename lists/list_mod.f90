@@ -284,15 +284,15 @@ SUBROUTINE check_ready (self, link, set_debug)
   logical:: ahead, is_clear, do_download
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_t%check_ready '//self%name, 2, itimer)
+  call trace_begin('list_mod::heck_ready '//self%name, 2, itimer)
   if (present(set_debug)) then
     debug = set_debug
   else
     debug = 0
   end if
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   do_download = .false.
-  call self%qconsistency(1)
+  !call self%qconsistency(1)
   task => link%task                                     ! already checked?
   if (task%is_clear(bits%ready)) then
     nbor => link%nbor                                   ! start on nbor list
@@ -308,14 +308,16 @@ SUBROUTINE check_ready (self, link, set_debug)
         goto 9
       end if
     end do
+    !$omp critical (list_cr)
     call task%set(bits%ready)                           ! mark as checked
     call self%qconsistency(2)
     call self%queue_by_time (link)                      ! add task to queue
     call self%qconsistency(3)
+    !$omp end critical (list_cr)
     do_download = .true.
   end if
 9 continue
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end (itimer)
   if (do_download) then
     !-----------------------------------------------------------------------------
@@ -809,6 +811,7 @@ SUBROUTINE queue_by_time (self, this)
   do while (associated(next))
     if (associated(next%task, this%task)) then
       print*, omp_mythread(), ' WARNING: task', this%task%id, ' is already on ready queue'
+      return
     else if (next%task%time > this%task%time) then
       this%next_time => next
       if (associated(prev)) then
