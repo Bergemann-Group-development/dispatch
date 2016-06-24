@@ -101,13 +101,13 @@ subroutine godunov (self)
   ! and stored in array unew(:), both at the current level and at the
   ! coarser level if necessary.
   !-----------------------------------------------------------------------------
-  integer::i0,j0,k0,i,j,k,idim,ivar,lo(3),uo(3),n_smalld,n_smallp
-  real(dp):: d,u,v,w,p,ekin
+  integer::i0,j0,k0,i,j,k,idim,ivar,lo(3),uo(3)
   integer,save:: itimer=0
   associate (unew=>self%unew, uin=>self%uin, fl=>self%fl)
   !-----------------------------------------------------------------------------
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
+  call check_small (self, uin)
   call unsplit (self)
   !-----------------------------------------------------------------------------
   ! Conservative update, looping over internal cells only
@@ -132,30 +132,48 @@ subroutine godunov (self)
       end do
     end do
   end do
+  call trace_end (itimer)
+  end associate
+end subroutine godunov
+
+!> =============================================================================
+!> =============================================================================
+subroutine check_small (self, uu)
+  class(mhd_t):: self
+  real(dp), dimension(:,:,:,:):: uu
+  integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
+  real(dp):: c,d,u,v,w,p,ekin
+  integer, save:: nprint=10
+  !-----------------------------------------------------------------------------
   n_smalld = 0
   n_smallp = 0
+  lo = self%mesh%li
+  uo = self%mesh%ui
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   do i=lo(1),uo(1)
-    if (unew(i,j,k,1) < smallr) then
-      unew(i,j,k,1) = smallr
+    if (uu(i,j,k,1) < smallr) then
+      if (nprint>0) then
+        nprint = nprint-1
+        print '(i7,3i5,1p,2e12.3)',self%id,i,j,k,uu(i,j,k,1),smallr
+      end if
       n_smalld = n_smalld+1
+      uu(i,j,k,1) = smallr
     end if
-    d = 1./unew(i,j,k,1)
-    u =  unew(i,j,k,2)*d
-    v =  unew(i,j,k,3)*d
-    w =  unew(i,j,k,4)*d
-    ekin = 0.5*d*(unew(i,j,k,2)**2 &
-                 +unew(i,j,k,3)**2 &
-                 +unew(i,j,k,4)**2)
+    d =  uu(i,j,k,1)
+    c = 1./d
+    u =  uu(i,j,k,2)*c
+    v =  uu(i,j,k,3)*c
+    w =  uu(i,j,k,4)*c
+    ekin = 0.5*d*(u**2+v**2+w**2)
     if (do_isothermal) then
       p = d*csound_isothermal**2
-      unew(i,j,k,5) = p/(gamma-one)+ekin
+      uu(i,j,k,5) = p/(gamma-one)+ekin
     else
-      p = (unew(i,j,k,5)-ekin)*(gamma-one)
+      p = (uu(i,j,k,5)-ekin)*(gamma-one)
       if (p < smallr*smallc**2) then
         p = smallr*smallc**2
-        unew(i,j,k,5) = p/(gamma-one)+ekin
+        uu(i,j,k,5) = p/(gamma-one)+ekin
         n_smallp = n_smallp+1
       end if
     end if
@@ -165,9 +183,7 @@ subroutine godunov (self)
   if (n_smalld+n_smallp > 0) then
     print*,'small: id,nr,np', self%id,n_smalld,n_smallp
   end if
-  call trace_end (itimer)
-  end associate
-end subroutine godunov
+end subroutine
 
 !> =============================================================================
 !>  UNSPLIT     Unsplit second order Godunov integrator for
@@ -200,21 +216,23 @@ end subroutine unsplit
 !> =============================================================================
 subroutine ctoprim (self)
   class(mhd_t):: self
-  real(dp):: smalle, dtxhalf
+  real(dp):: smallp, dtxhalf
   integer,save:: itimer=0
   associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::ctoprim', itimer=itimer)
-  smalle = smallc**2/gamma/(gamma-one)
+  smallp = smallr*smallc**2/gamma
   q(:,:,:,1) = max(uin(:,:,:,1),smallr)
   s = 1.d0/q(:,:,:,1)
   q(:,:,:,2) = uin(:,:,:,2)*s
   q(:,:,:,3) = uin(:,:,:,3)*s
   q(:,:,:,4) = uin(:,:,:,4)*s
   s = q(:,:,:,2)**2+q(:,:,:,3)**2+q(:,:,:,4)**2
-  q(:,:,:,5)=(gamma-one)*max(uin(:,:,:,5)-half*q(:,:,:,1)*s(:,:,:),smalle)
+  q(:,:,:,5)=max((gamma-one)*(uin(:,:,:,5)-half*q(:,:,:,1)*s(:,:,:)),smallp)
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
-  self%u_max = self%fmaxval(c + sqrt(s))
+  self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
+                          + c + abs(q(:,:,:,3)) &
+                          + c + abs(q(:,:,:,4)))
   call trace_end (itimer)
   end associate
 end subroutine ctoprim

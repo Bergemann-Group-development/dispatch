@@ -177,13 +177,14 @@ END FUNCTION single_advection
 FUNCTION ramses256 (self, m) RESULT (ff)
   USE io_unit_mod
   USE hydro_parameters
-  class(initial_t)      :: self
-  type(mesh_t)          :: m(3)
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  class(initial_t):: self
+  type(mesh_t):: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8):: ff
   real, dimension(:), allocatable:: u, d
   !.............................................................................
-  integer               :: ix, iy, iz, jy, jz, rec, i
-  integer(8)            :: nx, ny, nz
+  integer:: ix, iy, iz, jy, jz, rec, i, li(3), ui(3)
+  integer(8):: nx, ny, nz
+  real(dp):: umax, dt
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t::ramses256')
   self%mhd = .false.
@@ -199,8 +200,11 @@ FUNCTION ramses256 (self, m) RESULT (ff)
   nx = m(1)%b/m(1)%d + 0.5
   ny = m(2)%b/m(2)%d + 0.5
   nz = m(3)%b/m(3)%d + 0.5
-  do jz=m(3)%li,m(3)%ui
-  do jy=m(2)%li,m(2)%ui
+  li = m%li
+  ui = m%ui
+  umax = 0.0
+  do jz=li(3),ui(3)
+  do jy=li(2),ui(2)
     rec = 1   + (ix           )      /m(1)%n
     rec = rec + (iy+jy-m(2)%li)*nx   /m(1)%n
     rec = rec + (iz+jz-m(3)%li)*nx*ny/m(1)%n
@@ -212,15 +216,20 @@ FUNCTION ramses256 (self, m) RESULT (ff)
     read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,3) = u
     rec = rec + nx*ny*nz/m(1)%n
     read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,4) = u
+    umax=max(umax,3.+maxval(abs(ff(li(1):ui(1),jy,jz,2)) &
+                           +abs(ff(li(1):ui(1),jy,jz,3)) &
+                           +abs(ff(li(1):ui(1),jy,jz,4))))
   end do
   end do
   ff(:,:,:,5) = 0.5*ff(:,:,:,1)*(ff(:,:,:,2)**2+ &
                                  ff(:,:,:,3)**2+ &
                                  ff(:,:,:,4)**2) &
-              + ff(:,:,:,1)/(gamma-1.0_dp)
+              + ff(:,:,:,1)/(gamma-one)
   do i=2,4
     ff(:,:,:,i) = ff(:,:,:,1)*ff(:,:,:,i)
   end do
+  dt = courant_factor*m(1)%d/umax
+  if (io%verbose > 1) print*,'initial dt:',dt,courant_factor,gamma,umax
   if (io%verbose > 0) &
     print *,'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &

@@ -12,7 +12,7 @@
  verbose=1
  do_trace=f
  do_debug=f
- do_output=t
+ do_output=f
 /
 &box_params
  face_nbors=f
@@ -38,7 +38,7 @@
 &out_params
  end_time=0.2
  out_time=0.02
- print_time=1e-3
+ print_time=0e-3
  guard_zones=t
  time_derivs=f
 /
@@ -60,12 +60,14 @@
  calls_per_report=100000
 /
 &ramses_params
- courant_factor=0.2
+ courant_factor=0.8
  !courant_factor=0.266667
  gamma=1.00001
- slope_type=0
+ slope_type=2
+ !slope_type=-1
  smallr=1e-4
- smallc=1e-4
+ smallc=5e-1
  riemann='hllc'
  !riemann='llf'
+ do_isothermal=t
 /
