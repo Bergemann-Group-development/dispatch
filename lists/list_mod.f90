@@ -282,8 +282,9 @@ SUBROUTINE check_ready (self, link, set_debug)
   integer:: set_debug, debug=0
   optional:: set_debug
   logical:: ahead, is_clear, do_download
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_t%check_ready '//self%name,2)
+  call trace_begin('list_t%check_ready '//self%name, 2, itimer)
   if (present(set_debug)) then
     debug = set_debug
   else
@@ -315,7 +316,7 @@ SUBROUTINE check_ready (self, link, set_debug)
   end if
 9 continue
   !$omp end critical (list_cr)
-  call trace_end
+  call trace_end (itimer)
   if (do_download) then
     !-----------------------------------------------------------------------------
     ! Prepare for update, by pro-actively downloading data that it depends on.

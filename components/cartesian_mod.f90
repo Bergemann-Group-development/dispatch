@@ -64,7 +64,7 @@ SUBROUTINE init (self, label)
   do dim=1,3
     nn(:,dim) = merge([-1,1],[0,0],self%dims(dim)>1)
   end do
-  !$omp parallel do private(i,j,k,patch,task,rank)
+  !xomp parallel do private(i,j,k,patch,task,rank)
   do k=1,self%dims(3)
   do j=1,self%dims(2)
   do i=1,self%dims(1)
