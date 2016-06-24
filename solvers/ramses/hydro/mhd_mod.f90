@@ -71,9 +71,8 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer:: n(3)
-  integer,save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_mod::update', itimer=itimer)
+  call trace_begin ('mhd_mod::update')
   self%uin => self%mem(:,:,:,:,self%it,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
   n = self%mesh%gn
@@ -87,7 +86,7 @@ SUBROUTINE update (self)
   allocate (self%s(n(1),n(2),n(3)))
   call godunov (self)
   deallocate (self%q,self%fx,self%qp,self%qm,self%dq,self%fl,self%c,self%s)
-  call trace_end (itimer)
+  call trace_end
 END SUBROUTINE update
 
 !> =============================================================================

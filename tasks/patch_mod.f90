@@ -518,9 +518,10 @@ SUBROUTINE output (self, experiment_name)
   integer:: it1, it2, n(3)
   real:: pt, qt
   real, dimension(:,:,:), pointer:: buf
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
-  call trace_begin('patch:t%output')
+  call trace_begin('patch_mod::output', itimer=itimer)
   do while (self%time > self%out_next .and. self%out_next <= self%end_time)
     if (io%do_legacy) then
       call self%output_legacy
@@ -534,7 +535,7 @@ SUBROUTINE output (self, experiment_name)
     end if
     self%iout = self%iout+1
   end do
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE output
 
 !> =============================================================================
