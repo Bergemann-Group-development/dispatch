@@ -789,6 +789,19 @@ END SUBROUTINE search_nbors_by_overlap
 !> Add a link node into the queue chain, in ascending time order.  When a link
 !> to a task with time larger than this%task%time is found, or the end of the
 !> list is fount, this link is inserted before.
+!>
+!> -> link0 -next_time-> link1 -next_time-> link2
+!>     |                  |                  |
+!>     t0                 t1                 t2
+!>        tnew0   tnew1         tnew2
+!>
+!> In the sketch above the worst case is when two tasks are being queued at
+!> nearly the same time, into the same interval.  This may be handled by having
+!> a lock on each link, so when the two tasks have identified the interval
+!> they should be in, which means they want to modify the next_time of the
+!> previous link (link0), they need to compete about who gets the lock. The one
+!> that succeeds modifies the next_time of link0 and its own next_time and then
+!> unlocks the link.
 !> =============================================================================
 SUBROUTINE queue_by_time (self, this)
   class(list_t):: self
