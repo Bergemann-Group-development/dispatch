@@ -426,6 +426,7 @@ SUBROUTINE rotate (self)
   self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
   self%iit(self%nt) = self%new                          ! new right-most slot
   self%istep = self%istep + 1
+  !$omp atomic write
   self%time = time
   if (io%verbose>2) &
    print*,'patch id:',self%id,'  it:',self%it,'  new:',self%new
@@ -942,19 +943,22 @@ END FUNCTION highest
 !> =============================================================================
 SUBROUTINE courant_condition (self)
   class(patch_t):: self
+  real(8):: dtime
   !.............................................................................
   call trace_begin('patch_t%courant')
   call self%lock%set ('courant')
   if (io%verbose>2) &
     print*, 'courant: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
-    self%dtime = self%dt_fixed
-    self%courant = self%dtime*self%u_max/minval(self%ds)
+    dtime = self%dt_fixed
+    self%courant = dtime*self%u_max/minval(self%ds)
   else if (self%u_fixed > 0.0) then
-    self%dtime = self%courant*minval(self%ds)/self%u_fixed
+    dtime = self%courant*minval(self%ds)/self%u_fixed
   else
-    self%dtime = self%courant*minval(self%ds)/self%u_max
+    dtime = self%courant*minval(self%ds)/self%u_max
   endif
+  !$omp atomic write
+  self%dtime = dtime
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
@@ -1151,7 +1155,7 @@ END FUNCTION local_iit
 
 !> =============================================================================
 !> Find the right time interval in source%t(source%iit), which are the source
-!> times in increasing order.  To avoid having to lock access to source%iit while 
+!> times in increasing order.  To avoid having to lock access to source%iit while
 !> reading it, we read instead (with an atomic read) source%new, from which a
 !> consisten local copy of itt can be constructed.
 !> =============================================================================
