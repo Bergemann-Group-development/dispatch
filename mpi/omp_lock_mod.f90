@@ -43,7 +43,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE set (self, label)
   class(lock_t):: self
-  character(len=*):: label
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (omp_test_lock (self%lock)) then
     if (debug) then
@@ -78,7 +78,7 @@ END FUNCTION test
 !> =============================================================================
 SUBROUTINE unset (self, label)
   class(lock_t):: self
-  character(len=*):: label
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (debug) then
     print*, omp_mythread(),' unset lock', self%id, self%kind//': '//trim(label)

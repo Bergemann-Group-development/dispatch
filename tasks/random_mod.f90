@@ -6,6 +6,9 @@ MODULE random_mod
   USE io_mod
   implicit none
   private
+  interface uniform
+    module procedure uniform_1, uniform_n
+  end interface
   type, public:: random_t
     integer:: seed=11
   contains
@@ -15,9 +18,6 @@ MODULE random_mod
     procedure:: uniform_1
     procedure:: uniform_n
   end type
-  interface uniform
-    module procedure uniform_1, uniform_n
-  end interface
   type(random_t), public:: random
 CONTAINS
 
@@ -93,9 +93,9 @@ FUNCTION uniform_1 (self, a, b) RESULT (out)
   !-----------------------------------------------------------------------------
   if (present(a)) then
     if (present(b)) then
-      out = a*self%ran1()
-    else
       out = a + (b-a)*self%ran1()
+    else
+      out = a*self%ran1()
     end if
   else
     out = self%ran1()

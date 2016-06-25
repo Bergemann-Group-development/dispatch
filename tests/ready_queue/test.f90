@@ -29,7 +29,7 @@ MODULE list_mod
     procedure:: dealloc
     procedure:: print
   end type
-  integer, public, parameter:: nit=10000, nadd=200, maxthread=20
+  integer, public, parameter:: nit=5000, nadd=200, maxthread=20
   integer, public, save:: id=0
   real(8):: time(nit*nadd*maxthread)
 CONTAINS
@@ -63,7 +63,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE queue_by_time (self, this)
   class(list_t):: self
-  class(link_t), pointer:: this
+  class(link_t), pointer:: this, link
   class(link_t), pointer:: next, prev
   !-----------------------------------------------------------------------------
   nullify (prev)
@@ -93,7 +93,7 @@ SUBROUTINE queue_by_time (self, this)
     if (next%task%time > this%task%time) then
       if (associated(prev)) then
         !$omp flush
-        call prev%lock%set ('queue_by_time')
+        call prev%lock%set
         !-----------------------------------------------------------------------
         ! We now have a "prev" that for sure has a task%time smaller than this.
         ! We cannot be sure that the "next" we have actually is the same as
@@ -103,19 +103,20 @@ SUBROUTINE queue_by_time (self, this)
         this%next_time => prev%next_time
         prev%next_time => this
         !print*,omp%mythread(),' inserts',this%task%time,' before',next%task%time
-        call prev%lock%unset ('queue_by_time')
         !$omp flush
+        call prev%lock%unset
       else
         !-----------------------------------------------------------------------
         ! When prev is not associated the link should be the new queue head.
         !-----------------------------------------------------------------------
         !$omp flush
-        call self%queue%lock%set ('queue_by_time')
+        link => self%queue
+        call link%lock%set
         this%next_time => self%queue
         self%queue => this
         !print*,omp%mythread(),' inserts',this%task%time,' before',next%task%time,' at head'
-        call this%next_time%lock%unset ('queue_by_time')
         !$omp flush
+        call link%lock%unset
       end if
       !$omp atomic
       self%n = self%n+1
@@ -142,7 +143,7 @@ SUBROUTINE queue_by_time (self, this)
   !-----------------------------------------------------------------------------
   if (associated(prev)) then
     !$omp flush
-    call prev%lock%set ('queue_by_time')
+    call prev%lock%set
     next => prev%next_time
     prev%next_time => this
     this%next_time => next
@@ -151,23 +152,24 @@ SUBROUTINE queue_by_time (self, this)
     else
       !print*,omp%mythread(),' inserts',this%task%time,' at tail'
     end if
-    call prev%lock%unset ('queue_by_time')
+    call prev%lock%unset
     !$omp flush
   else
     !$omp flush
     if (associated(self%queue)) then
       !$omp flush
       call self%queue%lock%set ('queue_by_time')
+      link => self%queue
       next => self%queue%next_time
       this%next_time => next
       self%queue => this
-      if (associated(next)) then
+      !if (associated(next)) then
         !print*,omp%mythread(),' inserts',this%task%time,' before',next%task%time,' at head'
-      else
+      !else
         !print*,omp%mythread(),' inserts',this%task%time,' as the first one, at head(2)'
-      end if
-      call self%queue%lock%unset ('queue_by_time')
+      !end if
       !$omp flush
+      call link%lock%unset ('queue_by_time')
     else
       nullify (next, this%next_time)
       self%queue => this
@@ -290,9 +292,10 @@ PROGRAM test_queue_by_time
   call omp%init
   nthreads = omp%nthreads
   add_per_thread = nadd/nthreads
-  print*,nthreads,nadd,add_per_thread
+  print '("iterations:",i5,5x,"threads:",i3)', nit, nthreads
   wc = wallclock()
   do j=1,nit
+    if (mod(j,1000)==0) print*,j
     n = 0
     id = 0
     nth = 0
@@ -311,5 +314,6 @@ PROGRAM test_queue_by_time
     call list%count
     call list%dealloc
   end do
-  print*,n, 1e6*(wallclock()-wc)/(nit*nadd)
+  wc = wallclock()-wc
+  print '("n:",i4,5x," sec:",f4.1,5x," mus/call:",f5.2)', n, wc, 1e6*wc/(nit*nadd)
 END PROGRAM test_queue_by_time
