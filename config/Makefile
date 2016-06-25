@@ -33,10 +33,11 @@ default: $(EXEC)
 #############################################################################
 # Sources directories are searched in this exact order (VPATH inside Makefile)
 VPATH = $(TOP)
-ifeq ($(MPI),no)
-  sinclude $(TOP)/mpi/nompi/Makefile
+sinclude $(TOP)/par/omp/Makefile
+ifeq ($(MPI),mpi)
+  sinclude $(TOP)/par/mpi/Makefile
 else
-  sinclude $(TOP)/mpi/Makefile
+  sinclude $(TOP)/par/nompi/Makefile
 endif
 sinclude $(TOP)/io/Makefile
 #sinclude $(TOP)/operators/Makefile

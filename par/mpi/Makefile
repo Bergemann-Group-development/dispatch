@@ -1,7 +1,5 @@
-VPATH := $(VPATH):$(TOP)/mpi
+VPATH := $(VPATH):$(TOP)/par/mpi
 
-omp_timer_mod.o:  omp_mod.o io_unit_mod.o mpi_mod.o
-omp_lock_mod.o:   omp_mod.o
 mpi_mod.o:        omp_mod.o
 mpi_all_mod.o:    mpi_mod.o
 mpi_coords_mod.o: mpi_mod.o io_mod.o
