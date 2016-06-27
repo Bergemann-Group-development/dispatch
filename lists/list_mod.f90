@@ -501,7 +501,9 @@ SUBROUTINE init_all_nbors (self)
   call init_nonleaf (self)                              ! set non_leaf bit
   link => self%head                                     ! start checking links
   do while (associated(link))
-    call self%init_nbors (link)
+    if (mod(link%task%id,omp%nthreads)==omp_mythread) then
+      call self%init_nbors (link)
+    end if
     link => link%next                                   ! continue list
   end do
   call trace_end
