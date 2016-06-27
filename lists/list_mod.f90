@@ -501,7 +501,9 @@ SUBROUTINE init_all_nbors (self)
   call init_nonleaf (self)                              ! set non_leaf bit
   link => self%head                                     ! start checking links
   do while (associated(link))
-    call self%init_nbors (link)
+    if (mod(link%task%id,omp%nthreads)==omp_mythread) then
+      call self%init_nbors (link)
+    end if
     link => link%next                                   ! continue list
   end do
   call trace_end
@@ -823,7 +825,7 @@ SUBROUTINE queue_by_time (self, this)
   next => self%queue
   do while (associated(next))
     if (associated(next%task, this%task)) then
-      print*, omp_mythread(), ' WARNING: task', this%task%id, ' is already on ready queue'
+      print*, omp_mythread, ' WARNING: task', this%task%id, ' is already on ready queue'
       return
     else if (next%task%time > this%task%time) then
       this%next_time => next

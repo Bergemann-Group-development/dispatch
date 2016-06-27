@@ -75,7 +75,9 @@ SUBROUTINE init (self, name)
   ! Compute neighbor list used to perform checks for ready status
   !-----------------------------------------------------------------------------
   call trace_tag ('call self%init_nbors')
+  !$omp parallel
   call self%init_all_nbors
+  !$omp end parallel
   link => self%head
   do while (associated(link))
     call link%task%clear(bits%ready)
@@ -167,7 +169,7 @@ SUBROUTINE update (self)
     !----------------------------------------------------------------------------
     if (io%verbose>1) &
       print'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)', &
-      'thread', omp_mythread(), 'task', task%id, &
+      'thread', omp_mythread, 'task', task%id, &
       'step', task%istep, 'n, nq', self%n, self%nq
     select type (task)
     class is (patch_t)

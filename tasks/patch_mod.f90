@@ -277,7 +277,7 @@ SUBROUTINE init (self)
     read (io%input, out_params)
     if (io%master) write (*, out_params)
   end if
-  !print *, 'MK', omp_mythread(), self%id, self%nt, nt
+  !print *, 'MK', omp_mythread, self%id, self%nt, nt
   !$omp end critical (input_cr)
   ! reasonable values of self%n should take precedence over a saved value of `n`.
   if (any(self%n == 0)) then
@@ -801,7 +801,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       do iv=1,nv
         1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,2x,2i5,o12)
         print 1, &
-          'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%u_max, &
+          'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
           maxval(self%mem(:,:,:,iv,self%it ,2)), &
           minval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -810,7 +810,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           maxval(self%mem(:,:,:,iv,self%new,1)), &
           ntask, nq, self%status
         write (io%log_unit,1) &
-          'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%u_max, &
+          'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
           maxval(self%mem(:,:,:,iv,self%it ,2)), &
           minval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -946,7 +946,6 @@ SUBROUTINE courant_condition (self)
   real(8):: dtime
   !.............................................................................
   call trace_begin('patch_t%courant')
-  call self%lock%set ('courant')
   if (io%verbose>2) &
     print*, 'courant: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
@@ -968,7 +967,6 @@ SUBROUTINE courant_condition (self)
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
-  call self%lock%unset ('courant')
   call trace_end
 END SUBROUTINE courant_condition
 

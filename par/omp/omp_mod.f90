@@ -11,14 +11,15 @@ MODULE omp_mod
     logical:: master=.true.
   contains
     procedure:: init
-    procedure, nopass:: mythread => omp_mythread
+    procedure, nopass:: mythread
     procedure, nopass:: numthreads => omp_numthreads
   end type
-  public:: init_omp, omp_mythread, omp_numthreads
   logical, public, save:: omp_master
   integer, public, save:: omp_nthreads
+  integer, public, save:: omp_mythread
+  public:: init_omp, omp_numthreads
   type(omp_t), public, save:: omp
-  !$omp threadprivate (omp_master, omp)
+  !$omp threadprivate (omp_master, omp, omp_mythread)
 CONTAINS
 
 !> =============================================================================
@@ -39,11 +40,13 @@ SUBROUTINE init_omp
 !$omp single
   omp_nthreads = omp_get_num_threads()
   omp_master = (omp_get_thread_num() == 0)
+  omp_mythread = omp_get_thread_num()
 !$omp end single
 !$omp end parallel
 #else
   omp_nthreads = 1
   omp_master = .true.
+  omp_mythread = 0
 #endif
 END SUBROUTINE init_omp
 
@@ -57,15 +60,15 @@ END FUNCTION
 #endif
 
 !> =============================================================================
-INTEGER FUNCTION omp_mythread()
+INTEGER FUNCTION mythread()
 #if defined (_OPENMP)
   if (omp_in_parallel()) then
-    omp_mythread = omp_get_thread_num()
+    mythread = omp_get_thread_num()
   else
-    omp_mythread = 0
+    mythread = 0
   end if
 #else
-  omp_mythread = 0
+  mythread = 0
 #endif
 END FUNCTION
 
