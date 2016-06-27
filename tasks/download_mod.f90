@@ -160,9 +160,9 @@ SUBROUTINE find_time (other, time, jt, pt)
           pt(2) = pt2
           jt(1) = it1
           jt(2) = it2
-          !print*,omp_mythread(),' MK1: id, it', other%id, it, jt, dt, pt2
+          !print*,omp_mythread,' MK1: id, it', other%id, it, jt, dt, pt2
         else
-          !print*,omp_mythread(),' MK2: id, it', other%id, it, jt, dt, pt2
+          !print*,omp_mythread,' MK2: id, it', other%id, it, jt, dt, pt2
         end if
       end if
     end do
@@ -171,7 +171,7 @@ SUBROUTINE find_time (other, time, jt, pt)
     pt(2) = 0.0
     if (other%is_clear(bits%virtual) .and. io%verbose>2) &
       print '(i6,i4,2x,a,2i4,2f9.4,3x,"time",f9.4,3x,"other%t",7f9.5)', &
-      other%id, omp_mythread(), 'WARNING: using fall-back', &
+      other%id, omp_mythread, 'WARNING: using fall-back', &
       jt, pt, time, other%t(iit(1:other%nt-1))
   end if
   pt(1) = 1.0-pt(2)

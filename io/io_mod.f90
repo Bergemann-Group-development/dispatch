@@ -13,7 +13,7 @@ MODULE io_mod
   type io_t
     integer:: verbose=0, input, output, data_unit, log_unit
     logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.true.
-    logical:: do_flags, do_legacy
+    logical:: do_flags, do_legacy, omp_trace
     integer:: levelmax
     integer:: word_size=4
     character(len=64):: inputname, outputname, datadir='data'
@@ -25,7 +25,7 @@ MODULE io_mod
   end type
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
-  public print_id, mch,io_unit
+  public print_id, mch, io_unit, log_unit
 CONTAINS
 
 !> =============================================================================
@@ -41,11 +41,11 @@ SUBROUTINE init (self, name)
   integer:: verbose=0, levelmax=10, iostat
   character(len=*), optional:: name
   character(len=64):: filename
-  logical:: first_time=.true.
+  logical:: first_time=.true., omp_trace=.false.
   logical:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.true., do_flags=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
-    do_legacy, levelmax
+    do_legacy, levelmax, omp_trace
   real:: test
   !.............................................................................
   call init_omp
@@ -78,23 +78,37 @@ SUBROUTINE init (self, name)
       self%inputname = 'input.nml'
       self%outputname = trim(self%datadir)//self%sep            ! data/
     end if
-    call system ('mkdir -p '//trim(self%outputname))
-    !---------------------------------------------------------------------------
-    ! Open an MPI rank specific log file
-    !---------------------------------------------------------------------------
-    write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
-    if (self%master) print*, 'logfile:', filename
-    open (self%log_unit, file=filename, form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
+    rewind (io_unit%input)
+    read (io_unit%input, io_params)
+    !---------------------------------------------------------------------------
+    ! Open an MPI rank--and possible OMP thread--specific log file
+    !---------------------------------------------------------------------------
+    call system ('mkdir -p '//trim(self%outputname))
+    !iread (io_unit%input, io_params,iostat=iostat)
+    if (self%master.and.first_time) write (*,io_params)
+    if (omp_trace) then
+      !$omp parallel
+      log_unit = 100+omp%mythread()
+      !$omp critical
+      write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%mythread()
+      open (log_unit, file=filename, form='formatted', status='unknown')
+      print *, omp%mythread(), log_unit
+      !$omp end critical
+      !$omp end parallel
+    else
+      log_unit = 100
+      write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
+      open (log_unit, file=filename, form='formatted', status='unknown')
+    end if
+    if (self%master) print*, 'logfile:', filename
+    self%log_unit = io_unit%log 
     if (self%master) then
       print*,'======================================================================='
       print*,'NOTE: Reading parameters from '//trim(self%inputname)
       print'(a,i1)', ' This version was compiled with default real KIND=', kind(test)
       print*,'======================================================================='
     end if
-    rewind (io_unit%input)
-    read (io_unit%input, io_params,iostat=iostat)
-    if (self%master.and.first_time) write (*,io_params)
     first_time=.false.
   end if
   !$omp end critical (input_cr)
@@ -104,6 +118,7 @@ SUBROUTINE init (self, name)
   self%do_output = do_output
   self%do_flags  = do_flags
   self%do_legacy = do_legacy
+  self%omp_trace = omp_trace
   self%levelmax  = levelmax
   self%inputname = inputname
   self%master = self%master .and. (mpi%rank==0)

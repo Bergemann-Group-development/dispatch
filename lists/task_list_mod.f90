@@ -167,7 +167,7 @@ SUBROUTINE update (self)
     !----------------------------------------------------------------------------
     if (io%verbose>1) &
       print'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)', &
-      'thread', omp_mythread(), 'task', task%id, &
+      'thread', omp_mythread, 'task', task%id, &
       'step', task%istep, 'n, nq', self%n, self%nq
     select type (task)
     class is (patch_t)
