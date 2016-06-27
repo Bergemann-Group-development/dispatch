@@ -9,7 +9,7 @@
 ! and tttt is the snapshot number.
 
 &io_params
- verbose=1
+ verbose=-1
  do_trace=f
  do_debug=f
  do_output=f
@@ -36,9 +36,10 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.2
+ !end_time=0.2
+ end_time=0.0210
  out_time=0.02
- print_time=2e-3
+ print_time=5e-3
  guard_zones=t
  time_derivs=f
 /

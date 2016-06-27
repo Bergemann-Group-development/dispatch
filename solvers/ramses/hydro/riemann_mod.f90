@@ -457,7 +457,7 @@ end subroutine llf
 
 !> =============================================================================
 !> =============================================================================
-subroutine hllc(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+subroutine hllc (qleft,qright,qgdnv,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
   REAL(dp)::SL,SR
@@ -471,55 +471,55 @@ subroutine hllc(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
   REAL(dp)::ro,uo,ptoto,etoto
   REAL(dp)::smallp
   INTEGER ::ivar, i
-
+  !
   ! constants
   smallp = smallc**2/gamma
   entho = one/(gamma-one)
-
+  !
   do i=1,ngrid
-
+     !
      ! Left variables
      rl=max(qleft (i,1),smallr)
      Pl=max(qleft (i,3),rl*smallp)
      ul=    qleft (i,2)
-
+     !
      ecinl = half*rl*(ul*ul+qleft(i,4)**2+qleft(i,5)**2)
      etotl = Pl*entho+ecinl
      Ptotl = Pl
-
+     !
      ! Right variables
      rr=max(qright(i,1),smallr)
      Pr=max(qright(i,3),rr*smallp)
      ur=    qright(i,2)
-
+     !
      ecinr = half*rr*(ur*ur+qright(i,4)**2+qright(i,5)**2)
      etotr = Pr*entho+ecinr
      Ptotr = Pr
-
+     !
      ! Find the largest eigenvalues in the normal direction to the interface
      cfastl=sqrt(max(gamma*Pl/rl,smallc**2))
      cfastr=sqrt(max(gamma*Pr/rr,smallc**2))
-
+     !
      ! Compute HLL wave speed
      SL=min(ul,ur)-max(cfastl,cfastr)
      SR=max(ul,ur)+max(cfastl,cfastr)
-
+     !
      ! Compute lagrangian sound speed
      rcl=rl*(ul-SL)
      rcr=rr*(SR-ur)
-
+     !
      ! Compute acoustic star state
      ustar   =(rcr*ur   +rcl*ul   +  (Ptotl-Ptotr))/(rcr+rcl)
      Ptotstar=(rcr*Ptotl+rcl*Ptotr+rcl*rcr*(ul-ur))/(rcr+rcl)
-
+     !
      ! Left star region variables
      rstarl=rl*(SL-ul)/(SL-ustar)
      etotstarl=((SL-ul)*etotl-Ptotl*ul+Ptotstar*ustar)/(SL-ustar)
-
+     !
      ! Right star region variables
      rstarr=rr*(SR-ur)/(SR-ustar)
      etotstarr=((SR-ur)*etotr-Ptotr*ur+Ptotstar*ustar)/(SR-ustar)
-
+     !
      ! Sample the solution at x/t=0
      if(SL>0d0)then
         ro=rl
@@ -542,23 +542,240 @@ subroutine hllc(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
         Ptoto=Ptotr
         etoto=etotr
      end if
-
+     !
      ! Compute the Godunov flux
      fgdnv(i,1) = ro*uo
      fgdnv(i,2) = ro*uo*uo+Ptoto
      fgdnv(i,3) = (etoto+Ptoto)*uo
-     do ivar = 4,nvar
-        if(fgdnv(i,1)>0)then
-           fgdnv(i,ivar) = fgdnv(i,1)*qleft (i,ivar)
-        else
-           fgdnv(i,ivar) = fgdnv(i,1)*qright(i,ivar)
-        endif
-     end do
-
+     !
      ! Compute the Godunov velocity
      qgdnv(i,2) = uo
   end do
+  !
+     do i=1,ngrid
+        if(fgdnv(i,1)>0)then
+           fgdnv(i,4:nvar) = fgdnv(i,1)*qleft (i,4:nvar)
+        else
+           fgdnv(i,4:nvar) = fgdnv(i,1)*qright(i,4:nvar)
+        endif
+     end do
 end subroutine hllc
+
+!> =============================================================================
+!> =============================================================================
+subroutine hllc_a (qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+  integer::ngrid,nvar
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
+  REAL(dp)::entho
+  REAL(dp)::pl,ecinl
+  REAL(dp)::pr,ecinr
+  REAL(dp)::cfastl,rcl
+  REAL(dp)::cfastr,rcr
+  REAL(dp)::smallp
+  REAL(dp),dimension(ngrid)::SL,SR
+  REAL(dp),dimension(ngrid)::ro,uo,Ptoto,Etoto
+  REAL(dp),dimension(ngrid)::rl,ul,Ptotl,Etotl
+  REAL(dp),dimension(ngrid)::rr,ur,Ptotr,Etotr
+  REAL(dp),dimension(ngrid)::rstarl,Etotstarl
+  REAL(dp),dimension(ngrid)::rstarr,Etotstarr
+  REAL(dp),dimension(ngrid)::ustar,Ptotstar
+  INTEGER ::ivar, i
+  !
+  ! constants
+  smallp = smallc**2/gamma
+  entho = one/(gamma-one)
+  !
+  do i=1,ngrid
+     !
+     ! Left variables
+     rl(i)=max(qleft (i,1),smallr)
+     Pl=max(qleft (i,3),rl(i)*smallp)
+     ul(i)=    qleft (i,2)
+     !
+     ecinl = half*rl(i)*(ul(i)*ul(i)+qleft(i,4)**2+qleft(i,5)**2)
+     etotl(i) = Pl*entho+ecinl
+     Ptotl(i) = Pl
+     !
+     ! Right variables
+     rr(i)=max(qright(i,1),smallr)
+     Pr=max(qright(i,3),rr(i)*smallp)
+     ur(i)=    qright(i,2)
+     !
+     ecinr = half*rr(i)*(ur(i)*ur(i)+qright(i,4)**2+qright(i,5)**2)
+     etotr(i) = Pr*entho+ecinr
+     Ptotr(i) = Pr
+     !
+     ! Find the largest eigenvalues in the normal direction to the interface
+     cfastl=sqrt(max(gamma*Pl/rl(i),smallc**2))
+     cfastr=sqrt(max(gamma*Pr/rr(i),smallc**2))
+     !
+     ! Compute HLL wave speed
+     SL(i)=min(ul(i),ur(i))-max(cfastl,cfastr)
+     SR(i)=max(ul(i),ur(i))+max(cfastl,cfastr)
+     !
+     ! Compute lagrangian sound speed
+     rcl=rl(i)*(ul(i)-SL(i))
+     rcr=rr(i)*(SR(i)-ur(i))
+     !
+     ! Compute acoustic star state
+     ustar(i)   =(rcr*ur(i)   +rcl*ul(i)   +  (Ptotl(i)-Ptotr(i)))/(rcr+rcl)
+     Ptotstar(i)=(rcr*Ptotl(i)+rcl*Ptotr(i)+rcl*rcr*(ul(i)-ur(i)))/(rcr+rcl)
+  end do
+  do i=1,ngrid
+     !
+     ! Left star region variables
+     rstarl(i)=rl(i)*(SL(i)-ul(i))/(SL(i)-ustar(i))
+     etotstarl(i)=((SL(i)-ul(i))*etotl(i)-Ptotl(i)*ul(i)+Ptotstar(i)*ustar(i))/(SL(i)-ustar(i))
+     !
+     ! Right star region variables
+     rstarr(i)=rr(i)*(SR(i)-ur(i))/(SR(i)-ustar(i))
+     etotstarr(i)=((SR(i)-ur(i))*etotr(i)-Ptotr(i)*ur(i)+Ptotstar(i)*ustar(i))/(SR(i)-ustar(i))
+  end do
+     !
+     ! Sample the solution at x/t=0
+  do i=1,ngrid
+     if(SL(i)>0d0)then
+        ro(i)=rl(i)
+        uo(i)=ul(i)
+        Ptoto(i)=Ptotl(i)
+        etoto(i)=etotl(i)
+     else if(ustar(i)>0d0)then
+        ro(i)=rstarl(i)
+        uo(i)=ustar(i)
+        Ptoto(i)=Ptotstar(i)
+        etoto(i)=etotstarl(i)
+     else if (SR(i)>0d0)then
+        ro(i)=rstarr(i)
+        uo(i)=ustar(i)
+        Ptoto(i)=Ptotstar(i)
+        etoto(i)=etotstarr(i)
+     else
+        ro(i)=rr(i)
+        uo(i)=ur(i)
+        Ptoto(i)=Ptotr(i)
+        etoto(i)=etotr(i)
+     end if
+  end do
+     !
+     ! Compute the Godunov flux
+  do i=1,ngrid
+     fgdnv(i,1) = ro(i)*uo(i)
+     fgdnv(i,2) = ro(i)*uo(i)*uo(i)+Ptoto(i)
+     fgdnv(i,3) = (etoto(i)+Ptoto(i))*uo(i)
+     qgdnv(i,2) = uo(i)
+  end do
+     !
+     do i=1,ngrid
+        if(fgdnv(i,1)>0)then
+           fgdnv(i,4:nvar) = fgdnv(i,1)*qleft (i,4:nvar)
+        else
+           fgdnv(i,4:nvar) = fgdnv(i,1)*qright(i,4:nvar)
+        endif
+     end do
+end subroutine hllc_a
+
+!> =============================================================================
+!> =============================================================================
+subroutine hllc_vec (qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+  integer::ngrid,nvar
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
+  REAL(dp),dimension(ngrid)::SL,SR
+  REAL(dp),dimension(ngrid)::entho
+  REAL(dp),dimension(ngrid)::rl,pl,ul,ecinl,etotl,ptotl
+  REAL(dp),dimension(ngrid)::rr,pr,ur,ecinr,etotr,ptotr
+  REAL(dp),dimension(ngrid)::cfastl,rcl,rstarl
+  REAL(dp),dimension(ngrid)::cfastr,rcr,rstarr
+  REAL(dp),dimension(ngrid)::etotstarl,etotstarr
+  REAL(dp),dimension(ngrid)::ustar,ptotstar
+  REAL(dp),dimension(ngrid)::ro,uo,ptoto,etoto
+  REAL(dp),dimension(ngrid)::smallp
+  INTEGER ::ivar, i
+  !
+  ! constants
+  smallp = smallc**2/gamma
+  entho = one/(gamma-one)
+  !
+     !
+     ! Left variables
+     rl=max(qleft (:,1),smallr)
+     Pl=max(qleft (:,3),rl*smallp)
+     ul=    qleft (:,2)
+     !
+     ecinl = half*rl*(ul*ul+qleft(:,4)**2+qleft(:,5)**2)
+     etotl = Pl*entho+ecinl
+     Ptotl = Pl
+     !
+     ! Right variables
+     rr=max(qright(:,1),smallr)
+     Pr=max(qright(:,3),rr*smallp)
+     ur=    qright(:,2)
+     !
+     ecinr = half*rr*(ur*ur+qright(:,4)**2+qright(:,5)**2)
+     etotr = Pr*entho+ecinr
+     Ptotr = Pr
+     !
+     ! Find the largest eigenvalues in the normal direction to the interface
+     cfastl=sqrt(max(gamma*Pl/rl,smallc**2))
+     cfastr=sqrt(max(gamma*Pr/rr,smallc**2))
+     !
+     ! Compute HLL wave speed
+     SL=min(ul,ur)-max(cfastl,cfastr)
+     SR=max(ul,ur)+max(cfastl,cfastr)
+     !
+     ! Compute lagrangian sound speed
+     rcl=rl*(ul-SL)
+     rcr=rr*(SR-ur)
+     !
+     ! Compute acoustic star state
+     ustar   =(rcr*ur   +rcl*ul   +  (Ptotl-Ptotr))/(rcr+rcl)
+     Ptotstar=(rcr*Ptotl+rcl*Ptotr+rcl*rcr*(ul-ur))/(rcr+rcl)
+     !
+     ! Left star region variables
+     rstarl=rl*(SL-ul)/(SL-ustar)
+     etotstarl=((SL-ul)*etotl-Ptotl*ul+Ptotstar*ustar)/(SL-ustar)
+     !
+     ! Right star region variables
+     rstarr=rr*(SR-ur)/(SR-ustar)
+     etotstarr=((SR-ur)*etotr-Ptotr*ur+Ptotstar*ustar)/(SR-ustar)
+     !
+     ! Sample the solution at x/t=0
+     where (SL>0d0)
+        ro=rl
+        uo=ul
+        Ptoto=Ptotl
+        etoto=etotl
+     else where (ustar>0d0)
+        ro=rstarl
+        uo=ustar
+        Ptoto=Ptotstar
+        etoto=etotstarl
+     else where  (SR>0d0)
+        ro=rstarr
+        uo=ustar
+        Ptoto=Ptotstar
+        etoto=etotstarr
+     else where
+        ro=rr
+        uo=ur
+        Ptoto=Ptotr
+        etoto=etotr
+     end where
+     !
+     ! Compute the Godunov flux
+     fgdnv(:,1) = ro*uo
+     fgdnv(:,2) = ro*uo*uo+Ptoto
+     fgdnv(:,3) = (etoto+Ptoto)*uo
+     do ivar = 4,nvar
+        where (fgdnv(:,1)>0)
+           fgdnv(:,ivar) = fgdnv(:,1)*qleft (:,ivar)
+        else where
+           fgdnv(:,ivar) = fgdnv(:,1)*qright(:,ivar)
+        end where
+     end do
+     !
+     ! Compute the Godunov velocity
+     qgdnv(:,2) = uo
+end subroutine hllc_vec
 
 !> =============================================================================
 !> =============================================================================

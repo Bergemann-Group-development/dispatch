@@ -112,8 +112,8 @@ subroutine godunov (self)
   ! Conservative update, looping over internal cells only
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::godunov', itimer=itimer)
-  lo = self%mesh%lo
-  uo = self%mesh%uo
+  lo = self%mesh%li
+  uo = self%mesh%ui
   do idim=1,self%ndim
     i0 = merge(1,0,idim==1)
     j0 = merge(1,0,idim==2)
@@ -514,8 +514,8 @@ subroutine cmpflxm(self,ln,lt1,lt2)
   xdim=ln-1
   ngrid = self%mesh(1)%gn
   !
-  lb = self%mesh%lb
-  ub = self%mesh%ub
+  lb = self%mesh%li
+  ub = self%mesh%uo
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       ! Mass density
