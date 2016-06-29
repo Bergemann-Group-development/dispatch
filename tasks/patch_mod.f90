@@ -390,7 +390,7 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
-  if (self%root_grid) then
+  if (self%root_grid.or.self%is_set(bits%root_grid)) then
     call self%periodic_grid                     ! periodic root grid
   else
     call self%extrapolate_guards                ! time-extrapolate guard cells
