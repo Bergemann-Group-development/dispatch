@@ -535,8 +535,41 @@ subroutine cmpflxm(self)
       fl(:,j,k,4,1) = fgdnv(:,5)*dtds(1)
     end do
   end do
-  call cmpflxm_y (self)
-  call cmpflxm_z (self)
+  if (any(self%mesh%gn/=self%mesh(1)%gn)) then
+    call cmpflxm_y (self)
+    call cmpflxm_z (self)
+  else
+    do k = lb(3),ub(3)
+      do i = lb(1),ub(1)
+        qleft (:,1) = qm(i,:,k,1,2); qright(:,1) = qp(i,:,k,1,2)
+        qleft (:,2) = qm(i,:,k,3,2); qright(:,2) = qp(i,:,k,3,2)
+        qleft (:,3) = qm(i,:,k,5,2); qright(:,3) = qp(i,:,k,5,2)
+        qleft (:,4) = qm(i,:,k,2,2); qright(:,4) = qp(i,:,k,2,2)
+        qleft (:,5) = qm(i,:,k,4,2); qright(:,5) = qp(i,:,k,4,2)
+        call solver (self,self%mesh(2)%gn,qleft,qright,qgdnv,fgdnv)
+        fl(i,:,k,1,2) = fgdnv(:,1)*dtds(2)
+        fl(i,:,k,3,2) = fgdnv(:,2)*dtds(2)
+        fl(i,:,k,5,2) = fgdnv(:,3)*dtds(2)
+        fl(i,:,k,2,2) = fgdnv(:,4)*dtds(2)
+        fl(i,:,k,4,2) = fgdnv(:,5)*dtds(2)
+      end do
+    end do
+    do j = lb(2),ub(2)
+      do i = lb(1),ub(1)
+        qleft (:,1) = qm(i,j,:,1,3); qright(:,1) = qp(i,j,:,1,3)
+        qleft (:,2) = qm(i,j,:,4,3); qright(:,2) = qp(i,j,:,4,3)
+        qleft (:,3) = qm(i,j,:,5,3); qright(:,3) = qp(i,j,:,5,3)
+        qleft (:,4) = qm(i,j,:,2,3); qright(:,4) = qp(i,j,:,2,3)
+        qleft (:,5) = qm(i,j,:,3,3); qright(:,5) = qp(i,j,:,3,3)
+        call solver (self,self%mesh(3)%gn,qleft,qright,qgdnv,fgdnv)
+        fl(i,j,:,1,3) = fgdnv(:,1)*dtds(3)
+        fl(i,j,:,4,3) = fgdnv(:,2)*dtds(3)
+        fl(i,j,:,5,3) = fgdnv(:,3)*dtds(3)
+        fl(i,j,:,2,3) = fgdnv(:,4)*dtds(3)
+        fl(i,j,:,3,3) = fgdnv(:,5)*dtds(3)
+      end do
+    end do
+  end if
   end associate
 end subroutine cmpflxm
 
