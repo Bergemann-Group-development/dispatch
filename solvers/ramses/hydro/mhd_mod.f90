@@ -304,8 +304,8 @@ subroutine uslope(self)
             slop = min(abs(dlft),abs(drgt))
             dlim = merge(zero,slop,(dlft*drgt)<=zero)
             dq(i,j,k,n,1) = dsgn*min(dlim,abs(dcen))
-          end do
-          do i = l(1),u(1)
+!          end do
+!          do i = l(1),u(1)
             ! slopes in second coordinate direction
             dlft = c1*(q(i,j  ,k,n) - q(i,j-1,k,n))
             drgt = c1*(q(i,j+1,k,n) - q(i,j  ,k,n))
@@ -314,8 +314,8 @@ subroutine uslope(self)
             slop = min(abs(dlft),abs(drgt))
             dlim = merge(zero,slop,(dlft*drgt)<=zero)
             dq(i,j,k,n,2) = dsgn*min(dlim,abs(dcen))
-          end do
-          do i = l(1),u(1)
+!          end do
+!          do i = l(1),u(1)
             ! slopes in third coordinate direction
             dlft = c1*(q(i,j,k  ,n) - q(i,j,k-1,n))
             drgt = c1*(q(i,j,k+1,n) - q(i,j,k  ,n))
