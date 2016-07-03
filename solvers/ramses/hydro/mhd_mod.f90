@@ -502,16 +502,18 @@ end subroutine trace3d
 subroutine cmpflxm(self)
   class(mhd_t):: self
   ! local variables
-  integer ::i, j, k, n, l, idim, lb(3), ub(3)
-  real(dp),dimension(self%mesh(1)%gn,1:self%nv)::qleft,qright,qgdnv,fgdnv
+  integer:: i, j, k, n(3), lb(3), ub(3)
+  real(dp), pointer, dimension(:,:):: qleft, qright, qgdnv, fgdnv
   integer,save:: itimer=0
   real(dp):: dtds(3)
   !-----------------------------------------------------------------------------
-  associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
+  associate (qp=>self%qp, qm=>self%qm, fl=>self%fl, nv=>self%nv)
   dtds = self%dtime/self%mesh%d       ! needed here
   !
+  n = self%mesh%gn
   lb = self%mesh%lb
   ub = self%mesh%ub
+  allocate (qleft(n(1),nv),qright(n(1),nv),qgdnv(n(1),nv),fgdnv(n(1),nv))
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       qleft (:,1) = qm(:,j,k,1,1); qright(:,1) = qp(:,j,k,1,1)
@@ -519,7 +521,7 @@ subroutine cmpflxm(self)
       qleft (:,3) = qm(:,j,k,5,1); qright(:,3) = qp(:,j,k,5,1)
       qleft (:,4) = qm(:,j,k,3,1); qright(:,4) = qp(:,j,k,3,1)
       qleft (:,5) = qm(:,j,k,4,1); qright(:,5) = qp(:,j,k,4,1)
-      call solver (self,self%mesh(1)%gn,qleft,qright,qgdnv,fgdnv)
+      call solver (self,n(1),qleft,qright,qgdnv,fgdnv)
       fl(:,j,k,1,1) = fgdnv(:,1)*dtds(1)
       fl(:,j,k,2,1) = fgdnv(:,2)*dtds(1)
       fl(:,j,k,5,1) = fgdnv(:,3)*dtds(1)
@@ -527,6 +529,8 @@ subroutine cmpflxm(self)
       fl(:,j,k,4,1) = fgdnv(:,5)*dtds(1)
     end do
   end do
+  deallocate (qleft,qright,qgdnv,fgdnv)
+  allocate (qleft(n(2),nv),qright(n(2),nv),qgdnv(n(2),nv),fgdnv(n(2),nv))
   do k = lb(3),ub(3)
     do i = lb(1),ub(1)
       qleft (:,1) = qm(i,:,k,1,2); qright(:,1) = qp(i,:,k,1,2)
@@ -534,7 +538,7 @@ subroutine cmpflxm(self)
       qleft (:,3) = qm(i,:,k,5,2); qright(:,3) = qp(i,:,k,5,2)
       qleft (:,4) = qm(i,:,k,2,2); qright(:,4) = qp(i,:,k,2,2)
       qleft (:,5) = qm(i,:,k,4,2); qright(:,5) = qp(i,:,k,4,2)
-      call solver (self,self%mesh(2)%gn,qleft,qright,qgdnv,fgdnv)
+      call solver (self,n(2),qleft,qright,qgdnv,fgdnv)
       fl(i,:,k,1,2) = fgdnv(:,1)*dtds(2)
       fl(i,:,k,3,2) = fgdnv(:,2)*dtds(2)
       fl(i,:,k,5,2) = fgdnv(:,3)*dtds(2)
@@ -542,6 +546,8 @@ subroutine cmpflxm(self)
       fl(i,:,k,4,2) = fgdnv(:,5)*dtds(2)
     end do
   end do
+  deallocate (qleft,qright,qgdnv,fgdnv)
+  allocate (qleft(n(3),nv),qright(n(3),nv),qgdnv(n(3),nv),fgdnv(n(3),nv))
   do j = lb(2),ub(2)
     do i = lb(1),ub(1)
       qleft (:,1) = qm(i,j,:,1,3); qright(:,1) = qp(i,j,:,1,3)
@@ -549,7 +555,7 @@ subroutine cmpflxm(self)
       qleft (:,3) = qm(i,j,:,5,3); qright(:,3) = qp(i,j,:,5,3)
       qleft (:,4) = qm(i,j,:,2,3); qright(:,4) = qp(i,j,:,2,3)
       qleft (:,5) = qm(i,j,:,3,3); qright(:,5) = qp(i,j,:,3,3)
-      call solver (self,self%mesh(3)%gn,qleft,qright,qgdnv,fgdnv)
+      call solver (self,n(3),qleft,qright,qgdnv,fgdnv)
       fl(i,j,:,1,3) = fgdnv(:,1)*dtds(3)
       fl(i,j,:,4,3) = fgdnv(:,2)*dtds(3)
       fl(i,j,:,5,3) = fgdnv(:,3)*dtds(3)
@@ -557,6 +563,7 @@ subroutine cmpflxm(self)
       fl(i,j,:,3,3) = fgdnv(:,5)*dtds(3)
     end do
   end do
+  deallocate (qleft,qright,qgdnv,fgdnv)
   end associate
 end subroutine cmpflxm
 
