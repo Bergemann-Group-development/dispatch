@@ -1,13 +1,15 @@
 !> =============================================================================
+!> =============================================================================
 !> RAMSES Godunov solvers
 !>
 !> godunov_fine
-!>   unsplit
-!>     ctoprim
-!>     uslope
-!>     trace3d
-!>     cmpflxm
-!>       riemann%hllc
+!>   unsplit              1   2   3      ui  uo  ub
+!>     ctoprim            +---+---+......+---+---+
+!>     uslope:dq              +---+......+---+
+!>     trace3d:qp             +---+......+---+
+!>     trace3d:qm                 +......+---+---+
+!>     cmpflxm                    +......+---+
+!>       riemann%hllc             +......+
 !> =============================================================================
 MODULE mhd_mod
   !.............................................................................
@@ -25,7 +27,6 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:):: uin       ! conserved
     real, pointer, dimension(:,:,:,:):: unew      ! new conserved
     real, pointer, dimension(:,:,:,:):: q         ! primitive
-    real, pointer, dimension(:,:,:,:):: fx        ! 1D fluxes
     real, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
     real, pointer, dimension(:,:,:,:,:):: dq      ! slopes
     real, pointer, dimension(:,:,:,:,:):: fl      ! 3D fluxes
@@ -77,7 +78,6 @@ SUBROUTINE update (self)
   self%unew => self%mem(:,:,:,:,self%new,1)
   n = self%mesh%gn
   allocate (self%q (n(1),n(2),n(3),self%nv))
-  allocate (self%fx(n(1),n(2),n(3),self%nv))
   allocate (self%qp(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%qm(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%dq(n(1),n(2),n(3),self%nv,ndim))
@@ -85,7 +85,7 @@ SUBROUTINE update (self)
   allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
   call godunov (self)
-  deallocate (self%q,self%fx,self%qp,self%qm,self%dq,self%fl,self%c,self%s)
+  deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%c,self%s)
   call trace_end
 END SUBROUTINE update
 
@@ -100,30 +100,35 @@ subroutine godunov (self)
   ! and stored in array unew(:), both at the current level and at the
   ! coarser level if necessary.
   !-----------------------------------------------------------------------------
-  integer::i0,j0,k0,i,j,k,idim,ivar,lo(3),uo(3)
+  integer::i0,j0,k0,i,j,k,idim,ivar,li(3),ui(3),lo(3),uo(3)
   integer,save:: itimer=0
   associate (unew=>self%unew, uin=>self%uin, fl=>self%fl)
   !-----------------------------------------------------------------------------
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
+  li = self%mesh%li
+  ui = self%mesh%ui
+  lo = self%mesh%lo
+  uo = self%mesh%uo
   call check_small (self, uin)
   call unsplit (self)
   !-----------------------------------------------------------------------------
   ! Conservative update, looping over internal cells only
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::godunov', itimer=itimer)
-  lo = self%mesh%li
-  uo = self%mesh%ui
-  do idim=1,self%ndim
-    i0 = merge(1,0,idim==1)
-    j0 = merge(1,0,idim==2)
-    k0 = merge(1,0,idim==3)
-    do ivar=1,self%nv
-      do k=lo(3),uo(3)
-      do j=lo(2),uo(2)
-      do i=lo(1),uo(1)
+  unew = uin
+  do ivar=1,self%nv
+!    unew(lo(1):uo(1),lo(2):uo(2),lo(3):uo(3),ivar) = &
+!     uin(lo(1):uo(1),lo(2):uo(2),lo(3):uo(3),ivar)
+    do idim=1,self%ndim
+      i0 = merge(1,0,idim==1)
+      j0 = merge(1,0,idim==2)
+      k0 = merge(1,0,idim==3)
+      do k=li(3),ui(3)
+      do j=li(2),ui(2)
+      do i=li(1),ui(1)
         ! Update conservative variables
-        unew(i,j,k,ivar)=uin(i,j,k,ivar)+ &
+        unew(i,j,k,ivar) = unew(i,j,k,ivar)+ &
           & (fl(i   ,j   ,k   ,ivar,idim) &
           & -fl(i+i0,j+j0,k+k0,ivar,idim))
       end do
@@ -146,8 +151,8 @@ subroutine check_small (self, uu)
   !-----------------------------------------------------------------------------
   n_smalld = 0
   n_smallp = 0
-  lo = self%mesh%li
-  uo = self%mesh%ui
+  lo = self%mesh%lb
+  uo = self%mesh%ub
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   do i=lo(1),uo(1)
@@ -192,22 +197,14 @@ subroutine unsplit(self)
   class(mhd_t):: self
   real(dp):: dtds(3)
   integer,save:: itimer=0
-  associate (fl=>self%fl, fx=>self%fx)
   !-----------------------------------------------------------------------------
   call ctoprim(self)                  ! Primitive variables, sound speeds
   call self%courant_condition         ! compute dt
-  dtds = self%dtime/self%mesh%d       ! needed here
   call uslope(self)                   ! TVD slopes
   call trace3d(self)                  ! predictor step
   call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
-  call cmpflxm(self,2,3,4)            ! Solve for 1D flux in X direction
-  fl(:,:,:,:,1)=fx(:,:,:,:)*dtds(1)   ! 1D to 3D flux
-  call cmpflxm(self,3,2,4)            ! Solve for 1D flux in Y direction
-  fl(:,:,:,:,2)=fx(:,:,:,:)*dtds(3)   ! 1D to 3D flux
-  call cmpflxm(self,4,2,3)            ! Solve for 1D flux in Z direction
-  fl(:,:,:,:,3)=fx(:,:,:,:)*dtds(3)   ! 1D to 3D flux
+  call cmpflxm(self)                  ! Solve for 1D flux in X direction
   call trace_end (itimer)
-  end associate
 end subroutine unsplit
 
 !> =============================================================================
@@ -502,98 +499,119 @@ end subroutine trace3d
 !> =============================================================================
 !> Compute fluxes
 !> =============================================================================
-subroutine cmpflxm(self,ln,lt1,lt2)
+subroutine cmpflxm(self)
   class(mhd_t):: self
-  integer ::ln,lt1,lt2
   ! local variables
-  integer ::i, j, k, n, l, idim, xdim, lb(3), ub(3), ngrid
+  integer ::i, j, k, n, l, idim, lb(3), ub(3)
   real(dp),dimension(self%mesh(1)%gn,1:self%nv)::qleft,qright,qgdnv,fgdnv
   integer,save:: itimer=0
+  real(dp):: dtds(3)
   !-----------------------------------------------------------------------------
-  associate (qp=>self%qp, qm=>self%qm, fx=>self%fx)
-  xdim=ln-1
-  ngrid = self%mesh(1)%gn
+  associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
+  dtds = self%dtime/self%mesh%d       ! needed here
   !
-  lb = self%mesh%li
-  ub = self%mesh%uo
+  lb = self%mesh%lb
+  ub = self%mesh%ub
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
-      ! Mass density
-      qleft (:,1) = qm(:,j,k,1,xdim)
-      qright(:,1) = qp(:,j,k,1,xdim)
-      !
-      ! Normal velocity
-      qleft (:,2) = qm(:,j,k,ln,xdim)
-      qright(:,2) = qp(:,j,k,ln,xdim)
-      !
-      ! Pressure
-      qleft (:,3) = qm(:,j,k,5,xdim)
-      qright(:,3) = qp(:,j,k,5,xdim)
-      !
-      ! Tangential velocity 1
-      qleft (:,4) = qm(:,j,k,lt1,xdim)
-      qright(:,4) = qp(:,j,k,lt1,xdim)
-      !
-      ! Tangential velocity 2
-      qleft (:,5) = qm(:,j,k,lt2,xdim)
-      qright(:,5) = qp(:,j,k,lt2,xdim)
-      !
-      ! Solve Riemann problem
-      if(self%riemann.eq.'acoustic')then
-        call riemann%acoustic(qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
-      else if (self%riemann.eq.'exact')then
-        call riemann%approx  (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
-      else if (self%riemann.eq.'llf')then
-        call riemann%llf     (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
-      else if (self%riemann.eq.'hllc')then
-        call riemann%hllc    (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
-      else if (self%riemann.eq.'hll')then
-        call riemann%hll     (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
-      else
-        write(*,*)'unknown Riemann solver'
-        stop
-      end if
-      !
-      ! Compute fluxes
-      fx(:,j,k,1)      = fgdnv(:,1)
-      fx(:,j,k,ln)     = fgdnv(:,2)
-      fx(:,j,k,lt1)    = fgdnv(:,4)
-      fx(:,j,k,lt2)    = fgdnv(:,5)
-      fx(:,j,k,ndim+2) = fgdnv(:,3)
+      qleft (:,1) = qm(:,j,k,1,1); qright(:,1) = qp(:,j,k,1,1)
+      qleft (:,2) = qm(:,j,k,2,1); qright(:,2) = qp(:,j,k,2,1)
+      qleft (:,3) = qm(:,j,k,5,1); qright(:,3) = qp(:,j,k,5,1)
+      qleft (:,4) = qm(:,j,k,3,1); qright(:,4) = qp(:,j,k,3,1)
+      qleft (:,5) = qm(:,j,k,4,1); qright(:,5) = qp(:,j,k,4,1)
+      call solver (self,self%mesh(1)%gn,qleft,qright,qgdnv,fgdnv)
+      fl(:,j,k,1,1) = fgdnv(:,1)*dtds(1)
+      fl(:,j,k,2,1) = fgdnv(:,2)*dtds(1)
+      fl(:,j,k,5,1) = fgdnv(:,3)*dtds(1)
+      fl(:,j,k,3,1) = fgdnv(:,4)*dtds(1)
+      fl(:,j,k,4,1) = fgdnv(:,5)*dtds(1)
+    end do
+  end do
+  do k = lb(3),ub(3)
+    do i = lb(1),ub(1)
+      qleft (:,1) = qm(i,:,k,1,2); qright(:,1) = qp(i,:,k,1,2)
+      qleft (:,2) = qm(i,:,k,3,2); qright(:,2) = qp(i,:,k,3,2)
+      qleft (:,3) = qm(i,:,k,5,2); qright(:,3) = qp(i,:,k,5,2)
+      qleft (:,4) = qm(i,:,k,2,2); qright(:,4) = qp(i,:,k,2,2)
+      qleft (:,5) = qm(i,:,k,4,2); qright(:,5) = qp(i,:,k,4,2)
+      call solver (self,self%mesh(2)%gn,qleft,qright,qgdnv,fgdnv)
+      fl(i,:,k,1,2) = fgdnv(:,1)*dtds(2)
+      fl(i,:,k,3,2) = fgdnv(:,2)*dtds(2)
+      fl(i,:,k,5,2) = fgdnv(:,3)*dtds(2)
+      fl(i,:,k,2,2) = fgdnv(:,4)*dtds(2)
+      fl(i,:,k,4,2) = fgdnv(:,5)*dtds(2)
+    end do
+  end do
+  do j = lb(2),ub(2)
+    do i = lb(1),ub(1)
+      qleft (:,1) = qm(i,j,:,1,3); qright(:,1) = qp(i,j,:,1,3)
+      qleft (:,2) = qm(i,j,:,4,3); qright(:,2) = qp(i,j,:,4,3)
+      qleft (:,3) = qm(i,j,:,5,3); qright(:,3) = qp(i,j,:,5,3)
+      qleft (:,4) = qm(i,j,:,2,3); qright(:,4) = qp(i,j,:,2,3)
+      qleft (:,5) = qm(i,j,:,3,3); qright(:,5) = qp(i,j,:,3,3)
+      call solver (self,self%mesh(3)%gn,qleft,qright,qgdnv,fgdnv)
+      fl(i,j,:,1,3) = fgdnv(:,1)*dtds(3)
+      fl(i,j,:,4,3) = fgdnv(:,2)*dtds(3)
+      fl(i,j,:,5,3) = fgdnv(:,3)*dtds(3)
+      fl(i,j,:,2,3) = fgdnv(:,4)*dtds(3)
+      fl(i,j,:,3,3) = fgdnv(:,5)*dtds(3)
     end do
   end do
   end associate
 end subroutine cmpflxm
 
-!*******************************************************************************
+!> =============================================================================
+!> Selection of 1-D solvers
+!> =============================================================================
+subroutine solver (self,ngrid,qleft,qright,qgdnv,fgdnv)
+  class(mhd_t):: self
+  integer:: ngrid
+  real(dp),dimension(ngrid,self%nv):: qleft,qright,qgdnv,fgdnv
+  if(self%riemann.eq.'acoustic')then
+    call riemann%acoustic(qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
+  else if (self%riemann.eq.'exact')then
+    call riemann%approx  (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
+  else if (self%riemann.eq.'llf')then
+    call riemann%llf     (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
+  else if (self%riemann.eq.'hllc')then
+    call riemann%hllc    (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
+  else if (self%riemann.eq.'hll')then
+    call riemann%hll     (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
+  else
+    write(*,*)'unknown Riemann solver'
+    stop
+  end if
+end subroutine solver
+
+!> =============================================================================
 SUBROUTINE log_density (self, v)
   class(mhd_t):: self
   real, dimension(:,:,:):: v
   !-----------------------------------------------------------------------------
 END SUBROUTINE
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE log_pressure (self, v)
   class(mhd_t):: self
   real, dimension(:,:,:):: v
   !-----------------------------------------------------------------------------
 END SUBROUTINE
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE grav_potential (self, v)
   class(mhd_t):: self
   real, dimension(:,:,:):: v
   !-----------------------------------------------------------------------------
 END SUBROUTINE
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE velocity_magnitude (self, v)
   class(mhd_t):: self
   real, dimension(:,:,:):: v
   !-----------------------------------------------------------------------------
 END SUBROUTINE
 
-!*******************************************************************************
+!> =============================================================================
 SUBROUTINE magnetic_field_magnitude (self, v)
   class(mhd_t):: self
   real, dimension(:,:,:):: v
