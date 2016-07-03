@@ -7,6 +7,7 @@ MODULE initial_mod
   USE trace_mod
   USE mesh_mod
   USE random_mod
+  USE hydro_parameters
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -90,13 +91,16 @@ FUNCTION single_solenoidal (self, m) RESULT (ff)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0
-        ff(ix,iy,iz,2) = self%s0
-        ff(ix,iy,iz,3) = self%a0(1)*(sin(ky)+sin(kz))
-        ff(ix,iy,iz,4) = self%a0(2)*(sin(kz)+sin(kx))
-        ff(ix,iy,iz,5) = self%a0(3)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,6) = self%b0(1)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,7) = self%b0(2)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,8) = self%b0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,2) = self%a0(1)*(sin(ky)+sin(kz))
+        ff(ix,iy,iz,3) = self%a0(2)*(sin(kz)+sin(kx))
+        ff(ix,iy,iz,4) = self%a0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,5) = self%d0*csound**2/(gamma*(gamma-1)) + &
+          half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
+        if (self%mhd) then
+          ff(ix,iy,iz,6) = self%b0(1)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,7) = self%b0(2)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,8) = self%b0(3)*(sin(kx)+sin(ky))
+        end if
       end do
     end do
   end do
@@ -104,10 +108,10 @@ FUNCTION single_solenoidal (self, m) RESULT (ff)
 END FUNCTION single_solenoidal
 
 !> =============================================================================
-!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> Initialize a single 3-D wavenumber, with non-random amplitude and zero phase
 !> =============================================================================
 FUNCTION single_compressive (self, m) RESULT (ff)
-  class(initial_t)        :: self
+  class(initial_t)      :: self
   type(mesh_t)          :: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
@@ -124,13 +128,16 @@ FUNCTION single_compressive (self, m) RESULT (ff)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0
-        ff(ix,iy,iz,2) = self%s0
-        ff(ix,iy,iz,3) = self%u0(1)*sin(kx)
-        ff(ix,iy,iz,4) = self%u0(2)*sin(ky)
-        ff(ix,iy,iz,5) = self%u0(3)*sin(kz)
-        ff(ix,iy,iz,6) = self%b0(1)
-        ff(ix,iy,iz,7) = self%b0(2)
-        ff(ix,iy,iz,8) = self%b0(3)
+        ff(ix,iy,iz,2) = self%u0(1)*sin(kx)
+        ff(ix,iy,iz,3) = self%u0(2)*sin(ky)
+        ff(ix,iy,iz,4) = self%u0(3)*sin(kz)
+        ff(ix,iy,iz,5) = self%d0*csound**2/(gamma*(gamma-1)) + &
+          half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
+        if (self%mhd) then
+          ff(ix,iy,iz,6) = self%b0(1)
+          ff(ix,iy,iz,7) = self%b0(2)
+          ff(ix,iy,iz,8) = self%b0(3)
+        end if
       end do
     end do
   end do
@@ -158,13 +165,16 @@ FUNCTION single_advection (self, m) RESULT (ff)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
-        ff(ix,iy,iz,2) = self%s0
-        ff(ix,iy,iz,3) = self%d0*self%u0(1)
-        ff(ix,iy,iz,4) = self%d0*self%u0(2)
-        ff(ix,iy,iz,5) = self%d0*self%u0(3)
-        ff(ix,iy,iz,6) = self%b0(3)*sin(kz)
-        ff(ix,iy,iz,7) = self%b0(1)*sin(kx)
-        ff(ix,iy,iz,8) = self%b0(2)*sin(ky)
+        ff(ix,iy,iz,2) = self%d0*self%u0(1)
+        ff(ix,iy,iz,3) = self%d0*self%u0(2)
+        ff(ix,iy,iz,4) = self%d0*self%u0(3)
+        ff(ix,iy,iz,5) = self%d0*csound**2/(gamma*(gamma-1)) + &
+          half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
+        if (self%mhd) then
+          ff(ix,iy,iz,6) = self%b0(3)*sin(kz)
+          ff(ix,iy,iz,7) = self%b0(1)*sin(kx)
+          ff(ix,iy,iz,8) = self%b0(2)*sin(ky)
+        end if
       end do
     end do
   end do
@@ -176,7 +186,6 @@ END FUNCTION single_advection
 !> =============================================================================
 FUNCTION ramses256 (self, m) RESULT (ff)
   USE io_unit_mod
-  USE hydro_parameters
   class(initial_t):: self
   type(mesh_t):: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8):: ff
@@ -208,7 +217,6 @@ FUNCTION ramses256 (self, m) RESULT (ff)
     rec = 1   + (ix           )      /m(1)%n
     rec = rec + (iy+jy-m(2)%li)*nx   /m(1)%n
     rec = rec + (iz+jz-m(3)%li)*nx*ny/m(1)%n
-    !print*,ix,iy,iz,rec
     read (io_unit%data,rec=rec) d; ff(m(1)%li:m(1)%ui,jy,jz,1) = d
     rec = rec + nx*ny*nz/m(1)%n
     read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,2) = u

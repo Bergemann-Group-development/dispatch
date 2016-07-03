@@ -49,7 +49,7 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hllc'
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, do_isothermal, csound_isothermal
+    smallc, do_isothermal, csound
 !...............................................................................
   call trace_begin('mhd_mod::init')
   call self%patch_t%init
@@ -166,7 +166,7 @@ subroutine check_small (self, uu)
     w =  uu(i,j,k,4)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
     if (do_isothermal) then
-      p = d*csound_isothermal**2
+      p = d*csound**2
       uu(i,j,k,5) = p/(gamma-one)+ekin
     else
       p = (uu(i,j,k,5)-ekin)*(gamma-one)
