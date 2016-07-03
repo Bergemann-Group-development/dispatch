@@ -513,7 +513,7 @@ subroutine cmpflxm(self)
   class(mhd_t):: self
   ! local variables
   integer:: i, j, k, lb(3), ub(3)
-  real(dp), dimension(self%mesh(1)%gn,self%nv):: qleft, qright, qgdnv, fgdnv
+  real(dp), dimension(self%mesh(1)%gn,self%nv):: qleft, qright, fgdnv
   real(dp):: dtds(3)
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
@@ -527,7 +527,7 @@ subroutine cmpflxm(self)
       qleft (:,3) = qm(:,j,k,5,1); qright(:,3) = qp(:,j,k,5,1)
       qleft (:,4) = qm(:,j,k,3,1); qright(:,4) = qp(:,j,k,3,1)
       qleft (:,5) = qm(:,j,k,4,1); qright(:,5) = qp(:,j,k,4,1)
-      call solver (self,self%mesh(1)%gn,qleft,qright,qgdnv,fgdnv)
+      call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv)
       fl(:,j,k,1,1) = fgdnv(:,1)*dtds(1)
       fl(:,j,k,2,1) = fgdnv(:,2)*dtds(1)
       fl(:,j,k,5,1) = fgdnv(:,3)*dtds(1)
@@ -546,7 +546,7 @@ subroutine cmpflxm(self)
         qleft (:,3) = qm(i,:,k,5,2); qright(:,3) = qp(i,:,k,5,2)
         qleft (:,4) = qm(i,:,k,2,2); qright(:,4) = qp(i,:,k,2,2)
         qleft (:,5) = qm(i,:,k,4,2); qright(:,5) = qp(i,:,k,4,2)
-        call solver (self,self%mesh(2)%gn,qleft,qright,qgdnv,fgdnv)
+        call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv)
         fl(i,:,k,1,2) = fgdnv(:,1)*dtds(2)
         fl(i,:,k,3,2) = fgdnv(:,2)*dtds(2)
         fl(i,:,k,5,2) = fgdnv(:,3)*dtds(2)
@@ -561,7 +561,7 @@ subroutine cmpflxm(self)
         qleft (:,3) = qm(i,j,:,5,3); qright(:,3) = qp(i,j,:,5,3)
         qleft (:,4) = qm(i,j,:,2,3); qright(:,4) = qp(i,j,:,2,3)
         qleft (:,5) = qm(i,j,:,3,3); qright(:,5) = qp(i,j,:,3,3)
-        call solver (self,self%mesh(3)%gn,qleft,qright,qgdnv,fgdnv)
+        call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv)
         fl(i,j,:,1,3) = fgdnv(:,1)*dtds(3)
         fl(i,j,:,4,3) = fgdnv(:,2)*dtds(3)
         fl(i,j,:,5,3) = fgdnv(:,3)*dtds(3)
@@ -580,7 +580,7 @@ subroutine cmpflxm_y (self)
   class(mhd_t):: self
   ! local variables
   integer:: i, j, k, lb(3), ub(3)
-  real(dp), dimension(self%mesh(2)%gn,self%nv):: qleft, qright, qgdnv, fgdnv
+  real(dp), dimension(self%mesh(2)%gn,self%nv):: qleft, qright, fgdnv
   real(dp):: dtds(3)
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
@@ -594,7 +594,7 @@ subroutine cmpflxm_y (self)
       qleft (:,3) = qm(i,:,k,5,2); qright(:,3) = qp(i,:,k,5,2)
       qleft (:,4) = qm(i,:,k,2,2); qright(:,4) = qp(i,:,k,2,2)
       qleft (:,5) = qm(i,:,k,4,2); qright(:,5) = qp(i,:,k,4,2)
-      call solver (self,self%mesh(2)%gn,qleft,qright,qgdnv,fgdnv)
+      call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv)
       fl(i,:,k,1,2) = fgdnv(:,1)*dtds(2)
       fl(i,:,k,3,2) = fgdnv(:,2)*dtds(2)
       fl(i,:,k,5,2) = fgdnv(:,3)*dtds(2)
@@ -612,7 +612,7 @@ subroutine cmpflxm_z (self)
   class(mhd_t):: self
   ! local variables
   integer:: i, j, k, lb(3), ub(3)
-  real(dp), dimension(self%mesh(3)%gn,self%nv):: qleft, qright, qgdnv, fgdnv
+  real(dp), dimension(self%mesh(3)%gn,self%nv):: qleft, qright, fgdnv
   real(dp):: dtds(3)
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
@@ -626,7 +626,7 @@ subroutine cmpflxm_z (self)
       qleft (:,3) = qm(i,j,:,5,3); qright(:,3) = qp(i,j,:,5,3)
       qleft (:,4) = qm(i,j,:,2,3); qright(:,4) = qp(i,j,:,2,3)
       qleft (:,5) = qm(i,j,:,3,3); qright(:,5) = qp(i,j,:,3,3)
-      call solver (self,self%mesh(3)%gn,qleft,qright,qgdnv,fgdnv)
+      call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv)
       fl(i,j,:,1,3) = fgdnv(:,1)*dtds(3)
       fl(i,j,:,4,3) = fgdnv(:,2)*dtds(3)
       fl(i,j,:,5,3) = fgdnv(:,3)*dtds(3)
@@ -640,20 +640,20 @@ end subroutine cmpflxm_z
 !> =============================================================================
 !> Selection of 1-D solvers
 !> =============================================================================
-subroutine solver (self,ngrid,qleft,qright,qgdnv,fgdnv)
+subroutine solver (self,ngrid,qleft,qright,fgdnv)
   class(mhd_t):: self
   integer:: ngrid
-  real(dp),dimension(ngrid,self%nv):: qleft,qright,qgdnv,fgdnv
+  real(dp),dimension(ngrid,self%nv):: qleft,qright,fgdnv
   if(self%riemann.eq.'acoustic')then
-    call riemann%acoustic(qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
+    call riemann%acoustic(qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'exact')then
-    call riemann%approx  (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
+    call riemann%approx  (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'llf')then
-    call riemann%llf     (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
+    call riemann%llf     (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'hllc')then
-    call riemann%hllc    (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
+    call riemann%hllc    (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'hll')then
-    call riemann%hll     (qleft,qright,qgdnv,fgdnv,ngrid,self%nv)
+    call riemann%hll     (qleft,qright,fgdnv,ngrid,self%nv)
   else
     write(*,*)'unknown Riemann solver'
     stop

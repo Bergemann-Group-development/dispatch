@@ -16,7 +16,7 @@ contains
 
 !> =============================================================================
 !> =============================================================================
-subroutine approx(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
 
@@ -227,7 +227,7 @@ end subroutine approx
 
 !> =============================================================================
 !> =============================================================================
-subroutine acoustic(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
 
@@ -367,9 +367,9 @@ end subroutine acoustic
 
 !> =============================================================================
 !> =============================================================================
-subroutine llf(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+subroutine llf(qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
-  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
 
   ! local arrays
   real(dp),dimension(1:ngrid,1:nvar)::fleft,fright,uleft,uright
@@ -396,11 +396,6 @@ subroutine llf(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
      cl= sqrt(gamma*pl/rl)
      cr= sqrt(gamma*pr/rr)
      cmax(i)=max(abs(ul)+cl,abs(ur)+cr)
-  end do
-
-  ! Compute average velocity
-  do i=1,ngrid
-     qgdnv(i,2) = half*(qleft(i,2)+qright(i,2))
   end do
 
   ! Compute conservative variables
@@ -457,9 +452,9 @@ end subroutine llf
 
 !> =============================================================================
 !> =============================================================================
-subroutine hllc (qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+subroutine hllc (qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
-  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
   REAL(dp)::SL,SR
   REAL(dp)::entho
   REAL(dp)::rl,pl,ul,ecinl,etotl,ptotl
@@ -547,9 +542,6 @@ subroutine hllc (qleft,qright,qgdnv,fgdnv,ngrid,nvar)
      fgdnv(i,1) = ro*uo
      fgdnv(i,2) = ro*uo*uo+Ptoto
      fgdnv(i,3) = (etoto+Ptoto)*uo
-     !
-     ! Compute the Godunov velocity
-     qgdnv(i,2) = uo
   end do
   !
      do i=1,ngrid
@@ -563,9 +555,9 @@ end subroutine hllc
 
 !> =============================================================================
 !> =============================================================================
-subroutine hllc_a (qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+subroutine hllc_a (qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
-  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
   REAL(dp)::entho
   REAL(dp)::pl,ecinl
   REAL(dp)::pr,ecinr
@@ -662,7 +654,6 @@ subroutine hllc_a (qleft,qright,qgdnv,fgdnv,ngrid,nvar)
      fgdnv(i,1) = ro(i)*uo(i)
      fgdnv(i,2) = ro(i)*uo(i)*uo(i)+Ptoto(i)
      fgdnv(i,3) = (etoto(i)+Ptoto(i))*uo(i)
-     qgdnv(i,2) = uo(i)
   end do
      !
      do i=1,ngrid
@@ -676,9 +667,9 @@ end subroutine hllc_a
 
 !> =============================================================================
 !> =============================================================================
-subroutine hllc_vec (qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+subroutine hllc_vec (qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
-  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
   REAL(dp),dimension(ngrid)::SL,SR
   REAL(dp),dimension(ngrid)::entho
   REAL(dp),dimension(ngrid)::rl,pl,ul,ecinl,etotl,ptotl
@@ -772,16 +763,13 @@ subroutine hllc_vec (qleft,qright,qgdnv,fgdnv,ngrid,nvar)
            fgdnv(:,ivar) = fgdnv(:,1)*qright(:,ivar)
         end where
      end do
-     !
-     ! Compute the Godunov velocity
-     qgdnv(:,2) = uo
 end subroutine hllc_vec
 
 !> =============================================================================
 !> =============================================================================
-subroutine hll(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
+subroutine hll(qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
-  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
+  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
   real(dp),dimension(1:ngrid,1:nvar)::fleft,fright,uleft,uright
   real(dp),dimension(1:ngrid)::SL,SR
   integer::i,n
@@ -805,11 +793,6 @@ subroutine hll(qleft,qright,qgdnv,fgdnv,ngrid,nvar)
      cr= sqrt(gamma*pr/rr)
      SL(i)=min(min(ul,ur)-max(cl,cr),zero)
      SR(i)=max(max(ul,ur)+max(cl,cr),zero)
-  end do
-
-  ! Compute average velocity
-  do i=1,ngrid
-     qgdnv(i,2) = half*(qleft(i,2)+qright(i,2))
   end do
 
   ! Compute conservative variables
