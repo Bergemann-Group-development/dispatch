@@ -249,16 +249,26 @@ subroutine uslope(self)
   integer,save:: itimer=0
   associate (q=>self%q, dq=>self%dq)
   !-----------------------------------------------------------------------------
-  if (slope_type < 0) return
   call trace_begin ('mhd_mod::uslope', itimer=itimer)
-  if(slope_type==0)then
-     dq=0.0_dp
-     return
-  end if
   !
   l = self%mesh%lb+1
   u = self%mesh%ub-1
-  if (slope_type==1) then  ! minmod
+  if(slope_type==-1)then
+    do n = 1, self%nv
+      do k = l(3),u(3)
+        do j = l(2),u(2)
+          do i = l(1),u(1)
+            dq(i,j,k,n,1) = half*(q(i+1,j,k,n) - q(i-1,j,k,n))
+            dq(i,j,k,n,2) = half*(q(i,j+1,k,n) - q(i,j-1,k,n))
+            dq(i,j,k,n,3) = half*(q(i,j,k+1,n) - q(i,j,k-1,n))
+          end do
+        end do
+      end do
+    end do
+  else if(slope_type==0)then
+     dq=0.0_dp
+     return
+  else if (slope_type==1) then  ! minmod
     do n = 1, self%nv
       do k = l(3),u(3)
         do j = l(2),u(2)
