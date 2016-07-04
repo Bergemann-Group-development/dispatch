@@ -496,17 +496,16 @@ END SUBROUTINE init_nbors
 SUBROUTINE init_all_nbors (self)
   class(list_t):: self
   class(link_t), pointer:: link
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_t%init_all_nbors')
+  call trace_begin('list_mod::init_all_nbors', itimer=itimer)
   call init_nonleaf (self)                              ! set non_leaf bit
   link => self%head                                     ! start checking links
   do while (associated(link))
-    if (mod(link%task%id,omp%nthreads)==omp_mythread) then
-      call self%init_nbors (link)
-    end if
+    call self%init_nbors (link)
     link => link%next                                   ! continue list
   end do
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE init_all_nbors
 
 !> =============================================================================
