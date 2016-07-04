@@ -32,7 +32,6 @@ MODULE task_list_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
-    integer(8):: n_update=0
   contains
     procedure:: init
     procedure:: execute
@@ -72,18 +71,12 @@ SUBROUTINE init (self, name)
     if (io%master) write (*,task_list_params)
   end if
   !-----------------------------------------------------------------------------
-  ! Compute neighbor list used to perform checks for ready status
+  ! Construct neighbor lists used to perform checks for ready status
   !-----------------------------------------------------------------------------
   call trace_tag ('call self%init_nbors')
   call self%init_all_nbors
-  link => self%head
-  do while (associated(link))
-    call link%task%clear(bits%ready)
-    call self%check_ready (link)
-    link => link%next
-  end do
-  call self%print
   call trace_end
+  call timer%print
 END SUBROUTINE init
 
 !> =============================================================================
@@ -95,18 +88,29 @@ SUBROUTINE execute (self)
   class(task_list_t):: self
   class(link_t), pointer:: link, rem
   !-----------------------------------------------------------------------------
+  ! Check the ready status of all tasks
+  !-----------------------------------------------------------------------------
+  link => self%head
+  do while (associated(link))
+    call link%task%clear(bits%ready)
+    call self%check_ready (link)
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Start timer, and run until the task count is zero
+  !-----------------------------------------------------------------------------
   call tic
   !$omp parallel
   do while (self%n > 0)
     call self%update
   end do
   !$omp end parallel
-  call toc ('rank time', self%n_update)
-  if (io%master) &
-    print *, 'download_differ % =', 100.*download%n_differ/ &
-      max(1,(download%n_differ+download%n_same))
-  call buffered_output%close
   call timer%print
+  call toc ('rank time', n_update)
+  !if (io%master) &
+  !  print *, 'download_differ % =', 100.*download%n_differ/ &
+  !    max(1,(download%n_differ+download%n_same))
+  call buffered_output%close
 END SUBROUTINE execute
 
 !> =============================================================================
@@ -173,7 +177,7 @@ SUBROUTINE update (self)
     class is (patch_t)
     call task%rotate
     !$omp atomic
-    self%n_update = self%n_update + product(task%n)
+    n_update = n_update + product(task%n)
     end select
     if (task%is_set(bits%boundary)) then                ! boundary patch?
       !-------------------------------------------------------------------------

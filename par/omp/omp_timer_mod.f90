@@ -11,10 +11,11 @@ MODULE omp_timer_mod
   private
   integer, save:: n_core = 0
   real(8), save:: wt=0d0
+  integer(8), save:: n_update=0
   interface toc
     module procedure toc_i4, toc_i8, toc_1
   end interface
-  public tic, toc, wallclock
+  public tic, toc, wallclock, n_update
 CONTAINS
 
 !> =============================================================================
@@ -105,8 +106,8 @@ SUBROUTINE toc_r (label, n)
   real:: n, n_tmp
   real(8):: omp_get_wtime
   !.............................................................................
-  call detect_cores
   wt = (omp_get_wtime() - wt)
+  n_core = omp%ncores
   n_tmp = merge(omp_nthreads, min(n_core,omp_nthreads), n_core==0)
   write (io_unit%log,1) label, trim(time_str(wt)), &
     trim(time_str(wt*n_tmp/max(n,1.))), '/upd,', n, 'updates'
@@ -118,89 +119,6 @@ SUBROUTINE toc_r (label, n)
   flush (6)
   wt = omp_get_wtime()
 END SUBROUTINE toc_r
-
-!> =============================================================================
-!> Attempt to determine the actual number of cores. If /proc/cpuinfo exists
-!> one has to count the number of sockets, but observing hom many different 
-!> "physical id" there are.  The number of cores per socket is in the fild
-!> "cpu cores".
-!> =============================================================================
-SUBROUTINE detect_cores
-  character(len=32):: file="/proc/cpuinfo"
-  character(len=32):: line
-  logical:: exist
-  integer:: i, iostat, id, oid, n_socket
-  type:: socket_t
-    type(socket_t), pointer:: next => null()
-    integer:: id
-  end type
-  type(socket_t), pointer:: p, o, head
-  !.............................................................................
-  nullify(head)
-  n_socket = 0
-  oid = -1
-  inquire (file=file, exist=exist)
-  if (exist) then
-    open (file=file, unit=io_unit%os, form='formatted', status='old')
-    do while (.true.)
-      read (io_unit%os,'(a32)',iostat=iostat) line
-      if (iostat/=0) then
-        exit
-      else
-        i = index(line,':')
-        if (line(1:8)=='cpu core') then
-          read (line(i+1:),*) n_core
-        else if (line(1:8)=='physical') then
-          read (line(i+1:),*) id
-          if (new(id)) then
-            n_socket = n_socket + 1
-          end if
-        end if
-      end if
-    end do
-    close (io_unit%os)
-  end if
-  if (n_socket>0) n_core = n_core*n_socket
-  if (mpi%rank==0) print'(a,i4)', '   n_core =', n_core
-  if (mpi%rank==0) print'(a,i4)', ' n_thread =', omp_nthreads
-  !-----------------------------------------------------------------------------
-  ! For good measure, although totally insifinificant, deallocate the list
-  !-----------------------------------------------------------------------------
-  p => head
-  do while (associated(p))
-    o => p
-    p => p%next
-    deallocate (o)
-  end do
-CONTAINS
-  logical function new(id)
-    integer:: id
-    p => head
-    o => p
-    !---------------------------------------------------------------------------
-    ! If the id already exists, return false
-    !---------------------------------------------------------------------------
-    do while (associated(p))
-      o => p
-      if (p%id == id) then
-        new = .false.
-        return
-      end if
-      p => p%next
-    end do
-    !---------------------------------------------------------------------------
-    ! If the id did not exist, add it, and return true
-    !---------------------------------------------------------------------------
-    allocate (p)
-    p%id = id
-    if (associated(o)) then
-      o%next => p
-    else
-      head => p
-    end if
-    new = .true.
-  end function
-END SUBROUTINE detect_cores
 
 !> =============================================================================
 FUNCTION wallclock() result (delta)

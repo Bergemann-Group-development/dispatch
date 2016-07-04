@@ -284,7 +284,7 @@ SUBROUTINE check_ready (self, link, set_debug)
   logical:: ahead, is_clear, do_download
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_mod::heck_ready '//self%name, 2, itimer)
+  call trace_begin('list_mod::check_ready '//self%name, 2, itimer)
   if (present(set_debug)) then
     debug = set_debug
   else

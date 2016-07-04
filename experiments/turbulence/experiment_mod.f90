@@ -38,7 +38,7 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_t%init', itimer=itimer)
+  call trace_begin('experiment_mod::init', itimer=itimer)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------

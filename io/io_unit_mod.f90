@@ -13,5 +13,5 @@ MODULE io_unit_mod
   integer, parameter, public:: mch=120
   type(io_unit_t), public:: io_unit
   integer, public:: log_unit=6
-  !$omp threadprivate (log_unit)
+  !$omp threadprivate (io_unit, log_unit)
 END MODULE io_unit_mod

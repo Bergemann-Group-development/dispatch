@@ -79,6 +79,11 @@ SUBROUTINE init (mp, mpi_dims, dims)
   mpi%comm   = mpi_comm_world
   mpi%master = mpi_rank==0
   mpi%ok     = .true.
+  if (mpi%master) then
+    print'(a,i4)', ' n_socket =', omp%nsockets
+    print'(a,i4)', '   n_core =', omp%ncores
+    print'(a,i4)', ' n_thread =', omp_nthreads
+  end if
   !-----------------------------------------------------------------------------
   ! For some reason, this must be done element by element.  Turning it around,
   ! and doing mpi = mp (which is syntactically correct), values are screwed

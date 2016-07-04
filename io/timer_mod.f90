@@ -19,12 +19,11 @@ MODULE timer_mod
     procedure, nopass:: print
   end type
   character(len=32), dimension(maxproc):: names
-  type(lock_t):: lock
+  !type(lock_t):: lock
   type(timer_t), pointer:: timers(:)
   type(timer_t), public:: timer
   integer, save:: nprint=20
-  integer, save:: calls_per_report=10000
-  integer(8):: calls, next_report
+  real(8), save:: sec_per_report=10d0, sec=0d0, next_report_sec
 CONTAINS
 
 !> =============================================================================
@@ -33,15 +32,16 @@ SUBROUTINE init (self)
   class(timer_t):: self
   logical, save:: first_time=.true.
   integer:: ignore
-  namelist /timer_params/ calls_per_report
+  namelist /timer_params/ sec_per_report
   !.............................................................................
   !$omp critical (timer_cr)
   if (first_time) then
     first_time = .false.
+    rewind (io_unit%input)
     read (io_unit%input, timer_params, iostat=ignore)
     if (io_unit%master) write (*, timer_params)
-    next_report = calls_per_report
-    call lock%init('timer')
+    next_report_sec = sec_per_report
+    !call lock%init('timer')
     allocate (timers(0:omp%nthreads-1))
     print*,'timer::init', omp%nthreads, associated(timers), size(timers)
   end if
@@ -79,18 +79,21 @@ SUBROUTINE end (self, itimer)
   class(timer_t):: self
   integer:: itimer, thread, i
   optional:: itimer
-  real(8):: total, proc(maxproc)
+  real(8):: wc
+  real(8), save:: previous
   !.............................................................................
   thread = omp%mythread()
   if (itimer > 0) then
-    timers(thread)%total(itimer) = timers(thread)%total(itimer) &
-      + wallclock() - timers(thread)%start(itimer)
+    wc = wallclock()
     timers(thread)%calls(itimer) = timers(thread)%calls(itimer) + 1
-    !$omp atomic
-    calls = calls + 1
-    if (calls > next_report) then
-      next_report = next_report + calls_per_report
-      call print()
+    timers(thread)%total(itimer) = timers(thread)%total(itimer) + &
+      wc - timers(thread)%start(itimer)
+    if (io_unit%master) then
+      sec = wc - previous
+      if (sec > sec_per_report) then
+        call print()
+        previous = wc
+      end if
     end if
   end if
 END SUBROUTINE end
@@ -98,20 +101,35 @@ END SUBROUTINE end
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE print ()
-  real(8):: total, proc(maxproc),ncalls(maxproc)
+  real(8):: total, proc(maxproc), ncalls(maxproc)
+  real(8):: updates, musppt, calls
+  real(8), save:: n_previous=0
+  real(8):: wc
+  real(8), save:: previous
   integer:: i
   !.............................................................................
+  wc = wallclock()
+  sec = wc - previous
+  if (sec < 0.01d0) return
   total = 0d0
+  calls = 0d0
   do i=1,ntimer
     proc(i) = sum(timers(:)%total(i))
     ncalls(i) = sum(timers(:)%calls(i))
     total = total + proc(i)
+    calls = calls + ncalls(i)
   end do
   do i=1,ntimer
-    print 1, trim(names(i)), proc(i), proc(i)/total*100., proc(i)/ncalls(i)
+    print 1, trim(names(i)), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
     1 format(a32,1p,g15.3,2g10.2)
   end do
-  print 1, "TOTAL time, calls", total, real(calls)
+  updates = max(1.0,real(n_update-n_previous))
+  musppt = min(omp%ncores,omp%nthreads)*sec*1d6/updates
+  print 2, "TOTAL thread time, calls", total, calls, musppt, 'core-mus/cell-upd', &
+    sec, 'wall sec'
+  2 format(a32,1p,g15.3,g10.2,2(g10.3,2x,a,5x))
+  n_previous = n_update
+  previous = wc
 END SUBROUTINE print
 
 END MODULE timer_mod

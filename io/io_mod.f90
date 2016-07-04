@@ -48,7 +48,6 @@ SUBROUTINE init (self, name)
     do_legacy, levelmax, omp_trace
   real:: test
   !.............................................................................
-  call init_omp
   self%master = self%master .and. (mpi%rank==0)
   io%master = self%master
   io_unit%master = self%master

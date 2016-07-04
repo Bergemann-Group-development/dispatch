@@ -194,14 +194,19 @@ FUNCTION ramses256 (self, m) RESULT (ff)
   integer:: ix, iy, iz, jy, jz, rec, i, li(3), ui(3)
   integer(8):: nx, ny, nz
   real(dp):: umax, dt
+  logical, save:: first_time=.true.
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t::ramses256')
   self%mhd = .false.
   ff(:,:,:,:) = 0.0
   allocate (u(m(1)%n))
   allocate (d(m(1)%n))
-  open (io_unit%data, file='data/ramses256/t0.02.raw', form='unformatted', &
-    access='direct', recl=m(1)%n*4)
+  if (first_time) then
+    first_time = .false.
+    open (io_unit%data, file='data/ramses256/t0.02.raw', form='unformatted', &
+      access='direct', recl=m(1)%n*4)
+  end if
   self%time = 0.02
   ix=m(1)%p/m(1)%d+0.5-m(1)%n/2
   iy=m(2)%p/m(2)%d+0.5-m(2)%n/2
@@ -242,7 +247,6 @@ FUNCTION ramses256 (self, m) RESULT (ff)
     print '(a,3i4,1p,2g12.3)', 'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
-  call trace_end
 END FUNCTION ramses256
 
 END MODULE
