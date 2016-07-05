@@ -162,6 +162,7 @@ SUBROUTINE update (self)
     !----------------------------------------------------------------------------
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
+    call download%download_link (head, all_cells=.false.)
     call task%output (self%name)                        ! check output
     call task%update                                    ! update the task
     !----------------------------------------------------------------------------

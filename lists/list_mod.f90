@@ -281,7 +281,7 @@ SUBROUTINE check_ready (self, link, set_debug)
   class(link_t), pointer:: nbor, scan
   integer:: set_debug, debug=0
   optional:: set_debug
-  logical:: ahead, is_clear, do_download
+  logical:: ahead, is_clear
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_mod::check_ready '//self%name, 2, itimer)
@@ -317,13 +317,6 @@ SUBROUTINE check_ready (self, link, set_debug)
 9 continue
   !$omp end critical (list_cr)
   call trace_end (itimer)
-  if (do_download) then
-    !-----------------------------------------------------------------------------
-    ! Prepare for update, by pro-actively downloading data that it depends on.
-    ! By doing it immediately, the guard zone data becomes available to neighbors
-    !-----------------------------------------------------------------------------
-    call download%download_link (link, all_cells=.false.)
-  end if
 END SUBROUTINE check_ready
 
 !> =============================================================================
