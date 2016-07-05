@@ -277,8 +277,8 @@ SUBROUTINE send_to_vnbors (self, mesg)
   ! messages that may now be deallocated.  The test is fast, so we can leave the
   ! list locked while updating.
   !-----------------------------------------------------------------------------
-  call mpi_mesg%sent_list%lock%set ('send')
-  if (debug) write(io%log_unit,*) 'sent_list%add mesg', mesg%id
+  !$omp critical (sent_cr)
+  if (debug) write(io%log_unit,*) 'link_mod::send_to_vnbors mesg', mesg%id
   if (debug) flush(io%log_unit)
   call mpi_mesg%sent_list%add (mesg)                            ! add to sent_list
   mesg => mpi_mesg%sent_list%head                               ! top of list
@@ -286,16 +286,16 @@ SUBROUTINE send_to_vnbors (self, mesg)
     next => mesg%next                                           ! in case removed
     call mesg%test_all (flag)                                   ! done with?
     if (flag) then
-      if (debug) write(io%log_unit,*) 'sent_list remove mesg', mesg%id
-      if (debug) flush(io%log_unit)
-!print *, mpi%rank, 'sent_list remove mesg', mesg%id; flush(6)
+      if (debug) write(io%log_unit,*) 'link_mod::send_to_vnbors remove mesg', mesg%id
       call mpi_mesg%sent_list%remove (mesg)                     ! yes, remove
-    else
-!print *, mpi%rank, 'send_to_vnbors mesg', mesg%id, 'not removed'; flush(6)
+      if (debug) then
+        write (io_unit%log,*) ' remove mesg', mesg%id; flush(io_unit%log)
+        flush (io%log_unit)
+      end if
     end if
     mesg => next                                                ! true next
   end do
-  call mpi_mesg%sent_list%lock%unset ('send')
+  !$omp end critical (sent_cr)
   call trace_end
 END SUBROUTINE send_to_vnbors
 

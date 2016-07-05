@@ -169,8 +169,10 @@ SUBROUTINE check (self)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
   call trace_begin ('mpi_mesg_mod::check')
+  if (debug.and.io%verbose>1) write (io_unit%log,*) 'mpi_mesg_mod::check'
   call self%init
   call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+  !$omp critical (recv_cr)
   do while (flag)
     call trace_tag ('flag')
     allocate (mesg)
@@ -180,17 +182,17 @@ SUBROUTINE check (self)
     mesg%req = req
     mesg%id = stat(MPI_TAG)
     mesg%sender = stat(MPI_SOURCE)
-    call self%recv_list%lock%set ('check')
+    if (debug.and.io%verbose>1) then
+      write (io_unit%log,*) ' check mesh add', mesg%id
+      flush (io_unit%log)
+    end if
     call self%recv_list%add (mesg)
-!print*, mpi%rank, 'rcvd', mesg%id, self%recv_list%n, ' from', mesg%sender; flush(6)
-    call self%recv_list%lock%unset ('check')
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   end do
   !-----------------------------------------------------------------------------
   ! Check the recv_list for completed receives, adding them to unpack_list
   !-----------------------------------------------------------------------------
   call trace_tag ('check')
-  call self%recv_list%lock%set ('check')
   mesg => self%recv_list%head
   do while (associated(mesg))
     call trace_tag ('mesg')
@@ -199,16 +201,16 @@ SUBROUTINE check (self)
     if (flag) then
       self%recv_list%head => mesg%next
       self%recv_list%n = self%recv_list%n - 1
-      call self%unpack_list%lock%set ('check')
+      if (debug.and.io%verbose>1) then
+        write (io_unit%log,*) ' check mesh unpack', mesg%id
+        flush (io_unit%log)
+      end if
       call self%unpack_list%add (mesg)
-      call self%unpack_list%lock%unset ('check')
-!print*, mpi%rank, 'rcvd', mesg%id, self%recv_list%n, self%unpack_list%n, & ' from', mesg%sender, ' complete'; flush(6)
     else
-!print*, mpi%rank, 'rcvd', mesg%id, mesg%req, ' from', mesg%sender, ' incomplete'; flush(6)
     end if
     mesg => mesg%next
   end do
-  call self%recv_list%lock%unset ('check')
+  !$omp end critical (recv_cr)
   call trace_end
 END SUBROUTINE check
 
@@ -221,14 +223,17 @@ SUBROUTINE get (self, mesg)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
   call trace_begin('mpi_mesg_mod::get')
-  call self%unpack_list%lock%set ('get')
+  !$omp critical (recv_cr)
   mesg => self%unpack_list%head
   if (associated(mesg)) then
     self%unpack_list%head => mesg%next
     self%unpack_list%n = self%unpack_list%n - 1
-!print*, mpi%rank, 'get ', mesg%id, ' from', mesg%sender; flush(6)
+    if (debug) then
+      write (io_unit%log,*) ' get ', mesg%id, ' from', mesg%sender
+      flush (io_unit%log)
+    end if
   end if
-  call self%unpack_list%lock%unset ('get')
+  !$omp end critical (recv_cr)
   call trace_end
 END SUBROUTINE get
 

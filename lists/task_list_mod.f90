@@ -100,6 +100,7 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
+  call mpi%barrier ('task_list_mod::execute')
   call tic
   call timer%print
   !$omp parallel
