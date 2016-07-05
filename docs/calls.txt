@@ -1,0 +1,57 @@
+! This file shows the basic call hierarchy, for quick reference
+
+dispatch
+  mpi_mod::init                                 ! initialize MPI
+    omp_mod::init                               ! initialize OMP
+  io_mod::init                                  ! initialize I/O
+  cartesian_mod::init                           ! initialize patches
+    mpi_cords_mod::init                         ! determine MPI placement
+    task_list_mod::init                         ! initialize task list
+      list_mod::init                            ! initialize a list
+    do
+      patch_mod::set                            ! set bits
+      patch_mod::init                           ! initialize patch
+      task_list_mod::append                     ! append to task list
+    end do
+  task_list_mod::execute                        ! prepare and run the job
+    list_mod::init_all_nbors                    ! initialize neighbor lists
+    list_mod::reset_status                      ! set boundary and virtual bits
+    do
+      task_mod::clear                           ! clear ready bit
+      task_list_mod::check_ready                ! check if patch is ready
+        list_mod::queue_by_time                 ! add to ready queue
+    end do
+    tic                                         ! initialize performance counters
+    timer_mod::print                            ! initialization time statistics
+    do
+      task_list_mod::update
+        task_list_mod::check_flags              ! check for flag files
+        task_list_mod::check_mpi                ! check for MPI messages
+          mpi_mesh_mod::check                   ! check mesh lists
+            MPI_IMPROBE
+            MPI_GET_COUNT
+            MPI_IRECV
+            recv_list::add                      ! add to recv_list
+            MPI_TEST
+            unpack_list::add                    ! move to unpack_list
+          mpi_mesh_mod::get                     ! get an incoming mesg
+          task_list_mod::unpack                 ! handle unpacking
+             task_list_mod::find_task           ! find the link with the task
+             patch_mod::unpack                  ! patch unpack procedure
+               anonymous_copy                   ! copy header into place
+               patch_mod::header_to_patch       ! unpack header
+               anonymous_copy                   ! copy mem into place
+             deallocate                         ! deallocate mesg%buffer and mesg
+        download_mod::download_link             ! fill guard zones
+        experiment_mod::output                  ! snapshots
+        experiment_mod::update                  ! task update
+        patch_mod::rotate                       ! time slot rotate
+        task_mod::pack                          ! pack boundary patches
+        link_mod::send_to_vnbors                ! send to virtual neighbors
+        task_mod::clear                         ! remove check bit
+        list_mod::check_nbors                   ! check nbors and self
+    end do
+    timer_mod::print                            ! execution time statistics
+    toc                                         ! performance cost summary
+    buffered_output_mod::close                  ! close output files
+  mpi_mod::end
