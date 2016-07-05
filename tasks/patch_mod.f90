@@ -794,30 +794,27 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !-----------------------------------------------------------------------------
   if (io%verbose >= 0) then
     if (self%time>=self%print_next) then
+      if (io%verbose==0 .and. self%id/=1) return
       if (self%print_time > 0) &
         self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
       nv = 1
       if (io%verbose>1) nv = self%nv
       do iv=1,nv
-        1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,2x,2i5,o12)
+        1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,2x,e10.2,2i5,o12)
         print 1, &
           'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
-          minval(self%mem(:,:,:,iv,self%it ,2)), &
-          maxval(self%mem(:,:,:,iv,self%it ,2)), &
-          minval(self%mem(:,:,:,iv,self%it ,1)), &
-          maxval(self%mem(:,:,:,iv,self%it ,1)), &
-          minval(self%mem(:,:,:,iv,self%new,1)), &
-          maxval(self%mem(:,:,:,iv,self%new,1)), &
-          ntask, nq, self%status
+          self%fminval(self%mem(:,:,:,iv,self%it ,2)), &
+          self%fmaxval(self%mem(:,:,:,iv,self%it ,2)), &
+          self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+          self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+          real(n_update), ntask, nq, self%status
         write (io%log_unit,1) &
           'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
-          minval(self%mem(:,:,:,iv,self%it ,2)), &
-          maxval(self%mem(:,:,:,iv,self%it ,2)), &
-          minval(self%mem(:,:,:,iv,self%it ,1)), &
-          maxval(self%mem(:,:,:,iv,self%it ,1)), &
-          minval(self%mem(:,:,:,iv,self%new,1)), &
-          maxval(self%mem(:,:,:,iv,self%new,1)), &
-          ntask, nq, self%status
+          self%fminval(self%mem(:,:,:,iv,self%it ,2)), &
+          self%fmaxval(self%mem(:,:,:,iv,self%it ,2)), &
+          self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+          self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+          real(n_update), ntask, nq, self%status
       end do
     end if
   end if
