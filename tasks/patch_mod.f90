@@ -637,6 +637,7 @@ SUBROUTINE unpack (self, buffer)
   ! Compute size of buffer
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::pack')
+  !write (io_unit%log,*) 'unpack patch id', self%id
   n_header = sizeof(header)/4
   n_buf = product(self%gn)
   !-----------------------------------------------------------------------------

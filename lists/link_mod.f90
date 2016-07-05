@@ -264,9 +264,10 @@ SUBROUTINE send_to_vnbors (self, mesg)
     task => nbor%task
     if (task%rank/=mpi%rank .and. task%rank/=rank) then         ! new rank?
       rank = nbor%task%rank                                     ! current rank
-      if (debug) write(io%log_unit,*) 'mesg%send to rank', rank
-      if (debug) flush(io%log_unit)
-!print *, mpi%rank, 'mesg%send', mesg%id, ' to rank', rank; flush(6)
+      if (debug) then
+        write (io_unit%log,*) ' send mesg', mesg%id, ' to', rank; flush(io_unit%log)
+        flush (io%log_unit)
+      end if
       call mesg%send (rank)                                     ! send it
     end if
     nbor => nbor%next                                           ! next nbor

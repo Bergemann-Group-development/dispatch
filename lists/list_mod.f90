@@ -408,7 +408,7 @@ SUBROUTINE init_nonleaf (self)
   class(link_t), pointer:: nbor
   integer:: n_add
   !.............................................................................
-  call trace_begin('list_t%init_nonleaf ')
+  call trace_begin('list_mod::init_nonleaf ')
   !$omp critical (list_cr)
   !-----------------------------------------------------------------------------
   ! First find and mark all non-leaf patches; these are patches that the link
@@ -457,7 +457,8 @@ SUBROUTINE init_nbors (self, link)
   do while (associated(scan))                         ! until end
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       if (self%overlaps (scan%task, link%task)) then  ! if its task overlaps
-        write (io%log_unit, '(3(i6,2(3f8.4,2x)),l4)') &
+        if (io%verbose>2) &
+          write (io%log_unit, '(3(i6,2(3f8.4,2x)),l4)') &
           scan%task%id, scan%task%position, scan%task%size, &
           link%task%id, link%task%position, link%task%size, &
           0, self%distance (scan%task, link%task), self%size, &
@@ -544,15 +545,17 @@ SUBROUTINE reset_status (self)
       if (link%task%rank==mpi%rank .and. nbor%task%is_set(bits%virtual)) then
         call link%task%set(bits%boundary)
       end if
-      write (io%log_unit,'(2(a,i7,i4,2l4,5x,a,3i4,10x))') &
-        'link:', link%task%id, link%task%rank, &
-                 link%task%is_set(bits%boundary), &
-                 link%task%is_set(bits%virtual), &
-        'pos:', self%intpos(link%task), &
-        'nbor:', nbor%task%id, nbor%task%rank, &
-                 nbor%task%is_set(bits%boundary), &
-                 nbor%task%is_set(bits%virtual), &
-        'pos:', self%intpos(nbor%task,link%task)
+      if (io%verbose>2) then
+        write (io%log_unit,'(2(a,i7,i4,2l4,5x,a,3i4,10x))') &
+          'link:', link%task%id, link%task%rank, &
+                   link%task%is_set(bits%boundary), &
+                   link%task%is_set(bits%virtual), &
+          'pos:', self%intpos(link%task), &
+          'nbor:', nbor%task%id, nbor%task%rank, &
+                   nbor%task%is_set(bits%boundary), &
+                   nbor%task%is_set(bits%virtual), &
+          'pos:', self%intpos(nbor%task,link%task)
+      end if
       nbor => nbor%next
     end do
     if (link%task%is_set(bits%boundary)) then
@@ -561,12 +564,14 @@ SUBROUTINE reset_status (self)
     end if
     link => link%next
   end do
-  write (io%log_unit,'(4(a,i7,5x))') &
-    'rank:',mpi%rank, &
-    'n_internal:', n_internal, &
-    'n_boundary:', n_boundary, &
-    'n_virtual:' , n_virtual
-  flush (io%log_unit)
+  if (io%verbose>0) then
+    write (io%log_unit,'(4(a,i7,5x))') &
+      'rank:',mpi%rank, &
+      'n_internal:', n_internal, &
+      'n_boundary:', n_boundary, &
+      'n_virtual:' , n_virtual
+    flush (io%log_unit)
+  end if
   !$omp end critical (list_cr)
 END SUBROUTINE reset_status
 

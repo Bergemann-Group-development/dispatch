@@ -93,7 +93,8 @@ SUBROUTINE init (self)
   end if
   scene%n_patch = self%id
   !$omp end critical
-  write (io%log_unit,*) 'obtained patch id', self%id
+  if (io%verbose>2) &
+    write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)
   call trace_end
 END SUBROUTINE

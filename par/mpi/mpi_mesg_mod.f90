@@ -5,6 +5,8 @@ MODULE mpi_mesg_mod
   USE trace_mod
   USE mpi_mod
   USE omp_lock_mod
+  USE io_mod
+  USE io_unit_mod
   implicit none
   private
   include "mpif.h"
@@ -39,6 +41,7 @@ MODULE mpi_mesg_mod
     procedure:: get
   end type
   type(mpi_mesg_t), public:: mpi_mesg
+  logical, save:: debug=.true.
 CONTAINS
 
 !> =============================================================================
@@ -48,6 +51,10 @@ SUBROUTINE send (self, rank)
   class(mesg_t):: self
   integer:: rank, req, ierr
   !.............................................................................
+  if (debug) then
+    write (io_unit%log,*) ' send', self%id, ' to', rank
+    flush (io_unit%log)
+  end if
   call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
     mpi%comm, req, ierr)
   self%nreq = self%nreq+1                                   ! count reqs
@@ -63,6 +70,10 @@ SUBROUTINE test_all (self, flag)
   integer:: rank, req, ierr
   !.............................................................................
   call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+  if (debug.and.io%verbose>1) then
+    write (io_unit%log,*) ' test_all flag =', flag
+    flush (io_unit%log)
+  end if
 END SUBROUTINE test_all
 
 !> =============================================================================
@@ -80,12 +91,16 @@ SUBROUTINE add (self, mesg)
   end if
   self%tail => mesg
   self%n = self%n+1
-!print *, mpi%rank, trim(self%name)//' added mesg', mesg%id, self%n; flush(6)
+  if (debug.and.io%verbose>1) then
+    write (io_unit%log,*) trim(self%name)//' added mesg', mesg%id, self%n
+    flush (io_unit%log)
+  end if
 END SUBROUTINE add
 
 !> =============================================================================
 !> Remove a message from a message list, and deallocate the beffer and reqs
 !> The list has no prev pointers, so we need to search for the message first.
+!> This routine is assumed to be called from inside a critical region.
 !> =============================================================================
 SUBROUTINE remove (self, this)
   class(mesg_list_t):: self
@@ -111,11 +126,18 @@ SUBROUTINE remove (self, this)
       deallocate (this%buffer)                          ! free to dealloc
       deallocate (this%reqs)
       self%n = self%n-1                                 ! count down
+      if (debug) then
+        write (io_unit%log,*) trim(self%name)//' remove mesg OK', this%id, self%n
+        flush (io_unit%log)
+      end if
       return                                            ! done
     end if
     mesg => next                                        ! next in list
   end do
-!print *, mpi%rank, trim(self%name)//' remove mesg FAIL', this%id; flush(6)
+  if (debug) then
+    write (io_unit%log,*) trim(self%name)//' remove mesg failed', this%id, self%n
+    flush (io_unit%log)
+  end if
 END SUBROUTINE remove
 
 !> =============================================================================
@@ -125,9 +147,10 @@ SUBROUTINE init (self)
   class(mpi_mesg_t):: self
   !.............................................................................
   if (self%initialized) return
-  call self%sent_list%lock%init ('mpi_mesg')
-  call self%recv_list%lock%init ('mpi_mesg')
-  call self%unpack_list%lock%init ('mpi_mesg')
+  if (debug) write (io_unit%log,*) 'mpi_mesg_mod::init'
+  call self%sent_list%lock%init ('sent')
+  call self%recv_list%lock%init ('recv')
+  call self%unpack_list%lock%init ('unpk')
   self%sent_list%name = 'sent_list'
   self%recv_list%name = 'recv_list'
   self%unpack_list%name = 'unpk_list'

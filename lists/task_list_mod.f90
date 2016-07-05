@@ -229,7 +229,7 @@ FUNCTION find_task (self, id) RESULT (link)
   do while (associated(link))
 !print *,mpi%rank,' find task: id, link%id, virtual =', id, link%task%id, link%task%is_set(bits%virtual)
     if (link%task%id == id) then
-print *,mpi%rank,' find task: match', id; flush(6)
+!print *,mpi%rank,' find task: match', id; flush(6)
       return
     end if
     link => link%next

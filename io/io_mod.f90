@@ -102,7 +102,9 @@ SUBROUTINE init (self, name)
       write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
       open (log_unit, file=filename, form='formatted', status='unknown')
     end if
-    if (self%master) print*, 'logfile:', filename
+    io_unit%log = log_unit
+    if (io%verbose>0.or.self%master) &
+      print*, 'logfile:', filename
     self%log_unit = io_unit%log 
     if (self%master) then
       print*,'======================================================================='
@@ -124,6 +126,9 @@ SUBROUTINE init (self, name)
   self%levelmax  = levelmax
   self%inputname = inputname
   self%master = self%master .and. (mpi%rank==0)
+  !$omp parallel
+  io_unit%master = io_unit%master.and.self%master
+  !$omp end parallel
   call timer%init
 END SUBROUTINE init
 
