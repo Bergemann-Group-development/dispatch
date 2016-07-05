@@ -24,6 +24,8 @@ MODULE timer_mod
   type(timer_t), public:: timer
   integer, save:: nprint=20
   real(8), save:: sec_per_report=10d0, sec=0d0, next_report_sec
+  real(8), save:: prev1
+  real(8), save:: prev2
 CONTAINS
 
 !> =============================================================================
@@ -80,7 +82,6 @@ SUBROUTINE end (self, itimer)
   integer:: itimer, thread, i
   optional:: itimer
   real(8):: wc
-  real(8), save:: previous
   !.............................................................................
   thread = omp%mythread()
   if (itimer > 0) then
@@ -89,10 +90,10 @@ SUBROUTINE end (self, itimer)
     timers(thread)%total(itimer) = timers(thread)%total(itimer) + &
       wc - timers(thread)%start(itimer)
     if (io_unit%master) then
-      sec = wc - previous
+      sec = wc - prev1
       if (sec > sec_per_report) then
         call print()
-        previous = wc
+        prev1 = wc
       end if
     end if
   end if
@@ -105,11 +106,10 @@ SUBROUTINE print ()
   real(8):: updates, musppt, calls
   real(8), save:: n_previous=0
   real(8):: wc
-  real(8), save:: previous
   integer:: i
   !.............................................................................
   wc = wallclock()
-  sec = wc - previous
+  sec = wc - prev2
   if (sec < 0.01d0) return
   total = 0d0
   calls = 0d0
@@ -129,7 +129,8 @@ SUBROUTINE print ()
     sec, 'wall sec'
   2 format(a32,1p,g15.3,g10.2,2(g10.3,2x,a,5x))
   n_previous = n_update
-  previous = wc
+  prev1 = wc
+  prev2 = wc
 END SUBROUTINE print
 
 END MODULE timer_mod
