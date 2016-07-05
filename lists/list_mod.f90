@@ -290,8 +290,7 @@ SUBROUTINE check_ready (self, link, set_debug)
   else
     debug = 0
   end if
-  !xomp critical (list_cr)
-  do_download = .false.
+  !$omp critical (list_cr)
   !call self%qconsistency(1)
   task => link%task                                     ! already checked?
   if (task%is_clear(bits%ready)) then
@@ -308,16 +307,15 @@ SUBROUTINE check_ready (self, link, set_debug)
         goto 9
       end if
     end do
-    !$omp critical (list_cr)
+    !xomp critical (list_cr)
     call task%set(bits%ready)                           ! mark as checked
     call self%qconsistency(2)
     call self%queue_by_time (link)                      ! add task to queue
     call self%qconsistency(3)
-    !$omp end critical (list_cr)
-    do_download = .true.
+    !xomp end critical (list_cr)
   end if
 9 continue
-  !xomp end critical (list_cr)
+  !$omp end critical (list_cr)
   call trace_end (itimer)
   if (do_download) then
     !-----------------------------------------------------------------------------
