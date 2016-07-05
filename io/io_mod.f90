@@ -16,6 +16,7 @@ MODULE io_mod
     logical:: do_flags, do_legacy, omp_trace
     integer:: levelmax
     integer:: word_size=4
+    integer:: id_debug=0
     character(len=64):: inputname, outputname, datadir='data'
     character(len=1):: sep = '/'
   contains
@@ -41,11 +42,12 @@ SUBROUTINE init (self, name)
   integer:: verbose=0, levelmax=10, iostat
   character(len=*), optional:: name
   character(len=64):: filename
+  integer:: id_debug=-1
   logical:: first_time=.true., omp_trace=.false.
   logical:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.true., do_flags=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
-    do_legacy, levelmax, omp_trace
+    do_legacy, levelmax, omp_trace, id_debug
   real:: test
   !.............................................................................
   self%master = self%master .and. (mpi%rank==0)
@@ -111,6 +113,7 @@ SUBROUTINE init (self, name)
     first_time=.false.
   end if
   !$omp end critical (input_cr)
+  self%id_debug  = id_debug
   self%verbose   = verbose
   self%do_debug  = do_debug
   self%do_trace  = do_trace

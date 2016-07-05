@@ -66,7 +66,6 @@ MODULE task_mod
   end type
 
   integer, save:: id=0
-  integer, save, public:: id_debug=0
 CONTAINS
 
 !> =============================================================================
@@ -147,7 +146,7 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   nbdtime = self%dtime
   !$omp flush
   is_ahead_of = nbtime + self%dtime*task%grace >= task%time
-  if (task%id==id_debug.or.io%verbose>4) &
+  if (task%id==io%id_debug.or.io%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &
     task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of
 END FUNCTION

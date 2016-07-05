@@ -443,7 +443,7 @@ SUBROUTINE check_flags (self)
   !.............................................................................
   if (io%verbose > 0 .and. io%do_flags) then             ! avoid speed impact
     call trace_begin ('task_list_mod::check_flags')
-    call icheck ('id_debug.flag', id_debug   , changed)
+    call icheck ('id_debug.flag', io%id_debug, changed)
     call icheck ('verbose.flag' , io%verbose , changed)
     call lcheck ('do_trace.flag', io%do_trace, changed)
     call trace_end

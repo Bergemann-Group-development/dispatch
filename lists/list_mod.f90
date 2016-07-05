@@ -238,7 +238,7 @@ SUBROUTINE check_nbors (self, link)
       else
         n_remain = n_remain+1
       end if
-      if (nbtask%id==id_debug) print*, id_debug, 'mk checked by:', task%id, nbtask%is_set(bits%ready)
+      if (nbtask%id==io%id_debug) print*, io%id_debug, 'mk checked by:', task%id, nbtask%is_set(bits%ready)
     else
       n_ready = n_ready+1
     end if
@@ -246,7 +246,7 @@ SUBROUTINE check_nbors (self, link)
   end do
   call self%check_ready (link)                        ! finally check link task
   !$omp end critical (list_cr)
-  if (task%id==id_debug) print*, id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
+  if (task%id==io%id_debug) print*, io%id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
   !self%n_nbor = self%n_nbor + 1
   if (io%verbose>2) print '(a,i6,l3,12(2x,a,i4))', &
     'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
@@ -300,7 +300,7 @@ SUBROUTINE check_ready (self, link, set_debug)
     do while (associated (nbor))                        ! keep going until end
       nbtask => nbor%task
       ahead = nbtask%is_ahead_of(task)
-      if (task%id==id_debug.or.io%verbose>3) &
+      if (task%id==io%id_debug.or.io%verbose>3) &
         print*, task%id, 'checking nbor', &
         nbtask%id, ahead, nbtask%time-task%time
       if (ahead) then
@@ -467,8 +467,8 @@ SUBROUTINE init_nbors (self, link)
         nbor%link => scan
         call link%add_nbor_by_rank (nbor)
         n_add = n_add+1
-        if (nbor%task%id==id_debug) print*, id_debug, 'mk is nbor:', link%task%id
-        if (link%task%id==id_debug) print*, id_debug, 'mk has nbor:', nbor%task%id
+        if (nbor%task%id==io%id_debug) print*, io%id_debug, 'mk is nbor:', link%task%id
+        if (link%task%id==io%id_debug) print*, io%id_debug, 'mk has nbor:', nbor%task%id
       end if
     end if
     scan => scan%next                                 ! continue search
