@@ -518,8 +518,8 @@ subroutine cmpflxm(self)
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   dtds = self%dtime/self%mesh%d
-  lb = self%mesh%lb
-  ub = self%mesh%ub
+  lb = self%mesh%li
+  ub = self%mesh%uo
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       qleft (:,1) = qm(:,j,k,1,1); qright(:,1) = qp(:,j,k,1,1)
@@ -652,6 +652,10 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv)
     call riemann%llf     (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'hllc')then
     call riemann%hllc    (qleft,qright,fgdnv,ngrid,self%nv)
+  else if (self%riemann.eq.'hllc_a')then
+    call riemann%hllc_a  (qleft,qright,fgdnv,ngrid,self%nv)
+  else if (self%riemann.eq.'hllc_v')then
+    call riemann%hllc_v  (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'hll')then
     call riemann%hll     (qleft,qright,fgdnv,ngrid,self%nv)
   else

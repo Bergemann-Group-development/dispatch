@@ -10,6 +10,8 @@ module riemann_mod
     procedure, nopass:: llf
     procedure, nopass:: hll
     procedure, nopass:: hllc
+    procedure, nopass:: hllc_a
+    procedure, nopass:: hllc_v
   end type
   type(riemann_t), public:: riemann
 contains
@@ -41,7 +43,7 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
   entho = one/(gamma-one)
 
   ! Pressure, density and velocity
-  do i=1,ngrid
+  do i=3,ngrid-1
      rl(i)=MAX(qleft (i,1),smallr)
      ul(i)=    qleft (i,2)
      pl(i)=MAX(qleft (i,3),rl(i)*smallp)
@@ -51,13 +53,13 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
   end do
 
   ! Lagrangian sound speed
-  do i=1,ngrid
+  do i=3,ngrid-1
      cl(i) = gamma*pl(i)*rl(i)
      cr(i) = gamma*pr(i)*rr(i)
   end do
 
   ! First guess
-  do i=1,ngrid
+  do i=3,ngrid-1
      wl(i)= sqrt(cl(i)); wr(i) = sqrt(cr(i))
      pstar(i) = ((wr(i)*pl(i)+wl(i)*pr(i))+wl(i)*wr(i)*(ul(i)-ur(i)))/(wl(i)+wr(i))
      pstar(i) = MAX(pstar(i),0.0_dp)
@@ -110,28 +112,28 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
 
   ! Star region pressure
   ! for a two-shock Riemann problem
-  do i=1,ngrid
+  do i=3,ngrid-1
      pstar(ind(i))=pold(i)
   end do
-  do i=1,ngrid
+  do i=3,ngrid-1
      wl(i) = sqrt(cl(i)*(one+gamma6*(pstar(i)-pl(i))/pl(i)))
      wr(i) = sqrt(cr(i)*(one+gamma6*(pstar(i)-pr(i))/pr(i)))
   end do
 
   ! Star region velocity
   ! for a two shock Riemann problem
-  do i=1,ngrid
+  do i=3,ngrid-1
      ustar(i) = half*(ul(i) + (pl(i)-pstar(i))/wl(i) + &
           &           ur(i) - (pr(i)-pstar(i))/wr(i) )
   end do
 
   ! Left going or right going contact wave
-  do i=1,ngrid
+  do i=3,ngrid-1
      sgnm(i) = sign(one,ustar(i))
   end do
 
   ! Left or right unperturbed state
-  do i=1,ngrid
+  do i=3,ngrid-1
      if(sgnm(i)==one)then
         ro(i) = rl(i)
         uo(i) = ul(i)
@@ -144,12 +146,12 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
         wo(i) = wr(i)
      end if
   end do
-  do i=1,ngrid
+  do i=3,ngrid-1
      co(i) = max(smallc,sqrt(abs(gamma*po(i)/ro(i))))
   end do
 
   ! Star region density
-  do i=1,ngrid
+  do i=3,ngrid-1
      if(pstar(i)>= po(i))then
         ! Shock
         rstar(i) = ro(i)/(one+ro(i)*(po(i)-pstar(i))/wo(i)**2)
@@ -159,7 +161,7 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
      end if
   end do
 
-  do i=1,ngrid
+  do i=3,ngrid-1
      ! Prevent vacuum formation in star region
      rstar(i) = max(rstar(i),smallr)
      ! Star region sound speed
@@ -172,7 +174,7 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
      ushock(i) = wo(i)/ro(i)-sgnm(i)*uo(i)
   end do
 
-  do i=1,ngrid
+  do i=3,ngrid-1
      if(pstar(i)>=po(i))then
         spout(i)=ushock(i)
         spin (i)=spout (i)
@@ -180,7 +182,7 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
   end do
 
   ! Sample the solution at x/t=0
-  do i=1,ngrid
+  do i=3,ngrid-1
      if(spout(i)<=zero)then
         qgdnv(i,1) = ro(i)
         qgdnv(i,2) = uo(i)
@@ -199,7 +201,7 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
 
   ! Passive scalars
   do n = 4,nvar
-     do i=1,ngrid
+     do i=3,ngrid-1
         if(sgnm(i)==one)then
            qgdnv(i,n) = qleft(i,n)
         else
@@ -209,7 +211,7 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
   end do
 
   ! Compute fluxes
-  do i = 1, ngrid
+  do i = 3,ngrid-1
      fgdnv(i,1) = qgdnv(i,1)*qgdnv(i,2)  ! Mass density
      fgdnv(i,2) = qgdnv(i,3)+qgdnv(i,1)*qgdnv(i,2)**2  ! Normal momentum
      etot = qgdnv(i,3)*entho + half*qgdnv(i,1)*qgdnv(i,2)**2
@@ -219,7 +221,7 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
   end do
   ! Other advected quantities
   do n = 4, nvar
-     do i = 1, ngrid
+     do i = 3,ngrid-1
         fgdnv(i,n) = fgdnv(i,1)*qgdnv(i,n)
      end do
   end do
@@ -249,7 +251,7 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   entho = one/(gamma-one)
 
   ! Initial states pressure, density and velocity
-  do i=1,ngrid
+  do i=3,ngrid-1
      rl(i)=max(qleft (i,1),smallr)
      ul(i)=    qleft (i,2)
      pl(i)=max(qleft (i,3),rl(i)*smallp)
@@ -259,7 +261,7 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   end do
 
   ! Acoustic star state
-  do i=1,ngrid
+  do i=3,ngrid-1
      cl(i) = sqrt(gamma*pl(i)/rl(i))
      cr(i) = sqrt(gamma*pr(i)/rr(i))
      wl(i) = cl(i)*rl(i)
@@ -272,12 +274,12 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   end do
 
   ! Left going or right going contact wave
-  do i=1,ngrid
+  do i=3,ngrid-1
      sgnm(i) = sign(one,ustar(i))
   end do
 
   ! Left or right unperturbed state
-  do i=1,ngrid
+  do i=3,ngrid-1
      if(sgnm(i)==one)then
         ro(i) = rl(i)
         uo(i) = ul(i)
@@ -294,7 +296,7 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   end do
 
   ! Star region density and sound speed
-  do i=1,ngrid
+  do i=3,ngrid-1
      rstar(i) = ro(i)+(pstar(i)-po(i))/co(i)**2
      rstar(i) = max(rstar(i),smallr)
      cstar(i) = sqrt(abs(gamma*pstar(i)/rstar(i)))
@@ -302,17 +304,17 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   end do
 
   ! Head and tail speed of rarefaction
-  do i=1,ngrid
+  do i=3,ngrid-1
      spout(i) = co   (i)-sgnm(i)*uo   (i)
      spin (i) = cstar(i)-sgnm(i)*ustar(i)
   end do
 
   ! Shock speed
-  do i=1,ngrid
+  do i=3,ngrid-1
      ushock(i) = half*(spin(i)+spout(i))
      ushock(i) = max(ushock(i),-sgnm(i)*ustar(i))
   end do
-  do i=1,ngrid
+  do i=3,ngrid-1
      if(pstar(i)>=po(i))then
         spout(i)=ushock(i)
         spin (i)=spout (i)
@@ -320,7 +322,7 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   end do
 
   ! Sample the solution at x/t=0
-  do i=1,ngrid
+  do i=3,ngrid-1
      if(spout(i)<zero)then      ! Initial state
         qgdnv(i,1) = ro(i)
         qgdnv(i,2) = uo(i)
@@ -339,7 +341,7 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
 
   ! Passive scalars
   do n = 4,nvar
-     do i=1,ngrid
+     do i=3,ngrid-1
         if(sgnm(i)==one)then
            qgdnv(i,n) = qleft (i,n)
         else
@@ -349,7 +351,7 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   end do
 
   ! Compute fluxes
-  do i = 1, ngrid
+  do i = 3,ngrid-1
      fgdnv(i,1) = qgdnv(i,1)*qgdnv(i,2)  ! Mass density
      fgdnv(i,2) = qgdnv(i,3)+qgdnv(i,1)*qgdnv(i,2)**2  ! Normal momentum
      etot = qgdnv(i,3)*entho + half*qgdnv(i,1)*qgdnv(i,2)**2
@@ -359,7 +361,7 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   end do
   ! Other advected quantities
   do n = 4, nvar
-     do i = 1, ngrid
+     do i = 3,ngrid-1
         fgdnv(i,n) = fgdnv(i,1)*qgdnv(i,n)
      end do
   end do
@@ -386,7 +388,7 @@ subroutine llf(qleft,qright,fgdnv,ngrid,nvar)
   entho = one/(gamma-one)
 
   ! Maximum wave speed
-  do i=1,ngrid
+  do i=3,ngrid-1
      rl=max(qleft (i,1),smallr)
      ul=    qleft (i,2)
      pl=max(qleft (i,3),rl*smallp)
@@ -399,7 +401,7 @@ subroutine llf(qleft,qright,fgdnv,ngrid,nvar)
   end do
 
   ! Compute conservative variables
-  do i = 1, ngrid
+  do i = 3,ngrid-1
      ! Mass density
      uleft (i,1) = qleft (i,1)
      uright(i,1) = qright(i,1)
@@ -416,14 +418,14 @@ subroutine llf(qleft,qright,fgdnv,ngrid,nvar)
   end do
   ! Other advected quantities
   do n = 4, nvar
-     do i = 1, ngrid
+     do i = 3,ngrid-1
         uleft (i,n) = qleft (i,1)*qleft (i,n)
         uright(i,n) = qright(i,1)*qright(i,n)
      end do
   end do
 
   ! Compute left and right fluxes
-  do i = 1, ngrid
+  do i = 3,ngrid-1
      ! Mass density
      fleft (i,1) = uleft (i,2)
      fright(i,1) = uright(i,2)
@@ -436,7 +438,7 @@ subroutine llf(qleft,qright,fgdnv,ngrid,nvar)
   end do
   ! Other advected quantities
   do n = 4, nvar
-     do i = 1, ngrid
+     do i = 3,ngrid-1
         fleft (i,n) = fleft (i,1)*qleft (i,n)
         fright(i,n) = fright(i,1)*qright(i,n)
      end do
@@ -444,7 +446,7 @@ subroutine llf(qleft,qright,fgdnv,ngrid,nvar)
 
   ! Compute Lax-Friedrich fluxes
   do n = 1, nvar
-     do i = 1, ngrid
+     do i = 3,ngrid-1
         fgdnv(i,n) = half*(fleft(i,n)+fright(i,n)-cmax(i)*(uright(i,n)-uleft(i,n)))
      end do
   end do
@@ -471,7 +473,7 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar)
   smallp = smallc**2/gamma
   entho = one/(gamma-one)
   !
-  do i=1,ngrid
+  do i=3,ngrid-1
      !
      ! Left variables
      rl=max(qleft (i,1),smallr)
@@ -544,7 +546,7 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar)
      fgdnv(i,3) = (etoto+Ptoto)*uo
   end do
   !
-     do i=1,ngrid
+     do i=3,ngrid-1
         if(fgdnv(i,1)>0)then
            fgdnv(i,4:nvar) = fgdnv(i,1)*qleft (i,4:nvar)
         else
@@ -577,7 +579,7 @@ subroutine hllc_a (qleft,qright,fgdnv,ngrid,nvar)
   smallp = smallc**2/gamma
   entho = one/(gamma-one)
   !
-  do i=1,ngrid
+  do i=3,ngrid-1
      !
      ! Left variables
      rl(i)=max(qleft (i,1),smallr)
@@ -613,7 +615,7 @@ subroutine hllc_a (qleft,qright,fgdnv,ngrid,nvar)
      ustar(i)   =(rcr*ur(i)   +rcl*ul(i)   +  (Ptotl(i)-Ptotr(i)))/(rcr+rcl)
      Ptotstar(i)=(rcr*Ptotl(i)+rcl*Ptotr(i)+rcl*rcr*(ul(i)-ur(i)))/(rcr+rcl)
   end do
-  do i=1,ngrid
+  do i=3,ngrid-1
      !
      ! Left star region variables
      rstarl(i)=rl(i)*(SL(i)-ul(i))/(SL(i)-ustar(i))
@@ -625,7 +627,7 @@ subroutine hllc_a (qleft,qright,fgdnv,ngrid,nvar)
   end do
      !
      ! Sample the solution at x/t=0
-  do i=1,ngrid
+  do i=3,ngrid-1
      if(SL(i)>0d0)then
         ro(i)=rl(i)
         uo(i)=ul(i)
@@ -650,24 +652,23 @@ subroutine hllc_a (qleft,qright,fgdnv,ngrid,nvar)
   end do
      !
      ! Compute the Godunov flux
-  do i=1,ngrid
+  do i=3,ngrid-1
      fgdnv(i,1) = ro(i)*uo(i)
      fgdnv(i,2) = ro(i)*uo(i)*uo(i)+Ptoto(i)
      fgdnv(i,3) = (etoto(i)+Ptoto(i))*uo(i)
   end do
      !
-     do i=1,ngrid
-        if(fgdnv(i,1)>0)then
-           fgdnv(i,4:nvar) = fgdnv(i,1)*qleft (i,4:nvar)
-        else
-           fgdnv(i,4:nvar) = fgdnv(i,1)*qright(i,4:nvar)
-        endif
-     end do
+  do ivar=4,nvar
+  do i=3,ngrid-1
+     fgdnv(i,ivar) = merge(fgdnv(i,1)*qleft (i,ivar), &
+                           fgdnv(i,1)*qright(i,ivar), fgdnv(i,1)>0)
+  end do
+  end do
 end subroutine hllc_a
 
 !> =============================================================================
 !> =============================================================================
-subroutine hllc_vec (qleft,qright,fgdnv,ngrid,nvar)
+subroutine hllc_v (qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
   REAL(dp),dimension(ngrid)::SL,SR
@@ -763,7 +764,7 @@ subroutine hllc_vec (qleft,qright,fgdnv,ngrid,nvar)
            fgdnv(:,ivar) = fgdnv(:,1)*qright(:,ivar)
         end where
      end do
-end subroutine hllc_vec
+end subroutine hllc_v
 
 !> =============================================================================
 !> =============================================================================
@@ -782,7 +783,7 @@ subroutine hll(qleft,qright,fgdnv,ngrid,nvar)
   entho = one/(gamma-one)
 
   ! Maximum wave speed
-  do i=1,ngrid
+  do i=3,ngrid-1
      rl=max(qleft (i,1),smallr)
      ul=    qleft (i,2)
      pl=max(qleft (i,3),rl*smallp)
@@ -796,7 +797,7 @@ subroutine hll(qleft,qright,fgdnv,ngrid,nvar)
   end do
 
   ! Compute conservative variables
-  do i = 1, ngrid
+  do i = 3,ngrid-1
      uleft (i,1) = qleft (i,1)
      uright(i,1) = qright(i,1)
      uleft (i,2) = qleft (i,1)*qleft (i,2)
@@ -810,14 +811,14 @@ subroutine hll(qleft,qright,fgdnv,ngrid,nvar)
   end do
   ! Other advected quantities
   do n = 4, nvar
-     do i = 1, ngrid
+     do i = 3,ngrid-1
         uleft (i,n) = qleft (i,1)*qleft (i,n)
         uright(i,n) = qright(i,1)*qright(i,n)
      end do
   end do
 
   ! Compute left and right fluxes
-  do i = 1, ngrid
+  do i = 3,ngrid-1
      fleft (i,1) = uleft (i,2)
      fright(i,1) = uright(i,2)
      fleft (i,2) = qleft (i,3)+uleft (i,2)*qleft (i,2)
@@ -827,7 +828,7 @@ subroutine hll(qleft,qright,fgdnv,ngrid,nvar)
   end do
   ! Other advected quantities
   do n = 4, nvar
-     do i = 1, ngrid
+     do i = 3,ngrid-1
         fleft (i,n) = fleft (i,1)*qleft (i,n)
         fright(i,n) = fright(i,1)*qright(i,n)
      end do
@@ -835,7 +836,7 @@ subroutine hll(qleft,qright,fgdnv,ngrid,nvar)
 
   ! Compute HLL fluxes
   do n = 1, nvar
-     do i = 1, ngrid
+     do i = 3,ngrid-1
         fgdnv(i,n) = (SR(i)*fleft(i,n)-SL(i)*fright(i,n) &
              & + SR(i)*SL(i)*(uright(i,n)-uleft(i,n)))/(SR(i)-SL(i))
      end do
