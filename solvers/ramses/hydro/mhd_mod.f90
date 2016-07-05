@@ -585,8 +585,8 @@ subroutine cmpflxm_y (self)
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   dtds = self%dtime/self%mesh%d       ! needed here
-  lb = self%mesh%lb
-  ub = self%mesh%ub
+  lb = self%mesh%li
+  ub = self%mesh%uo
   do k = lb(3),ub(3)
     do i = lb(1),ub(1)
       qleft (:,1) = qm(i,:,k,1,2); qright(:,1) = qp(i,:,k,1,2)
@@ -617,8 +617,8 @@ subroutine cmpflxm_z (self)
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   dtds = self%dtime/self%mesh%d       ! needed here
-  lb = self%mesh%lb
-  ub = self%mesh%ub
+  lb = self%mesh%li
+  ub = self%mesh%uo
   do j = lb(2),ub(2)
     do i = lb(1),ub(1)
       qleft (:,1) = qm(i,j,:,1,3); qright(:,1) = qp(i,j,:,1,3)
