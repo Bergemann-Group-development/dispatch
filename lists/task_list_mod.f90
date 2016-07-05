@@ -87,7 +87,7 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   ! Set virtual and boundary bits
   !-----------------------------------------------------------------------------
-  call self%reset_status
+  !call self%reset_status
   !-----------------------------------------------------------------------------
   ! Check the ready status of all tasks
   !-----------------------------------------------------------------------------
@@ -271,6 +271,8 @@ SUBROUTINE unpack (self, mesg)
   class is (experiment_t)
     patch => task
     call patch%unpack (mesg%buffer)
+    deallocate (mesg%buffer)
+    deallocate (mesg)
   end select
   call self%check_nbors (link)
 END SUBROUTINE unpack
@@ -280,7 +282,7 @@ END SUBROUTINE unpack
 !> =============================================================================
 SUBROUTINE check_mpi (self)
   class(task_list_t):: self
-  class(mesg_t), pointer:: mesg
+  class(mesg_t), pointer:: mesg, this
   !.............................................................................
   if (mpi%size <= 1) return
   call trace_begin ('check_mpi',1)
@@ -293,6 +295,8 @@ SUBROUTINE check_mpi (self)
   !-----------------------------------------------------------------------------
   call mpi_mesg%get (mesg)
   do while (associated(mesg))
+    this => mesg
+    write (io_unit%log,*) 'unpack msg id, sender', mesg%id, mesg%sender
     call self%unpack (mesg)
     call mpi_mesg%get (mesg)
   end do

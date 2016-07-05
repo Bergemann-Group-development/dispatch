@@ -108,17 +108,19 @@ SUBROUTINE remove (self, this)
   !.............................................................................
   mesg => self%head                                     ! list start
   if (associated(mesg,this)) then
-    self%head => mesg%next                            ! skip this
-    deallocate (this%buffer)                          ! free to dealloc
+    self%head => mesg%next                              ! skip this
+    deallocate (this%buffer)                            ! free to dealloc
     deallocate (this%reqs)
-    self%n = self%n-1                                 ! count down
-!print *, mpi%rank, trim(self%name)//' remove mesg OK', this%id; flush(6)
+    self%n = self%n-1                                   ! count down
+    if (debug) then
+      write (io_unit%log,*) trim(self%name)//' remove head OK', this%id, self%n
+      flush (io_unit%log)
+    end if
     return
   end if
   do while (associated(mesg))                           ! as long as ..
     next => mesg%next                                   ! tentative
     if (associated(next,this)) then                     ! is it this?
-!print *, mpi%rank, trim(self%name)//' remove mesg OK', this%id; flush(6)
       next => next%next                                 ! skip this
       mesg%next => next                                 ! bypass this
       if (associated(self%head,this)) self%head => next ! case this==head
