@@ -62,7 +62,6 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
-  call io%init
   call self%list_t%init (name)
   call trace_begin('task_list_t%init ')
   rewind (io%input); read(io%input, task_list_params, iostat=iostat)
@@ -70,13 +69,7 @@ SUBROUTINE init (self, name)
     self%debug = debug
     if (io%master) write (*,task_list_params)
   end if
-  !-----------------------------------------------------------------------------
-  ! Construct neighbor lists used to perform checks for ready status
-  !-----------------------------------------------------------------------------
-  call trace_tag ('call self%init_nbors')
-  call self%init_all_nbors
   call trace_end
-  call timer%print
 END SUBROUTINE init
 
 !> =============================================================================
@@ -87,6 +80,14 @@ SUBROUTINE execute (self)
   USE omp_timer_mod
   class(task_list_t):: self
   class(link_t), pointer:: link, rem
+  !-----------------------------------------------------------------------------
+  ! Construct neighbor lists used to perform checks for ready status
+  !-----------------------------------------------------------------------------
+  call self%init_all_nbors
+  !-----------------------------------------------------------------------------
+  ! Set virtual and boundary bits
+  !-----------------------------------------------------------------------------
+  call self%reset_status
   !-----------------------------------------------------------------------------
   ! Check the ready status of all tasks
   !-----------------------------------------------------------------------------
@@ -100,6 +101,7 @@ SUBROUTINE execute (self)
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
   call tic
+  call timer%print
   !$omp parallel
   do while (self%n > 0)
     call self%update

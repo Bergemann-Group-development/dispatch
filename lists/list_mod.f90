@@ -225,6 +225,7 @@ SUBROUTINE check_nbors (self, link)
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
   nbor => link%nbor                                   ! first nbor
+  !$omp critical (list_cr)
   do while (associated (nbor))                        ! keep going until end
     nbtask => nbor%task                               ! neighbor task
     n_check = n_check+1
@@ -244,6 +245,7 @@ SUBROUTINE check_nbors (self, link)
     nbor => nbor%next                                 ! next nbor
   end do
   call self%check_ready (link)                        ! finally check link task
+  !$omp end critical (list_cr)
   if (task%id==id_debug) print*, id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
   !self%n_nbor = self%n_nbor + 1
   if (io%verbose>2) print '(a,i6,l3,12(2x,a,i4))', &
@@ -290,7 +292,7 @@ SUBROUTINE check_ready (self, link, set_debug)
   else
     debug = 0
   end if
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   !call self%qconsistency(1)
   task => link%task                                     ! already checked?
   if (task%is_clear(bits%ready)) then
@@ -315,7 +317,7 @@ SUBROUTINE check_ready (self, link, set_debug)
     !xomp end critical (list_cr)
   end if
 9 continue
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end (itimer)
 END SUBROUTINE check_ready
 

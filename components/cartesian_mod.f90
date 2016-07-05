@@ -128,8 +128,6 @@ SUBROUTINE init (self, label)
   end do
   end do
   end do
-  call self%task_list%init (label)
-  call self%task_list%reset_status
   call trace_end
 END SUBROUTINE init
 
