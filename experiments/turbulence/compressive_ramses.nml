@@ -1,8 +1,8 @@
 ! $Id$
 
 &io_params
- verbose=1
- do_trace=f
+ verbose=2
+ do_trace=t
  do_debug=f
  do_output=f
  omp_trace=f

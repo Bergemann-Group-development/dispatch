@@ -48,7 +48,7 @@ SUBROUTINE download_link (link, all_cells)
     if (patch%is_clear(bits%static)) static = .false.
     nbor => link%nbor
     do while (associated(nbor))
-      if (io%verbose>4) &
+      if (io%master.and.io%verbose>4) &
         print*,patch%id,nbor%task%id,nbor%task%is_clear(bits%static),nbor%task%level
       if (nbor%task%is_clear(bits%static)) static = .false.
       if (nbor%task%level /= patch%level) same = .false.
@@ -99,7 +99,7 @@ SUBROUTINE download_same_static (self)
       call target%dnload_range (source, l1, u1, o)
       ntot = product(u1-l1+1)
       nuse = ntot
-      if (iv==1 .and. io%verbose>2) then
+      if (io%master .and. iv==1 .and. io%verbose>2) then
         print'(a,3(3i4,3x),i6)','target ranges: l1, u1, o, n =', l1, u1, o, ntot
       end if
       do iz=l1(3),u1(3)
@@ -110,9 +110,9 @@ SUBROUTINE download_same_static (self)
       end do
       end do
       end do
-      if (iv==1.and.io%verbose==2) print'(7(1x,a,i7,1x))', 'patch', target%id, ' level', target%level, &
+      if (io%master .and. iv==1.and.io%verbose==2) print'(7(1x,a,i7,1x))', 'patch', target%id, ' level', target%level, &
         ' picked up', nuse, 'of', ntot, ' points from patch', source%id, ' at level', source%level
-      if (io%verbose>2) print'(7(1x,a,i7,1x),2l4)', 'patch', target%id, ' level', target%level, 'var', iv, &
+      if (io%master .and. io%verbose>2) print'(7(1x,a,i7,1x),2l4)', 'patch', target%id, ' level', target%level, 'var', iv, &
         ' picked up', nuse, 'of', ntot, ' points from patch', source%id, ' at level', source%level
     end do
     nbor => nbor%next
@@ -169,20 +169,20 @@ SUBROUTINE find_time (other, time, jt, pt)
   end if
   if (.not.found) then
     pt(2) = 0.0
-    if (other%is_clear(bits%virtual) .and. io%verbose>2) &
+    if (io%master .and. other%is_clear(bits%virtual) .and. io%verbose>2) &
       print '(i6,i4,2x,a,2i4,2f9.4,3x,"time",f9.4,3x,"other%t",7f9.5)', &
       other%id, omp_mythread, 'WARNING: using fall-back', &
       jt, pt, time, other%t(iit(1:other%nt-1))
   end if
   pt(1) = 1.0-pt(2)
   if (abs(pt(1))< 1e-4) then
-    if (io%verbose>2) print*,'EXACT'
+    if (io%master .and. io%verbose>2) print*,'EXACT'
     pt(1)=0.0; pt(2)=1.0
   else if (abs(pt(2)) < 1e-4) then
-    if (io%verbose>2) print*,'EXACT'
+    if (io%master .and. io%verbose>2) print*,'EXACT'
     pt(1)=1.0; pt(2)=0.0
   end if
-  if (io%verbose>1) &
+  if (io%master .and. io%verbose>1) &
     print'(a,i6,f9.4,2i4,2f7.3,10f9.4)', 'find_time: ', other%id, time, jt, pt, other%t
 END SUBROUTINE find_time
 
@@ -313,12 +313,12 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
       pp(i) = pp(i) - jj(i)                                                                         ! fractions
       if (pp(i)<-0.35d0 .or. pp(i)>1.35d0) then
         pp(i) = (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)  ! float index in source
-        if (io%verbose > 1) &
+        if (io%master .and. io%verbose > 1) &
         print '(a,2i3,2f6.1,2(2x,a,i6,i3," i:",i4,f13.8))', 'INDEX ERROR:', idir, i, &
           target%mesh(i)%h(iv), source%mesh(i)%h(iv), &
           'target: id,lv=',target%id, target%level, ii(i), (source%position(i)-target%position(i))/source%mesh(i)%d, &
           'source: id,lv=',source%id, source%level, jj(i), pp(i)
-        if (io%verbose > 2) then
+        if (io%master .and. io%verbose > 2) then
           print*,'   source shift:', (target%position-source%position)/source%ds + source%offset
           print*,'    target size:', target%size
           print*,'   target index:', (cellpos(i)-target%position(i))/target%ds(i) + target%offset(i)

@@ -140,7 +140,7 @@ SUBROUTINE add_nbor_by_rank (self, this)
   class(link_t), pointer:: this
   class(link_t), pointer:: next, prev
   !.............................................................................
-  call trace_begin ('list_t%add_nbor_by_rank')
+  call trace_begin ('list_t%add_nbor_by_rank', 2)
   nullify (prev)
   next => self%nbor
   do while (associated(next))
@@ -156,7 +156,6 @@ SUBROUTINE add_nbor_by_rank (self, this)
           self%nbor => this
         end if
         self%task%n_nbors = self%task%n_nbors+1
-        call trace_end
         goto 9
       end if
     end if
@@ -278,15 +277,16 @@ SUBROUTINE send_to_vnbors (self, mesg)
   ! list locked while updating.
   !-----------------------------------------------------------------------------
   !$omp critical (sent_cr)
-  if (debug) write(io%log_unit,*) 'link_mod::send_to_vnbors mesg', mesg%id
+  if (debug) write(io%log_unit,*) 'link_mod::send_to_vnbors sent_list%add', mesg%id
   if (debug) flush(io%log_unit)
   call mpi_mesg%sent_list%add (mesg)                            ! add to sent_list
   mesg => mpi_mesg%sent_list%head                               ! top of list
   do while (associated(mesg))
     next => mesg%next                                           ! in case removed
+    if (debug) write(io%log_unit,*) 'link_mod::send_to_vnbors test_all', mesg%id
     call mesg%test_all (flag)                                   ! done with?
     if (flag) then
-      if (debug) write(io%log_unit,*) 'link_mod::send_to_vnbors remove mesg', mesg%id
+      if (debug) write(io%log_unit,*) 'link_mod::send_to_vnbors remove', mesg%id
       call mpi_mesg%sent_list%remove (mesg)                     ! yes, remove
       if (debug) then
         write (io_unit%log,*) ' remove mesg', mesg%id; flush(io_unit%log)

@@ -14,7 +14,7 @@ MODULE mpi_mesg_mod
   type, public:: mesg_t
     class(mesg_t), pointer:: next => null()
     integer, dimension(:), pointer:: buffer
-    integer, pointer:: reqs(:)
+    integer, pointer:: reqs(:) => null()
     integer:: nbuf, nreq, req, sender, id
   contains
     procedure:: send
@@ -30,6 +30,7 @@ MODULE mpi_mesg_mod
   contains
     procedure:: add
     procedure:: remove
+    procedure:: print => print_list
   end type
   !
   type, public:: mpi_mesg_t
@@ -69,6 +70,10 @@ SUBROUTINE test_all (self, flag)
   logical:: flag
   integer:: rank, req, ierr
   !.............................................................................
+  if ((self%nreq<=0) .or. (.not.associated(self%reqs))) then
+    print*,'WARNING: test_all', self%nreq, associated(self%reqs)
+    return
+  end if
   call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
   if (debug.and.io%verbose>1) then
     write (io_unit%log,*) ' test_all flag =', flag
@@ -165,7 +170,7 @@ END SUBROUTINE init
 SUBROUTINE check (self)
   class(mpi_mesg_t):: self
   integer:: stat(MPI_STATUS_SIZE)
-  integer:: msg ,ierr, nbuf, req
+  integer:: msg ,ierr, nbuf, req, nmsg
   logical:: flag
   class(mesg_t), pointer:: mesg
   !-----------------------------------------------------------------------------
@@ -175,8 +180,10 @@ SUBROUTINE check (self)
   call self%init
   call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   !$omp critical (recv_cr)
+  nmsg = 0
   do while (flag)
-    call trace_tag ('flag')
+    nmsg = nmsg+1
+    !call trace_tag ('flag')
     allocate (mesg)
     call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
     allocate (mesg%buffer(nbuf))
@@ -191,24 +198,32 @@ SUBROUTINE check (self)
     call self%recv_list%add (mesg)
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   end do
+  if (io%verbose>1) then
+    write (io_unit%log,*) 'nmsg =', nmsg
+    flush (io_unit%log)
+  end if
   !-----------------------------------------------------------------------------
   ! Check the recv_list for completed receives, adding them to unpack_list
   !-----------------------------------------------------------------------------
-  call trace_tag ('check')
+  !call trace_tag ('check')
   mesg => self%recv_list%head
   do while (associated(mesg))
-    call trace_tag ('mesg')
+    !call trace_tag ('mesg')
     req = mesg%req
     call MPI_TEST (req, flag, stat, ierr)
     if (flag) then
       self%recv_list%head => mesg%next
       self%recv_list%n = self%recv_list%n - 1
       if (debug.and.io%verbose>1) then
-        write (io_unit%log,*) ' check mesh unpack', mesg%id
+        write (io_unit%log,*) ' recv complete', mesg%id
         flush (io_unit%log)
       end if
       call self%unpack_list%add (mesg)
     else
+      if (debug.and.io%verbose>1) then
+        write (io_unit%log,*) ' check incomplete', mesg%id
+        flush (io_unit%log)
+      end if
     end if
     mesg => mesg%next
   end do
@@ -221,22 +236,43 @@ END SUBROUTINE check
 !> =============================================================================
 SUBROUTINE get (self, mesg)
   class(mpi_mesg_t):: self
-  class(mesg_t), pointer:: mesg
+  class(mesg_t), pointer:: mesg, next
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
   call trace_begin('mpi_mesg_mod::get')
+  call self%unpack_list%print
   !$omp critical (recv_cr)
   mesg => self%unpack_list%head
   if (associated(mesg)) then
     self%unpack_list%head => mesg%next
     self%unpack_list%n = self%unpack_list%n - 1
     if (debug) then
-      write (io_unit%log,*) ' get ', mesg%id, ' from', mesg%sender
+      write (io_unit%log,*) ' get ', mesg%id, ' from', mesg%sender, ' n', self%unpack_list%n
+      next => self%unpack_list%head
+      if (associated(next)) then
+        write (io_unit%log,*) ' next ', mesg%id, ' from', mesg%sender
+      else
+        nullify (self%unpack_list%tail)
+      end if
       flush (io_unit%log)
     end if
   end if
+  call self%unpack_list%print
   !$omp end critical (recv_cr)
   call trace_end
 END SUBROUTINE get
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE print_list (self)
+  class (mesg_list_t):: self
+  class(mesg_t), pointer:: mesg
+  !-----------------------------------------------------------------------------
+  mesg => self%head
+  do while (associated(mesg))
+    write (io_unit%log,*) 'mesg_list: '//self%name, mesg%id, mesg%sender
+    mesg => mesg%next
+  end do
+END SUBROUTINE print_list
 
 END MODULE mpi_mesg_mod

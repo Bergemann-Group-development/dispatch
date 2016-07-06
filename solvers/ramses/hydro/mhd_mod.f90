@@ -159,7 +159,7 @@ subroutine check_small (self, uu)
     if (uu(i,j,k,1) < smallr) then
       if (nprint>0) then
         nprint = nprint-1
-        print '(i7,3i5,1p,2e12.3)',self%id,i,j,k,uu(i,j,k,1),smallr
+        write (io_unit%log,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,1),smallr
       end if
       n_smalld = n_smalld+1
       uu(i,j,k,1) = smallr
@@ -185,7 +185,7 @@ subroutine check_small (self, uu)
   end do
   end do
   if (n_smalld+n_smallp > 0) then
-    print*,'small: id,nr,np', self%id,n_smalld,n_smallp
+    write (io_unit%log,*) 'small: id,nr,np', self%id,n_smalld,n_smallp
   end if
 end subroutine
 

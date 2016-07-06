@@ -238,7 +238,8 @@ SUBROUTINE check_nbors (self, link)
       else
         n_remain = n_remain+1
       end if
-      if (nbtask%id==io%id_debug) print*, io%id_debug, 'mk checked by:', task%id, nbtask%is_set(bits%ready)
+      if (nbtask%id==io%id_debug) &
+        write (io_unit%log,*) io%id_debug, 'mk checked by:', task%id, nbtask%is_set(bits%ready)
     else
       n_ready = n_ready+1
     end if
@@ -248,7 +249,7 @@ SUBROUTINE check_nbors (self, link)
   !$omp end critical (list_cr)
   if (task%id==io%id_debug) print*, io%id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
   !self%n_nbor = self%n_nbor + 1
-  if (io%verbose>2) print '(a,i6,l3,12(2x,a,i4))', &
+  if (io%verbose>2) write (io_unit%log,'(a,i6,l3,12(2x,a,i4))') &
     'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
     'neighbors:',n_check, 'blocked:',n_blocked, 'ready:', n_ready, &
     'cleared:',n_cleared, 'remain:', n_remain
@@ -301,7 +302,7 @@ SUBROUTINE check_ready (self, link, set_debug)
       nbtask => nbor%task
       ahead = nbtask%is_ahead_of(task)
       if (task%id==io%id_debug.or.io%verbose>3) &
-        print*, task%id, 'checking nbor', &
+        write (io_unit%log,*) task%id, 'checking nbor', &
         nbtask%id, ahead, nbtask%time-task%time
       if (ahead) then
         nbor => nbor%next                               ! next nbor
@@ -1019,7 +1020,8 @@ SUBROUTINE print_list (self, label)
   character(len=32):: type
   !.............................................................................
   call trace_begin ('list_t%print')
-  if (io%master) print*,'list_t%print: ',trim(self%name), self%n
+  if (io%verbose>0) &
+    write (io_unit%log,*) 'list_t%print: ',trim(self%name), self%n
   !$omp critical (list_cr)
   link => self%head
   do while (associated(link))
@@ -1039,9 +1041,10 @@ SUBROUTINE print_list (self, label)
     !class is (patch_t)
       type = 'patch_t'
     !end select
-    if (io%master) print '(a,i7,f10.6,3x,3f10.6,i4,i6,l5,2x,a)', 'list_t%print:', &
-      task%id, task%time, task%position, task%status, task%n_nbors, associated(link%nbor), &
-      type
+    if (io%verbose>1) &
+      write (io_unit%log,'(a,i7,f10.6,3x,3f10.6,i4,i6,l5,2x,a)') &
+        'list_t%print:', task%id, task%time, task%position, task%status, &
+        task%n_nbors, associated(link%nbor), type
     link => link%next
   end do
   !$omp end critical (list_cr)

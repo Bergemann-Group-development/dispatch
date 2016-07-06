@@ -4,7 +4,6 @@ MODULE timer_mod
   USE io_unit_mod
   USE omp_mod
   USE omp_timer_mod
-  USE omp_lock_mod
   implicit none
   private
   integer, parameter:: maxproc=100
@@ -19,7 +18,6 @@ MODULE timer_mod
     procedure, nopass:: print
   end type
   character(len=32), dimension(maxproc):: names
-  !type(lock_t):: lock
   type(timer_t), pointer:: timers(:)
   type(timer_t), public:: timer
   integer, save:: nprint=20
@@ -43,9 +41,7 @@ SUBROUTINE init (self)
     read (io_unit%input, timer_params, iostat=ignore)
     if (io_unit%master) write (*, timer_params)
     next_report_sec = sec_per_report
-    !call lock%init('timer')
     allocate (timers(0:omp%nthreads-1))
-    print*,'timer::init', omp%nthreads, associated(timers), size(timers)
   end if
   !$omp end critical (timer_cr)
 END SUBROUTINE init
@@ -108,6 +104,7 @@ SUBROUTINE print ()
   real(8):: wc
   integer:: i
   !.............................................................................
+  if (.not. io_unit%master) return
   wc = wallclock()
   sec = wc - prev2
   if (sec < 0.01d0) return

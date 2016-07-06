@@ -52,7 +52,10 @@ SUBROUTINE init (self, name)
   !.............................................................................
   self%master = self%master .and. (mpi%rank==0)
   io%master = self%master
-  io_unit%master = self%master
+  !print*,'io_mod::init, master =', self%master, io%master
+  !$omp parallel
+  io_unit%master = io_unit%master.and.self%master
+  !$omp end parallel
   call print_id (id)
   !-----------------------------------------------------------------------------
   ! I/O unit numbers, for convenience and backwards compatibility.  All other
@@ -125,10 +128,6 @@ SUBROUTINE init (self, name)
   self%omp_trace = omp_trace
   self%levelmax  = levelmax
   self%inputname = inputname
-  self%master = self%master .and. (mpi%rank==0)
-  !$omp parallel
-  io_unit%master = io_unit%master.and.self%master
-  !$omp end parallel
   call timer%init
 END SUBROUTINE init
 

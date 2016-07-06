@@ -59,10 +59,9 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
   end if
   write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
   if (io%verbose>=verbose) then
-    if (io%omp_trace) then
-      write(log_unit,fmt) omp_mythread, wallclock(), trim(id)//' begin'
-      call flush(log_unit)
-    else if (io%master) then
+    write(log_unit,fmt) omp_mythread, wallclock(), trim(id)//' begin'
+    call flush(log_unit)
+    if (io%master) then
       write(io%output,fmt) omp_mythread, wallclock(), trim(id)//' begin'
       call flush(io%output)
     end if
@@ -75,14 +74,17 @@ SUBROUTINE trace_tag (id)
   implicit none
   character(len=*) id
   character(len=mch):: fmt
-  integer:: verbose, level
+  integer:: verbose
   if (.not.io%do_trace) return
-  level = max(1,level-1)
   verbose = verbosity(level)
-  write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
-  if (io%master.and.io%verbose>=verbose) then
-    write(io_unit%log,fmt) omp_mythread, wallclock(), trim(tracing(level))//' '//trim(id)
-    call flush(io_unit%log)
+  if (io%verbose>=verbose) then
+    write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
+    write(log_unit,fmt) omp_mythread, wallclock(), trim(tracing(level))//' '//trim(id)
+    call flush(log_unit)
+    if (io%master) then
+      write(io%output,fmt) omp_mythread, wallclock(), trim(tracing(level))//' '//trim(id)
+      call flush(io%output)
+    end if
   end if
 END SUBROUTINE trace_tag
 
@@ -100,12 +102,11 @@ SUBROUTINE trace_end (itimer)
   level  = max(level-1,1)
   indent = max(indent,4)
   verbose = verbosity(level)
-  write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
   if (io%verbose>=verbose) then
-    if (io%omp_trace) then
-      write(log_unit,fmt) omp_mythread, wallclock(), trim(tracing(level))//' end'
-      call flush(log_unit)
-    else if (io%master) then
+    write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
+    write(log_unit,fmt) omp_mythread, wallclock(), trim(tracing(level))//' end'
+    call flush(log_unit)
+    if (io%master) then
       write(io%output,fmt) omp_mythread, wallclock(), trim(tracing(level))//' end'
       call flush(io%output)
     end if

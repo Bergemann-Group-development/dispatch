@@ -81,6 +81,7 @@ END SUBROUTINE
 SUBROUTINE print_mesh (self)
   class(mesh_t):: self
   integer:: i
+  if (.not. io%master) return
   if (io%verbose <= 1) return
   print'(a,2(2x,1p,3e10.2))', 'mesh%print: size, position =', self%s, self%p
   if (io%verbose <= 2) return

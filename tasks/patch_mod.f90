@@ -793,7 +793,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !.............................................................................
   integer:: iv, nv
   !-----------------------------------------------------------------------------
-  if (io%verbose >= 0) then
+  if ((io%verbose>=0 .and. io%master) .or. io%verbose>=3) then
     if (self%time>=self%print_next) then
       if (io%verbose==0 .and. self%id/=1) return
       if (self%print_time > 0) &
