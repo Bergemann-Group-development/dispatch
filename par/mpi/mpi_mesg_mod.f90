@@ -89,13 +89,13 @@ SUBROUTINE add (self, mesg)
   class(mesg_t), pointer:: mesg
   !.............................................................................
   nullify (mesg%next)
-  if (associated(self%tail)) then
-    self%tail%next => mesg
+  if (associated(self%head)) then               ! if the list is non-empty
+    self%tail%next => mesg                      ! add to the tail
   else
-    self%head => mesg
+    self%head => mesg                           ! else add at the head
   end if
-  self%tail => mesg
-  self%n = self%n+1
+  self%tail => mesg                             ! tail points to it
+  self%n = self%n+1                             ! increment counter
   if (debug.and.io%verbose>1) then
     write (io_unit%log,*) trim(self%name)//' added mesg', mesg%id, self%n
     flush (io_unit%log)
@@ -115,12 +115,13 @@ SUBROUTINE remove (self, this)
   if (associated(mesg,this)) then
     self%head => mesg%next                              ! skip this
     deallocate (this%buffer)                            ! free to dealloc
-    deallocate (this%reqs)
+    if (associated(this%reqs)) deallocate (this%reqs)   ! send mesgs have reqs
     self%n = self%n-1                                   ! count down
     if (debug) then
       write (io_unit%log,*) trim(self%name)//' remove head OK', this%id, self%n
       flush (io_unit%log)
     end if
+    nullify(self%head,self%tail)
     return
   end if
   do while (associated(mesg))                           ! as long as ..
@@ -131,7 +132,7 @@ SUBROUTINE remove (self, this)
       if (associated(self%head,this)) self%head => next ! case this==head
       if (associated(self%tail,this)) self%tail => mesg ! case this==tail
       deallocate (this%buffer)                          ! free to dealloc
-      deallocate (this%reqs)
+      if (associated(this%reqs)) deallocate (this%reqs) ! send mesgs have reqs
       self%n = self%n-1                                 ! count down
       if (debug) then
         write (io_unit%log,*) trim(self%name)//' remove mesg OK', this%id, self%n
