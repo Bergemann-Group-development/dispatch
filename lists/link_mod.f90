@@ -288,6 +288,8 @@ SUBROUTINE send_to_vnbors (self, mesg)
     if (flag) then
       if (debug) write(io%log_unit,*) 'link_mod::send_to_vnbors remove', mesg%id
       call mpi_mesg%sent_list%remove (mesg)                     ! yes, remove
+      deallocate (mesg%buffer, mesg%reqs)
+      deallocate (mesg)
       if (debug) then
         write (io_unit%log,*) ' remove mesg', mesg%id; flush(io_unit%log)
         flush (io%log_unit)

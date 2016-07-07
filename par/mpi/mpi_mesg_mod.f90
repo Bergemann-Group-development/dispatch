@@ -188,11 +188,12 @@ SUBROUTINE check (self)
     if (flag) then
       self%recv_list%head => mesg%next
       self%recv_list%n = self%recv_list%n - 1
+      call self%unpack_list%add (mesg)
+      call self%recv_list%remove (mesg)
       if (debug.and.io%verbose>1) then
         write (io_unit%log,*) wallclock(), ' recv complete', mesg%id
         flush (io_unit%log)
       end if
-      call self%unpack_list%add (mesg)
     else
       if (debug.and.io%verbose>1) then
         write (io_unit%log,*) wallclock(), ' recv incomplete', mesg%id
