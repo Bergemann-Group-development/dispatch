@@ -624,7 +624,7 @@ FUNCTION distance (self, task1, task2)
   !.............................................................................
   size = self%size
   distance = task1%position - task2%position
-  distance = abs(modulo(distance + 0.5*size, size) - 0.5*size)
+  distance = abs(modulo(distance + 0.5d0*size, size) - 0.5d0*size)
 END FUNCTION distance
 
 !> =============================================================================
