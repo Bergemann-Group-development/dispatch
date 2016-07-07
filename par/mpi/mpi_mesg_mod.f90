@@ -4,15 +4,16 @@
 MODULE mpi_mesg_mod
   USE trace_mod
   USE mpi_mod
-  USE omp_lock_mod
   USE io_mod
   USE io_unit_mod
+  USE omp_timer_mod
   implicit none
   private
   include "mpif.h"
   !
   type, public:: mesg_t
     class(mesg_t), pointer:: next => null()
+    class(mesg_t), pointer:: prev => null()
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:) => null()
     integer:: nbuf, nreq, req, sender, id
@@ -26,7 +27,6 @@ MODULE mpi_mesg_mod
     class(mesg_t), pointer:: tail => null()
     character(len=16):: name
     integer:: n=0
-    type(lock_t):: lock
   contains
     procedure:: add
     procedure:: remove
@@ -91,59 +91,40 @@ SUBROUTINE add (self, mesg)
   nullify (mesg%next)
   if (associated(self%head)) then               ! if the list is non-empty
     self%tail%next => mesg                      ! add to the tail
+    mesg%prev => self%tail
   else
     self%head => mesg                           ! else add at the head
+    mesg%prev => self%head
   end if
   self%tail => mesg                             ! tail points to it
   self%n = self%n+1                             ! increment counter
-  if (debug.and.io%verbose>1) then
+  if (debug.and.io%verbose>2) then
     write (io_unit%log,*) trim(self%name)//' added mesg', mesg%id, self%n
     flush (io_unit%log)
   end if
 END SUBROUTINE add
 
 !> =============================================================================
-!> Remove a message from a message list, and deallocate the beffer and reqs
-!> The list has no prev pointers, so we need to search for the message first.
-!> This routine is assumed to be called from inside a critical region.
+!> Remove a message from a message list. This routine is assumed to be called
+!> from inside a critical region.
 !> =============================================================================
-SUBROUTINE remove (self, this)
+SUBROUTINE remove (self, mesg)
   class(mesg_list_t):: self
-  class(mesg_t), pointer:: this, mesg, next
+  class(mesg_t), pointer:: mesg
   !.............................................................................
-  mesg => self%head                                     ! list start
-  if (associated(mesg,this)) then
-    self%head => mesg%next                              ! skip this
-    deallocate (this%buffer)                            ! free to dealloc
-    if (associated(this%reqs)) deallocate (this%reqs)   ! send mesgs have reqs
-    self%n = self%n-1                                   ! count down
-    if (debug) then
-      write (io_unit%log,*) trim(self%name)//' remove head OK', this%id, self%n
-      flush (io_unit%log)
-    end if
-    nullify(self%head,self%tail)
-    return
+  if (associated(mesg%prev)) then               ! associated(prev) => not head
+    mesg%prev%next => mesg%next                 ! cut out forwards
+  else                                          ! mesg is head
+    self%head => mesg%next                      ! new head
   end if
-  do while (associated(mesg))                           ! as long as ..
-    next => mesg%next                                   ! tentative
-    if (associated(next,this)) then                     ! is it this?
-      next => next%next                                 ! skip this
-      mesg%next => next                                 ! bypass this
-      if (associated(self%head,this)) self%head => next ! case this==head
-      if (associated(self%tail,this)) self%tail => mesg ! case this==tail
-      deallocate (this%buffer)                          ! free to dealloc
-      if (associated(this%reqs)) deallocate (this%reqs) ! send mesgs have reqs
-      self%n = self%n-1                                 ! count down
-      if (debug) then
-        write (io_unit%log,*) trim(self%name)//' remove mesg OK', this%id, self%n
-        flush (io_unit%log)
-      end if
-      return                                            ! done
-    end if
-    mesg => next                                        ! next in list
-  end do
+  if (associated(mesg%next)) then               ! associated(next) => not tail
+    mesg%next%prev => mesg%prev                 ! cut out backwards
+  else                                          ! mesg is tail
+    self%tail => mesg%prev                      ! new tail
+  end if
+  self%n = self%n-1                             ! decrement count
   if (debug) then
-    write (io_unit%log,*) trim(self%name)//' remove mesg failed', this%id, self%n
+    write (io_unit%log,*) trim(self%name)//' remove mesg OK', mesg%id, self%n
     flush (io_unit%log)
   end if
 END SUBROUTINE remove
@@ -156,9 +137,6 @@ SUBROUTINE init (self)
   !.............................................................................
   if (self%initialized) return
   if (debug) write (io_unit%log,*) 'mpi_mesg_mod::init'
-  call self%sent_list%lock%init ('sent')
-  call self%recv_list%lock%init ('recv')
-  call self%unpack_list%lock%init ('unpk')
   self%sent_list%name = 'sent_list'
   self%recv_list%name = 'recv_list'
   self%unpack_list%name = 'unpk_list'
