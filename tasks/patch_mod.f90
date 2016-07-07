@@ -807,7 +807,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       if (self%print_time > 0) &
         self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
       nv = 1
-      if (io%verbose>1) nv = self%nv
+      if (io%verbose>2) nv = self%nv
       do iv=1,nv
         1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,2x,e10.2,2i5,o12)
         if (io%master) &

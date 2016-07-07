@@ -449,6 +449,7 @@ SUBROUTINE init_nbors (self, link)
   class(link_t), pointer:: link, scan
   class(link_t), pointer:: nbor
   integer:: n_add
+  logical:: overlaps
   !.............................................................................
   call trace_begin('list_mod::init_nbors ')
   !$omp critical (list_cr)
@@ -457,13 +458,14 @@ SUBROUTINE init_nbors (self, link)
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
     if (.not.associated(scan,link) .and. associated(scan%task)) then
-      if (self%overlaps (scan%task, link%task)) then  ! if its task overlaps
+      overlaps = self%overlaps (scan%task, link%task)
+      if (overlaps) then  ! if its task overlaps
         if (io%verbose>2) &
           write (io%log_unit, '(3(i6,2(3f8.4,2x)),l4)') &
           scan%task%id, scan%task%position, scan%task%size, &
           link%task%id, link%task%position, link%task%size, &
           0, self%distance (scan%task, link%task), self%size, &
-          self%overlaps (scan%task, link%task)
+          overlaps
         allocate (nbor)
         nbor%task => scan%task
         nbor%link => scan

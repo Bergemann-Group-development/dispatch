@@ -41,6 +41,7 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
   character(len=*) id
   character(len=mch):: fmt
   integer:: verbose
+  real(8):: wc
   !.............................................................................
   if (present(itimer)) then
     call timer%begin (id, itimer)
@@ -59,10 +60,11 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
   end if
   write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
   if (io%verbose>=verbose) then
-    write(log_unit,fmt) omp_mythread, wallclock(), trim(id)//' begin'
+    wc = wallclock()
+    write(log_unit,fmt) omp_mythread, wc, trim(id)//' begin'
     call flush(log_unit)
     if (io%master) then
-      write(io%output,fmt) omp_mythread, wallclock(), trim(id)//' begin'
+      write(io%output,fmt) omp_mythread, wc, trim(id)//' begin'
       call flush(io%output)
     end if
   end if
@@ -75,14 +77,17 @@ SUBROUTINE trace_tag (id)
   character(len=*) id
   character(len=mch):: fmt
   integer:: verbose
+  real(8):: wc
+  !.............................................................................
   if (.not.io%do_trace) return
   verbose = verbosity(level)
   if (io%verbose>=verbose) then
     write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
-    write(log_unit,fmt) omp_mythread, wallclock(), trim(tracing(level))//' '//trim(id)
+    wc = wallclock()
+    write(log_unit,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
     call flush(log_unit)
     if (io%master) then
-      write(io%output,fmt) omp_mythread, wallclock(), trim(tracing(level))//' '//trim(id)
+      write(io%output,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
       call flush(io%output)
     end if
   end if
@@ -96,6 +101,7 @@ SUBROUTINE trace_end (itimer)
   integer i
   character(len=mch):: fmt
   integer:: verbose
+  real(8):: wc
   !.............................................................................
   if (present(itimer)) call timer%end(itimer)
   if (.not.io%do_trace) return
@@ -104,10 +110,11 @@ SUBROUTINE trace_end (itimer)
   verbose = verbosity(level)
   if (io%verbose>=verbose) then
     write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
-    write(log_unit,fmt) omp_mythread, wallclock(), trim(tracing(level))//' end'
+    wc = wallclock()
+    write(log_unit,fmt) omp_mythread, wc, trim(tracing(level))//' end'
     call flush(log_unit)
     if (io%master) then
-      write(io%output,fmt) omp_mythread, wallclock(), trim(tracing(level))//' end'
+      write(io%output,fmt) omp_mythread, wc, trim(tracing(level))//' end'
       call flush(io%output)
     end if
   end if
