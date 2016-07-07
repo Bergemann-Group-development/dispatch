@@ -1,7 +1,7 @@
 ! $Id$
 
 &io_params
- verbose=2
+ verbose=0
  do_trace=f
  do_debug=f
  do_output=f
@@ -22,9 +22,9 @@
 &patch_params
  nt=3
  courant=0.2
- grace=0.0
- n=16,16,16
- !n=32,32,32
+ grace=0.1
+ !n=16,16,16
+ n=32,32,32
  !n=128,128,128
  !n=256,256,256
 !dt_fixed=0.001

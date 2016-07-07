@@ -253,8 +253,9 @@ SUBROUTINE send_to_vnbors (self, mesg)
   class(mesg_t), pointer:: mesg, next
   logical:: flag
   integer:: ierr, rank
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_mod::send_to_vnbors')
+  call trace_begin('list_mod::send_to_vnbors', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Send to all unique ranks in the nbor list (which is sorted by rank)
   !-----------------------------------------------------------------------------
@@ -282,7 +283,7 @@ SUBROUTINE send_to_vnbors (self, mesg)
   call mpi_mesg%sent_list%add (mesg)                            ! add to sent_list
   call mpi_mesg%sent_list%check                                 ! check list
   !$omp end critical (sent_cr)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE send_to_vnbors
 
 END MODULE link_mod
