@@ -249,7 +249,7 @@ SUBROUTINE check_nbors (self, link)
   !$omp end critical (list_cr)
   if (task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
   !self%n_nbor = self%n_nbor + 1
-  if (io%verbose>2) write (io_unit%log,'(a,i6,l3,12(2x,a,i4))') &
+  if (io%verbose>2) write (io_unit%log,'(a,i9,l3,12(2x,a,i4))') &
     'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
     'neighbors:',n_check, 'blocked:',n_blocked, 'ready:', n_ready, &
     'cleared:',n_cleared, 'remain:', n_remain
@@ -307,7 +307,7 @@ SUBROUTINE check_ready (self, link, set_debug)
         if (task%id==io%id_debug.or.io%verbose>1) &
           write (io_unit%log,1) task%id, 'fails at', &
           task%time, ' on', nbtask%id, nbtask%time-task%time
-          1 format(i6,2x,a,1p,e16.8,2x,a,i5,e16.8)
+          1 format(i9,2x,a,1p,e16.8,2x,a,i9,e16.8)
         goto 9
       end if
     end do
@@ -464,7 +464,7 @@ SUBROUTINE init_nbors (self, link)
       overlaps = self%overlaps (scan%task, link%task)
       if (overlaps) then  ! if its task overlaps
         if (io%verbose>2) &
-          write (io%log_unit, '(3(i6,2(3f8.4,2x)),l4)') &
+          write (io%log_unit, '(3(i9,2(3f7.3,1x)),l4)') &
           scan%task%id, scan%task%position, scan%task%size, &
           link%task%id, link%task%position, link%task%size, &
           0, self%distance (scan%task, link%task), self%size, &
@@ -481,8 +481,6 @@ SUBROUTINE init_nbors (self, link)
     scan => scan%next                                 ! continue search
   end do
   link%task%n_nbors = n_add                           ! remember n_nbors
-  if (io%master .and. io%verbose>1) write (io_unit%log,*) &
-    'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
   if (io%verbose>1) write (io%log_unit,*) &
     'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
   !$omp end critical (list_cr)
@@ -606,7 +604,7 @@ SUBROUTINE remove_parents (self)
       end if
       scan => scan%next                                 ! continue search
       if (associated(parent)) then
-        write (io_unit%log,'(2(1x,a,i8,5x))') &
+        write (io_unit%log,'(2(1x,a,i9,5x))') &
           'remove parent task', parent%task%id, 'level', parent%task%level
         call self%remove_link (parent)
       end if
@@ -656,7 +654,7 @@ FUNCTION overlaps (self, task1, task2, label)
   logical:: overlaps
   real(8):: dist(3)
   !.............................................................................
-  call trace_begin ('task_list_mod::overlap', 3)
+  call trace_begin ('task_list_mod::overlap', 4)
   if (self%face_nbors) then
     overlaps = sum(self%distance(task1,task2)/(task1%size+task2%size)) &
              < 0.50000001_8
@@ -823,7 +821,7 @@ SUBROUTINE queue_by_time (self, this)
   !-----------------------------------------------------------------------------
   call this%task%set(bits%ready)                       ! mark as checked
   if (io%verbose>2) &
-    write (io_unit%log,'(1x,a,i6,a,f10.5)') 'list_mod::queue_by_time: adding task', &
+    write (io_unit%log,'(1x,a,i9,a,f10.5)') 'list_mod::queue_by_time: adding task', &
       this%task%id, ' at time', this%task%time
   nullify (prev)
   next => self%queue
@@ -1048,7 +1046,7 @@ SUBROUTINE print_list (self, label)
       type = 'patch_t'
     !end select
     if (io%verbose>1) &
-      write (io_unit%log,'(a,i7,f10.6,3x,3f10.6,i4,i6,l5,2x,a)') &
+      write (io_unit%log,'(a,i9,f10.6,3x,3f10.6,i4,i6,l5,2x,a)') &
         'list_mod::print:', task%id, task%time, task%position, task%status, &
         task%n_nbors, associated(link%nbor), type
     link => link%next

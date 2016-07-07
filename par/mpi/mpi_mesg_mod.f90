@@ -93,7 +93,7 @@ SUBROUTINE test_all (self, flag)
     return
   end if
   call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
-  if (debug.and.io%verbose>1) then
+  if (debug.and.io%verbose>2) then
     write (io_unit%log,*) wallclock(), self%id, ' test_all flag =', flag
     flush (io_unit%log)
   end if
@@ -191,7 +191,7 @@ SUBROUTINE check (self)
     call self%recv_list%add (mesg)
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   end do
-  if (io%verbose>1) then
+  if (io%verbose>2) then
     if (nmsg==0) then
       if (nprint>0) then
         nprint = nprint-1
@@ -231,7 +231,7 @@ SUBROUTINE check (self)
       if (io%verbose>1) then
         write (io_unit%log,1) wallclock(), ' recv incomplete', mesg%id, &
           i, self%recv_list%n, self%unpack_list%n
-        1 format(f15.6,2x,a,4i5)
+        1 format(f15.6,2x,a,i9,3i5)
         flush (io_unit%log)
       end if
     end if

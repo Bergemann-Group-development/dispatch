@@ -400,7 +400,7 @@ SUBROUTINE rotate (self)
   ! One line summary
   !-----------------------------------------------------------------------------
   if (io%verbose>1) then
-    write (io_unit%log,'(a,i4,2i3,2f11.6,2x,a,1p,6e10.2)') 'update: id,j,k,l,n,dt,t', &
+    write (io_unit%log,'(a,i6,2i3,2e13.6,2x,a,1p,6e10.2)') 'update: id,j,k,l,n,dt,t', &
       self%id, self%it, self%new, self%dtime, self%time, 'minmax:', &
       minval(self%mem(:,:,:,1,self%it ,2)), &
       maxval(self%mem(:,:,:,1,self%it ,2)), &

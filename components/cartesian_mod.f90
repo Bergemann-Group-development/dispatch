@@ -38,6 +38,7 @@ SUBROUTINE init (self, label)
   real(8):: size(3) = [1.0,1.0,1.0]
   integer:: dims(3) = [4,4,4]
   integer:: mpi_dims(3) = [1,1,1]
+  integer:: npatch, nvpatch, nbpatch
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
   logical:: face_nbors=.false.
   namelist /box_params/ size, dims, mpi_dims, origin, face_nbors
@@ -65,6 +66,7 @@ SUBROUTINE init (self, label)
     nn(:,dim) = merge([-1,1],[0,0],self%dims(dim)>1)
   end do
   !xomp parallel do private(i,j,k,i1,j1,k1,patch,task,rank)
+  npatch=0; nvpatch=0; nbpatch=0
   do k=1,self%dims(3)
   do j=1,self%dims(2)
   do i=1,self%dims(1)
@@ -87,21 +89,26 @@ SUBROUTINE init (self, label)
       rank = pos2rank (i+i1, j+j1, k+k1)
       if (patch%rank/=mpi%rank .and. rank==mpi%rank) call patch%set (bits%virtual)
       if (patch%rank==mpi%rank .and. rank/=mpi%rank) call patch%set (bits%boundary)
-      if (omp_master .and. io%verbose > 2) then
+      if (omp_master .and. io%verbose>2) then
         write (io%log_unit,'(3(3i4,2x),2l6)') &
           i,j,k, i1,j1,k1, mpi%rank,patch%rank,rank, &
           patch%is_set(bits%virtual), patch%is_set(bits%boundary)
-        flush (io%log_unit)
       end if
     end do
     end do
     end do
+    npatch = npatch+1
+    if (patch%is_set (bits%virtual )) nvpatch = nvpatch+1
+    if (patch%is_set (bits%boundary)) nbpatch = nbpatch+1
     !---------------------------------------------------------------------------
     ! If belongs to a different rank and is not a virtual patch, skip it
     !---------------------------------------------------------------------------
     if (patch%rank /= mpi%rank .and. patch%is_clear(bits%virtual)) then
-      if (io%verbose>1) then
-        write (io%log_unit,*) 'skipping', patch%id
+      if (io%verbose>2) then
+        patch%id = 1 + mpi%rank + &
+          mpi%size*((i-1) + self%dims(1)*((j-1) + (k-1)*self%dims(2)))
+        write (io%log_unit,'(a,3i4,i8,2i4,l4)') 'skipping', i, j, k, &
+          patch%id, patch%rank, mpi%rank, patch%is_clear(bits%virtual)
       end if
       deallocate (patch)
     !---------------------------------------------------------------------------
@@ -115,11 +122,8 @@ SUBROUTINE init (self, label)
       patch%i = i; patch%j = j; patch%k = k
       if (all(self%dims==1)) call patch%set(bits%root_grid)
       if (omp_master) then
-        if (io%verbose > 2) &
-          write (io%log_unit,'(i5,3(3f9.4,3x))') &
-            patch%id, patch%position, patch%size
         if (io%verbose>0) then
-          write (io%log_unit,'(a,2i6,2(2x,3f10.6),2l6)') &
+          write (io%log_unit,'(a,i8,i6,1p,2(2x,3e14.6),2l6)') &
             'init_cartesian: id, rank, size, pos =', &
             patch%id, patch%rank, patch%size, patch%position, &
             patch%is_set(bits%virtual), patch%is_set(bits%boundary)
@@ -132,6 +136,8 @@ SUBROUTINE init (self, label)
   end do
   end do
   end do
+  write (io_unit%log,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
+  flush (io%log_unit)
   call trace_end
 contains
   integer function pos2rank (i, j, k)

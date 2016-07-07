@@ -52,9 +52,10 @@ SUBROUTINE init (self, name)
   !.............................................................................
   self%master = self%master .and. (mpi%rank==0)
   io%master = self%master
-  !print*,'io_mod::init, master =', self%master, io%master
   !$omp parallel
   io_unit%master = io_unit%master.and.self%master
+  write (io_unit%log,'(a,5l3,i5)') 'io_mod::init master, %log =', &
+    self%master, io%master, mpi%master, omp%master, io_unit%master, io_unit%log
   !$omp end parallel
   call print_id (id)
   !-----------------------------------------------------------------------------

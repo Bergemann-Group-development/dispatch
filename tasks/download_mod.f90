@@ -49,10 +49,10 @@ SUBROUTINE download_link (link, all_cells)
     nbor => link%nbor
     do while (associated(nbor))
       if (io%master.and.io%verbose>4) &
-        print*,patch%id,nbor%task%id,nbor%task%is_clear(bits%static),nbor%task%level
+        write (io_unit%log,*) patch%id,nbor%task%id,nbor%task%is_clear(bits%static),nbor%task%level
       if (nbor%task%is_clear(bits%static)) static = .false.
       if (nbor%task%level /= patch%level) same = .false.
-      if (io%do_debug) print*,patch%id,patch%level,nbor%task%id,nbor%task%level,same
+      if (io%do_debug) write (io_unit%log,*) patch%id,patch%level,nbor%task%id,nbor%task%level,same
       nbor => nbor%next
     end do
     if (static) then
@@ -67,7 +67,7 @@ SUBROUTINE download_link (link, all_cells)
         download%n_differ = download%n_differ+1
       end if
     else
-      print *, 'ERROR: moving patches found'
+      write (io_unit%log,*) 'ERROR: moving patches found'
     end if
   end if
   call patch%check_density (" after download")
@@ -100,7 +100,7 @@ SUBROUTINE download_same_static (self)
       ntot = product(u1-l1+1)
       nuse = ntot
       if (io%master .and. iv==1 .and. io%verbose>2) then
-        print'(a,3(3i4,3x),i6)','target ranges: l1, u1, o, n =', l1, u1, o, ntot
+        write (io_unit%log,'(a,3(3i4,3x),i6)') 'target ranges: l1, u1, o, n =', l1, u1, o, ntot
       end if
       do iz=l1(3),u1(3)
       do iy=l1(2),u1(2)
@@ -110,10 +110,12 @@ SUBROUTINE download_same_static (self)
       end do
       end do
       end do
-      if (io%master .and. iv==1.and.io%verbose==2) print'(7(1x,a,i7,1x))', 'patch', target%id, ' level', target%level, &
-        ' picked up', nuse, 'of', ntot, ' points from patch', source%id, ' at level', source%level
-      if (io%master .and. io%verbose>2) print'(7(1x,a,i7,1x),2l4)', 'patch', target%id, ' level', target%level, 'var', iv, &
-        ' picked up', nuse, 'of', ntot, ' points from patch', source%id, ' at level', source%level
+      if (iv==1.and.io%verbose==3) write (io_unit%log,'(7(1x,a,i7,1x))') &
+        'patch', target%id, ' level', target%level, ' picked up', nuse, &
+        'of', ntot, ' points from patch', source%id, ' at level', source%level
+      if (io%verbose>3) write (io_unit%log,'(7(1x,a,i7,1x),2l4)') &
+        'patch', target%id, ' level', target%level, 'var', iv, ' picked up', nuse, &
+        'of', ntot, ' points from patch', source%id, ' at level', source%level
     end do
     nbor => nbor%next
   end do
@@ -160,9 +162,9 @@ SUBROUTINE find_time (other, time, jt, pt)
           pt(2) = pt2
           jt(1) = it1
           jt(2) = it2
-          !print*,omp_mythread,' MK1: id, it', other%id, it, jt, dt, pt2
+          !write (io_unit%log,*) omp_mythread,' MK1: id, it', other%id, it, jt, dt, pt2
         else
-          !print*,omp_mythread,' MK2: id, it', other%id, it, jt, dt, pt2
+          !write (io_unit%log,*) omp_mythread,' MK2: id, it', other%id, it, jt, dt, pt2
         end if
       end if
     end do
@@ -170,20 +172,21 @@ SUBROUTINE find_time (other, time, jt, pt)
   if (.not.found) then
     pt(2) = 0.0
     if (io%master .and. other%is_clear(bits%virtual) .and. io%verbose>2) &
-      print '(i6,i4,2x,a,2i4,2f9.4,3x,"time",f9.4,3x,"other%t",7f9.5)', &
+      write (io_unit%log,'(i6,i4,2x,a,2i4,2f9.4,3x,"time",f9.4,3x,"other%t",7f9.5)') &
       other%id, omp_mythread, 'WARNING: using fall-back', &
       jt, pt, time, other%t(iit(1:other%nt-1))
   end if
   pt(1) = 1.0-pt(2)
   if (abs(pt(1))< 1e-4) then
-    if (io%master .and. io%verbose>2) print*,'EXACT'
+    if (io%master .and. io%verbose>2) write (io_unit%log,*) 'EXACT'
     pt(1)=0.0; pt(2)=1.0
   else if (abs(pt(2)) < 1e-4) then
-    if (io%master .and. io%verbose>2) print*,'EXACT'
+    if (io%master .and. io%verbose>2) write (io_unit%log,*) 'EXACT'
     pt(1)=1.0; pt(2)=0.0
   end if
-  if (io%master .and. io%verbose>1) &
-    print'(a,i6,f9.4,2i4,2f7.3,10f9.4)', 'find_time: ', other%id, time, jt, pt, other%t
+  if (io%verbose>1) &
+    write (io_unit%log,'(a,i6,f9.4,2i4,2f7.3,10f9.4)') &
+    'find_time: ', other%id, time, jt, pt, other%t
 END SUBROUTINE find_time
 
 !> =============================================================================
@@ -292,13 +295,13 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
   cellpos = target%myposition (ii)
   call find_best_nbor  (link, target, cellpos, source, jt, pt, idir, old_score)
   if (.not.associated(source)) then
-    !if (target%id==121) print*,'WARNING: no best_nbor for 121', ii, idir, old_score
+    !if (target%id==121) write (io_unit%log,*) 'WARNING: no best_nbor for 121', ii, idir, old_score
     return
   else
-    !if (target%id==121) print*,'best_nbor for 121', source%id, ii, idir, old_score
+    !if (target%id==121) write (io_unit%log,*) 'best_nbor for 121', source%id, ii, idir, old_score
   end if
   !call trace_begin ('download_mod::interpolate_to',2)
-  if (io%do_debug) print*,'interpolate_to',target%it,ii,source%id,jt,pt
+  if (io%do_debug) write (io_unit%log,*) 'interpolate_to',target%it,ii,source%id,jt,pt
   it = target%it
   jj = 0
   do iv=1,source%nv
@@ -314,17 +317,17 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
       if (pp(i)<-0.35d0 .or. pp(i)>1.35d0) then
         pp(i) = (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)  ! float index in source
         if (io%master .and. io%verbose > 1) &
-        print '(a,2i3,2f6.1,2(2x,a,i6,i3," i:",i4,f13.8))', 'INDEX ERROR:', idir, i, &
+        write (io_unit%log,'(a,2i3,2f6.1,2(2x,a,i6,i3," i:",i4,f13.8))') 'INDEX ERROR:', idir, i, &
           target%mesh(i)%h(iv), source%mesh(i)%h(iv), &
           'target: id,lv=',target%id, target%level, ii(i), (source%position(i)-target%position(i))/source%mesh(i)%d, &
           'source: id,lv=',source%id, source%level, jj(i), pp(i)
         if (io%master .and. io%verbose > 2) then
-          print*,'   source shift:', (target%position-source%position)/source%ds + source%offset
-          print*,'    target size:', target%size
-          print*,'   target index:', (cellpos(i)-target%position(i))/target%ds(i) + target%offset(i)
-          print*,'    source size:', source%size
-          print*,'   source index:', (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i)
-          print*,'staggered index:', (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)
+          write (io_unit%log,*) '   source shift:', (target%position-source%position)/source%ds + source%offset
+          write (io_unit%log,*) '    target size:', target%size
+          write (io_unit%log,*) '   target index:', (cellpos(i)-target%position(i))/target%ds(i) + target%offset(i)
+          write (io_unit%log,*) '    source size:', source%size
+          write (io_unit%log,*) '   source index:', (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i)
+          write (io_unit%log,*) 'staggered index:', (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)
         end if
         pp(i) = max(-0.35d0,min(pp(i),1.35d0))
       end if
@@ -409,7 +412,7 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
           best_id = best%id
       end if
     end if
-    !if (target%id==121.and.idir==1) print'(a,i6,2i4,3f8.2,4(3x,3f8.2))', &
+    !if (target%id==121.and.idir==1) write (io_unit%log,'(a,i6,2i4,3f8.2,4(3x,3f8.2))') &
       !'search best_nbor for 121', other%id, target%level, other%level, &
       !score, best_score, old_score, abs(pp)/other%size, abs(pp)/other%gsize, pp
     nbor => nbor%next
