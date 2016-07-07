@@ -100,7 +100,7 @@ SUBROUTINE init (self, label)
     ! If belongs to a different rank and is not a virtual patch, skip it
     !---------------------------------------------------------------------------
     if (patch%rank /= mpi%rank .and. patch%is_clear(bits%virtual)) then
-      if (omp_master) then
+      if (io%verbose>1) then
         write (io%log_unit,*) 'skipping', patch%id
       end if
       deallocate (patch)
