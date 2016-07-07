@@ -22,8 +22,8 @@ MODULE timer_mod
   type(timer_t), public:: timer
   integer, save:: nprint=20
   real(8), save:: sec_per_report=10d0, sec=0d0, next_report_sec
-  real(8), save:: prev1
-  real(8), save:: prev2
+  real(8), save:: prev1=0d0
+  real(8), save:: prev2=0d0
 CONTAINS
 
 !> =============================================================================

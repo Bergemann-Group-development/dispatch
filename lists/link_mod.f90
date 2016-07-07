@@ -9,6 +9,7 @@ MODULE link_mod
   USE bits_mod
   USE task_mod
   USE patch_mod
+  USE omp_timer_mod
   implicit none
   private
 
@@ -263,9 +264,10 @@ SUBROUTINE send_to_vnbors (self, mesg)
     task => nbor%task
     if (task%rank/=mpi%rank .and. task%rank/=rank) then         ! new rank?
       rank = nbor%task%rank                                     ! current rank
-      if (debug) then
-        write (io_unit%log,*) ' send mesg', mesg%id, ' to', rank; flush(io_unit%log)
-        flush (io%log_unit)
+      if (io%verbose>1) then
+        write (io_unit%log,'(f12.6,2x,a,i6,1p,e18.6,2x,a,i5)') &
+          wallclock(), 'send', mesg%id, self%task%time, 'to', rank
+        flush (io_unit%log)
       end if
       call mesg%send (rank)                                     ! send it
     end if

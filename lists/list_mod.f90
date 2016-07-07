@@ -301,15 +301,18 @@ SUBROUTINE check_ready (self, link, set_debug)
     do while (associated (nbor))                        ! keep going until end
       nbtask => nbor%task
       ahead = nbtask%is_ahead_of(task)
-      if (task%id==io%id_debug.or.io%verbose>2) &
-        write (io_unit%log,*) task%id, 'checking nbor', &
-        nbtask%id, nbtask%time-task%time, ahead
       if (ahead) then
         nbor => nbor%next                               ! next nbor
       else
+        if (task%id==io%id_debug.or.io%verbose>1) &
+          write (io_unit%log,1) task%id, 'fails at', &
+          task%time, ' on', nbtask%id, nbtask%time-task%time
+          1 format(i6,2x,a,1p,e16.8,2x,a,i5,e16.8)
         goto 9
       end if
     end do
+    if (task%id==io%id_debug.or.io%verbose>1) &
+      write (io_unit%log,1) task%id, '   ok at', task%time
     !xomp critical (list_cr)
     call task%set(bits%ready)                           ! mark as checked
     call self%qconsistency(2)

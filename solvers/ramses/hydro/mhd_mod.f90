@@ -17,7 +17,9 @@ MODULE mhd_mod
   USE patch_mod
   USE riemann_mod
   use hydro_parameters
-  use trace_mod
+  USE trace_mod
+  USE mpi_mod
+  USE omp_mod
   implicit none
   PRIVATE
   type, public, extends(patch_t):: mhd_t

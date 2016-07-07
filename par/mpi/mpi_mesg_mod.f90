@@ -52,10 +52,6 @@ SUBROUTINE send (self, rank)
   class(mesg_t):: self
   integer:: rank, req, ierr
   !.............................................................................
-  if (debug) then
-    write (io_unit%log,*) wallclock(), ' send', self%id, ' to', rank
-    flush (io_unit%log)
-  end if
   call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
     mpi%comm, req, ierr)
   self%nreq = self%nreq+1                                   ! count reqs
@@ -76,7 +72,7 @@ SUBROUTINE test_all (self, flag)
   end if
   call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
   if (debug.and.io%verbose>1) then
-    write (io_unit%log,*) ' test_all flag =', flag
+    write (io_unit%log,*) wallclock(), self%id, ' test_all flag =', flag
     flush (io_unit%log)
   end if
 END SUBROUTINE test_all
@@ -98,7 +94,7 @@ SUBROUTINE add (self, mesg)
   end if
   self%tail => mesg                             ! tail points to it
   self%n = self%n+1                             ! increment counter
-  if (debug.and.io%verbose>2) then
+  if (debug.and.io%verbose>1) then
     write (io_unit%log,*) trim(self%name)//' added mesg', mesg%id, self%n
     flush (io_unit%log)
   end if
@@ -123,7 +119,7 @@ SUBROUTINE remove (self, mesg)
     self%tail => mesg%prev                      ! new tail
   end if
   self%n = self%n-1                             ! decrement count
-  if (debug) then
+  if (io%verbose>1) then
     write (io_unit%log,*) trim(self%name)//' remove mesg OK', mesg%id, self%n
     flush (io_unit%log)
   end if
@@ -149,9 +145,10 @@ END SUBROUTINE init
 SUBROUTINE check (self)
   class(mpi_mesg_t):: self
   integer:: stat(MPI_STATUS_SIZE)
-  integer:: msg ,ierr, nbuf, req, nmsg
+  integer:: msg ,ierr, nbuf, req, nmsg, i
   logical:: flag
   class(mesg_t), pointer:: mesg
+  integer, save:: nprint=50
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
   call trace_begin ('mpi_mesg_mod::check')
@@ -173,30 +170,48 @@ SUBROUTINE check (self)
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   end do
   if (io%verbose>1) then
-    write (io_unit%log,*) 'mpi_mesg_mod::check nmsg =', nmsg
-    flush (io_unit%log)
+    if (nmsg==0) then
+      if (nprint>0) then
+        nprint = nprint-1
+        write (io_unit%log,*) 'mpi_mesg_mod::check nmsg =', nmsg
+        flush (io_unit%log)
+      else if (nprint==0) then
+        nprint = nprint-1
+        write (io_unit%log,*) 'mpi_mesg_mod::check continuing...'
+        flush (io_unit%log)
+      end if
+    else
+      if (nprint==-1) nprint = 10
+      write (io_unit%log,*) 'mpi_mesg_mod::check nmsg =', nmsg
+      flush (io_unit%log)
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Check the recv_list for completed receives, adding them to unpack_list
   !-----------------------------------------------------------------------------
   !call trace_tag ('check')
   mesg => self%recv_list%head
+  i = 0
   do while (associated(mesg))
+    i = i+1
     !call trace_tag ('mesg')
     req = mesg%req
     call MPI_TEST (req, flag, stat, ierr)
     if (flag) then
       self%recv_list%head => mesg%next
       self%recv_list%n = self%recv_list%n - 1
-      if (debug.and.io%verbose>1) then
-        write (io_unit%log,*) wallclock(), ' recv complete', mesg%id
-        flush (io_unit%log)
-      end if
       call self%recv_list%remove (mesg)
       call self%unpack_list%add (mesg)
+      if (io%verbose>1) then
+        write (io_unit%log,1) wallclock(), ' recv   complete', mesg%id, &
+          i, self%recv_list%n, self%unpack_list%n
+        flush (io_unit%log)
+      end if
     else
-      if (debug.and.io%verbose>1) then
-        write (io_unit%log,*) wallclock(), ' recv incomplete', mesg%id
+      if (io%verbose>1) then
+        write (io_unit%log,1) wallclock(), ' recv incomplete', mesg%id, &
+          i, self%recv_list%n, self%unpack_list%n
+        1 format(f15.6,2x,a,4i5)
         flush (io_unit%log)
       end if
     end if
@@ -220,6 +235,8 @@ SUBROUTINE get (self, mesg)
   mesg => self%unpack_list%head
   if (associated(mesg)) then
     self%unpack_list%head => mesg%next
+    if (associated(self%unpack_list%head)) &
+      nullify(self%unpack_list%head%prev)
     self%unpack_list%n = self%unpack_list%n - 1
     if (debug .and. io%verbose>2) then
       write (io_unit%log,*) ' get ', mesg%id, ' from', mesg%sender, ' n', self%unpack_list%n
