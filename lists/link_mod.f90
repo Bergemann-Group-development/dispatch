@@ -279,26 +279,8 @@ SUBROUTINE send_to_vnbors (self, mesg)
   ! list locked while updating.
   !-----------------------------------------------------------------------------
   !$omp critical (sent_cr)
-  if (debug) write(io%log_unit,*) 'link_mod::send_to_vnbors sent_list%add', mesg%id
-  if (debug) flush(io%log_unit)
   call mpi_mesg%sent_list%add (mesg)                            ! add to sent_list
-  mesg => mpi_mesg%sent_list%head                               ! top of list
-  do while (associated(mesg))
-    next => mesg%next                                           ! in case removed
-    if (debug) write(io%log_unit,*) 'link_mod::send_to_vnbors test_all', mesg%id
-    call mesg%test_all (flag)                                   ! done with?
-    if (flag) then
-      if (debug) write(io%log_unit,*) 'link_mod::send_to_vnbors remove', mesg%id
-      call mpi_mesg%sent_list%remove (mesg)                     ! yes, remove
-      deallocate (mesg%buffer, mesg%reqs)
-      deallocate (mesg)
-      if (debug) then
-        write (io_unit%log,*) ' remove mesg', mesg%id; flush(io_unit%log)
-        flush (io%log_unit)
-      end if
-    end if
-    mesg => next                                                ! true next
-  end do
+  call mpi_mesg%sent_list%check                                 ! check list
   !$omp end critical (sent_cr)
   call trace_end
 END SUBROUTINE send_to_vnbors

@@ -30,6 +30,7 @@ MODULE mpi_mesg_mod
   contains
     procedure:: add
     procedure:: remove
+    procedure:: check => check_sent
     procedure:: print => print_list
   end type
   !
@@ -57,6 +58,27 @@ SUBROUTINE send (self, rank)
   self%nreq = self%nreq+1                                   ! count reqs
   self%reqs(self%nreq) = req                                ! collect reqs
 END SUBROUTINE send
+
+!> =============================================================================
+!> Check messages on a sent_list for completeness
+!> =============================================================================
+SUBROUTINE check_sent (self)
+  class(mesg_list_t):: self
+  class(mesg_t), pointer:: mesg, next
+  logical:: flag
+  !.............................................................................
+  mesg => self%head                                             ! top of list
+  do while (associated(mesg))
+    next => mesg%next                                           ! in case removed
+    call mesg%test_all (flag)                                   ! done with?
+    if (flag) then
+      call self%remove (mesg)                                   ! yes, remove
+      deallocate (mesg%buffer, mesg%reqs)
+      deallocate (mesg)
+    end if
+    mesg => next                                                ! true next
+  end do
+END SUBROUTINE check_sent
 
 !> =============================================================================
 !> Test if all requests are complete
@@ -152,7 +174,7 @@ SUBROUTINE check (self)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
   call trace_begin ('mpi_mesg_mod::check')
-  call self%init
+  call self%sent_list%check
   call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   !$omp critical (recv_cr)
   nmsg = 0

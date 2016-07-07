@@ -62,8 +62,9 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
-  call self%list_t%init (name)
   call trace_begin('task_list_t%init ')
+  call self%list_t%init (name)
+  call mpi_mesg%init
   rewind (io%input); read(io%input, task_list_params, iostat=iostat)
   if (iostat==0 .and. io%master) then
     self%debug = debug
@@ -287,7 +288,7 @@ SUBROUTINE check_mpi (self)
   if (mpi%size <= 1) return
   call trace_begin ('task_list_mod::check_mpi',1)
   !-----------------------------------------------------------------------------
-  ! Check for new or completed incoming messages
+  ! Check for new or completed incoming and outgoing messages
   !-----------------------------------------------------------------------------
   call mpi_mesg%check
   !-----------------------------------------------------------------------------
