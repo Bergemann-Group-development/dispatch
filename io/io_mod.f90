@@ -67,9 +67,8 @@ SUBROUTINE init (self, name)
   self%log_unit  = io_unit%log
   self%data_unit = io_unit%data
   !-----------------------------------------------------------------------------
-  ! Use critical region to avoid threads using the input file simultaneously
+  ! Use serial region to avoid threads using the input file simultaneously
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
   if (first_time) then
     !---------------------------------------------------------------------------
     ! The input filename is input.nml, or as given on the command line
@@ -92,21 +91,26 @@ SUBROUTINE init (self, name)
     call system ('mkdir -p '//trim(self%outputname))
     !iread (io_unit%input, io_params,iostat=iostat)
     if (self%master.and.first_time) write (*,io_params)
+    !$omp parallel
+    !$omp critical
     if (omp_trace) then
-      !$omp parallel
       log_unit = 100+omp%mythread()
-      !$omp critical
+      io_unit%log = log_unit
       write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%mythread()
       open (log_unit, file=filename, form='formatted', status='unknown')
-      print *, omp%mythread(), log_unit
-      !$omp end critical
-      !$omp end parallel
-    else
+    else if (omp%master) then
       log_unit = 100
       write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
       open (log_unit, file=filename, form='formatted', status='unknown')
+    else
+      io_unit%verbose = -2
     end if
     io_unit%log = log_unit
+    !$omp end critical
+    write (io_unit%log,'(a,i4,2l4)') &
+      'io_mod::init io_unit%log, io_unit%master, io_unit%verbose:', &
+      io_unit%log, io_unit%master, io_unit%verbose
+    !$omp end parallel
     if (io%verbose>0.or.self%master) &
       print*, 'logfile:', filename
     self%log_unit = io_unit%log 
@@ -118,7 +122,6 @@ SUBROUTINE init (self, name)
     end if
     first_time=.false.
   end if
-  !$omp end critical (input_cr)
   self%id_debug  = id_debug
   self%verbose   = verbose
   self%do_debug  = do_debug
