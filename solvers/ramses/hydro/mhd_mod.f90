@@ -416,7 +416,7 @@ subroutine trace3d(self)
   dtdy = self%dtime/self%mesh(2)%d
   dtdz = self%dtime/self%mesh(3)%d
   !-----------------------------------------------------------------------------
-  lb = self%mesh%lb
+  lb = self%mesh%lb+1
   ub = self%mesh%ub-1
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
