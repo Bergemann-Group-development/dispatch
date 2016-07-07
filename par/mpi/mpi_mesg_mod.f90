@@ -91,10 +91,10 @@ SUBROUTINE add (self, mesg)
   nullify (mesg%next)
   if (associated(self%head)) then               ! if the list is non-empty
     self%tail%next => mesg                      ! add to the tail
-    mesg%prev => self%tail
+    mesg%prev => self%tail                      ! prev is the previous tail
   else
     self%head => mesg                           ! else add at the head
-    mesg%prev => self%head
+    nullify (mesg%prev, mesg%next)
   end if
   self%tail => mesg                             ! tail points to it
   self%n = self%n+1                             ! increment counter
@@ -188,12 +188,12 @@ SUBROUTINE check (self)
     if (flag) then
       self%recv_list%head => mesg%next
       self%recv_list%n = self%recv_list%n - 1
-      call self%unpack_list%add (mesg)
-      call self%recv_list%remove (mesg)
       if (debug.and.io%verbose>1) then
         write (io_unit%log,*) wallclock(), ' recv complete', mesg%id
         flush (io_unit%log)
       end if
+      call self%recv_list%remove (mesg)
+      call self%unpack_list%add (mesg)
     else
       if (debug.and.io%verbose>1) then
         write (io_unit%log,*) wallclock(), ' recv incomplete', mesg%id
