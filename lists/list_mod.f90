@@ -72,7 +72,7 @@ SUBROUTINE init (self, name)
   !.............................................................................
   if (present(name)) then
     self%name = name
-    print*,'init_list: ', name
+    write (io_unit%log,*)'init_list: ', name
   end if
   call self%lock%init (self%kind)
 END SUBROUTINE init
@@ -93,7 +93,7 @@ SUBROUTINE reset (self)
   class(link_t), pointer:: link, old
   class(task_t), pointer:: task
   !.............................................................................
-  call trace_begin ('list_t%reset '//self%name)
+  call trace_begin ('list_mod::reset '//self%name)
   link => self%head
   do while (associated(link))
     task => link%task
@@ -117,7 +117,7 @@ SUBROUTINE append (self, task)
   class(task_t), pointer:: task
   class(link_t), pointer:: link
   !.............................................................................
-  call trace_begin ('list_t%append '//self%name)
+  call trace_begin ('list_mod::append '//self%name)
   allocate (link)
   link%task => task
   call self%append_link (link)
@@ -133,7 +133,7 @@ SUBROUTINE append_link (self, link)
   class(*), pointer:: anon
   logical, save:: first_time=.true.
   !.............................................................................
-  call trace_begin ('list_t%append_link '//self%name)
+  call trace_begin ('list_mod::append_link '//self%name)
   !$omp critical (list_cr)
   if (associated(self%tail)) then
     link%prev => self%tail
@@ -159,7 +159,7 @@ SUBROUTINE remove_link (self, link)
   class(link_t), pointer:: link, next
   class(task_t), pointer:: task
   !.............................................................................
-  call trace_begin ('list_t%remove_link '//self%name)
+  call trace_begin ('list_mod::remove_link '//self%name)
   next => link%next
   !-------------------------------------------------------------------------
   ! Check for tail task
@@ -190,7 +190,7 @@ SUBROUTINE remove_head (self)
   class(list_t):: self
   class(link_t), pointer:: head, link, next
   !.............................................................................
-  call trace_begin ('list_t%remove_head '//self%name)
+  call trace_begin ('list_mod::remove_head '//self%name)
   head => self%head
   next => head%next
   !-------------------------------------------------------------------------
@@ -221,7 +221,7 @@ SUBROUTINE check_nbors (self, link)
   integer:: n_check, n_ready, n_blocked, n_cleared, n_remain
   logical:: is_clear
   !.............................................................................
-  call trace_begin('list_t%check_nbors '//self%name)
+  call trace_begin('list_mod::check_nbors '//self%name)
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
   nbor => link%nbor                                   ! first nbor
@@ -247,7 +247,7 @@ SUBROUTINE check_nbors (self, link)
   end do
   call self%check_ready (link)                        ! finally check link task
   !$omp end critical (list_cr)
-  if (task%id==io%id_debug) print*, io%id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
+  if (task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
   !self%n_nbor = self%n_nbor + 1
   if (io%verbose>2) write (io_unit%log,'(a,i6,l3,12(2x,a,i4))') &
     'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
@@ -265,7 +265,7 @@ SUBROUTINE check_all (self)
   class(list_t):: self
   class(link_t), pointer:: link
   !.............................................................................
-  call trace_begin('list_t%check_all '//self%name)
+  call trace_begin('list_mod::check_all '//self%name)
   link => self%head
   do while (associated (link))                        ! keep going until end
     call self%check_ready (link, 1)                   ! link ready?
@@ -301,9 +301,9 @@ SUBROUTINE check_ready (self, link, set_debug)
     do while (associated (nbor))                        ! keep going until end
       nbtask => nbor%task
       ahead = nbtask%is_ahead_of(task)
-      if (task%id==io%id_debug.or.io%verbose>3) &
+      if (task%id==io%id_debug.or.io%verbose>2) &
         write (io_unit%log,*) task%id, 'checking nbor', &
-        nbtask%id, ahead, nbtask%time-task%time
+        nbtask%id, nbtask%time-task%time, ahead
       if (ahead) then
         nbor => nbor%next                               ! next nbor
       else
@@ -333,7 +333,7 @@ SUBROUTINE consistency (self, link, i)
   integer:: n, id1=0, id2=0, i
   !.............................................................................
   if (self%debug < 2) return
-  call trace_begin ('list_t%consitency',1)
+  call trace_begin ('list_mod::consistency',1)
   !$omp critical (list_cr)
   n = 0
   task => link%task
@@ -341,14 +341,14 @@ SUBROUTINE consistency (self, link, i)
   if (associated(nbor)) id1 = nbor%task%id
   do while (associated (nbor))                        ! keep going until end
     id2 = nbor%task%id
-    !print*,id2
+    !write (io_unit%log,*)id2
     nbor => nbor%next                                 ! next nbor
     n = n+1
   end do
   if (n /= link%task%n_nbors) then
-    print*, task%id, 'ERROR: n, nbors', n, id1, id2, i
+    write (io_unit%log,*) task%id, 'ERROR: n, nbors', n, id1, id2, i
   else
-!    print*, task%id, 'consistent', id1, id2, i
+!    write (io_unit%log,*) task%id, 'consistent', id1, id2, i
   end if
   !$omp end critical (list_cr)
   call trace_end
@@ -367,7 +367,7 @@ SUBROUTINE qconsistency (self, i)
   real(8):: time
   !.............................................................................
   !if (self%debug < 1) return
-  call trace_begin ('list_t%qconsistency',0)
+  call trace_begin ('list_mod::qconsistency',0)
   n = 0
   link => self%queue
   if (associated(link)) then
@@ -379,19 +379,19 @@ SUBROUTINE qconsistency (self, i)
     n = n+1
     if (n > self%nq) exit
     if (link%task%time < time) then
-      print*,'ERROR: queue out of order'
+      write (io_unit%log,*)'ERROR: queue out of order'
       exit
     end if
     time = link%task%time
     link => link%next_time
   end do
   if (n /= self%nq) then
-    print *, 'ERROR: qconsistency:', n, self%nq, i
+    write (io_unit%log,*) 'ERROR: qconsistency:', n, self%nq, i
     n = 0
     link => self%queue
     do while (associated(link))
       n = n+1
-      print*, n, link%task%id, link%task%time
+      write (io_unit%log,*) n, link%task%id, link%task%time
       link => link%next_time
       if (n > self%nq+1) exit
     end do
@@ -427,7 +427,7 @@ SUBROUTINE init_nonleaf (self)
             if (all(abs(scan%task%position-link%task%position) < scan%task%size*0.55d0)) then
               call scan%task%set (bits%not_leaf)        ! mark non-leaf
               if (io%verbose>0) &
-                print*, 'patch', link%task%id, ' parent:', scan%task%id
+                write (io_unit%log,*) 'patch', link%task%id, ' parent:', scan%task%id
             end if
           end if
         end if
@@ -450,7 +450,7 @@ SUBROUTINE init_nbors (self, link)
   class(link_t), pointer:: nbor
   integer:: n_add
   !.............................................................................
-  call trace_begin('list_t%init_nbors ')
+  call trace_begin('list_mod::init_nbors ')
   !$omp critical (list_cr)
   nullify (link%nbor)                                 ! initially no nbor
   n_add = 0
@@ -469,14 +469,14 @@ SUBROUTINE init_nbors (self, link)
         nbor%link => scan
         call link%add_nbor_by_rank (nbor)
         n_add = n_add+1
-        if (nbor%task%id==io%id_debug) print*, io%id_debug, 'mk is nbor:', link%task%id
-        if (link%task%id==io%id_debug) print*, io%id_debug, 'mk has nbor:', nbor%task%id
+        if (nbor%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk is nbor:', link%task%id
+        if (link%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk has nbor:', nbor%task%id
       end if
     end if
     scan => scan%next                                 ! continue search
   end do
   link%task%n_nbors = n_add                           ! remember n_nbors
-  if (io%master .and. io%verbose>1) print*, &
+  if (io%master .and. io%verbose>1) write (io_unit%log,*) &
     'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
   if (io%verbose>1) write (io%log_unit,*) &
     'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
@@ -583,7 +583,7 @@ SUBROUTINE remove_parents (self)
   class(list_t):: self
   class(link_t), pointer:: link, scan, parent
   !.............................................................................
-  call trace_begin('list_t%remove_parents')
+  call trace_begin('list_mod::remove_parents')
   !$omp critical (list_cr)
   link => self%head                                     ! start checking links
   do while (associated(link))
@@ -601,7 +601,7 @@ SUBROUTINE remove_parents (self)
       end if
       scan => scan%next                                 ! continue search
       if (associated(parent)) then
-        print '(2(1x,a,i8,5x))', &
+        write (io_unit%log,'(2(1x,a,i8,5x))') &
           'remove parent task', parent%task%id, 'level', parent%task%level
         call self%remove_link (parent)
       end if
@@ -651,7 +651,7 @@ FUNCTION overlaps (self, task1, task2, label)
   logical:: overlaps
   real(8):: dist(3)
   !.............................................................................
-  call trace_begin ('task_list_t%overlap', 3)
+  call trace_begin ('task_list_mod::overlap', 3)
   if (self%face_nbors) then
     overlaps = sum(self%distance(task1,task2)/(task1%size+task2%size)) &
              < 0.50000001_8
@@ -662,7 +662,7 @@ FUNCTION overlaps (self, task1, task2, label)
     block
     real(8):: limit(3)
     limit = 0.501*(task1%size+task2%size)
-    print'(a,2i4,2(3f8.2,3x),l3)', 'overlap:', task1%id, task2%id, &
+    write (io_unit%log,'(a,2i4,2(3f8.2,3x),l3)') 'overlap:', task1%id, task2%id, &
      (task1%position-task2%position)/limit, dist/limit, overlaps
     end block
   end if
@@ -673,7 +673,7 @@ END FUNCTION overlaps
 !> =============================================================================
 SUBROUTINE statistics (self)
   class(list_t):: self
-  print '(a,3(5x,a,i6))', 'output_experiment:', &
+  write (io_unit%log,'(a,3(5x,a,i6))') 'output_experiment:', &
     'n_ready:', self%n_ready, &
     'n_check:', self%n_check, &
     'n_nbor:' , self%n_nbor
@@ -687,7 +687,7 @@ SUBROUTINE append_list (self, task_list)
   class(link_t), pointer:: link
   integer:: n
   !-----------------------------------------------------------------------------
-  call trace_begin ('list_t%append_list')
+  call trace_begin ('list_mod::append_list')
   !$omp critical (list_cr)
   self%tail%next => task_list%head
   self%tail      => task_list%tail
@@ -699,9 +699,9 @@ SUBROUTINE append_list (self, task_list)
     n = n+1
   end do
   if (n==self%n) then
-    print *, trim(self%name)//': OK append of '//task_list%name
+    write (io_unit%log,*) trim(self%name)//': OK append of '//task_list%name
   else
-    print *, trim(self%name)//': inconsistent append of '//task_list%name
+    write (io_unit%log,*) trim(self%name)//': inconsistent append of '//task_list%name
   end if
   !$omp end critical (list_cr)
   call trace_end
@@ -713,7 +713,7 @@ SUBROUTINE remove_task (self, task)
   class(task_t), pointer:: task
   class(link_t), pointer:: link, prev
   !.............................................................................
-  call trace_begin('list_t%remove_task')
+  call trace_begin('list_mod::remove_task')
   !$omp critical (list_cr)
   link => self%head
   nullify (prev)
@@ -749,16 +749,16 @@ SUBROUTINE search_nbors_by_overlap (self, start)
   !> ===========================================================================
   !> For each task link, make a list of neighbors, starting with link%nbor
   !> ===========================================================================
-  call trace_begin('list_t%search_nbors_by_overlap', 3)
+  call trace_begin('list_mod::search_nbors_by_overlap', 3)
   link1 => self                                 ! start on the self list
-  if (io%verbose>3) print*,' id, size, position, distance:'
+  if (io%verbose>3) write (io_unit%log,*)' id, size, position, distance:'
   do while (associated(link1))
     prev => link1%nbor                         ! existing nbor list head (empty?)
     link2 => start                              ! start searching throuch nbor chain
     do while (associated(link2))
       if (.not.associated(link1%task,link2%task)) then
         !if (io%verbose>3) &
-        !  print'(2(i5,3(3f8.4,2x)),l3)', &
+        !  write (io_unit%log,'(2(i5,3(3f8.4,2x)),l3)') &
         !    link1%task%id, link1%task%size, link1%task%position, link1%task%distance(link2%task), &
         !    link2%task%id, link2%task%size, link2%task%position, link2%task%distance(link1%task), &
         !    link1%task%overlaps(link2%task)
@@ -812,18 +812,19 @@ SUBROUTINE queue_by_time (self, this)
   ! Refuse to queue virtual tasks and finished tasks
   !-----------------------------------------------------------------------------
   if (this%task%is_set(bits%virtual) .or. this%task%has_finished()) return
-  call trace_begin ('list_t%queue_by_time '//self%name)
+  call trace_begin ('list_mod::queue_by_time '//self%name)
   !-----------------------------------------------------------------------------
   ! Lock the queue while inserting the task
   !-----------------------------------------------------------------------------
   call this%task%set(bits%ready)                       ! mark as checked
-  if (io%verbose>2) print'(1x,a,i6,a,f10.5)', 'list_t%queue_by_time: adding task', &
-    this%task%id, ' at time', this%task%time
+  if (io%verbose>2) &
+    write (io_unit%log,'(1x,a,i6,a,f10.5)') 'list_mod::queue_by_time: adding task', &
+      this%task%id, ' at time', this%task%time
   nullify (prev)
   next => self%queue
   do while (associated(next))
     if (associated(next%task, this%task)) then
-      print*, omp_mythread, ' WARNING: task', this%task%id, ' is already on ready queue'
+      write (io_unit%log,*) omp_mythread, ' WARNING: task', this%task%id, ' is already on ready queue'
       return
     else if (next%task%time > this%task%time) then
       this%next_time => next
@@ -857,13 +858,13 @@ SUBROUTINE add_by_quality (self, this)
   class(link_t), pointer:: this
   class(link_t), pointer:: next, prev
   !.............................................................................
-  call trace_begin ('list_t%add_by_quality')
+  call trace_begin ('list_mod::add_by_quality')
   !$omp critical (list_cr)
   nullify (prev)
   next => self%head
   do while (associated(next))
     if (associated(next%task,this%task)) then
-      print *,'ERROR: Trying to add task', this%task%id, ' which is already there'
+      write (io_unit%log,*)'ERROR: Trying to add task', this%task%id, ' which is already there'
       call trace_end
       goto 9
     end if
@@ -915,13 +916,13 @@ SUBROUTINE check_queue (self)
   nq = 0
   do while (associated(link))
     if (link%task%time < previous) &
-      print *,'ERROR: queue out of order at', link%task%id, link%task%time, &
+      write (io_unit%log,*)'ERROR: queue out of order at', link%task%id, link%task%time, &
       previous
     previous = link%task%time
     link => link%next_time
     nq = nq+1
   end do
-  if (nq /= self%nq) print*,'ERROR: inconsistent number of tasks in queue', nq, self%nq
+  if (nq /= self%nq) write (io_unit%log,*)'ERROR: inconsistent number of tasks in queue', nq, self%nq
   !$omp end critical (list_cr)
 END SUBROUTINE check_queue
 
@@ -932,7 +933,7 @@ SUBROUTINE insert (self, old, new)
   class(list_t):: self
   class(link_t), pointer:: old, new
   !.............................................................................
-  call trace_begin ('list_t%insert '//self%name)
+  call trace_begin ('list_mod::insert '//self%name)
   !$omp critical (list_cr)
   if (associated(old%prev)) then
     new%prev => old%prev
@@ -957,13 +958,13 @@ SUBROUTINE print_queue (self)
   if (io%verbose < 2) return
   !$omp critical (list_cr)
   link => self%queue
-  print'(a,2i4,":",$)', 'ready_queue', self%nq, self%n
+  write (io_unit%log,'(a,2i4,":",$)') 'ready_queue', self%nq, self%n
   do while (associated(link))
-    print '(i4,$)', link%task%id
+    write (io_unit%log,'(i4,$)') link%task%id
     link => link%next_time
   end do
   !$omp end critical (list_cr)
-  if (io%master) print*,''
+  if (io%master) write (io_unit%log,*)''
 END SUBROUTINE print_queue
 
 !> =============================================================================
@@ -976,9 +977,9 @@ SUBROUTINE print_queue_until (self, task)
   !.............................................................................
   !$omp critical (list_cr)
   link => self%queue
-  if (io%master) print*,'print_queue_until:'
+  if (io%master) write (io_unit%log,*)'print_queue_until:'
   do while (associated(link))
-    print '("queue: id, t0, t, t0-t =",i7,1p,3e12.3)', &
+    write (io_unit%log,'("queue: id, t0, t, t0-t =",i7,1p,3e12.3)') &
       link%task%id, task%time, link%task%time, task%time-link%task%time
     if (link%task%id==task%id) exit
     link => link%next_time
@@ -997,17 +998,17 @@ SUBROUTINE print_queue_times (self, label)
   !$omp critical (list_cr)
   link => self%queue
   if (present(label)) then
-     print*,'print_queue_times: '//trim(label)
+     write (io_unit%log,*)'print_queue_times: '//trim(label)
   else
-     print*,'print_queue_times:'
+     write (io_unit%log,*)'print_queue_times:'
   end if
   do while (associated(link))
-    print '("queue: id, time =",i7,1p,g14.5,l5)', link%task%id, link%task%time, &
+    write (io_unit%log,'("queue: id, time =",i7,1p,g14.5,l5)') link%task%id, link%task%time, &
       link%task%is_set(bits%ready)
     link => link%next_time
   end do
   !$omp end critical (list_cr)
-  print*,'done'
+  write (io_unit%log,*)'done'
 END SUBROUTINE print_queue_times
 
 !> =============================================================================
@@ -1019,9 +1020,9 @@ SUBROUTINE print_list (self, label)
   class(task_t), pointer:: task
   character(len=32):: type
   !.............................................................................
-  call trace_begin ('list_t%print')
+  call trace_begin ('list_mod::print')
   if (io%verbose>0) &
-    write (io_unit%log,*) 'list_t%print: ',trim(self%name), self%n
+    write (io_unit%log,*) 'list_mod::print: ',trim(self%name), self%n
   !$omp critical (list_cr)
   link => self%head
   do while (associated(link))
@@ -1043,7 +1044,7 @@ SUBROUTINE print_list (self, label)
     !end select
     if (io%verbose>1) &
       write (io_unit%log,'(a,i7,f10.6,3x,3f10.6,i4,i6,l5,2x,a)') &
-        'list_t%print:', task%id, task%time, task%position, task%status, &
+        'list_mod::print:', task%id, task%time, task%position, task%status, &
         task%n_nbors, associated(link%nbor), type
     link => link%next
   end do

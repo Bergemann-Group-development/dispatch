@@ -257,7 +257,7 @@ SUBROUTINE init (self)
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     guard_zones, time_derivs
   !.............................................................................
-  call trace_begin ('patch_t%init', 2)
+  call trace_begin ('patch_mod::init', 2)
   call self%task_t%init                         ! sets unique id
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
@@ -302,7 +302,7 @@ SUBROUTINE init (self)
   self%print_next  = print_time
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   if (all(self%size==self%box)) then
-    print *, mpi%rank, 'task', self%id, ' is root grid'
+    write (io_unit%log,*) mpi%rank, 'task', self%id, ' is root grid'
     self%root_grid = .true.
     call self%set(bits%root_grid)
   end if
@@ -341,9 +341,10 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   self%level = log(maxval(self%box)/minval(self%ds))/log(real(self%msplit)) + 0.1
   if (io%verbose>2) &
-    print'(1x,a,i7,2(1p,3e12.4,2x))', 'patch_t%init: id, size, pos =', self%id, self%size, self%position
+    write (io_unit%log,'(1x,a,i7,2(1p,3e12.4,2x))') 'patch_mod::init: id, size, pos =', &
+      self%id, self%size, self%position
   if (io%verbose>3) &
-    print*,'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
+    write (io_unit%log,*) 'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
   !-----------------------------------------------------------------------------
   ! Allocate memory, if not already allocated
   !-----------------------------------------------------------------------------
@@ -384,8 +385,8 @@ SUBROUTINE rotate (self)
   ! Call timestep update procedure to fill the next time slot with values
   !-----------------------------------------------------------------------------
   if (io%verbose > 1) then
-    print'(a,7i10)',   'experiment_t%update: iit =', self%iit
-    print'(a,7f10.6)', 'experiment_t%update:   t =', self%t(self%iit)
+    write (io_unit%log,'(a,7i10)')   'patch_mod::rotate iit =', self%iit
+    write (io_unit%log,'(a,7f10.6)') 'patch_mod::rotate   t =', self%t(self%iit)
   end if
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
@@ -399,7 +400,7 @@ SUBROUTINE rotate (self)
   ! One line summary
   !-----------------------------------------------------------------------------
   if (io%verbose>1) then
-    print'(a,i4,2i3,2f11.6,2x,a,1p,6e10.2)', 'update: id,j,k,l,n,dt,t', &
+    write (io_unit%log,'(a,i4,2i3,2f11.6,2x,a,1p,6e10.2)') 'update: id,j,k,l,n,dt,t', &
       self%id, self%it, self%new, self%dtime, self%time, 'minmax:', &
       minval(self%mem(:,:,:,1,self%it ,2)), &
       maxval(self%mem(:,:,:,1,self%it ,2)), &
@@ -411,7 +412,7 @@ SUBROUTINE rotate (self)
   ! updates, since we do not want to enforce a critical region, and the
   ! new self%time is what a task is judged on!
   !-----------------------------------------------------------------------------
-  call trace_tag ('patch_t%update mem_cr')
+  call trace_tag ('patch_mod::update mem_cr')
   !call self%lock%set ('rotate')
   !!$omp flush
   time = self%time + self%dtime
@@ -429,11 +430,11 @@ SUBROUTINE rotate (self)
   !$omp atomic write
   self%time = time
   if (io%verbose>2) &
-   print*,'patch id:',self%id,'  it:',self%it,'  new:',self%new
+   write (io_unit%log,*) 'patch id:',self%id,'  it:',self%it,'  new:',self%new
   if (io%verbose>3) &
-   print*,'patch iit:', self%iit
+   write (io_unit%log,*) 'patch iit:', self%iit
   if (io%verbose>3) &
-   print*,'patch t(iit):', self%t(self%iit)
+   write (io_unit%log,*) 'patch t(iit):', self%t(self%iit)
   !!$omp flush
   !call self%lock%unset ('rotate')
   call trace_end (itimer)
@@ -457,7 +458,7 @@ SUBROUTINE periodic_grid (self)
   class(patch_t):: self
   integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3)
   !.............................................................................
-  call trace_begin ('patch_t%periodic_grid')
+  call trace_begin ('patch_mod::periodic_grid')
   lb = self%mesh%lb
   ub = self%mesh%ub
   li = self%mesh%li
@@ -608,6 +609,8 @@ SUBROUTINE pack (self, mesg)
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info to sequenced header, and copy that to the buffer
   !-----------------------------------------------------------------------------
+  if (io%verbose > 1) write (io_unit%log,*) 'pack, id, time, it:', &
+    self%id, self%time, self%it
   call patch_to_header (self, header)
   ibuf = 1
   call anonymous_copy (n_header, header, mesg%buffer(ibuf))
@@ -646,7 +649,11 @@ SUBROUTINE unpack (self, buffer)
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
+  if (io%verbose > 2) write (io_unit%log,*) 'unpack, id, time before:', &
+    self%id, self%time, self%it
   call self%header_to_patch (header)
+  if (io%verbose > 1) write (io_unit%log,*) 'unpack, id, time  after:', &
+    self%id, self%time, self%it
   !-----------------------------------------------------------------------------
   ! Copy the variables from the output buffer
   !-----------------------------------------------------------------------------
@@ -675,7 +682,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   call trace_begin('patch_mod::output_legacy')
   self%max_files = self%max_files-1
   if (self%max_files <= 0) then
-    print*,'TOO MANY FILES'
+    write (io_unit%log,*) 'TOO MANY FILES'
     stop
   end if
   !-----------------------------------------------------------------------------
@@ -723,8 +730,8 @@ SUBROUTINE output_legacy (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
-  if (io%verbose>=0) &
-    print'(a,3x,"time:",f9.5)', 'patches_t%output: file= '//trim(filename), self%out_next
+  if (io%master .and. io%verbose>=0) &
+    print'(a,3x,"time:",f9.5)', 'patch_mod::output: file= '//trim(filename), self%out_next
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   do i=1,3
     if (self%size(i) > 0.0) then
@@ -772,7 +779,8 @@ SUBROUTINE output_legacy (self, experiment_name)
         call check_error(self, buf, "output 2")
       end if
       if (io%verbose>1) &
-        print'(1x,a,2i5,i3,1p,3e11.3)',trim(filename),iv,it,jo,minval(buf),maxval(buf),pt
+        write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
+          trim(filename),iv,it,jo,minval(buf),maxval(buf),pt
       write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
       deallocate (buf)
     end do
@@ -793,7 +801,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !.............................................................................
   integer:: iv, nv
   !-----------------------------------------------------------------------------
-  if ((io%verbose>=0 .and. io%master) .or. io%verbose>=3) then
+  if (io%verbose>=0) then
     if (self%time>=self%print_next) then
       if (io%verbose==0 .and. self%id/=1) return
       if (self%print_time > 0) &
@@ -802,7 +810,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       if (io%verbose>1) nv = self%nv
       do iv=1,nv
         1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,2x,e10.2,2i5,o12)
-        print 1, &
+        if (io%master) &
+          print 1, &
           'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
           self%fminval(self%mem(:,:,:,iv,self%it ,2)), &
           self%fmaxval(self%mem(:,:,:,iv,self%it ,2)), &
@@ -943,9 +952,9 @@ SUBROUTINE courant_condition (self)
   class(patch_t):: self
   real(8):: dtime
   !.............................................................................
-  call trace_begin('patch_t%courant')
+  call trace_begin('patch_mod::courant')
   if (io%verbose>2) &
-    print*, 'courant: u_max, ds', self%u_max, minval(self%ds)
+    write (io_unit%log,*) 'courant: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
     dtime = self%dt_fixed
     self%courant = dtime*self%u_max/minval(self%ds)
@@ -1031,7 +1040,7 @@ SUBROUTINE set (self, bit)
   class (patch_t):: self
   integer:: bit
   !.............................................................................
-!  call trace_begin ('patch_t%set')
+!  call trace_begin ('patch_mod::set')
   self%status = ior(self%status, bit)
 !  call trace_end
 END SUBROUTINE
@@ -1040,7 +1049,7 @@ SUBROUTINE clear (self, bit)
   class (patch_t):: self
   integer:: bit
   !.............................................................................
-!  call trace_begin ('patch_t%clear')
+!  call trace_begin ('patch_mod::clear')
   self%status = iand(self%status, not(bit))
 !  call trace_end
 END SUBROUTINE
@@ -1049,7 +1058,7 @@ LOGICAL FUNCTION is_set (self, bit)
   class (patch_t):: self
   integer:: bit
   !.............................................................................
-!  call trace_begin ('patch_t%is_set')
+!  call trace_begin ('patch_mod::is_set')
   is_set = (iand(self%status, bit) /= 0)
 !  call trace_end
 END FUNCTION
@@ -1058,7 +1067,7 @@ LOGICAL FUNCTION is_clear (self, bit)
   class (patch_t):: self
   integer:: bit
   !.............................................................................
-!  call trace_begin ('patch_t%is_clear')
+!  call trace_begin ('patch_mod::is_clear')
   is_clear = (iand(self%status, bit) == 0)
 !  call trace_end
 END FUNCTION
@@ -1094,7 +1103,7 @@ SUBROUTINE check_density (self, label)
   !-----------------------------------------------------------------------------
   if (io%verbose < 1) return
   mind = minval(self%mem(:,:,:,1,self%it,1))
-  if (present(label) .and. io%verbose>1) print*, label, self%id, mind
+  if (present(label) .and. io%verbose>1) write (io_unit%log,*) label, self%id, mind
   if (mind <= 0.0) then
     !---------------------------------------------------------------------------
     ! Negative densities appear to develop at a few points in the guard zones,
@@ -1122,13 +1131,13 @@ SUBROUTINE check_density (self, label)
     end do
     if (present(label)) then
       if (io%verbose>1 .or. nins>0) &
-        print 1, self%id, &
+        write (io_unit%log,1) self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
          trim(label)
       1 format(i8,3x,a,i8,a,i8,a)
     else
       if (io%verbose>1 .or. nins>0) &
-        print 1, self%id, &
+        write (io_unit%log,1) self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside'
     end if
   end if
@@ -1193,10 +1202,10 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   !-----------------------------------------------------------------------------
   if (self%dt_fixed > 0.0) then
     if (abs(pt(1))< 1d-5) then
-      if (io%verbose>2) print*,'EXACT'
+      if (io%verbose>2) write (io_unit%log,*) 'EXACT'
       pt(1)=0d0; pt(2)=1d0
     else if (abs(pt(2)) < 1d-5) then
-      if (io%verbose>2) print*,'EXACT'
+      if (io%verbose>2) write (io_unit%log,*) 'EXACT'
       pt(1)=1d0; pt(2)=0d0
     end if
   end if

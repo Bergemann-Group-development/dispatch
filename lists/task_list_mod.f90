@@ -111,7 +111,7 @@ SUBROUTINE execute (self)
   call timer%print
   call toc ('rank time', n_update)
   !if (io%master) &
-  !  print *, 'download_differ % =', 100.*download%n_differ/ &
+  !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
   !    max(1,(download%n_differ+download%n_same))
   call buffered_output%close
 END SUBROUTINE execute
@@ -174,7 +174,7 @@ SUBROUTINE update (self)
     ! previous time steps are saved.
     !----------------------------------------------------------------------------
     if (io%verbose>1) &
-      print'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)', &
+      write (io_unit%log,'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4)') &
       'thread', omp_mythread, 'task', task%id, &
       'step', task%istep, 'n, nq', self%n, self%nq
     select type (task)
@@ -228,9 +228,9 @@ FUNCTION find_task (self, id) RESULT (link)
   !.............................................................................
   link => self%head
   do while (associated(link))
-!print *,mpi%rank,' find task: id, link%id, virtual =', id, link%task%id, link%task%is_set(bits%virtual)
+!write (io_unit%log,*) mpi%rank,' find task: id, link%id, virtual =', id, link%task%id, link%task%is_set(bits%virtual)
     if (link%task%id == id) then
-!print *,mpi%rank,' find task: match', id; flush(6)
+!write (io_unit%log,*) mpi%rank,' find task: match', id; flush(6)
       return
     end if
     link => link%next
@@ -243,7 +243,7 @@ FUNCTION find_task (self, id) RESULT (link)
   link%task => task
   task%id = id
   task%box = self%size
-print *,mpi%rank,' find task: new task', id, task%box; flush(6)
+write (io_unit%log,*) mpi%rank,' find task: new task', id, task%box; flush(6)
   call task%init
   !-----------------------------------------------------------------------------
   ! Create a neighbor list, and update the nbor lists of the nbors, before adding
@@ -351,8 +351,8 @@ SUBROUTINE split (self, this)
         patch%t   = this_patch%t                        ! newly allocated
         patch%dt  = this_patch%dt                       ! newly allocated
         patch%iit = this_patch%iit                      ! newly allocated
-        !print*,'mk1: id,it,it,new,new',patch%id,patch%it,this_patch%it,patch%new,this_patch%new
-        !print*,'mk2; id,it,iit',patch%id,this_patch%it, this_patch%iit
+        !write (io_unit%log,*) 'mk1: id,it,it,new,new',patch%id,patch%it,this_patch%it,patch%new,this_patch%new
+        !write (io_unit%log,*) 'mk2; id,it,iit',patch%id,this_patch%it, this_patch%iit
         patch%iit(1:patch%nt-1) = this_patch%it         ! fake history
         patch%out_next = patch%time                     ! force output now
         !------------------------------------------------------------------------
@@ -413,16 +413,16 @@ SUBROUTINE print_tasks (self, label)
   !.............................................................................
   !if (io%verbose < 2) return
   if (present(label)) then
-    print'(a,i4,":")', 'task_list: '//trim(label), self%n
+    write (io_unit%log,'(a,i4,":")') 'task_list: '//trim(label), self%n
   else
-    print'(a,i4,":")', 'task_list', self%n
+    write (io_unit%log,'(a,i4,":")') 'task_list', self%n
   end if
   link => self%head
   do while (associated(link))
-    print '(i4,g15.6,l5)', link%task%id, link%task%time, link%task%is_set(bits%ready)
+    write (io_unit%log,'(i4,g15.6,l5)') link%task%id, link%task%time, link%task%is_set(bits%ready)
     link => link%next
   end do
-  print*,''
+  write (io_unit%log,*) ''
 END SUBROUTINE print_tasks
 
 !> =============================================================================
@@ -433,7 +433,7 @@ SUBROUTINE print_tasklist (self, label)
   character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
   !.............................................................................
-  if (io%master) print*, label
+  if (io%master) write (io_unit%log,*) label
   link => self%head
   do while (associated(link))
     call link%print_nbors ('')
@@ -471,7 +471,7 @@ contains
     open (io_unit%flag, file=trim(file), form='formatted', status='old')
     read (io_unit%flag,*) value
     close (io_unit%flag,status='delete')
-    print*, 'flag check:', file, value
+    write (io_unit%log,*) 'flag check:', file, value
     changed = .true.
   else
     changed = .false.
@@ -486,7 +486,7 @@ contains
     open (io_unit%flag, file=trim(file), form='formatted', status='old')
     read (io_unit%flag,*) value
     close (io_unit%flag,status='delete')
-    print*, 'flag check:', file, value
+    write (io_unit%log,*) 'flag check:', file, value
     changed = .true.
   else
     changed = .false.
