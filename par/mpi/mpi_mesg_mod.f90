@@ -220,8 +220,6 @@ SUBROUTINE check (self)
     req = mesg%req
     call MPI_TEST (req, flag, stat, ierr)
     if (flag) then
-      self%recv_list%head => mesg%next
-      self%recv_list%n = self%recv_list%n - 1
       call self%recv_list%remove (mesg)
       call self%unpack_list%add (mesg)
       if (io%verbose>1) then
