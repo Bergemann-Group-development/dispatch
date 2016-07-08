@@ -818,7 +818,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
           self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
           real(n_update), ntask, nq, self%status
-        write (io%log_unit,1) &
+        write (io_unit%log,1) &
           'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
           self%fminval(self%mem(:,:,:,iv,self%it ,2)), &
           self%fmaxval(self%mem(:,:,:,iv,self%it ,2)), &

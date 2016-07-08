@@ -306,8 +306,9 @@ SUBROUTINE check_ready (self, link, set_debug)
       else
         if (task%id==io%id_debug.or.io%verbose>1) &
           write (io_unit%log,1) task%id, 'fails at', &
-          task%time, ' on', nbtask%id, nbtask%time-task%time
-          1 format(i9,2x,a,1p,e16.8,2x,a,i9,e16.8)
+          task%time, ' on', nbtask%id, nbtask%time-task%time, &
+          nbtask%is_set(bits%virtual)
+          1 format(i9,2x,a,1p,e16.8,2x,a,i9,e16.8,l4)
         goto 9
       end if
     end do
