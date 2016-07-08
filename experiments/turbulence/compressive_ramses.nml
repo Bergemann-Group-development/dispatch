@@ -1,11 +1,11 @@
 ! $Id$
 
 &io_params
- verbose=0
+ verbose=2
  do_trace=f
  do_debug=f
  do_output=f
- omp_trace=f
+ omp_trace=t
 /
 &box_params
  face_nbors=f
@@ -15,16 +15,16 @@
  !dims=2,2,2
  !dims=1,1,1
  origin=0,0,0
- mpi_dims=2,2,2
+ mpi_dims=1,1,2
 /
 &experiment_params
 /
 &patch_params
  nt=3
  courant=0.2
- grace=1.1
- !n=16,16,16
- n=32,32,32
+ grace=0
+ n=16,16,16
+ !n=32,32,32
  !n=128,128,128
  !n=256,256,256
 !dt_fixed=0.001
