@@ -174,9 +174,11 @@ SUBROUTINE check (self)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
   call trace_begin ('mpi_mesg_mod::check')
+  !$omp critical (sent_cr)
   call self%sent_list%check
-  call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+  !$omp end critical (sent_cr)
   !$omp critical (recv_cr)
+  call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   nmsg = 0
   do while (flag)
     nmsg = nmsg+1
@@ -250,8 +252,8 @@ SUBROUTINE get (self, mesg)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
   call trace_begin('mpi_mesg_mod::get')
-  call self%unpack_list%print
   !$omp critical (recv_cr)
+  call self%unpack_list%print
   mesg => self%unpack_list%head
   if (associated(mesg)) then
     self%unpack_list%head => mesg%next

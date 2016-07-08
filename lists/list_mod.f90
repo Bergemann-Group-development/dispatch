@@ -225,7 +225,7 @@ SUBROUTINE check_nbors (self, link)
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
   nbor => link%nbor                                   ! first nbor
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   do while (associated (nbor))                        ! keep going until end
     nbtask => nbor%task                               ! neighbor task
     n_check = n_check+1
@@ -246,7 +246,7 @@ SUBROUTINE check_nbors (self, link)
     nbor => nbor%next                                 ! next nbor
   end do
   call self%check_ready (link)                        ! finally check link task
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   if (task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
   !self%n_nbor = self%n_nbor + 1
   if (io%verbose>2) write (io_unit%log,'(a,i9,l3,12(2x,a,i4))') &
@@ -287,14 +287,15 @@ SUBROUTINE check_ready (self, link, set_debug)
   logical:: ahead, is_clear
   integer, save:: itimer=0
   !.............................................................................
+  if (link%task%is_set (bits%virtual)) return
   call trace_begin('list_mod::check_ready '//self%name, 2, itimer)
   if (present(set_debug)) then
     debug = set_debug
   else
     debug = 0
   end if
-  !xomp critical (list_cr)
-  !call self%qconsistency(1)
+  !$omp critical (list_cr)
+  call self%qconsistency(1)
   task => link%task                                     ! already checked?
   if (task%is_clear(bits%ready)) then
     nbor => link%nbor                                   ! start on nbor list
@@ -315,14 +316,13 @@ SUBROUTINE check_ready (self, link, set_debug)
     if (task%id==io%id_debug.or.io%verbose>1) &
       write (io_unit%log,1) task%id, '   ok at', task%time
     !xomp critical (list_cr)
-    call task%set(bits%ready)                           ! mark as checked
     call self%qconsistency(2)
     call self%queue_by_time (link)                      ! add task to queue
     call self%qconsistency(3)
     !xomp end critical (list_cr)
   end if
 9 continue
-  !xomp end critical (list_cr)
+  !$omp end critical (list_cr)
   call trace_end (itimer)
 END SUBROUTINE check_ready
 
@@ -837,6 +837,7 @@ SUBROUTINE queue_by_time (self, this)
       else
         self%queue => this
       end if
+      !$omp atomic
       self%nq = self%nq+1
       call trace_end
       return

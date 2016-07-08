@@ -150,6 +150,7 @@ SUBROUTINE update (self)
     ! one time.
     !---------------------------------------------------------------------------
     self%queue => head%next_time
+    !$omp atomic
     self%nq = self%nq-1                                 ! decrement queue count
   end if
   !$omp end critical (list_cr)
@@ -275,6 +276,7 @@ SUBROUTINE unpack (self, mesg)
     deallocate (mesg%buffer)
     deallocate (mesg)
   end select
+  !call link%task%clear (bits%ready)
   call self%check_nbors (link)
 END SUBROUTINE unpack
 
