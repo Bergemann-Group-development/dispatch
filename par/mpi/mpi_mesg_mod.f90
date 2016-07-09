@@ -30,7 +30,7 @@ MODULE mpi_mesg_mod
   contains
     procedure:: add
     procedure:: remove
-    procedure:: check => check_sent
+    procedure:: check_sent
     procedure:: print => print_list
   end type
   !
@@ -41,6 +41,7 @@ MODULE mpi_mesg_mod
     procedure:: init
     procedure:: check
     procedure:: get
+    procedure:: sent
   end type
   type(mpi_mesg_t), public:: mpi_mesg
   logical, save:: debug=.true.
@@ -162,6 +163,18 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
+!> Add a message to the sent_list, in a critical region
+!> =============================================================================
+SUBROUTINE sent (self, mesg)
+  class(mpi_mesg_t):: self
+  class(mesg_t), pointer:: mesg, next
+  !-----------------------------------------------------------------------------
+  !$omp critical (sent_cr)
+  call self%sent_list%add (mesg)
+  !$omp end critical (sent_cr)
+END SUBROUTINE sent
+
+!> =============================================================================
 !> Check for new incoming messages
 !> =============================================================================
 SUBROUTINE check (self)
@@ -185,7 +198,7 @@ SUBROUTINE check (self)
     every = 10
     !$omp critical (sent_cr)
     wc(2) = wallclock()
-    call self%sent_list%check
+    call self%sent_list%check_sent
     wc(3) = wallclock()
     !$omp end critical (sent_cr)
   end if
@@ -258,8 +271,8 @@ SUBROUTINE check (self)
     end if
     mesg => mesg%next
   end do
-  call trace_end (itimer(3))
   !$omp end critical (recv_cr)
+  call trace_end (itimer(3))
   wc(7) = wallclock()
   do i=1,6
     ws(i)=ws(i)+(wc(i+1)-wc(i))

@@ -261,8 +261,6 @@ SUBROUTINE send_to_vnbors (self, mesg)
   !-----------------------------------------------------------------------------
   rank = -1                                                     ! previous rank
   nbor => self%nbor                                             ! first nbor
-  !$omp critical (sent_cr)
-  !xomp critical (send_cr)
   do while (associated(nbor))                                   ! until end
     task => nbor%task
     if (task%rank/=mpi%rank .and. task%rank/=rank) then         ! new rank?
@@ -276,16 +274,12 @@ SUBROUTINE send_to_vnbors (self, mesg)
     end if
     nbor => nbor%next                                           ! next nbor
   end do
-  !xomp end critical (send_cr)
   !-----------------------------------------------------------------------------
   ! Add the message to a list of sent messages, and check which previously sent
   ! messages that may now be deallocated.  The test is fast, so we can leave the
   ! list locked while updating.
   !-----------------------------------------------------------------------------
-  !xomp critical (sent_cr)
-  call mpi_mesg%sent_list%add (mesg)                            ! add to sent_list
-  call mpi_mesg%sent_list%check                                 ! check list
-  !$omp end critical (sent_cr)
+  call mpi_mesg%sent (mesg)                                     ! check list
   call trace_end (itimer)
 END SUBROUTINE send_to_vnbors
 
