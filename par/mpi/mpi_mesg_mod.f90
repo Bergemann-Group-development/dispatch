@@ -171,13 +171,27 @@ SUBROUTINE check (self)
   logical:: flag
   class(mesg_t), pointer:: mesg
   integer, save:: nprint=50
+  integer, save:: itimer(4)=0
+  integer, save:: every=10
+  real(8):: wc(7)
+  real(8),save:: ws(6)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
-  call trace_begin ('mpi_mesg_mod::check')
-  !$omp critical (sent_cr)
-  call self%sent_list%check
-  !$omp end critical (sent_cr)
+  wc(1) = wallclock()
+  if (every>0) then
+    every = every-1
+    wc(2:3) = wc(1)
+  else
+    every = 10
+    !$omp critical (sent_cr)
+    wc(2) = wallclock()
+    call self%sent_list%check
+    wc(3) = wallclock()
+    !$omp end critical (sent_cr)
+  end if
   !$omp critical (recv_cr)
+  wc(4) = wallclock()
+  call trace_begin ('mpi_mesg_mod::check(1)', itimer=itimer(1))
   call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   nmsg = 0
   do while (flag)
@@ -193,6 +207,9 @@ SUBROUTINE check (self)
     call self%recv_list%add (mesg)
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   end do
+  wc(5) = wallclock()
+  call trace_end (itimer(1))
+  call trace_begin ('mpi_mesg_mod::check(2)', itimer=itimer(2))
   if (io%verbose>2) then
     if (nmsg==0) then
       if (nprint>0) then
@@ -213,7 +230,9 @@ SUBROUTINE check (self)
   !-----------------------------------------------------------------------------
   ! Check the recv_list for completed receives, adding them to unpack_list
   !-----------------------------------------------------------------------------
-  !call trace_tag ('check')
+  wc(6) = wallclock()
+  call trace_end (itimer(2))
+  call trace_begin ('mpi_mesg_mod::check(3)', itimer=itimer(3))
   mesg => self%recv_list%head
   i = 0
   do while (associated(mesg))
@@ -239,8 +258,13 @@ SUBROUTINE check (self)
     end if
     mesg => mesg%next
   end do
+  call trace_end (itimer(3))
   !$omp end critical (recv_cr)
-  call trace_end
+  wc(7) = wallclock()
+  do i=1,6
+    ws(i)=ws(i)+(wc(i+1)-wc(i))
+  end do
+  write (io_unit%log,'(a,3p,6f10.3)') 'wc:', ws(1:6)
 END SUBROUTINE check
 
 !> =============================================================================
@@ -249,10 +273,11 @@ END SUBROUTINE check
 SUBROUTINE get (self, mesg)
   class(mpi_mesg_t):: self
   class(mesg_t), pointer:: mesg, next
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
-  call trace_begin('mpi_mesg_mod::get')
   !$omp critical (recv_cr)
+  call trace_begin('mpi_mesg_mod::get', itimer=itimer)
   call self%unpack_list%print
   mesg => self%unpack_list%head
   if (associated(mesg)) then
@@ -272,8 +297,8 @@ SUBROUTINE get (self, mesg)
     end if
   end if
   call self%unpack_list%print
+  call trace_end (itimer)
   !$omp end critical (recv_cr)
-  call trace_end
 END SUBROUTINE get
 
 !> =============================================================================

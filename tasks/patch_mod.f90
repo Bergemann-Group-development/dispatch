@@ -594,10 +594,11 @@ SUBROUTINE pack (self, mesg)
   integer:: n_header, n_var, ibuf, iv
   real, dimension(:,:,:), pointer:: var
   real:: pt
+  integer:: itimer=0
   !-----------------------------------------------------------------------------
   ! Compute size of buffer and allocate -- it will be freed by the writer
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_mod::pack')
+  call trace_begin ('patch_mod::pack', itimer=itimer)
   allocate (mesg)
   n_header = sizeof(header)/4
   n_var = product(self%gn)
@@ -622,7 +623,7 @@ SUBROUTINE pack (self, mesg)
     call anonymous_copy (n_var, self%mem(:,:,:,iv,self%it,1), mesg%buffer(ibuf))
     ibuf = ibuf + n_var
   end do
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE pack
 
 !> =============================================================================
@@ -636,10 +637,11 @@ SUBROUTINE unpack (self, buffer)
   integer, dimension(:), pointer:: buffer
   real, dimension(:,:,:), pointer:: var
   real:: pt
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Compute size of buffer
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_mod::pack')
+  call trace_begin ('patch_mod::unpack', itimer=itimer)
   !write (io_unit%log,*) 'unpack patch id', self%id
   n_header = sizeof(header)/4
   n_buf = product(self%gn)
@@ -661,7 +663,7 @@ SUBROUTINE unpack (self, buffer)
     call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
     ibuf = ibuf + n_buf
   end do
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE unpack
 
 !> =============================================================================

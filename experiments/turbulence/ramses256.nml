@@ -1,10 +1,14 @@
 ! $Id$
 
+&timer_params
+ sec_per_report=5
+/
 &io_params
- verbose=1
+ verbose=0
  do_trace=f
  do_debug=f
  do_output=f
+ omp_trace=t
 /
 &box_params
  face_nbors=f
@@ -14,6 +18,7 @@
  !dims=2,2,2
  !dims=1,1,1
  origin=0,0,0
+ mpi_dims=1,2,2
 /
 &experiment_params
 /
@@ -48,8 +53,6 @@
  u0=0,0,0
  b0=0,0,0
  type='ramses256'
-/
-&timer_params
 /
 &ramses_params
  courant_factor=0.8
