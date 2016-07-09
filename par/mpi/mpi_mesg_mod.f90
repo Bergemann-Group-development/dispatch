@@ -184,12 +184,13 @@ SUBROUTINE check (self)
   logical:: flag
   class(mesg_t), pointer:: mesg
   integer, save:: nprint=50
-  integer, save:: itimer(4)=0
+  integer, save:: itimer(5)=0
   integer, save:: every=10
-  real(8):: wc(7)
-  real(8),save:: ws(6)
+  real(8):: wc(12)
+  real(8),save:: ws(11)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
+  call trace_begin ('mpi_mesg_mod::check(1)', itimer=itimer(1))
   wc(1) = wallclock()
   if (every>0) then
     every = every-1
@@ -202,14 +203,13 @@ SUBROUTINE check (self)
     wc(3) = wallclock()
     !$omp end critical (sent_cr)
   end if
-  !$omp critical (recv_cr)
-  wc(4) = wallclock()
-  call trace_begin ('mpi_mesg_mod::check(1)', itimer=itimer(1))
+  !call trace_end (itimer(1))
+  !call trace_begin ('mpi_mesg_mod::check(2)', itimer=itimer(2))
   call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   nmsg = 0
+  wc(4) = wallclock()
   do while (flag)
     nmsg = nmsg+1
-    !call trace_tag ('flag')
     allocate (mesg)
     call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
     allocate (mesg%buffer(nbuf))
@@ -217,12 +217,14 @@ SUBROUTINE check (self)
     mesg%req = req
     mesg%id = stat(MPI_TAG)
     mesg%sender = stat(MPI_SOURCE)
+    !$omp critical (recv_cr)
     call self%recv_list%add (mesg)
+    !$omp end critical (recv_cr)
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   end do
   wc(5) = wallclock()
-  call trace_end (itimer(1))
-  call trace_begin ('mpi_mesg_mod::check(2)', itimer=itimer(2))
+  !call trace_end (itimer(2))
+  !call trace_begin ('mpi_mesg_mod::check(3)', itimer=itimer(3))
   if (io%verbose>2) then
     if (nmsg==0) then
       if (nprint>0) then
@@ -243,19 +245,26 @@ SUBROUTINE check (self)
   !-----------------------------------------------------------------------------
   ! Check the recv_list for completed receives, adding them to unpack_list
   !-----------------------------------------------------------------------------
+  !call trace_end (itimer(3))
+  !call trace_begin ('mpi_mesg_mod::check(4)', itimer=itimer(4))
   wc(6) = wallclock()
-  call trace_end (itimer(2))
-  call trace_begin ('mpi_mesg_mod::check(3)', itimer=itimer(3))
+  wc(7) = wc(6)
+  !$omp critical (recv_cr)
+  wc(8) = wallclock(); ws(7) = ws(7)+(wc(8)-wc(7)); wc(7) = wc(8) 
   mesg => self%recv_list%head
   i = 0
   do while (associated(mesg))
     i = i+1
-    !call trace_tag ('mesg')
     req = mesg%req
     call MPI_TEST (req, flag, stat, ierr)
+    wc(8) = wallclock(); ws(8) = ws(8)+(wc(8)-wc(7)); wc(7) = wc(8) 
     if (flag) then
       call self%recv_list%remove (mesg)
+      wc(8) = wallclock(); ws(9) = ws(9)+(wc(8)-wc(7)); wc(7) = wc(8) 
+      !$omp critical (unpk_cr)
       call self%unpack_list%add (mesg)
+      !$omp end critical (unpk_cr)
+      wc(8) = wallclock(); ws(10) = ws(10)+(wc(8)-wc(7)); wc(7) = wc(8) 
       if (io%verbose>1) then
         write (io_unit%log,1) wallclock(), ' recv   complete', mesg%id, &
           i, self%recv_list%n, self%unpack_list%n
@@ -272,12 +281,14 @@ SUBROUTINE check (self)
     mesg => mesg%next
   end do
   !$omp end critical (recv_cr)
-  call trace_end (itimer(3))
   wc(7) = wallclock()
   do i=1,6
+    !$omp atomic
     ws(i)=ws(i)+(wc(i+1)-wc(i))
   end do
-  write (io_unit%log,'(a,3p,6f10.3)') 'wc:', ws(1:6)
+  write (io_unit%log,'(a,3p,10f10.3)') 'wc:', ws(1:10)
+  !call trace_end (itimer(4))
+  call trace_end (itimer(1))
 END SUBROUTINE check
 
 !> =============================================================================
@@ -289,7 +300,7 @@ SUBROUTINE get (self, mesg)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
-  !$omp critical (recv_cr)
+  !$omp critical (unpk_cr)
   call trace_begin('mpi_mesg_mod::get', itimer=itimer)
   call self%unpack_list%print
   mesg => self%unpack_list%head
@@ -311,7 +322,7 @@ SUBROUTINE get (self, mesg)
   end if
   call self%unpack_list%print
   call trace_end (itimer)
-  !$omp end critical (recv_cr)
+  !$omp end critical (unpk_cr)
 END SUBROUTINE get
 
 !> =============================================================================

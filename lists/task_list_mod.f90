@@ -285,7 +285,7 @@ END SUBROUTINE unpack
 !> =============================================================================
 SUBROUTINE check_mpi (self)
   class(task_list_t):: self
-  class(mesg_t), pointer:: mesg, this
+  class(mesg_t), pointer:: mesg
   integer, save:: itimer=0
   !.............................................................................
   if (mpi%size <= 1) return
@@ -299,7 +299,6 @@ SUBROUTINE check_mpi (self)
   !-----------------------------------------------------------------------------
   call mpi_mesg%get (mesg)
   do while (associated(mesg))
-    this => mesg
     if (io%verbose>0) then
       write (io_unit%log,*) 'unpack msg id, sender', mesg%id, mesg%sender
       flush (io_unit%log)
