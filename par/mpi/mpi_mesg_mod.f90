@@ -16,7 +16,7 @@ MODULE mpi_mesg_mod
     class(mesg_t), pointer:: prev => null()
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:) => null()
-    integer:: nbuf, nreq, req, sender, id
+    integer:: nbuf, nreq, req, sender, id, ntry=0
   contains
     procedure:: send
     procedure:: test_all
@@ -43,10 +43,13 @@ MODULE mpi_mesg_mod
     procedure:: check
     procedure:: get
     procedure:: sent
+    procedure:: delay
+    procedure:: diagnostics
   end type
   type(mpi_mesg_t), public:: mpi_mesg
   integer, parameter:: every_send=10            ! how often to check send_list
   integer, parameter:: every_recv=1             ! how often to check recv_list
+  logical, save:: debug=.false.
 CONTAINS
 
 !> =============================================================================
@@ -78,6 +81,8 @@ SUBROUTINE check_sent (self)
       call self%remove (mesg)                                   ! yes, remove
       deallocate (mesg%buffer, mesg%reqs)
       deallocate (mesg)
+    else if (io%verbose>0) then
+      mesg%ntry = mesg%ntry+1
     end if
     mesg => next                                                ! true next
   end do
@@ -152,6 +157,45 @@ SUBROUTINE remove (self, mesg)
 END SUBROUTINE remove
 
 !> =============================================================================
+!> Print a list of messages
+!> =============================================================================
+SUBROUTINE print_list (self, label)
+  class (mesg_list_t):: self
+  character(len=*), optional:: label
+  class(mesg_t), pointer:: mesg
+  !-----------------------------------------------------------------------------
+  if (present(label)) &
+    write (io_unit%log,*) '------------------ '//label//' ------------------'
+  mesg => self%head
+  do while (associated(mesg))
+    write (io_unit%log,'(a,i5,i9,2i5)') 'mesg_list: '//self%name, &
+      self%n, mesg%id, mesg%sender, mesg%ntry
+    mesg => mesg%next
+  end do
+END SUBROUTINE print_list
+
+!> =============================================================================
+!> Count messages, with warning if the %n does not agree with the actual number
+!> =============================================================================
+SUBROUTINE count (self, label)
+  class (mesg_list_t):: self
+  character(len=*):: label
+  class(mesg_t), pointer:: mesg
+  integer:: n
+  !-----------------------------------------------------------------------------
+  if (io%verbose < 1) return
+  mesg => self%head
+  n = 0
+  do while (associated(mesg))
+    n = n+1
+    mesg => mesg%next
+  end do
+  if (n /= self%n) then
+    write (io_unit%log,*) 'WARNING: inconsistent '//self%name, n, self%n
+  end if
+END SUBROUTINE count
+
+!> =============================================================================
 !> Initialize the three message lists
 !> =============================================================================
 SUBROUTINE init (self)
@@ -218,9 +262,18 @@ SUBROUTINE check (self)
     mesg%req = req
     mesg%id = stat(MPI_TAG)
     mesg%sender = stat(MPI_SOURCE)
-    !$omp critical (recv_cr)
-    call self%recv_list%add (mesg)
-    !$omp end critical (recv_cr)
+    call MPI_TEST (req, flag, stat, ierr)
+    if (flag) then
+      !$omp critical (unpk_cr)
+      call self%unpack_list%add (mesg)
+      !$omp end critical (unpk_cr)
+    else
+      !$omp atomic
+      mesg%ntry = mesg%ntry+1
+      !$omp critical (recv_cr)
+      call self%recv_list%add (mesg)
+      !$omp end critical (recv_cr)
+    end if
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   end do
   wc(5) = wallclock()
@@ -251,6 +304,7 @@ SUBROUTINE check (self)
     wc(8) = wallclock(); ws(7) = ws(7)+(wc(8)-wc(7)); wc(7) = wc(8) 
     mesg => self%recv_list%head
     i = 0
+    if (debug) write (io_unit%log,*) 'DEBUG: checking recv_list, n =', self%recv_list%n
     do while (associated(mesg))
       i = i+1
       req = mesg%req
@@ -271,11 +325,18 @@ SUBROUTINE check (self)
         end if
       else
         if (io%verbose>1) then
+          !$omp atomic
+          mesg%ntry = mesg%ntry+1
           write (io_unit%log,1) wallclock(), ' recv incomplete', mesg%id, &
             i, self%recv_list%n, self%unpack_list%n
           1 format(f15.6,2x,a,i9,3i5)
           flush (io_unit%log)
         end if
+      end if
+      if (debug) then
+        write (io_unit%log,'(a,i9,l4,5i5)') &
+          mesg%id, flag, mesg%ntry, i, self%recv_list%n, self%unpack_list%n
+        flush (io_unit%log)
       end if
       mesg => mesg%next
     end do
@@ -329,37 +390,34 @@ SUBROUTINE get (self, mesg)
 END SUBROUTINE get
 
 !> =============================================================================
+!> Delay for about 1 ms, to encourage incoming messages to complete
 !> =============================================================================
-SUBROUTINE print_list (self)
-  class (mesg_list_t):: self
-  class(mesg_t), pointer:: mesg
+SUBROUTINE delay (self, n)
+  class(mpi_mesg_t):: self
+  integer:: n
+  real(8):: wc
   !-----------------------------------------------------------------------------
-  if (io%verbose < 3) return
-  mesg => self%head
-  do while (associated(mesg))
-    write (io_unit%log,*) 'mesg_list: '//self%name, mesg%id, mesg%sender
-    mesg => mesg%next
+  write (io_unit%log,*) 'delay:',n
+  wc = wallclock()
+  do while ((wallclock()-wc) < 1d-2)
   end do
-END SUBROUTINE print_list
+END SUBROUTINE delay
 
 !> =============================================================================
+!> Diagnostic printout, called when task_list_mod::update stalls
 !> =============================================================================
-SUBROUTINE count (self, label)
-  class (mesg_list_t):: self
-  character(len=*):: label
-  class(mesg_t), pointer:: mesg
-  integer:: n
+SUBROUTINE diagnostics (self, onoff)
+  class(mpi_mesg_t):: self
+  integer:: onoff
   !-----------------------------------------------------------------------------
-  if (io%verbose < 1) return
-  mesg => self%head
-  n = 0
-  do while (associated(mesg))
-    n = n+1
-    mesg => mesg%next
-  end do
-  if (n /= self%n) then
-    write (io_unit%log,*) 'WARNING: inconsistent '//self%name, n, self%n
+  !$omp critical (abort_cr)
+  debug = onoff>0
+  if (debug) then
+    call self%sent_list%print ('ABORT')
+    call self%recv_list%print ('ABORT')
+    flush (io_unit%log)
   end if
-END SUBROUTINE count
+  !$omp end critical (abort_cr)
+END SUBROUTINE diagnostics
 
 END MODULE mpi_mesg_mod

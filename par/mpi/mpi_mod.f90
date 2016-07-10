@@ -26,6 +26,7 @@
 !> =============================================================================
 MODULE mpi_mod
   USE omp_mod
+  USE io_unit_mod
   implicit none
   include 'mpif.h'              ! some systems require this instead of 'use mpi'
   integer:: mpi_err             ! MPI error status
@@ -36,7 +37,6 @@ MODULE mpi_mod
   integer:: mpi_size            ! number of MPI processes
   integer:: mpi_rank            ! process number (zero-based)
   integer:: output=2
-  integer, parameter:: mch=120
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   ! Object that returns the most important MPI parameters
@@ -187,11 +187,9 @@ SUBROUTINE abort_mpi (mp, reason)
   class(mpi_t):: mp
   character(len=*):: reason
 !...............................................................................
-  print*,'mpi_abort: '//trim(reason)
-  if (mp%verbose > 2) then
-    write(output,'(3(a,2x,i6))') 'mpi_abort: rank =',mpi_rank,'thread',trim(reason)
-    call flush (output)
-  end if
+  print*, mpi_rank, 'mpi_abort: '//trim(reason)
+  write(io_unit%log,'(3(a,2x,i6))') 'mpi_abort: thread =',omp%thread,trim(reason)
+  call flush (io_unit%log)
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
   call exit
 END SUBROUTINE abort_mpi

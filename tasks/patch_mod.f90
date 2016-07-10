@@ -42,10 +42,11 @@ MODULE patch_mod
     integer:: i_d                       ! density inddex
     real(8):: box(3)=1d0                ! the periodic wrapping size
     real(8):: ds(3), gsize(3)           ! convenience
-    integer:: n(3)=0, ng(3)=2          ! convient default
+    integer:: n(3)=0, ng(3)=2           ! convient default
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
     integer:: i,j,k                     ! should go!  FIXME
     real(8):: offset(3)                 ! this is used to compute indices
+    integer:: nq                        ! number of tasks in ready queue
   contains
     procedure:: check_error
     procedure:: init
@@ -118,6 +119,8 @@ MODULE patch_mod
     real(8):: gsize(3)                  ! convenience
     integer:: n(3)=16                   ! convenience
     integer:: ng(3)=2                   ! convenience
+    integer:: nq=0
+    integer:: npad=0
   end type
   !-----------------------------------------------------------------------------
   ! Template task, with procedure to place it it MPI-space
@@ -161,6 +164,7 @@ SUBROUTINE patch_to_header (self, head)
   head%t(1:nt)    = self%t
   head%dt(1:nt)   = self%dt
   head%iit(1:nt)  = self%iit
+  head%nq         = self%nq
 END SUBROUTINE patch_to_header
 
 !> =============================================================================
@@ -193,6 +197,7 @@ SUBROUTINE header_to_patch (self, head)
   self%t          = head%t(1:nt)
   self%dt         = head%dt(1:nt)
   self%iit        = head%iit(1:nt)
+  self%nq         = head%nq
 END SUBROUTINE header_to_patch
 
 !> =============================================================================

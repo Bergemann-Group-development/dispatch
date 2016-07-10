@@ -127,6 +127,7 @@ SUBROUTINE update (self)
   class(link_t), pointer:: head
   class(task_t), pointer:: task
   class(mesg_t), pointer:: mesg
+  integer, save:: stalled=0, max_stalled=10000
   !.............................................................................
   call trace_begin('task_list_t%update')
   !call self%check_flags
@@ -215,6 +216,16 @@ SUBROUTINE update (self)
       !$omp flush
     end if
     call task%info (self%nq, self%n)                    ! print info on stdout
+    !$omp atomic write
+    stalled = 0
+    call mpi_mesg%diagnostics (0)
+  else
+    !$omp critical (stalled_cr)
+    stalled = stalled+1
+    call mpi_mesg%delay (stalled)
+    if (stalled == max_stalled/2) call mpi_mesg%diagnostics (1)
+    if (stalled > max_stalled) call mpi%abort ('exceeded max_stalled')
+    !$omp end critical (stalled_cr)
   end if
   call trace_end
 END SUBROUTINE update
