@@ -1,6 +1,7 @@
 !> =============================================================================
 !> =============================================================================
 MODULE timer_mod
+  USE mpi_mod
   USE io_unit_mod
   USE omp_mod
   USE omp_timer_mod
@@ -17,7 +18,7 @@ MODULE timer_mod
     procedure:: end
     procedure, nopass:: print
   end type
-  character(len=32), dimension(maxproc):: names
+  character(len=64), dimension(maxproc):: names
   type(timer_t), pointer:: timers(:)
   type(timer_t), public:: timer
   integer, save:: nprint=20
@@ -63,6 +64,7 @@ SUBROUTINE begin (self, name, itimer)
     end do
     if (ok) then
       ntimer = ntimer+1
+      if (ntimer > maxproc) call mpi%abort ('timer_mod: increase maxproc')
       itimer = ntimer
       names(itimer) = name
     end if
@@ -128,6 +130,10 @@ SUBROUTINE print ()
   n_previous = n_update
   prev1 = wc
   prev2 = wc
+  do i=1,ntimer
+    timers(:)%total(i) = 0d0
+    timers(:)%calls(i) = 0
+  end do
 END SUBROUTINE print
 
 END MODULE timer_mod
