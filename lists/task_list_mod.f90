@@ -286,10 +286,9 @@ END SUBROUTINE unpack
 SUBROUTINE check_mpi (self)
   class(task_list_t):: self
   class(mesg_t), pointer:: mesg
-  integer, save:: itimer=0
   !.............................................................................
   if (mpi%size <= 1) return
-  call trace_begin ('task_list_mod::check_mpi', 1, itimer=itimer)
+  call trace_begin ('task_list_mod::check_mpi', 1)
   !-----------------------------------------------------------------------------
   ! Check for new or completed incoming and outgoing messages
   !-----------------------------------------------------------------------------
@@ -306,7 +305,7 @@ SUBROUTINE check_mpi (self)
     call self%unpack (mesg)
     call mpi_mesg%get (mesg)
   end do
-  call trace_end (itimer)
+  call trace_end
 END SUBROUTINE check_mpi
 
 !> =============================================================================

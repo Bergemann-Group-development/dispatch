@@ -190,7 +190,7 @@ SUBROUTINE check (self)
   real(8),save:: ws(11)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
-  call trace_begin ('mpi_mesg_mod::check(1)', itimer=itimer(1))
+  call trace_begin ('mpi_mesg_mod::check', itimer=itimer(1))
   wc(1) = wallclock()
   if (every>0) then
     every = every-1
