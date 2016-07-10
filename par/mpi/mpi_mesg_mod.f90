@@ -203,8 +203,6 @@ SUBROUTINE check (self)
     wc(3) = wallclock()
     !$omp end critical (sent_cr)
   end if
-  !call trace_end (itimer(1))
-  !call trace_begin ('mpi_mesg_mod::check(2)', itimer=itimer(2))
   call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   nmsg = 0
   wc(4) = wallclock()
@@ -223,8 +221,6 @@ SUBROUTINE check (self)
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
   end do
   wc(5) = wallclock()
-  !call trace_end (itimer(2))
-  !call trace_begin ('mpi_mesg_mod::check(3)', itimer=itimer(3))
   if (io%verbose>2) then
     if (nmsg==0) then
       if (nprint>0) then
@@ -245,49 +241,48 @@ SUBROUTINE check (self)
   !-----------------------------------------------------------------------------
   ! Check the recv_list for completed receives, adding them to unpack_list
   !-----------------------------------------------------------------------------
-  !call trace_end (itimer(3))
-  !call trace_begin ('mpi_mesg_mod::check(4)', itimer=itimer(4))
   wc(6) = wallclock()
-  wc(7) = wc(6)
-  !$omp critical (recv_cr)
-  wc(8) = wallclock(); ws(7) = ws(7)+(wc(8)-wc(7)); wc(7) = wc(8) 
-  mesg => self%recv_list%head
-  i = 0
-  do while (associated(mesg))
-    i = i+1
-    req = mesg%req
-    call MPI_TEST (req, flag, stat, ierr)
-    wc(8) = wallclock(); ws(8) = ws(8)+(wc(8)-wc(7)); wc(7) = wc(8) 
-    if (flag) then
-      call self%recv_list%remove (mesg)
-      wc(8) = wallclock(); ws(9) = ws(9)+(wc(8)-wc(7)); wc(7) = wc(8) 
-      !$omp critical (unpk_cr)
-      call self%unpack_list%add (mesg)
-      !$omp end critical (unpk_cr)
-      wc(8) = wallclock(); ws(10) = ws(10)+(wc(8)-wc(7)); wc(7) = wc(8) 
-      if (io%verbose>1) then
-        write (io_unit%log,1) wallclock(), ' recv   complete', mesg%id, &
-          i, self%recv_list%n, self%unpack_list%n
-        flush (io_unit%log)
+  if (mod(every,2)==0) then
+    wc(7) = wc(6)
+    !$omp critical (recv_cr)
+    wc(8) = wallclock(); ws(7) = ws(7)+(wc(8)-wc(7)); wc(7) = wc(8) 
+    mesg => self%recv_list%head
+    i = 0
+    do while (associated(mesg))
+      i = i+1
+      req = mesg%req
+      call MPI_TEST (req, flag, stat, ierr)
+      wc(8) = wallclock(); ws(8) = ws(8)+(wc(8)-wc(7)); wc(7) = wc(8) 
+      if (flag) then
+        call self%recv_list%remove (mesg)
+        wc(8) = wallclock(); ws(9) = ws(9)+(wc(8)-wc(7)); wc(7) = wc(8) 
+        !$omp critical (unpk_cr)
+        call self%unpack_list%add (mesg)
+        !$omp end critical (unpk_cr)
+        wc(8) = wallclock(); ws(10) = ws(10)+(wc(8)-wc(7)); wc(7) = wc(8) 
+        if (io%verbose>1) then
+          write (io_unit%log,1) wallclock(), ' recv   complete', mesg%id, &
+            i, self%recv_list%n, self%unpack_list%n
+          flush (io_unit%log)
+        end if
+      else
+        if (io%verbose>1) then
+          write (io_unit%log,1) wallclock(), ' recv incomplete', mesg%id, &
+            i, self%recv_list%n, self%unpack_list%n
+          1 format(f15.6,2x,a,i9,3i5)
+          flush (io_unit%log)
+        end if
       end if
-    else
-      if (io%verbose>1) then
-        write (io_unit%log,1) wallclock(), ' recv incomplete', mesg%id, &
-          i, self%recv_list%n, self%unpack_list%n
-        1 format(f15.6,2x,a,i9,3i5)
-        flush (io_unit%log)
-      end if
-    end if
-    mesg => mesg%next
-  end do
-  !$omp end critical (recv_cr)
+      mesg => mesg%next
+    end do
+    !$omp end critical (recv_cr)
+  end if
   wc(7) = wallclock()
   do i=1,6
     !$omp atomic
     ws(i)=ws(i)+(wc(i+1)-wc(i))
   end do
-  write (io_unit%log,'(a,3p,10f10.3)') 'wc:', ws(1:10)
-  !call trace_end (itimer(4))
+  if (io%verbose>1) write (io_unit%log,'(a,3p,10f10.3)') 'wc:', ws(1:10)
   call trace_end (itimer(1))
 END SUBROUTINE check
 

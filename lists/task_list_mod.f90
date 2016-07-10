@@ -129,7 +129,7 @@ SUBROUTINE update (self)
   class(mesg_t), pointer:: mesg
   !.............................................................................
   call trace_begin('task_list_t%update')
-  call self%check_flags
+  !call self%check_flags
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------

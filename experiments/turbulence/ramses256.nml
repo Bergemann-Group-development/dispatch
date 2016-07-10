@@ -1,10 +1,10 @@
 ! $Id$
 
 &timer_params
- sec_per_report=5
+ sec_per_report=15
 /
 &io_params
- verbose=0
+ verbose=1
  do_trace=f
  do_debug=f
  do_output=f
@@ -25,7 +25,7 @@
 &patch_params
  nt=3
  courant=0.2
- grace=0.1
+ grace=0.2
  !n=16,16,16
  n=32,32,32
  !n=128,128,128
@@ -33,7 +33,7 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.2
+ end_time=0.03
  !end_time=0.0210
  out_time=0.02
  print_time=0.01
