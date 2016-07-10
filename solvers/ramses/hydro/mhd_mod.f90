@@ -102,7 +102,7 @@ subroutine godunov (self)
   ! and stored in array unew(:), both at the current level and at the
   ! coarser level if necessary.
   !-----------------------------------------------------------------------------
-  integer::i0,j0,k0,i,j,k,idim,ivar,li(3),ui(3),lo(3),uo(3)
+  integer::i0,j0,k0,i,j,k,idim,ivar,li(3),ui(3)
   integer,save:: itimer=0
   associate (unew=>self%unew, uin=>self%uin, fl=>self%fl)
   !-----------------------------------------------------------------------------
@@ -110,8 +110,6 @@ subroutine godunov (self)
   !-----------------------------------------------------------------------------
   li = self%mesh%li
   ui = self%mesh%ui
-  lo = self%mesh%lo
-  uo = self%mesh%uo
   call check_small (self, uin)
   call unsplit (self)
   !-----------------------------------------------------------------------------
@@ -120,8 +118,6 @@ subroutine godunov (self)
   call trace_begin ('mhd_mod::godunov', itimer=itimer)
   unew = uin
   do ivar=1,self%nv
-!    unew(lo(1):uo(1),lo(2):uo(2),lo(3):uo(3),ivar) = &
-!     uin(lo(1):uo(1),lo(2):uo(2),lo(3):uo(3),ivar)
     do idim=1,self%ndim
       i0 = merge(1,0,idim==1)
       j0 = merge(1,0,idim==2)
@@ -253,8 +249,8 @@ subroutine uslope(self)
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::uslope', itimer=itimer)
   !
-  l = self%mesh%lb+1
-  u = self%mesh%ub-1
+  l = self%mesh%lo
+  u = self%mesh%uo
   if(slope_type==-1)then
     do n = 1, self%nv
       do k = l(3),u(3)
@@ -416,8 +412,8 @@ subroutine trace3d(self)
   dtdy = self%dtime/self%mesh(2)%d
   dtdz = self%dtime/self%mesh(3)%d
   !-----------------------------------------------------------------------------
-  lb = self%mesh%lb+1
-  ub = self%mesh%ub-1
+  lb = self%mesh%lo
+  ub = self%mesh%uo
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       do i = lb(1),ub(1)

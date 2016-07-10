@@ -32,6 +32,7 @@ MODULE mpi_mesg_mod
     procedure:: remove
     procedure:: check_sent
     procedure:: print => print_list
+    procedure:: count
   end type
   !
   type, public:: mpi_mesg_t
@@ -44,7 +45,8 @@ MODULE mpi_mesg_mod
     procedure:: sent
   end type
   type(mpi_mesg_t), public:: mpi_mesg
-  logical, save:: debug=.true.
+  integer, parameter:: every_send=10            ! how often to check send_list
+  integer, parameter:: every_recv=1             ! how often to check recv_list
 CONTAINS
 
 !> =============================================================================
@@ -94,7 +96,7 @@ SUBROUTINE test_all (self, flag)
     return
   end if
   call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
-  if (debug.and.io%verbose>2) then
+  if (io%verbose>2) then
     write (io_unit%log,*) wallclock(), self%id, ' test_all flag =', flag
     flush (io_unit%log)
   end if
@@ -116,8 +118,9 @@ SUBROUTINE add (self, mesg)
     nullify (mesg%prev, mesg%next)
   end if
   self%tail => mesg                             ! tail points to it
+  !$omp atomic
   self%n = self%n+1                             ! increment counter
-  if (debug.and.io%verbose>1) then
+  if (io%verbose>1) then
     write (io_unit%log,*) trim(self%name)//' added mesg', mesg%id, self%n
     flush (io_unit%log)
   end if
@@ -155,7 +158,7 @@ SUBROUTINE init (self)
   class(mpi_mesg_t):: self
   !.............................................................................
   if (self%initialized) return
-  if (debug) write (io_unit%log,*) 'mpi_mesg_mod::init'
+  if (io%verbose>0) write (io_unit%log,*) 'mpi_mesg_mod::init'
   self%sent_list%name = 'sent_list'
   self%recv_list%name = 'recv_list'
   self%unpack_list%name = 'unpk_list'
@@ -185,7 +188,7 @@ SUBROUTINE check (self)
   class(mesg_t), pointer:: mesg
   integer, save:: nprint=50
   integer, save:: itimer(5)=0
-  integer, save:: every=10
+  integer, save:: every=every_send
   real(8):: wc(12)
   real(8),save:: ws(11)
   !-----------------------------------------------------------------------------
@@ -196,7 +199,7 @@ SUBROUTINE check (self)
     every = every-1
     wc(2:3) = wc(1)
   else
-    every = 10
+    every = every_send
     !$omp critical (sent_cr)
     wc(2) = wallclock()
     call self%sent_list%check_sent
@@ -242,7 +245,7 @@ SUBROUTINE check (self)
   ! Check the recv_list for completed receives, adding them to unpack_list
   !-----------------------------------------------------------------------------
   wc(6) = wallclock()
-  if (mod(every,2)==0) then
+  if (mod(every,every_recv)==0) then
     wc(7) = wc(6)
     !$omp critical (recv_cr)
     wc(8) = wallclock(); ws(7) = ws(7)+(wc(8)-wc(7)); wc(7) = wc(8) 
@@ -258,6 +261,7 @@ SUBROUTINE check (self)
         wc(8) = wallclock(); ws(9) = ws(9)+(wc(8)-wc(7)); wc(7) = wc(8) 
         !$omp critical (unpk_cr)
         call self%unpack_list%add (mesg)
+        !call self%unpack_list%count ('check')
         !$omp end critical (unpk_cr)
         wc(8) = wallclock(); ws(10) = ws(10)+(wc(8)-wc(7)); wc(7) = wc(8) 
         if (io%verbose>1) then
@@ -297,14 +301,19 @@ SUBROUTINE get (self, mesg)
   if (mpi%size <= 1) return
   !$omp critical (unpk_cr)
   call trace_begin('mpi_mesg_mod::get', itimer=itimer)
-  call self%unpack_list%print
+  !call self%unpack_list%print
   mesg => self%unpack_list%head
   if (associated(mesg)) then
     self%unpack_list%head => mesg%next
     if (associated(self%unpack_list%head)) &
       nullify(self%unpack_list%head%prev)
+    !$omp atomic
     self%unpack_list%n = self%unpack_list%n - 1
-    if (debug .and. io%verbose>2) then
+    !call self%unpack_list%count ('get')
+    if (io%verbose>0) then
+      write (io_unit%log,'(a,i9,i6,2i4)') 'unpack msg id, sender, revc%n, unpk%n:', mesg%id, mesg%sender, &
+        self%recv_list%n, self%unpack_list%n
+    else if (io%verbose>2) then
       write (io_unit%log,*) ' get ', mesg%id, ' from', mesg%sender, ' n', self%unpack_list%n
       next => self%unpack_list%head
       if (associated(next)) then
@@ -315,7 +324,6 @@ SUBROUTINE get (self, mesg)
       flush (io_unit%log)
     end if
   end if
-  call self%unpack_list%print
   call trace_end (itimer)
   !$omp end critical (unpk_cr)
 END SUBROUTINE get
@@ -333,5 +341,25 @@ SUBROUTINE print_list (self)
     mesg => mesg%next
   end do
 END SUBROUTINE print_list
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE count (self, label)
+  class (mesg_list_t):: self
+  character(len=*):: label
+  class(mesg_t), pointer:: mesg
+  integer:: n
+  !-----------------------------------------------------------------------------
+  if (io%verbose < 1) return
+  mesg => self%head
+  n = 0
+  do while (associated(mesg))
+    n = n+1
+    mesg => mesg%next
+  end do
+  if (n /= self%n) then
+    write (io_unit%log,*) 'WARNING: inconsistent '//self%name, n, self%n
+  end if
+END SUBROUTINE count
 
 END MODULE mpi_mesg_mod

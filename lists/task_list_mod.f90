@@ -298,10 +298,6 @@ SUBROUTINE check_mpi (self)
   !-----------------------------------------------------------------------------
   call mpi_mesg%get (mesg)
   do while (associated(mesg))
-    if (io%verbose>0) then
-      write (io_unit%log,*) 'unpack msg id, sender', mesg%id, mesg%sender
-      flush (io_unit%log)
-    end if
     call self%unpack (mesg)
     call mpi_mesg%get (mesg)
   end do
