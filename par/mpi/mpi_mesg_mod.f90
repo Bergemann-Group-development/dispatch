@@ -59,6 +59,9 @@ SUBROUTINE send (self, rank)
   class(mesg_t):: self
   integer:: rank, req, ierr
   !.............................................................................
+  if (io%verbose>1) & 
+    write (io_unit%log,*) &
+    'mpi_mesg::send id, nbuf, to =', self%id, self%nbuf, rank
   call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
     mpi%comm, req, ierr)
   self%nreq = self%nreq+1                                   ! count reqs
@@ -224,8 +227,9 @@ END SUBROUTINE sent
 !> =============================================================================
 !> Check for new incoming messages
 !> =============================================================================
-SUBROUTINE check (self)
+SUBROUTINE check (self, wait)
   class(mpi_mesg_t):: self
+  logical:: wait
   integer:: stat(MPI_STATUS_SIZE)
   integer:: msg ,ierr, nbuf, req, nmsg, i
   logical:: flag
@@ -262,7 +266,16 @@ SUBROUTINE check (self)
     mesg%req = req
     mesg%id = stat(MPI_TAG)
     mesg%sender = stat(MPI_SOURCE)
-    call MPI_TEST (req, flag, stat, ierr)
+    mesg%nbuf = nbuf
+    if (io%verbose>1) &
+      write (io_unit%log,*) &
+      'mpi_mesg::recv id, nbuf, fr =', mesg%id, mesg%nbuf, mesg%sender
+    if (wait) then
+      call MPI_WAIT (req, stat, ierr)
+      flag = .true.
+    else
+      call MPI_TEST (req, flag, stat, ierr)
+    end if
     if (flag) then
       !$omp critical (unpk_cr)
       call self%unpack_list%add (mesg)
@@ -308,7 +321,12 @@ SUBROUTINE check (self)
     do while (associated(mesg))
       i = i+1
       req = mesg%req
-      call MPI_TEST (req, flag, stat, ierr)
+      if (wait) then
+        call MPI_WAIT (req, stat, ierr)
+        flag = .true.
+      else
+        call MPI_TEST (req, flag, stat, ierr)
+      end if
       wc(8) = wallclock(); ws(8) = ws(8)+(wc(8)-wc(7)); wc(7) = wc(8) 
       if (flag) then
         call self%recv_list%remove (mesg)

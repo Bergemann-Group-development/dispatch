@@ -242,11 +242,12 @@ FUNCTION ramses256 (self, m) RESULT (ff)
     ff(:,:,:,i) = ff(:,:,:,1)*ff(:,:,:,i)
   end do
   dt = courant_factor*m(1)%d/umax
-  if (io%verbose > 1) print*,'initial dt:',dt,courant_factor,gamma,umax
-  if (io%verbose > 0) &
-    print '(a,3i4,1p,2g12.3)', 'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
+  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,courant_factor,gamma,umax
+  if (io%verbose > 2) &
+    write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
+  call trace_end
 END FUNCTION ramses256
 
 END MODULE

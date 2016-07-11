@@ -78,7 +78,8 @@ SUBROUTINE update (self)
   call trace_begin('experiment_t%update')
   call self%mhd_t%update
   call self%courant_condition
-  call self%check_density('before timestep')
+  if (io%verbose>2) &
+    call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
   call trace_end

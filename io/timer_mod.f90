@@ -106,7 +106,7 @@ SUBROUTINE print ()
   real(8):: wc
   integer:: i
   !.............................................................................
-  if (.not. io_unit%master) return
+  !if (.not. io_unit%master) return
   wc = wallclock()
   sec = wc - prev2
   if (sec < 0.01d0) return
@@ -124,9 +124,13 @@ SUBROUTINE print ()
   end do
   updates = max(1.0,real(n_update-n_previous))
   musppt = min(omp%ncores,omp%nthreads)*sec*1d6/updates
-  print 2, "TOTAL thread time, calls", total, calls, musppt, 'core-mus/cell-upd', &
-    sec, 'wall sec'
-  2 format(a32,1p,g15.3,g10.2,2(g10.3,2x,a,5x))
+  if (io_unit%master) &
+    print 2, "TOTAL thread time, calls", total, calls, musppt, 'core-mus/cell-upd', &
+      sec, 'wall sec'
+    2 format(a32,1p,g15.3,g10.2,2(g10.3,2x,a,5x))
+  if (io_unit%verbose>1) &
+    write (io_unit%log,'(a,1p,e9.2,3x,a,g10.3)') 'timer_mod::print, updates =', &
+      updates,'mus/p =', musppt
   n_previous = n_update
   prev1 = wc
   prev2 = wc

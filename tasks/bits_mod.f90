@@ -7,10 +7,10 @@ MODULE bits_mod
   integer, parameter::         leaf_bit=2
   integer, parameter::        ready_bit=2**2
   integer, parameter::     internal_bit=2**3
-  integer, parameter::      virtual_bit=2**4
-  integer, parameter::     boundary_bit=2**5
+  integer, parameter::     boundary_bit=2**4
+  integer, parameter::      virtual_bit=2**5
   integer, parameter::     external_bit=2**6
-  integer, parameter:: swap_request_bit=2**8
+  integer, parameter:: swap_request_bit=2**7
   integer, parameter::    root_grid_bit=2**9
   integer, parameter::         star_bit=2**10
   integer, parameter::       planet_bit=2**11

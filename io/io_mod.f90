@@ -93,6 +93,7 @@ SUBROUTINE init (self, name)
     if (self%master.and.first_time) write (*,io_params)
     !$omp parallel
     !$omp critical
+    io_unit%verbose = verbose
     if (omp_trace) then
       log_unit = 100+omp%mythread()
       io_unit%log = log_unit
@@ -111,7 +112,7 @@ SUBROUTINE init (self, name)
       'io_mod::init io_unit%log, io_unit%master, io_unit%verbose:', &
       io_unit%log, io_unit%master, io_unit%verbose
     !$omp end parallel
-    if (io%verbose>0.or.self%master) &
+    if (verbose>0.or.self%master) &
       print*, 'logfile:', filename
     self%log_unit = io_unit%log 
     if (self%master) then

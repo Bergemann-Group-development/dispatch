@@ -12,6 +12,7 @@ MODULE list_mod
   USE patch_mod
   USE link_mod
   USE download_mod
+  USE rank_info_mod
   implicit none
   private
   type, public:: list_t
@@ -19,8 +20,13 @@ MODULE list_mod
     class(link_t), pointer:: head => null()
     class(link_t), pointer:: tail => null()
     class(link_t), pointer:: queue => null()
-    integer:: n = 0
-    integer:: nq = 0
+    integer::  n=0                      ! total
+    integer:: nq=0                      ! ready
+    integer:: nv=0                      ! virtual
+    integer:: nb=0                      ! boundary
+    integer:: ni=0                      ! internal
+    integer:: ne=0                      ! external
+    integer:: na=0                      ! active = internal+boundary
     real(8):: size(3) = 1.0_8
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0
     integer:: debug=0
@@ -54,6 +60,7 @@ MODULE list_mod
     procedure:: reset_status
     procedure:: add_by_quality
     procedure:: queue_by_time
+    procedure:: count_status
     procedure:: print_queue
     procedure:: print_queue_until
     procedure:: print_queue_times
@@ -143,8 +150,16 @@ SUBROUTINE append_link (self, link)
     self%head => link
     self%tail => link
   end if
-  if (link%task%is_clear(bits%virtual)) &
-    self%n = self%n+1
+  self%n = self%n+1
+  if      (link%task%is_set (bits%virtual)) then
+    self%nv = self%nv + 1
+  else if (link%task%is_set (bits%boundary)) then
+    self%nb = self%nb + 1
+    self%na = self%na + 1
+  else if (link%task%is_set (bits%internal)) then
+    self%ni = self%ni + 1
+    self%na = self%na + 1
+  end if
   if (associated(link%task)) &
     link%task%link => link
   !$omp end critical (list_cr)
@@ -211,7 +226,8 @@ END SUBROUTINE remove_head
 
 !> =============================================================================
 !> Among a task and its neighbor tasks, move local tasks to ready_queue if they
-!> are ready, and send task data to non-locals.
+!> are ready.  If the ready bit is already set it means the patch has already
+!> been put in the ready queue, and should not be checked again.
 !> =============================================================================
 SUBROUTINE check_nbors (self, link)
   class(list_t):: self
@@ -225,7 +241,6 @@ SUBROUTINE check_nbors (self, link)
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
   nbor => link%nbor                                   ! first nbor
-  !xomp critical (list_cr)
   do while (associated (nbor))                        ! keep going until end
     nbtask => nbor%task                               ! neighbor task
     n_check = n_check+1
@@ -245,15 +260,20 @@ SUBROUTINE check_nbors (self, link)
     end if
     nbor => nbor%next                                 ! next nbor
   end do
-  call self%check_ready (link)                        ! finally check link task
-  !xomp end critical (list_cr)
-  if (task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk checked self:', task%id, task%is_set(bits%ready)
-  !self%n_nbor = self%n_nbor + 1
-  if (io%verbose>2) write (io_unit%log,'(a,i9,l3,12(2x,a,i4))') &
-    'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
-    'neighbors:',n_check, 'blocked:',n_blocked, 'ready:', n_ready, &
-    'cleared:',n_cleared, 'remain:', n_remain
-  if (io%verbose>3) call self%print
+  !-----------------------------------------------------------------------------
+  ! Since we may be called upon to check nbors of a patch that should not itself
+  ! be checked, we check if any bits are set indicating this to be the case
+  !-----------------------------------------------------------------------------
+  if (task%is_clear (bits%virtual+bits%external)) then
+    call task%clear(bits%ready)                       ! needs new check
+    call self%check_ready (link)                      ! finally check link task
+    self%n_nbor = self%n_nbor + 1
+    if (io%verbose>2) write (io_unit%log,'(a,i9,l3,12(2x,a,i4))') &
+      'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
+      'neighbors:',n_check, 'blocked:',n_blocked, 'ready:', n_ready, &
+      'cleared:',n_cleared, 'remain:', n_remain
+    if (io%verbose>3) call self%print
+  end if
   call trace_end
 END SUBROUTINE check_nbors
 
@@ -287,7 +307,7 @@ SUBROUTINE check_ready (self, link, set_debug)
   logical:: ahead, is_clear
   integer, save:: itimer=0
   !.............................................................................
-  if (link%task%is_set (bits%virtual)) return
+  if (link%task%is_set (bits%virtual+bits%external)) return
   call trace_begin('list_mod::check_ready '//self%name, 2, itimer)
   if (present(set_debug)) then
     debug = set_debug
@@ -362,12 +382,12 @@ END SUBROUTINE consistency
 !> Check if the number of queued tasks is consistent; i.e., of the number of
 !> tasks linked at self%queue is the same as nq
 !> =============================================================================
-SUBROUTINE qconsistency (self, i)
+SUBROUTINE qconsistency (self, ident)
   class(list_t):: self
   class(link_t), pointer:: link
-  class(task_t), pointer:: task
+  class(task_t), pointer:: task, prev
   class(link_t), pointer:: nbor
-  integer:: n, id1=0, id2=0, i
+  integer:: n, id1=0, id2=0, ident
   real(8):: time
   !.............................................................................
   !if (self%debug < 1) return
@@ -376,21 +396,25 @@ SUBROUTINE qconsistency (self, i)
   link => self%queue
   if (associated(link)) then
     time = link%task%time
+    prev => link%task
     link => link%next_time
     n = n+1
   end if
   do while (associated(link))
+    task => link%task
     n = n+1
     if (n > self%nq) exit
-    if (link%task%time < time) then
-      write (io_unit%log,*)'ERROR: queue out of order'
-      exit
+    if (task%time < time) then
+      write (io_unit%log,'(a,i4,2(i9,1p,g15.6,3x))') &
+        'ERROR: queue out of order', ident, prev%id, time, task%id, task%time
     end if
-    time = link%task%time
+    time = task%time
+    prev => task
     link => link%next_time
   end do
   if (n /= self%nq) then
-    write (io_unit%log,*) 'ERROR: qconsistency:', n, self%nq, i
+    write (io_unit%log,*) &
+      'ERROR: qconsistency ident, n, nq, ident =', ident, n, self%nq
     n = 0
     link => self%queue
     do while (associated(link))
@@ -399,7 +423,7 @@ SUBROUTINE qconsistency (self, i)
       link => link%next_time
       if (n > self%nq+1) exit
     end do
-    call mpi%end ('error')
+    call mpi%abort ('ERROR: qconsistency size')
   end if
   call trace_end
 END SUBROUTINE qconsistency
@@ -461,6 +485,8 @@ SUBROUTINE init_nbors (self, link)
   n_add = 0
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
+    if (scan%task%rank /= mpi%rank) &
+      call rank_info_list%add (scan%task%rank)
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       overlaps = self%overlaps (scan%task, link%task)
       if (overlaps) then  ! if its task overlaps
@@ -483,7 +509,8 @@ SUBROUTINE init_nbors (self, link)
   end do
   link%task%n_nbors = n_add                           ! remember n_nbors
   if (io%verbose>1) write (io%log_unit,*) &
-    'added ', n_add, ' neighbors to', link%task%id, associated(link%nbor)
+    'added ', n_add, ' neighbors to', link%task%id, &
+    link%task%is_set(bits%boundary), link%task%is_set(bits%virtual)
   !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE init_nbors
@@ -533,8 +560,10 @@ SUBROUTINE reset_status (self)
   link => self%head
   do while (associated(link))
     n_internal = n_internal + 1
+    call link%task%set(bits%internal)
     if (link%task%rank /= mpi%rank) then
       call link%task%set(bits%virtual)
+      call link%task%clear(bits%internal)
       n_virtual  = n_virtual  + 1
       n_internal = n_internal - 1
     end if
@@ -547,9 +576,6 @@ SUBROUTINE reset_status (self)
   do while (associated(link))
     nbor => link%nbor
     do while (associated(nbor))
-      if (link%task%rank==mpi%rank .and. nbor%task%is_set(bits%virtual)) then
-        call link%task%set(bits%boundary)
-      end if
       if (io%verbose>2) then
         write (io%log_unit,'(2(a,i7,i4,2l4,5x,a,3i4,10x))') &
           'link:', link%task%id, link%task%rank, &
@@ -561,6 +587,11 @@ SUBROUTINE reset_status (self)
                    nbor%task%is_set(bits%virtual), &
           'pos:', self%intpos(nbor%task,link%task)
       end if
+      if (link%task%rank==mpi%rank .and. nbor%task%is_set(bits%virtual)) then
+        call link%task%set(bits%boundary)
+        call link%task%clear(bits%internal)
+        exit
+      end if
       nbor => nbor%next
     end do
     if (link%task%is_set(bits%boundary)) then
@@ -569,6 +600,10 @@ SUBROUTINE reset_status (self)
     end if
     link => link%next
   end do
+  self%nb = n_boundary
+  self%nv = n_virtual
+  self%ni = n_internal
+  self%n = n_internal+n_boundary
   if (io%verbose>0) then
     write (io%log_unit,'(4(a,i7,5x))') &
       'rank:',mpi%rank, &
@@ -952,6 +987,34 @@ SUBROUTINE insert (self, old, new)
   !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE insert
+
+!> =============================================================================
+!> Print a table with task id, positions, and all neighbors
+!> =============================================================================
+SUBROUTINE count_status (self)
+  class (list_t):: self
+  class(link_t) , pointer:: link, nbor
+  integer:: nf
+  !.............................................................................
+  if (io%verbose < 2) return
+  !$omp critical (list_cr)
+  self%nb=0; self%nv=0; self%ni=0; self%ne=0; self%n = 0
+  nf = 0
+  link => self%head
+  do while (associated(link))
+    self%n = self%n+1
+    if (link%task%is_set(bits%frozen  )) nf = nf+1
+    if (link%task%is_set(bits%boundary)) self%nb = self%nb+1
+    if (link%task%is_set(bits%virtual )) self%nv = self%nv+1
+    if (link%task%is_set(bits%internal)) self%ni = self%ni+1
+    if (link%task%is_set(bits%external)) self%ne = self%ne+1
+    link => link%next
+  end do
+  self%na = self%ni+self%nb-nf
+  !$omp end critical (list_cr)
+  if (io%verbose>1) write (io_unit%log,*) &
+    'count_status: n[ibve] = ', self%ni, self%nb, self%nv, self%ne
+END SUBROUTINE count_status
 
 !> =============================================================================
 !> Print a table with task id, positions, and all neighbors

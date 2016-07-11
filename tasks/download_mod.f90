@@ -1,9 +1,9 @@
 !> =============================================================================
-!> download_link             : takes care of downloads to link%task
-!>   download_same_static    : called for static patches on the same level
-!>   download_differ_static  : called for static patches on different levels
-!>     interpolate_to        : called for nbors on different levels
-!>       find_time           : computes time interpolation parameters
+!>  download_link: takes care of downloads to link%task
+!>    same_static: called for static patches on the same level
+!>  differ_static: called for static patches on different levels
+!> interpolate_to: called for nbors on different levels
+!>      find_time: computes time interpolation parameters
 !> =============================================================================
 MODULE download_mod
   USE io_mod
@@ -38,7 +38,8 @@ SUBROUTINE download_link (link, all_cells)
   !-----------------------------------------------------------------------------
   call trace_begin('download_t%download')
   patch => task2patch(link%task)
-  call patch%check_density ("before download")
+  if (io%verbose>2) &
+    call patch%check_density ("before download")
   if (patch%is_set(bits%root_grid)) then
     call patch%periodic_grid
   else
@@ -57,12 +58,12 @@ SUBROUTINE download_link (link, all_cells)
     end do
     if (static) then
       if (same) then
-        call download_same_static (link)               ! FIXME
-        !call download_different_static (link)
+        call same_static (link)               ! FIXME
+        !call different_static (link)
         !$omp atomic
         download%n_same = download%n_same+1
       else
-        call download_different_static (link)
+        call different_static (link)
         !$omp atomic
         download%n_differ = download%n_differ+1
       end if
@@ -80,18 +81,21 @@ END SUBROUTINE download_link
 !> the iit array is reconstucted from the single value source%it, which is atomic,
 !> there should be no need for locking.  This is in patch_mod::time_interpolate.
 !> =============================================================================
-SUBROUTINE download_same_static (self)
+SUBROUTINE same_static (self)
   class (link_t):: self
   class (link_t),  pointer:: nbor
   class (patch_t), pointer:: source, target
-  integer:: it, iv, l1(3), u1(3), o(3), jt(2), ntot, nuse, ix, iy, iz
+  integer:: it, iv, l1(3), u1(3), o(3), jt(2), ntot, nuse, ix, iy, iz, n
   real(8):: pt(2)
+  real:: dmin
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('download_mod::download_same_static',itimer=itimer)
+  call trace_begin('download_mod::same_static',itimer=itimer)
   target => task2patch(self%task)
+  n = 0
   nbor => self%nbor
   do while (associated (nbor))
+    n = n+1
     source => task2patch(nbor%task)
     it = target%it
     call target%time_interpolate (source, jt, pt)
@@ -99,28 +103,55 @@ SUBROUTINE download_same_static (self)
       call target%dnload_range (source, l1, u1, o)
       ntot = product(u1-l1+1)
       nuse = ntot
-      if (io%master .and. iv==1 .and. io%verbose>2) then
+      if (io%master .and. iv==1 .and. io%verbose>3) then
         write (io_unit%log,'(a,3(3i4,3x),i6)') 'target ranges: l1, u1, o, n =', l1, u1, o, ntot
       end if
+      dmin = 1e30
       do iz=l1(3),u1(3)
       do iy=l1(2),u1(2)
       do ix=l1(1),u1(1)
         target%mem(ix,iy,iz,iv,it,1) = source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)*pt(1) &
                                      + source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)*pt(2)
+        dmin = min(dmin,target%mem(ix,iy,iz,iv,it,1))
       end do
       end do
       end do
-      if (iv==1.and.io%verbose==3) write (io_unit%log,'(7(1x,a,i7,1x))') &
+      if (iv==1) then
+        if (io%verbose==2) write (io_unit%log,1) &
         'patch', target%id, ' level', target%level, ' picked up', nuse, &
-        'of', ntot, ' points from patch', source%id, ' at level', source%level
-      if (io%verbose>3) write (io_unit%log,'(7(1x,a,i7,1x),2l4)') &
+        'of', ntot, ' points from patch', source%id, ' at level', source%level, &
+        'position', (source%position-target%position)/target%size, pt, dmin
+      1 format(6(1x,a,i7,1x),1x,a,5f6.2,1p,e12.3)
+         if (dmin < 0.0) then
+           write (io_unit%log,'(a,i9,a,i9)') &
+             'download_mod::same_static: ERROR, negative density contribution to', &
+             target%id, ' from', source%id
+           write (io_unit%log,'(a,2(i9,2f12.6),f10.3)') &
+             'same_static: target,source id,time,dtime =', &
+             target%id, target%time, target%dtime, &
+             source%id, source%time, source%dtime, &
+             (target%time-source%time)/source%dtime
+           do it=1,source%nt
+             write (io_unit%log,'(a,1p,2g16.6)') &
+               'same_static: source t, dt =', &
+               source%t (source%iit(it)), &
+               source%dt(source%iit(it))
+           end do
+         end if
+      end if
+      if (io%verbose>2) write (io_unit%log,1) &
         'patch', target%id, ' level', target%level, 'var', iv, ' picked up', nuse, &
-        'of', ntot, ' points from patch', source%id, ' at level', source%level
+        'of', ntot, ' points from patch', source%id, ' at level', source%level, &
+        'position', (source%position-target%position)/target%size, pt, dmin
     end do
     nbor => nbor%next
   end do
+  if (n/=26) then
+    write (io_unit%log,'(a,i3,a,i9)') &
+      'download_mod::same_static: ERROR, only',n,' nbors contributed to', target%id
+  end if
   call trace_end(itimer)
-END SUBROUTINE download_same_static
+END SUBROUTINE same_static
 
 !> =============================================================================
 !> Scan the available times, and set jt(1),jt(2) to the pair that gives the
@@ -191,7 +222,7 @@ END SUBROUTINE find_time
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE download_different_static (link)
+SUBROUTINE different_static (link)
   class(link_t), pointer:: link
   !.............................................................................
   class(patch_t), pointer:: target, source
@@ -201,7 +232,7 @@ SUBROUTINE download_different_static (link)
   !-----------------------------------------------------------------------------
   ! XY-planes in the two Z guard zones
   !-----------------------------------------------------------------------------
-  call trace_begin('download::download_different_static')
+  call trace_begin('download::different_static')
   target => task2patch (link%task)
   m => target%mesh
   nullify(source)
@@ -271,12 +302,12 @@ contains
   subroutine reset
     if (associated(source)) then
       !$omp flush
-      call source%lock%unset ('download_different_static')
+      call source%lock%unset ('different_static')
       nullify (source)
     end if
     old_score = -1.
   end subroutine
-END SUBROUTINE download_different_static
+END SUBROUTINE different_static
 
 !> =============================================================================
 !> =============================================================================

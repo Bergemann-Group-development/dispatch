@@ -33,7 +33,6 @@ SUBROUTINE init (self, label)
   type(link_t) , pointer:: prev=>null(), link
   class(task_t), pointer:: task
   integer:: i, j, k, i1, j1, k1, i2, j2, k2, rank, dim, nn(2,3)
-  type(experiment_t), pointer, dimension(:,:,:):: patches
   !
   real(8):: size(3) = [1.0,1.0,1.0]
   integer:: dims(3) = [4,4,4]
@@ -121,14 +120,12 @@ SUBROUTINE init (self, label)
       patch%id = patch%id - mpi%rank + patch%rank             ! adjust id of vpatch
       patch%i = i; patch%j = j; patch%k = k
       if (all(self%dims==1)) call patch%set(bits%root_grid)
-      if (omp_master) then
-        if (io%verbose>0) then
-          write (io%log_unit,'(a,i8,i6,1p,2(2x,3e14.6),2l6)') &
-            'init_cartesian: id, rank, size, pos =', &
-            patch%id, patch%rank, patch%size, patch%position, &
-            patch%is_set(bits%virtual), patch%is_set(bits%boundary)
-          flush (io%log_unit)
-        end if
+      if (omp%master .and. io%verbose>0) then
+        write (io%log_unit,'(a,i8,i6,1p,2(2x,3e14.6),2l6)') &
+          'init_cartesian: id, rank, size, pos =', &
+          patch%id, patch%rank, patch%size, patch%position, &
+          patch%is_set(bits%boundary), patch%is_set(bits%virtual)
+        flush (io%log_unit)
       end if
       task => patch
       call self%task_list%append (task)

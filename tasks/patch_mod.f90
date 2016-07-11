@@ -46,7 +46,6 @@ MODULE patch_mod
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
     integer:: i,j,k                     ! should go!  FIXME
     real(8):: offset(3)                 ! this is used to compute indices
-    integer:: nq                        ! number of tasks in ready queue
   contains
     procedure:: check_error
     procedure:: init
@@ -165,6 +164,8 @@ SUBROUTINE patch_to_header (self, head)
   head%dt(1:nt)   = self%dt
   head%iit(1:nt)  = self%iit
   head%nq         = self%nq
+  if (io%verbose > 1) &
+    write (io_unit%log,*) 'patch_to_header: id, nq =', head%id, head%nq, self%is_set(bits%swap_request)
 END SUBROUTINE patch_to_header
 
 !> =============================================================================
@@ -198,6 +199,8 @@ SUBROUTINE header_to_patch (self, head)
   self%dt         = head%dt(1:nt)
   self%iit        = head%iit(1:nt)
   self%nq         = head%nq
+  if (io%verbose > 1) &
+    write (io_unit%log,*) 'header_to_patch: id, nq =', self%id, self%nq, self%is_set(bits%swap_request)
 END SUBROUTINE header_to_patch
 
 !> =============================================================================
@@ -356,11 +359,13 @@ SUBROUTINE init (self)
   if (.not.self%mem_allocated) then
     allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
 !    if (associated(self%mem)) deallocate (self%mem)
-    allocate (self%mem(self%mesh(1)%gn, &
-                       self%mesh(2)%gn, &
-                       self%mesh(3)%gn, &
-                       self%nv,self%nt,2))
-    self%mem_allocated = .true.                 ! mark
+!    if (self%rank == mpi%rank .or. self%is_set (bits%virtual)) then
+      allocate (self%mem(self%mesh(1)%gn, &
+                         self%mesh(2)%gn, &
+                         self%mesh(3)%gn, &
+                         self%nv,self%nt,2))
+      self%mem_allocated = .true.               ! mark
+!    end if
   end if
   self%dt = 0.0
   self%t =  0.0
@@ -596,7 +601,7 @@ SUBROUTINE pack (self, mesg)
   class(mesg_t), pointer:: mesg
   !.............................................................................
   type(header_t):: header
-  integer:: n_header, n_var, ibuf, iv
+  integer:: n_header, n_var, ibuf, iv, it
   real, dimension(:,:,:), pointer:: var
   real:: pt
   integer:: itimer=0
@@ -608,6 +613,9 @@ SUBROUTINE pack (self, mesg)
   n_header = sizeof(header)/4
   n_var = product(self%gn)
   mesg%nbuf = n_header + self%nv*n_var
+  if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
+    mesg%nbuf = mesg%nbuf+ self%nv*n_var
+  end if
   allocate (mesg%buffer(mesg%nbuf))
   allocate (mesg%reqs(self%n_nbors))
   mesg%id = self%id                                             ! MPI message tag
@@ -615,19 +623,42 @@ SUBROUTINE pack (self, mesg)
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info to sequenced header, and copy that to the buffer
   !-----------------------------------------------------------------------------
-  if (io%verbose > 1) write (io_unit%log,*) 'pack, id, time, it:', &
-    self%id, self%time, self%it
+  if (io%verbose > 1) then
+    write (io_unit%log,1) 'patch_mod::pack, id, nq, time, status:', &
+    self%id, self%nq, self%time, &
+    self%is_set (bits%internal), &
+    self%is_set (bits%boundary), &
+    self%is_set (bits%virtual), &
+    self%is_set (bits%external), &
+    self%is_set (bits%swap_request)
+    1 format(a,2i9,f12.6,2x,5l1)
+    flush (io_unit%log)
+  end if
   call patch_to_header (self, header)
   ibuf = 1
   call anonymous_copy (n_header, header, mesg%buffer(ibuf))
   ibuf = ibuf + n_header
   !-----------------------------------------------------------------------------
-  ! Copy the variables to the output buffer
+  ! Copy the variables to the output buffer.  If the bdry+swap bit are set,
+  ! copy as a minimum also the previous time slot
   !-----------------------------------------------------------------------------
   do iv=1,self%nv
     call anonymous_copy (n_var, self%mem(:,:,:,iv,self%it,1), mesg%buffer(ibuf))
     ibuf = ibuf + n_var
   end do
+  if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
+    it = mod(self%it-1+self%nt-1,self%nt)+1
+    if (io%verbose>1) then
+      write (io_unit%log,*) self%id, 'extra time slot packed', it
+      flush (io_unit%log)
+    end if
+    do iv=1,self%nv
+      call anonymous_copy (n_var, self%mem(:,:,:,iv,it,1), mesg%buffer(ibuf))
+      ibuf = ibuf + n_var
+    end do
+  end if
+  if (io%verbose > 2) &
+    write (io_unit%log,*) self%id, 'after pack', minval(self%mem(:,:,:,1,self%it,1))
   call trace_end (itimer)
 END SUBROUTINE pack
 
@@ -638,7 +669,7 @@ SUBROUTINE unpack (self, buffer)
   class(patch_t):: self
   !.............................................................................
   type(header_t):: header
-  integer:: n_header, n_buf, ibuf, iv
+  integer:: n_header, n_buf, ibuf, iv, it
   integer, dimension(:), pointer:: buffer
   real, dimension(:,:,:), pointer:: var
   real:: pt
@@ -656,18 +687,48 @@ SUBROUTINE unpack (self, buffer)
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
-  if (io%verbose > 2) write (io_unit%log,*) 'unpack, id, time before:', &
-    self%id, self%time, self%it
+  if (io%verbose > 2) write (io_unit%log,1) 'patch_mod::unpk id, nq, time before:', &
+    self%id, self%nq, self%time
   call self%header_to_patch (header)
-  if (io%verbose > 1) write (io_unit%log,*) 'unpack, id, time  after:', &
-    self%id, self%time, self%it
+  if (io%verbose > 1) write (io_unit%log,1) 'patch_mod::unpk id, nq, time  after:', &
+    self%id, self%nq, self%time, &
+    self%is_set (bits%internal), &
+    self%is_set (bits%boundary), &
+    self%is_set (bits%virtual), &
+    self%is_set (bits%external), &
+    self%is_set (bits%swap_request)
+    1 format(a,2i9,f12.6,2x,5l1)
   !-----------------------------------------------------------------------------
-  ! Copy the variables from the output buffer
+  ! Swap the roles of boundary and virtual on incoming patches
+  !-----------------------------------------------------------------------------
+  if (self%is_set(bits%boundary)) then
+    call self%set   (bits%virtual)
+    call self%clear (bits%boundary)
+  else if (self%is_set(bits%virtual)) then
+    call self%set   (bits%boundary)
+    call self%clear (bits%virtual)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Copy the variables from the output buffer.  If this is swap of patch roles
+  ! expect at least one more time slot.
   !-----------------------------------------------------------------------------
   do iv=1,self%nv
     call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
     ibuf = ibuf + n_buf
   end do
+  if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
+    it = mod(self%it-1+self%nt-1,self%nt)+1
+    if (io%verbose>0) then
+      write (io_unit%log,*) self%id, 'extra time slot unpacked', it
+      flush (io_unit%log)
+    end if
+    do iv=1,self%nv
+      call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,it,1))
+      ibuf = ibuf + n_buf
+    end do
+  end if
+  if (io%verbose > 2) &
+    write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
   call trace_end (itimer)
 END SUBROUTINE unpack
 
@@ -799,7 +860,11 @@ SUBROUTINE output_legacy (self, experiment_name)
 END SUBROUTINE output_legacy
 
 !> =============================================================================
-!> Print info to stdout
+!> Print info to stdout.  If
+!>   verbose==0:        print only id=1 to stdout and io_unit%log
+!>   verbose==1:        print only id=1 to stdout but all to io_unit%log
+!>   verbose==2:        print iv=1 to stdout and io_unit%log for all id
+!>   verbose==3:        print iv=1,nv to stdout and io_unit%log for all id
 !> =============================================================================
 SUBROUTINE info (self, nq, ntask, experiment_name)
   class(patch_t):: self
@@ -810,28 +875,31 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !-----------------------------------------------------------------------------
   if (io%verbose>=0) then
     if (self%time>=self%print_next) then
-      if (io%verbose==0 .and. self%id/=1) return
       if (self%print_time > 0) &
         self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
+      if (io%verbose<1 .and. self%id/=1) return
       nv = 1
       if (io%verbose>2) nv = self%nv
       do iv=1,nv
-        1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,2x,e10.2,2i5,o12)
-        if (io%master) &
-          print 1, &
-          'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
-          self%fminval(self%mem(:,:,:,iv,self%it ,2)), &
-          self%fmaxval(self%mem(:,:,:,iv,self%it ,2)), &
-          self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-          self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-          real(n_update), ntask, nq, self%status
         write (io_unit%log,1) &
           'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
           self%fminval(self%mem(:,:,:,iv,self%it ,2)), &
           self%fmaxval(self%mem(:,:,:,iv,self%it ,2)), &
           self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
           self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-          real(n_update), ntask, nq, self%status
+          real(n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual), self%status
+      end do
+      if (io%verbose<2 .and. self%id/=1) return
+      do iv=1,nv
+        1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,2x,e10.2,2i5,2l2,o12)
+        if (io%master .or. self%id==1) &
+          print 1, &
+          'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
+          self%fminval(self%mem(:,:,:,iv,self%it ,2)), &
+          self%fmaxval(self%mem(:,:,:,iv,self%it ,2)), &
+          self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+          self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+          real(n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual), self%status
       end do
     end if
   end if

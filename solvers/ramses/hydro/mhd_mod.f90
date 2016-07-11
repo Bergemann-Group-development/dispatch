@@ -15,6 +15,7 @@ MODULE mhd_mod
   !.............................................................................
   USE io_unit_mod
   USE patch_mod
+  USE link_mod
   USE riemann_mod
   use hydro_parameters
   USE trace_mod
@@ -513,8 +514,10 @@ subroutine cmpflxm(self)
   integer:: i, j, k, lb(3), ub(3)
   real(dp), dimension(self%mesh(1)%gn,self%nv):: qleft, qright, fgdnv
   real(dp):: dtds(3)
+  logical:: error
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
+  error = .false.
   dtds = self%dtime/self%mesh%d
   lb = self%mesh%li
   ub = self%mesh%uo
@@ -525,7 +528,8 @@ subroutine cmpflxm(self)
       qleft (lb(1):ub(1),3) = qm(lb(1):ub(1),j,k,5,1); qright(lb(1):ub(1),3) = qp(lb(1):ub(1),j,k,5,1)
       qleft (lb(1):ub(1),4) = qm(lb(1):ub(1),j,k,3,1); qright(lb(1):ub(1),4) = qp(lb(1):ub(1),j,k,3,1)
       qleft (lb(1):ub(1),5) = qm(lb(1):ub(1),j,k,4,1); qright(lb(1):ub(1),5) = qp(lb(1):ub(1),j,k,4,1)
-      call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv)
+      call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error)
+      if (error) call error_handler('x', j, k, lb(1), ub(1))
       fl(lb(1):ub(1),j,k,1,1) = fgdnv(lb(1):ub(1),1)*dtds(1)
       fl(lb(1):ub(1),j,k,2,1) = fgdnv(lb(1):ub(1),2)*dtds(1)
       fl(lb(1):ub(1),j,k,5,1) = fgdnv(lb(1):ub(1),3)*dtds(1)
@@ -534,8 +538,8 @@ subroutine cmpflxm(self)
     end do
   end do
   if (any(self%mesh%gn/=self%mesh(1)%gn)) then
-    call cmpflxm_y (self)
-    call cmpflxm_z (self)
+    call cmpflxm_y
+    call cmpflxm_z
   else
     do k = lb(3),ub(3)
       do i = lb(2),ub(2)
@@ -544,7 +548,8 @@ subroutine cmpflxm(self)
         qleft (lb(2):ub(2),3) = qm(i,lb(2):ub(2),k,5,2); qright(lb(2):ub(2),3) = qp(i,lb(2):ub(2),k,5,2)
         qleft (lb(2):ub(2),4) = qm(i,lb(2):ub(2),k,2,2); qright(lb(2):ub(2),4) = qp(i,lb(2):ub(2),k,2,2)
         qleft (lb(2):ub(2),5) = qm(i,lb(2):ub(2),k,4,2); qright(lb(2):ub(2),5) = qp(i,lb(2):ub(2),k,4,2)
-        call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv)
+        call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error)
+        if (error) call error_handler('y', i, k, lb(2), ub(2))
         fl(i,lb(2):ub(2),k,1,2) = fgdnv(lb(2):ub(2),1)*dtds(2)
         fl(i,lb(2):ub(2),k,3,2) = fgdnv(lb(2):ub(2),2)*dtds(2)
         fl(i,lb(2):ub(2),k,5,2) = fgdnv(lb(2):ub(2),3)*dtds(2)
@@ -559,7 +564,8 @@ subroutine cmpflxm(self)
         qleft (lb(3):ub(3),3) = qm(i,j,lb(3):ub(3),5,3); qright(lb(3):ub(3),3) = qp(i,j,lb(3):ub(3),5,3)
         qleft (lb(3):ub(3),4) = qm(i,j,lb(3):ub(3),2,3); qright(lb(3):ub(3),4) = qp(i,j,lb(3):ub(3),2,3)
         qleft (lb(3):ub(3),5) = qm(i,j,lb(3):ub(3),3,3); qright(lb(3):ub(3),5) = qp(i,j,lb(3):ub(3),3,3)
-        call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv)
+        call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error)
+        if (error) call error_handler('z', i, j, lb(3), ub(3))
         fl(i,j,lb(3):ub(3),1,3) = fgdnv(lb(3):ub(3),1)*dtds(3)
         fl(i,j,lb(3):ub(3),4,3) = fgdnv(lb(3):ub(3),2)*dtds(3)
         fl(i,j,lb(3):ub(3),5,3) = fgdnv(lb(3):ub(3),3)*dtds(3)
@@ -569,18 +575,12 @@ subroutine cmpflxm(self)
     end do
   end if
   end associate
-end subroutine cmpflxm
-
-!> =============================================================================
-!> Compute y-fluxes
-!> =============================================================================
-subroutine cmpflxm_y (self)
-  class(mhd_t):: self
+contains
+  subroutine cmpflxm_y
   ! local variables
-  integer:: i, j, k, lb(3), ub(3)
   real(dp), dimension(self%mesh(2)%gn,self%nv):: qleft, qright, fgdnv
-  real(dp):: dtds(3)
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
+  !-----------------------------------------------------------------------------
   !-----------------------------------------------------------------------------
   dtds = self%dtime/self%mesh%d       ! needed here
   lb = self%mesh%li
@@ -592,7 +592,8 @@ subroutine cmpflxm_y (self)
       qleft (:,3) = qm(i,:,k,5,2); qright(:,3) = qp(i,:,k,5,2)
       qleft (:,4) = qm(i,:,k,2,2); qright(:,4) = qp(i,:,k,2,2)
       qleft (:,5) = qm(i,:,k,4,2); qright(:,5) = qp(i,:,k,4,2)
-      call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv)
+      call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error)
+      if (error) call error_handler('y', i, k, lb(2), ub(2))
       fl(i,:,k,1,2) = fgdnv(:,1)*dtds(2)
       fl(i,:,k,3,2) = fgdnv(:,2)*dtds(2)
       fl(i,:,k,5,2) = fgdnv(:,3)*dtds(2)
@@ -601,17 +602,13 @@ subroutine cmpflxm_y (self)
     end do
   end do
   end associate
-end subroutine cmpflxm_y
-
-!> =============================================================================
-!> Compute z-fluxes
-!> =============================================================================
-subroutine cmpflxm_z (self)
-  class(mhd_t):: self
+  end subroutine cmpflxm_y
+  !-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  subroutine cmpflxm_z
   ! local variables
   integer:: i, j, k, lb(3), ub(3)
   real(dp), dimension(self%mesh(3)%gn,self%nv):: qleft, qright, fgdnv
-  real(dp):: dtds(3)
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   dtds = self%dtime/self%mesh%d       ! needed here
@@ -624,7 +621,8 @@ subroutine cmpflxm_z (self)
       qleft (:,3) = qm(i,j,:,5,3); qright(:,3) = qp(i,j,:,5,3)
       qleft (:,4) = qm(i,j,:,2,3); qright(:,4) = qp(i,j,:,2,3)
       qleft (:,5) = qm(i,j,:,3,3); qright(:,5) = qp(i,j,:,3,3)
-      call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv)
+      call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error)
+      if (error) call error_handler('z', i, j, lb(3), ub(3))
       fl(i,j,:,1,3) = fgdnv(:,1)*dtds(3)
       fl(i,j,:,4,3) = fgdnv(:,2)*dtds(3)
       fl(i,j,:,5,3) = fgdnv(:,3)*dtds(3)
@@ -633,15 +631,52 @@ subroutine cmpflxm_z (self)
     end do
   end do
   end associate
-end subroutine cmpflxm_z
+  end subroutine cmpflxm_z
+  !-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  subroutine error_handler (label, i1, i2, lb, ub)
+  class(*), pointer:: link
+  character(len=*):: label
+  integer:: i1, i2, lb, ub
+  class(link_t), pointer:: nbor
+  !.............................................................................
+  write (io_unit%log,*) 'solver error: id, i[12] =', self%id, i1, i2
+  !-----------------------------------------------------------------------------
+  ! Print the left and right states that give errors
+  !-----------------------------------------------------------------------------
+  do i=lb,ub
+    write (io_unit%log,'(a,1p,2(5e12.3,2x))') &
+      'solver error:', qleft(i,1:5), qright(i,1:5)
+  end do
+  !-----------------------------------------------------------------------------
+  ! Print a list of neighbors and their time differences
+  !-----------------------------------------------------------------------------
+  link => self%link
+  select type (link)
+  class is (link_t)
+    nbor => link%nbor
+  class default
+    nullify(nbor)
+  end select
+  do while (associated(nbor))
+    write (io_unit%log,'(a,i9,f10.3,3x,3f6.2)') 'solver error: nbor, time diff', &
+      nbor%task%id, (nbor%task%time-self%time)/self%dtime, &
+      (nbor%task%position-self%position)/self%size
+    nbor => nbor%next
+  end do
+  call mpi%abort ('HLLC')
+  end subroutine
+end subroutine cmpflxm
 
 !> =============================================================================
 !> Selection of 1-D solvers
 !> =============================================================================
-subroutine solver (self,ngrid,qleft,qright,fgdnv)
+subroutine solver (self,ngrid,qleft,qright,fgdnv,error)
   class(mhd_t):: self
   integer:: ngrid
   real(dp),dimension(ngrid,self%nv):: qleft,qright,fgdnv
+  logical:: error
+  !.............................................................................
   if(self%riemann.eq.'acoustic')then
     call riemann%acoustic(qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'exact')then
@@ -649,7 +684,7 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv)
   else if (self%riemann.eq.'llf')then
     call riemann%llf     (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'hllc')then
-    call riemann%hllc    (qleft,qright,fgdnv,ngrid,self%nv)
+    call riemann%hllc    (qleft,qright,fgdnv,ngrid,self%nv,error)
   else if (self%riemann.eq.'hllc_a')then
     call riemann%hllc_a  (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'hllc_v')then

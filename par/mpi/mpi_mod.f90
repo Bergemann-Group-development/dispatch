@@ -188,7 +188,7 @@ SUBROUTINE abort_mpi (mp, reason)
   character(len=*):: reason
 !...............................................................................
   print*, mpi_rank, 'mpi_abort: '//trim(reason)
-  write(io_unit%log,'(3(a,2x,i6))') 'mpi_abort: thread =',omp%thread,trim(reason)
+  write(io_unit%log,'(3(a,i6,2x))') 'mpi_abort: thread =',omp%thread,trim(reason)
   call flush (io_unit%log)
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
   call exit
