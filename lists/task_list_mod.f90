@@ -229,6 +229,7 @@ SUBROUTINE update (self)
     ! however, not added back onto the ready queue.
     !-----------------------------------------------------------------------------
     if (task%has_finished()) then  ! finished:
+      load_balance%on = .false.                         ! turn of load balancing
       call task%output (self%name)                      ! check output
       !$omp atomic
       self%na = self%na-1
