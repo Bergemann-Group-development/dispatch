@@ -45,6 +45,7 @@ MODULE list_mod
     procedure:: check_nbors
     procedure:: check_ready
     procedure:: check_all
+    procedure:: check_oldest
     procedure:: check_queue
     procedure:: init_nbors
     procedure:: init_all_nbors
@@ -286,13 +287,60 @@ SUBROUTINE check_all (self)
   class(link_t), pointer:: link
   !.............................................................................
   call trace_begin('list_mod::check_all '//self%name)
+  write (io_unit%log,*) 'check_all: phase 1'
   link => self%head
   do while (associated (link))                        ! keep going until end
     call self%check_ready (link, 1)                   ! link ready?
     link => link%next
   end do
+  write (io_unit%log,*) 'check_all: phase 2'
+  link => self%head
+  do while (associated (link))                        ! keep going until end
+    if (link%task%is_clear (bits%virtual+bits%external)) then
+      if (link%task%is_set (bits%ready)) then
+        write (io_unit%log,*) 'clearing ready bit on', link%task%id
+        call link%task%clear (bits%ready)
+        call self%check_ready (link, 1)                 ! link ready?
+      end if
+    end if
+    link => link%next
+  end do
   call trace_end
 END SUBROUTINE check_all
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE check_oldest (self)
+  class(list_t):: self
+  class(link_t), pointer:: link, oldest
+  real(8):: told
+  !.............................................................................
+  call trace_begin('list_mod::check_oldest '//self%name)
+  write (io_unit%log,*) 'check_oldest: phase 1'
+  told = 1d30
+  link => self%head
+  do while (associated (link))                        ! keep going until end
+    if (link%task%time < told) then
+      told = link%task%time
+      oldest => link
+    end if
+    link => link%next
+  end do
+  link => oldest
+  write (io_unit%log,*) 'the oldest task is ', link%task%id, link%task%time
+  write (io_unit%log,*) 'check_oldest: phase 2'
+  if (link%task%is_clear (bits%virtual+bits%external)) then
+    if (link%task%is_set (bits%ready)) then
+      write (io_unit%log,*) 'clearing ready bit on', link%task%id
+      call link%task%clear (bits%ready)
+      call self%check_ready (link, 1)                 ! link ready?
+    end if
+  else
+    write (io_unit%log,*) 'the oldest task is not active', &
+      link%task%is_clear (bits%virtual), link%task%is_clear (bits%external)
+  end if
+  call trace_end
+END SUBROUTINE check_oldest
 
 !> =============================================================================
 !> Check if the link task is ready, and if so, add it to self (the ready_queue)
@@ -322,14 +370,16 @@ SUBROUTINE check_ready (self, link, set_debug)
     do while (associated (nbor))                        ! keep going until end
       nbtask => nbor%task
       ahead = nbtask%is_ahead_of(task)
-      if (ahead) then
+      if (ahead .or. nbtask%is_set(bits%external)) then
         nbor => nbor%next                               ! next nbor
       else
         if (task%id==io%id_debug.or.io%verbose>1) &
           write (io_unit%log,1) task%id, 'fails at', &
           task%time, ' on', nbtask%id, nbtask%time-task%time, &
-          nbtask%is_set(bits%virtual)
-          1 format(i9,2x,a,1p,e16.8,2x,a,i9,e16.8,l4)
+          nbtask%is_set(bits%virtual), &
+          nbtask%is_set(bits%boundary), &
+          nbtask%is_set(bits%external)
+          1 format(i9,2x,a,1p,e16.8,2x,a,i9,e16.8,3l4)
         goto 9
       end if
     end do

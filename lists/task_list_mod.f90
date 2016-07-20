@@ -260,7 +260,13 @@ SUBROUTINE update (self)
   else
     !$omp critical (stalled_cr)
     stalled = stalled+1
-    call mpi_mesg%delay (stalled)
+    if (stalled == 100) then
+       call self%check_all
+    else if (stalled == 101) then
+       call self%check_oldest
+    else
+      call mpi_mesg%delay (stalled)
+    end if
     if (stalled == max_stalled/2) call mpi_mesg%diagnostics (1)
     if (stalled > max_stalled) call mpi%abort ('exceeded max_stalled')
     !$omp end critical (stalled_cr)

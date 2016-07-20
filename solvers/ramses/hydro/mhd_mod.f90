@@ -646,7 +646,7 @@ contains
   !-----------------------------------------------------------------------------
   do i=lb,ub
     write (io_unit%log,'(a,1p,2(5e12.3,2x))') &
-      'solver error:', qleft(i,1:5), qright(i,1:5)
+      trim(label)//'solver error:', qleft(i,1:5), qright(i,1:5)
   end do
   !-----------------------------------------------------------------------------
   ! Print a list of neighbors and their time differences
@@ -659,7 +659,8 @@ contains
     nullify(nbor)
   end select
   do while (associated(nbor))
-    write (io_unit%log,'(a,i9,f10.3,3x,3f6.2)') 'solver error: nbor, time diff', &
+    write (io_unit%log,'(a,i9,f10.3,3x,3f6.2)') &
+      trim(label)//'solver error: nbor, time diff', &
       nbor%task%id, (nbor%task%time-self%time)/self%dtime, &
       (nbor%task%position-self%position)/self%size
     nbor => nbor%next

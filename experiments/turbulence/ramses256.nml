@@ -45,7 +45,7 @@
 /
 &out_params
  !end_time=0.20
- end_time=0.03
+ end_time=0.04
  out_time=0.02
  print_time=0.0
  guard_zones=f
