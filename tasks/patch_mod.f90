@@ -1246,10 +1246,11 @@ END FUNCTION local_iit
 SUBROUTINE time_interpolate (self, source, jt, pt)
   class(patch_t):: self, source
   integer:: jt(2)
-  integer:: i, it, iit(self%nt)
+  integer:: i, it, iit(self%nt), verbose
   real(8):: pt(2), dt
   !.............................................................................
   call trace_begin ('task_t::time_interpolate',3)
+  verbose = io%verbose
   !-----------------------------------------------------------------------------
   ! In case of e.g. an error in initial conditions, choose a valid default
   !-----------------------------------------------------------------------------
@@ -1271,11 +1272,28 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   dt = source%t(jt(2))-source%t(jt(1))
   if (dt==0d0) then
     pt(2) = 1d0
+  !-----------------------------------------------------------------------------
+  ! If a task lags behind, prevent backwards time interpolation, with a warning
+  !-----------------------------------------------------------------------------
   else
     pt(2) = (self%time - source%t(jt(1)))/dt
+    if (pt(2) < -self%grace) then
+      write (io_unit%log,1) &
+        'patch_mod::time_interpolate WARNING: backward extrapolation, trg,src,pt:', &
+        self%id, source%id, pt(2)
+      1 format(a,2i9,f7.2)
+      pt(2) = -self%grace
+      verbose = 3
+    else if (pt(2) > 1.0+self%grace) then
+      write (io_unit%log,1) &
+        'patch_mod::time_interpolate WARNING: forward extrapolation, trg,src,pt:', &
+        self%id, source%id, pt(2)
+      pt(2) = 1.0+self%grace
+      verbose = 3
+    end if
   end if
   pt(1) = 1d0-pt(2)
-  if (io%verbose > 2) then
+  if (verbose > 2) then
     write (io_unit%log,'(a,2i5,2f7.3,1p,g16.6)') &
       'patch_mod::time_interpolation jt, pt, target', &
       jt, pt, self%time
