@@ -225,35 +225,34 @@ SUBROUTINE update (self)
     call task%info (self%nq, self%na)                   ! print info on stdout
     !-----------------------------------------------------------------------------
     ! Tasks that have finished are subtracted from the task list count but are
-    ! not removed, since their data may be needed by other tasks.  They are,
-    ! however, not added back onto the ready queue.
+    ! not removed, since their data may be needed by other tasks (including on
+    ! other ranks).  They are, however, not added back onto the ready queue.
     !-----------------------------------------------------------------------------
     if (task%has_finished()) then  ! finished:
       load_balance%on = .false.                         ! turn of load balancing
       call task%output (self%name)                      ! check output
       !$omp atomic
       self%na = self%na-1
-    else
-      !---------------------------------------------------------------------------
-      ! If the task is a boundary patch, first check if it should be given to
-      ! another rank.  A patch that has been given to another rank becomes
-      ! a virtual patch, and the load balance procedure has already send those
-      ! of its nbors that became new boundary patches over to relevant ranks,
-      ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
-      !---------------------------------------------------------------------------
-      if (task%is_set(bits%boundary)) then              ! boundary patch?
-        head%task%nq = self%nq                          ! make sure to pass on
-        call load_balance%check (self, head)            ! sell?
-        call head%send_to_vnbors                        ! send to virtual nbors
-      end if
-      !---------------------------------------------------------------------------
-      ! The task should now again be checked, before it can be returned to the
-      ! queue, and its neighbors should also be checked for return to the queue.
-      ! If the task was turned into a virtual task by the load balance, its virtual
-      ! bit will prevent it being checked, but its nbors still need to be checked
-      !---------------------------------------------------------------------------
-      call self%check_nbors (head)                      ! any nbors ready?
     end if
+    !-----------------------------------------------------------------------------
+    ! If the task is a boundary patch, first check if it should be given to
+    ! another rank.  A patch that has been given to another rank becomes
+    ! a virtual patch, and the load balance procedure has already sent those
+    ! of its nbors that became new boundary patches over to relevant ranks,
+    ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
+    !-----------------------------------------------------------------------------
+    if (task%is_set(bits%boundary)) then              ! boundary patch?
+      head%task%nq = self%nq                          ! make sure to pass on
+      call load_balance%check (self, head)            ! sell?
+      call head%send_to_vnbors                        ! send to virtual nbors
+    end if
+    !-----------------------------------------------------------------------------
+    ! The task should now again be checked, before it can be returned to the
+    ! queue, and its neighbors should also be checked for return to the queue.
+    ! If the task was turned into a virtual task by the load balance, its virtual
+    ! bit will prevent it being checked, but its nbors still need to be checked
+    !-----------------------------------------------------------------------------
+    call self%check_nbors (head)                      ! any nbors ready?
     !$omp atomic write
     stalled = 0
     call mpi_mesg%diagnostics (0)
