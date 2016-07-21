@@ -119,7 +119,6 @@ SUBROUTINE execute (self)
   ! Construct neighbor lists used to perform checks for ready status
   !-----------------------------------------------------------------------------
   call self%init_all_nbors
-  call self%count_status
   !-----------------------------------------------------------------------------
   ! Set virtual and boundary bits
   !-----------------------------------------------------------------------------
@@ -449,6 +448,9 @@ SUBROUTINE check_load (self, task_list, link)
               flush (io_unit%log)
             end if
             call link%give_to (link, nbor%task%rank)
+            task_list%na = task_list%na-1
+            task_list%nb = task_list%nb-1
+            task_list%nv = task_list%nv-1
             if (io%verbose>0) &
               write (io_unit%log,*) 'swapped boundary to virtual:', link%task%id
             call task_list%count_status
@@ -513,6 +515,7 @@ FUNCTION find_task (self, id) RESULT (link)
   ! Append to the task_list.  The calling procedure must create an nbor list,
   ! and must also update the nbor list of the nbors
   !-----------------------------------------------------------------------------
+  call task%set (bits%virtual)
   call self%append_link (link)
   call trace_end
 END FUNCTION find_task
@@ -563,6 +566,7 @@ SUBROUTINE unpack (self, mesg)
     ! resorting (removing + re-adding) the nbor's nbor lists in rank order.
     !---------------------------------------------------------------------------
     if (task%is_set(bits%swap_request) .and. task%is_set(bits%boundary)) then
+      self%na = self%na+1; self%nb = self%nb+1; self%nv = self%nv-1
       call self%init_nbors (link)
       call task%clear (bits%swap_request+bits%ready)
       call link%update_nbor_status (link)
@@ -583,6 +587,7 @@ SUBROUTINE unpack (self, mesg)
     else if (task%is_set(bits%swap_request) .and. task%is_set(bits%virtual)) then
       if (io%verbose>0) &
         write (io_unit%log,*) 'new virtal patch:', task%id
+      self%nv = self%nv+1
       call self%init_nbors (link)
       call task%clear (bits%swap_request+bits%ready)
       call link%update_nbor_status (link)
