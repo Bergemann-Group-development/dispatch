@@ -1227,13 +1227,14 @@ FUNCTION local_iit (self) RESULT (iit)
   class(patch_t):: self
   integer:: i, it, iit(self%nt)
   !-----------------------------------------------------------------------------
-  ! Make a consistent local copy of self%iit, based on self%new, which is
+  ! Make a consistent local copy of self%iit, based on self%it, which is
   ! written and read in atomic operations.  The array iit is such that its last
   ! value, iit(self%nt) is equal to self%new.
   !-----------------------------------------------------------------------------
-  !$omp atomic read
-  it = self%it
-  iit = [(1+mod(it+i,self%nt), i=1,self%nt)]
+  !!$omp atomic read
+  !it = self%it
+  !iit = [(1+mod(it+i,self%nt), i=1,self%nt)]
+  iit = self%iit
 END FUNCTION local_iit
 
 !> =============================================================================
