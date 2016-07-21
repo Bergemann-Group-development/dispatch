@@ -20,7 +20,7 @@ MODULE rank_info_mod
     real(8):: otime, owall
     type(rank_info_t), pointer:: next => null()
   contains
-    procedure:: time_diff
+    procedure:: imbalance
   end type
   type, public:: io_rank_info_t
     sequence
@@ -280,7 +280,7 @@ END SUBROUTINE send
 !> known for nbor), and return the difference between that and nbor%time. A
 !> positive value means that nbor is ahead of the local rank.
 !> =============================================================================
-FUNCTION time_diff (self, nbor) RESULT (diff)
+FUNCTION imbalance (self, nbor) RESULT (diff)
   class(rank_info_t):: self
   class(rank_info_t), pointer:: nbor
   real(8):: p, time, diff
@@ -289,7 +289,7 @@ FUNCTION time_diff (self, nbor) RESULT (diff)
   !time = self%otime + p*(self%time-self%otime)
   !diff = (nbor%time-time)/self%dtime
   diff = (self%nq-nbor%nq)
-END FUNCTION time_diff
+END FUNCTION imbalance
 
 !> =============================================================================
 !> Look up the load for a neighbor rank
@@ -328,20 +328,20 @@ SUBROUTINE print (self, time)
   class(rank_info_list_t):: self
   real(8):: time
   class(rank_info_t), pointer:: nbor_info
-  real:: load_diff, time_diff
+  real:: load_diff, imbalance
   !.............................................................................
   if (.not.rank_info%ok) return
   !$omp critical (rank_info_list_cr)
   nbor_info => self%head
   do while (associated(nbor_info))
     load_diff = (rank_info%cost-nbor_info%cost)/rank_info%patch_cost
-   !time_diff = (nbor_info%time-rank_info%time)/rank_info%dtime
-    time_diff = rank_info%time_diff (nbor_info)
+   !imbalance = (nbor_info%time-rank_info%time)/rank_info%dtime
+    imbalance = rank_info%imbalance (nbor_info)
     write (io_unit%log,'(2f12.6,2x,a,i6,1p,4g12.3,3i6)') &
       wallclock(), &
       time, &
       'rank_info_list: rnk,load,time,cost[12],wall,nq =', &
-      nbor_info%rank,load_diff,time_diff, &
+      nbor_info%rank,load_diff,imbalance, &
       nbor_info%cost, rank_info%cost, &
       nbor_info%nq, rank_info%nq, nbor_info%n_swap
     nbor_info => nbor_info%next

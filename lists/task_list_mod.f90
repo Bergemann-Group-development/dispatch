@@ -229,6 +229,7 @@ SUBROUTINE update (self)
     ! other ranks).  They are, however, not added back onto the ready queue.
     !-----------------------------------------------------------------------------
     if (task%has_finished()) then  ! finished:
+      !$omp atomic write
       load_balance%on = .false.                         ! turn of load balancing
       call task%output (self%name)                      ! check output
       !$omp atomic
@@ -378,9 +379,15 @@ SUBROUTINE check_load (self, task_list, link)
   integer,save:: delay=0
   logical:: load_condition, time_condition
   real(8):: wc
-  real:: load_diff, cost, time_diff
+  real:: load_diff, cost, imbalance
   logical, save:: make_estimate=.true.
   !-----------------------------------------------------------------------------
+  ! Only one thread should do load balancing, and that thread should make sure
+  ! to use omp critical (list_cr) whenever it needs to access the task list,
+  ! so for simplicity we lock on that for now.
+  !-----------------------------------------------------------------------------
+  if (.not.load_balance%on) return
+  !$omp critical (loadb_cr)
   wc = wallclock()
   patch => task2patch(link%task)
   !-----------------------------------------------------------------------------
@@ -398,66 +405,70 @@ SUBROUTINE check_load (self, task_list, link)
   ! If load balancing is on, and we have information, and it's time, or if an
   ! earlier case has left an excess, go ahead
   !-----------------------------------------------------------------------------
-  if (.not.load_balance%on .or. &
-      .not.rank_info%ok  .or. &
-      wc > load_balance%duration) then
-    return
-  end if
-  !-----------------------------------------------------------------------------
-  ! Among the virtual patches that surround the link boundary patch, find one
-  ! that needs more load and give the link patch to it
-  !-----------------------------------------------------------------------------
-  nbor => link%nbor
-  do while (associated(nbor))
-    if (io%verbose>1) &
-      write (io_unit%log,'(a,2i9,3i6,2f12.6,l3)') 'LB: ids,nqs,rank,times', &
-        link%task%id, nbor%task%id, task_list%nq, nbor%task%nq, nbor%task%rank, &
-        nbor%task%time, link%task%time, nbor%task%is_set(bits%virtual)
-    if (nbor%task%is_set (bits%virtual)) then
-      nbor_info => rank_info_list%find (nbor%task%rank)
-      if (nbor%task%rank == mpi%rank) then
-        write (io_unit%log,*) &
-          'task_list_mod::check_load virtual bit on my rank', nbor%task%id
-        flush (io_unit%log)
-      else if (associated(nbor_info)) then
-        time_diff = rank_info%time_diff (nbor_info)/load_balance%grace
-        time_diff = max(time_diff, -1.)
-        if (rank_info%ok.and.nbor_info%ok.and. &
-            random%ran1() < 0.05*(1.-exp(-time_diff))) then
-          !$omp critical (loadb_cr)
-          if (io%verbose>0) then
-            print 1, &
-              wc,'LB: rank',mpi%rank,' gives patch',link%task%id,' to',nbor%task%rank, &
-              load_balance%excess, nbor_info%n_swap, &
-              nbor_info%cost, rank_info%cost
-              1 format(f12.6,2x,a,i6,a,i9,a,i6,2i5,1p,2g12.3)
-            write (io_unit%log,2) &
-              wc,'load_balance: giving patch',link%task%id, ' to',nbor%task%rank, &
-              load_balance%excess, nbor_info%n_swap, &
-              nbor_info%cost, rank_info%cost
-              2 format(f12.6,2x,a,i9,a,i6,2i5,1p,2g12.3)
-            flush (io_unit%log)
+  if (rank_info%ok .and. wc<load_balance%duration) then
+    !---------------------------------------------------------------------------
+    ! Among the virtual patches that surround the link boundary patch, find one
+    ! that needs more load and give the link patch to it
+    !---------------------------------------------------------------------------
+    nbor => link%nbor
+    do while (associated(nbor))
+      if (io%verbose>1) &
+        write (io_unit%log,'(a,2i9,3i6,2f12.6,l3)') 'LB: ids,nqs,rank,times', &
+          link%task%id, nbor%task%id, task_list%nq, nbor%task%nq, nbor%task%rank, &
+          nbor%task%time, link%task%time, nbor%task%is_set(bits%virtual)
+      if (nbor%task%is_set (bits%virtual)) then
+        nbor_info => rank_info_list%find (nbor%task%rank)
+        if (nbor%task%rank == mpi%rank) then
+          write (io_unit%log,*) &
+            'task_list_mod::check_load virtual bit on my rank', nbor%task%id
+          flush (io_unit%log)
+        else if (associated(nbor_info)) then
+          imbalance = rank_info%imbalance (nbor_info)/load_balance%grace
+          imbalance = max(imbalance, -1.)
+          !---------------------------------------------------------------------
+          ! If the imbalance measure is posive then give a patch to the remote
+          ! rank, with a probability essentially proportional to the imbalance,
+          ! but saturating at 5%, to limit the number of swaps per unit time.
+          ! A swap can cause a fair number of patch transfers, since new virtual
+          ! patches on the remote need at least two time slices.
+          !---------------------------------------------------------------------
+          if (rank_info%ok.and.nbor_info%ok .and. &
+              imbalance > 0.0 .and. &
+              random%ran1() < 0.05*(1.-exp(-imbalance))) then
+            if (io%verbose>0) then
+              print 1, &
+                wc,'LB: rank',mpi%rank,' gives patch',link%task%id,' to',nbor%task%rank, &
+                load_balance%excess, nbor_info%n_swap, &
+                nbor_info%cost, rank_info%cost
+                1 format(f12.6,2x,a,i6,a,i9,a,i6,2i5,1p,2g12.3)
+              write (io_unit%log,2) &
+                wc,'load_balance: giving patch',link%task%id, ' to',nbor%task%rank, &
+                load_balance%excess, nbor_info%n_swap, &
+                nbor_info%cost, rank_info%cost
+                2 format(f12.6,2x,a,i9,a,i6,2i5,1p,2g12.3)
+              flush (io_unit%log)
+            end if
+            call link%give_to (link, nbor%task%rank)
+            if (io%verbose>0) &
+              write (io_unit%log,*) 'swapped boundary to virtual:', link%task%id
+            call task_list%count_status
+            exit
           end if
-          call link%give_to (link, nbor%task%rank)
-          if (io%verbose>0) &
-            write (io_unit%log,*) 'swapped boundary to virtual:', link%task%id
-          !$omp end critical (loadb_cr)
-          call task_list%count_status
-          exit
+        else
+          write (io_unit%log,*) &
+            'check_load  ERROR: nbor_info not associated, rank', nbor%task%rank
+          nbor_info => rank_info_list%find (nbor%task%rank, debug=.true.)
+          flush (io_unit%log)
         end if
-      else
-        write (io_unit%log,*) &
-          'check_load  ERROR: nbor_info not associated, rank', nbor%task%rank
-        nbor_info => rank_info_list%find (nbor%task%rank, debug=.true.)
-        flush (io_unit%log)
+      else if (nbor%task%is_set (bits%external)) then
+        write (io_unit%log,*) nbor%task%id, 'LB: external status on nbor from rank', nbor%task%rank
+      else if (nbor%task%rank /= mpi%rank) then
+        write (io_unit%log,*) nbor%task%id, 'LB: inconsistent status on nbor from rank', nbor%task%rank
       end if
-    else if (nbor%task%is_set (bits%external)) then
-      write (io_unit%log,*) nbor%task%id, 'LB: external status on nbor from rank', nbor%task%rank
-    else if (nbor%task%rank /= mpi%rank) then
-      write (io_unit%log,*) nbor%task%id, 'LB: inconsistent status on nbor from rank', nbor%task%rank
-    end if
-    nbor => nbor%next
-  end do
+      nbor => nbor%next
+    end do
+  end if ! (rank_info%ok .and. wc < load_balance%duration)
+  !$omp end critical (loadb_cr)
 END SUBROUTINE check_load
 
 !> =============================================================================
