@@ -85,10 +85,11 @@ SUBROUTINE same_static (self)
   class (link_t):: self
   class (link_t),  pointer:: nbor
   class (patch_t), pointer:: source, target
-  integer:: it, iv, l1(3), u1(3), o(3), jt(2), ntot, nuse, ix, iy, iz, n
+  integer:: i, it, iv, l1(3), u1(3), o(3), jt(2), ntot, ix, iy, iz, n, verbose
   real(8):: pt(2)
   real:: dmin
   integer, save:: itimer=0
+  logical:: ahead
   !.............................................................................
   call trace_begin('download_mod::same_static',itimer=itimer)
   target => task2patch(self%task)
@@ -102,7 +103,6 @@ SUBROUTINE same_static (self)
     do iv=1,source%nv
       call target%dnload_range (source, l1, u1, o)
       ntot = product(u1-l1+1)
-      nuse = ntot
       if (io%master .and. iv==1 .and. io%verbose>3) then
         write (io_unit%log,'(a,3(3i4,3x),i6)') 'target ranges: l1, u1, o, n =', l1, u1, o, ntot
       end if
@@ -118,42 +118,60 @@ SUBROUTINE same_static (self)
       end do
       if (iv==1) then
         if (io%verbose==3.or.dmin<0.0) write (io_unit%log,1) &
-        'patch', target%id, ' level', target%level, ' picked up', nuse, &
-        'of', ntot, ' points from patch', source%id, ' at level', source%level, &
+        'patch', target%id, ' level', target%level, ' picked up', ntot, &
+        ' points from patch', source%id, ' at level', source%level, &
         'position', (source%position-target%position)/target%size, pt, dmin
-      1 format(6(1x,a,i7,1x),1x,a,5f6.2,1p,e12.3)
+      1 format(5(1x,a,i7,1x),1x,a,5f6.2,1p,e12.3)
+        !-----------------------------------------------------------------------
+        ! Detailed analysis of rare negative density cases, ending with a patch-up 
+        ! that interpolates in the log to replace the negative values.  The cases
+        ! looked at generally are caused by time extrapolation, and even if they
+        ! are extremely rare they need to be handled, lest the solver chokes on
+        ! the unphysical values that result.
+        !-----------------------------------------------------------------------
         if (dmin < 0.0) then
-          write (io_unit%log,'(a,i9,a,i9)') &
+          write (io_unit%log,'(a,i9,3x,a,i9,3x,a,2i4,3x,a,2f6.3)') &
             'download_mod::same_static: ERROR, negative density contribution to', &
-            target%id, ' from', source%id
-          write (io_unit%log,'(a,2(i9,2f12.6),f10.3)') &
-            'same_static: target,source id,time,dtime =', &
+            target%id, 'from', source%id,'jt:',jt,'pt:',pt
+          verbose = io%verbose
+          io%verbose = 5
+          ahead = source%is_ahead_of (target)
+          call target%time_interpolate (source, jt, pt)
+          io%verbose = verbose
+          write (io_unit%log,'(a,l2,4(i9,2f12.6),f10.3)') &
+            'same_static: target,source id,time,dtime,jt1,t1,jt2,t2 =', &
+            ahead, &
             target%id, target%time, target%dtime, &
             source%id, source%time, source%dtime, &
+            jt(1), source%t(jt(1)), source%dt(jt(1)), &
+            jt(2), source%t(jt(2)), source%dt(jt(1)), &
             (target%time-source%time)/source%dtime
-          do it=1,source%nt
-            write (io_unit%log,'(a,1p,2g16.6)') &
-              'same_static: source t, dt =', &
-              source%t (source%iit(it)), &
-              source%dt(source%iit(it))
-          end do
-          block
-            integer:: verbose
-            verbose = io%verbose
-            io%verbose = 3
-            call target%time_interpolate (source, jt, pt)
-            io%verbose = verbose
-          end block
+          !---------------------------------------------------------------------
+          ! If there were negative values produced, redo this guard zone, with
+          ! debug printout and log-interpolation
+          !---------------------------------------------------------------------
           do iz=l1(3),u1(3)
           do iy=l1(2),u1(2)
           do ix=l1(1),u1(1)
             target%mem(ix,iy,iz,iv,it,1) = source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)*pt(1) &
                                          + source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)*pt(2)
             if (target%mem(ix,iy,iz,iv,it,1) < 0.0) then
-              write (io_unit%log,'(a,3i4,1p,2g16.6)') 'same_static: ix,iy,iz,src1,src2 =', &
-                ix, iy, iz, &
+              write (io_unit%log,'(a,1p,7g16.6)') 'same_static: source t =', &
+                (source%t(source%iit(i)), i=1,source%nt-1)
+              write (io_unit%log,'(a,1p,7g16.6)') 'same_static: source d =', &
+                (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,source%iit(i),1), i=1,source%nt-1)
+              !-----------------------------------------------------------------
+              ! Extrapolate in the log, to ensure positive results
+              !-----------------------------------------------------------------
+              target%mem(ix,iy,iz,iv,it,1) = exp( &
+                alog(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1))*pt(1) + &
+                alog(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))*pt(2))
+              write (io_unit%log,'(a,2(3i4,1x),1p,3g16.6)') 'same_static: ix,iy,iz,src1,src2,trg =', &
+                ix     , iy     , iz     , &
+                ix+o(1), iy+o(2), iz+o(3), &
                 source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1), &
-                source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
+                source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
+                target%mem(ix,iy,iz,iv,it,1)
             end if
           end do
           end do
@@ -161,8 +179,8 @@ SUBROUTINE same_static (self)
         end if
       end if
       if (io%verbose>3) write (io_unit%log,1) &
-        'patch', target%id, ' level', target%level, 'var', iv, ' picked up', nuse, &
-        'of', ntot, ' points from patch', source%id, ' at level', source%level, &
+        'patch', target%id, ' level', target%level, 'var', iv, ' picked up', &
+        ntot, ' points from patch', source%id, ' at level', source%level, &
         'position', (source%position-target%position)/target%size, pt, dmin
     end do
     nbor => nbor%next
