@@ -29,6 +29,7 @@ MODULE patch_mod
     real:: dt_fixed, u_fixed, u_max     ! for fixed time step Courant condition
     integer:: ndim = ndim               ! number of dimensions
     integer:: nv=5                      ! number of variables
+    integer:: nw=2                      ! number of work indices
     integer:: msplit=2                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
     logical:: guard_zones, time_derivs  ! switches for I/O
@@ -254,14 +255,14 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
-  integer, save:: n(3), ng(3), nv, nt, max_files=100
+  integer, save:: n(3), ng(3), nv, nt, nw, max_files=100
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false.
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
   real(8):: position(3), size(3)
   integer:: iostat, i
-  namelist /patch_params/ size, n, nv, ng, nt, courant, u_fixed, dt_fixed, grace
+  namelist /patch_params/ size, n, nv, nw, ng, nt, courant, u_fixed, dt_fixed, grace
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     guard_zones, time_derivs
   !.............................................................................
@@ -276,6 +277,7 @@ SUBROUTINE init (self)
     n    = self%n
     ng   = self%ng
     nv   = self%nv
+    nw   = self%nw
     nt   = self%nt
     first_time = .false.
     rewind (io%input)
@@ -291,9 +293,10 @@ SUBROUTINE init (self)
   if (any(self%n == 0)) then
     self%n           = n                        ! patch dimensions
   end if
-  self%ng          = ng                         ! patch dimensions
-  self%nv          = nv                         ! patch dimensions
-  self%nt          = nt                         ! patch dimensions
+  self%ng          = ng                         ! number of guard zones
+  self%nv          = nv                         ! number of variables
+  self%nw          = nw                         ! number of work indices
+  self%nt          = nt                         ! number of time slices
   self%courant     = courant                    ! courant number
   self%grace       = grace                      ! grace fraction of dtime
   self%dt_fixed    = dt_fixed
@@ -363,7 +366,7 @@ SUBROUTINE init (self)
       allocate (self%mem(self%mesh(1)%gn, &
                          self%mesh(2)%gn, &
                          self%mesh(3)%gn, &
-                         self%nv,self%nt,2))
+                         self%nv,self%nt,self%nw))
       self%mem_allocated = .true.               ! mark
 !    end if
   end if
@@ -412,8 +415,8 @@ SUBROUTINE rotate (self)
   if (io%verbose>1) then
     write (io_unit%log,'(a,i6,2i3,2e13.6,2x,a,1p,6e10.2)') 'update: id,j,k,l,n,dt,t', &
       self%id, self%it, self%new, self%dtime, self%time, 'minmax:', &
-      minval(self%mem(:,:,:,1,self%it ,2)), &
-      maxval(self%mem(:,:,:,1,self%it ,2)), &
+      minval(self%mem(:,:,:,1,self%it ,self%nw)), &
+      maxval(self%mem(:,:,:,1,self%it ,self%nw)), &
       minval(self%mem(:,:,:,1,self%new,1)), &
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
@@ -883,8 +886,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       do iv=1,nv
         write (io_unit%log,1) &
           'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
-          self%fminval(self%mem(:,:,:,iv,self%it ,2)), &
-          self%fmaxval(self%mem(:,:,:,iv,self%it ,2)), &
+          self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+          self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
           self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
           self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
           real(n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual), self%status
@@ -895,8 +898,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         if (io%master .or. self%id==1) &
           print 1, &
           'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
-          self%fminval(self%mem(:,:,:,iv,self%it ,2)), &
-          self%fmaxval(self%mem(:,:,:,iv,self%it ,2)), &
+          self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+          self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
           self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
           self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
           real(n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual), self%status
