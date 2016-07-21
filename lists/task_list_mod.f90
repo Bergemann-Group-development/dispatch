@@ -392,7 +392,7 @@ SUBROUTINE check_load (self, task_list, link)
     call load_balance%measure (task_list)
     call rank_info_list%send
     rank_info%patch_cost = product(patch%mesh%gn)/patch%dtime
-    call rank_info_list%print
+    call rank_info_list%print (link%task%time)
   end if
   !-----------------------------------------------------------------------------
   ! If load balancing is on, and we have information, and it's time, or if an

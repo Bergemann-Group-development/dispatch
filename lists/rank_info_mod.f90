@@ -44,7 +44,6 @@ MODULE rank_info_mod
     procedure:: remove
     procedure:: send
     procedure:: find
-    procedure:: test
     procedure:: print
   end type
   type(rank_info_t), public:: rank_info
@@ -277,35 +276,6 @@ SUBROUTINE send (self)
 END SUBROUTINE send
 
 !> =============================================================================
-!> Test rank_info list, by adding and removing three items
-!> =============================================================================
-SUBROUTINE test (self)
-  class(rank_info_list_t):: self
-  class(rank_info_t), pointer:: nbor_info
-  integer:: i
-  !.............................................................................
-  if (io%verbose < 3) return
-  call trace_begin('rank_info_mod::test')
-  do i=1,3
-    allocate (nbor_info)
-    nbor_info%rank = i
-    nbor_info%cost = rank_info%cost
-    call self%append (nbor_info)
-  end do
-  call self%print
-  nbor_info => self%head                                        ! first rank_info
-  call self%remove (nbor_info)
-  call self%print
-  nbor_info => self%tail                                        ! last rank_info
-  call self%remove (nbor_info)
-  call self%print
-  nbor_info => self%head                                        ! first rank_info
-  call self%remove (nbor_info)
-  call self%print
-  call trace_end
-END SUBROUTINE test
-
-!> =============================================================================
 !> Interpolate the local code time to the wall clock time nbor%wall (the latest
 !> known for nbor), and return the difference between that and nbor%time. A
 !> positive value means that nbor is ahead of the local rank.
@@ -354,8 +324,9 @@ END FUNCTION find
 !> =============================================================================
 !> Print a rank_info list
 !> =============================================================================
-SUBROUTINE print (self)
+SUBROUTINE print (self, time)
   class(rank_info_list_t):: self
+  real(8):: time
   class(rank_info_t), pointer:: nbor_info
   real:: load_diff, time_diff
   !.............................................................................
@@ -366,12 +337,12 @@ SUBROUTINE print (self)
     load_diff = (rank_info%cost-nbor_info%cost)/rank_info%patch_cost
    !time_diff = (nbor_info%time-rank_info%time)/rank_info%dtime
     time_diff = rank_info%time_diff (nbor_info)
-    write (io_unit%log,'(f12.6,2x,a,i6,1p,6g12.3,3i6)') &
+    write (io_unit%log,'(2f12.6,2x,a,i6,1p,4g12.3,3i6)') &
       wallclock(), &
-      'rank_info_list: rank,load_diff,time,cost[12],wall,nq =', &
+      time, &
+      'rank_info_list: rnk,load,time,cost[12],wall,nq =', &
       nbor_info%rank,load_diff,time_diff, &
       nbor_info%cost, rank_info%cost, &
-      nbor_info%wall/rank_info%cadence, rank_info%wall/rank_info%cadence, &
       nbor_info%nq, rank_info%nq, nbor_info%n_swap
     nbor_info => nbor_info%next
   end do
