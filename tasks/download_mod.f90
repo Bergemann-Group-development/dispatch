@@ -117,29 +117,50 @@ SUBROUTINE same_static (self)
       end do
       end do
       if (iv==1) then
-        if (io%verbose==2) write (io_unit%log,1) &
+        if (io%verbose==3.or.dmin<0.0) write (io_unit%log,1) &
         'patch', target%id, ' level', target%level, ' picked up', nuse, &
         'of', ntot, ' points from patch', source%id, ' at level', source%level, &
         'position', (source%position-target%position)/target%size, pt, dmin
       1 format(6(1x,a,i7,1x),1x,a,5f6.2,1p,e12.3)
-         if (dmin < 0.0) then
-           write (io_unit%log,'(a,i9,a,i9)') &
-             'download_mod::same_static: ERROR, negative density contribution to', &
-             target%id, ' from', source%id
-           write (io_unit%log,'(a,2(i9,2f12.6),f10.3)') &
-             'same_static: target,source id,time,dtime =', &
-             target%id, target%time, target%dtime, &
-             source%id, source%time, source%dtime, &
-             (target%time-source%time)/source%dtime
-           do it=1,source%nt
-             write (io_unit%log,'(a,1p,2g16.6)') &
-               'same_static: source t, dt =', &
-               source%t (source%iit(it)), &
-               source%dt(source%iit(it))
-           end do
-         end if
+        if (dmin < 0.0) then
+          write (io_unit%log,'(a,i9,a,i9)') &
+            'download_mod::same_static: ERROR, negative density contribution to', &
+            target%id, ' from', source%id
+          write (io_unit%log,'(a,2(i9,2f12.6),f10.3)') &
+            'same_static: target,source id,time,dtime =', &
+            target%id, target%time, target%dtime, &
+            source%id, source%time, source%dtime, &
+            (target%time-source%time)/source%dtime
+          do it=1,source%nt
+            write (io_unit%log,'(a,1p,2g16.6)') &
+              'same_static: source t, dt =', &
+              source%t (source%iit(it)), &
+              source%dt(source%iit(it))
+          end do
+          block
+            integer:: verbose
+            verbose = io%verbose
+            io%verbose = 3
+            call target%time_interpolate (source, jt, pt)
+            io%verbose = verbose
+          end block
+          do iz=l1(3),u1(3)
+          do iy=l1(2),u1(2)
+          do ix=l1(1),u1(1)
+            target%mem(ix,iy,iz,iv,it,1) = source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)*pt(1) &
+                                         + source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)*pt(2)
+            if (target%mem(ix,iy,iz,iv,it,1) < 0.0) then
+              write (io_unit%log,'(a,3i4,1p,2g16.6)') 'same_static: ix,iy,iz,src1,src2 =', &
+                ix, iy, iz, &
+                source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1), &
+                source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
+            end if
+          end do
+          end do
+          end do
+        end if
       end if
-      if (io%verbose>2) write (io_unit%log,1) &
+      if (io%verbose>3) write (io_unit%log,1) &
         'patch', target%id, ' level', target%level, 'var', iv, ' picked up', nuse, &
         'of', ntot, ' points from patch', source%id, ' at level', source%level, &
         'position', (source%position-target%position)/target%size, pt, dmin

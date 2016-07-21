@@ -1274,6 +1274,16 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
     pt(2) = (self%time - source%t(jt(1)))/dt
   end if
   pt(1) = 1d0-pt(2)
+  if (io%verbose > 2) then
+    write (io_unit%log,'(a,2i5,2f7.3,1p,g16.6)') &
+      'patch_mod::time_interpolation jt, pt, target', &
+      jt, pt, self%time
+    do i=1,source%nt
+      write (io_unit%log,'(a,3i4,1p,2g16.6)') &
+        'patch_mod::time_interpolation i,iit,src%iit,src%t,src&dt:', &
+        i, iit(i), source%iit(i), source%t(i), source%dt(i)
+    end do
+  end if
   !print'(a,5i3,3x,2i3,2x,2f7.3)', 'MK:', iit-source%iit, jt, pt
   !-----------------------------------------------------------------------------
   ! Facilitate exact time evolution when dt_fixed is being used
