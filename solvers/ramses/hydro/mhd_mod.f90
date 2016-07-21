@@ -542,7 +542,7 @@ subroutine cmpflxm(self)
     call cmpflxm_z
   else
     do k = lb(3),ub(3)
-      do i = lb(2),ub(2)
+      do i = lb(1),ub(1)
         qleft (lb(2):ub(2),1) = qm(i,lb(2):ub(2),k,1,2); qright(lb(2):ub(2),1) = qp(i,lb(2):ub(2),k,1,2)
         qleft (lb(2):ub(2),2) = qm(i,lb(2):ub(2),k,3,2); qright(lb(2):ub(2),2) = qp(i,lb(2):ub(2),k,3,2)
         qleft (lb(2):ub(2),3) = qm(i,lb(2):ub(2),k,5,2); qright(lb(2):ub(2),3) = qp(i,lb(2):ub(2),k,5,2)

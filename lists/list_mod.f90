@@ -78,11 +78,13 @@ SUBROUTINE init (self, name)
   class(list_t):: self
   character(len=*), optional:: name
   !.............................................................................
+  call trace_begin ('list_mod::init')
   if (present(name)) then
     self%name = name
     write (io_unit%log,*)'init_list: ', name
   end if
   call self%lock%init (self%kind)
+  call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -653,7 +655,8 @@ SUBROUTINE reset_status (self)
   self%nb = n_boundary
   self%nv = n_virtual
   self%ni = n_internal
-  self%n = n_internal+n_boundary
+  self%na = n_internal+n_boundary
+  self%n  = n_internal+n_boundary+n_virtual
   if (io%verbose>0) then
     write (io%log_unit,'(4(a,i7,5x))') &
       'rank:',mpi%rank, &
@@ -1062,8 +1065,8 @@ SUBROUTINE count_status (self)
   end do
   self%na = self%ni+self%nb-nf
   !$omp end critical (list_cr)
-  if (io%verbose>1) write (io_unit%log,*) &
-    'count_status: n[ibve] = ', self%ni, self%nb, self%nv, self%ne
+  if (io%verbose>1) write (io_unit%log,'(a,5i6)') &
+    'count_status: n[ibvea] = ', self%ni, self%nb, self%nv, self%ne, self%na
 END SUBROUTINE count_status
 
 !> =============================================================================
