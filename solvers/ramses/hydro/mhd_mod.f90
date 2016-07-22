@@ -21,6 +21,7 @@ MODULE mhd_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod
+  USE download_mod
   implicit none
   PRIVATE
   type, public, extends(patch_t):: mhd_t
@@ -34,6 +35,7 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:,:):: dq      ! slopes
     real, pointer, dimension(:,:,:,:,:):: fl      ! 3D fluxes
     real, pointer, dimension(:,:,:):: c, s        ! scratch
+    type(download_t):: download
   contains
     procedure:: init
     procedure:: update
@@ -72,11 +74,13 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE update (self, head)
   class(mhd_t):: self
+  class(link_t), pointer:: head
   integer:: n(3)
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::update')
+  call self%download%download_link (head, all_cells=.false.)
   self%uin => self%mem(:,:,:,:,self%it,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
   n = self%mesh%gn

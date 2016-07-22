@@ -9,6 +9,7 @@ MODULE task_mod
   USE bits_mod
   USE trace_mod
   USE scene_mod
+  USE mpi_mesg_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -39,18 +40,18 @@ MODULE task_mod
     real(8):: position(3) = 0d0
     real(8):: velocity(3) = 0d0
     real(8):: size(3) = 0.9999d0
+    real(8):: gsize(3)                  ! convenience
+    real(8):: box(3)=1d0                ! the periodic wrapping size
     real(8):: wallclock
     integer, dimension(:), pointer:: iit
     real(8), dimension(:), pointer:: t
     real(8), dimension(:), pointer:: dt
     character(len=32), pointer:: name
     class(task_t), pointer:: parent
-    class(*), pointer:: link            ! this could be useful
     type(lock_t):: lock                 ! OMP lock
     character(len=4):: kind='task'
   contains
     procedure:: init
-    procedure:: update
     procedure:: output
     procedure:: info
     procedure:: is_ahead_of
@@ -64,6 +65,9 @@ MODULE task_mod
     procedure:: unique_id
     procedure:: load_balance
     procedure:: has_finished
+    procedure:: overlaps
+    procedure:: distance                ! return the distance btw two patches
+    procedure:: pack
   end type
 
   integer, save:: id=0
@@ -97,18 +101,6 @@ SUBROUTINE init (self)
   if (io%verbose>2) &
     write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)
-  call trace_end
-END SUBROUTINE
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE update (self)
-  class (task_t):: self
-  !.............................................................................
-  call trace_begin ('task_t%update')
-  self%time = self%time + self%dtime
-  if (io%master .and. io%verbose > 1) &
-    print *, 'task_t%update: id, time =', self%id, self%time, self%name
   call trace_end
 END SUBROUTINE
 
@@ -251,5 +243,36 @@ SUBROUTINE load_balance (self)
 class(task_t):: self
 
 END SUBROUTINE load_balance
+
+!> =============================================================================
+!> Check if there is overlap, using the full size (including guard zones), since
+!> the guard zones may be used in interpolations for qualified time slices. The
+!> definition of overlap also MUST be symmetric, since it is being used to define
+!> neighbor relations.
+!> =============================================================================
+FUNCTION overlaps (self, task)
+  class(task_t):: self
+  class(task_t):: task
+  logical:: overlaps
+  !.............................................................................
+  overlaps = all(abs(distance(self,task)) <= 0.5000000001_8*(self%gsize+task%gsize))
+END FUNCTION overlaps
+
+!> =============================================================================
+!> Signed distance between the centers of two tasks in the periodic box
+!> =============================================================================
+FUNCTION distance (self, task) RESULT (out)
+  class(task_t):: self
+  class(task_t):: task
+  real(8):: out(3)
+  !.............................................................................
+  out = self%position-task%position
+  out = modulo(out+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box
+END FUNCTION distance
+
+SUBROUTINE pack (self, mesg)
+  class(task_t):: self
+  class(mesg_t), pointer:: mesg
+END SUBROUTINE
 
 END MODULE task_mod

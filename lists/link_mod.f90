@@ -8,7 +8,6 @@ MODULE link_mod
   USE trace_mod
   USE bits_mod
   USE task_mod
-  USE patch_mod
   USE omp_timer_mod
   implicit none
   private
@@ -37,29 +36,28 @@ MODULE link_mod
     procedure:: print_nbors
     procedure:: test_nbor_status
   end type
-  public task2patch
   logical, save:: debug=.false.
 CONTAINS
 
 !> =============================================================================
-!> Initialize the nbors chain of a new patch (self), by
+!> Initialize the nbors chain of a new task (self), by
 !> 1) adding the parent
-!> 2) searching the parent nbors, adding patches that overlap
+!> 2) searching the parent nbors, adding tasks that overlap
 !> Each time it adds an nbor, it should also add itself to that nbor's nbor list
 !> =============================================================================
 SUBROUTINE make_new_nbors (self, selfp, parent)
   class(link_t):: self
   class(link_t), pointer:: selfp, parent, nbor
-  class(patch_t), pointer:: p1, p2
+  class(task_t), pointer:: t1, t2
   !> ...........................................................................
   call trace_begin('list_t%make_new_nbors', 1)
-  p1 => task2patch (self%task)
+  t1 => self%task
   call self%make_new_nbor (selfp, parent)       ! make me a neighbor of my parent
   nbor => parent%nbor                           ! start on parent's nbors chain
   do while (associated(nbor))
-    p2 => task2patch (nbor%task)
+    t2 => nbor%task
     if (.not.associated(self%task,nbor%task) &
-      .and. p1%overlaps (p2)) &   ! if my task overlaps with that task
+      .and. t1%overlaps (t2)) &   ! if my task overlaps with that task
       call self%make_new_nbor (selfp, nbor%nbor)! make a neighbor (and make me one)
     nbor => nbor%next                           ! continue on parents nbors chain
   end do
@@ -140,11 +138,11 @@ SUBROUTINE add_nbor_by_quality (self, this)
 END SUBROUTINE add_nbor_by_quality
 
 !> =============================================================================
-!> Give a patch to another rank, making sure to update the nbor relations on
+!> Give a task to another rank, making sure to update the nbor relations on
 !> this rank -- doing the same on the receiver rank is handled when unpacking,
 !> As a consequence of update_nbor_status, those nbors that become new bdry
-!> patches are send to relevant ranks, while the patch itself if sent by the
-!> patch_list_mod::update procedure.
+!> tasks are send to relevant ranks, while the task itself if sent by the
+!> task_list_mod::update procedure.
 !> =============================================================================
 SUBROUTINE give_to (self, link, rank)
   class(link_t):: self
@@ -152,7 +150,7 @@ SUBROUTINE give_to (self, link, rank)
   integer:: rank
   !-----------------------------------------------------------------------
   ! Set the bits and rank as they should be on the local rank, and mark
-  ! the patch with a swap_request bit
+  ! the task with a swap_request bit
   !-----------------------------------------------------------------------
   call self%task%clear (bits%boundary)
   call self%task%set (bits%virtual+bits%swap_request)
@@ -160,7 +158,7 @@ SUBROUTINE give_to (self, link, rank)
   !-----------------------------------------------------------------------
   ! With the new rank and status settings, update the status of the nbors
   ! and their nbor lists, which may all be affected by the change of rank.
-  ! The ones that are new boundary patches will be sent to nbor ranks by
+  ! The ones that are new boundary tasks will be sent to nbor ranks by
   ! the update_nbor_status procedure.
   !-----------------------------------------------------------------------
   call self%update_nbor_status (link)
@@ -239,7 +237,7 @@ SUBROUTINE add_nbor_by_rank (self, this)
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_rank', 2)
   if (io%verbose>1) &
-  write (io_unit%log,*) '  adding patch', this%task%id, &
+  write (io_unit%log,*) '  adding task', this%task%id, &
     this%task%is_set(bits%boundary), this%task%is_set(bits%virtual), &
     ' to nbor list of', self%task%id
   nullify (prev)
@@ -286,7 +284,7 @@ FUNCTION remove_nbor (self, this) RESULT (nbor)
   !.............................................................................
   call trace_begin ('list_mod::remove_nbor', 2)
   if (io%verbose>1) &
-    write (io_unit%log,*) 'removing patch', this%task%id,associated(this%link), &
+    write (io_unit%log,*) 'removing task', this%task%id,associated(this%link), &
       ' from nbor list of', self%task%id
   nullify (prev)
   nbor => self%nbor
@@ -304,7 +302,7 @@ FUNCTION remove_nbor (self, this) RESULT (nbor)
     nbor => nbor%next
   end do
   if (io%verbose>2) &
-    write (io_unit%log,*) 'WARNING: remove_nbor could not find patch', this%task%id
+    write (io_unit%log,*) 'WARNING: remove_nbor could not find task', this%task%id
 9 continue
   call trace_end
 END FUNCTION remove_nbor
@@ -326,19 +324,6 @@ FUNCTION remove_from_nbors (self, this) RESULT (nbor)
 END FUNCTION remove_from_nbors
 
 !> =============================================================================
-FUNCTION task2patch (task) RESULT (patch)
-  class(task_t), pointer:: task
-  class(patch_t), pointer:: patch
-  select type (task)
-  class is (patch_t)
-  patch => task
-  class default
-  nullify(patch)
-  stop
-  end select
-END FUNCTION
-
-!> =============================================================================
 !> Update the nbor list of self, adding self to the each nbor's nbor list
 !> =============================================================================
 SUBROUTINE update_nbors (self)
@@ -358,7 +343,7 @@ END SUBROUTINE update_nbors
 
 !> =============================================================================
 !> Update the nbor/vnbor status of a links nbor list, including the self link.
-!> If the boundary bit gets set, send the patch to its vnbors.  Before doing so,
+!> If the boundary bit gets set, send the task to its vnbors.  Before doing so,
 !> the nbor list of the nbors need to be updated, to reflect the new task rank
 !> =============================================================================
 SUBROUTINE update_nbor_status (self, link)
@@ -374,7 +359,7 @@ SUBROUTINE update_nbor_status (self, link)
   call self%update_status                               ! new status
   if (self%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
     if (io%verbose>0) &
-    write (io_unit%log,*) 'sending new bdry patch',self%task%id,' to vnbors'
+    write (io_unit%log,*) 'sending new bdry task',self%task%id,' to vnbors'
     call nbor%task%clear (bits%virtual)
     call nbor%task%set (bits%swap_request)
     nbor%task%rank = mpi%rank                           ! since it's a boundary
@@ -402,7 +387,7 @@ SUBROUTINE update_nbor_status (self, link)
     call nbor%link%update_status                        ! new status
     if (nbor%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
       if (io%verbose>0) &
-        write (io_unit%log,*) 'sending new bdry patch',nbor%task%id,' to vnbors'
+        write (io_unit%log,*) 'sending new bdry task',nbor%task%id,' to vnbors'
       call nbor%task%clear (bits%virtual)
       call nbor%task%set (bits%swap_request)
       nbor%task%rank = mpi%rank                         ! since it's a boundary
@@ -490,7 +475,7 @@ END SUBROUTINE print_nbors
 !> =============================================================================
 !> Send a package with updated time slice info to neighbor ranks.
 !>
-!> 1) assemble patch data into a message
+!> 1) assemble task data into a message
 !> 3) send the message to the nbors rank (only once per rank)
 !> 4) add the message to a sent_list
 !> 5) check the sent list for completed sends
@@ -501,7 +486,6 @@ SUBROUTINE send_to_vnbors (self)
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task
   class(mesg_t), pointer:: mesg
-  class(patch_t), pointer:: patch
   logical:: flag
   integer:: ierr, rank
   integer, save:: itimer=0
@@ -521,9 +505,9 @@ SUBROUTINE send_to_vnbors (self)
     if (task%rank/=mpi%rank .and. task%rank/=rank) then         ! new rank?
       rank = nbor%task%rank                                     ! current rank
       if (.not.flag) then                                       ! if not already packed
-        patch => task2patch (self%task)                         ! convert to patch
+        task => self%task                                       ! convert to task
         call self%task%clear (bits%ready)                       ! not ready on recv
-        call patch%pack (mesg)                                  ! pack into mesg
+        call task%pack (mesg)                                   ! pack into mesg
       end if
       call mesg%send (rank)                                     ! send it
       flag = .true.

@@ -139,6 +139,7 @@ END SUBROUTINE append
 SUBROUTINE append_link (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
+  class(task_t), pointer:: task
   class(*), pointer:: anon
   logical, save:: first_time=.true.
   !.............................................................................
@@ -162,8 +163,13 @@ SUBROUTINE append_link (self, link)
     self%ni = self%ni + 1
     self%na = self%na + 1
   end if
-  if (associated(link%task)) &
-    link%task%link => link
+  if (associated(link%task)) then
+    task => link%task
+    select type (task)
+    class is (patch_t)
+    task%link => link
+    end select
+  end if
   !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE append_link

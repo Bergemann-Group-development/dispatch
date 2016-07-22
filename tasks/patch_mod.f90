@@ -13,6 +13,7 @@ MODULE patch_mod
   USE trace_mod
   USE mpi_mod
   USE task_mod
+  USE link_mod
   USE mesh_mod
   USE buffered_output_mod
   implicit none
@@ -36,13 +37,13 @@ MODULE patch_mod
     logical:: root_grid=.false.
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
+    class(link_t), pointer:: link       ! this could be useful
     !---------------------------------------------------------------------------
     ! HACK below:  FIXME
     !---------------------------------------------------------------------------
     real:: grav                         ! gravitational consant (code units)
     integer:: i_d                       ! density inddex
-    real(8):: box(3)=1d0                ! the periodic wrapping size
-    real(8):: ds(3), gsize(3)           ! convenience
+    real(8):: ds(3)                     ! convenience
     integer:: n(3)=0, ng(3)=2           ! convient default
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
     integer:: i,j,k                     ! should go!  FIXME
@@ -57,10 +58,8 @@ MODULE patch_mod
     procedure:: pack                    ! pack patch into buffer
     procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
-    procedure:: distance                ! return the distance btw two patches
     procedure:: point_distance          ! distance btw two points
     procedure:: point_distances         ! distances btw two points
-    procedure:: overlaps                ! return true if they overlap (incl. ghost zones)
     procedure:: overlaps_point          ! return true if they overlap (incl. ghost zones)
     procedure:: upload_range            ! returns the index ranges btw two points
     procedure:: dnload_range            ! returns the index ranges btw two points
@@ -116,7 +115,6 @@ MODULE patch_mod
     integer, dimension(8):: iit
     real(8):: box(3)                    ! the periodic wrapping size
     real(8):: ds(3)
-    real(8):: gsize(3)                  ! convenience
     integer:: n(3)=16                   ! convenience
     integer:: ng(3)=2                   ! convenience
     integer:: nq=0
@@ -130,6 +128,7 @@ MODULE patch_mod
     real:: num(3)
     integer:: dim(3)
   end type
+  public task2patch
 CONTAINS
 
 !> =============================================================================
@@ -1056,18 +1055,6 @@ SUBROUTINE courant_condition (self)
 END SUBROUTINE courant_condition
 
 !> =============================================================================
-!> Signed distance between the centers of two patches in the periodic box
-!> =============================================================================
-FUNCTION distance (self, patch) RESULT (out)
-  class(patch_t):: self
-  class(patch_t):: patch
-  real(8):: out(3)
-  !.............................................................................
-  out = self%position-patch%position
-  out = modulo(out+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box
-END FUNCTION distance
-
-!> =============================================================================
 !> Max absolute distance between two points in the periodic box
 !> =============================================================================
 FUNCTION point_distance (self, p1, p2) RESULT (out)
@@ -1086,20 +1073,6 @@ FUNCTION point_distances (self, p1, p2) RESULT (out)
   !.............................................................................
   out = abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box)
 END FUNCTION point_distances
-
-!> =============================================================================
-!> Check if there is overlap, using the full size (including guard zones), since
-!> the guard zones may be used in interpolations for qualified time slices. The
-!> definition of overlap also MUST be symmetric, since it is being used to define
-!> neighbor relations.
-!> =============================================================================
-FUNCTION overlaps (self, patch)
-  class(patch_t):: self
-  class(patch_t):: patch
-  logical:: overlaps
-  !.............................................................................
-  overlaps = all(abs(distance(self,patch)) <= 0.5000000001_8*(self%gsize+patch%gsize))
-END FUNCTION overlaps
 
 !> =============================================================================
 FUNCTION overlaps_point (self, idir, point)
@@ -1318,5 +1291,18 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   end if
   call trace_end
 END SUBROUTINE time_interpolate
+
+!> =============================================================================
+FUNCTION task2patch (task) RESULT (patch)
+  class(task_t), pointer:: task
+  class(patch_t), pointer:: patch
+  select type (task)
+  class is (patch_t)
+  patch => task
+  class default
+  nullify(patch)
+  stop
+  end select
+END FUNCTION
 
 END MODULE

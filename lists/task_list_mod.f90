@@ -203,9 +203,10 @@ SUBROUTINE update (self)
     !----------------------------------------------------------------------------
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
-    call download%download_link (head, all_cells=.false.)
-    call task%output (self%name)                        ! check output
-    call task%update                                    ! update the task
+    select type (task)
+    class is (experiment_t)
+    call task%update (head)                             ! update the task
+    end select
     !----------------------------------------------------------------------------
     ! The rotate procedure in the generic patch_t module is responsible for
     ! updating the time, and rotating the memory slots where information about
