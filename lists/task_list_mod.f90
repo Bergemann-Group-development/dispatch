@@ -49,13 +49,13 @@ MODULE task_list_mod
   end type
   type, public:: load_balance_t
     logical:: on, only_initial
-    real:: cadence, info_cadence, duration
-    real:: next_time, next_info
+    real:: cadence, duration
+    real:: next_info
     real:: threshold, grace
     integer:: excess=0
   contains
     procedure:: check => check_load
-    procedure:: measure => measure_load
+    procedure:: measure_load
   end type
   type(load_balance_t):: load_balance
   public link_t
@@ -71,11 +71,11 @@ SUBROUTINE init (self, name)
   class(link_t), pointer:: link
   integer:: iostat
   integer:: debug=0
-  real, save:: cadence=10., info_cadence=1., threshold=10., grace=0.3
+  real, save:: cadence=1., threshold=10., grace=0.3
   real, save:: duration=0.0
   logical:: on=.false., only_initial=.false.
   namelist /task_list_params/ debug
-  namelist /load_balance_params/ on, cadence, info_cadence, threshold, grace, &
+  namelist /load_balance_params/ on, cadence, threshold, grace, &
     duration, only_initial
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
@@ -95,9 +95,7 @@ SUBROUTINE init (self, name)
   load_balance%on = on
   load_balance%only_initial = only_initial
   load_balance%cadence = cadence
-  load_balance%info_cadence = info_cadence
-  load_balance%next_time = cadence
-  load_balance%next_info = info_cadence
+  load_balance%next_info = cadence
   load_balance%threshold = threshold
   load_balance%grace     = grace
   load_balance%duration  = duration
@@ -290,7 +288,7 @@ SUBROUTINE measure_load (self, task_list)
   !-----------------------------------------------------------------------------
   call trace_begin ('task_list_mod::measure_load', itimer=itimer)
   !
-  rank_info%cadence = load_balance%info_cadence
+  rank_info%cadence = load_balance%cadence
   ok = .true.
   link => task_list%head
   do while (associated(link))
@@ -350,23 +348,13 @@ END SUBROUTINE measure_load
 !> nbor task that needs more load. After a rank passes the critical threshold
 !> below, there is a delay before it's boundary patches are sent to its nbor
 !> ranks, are unpacked, and end up in a load_balance comparison.  This will 
-!> lead to a burst of patch transfers, and oscillatory behavior. It might thus
-!> be better to transfer the LB info separately, in small packages that do not
-!> take as long to transfer.  This can be done in the same send_to_vnbors. 
-!>
-!> If one instead gives up ownership of a patch as soon the threshold is hit,
-!> and one counts this immediately as an improved load balance, then one can
-!> prevent the oscillatory behavior.  The 'pending' improvement would be
-!> cancelled when the patch update first comes back.  This speaks in favor of
-!> a measure of load balance that both includes a measure of actual load (e.g.
-!> wall clock seconds per code time unit), and a measure of the ready queue.
-!> A too small ready queue should result in immediate action, and in immediate
-!> improvement of the measure of load balance.
-!>
-!> The sum of 1./dtime for all tasks in the task list is a measure of load.
-!> The part of this in the ready queue is a measure of the urgency of LB. The
-!> boundary patch that was just updated, and which triggered the call to LB,
-!> is/was counted towards that ready-load
+!> lead to a burst of patch transfers, and potentially oscillatory behavior.
+!> It is better to transfer the LB info separately, in small packages that do
+!> not take long to transfer; this is implemented.
+!> 
+!> The measure of imbalance used below is defined in rank_info_mod::imbalance.
+!> Ideally, it should contain both a measure of the actual load, the time skew,
+!> and the size of the ready queue on the two ranks being compared.
 !> =============================================================================
 SUBROUTINE check_load (self, task_list, link)
   class (load_balance_t):: self
@@ -382,8 +370,7 @@ SUBROUTINE check_load (self, task_list, link)
   logical, save:: make_estimate=.true.
   !-----------------------------------------------------------------------------
   ! Only one thread should do load balancing, and that thread should make sure
-  ! to use omp critical (list_cr) whenever it needs to access the task list,
-  ! so for simplicity we lock on that for now.
+  ! to use omp critical (list_cr) whenever it needs to access the task list.
   !-----------------------------------------------------------------------------
   if (.not.load_balance%on) return
   !$omp critical (loadb_cr)
@@ -394,8 +381,8 @@ SUBROUTINE check_load (self, task_list, link)
   ! rank_info_list, which is also updated via MPI
   !-----------------------------------------------------------------------------
   if (wc > load_balance%next_info) then
-    load_balance%next_info = load_balance%next_info + load_balance%info_cadence
     call load_balance%measure (task_list)
+    load_balance%next_info = load_balance%next_info + load_balance%cadence
     call rank_info_list%send
     rank_info%patch_cost = product(patch%mesh%gn)/patch%dtime
     call rank_info_list%print (link%task%time)
