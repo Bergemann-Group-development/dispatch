@@ -78,7 +78,7 @@ SUBROUTINE update (self, head)
   type(timestep_t):: timestep
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-  call self%output (self%name)
+  call self%output
   call self%mhd_t%update (head)
   call self%courant_condition
   if (io%verbose>2) &
