@@ -21,6 +21,7 @@ MODULE link_mod
     class(link_t), pointer :: prev => null()         ! previous link in task list
     class(link_t), pointer :: parent => null()       ! parent task link
     class(link_t), pointer :: next_time => null()    ! next link in time order
+    logical:: check = .true.
   contains
     procedure:: add_nbor_by_quality
     procedure:: add_nbor_by_rank
