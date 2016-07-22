@@ -11,7 +11,6 @@ MODULE list_mod
   USE task_mod
   USE patch_mod
   USE link_mod
-  USE download_mod
   USE rank_info_mod
   implicit none
   private
