@@ -1281,13 +1281,13 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
       write (io_unit%log,1) &
         'patch_mod::time_interpolate WARNING: backward extrapolation, trg,src,pt:', &
         self%id, source%id, pt(2)
-      1 format(a,2i9,f7.2)
+      1 format(a,2i9,f7.2,1p,3g16.7)
       pt(2) = -self%grace
       verbose = 3
-    else if (pt(2) > 1.0+self%grace) then
+    else if (pt(2) > 1.001+self%grace) then
       write (io_unit%log,1) &
         'patch_mod::time_interpolate WARNING: forward extrapolation, trg,src,pt:', &
-        self%id, source%id, pt(2)
+        self%id, source%id, pt(2), dt, source%dt(jt(1)), source%dt(jt(2))
       pt(2) = 1.0+self%grace
       verbose = 3
     end if
