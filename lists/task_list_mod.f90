@@ -55,7 +55,6 @@ MODULE task_list_mod
     integer:: excess=0
   contains
     procedure:: check => check_load
-    procedure:: measure_load
   end type
   type(load_balance_t):: load_balance
   public link_t
@@ -272,79 +271,6 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !> =============================================================================
-!> Compute a measure of the task load, which for patches is the number of cells
-!> divided by the time step.
-!> =============================================================================
-SUBROUTINE measure_load (self, task_list, head)
-  class (load_balance_t):: self
-  class (task_list_t):: task_list
-  class (link_t), pointer:: head
-  class (link_t), pointer:: link
-  class (task_t), pointer:: task
-  real:: load, sum, sum_cost, cells, sum_cells, ready
-  real(8):: dt, sum_dt, wc
-  integer:: n, n1
-  integer, save:: itimer
-  logical:: ok, active
-  !-----------------------------------------------------------------------------
-  call trace_begin ('task_list_mod::measure_load', itimer=itimer)
-  !
-  rank_info%cadence = load_balance%cadence
-  ok = .true.
-  link => task_list%head
-  do while (associated(link))
-    ok = merge(.false., ok, link%task%rank==mpi%rank .and. link%task%dtime==0d0)
-    link => link%next
-  end do
-  rank_info%ok = ok                             ! active patches have non-zero dtime
-  if (.not. ok) then
-    rank_info%dtime = 1.0
-    call trace_end (itimer)
-    return
-  end if
-  !
-  sum_dt = 0.0
-  sum_cost = 0.0
-  sum_cells = 0.0
-  link => task_list%head
-  do while (associated(link))
-    task => link%task
-    select type (task)
-    class is (patch_t)
-      if (task%rank==mpi%rank) then
-        cells = product(task%mesh%n)
-        sum_cells = sum_cells + cells
-        sum_cost = sum_cost + cells/task%dtime
-      end if
-    end select
-    link => link%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! cost = number of cell updates per code time unit
-  !-----------------------------------------------------------------------------
-  rank_info%cost = sum_cost                     ! total rank update cost
-  rank_info%rank = mpi%rank                     ! local rank
-  rank_info%dtime = sum_cells/sum_cost          ! cell-weighted dtime
-  !$omp critical (list_cr)
-  if (associated(task_list%queue)) then         ! queue info, if available
-    wc = wallclock()
-    if (wc > rank_info%wall) then
-      rank_info%owall = rank_info%wall          ! previous wall time
-      rank_info%wall  = wc                      ! wall time
-      rank_info%otime = rank_info%time          ! previsou queue time
-      rank_info%time  = 0.9*rank_info%time   &  ! smoothed ..
-                      + 0.1*head%task%time      ! .. queue time
-      rank_info%nq    = task_list%nq            ! queue size
-    end if
-  end if
-  !$omp end critical (list_cr)
-  if (io%verbose > 1) &
-    write (io_unit%log,'(a,3i5,1p,3e12.3)') 'measure_load: n,n1,nq,load,cost,dt =', &
-      n, n1, task_list%nq, rank_info%cost, rank_info%dtime
-  call trace_end (itimer)
-END SUBROUTINE measure_load
-
-!> =============================================================================
 !> Decide whether to give up ownership of a patch, to increase the load of an
 !> nbor task that needs more load. After a rank passes the critical threshold
 !> below, there is a delay before it's boundary patches are sent to its nbor
@@ -383,9 +309,11 @@ SUBROUTINE check_load (self, task_list, head)
   !-----------------------------------------------------------------------------
   if (wc > load_balance%next_info) then
     load_balance%next_info = load_balance%next_info + load_balance%cadence
-    call load_balance%measure_load (task_list, head)
-    call rank_info_list%send
+    rank_info%cadence = load_balance%cadence
+    rank_info%nq = task_list%nq
     rank_info%patch_cost = product(patch%mesh%gn)/patch%dtime
+    call rank_info%measure_load (head)
+    call rank_info_list%send
     call rank_info_list%print (head%task%time)
   end if
   !-----------------------------------------------------------------------------

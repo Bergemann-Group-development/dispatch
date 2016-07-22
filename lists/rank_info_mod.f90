@@ -8,6 +8,9 @@ MODULE rank_info_mod
   USE mpi_mod
   USE mpi_mesg_mod
   USE omp_timer_mod
+  USE task_mod
+  USE patch_mod
+  USE link_mod
   implicit none
   private
   type, public:: rank_info_t
@@ -21,6 +24,7 @@ MODULE rank_info_mod
     type(rank_info_t), pointer:: next => null()
   contains
     procedure:: imbalance
+    procedure:: measure_load
   end type
   type, public:: io_rank_info_t
     sequence
@@ -290,6 +294,72 @@ FUNCTION imbalance (self, nbor) RESULT (diff)
   !diff = (nbor%time-time)/self%dtime
   diff = (self%nq-nbor%nq)
 END FUNCTION imbalance
+
+!> =============================================================================
+!> Compute a measure of the task load, which for patches is the number of cells
+!> divided by the time step.
+!> =============================================================================
+SUBROUTINE measure_load (self, head)
+  class (rank_info_t):: self
+  class (link_t), pointer:: head
+  class (link_t), pointer:: link
+  class (task_t), pointer:: task
+  real:: load, sum, sum_cost, cells, sum_cells, ready
+  real(8):: dt, sum_dt, wc
+  integer:: n, n1
+  integer, save:: itimer
+  logical:: ok, active
+  !-----------------------------------------------------------------------------
+  call trace_begin ('rank_info_mod::measure_load', itimer=itimer)
+  !
+  ok = .true.
+  link => head
+  do while (associated(link))
+    ok = merge(.false., ok, link%task%rank==mpi%rank .and. link%task%dtime==0d0)
+    link => link%next
+  end do
+  rank_info%ok = ok                             ! active patches have non-zero dtime
+  if (.not. ok) then
+    rank_info%dtime = 1.0
+    call trace_end (itimer)
+    return
+  end if
+  !
+  sum_dt = 0.0
+  sum_cost = 0.0
+  sum_cells = 0.0
+  link => head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (patch_t)
+      if (task%rank==mpi%rank) then
+        cells = product(task%mesh%n)
+        sum_cells = sum_cells + cells
+        sum_cost = sum_cost + cells/task%dtime
+      end if
+    end select
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! cost = number of cell updates per code time unit
+  !-----------------------------------------------------------------------------
+  rank_info%cost = sum_cost                     ! total rank update cost
+  rank_info%rank = mpi%rank                     ! local rank
+  rank_info%dtime = sum_cells/sum_cost          ! cell-weighted dtime
+  wc = wallclock()
+  if (wc > rank_info%wall) then
+    rank_info%owall = rank_info%wall            ! previous wall time
+    rank_info%wall  = wc                        ! wall time
+    rank_info%otime = rank_info%time            ! previsou queue time
+    rank_info%time  = 0.9*rank_info%time  &     ! smoothed ..
+                    + 0.1*head%task%time        ! .. queue time
+  end if
+  if (io%verbose > 1) &
+    write (io_unit%log,'(a,3i5,1p,3e12.3)') 'measure_load: n,n1,nq,load,cost,dt =', &
+      n, n1, rank_info%nq, rank_info%cost, rank_info%dtime
+  call trace_end (itimer)
+END SUBROUTINE measure_load
 
 !> =============================================================================
 !> Look up the load for a neighbor rank
