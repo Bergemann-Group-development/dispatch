@@ -11,6 +11,8 @@ MODULE rank_info_mod
   USE task_mod
   USE patch_mod
   USE link_mod
+  USE bits_mod
+  USE random_mod
   implicit none
   private
   type, public:: rank_info_t
@@ -52,15 +54,39 @@ MODULE rank_info_mod
   end type
   type(rank_info_t), public:: rank_info
   type(rank_info_list_t), public:: rank_info_list
+  type, public:: load_balance_t
+    logical:: on, only_initial
+    real:: cadence, duration
+    real:: next_info
+    real:: threshold, grace
+    integer:: excess=0
+  contains
+    procedure:: check_load
+  end type
+  type(load_balance_t), public:: load_balance
 CONTAINS
 
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE init (self)
   class(rank_info_list_t):: self
+  real, save:: cadence=1., threshold=10., grace=0.3, duration=0.0
+  logical:: on=.false., only_initial=.false.
+  namelist /load_balance_params/ on, cadence, threshold, grace, &
+    duration, only_initial
+  integer:: iostat
   !.............................................................................
-  if (io%verbose<1) return
-  !call self%test
+  rewind (io%input); read(io%input, load_balance_params, iostat=iostat)
+  if (io%master) then
+    if (io%master) write (*,load_balance_params)
+  end if
+  load_balance%on = on
+  load_balance%only_initial = only_initial
+  load_balance%cadence = cadence
+  load_balance%next_info = cadence
+  load_balance%threshold = threshold
+  load_balance%grace     = grace
+  load_balance%duration  = duration
 END SUBROUTINE init
 
 !> =============================================================================
@@ -418,5 +444,121 @@ SUBROUTINE print (self, time)
   end do
   !$omp end critical (rank_info_list_cr)
 END SUBROUTINE print
+
+!> =============================================================================
+!> Decide whether to give up ownership of a patch, to increase the load of an
+!> nbor task that needs more load. After a rank passes the critical threshold
+!> below, there is a delay before it's boundary patches are sent to its nbor
+!> ranks, are unpacked, and end up in a load_balance comparison.  This will 
+!> lead to a burst of patch transfers, and potentially oscillatory behavior.
+!> It is better to transfer the LB info separately, in small packages that do
+!> not take long to transfer; this is implemented.
+!> 
+!> The measure of imbalance used below is defined in rank_info_mod::imbalance.
+!> Ideally, it should contain both a measure of the actual load, the time skew,
+!> and the size of the ready queue on the two ranks being compared.
+!> =============================================================================
+FUNCTION check_load (self, head) RESULT (sell)
+  class (load_balance_t):: self
+  class (link_t), pointer:: head, nbor
+  logical:: sell
+  class (task_t), pointer:: task
+  class (patch_t), pointer:: patch
+  class(rank_info_t), pointer:: nbor_info
+  integer,save:: delay=0
+  logical:: load_condition, time_condition
+  real(8):: wc
+  real:: load_diff, cost, imbalance
+  logical, save:: make_estimate=.true.
+  !-----------------------------------------------------------------------------
+  ! Only one thread should do load balancing, and that thread should make sure
+  ! to use omp critical (list_cr) whenever it needs to access the task list.
+  !-----------------------------------------------------------------------------
+  if (.not.load_balance%on) return
+  !$omp critical (loadb_cr)
+  wc = wallclock()
+  patch => task2patch(head%task)
+  !-----------------------------------------------------------------------------
+  ! Update the load balance calculation for the local rank, and enter into the
+  ! rank_info_list, which is also updated via MPI
+  !-----------------------------------------------------------------------------
+  if (wc > load_balance%next_info) then
+    load_balance%next_info = load_balance%next_info + load_balance%cadence
+    rank_info%cadence = load_balance%cadence
+    rank_info%patch_cost = product(patch%mesh%gn)/patch%dtime
+    call rank_info%measure_load (head)
+    call rank_info_list%send
+    call rank_info_list%print (head%task%time)
+  end if
+  !-----------------------------------------------------------------------------
+  ! If load balancing is on, and we have information, and it's time, or if an
+  ! earlier case has left an excess, go ahead
+  !-----------------------------------------------------------------------------
+  sell = .false.
+  if (rank_info%ok .and. wc<load_balance%duration) then
+    !---------------------------------------------------------------------------
+    ! Among the virtual patches that surround the head boundary patch, find one
+    ! that needs more load and give the head patch to it
+    !---------------------------------------------------------------------------
+    nbor => head%nbor
+    do while (associated(nbor))
+      if (io%verbose>1) &
+        write (io_unit%log,'(a,2i9,3i6,2f12.6,l3)') 'LB: ids,nqs,rank,times', &
+          head%task%id, nbor%task%id, rank_info%nq, nbor%task%nq, nbor%task%rank, &
+          nbor%task%time, head%task%time, nbor%task%is_set(bits%virtual)
+      if (nbor%task%is_set (bits%virtual)) then
+        nbor_info => rank_info_list%find (nbor%task%rank)
+        if (nbor%task%rank == mpi%rank) then
+          write (io_unit%log,*) &
+            'rank_info_mod::check_load virtual bit on my rank', nbor%task%id
+          flush (io_unit%log)
+        else if (associated(nbor_info)) then
+          imbalance = rank_info%imbalance (nbor_info)/load_balance%grace
+          imbalance = max(imbalance, -1.)
+          !---------------------------------------------------------------------
+          ! If the imbalance measure is posive then give a patch to the remote
+          ! rank, with a probability essentially proportional to the imbalance,
+          ! but saturating at 5%, to limit the number of swaps per unit time.
+          ! A swap can cause a fair number of patch transfers, since new virtual
+          ! patches on the remote need at least two time slices.
+          !---------------------------------------------------------------------
+          if (rank_info%ok.and.nbor_info%ok .and. &
+              imbalance > 0.0 .and. &
+              random%ran1() < 0.05*(1.-exp(-imbalance))) then
+            if (io%verbose>0) then
+              print 1, &
+                wc,'LB: rank',mpi%rank,' gives patch',head%task%id,' to',nbor%task%rank, &
+                load_balance%excess, nbor_info%n_swap, &
+                nbor_info%cost, rank_info%cost
+                1 format(f12.6,2x,a,i6,a,i9,a,i6,2i5,1p,2g12.3)
+              write (io_unit%log,2) &
+                wc,'load_balance: giving patch',head%task%id, ' to',nbor%task%rank, &
+                load_balance%excess, nbor_info%n_swap, &
+                nbor_info%cost, rank_info%cost
+                2 format(f12.6,2x,a,i9,a,i6,2i5,1p,2g12.3)
+              flush (io_unit%log)
+            end if
+            call head%give_to (head, nbor%task%rank)
+            sell = .true.
+            if (io%verbose>0) &
+              write (io_unit%log,*) 'swapped boundary to virtual:', head%task%id
+            exit
+          end if
+        else
+          write (io_unit%log,*) &
+            'check_load  ERROR: nbor_info not associated, rank', nbor%task%rank
+          nbor_info => rank_info_list%find (nbor%task%rank, debug=.true.)
+          flush (io_unit%log)
+        end if
+      else if (nbor%task%is_set (bits%external)) then
+        write (io_unit%log,*) nbor%task%id, 'LB: external status on nbor from rank', nbor%task%rank
+      else if (nbor%task%rank /= mpi%rank) then
+        write (io_unit%log,*) nbor%task%id, 'LB: inconsistent status on nbor from rank', nbor%task%rank
+      end if
+      nbor => nbor%next
+    end do
+  end if ! (rank_info%ok .and. wc < load_balance%duration)
+  !$omp end critical (loadb_cr)
+END FUNCTION check_load
 
 END MODULE rank_info_mod
