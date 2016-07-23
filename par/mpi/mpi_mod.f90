@@ -43,6 +43,7 @@ MODULE mpi_mod
   !-----------------------------------------------------------------------------
   type mpi_t
     integer:: size, rank, comm, verbose=0
+    integer:: mode
     logical:: master
     logical:: ok = .false.
   contains
@@ -136,6 +137,7 @@ SUBROUTINE init_mpi (mp)
 !  Start up MPI and get number of nodes and our node rank
 !-------------------------------------------------------------------------------
   call MPI_INIT_THREAD (MPI_THREAD_MULTIPLE, mpi_provided, mpi_err)
+  mp%mode = mpi_provided
   mpi_comm = mpi_comm_world
   call MPI_Comm_size (mpi_comm_world, mpi_size, mpi_err)
   call MPI_Comm_rank (mpi_comm_world, mpi_rank, mpi_err)

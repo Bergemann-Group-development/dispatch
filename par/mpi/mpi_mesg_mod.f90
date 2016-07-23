@@ -60,11 +60,18 @@ SUBROUTINE send (self, rank)
   class(mesg_t):: self
   integer:: rank, req, ierr
   !.............................................................................
-  if (io%verbose>1) & 
+  if (io%verbose>1) &
     write (io_unit%log,*) &
     'mpi_mesg::send id, nbuf, to =', self%id, self%nbuf, rank
-  call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
-    mpi%comm, req, ierr)
+  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+    !$omp critical (mpi_cr)
+    call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
+      mpi%comm, req, ierr)
+    !$omp end critical (mpi_cr)
+  else
+    call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
+      mpi%comm, req, ierr)
+  end if
   self%nreq = self%nreq+1                                   ! count reqs
   self%reqs(self%nreq) = req                                ! collect reqs
 END SUBROUTINE send
@@ -104,7 +111,13 @@ SUBROUTINE test_all (self, flag)
     print*,'WARNING: test_all', self%nreq, associated(self%reqs)
     return
   end if
-  call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+    !$omp critical (mpi_cr)
+    call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+    !$omp end critical (mpi_cr)
+  else
+    call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+  end if
   if (io%verbose>2) then
     write (io_unit%log,*) wallclock(), self%id, ' test_all flag =', flag
     flush (io_unit%log)
@@ -255,15 +268,29 @@ SUBROUTINE check (self, wait)
     wc(3) = wallclock()
     !$omp end critical (sent_cr)
   end if
-  call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+    !$omp critical (mpi_cr)
+    call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+    !$omp end critical (mpi_cr)
+  else
+    call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+  end if
   nmsg = 0
   wc(4) = wallclock()
   do while (flag)
     nmsg = nmsg+1
     allocate (mesg)
-    call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
-    allocate (mesg%buffer(nbuf))
-    call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
+    if (mpi%mode == MPI_THREAD_SERIALIZED) then
+      !$omp critical (mpi_cr)
+      call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
+      allocate (mesg%buffer(nbuf))
+      call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
+      !$omp end critical (mpi_cr)
+    else
+      call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
+      allocate (mesg%buffer(nbuf))
+      call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
+    end if
     mesg%req = req
     mesg%id = stat(MPI_TAG)
     mesg%sender = stat(MPI_SOURCE)
@@ -272,10 +299,22 @@ SUBROUTINE check (self, wait)
       write (io_unit%log,*) &
       'mpi_mesg::recv id, nbuf, fr =', mesg%id, mesg%nbuf, mesg%sender
     if (wait) then
-      call MPI_WAIT (req, stat, ierr)
+      if (mpi%mode == MPI_THREAD_SERIALIZED) then
+        !$omp critical (mpi_cr)
+        call MPI_WAIT (req, stat, ierr)
+        !$omp end critical (mpi_cr)
+      else
+        call MPI_WAIT (req, stat, ierr)
+      end if
       flag = .true.
     else
-      call MPI_TEST (req, flag, stat, ierr)
+      if (mpi%mode == MPI_THREAD_SERIALIZED) then
+        !$omp critical (mpi_cr)
+        call MPI_TEST (req, flag, stat, ierr)
+        !$omp end critical (mpi_cr)
+      else
+        call MPI_TEST (req, flag, stat, ierr)
+      end if
     end if
     if (flag) then
       !$omp critical (unpk_cr)
@@ -289,6 +328,13 @@ SUBROUTINE check (self, wait)
       !$omp end critical (recv_cr)
     end if
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+    if (mpi%mode == MPI_THREAD_SERIALIZED) then
+      !$omp critical (mpi_cr)
+      call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+      !$omp end critical (mpi_cr)
+    else
+      call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+    end if
   end do
   wc(5) = wallclock()
   if (io%verbose>2) then
@@ -315,7 +361,7 @@ SUBROUTINE check (self, wait)
   if (mod(every,every_recv)==0) then
     wc(7) = wc(6)
     !$omp critical (recv_cr)
-    wc(8) = wallclock(); ws(7) = ws(7)+(wc(8)-wc(7)); wc(7) = wc(8) 
+    wc(8) = wallclock(); ws(7) = ws(7)+(wc(8)-wc(7)); wc(7) = wc(8)
     mesg => self%recv_list%head
     i = 0
     if (debug) write (io_unit%log,*) 'DEBUG: checking recv_list, n =', self%recv_list%n
@@ -323,20 +369,32 @@ SUBROUTINE check (self, wait)
       i = i+1
       req = mesg%req
       if (wait) then
-        call MPI_WAIT (req, stat, ierr)
+        if (mpi%mode == MPI_THREAD_SERIALIZED) then
+          !$omp critical (mpi_cr)
+          call MPI_WAIT (req, stat, ierr)
+          !$omp end critical (mpi_cr)
+        else
+          call MPI_WAIT (req, stat, ierr)
+        end if
         flag = .true.
       else
-        call MPI_TEST (req, flag, stat, ierr)
+        if (mpi%mode == MPI_THREAD_SERIALIZED) then
+          !$omp critical (mpi_cr)
+          call MPI_TEST (req, flag, stat, ierr)
+          !$omp end critical (mpi_cr)
+        else
+          call MPI_TEST (req, flag, stat, ierr)
+        end if
       end if
-      wc(8) = wallclock(); ws(8) = ws(8)+(wc(8)-wc(7)); wc(7) = wc(8) 
+      wc(8) = wallclock(); ws(8) = ws(8)+(wc(8)-wc(7)); wc(7) = wc(8)
       if (flag) then
         call self%recv_list%remove (mesg)
-        wc(8) = wallclock(); ws(9) = ws(9)+(wc(8)-wc(7)); wc(7) = wc(8) 
+        wc(8) = wallclock(); ws(9) = ws(9)+(wc(8)-wc(7)); wc(7) = wc(8)
         !$omp critical (unpk_cr)
         call self%unpack_list%add (mesg)
         !call self%unpack_list%count ('check')
         !$omp end critical (unpk_cr)
-        wc(8) = wallclock(); ws(10) = ws(10)+(wc(8)-wc(7)); wc(7) = wc(8) 
+        wc(8) = wallclock(); ws(10) = ws(10)+(wc(8)-wc(7)); wc(7) = wc(8)
         if (io%verbose>1) then
           write (io_unit%log,1) wallclock(), ' recv   complete', mesg%id, &
             i, self%recv_list%n, self%unpack_list%n
