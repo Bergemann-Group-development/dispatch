@@ -29,8 +29,7 @@ MODULE task_list_mod
   USE timestep_mod
   USE buffered_output_mod
   USE timer_mod
-  USE rank_info_mod
-  USE random_mod
+  USE load_balance_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
@@ -47,17 +46,6 @@ MODULE task_list_mod
     procedure:: print => print_tasklist
     procedure:: print_tasks
   end type
-  type, public:: load_balance_t
-    logical:: on, only_initial
-    real:: cadence, info_cadence, duration
-    real:: next_time, next_info
-    real:: threshold, grace
-    integer:: excess=0
-  contains
-    procedure:: check => check_load
-    procedure:: measure => measure_load
-  end type
-  type(load_balance_t):: load_balance
   public link_t
 CONTAINS
 
@@ -71,12 +59,7 @@ SUBROUTINE init (self, name)
   class(link_t), pointer:: link
   integer:: iostat
   integer:: debug=0
-  real, save:: cadence=10., info_cadence=1., threshold=10., grace=0.3
-  real, save:: duration=0.0
-  logical:: on=.false., only_initial=.false.
   namelist /task_list_params/ debug
-  namelist /load_balance_params/ on, cadence, info_cadence, threshold, grace, &
-    duration, only_initial
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -88,22 +71,7 @@ SUBROUTINE init (self, name)
     self%debug = debug
     if (io%master) write (*,task_list_params)
   end if
-  rewind (io%input); read(io%input, load_balance_params, iostat=iostat)
-  if (io%master) then
-    if (io%master) write (*,load_balance_params)
-  end if
-  load_balance%on = on
-  load_balance%only_initial = only_initial
-  load_balance%cadence = cadence
-  load_balance%info_cadence = info_cadence
-  load_balance%next_time = cadence
-  load_balance%next_info = info_cadence
-  load_balance%threshold = threshold
-  load_balance%grace     = grace
-  load_balance%duration  = duration
-  io%do_trace = .true.
-  call rank_info_list%init
-  io%do_trace = .false.
+  call load_balance%init
   call trace_end
 END SUBROUTINE init
 
@@ -233,8 +201,7 @@ SUBROUTINE update (self)
     ! other ranks).  They are, however, not added back onto the ready queue.
     !-----------------------------------------------------------------------------
     if (task%has_finished()) then  ! finished:
-      !$omp atomic write
-      load_balance%on = .false.                         ! turn of load balancing
+      call load_balance%active (.false.)                ! turn off load balancing
       call task%output (self%name)                      ! check output
       !$omp atomic
       self%na = self%na-1
@@ -246,10 +213,15 @@ SUBROUTINE update (self)
     ! of its nbors that became new boundary patches over to relevant ranks,
     ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
     !-----------------------------------------------------------------------------
-    if (task%is_set(bits%boundary)) then                ! boundary patch?
-      head%task%nq = self%nq                            ! make sure to pass on
-      call load_balance%check (self, head)              ! sell?
-      call head%send_to_vnbors                          ! send to virtual nbors
+    if (task%is_set(bits%boundary)) then              ! boundary patch?
+      head%task%nq = self%nq                          ! make sure to pass on
+      if (load_balance%check_load (head)) then        ! sell?
+         self%na = self%na-1
+         self%nb = self%nb-1
+         self%nv = self%nv-1
+         call self%count_status
+      end if
+      call head%send_to_vnbors                        ! send to virtual nbors
     end if
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the
@@ -261,222 +233,22 @@ SUBROUTINE update (self)
     !$omp atomic write
     stalled = 0
     call mpi_mesg%diagnostics (0)
-  else
-    !$omp critical (stalled_cr)
-    stalled = stalled+1
-    if (stalled == 100) then
-       call self%check_all
-    else if (stalled == 101) then
-       call self%check_oldest
-    else
-      call mpi_mesg%delay (stalled)
-    end if
-    if (stalled == max_stalled/2) call mpi_mesg%diagnostics (1)
-    if (stalled > max_stalled) call mpi%abort ('exceeded max_stalled')
-    !$omp end critical (stalled_cr)
+  !else
+  !  !$omp critical (stalled_cr)
+  !  stalled = stalled+1
+  !  if (stalled == 100) then
+  !     call self%check_all
+  !!  else if (stalled == 101) then
+  !     call self%check_oldest
+  !  else
+  !    call mpi_mesg%delay (stalled)
+  !  end if
+  !  if (stalled == max_stalled/2) call mpi_mesg%diagnostics (1)
+  !  if (stalled > max_stalled) call mpi%abort ('exceeded max_stalled')
+  !  !$omp end critical (stalled_cr)
   end if
   call trace_end
 END SUBROUTINE update
-
-!> =============================================================================
-!> Compute a measure of the task load, which for patches is the number of cells
-!> divided by the time step.
-!> =============================================================================
-SUBROUTINE measure_load (self, task_list)
-  class (load_balance_t):: self
-  class (task_list_t):: task_list
-  class (link_t), pointer:: link
-  class (task_t), pointer:: task
-  real:: load, sum, sum_cost, cells, sum_cells, ready
-  real(8):: dt, sum_dt, wc
-  integer:: n, n1
-  integer, save:: itimer
-  logical:: ok, active
-  !-----------------------------------------------------------------------------
-  call trace_begin ('task_list_mod::measure_load', itimer=itimer)
-  !
-  rank_info%cadence = load_balance%info_cadence
-  ok = .true.
-  link => task_list%head
-  do while (associated(link))
-    ok = merge(.false., ok, link%task%rank==mpi%rank .and. link%task%dtime==0d0)
-    link => link%next
-  end do
-  rank_info%ok = ok                             ! active patches have non-zero dtime
-  if (.not. ok) then
-    rank_info%dtime = 1.0
-    call trace_end (itimer)
-    return
-  end if
-  !
-  sum_dt = 0.0
-  sum_cost = 0.0
-  sum_cells = 0.0
-  link => task_list%head
-  do while (associated(link))
-    task => link%task
-    select type (task)
-    class is (patch_t)
-      if (task%rank==mpi%rank) then
-        cells = product(task%mesh%n)
-        sum_cells = sum_cells + cells
-        sum_cost = sum_cost + cells/task%dtime
-      end if
-    end select
-    link => link%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! cost = number of cell updates per code time unit
-  !-----------------------------------------------------------------------------
-  rank_info%cost = sum_cost                     ! total rank update cost
-  rank_info%rank = mpi%rank                     ! local rank
-  rank_info%dtime = sum_cells/sum_cost          ! cell-weighted dtime
-  !$omp critical (list_cr)
-  if (associated(task_list%queue)) then         ! queue info, if available
-    wc = wallclock()
-    if (wc > rank_info%wall) then
-      rank_info%owall = rank_info%wall          ! previous wall time
-      rank_info%wall  = wc                      ! wall time
-      rank_info%otime = rank_info%time          ! previsou queue time
-      rank_info%time  = 0.9*rank_info%time + &  ! smoothed ..
-        0.1*task_list%queue%task%time           ! .. queue time
-      rank_info%nq    = task_list%nq            ! queue size
-    end if
-  end if
-  !$omp end critical (list_cr)
-  if (io%verbose > 1) &
-    write (io_unit%log,'(a,3i5,1p,3e12.3)') 'measure_load: n,n1,nq,load,cost,dt =', &
-      n, n1, task_list%nq, rank_info%cost, rank_info%dtime
-  call trace_end (itimer)
-END SUBROUTINE measure_load
-
-!> =============================================================================
-!> Decide whether to give up ownership of a patch, to increase the load of an
-!> nbor task that needs more load. After a rank passes the critical threshold
-!> below, there is a delay before it's boundary patches are sent to its nbor
-!> ranks, are unpacked, and end up in a load_balance comparison.  This will 
-!> lead to a burst of patch transfers, and oscillatory behavior. It might thus
-!> be better to transfer the LB info separately, in small packages that do not
-!> take as long to transfer.  This can be done in the same send_to_vnbors. 
-!>
-!> If one instead gives up ownership of a patch as soon the threshold is hit,
-!> and one counts this immediately as an improved load balance, then one can
-!> prevent the oscillatory behavior.  The 'pending' improvement would be
-!> cancelled when the patch update first comes back.  This speaks in favor of
-!> a measure of load balance that both includes a measure of actual load (e.g.
-!> wall clock seconds per code time unit), and a measure of the ready queue.
-!> A too small ready queue should result in immediate action, and in immediate
-!> improvement of the measure of load balance.
-!>
-!> The sum of 1./dtime for all tasks in the task list is a measure of load.
-!> The part of this in the ready queue is a measure of the urgency of LB. The
-!> boundary patch that was just updated, and which triggered the call to LB,
-!> is/was counted towards that ready-load
-!> =============================================================================
-SUBROUTINE check_load (self, task_list, link)
-  class (load_balance_t):: self
-  class (task_list_t):: task_list
-  class (link_t), pointer:: link, nbor
-  class (task_t), pointer:: task
-  class (patch_t), pointer:: patch
-  class(rank_info_t), pointer:: nbor_info
-  integer,save:: delay=0
-  logical:: load_condition, time_condition
-  real(8):: wc
-  real:: load_diff, cost, imbalance
-  logical, save:: make_estimate=.true.
-  !-----------------------------------------------------------------------------
-  ! Only one thread should do load balancing, and that thread should make sure
-  ! to use omp critical (list_cr) whenever it needs to access the task list,
-  ! so for simplicity we lock on that for now.
-  !-----------------------------------------------------------------------------
-  if (.not.load_balance%on) return
-  !$omp critical (loadb_cr)
-  wc = wallclock()
-  patch => task2patch(link%task)
-  !-----------------------------------------------------------------------------
-  ! Update the load balance calculation for the local rank, and enter into the
-  ! rank_info_list, which is also updated via MPI
-  !-----------------------------------------------------------------------------
-  if (wc > load_balance%next_info) then
-    load_balance%next_info = load_balance%next_info + load_balance%info_cadence
-    call load_balance%measure (task_list)
-    call rank_info_list%send
-    rank_info%patch_cost = product(patch%mesh%gn)/patch%dtime
-    call rank_info_list%print (link%task%time)
-  end if
-  !-----------------------------------------------------------------------------
-  ! If load balancing is on, and we have information, and it's time, or if an
-  ! earlier case has left an excess, go ahead
-  !-----------------------------------------------------------------------------
-  if (rank_info%ok .and. wc<load_balance%duration) then
-    !---------------------------------------------------------------------------
-    ! Among the virtual patches that surround the link boundary patch, find one
-    ! that needs more load and give the link patch to it
-    !---------------------------------------------------------------------------
-    nbor => link%nbor
-    do while (associated(nbor))
-      if (io%verbose>1) &
-        write (io_unit%log,'(a,2i9,3i6,2f12.6,l3)') 'LB: ids,nqs,rank,times', &
-          link%task%id, nbor%task%id, task_list%nq, nbor%task%nq, nbor%task%rank, &
-          nbor%task%time, link%task%time, nbor%task%is_set(bits%virtual)
-      if (nbor%task%is_set (bits%virtual)) then
-        nbor_info => rank_info_list%find (nbor%task%rank)
-        if (nbor%task%rank == mpi%rank) then
-          write (io_unit%log,*) &
-            'task_list_mod::check_load virtual bit on my rank', nbor%task%id
-          flush (io_unit%log)
-        else if (associated(nbor_info)) then
-          imbalance = rank_info%imbalance (nbor_info)/load_balance%grace
-          imbalance = max(imbalance, -1.)
-          !---------------------------------------------------------------------
-          ! If the imbalance measure is posive then give a patch to the remote
-          ! rank, with a probability essentially proportional to the imbalance,
-          ! but saturating at 5%, to limit the number of swaps per unit time.
-          ! A swap can cause a fair number of patch transfers, since new virtual
-          ! patches on the remote need at least two time slices.
-          !---------------------------------------------------------------------
-          if (rank_info%ok.and.nbor_info%ok .and. &
-              imbalance > 0.0 .and. &
-              random%ran1() < 0.05*(1.-exp(-imbalance))) then
-            if (io%verbose>0) then
-              print 1, &
-                wc,'LB: rank',mpi%rank,' gives patch',link%task%id,' to',nbor%task%rank, &
-                load_balance%excess, nbor_info%n_swap, &
-                nbor_info%cost, rank_info%cost
-                1 format(f12.6,2x,a,i6,a,i9,a,i6,2i5,1p,2g12.3)
-              write (io_unit%log,2) &
-                wc,'load_balance: giving patch',link%task%id, ' to',nbor%task%rank, &
-                load_balance%excess, nbor_info%n_swap, &
-                nbor_info%cost, rank_info%cost
-                2 format(f12.6,2x,a,i9,a,i6,2i5,1p,2g12.3)
-              flush (io_unit%log)
-            end if
-            call link%give_to (link, nbor%task%rank)
-            task_list%na = task_list%na-1
-            task_list%nb = task_list%nb-1
-            task_list%nv = task_list%nv-1
-            if (io%verbose>0) &
-              write (io_unit%log,*) 'swapped boundary to virtual:', link%task%id
-            call task_list%count_status
-            exit
-          end if
-        else
-          write (io_unit%log,*) &
-            'check_load  ERROR: nbor_info not associated, rank', nbor%task%rank
-          nbor_info => rank_info_list%find (nbor%task%rank, debug=.true.)
-          flush (io_unit%log)
-        end if
-      else if (nbor%task%is_set (bits%external)) then
-        write (io_unit%log,*) nbor%task%id, 'LB: external status on nbor from rank', nbor%task%rank
-      else if (nbor%task%rank /= mpi%rank) then
-        write (io_unit%log,*) nbor%task%id, 'LB: inconsistent status on nbor from rank', nbor%task%rank
-      end if
-      nbor => nbor%next
-    end do
-  end if ! (rank_info%ok .and. wc < load_balance%duration)
-  !$omp end critical (loadb_cr)
-END SUBROUTINE check_load
 
 !> =============================================================================
 !> Find the link with a specified task id.  If there isn't any, create one!
@@ -536,7 +308,7 @@ SUBROUTINE unpack (self, mesg)
   class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
   if (mesg%nbuf < 40) then
-    call rank_info_list%unpack (mesg%buffer)
+    call load_balance%unpack (mesg%buffer)
     return
   end if
   link => self%find_task (mesg%id)
@@ -576,7 +348,7 @@ SUBROUTINE unpack (self, mesg)
       call task%clear (bits%swap_request+bits%ready)
       call link%update_nbor_status (link)
       call self%count_status
-      if (io%verbose>1) & 
+      if (io%verbose>1) &
         print '(f12.6,2x,a,i6,a,i9,a,i6)', &
         wallclock(),'LB: rank',mpi%rank,' given patch',task%id,' by',mesg%sender
       if (io%verbose>0) &

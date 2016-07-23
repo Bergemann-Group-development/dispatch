@@ -353,20 +353,6 @@ SUBROUTINE update_nbor_status (self, link)
   !-----------------------------------------------------------------------------
   call trace_begin ('link_mod::update_nbor_status')
   !
-  if (io%verbose>0) &
-  write (io_unit%log,*) 'update_nbor_status: id =', self%task%id, associated(link)
-  status = self%task%status                             ! current status
-  call self%update_status                               ! new status
-  if (self%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
-    if (io%verbose>0) &
-    write (io_unit%log,*) 'sending new bdry task',self%task%id,' to vnbors'
-    call nbor%task%clear (bits%virtual)
-    call nbor%task%set (bits%swap_request)
-    nbor%task%rank = mpi%rank                           ! since it's a boundary
-    call self%send_to_vnbors                            ! need to send ...
-    call nbor%task%clear (bits%swap_request)
-  end if
-  !
   nbor => self%nbor                                     ! then help others
   do while (associated(nbor))
     if (io%verbose>1) &
@@ -388,7 +374,10 @@ SUBROUTINE update_nbor_status (self, link)
     if (nbor%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
       if (io%verbose>0) &
         write (io_unit%log,*) 'sending new bdry task',nbor%task%id,' to vnbors'
-      call nbor%task%clear (bits%virtual)
+      if (.not.nbor%task%is_clear (bits%virtual)) then
+        call nbor%task%clear (bits%virtual)
+        write (io_unit%log,*) 'WARNING: needed to clear virtual bit(1)'
+      end if
       call nbor%task%set (bits%swap_request)
       nbor%task%rank = mpi%rank                         ! since it's a boundary
       call nbor%link%send_to_vnbors
@@ -396,6 +385,23 @@ SUBROUTINE update_nbor_status (self, link)
     end if
     nbor => nbor%next                                   ! check next nbor
   end do
+  !
+  if (io%verbose>0) &
+    write (io_unit%log,*) 'update_nbor_status: id =', self%task%id, associated(link)
+  status = self%task%status                             ! current status
+  call self%update_status                               ! new status
+  if (self%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
+    if (io%verbose>0) &
+      write (io_unit%log,*) 'sending new bdry task',self%task%id,' to vnbors'
+    if (.not.nbor%task%is_clear (bits%virtual)) then
+      write (io_unit%log,*) 'WARNING: needed to clear virtual bit(2)'
+      call nbor%task%clear (bits%virtual)
+    end if
+    call nbor%task%set (bits%swap_request)
+    nbor%task%rank = mpi%rank                           ! since it's a boundary
+    call self%send_to_vnbors                            ! need to send ...
+    call nbor%task%clear (bits%swap_request)
+  end if
   call trace_end
 END SUBROUTINE update_nbor_status
 
@@ -506,7 +512,6 @@ SUBROUTINE send_to_vnbors (self)
       rank = nbor%task%rank                                     ! current rank
       if (.not.flag) then                                       ! if not already packed
         task => self%task                                       ! convert to task
-        call self%task%clear (bits%ready)                       ! not ready on recv
         call task%pack (mesg)                                   ! pack into mesg
       end if
       call mesg%send (rank)                                     ! send it

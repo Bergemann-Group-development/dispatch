@@ -11,7 +11,7 @@ MODULE list_mod
   USE task_mod
   USE patch_mod
   USE link_mod
-  USE rank_info_mod
+  USE load_balance_mod
   implicit none
   private
   type, public:: list_t
@@ -555,8 +555,8 @@ SUBROUTINE init_nonleaf (self)
 END SUBROUTINE init_nonleaf
 
 !> =============================================================================
-!> The very first initialization of the neighbor lists.  After this, it can be
-!> maintained without a global search.
+!> The very first initialization of a neighbor list.  After this, it can be
+!> maintained without searching the entire task list on the rank.
 !> =============================================================================
 SUBROUTINE init_nbors (self, link)
   class(list_t):: self
@@ -572,7 +572,7 @@ SUBROUTINE init_nbors (self, link)
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
     if (scan%task%rank /= mpi%rank) &
-      call rank_info_list%add (scan%task%rank)
+      call load_balance%add (scan%task%rank)
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       overlaps = self%overlaps (scan%task, link%task)
       if (overlaps) then  ! if its task overlaps
