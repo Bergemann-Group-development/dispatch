@@ -118,10 +118,12 @@ SUBROUTINE print ()
     total = total + proc(i)
     calls = calls + ncalls(i)
   end do
-  do i=1,ntimer
-    print 1, trim(names(i)), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
-    1 format(a32,1p,g15.3,2g10.2)
-  end do
+  if (io_unit%master) then
+    do i=1,ntimer
+      print 1, trim(names(i)), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
+      1 format(a32,1p,g15.3,2g10.2)
+    end do
+  end if
   updates = max(1.0,real(n_update-n_previous))
   musppt = min(omp%ncores,omp%nthreads)*sec*1d6/updates
   if (io_unit%master) &

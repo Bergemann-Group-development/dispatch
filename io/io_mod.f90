@@ -39,16 +39,17 @@ SUBROUTINE init (self, name)
   class(io_t):: self
   character(len=120), save:: id = &
   'io_mod.f90 $Id$'
-  integer:: verbose=0, levelmax=10, iostat
+  integer, save:: verbose=0, levelmax=10
   character(len=*), optional:: name
   character(len=64):: filename
-  integer:: id_debug=-1
-  logical:: first_time=.true., omp_trace=.false.
-  logical:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
+  integer, save:: id_debug=-1
+  logical, save:: first_time=.true., omp_trace=.false.
+  logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.true., do_flags=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
     do_legacy, levelmax, omp_trace, id_debug
   real:: test
+  integer:: iostat
   !.............................................................................
   self%master = self%master .and. (mpi%rank==0)
   io%master = self%master

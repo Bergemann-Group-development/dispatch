@@ -140,7 +140,7 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   nbdtime = self%dtime
   !$omp flush
   is_ahead_of = nbtime + nbdtime*task%grace >= task%time
-  if (task%id==io%id_debug.or.io%verbose>4) &
+  if (task%id==io%id_debug.or.io_unit%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &
     task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of
 END FUNCTION
@@ -174,19 +174,23 @@ END SUBROUTINE
 !> =============================================================================
 LOGICAL FUNCTION is_set (self, bit)
   class (task_t):: self
-  integer:: bit
+  integer:: bit, status
   !.............................................................................
 !  call trace_begin ('task_t%is_set')
-  is_set = (iand(self%status, bit) /= 0)
+  !$omp atomic read
+  status = self%status
+  is_set = (iand(status, bit) /= 0)
 !  call trace_end
 END FUNCTION
 !> =============================================================================
 LOGICAL FUNCTION is_clear (self, bit)
   class (task_t):: self
-  integer:: bit
+  integer:: bit, status
   !.............................................................................
 !  call trace_begin ('task_t%is_clear')
-  is_clear = (iand(self%status, bit) == 0)
+  !$omp atomic read
+  status = self%status
+  is_clear = (iand(status, bit) == 0)
 !  call trace_end
 END FUNCTION
 

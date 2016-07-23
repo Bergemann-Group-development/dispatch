@@ -1223,7 +1223,7 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   real(8):: pt(2), dt
   !.............................................................................
   call trace_begin ('task_t::time_interpolate',3)
-  verbose = io%verbose
+  verbose = io_unit%verbose
   !-----------------------------------------------------------------------------
   ! In case of e.g. an error in initial conditions, choose a valid default
   !-----------------------------------------------------------------------------
@@ -1254,7 +1254,7 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
       write (io_unit%log,1) &
         'patch_mod::time_interpolate WARNING: backward extrapolation, trg,src,pt:', &
         self%id, source%id, pt(2)
-      1 format(a,2i9,f7.2)
+      1 format(a,2i9,1p,g12.3)
       pt(2) = -self%grace
       verbose = 3
     else if (pt(2) > 1.0+self%grace) then
@@ -1272,9 +1272,10 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
       jt, pt, self%time
     do i=1,source%nt
       write (io_unit%log,'(a,3i4,1p,2g16.6)') &
-        'patch_mod::time_interpolation i,iit,src%iit,src%t,src&dt:', &
+        'patch_mod::time_interpolation i,iit,src%iit,src%t,src%dt:', &
         i, iit(i), source%iit(i), source%t(i), source%dt(i)
     end do
+    flush (io_unit%log)
   end if
   !print'(a,5i3,3x,2i3,2x,2f7.3)', 'MK:', iit-source%iit, jt, pt
   !-----------------------------------------------------------------------------
@@ -1282,10 +1283,10 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   !-----------------------------------------------------------------------------
   if (self%dt_fixed > 0.0) then
     if (abs(pt(1))< 1d-5) then
-      if (io%verbose>2) write (io_unit%log,*) 'EXACT'
+      if (io_unit%verbose>2) write (io_unit%log,*) 'EXACT'
       pt(1)=0d0; pt(2)=1d0
     else if (abs(pt(2)) < 1d-5) then
-      if (io%verbose>2) write (io_unit%log,*) 'EXACT'
+      if (io_unit%verbose>2) write (io_unit%log,*) 'EXACT'
       pt(1)=1d0; pt(2)=0d0
     end if
   end if

@@ -133,11 +133,11 @@ SUBROUTINE same_static (self)
           write (io_unit%log,'(a,i9,3x,a,i9,3x,a,2i4,3x,a,2f6.3)') &
             'download_mod::same_static: ERROR, negative density contribution to', &
             target%id, 'from', source%id,'jt:',jt,'pt:',pt
-          verbose = io%verbose
-          io%verbose = 5
+          verbose = io_unit%verbose
+          io_unit%verbose = 5
           ahead = source%is_ahead_of (target)
           call target%time_interpolate (source, jt, pt)
-          io%verbose = verbose
+          io_unit%verbose = verbose
           write (io_unit%log,'(a,l2,4(i9,2f12.6),f10.3)') &
             'same_static: target,source id,time,dtime,jt1,t1,jt2,t2 =', &
             ahead, &
@@ -178,10 +178,11 @@ SUBROUTINE same_static (self)
           end do
         end if
       end if
-      if (io%verbose>3) write (io_unit%log,1) &
+      if (io_unit%verbose>3) write (io_unit%log,2) &
         'patch', target%id, ' level', target%level, 'var', iv, ' picked up', &
         ntot, ' points from patch', source%id, ' at level', source%level, &
         'position', (source%position-target%position)/target%size, pt, dmin
+      2 format(6(1x,a,i7,1x),1x,a,5f6.2,1p,e12.3)
     end do
     nbor => nbor%next
   end do
