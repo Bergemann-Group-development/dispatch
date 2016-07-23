@@ -296,22 +296,27 @@ SUBROUTINE check_all (self)
   call trace_begin('list_mod::check_all '//self%name)
   write (io_unit%log,*) 'check_all: phase 1'
   link => self%head
-  do while (associated (link))                        ! keep going until end
-    call self%check_ready (link, 1)                   ! link ready?
+  do while (associated (link))                          ! keep going until end
+    call self%check_ready (link, 1)                     ! link ready?
     link => link%next
   end do
-  write (io_unit%log,*) 'check_all: phase 2'
-  link => self%head
-  do while (associated (link))                        ! keep going until end
-    if (link%task%is_clear (bits%virtual+bits%external)) then
-      if (link%task%is_set (bits%ready)) then
-        write (io_unit%log,*) 'clearing ready bit on', link%task%id
-        call link%task%clear (bits%ready)
-        call self%check_ready (link, 1)                 ! link ready?
+  if (.not.associated(self%queue)) then
+    write (io_unit%log,*) 'check_all: phase 2'
+    link => self%head
+    do while (associated (link))                        ! keep going until end
+      if (link%task%is_clear (bits%virtual+bits%external)) then
+        if (link%task%is_set (bits%ready)) then
+          write (io_unit%log,*) 'clearing ready bit on', link%task%id
+          call link%task%clear (bits%ready)
+          call self%check_ready (link, 1)               ! link ready?
+        end if
       end if
-    end if
-    link => link%next
-  end do
+      link => link%next
+    end do
+  end if
+  if (.not.associated(self%queue)) then
+    call self%check_oldest
+  end if
   call trace_end
 END SUBROUTINE check_all
 
@@ -319,33 +324,57 @@ END SUBROUTINE check_all
 !> =============================================================================
 SUBROUTINE check_oldest (self)
   class(list_t):: self
-  class(link_t), pointer:: link, oldest
-  real(8):: told
+  class(link_t), pointer:: link, oldest, oldestv
+  real(8):: told, toldv
   !.............................................................................
   call trace_begin('list_mod::check_oldest '//self%name)
   write (io_unit%log,*) 'check_oldest: phase 1'
   told = 1d30
+  toldv = told
+  nullify (oldestv)
   link => self%head
   do while (associated (link))                        ! keep going until end
     if (link%task%time < told) then
       told = link%task%time
       oldest => link
     end if
+    if (link%task%is_set(bits%virtual)) then
+      if (link%task%time < toldv) then
+        toldv = link%task%time
+        oldestv => link
+      end if
+    end if
     link => link%next
   end do
   link => oldest
-  write (io_unit%log,*) 'the oldest task is ', link%task%id, link%task%time
+  write (io_unit%log,*) 'the oldest task is ', oldest%task%id, oldest%task%time
   write (io_unit%log,*) 'check_oldest: phase 2'
-  if (link%task%is_clear (bits%virtual+bits%external)) then
-    if (link%task%is_set (bits%ready)) then
-      write (io_unit%log,*) 'clearing ready bit on', link%task%id
-      call link%task%clear (bits%ready)
-      call self%check_ready (link, 1)                 ! link ready?
+  if (oldest%task%is_clear (bits%virtual+bits%external)) then
+    if (oldest%task%is_set (bits%ready)) then
+      write (io_unit%log,*) 'clearing ready bit on', oldest%task%id
+      call oldest%task%clear (bits%ready)
+      call self%check_ready (oldest, 1)                 ! oldest ready?
     end if
   else
-    write (io_unit%log,*) 'the oldest task is not active', &
-      link%task%is_clear (bits%virtual), link%task%is_clear (bits%external)
+    write (io_unit%log,*) 'the oldest task is not active: v, e =', &
+      oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
   end if
+  !
+  write (io_unit%log,*) 'check_oldest: phase 3', associated(oldestv)
+  if (associated(oldestv)) then
+    write (io_unit%log,1) 'the oldest virtual task is', oldestv%task%id, &
+      'rank', oldest%task%rank, oldestv%task%time, &
+      oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
+    link => oldestv%nbor
+    do while (associated(link))
+      write (io_unit%log,1) &
+        'nbor', link%task%id, 'rank', link%task%rank, link%task%time, &
+        link%task%is_set(bits%boundary), link%task%is_set (bits%virtual)
+      link => link%next
+      1 format (a,i9,3x,a,i6,1p,e16.6,2l3)
+    end do
+  end if
+  flush (io_unit%log)
   call trace_end
 END SUBROUTINE check_oldest
 

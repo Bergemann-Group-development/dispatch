@@ -192,6 +192,10 @@ SUBROUTINE update (self)
   !$omp end critical (list_cr)
   if (associated(head)) then
     task => head%task                                   ! head task
+    if (io%verbose > 1) then
+      write (io_unit%log,*) 'thread', omp%thread,' takes', task%id
+      flush (io_unit%log)
+    end if
     !---------------------------------------------------------------------------
     ! If the task is frozen (e.g. because it has finished), return
     !---------------------------------------------------------------------------
@@ -242,10 +246,10 @@ SUBROUTINE update (self)
     ! of its nbors that became new boundary patches over to relevant ranks,
     ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
     !-----------------------------------------------------------------------------
-    if (task%is_set(bits%boundary)) then              ! boundary patch?
-      head%task%nq = self%nq                          ! make sure to pass on
-      call load_balance%check (self, head)            ! sell?
-      call head%send_to_vnbors                        ! send to virtual nbors
+    if (task%is_set(bits%boundary)) then                ! boundary patch?
+      head%task%nq = self%nq                            ! make sure to pass on
+      call load_balance%check (self, head)              ! sell?
+      call head%send_to_vnbors                          ! send to virtual nbors
     end if
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the
@@ -253,7 +257,7 @@ SUBROUTINE update (self)
     ! If the task was turned into a virtual task by the load balance, its virtual
     ! bit will prevent it being checked, but its nbors still need to be checked
     !-----------------------------------------------------------------------------
-    call self%check_nbors (head)                      ! any nbors ready?
+    call self%check_nbors (head)                        ! any nbors ready?
     !$omp atomic write
     stalled = 0
     call mpi_mesg%diagnostics (0)
