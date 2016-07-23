@@ -6,6 +6,7 @@ MODULE mpi_mesg_mod
   USE mpi_mod
   USE io_mod
   USE io_unit_mod
+  USE omp_mod
   USE omp_timer_mod
   implicit none
   private
@@ -417,7 +418,7 @@ SUBROUTINE delay (self, n)
   !-----------------------------------------------------------------------------
   write (io_unit%log,*) 'delay:',n
   wc = wallclock()
-  do while ((wallclock()-wc) < 1d-2)
+  do while ((wallclock()-wc) < 3d-3/omp%nthreads)
   end do
 END SUBROUTINE delay
 
