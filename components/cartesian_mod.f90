@@ -66,6 +66,8 @@ SUBROUTINE init (self, label)
   end do
   !xomp parallel do private(i,j,k,i1,j1,k1,patch,task,rank)
   npatch=0; nvpatch=0; nbpatch=0
+  !$omp parallel private(task)
+  !$omp master
   do k=1,self%dims(3)
   do j=1,self%dims(2)
   do i=1,self%dims(1)
@@ -111,28 +113,38 @@ SUBROUTINE init (self, label)
       end if
       deallocate (patch)
     !---------------------------------------------------------------------------
-    ! Otherwise, choose a unique patch id, based on position and rank
+    ! Otherwise, choose a unique patch id, based on position and rank.  In order
+    ! to distribute the memory over threads, while at the same time avoiding any
+    ! possible multi-thread issue in the experiment_t%init, we use an OMP task
+    ! to generate threads, and a critical region inside to enforce one-at-a-time
+    ! execution.
     !---------------------------------------------------------------------------
     else
+      !$omp task
+      !$omp critical (rams_cr)
       call patch%init
       patch%id = 1 + mpi%rank + &
         mpi%size*((i-1) + self%dims(1)*((j-1) + (k-1)*self%dims(2)))
       patch%id = patch%id - mpi%rank + patch%rank             ! adjust id of vpatch
       patch%i = i; patch%j = j; patch%k = k
       if (all(self%dims==1)) call patch%set(bits%root_grid)
-      if (omp%master .and. io%verbose>0) then
-        write (io%log_unit,'(a,i8,i6,1p,2(2x,3e14.6),2l6)') &
+      if (io%verbose>0) then
+        write (io_unit%log,'(a,i8,i6,1p,2(2x,3e14.6),2l6)') &
           'init_cartesian: id, rank, size, pos =', &
           patch%id, patch%rank, patch%size, patch%position, &
           patch%is_set(bits%boundary), patch%is_set(bits%virtual)
-        flush (io%log_unit)
+        flush (io_unit%log)
       end if
       task => patch
       call self%task_list%append (task)
+      !$omp end critical (rams_cr)
+      !$omp end task
     end if
   end do
   end do
   end do
+  !$omp end master
+  !$omp end parallel
   write (io_unit%log,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
   flush (io%log_unit)
   call trace_end
