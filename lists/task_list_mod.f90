@@ -233,19 +233,19 @@ SUBROUTINE update (self)
     !$omp atomic write
     stalled = 0
     call mpi_mesg%diagnostics (0)
-  !else
-  !  !$omp critical (stalled_cr)
-  !  stalled = stalled+1
-  !  if (stalled == 100) then
-  !     call self%check_all
-  !!  else if (stalled == 101) then
-  !     call self%check_oldest
-  !  else
-  !    call mpi_mesg%delay (stalled)
-  !  end if
-  !  if (stalled == max_stalled/2) call mpi_mesg%diagnostics (1)
-  !  if (stalled > max_stalled) call mpi%abort ('exceeded max_stalled')
-  !  !$omp end critical (stalled_cr)
+  else
+    !$omp critical (stalled_cr)
+    stalled = stalled+1
+    if (stalled == 100) then
+       call self%check_all
+    else if (stalled == 101) then
+       call self%check_oldest
+    else
+      call mpi_mesg%delay (stalled)
+    end if
+    if (stalled == max_stalled/2) call mpi_mesg%diagnostics (1)
+    if (stalled > max_stalled) call mpi%abort ('exceeded max_stalled')
+    !$omp end critical (stalled_cr)
   end if
   call trace_end
 END SUBROUTINE update
@@ -306,6 +306,7 @@ SUBROUTINE unpack (self, mesg)
   class(mesg_t), pointer:: mesg
   class(link_t), pointer:: link
   class(task_t), pointer:: task
+  logical:: found
   !-----------------------------------------------------------------------------
   if (mesg%nbuf < 40) then
     call load_balance%unpack (mesg%buffer)
@@ -324,8 +325,17 @@ SUBROUTINE unpack (self, mesg)
     return
   end if
   if (task%is_set (bits%ready)) then
-    write (io_unit%log,'(f12.6,2x,a,i9)') wallclock(), &
-      'task_list_mod::unpack ERROR, received mpi_mesg for task in ready queue:', task%id
+    found = .false.
+    link => self%queue
+    do while (associated(link))
+      if (link%task%id == task%id) then
+        found = .true.
+        exit
+      end if
+      link => link%next_time
+    end do
+    write (io_unit%log,'(f12.6,2x,a,i9,l3)') wallclock(), &
+      'task_list_mod::unpack ERROR, received mpi_mesg for task with ready bit:', task%id, found
     deallocate (mesg%buffer)
     deallocate (mesg)
     return
@@ -336,6 +346,13 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
   select type (task)
   class is (experiment_t)
+    !---------------------------------------------------------------------------
+    ! Unpack a patch message (which includes swapping the roles of boundary bits).
+    ! Since an already existing patch may, at any one time, be under investigation
+    ! by check_nbors, it must be protected by a critical region (or an OMP 
+    ! lock) while it is being updated here
+    !---------------------------------------------------------------------------
+    !$omp critical (list_cr)
     call task%unpack (mesg%buffer)
     !---------------------------------------------------------------------------
     ! If the boundary+swap bits are set, this is a task that has just changed
@@ -370,6 +387,7 @@ SUBROUTINE unpack (self, mesg)
       call link%update_nbor_status (link)
       call self%count_status
     end if
+    !$omp end critical (list_cr)
     deallocate (mesg%buffer)
     deallocate (mesg)
   end select
