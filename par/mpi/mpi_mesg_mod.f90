@@ -271,71 +271,78 @@ SUBROUTINE check (self, wait)
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+    nmsg = 0
+    wc(4) = wallclock()
+    do while (flag)
+      nmsg = nmsg+1
+      allocate (mesg)
+      call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
+      allocate (mesg%buffer(nbuf))
+      call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
+      mesg%req = req
+      mesg%id = stat(MPI_TAG)
+      mesg%sender = stat(MPI_SOURCE)
+      mesg%nbuf = nbuf
+      if (io%verbose>1) &
+        write (io_unit%log,*) &
+        'mpi_mesg::recv id, nbuf, fr =', mesg%id, mesg%nbuf, mesg%sender
+      if (wait) then
+        call MPI_WAIT (req, stat, ierr)
+       flag = .true.
+      else
+        call MPI_TEST (req, flag, stat, ierr)
+      end if
+      if (flag) then
+        !$omp critical (unpk_cr)
+        call self%unpack_list%add (mesg)
+        !$omp end critical (unpk_cr)
+      else
+        !$omp atomic
+        mesg%ntry = mesg%ntry+1
+        !$omp critical (recv_cr)
+        call self%recv_list%add (mesg)
+        !$omp end critical (recv_cr)
+      end if
+      call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+    end do
     !$omp end critical (mpi_cr)
   else
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+    nmsg = 0
+    wc(4) = wallclock()
+    do while (flag)
+      nmsg = nmsg+1
+      allocate (mesg)
+      call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
+      allocate (mesg%buffer(nbuf))
+      call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
+      mesg%req = req
+      mesg%id = stat(MPI_TAG)
+      mesg%sender = stat(MPI_SOURCE)
+      mesg%nbuf = nbuf
+      if (io%verbose>1) &
+        write (io_unit%log,*) &
+        'mpi_mesg::recv id, nbuf, fr =', mesg%id, mesg%nbuf, mesg%sender
+      if (wait) then
+        call MPI_WAIT (req, stat, ierr)
+       flag = .true.
+      else
+        call MPI_TEST (req, flag, stat, ierr)
+      end if
+      if (flag) then
+        !$omp critical (unpk_cr)
+        call self%unpack_list%add (mesg)
+        !$omp end critical (unpk_cr)
+      else
+        !$omp atomic
+        mesg%ntry = mesg%ntry+1
+        !$omp critical (recv_cr)
+        call self%recv_list%add (mesg)
+        !$omp end critical (recv_cr)
+      end if
+      call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
+    end do
   end if
-  nmsg = 0
-  wc(4) = wallclock()
-  do while (flag)
-    nmsg = nmsg+1
-    allocate (mesg)
-    if (mpi%mode == MPI_THREAD_SERIALIZED) then
-      !$omp critical (mpi_cr)
-      call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
-      allocate (mesg%buffer(nbuf))
-      call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
-      !$omp end critical (mpi_cr)
-    else
-      call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
-      allocate (mesg%buffer(nbuf))
-      call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
-    end if
-    mesg%req = req
-    mesg%id = stat(MPI_TAG)
-    mesg%sender = stat(MPI_SOURCE)
-    mesg%nbuf = nbuf
-    if (io%verbose>1) &
-      write (io_unit%log,*) &
-      'mpi_mesg::recv id, nbuf, fr =', mesg%id, mesg%nbuf, mesg%sender
-    if (wait) then
-      if (mpi%mode == MPI_THREAD_SERIALIZED) then
-        !$omp critical (mpi_cr)
-        call MPI_WAIT (req, stat, ierr)
-        !$omp end critical (mpi_cr)
-      else
-        call MPI_WAIT (req, stat, ierr)
-      end if
-      flag = .true.
-    else
-      if (mpi%mode == MPI_THREAD_SERIALIZED) then
-        !$omp critical (mpi_cr)
-        call MPI_TEST (req, flag, stat, ierr)
-        !$omp end critical (mpi_cr)
-      else
-        call MPI_TEST (req, flag, stat, ierr)
-      end if
-    end if
-    if (flag) then
-      !$omp critical (unpk_cr)
-      call self%unpack_list%add (mesg)
-      !$omp end critical (unpk_cr)
-    else
-      !$omp atomic
-      mesg%ntry = mesg%ntry+1
-      !$omp critical (recv_cr)
-      call self%recv_list%add (mesg)
-      !$omp end critical (recv_cr)
-    end if
-    call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
-    if (mpi%mode == MPI_THREAD_SERIALIZED) then
-      !$omp critical (mpi_cr)
-      call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
-      !$omp end critical (mpi_cr)
-    else
-      call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
-    end if
-  end do
   wc(5) = wallclock()
   if (io%verbose>2) then
     if (nmsg==0) then
