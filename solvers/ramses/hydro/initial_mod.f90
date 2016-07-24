@@ -8,6 +8,7 @@ MODULE initial_mod
   USE mesh_mod
   USE random_mod
   USE hydro_parameters
+  USE omp_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -63,6 +64,8 @@ SUBROUTINE init (self)
      self%selected => single_advection
    case ('ramses256')
      self%selected => ramses256
+   case ('raw')
+     self%selected => raw
    case default
      print*,'UNKNOWN INITIAL CONDITION TYPE'
      stop
@@ -249,5 +252,66 @@ FUNCTION ramses256 (self, m) RESULT (ff)
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
   call trace_end
 END FUNCTION ramses256
+
+!> =============================================================================
+!> Initialize from a raw data file
+!> =============================================================================
+FUNCTION raw (self, m) RESULT (ff)
+  USE io_unit_mod
+  class(initial_t):: self
+  type(mesh_t):: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8):: ff
+  !.............................................................................
+  real, save, pointer, dimension(:,:,:,:):: buffer
+  integer:: n(3), i(3), iv
+  integer, save:: ncall=0, mcall=0
+  integer, save:: mv=4
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t::ramses256a')
+  self%mhd = .false.
+  self%time = 0.02
+  !-----------------------------------------------------------------------------
+  ! At first call, allocate a buffer and read the entire file -- this is OK since
+  ! we only use one thread per rank to initialize, computing also how many calls
+  ! will be made, so the buffer can be deallocated when all patches are done
+  !-----------------------------------------------------------------------------
+  !$omp critical (raw_cr)
+  if (mcall==0) then
+    n = nint(m%b/m%d)                                ! snapshot dimensions
+    allocate (buffer(n(1),n(2),n(3),mv))
+    open (io_unit%data, file='data/ramses256/t0.02.raw', form='unformatted', &
+      access='direct', recl=4*product(n))
+    do iv=1,mv
+      read (io_unit%data, rec=iv) buffer(:,:,:,iv)
+    end do
+    close (io_unit%data)
+    mcall = product(n)/product(m%n)
+  end if
+  !$omp end critical (raw_cr)
+  i = 1 + nint(m%p/m%d)-m%n/2                            ! index offsets
+  ff = 0.0
+  do iv=1,mv
+    ff(m(1)%li:m(1)%ui, &
+       m(2)%li:m(2)%ui, &
+       m(3)%li:m(3)%ui,iv) = buffer(i(1):i(1)+m(1)%n-1, &
+                                    i(2):i(2)+m(2)%n-1, &
+                                    i(3):i(3)+m(3)%n-1,iv)
+  end do
+  do iv=2,4
+    ff(:,:,:,iv) = ff(:,:,:,1)*ff(:,:,:,iv)
+  end do
+  if (io%verbose > 2) &
+    write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
+      minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
+      maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
+  !$omp critical (raw_cr)
+  ncall = ncall + 1
+  if (ncall == mcall) then
+    print *,mcall,' patches generated'
+    deallocate (buffer)
+  end if
+  !$omp end critical (raw_cr)
+  call trace_end
+END FUNCTION raw
 
 END MODULE
