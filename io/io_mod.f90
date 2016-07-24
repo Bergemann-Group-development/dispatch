@@ -97,7 +97,6 @@ SUBROUTINE init (self, name)
     io_unit%verbose = verbose
     if (omp_trace) then
       log_unit = 100+omp%mythread()
-      io_unit%log = log_unit
       write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%mythread()
       open (log_unit, file=filename, form='formatted', status='unknown')
     else if (omp%master) then
@@ -105,6 +104,7 @@ SUBROUTINE init (self, name)
       write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
       open (log_unit, file=filename, form='formatted', status='unknown')
     else
+      log_unit = 100
       io_unit%verbose = -2
     end if
     io_unit%log = log_unit
