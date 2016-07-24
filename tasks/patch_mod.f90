@@ -701,7 +701,9 @@ SUBROUTINE unpack (self, buffer)
     self%is_set (bits%swap_request)
     1 format(a,2i9,f12.6,2x,5l1)
   !-----------------------------------------------------------------------------
-  ! Swap the roles of boundary and virtual on incoming patches
+  ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
+  ! ready bit, which is an indicator of a patch being in the ready queue, which
+  ! an incoming patch is not.
   !-----------------------------------------------------------------------------
   if (self%is_set(bits%boundary)) then
     call self%set   (bits%virtual)
@@ -710,6 +712,7 @@ SUBROUTINE unpack (self, buffer)
     call self%set   (bits%boundary)
     call self%clear (bits%virtual)
   end if
+  call self%clear (bits%ready)
   !-----------------------------------------------------------------------------
   ! Copy the variables from the output buffer.  If this is swap of patch roles
   ! expect at least one more time slot.

@@ -140,9 +140,6 @@ END SUBROUTINE add_nbor_by_quality
 !> =============================================================================
 !> Give a task to another rank, making sure to update the nbor relations on
 !> this rank -- doing the same on the receiver rank is handled when unpacking,
-!> As a consequence of update_nbor_status, those nbors that become new bdry
-!> tasks are send to relevant ranks, while the task itself if sent by the
-!> task_list_mod::update procedure.
 !> =============================================================================
 SUBROUTINE give_to (self, link, rank)
   class(link_t):: self
@@ -159,10 +156,10 @@ SUBROUTINE give_to (self, link, rank)
   ! With the new rank and status settings, update the status of the nbors
   ! and their nbor lists, which may all be affected by the change of rank.
   ! The ones that are new boundary tasks will be sent to nbor ranks by
-  ! the update_nbor_status procedure.
+  ! the update_nbor_status procedure.  The rank itself will be sent by
+  ! task_list_mod::update, and should not be sent from here.
   !-----------------------------------------------------------------------
   call self%update_nbor_status (link)
-  call self%send_to_vnbors
   if (io%verbose>1) &
     call test_nbor_status (link)
 END SUBROUTINE give_to
@@ -505,8 +502,8 @@ SUBROUTINE send_to_vnbors (self)
   flag = .false.
   do while (associated(nbor))                                   ! until end
     task => nbor%task
-    if (io%verbose>1) &
-      write (io_unit%log,*) 'link, nbor:', self%task%id, task%id, task%rank
+    if (io%verbose>2) &
+      write (io_unit%log,*) 'send_to_vnb: id,nbor,rank =', self%task%id, task%id, task%rank
     flush (io_unit%log)
     if (task%rank/=mpi%rank .and. task%rank/=rank) then         ! new rank?
       rank = nbor%task%rank                                     ! current rank
