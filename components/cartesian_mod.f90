@@ -6,6 +6,7 @@ MODULE cartesian_mod
   USE bits_mod
   USE trace_mod
   USE task_mod
+  USE link_mod
   USE task_list_mod
   USE experiment_mod
   implicit none

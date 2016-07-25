@@ -46,7 +46,7 @@ MODULE task_list_mod
     procedure:: print => print_tasklist
     procedure:: print_tasks
   end type
-  public link_t
+  integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
 CONTAINS
 
 !> =============================================================================
@@ -59,7 +59,7 @@ SUBROUTINE init (self, name)
   class(link_t), pointer:: link
   integer:: iostat
   integer:: debug=0
-  namelist /task_list_params/ debug
+  namelist /task_list_params/ debug, max_stalled, retry_stalled
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -129,7 +129,6 @@ SUBROUTINE update (self)
   class(link_t), pointer:: head
   class(task_t), pointer:: task
   class(mesg_t), pointer:: mesg
-  integer, save:: stalled=0, max_stalled=10000
   !.............................................................................
   call trace_begin('task_list_t%update')
   !call self%check_flags
@@ -236,9 +235,9 @@ SUBROUTINE update (self)
   else
     !$omp critical (stalled_cr)
     stalled = stalled+1
-    if (stalled == 100) then
+    if (stalled == retry_stalled) then
        call self%check_all
-    else if (stalled == 101) then
+    else if (stalled == retry_stalled+1) then
        call self%check_oldest
     else
       call mpi_mesg%delay (stalled)

@@ -130,7 +130,7 @@ SUBROUTINE same_static (self)
         ! the unphysical values that result.
         !-----------------------------------------------------------------------
         if (dmin < 0.0) then
-          write (io_unit%log,'(a,i9,3x,a,i9,3x,a,2i4,3x,a,2f6.3)') &
+          write (io_unit%log,'(a,i9,3x,a,i9,3x,a,2i4,3x,a,2f7.3)') &
             'download_mod::same_static: ERROR, negative density contribution to', &
             target%id, 'from', source%id,'jt:',jt,'pt:',pt
           verbose = io_unit%verbose
