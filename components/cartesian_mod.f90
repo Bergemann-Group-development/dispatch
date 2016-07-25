@@ -52,7 +52,8 @@ SUBROUTINE init (self, label)
   ! Generate a (periodic) MPI geometry, with dims specified in the input file
   !-----------------------------------------------------------------------------
   if (mpi%size > 1) then
-    call mpi_coords%init (mpi_dims=mpi_dims)
+    call mpi_coords%init (dims=dims)
+    mpi_dims = mpi_coords%dims
   else
     mpi_dims = 1
   end if
@@ -93,7 +94,7 @@ SUBROUTINE init (self, label)
       rank = pos2rank (i+i1, j+j1, k+k1)
       if (patch%rank/=mpi%rank .and. rank==mpi%rank) call patch%set (bits%virtual)
       if (patch%rank==mpi%rank .and. rank/=mpi%rank) call patch%set (bits%boundary)
-      if (omp_master .and. io_unit%verbose>2) then
+      if (omp_master .and. io%verbose>2) then
         write (io%log_unit,'(3(3i4,2x),2l6)') &
           i,j,k, i1,j1,k1, mpi%rank,patch%rank,rank, &
           patch%is_set(bits%virtual), patch%is_set(bits%boundary)
@@ -108,7 +109,7 @@ SUBROUTINE init (self, label)
     ! If belongs to a different rank and is not a virtual patch, skip it
     !---------------------------------------------------------------------------
     if (patch%rank /= mpi%rank .and. patch%is_clear(bits%virtual)) then
-      if (io_unit%verbose>2) then
+      if (io%verbose>2) then
         patch%id = 1 + mpi%rank + &
           mpi%size*((i-1) + self%dims(1)*((j-1) + (k-1)*self%dims(2)))
         write (io%log_unit,'(a,3i4,i8,2i4,l4)') 'skipping', i, j, k, &
@@ -129,7 +130,7 @@ SUBROUTINE init (self, label)
       patch%id = patch%id - mpi%rank + patch%rank             ! adjust id of vpatch
       patch%i = i; patch%j = j; patch%k = k
       if (all(self%dims==1)) call patch%set(bits%root_grid)
-      if (io_unit%verbose>0) then
+      if (io%verbose>0) then
         write (io_unit%log,'(a,i8,i6,1p,2(2x,3e14.6),2x,2l1)') &
           'init_cartesian: id, rank, size, pos =', &
           patch%id, patch%rank, patch%size, patch%position, &

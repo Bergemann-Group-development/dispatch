@@ -99,10 +99,6 @@ SUBROUTINE init (mp, mpi_dims, dims)
   !.............................................................................
   call mp%mpi_t%init
   call cart_create_mpi (mp, mpi_dims, dims=dims)
-  if (mpi%size /= product(mpi_dims)) then
-    print*,'inconstent mpi%size:', mpi%size, mpi_dims
-    stop
-  end if
   mp%coords = mpi_cord3
   mp%dims   = mpi_dim3
   mp%plane  = mpi_plane
@@ -117,6 +113,10 @@ SUBROUTINE init (mp, mpi_dims, dims)
   mpi_coords%dn     = mp%dn
   mpi_coords%up     = mp%up
   mpi_coords%ok     = mp%ok
+  if (mpi%size /= product(mpi_dim3)) then
+    print*,'inconstent mpi%size:', mpi%size, mpi_dim3
+    stop
+  end if
 END SUBROUTINE init
 
 !> =============================================================================
