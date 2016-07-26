@@ -48,8 +48,8 @@ MODULE mpi_mesg_mod
     procedure:: diagnostics
   end type
   type(mpi_mesg_t), public:: mpi_mesg
-  integer, parameter:: every_send=10            ! how often to check send_list
-  integer, parameter:: every_recv=1             ! how often to check recv_list
+  integer, save:: every_send=5                  ! how often to check send_list
+  integer, save:: every_recv=1                  ! how often to check recv_list
   logical, save:: debug=.false.
 CONTAINS
 
@@ -219,8 +219,12 @@ END SUBROUTINE count
 !> =============================================================================
 SUBROUTINE init (self)
   class(mpi_mesg_t):: self
+  namelist /mpi_mesg_params/ every_recv, every_send
+  integer:: iostat
   !.............................................................................
   if (self%initialized) return
+  rewind (io%input); read (io%input, mpi_mesg_params,iostat=iostat)
+  if (io%master) write (io%output, mpi_mesg_params)
   if (io%verbose>0) write (io_unit%log,*) 'mpi_mesg_mod::init'
   self%sent_list%name = 'sent_list'
   self%recv_list%name = 'recv_list'
@@ -252,7 +256,7 @@ SUBROUTINE check (self, wait)
   class(mesg_t), pointer:: mesg
   real(8):: wc(12)
   integer, save:: itimer=0
-  integer, save:: every=every_send
+  integer, save:: every=0
   real(8), save:: ws(11)
   !$omp threadprivate (ws, every)
   !-----------------------------------------------------------------------------
