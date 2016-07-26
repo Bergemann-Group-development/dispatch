@@ -81,9 +81,9 @@ FUNCTION time_str (t) RESULT (out)
     out=trim(str_f4(t/mu))//' mus'
   else if (   t < 1d0) then
     out=trim(str_f4(t/ms))//' ms'
-  else if (t/mi < 1d0) then
+  else if (   t < 100) then
     out=trim(str_f4(   t))//' s '
-  else if (t/hr < 1d0) then
+  else if (t/mi < 100) then
     out=trim(str_f4(t/mi))//' mn'
   else if (t/dy < 1d0) then
     out=trim(str_f4(t/hr))//' hr'

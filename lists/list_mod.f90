@@ -246,6 +246,7 @@ SUBROUTINE check_nbors (self, link)
   logical:: is_clear
   !.............................................................................
   call trace_begin('list_mod::check_nbors '//self%name)
+  !$omp critical (list_cr)
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
   nbor => link%nbor                                   ! first nbor
@@ -282,6 +283,7 @@ SUBROUTINE check_nbors (self, link)
       'cleared:',n_cleared, 'remain:', n_remain
     if (io%verbose>3) call self%print
   end if
+  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE check_nbors
 
@@ -295,6 +297,7 @@ SUBROUTINE check_all (self)
   !.............................................................................
   call trace_begin('list_mod::check_all '//self%name)
   write (io_unit%log,*) 'check_all: phase 1'
+  !xomp critical (list_cr)
   link => self%head
   do while (associated (link))                          ! keep going until end
     call self%check_ready (link, 1)                     ! link ready?
@@ -314,6 +317,7 @@ SUBROUTINE check_all (self)
       link => link%next
     end do
   end if
+  !xomp end critical (list_cr)
   if (.not.associated(self%queue)) then
     call self%check_oldest
   end if
@@ -398,7 +402,7 @@ SUBROUTINE check_ready (self, link, set_debug)
   else
     debug = 0
   end if
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   call self%qconsistency(1)
   task => link%task                                     ! already checked?
   if (task%is_clear(bits%ready)) then
@@ -428,7 +432,7 @@ SUBROUTINE check_ready (self, link, set_debug)
     !xomp end critical (list_cr)
   end if
 9 continue
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end (itimer)
 END SUBROUTINE check_ready
 
@@ -523,8 +527,9 @@ SUBROUTINE init_nonleaf (self)
   class(link_t), pointer:: nbor
   integer:: n_add
   !.............................................................................
+  return
   call trace_begin('list_mod::init_nonleaf ')
-  !$omp critical (list_cr)
+  !xomp critical (list_cr)
   !-----------------------------------------------------------------------------
   ! First find and mark all non-leaf patches; these are patches that the link
   ! patch is fully contained inside -- we *assume* that finer level patches
@@ -550,7 +555,7 @@ SUBROUTINE init_nonleaf (self)
     end do
     link => link%next                                   ! continue list
   end do
-  !$omp end critical (list_cr)
+  !xomp end critical (list_cr)
   call trace_end
 END SUBROUTINE init_nonleaf
 
@@ -571,7 +576,7 @@ SUBROUTINE init_nbors (self, link)
   n_add = 0
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
-    if (scan%task%rank /= mpi%rank) &
+    if (scan%task%rank /= mpi%rank .and. load_balance%on) &
       call load_balance%add (scan%task%rank)
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       overlaps = self%overlaps (scan%task, link%task)
@@ -938,7 +943,7 @@ SUBROUTINE queue_by_time (self, this)
   ! Refuse to queue virtual tasks and finished tasks
   !-----------------------------------------------------------------------------
   if (this%task%is_set(bits%virtual) .or. this%task%has_finished()) return
-  call trace_begin ('list_mod::queue_by_time '//self%name)
+  call trace_begin ('list_mod::queue_by_time ')
   !-----------------------------------------------------------------------------
   ! Lock the queue while inserting the task
   !-----------------------------------------------------------------------------
@@ -955,9 +960,17 @@ SUBROUTINE queue_by_time (self, this)
     else if (next%task%time > this%task%time) then
       this%next_time => next
       if (associated(prev)) then
+        if (io%verbose > 1) then
+          write (io_unit%log,*) 'task',this%task%id,' in ready queue after',prev%task%id,self%nq
+          flush (io_unit%log)
+        end if
         prev%next_time => this
       else
         self%queue => this
+        if (io%verbose > 1) then
+          write (io_unit%log,*) 'task',this%task%id,' at ready queue head',self%nq
+          flush (io_unit%log)
+        end if
       end if
       !$omp atomic
       self%nq = self%nq+1
@@ -969,8 +982,16 @@ SUBROUTINE queue_by_time (self, this)
   end do
   self%nq = self%nq+1
   if (associated(prev)) then
+    if (io%verbose > 1) then
+      write (io_unit%log,*) 'task',this%task%id,' in ready queue after',prev%task%id,self%nq
+      flush (io_unit%log)
+    end if
     prev%next_time => this
   else
+    if (io%verbose > 1) then
+      write (io_unit%log,*) 'task',this%task%id,' at ready queue head',self%nq
+      flush (io_unit%log)
+    end if
     self%queue => this
   end if
   nullify (this%next_time)

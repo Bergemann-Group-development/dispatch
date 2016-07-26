@@ -52,13 +52,13 @@ MODULE load_balance_mod
   type(rank_info_t):: rank_info
   type(rank_info_list_t):: rank_info_list
   !
-  logical, save:: on=.false.
   logical, save:: only_initial=.false.
   real, save:: cadence=1., threshold=10., grace=0.3, duration=0.0
   real, save:: next_info
   integer, save:: excess=0
   !
   type, public:: load_balance_t
+    logical:: on=.false.
   contains
     procedure:: init
     procedure:: active
@@ -75,6 +75,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(load_balance_t):: self
+  logical, save:: on=.false.
   namelist /load_balance_params/ on, cadence, threshold, grace, &
     duration, only_initial
   integer:: iostat
@@ -83,6 +84,7 @@ SUBROUTINE init (self)
   if (io%master) then
     if (io%master) write (*,load_balance_params)
   end if
+  self%on = on
   next_info = cadence
 END SUBROUTINE init
 
@@ -92,7 +94,7 @@ SUBROUTINE active (self, flag)
   class(load_balance_t):: self
   logical:: flag
   !$omp atomic write
-  on = flag
+  self%on = flag
 END SUBROUTINE active
 
 !> =============================================================================
@@ -480,7 +482,7 @@ FUNCTION check_load (self, head) RESULT (sell)
   ! Only one thread should do load balancing, and that thread should make sure
   ! to use omp critical (list_cr) whenever it needs to access the task list.
   !-----------------------------------------------------------------------------
-  if (.not.on) return
+  if (.not.self%on) return
   !$omp critical (loadb_cr)
   wc = wallclock()
   patch => task2patch(head%task)

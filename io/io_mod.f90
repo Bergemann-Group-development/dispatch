@@ -95,7 +95,7 @@ SUBROUTINE init (self, name)
     !$omp parallel
     !$omp critical
     io_unit%verbose = verbose
-    if (omp_trace) then
+    if (omp_trace .and. omp%nthreads>1) then
       log_unit = 100+omp%mythread()
       write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%mythread()
       open (log_unit, file=filename, form='formatted', status='unknown')

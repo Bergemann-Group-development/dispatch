@@ -179,7 +179,6 @@ SUBROUTINE end_mpi (mp, label)
       print*,'MPI finalized with message: "'//trim(label)//'"'
     end if
   end if
-  call MPI_Barrier (mpi_comm_world, mpi_err)
   call MPI_Finalize (mpi_err)
   call exit        ! avoid "stop" which may produce one output line per process
 END SUBROUTINE

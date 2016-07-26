@@ -232,7 +232,7 @@ SUBROUTINE add_nbor_by_rank (self, this)
   class(link_t), pointer:: this
   class(link_t), pointer:: next, prev
   !.............................................................................
-  call trace_begin ('list_t%add_nbor_by_rank', 2)
+  call trace_begin ('list_t%add_nbor_by_rank', 3)
   if (io%verbose>1) &
   write (io_unit%log,*) '  adding task', this%task%id, &
     this%task%is_set(bits%boundary), this%task%is_set(bits%virtual), &
@@ -279,7 +279,7 @@ FUNCTION remove_nbor (self, this) RESULT (nbor)
   class(link_t), pointer:: this
   class(link_t), pointer:: nbor, prev
   !.............................................................................
-  call trace_begin ('list_mod::remove_nbor', 2)
+  call trace_begin ('link_mod::remove_nbor', 2)
   if (io%verbose>1) &
     write (io_unit%log,*) 'removing task', this%task%id,associated(this%link), &
       ' from nbor list of', self%task%id
@@ -311,7 +311,7 @@ FUNCTION remove_from_nbors (self, this) RESULT (nbor)
   class(link_t), pointer:: this
   class(link_t), pointer:: nbor, prev
   !.............................................................................
-  call trace_begin ('list_mod::remove_from_nbors', 2)
+  call trace_begin ('link_mod::remove_from_nbors', 2)
   nbor => self%nbor
   do while (associated(nbor))
     prev => nbor%link%remove_nbor (this)
@@ -327,7 +327,7 @@ SUBROUTINE update_nbors (self)
   class(link_t):: self
   class(link_t), pointer:: nbor, new
   !.............................................................................
-  call trace_begin('list_mod::init_all_nbors')
+  call trace_begin('link_mod::init_all_nbors')
   nbor => self%nbor                                     ! start checking nbors
   do while (associated(nbor))                           ! loop over nbor list
     allocate (new)                                      ! new link for nbor's nbor list
@@ -493,7 +493,7 @@ SUBROUTINE send_to_vnbors (self)
   integer:: ierr, rank
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_mod::send_to_vnbors', itimer=itimer)
+  call trace_begin('link_mod::send_to_vnbors', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Send to all unique ranks in the nbor list (which is sorted by rank)
   !-----------------------------------------------------------------------------
