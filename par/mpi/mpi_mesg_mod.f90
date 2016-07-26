@@ -67,13 +67,15 @@ SUBROUTINE send (self, rank)
     !$omp critical (mpi_cr)
     call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
       mpi%comm, req, ierr)
+    self%nreq = self%nreq+1                                 ! count reqs
+    self%reqs(self%nreq) = req                              ! collect reqs
     !$omp end critical (mpi_cr)
   else
     call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
       mpi%comm, req, ierr)
+    self%nreq = self%nreq+1                                 ! count reqs
+    self%reqs(self%nreq) = req                              ! collect reqs
   end if
-  self%nreq = self%nreq+1                                   ! count reqs
-  self%reqs(self%nreq) = req                                ! collect reqs
 END SUBROUTINE send
 
 !> =============================================================================
@@ -245,18 +247,23 @@ SUBROUTINE check (self, wait)
   class(mpi_mesg_t):: self
   logical:: wait
   integer:: stat(MPI_STATUS_SIZE)
-  integer:: msg ,ierr, nbuf, req, nmsg, i
+  integer:: msg ,ierr, nbuf, req, nmsg, i, nr, nu
   logical:: flag
   class(mesg_t), pointer:: mesg
-  integer, save:: nprint=50
-  integer, save:: itimer(5)=0
-  integer, save:: every=every_send
   real(8):: wc(12)
-  real(8),save:: ws(11)
+  integer, save:: itimer=0
+  integer, save:: every=every_send
+  real(8), save:: ws(11)
+  !$omp threadprivate (ws, every)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
-  call trace_begin ('mpi_mesg_mod::check', itimer=itimer(1))
+  call trace_begin ('mpi_mesg_mod::check', itimer=itimer)
   wc(1) = wallclock()
+  !-----------------------------------------------------------------------------
+  ! Only test for sent messages completin 'every_send' time; there is no need
+  ! to rush with the deallocation of mesg buffers, and the test cost can be 
+  ! significant.
+  !-----------------------------------------------------------------------------
   if (every>0) then
     every = every-1
     wc(2:3) = wc(1)
@@ -268,45 +275,56 @@ SUBROUTINE check (self, wait)
     wc(3) = wallclock()
     !$omp end critical (sent_cr)
   end if
+  !-----------------------------------------------------------------------------
+  ! Probe for incoming messages
+  !-----------------------------------------------------------------------------
+  wc(4) = wallclock()
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
-    call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
-    nmsg = 0
-    wc(4) = wallclock()
-    do while (flag)
-      nmsg = nmsg+1
-      allocate (mesg)
-      call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
-      allocate (mesg%buffer(nbuf))
-      call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
-      mesg%req = req
-      mesg%id = stat(MPI_TAG)
-      mesg%sender = stat(MPI_SOURCE)
-      mesg%nbuf = nbuf
-      if (io%verbose>1) &
-        write (io_unit%log,*) &
-        'mpi_mesg::recv id, nbuf, fr =', mesg%id, mesg%nbuf, mesg%sender
-      if (wait) then
-        call MPI_WAIT (req, stat, ierr)
-       flag = .true.
-      else
-        call MPI_TEST (req, flag, stat, ierr)
-      end if
-      if (flag) then
-        !$omp critical (unpk_cr)
-        call self%unpack_list%add (mesg)
-        !$omp end critical (unpk_cr)
-      else
-        !$omp atomic
-        mesg%ntry = mesg%ntry+1
-        !$omp critical (recv_cr)
-        call self%recv_list%add (mesg)
-        !$omp end critical (recv_cr)
-      end if
-      call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
-    end do
+    call probe_mesg
     !$omp end critical (mpi_cr)
   else
+    call probe_mesg
+  end if
+  !-----------------------------------------------------------------------------
+  ! Manage the recv and unpack lists, doing so only 'every_recv' time -- this
+  ! should normally be =1, but in some cases a larger value may be more optimal
+  !-----------------------------------------------------------------------------
+  wc(5) = wallclock()
+  if (mod(every,every_recv)==0) then
+    wc(6) = wc(5)
+    if (mpi%mode == MPI_THREAD_SERIALIZED) then
+      !$omp critical (mpi_cr)
+      call check_lists
+      !$omp end critical (mpi_cr)
+    else
+      call check_lists
+    end if
+  end if
+  if (io%verbose>2) then
+    wc(6) = wallclock()
+    do i=1,5
+      !$omp atomic
+      ws(i)=ws(i)+(wc(i+1)-wc(i))
+    end do
+    write (io_unit%log,'(a,3p,10f10.3)') 'wc:', ws(1:10)
+  end if
+  call trace_end (itimer)
+  return
+contains
+  !-----------------------------------------------------------------------------
+  ! Probe for incoming MPI messages, and if they are already complete add them
+  ! directly to the unpack list, otherwise add them to the recv list
+  !-----------------------------------------------------------------------------
+  subroutine probe_mesg
+    if (io%verbose>1) then
+      !$omp atomic read
+      nr  = self%recv_list%n
+      !$omp atomic read
+      nu = self%unpack_list%n
+      write (io_unit%log,*) 'mpi_mesg::probe_mesg recv%n, unpk% =', nr, nu, mpi%mode
+      flush (io_unit%log)
+    end if
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
     nmsg = 0
     wc(4) = wallclock()
@@ -320,14 +338,16 @@ SUBROUTINE check (self, wait)
       mesg%id = stat(MPI_TAG)
       mesg%sender = stat(MPI_SOURCE)
       mesg%nbuf = nbuf
-      if (io%verbose>1) &
-        write (io_unit%log,*) &
-        'mpi_mesg::recv id, nbuf, fr =', mesg%id, mesg%nbuf, mesg%sender
       if (wait) then
         call MPI_WAIT (req, stat, ierr)
-       flag = .true.
+        flag = .true.
       else
         call MPI_TEST (req, flag, stat, ierr)
+      end if
+      if (io%verbose>1) then
+        write (io_unit%log,*) &
+        'mpi_mesg::recv id, nbuf, fr =', mesg%id, mesg%nbuf, mesg%sender, flag
+        flush (io_unit%log)
       end if
       if (flag) then
         !$omp critical (unpk_cr)
@@ -342,56 +362,30 @@ SUBROUTINE check (self, wait)
       end if
       call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
     end do
-  end if
-  wc(5) = wallclock()
-  if (io%verbose>2) then
-    if (nmsg==0) then
-      if (nprint>0) then
-        nprint = nprint-1
-        write (io_unit%log,*) 'mpi_mesg_mod::check nmsg =', nmsg
-        flush (io_unit%log)
-      else if (nprint==0) then
-        nprint = nprint-1
-        write (io_unit%log,*) 'mpi_mesg_mod::check continuing...'
-        flush (io_unit%log)
-      end if
-    else
-      if (nprint==-1) nprint = 10
-      write (io_unit%log,*) 'mpi_mesg_mod::check nmsg =', nmsg
+  end subroutine probe_mesg
+  !-----------------------------------------------------------------------------
+  ! Check for completed messages, and move them to the unpack list
+  !-----------------------------------------------------------------------------
+  subroutine check_lists
+    !$omp critical (recv_cr)
+    if (io%verbose>1) then
+      !$omp atomic read
+      nu = self%unpack_list%n
+      write (io_unit%log,*) &
+      'mpi_mesg::check_lists recv%n, unpk% =', self%recv_list%n, nu
       flush (io_unit%log)
     end if
-  end if
-  !-----------------------------------------------------------------------------
-  ! Check the recv_list for completed receives, adding them to unpack_list
-  !-----------------------------------------------------------------------------
-  wc(6) = wallclock()
-  if (mod(every,every_recv)==0) then
-    wc(7) = wc(6)
-    !$omp critical (recv_cr)
     wc(8) = wallclock(); ws(7) = ws(7)+(wc(8)-wc(7)); wc(7) = wc(8)
     mesg => self%recv_list%head
     i = 0
-    if (debug) write (io_unit%log,*) 'DEBUG: checking recv_list, n =', self%recv_list%n
     do while (associated(mesg))
       i = i+1
       req = mesg%req
       if (wait) then
-        if (mpi%mode == MPI_THREAD_SERIALIZED) then
-          !$omp critical (mpi_cr)
-          call MPI_WAIT (req, stat, ierr)
-          !$omp end critical (mpi_cr)
-        else
-          call MPI_WAIT (req, stat, ierr)
-        end if
+        call MPI_WAIT (req, stat, ierr)
         flag = .true.
       else
-        if (mpi%mode == MPI_THREAD_SERIALIZED) then
-          !$omp critical (mpi_cr)
-          call MPI_TEST (req, flag, stat, ierr)
-          !$omp end critical (mpi_cr)
-        else
-          call MPI_TEST (req, flag, stat, ierr)
-        end if
+        call MPI_TEST (req, flag, stat, ierr)
       end if
       wc(8) = wallclock(); ws(8) = ws(8)+(wc(8)-wc(7)); wc(7) = wc(8)
       if (flag) then
@@ -400,13 +394,13 @@ SUBROUTINE check (self, wait)
         !$omp critical (unpk_cr)
         call self%unpack_list%add (mesg)
         !call self%unpack_list%count ('check')
-        !$omp end critical (unpk_cr)
         wc(8) = wallclock(); ws(10) = ws(10)+(wc(8)-wc(7)); wc(7) = wc(8)
         if (io%verbose>1) then
           write (io_unit%log,1) wallclock(), ' recv   complete', mesg%id, &
             i, self%recv_list%n, self%unpack_list%n
           flush (io_unit%log)
         end if
+        !$omp end critical (unpk_cr)
       else
         if (io%verbose>1) then
           !$omp atomic
@@ -417,22 +411,10 @@ SUBROUTINE check (self, wait)
           flush (io_unit%log)
         end if
       end if
-      if (debug) then
-        write (io_unit%log,'(a,i9,l4,5i5)') &
-          mesg%id, flag, mesg%ntry, i, self%recv_list%n, self%unpack_list%n
-        flush (io_unit%log)
-      end if
       mesg => mesg%next
     end do
     !$omp end critical (recv_cr)
-  end if
-  wc(7) = wallclock()
-  do i=1,6
-    !$omp atomic
-    ws(i)=ws(i)+(wc(i+1)-wc(i))
-  end do
-  if (io%verbose>1) write (io_unit%log,'(a,3p,10f10.3)') 'wc:', ws(1:10)
-  call trace_end (itimer(1))
+  end subroutine check_lists
 END SUBROUTINE check
 
 !> =============================================================================
@@ -481,8 +463,8 @@ SUBROUTINE delay (self, n)
   integer:: n
   real(8):: wc
   !-----------------------------------------------------------------------------
-  write (io_unit%log,*) 'delay:',n
   wc = wallclock()
+  write (io_unit%log,*) wc,'delay:',n
   do while ((wallclock()-wc) < 3d-3/omp%nthreads)
   end do
 END SUBROUTINE delay
