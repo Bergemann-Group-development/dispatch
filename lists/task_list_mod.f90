@@ -311,6 +311,7 @@ SUBROUTINE unpack (self, mesg)
     call load_balance%unpack (mesg%buffer)
     return
   end if
+  !$omp critical (list_cr)
   link => self%find_task (mesg%id)
   task => link%task
   !-----------------------------------------------------------------------------
@@ -321,7 +322,7 @@ SUBROUTINE unpack (self, mesg)
       'task_list_mod::unpack ERROR, received mpi_mesg for boundary task:', task%id
     deallocate (mesg%buffer)
     deallocate (mesg)
-    return
+    go to 9
   end if
   if (task%is_set (bits%ready)) then
     found = .false.
@@ -337,7 +338,7 @@ SUBROUTINE unpack (self, mesg)
       'task_list_mod::unpack ERROR, received mpi_mesg for task with ready bit:', task%id, found
     deallocate (mesg%buffer)
     deallocate (mesg)
-    return
+    go to 9
   end if
   !-----------------------------------------------------------------------------
   ! Elevate the type of pointer, to make sure to use the experiment_t%unpack,
@@ -351,7 +352,6 @@ SUBROUTINE unpack (self, mesg)
     ! by check_nbors, it must be protected by a critical region (or an OMP 
     ! lock) while it is being updated here
     !---------------------------------------------------------------------------
-    !$omp critical (list_cr)
     call task%unpack (mesg%buffer)
     !---------------------------------------------------------------------------
     ! If the boundary+swap bits are set, this is a task that has just changed
@@ -386,10 +386,10 @@ SUBROUTINE unpack (self, mesg)
       call link%update_nbor_status (link)
       call self%count_status
     end if
-    !$omp end critical (list_cr)
     deallocate (mesg%buffer)
     deallocate (mesg)
   end select
+9 continue
   !-----------------------------------------------------------------------------
   ! As the task has now been updated, we need to check if any of the neighbors
   ! have become ready to update. If the task has just been swapped into being
@@ -397,6 +397,7 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
   if (io%verbose>1) &
     call link%test_nbor_status
+  !$omp end critical (list_cr)
   call self%check_nbors (link)
 END SUBROUTINE unpack
 
