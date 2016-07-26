@@ -160,7 +160,7 @@ SUBROUTINE update (self)
   if (associated(head)) then
     task => head%task                                   ! head task
     if (io%verbose > 1) then
-      write (io_unit%log,*) 'thread', omp%thread,' takes', task%id
+      write (io_unit%log,*) 'thread', omp%thread,' takes', task%id, self%nq
       flush (io_unit%log)
     end if
     !---------------------------------------------------------------------------

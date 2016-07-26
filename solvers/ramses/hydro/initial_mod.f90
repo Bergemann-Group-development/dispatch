@@ -267,7 +267,7 @@ FUNCTION raw (self, m) RESULT (ff)
   integer, save:: ncall=0, mcall=0
   integer, save:: mv=4
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t::ramses256a')
+  call trace_begin('initial_t::raw')
   self%mhd = .false.
   self%time = 0.02
   !-----------------------------------------------------------------------------
@@ -275,7 +275,6 @@ FUNCTION raw (self, m) RESULT (ff)
   ! we only use one thread per rank to initialize, computing also how many calls
   ! will be made, so the buffer can be deallocated when all patches are done
   !-----------------------------------------------------------------------------
-  !$omp critical (raw_cr)
   if (mcall==0) then
     n = nint(m%b/m%d)                                ! snapshot dimensions
     allocate (buffer(n(1),n(2),n(3),mv))
@@ -287,7 +286,6 @@ FUNCTION raw (self, m) RESULT (ff)
     close (io_unit%data)
     mcall = product(n)/product(m%n)
   end if
-  !$omp end critical (raw_cr)
   i = 1 + nint(m%p/m%d)-m%n/2                            ! index offsets
   ff = 0.0
   do iv=1,mv
@@ -304,13 +302,11 @@ FUNCTION raw (self, m) RESULT (ff)
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
-  !$omp critical (raw_cr)
   ncall = ncall + 1
   if (ncall == mcall) then
     print *,mcall,' patches generated'
     deallocate (buffer)
   end if
-  !$omp end critical (raw_cr)
   call trace_end
 END FUNCTION raw
 

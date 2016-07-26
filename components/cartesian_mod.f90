@@ -52,7 +52,11 @@ SUBROUTINE init (self, label)
   ! Generate a (periodic) MPI geometry, with dims specified in the input file
   !-----------------------------------------------------------------------------
   if (mpi%size > 1) then
-    call mpi_coords%init (dims=dims)
+    if (product(mpi_dims)==1) then
+      call mpi_coords%init (dims=dims)
+    else
+      call mpi_coords%init (mpi_dims=mpi_dims)
+    end if
     mpi_dims = mpi_coords%dims
   else
     mpi_dims = 1
@@ -146,9 +150,10 @@ SUBROUTINE init (self, label)
   end do
   end do
   !$omp end master
-  !$omp end parallel
+  !$omp barrier
   write (io_unit%log,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
   flush (io%log_unit)
+  !$omp end parallel
   call trace_end
 contains
   integer function pos2rank (i, j, k)

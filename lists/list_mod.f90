@@ -571,7 +571,7 @@ SUBROUTINE init_nbors (self, link)
   n_add = 0
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
-    if (scan%task%rank /= mpi%rank) &
+    if (scan%task%rank /= mpi%rank .and. load_balance%on) &
       call load_balance%add (scan%task%rank)
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       overlaps = self%overlaps (scan%task, link%task)
@@ -938,7 +938,7 @@ SUBROUTINE queue_by_time (self, this)
   ! Refuse to queue virtual tasks and finished tasks
   !-----------------------------------------------------------------------------
   if (this%task%is_set(bits%virtual) .or. this%task%has_finished()) return
-  call trace_begin ('list_mod::queue_by_time '//self%name)
+  call trace_begin ('list_mod::queue_by_time ')
   !-----------------------------------------------------------------------------
   ! Lock the queue while inserting the task
   !-----------------------------------------------------------------------------
@@ -955,9 +955,17 @@ SUBROUTINE queue_by_time (self, this)
     else if (next%task%time > this%task%time) then
       this%next_time => next
       if (associated(prev)) then
+        if (io%verbose > 1) then
+          write (io_unit%log,*) 'task',this%task%id,' in ready queue after',prev%task%id,self%nq
+          flush (io_unit%log)
+        end if
         prev%next_time => this
       else
         self%queue => this
+        if (io%verbose > 1) then
+          write (io_unit%log,*) 'task',this%task%id,' at ready queue head',self%nq
+          flush (io_unit%log)
+        end if
       end if
       !$omp atomic
       self%nq = self%nq+1
@@ -969,8 +977,16 @@ SUBROUTINE queue_by_time (self, this)
   end do
   self%nq = self%nq+1
   if (associated(prev)) then
+    if (io%verbose > 1) then
+      write (io_unit%log,*) 'task',this%task%id,' in ready queue after',prev%task%id,self%nq
+      flush (io_unit%log)
+    end if
     prev%next_time => this
   else
+    if (io%verbose > 1) then
+      write (io_unit%log,*) 'task',this%task%id,' at ready queue head',self%nq
+      flush (io_unit%log)
+    end if
     self%queue => this
   end if
   nullify (this%next_time)

@@ -197,6 +197,7 @@ END SUBROUTINE write
 SUBROUTINE close (self)
   class (buffered_output_t):: self
   !-----------------------------------------------------------------------------
+  if (io%do_legacy) return
   call trace_begin('buffered_output_mod::close')
   close (io_unit%index)
   close (io_unit%dump)
