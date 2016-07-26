@@ -28,6 +28,9 @@ MODULE mhd_mod
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure
+    procedure:: cell_gas_pressure
+    procedure:: gas_temperature
+    procedure:: cell_gas_temperature
     procedure:: velocity_magnitude => void
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
@@ -332,6 +335,44 @@ FUNCTION gas_pressure (self) RESULT (pg)
     pg = self%d**self%gamma*exp(self%s/self%d*(self%gamma-1))
   end if
 END FUNCTION gas_pressure
+
+FUNCTION cell_gas_pressure(self, c) RESULT (pg)
+  class(mhd_t) :: self
+  real :: pg
+  integer :: c(3)
+  !---------------------------------------------------------------------
+  associate (d => self%mem(c(1),c(2),c(3), 1,self%it,1), &
+             s => self%mem(c(1),c(2),c(3), 2,self%it,1))
+  if (self%gamma==1.0) then
+    pg = d
+  else
+    pg = d**self%gamma*exp(s/d*(self%gamma-1))
+  end if
+  end associate
+END FUNCTION cell_gas_pressure
+
+!> =============================================================================
+!> temperature from ideal gas law, taking into account that the temperature is 
+!> normalised by k_B and mu (so that specific gas constant = 1)
+!> =============================================================================
+FUNCTION gas_temperature (self) RESULT (tmp)
+  class(mhd_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
+  !-----------------------------------------------------------------------------
+  associate (d => self%mem(:,:,:,  1,self%it,1))
+  tmp = gas_pressure(self)/d
+  end associate
+END FUNCTION gas_temperature
+
+FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
+  class(mhd_t):: self
+  real :: tmp
+  integer :: c(3)
+  !-----------------------------------------------------------------------------
+  associate (d => self%mem(c(1),c(2),c(3),  1,self%it,1))
+  tmp = cell_gas_pressure(self,c)/d
+  end associate
+END FUNCTION cell_gas_temperature
 
 !> =============================================================================
 SUBROUTINE log_density (self, v)
