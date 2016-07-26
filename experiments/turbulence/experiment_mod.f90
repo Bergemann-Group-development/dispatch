@@ -72,14 +72,13 @@ END SUBROUTINE init
 !> $(TOP)/timestep/$(UPD)/timestep_mod.f90 -- currently an Adams-Bashforth
 !> method.
 !> =============================================================================
-SUBROUTINE update (self, head)
+SUBROUTINE update (self)
   class(experiment_t):: self
-  class(link_t), pointer:: head
+  class(link_t), pointer:: link
   type(timestep_t):: timestep
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-  call self%output
-  call self%mhd_t%update (head)
+  call self%mhd_t%update
   call self%courant_condition
   if (io%verbose>2) &
     call self%check_density('before timestep')

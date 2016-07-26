@@ -52,6 +52,8 @@ MODULE task_mod
     character(len=4):: kind='task'
   contains
     procedure:: init
+    procedure:: dnload
+    procedure:: update => void
     procedure:: output
     procedure:: info
     procedure:: is_ahead_of
@@ -72,6 +74,13 @@ MODULE task_mod
 
   integer, save:: id=0
 CONTAINS
+
+!> =============================================================================
+!> Do-nothing handle
+!> =============================================================================
+SUBROUTINE dnload(self)
+  class(task_t):: self
+END SUBROUTINE
 
 !> =============================================================================
 SUBROUTINE void (self)
