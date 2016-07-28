@@ -35,7 +35,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(timestep_t):: self
-  integer, save:: verbose=0, time_order=0
+  integer, save:: verbose=0, time_order=-1
   namelist /timestep_params/ verbose, time_order
   !.............................................................................
   call trace_begin ('timestep_t%init', 1)
