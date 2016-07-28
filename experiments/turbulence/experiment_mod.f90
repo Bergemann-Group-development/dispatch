@@ -78,6 +78,10 @@ SUBROUTINE update (self)
   type(timestep_t):: timestep
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
+  if (first_time) then
+    first_time = .false.
+    call self%initial%cleanup
+  end if
   call self%mhd_t%update
   call self%courant_condition
   if (io%verbose>2) &

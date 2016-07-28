@@ -6,7 +6,6 @@ MODULE cartesian_mod
   USE bits_mod
   USE trace_mod
   USE task_mod
-  USE link_mod
   USE task_list_mod
   USE experiment_mod
   implicit none
@@ -30,8 +29,7 @@ SUBROUTINE init (self, label)
   type(task_list_t):: task_list
   integer:: patches_per_mpi(3)
   real:: position(3)
-  type(experiment_t), pointer:: patch
-  type(link_t) , pointer:: prev=>null(), link
+  class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
   integer:: i, j, k, i1, j1, k1, i2, j2, k2, rank, dim, nn(2,3)
   !
@@ -41,6 +39,7 @@ SUBROUTINE init (self, label)
   integer:: npatch, nvpatch, nbpatch
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
   logical:: face_nbors=.false.
+  integer:: thread
   namelist /box_params/ size, dims, mpi_dims, origin, face_nbors
   !.............................................................................
   call trace_begin ('cartesian_mod::init')
@@ -70,15 +69,13 @@ SUBROUTINE init (self, label)
   do dim=1,3
     nn(:,dim) = merge([-1,1],[0,0],self%dims(dim)>1)
   end do
-  !xomp parallel do private(i,j,k,i1,j1,k1,patch,task,rank)
   npatch=0; nvpatch=0; nbpatch=0
-  !$omp parallel
-  !$omp master
+  thread = 0
   do k=1,self%dims(3)
   do j=1,self%dims(2)
   do i=1,self%dims(1)
-    !$omp task
-    !$omp critical (raw_cr)
+   !$omp parallel default(shared)
+   if (omp%thread==thread) then
     !---------------------------------------------------------------------------
     ! Initialize each patch, via patch_t:init
     !---------------------------------------------------------------------------
@@ -144,23 +141,21 @@ SUBROUTINE init (self, label)
       task => patch
       call self%task_list%append (task)
     end if
-    !$omp end critical (raw_cr)
-    !$omp end task
+   end if
+   !$omp end parallel
+   thread = mod(thread+1,omp%nthreads)
   end do
   end do
   end do
-  !$omp end master
-  !$omp barrier
   write (io_unit%log,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
   flush (io%log_unit)
-  !$omp end parallel
   call trace_end
 contains
   integer function pos2rank (i, j, k)
   integer:: i, j, k
-    pos2rank = modulo((i-1),self%dims(1))/patches_per_mpi(1) + &
-               modulo((j-1),self%dims(2))/patches_per_mpi(2)*mpi_dims(1) + &
-               modulo((k-1),self%dims(3))/patches_per_mpi(3)*mpi_dims(1)*mpi_dims(2)
+    pos2rank = ((i-1)/patches_per_mpi(1)) + &
+               ((j-1)/patches_per_mpi(2))*mpi_dims(1) + &
+               ((k-1)/patches_per_mpi(3))*mpi_dims(1)*mpi_dims(2)
   end function
 END SUBROUTINE init
 

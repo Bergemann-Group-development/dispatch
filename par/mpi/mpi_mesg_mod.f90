@@ -48,9 +48,11 @@ MODULE mpi_mesg_mod
     procedure:: diagnostics
   end type
   type(mpi_mesg_t), public:: mpi_mesg
+  real, save:: delay_ms=3.0
   integer, save:: every_send=5                  ! how often to check send_list
   integer, save:: every_recv=1                  ! how often to check recv_list
   logical, save:: debug=.false.
+  logical, save:: wait=.false.
 CONTAINS
 
 !> =============================================================================
@@ -219,7 +221,7 @@ END SUBROUTINE count
 !> =============================================================================
 SUBROUTINE init (self)
   class(mpi_mesg_t):: self
-  namelist /mpi_mesg_params/ every_recv, every_send
+  namelist /mpi_mesg_params/ every_recv, every_send, delay_ms, wait
   integer:: iostat
   !.............................................................................
   if (self%initialized) return
@@ -247,9 +249,9 @@ END SUBROUTINE sent
 !> =============================================================================
 !> Check for new incoming messages
 !> =============================================================================
-SUBROUTINE check (self, wait)
+SUBROUTINE check (self, wait_req)
   class(mpi_mesg_t):: self
-  logical:: wait
+  logical:: wait_req
   integer:: stat(MPI_STATUS_SIZE)
   integer:: msg ,ierr, nbuf, req, nmsg, i, nr, nu
   logical:: flag
@@ -342,15 +344,16 @@ contains
       mesg%id = stat(MPI_TAG)
       mesg%sender = stat(MPI_SOURCE)
       mesg%nbuf = nbuf
-      if (wait) then
+      if (wait .and. wait_req) then
         call MPI_WAIT (req, stat, ierr)
         flag = .true.
       else
         call MPI_TEST (req, flag, stat, ierr)
       end if
       if (io%verbose>1) then
-        write (io_unit%log,*) &
-        'mpi_mesg::recv id, nbuf, fr =', mesg%id, mesg%nbuf, mesg%sender, flag
+        write (io_unit%log,'(a,i9,2i4,i4,3x,2l1)') &
+        'mpi_mesg::recv id, recv%n, unpk%n, fr =', &
+        mesg%id, mpi_mesg%recv_list%n, mpi_mesg%unpack_list%n, mesg%sender, flag, wait_req
         flush (io_unit%log)
       end if
       if (flag) then
@@ -385,7 +388,7 @@ contains
     do while (associated(mesg))
       i = i+1
       req = mesg%req
-      if (wait) then
+      if (wait .and. wait_req) then
         call MPI_WAIT (req, stat, ierr)
         flag = .true.
       else
@@ -469,7 +472,7 @@ SUBROUTINE delay (self, n)
   !-----------------------------------------------------------------------------
   wc = wallclock()
   write (io_unit%log,*) wc,'delay:',n
-  do while ((wallclock()-wc) < 3d-3/omp%nthreads)
+  do while ((wallclock()-wc) < 1e-3*delay_ms)
   end do
 END SUBROUTINE delay
 

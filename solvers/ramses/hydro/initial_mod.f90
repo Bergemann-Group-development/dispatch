@@ -3,6 +3,8 @@
 !> module, where the standard forcing we have been using in RAMSES is implemented
 !> =============================================================================
 MODULE initial_mod
+  USE mpi_mod
+  USE mpi_coords_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
@@ -20,9 +22,11 @@ MODULE initial_mod
     real(8):: time
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
-    procedure init
+    procedure:: init
+    procedure, nopass:: cleanup
   end type
   logical, save:: first_time=.true.
+  real, save, pointer, dimension(:,:,:,:):: buffer => null()
 CONTAINS
 
 !> =============================================================================
@@ -72,6 +76,11 @@ SUBROUTINE init (self)
    end select
    call trace_end
 END SUBROUTINE init
+
+!> =============================================================================
+SUBROUTINE cleanup
+  if (associated(buffer)) deallocate(buffer)
+END SUBROUTINE cleanup
 
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
@@ -262,10 +271,9 @@ FUNCTION raw (self, m) RESULT (ff)
   type(mesh_t):: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8):: ff
   !.............................................................................
-  real, save, pointer, dimension(:,:,:,:):: buffer
   integer:: n(3), i(3), iv
-  integer, save:: ncall=0, mcall=0
   integer, save:: mv=4
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t::raw')
   self%mhd = .false.
@@ -275,8 +283,9 @@ FUNCTION raw (self, m) RESULT (ff)
   ! we only use one thread per rank to initialize, computing also how many calls
   ! will be made, so the buffer can be deallocated when all patches are done
   !-----------------------------------------------------------------------------
-  if (mcall==0) then
-    n = nint(m%b/m%d)                                ! snapshot dimensions
+  if (first_time) then
+    first_time = .false.
+    n = nint(m%b/m%d)
     allocate (buffer(n(1),n(2),n(3),mv))
     open (io_unit%data, file='data/ramses256/t0.02.raw', form='unformatted', &
       access='direct', recl=4*product(n))
@@ -284,7 +293,6 @@ FUNCTION raw (self, m) RESULT (ff)
       read (io_unit%data, rec=iv) buffer(:,:,:,iv)
     end do
     close (io_unit%data)
-    mcall = product(n)/product(m%n)
   end if
   i = 1 + nint(m%p/m%d)-m%n/2                            ! index offsets
   ff = 0.0
@@ -302,11 +310,6 @@ FUNCTION raw (self, m) RESULT (ff)
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
-  ncall = ncall + 1
-  if (ncall == mcall) then
-    print *,mcall,' patches generated'
-    deallocate (buffer)
-  end if
   call trace_end
 END FUNCTION raw
 

@@ -411,8 +411,8 @@ SUBROUTINE check_mpi (self)
   !-----------------------------------------------------------------------------
   ! Check for new or completed incoming and outgoing messages
   !-----------------------------------------------------------------------------
-  wait = self%nq < 4
-  wait = .false.
+  wait = self%nq < 10
+  !wait = .false.
   call mpi_mesg%check (wait)
   !-----------------------------------------------------------------------------
   ! Get and unpack available message buffers
