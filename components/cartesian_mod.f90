@@ -153,9 +153,9 @@ SUBROUTINE init (self, label)
 contains
   integer function pos2rank (i, j, k)
   integer:: i, j, k
-    pos2rank = ((i-1)/patches_per_mpi(1)) + &
-               ((j-1)/patches_per_mpi(2))*mpi_dims(1) + &
-               ((k-1)/patches_per_mpi(3))*mpi_dims(1)*mpi_dims(2)
+    pos2rank = (modulo(i-1,self%dims(1))/patches_per_mpi(1)) + &
+               (modulo(j-1,self%dims(2))/patches_per_mpi(2))*mpi_dims(1) + &
+               (modulo(k-1,self%dims(3))/patches_per_mpi(3))*mpi_dims(1)*mpi_dims(2)
   end function
 END SUBROUTINE init
 

@@ -1,7 +1,10 @@
 ! $Id$
 
 &timer_params
- sec_per_report=20
+ sec_per_report=10
+/
+&task_list_params
+ max_stalled=1000
 /
 &mpi_mesg_params
  delay_ms=10.
