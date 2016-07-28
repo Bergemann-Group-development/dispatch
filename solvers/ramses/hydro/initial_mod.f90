@@ -3,8 +3,6 @@
 !> module, where the standard forcing we have been using in RAMSES is implemented
 !> =============================================================================
 MODULE initial_mod
-  USE mpi_mod
-  USE mpi_coords_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
