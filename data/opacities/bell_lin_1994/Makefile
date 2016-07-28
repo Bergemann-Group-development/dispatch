@@ -1,5 +1,5 @@
-OPAC_DIR = $(TOP)/data/opacities/$(OPACITY)
+OPAC_DIR = $(TOP)/data/opacities/$(OPACITIES)
 
 VPATH := $(VPATH):$(OPAC_DIR)
 
-opacity_mod.o:		trace_mod.o
+opacities_mod.o:		trace_mod.o scaling_mod.o

@@ -42,13 +42,15 @@ endif
 sinclude $(TOP)/io/Makefile
 #sinclude $(TOP)/operators/Makefile
 sinclude $(TOP)/solvers/$(SOLVER)/Makefile
+sinclude $(TOP)/solvers/rt_$(RT_SOLVER)/Makefile
 sinclude $(TOP)/components/Makefile
 sinclude $(TOP)/lists/Makefile
 sinclude $(TOP)/tasks/Makefile
 sinclude $(TOP)/meshes/$(MESH)/Makefile
+sinclude $(TOP)/microphysics/Makefile
 sinclude $(TOP)/patches/$(MESH)/Makefile
 sinclude $(TOP)/timestep/$(UPD)/Makefile
-sinclude $(TOP)/data/opacities/$(OPACITY)/Makefile
+sinclude $(TOP)/data/opacities/$(OPACITIES)/Makefile
 sinclude $(TOP)/particles/Makefile
 sinclude $(TOP)/states/Makefile
 
