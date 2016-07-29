@@ -108,7 +108,7 @@ SUBROUTINE init (self)
     first_time = .false.
     size = self%size
     if (io%verbose>1) &
-      print*, 'thread', omp_mythread(), ' reading namelist'
+      print*, 'thread', omp_mythread, ' reading namelist'
     rewind (io%input)
     read (io%input, pebble_params, iostat=iostat)
     if (io%master) write(*, pebble_params)
@@ -841,7 +841,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       if (io%verbose>2) nv = self%nv
       do iv=1,nv
         print '(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,z10,2i6)', &
-          'upd',self%id, self%level, iv, omp_mythread(), self%time, self%dtime, self%courant, &
+          'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%courant, &
           minval(self%mem(:,:,:,iv,self%it ,2)), &
           maxval(self%mem(:,:,:,iv,self%it ,2)), &
           minval(self%mem(:,:,:,iv,self%it ,1)), &

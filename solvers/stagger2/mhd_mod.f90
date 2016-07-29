@@ -13,6 +13,7 @@ MODULE mhd_mod
   USE patch_mod
   USE force_mod
   USE boundary_mod
+  USE download_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
@@ -24,6 +25,7 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: update
+    procedure:: dnload
     procedure:: output
     procedure:: log_density => void
     procedure:: log_pressure => void
@@ -69,6 +71,15 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
+!> =============================================================================
+SUBROUTINE dnload (self)
+  class(mhd_t):: self
+  call trace_begin ('experiment_mod::dnload')
+  call download%download_link (self%link, all_cells=.false.)
+  call trace_end
+END SUBROUTINE
+
+!> =============================================================================
 SUBROUTINE update (self)
   USE scalar_mod
   class(mhd_t):: self
@@ -89,6 +100,9 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%update',itimer=itimer)
+  call self%dnload
+  call self%output
+
   self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
   self%s => self%mem(:,:,:,  2,self%it,1); self%dsdt => self%mem(:,:,:,  2,self%it,2)
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
@@ -311,16 +325,20 @@ SUBROUTINE output (self, experiment_name)
   class(mhd_t):: self
   character(len=64):: experiment_name, filename
   optional:: experiment_name
+  logical:: exists
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
   !$omp critical (output_cr)
   call self%patch_t%output (experiment_name)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout-1
-  open (io%data_unit, file=trim(filename), form='formatted', status='old', &
-    position='append')
-  write (io%data_unit,'(8f10.4)') self%nu
-  close (io%data_unit)
+  inquire(file=filename, exist=exists)
+  if (exists) then
+    open (io%data_unit, file=trim(filename), form='formatted', status='old', &
+      position='append')
+    write (io%data_unit,'(8f10.4)') self%nu
+    close (io%data_unit)
+  end if
   !$omp end critical (output_cr)
 END SUBROUTINE output
 
