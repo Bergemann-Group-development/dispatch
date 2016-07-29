@@ -36,7 +36,6 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:,:):: fl      ! 3D fluxes
     real, pointer, dimension(:,:,:):: c, s        ! scratch
   contains
-    procedure:: dnload
     procedure:: init
     procedure:: update
     procedure:: log_density
@@ -49,15 +48,6 @@ MODULE mhd_mod
   character(len=16):: eqn='mhd'
   real(kind=8):: courant_number=0.2
 CONTAINS
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE dnload (self)
-  class(mhd_t):: self
-  call trace_begin ('experiment_mod::dnload')
-  call download%download_link (self%link, all_cells=.true.)
-  call trace_end
-END SUBROUTINE
 
 !> =============================================================================
 SUBROUTINE init (self)
@@ -83,13 +73,20 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
+!> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer:: n(3)
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::update')
-  call self%dnload
+  !----------------------------------------------------------------------------
+  ! Fill guard zones and checks whether to do output
+  !----------------------------------------------------------------------------
+  call download%download_link (self%link, all_cells=.true.)
   call self%output
+  !-----------------------------------------------------------------------------
+  ! Memory mapping and allocations
+  !-----------------------------------------------------------------------------
   self%uin => self%mem(:,:,:,:,self%it,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
   n = self%mesh%gn

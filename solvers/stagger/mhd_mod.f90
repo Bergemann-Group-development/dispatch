@@ -8,6 +8,7 @@ MODULE mhd_mod
   USE stagger_mod
   USE patch_mod
   USE force_mod
+  USE download_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
@@ -66,6 +67,11 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%update')
   if (first_time) call self%init
+  !----------------------------------------------------------------------------
+  ! Fill guard zones and checks whether to do output
+  !----------------------------------------------------------------------------
+  call download%download_link (self%link, all_cells=.true.)
+  call self%output
   !----------------------------------------------------------------------------
   ! Map variables to memory
   !----------------------------------------------------------------------------
