@@ -297,7 +297,7 @@ SUBROUTINE check_all (self)
   !.............................................................................
   call trace_begin('list_mod::check_all '//self%name)
   write (io_unit%log,*) 'check_all: phase 1'
-  !xomp critical (list_cr)
+  !$omp critical (list_cr)
   link => self%head
   do while (associated (link))                          ! keep going until end
     call self%check_ready (link, 1)                     ! link ready?
@@ -317,7 +317,7 @@ SUBROUTINE check_all (self)
       link => link%next
     end do
   end if
-  !xomp end critical (list_cr)
+  !$omp end critical (list_cr)
   if (.not.associated(self%queue)) then
     call self%check_oldest
   end if
@@ -336,6 +336,7 @@ SUBROUTINE check_oldest (self)
   told = 1d30
   toldv = told
   nullify (oldestv)
+  !$omp critical (list_cr)
   link => self%head
   do while (associated (link))                        ! keep going until end
     if (link%task%time < told) then
@@ -363,6 +364,7 @@ SUBROUTINE check_oldest (self)
     write (io_unit%log,*) 'the oldest task is not active: v, e =', &
       oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
   end if
+  !$omp end critical (list_cr)
   !
   write (io_unit%log,*) 'check_oldest: phase 3', associated(oldestv)
   if (associated(oldestv)) then
