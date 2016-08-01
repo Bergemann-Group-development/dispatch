@@ -1,14 +1,14 @@
 &io_params
- verbose=0
+ verbose=3
  do_trace=f
- do_debug=f
+ do_debug=t
  do_output=t
  do_legacy = t
 /
 
 &box_params
  size=1,1,1
- dims=3,3,3
+ dims=2,2,2
  origin=0.0,0.0,0.0
  !origin=-0.5,-0.5,-0.5
 /
@@ -17,7 +17,7 @@
  nt=5
  courant=0.2
  grace=0.1
- n=32,32,32
+ n=8,8,8
 /
 
 &rt_params

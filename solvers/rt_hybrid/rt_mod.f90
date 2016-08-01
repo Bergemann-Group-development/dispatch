@@ -15,7 +15,7 @@ MODULE rt_mod
     class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task 
     type (ray_list_t),   pointer :: my_rays
     ! common items
-    integer :: n_ray_dirs = 3
+    integer :: n_ray_dirs = 3, rt_freq = 1
     integer :: bundle_ID, dir_ID, rt_type, li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment 
     real(kind=8) :: cell_ds(3)
@@ -38,6 +38,7 @@ MODULE rt_mod
     procedure :: pos2ray
     procedure :: ray2pos
     procedure :: the_right_wall
+    procedure :: update_time
   end type
 !-----------------------------------------------------------------------
   CONTAINS
@@ -387,6 +388,19 @@ FUNCTION point_in_cell (pt, cell, ds) result (out)
   ui = cell + 0.5*ds
   if ((all(li < pt)).and.(all(ui > pt))) out = .true.
 END FUNCTION point_in_cell
+
+SUBROUTINE update_time(self)
+  class(rt_t) :: self
+!-----------------------------------------------------------------------  
+  if (self%time < 0) then
+    self%time  = self%mhd_patch%time
+    self%dtime = self%mhd_patch%dtime * self%rt_freq
+  else   
+    self%dtime = self%mhd_patch%dtime * self%rt_freq
+    self%time  = self%time + self%dtime
+  end if
+
+END SUBROUTINE update_time
 
 
 END MODULE rt_mod
