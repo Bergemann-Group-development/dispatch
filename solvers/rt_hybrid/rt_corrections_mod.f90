@@ -10,11 +10,11 @@ MODULE rt_corrections_mod
   implicit none
   private
 !-----------------------------------------------------------------------
-  type :: dwnstr_t
-    type (dwnstr_t), pointer :: head => null()
-    type (dwnstr_t), pointer :: next => null()
-    type (dwnstr_t), pointer :: tail => null()
-    type (link_t)  , pointer :: link => null()
+  type :: rt_stream_t
+    type (rt_stream_t), pointer :: head => null()
+    type (rt_stream_t), pointer :: next => null()
+    type (rt_stream_t), pointer :: tail => null()
+    type (link_t)     , pointer :: link => null()
     integer, dimension(:), pointer :: ray, pt
   end type
 
@@ -22,7 +22,8 @@ MODULE rt_corrections_mod
   type, extends(rt_t), public :: rt_correction_t
     type (rt_data_t),     pointer :: my_rt_data     => null()
     type (rt_internal_t), pointer :: my_rt_internal => null()
-    type (dwnstr_t),      pointer :: downstream => null()
+    type (rt_stream_t),   pointer :: send_list => null()
+    type (rt_stream_t),   pointer :: recv_list => null()
     integer :: solver
   contains
     procedure :: init => init_rt_correction

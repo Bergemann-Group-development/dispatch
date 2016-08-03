@@ -80,7 +80,7 @@ SUBROUTINE update_rt_data (self)
   allocate (temp(size(self%source,1),size(self%source,2),size(self%source,3)))
   associate  (rho => self%mhd_patch%mem(:,:,:,1,self%it,1), &
                 l => self%li, u=>self%ui) 
-  
+  print *,'n_nbors from data:', self%n_nbors
   temp = self%mhd_patch%gas_temperature()         
   self%opacity = microphysics%opacity%solve   (rho, temp, microphysics%n_wl_bins)  !FIXME : should pass wl_bins with info
   self%source  = microphysics%source_fn%solve (     temp, microphysics%wl_bins)

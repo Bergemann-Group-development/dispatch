@@ -35,12 +35,6 @@ FUNCTION rt_shadow_opacity (self, rho, temp, nwb) RESULT (kappa)
   !.....................................................................
   call trace_begin('opacity_mod::rt_shadow_opacity',3)
   
-  if (io%verbose>2) then
-    if (any(isnan(rho)).or.any(isnan(temp))) then
-      error stop "rt_shadow_opac%solve: rho or temp has NaN"
-    end if
-  end if
-
   kappa(:,:,:,1) = ((temp(:,:,:)*self%t0)**(-3.5)*(rho(:,:,:)*self%rho0)**2)
   
   if (nwb>1) then
@@ -48,7 +42,18 @@ FUNCTION rt_shadow_opacity (self, rho, temp, nwb) RESULT (kappa)
      kappa(:,:,:,wl) = kappa(:,:,:,1)
    end do
   end if
-
+  
+  if (io%verbose>2) then
+    if (any(isnan(rho)).or.any(isnan(temp))) then
+      error stop "rt_shadow_opac%solve: rho or temp has NaN"
+    end if
+    if (any(isnan(kappa))) then
+      print *,'=================== kappa ================'
+      print *,kappa
+      error stop "rt_shadow_opacity%check: kappa has NaN"
+    end if
+  end if
+  
   call trace_end
 END FUNCTION rt_shadow_opacity
 

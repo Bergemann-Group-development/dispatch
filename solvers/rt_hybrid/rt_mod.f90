@@ -15,14 +15,14 @@ MODULE rt_mod
     class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task 
     type (ray_list_t),   pointer :: my_rays
     ! common items
+    real (kind=8), dimension(:,:,:), pointer :: intensity => null()  ! (wl_bin, point, ray), to communicate the corrections downstream
+    real (kind=8), dimension(:,:),   pointer :: I_in => null()       ! (wl_bin, ray) incoming intensity. 
+    real (kind=8), dimension(:),   pointer :: I_in_time => null()    ! (ray) incoming intensity. 
     integer :: n_ray_dirs = 3, rt_freq = 1
     integer :: bundle_ID, dir_ID, rt_type, li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment 
     real(kind=8) :: cell_ds(3)
     real(8):: offset(3)                 ! this is used to compute indices, locations
-    real (kind=8), dimension(:,:,:), pointer :: intensity => null()  ! (wl_bin, point, ray), to communicate the corrections
-    real (kind=8), dimension(:,:),   pointer :: I_in => null()       ! (wl_bin, ray) incoming intensity. 
-    real (kind=8), dimension(:),     pointer :: I_in_time  => null() ! FIXME: test if incoming intensity is from time.geq.self%time
   contains
     procedure :: find_upstream                                             
     procedure :: init => init_rt

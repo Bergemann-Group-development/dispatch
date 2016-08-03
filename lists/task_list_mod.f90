@@ -72,6 +72,10 @@ SUBROUTINE init (self, name)
     if (io%master) write (*,task_list_params)
   end if
   call load_balance%init
+  !-----------------------------------------------------------------------------
+  ! Construct neighbor lists used to perform checks for ready status
+  !-----------------------------------------------------------------------------
+  call self%init_all_nbors
   call trace_end
 END SUBROUTINE init
 
@@ -83,10 +87,6 @@ SUBROUTINE execute (self)
   USE omp_timer_mod
   class(task_list_t):: self
   class(link_t), pointer:: link, rem
-  !-----------------------------------------------------------------------------
-  ! Construct neighbor lists used to perform checks for ready status
-  !-----------------------------------------------------------------------------
-  call self%init_all_nbors
   !-----------------------------------------------------------------------------
   ! Set virtual and boundary bits
   !-----------------------------------------------------------------------------
