@@ -109,7 +109,10 @@ SUBROUTINE initial_conditions (self, patch)
       end do
     end do
   end do
-
+  print *,'self%d0', self%d0
+  print *,'self%t0', self%t0
+  print *,'from initial conds'
+  print *,f(:,:,:,2)
   nullify (mx, my, mz, f)
   call trace_end
 END SUBROUTINE initial_conditions

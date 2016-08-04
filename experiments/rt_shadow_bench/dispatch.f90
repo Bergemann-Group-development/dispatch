@@ -14,7 +14,7 @@ PROGRAM dispatch
   call mpi%init
   call io%init('shadow benchmark')
   call cartesian%init                   ! Initialize the patch list and patches
-  call rt_setup (cartesian%task_list)           ! Setup the RT solver
+  !call rt_setup (cartesian%task_list)           ! Setup the RT solver
   call cartesian%task_list%execute      ! update the list = update member patches
   call mpi%end
 !> =============================================================================

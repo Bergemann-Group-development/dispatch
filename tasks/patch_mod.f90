@@ -215,8 +215,13 @@ SUBROUTINE check_error (self, a, label, error)
   integer, save:: nerror=4
   !-----------------------------------------------------------------------------
   if (.not.io%do_debug) return
-  l = self%mesh%lb
-  u = self%mesh%ub
+  if (self%guard_zones) then
+    l = self%mesh%lb
+    u = self%mesh%ub
+  else
+    l = self%mesh%li
+    u = self%mesh%ui
+  end if
   n = u-l+1
   allocate (b(n(1),n(2),n(3)))
   do iy=l(2),u(2)

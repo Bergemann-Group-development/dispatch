@@ -48,6 +48,7 @@ class Patch(Task):
 
         # line 1: time, pos(1:3), ds(1:3), vel(1:3), origin(1:3), llc(1:3), cent(1:3)
         line = fp.readline().split()
+        print len(line)
         self.time = float(line[0])
         self.pos  = (float(line[1]),float(line[2]),float(line[3]))
         self.dx = (float(line[4]),float(line[5]),float(line[6]))
