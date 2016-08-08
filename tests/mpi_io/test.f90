@@ -49,8 +49,8 @@ PROGRAM test_mpi_io
   call io_f%close
   call io_h%close
 
-  call io_f%openr ('data/test.dat')
-  call io_h%openr ('data/test.dat')
+  call io_f%openr ('data/f.dat')
+  call io_h%openr ('data/h.dat')
   do rec=1,nrec
     call io_f%read (f, rec)
     call io_h%read (h, rec)
@@ -58,4 +58,5 @@ PROGRAM test_mpi_io
     if (.not.io_h%test()) call io_h%wait
   end do
   call io_f%close
+  call io_h%close
 END PROGRAM

@@ -1,17 +1,15 @@
 !> *****************************************************************************
-!> Module for handling non-blocking MPI parallel I/O to a single file.  We have
-!> no interest in making this general, since we do not plan to write to several
-!> files at the same time.  The module is initialized by specifying the size
+!> Module for handling non-blocking MPI parallel I/O to a single file. The module
+!> is initialized by specifying the size (which can be 1- or 3-dimensional)
 !> and relative position of the local chunk relative to the whole file. A chunk
 !> could be just a patch, or a single chunk of data per rank (but this would
 !> require that a rank held a cubic region, which would be too restrictive).
 !>
-!> As is, this module is oriented towards handling unigrid files (e.g. the ones
-!> used by the original STAGGER code), but the method can be generalized to
-!> handle any collection of patches, by using the patch%id number to map each
-!> patch into the file.  If the patch sizes are fixed, this is a unique mapping,
-!> and if each snapshot is written into a separate file this is also sufficiently
-!> general.
+!> The module can be used to handle any collection of patches, by using the
+!> patch%id number to map each patch into the file.  If the patch sizes are fixed,
+!> this is a unique mapping, and if each snapshot is written into a separate file
+!> this is also sufficiently general.  The header part of the file may be written
+!> to a separate file, as demonstrated in tests/mpi_io/test.f90.
 !> *****************************************************************************
 MODULE mpi_io_mod
   USE mpi_mod, only: mp=>mpi
@@ -20,9 +18,6 @@ MODULE mpi_io_mod
   implicit none
   !include 'mpif.h'
   private
-!  interface write
-!!    module procedure write1, write3
-!  end interface
   type, public:: mpi_io_t
     integer:: n
     integer:: gsize(3)
@@ -62,7 +57,6 @@ SUBROUTINE init (self, gsize, lsize, start)
   integer:: n
   !-----------------------------------------------------------------------------
   n = size(gsize,1)
-  print*,'mk',n
   self%n = n
   self%gsize(1:n) = gsize
   self%lsize(1:n) = lsize
@@ -95,7 +89,6 @@ SUBROUTINE open (self, filename, mode)
   call self%assert ('mpi_io_mod::open MPI_FILE_OPEN')
   !
   associate (n=>self%n)
-  print*,n
   CALL MPI_TYPE_CREATE_SUBARRAY (n, self%gsize(1:n), self%lsize(1:n), &
     self%start(1:n), MPI_ORDER_FORTRAN, MPI_REAL, self%filetype, self%err)
   end associate
