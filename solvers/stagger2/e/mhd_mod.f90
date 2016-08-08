@@ -19,7 +19,7 @@ MODULE mhd_mod
   type, extends(patch_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
-    real:: nu(6)
+    real:: nu(6), csound
     logical:: mhd=.true.
     type(force_t):: force
   contains
@@ -45,10 +45,10 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0
   integer:: i
   logical, save:: first_time=.true.
-  namelist /mhd_params/ nu, gamma
+  namelist /mhd_params/ nu, gamma, csound
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
@@ -62,6 +62,7 @@ SUBROUTINE init (self)
   !$omp end critical (input_cr)
   self%nu = nu
   self%gamma = gamma
+  self%csound = csound
   do i=1,3
     self%mesh(i)%h(2+i) = -0.5
     self%mesh(i)%h(5+i) = -0.5
@@ -153,7 +154,13 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ds = self%mesh%d
   dx = minval(ds)                                       ! smallest {dx,dy,dz}
-  du = -dx*div(ds,U)                                    ! convergence rate
+  du = div(ds,U)                                        ! save div(U) for now
+  if (self%gamma /= 1.0) then                           ! unless isothermal
+    dedt = -pg*du                                       ! -Pg*div(U) term
+  else
+    dedt = 0.0
+  end if
+  du = -dx*du                                           ! convergence rate
   du = max(du,0.0)                                      ! positive part
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -218,7 +225,7 @@ SUBROUTINE update (self)
   fm = p+fd                                             ! mass flux
   dddt = -div(ds,fm)                                    ! density derivative
   self%u_max = max(self%u_max,-0.4*dx*self%fminval(dddt/d))
-  if (io%verbose>1) print*,'u_max',self%u_max
+  if (io%verbose>2) print*,'u_max',self%u_max
   !self%u_max = max(self%u_max,-dx*self%fminval(dddt/d))
   !print*,'u_max',dx*self%fmaxval(div(ds,p)/d)
   !-----------------------------------------------------------------------------
@@ -226,12 +233,10 @@ SUBROUTINE update (self)
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
   ! plus a contribution proportional to the gradient of specific entropy ss.
   !-----------------------------------------------------------------------------
-  if (self%gamma==1.0) then
-    dedt = 0.0
-  else
+  if (self%gamma /= 1.0) then
     ee = e/d
     fm = fm*down(ee) - (self%nu(5)*dd*down(du))*ddown(ds,ee)
-    dedt = -div(ds,fm) + Q
+    dedt = dedt - div(ds,fm) + Q
   end if
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
@@ -351,23 +356,23 @@ FUNCTION gas_pressure (self) RESULT (pg)
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
   if (self%gamma==1.0) then
-    pg = self%d
+    pg = self%d*self%csound**2
   else
-    pg = self%d**(self%gamma-1.0)*self%e
+    pg = self%e*(self%gamma-1.0)
   end if
 END FUNCTION gas_pressure
 
 FUNCTION cell_gas_pressure(self, c) RESULT (pg)
   class(mhd_t) :: self
-  real :: pg
   integer :: c(3)
+  real :: pg(c(1),c(2),c(3))
   !---------------------------------------------------------------------
   associate (d => self%mem(c(1),c(2),c(3), 1,self%it,1), &
-             s => self%mem(c(1),c(2),c(3), 2,self%it,1))
+             e => self%mem(c(1),c(2),c(3), 2,self%it,1))
   if (self%gamma==1.0) then
-    pg = d
+    pg = d*self%csound**2
   else
-    pg = d**self%gamma*exp(s/d*(self%gamma-1))
+    pg = self%e*(self%gamma-1.0)
   end if
   end associate
 END FUNCTION cell_gas_pressure
@@ -385,10 +390,12 @@ FUNCTION gas_temperature (self) RESULT (tmp)
   end associate
 END FUNCTION gas_temperature
 
+!> =============================================================================
+!> =============================================================================
 FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
   class(mhd_t):: self
-  real :: tmp
   integer :: c(3)
+  real :: tmp(c(1),c(2),c(3))
   !-----------------------------------------------------------------------------
   associate (d => self%mem(c(1),c(2),c(3),  1,self%it,1))
   tmp = cell_gas_pressure(self,c)/d
