@@ -1,5 +1,5 @@
 # Append to VPATH
-VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)
+VPATH := $(VPATH):$(TOP)/solvers/stagger2
 
 # Dependencies
 scalar_mod.o            : io_mod.o trace_mod.o
