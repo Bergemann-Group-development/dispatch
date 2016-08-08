@@ -24,6 +24,7 @@ MODULE initial_mod
     procedure, nopass:: cleanup
   end type
   logical, save:: first_time=.true.
+  real, save, pointer, dimension(:,:,:,:):: buffer => null()
 CONTAINS
 
 !> =============================================================================
@@ -65,6 +66,8 @@ SUBROUTINE init (self)
      self%selected => single_advection
    case ('exa256')
      self%selected => exa256
+   case ('raw')
+     self%selected => raw
    case default
      print*,'UNKNOWN INITIAL CONDITION TYPE'
      stop
@@ -74,6 +77,7 @@ END SUBROUTINE init
 
 !> =============================================================================
 SUBROUTINE cleanup
+  if (associated(buffer)) deallocate(buffer)
 END SUBROUTINE cleanup
 
 !> =============================================================================
@@ -227,5 +231,56 @@ FUNCTION exa256 (self, m) RESULT (ff)
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
   call trace_end
 END FUNCTION exa256
+
+!> =============================================================================
+!> Initialize from a raw data file
+!> =============================================================================
+FUNCTION raw (self, m) RESULT (ff)
+  USE io_unit_mod
+  class(initial_t):: self
+  type(mesh_t):: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8):: ff
+  !.............................................................................
+  integer:: n(3), i(3), iv
+  integer, save:: mv=4
+  logical, save:: first_time=.true.
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t::raw')
+  self%mhd = .false.
+  self%time = 0.02
+  !-----------------------------------------------------------------------------
+  ! At first call, allocate a buffer and read the entire file -- this is OK since
+  ! we only use one thread per rank to initialize, computing also how many calls
+  ! will be made, so the buffer can be deallocated when all patches are done
+  !-----------------------------------------------------------------------------
+  if (first_time) then
+    first_time = .false.
+    n = nint(m%b/m%d)
+    allocate (buffer(n(1),n(2),n(3),mv))
+    open (io_unit%data, file='data/ramses256/t0.02.raw', form='unformatted', &
+      access='direct', recl=4*product(n))
+    do iv=1,mv
+      read (io_unit%data, rec=iv) buffer(:,:,:,iv)
+    end do
+    close (io_unit%data)
+  end if
+  i = 1 + nint(m%p/m%d)-m%n/2                            ! index offsets
+  ff = 0.0
+  do iv=1,mv
+    ff(m(1)%li:m(1)%ui, &
+       m(2)%li:m(2)%ui, &
+       m(3)%li:m(3)%ui,iv) = buffer(i(1):i(1)+m(1)%n-1, &
+                                    i(2):i(2)+m(2)%n-1, &
+                                    i(3):i(3)+m(3)%n-1,iv)
+  end do
+  do iv=2,4
+    ff(:,:,:,iv) = ff(:,:,:,1)*ff(:,:,:,iv)
+  end do
+  if (io%verbose > 2) &
+    write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
+      minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
+      maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
+  call trace_end
+END FUNCTION raw
 
 END MODULE
