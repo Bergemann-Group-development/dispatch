@@ -20,7 +20,11 @@ MODULE mpi_io_mod
   implicit none
   !include 'mpif.h'
   private
+!  interface write
+!!    module procedure write1, write3
+!  end interface
   type, public:: mpi_io_t
+    integer:: n
     integer:: gsize(3)
     integer:: lsize(3)
     integer:: start(3)
@@ -37,8 +41,10 @@ MODULE mpi_io_mod
     procedure:: openw
     procedure:: openr
     procedure:: close
-    procedure:: write
-    procedure:: read
+    generic, public:: write => write1, write3
+    procedure, private::       write1, write3
+    generic, public:: read => read1, read3
+    procedure, private::      read1, read3
     procedure:: test
     procedure:: wait
     procedure:: assert
@@ -52,12 +58,16 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self, gsize, lsize, start)
   class(mpi_io_t):: self
-  integer, dimension(3):: gsize, lsize, start
+  integer, dimension(:):: gsize, lsize, start
+  integer:: n
   !-----------------------------------------------------------------------------
-  self%gsize = gsize
-  self%lsize = lsize
-  self%start = start
-  self%count = product(self%lsize)
+  n = size(gsize,1)
+  print*,'mk',n
+  self%n = n
+  self%gsize(1:n) = gsize
+  self%lsize(1:n) = lsize
+  self%start(1:n) = start
+  self%count = product(lsize)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -67,7 +77,8 @@ END SUBROUTINE init
 SUBROUTINE open (self, filename, mode)
   class(mpi_io_t):: self
   character(len=*) filename
-  integer mode
+  integer:: mode
+  integer:: n
   !-----------------------------------------------------------------------------
   self%filename = filename
   CALL MPI_FILE_OPEN (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, &
@@ -83,8 +94,11 @@ SUBROUTINE open (self, filename, mode)
   endif
   call self%assert ('mpi_io_mod::open MPI_FILE_OPEN')
   !
-  CALL MPI_TYPE_CREATE_SUBARRAY (3, self%gsize, self%lsize, self%start, &
-    MPI_ORDER_FORTRAN, MPI_REAL, self%filetype, self%err)
+  associate (n=>self%n)
+  print*,n
+  CALL MPI_TYPE_CREATE_SUBARRAY (n, self%gsize(1:n), self%lsize(1:n), &
+    self%start(1:n), MPI_ORDER_FORTRAN, MPI_REAL, self%filetype, self%err)
+  end associate
   call self%assert ('mpi_io_mod::open MPI_TYPE_CREATE_SUBARRAY')
   !
   CALL MPI_TYPE_COMMIT (self%filetype, self%err)
@@ -134,7 +148,7 @@ END SUBROUTINE close
 !> =============================================================================
 !> Write a chunk (self%lsize) out to the open file
 !> =============================================================================
-SUBROUTINE write (self, f, rec)
+SUBROUTINE write3 (self, f, rec)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:):: f
   integer:: rec
@@ -152,12 +166,35 @@ SUBROUTINE write (self, f, rec)
     print fmt,'mpi_io_mod::write:', &
       mp%rank, self%count, rec, pos, f(3:5,3,3)
   end if
-END SUBROUTINE write
+END SUBROUTINE write3
+
+!> =============================================================================
+!> Write a chunk (self%lsize) out to the open file
+!> =============================================================================
+SUBROUTINE write1 (self, f, rec)
+  class(mpi_io_t):: self
+  real(kind=4), dimension(:):: f
+  integer:: rec
+  integer(kind=MPI_OFFSET_KIND):: pos
+  !-----------------------------------------------------------------------------
+  pos = 4*(rec-1)*product(self%gsize)
+  CALL MPI_FILE_SET_VIEW (self%handle, pos, MPI_REAL, self%filetype, 'native', &
+                          MPI_INFO_NULL, self%err)
+  call self%assert ('mpi_io_mod::write MPI_FILE_SET_VIEW')
+  !
+  CALL MPI_FILE_IWRITE (self%handle, f, self%count, MPI_REAL, self%req, self%err)
+  call self%assert ('mpi_io_mod::write MPI_FILE_IWRITE')
+  !
+  if (io%verbose > 0 .and. io%master) then
+    print fmt,'mpi_io_mod::write:', &
+      mp%rank, self%count, rec, pos, f(3:5)
+  end if
+END SUBROUTINE write1
 
 !> =============================================================================
 !> Read a chunk (self%lsize) from the open file
 !> =============================================================================
-SUBROUTINE read (self, f, rec)
+SUBROUTINE read3 (self, f, rec)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:):: f
   integer rec
@@ -174,7 +211,29 @@ SUBROUTINE read (self, f, rec)
   if (io%verbose > 0 .and. io%master) then
     print fmt,'mpi_io_mod::read:', mp%rank, self%count, rec, pos, f(3:5,3,3)
   end if
-END SUBROUTINE read
+END SUBROUTINE read3
+
+!> =============================================================================
+!> Read a chunk (self%lsize) from the open file
+!> =============================================================================
+SUBROUTINE read1 (self, f, rec)
+  class(mpi_io_t):: self
+  real(kind=4), dimension(:):: f
+  integer rec
+  integer(kind=MPI_OFFSET_KIND):: pos
+  !-----------------------------------------------------------------------------
+  pos = 4*(rec-1)*product(self%gsize)
+  CALL MPI_FILE_SET_VIEW (self%handle, pos, MPI_REAL, self%filetype, 'native', &
+                          MPI_INFO_NULL, self%err)
+  call self%assert ('mpi_io_mod::read MPI_FILE_SET_VIEW')
+  !
+  CALL MPI_FILE_IREAD (self%handle, f , self%count, MPI_REAL, self%req, self%err)
+  call self%assert ('mpi_io_mod::read MPI_FILE_IREAD')
+  !
+  if (io%verbose > 0 .and. io%master) then
+    print fmt,'mpi_io_mod::read:', mp%rank, self%count, rec, pos, f(3:5)
+  end if
+END SUBROUTINE read1
 
 !> =============================================================================
 !> Test if an I/O operation is complete
