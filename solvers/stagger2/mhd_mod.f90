@@ -217,7 +217,7 @@ SUBROUTINE update (self)
   fm = p+fd                                             ! mass flux
   dddt = -div(ds,fm)                                    ! density derivative
   self%u_max = max(self%u_max,-0.4*dx*self%fminval(dddt/d))
-  if (io%verbose>1) print*,'u_max',self%u_max
+  if (io%verbose>2) print*,'u_max',self%u_max
   !self%u_max = max(self%u_max,-dx*self%fminval(dddt/d))
   !print*,'u_max',dx*self%fmaxval(div(ds,p)/d)
   !-----------------------------------------------------------------------------
