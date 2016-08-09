@@ -116,7 +116,7 @@ SUBROUTINE toc_r (label, n)
     trim(time_str(wt/f/max(n,1.))), '/upd,', n, 'updates'
   1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a)
   flush (io_unit%log)
-  if (mpi%rank==0) &
+  if (mpi%rank==0.and.omp%thread==0) &
     print 1, label, trim(time_str(wt)), &
       trim(time_str(wt/f/max(n,1.))), '/upd,', n, 'updates'
   flush (6)

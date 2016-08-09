@@ -83,12 +83,11 @@ SUBROUTINE init (self, name)
     end if
     open (self%input, file=self%inputname, form='formatted', status='old')
     rewind (io_unit%input)
-    read (io_unit%input, io_params)
+    read (io_unit%input, io_params, iostat=iostat)
     !---------------------------------------------------------------------------
     ! Open an MPI rank--and possible OMP thread--specific log file
     !---------------------------------------------------------------------------
     call system ('mkdir -p '//trim(self%outputname))
-    !iread (io_unit%input, io_params,iostat=iostat)
     if (self%master.and.first_time) write (*,io_params)
     !$omp parallel
     !$omp critical

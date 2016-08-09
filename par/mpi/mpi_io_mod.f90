@@ -13,6 +13,7 @@
 !> *****************************************************************************
 MODULE mpi_io_mod
   USE mpi_mod, only: mp=>mpi
+  USE omp_mod
   USE io_mod
   USE mpi
   implicit none
@@ -20,9 +21,9 @@ MODULE mpi_io_mod
   private
   type, public:: mpi_io_t
     integer:: n
-    integer:: gsize(3)
-    integer:: lsize(3)
-    integer:: start(3)
+    integer:: gsize(3) = 1
+    integer:: lsize(3) = 1
+    integer:: start(3) = 0
     integer:: handle
     integer:: filetype
     integer:: req
@@ -150,14 +151,17 @@ SUBROUTINE write3 (self, f, rec)
   pos = 4*(rec-1)*product(self%gsize)
   CALL MPI_FILE_SET_VIEW (self%handle, pos, MPI_REAL, self%filetype, 'native', &
                           MPI_INFO_NULL, self%err)
-  call self%assert ('mpi_io_mod::write MPI_FILE_SET_VIEW')
+  call self%assert ('mpi_io_mod::write3 MPI_FILE_SET_VIEW '//trim(self%filename))
   !
   CALL MPI_FILE_IWRITE (self%handle, f, self%count, MPI_REAL, self%req, self%err)
-  call self%assert ('mpi_io_mod::write MPI_FILE_IWRITE')
+  call self%assert ('mpi_io_mod::write3 MPI_FILE_IWRITE '//trim(self%filename))
   !
-  if (io%verbose > 0 .and. io%master) then
-    print fmt,'mpi_io_mod::write:', &
+  if (io%verbose==1 .and. io%master) then
+    print fmt,'mpi_io_mod::write: '//trim(self%filename), &
       mp%rank, self%count, rec, pos, f(3:5,3,3)
+  else if (io%verbose>1) then
+    print fmt,'mpi_io_mod::read: '//trim(self%filename), &
+      mp%rank, omp%thread, rec, pos, f(3:5,3,3)
   end if
 END SUBROUTINE write3
 
@@ -170,17 +174,20 @@ SUBROUTINE write1 (self, f, rec)
   integer:: rec
   integer(kind=MPI_OFFSET_KIND):: pos
   !-----------------------------------------------------------------------------
-  pos = 4*(rec-1)*product(self%gsize)
+  pos = 4*(rec-1)*self%gsize(1)
   CALL MPI_FILE_SET_VIEW (self%handle, pos, MPI_REAL, self%filetype, 'native', &
                           MPI_INFO_NULL, self%err)
-  call self%assert ('mpi_io_mod::write MPI_FILE_SET_VIEW')
+  call self%assert ('mpi_io_mod::write1 MPI_FILE_SET_VIEW '//trim(self%filename))
   !
   CALL MPI_FILE_IWRITE (self%handle, f, self%count, MPI_REAL, self%req, self%err)
-  call self%assert ('mpi_io_mod::write MPI_FILE_IWRITE')
+  call self%assert ('mpi_io_mod::write1 MPI_FILE_IWRITE '//trim(self%filename))
   !
-  if (io%verbose > 0 .and. io%master) then
-    print fmt,'mpi_io_mod::write:', &
+  if (io%verbose==1 .and. io%master) then
+    print fmt,'mpi_io_mod::write: '//trim(self%filename), &
       mp%rank, self%count, rec, pos, f(3:5)
+  else if (io%verbose>1) then
+    print fmt,'mpi_io_mod::read: '//trim(self%filename), &
+      mp%rank, omp%thread, rec, pos, f(3:5)
   end if
 END SUBROUTINE write1
 
@@ -196,13 +203,17 @@ SUBROUTINE read3 (self, f, rec)
   pos = 4*(rec-1)*product(self%gsize)
   CALL MPI_FILE_SET_VIEW (self%handle, pos, MPI_REAL, self%filetype, 'native', &
                           MPI_INFO_NULL, self%err)
-  call self%assert ('mpi_io_mod::read MPI_FILE_SET_VIEW')
+  call self%assert ('mpi_io_mod::read3 MPI_FILE_SET_VIEW '//trim(self%filename))
   !
   CALL MPI_FILE_IREAD (self%handle, f , self%count, MPI_REAL, self%req, self%err)
-  call self%assert ('mpi_io_mod::read MPI_FILE_IREAD')
+  call self%assert ('mpi_io_mod::read3 MPI_FILE_IREAD '//trim(self%filename))
   !
-  if (io%verbose > 0 .and. io%master) then
-    print fmt,'mpi_io_mod::read:', mp%rank, self%count, rec, pos, f(3:5,3,3)
+  if (io%verbose==1 .and. io%master) then
+    print fmt,'mpi_io_mod::read: '//trim(self%filename), &
+      mp%rank, self%count, rec, pos, f(3:5,3,3)
+  else if (io%verbose>1) then
+    print fmt,'mpi_io_mod::read: '//trim(self%filename), &
+      mp%rank, omp%thread, rec, pos, f(3:5,3,3)
   end if
 END SUBROUTINE read3
 
@@ -215,16 +226,20 @@ SUBROUTINE read1 (self, f, rec)
   integer rec
   integer(kind=MPI_OFFSET_KIND):: pos
   !-----------------------------------------------------------------------------
-  pos = 4*(rec-1)*product(self%gsize)
+  pos = 4*(rec-1)*self%gsize(1)
   CALL MPI_FILE_SET_VIEW (self%handle, pos, MPI_REAL, self%filetype, 'native', &
                           MPI_INFO_NULL, self%err)
-  call self%assert ('mpi_io_mod::read MPI_FILE_SET_VIEW')
+  call self%assert ('mpi_io_mod::read1 MPI_FILE_SET_VIEW '//trim(self%filename))
   !
   CALL MPI_FILE_IREAD (self%handle, f , self%count, MPI_REAL, self%req, self%err)
-  call self%assert ('mpi_io_mod::read MPI_FILE_IREAD')
+  call self%assert ('mpi_io_mod::read1 MPI_FILE_IREAD '//trim(self%filename))
   !
-  if (io%verbose > 0 .and. io%master) then
-    print fmt,'mpi_io_mod::read:', mp%rank, self%count, rec, pos, f(3:5)
+  if (io%verbose==1 .and. io%master) then
+    print fmt,'mpi_io_mod::read: '//trim(self%filename), &
+      mp%rank, self%count, rec, pos, f(3:5)
+  else if (io%verbose>1) then
+    print fmt,'mpi_io_mod::read: '//trim(self%filename), &
+      mp%rank, omp%thread, rec, pos, f(3:5)
   end if
 END SUBROUTINE read1
 
