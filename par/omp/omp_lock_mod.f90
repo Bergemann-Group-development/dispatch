@@ -18,8 +18,9 @@ MODULE omp_lock_mod
     procedure:: unset
     procedure:: destroy
   end type
+  type(lock_t), public:: lock
   integer:: id=0
-  logical:: debug=.true.
+  logical:: debug=.false.
   real(8):: wc0=0d0
 CONTAINS
 
@@ -28,7 +29,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self, kind)
   class(lock_t):: self
-  character(len=4):: kind
+  character(len=4), optional:: kind
   logical omp_in_parallel
   !-----------------------------------------------------------------------------
   !$omp critical
@@ -36,7 +37,7 @@ SUBROUTINE init (self, kind)
     call omp_init_lock (self%lock)
     id = id+1
     self%id = id
-    self%kind = kind
+    if (present(kind)) self%kind = kind
   end if
   !$omp end critical
 END SUBROUTINE init
