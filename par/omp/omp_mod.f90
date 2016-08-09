@@ -129,11 +129,11 @@ SUBROUTINE detect_cores
     close (io_unit%os)
   end if
   if (n_socket>0) n_core = n_core*n_socket
+  !$omp parallel
   omp%ncores = n_core
-  omp%nthreads = omp_nthreads
-  omp%nsockets = n_socket
+  !$omp end parallel
 !-----------------------------------------------------------------------------
-! For good measure, although totally insifinificant, deallocate the list
+! For good measure, although totally insignificant, deallocate the list
 !-----------------------------------------------------------------------------
   p => head
   do while (associated(p))

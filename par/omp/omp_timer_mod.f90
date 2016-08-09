@@ -16,6 +16,7 @@ MODULE omp_timer_mod
     module procedure toc_i4, toc_i8, toc_1
   end interface
   public tic, toc, wallclock, n_update
+  !$omp threadprivate (wt)
 CONTAINS
 
 !> =============================================================================
@@ -99,23 +100,25 @@ FUNCTION time_str (t) RESULT (out)
 END FUNCTION
 
 !> =============================================================================
+!> Print the time used per thread.  Overuse is compensated for by the factor f =
+!> the number of threads per core.
 !> =============================================================================
 SUBROUTINE toc_r (label, n)
   implicit none
   character(len=*):: label
-  real:: n, n_tmp
+  real:: n, f
   real(8):: omp_get_wtime
   !.............................................................................
   wt = (omp_get_wtime() - wt)
   n_core = omp%ncores
-  n_tmp = merge(omp_nthreads, min(n_core,omp_nthreads), n_core==0)
+  f = omp%nthreads/real(n_core)
   write (io_unit%log,1) label, trim(time_str(wt)), &
-    trim(time_str(wt*n_tmp/max(n,1.))), '/upd,', n, 'updates'
+    trim(time_str(wt/f/max(n,1.))), '/upd,', n, 'updates'
   1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a)
   flush (io_unit%log)
   if (mpi%rank==0) &
     print 1, label, trim(time_str(wt)), &
-      trim(time_str(wt*n_tmp/max(n,1.))), '/upd,', n, 'updates'
+      trim(time_str(wt/f/max(n,1.))), '/upd,', n, 'updates'
   flush (6)
   wt = omp_get_wtime()
 END SUBROUTINE toc_r
