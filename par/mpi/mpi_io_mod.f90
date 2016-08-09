@@ -38,9 +38,11 @@ MODULE mpi_io_mod
     procedure:: openr
     procedure:: close
     generic, public:: write => write1, write3
-    procedure, private::       write1, write3
+    procedure, private::       write1
+    procedure, private::       write3
     generic, public:: read => read1, read3
-    procedure, private::      read1, read3
+    procedure, private::      read1
+    procedure, private::      read3
     procedure:: test
     procedure:: wait
     procedure:: assert

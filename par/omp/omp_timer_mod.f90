@@ -110,8 +110,8 @@ SUBROUTINE toc_r (label, n)
   real(8):: omp_get_wtime
   !.............................................................................
   wt = (omp_get_wtime() - wt)
-  n_core = omp%ncores
-  f = omp%nthreads/real(n_core)
+  n_core = max(omp%ncores,1)
+  f = max(omp%nthreads/real(n_core),1.0)
   write (io_unit%log,1) label, trim(time_str(wt)), &
     trim(time_str(wt/f/max(n,1.))), '/upd,', n, 'updates'
   1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a)

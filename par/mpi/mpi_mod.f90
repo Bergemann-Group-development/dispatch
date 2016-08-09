@@ -56,7 +56,7 @@ MODULE mpi_mod
   end type
   type(mpi_t):: mpi
 PRIVATE
-PUBLIC mpi_t, mpi, MPI_THREAD_MULTIPLE
+PUBLIC mpi_t, mpi
 CONTAINS
 
 !> =============================================================================
