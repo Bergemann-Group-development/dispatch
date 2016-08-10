@@ -55,8 +55,6 @@ SUBROUTINE init (self, name)
   io%master = self%master
   !$omp parallel
   io_unit%master = io_unit%master.and.self%master
-  write (io_unit%log,'(a,5l3,i5)') 'io_mod::init master, %log =', &
-    self%master, io%master, mpi%master, omp%master, io_unit%master, io_unit%log
   !$omp end parallel
   call print_id (id)
   !-----------------------------------------------------------------------------
@@ -85,12 +83,11 @@ SUBROUTINE init (self, name)
     end if
     open (self%input, file=self%inputname, form='formatted', status='old')
     rewind (io_unit%input)
-    read (io_unit%input, io_params)
+    read (io_unit%input, io_params, iostat=iostat)
     !---------------------------------------------------------------------------
     ! Open an MPI rank--and possible OMP thread--specific log file
     !---------------------------------------------------------------------------
     call system ('mkdir -p '//trim(self%outputname))
-    !iread (io_unit%input, io_params,iostat=iostat)
     if (self%master.and.first_time) write (*,io_params)
     !$omp parallel
     !$omp critical
@@ -98,15 +95,12 @@ SUBROUTINE init (self, name)
     if (omp_trace .and. omp%nthreads>1) then
       log_unit = 100+omp%mythread()
       write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%mythread()
-      open (log_unit, file=filename, form='formatted', status='unknown')
-    else if (omp%master) then
-      log_unit = 100
-      write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
-      open (log_unit, file=filename, form='formatted', status='unknown')
     else
       log_unit = 100
-      io_unit%verbose = -2
+      write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
+      if (.not.omp%master) io_unit%verbose = -2
     end if
+    open (log_unit, file=filename, form='formatted', status='unknown')
     io_unit%log = log_unit
     !$omp end critical
     write (io_unit%log,'(a,i4,2l4)') &

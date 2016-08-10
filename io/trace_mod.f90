@@ -84,12 +84,14 @@ SUBROUTINE trace_tag (id)
   if (io%verbose>=verbose) then
     write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
     wc = wallclock()
+    level  = max(level-1,1)
     write(log_unit,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
     call flush(log_unit)
     if (io%master) then
       write(io%output,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
       call flush(io%output)
     end if
+    level  = min(level+1,maxlev)
   end if
 END SUBROUTINE trace_tag
 
