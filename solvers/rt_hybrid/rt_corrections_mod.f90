@@ -5,34 +5,76 @@ MODULE rt_corrections_mod
   USE rt_mod
   USE rt_data_mod
   USE rt_internal_mod
+  USE rt_boundary_mod
   USE ray_geometry_mod
   USE trace_mod
   implicit none
   private
 !-----------------------------------------------------------------------
   type :: rt_stream_t
+    type (link_t)     , pointer :: nbor => null()
     type (rt_stream_t), pointer :: head => null()
     type (rt_stream_t), pointer :: next => null()
     type (rt_stream_t), pointer :: tail => null()
-    type (link_t)     , pointer :: link => null()
-    integer, dimension(:), pointer :: ray, pt
+    integer :: method = -1
+    integer :: n_entries = 0
+    real(kind=8), dimension(:), pointer :: t   => null()
+    integer,      dimension(:), pointer :: iit => null()
+    integer,      dimension(:), pointer :: ray => null()
+    integer,      dimension(:), pointer :: pt  => null()
+  contains
+    procedure :: init    => init_rt_stream
+    procedure :: add_src => add_rt_stream_src
   end type
 
 !-----------------------------------------------------------------------
-  type, extends(rt_t), public :: rt_correction_t
+  type, extends(rt_t), public     :: rt_correction_t
+    type (rt_stream_t),   pointer :: recv
     type (rt_data_t),     pointer :: my_rt_data     => null()
     type (rt_internal_t), pointer :: my_rt_internal => null()
-    type (rt_stream_t),   pointer :: send_list => null()
-    type (rt_stream_t),   pointer :: recv_list => null()
+    real (kind=8), dimension(:,:,:), pointer :: intensity => null()  ! (wl_bin, point, ray), to communicate the corrections
+    real (kind=8), dimension(:,:),   pointer :: I_in => null()       ! (wl_bin, ray) incoming intensity. 
+    real (kind=8), dimension(:),     pointer :: I_in_time  => null() ! (ray, time)
     integer :: solver
   contains
     procedure :: init => init_rt_correction
     procedure :: update => update_rt_correction
     procedure :: check => check_rt_corrections
-    procedure :: send_downstream
+    procedure :: get_upstream
   end type
 !-----------------------------------------------------------------------
 CONTAINS
+
+SUBROUTINE init_rt_stream(self)
+  class(rt_stream_t) :: self
+  
+END SUBROUTINE init_rt_stream
+
+SUBROUTINE add_rt_stream_src(self, src)
+  class(rt_stream_t) :: self
+  class(link_t), optional :: src
+  type (rt_stream_t) :: new
+!-----------------------------------------------------------------------
+
+  if (.not.present(src)) then
+    self%method = 0                    ! boundary
+    
+  else
+    self%method = 1 ! determine the method. 
+    allocate(new)
+    if (.not.associated(self%head)) then
+      self%head => new
+      self%tail => new
+    else
+      self%tail%next => new
+      self%tail => new
+      new%head => self%head
+    end if
+    new%nbor  => src
+    
+  end if
+  
+END SUBROUTINE add_rt_stream_src
 
 !> =====================================================================
 !> Initialise boundary table for upstream values
@@ -101,6 +143,7 @@ SUBROUTINE update_rt_correction (self)
   call trace_begin('rt_t%update_rt_correction '//stime)
   dir_wgt = 2.*pi/self%n_ray_dirs
   self%it = self%mhd_patch%it
+  call self%get_upstream
   associate (npt   => self%my_rays%n_points,    nwb => microphysics%n_wl_bins,  &
              nrays => self%my_rays%n_rays,      ex0 => self%my_rt_internal%ex0, &
                  s => self%my_rt_data%source,   op  => self%my_rt_data%opacity, &
@@ -151,10 +194,59 @@ SUBROUTINE update_rt_correction (self)
   call trace_end
 END SUBROUTINE update_rt_correction
 
-SUBROUTINE send_downstream(self)
+SUBROUTINE get_upstream(self)
+  class(rt_correction_t) :: self
+  !---------------------------------------------------------------------
+  select CASE(self%recv%method)
+    case (0)
+      call self%set_BC
+    case (1)
+      call self%get_upstream_direct(self%recv%nbor) 
+
+SUBROUTINE get_upstream_corr(self, nbor, my_ray, upd)
+  class(rt_correction_t)  :: self
+  class(rt_correction_t)  :: nbor
+  integer      :: my_ray, nb_c(3), nb_ray, nb_pt, try
+  logical      :: fnd, upd
+  real(kind=8) :: I_in, p(3), mean(microphysics%n_wl_bins), n_mean ,my_c_pos(3)
+!-----------------------------------------------------------------------
+  upd = .false.
+  if (self%level >= nbor%level) then
+  
+    p = self%cell2pos(self%my_rays%fwd_coords(:,my_ray))
+    fnd = .false.
+    call nbor%pos2ray(p,self%my_rays%lwall, nb_ray, nb_pt, fnd)  !here?
+    if (fnd.and.(self%time <= nbor%time)) then
+      upd = .true.
+      self%I_in(:,my_ray) =  nbor%intensity(:,nb_pt,nb_ray)
+      self%I_in_time(my_ray) = nbor%time
+    end if
+  else
+    my_c_pos = self%cell2pos(self%my_rays%fwd_coords(:,my_ray))  !here
+    n_mean = 0
+    mean = 0
+    do nb_ray = 1, nbor%my_rays%n_rays
+      try = -1
+      do nb_pt = 1, nbor%my_rays%n_points(nb_ray)    ! find the last point in the ray before the wall in question
+        if (point_in_cell(nbor%ray2pos(nb_ray,nb_pt),my_c_pos, self%cell_ds)) try = nb_pt
+      end do
+      if (try > 0) then
+        mean = mean + nbor%intensity(:, try, nb_ray)
+        n_mean = n_mean + 1.
+      end if
+    end do
+    if ((n_mean > 0).and.(self%time <= nbor%time)) then
+      self%I_in(:,my_ray) = mean/n_mean
+      self%I_in_time(my_ray) = nbor%time
+      upd = .true.
+    end if
+  end if
+END SUBROUTINE get_upstream_corr
+
+SUBROUTINE get_downstream(self)
   class(rt_correction_t) :: self
 
-END SUBROUTINE send_downstream
+END SUBROUTINE get_downstream
 
 SUBROUTINE check_rt_corrections(self)
   class(rt_correction_t) :: self

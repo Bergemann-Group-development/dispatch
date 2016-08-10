@@ -235,9 +235,11 @@ SUBROUTINE add_correction_nbors (self)
       rt  => rt_list
       rtc => this
       n_connected = 0
+      n_found = 0
       call rtc%find_upstream(nb_mhd, n_found)
       if (n_found < 1) then
         call rtc%set_BC
+        call rtc%add_src()
       else
         do while (associated(nb_mhd))
           nb_mhd_nbor => nb_mhd%link%nbor
@@ -253,6 +255,7 @@ SUBROUTINE add_correction_nbors (self)
                 if (rtc%id/=nb_rt%id) then
                   if (abs(rtc%level-nb_rt%level)<2) then
                     call connect_nbors (nb_rt_l%link, rt)
+                    call rtc%add_src(nb_rt_l%link)
                     n_connected = n_connected+1
                   end if
                 end if

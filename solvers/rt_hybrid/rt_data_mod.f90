@@ -93,7 +93,7 @@ SUBROUTINE update_rt_data (self)
   call self%update_time
   
   end associate
- ! deallocate (temp)
+  deallocate (temp)
   
   if (io%verbose>2) call self%check
     

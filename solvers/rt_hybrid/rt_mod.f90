@@ -15,9 +15,6 @@ MODULE rt_mod
     class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task 
     type (ray_list_t),   pointer :: my_rays
     ! common items
-    real (kind=8), dimension(:,:,:), pointer :: intensity => null()  ! (wl_bin, point, ray), to communicate the corrections
-    real (kind=8), dimension(:,:),   pointer :: I_in => null()       ! (wl_bin, ray) incoming intensity. 
-    real (kind=8), dimension(:),     pointer :: I_in_time  => null() ! FIXME: test if incoming intensity is from time.geq.self%time
     integer :: n_ray_dirs = 3, rt_freq = 1
     integer :: bundle_ID, dir_ID, rt_type, li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment 
@@ -54,26 +51,6 @@ SUBROUTINE update_rt (self)
   !---------------------------------------------------------------------
   error stop "ERROR: rt_t%update_rt is an empty subroutine"
 END SUBROUTINE update_rt
-
-SUBROUTINE update_BC (self)
-  class(rt_t) :: self
-  integer :: ray
-  real(kind=8) :: ppos(3)
-  !---------------------------------------------------------------------
-  call trace_begin('rt_t%set_BC')
-  SELECT case(self%rt_type)
-  case(0)
-  case(1)
-  case(2,3)  
-    do ray = 1, self%my_rays%n_rays
-      ppos = self%absolute_point_position(ray, 1, self%rt_type)
-      if (self%obct == 0) then
-        call rt_boundary%set_obc(ppos,self%cell_ds,self%I_in(:,ray))
-      end if
-    end do
-  end SELECT
-  call trace_end
-END SUBROUTINE update_BC
 
 SUBROUTINE set_reflective_BC(self)
   class(rt_t) :: self
@@ -204,6 +181,26 @@ SUBROUTINE set_BC (self)
   self%obc = 1
   self%my_nb_link%check = .true.
 END SUBROUTINE set_BC
+
+SUBROUTINE update_BC (self)
+  class(rt_correction_t) :: self
+  integer :: ray
+  real(kind=8) :: ppos(3)
+  !---------------------------------------------------------------------
+  call trace_begin('rt_t%set_BC')
+  SELECT case(self%rt_type)
+  case(0)
+  case(1)
+  case(2,3)  
+    do ray = 1, self%my_rays%n_rays
+      ppos = self%absolute_point_position(ray, 1, self%rt_type)
+      if (self%obct == 0) then
+        call rt_boundary%set_obc(ppos,self%cell_ds,self%I_in(:,ray))
+      end if
+    end do
+  end SELECT
+  call trace_end
+END SUBROUTINE update_BC
 
 SUBROUTINE check_common_surface(me, nbor, wall, right, it)
   type (experiment_t), pointer :: me, nbor
@@ -339,45 +336,7 @@ FUNCTION ray2pos (self, ray, pt) result (p)
   
 END FUNCTION ray2pos
 
-SUBROUTINE update_correction_upstream(self, nbor, my_ray, upd)
-  class(rt_t)  :: self
-  class(rt_t)  :: nbor
-  integer      :: my_ray, nb_c(3), nb_ray, nb_pt, try
-  logical      :: fnd, upd
-  real(kind=8) :: I_in, p(3), mean(microphysics%n_wl_bins), n_mean ,my_c_pos(3)
-!-----------------------------------------------------------------------
-  upd = .false.
-  if (self%level >= nbor%level) then
-  
-    p = self%cell2pos(self%my_rays%fwd_coords(:,my_ray))
-    fnd = .false.
-    call nbor%pos2ray(p,self%my_rays%lwall, nb_ray, nb_pt, fnd)  !here?
-    if (fnd.and.(self%time <= nbor%time)) then
-      upd = .true.
-      self%I_in(:,my_ray) =  nbor%intensity(:,nb_pt,nb_ray)
-      self%I_in_time(my_ray) = nbor%time
-    end if
-  else
-    my_c_pos = self%cell2pos(self%my_rays%fwd_coords(:,my_ray))  !here
-    n_mean = 0
-    mean = 0
-    do nb_ray = 1, nbor%my_rays%n_rays
-      try = -1
-      do nb_pt = 1, nbor%my_rays%n_points(nb_ray)    ! find the last point in the ray before the wall in question
-        if (point_in_cell(nbor%ray2pos(nb_ray,nb_pt),my_c_pos, self%cell_ds)) try = nb_pt
-      end do
-      if (try > 0) then
-        mean = mean + nbor%intensity(:, try, nb_ray)
-        n_mean = n_mean + 1.
-      end if
-    end do
-    if ((n_mean > 0).and.(self%time <= nbor%time)) then
-      self%I_in(:,my_ray) = mean/n_mean
-      self%I_in_time(my_ray) = nbor%time
-      upd = .true.
-    end if
-  end if
-END SUBROUTINE update_correction_upstream
+
 
 FUNCTION point_in_cell (pt, cell, ds) result (out)
   real(kind=8) :: pt(3), cell(3), li(3), ui(3), ds(3)
