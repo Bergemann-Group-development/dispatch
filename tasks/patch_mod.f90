@@ -88,6 +88,7 @@ MODULE patch_mod
   !-----------------------------------------------------------------------------
   type header_t
     sequence
+    integer:: version=1
     integer:: n_header
     integer:: n_data
     integer:: id
@@ -99,7 +100,6 @@ MODULE patch_mod
     integer:: nt
     integer:: nv                        ! number of variables
     integer:: it
-    integer:: padding                   ! for alignment
     real(8):: time
     real(8):: end_time
     real(8):: out_next
