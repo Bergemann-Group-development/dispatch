@@ -21,4 +21,5 @@ $(EXEC): cartesian_mod.o $(PICOBJ)
 
 # Dependencies
 experiment_mod.o        : pic_mod.o trace_mod.o io_mod.o timestep_mod.o initial_mod.o download_mod.o link_mod.o
+dispatch.o              : io_mod.o mpi_mod.o cartesian_mod.o
 

@@ -1,7 +1,8 @@
 !> =============================================================================
 !> This module contains all experiment specific information.  The experiment_t
 !> object extends the generic PIC object pic_t, which is again an extension of
-!> the basic patch_t object for tasks (object task_t) with meshes.
+!> the basic patch_t object for tasks (object task_t) with meshes, or else an
+!> extension of an mhd_t data type with MHD variables.
 !>
 !> The PIC object is chosen with the SOLVER macro in the Makefile in the curren
 !> directory, while the generic task_t and patch_t objects are defined in the
