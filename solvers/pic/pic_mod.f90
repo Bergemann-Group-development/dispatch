@@ -6,13 +6,19 @@
 !> =============================================================================
 MODULE pic_mod
   USE io_mod
+  USE trace_mod
   USE mhd_mod
-  USE grid_m, only: g, mesh_type, grid_type
-  USE grid_m, only: Bx, By, Bz, Ex, Ey, Ez, fmhd
-  USE params, only: time, dt, it
-  USE species, only: spec, sp, field, fields, vthb !, counters, n
+  USE grid_m, ONLY: g, mesh_type, grid_type
+  USE grid_m, ONLY: Bx, By, Bz, Ex, Ey, Ez, fmhd
+  USE params, ONLY: time, dt, it
+  USE species, ONLY: spec, sp, field, fields, vthb !, counters, n
+  USE maxwell_sources, ONLY: jx,jy,jz,sx,sy,sz
   implicit none
   private
+  type:: scratch_t
+    real, dimension(:,:,:), pointer:: jx, jy, jz
+    real, dimension(:,:,:), pointer:: sx, sy, sz
+  end type
   type, public, extends(mhd_t):: pic_t
     !type(counters), pointer:: n                         ! species.f90
     type(spec), pointer, dimension(:):: sp              ! species.f90
@@ -23,6 +29,7 @@ MODULE pic_mod
     real, pointer, dimension(:,:,:):: Ex, Ey, Ez        ! grid.f90
     real, pointer, dimension(:,:,:):: fmhd              ! grid.f90
     type(grid_type), pointer:: g                        ! grid.f90
+    type(scratch_t):: scratch                           ! maxwell_sources.f90
   contains
     procedure:: init
     procedure:: update
@@ -45,7 +52,9 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initialize new PIC data for a patch
   !-----------------------------------------------------------------------------
+  call trace_begin ('pic_mod::init')
   call init_species
+  call init_grid
   !-----------------------------------------------------------------------------
   ! Save the location of dynamic PIC data for this patch
   !-----------------------------------------------------------------------------
@@ -61,6 +70,7 @@ SUBROUTINE init (self)
   self%Ey   => Ey                                       ! grid.f90
   self%Ez   => Ez                                       ! grid.f90
   self%fmhd => fmhd                                     ! grid.f90
+  call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -73,6 +83,7 @@ SUBROUTINE connect (self)
   !-----------------------------------------------------------------------------
   ! Prepare for access, by pointing to the patch data
   !-----------------------------------------------------------------------------
+  call trace_begin ('pic_mod::connect')
   fields => self%fields                                 ! species.f90
   vthb   => self%vthb                                   ! species.f90
   sp     => self%sp                                     ! species.f90
@@ -91,6 +102,7 @@ SUBROUTINE connect (self)
   time   = self%time
   dt     = self%dtime
   it     = self%it
+  call trace_end
 END SUBROUTINE connect
 
 !> =============================================================================
@@ -101,9 +113,11 @@ SUBROUTINE copy (self)
   !-----------------------------------------------------------------------------
   ! A few scalar data items need to be copied, to avoid having to make pointers
   !-----------------------------------------------------------------------------
+  call trace_begin ('pic_mod::copy')
   self%time   = time
   self%dtime  = dt
   self%it     = it
+  call trace_end
 END SUBROUTINE copy
 
 !> =============================================================================
@@ -113,10 +127,24 @@ END SUBROUTINE copy
 !> =============================================================================
 SUBROUTINE update (self)
   class(pic_t):: self
+  associate (scratch=>self%scratch)
   !-----------------------------------------------------------------------------
-  ! Prepare for update, by pointing to the patch data
+  ! Prepare for update, by pointing to the patch data and allocating scratch
   !-----------------------------------------------------------------------------
+  call trace_begin ('pic_mod::update')
   call self%connect
+  allocate(scratch%jx(g%gn(1),g%gn(2),g%gn(3)), &
+           scratch%jy(g%gn(1),g%gn(2),g%gn(3)), &
+           scratch%jz(g%gn(1),g%gn(2),g%gn(3)))
+  allocate(scratch%sx(g%gn(1),g%gn(2),g%gn(3)), &
+           scratch%sy(g%gn(1),g%gn(2),g%gn(3)), &
+           scratch%sz(g%gn(1),g%gn(2),g%gn(3)))
+  jx => scratch%jx
+  jy => scratch%jy
+  jz => scratch%jz
+  sx => scratch%sx
+  sy => scratch%sy
+  sz => scratch%sz
   !-----------------------------------------------------------------------------
   ! Do the PIC update, using calls to the PPcode routines
   !-----------------------------------------------------------------------------
@@ -129,6 +157,10 @@ SUBROUTINE update (self)
   it   = it + 1                                         ! time step counter
   time = time + dt                                      ! time advance
   call self%copy
+  deallocate(scratch%jx,scratch%jy,scratch%jz)
+  deallocate(scratch%sx,scratch%sy,scratch%sz)
+  end associate
+  call trace_end
 END SUBROUTINE update
 
 !> =============================================================================
@@ -140,8 +172,10 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Connect to the patch data and do I/O, using calls to the PPcode routine
   !-----------------------------------------------------------------------------
+  call trace_begin ('pic_mod::output')
   call self%connect
   call write_io                                         ! conditionally, do io
+  call trace_end
 END SUBROUTINE output
 
 !> =============================================================================
@@ -152,8 +186,10 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, optional:: nq, ntask
   character(len=*), optional:: experiment_name
   !-----------------------------------------------------------------------------
+  call trace_begin ('pic_mod::info')
   call self%connect
   call write_log                                        ! write log to stdout
+  call trace_end
 END SUBROUTINE info
 
 END MODULE pic_mod
