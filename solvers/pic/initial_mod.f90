@@ -6,6 +6,7 @@ MODULE initial_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
+  USE random_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -55,6 +56,12 @@ SUBROUTINE init (self)
    self%mhd    = mhd
    self%time   = 0d0
    select case (type)
+   case ('single_solenoidal')
+     self%selected => single_solenoidal
+   case ('single_compressive')
+     self%selected => single_compressive
+   case ('single_advection')
+     self%selected => single_advection
    case ('raw')
      self%selected => raw
    case default
@@ -68,6 +75,108 @@ END SUBROUTINE init
 SUBROUTINE cleanup
   if (associated(buffer)) deallocate(buffer)
 END SUBROUTINE cleanup
+
+!> =============================================================================
+!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> =============================================================================
+FUNCTION single_solenoidal (self, m) RESULT (ff)
+  class(initial_t)      :: self
+  type(mesh_t)          :: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  !.............................................................................
+  type(random_t)        :: random
+  integer               :: ix, iy, iz
+  real(8)               :: kx, ky, kz
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t:single_solenoidal')
+  self%phi = 0.0
+  do iz=m(3)%lb,m(3)%ub
+    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        ff(ix,iy,iz,1) = self%d0
+        ff(ix,iy,iz,2) = self%e0
+        ff(ix,iy,iz,3) = self%a0(1)*(sin(ky)+sin(kz))
+        ff(ix,iy,iz,4) = self%a0(2)*(sin(kz)+sin(kx))
+        ff(ix,iy,iz,5) = self%a0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,6) = self%b0(1)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,7) = self%b0(2)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,8) = self%b0(3)*(sin(kx)+sin(ky))
+      end do
+    end do
+  end do
+  call trace_end
+END FUNCTION single_solenoidal
+
+!> =============================================================================
+!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> =============================================================================
+FUNCTION single_compressive (self, m) RESULT (ff)
+  class(initial_t)        :: self
+  type(mesh_t)          :: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  !.............................................................................
+  type(random_t)        :: random
+  integer               :: ix, iy, iz
+  real(8)               :: kx, ky, kz
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t:single_compressive')
+  self%phi = 0.0
+  do iz=m(3)%lb,m(3)%ub
+    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        ff(ix,iy,iz,1) = self%d0
+        ff(ix,iy,iz,2) = self%e0
+        ff(ix,iy,iz,3) = self%u0(1)*sin(kx)
+        ff(ix,iy,iz,4) = self%u0(2)*sin(ky)
+        ff(ix,iy,iz,5) = self%u0(3)*sin(kz)
+        ff(ix,iy,iz,6) = self%b0(1)
+        ff(ix,iy,iz,7) = self%b0(2)
+        ff(ix,iy,iz,8) = self%b0(3)
+      end do
+    end do
+  end do
+  call trace_end
+END FUNCTION single_compressive
+
+!> =============================================================================
+!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> =============================================================================
+FUNCTION single_advection (self, m) RESULT (ff)
+  class(initial_t)        :: self
+  type(mesh_t)          :: m(3)
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  !.............................................................................
+  type(random_t)        :: random
+  integer               :: ix, iy, iz
+  real(8)               :: kx, ky, kz
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t:single_compressive')
+  self%phi = 0.0
+  do iz=m(3)%lb,m(3)%ub
+    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        ff(ix,iy,iz,1) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
+        ff(ix,iy,iz,2) = self%e0
+        ff(ix,iy,iz,3) = self%d0*self%u0(1)
+        ff(ix,iy,iz,4) = self%d0*self%u0(2)
+        ff(ix,iy,iz,5) = self%d0*self%u0(3)
+        ff(ix,iy,iz,6) = self%b0(3)*sin(kz)
+        ff(ix,iy,iz,7) = self%b0(1)*sin(kx)
+        ff(ix,iy,iz,8) = self%b0(2)*sin(ky)
+      end do
+    end do
+  end do
+  call trace_end
+END FUNCTION single_advection
 
 !> =============================================================================
 !> Initialize from a raw data file
