@@ -108,14 +108,14 @@ SUBROUTINE update (self)
   self%e => self%mem(:,:,:,  2,self%it,1); self%dedt => self%mem(:,:,:,  2,self%it,2)
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
   d=>self%d; dddt=>self%dddt
-  e=>self%e; dedt=>self%dedt;
+  e=>self%e; dedt=>self%dedt
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
     self%B => self%mem(:,:,:,6:8,self%it,1); self%dBdt => self%mem(:,:,:,6:8,self%it,2)
     B=>self%B; dBdt=>self%dBdt
-    Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
+    Bx   =>   B(:,:,:,1); By   =>   B(:,:,:,2); Bz   =>   B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
   call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
@@ -355,11 +355,13 @@ FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
+  call trace_begin('mhd_mod::gas_pressure',2)
   if (self%gamma==1.0) then
     pg = self%d*self%csound**2
   else
     pg = self%e*(self%gamma-1.0)
   end if
+  call trace_end
 END FUNCTION gas_pressure
 
 FUNCTION cell_gas_pressure(self, c) RESULT (pg)
