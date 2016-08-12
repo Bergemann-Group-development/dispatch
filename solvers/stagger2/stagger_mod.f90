@@ -4,6 +4,11 @@
 MODULE stagger_mod
   USE scalar_mod
   USE vector_mod
+  USE stagger_16
+  USE stagger_20
+  USE stagger_24
+  USE stagger_32
+  USE stagger_36
   implicit none
   public
   integer, private:: verbose=0
@@ -169,7 +174,17 @@ FUNCTION ddxdn (ds, a) RESULT (b)
   real    :: ds(3), c
   integer :: ix, iy, iz
 !...............................................................................
-  if (size(a,1) > 1) then
+  if (all(shape(a)==[16,16,16])) then
+    b = ddxdn_16 (ds,a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = ddxdn_20 (ds,a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = ddxdn_24 (ds,a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = ddxdn_32 (ds,a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = ddxdn_36 (ds,a)
+  else if (size(a,1) > 1) then
     b(1,:,:) = 0.0
     c = 1./ds(1)
     do iz=1,size(a,3)
@@ -191,7 +206,17 @@ FUNCTION ddydn (ds, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: ds(3), c
 !...............................................................................
-  if (size(a,2) > 1) then
+  if (all(shape(a)==[16,16,16])) then
+    b = ddydn_16 (ds,a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = ddydn_20 (ds,a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = ddydn_24 (ds,a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = ddydn_32 (ds,a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = ddydn_36 (ds,a)
+  else if (size(a,2) > 1) then
     b(:,1,:) = 0.0
     c = 1./ds(2)
     do iz=1,size(a,3)
@@ -213,7 +238,17 @@ FUNCTION ddzdn (ds, a) RESULT (b)
   real    :: ds(3), c
   integer :: ix, iy, iz
 !...............................................................................
-  if (size(a,3) > 1) then
+  if (all(shape(a)==[16,16,16])) then
+    b = ddzdn_16 (ds,a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = ddzdn_20 (ds,a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = ddzdn_24 (ds,a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = ddzdn_32 (ds,a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = ddzdn_36 (ds,a)
+  else if (size(a,3) > 1) then
     b(:,:,1) = 0.0
     c = 1./ds(3)
     do iz=2,size(a,3)
@@ -235,7 +270,17 @@ FUNCTION ddxup (ds, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: ds(3), c
 !...............................................................................
-  if (size(a,1) > 1) then
+  if (all(shape(a)==[16,16,16])) then
+    b = ddxup_16 (ds,a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = ddxup_20 (ds,a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = ddxup_24 (ds,a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = ddxup_32 (ds,a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = ddxup_36 (ds,a)
+  else if (size(a,1) > 1) then
     b(size(a,1),:,:) = 0.0
     c = 1./ds(1)
     do iz=1,size(a,3)
@@ -257,7 +302,17 @@ FUNCTION ddyup (ds, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: ds(3), c
 !...............................................................................
-  if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (all(shape(a)==[16,16,16])) then
+    b = ddyup_16 (ds,a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = ddyup_20 (ds,a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = ddyup_24 (ds,a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = ddyup_32 (ds,a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = ddyup_36 (ds,a)
+  else if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,size(a,2),:) = 0.0
     c = 1./ds(2)
     do iz=1,size(a,3)
@@ -279,7 +334,17 @@ FUNCTION ddzup (ds, a) RESULT (b)
   integer :: ix, iy, iz
   real    :: ds(3), c
 !...............................................................................
-  if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (all(shape(a)==[16,16,16])) then
+    b = ddzup_16 (ds,a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = ddzup_20 (ds,a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = ddzup_24 (ds,a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = ddzup_32 (ds,a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = ddzup_36 (ds,a)
+  else if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,:,size(a,3)) = 0.0
     c = 1./ds(3)
     do iz=1,size(a,3)-1
@@ -301,8 +366,18 @@ FUNCTION xdn (a) RESULT (b)
   real    :: c
   integer :: ix, iy, iz
 !...............................................................................
-  c = 0.5
-  if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (all(shape(a)==[16,16,16])) then
+    b = xdn_16 (a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = xdn_20 (a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = xdn_24 (a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = xdn_32 (a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = xdn_36 (a)
+  else if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
     b(1,:,:) = a(1,:,:)
     do iz=1,size(a,3)
     do iy=1,size(a,2)
@@ -323,8 +398,18 @@ FUNCTION ydn (a) RESULT (b)
   real    :: c
   integer :: ix, iy, iz
 !...............................................................................
-  c = 0.5
-  if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (all(shape(a)==[16,16,16])) then
+    b = ydn_16 (a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = ydn_20 (a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = ydn_24 (a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = ydn_32 (a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = ydn_36 (a)
+  else if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
     b(:,1,:) = a(:,1,:)
     do iz=1,size(a,3)
     do iy=2,size(a,2)
@@ -345,8 +430,18 @@ FUNCTION zdn (a) RESULT (b)
   real    :: c
   integer :: ix, iy, iz
 !...............................................................................
-  c = 0.5
-  if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (all(shape(a)==[16,16,16])) then
+    b = zdn_16 (a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = zdn_20 (a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = zdn_24 (a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = zdn_32 (a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = zdn_36 (a)
+  else if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
     b(:,:,1) = a(:,:,1)
     do iz=2,size(a,3)
     do iy=1,size(a,2)
@@ -367,8 +462,18 @@ FUNCTION xup (a) RESULT (b)
   real    :: c
   integer :: ix, iy, iz
 !...............................................................................
-  c = 0.5
-  if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (all(shape(a)==[16,16,16])) then
+    b = xup_16 (a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = xup_20 (a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = xup_24 (a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = xup_32 (a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = xup_36 (a)
+  else if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
     b(size(a,1),:,:) = a(size(a,1),:,:)
     do iz=1,size(a,3)
     do iy=1,size(a,2)
@@ -389,8 +494,18 @@ FUNCTION yup (a) RESULT (b)
   real    :: c
   integer :: ix, iy, iz
 !...............................................................................
-  c = 0.5
-  if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (all(shape(a)==[16,16,16])) then
+    b = yup_16 (a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = yup_20 (a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = yup_24 (a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = yup_32 (a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = yup_36 (a)
+  else if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
     b(:,size(a,2),:) = a(:,size(a,2),:)
     do iz=1,size(a,3)
     do iy=1,size(a,2)-1
@@ -411,8 +526,18 @@ FUNCTION zup (a) RESULT (b)
   real    :: c
   integer :: ix, iy, iz
 !...............................................................................
-  c = 0.5
-  if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (all(shape(a)==[16,16,16])) then
+    b = zup_16 (a)
+  else if (all(shape(a)==[20,20,20])) then
+    b = zup_20 (a)
+  else if (all(shape(a)==[24,24,24])) then
+    b = zup_24 (a)
+  else if (all(shape(a)==[32,32,32])) then
+    b = zup_32 (a)
+  else if (all(shape(a)==[36,36,36])) then
+    b = zup_36 (a)
+  else if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
     b(:,:,size(a,3)) = a(:,:,size(a,3))
     do iz=1,size(a,3)-1
     do iy=1,size(a,2)
