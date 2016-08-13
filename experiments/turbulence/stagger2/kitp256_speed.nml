@@ -32,7 +32,7 @@
 &patch_params
  nt=5
  nw=2           !HERE
- courant=0.1
+ courant=0.25
  grace=0.1
  !n=16,16,16
  n=32,32,32
@@ -48,9 +48,14 @@
  guard_zones=f
  time_derivs=f
 /
-&mhd_params /
+&mhd_params
+ gamma=1.
+ cdtd=0.8
+ nu=  0.60, 2.0, 1.0, 0.3, 1.0, 1.0
+ !     cs    pa  ofd  mas  kap  eta
+/
 &timestep_params
- time_order=0
+ time_order=2
 /
 &force_params
  type='zero'

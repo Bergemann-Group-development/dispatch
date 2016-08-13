@@ -11,7 +11,7 @@
  max_stalled=100000
 /
 &io_params
- verbose=0
+ verbose=2
  do_trace=f
  do_debug=f
  do_output=f
@@ -20,8 +20,8 @@
 &box_params
  face_nbors=f
  size=1,1,1
- dims=16,16,16
- !dims=8,8,8
+ !dims=16,16,16
+ dims=8,8,8
  !dims=2,2,2
  !dims=1,1,1
  origin=0,0,0
@@ -32,10 +32,10 @@
 &patch_params
  nt=5
  nw=2           !HERE
- courant=0.2
+ courant=0.25
  grace=0.1
- n=16,16,16
- !n=32,32,32
+ !n=16,16,16
+ n=32,32,32
  !n=128,128,128
  !n=256,256,256
 !dt_fixed=0.001
@@ -48,9 +48,14 @@
  guard_zones=f
  time_derivs=f
 /
-&mhd_params /
+&mhd_params
+ gamma=1.
+ cdtd=0.8
+ nu=  0.60, 2.0, 1.0, 0.3, 1.0, 1.0
+ !     cs    pa  ofd  mas  kap  eta
+/
 &timestep_params
- time_order=0
+ time_order=2
 /
 &force_params
  type='zero'
