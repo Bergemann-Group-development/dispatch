@@ -20,6 +20,8 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real:: nu(6)
+    real:: csound
+    real:: cdtd
     logical:: mhd=.true.
     type(force_t):: force
   contains
@@ -45,10 +47,10 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   integer:: i
   logical, save:: first_time=.true.
-  namelist /mhd_params/ nu, gamma
+  namelist /mhd_params/ nu, gamma, csound, cdtd
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
@@ -62,6 +64,8 @@ SUBROUTINE init (self)
   !$omp end critical (input_cr)
   self%nu = nu
   self%gamma = gamma
+  self%csound = csound
+  self%cdtd = cdtd
   do i=1,3
     self%mesh(i)%h(2+i) = -0.5
     self%mesh(i)%h(5+i) = -0.5
@@ -172,10 +176,12 @@ SUBROUTINE update (self)
     ! Fast mode speed + velocity
     pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
-    !self%u_max = self%fmaxval(cs)
-    !if (io%verbose>0) print*,'u_max',self%u_max
-    !self%u_max = self%fmaxval(cs + sqrt(pp))
-    !if (io%verbose>0) print*,'u_max',self%u_max
+    if (io%verbose>2) then
+      self%u_max = self%fmaxval(cs)
+      print*,'u_max',self%u_max
+      self%u_max = self%fmaxval(cs + sqrt(pp))
+      print*,'u_max',self%u_max
+    end if
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
     if (io%verbose>2) print*,'u_max',self%u_max
     ! Isotropic pressure part
@@ -196,10 +202,12 @@ SUBROUTINE update (self)
     pa = self%nu(2)*d*du**2                               ! dimension: pressure
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)
-    !self%u_max = self%fmaxval(cs)
-    !if (io%verbose>0) print*,'u_max',self%u_max
-    !self%u_max = self%fmaxval(cs + sqrt(pp))
-    !if (io%verbose>0) print*,'u_max',self%u_max
+    if (io%verbose>2) then
+      self%u_max = self%fmaxval(cs)
+      print*,'u_max',self%u_max
+      self%u_max = self%fmaxval(cs + sqrt(pp))
+      print*,'u_max',self%u_max
+    end if
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
     if (io%verbose>2) print*,'u_max',self%u_max
     pp = pg + pa
@@ -216,10 +224,8 @@ SUBROUTINE update (self)
   fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux
   fm = p+fd                                             ! mass flux
   dddt = -div(ds,fm)                                    ! density derivative
-  self%u_max = max(self%u_max,-0.4*dx*self%fminval(dddt/d))
+  self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))
   if (io%verbose>2) print*,'u_max',self%u_max
-  !self%u_max = max(self%u_max,-dx*self%fminval(dddt/d))
-  !print*,'u_max',dx*self%fmaxval(div(ds,p)/d)
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
@@ -295,7 +301,8 @@ SUBROUTINE update (self)
     J = curl_dn(ds,B)
     E = self%nu(6)*edge(du)*J
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
-    dsdt = dsdt + Q*d/pg
+    if (self%gamma/=1.0) &
+      dsdt = dsdt + Q*d/pg
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
     !---------------------------------------------------------------------------
@@ -349,7 +356,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
   if (self%gamma==1.0) then
-    pg = self%d
+    pg = self%d*self%csound**2
   else
     pg = self%d**self%gamma*exp(self%s/self%d*(self%gamma-1))
   end if
