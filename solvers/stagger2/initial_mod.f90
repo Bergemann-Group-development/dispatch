@@ -200,7 +200,7 @@ FUNCTION exa256 (self, m) RESULT (ff)
   ff(:,:,:,:) = 0.0
   allocate (u(m(1)%n))
   allocate (d(m(1)%n))
-  open (io_unit%data, file='data/exa256/t0.02.dat', form='unformatted', &
+  open (io_unit%data, file='data/exa256/t0.02.stag', form='unformatted', &
     access='direct', recl=m(1)%n*4)
   self%time = 0.02
   ix=m(1)%p/m(1)%d+0.5-m(1)%n/2
@@ -240,7 +240,7 @@ FUNCTION raw (self, m) RESULT (ff)
   type(mesh_t):: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8):: ff
   !.............................................................................
-  integer:: n(3), i(3), iv
+  integer:: n(3), i(3), iv, iw
   integer, save:: mv=4
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
@@ -256,7 +256,7 @@ FUNCTION raw (self, m) RESULT (ff)
     first_time = .false.
     n = nint(m%b/m%d)
     allocate (buffer(n(1),n(2),n(3),mv))
-    open (io_unit%data, file='data/ramses256/t0.02.raw', form='unformatted', &
+    open (io_unit%data, file='data/exa256/t0.02.stag', form='unformatted', &
       access='direct', recl=4*product(n))
     do iv=1,mv
       read (io_unit%data, rec=iv) buffer(:,:,:,iv)
@@ -265,15 +265,13 @@ FUNCTION raw (self, m) RESULT (ff)
   end if
   i = 1 + nint(m%p/m%d)-m%n/2                            ! index offsets
   ff = 0.0
-  do iv=1,mv
+  do iw=1,mv
+    iv = merge(1,iw+1,iw==1)
     ff(m(1)%li:m(1)%ui, &
        m(2)%li:m(2)%ui, &
        m(3)%li:m(3)%ui,iv) = buffer(i(1):i(1)+m(1)%n-1, &
                                     i(2):i(2)+m(2)%n-1, &
-                                    i(3):i(3)+m(3)%n-1,iv)
-  end do
-  do iv=2,4
-    ff(:,:,:,iv) = ff(:,:,:,1)*ff(:,:,:,iv)
+                                    i(3):i(3)+m(3)%n-1,iw)
   end do
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
