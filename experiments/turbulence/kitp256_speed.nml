@@ -20,8 +20,8 @@
 &box_params
  face_nbors=f
  size=1,1,1
- !dims=16,16,16
- dims=8,8,8
+ dims=16,16,16
+ !dims=8,8,8
  !dims=2,2,2
  !dims=1,1,1
  origin=0,0,0
@@ -34,8 +34,8 @@
  nw=1           !HERE
  courant=0.2
  grace=0.1
- !n=16,16,16
- n=32,32,32
+ n=16,16,16
+ !n=32,32,32
  !n=128,128,128
  !n=256,256,256
 !dt_fixed=0.001

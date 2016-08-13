@@ -30,6 +30,7 @@
 &experiment_params
 /
 &patch_params
+ !ng=3,3,3
  nt=5
  nw=2           !HERE
  courant=0.25
