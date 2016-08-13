@@ -17,8 +17,8 @@ MODULE mhd_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
-    real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
-    real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
+    real, dimension(:,:,:),   pointer:: d, e
+    real, dimension(:,:,:,:), pointer:: p, B
     real:: nu(6), csound
     logical:: mhd=.true.
     type(force_t):: force
@@ -75,9 +75,9 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE dnload (self)
   class(mhd_t):: self
-  call trace_begin ('experiment_mod::dnload')
+  call trace%begin ('experiment_mod::dnload')
   call download%download_link (self%link, all_cells=.false.)
-  call trace_end
+  call trace%end
 END SUBROUTINE
 
 !> =============================================================================
@@ -85,6 +85,7 @@ SUBROUTINE update (self)
   USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
+  real, dimension(:,:,:,:,:), pointer:: mem
   real, dimension(:,:,:,:), pointer:: U, emf, J, p, B, dpdt, dBdt
   real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm
   real, dimension(:,:,:),   pointer:: d, e, dddt, dedt
@@ -100,21 +101,20 @@ SUBROUTINE update (self)
   real:: ds(3), dx
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('mhd_t%update',itimer=itimer)
+  call trace%begin('mhd_t%update',itimer=itimer)
   call self%dnload
   call self%output
 
-  self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
-  self%e => self%mem(:,:,:,  2,self%it,1); self%dedt => self%mem(:,:,:,  2,self%it,2)
-  self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
-  d=>self%d; dddt=>self%dddt
-  e=>self%e; dedt=>self%dedt
-  p=>self%p; dpdt=>self%dpdt
-  px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
+  allocate (mem(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn,self%nv,2))
+  mem(:,:,:,:,1) = self%mem(:,:,:,:,self%it,1)
+
+  d => mem(:,:,:,  1,1); dddt => mem(:,:,:,  1,2); self%d => d
+  e => mem(:,:,:,  2,1); dedt => mem(:,:,:,  2,2); self%e => e
+  p => mem(:,:,:,3:5,1); dpdt => mem(:,:,:,3:5,2); self%p => p
+  px   =>   p(:,:,:,1); py   =>   p(:,:,:,2); pz   =>   p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
-    self%B => self%mem(:,:,:,6:8,self%it,1); self%dBdt => self%mem(:,:,:,6:8,self%it,2)
-    B=>self%B; dBdt=>self%dBdt
+    B => mem(:,:,:,6:8,1); dBdt => mem(:,:,:,6:8,2); self%B => B
     Bx   =>   B(:,:,:,1); By   =>   B(:,:,:,2); Bz   =>   B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
@@ -317,13 +317,15 @@ SUBROUTINE update (self)
     dBdt = -curl_up(ds,emf)
   end if
   !-----------------------------------------------------------------------------
+  self%mem(:,:,:,:,self%it,2) = mem(:,:,:,:,2)
+  deallocate (mem)
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pa, du, ee, cs, pp, pb, Q)
   if (.not.self%do_pebbles) then
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================
@@ -355,13 +357,13 @@ FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
-  call trace_begin('mhd_mod::gas_pressure',2)
+  call trace%begin('mhd_mod::gas_pressure',2)
   if (self%gamma==1.0) then
     pg = self%d*self%csound**2
   else
     pg = self%e*(self%gamma-1.0)
   end if
-  call trace_end
+  call trace%end
 END FUNCTION gas_pressure
 
 FUNCTION cell_gas_pressure(self, c) RESULT (pg)
