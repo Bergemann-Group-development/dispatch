@@ -74,9 +74,9 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE dnload (self)
   class(mhd_t):: self
-  call trace_begin ('experiment_mod::dnload')
+  call trace%begin ('experiment_mod::dnload')
   call download%download_link (self%link, all_cells=.false.)
-  call trace_end
+  call trace%end
 END SUBROUTINE
 
 !> =============================================================================
@@ -99,7 +99,7 @@ SUBROUTINE update (self)
   real:: ds(3), dx
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('mhd_t%update',itimer=itimer)
+  call trace%begin('mhd_t%update',itimer=itimer)
   call self%dnload
   call self%output
 
@@ -316,7 +316,7 @@ SUBROUTINE update (self)
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================
