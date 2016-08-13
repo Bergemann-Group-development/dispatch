@@ -9,7 +9,6 @@ FUNCTION xdn (a) RESULT (b)
 !...............................................................................
   c = 0.5
   if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(1,:,:) = a(1,:,:)
     do iz=1,size(a,3)
     do iy=1,size(a,2)
     do ix=2,size(a,1)
@@ -30,7 +29,6 @@ FUNCTION ydn (a) RESULT (b)
 !...............................................................................
   c = 0.5
   if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,1,:) = a(:,1,:)
     do iz=1,size(a,3)
     do iy=2,size(a,2)
     do ix=1,size(a,1)
@@ -51,7 +49,6 @@ FUNCTION zdn (a) RESULT (b)
 !...............................................................................
   c = 0.5
   if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,:,1) = a(:,:,1)
     do iz=2,size(a,3)
     do iy=1,size(a,2)
     do ix=1,size(a,1)
@@ -77,7 +74,6 @@ FUNCTION xdn (a) RESULT (b)
   c1 = 0.5
   c2 = 0.5
   if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(1,:,:) = a(1,:,:)
     do iz=1,size(a,3)
     do iy=1,size(a,2)
     do ix=3,size(a,1)-1
@@ -100,7 +96,6 @@ FUNCTION ydn (a) RESULT (b)
   c1 = 0.5
   c2 = 0.5
   if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,1,:) = a(:,1,:)
     do iz=1,size(a,3)
     do iy=3,size(a,2)-1
     do ix=1,size(a,1)
@@ -123,7 +118,6 @@ FUNCTION zdn (a) RESULT (b)
   c1 = 0.5
   c2 = 0.5
   if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,:,1) = a(:,:,1)
     do iz=3,size(a,3)-1
     do iy=1,size(a,2)
     do ix=1,size(a,1)
@@ -151,7 +145,6 @@ FUNCTION xdn (a) RESULT (b)
   c2 = 0.2
   c3 = 0.1
   if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(1,:,:) = a(1,:,:)
     do iz=1,size(a,3)
     do iy=1,size(a,2)
     do ix=4,size(a,1)-2
@@ -176,7 +169,6 @@ FUNCTION ydn (a) RESULT (b)
   c2 = 0.2
   c3 = 0.1
   if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,1,:) = a(:,1,:)
     do iz=1,size(a,3)
     do iy=4,size(a,2)-2
     do ix=1,size(a,1)
@@ -201,9 +193,8 @@ FUNCTION zdn (a) RESULT (b)
   c2 = 0.2
   c3 = 0.1
   if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,:,1) = a(:,:,1)
-    do iz=4,size(a,3)-2
     do iy=1,size(a,2)
+    do iz=4,size(a,3)-2
     do ix=1,size(a,1)
       b(ix,iy,iz) = c1*(a(ix,iy,iz  ) + a(ix,iy,iz-1)) &
                   + c2*(a(ix,iy,iz+1) + a(ix,iy,iz-2)) &
@@ -226,22 +217,24 @@ END MODULE stagger_6th
 !> =============================================================================
 PROGRAM test_stagger
   implicit none
-  integer, parameter:: n=128
+  integer, parameter:: n=36
   real, pointer, dimension(:,:,:):: f, d
   !-----------------------------------------------------------------------------
   allocate (f(n,n,n), d(n,n,n))
   f=1.
+  print*,'n =',n
   call test_2nd (n, f, d)
   call test_4th (n, f, d)
   call test_6th (n, f, d)
 END PROGRAM
 
-SUBROUTINE test_2nd (n, f, d)
+SUBROUTINE test_2nd (nn, f, d)
   USE stagger_2nd
   USE omp_timer_mod
   implicit none
+  integer(8), parameter:: n=36
   real, dimension(n,n,n):: f, d
-  integer:: n, m
+  integer:: nn, m
   real(8):: wt
   m=0
   wt = wallclock()
@@ -269,12 +262,13 @@ SUBROUTINE test_2nd (n, f, d)
   call toc('zdn',m*n**3)
 END SUBROUTINE
 
-SUBROUTINE test_4th (n, f, d)
+SUBROUTINE test_4th (nn, f, d)
   USE stagger_4th
   USE omp_timer_mod
   implicit none
+  integer(8), parameter:: n=36
   real, dimension(n,n,n):: f, d
-  integer:: n, m
+  integer:: nn, m
   real(8):: wt
   m=0
   wt = wallclock()
@@ -302,34 +296,38 @@ SUBROUTINE test_4th (n, f, d)
   call toc('zdn',m*n**3)
 END SUBROUTINE
 
-SUBROUTINE test_6th (n, f, d)
+SUBROUTINE test_6th (nn, f, d)
   USE stagger_6th
   USE omp_timer_mod
   implicit none
+  integer(8), parameter:: n=36
   real, dimension(n,n,n):: f, d
-  integer:: n, m
+  integer:: nn, m
   real(8):: wt
   m=0
   wt = wallclock()
+  d=0.0
   call tic
   do while ((wallclock()-wt) < 1.0)
-    d=xdn(f)
+    d=d+xdn(f+m)
     m=m+1
   end do
   call toc('xdn',m*n**3)
   m=0
   wt = wallclock()
+  d=0.0
   call tic
   do while ((wallclock()-wt) < 1.0)
-    d=ydn(f)
+    d=d+ydn(f+m)
     m=m+1
   end do
   call toc('ydn',m*n**3)
   m=0
   wt = wallclock()
+  d=0.0
   call tic
   do while ((wallclock()-wt) < 1.0)
-    d=zdn(f)
+    d=d+zdn(f+m)
     m=m+1
   end do
   call toc('zdn',m*n**3)
