@@ -1,0 +1,2 @@
+COMPILER = ifort
+ 
