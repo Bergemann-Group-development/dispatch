@@ -116,6 +116,14 @@ SUBROUTINE same_static (self)
       end do
       end do
       end do
+      !target%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),iv,it,1) = &
+      !    source%mem(l1(1)+o(1):u1(1)+o(1), &
+      !               l1(2)+o(2):u1(2)+o(2), &
+      !               l1(3)+o(3):u1(3)+o(3),iv,jt(1),1)*pt(1) &
+      !  + source%mem(l1(1)+o(1):u1(1)+o(1), &
+      !               l1(2)+o(2):u1(2)+o(2), &
+      !               l1(3)+o(3):u1(3)+o(3),iv,jt(2),1)*pt(2)
+      !dmin = minval(target%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),iv,it,1))
       if (iv==1) then
         if (io%verbose==3.or.dmin<0.0) write (io_unit%log,1) &
         'patch', target%id, ' level', target%level, ' picked up', ntot, &
