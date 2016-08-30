@@ -45,7 +45,6 @@ CONTAINS
     do i=0,ncpu-1
       if (i==rank) cycle
       call MPI_IRECV(t%data(i),1,MPI_INTEGER,i,i+1,mpi_comm_world,t%req(i),err)
-      print *, rank, 'Recv setup:', i, i+1
     enddo
     !
   END SUBROUTINE init_stealing
@@ -70,14 +69,13 @@ CONTAINS
         source = status(MPI_SOURCE)
         tag    = status(MPI_TAG)
         if (tag==0) then ! A zero tag means that thief needs work
+          print *, rank, 'Thief :', -1, cycles, source
           call MPI_RECV(dummy,0,MPI_INTEGER,source,tag,mpi_comm_world,MPI_STATUS_IGNORE,err) ! drop message from queue
           call MPI_RSEND(cycles,1,MPI_INTEGER,source,rank+1,mpi_comm_world,err)
           t%nresult = t%nresult + 1 ! One more outstanding result to receive
-          print *, rank, 'SendW', t%nresult, source,rank+1
         else              ! A positive tag means that thief is returning result
           call MPI_RECV(result,1,MPI_INTEGER,source,tag,mpi_comm_world,status,err)
           t%nresult = t%nresult - 1
-          print *, rank, 'RecvR1', source
           ! tag should contain the info to insert result in global data structure 
           retry = .true.
         endif
@@ -95,16 +93,19 @@ CONTAINS
     !
     integer :: irank, cycles, result, rtag, source, tag
     integer, dimension(:), allocatable :: preq, rreq
+    logical, dimension(:), allocatable :: reqsend
     logical :: flag, retry
     !
     ! Send everybody a message telling them that we solicit work
     !
-    allocate(preq(0:ncpu-1),rreq(0:ncpu-1))
+    allocate(preq(0:ncpu-1),rreq(0:ncpu-1),reqsend(0:ncpu))
     preq = MPI_REQUEST_NULL
     rreq = MPI_REQUEST_NULL
+    reqsend = .false.
     cycles=0
     do irank=0,ncpu-1
       if (irank==rank) cycle
+      reqsend(irank) = .true.
       call MPI_ISEND(cycles,0,MPI_INTEGER,irank,0,mpi_comm_world,preq(irank),err)
     enddo
     !
@@ -121,7 +122,6 @@ CONTAINS
       retry = flag
       if (flag) then
         if (t%data(irank)<0) then ! sender responded that it has no work left
-          print *, rank, 'WDone', irank, t%nworker
           t%worker(irank) = .false.
           t%nworker = t%nworker - 1
           if (preq(irank) .ne. MPI_REQUEST_NULL) then
@@ -129,12 +129,11 @@ CONTAINS
             call MPI_REQUEST_FREE(preq(irank),err)
           endif
         else
-          print *, rank, 'ExtW ', irank
+          print *, rank, 'ExtW ', irank, t%data(irank)
           call do_work(t%data(irank)) ! process work
           result=0    ! This should be the result payload
           rtag=ncpu+1 ! This should be the tag telling where to insert result
           call MPI_WAIT(rreq(irank),MPI_STATUS_IGNORE,err) ! Make sure that there are no outstanding results send to this rank
-          print *, rank, 'DoneW', irank
           call MPI_ISEND(result,1,MPI_INTEGER,irank,rtag,mpi_comm_world,rreq(irank),err)
           ! Post new mpi_recv to receive more work
           call MPI_IRECV(t%data(irank),1,MPI_INTEGER,irank,irank+1,mpi_comm_world,t%req(irank),err)
@@ -147,14 +146,11 @@ CONTAINS
       if (flag) then
         source = status(MPI_SOURCE)
         tag    = status(MPI_TAG)
-        print *, rank, 'Steal probe true:', source, tag, t%req==MPI_REQUEST_NULL
         if (tag==0) then ! A zero tag means that thief needs work
-          print *, rank, 'NoW  ', source, t%nworker, t%nresult
           call MPI_RECV(result,0,MPI_INTEGER,source,tag,mpi_comm_world,MPI_STATUS_IGNORE,err)
           ! Tell thief there is no work here
           call MPI_RSEND(-1,1,MPI_INTEGER,source,rank+1,mpi_comm_world,err)
         else if (tag > ncpu) then           ! A positive tag means that worker is returning result
-          print *, rank, 'RecvR2', source, tag
           call MPI_RECV(result,1,MPI_INTEGER,source,tag,mpi_comm_world,MPI_STATUS_IGNORE,err)
           t%nresult = t%nresult - 1
           ! tag should contain the info to insert result in global data structure 
@@ -271,8 +267,6 @@ PROGRAM main
     if (.not. thief_present(cycles)) then
       call do_work(cycles)
       print *, rank, 'Work  :', i, cycles, nwork
-    else
-      print *, rank, 'Thief :', i, cycles, nwork
     endif
   enddo
   !
