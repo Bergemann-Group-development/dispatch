@@ -90,18 +90,20 @@ CONTAINS
       end subroutine
     end interface
     !
-    integer :: irank, cycles, result, rtag, source, tag
+    integer :: irank, cycles, result, rtag, source, tag, nthief
     integer, dimension(:), allocatable :: preq, rreq
     logical, dimension(:), allocatable :: reqsend
     logical :: flag, retry
-    !
-    ! Send everybody a message telling them that we solicit work
     !
     allocate(preq(0:ncpu-1),rreq(0:ncpu-1),reqsend(0:ncpu))
     preq = MPI_REQUEST_NULL
     rreq = MPI_REQUEST_NULL
     reqsend = .false.
     cycles=0
+    nthief=1
+    !
+    ! Send everybody a message telling them that we solicit work
+    ! FIXME -- this should be only a subset and gradually increased
     do irank=0,ncpu-1
       if (irank==rank) cycle
       reqsend(irank) = .true.
@@ -109,35 +111,30 @@ CONTAINS
     enddo
     !
     ! Check if somebody wants to send us work or results
-    !
-    do while(t%nworker > 0 .or. t%nresult > 0)
+    do while(t%nworker > 0 .or. t%nresult > 0 .or. nthief < ncpu)
 
-      ! Test if a data package is being send:
-      call MPI_TESTANY(ncpu,t%req,irank,flag,status,err)
+      ! Test if a data package is being send by a worker:
+      flag = .false.
+      if (t%nworker > 0) call MPI_TESTANY(ncpu,t%req,irank,flag,status,err)
 
       retry = flag
       if (flag) then
-        irank = irank - 1 ! offset because index starts at 0
-        source = status(MPI_SOURCE)
-        tag    = status(MPI_TAG)
-        if (irank.ne.source) print *, rank, 'ERR in MPI_TESTANY', err, status, irank, source, tag, MPI_PROC_NULL, t%req==MPI_REQUEST_NULL
-
+        irank = irank - 1 ! offset because arrays start at 0, but MPI makes irank 1-based
         if (t%data(irank)<0) then ! sender responded that it has no work left
           t%worker(irank) = .false.
           t%nworker = t%nworker - 1
-          !if (preq(irank) .ne. MPI_REQUEST_NULL) then
-          !  call MPI_CANCEL(preq(irank),err)
-          !  call MPI_REQUEST_FREE(preq(irank),err)
-          !endif
         else
-          print *, rank, 'ExtW  :', irank, t%data(irank), t%nworker, t%nresult
           call do_work(t%data(irank)) ! process work
-          result=0    ! This should be the result payload
-          rtag=ncpu+1 ! This should be the tag telling where to insert result
+
+          result=0    ! result payload
+          rtag=ncpu+1 ! tag telling where to insert result
+
           call MPI_WAIT(rreq(irank),MPI_STATUS_IGNORE,err) ! Make sure that there are no outstanding results send to this rank
           call MPI_ISEND(result,1,MPI_INTEGER,irank,rtag,mpi_comm_world,rreq(irank),err)
+
           ! Post new mpi_recv to receive more work
           call MPI_IRECV(t%data(irank),1,MPI_INTEGER,irank,irank+1,mpi_comm_world,t%req(irank),err)
+
           ! Post new send to signal we want to steal
           call MPI_ISEND(cycles,0,MPI_INTEGER,irank,0,mpi_comm_world,preq(irank),err)
         endif
@@ -146,27 +143,26 @@ CONTAINS
       ! Test if a thief is present, or we are receiving a result
       call MPI_IPROBE(MPI_ANY_SOURCE,MPI_ANY_TAG,mpi_comm_world,flag,status,err)
       retry = retry .or. flag
+
       if (flag) then
         source = status(MPI_SOURCE)
         tag    = status(MPI_TAG)
-        if (tag==0) then ! A zero tag means that thief needs work
+        if (tag==0) then      ! A zero tag means that thief needs work
+          nthief = nthief + 1 ! inc thief counter
           call MPI_RECV(result,0,MPI_INTEGER,source,tag,mpi_comm_world,MPI_STATUS_IGNORE,err)
           ! Tell thief there is no work here
           call MPI_RSEND(-1,1,MPI_INTEGER,source,rank+1,mpi_comm_world,err)
         else if (tag > ncpu) then           ! A positive tag means that worker is returning result
           call MPI_RECV(result,1,MPI_INTEGER,source,tag,mpi_comm_world,MPI_STATUS_IGNORE,err)
           t%nresult = t%nresult - 1
-          print *, rank, 'Receiving result', source, tag, t%nresult
           ! tag should contain the info to insert result in global data structure 
         endif
       endif
       
-      if (.not. retry) call do_work(10) ! if nothing in incoming queue, cycle for 10 ms
+      if (.not. retry) call do_work(10) ! if nothing in incoming queues, cycle for 10 ms
     enddo
 
-    print *, rank, 'Done working and stealing'
-
-    ! Wait for outstanding mpi_send's with results to finish
+    ! Wait for outstanding mpi_sends and mpi_recvs
     call MPI_WAITALL(ncpu,rreq,MPI_STATUSES_IGNORE, err)
     call MPI_WAITALL(ncpu,preq,MPI_STATUSES_IGNORE, err)
     call MPI_WAITALL(ncpu,t%req,MPI_STATUSES_IGNORE, err)
@@ -194,6 +190,7 @@ FUNCTION ran1(seed)
 END FUNCTION
 !
 SUBROUTINE do_work(cycles)
+  USE mpi_mod, only : master
   implicit none
   integer, intent(in) :: cycles
   !
@@ -211,7 +208,7 @@ SUBROUTINE do_work(cycles)
     call system_clock(count=count2)
     time = 1000.*real(count2-count1) / count_rate ! time in milliseconds
     calibrate = ceiling(100000 / time)           ! nr of iterations for 1ms
-    print *, 'Time in milliseconds, calibrate :', time, calibrate
+    if (master) print *, 'Time in milliseconds, calibrate :', time, calibrate
   endif
   !
   k=0*k
@@ -281,7 +278,6 @@ PROGRAM main
   !
   ! The steal work takes as argument a function that does work.
   ! It returns when there is no more work to do.
-  print *, rank, 'Work done, now stealing work', t%nresult
   call steal_work(do_work)
   !  
 END PROGRAM
