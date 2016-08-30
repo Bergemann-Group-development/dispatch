@@ -45,6 +45,7 @@ CONTAINS
     do i=0,ncpu-1
       if (i==rank) cycle
       call MPI_IRECV(t%data(i),1,MPI_INTEGER,i,i+1,mpi_comm_world,t%req(i),err)
+      print *, rank, 'Recv setup:', i, i+1
     enddo
     !
   END SUBROUTINE init_stealing
@@ -52,7 +53,7 @@ CONTAINS
   LOGICAL FUNCTION thief_present(cycles)
     implicit none
     integer, intent(in) :: cycles
-    integer :: source, tag
+    integer :: source, tag, dummy
     logical :: retry
     !
     integer :: result ! This is the return payload
@@ -69,10 +70,10 @@ CONTAINS
         source = status(MPI_SOURCE)
         tag    = status(MPI_TAG)
         if (tag==0) then ! A zero tag means that thief needs work
-          !call MPI_RSEND(cycles,1,MPI_INTEGER,source,source+1,mpi_comm_world,err)
-          call MPI_SSEND(cycles,1,MPI_INTEGER,source,source+1,mpi_comm_world,err)
+          call MPI_RECV(dummy,0,MPI_INTEGER,source,tag,mpi_comm_world,MPI_STATUS_IGNORE,err) ! drop message from queue
+          call MPI_RSEND(cycles,1,MPI_INTEGER,source,rank+1,mpi_comm_world,err)
           t%nresult = t%nresult + 1 ! One more outstanding result to receive
-          print *, rank, 'SendW', t%nresult
+          print *, rank, 'SendW', t%nresult, source,rank+1
         else              ! A positive tag means that thief is returning result
           call MPI_RECV(result,1,MPI_INTEGER,source,tag,mpi_comm_world,status,err)
           t%nresult = t%nresult - 1
@@ -146,14 +147,15 @@ CONTAINS
       if (flag) then
         source = status(MPI_SOURCE)
         tag    = status(MPI_TAG)
+        print *, rank, 'Steal probe true:', source, tag, t%req==MPI_REQUEST_NULL
         if (tag==0) then ! A zero tag means that thief needs work
           print *, rank, 'NoW  ', source, t%nworker, t%nresult
+          call MPI_RECV(result,0,MPI_INTEGER,source,tag,mpi_comm_world,MPI_STATUS_IGNORE,err)
           ! Tell thief there is no work here
-          !call MPI_RSEND(-1,1,MPI_INTEGER,source,source+1,mpi_comm_world,err)
-          call MPI_SSEND(-1,1,MPI_INTEGER,source,source+1,mpi_comm_world,err)
+          call MPI_RSEND(-1,1,MPI_INTEGER,source,rank+1,mpi_comm_world,err)
         else if (tag > ncpu) then           ! A positive tag means that worker is returning result
           print *, rank, 'RecvR2', source, tag
-          call MPI_RECV(result,1,MPI_INTEGER,source,tag,mpi_comm_world,status,err)
+          call MPI_RECV(result,1,MPI_INTEGER,source,tag,mpi_comm_world,MPI_STATUS_IGNORE,err)
           t%nresult = t%nresult - 1
           ! tag should contain the info to insert result in global data structure 
         endif
