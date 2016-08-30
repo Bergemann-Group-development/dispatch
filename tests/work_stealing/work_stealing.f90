@@ -120,7 +120,7 @@ CONTAINS
         irank = irank - 1 ! offset because index starts at 0
         source = status(MPI_SOURCE)
         tag    = status(MPI_TAG)
-        if (irank.ne.source) print *, rank, 'ERR in MPI_TESTANY', err, status, irank, source, tag, t%req==MPI_REQUEST_NULL
+        if (irank.ne.source) print *, rank, 'ERR in MPI_TESTANY', err, status, irank, source, tag, MPI_PROC_NULL, t%req==MPI_REQUEST_NULL
 
         if (t%data(irank)<0) then ! sender responded that it has no work left
           t%worker(irank) = .false.
