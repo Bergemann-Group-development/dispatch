@@ -69,7 +69,6 @@ CONTAINS
         source = status(MPI_SOURCE)
         tag    = status(MPI_TAG)
         if (tag==0) then ! A zero tag means that thief needs work
-          print *, rank, 'Thief :', -1, cycles, source
           call MPI_RECV(dummy,0,MPI_INTEGER,source,tag,mpi_comm_world,MPI_STATUS_IGNORE,err) ! drop message from queue
           call MPI_RSEND(cycles,1,MPI_INTEGER,source,rank+1,mpi_comm_world,err)
           t%nresult = t%nresult + 1 ! One more outstanding result to receive
@@ -115,21 +114,23 @@ CONTAINS
 
       ! Test if a data package is being send:
       call MPI_TESTANY(ncpu,t%req,irank,flag,status,err)
-      irank = irank - 1 ! offset because index starts at 0
-      source = status(MPI_SOURCE)
-      tag    = status(MPI_TAG)
 
       retry = flag
       if (flag) then
+        irank = irank - 1 ! offset because index starts at 0
+        source = status(MPI_SOURCE)
+        tag    = status(MPI_TAG)
+        if (irank.ne.source) print *, rank, 'ERR in MPI_TESTANY', err, status, irank, source, tag, t%req==MPI_REQUEST_NULL
+
         if (t%data(irank)<0) then ! sender responded that it has no work left
           t%worker(irank) = .false.
           t%nworker = t%nworker - 1
-          if (preq(irank) .ne. MPI_REQUEST_NULL) then
-            call MPI_CANCEL(preq(irank),err)
-            call MPI_REQUEST_FREE(preq(irank),err)
-          endif
+          !if (preq(irank) .ne. MPI_REQUEST_NULL) then
+          !  call MPI_CANCEL(preq(irank),err)
+          !  call MPI_REQUEST_FREE(preq(irank),err)
+          !endif
         else
-          print *, rank, 'ExtW ', irank, t%data(irank)
+          print *, rank, 'ExtW  :', irank, t%data(irank), t%nworker, t%nresult
           call do_work(t%data(irank)) ! process work
           result=0    ! This should be the result payload
           rtag=ncpu+1 ! This should be the tag telling where to insert result
@@ -137,6 +138,8 @@ CONTAINS
           call MPI_ISEND(result,1,MPI_INTEGER,irank,rtag,mpi_comm_world,rreq(irank),err)
           ! Post new mpi_recv to receive more work
           call MPI_IRECV(t%data(irank),1,MPI_INTEGER,irank,irank+1,mpi_comm_world,t%req(irank),err)
+          ! Post new send to signal we want to steal
+          call MPI_ISEND(cycles,0,MPI_INTEGER,irank,0,mpi_comm_world,preq(irank),err)
         endif
       endif
 
@@ -153,6 +156,7 @@ CONTAINS
         else if (tag > ncpu) then           ! A positive tag means that worker is returning result
           call MPI_RECV(result,1,MPI_INTEGER,source,tag,mpi_comm_world,MPI_STATUS_IGNORE,err)
           t%nresult = t%nresult - 1
+          print *, rank, 'Receiving result', source, tag, t%nresult
           ! tag should contain the info to insert result in global data structure 
         endif
       endif
@@ -160,8 +164,12 @@ CONTAINS
       if (.not. retry) call do_work(10) ! if nothing in incoming queue, cycle for 10 ms
     enddo
 
+    print *, rank, 'Done working and stealing'
+
     ! Wait for outstanding mpi_send's with results to finish
     call MPI_WAITALL(ncpu,rreq,MPI_STATUSES_IGNORE, err)
+    call MPI_WAITALL(ncpu,preq,MPI_STATUSES_IGNORE, err)
+    call MPI_WAITALL(ncpu,t%req,MPI_STATUSES_IGNORE, err)
 
   END SUBROUTINE steal_work
 END MODULE
@@ -197,18 +205,18 @@ SUBROUTINE do_work(cycles)
   if (calibrate==0) then
     k = 0
     call system_clock(count=count1,count_rate=count_rate)
-    do calibrate=1,10000000
-      k = calibrate - k
+    do calibrate=1,100000_8
+      k = calibrate - floor(exp(sin(real(k))*10.))
     enddo
     call system_clock(count=count2)
     time = 1000.*real(count2-count1) / count_rate ! time in milliseconds
-    calibrate = ceiling(10000000 / time)           ! nr of iterations for 1ms
+    calibrate = ceiling(100000 / time)           ! nr of iterations for 1ms
     print *, 'Time in milliseconds, calibrate :', time, calibrate
   endif
   !
-  k=0
+  k=0*k
   do i=1_8, calibrate*cycles
-    k = i - k
+    k = i - floor(exp(sin(real(k))*10.))
   enddo
   !
 END SUBROUTINE do_work
@@ -221,11 +229,13 @@ PROGRAM main
   integer :: seed,i,cycles,nwork
   real    :: x
   real, external :: ran1
+  interface
+    subroutine do_work(data)
+      integer,intent(in) :: data
+    end subroutine
+  end interface
   !
-  !-----------------------------------------------------------------------------
   !  Start up MPI and get number of nodes and our node rank
-  !-----------------------------------------------------------------------------
-  !
   call MPI_INIT_THREAD (MPI_THREAD_MULTIPLE, mpi_mode, err)
   call MPI_Comm_size (mpi_comm_world, ncpu, err)
   call MPI_Comm_rank (mpi_comm_world, rank, err)
@@ -259,19 +269,19 @@ PROGRAM main
   !
   ! do work
   !
-  nwork = 10 + floor(5 * ran1(seed))
+  nwork = 20 + floor(50 * ran1(seed))
   call init_stealing()
   do i=1,nwork
     !
     cycles = 100 + floor(50 * ran1(seed))
     if (.not. thief_present(cycles)) then
       call do_work(cycles)
-      print *, rank, 'Work  :', i, cycles, nwork
     endif
   enddo
   !
   ! The steal work takes as argument a function that does work.
   ! It returns when there is no more work to do.
+  print *, rank, 'Work done, now stealing work', t%nresult
   call steal_work(do_work)
   !  
 END PROGRAM
