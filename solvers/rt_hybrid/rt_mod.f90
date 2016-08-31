@@ -17,6 +17,7 @@ MODULE rt_mod
     type (ray_list_t),   pointer :: my_rays
     ! common items
     integer :: n_ray_dirs = 3
+    integer :: rt_freq = 1                                              ! how often rt tasks are done wrt experiment
     integer :: bundle_ID, dir_ID, rt_type, li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment 
     real(kind=8) :: cell_ds(3)
@@ -25,9 +26,7 @@ MODULE rt_mod
     procedure :: find_upstream                                             
     procedure :: init => init_rt
     procedure :: update => update_rt
-    procedure :: update_correction_upstream
     procedure :: set_BC
-    procedure :: update_BC
     procedure :: absolute_point_position
     procedure :: ray2cell
     procedure :: cell2pos
@@ -44,13 +43,13 @@ MODULE rt_mod
 SUBROUTINE init_rt (self)
   class(rt_t) :: self
   !---------------------------------------------------------------------
-  error stop "ERROR: rt_t%init_rt is an empty subroutine"
+  error stop "ERROR: rt_t%init_rt was called, but it is an empty subroutine"
 END SUBROUTINE init_rt
 
 SUBROUTINE update_rt (self)
   class(rt_t) :: self
   !---------------------------------------------------------------------
-  error stop "ERROR: rt_t%update_rt is an empty subroutine"
+  error stop "ERROR: rt_t%update_rt was called, but it is an empty subroutine"
 END SUBROUTINE update_rt
 
 SUBROUTINE set_reflective_BC(self)
@@ -277,7 +276,7 @@ END FUNCTION pos2cell
 ! orient = 1 - lwall, orient = 2 - uwall
 SUBROUTINE cell2ray (self, c, w, ray, pt, found)
   class(rt_t) :: self
-  type(cell_t), pointer :: cell
+  type(rt_cell_t), pointer :: cell
   integer :: c(3), ray, pt, w(3), orient, wall(3)
   logical :: found
 !-----------------------------------------------------------------------

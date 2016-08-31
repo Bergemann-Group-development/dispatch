@@ -121,21 +121,22 @@ END SUBROUTINE update_rt_data
 SUBROUTINE I_store (self,I_st,c,pt,ray,dir,lw,uw)
   class (rt_data_t) :: self
   type (int_data_t), pointer :: this
-  real (kind=8), dimension(self%n_wl_bins) :: I_st
+  real (kind=8), dimension(microphysics%n_wl_bins) :: I_st
   integer :: pt, ray, dir, lw(3), uw(3), c(3)
   logical :: found
 !-----------------------------------------------------------------------
   call trace_begin('rt_data_mod%I_store')
-  associate (I_nt => self%intensity(c(1),c(2),c(3),dir))
+  associate (I_nt => self%intensity(c(1),c(2),c(3),dir),&
+             nwb => microphysics%n_wl_bins)
   
   if (.not.associated(I_nt%head)) then
-    call I_nt%init(self%n_wl_bins,ray,pt,lw,uw)
+    call I_nt%init(nwb,ray,pt,lw,uw)
   else
     this  => I_nt%head
     found = .false.
     do while (associated(this%next).and.(found.eqv..false.))
-      if (all(this%lw == lw).and.all(this%uw == uw).and.&
-          (this%point == pt).and.  (this%ray == ray)) then
+      if (all(this%lwall == lw).and.all(this%uwall == uw).and.&
+             (this%point == pt).and.   (this%ray   == ray)) then
         found = .true.
         this%I = I_st
       else
@@ -144,7 +145,7 @@ SUBROUTINE I_store (self,I_st,c,pt,ray,dir,lw,uw)
     end do
     
     if (.not.found) then
-      call I_nt%init(self%n_wl_bins,ray,pt,lw,uw)
+      call I_nt%init(nwb,ray,pt,lw,uw)
       I_nt%tail%I = I_st
     end if
   end if
@@ -155,18 +156,18 @@ END SUBROUTINE I_store
 !> =====================================================================
 !> Retrieve intensity
 !> =====================================================================
-FUNCTION I_retrv (self,c,dir,lw,uw) result I_st
+FUNCTION I_retrv (self,c,dir,lw,uw) result (I_st)
   class (rt_data_t) :: self
   type (int_data_t), pointer :: this
-  real (kind=8), dimension(self%n_wl_bins) :: I_st
+  real (kind=8), dimension(microphysics%n_wl_bins) :: I_st
   integer :: dir, lw(3), uw(3), c(3)
   logical :: found
 ! ----------------------------------------------------------------------
   call trace_begin('rt_data_mod%I_retrv')
   associate (this => self%intensity(c(1),c(2),c(3),dir)%head)
   found = .false.
-  do while(associated(this).and..not.found.)
-    if (all(this%lw == lw).and.all(this%uw == uw) then
+  do while(associated(this).and..not.found)
+    if (all(this%lwall == lw).and.all(this%uwall == uw)) then
       found = .true.
       I_st = this%I
     end if
@@ -176,13 +177,14 @@ FUNCTION I_retrv (self,c,dir,lw,uw) result I_st
   
   end associate
   call trace_end
-END SUBROUTINE I_retrv
+END FUNCTION I_retrv
 
 !> =====================================================================
 !> Initialize intensity storage for this cell
 !> =====================================================================
 SUBROUTINE int_data_init(self,nwb,ray,pt,lw,uw)
-  class (int_data_t), pointer :: self, new
+  class (int_data_t) :: self
+  type  (int_data_t), pointer :: new
   integer :: nwb, ray, pt, lw(3), uw(3)
 !-----------------------------------------------------------------------
   call trace_begin('rt_data_mod%int_data_init')
