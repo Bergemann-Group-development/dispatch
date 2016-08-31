@@ -1,6 +1,8 @@
 # Vpath
 VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)
 
+DEBUG += -DCHECK_NAN
+
 # Dependencies
 amr_parameters          :
 hydro_parameters.o      : amr_parameters.o
