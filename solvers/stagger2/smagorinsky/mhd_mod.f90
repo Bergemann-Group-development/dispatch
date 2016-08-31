@@ -85,17 +85,8 @@ SUBROUTINE update (self)
   USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
-  real, dimension(:,:,:,:), pointer:: U, emf, J, p, B, dpdt, dBdt
-  real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm
-  real, dimension(:,:,:),   pointer:: d, e, dddt, dedt
+  real, dimension(:,:,:,:), pointer:: U, emf, J, fx, fy, fz, fd, ld, dd, fm
   real, dimension(:,:,:),   pointer:: du, lnd, ee, cs, pg, pa, pp, pb, Q
-  real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
-  real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz
-  real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez, Jx, Jy, Jz
-  real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
-  real, dimension(:,:,:),   pointer:: fxx, fxy, fxz
-  real, dimension(:,:,:),   pointer:: fyx, fyy, fyz
-  real, dimension(:,:,:),   pointer:: fzx, fzy, fzz
   !.............................................................................
   real:: ds(3), dx
   integer, save:: itimer=0
@@ -104,19 +95,14 @@ SUBROUTINE update (self)
   call self%dnload
   call self%output
 
+  !-----------------------------------------------------------------------------
+  ! Pointer assignment and scratch allocation
+  !-----------------------------------------------------------------------------
   self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
   self%e => self%mem(:,:,:,  2,self%it,1); self%dedt => self%mem(:,:,:,  2,self%it,2)
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
-  d=>self%d; dddt=>self%dddt
-  e=>self%e; dedt=>self%dedt;
-  p=>self%p; dpdt=>self%dpdt
-  px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
-  dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
     self%B => self%mem(:,:,:,6:8,self%it,1); self%dBdt => self%mem(:,:,:,6:8,self%it,2)
-    B=>self%B; dBdt=>self%dBdt
-    Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
-    dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
   call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pa, du, ee, cs, pp, pb, Q)
@@ -128,15 +114,23 @@ SUBROUTINE update (self)
     call allocate_scalars (self%gn, pg)
     call allocate_vectors (self%gn, U)
   end if
-  Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
-  Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
-  Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
-  fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2); fxz=>fx(:,:,:,3)
-  fyx=>fy(:,:,:,1); fyy=>fy(:,:,:,2); fyz=>fy(:,:,:,3)
-  fzx=>fz(:,:,:,1); fzy=>fz(:,:,:,2); fzz=>fz(:,:,:,3)
-  fdx=>fd(:,:,:,1); fdy=>fd(:,:,:,2); fdz=>fd(:,:,:,3)
-  ldx=>ld(:,:,:,1); ldy=>ld(:,:,:,2); ldz=>ld(:,:,:,3)
-  ddx=>dd(:,:,:,1); ddy=>dd(:,:,:,2); ddz=>dd(:,:,:,3)
+associate (d=>self%d, dddt=>self%dddt, &
+           e=>self%e, dedt=>self%dedt, &
+           p=>self%p, dpdt=>self%dpdt, &
+           B=>self%B, dBdt=>self%dBdt, &
+           px=>self%p(:,:,:,1), py=>self%p(:,:,:,2), pz=>self%p(:,:,:,3), &
+           Bx=>self%B(:,:,:,1), By=>self%B(:,:,:,2), Bz=>self%B(:,:,:,3), &
+           dpdtx=>self%dpdt(:,:,:,1), dpdty=>self%dpdt(:,:,:,2), dpdtz=>self%dpdt(:,:,:,3), &
+           dBdtx=>self%dBdt(:,:,:,1), dBdty=>self%dBdt(:,:,:,2), dBdtz=>self%dBdt(:,:,:,3), &
+           Jx =>  J(:,:,:,1), Jy =>  J(:,:,:,2), Jz =>  J(:,:,:,3), &
+           Ux =>  U(:,:,:,1), Uy =>  U(:,:,:,2), Uz =>  U(:,:,:,3), &
+           fxx=> fx(:,:,:,1), fxy=> fx(:,:,:,2), fxz=> fx(:,:,:,3), &
+           fyx=> fy(:,:,:,1), fyy=> fy(:,:,:,2), fyz=> fy(:,:,:,3), &
+           fzx=> fz(:,:,:,1), fzy=> fz(:,:,:,2), fzz=> fz(:,:,:,3), &
+           fdx=> fd(:,:,:,1), fdy=> fd(:,:,:,2), fdz=> fd(:,:,:,3), &
+           ldx=> ld(:,:,:,1), ldy=> ld(:,:,:,2), ldz=> ld(:,:,:,3), &
+           ddx=> dd(:,:,:,1), ddy=> dd(:,:,:,2), ddz=> dd(:,:,:,3), &
+           Ex =>emf(:,:,:,1), Ey =>emf(:,:,:,2), Ez =>emf(:,:,:,3))
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below
@@ -324,6 +318,7 @@ SUBROUTINE update (self)
     call deallocate_scalars (pg)
   end if
   call trace_end (itimer)
+end associate
 END SUBROUTINE update
 
 !> =============================================================================
