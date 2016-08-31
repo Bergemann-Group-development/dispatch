@@ -34,7 +34,7 @@ SUBROUTINE allocate_vectors (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
   !.............................................................................
-  call trace_begin('init_vectors')
+  call trace_begin('allocate_vectors')
   if (present(v1)) allocate(v1(n(1),n(2),n(3),3))
   if (present(v2)) allocate(v2(n(1),n(2),n(3),3))
   if (present(v3)) allocate(v3(n(1),n(2),n(3),3))
@@ -53,7 +53,7 @@ SUBROUTINE deallocate_vectors (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
   !.............................................................................
-  call trace_begin('init_vectors')
+  call trace_begin('deallocate_vectors')
   if (present(v1)) deallocate(v1)
   if (present(v2)) deallocate(v2)
   if (present(v3)) deallocate(v3)

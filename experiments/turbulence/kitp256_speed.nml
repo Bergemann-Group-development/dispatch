@@ -11,7 +11,7 @@
  max_stalled=100000
 /
 &io_params
- verbose=0
+ verbose=2
  do_trace=f
  do_debug=f
  do_output=f

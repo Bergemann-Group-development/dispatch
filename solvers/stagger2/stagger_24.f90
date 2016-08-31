@@ -1,0 +1,225 @@
+!> =============================================================================
+!> $Id$
+!> =============================================================================
+MODULE stagger_24
+  implicit none
+  public
+CONTAINS
+
+!*******************************************************************************
+FUNCTION ddxdn_24 (ds, a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  real    :: ds(3), c
+  integer :: ix, iy, iz
+!...............................................................................
+  b(1,:,:) = 0.0
+  c = 1./ds(1)
+  do iz=1,24
+  do iy=1,24
+  do ix=2,24
+    b(ix,iy,iz) = c*(a(ix  ,iy,iz) - a(ix-1,iy,iz))
+  end do
+  end do
+  end do
+END FUNCTION ddxdn_24
+
+!*******************************************************************************
+FUNCTION ddydn_24 (ds, a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  integer :: ix, iy, iz
+  real    :: ds(3), c
+!...............................................................................
+  b(:,1,:) = 0.0
+  c = 1./ds(2)
+  do iz=1,24
+  do iy=2,24
+  do ix=1,24
+    b(ix,iy,iz) = c*(a(ix,iy  ,iz) - a(ix,iy-1,iz))
+  end do
+  end do
+  end do
+END FUNCTION ddydn_24
+
+!*******************************************************************************
+FUNCTION ddzdn_24 (ds, a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  real    :: ds(3), c
+  integer :: ix, iy, iz
+!...............................................................................
+  b(:,:,1) = 0.0
+  c = 1./ds(3)
+  do iz=2,24
+  do iy=1,24
+  do ix=1,24
+    b(ix,iy,iz) = c*(a(ix,iy,iz  ) - a(ix,iy,iz-1))
+  end do
+  end do
+  end do
+END FUNCTION ddzdn_24
+
+!*******************************************************************************
+FUNCTION ddxup_24 (ds, a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  integer :: ix, iy, iz
+  real    :: ds(3), c
+!...............................................................................
+  b(24,:,:) = 0.0
+  c = 1./ds(1)
+  do iz=1,24
+  do iy=1,24
+  do ix=1,24-1
+    b(ix,iy,iz) = c*(a(ix+1,iy,iz) - a(ix  ,iy,iz))
+  end do
+  end do
+  end do
+END FUNCTION ddxup_24
+
+!*******************************************************************************
+FUNCTION ddyup_24 (ds, a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  integer :: ix, iy, iz
+  real    :: ds(3), c
+!...............................................................................
+  b(:,24,:) = 0.0
+  c = 1./ds(2)
+  do iz=1,24
+  do iy=1,24-1
+  do ix=1,24
+    b(ix,iy,iz) = c*(a(ix,iy+1,iz) - a(ix,iy  ,iz))
+  end do
+  end do
+  end do
+END FUNCTION ddyup_24
+
+!*******************************************************************************
+FUNCTION ddzup_24 (ds, a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  integer :: ix, iy, iz
+  real    :: ds(3), c
+!...............................................................................
+  b(:,:,24) = 0.0
+  c = 1./ds(3)
+  do iz=1,24-1
+  do iy=1,24
+  do ix=1,24
+    b(ix,iy,iz) = c*(a(ix,iy,iz+1) - a(ix,iy,iz  ))
+  end do
+  end do
+  end do
+END FUNCTION ddzup_24
+
+!*******************************************************************************
+FUNCTION xdn_24 (a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  real    :: c
+  integer :: ix, iy, iz
+!...............................................................................
+  c = 0.5
+  b(1,:,:) = a(1,:,:)
+  do iz=1,24
+  do iy=1,24
+  do ix=2,24
+    b(ix,iy,iz) = c*(a(ix  ,iy,iz) + a(ix-1,iy,iz))
+  end do
+  end do
+  end do
+END FUNCTION xdn_24
+
+!*******************************************************************************
+FUNCTION ydn_24 (a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  real    :: c
+  integer :: ix, iy, iz
+!...............................................................................
+  c = 0.5
+  b(:,1,:) = a(:,1,:)
+  do iz=1,24
+  do iy=2,24
+  do ix=1,24
+    b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy-1,iz))
+  end do
+  end do
+  end do
+END FUNCTION ydn_24
+
+!*******************************************************************************
+FUNCTION zdn_24 (a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  real    :: c
+  integer :: ix, iy, iz
+!...............................................................................
+  c = 0.5
+  b(:,:,1) = a(:,:,1)
+  do iz=2,24
+  do iy=1,24
+  do ix=1,24
+    b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy,iz-1))
+  end do
+  end do
+  end do
+END FUNCTION zdn_24
+
+!*******************************************************************************
+FUNCTION xup_24 (a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  real    :: c
+  integer :: ix, iy, iz
+!...............................................................................
+  c = 0.5
+  b(24,:,:) = a(24,:,:)
+  do iz=1,24
+  do iy=1,24
+  do ix=1,24-1
+    b(ix,iy,iz) = c*(a(ix+1,iy,iz) + a(ix  ,iy,iz))
+  end do
+  end do
+  end do
+END FUNCTION
+
+!*******************************************************************************
+FUNCTION yup_24 (a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  real    :: c
+  integer :: ix, iy, iz
+!...............................................................................
+  c = 0.5
+  b(:,24,:) = a(:,24,:)
+  do iz=1,24
+  do iy=1,24-1
+  do ix=1,24
+    b(ix,iy,iz) = c*(a(ix,iy+1,iz) + a(ix,iy  ,iz))
+  end do
+  end do
+  end do
+END FUNCTION
+
+!*******************************************************************************
+FUNCTION zup_24 (a) RESULT (b)
+  real, dimension(24,24,24):: a
+  real, dimension(24,24,24):: b
+  real    :: c
+  integer :: ix, iy, iz
+!...............................................................................
+  c = 0.5
+  b(:,:,24) = a(:,:,24)
+  do iz=1,24-1
+  do iy=1,24
+  do ix=1,24
+    b(ix,iy,iz) = c*(a(ix,iy,iz+1) + a(ix,iy,iz  ))
+  end do
+  end do
+  end do
+END FUNCTION
+
+END MODULE

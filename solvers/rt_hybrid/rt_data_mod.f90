@@ -6,14 +6,27 @@ MODULE rt_data_mod
   USE io_mod
   implicit none
 !----------------------------------------------------------------------- 
+  type :: int_data_t
+    integer :: ray, point, lwall(3), uwall(3)
+    real(kind=8), dimension(:), pointer :: I => null()
+    class(int_data_t), pointer :: head => null()
+    class(int_data_t), pointer :: next => null()
+    class(int_data_t), pointer :: tail => null()
+  contains
+    procedure :: init => int_data_init
+  end type
+!----------------------------------------------------------------------- 
   type, extends(rt_t), public :: rt_data_t
-    integer                             :: n_cells(3)
-    real(kind=8), dimension(:,:,:,:),   pointer :: opacity => null()  ! (x,y,z,wl_bin)
-    real(kind=8), dimension(:,:,:,:),   pointer :: source  => null()  ! (x,y,z,wl_bin)
+    integer :: n_cells(3)
+    real(kind=8),     dimension(:,:,:,:), pointer :: opacity => null()  ! (x,y,z,wl_bin)
+    real(kind=8),     dimension(:,:,:,:), pointer :: source  => null()  ! (x,y,z,wl_bin)
+    type(int_data_t), dimension(:,:,:,:), pointer :: intensity => null()! (x,y,z,direction)
   contains
     procedure :: init   => init_rt_data
     procedure :: update => update_rt_data
     procedure :: check  => check_rt_data
+    procedure :: I_store
+    procedure :: I_retrv
   end type
 !----------------------------------------------------------------------- 
 CONTAINS
@@ -57,9 +70,10 @@ SUBROUTINE init_rt_data(self)
   self%n_ray_dirs = ray_geometry%ray_dirs
   allocate(self%opacity(n(1), n(2), n(3), nwb)) ! opacity table
   allocate(self%source (n(1), n(2), n(3), nwb)) ! Source function table
+  allocate(self%intensity(self%ui(1),self%ui(2),self%ui(3),self%n_ray_dirs))
   self%opacity = 0; self%source = 0
   end associate
-  if (io%verbose>2) call self%check       
+  if (io%verbose>2) call self%check(1)      
   call trace_end  
 END SUBROUTINE init_rt_data
 
@@ -88,6 +102,7 @@ SUBROUTINE update_rt_data (self)
   temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%n_wl_bins)  !FIXME : should pass wl_bins with info
   self%source (l(1):u(1),l(2):u(2),l(3):u(3),:) = &
   microphysics%source_fn%solve (temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%wl_bins)
+  
   ! add cosmic ray heating
   call self%mhd_patch%add_cr_heating(self%time,temp(l(1):u(1),l(2):u(2),l(3):u(3)))
   call self%update_time
@@ -95,24 +110,116 @@ SUBROUTINE update_rt_data (self)
   end associate
   deallocate (temp)
   
-  if (io%verbose>2) call self%check
+  if (io%verbose>2) call self%check(2)
     
   call trace_end (itimer)
 END SUBROUTINE update_rt_data
 
-SUBROUTINE check_rt_data(self)
+!> =====================================================================
+!> Store intensity
+!> =====================================================================
+SUBROUTINE I_store (self,I_st,c,pt,ray,dir,lw,uw)
+  class (rt_data_t) :: self
+  type (int_data_t), pointer :: this
+  real (kind=8), dimension(self%n_wl_bins) :: I_st
+  integer :: pt, ray, dir, lw(3), uw(3), c(3)
+  logical :: found
+!-----------------------------------------------------------------------
+  call trace_begin('rt_data_mod%I_store')
+  associate (I_nt => self%intensity(c(1),c(2),c(3),dir))
+  
+  if (.not.associated(I_nt%head)) then
+    call I_nt%init(self%n_wl_bins,ray,pt,lw,uw)
+  else
+    this  => I_nt%head
+    found = .false.
+    do while (associated(this%next).and.(found.eqv..false.))
+      if (all(this%lw == lw).and.all(this%uw == uw).and.&
+          (this%point == pt).and.  (this%ray == ray)) then
+        found = .true.
+        this%I = I_st
+      else
+        this => this%next
+      end if
+    end do
+    
+    if (.not.found) then
+      call I_nt%init(self%n_wl_bins,ray,pt,lw,uw)
+      I_nt%tail%I = I_st
+    end if
+  end if
+  end associate
+  call trace_end
+END SUBROUTINE I_store
+
+!> =====================================================================
+!> Retrieve intensity
+!> =====================================================================
+FUNCTION I_retrv (self,c,dir,lw,uw) result I_st
+  class (rt_data_t) :: self
+  type (int_data_t), pointer :: this
+  real (kind=8), dimension(self%n_wl_bins) :: I_st
+  integer :: dir, lw(3), uw(3), c(3)
+  logical :: found
+! ----------------------------------------------------------------------
+  call trace_begin('rt_data_mod%I_retrv')
+  associate (this => self%intensity(c(1),c(2),c(3),dir)%head)
+  found = .false.
+  do while(associated(this).and..not.found.)
+    if (all(this%lw == lw).and.all(this%uw == uw) then
+      found = .true.
+      I_st = this%I
+    end if
+  end do
+  
+  if (.not.found) error stop "ERROR: rt_data_mod%I_retrv did not find data entry"
+  
+  end associate
+  call trace_end
+END SUBROUTINE I_retrv
+
+!> =====================================================================
+!> Initialize intensity storage for this cell
+!> =====================================================================
+SUBROUTINE int_data_init(self,nwb,ray,pt,lw,uw)
+  class (int_data_t), pointer :: self, new
+  integer :: nwb, ray, pt, lw(3), uw(3)
+!-----------------------------------------------------------------------
+  call trace_begin('rt_data_mod%int_data_init')
+  allocate (new)
+  allocate (new%I(nwb))
+  new%ray = ray
+  new%point = pt
+  new%lwall = lw
+  new%uwall = uw
+  if (.not.associated(self%head)) then
+    self%head => new
+    self%tail => new
+    new%head => new
+  else
+    self%tail%next => new
+    new%head  => self%head
+    self%tail => new 
+  end if
+  call trace_end
+END SUBROUTINE int_data_init
+
+SUBROUTINE check_rt_data(self, plc)
   class(rt_data_t) :: self
+  integer :: plc
 !-----------------------------------------------------------------------
   if (any(isnan(self%opacity))) then
     print *,'=================== opacity ================'
     print *,self%opacity
-    error stop "rt_data%init: self%opacity has NaN"
+    if (plc ==1) error stop "rt_data%init: self%opacity has NaN"
+    if (plc ==2) error stop "rt_data%update: self%opacity has NaN"
   end if
   
   if (any(isnan(self%source))) then
     print *,'=================== source ================'
     print *,self%source
-    error stop "rt_data%init: self%source has NaN"
+    if (plc ==1) error stop "rt_data%init: self%source has NaN"
+    if (plc ==2) error stop "rt_data%update: self%source has NaN"
   end if
 END SUBROUTINE check_rt_data
 

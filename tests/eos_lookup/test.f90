@@ -14,6 +14,7 @@ PROGRAM test_eos
   !-----------------------------------------------------------------------------
   call mpi%init
   call io%init ('lookup')
+  call eos%init (n,n,n)
   allocate (rho(n,n,n), ee(n,n,n))
   rho=1.0
   ee=5.5
@@ -31,6 +32,10 @@ PROGRAM test_eos
   call tic
   call eos%lookup (rho, ee, lnrk=lnrk, lnsource=lnsource)
   call toc ('lnrk,lns',n**3)
+  !$omp barrier
+  call tic
+  call eos%lookup (rho, ee, pg=pg, tt=tt, ne=ne, lnrk=lnrk, lnsource=lnsource)
+  call toc ('all 8',n**3)
   !$omp end parallel
   print *,'  pg =',  pg(1:4,1,1)
   print *,'  tt =',  tt(1:4,1,1)

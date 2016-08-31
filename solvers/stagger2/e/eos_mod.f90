@@ -41,7 +41,6 @@ SUBROUTINE init (self, mx ,my ,mz)
   !-----------------------------------------------------------------------------
   !$omp critical (eos_cr)
   if (first_time) then
-    first_time = .false.
     do_eos = .true.
     tablefile = '../../data/eos/table.dat'
     rewind (io%input); read (io%input,eos_params)
@@ -60,9 +59,11 @@ SUBROUTINE init (self, mx ,my ,mz)
     allocate (tab(mtable))
     read (io_unit%data) tab
     close (io_unit%data)
+    first_time = .false.
   end if
   self%on = do_eos
   !$omp end critical (eos_cr)
+  !$omp barrier
 END SUBROUTINE init
 
 !> =============================================================================
@@ -90,7 +91,6 @@ SUBROUTINE lookup (self, rho, ee, pg, tt, ne, lnrk, lnsource)
   mx=size(rho,1)
   my=size(rho,2)
   mz=size(rho,3)
-  if (first_time) call self%init (mx, my, mz)
   allocate (pbot0(mx,mz), dlnpdE_r(mx,mz), dlnpdlnr_E(mx,mz))
   allocate (panic(mx,my,mz))
   panic = .false.

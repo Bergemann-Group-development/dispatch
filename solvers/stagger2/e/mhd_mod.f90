@@ -20,6 +20,7 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real:: nu(6), csound
+    real:: cdtd
     logical:: mhd=.true.
     type(force_t):: force
   contains
@@ -45,10 +46,10 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   integer:: i
   logical, save:: first_time=.true.
-  namelist /mhd_params/ nu, gamma, csound
+  namelist /mhd_params/ nu, gamma, csound, cdtd
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
@@ -63,6 +64,7 @@ SUBROUTINE init (self)
   self%nu = nu
   self%gamma = gamma
   self%csound = csound
+  self%cdtd = cdtd
   do i=1,3
     self%mesh(i)%h(2+i) = -0.5
     self%mesh(i)%h(5+i) = -0.5
@@ -75,9 +77,9 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE dnload (self)
   class(mhd_t):: self
-  call trace_begin ('experiment_mod::dnload')
+  call trace%begin ('experiment_mod::dnload')
   call download%download_link (self%link, all_cells=.false.)
-  call trace_end
+  call trace%end
 END SUBROUTINE
 
 !> =============================================================================
@@ -100,7 +102,7 @@ SUBROUTINE update (self)
   real:: ds(3), dx
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('mhd_t%update',itimer=itimer)
+  call trace%begin('mhd_t%update',itimer=itimer)
   call self%dnload
   call self%output
 
@@ -108,14 +110,14 @@ SUBROUTINE update (self)
   self%e => self%mem(:,:,:,  2,self%it,1); self%dedt => self%mem(:,:,:,  2,self%it,2)
   self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
   d=>self%d; dddt=>self%dddt
-  e=>self%e; dedt=>self%dedt;
+  e=>self%e; dedt=>self%dedt
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
     self%B => self%mem(:,:,:,6:8,self%it,1); self%dBdt => self%mem(:,:,:,6:8,self%it,2)
     B=>self%B; dBdt=>self%dBdt
-    Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
+    Bx   =>   B(:,:,:,1); By   =>   B(:,:,:,2); Bz   =>   B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
   call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
@@ -180,10 +182,12 @@ SUBROUTINE update (self)
     ! Fast mode speed + velocity
     pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
-    !self%u_max = self%fmaxval(cs)
-    !if (io%verbose>0) print*,'u_max',self%u_max
-    !self%u_max = self%fmaxval(cs + sqrt(pp))
-    !if (io%verbose>0) print*,'u_max',self%u_max
+    if (io%verbose>2) then
+      self%u_max = self%fmaxval(cs)
+      print*,'u_max',self%u_max
+      self%u_max = self%fmaxval(cs + sqrt(pp))
+      print*,'u_max',self%u_max
+    end if
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
     if (io%verbose>2) print*,'u_max',self%u_max
     ! Isotropic pressure part
@@ -204,10 +208,12 @@ SUBROUTINE update (self)
     pa = self%nu(2)*d*du**2                               ! dimension: pressure
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)
-    !self%u_max = self%fmaxval(cs)
-    !if (io%verbose>0) print*,'u_max',self%u_max
-    !self%u_max = self%fmaxval(cs + sqrt(pp))
-    !if (io%verbose>0) print*,'u_max',self%u_max
+    if (io%verbose>2) then
+      self%u_max = self%fmaxval(cs)
+      print*,'u_max',self%u_max
+      self%u_max = self%fmaxval(cs + sqrt(pp))
+      print*,'u_max',self%u_max
+    end if
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
     if (io%verbose>2) print*,'u_max',self%u_max
     pp = pg + pa
@@ -224,10 +230,8 @@ SUBROUTINE update (self)
   fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux
   fm = p+fd                                             ! mass flux
   dddt = -div(ds,fm)                                    ! density derivative
-  self%u_max = max(self%u_max,-0.4*dx*self%fminval(dddt/d))
+  self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))
   if (io%verbose>2) print*,'u_max',self%u_max
-  !self%u_max = max(self%u_max,-dx*self%fminval(dddt/d))
-  !print*,'u_max',dx*self%fmaxval(div(ds,p)/d)
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
@@ -323,7 +327,7 @@ SUBROUTINE update (self)
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================
@@ -355,24 +359,26 @@ FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
+  call trace%begin('mhd_mod::gas_pressure',2)
   if (self%gamma==1.0) then
     pg = self%d*self%csound**2
   else
     pg = self%e*(self%gamma-1.0)
   end if
+  call trace%end
 END FUNCTION gas_pressure
 
 FUNCTION cell_gas_pressure(self, c) RESULT (pg)
   class(mhd_t) :: self
   integer :: c(3)
-  real :: pg(c(1),c(2),c(3))
+  real :: pg
   !---------------------------------------------------------------------
   associate (d => self%mem(c(1),c(2),c(3), 1,self%it,1), &
              e => self%mem(c(1),c(2),c(3), 2,self%it,1))
   if (self%gamma==1.0) then
-    pg = d*self%csound**2
+    pg = self%d(c(1),c(2),c(3))*self%csound**2
   else
-    pg = self%e*(self%gamma-1.0)
+    pg = self%e(c(1),c(2),c(3))*(self%gamma-1.0)
   end if
   end associate
 END FUNCTION cell_gas_pressure
@@ -398,7 +404,7 @@ FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
   real :: tmp(c(1),c(2),c(3))
   !-----------------------------------------------------------------------------
   associate (d => self%mem(c(1),c(2),c(3),  1,self%it,1))
-  tmp = cell_gas_pressure(self,c)/d
+  tmp = cell_gas_pressure(self,c)/self%d(c(1),c(2),c(3))
   end associate
 END FUNCTION cell_gas_temperature
 

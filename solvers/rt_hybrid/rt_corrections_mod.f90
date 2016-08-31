@@ -11,23 +11,6 @@ MODULE rt_corrections_mod
   implicit none
   private
 !-----------------------------------------------------------------------
-  type :: rt_stream_t
-    type (link_t)     , pointer :: nbor => null()
-    type (rt_stream_t), pointer :: head => null()
-    type (rt_stream_t), pointer :: next => null()
-    type (rt_stream_t), pointer :: tail => null()
-    integer :: method = -1
-    integer :: n_entries = 0
-    real(kind=8), dimension(:), pointer :: t   => null()
-    integer,      dimension(:), pointer :: iit => null()
-    integer,      dimension(:), pointer :: ray => null()
-    integer,      dimension(:), pointer :: pt  => null()
-  contains
-    procedure :: init    => init_rt_stream
-    procedure :: add_src => add_rt_stream_src
-  end type
-
-!-----------------------------------------------------------------------
   type, extends(rt_t), public     :: rt_correction_t
     type (rt_stream_t),   pointer :: recv
     type (rt_data_t),     pointer :: my_rt_data     => null()
@@ -44,37 +27,6 @@ MODULE rt_corrections_mod
   end type
 !-----------------------------------------------------------------------
 CONTAINS
-
-SUBROUTINE init_rt_stream(self)
-  class(rt_stream_t) :: self
-  
-END SUBROUTINE init_rt_stream
-
-SUBROUTINE add_rt_stream_src(self, src)
-  class(rt_stream_t) :: self
-  class(link_t), optional :: src
-  type (rt_stream_t) :: new
-!-----------------------------------------------------------------------
-
-  if (.not.present(src)) then
-    self%method = 0                    ! boundary
-    
-  else
-    self%method = 1 ! determine the method. 
-    allocate(new)
-    if (.not.associated(self%head)) then
-      self%head => new
-      self%tail => new
-    else
-      self%tail%next => new
-      self%tail => new
-      new%head => self%head
-    end if
-    new%nbor  => src
-    
-  end if
-  
-END SUBROUTINE add_rt_stream_src
 
 !> =====================================================================
 !> Initialise boundary table for upstream values
@@ -194,14 +146,38 @@ SUBROUTINE update_rt_correction (self)
   call trace_end
 END SUBROUTINE update_rt_correction
 
-SUBROUTINE get_upstream(self)
+SUBROUTINE get_upstream_(self)
   class(rt_correction_t) :: self
   !---------------------------------------------------------------------
-  select CASE(self%recv%method)
-    case (0)
-      call self%set_BC
-    case (1)
-      call self%get_upstream_direct(self%recv%nbor) 
+
+
+END SUBROUTINE get_upstream
+
+SUBROUTINE get_correction_from_BC (self)
+  class(rt_correction_t) :: self
+  integer :: ray
+  real(kind=8) :: ppos(3)
+  !---------------------------------------------------------------------
+  call trace_begin('rt_t%set_BC')
+  SELECT case(self%rt_type)
+  case(0)
+  case(1)
+  case(2,3)  
+    do ray = 1, self%my_rays%n_rays
+      ppos = self%absolute_point_position(ray, 1, self%rt_type)
+      if (self%obct == 0) then
+        call rt_boundary%set_obc(ppos,self%cell_ds,self%I_in(:,ray))
+      end if
+    end do
+  end SELECT
+  call trace_end
+END SUBROUTINE get_correction_from_BC
+
+SUBROUTINE get_corr (self)
+  class(rt_correction_t) :: self
+! ----------------------------------------------------------------------
+
+END SUBROUTINE
 
 SUBROUTINE get_upstream_corr(self, nbor, my_ray, upd)
   class(rt_correction_t)  :: self

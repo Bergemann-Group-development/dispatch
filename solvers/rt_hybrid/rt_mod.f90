@@ -13,9 +13,10 @@ MODULE rt_mod
     type (experiment_t), pointer :: mhd_patch  => null()  ! pointer to MHD task
     type (link_t)      , pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
     class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task 
+    class(link_t),       pointer :: link       => null()  ! pointer to self link in the task list 
     type (ray_list_t),   pointer :: my_rays
     ! common items
-    integer :: n_ray_dirs = 3, rt_freq = 1
+    integer :: n_ray_dirs = 3
     integer :: bundle_ID, dir_ID, rt_type, li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment 
     real(kind=8) :: cell_ds(3)
@@ -182,26 +183,6 @@ SUBROUTINE set_BC (self)
   self%my_nb_link%check = .true.
 END SUBROUTINE set_BC
 
-SUBROUTINE update_BC (self)
-  class(rt_correction_t) :: self
-  integer :: ray
-  real(kind=8) :: ppos(3)
-  !---------------------------------------------------------------------
-  call trace_begin('rt_t%set_BC')
-  SELECT case(self%rt_type)
-  case(0)
-  case(1)
-  case(2,3)  
-    do ray = 1, self%my_rays%n_rays
-      ppos = self%absolute_point_position(ray, 1, self%rt_type)
-      if (self%obct == 0) then
-        call rt_boundary%set_obc(ppos,self%cell_ds,self%I_in(:,ray))
-      end if
-    end do
-  end SELECT
-  call trace_end
-END SUBROUTINE update_BC
-
 SUBROUTINE check_common_surface(me, nbor, wall, right, it)
   type (experiment_t), pointer :: me, nbor
   integer :: wall, w, s1, s2, it
@@ -311,7 +292,7 @@ SUBROUTINE cell2ray (self, c, w, ray, pt, found)
         found = .true.
         return
       else
-        cell => celL%next
+        cell => cell%next
       end if
     end if
   end do

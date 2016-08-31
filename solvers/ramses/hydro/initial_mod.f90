@@ -64,8 +64,8 @@ SUBROUTINE init (self)
      self%selected => single_compressive
    case ('single_advection')
      self%selected => single_advection
-   case ('ramses256')
-     self%selected => ramses256
+   case ('exa256')
+     self%selected => exa256
    case ('raw')
      self%selected => raw
    case default
@@ -194,7 +194,7 @@ END FUNCTION single_advection
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-FUNCTION ramses256 (self, m) RESULT (ff)
+FUNCTION exa256 (self, m) RESULT (ff)
   USE io_unit_mod
   class(initial_t):: self
   type(mesh_t):: m(3)
@@ -207,14 +207,14 @@ FUNCTION ramses256 (self, m) RESULT (ff)
   logical, save:: first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t::ramses256')
+  call trace_begin('initial_t::exa256')
   self%mhd = .false.
   ff(:,:,:,:) = 0.0
   allocate (u(m(1)%n))
   allocate (d(m(1)%n))
   if (first_time) then
     first_time = .false.
-    open (io_unit%data, file='data/ramses256/t0.02.raw', form='unformatted', &
+    open (io_unit%data, file='data/exa256/t0.02.raw', form='unformatted', &
       access='direct', recl=m(1)%n*4)
   end if
   self%time = 0.02
@@ -258,7 +258,7 @@ FUNCTION ramses256 (self, m) RESULT (ff)
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
   call trace_end
-END FUNCTION ramses256
+END FUNCTION exa256
 
 !> =============================================================================
 !> Initialize from a raw data file
@@ -285,7 +285,7 @@ FUNCTION raw (self, m) RESULT (ff)
     first_time = .false.
     n = nint(m%b/m%d)
     allocate (buffer(n(1),n(2),n(3),mv))
-    open (io_unit%data, file='data/ramses256/t0.02.raw', form='unformatted', &
+    open (io_unit%data, file='data/exa256/t0.02.raw', form='unformatted', &
       access='direct', recl=4*product(n))
     do iv=1,mv
       read (io_unit%data, rec=iv) buffer(:,:,:,iv)

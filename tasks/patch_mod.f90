@@ -901,10 +901,10 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       end do
       if (io%verbose<2 .and. self%id/=1) return
       do iv=1,nv
-        1 format(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,2x,e10.2,2i5,2l2,o12)
+        1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,2x,e10.2,2i5,2l2,o12)
         if (io%master .or. self%id==1) &
           print 1, &
-          'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
+          'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, self%dtime, self%u_max, &
           self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
           self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
           self%fminval(self%mem(:,:,:,iv,self%it ,1)), &

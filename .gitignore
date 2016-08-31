@@ -14,3 +14,5 @@ log*
 a.out
 .d/
 Untitled*
+fort.*
+*.o[0-9]*
