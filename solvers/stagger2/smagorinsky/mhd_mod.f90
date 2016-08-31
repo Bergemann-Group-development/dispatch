@@ -37,6 +37,7 @@ MODULE mhd_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
   end type
+  real, save:: smag_s=0.2, smag_d=0.1
 CONTAINS
 
 !> =============================================================================
@@ -48,7 +49,7 @@ SUBROUTINE init (self)
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0
   integer:: i
   logical, save:: first_time=.true.
-  namelist /mhd_params/ nu, gamma, csound
+  namelist /mhd_params/ nu, gamma, csound, smag_s, smag_d
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
@@ -87,6 +88,7 @@ SUBROUTINE update (self)
   !.............................................................................
   real, dimension(:,:,:,:), pointer:: U, emf, J, fx, fy, fz, fd, ld, dd, fm
   real, dimension(:,:,:),   pointer:: du, lnd, ee, cs, pg, pa, pp, pb, Q
+  real, dimension(:,:,:),   pointer:: divu, s2, sxx, syy, szz, sxy, sxz, syz
   !.............................................................................
   real:: ds(3), dx
   integer, save:: itimer=0
@@ -106,6 +108,7 @@ SUBROUTINE update (self)
   end if
   call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pa, du, ee, cs, pp, pb, Q)
+  call allocate_scalars (self%gn, divu, s2, sxx, syy, szz, sxy, sxz, syz)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
@@ -148,23 +151,27 @@ associate (d=>self%d, dddt=>self%dddt, &
   !-----------------------------------------------------------------------------
   ds = self%mesh%d
   dx = minval(ds)                                       ! smallest {dx,dy,dz}
-  du = div(ds,U)                                        ! save div(U) for now
+  sxx = ddxup(ds,Ux)
+  syy = ddyup(ds,Uy)
+  szz = ddzup(ds,Uz)
+  divu = sxx+syy+szz
   if (self%gamma /= 1.0) then                           ! unless isothermal
-    dedt = -pg*du                                       ! -Pg*div(U) term
+    dedt = -pg*divu                                     ! -Pg*div(U) term
   else
     dedt = 0.0
   end if
-  du = -dx*du                                           ! convergence rate
+  du = -dx*divu                                         ! convergence rate
   du = max(du,0.0)                                      ! positive part
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   !-----------------------------------------------------------------------------
+  ! Diagonal Reynolds stress and artificial pressure
+  fxx = xup(Ux)**2
+  fyy = yup(Uy)**2
+  fzz = zup(Uz)**2
+  pp = (fxx+fyy+fzz)                                    ! velocity squared
+  pa = self%nu(2)*d*du**2                               ! dimension: pressure
   if (self%mhd) then
-    ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2
-    fyy = yup(Uy)**2
-    fzz = zup(Uz)**2
-    pp = (fxx+fyy+fzz)
     ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
     Ex = xup(Bx)**2
     Ey = yup(By)**2
@@ -172,44 +179,28 @@ associate (d=>self%d, dddt=>self%dddt, &
     ! Magnetic pressure
     pb = 0.5*(Ex+Ey+Ez)
     ! Fast mode speed + velocity
-    pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
-    !self%u_max = self%fmaxval(cs)
-    !if (io%verbose>0) print*,'u_max',self%u_max
-    !self%u_max = self%fmaxval(cs + sqrt(pp))
-    !if (io%verbose>0) print*,'u_max',self%u_max
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
     if (io%verbose>2) print*,'u_max',self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb
     ! Total diagonal stress
     du = dx*self%nu(1)*cs
-    fxx = pp + d*(fxx - du*ddxup(ds,Ux)) - Ex
-    fyy = pp + d*(fyy - du*ddyup(ds,Uy)) - Ey
-    fzz = pp + d*(fzz - du*ddzup(ds,Uz)) - Ex
-    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
+    fxx = pp + d*(fxx - du*sxx) - Ex
+    fyy = pp + d*(fyy - du*syy) - Ey
+    fzz = pp + d*(fzz - du*szz) - Ex
+    Q = d*du*(sxx**2+syy**2+szz**2)
   else
-    ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2
-    fyy = yup(Uy)**2
-    fzz = zup(Uz)**2
-    pp = (fxx+fyy+fzz)
-    ! Isotropic pressure part
-    pa = self%nu(2)*d*du**2                               ! dimension: pressure
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)
-    !self%u_max = self%fmaxval(cs)
-    !if (io%verbose>0) print*,'u_max',self%u_max
-    !self%u_max = self%fmaxval(cs + sqrt(pp))
-    !if (io%verbose>0) print*,'u_max',self%u_max
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
     if (io%verbose>2) print*,'u_max',self%u_max
     pp = pg + pa
     ! Total diagondal stress, with density factor
     du = dx*self%nu(1)*cs
-    fxx = pp + d*(fxx - du*ddxup(ds,Ux))
-    fyy = pp + d*(fyy - du*ddyup(ds,Uy))
-    fzz = pp + d*(fzz - du*ddzup(ds,Uz))
+    fxx = pp + d*(fxx - du*sxx)
+    fyy = pp + d*(fyy - du*syy)
+    fzz = pp + d*(fzz - du*szz)
     Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
   end if
   !-----------------------------------------------------------------------------
@@ -220,8 +211,6 @@ associate (d=>self%d, dddt=>self%dddt, &
   dddt = -div(ds,fm)                                    ! density derivative
   self%u_max = max(self%u_max,-0.4*dx*self%fminval(dddt/d))
   if (io%verbose>2) print*,'u_max',self%u_max
-  !self%u_max = max(self%u_max,-dx*self%fminval(dddt/d))
-  !print*,'u_max',dx*self%fmaxval(div(ds,p)/d)
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
@@ -240,13 +229,22 @@ associate (d=>self%d, dddt=>self%dddt, &
   fxz = zdn(Ux)*xdn(Uz)
   fyz = zdn(Uy)*ydn(Uz)
   !---------------------------------------------------------------------------
-  ! Add viscous part -- edge-centered
+  ! Add viscous part -- Smagorinsky style
   !---------------------------------------------------------------------------
-  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
-  fxz = fxz - self%nu(3)*0.5*ydn1(zdn1(du))*(ddxdn(ds,Uz)+ddzdn(ds,Ux))
-  fyz = fyz - self%nu(3)*0.5*zdn1(xdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
+  sxy = 0.5*(ddxdn(ds,Uy)+ddydn(ds,Ux))
+  sxz = 0.5*(ddxdn(ds,Uz)+ddzdn(ds,Ux))
+  syz = 0.5*(ddydn(ds,Uz)+ddzdn(ds,Uy))
+  s2 = 2.0*(xup(yup(sxy))**2 + xup(zup(sxz))**2 + yup(zup(syz))**2) &
+     + ddxup(ds,Ux)**2 + ddyup(ds,Uy)**2 + ddzup(ds,Uz)**2
+  s2 = dx**2*(smag_s*sqrt(2.0*s2) + smag_d*abs(divu))
+  fxy = fxy - xdn1(ydn1(s2))*sxy
+  fxz = fxz - ydn1(zdn1(s2))*sxz
+  fyz = fyz - zdn1(xdn1(s2))*syz
+  fxx = fxx - d*s2*sxx
+  fyy = fyy - d*s2*syy
+  fzz = fzz - d*s2*szz
   !---------------------------------------------------------------------------
-  ! Multiply with edge-centered density
+  ! Multiply non-diagnoal part with edge-centered density
   !---------------------------------------------------------------------------
   fxy = exp(ydn(ldx))*fxy
   fxz = exp(zdn(ldx))*fxz
@@ -313,6 +311,7 @@ associate (d=>self%d, dddt=>self%dddt, &
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pa, du, ee, cs, pp, pb, Q)
+  call deallocate_scalars (divu, s2, sxx, syy, szz, sxy, sxz, syz)
   if (.not.self%do_pebbles) then
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
