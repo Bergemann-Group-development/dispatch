@@ -173,7 +173,7 @@ END SUBROUTINE update
 !> =============================================================================
 SUBROUTINE output (self, experiment_name)
   class(pic_t):: self
-  character(len=*), optional:: experiment_name
+  character(len=64), optional:: experiment_name
   !-----------------------------------------------------------------------------
   ! Connect to the patch data and do I/O, using calls to the PPcode routine
   !-----------------------------------------------------------------------------
@@ -189,7 +189,7 @@ END SUBROUTINE output
 SUBROUTINE info (self, nq, ntask, experiment_name)
   class(pic_t):: self
   integer, optional:: nq, ntask
-  character(len=*), optional:: experiment_name
+  character(len=64), optional:: experiment_name
   !-----------------------------------------------------------------------------
   call trace_begin ('pic_mod::info')
   call self%connect
