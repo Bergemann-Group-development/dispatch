@@ -11,7 +11,7 @@ MODULE pic_mod
   USE grid_m, ONLY: g, mesh_type, grid_type
   USE grid_m, ONLY: Bx, By, Bz, Ex, Ey, Ez, fmhd
   USE params, ONLY: time, dt, it
-  USE species, ONLY: spec, sp, field, fields, vthb !, counters, n
+  USE species_m, ONLY: spec, sp, field, fields, vthb !, counters, n
   USE maxwell_sources, ONLY: jx,jy,jz,sx,sy,sz
   implicit none
   private
