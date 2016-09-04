@@ -149,6 +149,10 @@ SUBROUTINE init (self, label)
   end do
   write (io_unit%log,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
   flush (io%log_unit)
+  !-----------------------------------------------------------------------------
+  ! Construct neighbor lists used to perform checks for ready status
+  !-----------------------------------------------------------------------------
+  call self%init_all_nbors
   call trace_end
 contains
   integer function pos2rank (i, j, k)

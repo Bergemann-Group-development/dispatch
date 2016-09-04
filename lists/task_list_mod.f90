@@ -84,10 +84,6 @@ SUBROUTINE execute (self)
   class(task_list_t):: self
   class(link_t), pointer:: link, rem
   !-----------------------------------------------------------------------------
-  ! Construct neighbor lists used to perform checks for ready status
-  !-----------------------------------------------------------------------------
-  call self%init_all_nbors
-  !-----------------------------------------------------------------------------
   ! Set virtual and boundary bits
   !-----------------------------------------------------------------------------
   call self%reset_status
