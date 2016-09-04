@@ -41,6 +41,7 @@ MODULE rt_corrections_mod
     procedure :: update => update_rt_correction
     procedure :: check => check_rt_corrections
     procedure :: get_upstream
+    procedure :: update_BC
   end type
 !-----------------------------------------------------------------------
 CONTAINS
@@ -53,7 +54,7 @@ END SUBROUTINE init_rt_stream
 SUBROUTINE add_rt_stream_src(self, src)
   class(rt_stream_t) :: self
   class(link_t), optional :: src
-  type (rt_stream_t) :: new
+  type(rt_stream_t), pointer :: new
 !-----------------------------------------------------------------------
 
   if (.not.present(src)) then
@@ -193,6 +194,26 @@ SUBROUTINE update_rt_correction (self)
   
   call trace_end
 END SUBROUTINE update_rt_correction
+
+SUBROUTINE update_BC (self)
+  class(rt_correction_t) :: self
+  integer :: ray
+  real(kind=8) :: ppos(3)
+  !---------------------------------------------------------------------
+  call trace_begin('rt_t%set_BC')
+  SELECT case(self%rt_type)
+  case(0)
+  case(1)
+  case(2,3)  
+    do ray = 1, self%my_rays%n_rays
+      ppos = self%absolute_point_position(ray, 1, self%rt_type)
+      if (self%obct == 0) then
+        call rt_boundary%set_obc(ppos,self%cell_ds,self%I_in(:,ray))
+      end if
+    end do
+  end SELECT
+  call trace_end
+END SUBROUTINE update_BC
 
 SUBROUTINE get_upstream(self)
   class(rt_correction_t) :: self

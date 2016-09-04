@@ -24,9 +24,8 @@ MODULE rt_mod
     procedure :: find_upstream                                             
     procedure :: init => init_rt
     procedure :: update => update_rt
-    procedure :: update_correction_upstream
+    !procedure :: update_correction_upstream
     procedure :: set_BC
-    procedure :: update_BC
     procedure :: absolute_point_position
     procedure :: ray2cell
     procedure :: cell2pos
@@ -181,26 +180,6 @@ SUBROUTINE set_BC (self)
   self%obc = 1
   self%my_nb_link%check = .true.
 END SUBROUTINE set_BC
-
-SUBROUTINE update_BC (self)
-  class(rt_correction_t) :: self
-  integer :: ray
-  real(kind=8) :: ppos(3)
-  !---------------------------------------------------------------------
-  call trace_begin('rt_t%set_BC')
-  SELECT case(self%rt_type)
-  case(0)
-  case(1)
-  case(2,3)  
-    do ray = 1, self%my_rays%n_rays
-      ppos = self%absolute_point_position(ray, 1, self%rt_type)
-      if (self%obct == 0) then
-        call rt_boundary%set_obc(ppos,self%cell_ds,self%I_in(:,ray))
-      end if
-    end do
-  end SELECT
-  call trace_end
-END SUBROUTINE update_BC
 
 SUBROUTINE check_common_surface(me, nbor, wall, right, it)
   type (experiment_t), pointer :: me, nbor
