@@ -36,7 +36,7 @@ if __name__ == "__main__":
         patches = []
         times = []
         for f in files:
-            patches.append(ThisPatch(datadir+f.strip('.txt'),verbose=False,read_derivs=True))
+            patches.append(ThisPatch(datadir+f.strip('.txt'),verbose=False,read_derivs=False))
 
         for p in patches:
             if p.task_type == 'immersed_boundary_t':

@@ -51,7 +51,7 @@ SUBROUTINE update_mhd_rt(self)
   ! --- Update MHD, whatever it means ---
   call self%mhd_t%update
   ! --- Update dsdt by addind Q ---
-  call self%apply_heating
+  !call self%apply_heating
   
   call trace_end
 END SUBROUTINE update_mhd_rt
@@ -63,7 +63,7 @@ SUBROUTINE update_q(self, tt, q, p, nwb, op, temp, dirw)
   real(kind=8), dimension(nwb) :: op, q
   real :: temp, itemp
   !---------------------------------------------------------------------
-  call trace_begin ('mhd_rt_t_%update_q')
+  call trace_begin ('mhd_rt_t_%update_q',4)
   if (tt > self%rt_q%t(self%it)) call self%rt_q%rotate(tt)
   
   itemp = 1./temp
@@ -85,7 +85,7 @@ SUBROUTINE add_cr_heating (self,tt, temp)
   u = self%mesh%ui
   associate (rho => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1), &
                q => self%rt_q%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it), &
-               t => temp(l(1):u(1),l(2):u(2),l(3):u(3)))
+               t => temp)
            
   q = q + rho * microphysics%cr_heating / t
   

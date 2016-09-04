@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
     datadir = 'data/'
     prefix = ''
-    dumps = [0,1,2]
+    dumps = [0]
     ThisPatch = StaggerMHDPatch
 
     m = 0 # counter

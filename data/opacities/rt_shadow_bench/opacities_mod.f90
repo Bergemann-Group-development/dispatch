@@ -4,6 +4,7 @@
 !> T0 = 290K, rho0 = 1 g cm-3
 !> =====================================================================
 MODULE opacities_mod
+  USE io_mod
   USE trace_mod
   USE scaling_mod
   implicit none
@@ -21,8 +22,8 @@ SUBROUTINE init_shadow_opacity(self)
   class(opacity_t) :: self
   ! --------------------------------------------------------------------
   call trace_begin('opacity_mod::rt_shadow_opacity',3)
-  self%t0   = 1./(290.*scaling%temp)
-  self%rho0 = 1./(1.  *scaling%d)
+  self%t0   = 1./(290./scaling%temp)
+  self%rho0 = 1./(1.  /scaling%d)
   call trace_end
 END SUBROUTINE init_shadow_opacity
 
@@ -31,10 +32,9 @@ FUNCTION rt_shadow_opacity (self, rho, temp, nwb) RESULT (kappa)
   real(4), dimension(:,:,:), intent(in) :: rho, temp
   real(4), dimension(size(rho,1),size(rho,2),size(rho,3), nwb) :: kappa
   integer :: nwb, wl
-  real(4) :: t0, rho0
   !.....................................................................
   call trace_begin('opacity_mod::rt_shadow_opacity',3)
-
+  
   kappa(:,:,:,1) = ((temp(:,:,:)*self%t0)**(-3.5)*(rho(:,:,:)*self%rho0)**2)
   
   if (nwb>1) then
@@ -42,7 +42,18 @@ FUNCTION rt_shadow_opacity (self, rho, temp, nwb) RESULT (kappa)
      kappa(:,:,:,wl) = kappa(:,:,:,1)
    end do
   end if
-
+  
+  if (io%verbose>2) then
+    if (any(isnan(rho)).or.any(isnan(temp))) then
+      error stop "rt_shadow_opac%solve: rho or temp has NaN"
+    end if
+    if (any(isnan(kappa))) then
+      print *,'=================== kappa ================'
+      print *,kappa
+      error stop "rt_shadow_opacity%check: kappa has NaN"
+    end if
+  end if
+  
   call trace_end
 END FUNCTION rt_shadow_opacity
 
@@ -66,6 +77,15 @@ FUNCTION opac_gr (rho, temp, wl) result(kappa)
       kappa(:,:,:,iwl) = kappa(:,:,:,1)
     end do
   end if
+  
+  if (io%verbose > 2) then
+    if (any(isnan(kappa))) then
+      print *,'=================== kappa ================'
+      print *,kappa
+      error stop "rt_shadow_opacity%check: kappa has NaN"
+    end if
+  end if
+  
 END FUNCTION opac_gr
 
 END MODULE opacities_mod
