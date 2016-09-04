@@ -21,12 +21,11 @@ MODULE rt_mod
     real(kind=8) :: cell_ds(3)
     real(8):: offset(3)                 ! this is used to compute indices, locations
   contains
-    procedure :: find_upstream                                             
+    procedure :: find_upstream
     procedure :: init => init_rt
     procedure :: update => update_rt
-    procedure :: update_correction_upstream
+    !procedure :: update_correction_upstream
     procedure :: set_BC
-    procedure :: update_BC
     procedure :: absolute_point_position
     procedure :: ray2cell
     procedure :: cell2pos
@@ -81,7 +80,7 @@ FUNCTION the_right_wall(self,me, nbor, wall) result (answer)
     mhd => my_type%mhd_patch
   END SELECT
   end associate
-  
+
   associate (nbor_type => nbor%task)
   SELECT type (nbor_type)
   type is (experiment_t)
@@ -90,7 +89,7 @@ FUNCTION the_right_wall(self,me, nbor, wall) result (answer)
     nb_mhd => nbor_type%mhd_patch                                       ! if I got an RT task to test, switch to corresponding MHD patch
   end SELECT
   end associate
-    
+
   if (abs(nb_mhd%level-mhd%level)<2) then                               ! connect only +/- 1 or same level
     if (wall(1) > 0) then
       if (mhd%position(1) < nb_mhd%position(1)) then
@@ -103,7 +102,7 @@ FUNCTION the_right_wall(self,me, nbor, wall) result (answer)
         nb_mhd%position(1) + nb_mhd%size(1)*0.5d0 + nb_mhd%ds(1)) answer = .true.
       end if
     end if
-    
+
     if (wall(2) > 0) then
       if (mhd%position(2) < nb_mhd%position(2)) then
         if (mhd%position(2)+mhd%size(2)*0.5d0 > &
@@ -115,7 +114,7 @@ FUNCTION the_right_wall(self,me, nbor, wall) result (answer)
         nb_mhd%position(2) + nb_mhd%size(2)*0.5d0 + nb_mhd%ds(2)) answer = .true.
       end if
     end if
-    
+
     if (wall(3) > 0) then
       if (mhd%position(3) < nb_mhd%position(3)) then
         if (mhd%position(3)+mhd%size(3)*0.5d0 > &
@@ -127,7 +126,7 @@ FUNCTION the_right_wall(self,me, nbor, wall) result (answer)
         nb_mhd%position(3) + nb_mhd%size(3)*0.5d0 + nb_mhd%ds(3)) answer = .true.
       end if
     end if
-    
+
   end if 
 END FUNCTION the_right_wall
 
@@ -143,7 +142,7 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   allocate (nbor_l)
   nbor => self%mhd_link%nbor
   my_task => self%mhd_patch
-  
+
   do while (associated(nbor))
     associate (nbtask => nbor%task)
     SELECT type (nbtask)
@@ -169,7 +168,7 @@ SUBROUTINE find_upstream (self, nbor_l, found)
     end associate
   nbor => nbor%next
   end do
-  
+
   nbor_l => nbor_l%next
   call trace_end
 END SUBROUTINE find_upstream
@@ -191,7 +190,7 @@ SUBROUTINE update_BC (self)
   SELECT case(self%rt_type)
   case(0)
   case(1)
-  case(2,3)  
+  case(2,3)
     do ray = 1, self%my_rays%n_rays
       ppos = self%absolute_point_position(ray, 1, self%rt_type)
       if (self%obct == 0) then
@@ -217,21 +216,21 @@ SUBROUTINE check_common_surface(me, nbor, wall, right, it)
   end SELECT
   ok = .false.
   if (wall < 0) then
-    if ((nbor%position(w)-0.5_8*nbor%size(w)) > &           
+    if ((nbor%position(w)-0.5_8*nbor%size(w)) > &
           (me%position(w)+0.5_8*  me%size(w)+me%ds(w))) ok = .true.
   else if (wall > 0) then
-    if ((nbor%position(w)+0.5_8*nbor%size(w)) > &           
+    if ((nbor%position(w)+0.5_8*nbor%size(w)) > &
           (me%position(w)-0.5_8*  me%size(w)-me%ds(w))) ok = .true.
   else
     right = .true.
   end if
-        
+
   if (ok) then
     if ((((nbor%position(s1)+0.5_8*nbor%size(s1)) >= &
             (me%position(s1)-0.5_8*  me%size(s1)))  .and. &
          ((nbor%position(s1)-0.5_8*nbor%size(s1)) <= &
             (me%position(s1)+0.5_8*  me%size(s1)))) .and. &
-                
+
         (((nbor%position(s2)+0.5_8*nbor%size(s2)) >= &
             (me%position(s2)-0.5_8*  me%size(s2)))  .and. &
          ((nbor%position(s2)-0.5_8*nbor%size(s2)) <= &
@@ -272,7 +271,7 @@ FUNCTION ray2cell(self, ray, pt) result (cell)
   integer :: ray, pt, cell(3)
 !-----------------------------------------------------------------------
   cell = self%my_rays%cell_coords(:,pt,ray)
-  
+
 END FUNCTION ray2cell
 
 FUNCTION cell2pos (self, cell) result(p)
@@ -290,7 +289,7 @@ FUNCTION pos2cell (self, p) result (cell)
   integer      :: cell(3)
 !-----------------------------------------------------------------------
   cell = nint((p-self%position+0.5_8*self%size)/self%cell_ds)+self%li
-  
+
 END FUNCTION pos2cell
 
 ! orient = 1 - lwall, orient = 2 - uwall
@@ -324,7 +323,7 @@ SUBROUTINE pos2ray (self, p, w, ray, pt, found)
   logical :: found
 !-----------------------------------------------------------------------
   call self%cell2ray(self%pos2cell(p), w, ray, pt, found)
-  
+
 END SUBROUTINE pos2ray
 
 FUNCTION ray2pos (self, ray, pt) result (p)
@@ -333,7 +332,7 @@ FUNCTION ray2pos (self, ray, pt) result (p)
   integer :: ray, pt
 !-----------------------------------------------------------------------
   p = self%cell2pos(self%ray2cell(ray,pt))
-  
+
 END FUNCTION ray2pos
 
 
@@ -350,11 +349,11 @@ END FUNCTION point_in_cell
 
 SUBROUTINE update_time(self)
   class(rt_t) :: self
-!-----------------------------------------------------------------------  
+!-----------------------------------------------------------------------
   if (self%time < 0) then
     self%time  = self%mhd_patch%time
     self%dtime = self%mhd_patch%dtime * self%rt_freq
-  else   
+  else
     self%dtime = self%mhd_patch%dtime * self%rt_freq
     self%time  = self%time + self%dtime
   end if

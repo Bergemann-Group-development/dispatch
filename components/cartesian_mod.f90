@@ -152,7 +152,7 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   ! Construct neighbor lists used to perform checks for ready status
   !-----------------------------------------------------------------------------
-  call self%init_all_nbors
+  call self%task_list%init_all_nbors
   call trace_end
 contains
   integer function pos2rank (i, j, k)

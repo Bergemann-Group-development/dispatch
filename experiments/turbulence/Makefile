@@ -6,8 +6,8 @@ OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
-#SOLVER          = ramses/hydro
-SOLVER          = ramses/mhd
+SOLVER          = ramses/hydro
+#SOLVER          = ramses/mhd
 MESH            = staggered
 EXEC            = dispatch.x
 TOP             = ../..
