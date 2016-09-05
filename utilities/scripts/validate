@@ -1,17 +1,17 @@
 #!/bin/csh
 
-# validate [ -d -m -t -x -h ] [ dir1 dir2 .. ]
+# validate [ -d -m -r -q -x -h ] [ dir1 dir2 .. ]
 #
 # -d       : dryrun
 # -m       : skip make
+# -r       : reset (create .val files even if fails)
 # -q       : quiet output
 # -x       : skip execution
-# -r       : reset (create .val files even if fails)
 # -h       : help
 # --help   : help
 # dir1 ..  : experiment directories
 #
-# With no dirs specified, validate all experiments at or below the current dir
+# With no dirs specified, validate the current dir or all experiments/* below the current dir
 ##
 
 # intial values
@@ -53,14 +53,12 @@ while ($#argv > 0)
   endsw
   shift
 end
-if ($#dirs == 0) set dirs = ( . )
 
 # with no directories parsed, base the choice on the current directory
 if ($#dirs == 0) then
   set dirs = ( . )
-  if (-d ../Experiments)       set dirs = ( `find ../Experiments -maxdepth 1 -type d \! -name Experiments` )
-  if (-d Experiments)          set dirs = ( `find Experiments    -maxdepth 1 -type d \! -name Experiments` )
-  if ($cwd:t == "Experiments") set dirs = ( `find .              -maxdepth 1 -type d \! -name .` )
+  if (-d experiments)          set dirs = ( `find experiments    -maxdepth 1 -type d \! -name experiments` )
+  echo dirs = $dirs
 endif
 
 # remember the initial working directory
