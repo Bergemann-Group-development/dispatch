@@ -57,7 +57,7 @@ end
 # with no directories parsed, base the choice on the current directory
 if ($#dirs == 0) then
   set dirs = ( . )
-  if (-d experiments)          set dirs = ( `find experiments    -maxdepth 1 -type d \! -name experiments` )
+  if (-d experiments)          set dirs = ( `find . -mindepth 3 -maxdepth 3 -name validate -type d | sed -e 's:/validate::'` )
   echo dirs = $dirs
 endif
 
@@ -66,6 +66,7 @@ set wd = $cwd
 
 # loop over experiment directories
 foreach d ( $dirs )
+  if ($#dirs > 1) echo "================================== $d ================================="
 
   # go to experiment directory and find the trailing name
   echo "cd $d"

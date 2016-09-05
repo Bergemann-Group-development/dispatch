@@ -96,6 +96,7 @@ SUBROUTINE init_hierarchy (self, label)
   ! Initialize the task list
   !-----------------------------------------------------------------------------
   call self%task_list%init (label)
+  call self%task_list%init_all_nbors
   call trace_end
 END SUBROUTINE init_hierarchy
 
