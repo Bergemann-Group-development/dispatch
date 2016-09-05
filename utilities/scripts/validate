@@ -1,0 +1,166 @@
+#!/bin/csh
+
+# validate [ -d -m -t -x -h ] [ -p patch ] [ dir1 dir2 .. ]
+#
+# -d       : dryrun
+# -m       : skip make
+# -t       : tee output
+# -x       : skip execution
+# -p patch : specify patch dir
+# -h       : help
+# --help   : help
+# dir1 ..  : experiment directories
+#
+# With no dirs specified, validate all experiments at or below the current dir
+##
+
+# intial values
+set dirs = ( )
+set opt = ( )
+set patches = ( )
+
+# parse argument list
+while ($#argv > 0)
+  switch ($1)
+    case -h:
+    case --help:
+      sed -n -e '3,/##/p' `which validate` | sed -e 's/#//g'
+      exit
+    # PATCH argument
+    case -p:
+      shift
+      set patches = ( $patches $1 )
+      breaksw
+    # dryrun
+    case -d:
+      setenv dryrun 1
+      breaksw
+    # no make
+    case -m:
+      set nomake
+      breaksw
+    # no execution
+    case -x:
+      set noexec
+      breaksw
+    # tee the output
+    case -v:
+      setenv tee 1
+      breaksw
+    # list of directories
+    default:
+      set dirs = ( $dirs $1 )
+  endsw
+  shift
+end
+
+# with no directories parsed, base the choice on the current directory
+if ($#dirs == 0) then
+  set dirs = ( . )
+  if (-d ../Experiments)       set dirs = ( `find ../Experiments -maxdepth 1 -type d \! -name Experiments` )
+  if (-d Experiments)          set dirs = ( `find Experiments    -maxdepth 1 -type d \! -name Experiments` )
+  if ($cwd:t == "Experiments") set dirs = ( `find .              -maxdepth 1 -type d \! -name .` )
+endif
+
+if ($#patches == 0) then
+  set patches = ( none )
+endif
+
+# remember the initial working directory
+set wd = $cwd
+
+# loop over experiment directories
+foreach d ( $dirs )
+
+  # go to experiment directory and find the trailing name
+  echo "cd $d"
+  cd $d
+  set d = $cwd:t
+
+  # make a validate/ subdir, with *.f90 files, cd there
+  mkdir -p validate/Data
+  cp -p *.f90 validate/
+  echo "cd validate/"
+  cd validate/
+
+  # make sure we have validate_cmd in the path
+  set path = ( ../../../bin $path )
+
+  # make an input.nml, if it isn't already there
+  if (! -e input.nml) then
+    if (-e ../validate.nml) then
+       cp -p ../validate.nml input.nml
+    else
+       echo "  WARNING: creating $d/validation/input.nml from $d/input.nml"
+       sed -e '/do /s/do_/do_validate=t do_/' -e 's/do_validate *=[fF]/do_validate=t/' < ../input.nml > input.nml
+    endif
+  endif
+
+  # make a Makefile, if it isn't already there
+  if (! -e Makefile) then
+    echo "  WARNING: creating default $d/validation/Makefile from $d/Makefile"
+    sed -e '/TOP =/s: \.:\.\./\.:' < ../Makefile > Makefile
+  endif
+
+  # loop over patches
+  foreach p ( $patches )
+
+    # set patch variables
+    if ($p == "none") then
+      setenv patch ""
+      setenv PATCH ""
+    else
+      setenv patch "_$p"
+      setenv PATCH "PATCH=$p"
+    endif
+
+    # check for PATCH = line in the Makefile
+    set q = `perl -n -e 'if (/PATCH/) {s/.*= *//; print;}' Makefile`
+    if ("$q" != "") then
+      if ("$p" != "none") goto e
+      setenv patch "_$q"
+      setenv PATCH "PATCH=$q"
+    endif
+
+    # reset status counter
+    @ s = 0
+
+    # make command
+    if (! $?nomake) then
+      set lab = "make"
+      set cmd = "make clean; make OPTS=validate EXP=$d $PATCH"
+      validate_cmd $opt $lab "$cmd"
+      @ s += $status
+    endif
+
+    # execute command
+    if (! $?noexec) then
+      foreach f (*.nml)
+        if ($f == "input.nml") then
+          set lab = "$d"
+          set cmd = "./$d$patch.x"
+        else
+          set lab = "${d}_$f:r"
+          set cmd = "./$d$patch.x $f"
+        endif
+          validate_cmd $opt $lab "$cmd"
+        @ s += $status
+      end
+    endif
+
+    # summary, action
+    if ($s) then
+      if (`uname -o` != "Cygwin" ) then
+        echo "Validation failed -- see $cwd/validate/" | mail -s "validation failed in $cwd" $user
+      endif
+    else
+      make clean
+      #\rm -rf *.f90
+      \rm -rf Data
+    endif
+e:
+  end
+
+  # back to initial dir
+  cd $wd
+end
