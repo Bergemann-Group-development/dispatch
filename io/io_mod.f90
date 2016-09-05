@@ -43,11 +43,11 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   character(len=64):: filename
   integer, save:: id_debug=-1
-  logical, save:: first_time=.true., omp_trace=.false.
+  logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.true., do_flags=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
-    do_legacy, levelmax, omp_trace, id_debug
+    do_validate, do_legacy, levelmax, omp_trace, id_debug
   real:: test
   integer:: iostat
   !.............................................................................
@@ -128,6 +128,7 @@ SUBROUTINE init (self, name)
   self%omp_trace = omp_trace
   self%levelmax  = levelmax
   self%inputname = inputname
+  io_unit%do_validate = do_validate
   call timer%init
 END SUBROUTINE init
 

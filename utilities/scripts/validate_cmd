@@ -1,6 +1,6 @@
 #!/bin/csh
 
-set label = "$1$patch"
+set label = "$1"
 shift
 set cmd = "$*"
 
@@ -8,8 +8,11 @@ set date = `date +%y%m%d_%H%M`
 
 #echo " "
 
-set cmd = "$cmd >& $label.log"
-if ($?tee) set cmd = "$cmd |& tee $label.log"
+if ($?tee) then
+  set cmd = "$cmd |& tee $label.log"
+else
+  set cmd = "$cmd >& $label.log"
+endif
 
 # echo the command
 echo "$cmd"
@@ -30,7 +33,11 @@ if ($status) then
   echo "                                                                    ==> NOT the same"
   cp -p $label{,_$date}.log
   cp -p $label{,_$date}.val
-  cp -p $label.{log,val}
+  if ($?reset) then
+    echo "WARNING: resetting $label.val"
+    cp -p $label.{log,val}
+    exit(0)
+  endif
   exit(1)
 else
   echo "                                                                    ==> OK, same result"
