@@ -57,7 +57,7 @@ end
 # with no directories parsed, base the choice on the current directory
 if ($#dirs == 0) then
   set dirs = ( . )
-  if (-d experiments)          set dirs = ( `find . -mindepth 3 -maxdepth 3 -name validate -type d | sed -e 's:/validate::'` )
+  if (-d experiments)          set dirs = ( `find . -mindepth 3 -maxdepth 4 -name validate -type d | sed -e 's:/validate::'` )
   echo dirs = $dirs
 endif
 
@@ -92,7 +92,7 @@ foreach d ( $dirs )
        if ($status) then
          sed -e '/io_params/s/$/ do_validate=t/' < ../input.nml > input.nml
        else
-         cp ../input.nml input.nml
+         sed -e '/do_validate/s/do_validate=[fF]/do_validate=t/' < ../input.nml > input.nml
        endif
     endif
   endif

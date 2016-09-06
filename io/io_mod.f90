@@ -56,7 +56,6 @@ SUBROUTINE init (self, name)
   !$omp parallel
   io_unit%master = io_unit%master.and.self%master
   !$omp end parallel
-  call print_id (id)
   !-----------------------------------------------------------------------------
   ! I/O unit numbers, for convenience and backwards compatibility.  All other
   ! unit numbers should be taken directly from io_unit_mod
@@ -129,6 +128,7 @@ SUBROUTINE init (self, name)
   self%levelmax  = levelmax
   self%inputname = inputname
   io_unit%do_validate = do_validate
+  call print_id (id)
   call timer%init
 END SUBROUTINE init
 
@@ -156,6 +156,7 @@ SUBROUTINE print_id (id)
   character(len=120), save:: hl= &
     '--------------------------------------------------------------------------------'
   !..............................................................................
+  if (io_unit%do_validate) return
   if (id .ne. ' ' .or. mpi_trace) then
     if (io%master) then
       call print_hl

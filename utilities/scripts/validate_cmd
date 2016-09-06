@@ -19,13 +19,13 @@ echo "$cmd"
 if ($?dryrun) exit
 
 # run the command
-csh -c "$cmd"
+time csh -c "$cmd"
 
 # check if a .val file exists, rerun if not
 if (! -e $label.val ) then
   echo "   WARNING: creating new $label.val from $label.log"
-  mv $label.log $label.val
-  csh -c "$cmd"
+  cp -p $label.log $label.val
+  #csh -c "$cmd"
 endif
 
 diff -ibw $label.val $label.log
