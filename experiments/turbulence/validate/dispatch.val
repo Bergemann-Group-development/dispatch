@@ -6,8 +6,6 @@
  n_socket =   1
    n_core =   2
  n_thread =   1
---------------------------------------------------------------------------------
- io_mod.f90 $Id: 206221a091dfaa9bef9b07cc5ad3aef155d90b2b $        0.00
 &IO_PARAMS
  VERBOSE=          2,
  DO_DEBUG=F,
@@ -35,11 +33,24 @@
  ORIGIN= 3*0.0000000000000000       ,
  FACE_NBORS=F,
  /
+ n_socket =   1
+   n_core =   2
+ n_thread =   1
+             trying mpi_dims =    1    1    1    T
+              Using mpi_dims =    1    1    1
 &MPI_MESG_PARAMS
  EVERY_RECV=          1,
  EVERY_SEND=          5,
  DELAY_MS=  3.00000000    ,
  WAIT=F,
+ /
+&LOAD_BALANCE_PARAMS
+ ON=F,
+ CADENCE=  1.00000000    ,
+ THRESHOLD=  10.0000000    ,
+ GRACE= 0.300000012    ,
+ DURATION=  0.00000000    ,
+ ONLY_INITIAL=F,
  /
 &LOAD_BALANCE_PARAMS
  ON=F,
@@ -90,6 +101,14 @@
  DO_ISOTHERMAL=T,
  CSOUND=  1.00000000    ,
  /
+init_cartesian: id, rank, size, pos =       1     0    5.000000E-01  5.000000E-01  5.000000E-01    0.000000E+00  0.000000E+00  0.000000E+00  FF
+init_cartesian: id, rank, size, pos =       2     0    5.000000E-01  5.000000E-01  5.000000E-01    5.000000E-01  0.000000E+00  0.000000E+00  FF
+init_cartesian: id, rank, size, pos =       3     0    5.000000E-01  5.000000E-01  5.000000E-01    0.000000E+00  5.000000E-01  0.000000E+00  FF
+init_cartesian: id, rank, size, pos =       4     0    5.000000E-01  5.000000E-01  5.000000E-01    5.000000E-01  5.000000E-01  0.000000E+00  FF
+init_cartesian: id, rank, size, pos =       5     0    5.000000E-01  5.000000E-01  5.000000E-01    0.000000E+00  0.000000E+00  5.000000E-01  FF
+init_cartesian: id, rank, size, pos =       6     0    5.000000E-01  5.000000E-01  5.000000E-01    5.000000E-01  0.000000E+00  5.000000E-01  FF
+init_cartesian: id, rank, size, pos =       7     0    5.000000E-01  5.000000E-01  5.000000E-01    0.000000E+00  5.000000E-01  5.000000E-01  FF
+init_cartesian: id, rank, size, pos =       8     0    5.000000E-01  5.000000E-01  5.000000E-01    5.000000E-01  5.000000E-01  5.000000E-01  FF
 &TIMESTEP_PARAMS
  VERBOSE=          0,
  TIME_ORDER=          2,

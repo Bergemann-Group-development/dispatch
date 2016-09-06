@@ -9,7 +9,8 @@
 ! and tttt is the snapshot number.
 
 &io_params
- verbose=2
+ verbose=1
+ do_validate=f
  do_trace=f
  do_debug=f
  do_output=f
