@@ -92,8 +92,10 @@ SUBROUTINE init (self)
   !$omp critical
   if (first_time) then
     first_time = .false.
-    id = mpi%rank+1
-    self%id = id
+    if (self%id==0) then
+      id = mpi%rank+1
+      self%id = id
+    end if
   else if (self%id==0) then
     id = id+mpi%size
     self%id = id
@@ -101,7 +103,7 @@ SUBROUTINE init (self)
   scene%n_patch = self%id
   !$omp end critical
   if (io%verbose>2) &
-    write (io%log_unit,*) 'obtained patch id', self%id
+    write (io%log_unit,*) 'patch id', self%id
   call self%lock%init (self%kind)
   call trace_end
 END SUBROUTINE

@@ -106,6 +106,7 @@ SUBROUTINE init (mp, mpi_dims, dims)
   mp%dn     = mpi_dn
   mp%up     = mpi_up
   mp%ok     = ok
+  mpi_coords%cart_comm = mp%cart_comm
   mpi_coords%coords = mp%coords
   mpi_coords%dims   = mp%dims
   mpi_coords%plane  = mp%plane
