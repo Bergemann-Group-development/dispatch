@@ -30,6 +30,7 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: update
+    procedure:: nonideal_MHD_courant_condition
     procedure:: dnload
     procedure:: output
     procedure:: log_density => void
@@ -404,6 +405,47 @@ SUBROUTINE update (self)
   end if
   call trace%end (itimer)
 END SUBROUTINE update
+
+!> =============================================================================
+!> Courant condition, one way or another
+!> =============================================================================
+SUBROUTINE nonideal_MHD_courant_condition (self,dt_AD_inp,dt_Ohm_inp)
+  class(mhd_t):: self
+  real(8):: dt_AD_inp
+  real(8):: dt_Ohm_inp
+  !.............................................................................
+  call trace_begin('patch_t%courant')
+  call self%lock%set ('courant')
+  if (io%verbose>2) &
+    print*, 'courant: u_max, ds', self%u_max, minval(self%ds)
+  if (self%dt_fixed > 0.0) then
+    self%dtime = self%dt_fixed
+    self%courant = self%dtime*self%u_max/minval(self%ds)
+  else if (self%u_fixed > 0.0) then
+    self%dtime = self%courant*minval(self%ds)/self%u_fixed
+  else
+    self%dtime = self%courant*minval(self%ds)/self%u_max
+  endif
+  !-----------------------------------------------------------------------------
+  ! Prevent large (cheap) patches from taking time steps longer than the out_time
+  !-----------------------------------------------------------------------------
+  if (self%out_time > 0.0) &
+    self%dtime = min (self%dtime, self%out_time)
+  if (self%mhd_AD) then
+    self%dtime = min (self%dtime, dt_AD_inp)
+  end if
+  if (self%mhd_Ohm) then
+    self%dtime = min (self%dtime, dt_Ohm_inp)
+  end if
+  self%dt(self%it) = self%dtime
+  !self%dt(:) = self%dtime
+  !print*,'dt', self%dt
+  if (io%verbose>3) &
+    print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
+      self%id, self%dtime, self%courant, self%u_max
+  call self%lock%unset ('courant')
+  call trace_end
+END SUBROUTINE nonideal_MHD_courant_condition
 
 !> =============================================================================
 !> Add extra, MHD-related information to the patch .txt output file

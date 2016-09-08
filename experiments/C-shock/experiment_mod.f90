@@ -135,9 +135,7 @@ SUBROUTINE update (self)
   call self%mhd_t%update
   !!!FIXME: Estimate adequate timestep for AD by taking the minimum of Courant number
   !!!and t_AD = 0.1*min(gamma_AD*rho_i*rho/B^2*Delta_x^2)!!!
-  call self%courant_condition()
-  call self%ohmic_condition(self%dt_Ohm)
-  call self%AD_condition(self%dt_AD)
+  call self%mhd_t%nonideal_MHD_courant_condition(self%dt_Ohm,self%dt_AD)
   call self%check_density('before timestep')
   call boundary%condition (self%mem(:,:,:,1,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
   call boundary%condition (self%mem(:,:,:,2,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
