@@ -12,8 +12,8 @@ MODULE rt_corrections_mod
   private
 !-----------------------------------------------------------------------
   type, extends(rt_t), public     :: rt_correction_t
-    type (rt_data_t),     pointer :: my_rt_data     => null()
-    type (rt_internal_t), pointer :: my_rt_internal => null()
+    type (rt_data_t),     pointer :: my_rt_data     => null()       ! corresponding rt data task
+    type (rt_internal_t), pointer :: my_rt_internal => null()       ! corresponding internal RT task
     real (kind=8), dimension(:,:),  pointer :: I_in => null()       ! (wl_bin, ray) incoming intensity. 
     real (kind=8), dimension(:),    pointer :: I_in_time  => null() ! (ray, time)
     integer :: solver
@@ -98,7 +98,7 @@ SUBROUTINE update_rt_correction (self)
   call trace_begin('rt_t%update_rt_correction '//stime)
   dir_wgt = 2.*pi/self%n_ray_dirs
   self%it = self%mhd_patch%it
-  call self%get_upstream
+  call self%get_upstream                                                ! get upstream data, whatever it means
   associate (npt   => self%my_rays%n_points,    nwb => microphysics%n_wl_bins,  &
              nrays => self%my_rays%n_rays,      ex0 => self%my_rt_internal%ex0, &
                  s => self%my_rt_data%source,   op  => self%my_rt_data%opacity, &
@@ -153,11 +153,14 @@ SUBROUTINE update_rt_correction (self)
   end associate
   
   if (io%verbose>2) call self%check
-  call self%update_time
+  call self%update_time                                                 ! update time
   
   call trace_end
 END SUBROUTINE update_rt_correction
 
+!> =====================================================================
+!> Select appropriate method to get the upstream values
+!> =====================================================================
 SUBROUTINE get_upstream (self)
   class(rt_correction_t) :: self
   logical:: static, local
@@ -169,12 +172,12 @@ SUBROUTINE get_upstream (self)
     if (self%obc == 0) then
       error stop "huh?"
     end if
-    call self%get_correction_from_BC
+    call self%get_correction_from_BC                                    ! get boundary value
   else
-    static = .true.; local = .true.
+    static = .true.; local = .true.                                     ! not moving? on this rank?
     if (self%is_clear(bits%static)) static = .false.
     nbor => self%link%nbor
-    do while (associated(nbor))
+    do while (associated(nbor))                                         ! check nbors for these logicals
       associate (this => nbor%task)
       SELECT type(this)
         class is (rt_correction_t)
@@ -185,7 +188,7 @@ SUBROUTINE get_upstream (self)
       nbor => nbor%next
     end do
     
-    if (local) then
+    if (local) then                                                     ! select appropriate mode
       if (static) then
         call self%get_local_static
       else 
@@ -202,6 +205,9 @@ SUBROUTINE get_upstream (self)
   call trace_end
 END SUBROUTINE get_upstream
 
+!> =====================================================================
+!> Upstream data is on same MPI rank and tasks are not moving.
+!> =====================================================================
 SUBROUTINE get_local_static (self)
   class(rt_correction_t) :: self
   class(rt_correction_t), pointer :: rt_nb
@@ -213,7 +219,7 @@ SUBROUTINE get_local_static (self)
   !---------------------------------------------------------------------  
   call trace_begin('rt_corrections_mod::get_local_static')
   
-  allocate (updated(self%my_rays%n_rays))
+  allocate (updated(self%my_rays%n_rays))                               ! make sure all intensities are updated
   updated = .false.
   
   nbor => self%link%nbor
@@ -224,39 +230,39 @@ SUBROUTINE get_local_static (self)
     SELECT type (rt)
     class is (rt_correction_t)
     
-      if (self%the_right_wall(self%link, nbor,self%my_rays%lwall)) then
-        if (rt%rt_type == self%rt_type) then
+      if (self%the_right_wall(self%link, nbor,self%my_rays%lwall)) then                   ! make sure nbor is on the right wall
+        if (rt%rt_type == self%rt_type) then                                              ! make sure nbor is of the right RT type
           rt_nb => rt
-          do ray = 1, self%my_rays%n_rays
-            if (self%level >= rt_nb%level) then
-              nb_cell = rt_nb%pos2cell(self%cell2pos(self%my_rays%fwd_coords(:,ray)))
-              if (all(nb_cell>=rt_nb%li).and.all(nb_cell<=rt_nb%ui)) then
-                lw      = -self%my_rays%pt_wall(:,2,1,ray)
+          do ray = 1, self%my_rays%n_rays                                                 ! loop  over my rays
+            if (self%level >= rt_nb%level) then                                           ! if i am not larger than my nbor
+              nb_cell = rt_nb%pos2cell(self%cell2pos(self%my_rays%fwd_coords(:,ray)))     ! corresponding cell at the nbor mesh
+              if (all(nb_cell>=rt_nb%li).and.all(nb_cell<=rt_nb%ui)) then                 ! double check that we pointed to the right spot
+                lw      = -self%my_rays%pt_wall(:,2,1,ray)                                ! select right walls for the ray
                 uw      = -self%my_rays%pt_wall(:,1,1,ray)
-                self%I_in   (:,ray) = rt_nb%my_rt_data%I_retrv(nb_cell,self%dir_ID,lw,uw)
-                self%I_in_time(ray) = rt_nb%time
-                updated(ray) = .true.
+                self%I_in   (:,ray) = rt_nb%my_rt_data%I_retrv(nb_cell,self%dir_ID,lw,uw) ! get the right intensity
+                self%I_in_time(ray) = rt_nb%time                                          ! store the time of the update
+                updated(ray) = .true.                                                     ! the ray was updated
               end if
-            else
+            else                                                                          ! i am larger than my nbor
             
-              my_c_pos = self%cell2pos(self%my_rays%fwd_coords(:,ray))
-              n_mean = 0
-              mean = 0
-              do nb_ray = 1, rt_nb%my_rays%n_rays
-                try = -1
-                do nb_pt = 1, rt_nb%my_rays%n_points(nb_ray)    ! find the last point in the ray before the wall in question
+              my_c_pos = self%cell2pos(self%my_rays%fwd_coords(:,ray))                    ! get the absolute cell position in the comp. domain
+              n_mean = 0                                                                  ! number of rays to be averaged
+              mean = 0                                                                    ! mean intensity
+              do nb_ray = 1, rt_nb%my_rays%n_rays                                         ! loop over nbor rays
+                try = -1                                                                  ! indicator whether this ray meets the criterion
+                do nb_pt = 1, rt_nb%my_rays%n_points(nb_ray)                              ! find the last point in the ray before the wall in question
                   if (point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),my_c_pos, self%cell_ds)) try = nb_pt
                 end do
                 if (try > 0) then
-                  Iin = rt_nb%my_rt_data%I_retrv_ray(nb_ray,nb_pt,self%dir_ID)
+                  Iin = rt_nb%my_rt_data%I_retrv_ray(nb_ray,nb_pt,self%dir_ID)            ! retrieve this intensity
                   mean = mean + Iin
                   n_mean = n_mean + 1.
                 end if
               end do
               if ((n_mean > 0).and.(self%time <= rt_nb%time)) then
                 self%I_in(:,ray) = mean/n_mean
-                self%I_in_time(ray) = rt_nb%time
-                updated(ray) = .true.
+                self%I_in_time(ray) = rt_nb%time                                          ! store the time of the update
+                updated(ray) = .true.                                                     ! the ray was updated
               end if
             end if
           end do
@@ -269,7 +275,7 @@ SUBROUTINE get_local_static (self)
   nbor => nbor%next
   end do
   
-  if(.not.all(updated)) then
+  if(.not.all(updated)) then                                                              ! TO DO: old test, to be moved to self%check
     print *, 'task ID, level, time, n_nbors', self%id, self%level, self%time, self%n_nbors
     print *, updated
     print *, self%i_in_time
@@ -281,18 +287,21 @@ SUBROUTINE get_local_static (self)
   call trace_end  
 END SUBROUTINE get_local_static
 
+!> =====================================================================
+!> Upstream data is on different MPI rank, but tasks are not moving.
+!> !!! TEMPORARY REMOVED !!!
+!> =====================================================================
+SUBROUTINE get_remote_static (self)
+  class(rt_correction_t) :: self
+  !---------------------------------------------------------------------  
+  error stop "ERROR: remote same static not implemented"
+END SUBROUTINE get_remote_static
 
 SUBROUTINE get_local_dynamic (self)
   class(rt_correction_t) :: self
   !---------------------------------------------------------------------  
   error stop "ERROR: local different dynamic not implemented"
 END SUBROUTINE get_local_dynamic
-
-SUBROUTINE get_remote_static (self)
-  class(rt_correction_t) :: self
-  !---------------------------------------------------------------------  
-  error stop "ERROR: remote same static not implemented"
-END SUBROUTINE get_remote_static
 
 SUBROUTINE get_remote_dynamic (self)
   class(rt_correction_t) :: self
@@ -301,7 +310,9 @@ SUBROUTINE get_remote_dynamic (self)
 END SUBROUTINE get_remote_dynamic
 
 
-
+!> =====================================================================
+!> Upstream data is from boundary conditions.
+!> =====================================================================
 SUBROUTINE get_correction_from_BC (self)
   class(rt_correction_t) :: self
   integer :: ray

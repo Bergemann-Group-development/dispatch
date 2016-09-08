@@ -6,6 +6,8 @@ MODULE rt_data_mod
   USE io_mod
   implicit none
 !----------------------------------------------------------------------- 
+!> Special intensity storage type. All cells can have more than one ray
+!> per direction. 
   type :: int_data_t
     integer :: ray, point, lwall(3), uwall(3)
     real(kind=8), dimension(:), pointer :: I => null()
@@ -60,8 +62,8 @@ SUBROUTINE init_rt_data(self)
   self%it       = mhd_patch%it                      ! task time
   self%end_time = self%mhd_patch%end_time
   self%out_time = self%mhd_patch%out_time
-  self%time     = -3
-  self%dtime    = 1e-6
+  self%time     = -3                                ! initial time
+  self%dtime    = 1e-6                              ! initial dtime
   if (mhd_patch%is_set(bits%static))    call self%set (bits%static)
   if (mhd_patch%is_set(bits%root_grid)) call self%set(bits%root_grid)
   !---------------------------------------------------------------------
@@ -75,7 +77,7 @@ SUBROUTINE init_rt_data(self)
   allocate(self%intensity(self%ui(1),self%ui(2),self%ui(3),self%n_ray_dirs))
   self%opacity = 0; self%source = 0
   end associate
-  if (io%verbose>2) call self%check(1)      
+  if (io%verbose>2) call self%check(1)             ! check if rt_data initialized ok  
   call trace_end  
 END SUBROUTINE init_rt_data
 
@@ -97,16 +99,16 @@ SUBROUTINE update_rt_data (self)
   associate  (l => self%li, u=>self%ui) 
   rho => self%mhd_patch%mem(:,:,:,1,self%it,1)
   
-  temp(l(1):u(1),l(2):u(2),l(3):u(3)) = self%mhd_patch%gas_temperature_ngz() 
+  temp(l(1):u(1),l(2):u(2),l(3):u(3)) = self%mhd_patch%gas_temperature_ngz() ! estimate temperature
        
   self%opacity(l(1):u(1),l(2):u(2),l(3):u(3),:) = &
   microphysics%opacity%solve (rho(l(1):u(1),l(2):u(2),l(3):u(3)),&
-  temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%n_wl_bins)  !FIXME : should pass wl_bins with info
+  temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%n_wl_bins)  !FIXME : should pass wl_bins with info ! estimate opacity
   self%source (l(1):u(1),l(2):u(2),l(3):u(3),:) = &
-  microphysics%source_fn%solve (temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%wl_bins)
+  microphysics%source_fn%solve (temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%wl_bins) ! estimate the source function
   
   ! add cosmic ray heating
-  call self%mhd_patch%add_cr_heating(self%time,temp(l(1):u(1),l(2):u(2),l(3):u(3)))
+  call self%mhd_patch%add_cr_heating(self%time,temp(l(1):u(1),l(2):u(2),l(3):u(3)))  ! add cr heating 
   call self%update_time
   
   end associate
@@ -132,13 +134,13 @@ SUBROUTINE I_store (self,I_st,c,pt,ray,dir,lw,uw)
              nwb => microphysics%n_wl_bins)
   
   if (.not.associated(I_nt%head)) then
-    call I_nt%init(nwb,ray,pt,lw,uw)
+    call I_nt%init(nwb,ray,pt,lw,uw)                              ! if this cell is empty, initialize
   else
     this  => I_nt%head
     found = .false.
-    do while (associated(this%next).and.(found.eqv..false.))
+    do while (associated(this%next).and.(found.eqv..false.))      ! loop over cell data
       if (all(this%lwall == lw).and.all(this%uwall == uw).and.&
-             (this%point == pt).and.   (this%ray   == ray)) then
+             (this%point == pt).and.   (this%ray   == ray)) then  ! find the right place to store
         found = .true.
         this%I = I_st
       else
@@ -147,7 +149,7 @@ SUBROUTINE I_store (self,I_st,c,pt,ray,dir,lw,uw)
     end do
     
     if (.not.found) then
-      call I_nt%init(nwb,ray,pt,lw,uw)
+      call I_nt%init(nwb,ray,pt,lw,uw)                            ! if not found the right place, initialize a new one
       I_nt%tail%I = I_st
     end if
   end if
@@ -168,15 +170,15 @@ FUNCTION I_retrv (self,c,dir,lw,uw) result (I_st)
   call trace_begin('rt_data_mod%I_retrv',4)
   associate (this => self%intensity(c(1),c(2),c(3),dir)%head)
   found = .false.
-  do while(associated(this).and..not.found)
-    if (all(this%lwall == lw).and.all(this%uwall == uw)) then
+  do while(associated(this).and..not.found)                    ! loop over cell storage
+    if (all(this%lwall == lw).and.all(this%uwall == uw)) then  ! this subroutine tests for right walls
       found = .true.
-      I_st = this%I
+      I_st = this%I                                            ! retrieve the right intensity
     end if
     this => this%next
   end do
   
-  if (.not.found) error stop "ERROR: rt_data_mod%I_retrv did not find data entry"
+  if (.not.found) error stop "ERROR: rt_data_mod%I_retrv did not find data entry" ! should not happen
   
   end associate
   call trace_end
@@ -195,10 +197,10 @@ FUNCTION I_retrv_ray (self,ray,pt,dir) result (I_st)
   call trace_begin('rt_data_mod%I_retrv_ray',4)
   associate (this => self%intensity(c(1),c(2),c(3),dir)%head)
   found = .false.
-  do while(associated(this).and..not.found)
-    if ((this%point == pt).and.(this%ray == ray)) then
+  do while(associated(this).and..not.found)                             ! loop over cell storage
+    if ((this%point == pt).and.(this%ray == ray)) then                  ! this subroutine tests for right point and ray
       found = .true.
-      I_st = this%I
+      I_st = this%I                                                     ! retrieve the right intensity
     end if
     this => this%next
   end do
@@ -220,11 +222,11 @@ SUBROUTINE int_data_init(self,nwb,ray,pt,lw,uw)
   call trace_begin('rt_data_mod%int_data_init',4)
   allocate (new)
   allocate (new%I(nwb))
-  new%ray = ray
-  new%point = pt
-  new%lwall = lw
-  new%uwall = uw
-  if (.not.associated(self%head)) then
+  new%ray = ray                                                         ! store ray number to ID the data
+  new%point = pt                                                        ! store point in ray to ID the data
+  new%lwall = lw                                                        ! store lower cell wall to ID the data
+  new%uwall = uw                                                        ! store upper cell wall to ID the data
+  if (.not.associated(self%head)) then                                  ! is it an empty cell
     self%head => new
     self%tail => new
     new%head => new
@@ -235,7 +237,9 @@ SUBROUTINE int_data_init(self,nwb,ray,pt,lw,uw)
   end if
   call trace_end
 END SUBROUTINE int_data_init
-
+!> =====================================================================
+!> Test if rt_data module has any errors
+!> =====================================================================
 SUBROUTINE check_rt_data(self, plc)
   class(rt_data_t) :: self
   integer :: plc

@@ -188,6 +188,10 @@ SUBROUTINE connect_nbors(self, nbor)
   call self%add_nbor_by_rank(link2)
 END SUBROUTINE connect_nbors
 
+!> =====================================================================
+!> My separate nbor connectors. This version deactivates both links and
+!> saves the link of the correction task for it to be altered upon need
+!> =====================================================================
 SUBROUTINE connect_corr_nbors(self, nbor, nb_l)
   class(link_t), pointer           :: self
   class(link_t), pointer           :: nbor, link1, link2
@@ -208,17 +212,6 @@ SUBROUTINE connect_corr_nbors(self, nbor, nb_l)
   
 END SUBROUTINE connect_corr_nbors
 
-SUBROUTINE add_rt_nbor(self, nbor)
-  class(link_t), pointer :: self
-  class(link_t), pointer :: nbor, link
-! -------------------------------------------------------------------
-  allocate(link)
-  link%task   => nbor%task
-  link%link   => nbor
-  link%parent => nbor%parent    
-  call self%add_nbor_by_rank(link)
-END SUBROUTINE add_rt_nbor
-
 !> =============================================================================
 !> Finalize the neighbor lists for upstream correction tasks by connecting 
 !> them to appropriate up/down nbors.
@@ -237,30 +230,30 @@ SUBROUTINE add_correction_nbors (self)
   do while (associated(rt_list))                                    ! loop through task_list
     associate (this => rt_list%task)
     SELECT TYPE (this)
-    type is (rt_correction_t)
+    type is (rt_correction_t)                                           ! select correction tasks
       rt  => rt_list
       rtc => this
       n_connected = 0
       n_found = 0
       nullify(nb_mhd)
-      call rtc%find_upstream(nb_mhd, n_found)
+      call rtc%find_upstream(nb_mhd, n_found)                           ! find upstream mhd nbors for this task
       if (n_found < 1) then
-        call rtc%init_obc
+        call rtc%init_obc                                               ! if no upstream found - initialize it as an outer boundary
       else
-        do while (associated(nb_mhd))
+        do while (associated(nb_mhd))                                   ! loop over upstream mhd patches
           nb_mhd_nbor => nb_mhd%link%nbor
           do while (associated(nb_mhd_nbor))
             associate (nb_rt_nb => nb_mhd_nbor%task)
             SELECT TYPE (nb_rt_nb)
-            type is (rt_correction_t)
+            type is (rt_correction_t)                                   ! select upstream rt correction tasks
               nb_rt   => nb_rt_nb
               nb_rt_l => nb_mhd_nbor
               
-              if ((rtc%dir_ID  == nb_rt%dir_ID).and.&
+              if ((rtc%dir_ID  == nb_rt%dir_ID).and.&                   ! check if they are the needed ones
                   (rtc%rt_type == nb_rt%rt_type)) then
                 if (rtc%id/=nb_rt%id) then
-                  if (abs(rtc%level-nb_rt%level)<2) then
-                    call connect_nbors (nb_rt_l%link, rt)
+                  if (abs(rtc%level-nb_rt%level)<2) then                ! only +/- one level difference is concerned
+                    call connect_nbors (nb_rt_l%link, rt)               ! connect these correction tasks
                     n_connected = n_connected+1
                   end if
                 end if
@@ -268,14 +261,14 @@ SUBROUTINE add_correction_nbors (self)
               
             end SELECT
             end associate
-            nb_mhd_nbor => nb_mhd_nbor%next
+            nb_mhd_nbor => nb_mhd_nbor%next                             ! move to next upstream mhd nbor's nbor
           end do
-          nb_mhd => nb_mhd%next
+          nb_mhd => nb_mhd%next                                         ! move to next upstream nbor
         end do
       end if
     end SELECT
     end associate
-    rt_list => rt_list%next
+    rt_list => rt_list%next                                             ! move to next rt task
   end do
   !$omp end critical (list_cr)
   call trace_end
@@ -286,6 +279,7 @@ END SUBROUTINE add_correction_nbors
 !> =============================================================================
 !> Finalize the neighbor lists for internal solution tasks by connecting 
 !> them to appropriate higher/lower level nbors.
+!> TO DO: NEEDS LOGICS, to be done: internal alteration, ray cutting, etc
 !> =============================================================================
 SUBROUTINE add_internal_nbors (self)
   class(list_t):: self

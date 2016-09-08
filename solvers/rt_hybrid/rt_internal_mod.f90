@@ -207,6 +207,9 @@ SUBROUTINE solve_internal_feautrier (self)
 
 END SUBROUTINE solve_internal_feautrier
 
+!> =====================================================================
+!> Test if rt_internal module has any errors
+!> =====================================================================
 SUBROUTINE check_rt_internal(self)
   class(rt_internal_t) :: self
 !-----------------------------------------------------------------------
