@@ -17,7 +17,7 @@ sinclude $(TOP)/config/Makefile
 $(EXEC): setup_mod.o
 
 # Dependencies
-experiment_mod.o	: mhd_mod.o trace_mod.o io_mod.o timestep_mod.o initial_mod.o bits_mod.o
-intial_mod.o		: io_mod.o trace_mod.o mesh_mod.o mhd_mod.o cgs_mod.o scaling_mod.o mpi_mod.o
-setup_mod.o			: io_mod.o trace_mod.o cgs_mod.o experiment_mod.o task_mod.o task_list_mod.o mesh_mod.o scaling_mod.o bits_mod.o
-scaling_mod.o		: io_mod.o trace_mod.o
+experiment_mod.o        : mhd_mod.o trace_mod.o io_mod.o timestep_mod.o initial_mod.o bits_mod.o
+initial_mod.o           : io_mod.o trace_mod.o mesh_mod.o mhd_mod.o cgs_mod.o scaling_mod.o mpi_mod.o
+setup_mod.o             : io_mod.o trace_mod.o cgs_mod.o experiment_mod.o task_mod.o task_list_mod.o mesh_mod.o scaling_mod.o bits_mod.o
+scaling_mod.o           : io_mod.o trace_mod.o
