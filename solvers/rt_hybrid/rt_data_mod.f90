@@ -27,6 +27,7 @@ MODULE rt_data_mod
     procedure :: check  => check_rt_data
     procedure :: I_store
     procedure :: I_retrv
+    procedure :: I_retrv_ray
   end type
 !----------------------------------------------------------------------- 
 CONTAINS
@@ -125,7 +126,7 @@ SUBROUTINE I_store (self,I_st,c,pt,ray,dir,lw,uw)
   integer :: pt, ray, dir, lw(3), uw(3), c(3)
   logical :: found
 !-----------------------------------------------------------------------
-  call trace_begin('rt_data_mod%I_store')
+  call trace_begin('rt_data_mod%I_store',4)
   associate (I_nt => self%intensity(c(1),c(2),c(3),dir),&
              nwb => microphysics%n_wl_bins)
   
@@ -154,7 +155,7 @@ SUBROUTINE I_store (self,I_st,c,pt,ray,dir,lw,uw)
 END SUBROUTINE I_store
 
 !> =====================================================================
-!> Retrieve intensity
+!> Retrieve intensity by cell
 !> =====================================================================
 FUNCTION I_retrv (self,c,dir,lw,uw) result (I_st)
   class (rt_data_t) :: self
@@ -163,7 +164,7 @@ FUNCTION I_retrv (self,c,dir,lw,uw) result (I_st)
   integer :: dir, lw(3), uw(3), c(3)
   logical :: found
 ! ----------------------------------------------------------------------
-  call trace_begin('rt_data_mod%I_retrv')
+  call trace_begin('rt_data_mod%I_retrv',4)
   associate (this => self%intensity(c(1),c(2),c(3),dir)%head)
   found = .false.
   do while(associated(this).and..not.found)
@@ -180,6 +181,32 @@ FUNCTION I_retrv (self,c,dir,lw,uw) result (I_st)
 END FUNCTION I_retrv
 
 !> =====================================================================
+!> Retrieve intensity by rays
+!> =====================================================================
+FUNCTION I_retrv_ray (self,ray,pt,dir) result (I_st)
+  class (rt_data_t) :: self
+  type (int_data_t), pointer :: this
+  real (kind=8), dimension(microphysics%n_wl_bins) :: I_st
+  integer :: dir, ray,pt, c(3)
+  logical :: found
+! ----------------------------------------------------------------------
+  call trace_begin('rt_data_mod%I_retrv_ray',4)
+  associate (this => self%intensity(c(1),c(2),c(3),dir)%head)
+  found = .false.
+  do while(associated(this).and..not.found)
+    if ((this%point == pt).and.(this%ray == ray)) then
+      found = .true.
+      I_st = this%I
+    end if
+  end do
+  
+  if (.not.found) error stop "ERROR: rt_data_mod%I_retrv did not find data entry"
+  
+  end associate
+  call trace_end
+END FUNCTION I_retrv_ray
+
+!> =====================================================================
 !> Initialize intensity storage for this cell
 !> =====================================================================
 SUBROUTINE int_data_init(self,nwb,ray,pt,lw,uw)
@@ -187,7 +214,7 @@ SUBROUTINE int_data_init(self,nwb,ray,pt,lw,uw)
   type  (int_data_t), pointer :: new
   integer :: nwb, ray, pt, lw(3), uw(3)
 !-----------------------------------------------------------------------
-  call trace_begin('rt_data_mod%int_data_init')
+  call trace_begin('rt_data_mod%int_data_init',4)
   allocate (new)
   allocate (new%I(nwb))
   new%ray = ray

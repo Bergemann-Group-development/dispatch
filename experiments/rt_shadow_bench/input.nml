@@ -8,7 +8,7 @@
 
 &box_params
  size=1,1,1
- dims=2,2,2
+ dims=3,3,3
  origin=0.0,0.0,0.0
  !origin=-0.5,-0.5,-0.5
 /
@@ -17,7 +17,7 @@
  nt=5
  courant=0.2
  grace=0.1
- n=8,8,8
+ n=16,16,16
 /
 
 &rt_params
@@ -49,7 +49,7 @@ ibc_treatment = 'ignore'     ! do nothing, continue as if there was no IB
 
 &custom_bc_params
 cool_temp = 10   ! in kelvins
-hot_temp  = 100000
+hot_temp  = 2000
 /
 
 &out_params
@@ -57,7 +57,7 @@ hot_temp  = 100000
  out_time=0.001
 print_time=0.001
  guard_zones=f
- time_derivs=t
+ time_derivs=f
 /
 
 

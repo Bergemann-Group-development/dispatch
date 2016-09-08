@@ -95,6 +95,7 @@ SUBROUTINE rt_setup (self)
       rt_data%mhd_link  => t_list                                       ! Pointer to mhd_patch's link
       link%task         => rt_data                                      ! connect to RT task
       rt_data_l => link                                                 ! save the link
+      rt_data%link => link
       rt_data%rt_type = 0                                               ! set the rt type
       rt_data%n_ray_dirs = ray_geometry%ray_dirs
       call rt_data%init                                                 ! initialise
@@ -118,6 +119,7 @@ SUBROUTINE rt_setup (self)
           internal%solver  = solver                                     ! set the rt solver type
           link%task => internal                                         ! connect to RT task
           internal_l => link                                            ! save pointer to internal task link
+          internal%link => link
           call internal%init                                            ! initialize in ray direction
           call connect_nbors(rt_data_l,link)                            ! data checks if internal is ready, internal does not do that
           call task_list%append_link(link)                              ! insert into the task list
@@ -135,6 +137,7 @@ SUBROUTINE rt_setup (self)
             correction%n_ray_dirs = ray_geometry%ray_dirs
             correction%solver  = solver                                 ! set the rt solver type
             correction%mhd_link       => t_list                         ! Pointer to mhd_patch's link
+            correction%link => link
             link%task => correction                                     ! connect to RT task
             call correction%init                                        ! initialize in ray direction
             call connect_nbors(link,t_list)                             ! correction checks if MHD is ready, MHD does not do that
@@ -241,7 +244,7 @@ SUBROUTINE add_correction_nbors (self)
       n_found = 0
       call rtc%find_upstream(nb_mhd, n_found)
       if (n_found < 1) then
-        call rtc%add_src()
+        call rtc%set_BC
       else
         do while (associated(nb_mhd))
           nb_mhd_nbor => nb_mhd%link%nbor
@@ -257,7 +260,6 @@ SUBROUTINE add_correction_nbors (self)
                 if (rtc%id/=nb_rt%id) then
                   if (abs(rtc%level-nb_rt%level)<2) then
                     call connect_nbors (nb_rt_l%link, rt)
-                    call rtc%add_src(nb_rt_l%link)
                     n_connected = n_connected+1
                   end if
                 end if

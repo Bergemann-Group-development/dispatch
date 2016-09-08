@@ -9,6 +9,7 @@ MODULE rt_mod
   USE experiment_mod
   USE rt_boundary_mod
   USE microphysics_mod
+!----------------------------------------------------------------------- 
   type, extends(task_t), public :: rt_t
     type (experiment_t), pointer :: mhd_patch  => null()  ! pointer to MHD task
     type (link_t)      , pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
@@ -17,6 +18,7 @@ MODULE rt_mod
     type (ray_list_t),   pointer :: my_rays
     ! common items
     integer :: n_ray_dirs = 3
+    integer :: geom = 1                                                 !cartesian = 1, spherical = 2, cylindrical = 3
     integer :: rt_freq = 1                                              ! how often rt tasks are done wrt experiment
     integer :: bundle_ID, dir_ID, rt_type, li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment 
