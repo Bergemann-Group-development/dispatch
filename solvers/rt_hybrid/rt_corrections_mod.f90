@@ -27,6 +27,7 @@ MODULE rt_corrections_mod
     procedure :: get_local_dynamic
     procedure :: get_remote_static
     procedure :: get_remote_dynamic
+    procedure :: get_correction_from_BC
   end type
 !-----------------------------------------------------------------------
 CONTAINS
@@ -51,7 +52,8 @@ SUBROUTINE init_rt_correction (self)
   self%it        = mhd_patch%it
   self%end_time  = self%mhd_patch%end_time
   self%out_time  = self%mhd_patch%out_time
-  self%time       = -1
+  self%time      = -1
+  self%dtime     = 3e-6
   self%li        = mhd_patch%li
   self%ui        = mhd_patch%ui
   if (mhd_patch%is_set(bits%static))    call self%set (bits%static)
@@ -167,7 +169,7 @@ SUBROUTINE get_upstream (self)
     if (self%obc == 0) then
       error stop "huh?"
     end if
-    call self%set_BC
+    call self%get_correction_from_BC
   else
     static = .true.; local = .true.
     if (self%is_clear(bits%static)) static = .false.
@@ -199,7 +201,6 @@ SUBROUTINE get_upstream (self)
   end if
   call trace_end
 END SUBROUTINE get_upstream
-
 
 SUBROUTINE get_local_static (self)
   class(rt_correction_t) :: self

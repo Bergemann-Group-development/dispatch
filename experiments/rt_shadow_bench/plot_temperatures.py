@@ -3,7 +3,7 @@ import numpy as np
 #from mayavi.tools import pipeline as pl
 import itertools
 import numpy as np
-from dispatch_data import *
+from dispatch_data2 import *
 import yt
 
 def get_pressure (p,gamma):
@@ -47,7 +47,7 @@ if __name__ == "__main__":
         patches = []
         times = []
         for f in files:
-            patches.append(ThisPatch(datadir+f.strip('.txt'),verbose=False,read_derivs=False))
+            patches.append(ThisPatch(datadir+f.strip('.txt'),verbose=False,read_derivs=True))
 
         for p in patches:
             if p.task_type == 'immersed_boundary_t':

@@ -49,6 +49,7 @@ SUBROUTINE init_rt_internal (self)
   self%li        = mhd_patch%li
   self%ui        = mhd_patch%ui
   self%time      = -2
+  self%dtime     = 2e-6
   if (mhd_patch%is_set(bits%static))    call self%set (bits%static)
   if (mhd_patch%is_set(bits%root_grid)) call self%set (bits%root_grid)
   !if (mhd_patch%is_set(bits%has_BC))    call self%set (bits%has_BC)

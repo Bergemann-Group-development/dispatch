@@ -61,6 +61,7 @@ SUBROUTINE init_rt_data(self)
   self%end_time = self%mhd_patch%end_time
   self%out_time = self%mhd_patch%out_time
   self%time     = -3
+  self%dtime    = 1e-6
   if (mhd_patch%is_set(bits%static))    call self%set (bits%static)
   if (mhd_patch%is_set(bits%root_grid)) call self%set(bits%root_grid)
   !---------------------------------------------------------------------
@@ -172,6 +173,7 @@ FUNCTION I_retrv (self,c,dir,lw,uw) result (I_st)
       found = .true.
       I_st = this%I
     end if
+    this => this%next
   end do
   
   if (.not.found) error stop "ERROR: rt_data_mod%I_retrv did not find data entry"
@@ -198,9 +200,10 @@ FUNCTION I_retrv_ray (self,ray,pt,dir) result (I_st)
       found = .true.
       I_st = this%I
     end if
+    this => this%next
   end do
   
-  if (.not.found) error stop "ERROR: rt_data_mod%I_retrv did not find data entry"
+  if (.not.found) error stop "ERROR: rt_data_mod%I_retrv_ray did not find data entry"
   
   end associate
   call trace_end
