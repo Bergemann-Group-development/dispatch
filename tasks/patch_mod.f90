@@ -77,6 +77,8 @@ MODULE patch_mod
     procedure:: fmaxval                 ! interior max value
     procedure:: fminval                 ! interior min value
     procedure:: courant_condition
+    procedure:: ohmic_condition
+    procedure:: AD_condition
     procedure:: check_density
     procedure:: patch_to_header
     procedure:: header_to_patch
@@ -1063,6 +1065,38 @@ SUBROUTINE courant_condition (self)
 END SUBROUTINE courant_condition
 
 !> =============================================================================
+!> Ohmic condition, one way or another
+!> =============================================================================
+SUBROUTINE ohmic_condition (self,dt_Ohm_inp)
+  class(patch_t):: self
+  real(8):: dtime
+  real(8):: dt_Ohm_inp
+  !.............................................................................
+  call trace_begin('patch_mod::ohmic')
+  if (io%verbose>2) &
+  !-----------------------------------------------------------------------------
+  self%dtime = min (self%dtime, dt_Ohm_inp)
+  self%dt(self%it) = self%dtime
+  call trace_end
+END SUBROUTINE ohmic_condition
+
+!> =============================================================================
+!> Ambipolar diffusion condition, one way or another
+!> =============================================================================
+SUBROUTINE AD_condition (self,dt_AD_inp)
+  class(patch_t):: self
+  real(8):: dtime
+  real(8):: dt_AD_inp
+  !.............................................................................
+  call trace_begin('patch_mod::AD')
+  if (io%verbose>2) &
+  !-----------------------------------------------------------------------------
+  self%dtime = min (self%dtime, dt_AD_inp)
+  self%dt(self%it) = self%dtime
+  call trace_end
+END SUBROUTINE AD_condition
+
+!> =============================================================================
 !> Max absolute distance between two points in the periodic box
 !> =============================================================================
 FUNCTION point_distance (self, p1, p2) RESULT (out)
@@ -1156,7 +1190,7 @@ END FUNCTION
 SUBROUTINE check_density (self, label)
   class(patch_t):: self
   character(len=*), optional:: label
-  real:: mind, posd
+  real:: mind, posd, tiny = 1.0e-32
   integer:: ix, iy, iz, ii(3), ntot, nins
   logical:: inside
   !-----------------------------------------------------------------------------
@@ -1168,7 +1202,7 @@ SUBROUTINE check_density (self, label)
     ! Negative densities appear to develop at a few points in the guard zones,
     ! so this tries to patch up, sampling densitites in the guard zone.
     !---------------------------------------------------------------------------
-    posd = self%mem(3,3,2,1,self%it,1)
+    posd = tiny
     ntot = 0
     nins = 0
     do iz=1,self%gn(3)
