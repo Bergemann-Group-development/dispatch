@@ -23,6 +23,9 @@ MODULE mhd_mod
     real:: csound
     real:: cdtd
     logical:: mhd=.true.
+    real:: gamma_AD, rho_ions
+    real(8):: dt_Ohm, dt_AD
+    logical:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
     type(force_t):: force
   contains
     procedure:: init
@@ -50,9 +53,10 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
+  real, save:: gamma_AD=75., rho_ions=1.
   integer:: i
-  logical, save:: first_time=.true.
-  namelist /mhd_params/ nu, gamma, csound, cdtd
+  logical, save:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
+  namelist /mhd_params/ nu, gamma, csound, cdtd, mhd_AD, mhd_Ohm, gamma_AD, rho_ions
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
@@ -68,6 +72,14 @@ SUBROUTINE init (self)
   self%gamma = gamma
   self%csound = csound
   self%cdtd = cdtd
+  if (mhd_Ohm) then
+    self%mhd_Ohm = mhd_Ohm
+  end if
+  if (mhd_AD) then
+    self%mhd_AD = mhd_AD
+    self%gamma_AD  = gamma_AD 
+    self%rho_ions  = rho_ions
+  endif
   do i=1,3
     self%mesh(i)%h(2+i) = -0.5
     self%mesh(i)%h(5+i) = -0.5
@@ -91,6 +103,7 @@ SUBROUTINE update (self)
   class(mhd_t):: self
   !.............................................................................
   real, dimension(:,:,:,:), pointer:: U, E, J, p, B, dpdt, dBdt
+  real, dimension(:,:,:,:), pointer:: Ud, E_AD
   real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm
   real, dimension(:,:,:),   pointer:: d, s, dddt, dsdt
   real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, Q
@@ -101,6 +114,9 @@ SUBROUTINE update (self)
   real, dimension(:,:,:),   pointer:: fxx, fxy, fxz
   real, dimension(:,:,:),   pointer:: fyx, fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx, fzy, fzz
+  real, dimension(:,:,:),   pointer:: Ud_x, Ud_y, Ud_z, eta_non, eta_th, eta_Ohm, ambi, H_AD
+  integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
+  logical, save:: first_time=.true., first_AD=.true.
   !.............................................................................
   real:: ds(3), dx
   integer, save:: itimer=0
@@ -124,6 +140,7 @@ SUBROUTINE update (self)
   end if
   call allocate_vectors (self%gn, ld, dd, E, J, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
+  if (self%mhd_Ohm) call allocate_scalars (self%gn, eta_Ohm)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
@@ -133,6 +150,13 @@ SUBROUTINE update (self)
     call allocate_vectors (self%gn, U)
   end if
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
+  if (self%mhd_AD) then
+    Ud_x=>Ud(:,:,:,1)
+    Ud_y=>Ud(:,:,:,2) 
+    Ud_z=>Ud(:,:,:,3)
+    call allocate_vectors (self%gn, Ud, E_AD)
+    call allocate_scalars (self%gn, ambi, H_AD)    
+  end if
   Ex=>E(:,:,:,1); Ey=>E(:,:,:,2); Ez=>E(:,:,:,3)
   Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
   fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2); fxz=>fx(:,:,:,3)
@@ -301,6 +325,12 @@ SUBROUTINE update (self)
     ! Electric current, resistive electric field and magnetic dissipation
     !---------------------------------------------------------------------------
     J = curl_dn(ds,B)
+    if (self%mhd_Ohm) then
+      eta_Ohm = self%nu(6)
+      self%dt_Ohm = 0.1*minval(dx**2/eta_Ohm)
+    else
+      self%dt_Ohm = 100.
+    end if
     E = self%nu(6)*edge(du)*J
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
     if (self%gamma/=1.0) &
@@ -317,10 +347,57 @@ SUBROUTINE update (self)
       call boundary%condition (Ez, self%mesh, [-0.5d0,-0.5d0,0d0])
     end if
     dBdt = -curl_up(ds,E)
+    if (self%mhd_AD) then
+      !---------------------------------------------------------------------------
+      ! Below is the actual ambipolar drift parameter as given in equation 20 in Padoan, Zweibel and Nordlund (2000). 
+      ! To only write ambi, the definition in Padoan et al. is already multiplied by density**(-3/2) 
+      ! as it appears in the calculation of the drift velocity. The term d**1.5 is a cosnequence of the single fluid 
+      ! approximation and the relation 
+      ! n_i = K(n_n/10^5cm^-3)^k + K' (n_n/10^3 cm^-3)^-2
+      ! K = 3*10^-3cm^-3, k=0.5 and K'=4.64*10^-4cm^-3. 
+      ! based on assuming that dust grains do NOT affect ionization balance significantly 
+      ! => second term falls off quickly => n_i~n_n^0.5 
+      ! In order to compute this parameter correctly, we need to know TEMPERATURE, 
+      ! RESOLUTION (not directly applicable here because we use AMR), BOX LENGTH, AVERAGE DENSITY, 
+      ! COSMIC-RAY IONISATION (K_i parameter: K_i = n_i*n_H**(-0.5) = x_i*n_H**(-0.5) ) and AVERAGE VOLUMETRIC FLOW RATE av_sigv:
+      !---------------------------------------------------------------------------
+      ! ambi = 0.28 * (0.1*T)**0.5 * (N/128d0) * (L/10d0)**(-1) * (av_n/200d0)**(-0.5) * (K_i/1e-5)**(-1) * (av_sigv/2e-9)**(-1) * d**(-1.5)
+      ! 
+      ! Alternative definition in Duffin and Pudritz (2008) assumes constant parameter for gamma_AD 
+      ! gamma_AD = av_sigv / (m_i + m_n) = 3.28e13 g^-1cm^3s^-1
+      !ambi = 1.4 / (gamma_AD*d**1.5)
+      !rho_i = 1. 
+      ambi = 1./(self%gamma_AD*d*self%rho_ions**0.5)
+      Ud_x = xdn(ambi) * (zup(Jy)*xdn(zup(Bz)) - yup(Jz)*xdn(yup(By)))
+      Ud_y = ydn(ambi) * (xup(Jz)*ydn(xup(Bx)) - zup(Jx)*ydn(zup(Bz)))
+      Ud_z = zdn(ambi) * (yup(Jx)*zdn(yup(By)) - xup(Jy)*zdn(xup(Bx)))
+      E_AD(:,:,:,1) = (Ud_y*Bz - Ud_z*By)
+      E_AD(:,:,:,2) = (Ud_z*Bx - Ud_x*Bz)
+      E_AD(:,:,:,3) = (Ud_x*By - Ud_y*Bx)
+      dBdt(:,:,:,1) = dBdt(:,:,:,1) + (ddyup(ds, (Ud_x*By - Ud_y*Bx)) - ddzup(ds, (Ud_z*Bx - Ud_x*Bz)) )
+      dBdt(:,:,:,2) = dBdt(:,:,:,2) + (ddzup(ds, (Ud_y*Bz - Ud_z*By)) - ddxup(ds, (Ud_x*By - Ud_y*Bx)) )
+      dBdt(:,:,:,3) = dBdt(:,:,:,3) + (ddxup(ds, (Ud_z*Bx - Ud_x*Bz)) - ddyup(ds, (Ud_y*Bz - Ud_z*By)) )
+      self%dt_AD = 0.1*minval(self%gamma_AD*self%rho_ions*d/(Bx**2+By**2+Bz**2)*dx**2)
+      if (self%gamma==1.0) then
+        dsdt = 0.
+      else
+        ! ambipolar heating H_AD = rho_i*rho_n*nu_in*v_D^2. nu_in is the collisional frequency between ions and neutrals
+        ! and so far this is all hidden in the constant gamma_AD.
+        H_AD = self%rho_ions * d * self%gamma_AD * (xup(Ud_x)**2 + yup(Ud_y)**2 + zup(Ud_z)**2)
+        dsdt = dsdt + H_AD*d/pg
+      end if
+    end if  
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, E, J, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pa, du, ss, cs, pp, pb, Q)
+  if (self%mhd_Ohm) then
+    call deallocate_scalars (eta_Ohm)
+  end if
+  if (self%mhd_AD) then
+    call deallocate_vectors (Ud, E_AD)
+    call deallocate_scalars (ambi,H_AD)            
+  end if
   if (.not.self%do_pebbles) then
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
