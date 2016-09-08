@@ -68,7 +68,7 @@ FUNCTION source_Stefan (self, temp, wl) result (src)
   real, dimension(:,:,:)   :: temp
   real, dimension(:)       :: wl
   real, dimension(size(temp,1),size(temp,2),size(temp,3),size(wl)) :: src
-  real:: lambda, sc_stf
+  real (kind=8):: lambda, sc_stf
   integer:: iwl
   !.............................................................................
   call trace_begin('source_function_mod::source_Stefan',2)
