@@ -19,6 +19,7 @@ MODULE initial_mod
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure init
+    procedure cleanup
   end type
   logical, save:: first_time=.true.
 CONTAINS
@@ -68,6 +69,11 @@ SUBROUTINE init (self)
    end select
    call trace_end
 END SUBROUTINE init
+
+!> =============================================================================
+SUBROUTINE cleanup(self)
+   class(initial_t):: self
+END SUBROUTINE cleanup
 
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase

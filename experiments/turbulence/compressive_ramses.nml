@@ -15,11 +15,10 @@
  size=1,1,1
  !dims=16,16,16
  !dims=8,8,8
- dims=4,4,4
+ !dims=4,4,4
  !dims=2,2,2
- !dims=1,1,1
+ dims=1,1,1
  origin=0,0,0
- dims=8,8,8 mpi_dims=2,2,2      ! 64 patches per rank, 8 ranks => 6.4 patches per thread w 10 threads per rank
 /
 &experiment_params
 /
@@ -28,7 +27,7 @@
  courant=0.2
  grace=0
 !n=16,16,16                     ! 4096 patches
- n=32,32,32                     ! 512 patches
+n=32,32,32                     ! 512 patches
 !n=64,64,64                     ! 64 patches
 !n=128,128,128                  ! 4 patches (not working)
 !n=256,256,256                  ! 1 patch
@@ -54,18 +53,18 @@
  k=2,2,2
  a0=0.0,0.0,0.0
  u0=0.0,0.01,0.0
- b0=0,0,0
+ b0=0,0,1
  type='single_compressive'
 /
 &ramses_params
  courant_factor=0.8
  !courant_factor=0.266667
- gamma=1.00001
+ gamma=1.66667
  slope_type=2
  !slope_type=-1
  smallr=1e-4
  smallc=5e-1
- riemann='hllc'
+ !riemann='hllc'
  !riemann='hll'
  !riemann='llf'
  do_isothermal=t

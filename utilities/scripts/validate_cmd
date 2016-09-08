@@ -1,0 +1,45 @@
+#!/bin/csh
+
+set label = "$1"
+shift
+set cmd = "$*"
+
+set date = `date +%y%m%d_%H%M`
+
+#echo " "
+
+if ($?tee) then
+  set cmd = "$cmd |& tee $label.log"
+else
+  set cmd = "$cmd >& $label.log"
+endif
+
+# echo the command
+echo "$cmd"
+if ($?dryrun) exit
+
+# run the command
+time csh -c "$cmd"
+
+# check if a .val file exists, rerun if not
+if (! -e $label.val ) then
+  echo "   WARNING: creating new $label.val from $label.log"
+  cp -p $label.log $label.val
+  #csh -c "$cmd"
+endif
+
+diff -ibw $label.val $label.log
+if ($status) then
+  echo "                                                                    ==> NOT the same"
+  cp -p $label{,_$date}.log
+  cp -p $label{,_$date}.val
+  if ($?reset) then
+    echo "WARNING: resetting $label.val"
+    cp -p $label.{log,val}
+    exit(0)
+  endif
+  exit(1)
+else
+  echo "                                                                    ==> OK, same result"
+  exit(0)
+endif

@@ -746,6 +746,7 @@ END SUBROUTINE unpack
 !> Write results to disk
 !> =============================================================================
 SUBROUTINE output_legacy (self, experiment_name)
+  USE iso_fortran_env, only : real32
   class(patch_t):: self
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
@@ -801,7 +802,8 @@ SUBROUTINE output_legacy (self, experiment_name)
       ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/ds(i) - 1.0
     end if
   end do
-  write (io%log_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
+  write (io%log_unit,'(1p,e14.6,3(2x,3e14.6),1x,i3.1)') self%time, self%position, self%ds, &
+        self%velocity, self%level
   write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
   close (io%log_unit)
 
@@ -811,14 +813,12 @@ SUBROUTINE output_legacy (self, experiment_name)
   if (io%master .and. io%verbose>=0) &
     print'(a,3x,"time:",f9.5)', 'patch_mod::output: file= '//trim(filename), self%out_next
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  do i=1,3
-    if (self%size(i) > 0.0) then
-      li(i) = (self%position(i)+0.5*(self%box(i)-self%size(i)))/self%ds(i)
-      ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/self%ds(i) - 1.0
-    end if
-  end do
-  write (io%data_unit,'(1p,e14.6,2(2x,3e14.6))') self%time, self%position, self%ds
-  write (io%data_unit,'(4(3i9,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
+  write (io%data_unit,'(1p,e18.10,3(2x,3e18.10)1x,i3.1)') self%time, self%position, self%ds, &
+        self%velocity, self%level
+  write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1)') int(self%box/self%ds+0.5), u-l+1, &
+        li, ui, self%n, self%gn, self%ng, self%nv
+  write (io%data_unit,'(3(1i8.1,1x),i2.1,1x,a)') self%id, self%iout, self%istep, &
+        1, trim(self%kind)
   close (io%data_unit)
   !$omp end critical (io_cr)
 
@@ -828,7 +828,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   !$omp critical (io_cr)
   n = u-l+1
   open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
-    status='unknown', recl=sizeof(self%mem(1,1,1,1,1,1))*product(n))
+    status='unknown', recl=real32*product(n))
   do jo=1,no
     do iv=1,self%nv
       allocate (buf(n(1),n(2),n(3)))

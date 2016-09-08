@@ -1,0 +1,2 @@
+OPT = -O1
+DEBUG = -g -traceback -ftrapuv -fp-model source -fp-model except -check bounds,pointers,uninit -fpe:0 -DCHECK_NAN

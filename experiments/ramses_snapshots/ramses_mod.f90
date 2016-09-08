@@ -923,6 +923,7 @@ SUBROUTINE read_snapshot (self)
   print*,'Finishing task list initialisation (including neighbour determination).'
   print*,'This could take a while...'
   call self%task_list%init ('ramses_snapshot')
+  call self%task_list%init_all_nbors
 
   call trace_end
 END SUBROUTINE read_snapshot
@@ -1083,6 +1084,7 @@ SUBROUTINE merge_ramses_octs (self, n_max)
   class(ramses_t) :: self
   integer, intent(in) :: n_max
   class(task_t), pointer :: task, nbor_task, merged_task
+  class(patch_t), pointer :: merged_patch
   class(link_t), pointer :: link, nbor, old_link, new_link
   integer :: n_now(3), n_nbor(3), n_updated(3), iterations, adir, n_merges=1, &
              merge_count, patch_count, diff_count
@@ -1166,12 +1168,13 @@ SUBROUTINE merge_ramses_octs (self, n_max)
 
         if (all(n_nbor < n_max)) then
           ! try to merge two patches; includes inheritence of existing neighbours
-          merged_task => merge_neighbours(link, nbor, dpos)
+          merged_patch => merge_neighbours(link, nbor, dpos)
           ! add new merged patch to the *end* of the list
+          merged_task => merged_patch
           call self%task_list%append(merged_task)
           ! merge the neighbour lists of the merged patches (and give it the
           ! result to the new task).
-          associate (back_link => merged_task%link)
+          associate (back_link=>merged_patch%link)
           select type (back_link)
           type is (link_t)
             new_link => back_link
@@ -1183,10 +1186,7 @@ SUBROUTINE merge_ramses_octs (self, n_max)
           merged = .true.
           n_merges = n_merges + 1
           merge_count = merge_count + 1
-          select type (merged_task)
-          class is (patch_t)
-            n_updated = merged_task%n
-          end select
+          n_updated = merged_patch%n
           write (*,'(a,i10.1,a,i10.1,a,i10.1,a,3(i3.1,1x),a)') 'patches merged: ids = ', &
             link%task%id, ', ', nbor%task%id,' => ', merged_task%id, ' (', n_updated, ')'
     

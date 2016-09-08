@@ -42,7 +42,7 @@ MODULE mpi_mod
   ! Object that returns the most important MPI parameters
   !-----------------------------------------------------------------------------
   type mpi_t
-    integer:: size, rank, comm, verbose=0
+    integer:: size=1, rank=0, comm, verbose=0
     integer:: mode
     logical:: master
     logical:: ok = .false.

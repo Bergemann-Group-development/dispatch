@@ -197,7 +197,7 @@ SUBROUTINE update (self)
     fxx = pp + d*(fxx - du*ddxup(ds,Ux)) - Ex
     fyy = pp + d*(fyy - du*ddyup(ds,Uy)) - Ey
     fzz = pp + d*(fzz - du*ddzup(ds,Uz)) - Ex
-    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
+    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz)**2)
   else
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2

@@ -11,7 +11,7 @@ MODULE pic_mod
   USE grid_m, ONLY: g, mesh_type, grid_type
   USE grid_m, ONLY: Bx, By, Bz, Ex, Ey, Ez, fmhd
   USE params, ONLY: time, dt, it
-  USE species, ONLY: spec, sp, field, fields, vthb !, counters, n
+  USE species_m, ONLY: spec, sp, field, fields, vthb !, counters, n
   USE maxwell_sources, ONLY: jx,jy,jz,sx,sy,sz
   implicit none
   private
@@ -44,7 +44,7 @@ CONTAINS
 !> Allocate and initialize the memory and paramters belonging to a PIC patch.
 !> This procedure is called once for every patch.  It calls init_species to
 !> initialize everything that belongs to the patch being initialized, and the
-!> dynamically changing part of this info needs to be copied to the patch 
+!> dynamically changing part of this info needs to be copied to the patch
 !> data type, to be recovered when a patch is to be updated.
 !> =============================================================================
 SUBROUTINE init (self)
@@ -53,8 +53,13 @@ SUBROUTINE init (self)
   ! Initialize new PIC data for a patch
   !-----------------------------------------------------------------------------
   call trace_begin ('pic_mod::init')
-  call init_species
-  call init_grid
+  call init_grid                                                        ! computational mesh
+  call init_species                                                     ! define particle species
+  call init_distributions                                               ! particle distibutions
+  call init_random                                                      ! random numbers
+  call init_pic_experiment                                              ! initialize the experiment
+  call init_maxwell                                                     ! initialize maxwell eq
+  call init_diagnostics                                                 ! energetics etc
   !-----------------------------------------------------------------------------
   ! Save the location of dynamic PIC data for this patch
   !-----------------------------------------------------------------------------
@@ -168,7 +173,7 @@ END SUBROUTINE update
 !> =============================================================================
 SUBROUTINE output (self, experiment_name)
   class(pic_t):: self
-  character(len=*), optional:: experiment_name
+  character(len=64), optional:: experiment_name
   !-----------------------------------------------------------------------------
   ! Connect to the patch data and do I/O, using calls to the PPcode routine
   !-----------------------------------------------------------------------------
@@ -184,7 +189,7 @@ END SUBROUTINE output
 SUBROUTINE info (self, nq, ntask, experiment_name)
   class(pic_t):: self
   integer, optional:: nq, ntask
-  character(len=*), optional:: experiment_name
+  character(len=64), optional:: experiment_name
   !-----------------------------------------------------------------------------
   call trace_begin ('pic_mod::info')
   call self%connect

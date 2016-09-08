@@ -1,0 +1,2 @@
+OPT = -O1
+DEBUG = -G0 -K trap=fp -R b -ei -h fp1

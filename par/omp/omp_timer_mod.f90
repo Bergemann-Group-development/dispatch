@@ -109,6 +109,7 @@ SUBROUTINE toc_r (label, n)
   real:: n, f
   real(8):: omp_get_wtime
   !.............................................................................
+  if (io_unit%do_validate) return
   wt = (omp_get_wtime() - wt)
   n_core = max(omp%ncores,1)
   f = max(omp%nthreads/real(n_core),1.0)

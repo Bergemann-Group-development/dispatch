@@ -218,7 +218,7 @@ SUBROUTINE update (self)
     fxx = pp + d*(fxx - du*ddxup(ds,Ux))
     fyy = pp + d*(fyy - du*ddyup(ds,Uy))
     fzz = pp + d*(fzz - du*ddzup(ds,Uz))
-    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
+    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz)**2)
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of mass

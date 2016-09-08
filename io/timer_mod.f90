@@ -55,6 +55,7 @@ SUBROUTINE begin (self, name, itimer)
   integer:: itimer, thread, i
   logical:: ok
   !.............................................................................
+  if (io_unit%do_validate) return
   thread = omp%mythread()
   if (itimer==0) then
     !$omp critical (timer_cr)
@@ -81,6 +82,7 @@ SUBROUTINE end (self, itimer)
   optional:: itimer
   real(8):: wc
   !.............................................................................
+  if (io_unit%do_validate) return
   thread = omp%mythread()
   if (itimer > 0) then
     wc = wallclock()
@@ -107,6 +109,7 @@ SUBROUTINE print ()
   integer:: i
   !.............................................................................
   !if (.not. io_unit%master) return
+  if (io_unit%do_validate) return
   wc = wallclock()
   sec = wc - prev2
   if (sec < 0.01d0) return

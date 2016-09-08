@@ -43,11 +43,11 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   character(len=64):: filename
   integer, save:: id_debug=-1
-  logical, save:: first_time=.true., omp_trace=.false.
+  logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.true., do_flags=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
-    do_legacy, levelmax, omp_trace, id_debug
+    do_validate, do_legacy, levelmax, omp_trace, id_debug
   real:: test
   integer:: iostat
   !.............................................................................
@@ -56,7 +56,6 @@ SUBROUTINE init (self, name)
   !$omp parallel
   io_unit%master = io_unit%master.and.self%master
   !$omp end parallel
-  call print_id (id)
   !-----------------------------------------------------------------------------
   ! I/O unit numbers, for convenience and backwards compatibility.  All other
   ! unit numbers should be taken directly from io_unit_mod
@@ -128,6 +127,8 @@ SUBROUTINE init (self, name)
   self%omp_trace = omp_trace
   self%levelmax  = levelmax
   self%inputname = inputname
+  io_unit%do_validate = do_validate
+  call print_id (id)
   call timer%init
 END SUBROUTINE init
 
@@ -155,6 +156,7 @@ SUBROUTINE print_id (id)
   character(len=120), save:: hl= &
     '--------------------------------------------------------------------------------'
   !..............................................................................
+  if (io_unit%do_validate) return
   if (id .ne. ' ' .or. mpi_trace) then
     if (io%master) then
       call print_hl

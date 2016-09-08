@@ -42,7 +42,7 @@ SUBROUTINE init_draine_lee (self)
   real(4):: q1
   ! --------------------------------------------------------------------
   call trace_begin('opacity_t%init')
-  
+
   nheader = 9
   opacfile = 'optSi.dat'
   self%grain_rho = 3.6 ! g cm**-3
@@ -86,7 +86,7 @@ SUBROUTINE init_draine_lee (self)
     ext_cs(i) = ext_cs(i) * 100.0**2
     scat_cs(i) = scat_cs(i) * 100.0**2
     self%wavelength(i) = self%wavelength(i) * 1.0e-4
-    
+
     ! NOTE!: No correction for the dust-to-gas ratio is made here!
     self%kappa_lamb(i) = (ext_cs(i) - scat_cs(i)) * q1
   end do
