@@ -24,7 +24,7 @@ MODULE mhd_mod
     real:: cdtd
     logical:: mhd=.true.
     real:: gamma_AD, rho_ions
-    real(8):: dt_Ohm, dt_AD
+    real(8):: dt_Ohm, dt_AD, nonideal_MHD_courant
     logical:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
     type(force_t):: force
   contains
@@ -409,22 +409,22 @@ END SUBROUTINE update
 !> =============================================================================
 !> Courant condition, one way or another
 !> =============================================================================
-SUBROUTINE nonideal_MHD_courant_condition (self,dt_AD_inp,dt_Ohm_inp)
+SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
   class(mhd_t):: self
   real(8):: dt_AD_inp
   real(8):: dt_Ohm_inp
   !.............................................................................
-  call trace_begin('patch_t%courant')
-  call self%lock%set ('courant')
+  call trace_begin('mhd_t%nonideal_MHD_courant')
+  call self%lock%set ('nonideal_MHD_courant')
   if (io%verbose>2) &
-    print*, 'courant: u_max, ds', self%u_max, minval(self%ds)
+    print*, 'nonideal_MHD_courant: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
     self%dtime = self%dt_fixed
-    self%courant = self%dtime*self%u_max/minval(self%ds)
+    self%nonideal_MHD_courant = self%dtime*self%u_max/minval(self%ds)
   else if (self%u_fixed > 0.0) then
-    self%dtime = self%courant*minval(self%ds)/self%u_fixed
+    self%dtime = self%nonideal_MHD_courant*minval(self%ds)/self%u_fixed
   else
-    self%dtime = self%courant*minval(self%ds)/self%u_max
+    self%dtime = self%nonideal_MHD_courant*minval(self%ds)/self%u_max
   endif
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
@@ -441,9 +441,9 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_AD_inp,dt_Ohm_inp)
   !self%dt(:) = self%dtime
   !print*,'dt', self%dt
   if (io%verbose>3) &
-    print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
-      self%id, self%dtime, self%courant, self%u_max
-  call self%lock%unset ('courant')
+    print'(a,i7,f12.6,f8.4,1p,e10.2)', 'nonideal_MHD_courant:', &
+      self%id, self%dtime, self%nonideal_MHD_courant, self%u_max
+  call self%lock%unset ('nonideal_MHD_courant')
   call trace_end
 END SUBROUTINE nonideal_MHD_courant_condition
 
