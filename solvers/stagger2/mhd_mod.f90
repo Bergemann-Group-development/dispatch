@@ -357,14 +357,11 @@ FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:, 1,self%it,1), &
-             s => self%mem(:,:,:, 2,self%it,1))
   if (self%gamma==1.0) then
     pg = self%d*self%csound**2
   else
-    pg = d**self%gamma*exp(s/d*(self%gamma-1))
+    pg = self%d**self%gamma*exp(self%s/self%d*(self%gamma-1))
   end if
-  end associate
 END FUNCTION gas_pressure
 
 FUNCTION gas_pressure_ngz (self) RESULT (pg)

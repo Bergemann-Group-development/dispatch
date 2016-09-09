@@ -9,23 +9,26 @@ MODULE rt_mod
   USE experiment_mod
   USE rt_boundary_mod
   USE microphysics_mod
+!----------------------------------------------------------------------- 
   type, extends(task_t), public :: rt_t
     type (experiment_t), pointer :: mhd_patch  => null()  ! pointer to MHD task
     type (link_t)      , pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
     class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task 
+    class(link_t),       pointer :: link       => null()  ! pointer to self link in the task list 
     type (ray_list_t),   pointer :: my_rays
     ! common items
-    integer :: n_ray_dirs = 3, rt_freq = 1
+    integer :: n_ray_dirs = 3
+    integer :: geom = 1                                                 !cartesian = 1, spherical = 2, cylindrical = 3
+    integer :: rt_freq = 1                                              ! how often rt tasks are done wrt experiment
     integer :: bundle_ID, dir_ID, rt_type, li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment 
     real(kind=8) :: cell_ds(3)
     real(8):: offset(3)                 ! this is used to compute indices, locations
   contains
-    procedure :: find_upstream
+    procedure :: find_upstream                                             
     procedure :: init => init_rt
     procedure :: update => update_rt
-    !procedure :: update_correction_upstream
-    procedure :: set_BC
+    procedure :: init_obc
     procedure :: absolute_point_position
     procedure :: ray2cell
     procedure :: cell2pos
@@ -42,13 +45,13 @@ MODULE rt_mod
 SUBROUTINE init_rt (self)
   class(rt_t) :: self
   !---------------------------------------------------------------------
-  error stop "ERROR: rt_t%init_rt is an empty subroutine"
+  error stop "ERROR: rt_t%init_rt was called, but it is an empty subroutine"
 END SUBROUTINE init_rt
 
 SUBROUTINE update_rt (self)
   class(rt_t) :: self
   !---------------------------------------------------------------------
-  error stop "ERROR: rt_t%update_rt is an empty subroutine"
+  error stop "ERROR: rt_t%update_rt was called, but it is an empty subroutine"
 END SUBROUTINE update_rt
 
 SUBROUTINE set_reflective_BC(self)
@@ -80,7 +83,7 @@ FUNCTION the_right_wall(self,me, nbor, wall) result (answer)
     mhd => my_type%mhd_patch
   END SELECT
   end associate
-
+  
   associate (nbor_type => nbor%task)
   SELECT type (nbor_type)
   type is (experiment_t)
@@ -89,7 +92,7 @@ FUNCTION the_right_wall(self,me, nbor, wall) result (answer)
     nb_mhd => nbor_type%mhd_patch                                       ! if I got an RT task to test, switch to corresponding MHD patch
   end SELECT
   end associate
-
+    
   if (abs(nb_mhd%level-mhd%level)<2) then                               ! connect only +/- 1 or same level
     if (wall(1) > 0) then
       if (mhd%position(1) < nb_mhd%position(1)) then
@@ -102,7 +105,7 @@ FUNCTION the_right_wall(self,me, nbor, wall) result (answer)
         nb_mhd%position(1) + nb_mhd%size(1)*0.5d0 + nb_mhd%ds(1)) answer = .true.
       end if
     end if
-
+    
     if (wall(2) > 0) then
       if (mhd%position(2) < nb_mhd%position(2)) then
         if (mhd%position(2)+mhd%size(2)*0.5d0 > &
@@ -114,7 +117,7 @@ FUNCTION the_right_wall(self,me, nbor, wall) result (answer)
         nb_mhd%position(2) + nb_mhd%size(2)*0.5d0 + nb_mhd%ds(2)) answer = .true.
       end if
     end if
-
+    
     if (wall(3) > 0) then
       if (mhd%position(3) < nb_mhd%position(3)) then
         if (mhd%position(3)+mhd%size(3)*0.5d0 > &
@@ -126,7 +129,7 @@ FUNCTION the_right_wall(self,me, nbor, wall) result (answer)
         nb_mhd%position(3) + nb_mhd%size(3)*0.5d0 + nb_mhd%ds(3)) answer = .true.
       end if
     end if
-
+    
   end if 
 END FUNCTION the_right_wall
 
@@ -142,7 +145,7 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   allocate (nbor_l)
   nbor => self%mhd_link%nbor
   my_task => self%mhd_patch
-
+  
   do while (associated(nbor))
     associate (nbtask => nbor%task)
     SELECT type (nbtask)
@@ -168,38 +171,18 @@ SUBROUTINE find_upstream (self, nbor_l, found)
     end associate
   nbor => nbor%next
   end do
-
+  
   nbor_l => nbor_l%next
   call trace_end
 END SUBROUTINE find_upstream
 
-SUBROUTINE set_BC (self)
+SUBROUTINE init_obc (self)
   class(rt_t) :: self
 !-----------------------------------------------------------------------
   call self%set(bits%has_BC)
   self%obc = 1
   self%my_nb_link%check = .true.
-END SUBROUTINE set_BC
-
-SUBROUTINE update_BC (self)
-  class(rt_correction_t) :: self
-  integer :: ray
-  real(kind=8) :: ppos(3)
-  !---------------------------------------------------------------------
-  call trace_begin('rt_t%set_BC')
-  SELECT case(self%rt_type)
-  case(0)
-  case(1)
-  case(2,3)
-    do ray = 1, self%my_rays%n_rays
-      ppos = self%absolute_point_position(ray, 1, self%rt_type)
-      if (self%obct == 0) then
-        call rt_boundary%set_obc(ppos,self%cell_ds,self%I_in(:,ray))
-      end if
-    end do
-  end SELECT
-  call trace_end
-END SUBROUTINE update_BC
+END SUBROUTINE init_obc
 
 SUBROUTINE check_common_surface(me, nbor, wall, right, it)
   type (experiment_t), pointer :: me, nbor
@@ -216,21 +199,21 @@ SUBROUTINE check_common_surface(me, nbor, wall, right, it)
   end SELECT
   ok = .false.
   if (wall < 0) then
-    if ((nbor%position(w)-0.5_8*nbor%size(w)) > &
+    if ((nbor%position(w)-0.5_8*nbor%size(w)) > &           
           (me%position(w)+0.5_8*  me%size(w)+me%ds(w))) ok = .true.
   else if (wall > 0) then
-    if ((nbor%position(w)+0.5_8*nbor%size(w)) > &
+    if ((nbor%position(w)+0.5_8*nbor%size(w)) > &           
           (me%position(w)-0.5_8*  me%size(w)-me%ds(w))) ok = .true.
   else
     right = .true.
   end if
-
+        
   if (ok) then
     if ((((nbor%position(s1)+0.5_8*nbor%size(s1)) >= &
             (me%position(s1)-0.5_8*  me%size(s1)))  .and. &
          ((nbor%position(s1)-0.5_8*nbor%size(s1)) <= &
             (me%position(s1)+0.5_8*  me%size(s1)))) .and. &
-
+                
         (((nbor%position(s2)+0.5_8*nbor%size(s2)) >= &
             (me%position(s2)-0.5_8*  me%size(s2)))  .and. &
          ((nbor%position(s2)-0.5_8*nbor%size(s2)) <= &
@@ -271,7 +254,7 @@ FUNCTION ray2cell(self, ray, pt) result (cell)
   integer :: ray, pt, cell(3)
 !-----------------------------------------------------------------------
   cell = self%my_rays%cell_coords(:,pt,ray)
-
+  
 END FUNCTION ray2cell
 
 FUNCTION cell2pos (self, cell) result(p)
@@ -289,13 +272,13 @@ FUNCTION pos2cell (self, p) result (cell)
   integer      :: cell(3)
 !-----------------------------------------------------------------------
   cell = nint((p-self%position+0.5_8*self%size)/self%cell_ds)+self%li
-
+  
 END FUNCTION pos2cell
 
 ! orient = 1 - lwall, orient = 2 - uwall
 SUBROUTINE cell2ray (self, c, w, ray, pt, found)
   class(rt_t) :: self
-  type(cell_t), pointer :: cell
+  type(rt_cell_t), pointer :: cell
   integer :: c(3), ray, pt, w(3), orient, wall(3)
   logical :: found
 !-----------------------------------------------------------------------
@@ -310,7 +293,7 @@ SUBROUTINE cell2ray (self, c, w, ray, pt, found)
         found = .true.
         return
       else
-        cell => celL%next
+        cell => cell%next
       end if
     end if
   end do
@@ -323,7 +306,7 @@ SUBROUTINE pos2ray (self, p, w, ray, pt, found)
   logical :: found
 !-----------------------------------------------------------------------
   call self%cell2ray(self%pos2cell(p), w, ray, pt, found)
-
+  
 END SUBROUTINE pos2ray
 
 FUNCTION ray2pos (self, ray, pt) result (p)
@@ -332,7 +315,7 @@ FUNCTION ray2pos (self, ray, pt) result (p)
   integer :: ray, pt
 !-----------------------------------------------------------------------
   p = self%cell2pos(self%ray2cell(ray,pt))
-
+  
 END FUNCTION ray2pos
 
 
@@ -349,11 +332,11 @@ END FUNCTION point_in_cell
 
 SUBROUTINE update_time(self)
   class(rt_t) :: self
-!-----------------------------------------------------------------------
+!-----------------------------------------------------------------------  
   if (self%time < 0) then
-    self%time  = self%mhd_patch%time
+    self%time  = self%mhd_patch%time + self%dtime
     self%dtime = self%mhd_patch%dtime * self%rt_freq
-  else
+  else   
     self%dtime = self%mhd_patch%dtime * self%rt_freq
     self%time  = self%time + self%dtime
   end if

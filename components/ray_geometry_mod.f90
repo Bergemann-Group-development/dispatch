@@ -2,11 +2,11 @@ MODULE ray_geometry_mod
   USE io_mod
   USE trace_mod
   implicit none
-  type, public :: cell_t
+  type, public :: rt_cell_t
     integer :: ray, point, lwall(3), uwall(3)
-    class(cell_t), pointer :: head => null()
-    class(cell_t), pointer :: next => null()
-    class(cell_t), pointer :: tail => null()
+    class(rt_cell_t), pointer :: head => null()
+    class(rt_cell_t), pointer :: next => null()
+    class(rt_cell_t), pointer :: tail => null()
   end type
     
   type, public                         :: ray_t
@@ -19,7 +19,7 @@ MODULE ray_geometry_mod
     integer, dimension(:,:  ), pointer :: rev_coords             ! x|y|z,            ray #
     real,    dimension(:,:  ), pointer :: ds          => null()  ! ds   , ray point, ray #
     integer, dimension(:,:,:,:), pointer :: pt_wall     => null()  ! lw|uw, ray point, ray #
-    type(cell_t), dimension(:,:,:), pointer :: cell_domain => null()
+    type(rt_cell_t), dimension(:,:,:), pointer :: cell_domain => null()
   contains
     procedure :: store_cell_data
   end type
@@ -1399,7 +1399,7 @@ END SUBROUTINE finish_single_ray_list
 
 SUBROUTINE store_cell_data(self,c,pt,ray,lw,uw)
   class (ray_t)     :: self
-  type (cell_t), pointer :: cell
+  type (rt_cell_t), pointer :: cell
   integer :: pt, ray, lw(3), uw(3),c(3)
 !-----------------------------------------------------------------------
   allocate (cell)

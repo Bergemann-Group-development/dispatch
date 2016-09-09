@@ -254,7 +254,7 @@ SUBROUTINE check_nbors (self, link)
     nbtask => nbor%task                               ! neighbor task
     n_check = n_check+1
     is_clear = nbtask%is_clear(bits%ready)
-    if (is_clear .and. link%check) then               ! needs checking?
+    if (is_clear .and. nbor%check) then               ! needs checking?
       n_blocked = n_blocked+1
       call self%check_ready (nbor%link)               ! pointer back
       if (nbtask%is_set(bits%ready)) then

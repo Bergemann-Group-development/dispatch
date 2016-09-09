@@ -51,7 +51,7 @@ SUBROUTINE update_mhd_rt(self)
   ! --- Update MHD, whatever it means ---
   call self%mhd_t%update
   ! --- Update dsdt by addind Q ---
-  !call self%apply_heating
+  call self%apply_heating
   
   call trace_end
 END SUBROUTINE update_mhd_rt

@@ -98,6 +98,7 @@ SUBROUTINE initial_conditions (self, patch)
         f(ix,iy,iz,2) = (log(p0) - log(f(ix,iy,iz,1)) * patch%gamma) &
                       * f(ix,iy,iz,1) / (patch%gamma - 1.0)
 
+
         ! momentum components
         f(ix,iy,iz,3) = 0.0
         f(ix,iy,iz,4) = 0.0
@@ -109,10 +110,7 @@ SUBROUTINE initial_conditions (self, patch)
       end do
     end do
   end do
-  print *,'self%d0', self%d0
-  print *,'self%t0', self%t0
-  print *,'from initial conds'
-  print *,f(:,:,:,2)
+
   nullify (mx, my, mz, f)
   call trace_end
 END SUBROUTINE initial_conditions
