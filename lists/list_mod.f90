@@ -145,6 +145,7 @@ SUBROUTINE append_link (self, link)
   !.............................................................................
   call trace_begin ('list_mod::append_link '//self%name)
   !$omp critical (list_cr)
+  nullify(link%next)
   if (associated(self%tail)) then
     link%prev => self%tail
     link%prev%next => link

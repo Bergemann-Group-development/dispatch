@@ -245,6 +245,7 @@ FUNCTION raw (self, m) RESULT (ff)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t::raw')
+  !$omp critical (raw_cr)
   self%mhd = .false.
   self%time = 0.02
   !-----------------------------------------------------------------------------
@@ -263,7 +264,7 @@ FUNCTION raw (self, m) RESULT (ff)
     end do
     close (io_unit%data)
   end if
-  i = 1 + nint(m%p/m%d)-m%n/2                            ! index offsets
+  i = 1 + nint(m%p/m%d)                                  ! index offsets
   ff = 0.0
   do iw=1,mv
     iv = merge(1,iw+1,iw==1)
@@ -277,6 +278,7 @@ FUNCTION raw (self, m) RESULT (ff)
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
+  !$omp end critical (raw_cr)
   call trace_end
 END FUNCTION raw
 

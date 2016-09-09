@@ -7,13 +7,14 @@ MODULE initial_mod
   USE trace_mod
   USE mesh_mod
   USE random_mod
+  USE stagger_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     integer:: seed
     logical:: mhd
-    real(8):: a(3), b(3), phi(3), d0, s0
+    real(8):: a(3), b(3), phi(3), d0, e0
     real(8):: a0(3), k(3), b0(3), u0(3)
     real(8):: time
     procedure(single_solenoidal), pointer:: selected=>null()
@@ -31,9 +32,9 @@ SUBROUTINE init (self)
    class(initial_t):: self
    integer, save:: seed=-33
    logical, save:: mhd=.true.
-   real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0
+   real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0
    character(len=32), save:: type='single_solenoidal'
-   namelist /initial_params/ seed, k, a0, u0, b0, d0, s0, mhd, type
+   namelist /initial_params/ seed, k, a0, u0, b0, d0, e0, mhd, type
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    !$omp critical (input_cr)
@@ -51,7 +52,7 @@ SUBROUTINE init (self)
    self%b0     = b0
    self%u0     = u0
    self%d0     = d0
-   self%s0     = s0
+   self%e0     = e0
    self%mhd    = mhd
    self%time   = 0d0
    select case (type)
@@ -61,8 +62,8 @@ SUBROUTINE init (self)
      self%selected => single_compressive
    case ('single_advection')
      self%selected => single_advection
-   case ('exa256')
-     self%selected => exa256
+   case ('raw')
+     self%selected => raw
    case default
      print*,'UNKNOWN INITIAL CONDITION TYPE'
      stop
@@ -96,7 +97,7 @@ FUNCTION single_solenoidal (self, m) RESULT (ff)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0
-        ff(ix,iy,iz,2) = self%s0
+        ff(ix,iy,iz,2) = self%e0
         ff(ix,iy,iz,3) = self%a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,4) = self%a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,5) = self%a0(3)*(sin(kx)+sin(ky))
@@ -106,6 +107,9 @@ FUNCTION single_solenoidal (self, m) RESULT (ff)
       end do
     end do
   end do
+  ff(:,:,:,2) = &
+  ff(:,:,:,2) + 0.5*(xup(ff(:,:,:,6))**2+yup(ff(:,:,:,7))**2+zup(ff(:,:,:,8))**2 &
+                   + (ff(:,:,:,3)**2+ff(:,:,:,4)**2+ff(:,:,:,5)**2)/ff(:,:,:,1))
   call trace_end
 END FUNCTION single_solenoidal
 
@@ -130,7 +134,7 @@ FUNCTION single_compressive (self, m) RESULT (ff)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0
-        ff(ix,iy,iz,2) = self%s0
+        ff(ix,iy,iz,2) = self%e0
         ff(ix,iy,iz,3) = self%u0(1)*sin(kx)
         ff(ix,iy,iz,4) = self%u0(2)*sin(ky)
         ff(ix,iy,iz,5) = self%u0(3)*sin(kz)
@@ -140,6 +144,9 @@ FUNCTION single_compressive (self, m) RESULT (ff)
       end do
     end do
   end do
+  ff(:,:,:,2) = &
+  ff(:,:,:,2) + 0.5*(xup(ff(:,:,:,6))**2+yup(ff(:,:,:,7))**2+zup(ff(:,:,:,8))**2 &
+                   + (ff(:,:,:,3)**2+ff(:,:,:,4)**2+ff(:,:,:,5)**2)/ff(:,:,:,1))
   call trace_end
 END FUNCTION single_compressive
 
@@ -164,7 +171,7 @@ FUNCTION single_advection (self, m) RESULT (ff)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
-        ff(ix,iy,iz,2) = self%s0
+        ff(ix,iy,iz,2) = self%e0
         ff(ix,iy,iz,3) = self%d0*self%u0(1)
         ff(ix,iy,iz,4) = self%d0*self%u0(2)
         ff(ix,iy,iz,5) = self%d0*self%u0(3)
@@ -174,13 +181,16 @@ FUNCTION single_advection (self, m) RESULT (ff)
       end do
     end do
   end do
+  ff(:,:,:,2) = &
+  ff(:,:,:,2) + 0.5*(xup(ff(:,:,:,6))**2+yup(ff(:,:,:,7))**2+zup(ff(:,:,:,8))**2 &
+                   + (ff(:,:,:,3)**2+ff(:,:,:,4)**2+ff(:,:,:,5)**2)/ff(:,:,:,1))
   call trace_end
 END FUNCTION single_advection
 
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-FUNCTION exa256 (self, m) RESULT (ff)
+FUNCTION raw (self, m) RESULT (ff)
   USE io_unit_mod
   class(initial_t)      :: self
   type(mesh_t)          :: m(3)
@@ -191,6 +201,7 @@ FUNCTION exa256 (self, m) RESULT (ff)
   integer(8)            :: nx, ny, nz
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t::exa256')
+  !$omp critical (raw_cr)
   self%mhd = .false.
   ff(:,:,:,:) = 0.0
   allocate (u(m(1)%n))
@@ -223,7 +234,8 @@ FUNCTION exa256 (self, m) RESULT (ff)
     print *,'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
+  !$omp end critical (raw_cr)
   call trace_end
-END FUNCTION exa256
+END FUNCTION raw
 
 END MODULE
