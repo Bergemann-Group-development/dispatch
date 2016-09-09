@@ -77,8 +77,6 @@ MODULE patch_mod
     procedure:: fmaxval                 ! interior max value
     procedure:: fminval                 ! interior min value
     procedure:: courant_condition
-    procedure:: ohmic_condition
-    procedure:: AD_condition
     procedure:: check_density
     procedure:: patch_to_header
     procedure:: header_to_patch
@@ -1063,38 +1061,6 @@ SUBROUTINE courant_condition (self)
       self%id, self%dtime, self%courant, self%u_max
   call trace_end
 END SUBROUTINE courant_condition
-
-!> =============================================================================
-!> Ohmic condition, one way or another
-!> =============================================================================
-SUBROUTINE ohmic_condition (self,dt_Ohm_inp)
-  class(patch_t):: self
-  real(8):: dtime
-  real(8):: dt_Ohm_inp
-  !.............................................................................
-  call trace_begin('patch_mod::ohmic')
-  if (io%verbose>2) &
-  !-----------------------------------------------------------------------------
-  self%dtime = min (self%dtime, dt_Ohm_inp)
-  self%dt(self%it) = self%dtime
-  call trace_end
-END SUBROUTINE ohmic_condition
-
-!> =============================================================================
-!> Ambipolar diffusion condition, one way or another
-!> =============================================================================
-SUBROUTINE AD_condition (self,dt_AD_inp)
-  class(patch_t):: self
-  real(8):: dtime
-  real(8):: dt_AD_inp
-  !.............................................................................
-  call trace_begin('patch_mod::AD')
-  if (io%verbose>2) &
-  !-----------------------------------------------------------------------------
-  self%dtime = min (self%dtime, dt_AD_inp)
-  self%dt(self%it) = self%dtime
-  call trace_end
-END SUBROUTINE AD_condition
 
 !> =============================================================================
 !> Max absolute distance between two points in the periodic box
