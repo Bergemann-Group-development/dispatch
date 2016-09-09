@@ -10,10 +10,10 @@ MODULE rt_internal_mod
   implicit none
 !-----------------------------------------------------------------------
   type,extends(rt_t), public :: rt_internal_t
-    type (rt_data_t),               pointer :: my_rt_data => null()
-    real,         dimension(:,:),   pointer :: ds         => null()  ! (point,ray)
-    real (kind=8), dimension(:,:),  pointer :: I_in => null()       ! (wl_bin, ray) incoming intensity. 
-    real (kind=8), dimension(:),    pointer :: I_in_time  => null() ! (ray, time)
+    type (rt_data_t),     pointer :: my_rt_data => null()
+    real, dimension(:,:), pointer :: ds         => null()               ! (point,ray)
+    real, dimension(:,:), pointer :: I_in => null()                     ! (wl_bin, ray) incoming intensity. 
+    real, dimension(:),   pointer :: I_in_time  => null()               ! (ray, time)
     integer :: solver
     procedure (solve_internal_integral), pointer :: solve => null()
   contains
