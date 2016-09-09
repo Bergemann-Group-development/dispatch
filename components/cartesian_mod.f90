@@ -73,7 +73,6 @@ SUBROUTINE init (self, label)
     nn(:,dim) = merge([-1,1],[0,0],self%dims(dim)>1)
   end do
   npatch=0; nvpatch=0; nbpatch=0
-  thread = 0
   !-----------------------------------------------------------------------------
   ! Find the location of all patches, based on the rank_to_coords procedure
   !-----------------------------------------------------------------------------
@@ -109,38 +108,56 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   call patch_list%reset_status
   !-----------------------------------------------------------------------------
-  ! Keep only patches that are on our rank, or ! are virtual patches. Initialize
-  ! (allocate memory for) the patches that are kept.
+  ! Initialize patches on our rank and virtual patches. This needs to be done
+  ! without changing the link chain in the patch_list for other threads.
+  !-----------------------------------------------------------------------------
+  !$omp parallel private(link,thread,task)
+  link => patch_list%head
+  thread = 0
+  do while (associated(link))
+    task => link%task
+    if ((task%rank == mpi%rank .or. task%is_set(bits%virtual)) &
+        .and. thread==omp%thread) then
+      !print'(a,5i6)','task%id, thread=', task%id, thread, omp%nthreads
+      select type (task)
+      type is (experiment_t)
+        call task%init
+        if (all(self%dims==1)) call task%set(bits%root_grid)
+        if (io%verbose>0) then
+          write (io_unit%log,1) &
+            'init_cartesian: id, rank, size, pos =', &
+            task%id, task%rank, task%size, task%position, &
+            task%is_set(bits%boundary), task%is_set(bits%virtual)
+          1 format(a,i8,i6,1p,2(2x,3e14.6),2x,2l1)
+          flush (io_unit%log)
+        end if
+        if (io_unit%verbose>1) then
+          write (io_unit%output,1) &
+            'init_cartesian: id, rank, size, pos =', &
+            task%id, task%rank, task%size, task%position, &
+            task%is_set(bits%boundary), task%is_set(bits%virtual)
+          flush (io_unit%log)
+        end if
+      end select
+    end if
+    thread = mod(thread+1,omp%nthreads)
+    link => link%next
+  end do
+  !$omp barrier
+  !$omp end parallel
+  !-----------------------------------------------------------------------------
+  ! Append initialized patches to the task_list, and deallocate unused patches
+  ! and links, and the patch_list.
   !-----------------------------------------------------------------------------
   link => patch_list%head
   do while (associated(link))
     task => link%task
     next => link%next
-    if (task%rank /= mpi%rank .and. task%is_clear(bits%virtual)) then
+    if (task%rank == mpi%rank .or. task%is_set(bits%virtual)) then
+      call self%task_list%append_link (link)
+    else
       deallocate (patch)
       deallocate (link)
-    else
-      select type (task)
-      type is (experiment_t)
-      call task%init
-      if (all(self%dims==1)) call task%set(bits%root_grid)
-      if (io%verbose>0) then
-        write (io_unit%log,1) &
-          'init_cartesian: id, rank, size, pos =', &
-          task%id, task%rank, task%size, task%position, &
-          task%is_set(bits%boundary), task%is_set(bits%virtual)
-        1 format(a,i8,i6,1p,2(2x,3e14.6),2x,2l1)
-        flush (io_unit%log)
-      end if
-      if (io%verbose>1) then
-        write (io_unit%output,1) &
-          'init_cartesian: id, rank, size, pos =', &
-          task%id, task%rank, task%size, task%position, &
-          task%is_set(bits%boundary), task%is_set(bits%virtual)
-        flush (io_unit%log)
-      end if
-      end select
-      call self%task_list%append_link (link)
     end if
     link => next
   end do
