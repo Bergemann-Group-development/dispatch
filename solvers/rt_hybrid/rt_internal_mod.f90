@@ -141,8 +141,8 @@ SUBROUTINE solve_internal_integral (self)
   do ray = 1, nrays
 
     do pt = 1, npt(ray)
+      p = cell(:,pt,ray)
       do wl = 1, nwb
-        p = cell(:,pt,ray)
         dtau (wl,pt) = rtd%opacity(p(1),p(2),p(3),wl)*self%ds(pt,ray)
            s (wl,pt) = rtd%source (p(1),p(2),p(3),wl)
       end do

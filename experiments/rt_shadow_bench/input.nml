@@ -1,5 +1,5 @@
 &io_params
- verbose=3
+ verbose=1
  do_trace=f
  do_debug=f
  do_output=t
@@ -8,7 +8,7 @@
 
 &box_params
  size=1,1,1
- dims=3,3,3
+ dims=4,4,4
  origin=0.0,0.0,0.0
  !origin=-0.5,-0.5,-0.5
 /
