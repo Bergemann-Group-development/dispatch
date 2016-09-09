@@ -152,10 +152,10 @@ SUBROUTINE update (self)
   end if
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
   if (self%mhd_AD) then
+    call allocate_vectors (self%gn, Ud, E_AD)
     Ud_x=>Ud(:,:,:,1)
     Ud_y=>Ud(:,:,:,2) 
     Ud_z=>Ud(:,:,:,3)
-    call allocate_vectors (self%gn, Ud, E_AD)
     call allocate_scalars (self%gn, ambi, H_AD)    
   end if
   Ex=>E(:,:,:,1); Ey=>E(:,:,:,2); Ez=>E(:,:,:,3)
@@ -342,11 +342,11 @@ SUBROUTINE update (self)
     Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
-    if (self%is_set (bits%has_BC)) then
-      call boundary%condition (Ex, self%mesh, [0d0,-0.5d0,-0.5d0])
-      call boundary%condition (Ey, self%mesh, [-0.5d0,0d0,-0.5d0])
-      call boundary%condition (Ez, self%mesh, [-0.5d0,-0.5d0,0d0])
-    end if
+    !if (self%is_set (bits%has_BC)) then
+    !  call boundary%condition (Ex, self%mesh, [0d0,-0.5d0,-0.5d0])
+    !  call boundary%condition (Ey, self%mesh, [-0.5d0,0d0,-0.5d0])
+    !  call boundary%condition (Ez, self%mesh, [-0.5d0,-0.5d0,0d0])
+    !end if
     dBdt = -curl_up(ds,E)
     if (self%mhd_AD) then
       !---------------------------------------------------------------------------
