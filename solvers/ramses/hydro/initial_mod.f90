@@ -292,7 +292,9 @@ FUNCTION raw (self, m) RESULT (ff)
     end do
     close (io_unit%data)
   end if
-  i = 1 + nint(m%p/m%d)-m%n/2                            ! index offsets
+  !i = 1 + nint(m%p/m%d)-m%n/2                            ! index offsets
+  i = 1 + nint(m%p/m%d)
+  !print *,'i',i
   ff = 0.0
   do iv=1,mv
     ff(m(1)%li:m(1)%ui, &

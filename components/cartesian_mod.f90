@@ -84,8 +84,8 @@ SUBROUTINE init (self, label)
     do j=0,patches_per_mpi(2)-1
     do i=0,patches_per_mpi(1)-1
       !------------------------------------------------------------------------
-      ! Allocate all patches, give them a unique id, and find its position,
-      ! counted ! in integer multiples of its size by icoords, and centered
+      ! Allocate all patches, give them a unique id, and find their position,
+      ! counted in integer multiples of their size by icoords, and centered
       ! relative to the full box by origin.
       !---------------------------------------------------------------------------
       allocate (patch)
@@ -96,7 +96,7 @@ SUBROUTINE init (self, label)
       patch%box = self%size
       patch%size = self%size/self%dims
       icoords = mpi_coords%rank_to_coords(rank)*patches_per_mpi + [i,j,k]
-      patch%position = icoords*patch%size + origin*patch%box
+      patch%position = icoords*patch%size
       call patch%set(bits%static)
       task=> patch
       call patch_list%append (task)
