@@ -24,7 +24,7 @@ SUBROUTINE condition (self, mem, m, h)
   !integer, dim1          :: size(mem,1)
   !integer, dim2          :: size(mem,2)
   !integer, dim3          :: size(mem,3)
-  real,save,dimension(128,64,1):: inrho, ins, inpx, inpy, inpz, inbx, inby, inbz
+  real,save,dimension(64,32,1):: inrho, ins, inpx, inpy, inpz, inbx, inby, inbz
   type(mesh_t)           :: m(3)
   integer,save           :: ini=1
   logical,save           :: first_time=.true.

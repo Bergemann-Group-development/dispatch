@@ -3,22 +3,22 @@
  ! Physical initial conditions: !!!AD!!! Same values as in Masson et al. 2012
  ! Left hand side
  !-----------------------------------------------------------------------------
- !rho_l = 5d-1
- !P_l   = 0.125 
- !vx_l = 5d0 
- !vy_l = 0d0
- !Bx_l = 1.4142135623730951d0
- !By_l = 1.4142135623730951d0
+ rho_l = 5d-1
+ P_l   = 0.125 
+ vx_l = 5d0 
+ vy_l = 0d0
+ Bx_l = 1.4142135623730951d0
+ By_l = 1.4142135623730951d0
  !!-----------------------------------------------------------------------------
  ! Physical initial conditions: right hand side (isothermal)
  !-----------------------------------------------------------------------------
- !gamma_exp = 1.0
- !rho_r = 1.0727d0
- !P_r = 0.2681
- !vx_r = 2.3305d0
- !vy_r = 1.3953d0
- !Bx_r = 1.4142135623730951d0
- !By_r = 3.8809d0
+ gamma_exp = 1.0
+ rho_r = 1.0727d0
+ P_r = 0.2681
+ vx_r = 2.3305d0
+ vy_r = 1.3953d0
+ Bx_r = 1.4142135623730951d0
+ By_r = 3.8809d0
  !-----------------------------------------------------------------------------
  ! Physical initial conditions: right hand side (non-isothermal)
  !-----------------------------------------------------------------------------
@@ -34,37 +34,37 @@
  ! Physical initial conditions: !!!OHMIC!!! Same values as in Masson et al. 2012
  ! Left hand side
  !-----------------------------------------------------------------------------
- rho_l = 0.4
- P_l   = 0.4
- vx_l = 3d0 
- vy_l = 0d0
- Bx_l = 0.7071067811865476
- By_l = 0.7071067811865476
- !-----------------------------------------------------------------------------
- ! Physical initial conditions: right hand side (Ohmic)
- !-----------------------------------------------------------------------------
- gamma_exp = 1.4 !66666
- rho_r = 0.71084
- P_r = 1.19222
- vx_r = 1.68814
- vy_r = 0.4299
- Bx_r = 0.7071067811865476
- By_r = 1.43667
+ !rho_l = 0.4
+ !P_l   = 0.4
+ !vx_l = 3d0 
+ !vy_l = 0d0
+ !Bx_l = 0.7071067811865476
+ !By_l = 0.7071067811865476
+ !!-----------------------------------------------------------------------------
+ !! Physical initial conditions: right hand side (Ohmic)
+ !!-----------------------------------------------------------------------------
+ !gamma_exp = 1.4 !66666
+ !rho_r = 0.71084
+ !P_r = 1.19222
+ !vx_r = 1.68814
+ !vy_r = 0.4299
+ !Bx_r = 0.7071067811865476
+ !By_r = 1.43667
 
 /
 &mhd_params              ! defaults are visible in the log file
  nu=    1., 1.0, 1.0, 0.1, 0.1, 0.1
  !nu=    0.5, 0., 0., 0.1, 0.1, 0.1
  !     cs    du   pa   ofd   mas   eta
- gamma=1.4 !66666
- mhd_AD=.false.
+ gamma=1. !66666
+ mhd_AD=.true.
  mhd_Ohm=.false.
  gamma_AD=75.
  !ksi = 1d-17
 /
 &patch_params
  !dims=16,16,16          ! patch dimensions
- n=128,64,1          	! patch dimensions
+ n=64,32,1          	! patch dimensions
  dt_fixed=1d-3        ! fixed time step
  ng = 0,0,0
  nt=8                   ! time slots
