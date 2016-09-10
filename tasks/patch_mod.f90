@@ -1156,7 +1156,7 @@ END FUNCTION
 SUBROUTINE check_density (self, label)
   class(patch_t):: self
   character(len=*), optional:: label
-  real:: mind, posd
+  real:: mind, posd, tiny = 1.0e-32
   integer:: ix, iy, iz, ii(3), ntot, nins
   logical:: inside
   !-----------------------------------------------------------------------------
@@ -1168,7 +1168,7 @@ SUBROUTINE check_density (self, label)
     ! Negative densities appear to develop at a few points in the guard zones,
     ! so this tries to patch up, sampling densitites in the guard zone.
     !---------------------------------------------------------------------------
-    posd = self%mem(3,3,2,1,self%it,1)
+    posd = tiny
     ntot = 0
     nins = 0
     do iz=1,self%gn(3)
