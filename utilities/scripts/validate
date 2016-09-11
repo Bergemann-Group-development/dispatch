@@ -74,13 +74,13 @@ foreach d ( $dirs )
   set d = dispatch
 
   # make a validate/ subdir, with *.f90 files, cd there
-  mkdir -p validate/Data
-  cp -p *.f90 validate/
+  mkdir -p validate/data
   echo "cd validate/"
   cd validate/
+  ln -s ../*.f90 .
 
   # make sure we have validate_cmd in the path
-  set path = ( ../../../bin $path )
+  set path = ( {,../,../../}../../../utilities/scripts $path )
 
   # make an input.nml, if it isn't already there
   if (! -e input.nml) then

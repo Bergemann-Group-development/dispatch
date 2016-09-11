@@ -69,7 +69,7 @@ SUBROUTINE init (self)
    case ('raw')
      self%selected => raw
    case default
-     print*,'UNKNOWN INITIAL CONDITION TYPE'
+     print*,'UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':'
      stop
    end select
    call trace_end
