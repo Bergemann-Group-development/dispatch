@@ -34,7 +34,7 @@ SUBROUTINE rt_setup (self)
   logical, save                :: first_time=.true.
   character(len=16)            :: RT_solver ='integral'      ! choice of RT solver
   integer:: solver, rt_type
-  real(kind=8) :: cr_heating=4.4e-27
+  real :: cr_heating=4.4e-27
   namelist /rt_params/ RT_solver, cr_heating
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer::rt_setup')
@@ -111,15 +111,15 @@ SUBROUTINE rt_setup (self)
           ! ------------------------------------------------------------
           do rt_type = 2,3
             allocate (internal, link)                                   ! the RT task and its link
-            internal%bundle_ID      = ray_bundle%bundle_ID              ! ray bundle ID
-            internal%dir_ID         = ray_bundle%dir_ID                 ! ray direction ID
-            internal%my_rt_data     => rt_data                          ! Pointer to rt_data task
-            internal%mhd_patch      => mhd_patch                        ! Pointer to mhd_patch
-            internal%rt_type = rt_type                                  ! set the rt type
-            internal%n_ray_dirs = ray_geometry%ray_dirs
-            internal%solver  = solver                                   ! set the rt solver type
-            internal%mhd_link       => t_list                           ! Pointer to mhd_patch's link
-            internal%link => link
+            internal%bundle_ID  =  ray_bundle%bundle_ID                 ! ray bundle ID
+            internal%dir_ID     =  ray_bundle%dir_ID                    ! ray direction ID
+            internal%my_rt_data => rt_data                              ! Pointer to rt_data task
+            internal%mhd_patch  => mhd_patch                            ! Pointer to mhd_patch
+            internal%rt_type    =  rt_type                              ! set the rt type
+            internal%n_ray_dirs =  ray_geometry%ray_dirs
+            internal%solver     =  solver                               ! set the rt solver type
+            internal%mhd_link   => t_list                               ! Pointer to mhd_patch's link
+            internal%link       => link                                 ! convenience
             link%task => internal                                       ! connect to RT task
             call internal%init                                          ! initialize in ray direction
             call connect_nbors(link,t_list)                             ! correction checks if MHD is ready, MHD does not do that

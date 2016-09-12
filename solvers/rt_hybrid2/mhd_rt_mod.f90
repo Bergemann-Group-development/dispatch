@@ -8,7 +8,7 @@ MODULE mhd_rt_mod
   private
   ! --------------------------------------------------------------------  
   type, public:: rt_q_t
-    real(kind=8), dimension(:,:,:,:), pointer :: q   => null()
+    real, dimension(:,:,:,:), pointer :: q   => null()
     real(kind=8), dimension(:),       pointer :: t   => null()
     integer,      dimension(:),       pointer :: iit => null()
   contains
@@ -59,9 +59,9 @@ END SUBROUTINE update_mhd_rt
 SUBROUTINE update_q(self, tt, q, p, nwb, op, temp, dirw)
   class(mhd_rt_t) :: self
   integer :: p(3), nwb, wl
-  real(kind=8) :: tt, dirw
-  real(kind=8), dimension(nwb) :: op, q
-  real :: temp, itemp
+  real(kind=8) :: tt
+  real, dimension(nwb) :: op, q
+  real :: temp, itemp, dirw
   !---------------------------------------------------------------------
   call trace_begin ('mhd_rt_t_%update_q',4)
   if (tt > self%rt_q%t(self%it)) call self%rt_q%rotate(tt)

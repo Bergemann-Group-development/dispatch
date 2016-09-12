@@ -7,3 +7,4 @@ rubiks_cube_mod.o   : io_mod.o trace_mod.o task_mod.o task_list_mod.o experiment
 rubiks_mod.o        : io_mod.o trace_mod.o task_mod.o task_list_mod.o experiment_mod.o scene_mod.o
 scene_mod.o         :
 ray_geometry_mod.o  : io_mod.o trace_mod.o
+ray_geometry_v2_mod.o  : io_mod.o trace_mod.o

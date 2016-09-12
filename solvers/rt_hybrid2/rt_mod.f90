@@ -32,9 +32,7 @@ MODULE rt_mod
     procedure :: absolute_point_position
     procedure :: ray2cell
     procedure :: cell2pos
-    procedure :: cell2ray
     procedure :: pos2cell
-    procedure :: pos2ray
     procedure :: ray2pos
     procedure :: the_right_wall
     procedure :: update_time
@@ -138,7 +136,7 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   class(link_t), pointer :: my_mhd_l
   class(link_t), pointer :: nbor, nbor_l, new
   class(experiment_t), pointer :: my_task, nbor_task
-  integer :: found
+  integer :: found, wall(3)
 ! ----------------------------------------------------------------------
   call trace_begin('rt_t%find_upstream')
   found = 0
@@ -152,7 +150,13 @@ SUBROUTINE find_upstream (self, nbor_l, found)
     class is (experiment_t)
       nbor_task => nbtask
       if (.not.nbor_is_my_child(my_task, nbor_task)) then
-        if (self%the_right_wall(self%mhd_link, nbor, self%my_rays%lwall)) then
+        select case(self%rt_type)
+        case(2)
+          wall = self%my_rays%lwall
+        case(3)
+          wall = self%my_rays%uwall
+        end select
+        if (self%the_right_wall(self%mhd_link, nbor, wall)) then
           allocate(new)
           new%task => nbor_task
           new%link => nbor%link
@@ -242,7 +246,12 @@ FUNCTION absolute_point_position(self, ray, pt, bn) result (cell_pos)
   real(kind=8) :: cell_pos(3)
 !-----------------------------------------------------------------------
   if (present(bn)) then
-    cp = self%my_rays%fwd_coords(:,ray)
+    select case(self%rt_type)
+    case(2)
+      cp = self%my_rays%fwd_coords(:,ray)
+    case(3)
+      cp = self%my_rays%rev_coords(:,ray)
+    end select
   else
     cp = self%my_rays%cell_coords(:,pt,ray)
   end if
@@ -275,39 +284,6 @@ FUNCTION pos2cell (self, p) result (cell)
   
 END FUNCTION pos2cell
 
-! orient = 1 - lwall, orient = 2 - uwall
-SUBROUTINE cell2ray (self, c, w, ray, pt, found)
-  class(rt_t) :: self
-  type(rt_cell_t), pointer :: cell
-  integer :: c(3), ray, pt, w(3), orient, wall(3)
-  logical :: found
-!-----------------------------------------------------------------------
-  cell => self%my_rays%cell_domain(c(1),c(2),c(3))%head
-  wall = cell%lwall
-  found = .false.
-  do while(associated(cell))
-    if(.not.found) then
-      if (all(wall == w)) then
-        ray = cell%ray
-        pt = cell%point
-        found = .true.
-        return
-      else
-        cell => cell%next
-      end if
-    end if
-  end do
-END SUBROUTINE cell2ray
-
-SUBROUTINE pos2ray (self, p, w, ray, pt, found)
-  class(rt_t) :: self
-  real(kind=8) :: p(3)
-  integer :: w(3), ray, pt
-  logical :: found
-!-----------------------------------------------------------------------
-  call self%cell2ray(self%pos2cell(p), w, ray, pt, found)
-  
-END SUBROUTINE pos2ray
 
 FUNCTION ray2pos (self, ray, pt) result (p)
   class(rt_t)  :: self

@@ -86,7 +86,7 @@ END SUBROUTINE set_ibc
 SUBROUTINE set_obc (self, ppos, ds, i_in)
   class (rt_boundary_t) :: self
   real(kind=8) :: ppos(3), ds(3), c
-  real(kind=8), dimension(self%n_wl_bins) :: i_in
+  real, dimension(self%n_wl_bins) :: i_in
 !> =====================================================================
 !> Should be modified only from here on  
 !> =====================================================================

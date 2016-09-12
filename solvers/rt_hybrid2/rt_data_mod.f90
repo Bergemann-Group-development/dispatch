@@ -91,7 +91,7 @@ SUBROUTINE init_rt_data(self)
   !---------------------------------------------------------------------
   allocate(self%name)
   self%name       = 'rt_data'
-  self%n_ray_dirs = ray_geometry%ray_dirs
+  self%n_ray_dirs = ray_geometry%head%n_ray_dirs
   allocate(self%opacity(n(1), n(2), n(3), nwb)) ! opacity table
   allocate(self%source (n(1), n(2), n(3), nwb)) ! Source function table
   allocate(self%intensity(self%ui(1),self%ui(2),self%ui(3),self%n_ray_dirs))
@@ -290,12 +290,18 @@ SUBROUTINE tau_upd (self)
     do while (associated(ray_bundle))                                   ! loop over all bundles in this direction
       bID = bID + 1
       do ray = 1, ray_bundle%n_rays                                     ! loop over rays
-        do pt = 1, ray_bundle%n_points(ray)                             ! loop over points
+        do pt = 1, ray_bundle%n_points                             ! loop over points
           c = ray_bundle%cell_coords(:,pt,ray)                          ! cell coord for this ray point
           dtau = self%opacity(c(1),c(2),c(3),:)*ray_bundle%ds(pt,ray)   ! calculate dtau
           associate (tau => self%tau(c(1),c(2),c(3),dID))               ! shortcut to this cell
+          select case(self%rt_type)
+          case(2)
           lw = ray_bundle%pt_wall(:,1,pt,ray)                           ! ray starts crossing this cell from this wall
+          uw = ray_bundle%pt_wall(:,2,pt,ray)                           ! ray leaves cell through this wall
+          case(3)
+          lw = ray_bundle%pt_wall(:,2,pt,ray)                           ! ray starts crossing this cell from this wall
           uw = ray_bundle%pt_wall(:,1,pt,ray)                           ! ray leaves cell through this wall
+          end select
           if (.not.associated(tau%head)) then                           
             call tau%init(ray,pt,lw,uw)                                 ! if this cell is empty, initialize
             self%n_tau_dat = self%n_tau_dat + 1                         ! increment total data entries

@@ -60,7 +60,6 @@ SUBROUTINE init_rt_internal (self)
   self%dtime     = 2e-6
   if (mhd_patch%is_set(bits%static))    call self%set (bits%static)
   if (mhd_patch%is_set(bits%root_grid)) call self%set (bits%root_grid)
-  !if (mhd_patch%is_set(bits%has_BC))    call self%set (bits%has_BC)
 
   allocate(self%name)
   SELECT case(self%rt_type)
@@ -173,16 +172,17 @@ SUBROUTINE get_local_static (self)
   class(rt_internal_t) :: self
   class(rt_internal_t), pointer :: rt_nb
   class(link_t), pointer :: nbor
-  integer:: ray, nb_cell(3), lw(3), uw(3), nb_ray, nb_pt, try
+  integer :: ray, nb_cell(3), lw(3), uw(3), nb_ray, nb_pt, try, lwall(3)
+  integer :: fw_c(3)
   logical, dimension(:), allocatable :: updated
-  real(kind=8), dimension(microphysics%n_wl_bins) :: mean, Iin
-  real(kind=8) :: n_mean ,my_c_pos(3)
+  real, dimension(microphysics%n_wl_bins) :: mean, Iin
+  real :: n_mean
+  real(8) :: my_c_pos(3)
   !---------------------------------------------------------------------  
   call trace_begin('rt_corrections_mod::get_local_static')
   
   allocate (updated(self%my_rays%n_rays))                               ! make sure all intensities are updated
   updated = .false.
-  
   nbor => self%link%nbor
   do while(associated(nbor))
     nullify(rt_nb)
@@ -190,40 +190,63 @@ SUBROUTINE get_local_static (self)
     associate (rt => nbor%task)
     SELECT type (rt)
     class is (rt_internal_t)
-    
-      if (self%the_right_wall(self%link, nbor,self%my_rays%lwall)) then                   ! make sure nbor is on the right wall
-        if (rt%rt_type == self%rt_type) then                                              ! make sure nbor is of the right RT type
+      select case(self%rt_type)
+        case(2)
+          lwall = self%my_rays%lwall
+        case(3)
+          lwall = self%my_rays%uwall
+      end select
+      if (self%the_right_wall(self%link, nbor,lwall)) then              ! make sure nbor is on the right wall
+        if (rt%rt_type == self%rt_type) then                            ! make sure nbor is of the right RT type
           rt_nb => rt
-          do ray = 1, self%my_rays%n_rays                                                 ! loop  over my rays
-            if (self%level >= rt_nb%level) then                                           ! if i am not larger than my nbor
-              nb_cell = rt_nb%pos2cell(self%cell2pos(self%my_rays%fwd_coords(:,ray)))     ! corresponding cell at the nbor mesh
-              if (all(nb_cell>=rt_nb%li).and.all(nb_cell<=rt_nb%ui)) then                 ! double check that we pointed to the right spot
-                lw      = -self%my_rays%pt_wall(:,2,1,ray)                                ! select right walls for the ray
-                uw      = -self%my_rays%pt_wall(:,1,1,ray)
+          do ray = 1, self%my_rays%n_rays                               ! loop  over my rays
+            select case(self%rt_type)
+              case(2)
+              fw_c = self%my_rays%fwd_coords(:,ray)                     ! select wall coordinates
+              lw   = -self%my_rays%pt_wall(:,2,1,ray)                   ! select right walls for the ray
+              uw   = -self%my_rays%pt_wall(:,1,1,ray)
+              case(3)
+              fw_c =  self%my_rays%rev_coords(:,ray)                    ! select wall coordinates
+              lw   = -self%my_rays%pt_wall(:,1,1,ray)                   ! select right walls for the ray
+              uw   = -self%my_rays%pt_wall(:,2,1,ray)
+            end select
+            if (self%level >= rt_nb%level) then                         ! if i am not larger than my nbor
+              nb_cell = rt_nb%pos2cell(self%cell2pos(fw_c))             ! corresponding cell at the nbor mesh
+              if (all(nb_cell>=rt_nb%li).and.&
+                  all(nb_cell<=rt_nb%ui)) then                          ! double check that we pointed to the right spot
                 self%I_in   (:,ray) = rt_nb%my_rt_data%I_retrv(nb_cell,self%dir_ID,lw,uw) ! get the right intensity
-                self%I_in_time(ray) = rt_nb%time                                          ! store the time of the update
-                updated(ray) = .true.                                                     ! the ray was updated
+                self%I_in_time(ray) = rt_nb%time                        ! store the time of the update
+                updated(ray) = .true.                                   ! the ray was updated
               end if
-            else                                                                          ! i am larger than my nbor
+            else                                                        ! i am larger than my nbor
             
-              my_c_pos = self%cell2pos(self%my_rays%fwd_coords(:,ray))                    ! get the absolute cell position in the comp. domain
-              n_mean = 0                                                                  ! number of rays to be averaged
-              mean = 0                                                                    ! mean intensity
-              do nb_ray = 1, rt_nb%my_rays%n_rays                                         ! loop over nbor rays
-                try = -1                                                                  ! indicator whether this ray meets the criterion
-                do nb_pt = 1, rt_nb%my_rays%n_points(nb_ray)                              ! find the last point in the ray before the wall in question
-                  if (point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),my_c_pos, self%cell_ds)) try = nb_pt
-                end do
+              my_c_pos = self%cell2pos(fw_c)                            ! get the absolute cell position in the comp. domain
+              n_mean = 0                                                ! number of rays to be averaged
+              mean = 0                                                  ! mean intensity
+              do nb_ray = 1, rt_nb%my_rays%n_rays                       ! loop over nbor rays
+                try = -1                                                ! indicator whether this ray meets the criterion
+                select case(self%rt_type)
+                  case(2)
+                  do nb_pt = 1, rt_nb%my_rays%n_points(nb_ray)          ! find the last point in the ray before the wall in question
+                    if (point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
+                        my_c_pos, self%cell_ds)) try = nb_pt
+                  end do
+                  case(3)
+                  do nb_pt = rt_nb%my_rays%n_points(nb_ray), 1, -1      ! find the last point in the ray before the wall in question
+                    if (point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
+                        my_c_pos, self%cell_ds)) try = nb_pt
+                  end do
+                  end select
                 if (try > 0) then
-                  Iin = rt_nb%my_rt_data%I_retrv_ray(nb_ray,nb_pt,self%dir_ID)            ! retrieve this intensity
+                  Iin = rt_nb%my_rt_data%I_retrv_ray(nb_ray,nb_pt,self%dir_ID) ! retrieve this intensity
                   mean = mean + Iin
                   n_mean = n_mean + 1.
                 end if
               end do
               if ((n_mean > 0).and.(self%time <= rt_nb%time)) then
                 self%I_in(:,ray) = mean/n_mean
-                self%I_in_time(ray) = rt_nb%time                                          ! store the time of the update
-                updated(ray) = .true.                                                     ! the ray was updated
+                self%I_in_time(ray) = rt_nb%time                        ! store the time of the update
+                updated(ray) = .true.                                   ! the ray was updated
               end if
             end if
           end do
@@ -301,12 +324,11 @@ END SUBROUTINE get_correction_from_BC
 
 SUBROUTINE solve_internal_integral (self)
   class(rt_internal_t) :: self
-  real(kind=8), dimension(:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
-  real(kind=8), dimension(:,:), allocatable :: s, dtau, idtau, ctau, q
-  real(kind=8), dimension(microphysics%n_wl_bins)   :: Ifw, I_in
+  real, dimension(:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
+  real, dimension(:,:), allocatable :: s, dtau, idtau, ctau, q
+  real, dimension(microphysics%n_wl_bins) :: Ifw, I_in
   integer :: pt, ipt, it, ray, wl, p(3), lw(3), uw(3)
-  real    :: temp
-  real(kind=8) :: dir_wgt
+  real    :: temp, dir_wgt
   !---------------------------------------------------------------------
   call trace_begin('rt_t%update_internal%solve_internal_integral')
   call self%get_upstream 
@@ -335,17 +357,22 @@ SUBROUTINE solve_internal_integral (self)
 
     do pt = 1, npt(ray)
       p = cell(:,pt,ray)
-      do wl = 1, nwb
-        dtau (wl,pt) = rtd%opacity(p(1),p(2),p(3),wl)*self%ds(pt,ray)
-           s (wl,pt) = rtd%source (p(1),p(2),p(3),wl)
-      end do
+      select case(self%rt_type)
+        case(2)
+        lw = self%my_rays%pt_wall(:,1,pt,ray)
+        uw = self%my_rays%pt_wall(:,2,pt,ray)
+        case(3)
+        lw = self%my_rays%pt_wall(:,1,pt,ray)
+        uw = self%my_rays%pt_wall(:,2,pt,ray)
+      end select
+      call self%my_rt_data%tau_retrv (p, self%dir_ID, lw, uw, ex0, dtau)
+      s (wl,pt) = rtd%source (p(1),p(2),p(3),wl)
     end do
     
     I_in = self%i_in(:,ray)
 
     pt = npt(ray)
     idtau(:,1:pt) = 1_8 / dtau(:,1:pt)
-      ex0(:,2:pt) = dexp(-dtau(:,2:pt))                                 ! first exponential coeff
       ex1(:,2:pt) = 1_8-ex0(:,2:pt)                                     ! second exponential coeff
       ex2(:,2:pt) = ex1(:,2:pt)-dtau(:,2:pt) *   ex0(:,2:pt)            ! third exponential coeff
       ds1(:,2:pt) = (s(:,2:pt) -s(:,1:pt-1)) * idtau(:,2:pt)            ! half-point centered dS/dtau
