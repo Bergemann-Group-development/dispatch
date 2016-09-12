@@ -34,7 +34,7 @@ SUBROUTINE rt_setup (self)
   logical, save                :: first_time=.true.
   character(len=16)            :: RT_solver ='integral'      ! choice of RT solver
   integer:: solver, rt_type
-  real(kind=8) :: cr_heating=4.4e-27
+  real(kind=4) :: cr_heating=4.4e-27
   namelist /rt_params/ RT_solver, cr_heating
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer::rt_setup')

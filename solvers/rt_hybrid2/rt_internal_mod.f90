@@ -40,7 +40,7 @@ SUBROUTINE init_rt_internal (self)
   class(rt_internal_t) :: self
   class(ray_list_t),    pointer :: my_rays
   integer :: point, ray
-  real(kind=8) :: p(3)
+  real(kind=4) :: p(3)
 !-----------------------------------------------------------------------
   call trace_begin('rt_t%init_rt_internal')
   call self%task_t%init
@@ -175,7 +175,7 @@ SUBROUTINE get_local_static (self)
   class(link_t), pointer :: nbor
   integer:: ray, nb_cell(3), lw(3), uw(3), nb_ray, nb_pt, try
   logical, dimension(:), allocatable :: updated
-  real(kind=8), dimension(microphysics%n_wl_bins) :: mean, Iin
+  real(kind=4), dimension(microphysics%n_wl_bins) :: mean, Iin
   real(kind=8) :: n_mean ,my_c_pos(3)
   !---------------------------------------------------------------------  
   call trace_begin('rt_corrections_mod::get_local_static')
@@ -207,7 +207,7 @@ SUBROUTINE get_local_static (self)
             else                                                                          ! i am larger than my nbor
             
               my_c_pos = self%cell2pos(self%my_rays%fwd_coords(:,ray))                    ! get the absolute cell position in the comp. domain
-              n_mean = 0                                                                  ! number of rays to be averaged
+              n_mean = 0d0                                                                ! number of rays to be averaged
               mean = 0                                                                    ! mean intensity
               do nb_ray = 1, rt_nb%my_rays%n_rays                                         ! loop over nbor rays
                 try = -1                                                                  ! indicator whether this ray meets the criterion
@@ -217,7 +217,7 @@ SUBROUTINE get_local_static (self)
                 if (try > 0) then
                   Iin = rt_nb%my_rt_data%I_retrv_ray(nb_ray,nb_pt,self%dir_ID)            ! retrieve this intensity
                   mean = mean + Iin
-                  n_mean = n_mean + 1.
+                  n_mean = n_mean + 1d0
                 end if
               end do
               if ((n_mean > 0).and.(self%time <= rt_nb%time)) then
@@ -301,12 +301,12 @@ END SUBROUTINE get_correction_from_BC
 
 SUBROUTINE solve_internal_integral (self)
   class(rt_internal_t) :: self
-  real(kind=8), dimension(:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
-  real(kind=8), dimension(:,:), allocatable :: s, dtau, idtau, ctau, q
-  real(kind=8), dimension(microphysics%n_wl_bins)   :: Ifw, I_in
+  real(kind=4), dimension(:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
+  real(kind=4), dimension(:,:), allocatable :: s, dtau, idtau, ctau, q
+  real(kind=4), dimension(microphysics%n_wl_bins)   :: Ifw, I_in
   integer :: pt, ipt, it, ray, wl, p(3), lw(3), uw(3)
   real    :: temp
-  real(kind=8) :: dir_wgt
+  real(kind=4) :: dir_wgt
   !---------------------------------------------------------------------
   call trace_begin('rt_t%update_internal%solve_internal_integral')
   call self%get_upstream 
@@ -345,7 +345,7 @@ SUBROUTINE solve_internal_integral (self)
 
     pt = npt(ray)
     idtau(:,1:pt) = 1_8 / dtau(:,1:pt)
-      ex0(:,2:pt) = dexp(-dtau(:,2:pt))                                 ! first exponential coeff
+      ex0(:,2:pt) = exp(-dtau(:,2:pt))                                 ! first exponential coeff
       ex1(:,2:pt) = 1_8-ex0(:,2:pt)                                     ! second exponential coeff
       ex2(:,2:pt) = ex1(:,2:pt)-dtau(:,2:pt) *   ex0(:,2:pt)            ! third exponential coeff
       ds1(:,2:pt) = (s(:,2:pt) -s(:,1:pt-1)) * idtau(:,2:pt)            ! half-point centered dS/dtau

@@ -56,6 +56,22 @@ PROGRAM test
   call toc ('sum(exp_series(real))', ntot)
   print*,sum
 
+  sum = 0.0
+  ntot=5e7
+  c = 1./ntot
+  call tic
+  do i=1,ntot
+    arg = c*real(i)
+    if (arg < 0.0) then
+      ex = 1.-arg
+    else
+      ex = exp(-arg)
+    end if
+    sum=sum+ex
+  end do
+  call toc ('non_vector_sum(exp(real))', ntot)
+  print*,sum
+
   sum8 = 0.0
   ntot=5e7
   c8 = 1./ntot
