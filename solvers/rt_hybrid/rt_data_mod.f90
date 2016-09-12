@@ -10,7 +10,7 @@ MODULE rt_data_mod
 !> per direction. 
   type :: int_data_t
     integer :: ray, point, lwall(3), uwall(3)
-    real(kind=8), dimension(:), pointer :: I => null()
+    real(kind=4), dimension(:), pointer :: I => null()
     class(int_data_t), pointer :: head => null()
     class(int_data_t), pointer :: next => null()
     class(int_data_t), pointer :: tail => null()
@@ -20,8 +20,8 @@ MODULE rt_data_mod
 !----------------------------------------------------------------------- 
   type, extends(rt_t), public :: rt_data_t
     integer :: n_cells(3)
-    real(kind=8),     dimension(:,:,:,:), pointer :: opacity => null()  ! (x,y,z,wl_bin)
-    real(kind=8),     dimension(:,:,:,:), pointer :: source  => null()  ! (x,y,z,wl_bin)
+    real(kind=4),     dimension(:,:,:,:), pointer :: opacity => null()  ! (x,y,z,wl_bin)
+    real(kind=4),     dimension(:,:,:,:), pointer :: source  => null()  ! (x,y,z,wl_bin)
     type(int_data_t), dimension(:,:,:,:), pointer :: intensity => null()! (x,y,z,direction)
   contains
     procedure :: init   => init_rt_data
@@ -125,7 +125,7 @@ END SUBROUTINE update_rt_data
 SUBROUTINE I_store (self,I_st,c,pt,ray,dir,lw,uw)
   class (rt_data_t) :: self
   type (int_data_t), pointer :: this
-  real (kind=8), dimension(microphysics%n_wl_bins) :: I_st
+  real (kind=4), dimension(microphysics%n_wl_bins) :: I_st
   integer :: pt, ray, dir, lw(3), uw(3), c(3)
   logical :: found
 !-----------------------------------------------------------------------
@@ -163,7 +163,7 @@ END SUBROUTINE I_store
 FUNCTION I_retrv (self,c,dir,lw,uw) result (I_st)
   class (rt_data_t) :: self
   type (int_data_t), pointer :: this
-  real (kind=8), dimension(microphysics%n_wl_bins) :: I_st
+  real (kind=4), dimension(microphysics%n_wl_bins) :: I_st
   integer :: dir, lw(3), uw(3), c(3)
   logical :: found
 ! ----------------------------------------------------------------------
@@ -190,7 +190,7 @@ END FUNCTION I_retrv
 FUNCTION I_retrv_ray (self,ray,pt,dir) result (I_st)
   class (rt_data_t) :: self
   type (int_data_t), pointer :: this
-  real (kind=8), dimension(microphysics%n_wl_bins) :: I_st
+  real (kind=4), dimension(microphysics%n_wl_bins) :: I_st
   integer :: dir, ray,pt, c(3)
   logical :: found
 ! ----------------------------------------------------------------------

@@ -10,9 +10,9 @@ MODULE rt_internal_mod
   type,extends(rt_t), public :: rt_internal_t
     type (rt_data_t),               pointer :: my_rt_data => null()
     real,         dimension(:,:),   pointer :: ds         => null()  ! (point,ray)
-    real(kind=8), dimension(:,:,:), pointer :: qfw        => null()  ! (wl_bin, point, ray)
-    real(kind=8), dimension(:,:,:), pointer :: qrv        => null()  ! (wl_bin, point, ray)
-    real(kind=8), dimension(:,:,:), pointer :: ex0        => null()  ! (wl_bin, point, ray), first exponential coeff, for Integral solver
+    real(kind=4), dimension(:,:,:), pointer :: qfw        => null()  ! (wl_bin, point, ray)
+    real(kind=4), dimension(:,:,:), pointer :: qrv        => null()  ! (wl_bin, point, ray)
+    real(kind=4), dimension(:,:,:), pointer :: ex0        => null()  ! (wl_bin, point, ray), first exponential coeff, for Integral solver
     integer :: solver
     procedure (solve_internal_integral), pointer :: solve => null()
   contains
@@ -114,8 +114,8 @@ END SUBROUTINE update_rt_internal
 
 SUBROUTINE solve_internal_integral (self)
   class(rt_internal_t) :: self
-  real(kind=8), dimension(:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
-  real(kind=8), dimension(:,:), allocatable :: s, dtau, idtau, ctau
+  real(kind=4), dimension(:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
+  real(kind=4), dimension(:,:), allocatable :: s, dtau, idtau, ctau
   integer :: pt, ipt, it, ray, wl, p(3)
   !---------------------------------------------------------------------
   call trace_begin('rt_t%update_internal%solve_internal_integral')
@@ -151,7 +151,7 @@ SUBROUTINE solve_internal_integral (self)
     if (npt(ray) > 1) then
       pt = npt(ray)
       idtau(:,1:pt) = 1_8 / dtau(:,1:pt)
-      ex0(:,2:pt) = dexp(-dtau(:,2:pt))                                  ! first exponential coeff
+      ex0(:,2:pt) = exp(-dtau(:,2:pt))                                   ! first exponential coeff
       ex1(:,2:pt) = 1_8-ex0(:,2:pt)                                      ! second exponential coeff
       ex2(:,2:pt) = ex1(:,2:pt)-dtau(:,2:pt) *   ex0(:,2:pt)             ! third exponential coeff
       ds1(:,2:pt) = (s(:,2:pt) -s(:,1:pt-1)) * idtau(:,2:pt)             ! half-point centered dS/dtau

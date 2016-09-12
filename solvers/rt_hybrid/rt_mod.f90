@@ -224,7 +224,7 @@ END SUBROUTINE check_common_surface
 
 FUNCTION nbor_is_my_child(me, nbor) result (out)
   type (experiment_t), pointer :: me, nbor
-  real(kind=8) :: me_li, me_ui, nbor_li, nbor_ui
+  !real(kind=8) :: me_li, me_ui, nbor_li, nbor_ui
   logical :: out
 !-----------------------------------------------------------------------
   out = .false.

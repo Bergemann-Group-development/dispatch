@@ -345,7 +345,7 @@ SUBROUTINE solve_internal_integral (self)
 
     pt = npt(ray)
     idtau(:,1:pt) = 1_8 / dtau(:,1:pt)
-      ex0(:,2:pt) = exp(-dtau(:,2:pt))                                 ! first exponential coeff
+      ex0(:,2:pt) = exp(-dtau(:,2:pt))                                  ! first exponential coeff
       ex1(:,2:pt) = 1_8-ex0(:,2:pt)                                     ! second exponential coeff
       ex2(:,2:pt) = ex1(:,2:pt)-dtau(:,2:pt) *   ex0(:,2:pt)            ! third exponential coeff
       ds1(:,2:pt) = (s(:,2:pt) -s(:,1:pt-1)) * idtau(:,2:pt)            ! half-point centered dS/dtau
