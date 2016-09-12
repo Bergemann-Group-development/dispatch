@@ -43,6 +43,8 @@ MODULE ray_geometry_mod
     integer :: dir_ID, n_dirs
     integer :: bundle_ID, n_bundles
     integer :: packet_ID, n_packets
+    integer :: bundle_n_rays
+    integer :: directionality(3)                                        ! 1 - two directions, 2 - only forward, 3 - only reverse (x|y|z)
   end type
 ! ----------------------------------------------------------------------
   type, public :: ray_geometry_t
@@ -52,7 +54,7 @@ MODULE ray_geometry_mod
     integer :: geometry = 1 !cartesian = 1, spherical = 2, cylindrical = 3
     logical :: init_done = .false.
     class(ray_list_t), pointer :: ray_list => null()
-    integer :: axis                                                     ! convenience
+    integer :: axis, dr(3)                                              ! convenience
     real    :: theta, phi                                               ! convenience
   contains
     procedure :: add_axis
@@ -248,8 +250,9 @@ SUBROUTINE init_cartesian(self)
   integer                         :: i, nx, ny, nz, d45
   real, dimension(:), allocatable :: xt, yt, zt
   real, dimension(5)              :: xti, yti, zti
+  integer :: dx, dy, dz
 ! ......................................................................
-  namelist /cartesian_ray_geometry_params/ nx, ny, nz, xti, yti, zti
+  namelist /cartesian_ray_geometry_params/ nx, ny, nz, xti, yti, zti, dx, dy, dz
 ! ......................................................................
   call trace_begin('ray_geometry_t%init_cartesian',2)
   !> TO DO: add an option for 2D simulation setup (i.e. any(cell_dims) == 0)
@@ -261,6 +264,9 @@ SUBROUTINE init_cartesian(self)
   rewind (io%input)
   read (io%input, cartesian_ray_geometry_params)
   
+  self%dr(1) = dx
+  self%dr(2) = dy
+  self%dr(3) = dz
   d45 = 0                                                               ! flag for 45 degree angles
   if (nx > 0) then
     allocate (xt(nx)); xt = xti(1:nx)
@@ -406,6 +412,7 @@ SUBROUTINE add_axis(self, dir)
   ray%axis  = c
   ray%theta = 0
   ray%phi   = 0
+  ray%directionality = self%dr
 
   allocate (ray%ds(pmax(c),ray%n_rays))                                 ! create ds table, containing ds for all points in all rays
   allocate (ray%fwd_coords(3,ray%n_rays))                               ! create table, containing x|y|z coords for upstream position for particular ray, for all rays
@@ -1555,13 +1562,14 @@ SUBROUTINE finish_single_ray_list(self, bundle)
   class(single_ray_list_t), pointer :: bundle, prev_bundle, next_bundle
   class(single_ray_list_t), pointer :: packet, prev_packet, next_packet
   class(ray_list_t),        pointer :: ray 
-  integer :: iray, npt, pt
+  integer :: iray, npt, pt, bundle_n_rays
   logical :: first_bundle = .true.
   logical :: first_packet = .true.
   logical :: new_bundle
 ! ......................................................................
   bundle => bundle%head
   do while (associated(bundle))                                         ! loop over ray bundles to be saved
+    bundle_n_rays = 0
     packet => bundle%first_packet
     first_packet = .true.
     new_bundle = .true.
@@ -1569,11 +1577,16 @@ SUBROUTINE finish_single_ray_list(self, bundle)
     do while (associated(packet))                                       ! loop over ray packets in this bundle
     
       allocate (ray)                                                    ! alocate new ray packet
+      bundle_n_rays = bundle_n_rays + 1
       ray%dir_ID       = self%n_ray_dirs                                ! save direction ID
       ray%n_rays       = packet%n_rays                                  ! save number of rays in this bundle 
       ray%n_points     = packet%n_points                                ! save  number of points in the longest ray                
       ray%lwall        = bundle%lwall                                   ! save lower wall for this bundle
       ray%uwall        = bundle%uwall                                   ! save upper wall for this bundle
+      ray%axis         = self%axis
+      ray%theta        = self%theta
+      ray%phi          = self%phi
+      ray%directionality = self%dr
     
     if (new_bundle) then                                                ! only if it is a new bundle
       if (first_bundle) then
@@ -1635,6 +1648,7 @@ SUBROUTINE finish_single_ray_list(self, bundle)
     end do
       packet => next_packet                                             ! move to next packet
     end do
+    self%ray_list%last_dir%last_bundle%bundle_n_rays = bundle_n_rays
     prev_bundle => bundle
     bundle => bundle%next_bundle                                        ! move to next bundle
     deallocate (prev_bundle)

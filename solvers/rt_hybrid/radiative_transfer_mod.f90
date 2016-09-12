@@ -117,6 +117,13 @@ SUBROUTINE rt_setup (self)
           internal%rt_type = 1                                          ! set the rt type
           internal%n_ray_dirs = ray_geometry%ray_dirs
           internal%solver  = solver                                     ! set the rt solver type
+          
+          
+          ! DIRECTIONALITY DEPENDENCIES
+          
+          
+          
+          internal%dir_weight = ray_dir%dir_weight
           link%task => internal                                         ! connect to RT task
           internal_l => link                                            ! save pointer to internal task link
           internal%link => link

@@ -9,12 +9,17 @@ MODULE rt_internal_mod
   USE trace_mod
   implicit none
 !-----------------------------------------------------------------------
+  type :: internal_data_t
+    real, dimension(:,:), pointer :: bndry => null()                    ! (wl_bin, ray) incoming intensity. 
+    real, dimension(:),   pointer :: time => null()                     ! (time)
+    real, dimension(:,:), pointer :: ds   => null()                     ! (point,ray)
+  end type
+!-----------------------------------------------------------------------
   type,extends(rt_t), public :: rt_internal_t
     type (rt_data_t),     pointer :: my_rt_data => null()
-    real, dimension(:,:), pointer :: ds         => null()               ! (point,ray)
-    real, dimension(:,:), pointer :: I_in => null()                     ! (wl_bin, ray) incoming intensity. 
-    real, dimension(:),   pointer :: I_in_time  => null()               ! (ray, time)
+    class(internal_data_t), dimension(:), pointer :: packet_data => null() ! incoming intensities
     integer :: solver
+    real :: dir_weight
     procedure (solve_internal_integral), pointer :: solve => null()
   contains
     procedure :: init   => init_rt_internal
@@ -38,9 +43,8 @@ CONTAINS
 !> =====================================================================
 SUBROUTINE init_rt_internal (self)
   class(rt_internal_t) :: self
-  class(ray_list_t),    pointer :: my_rays
-  integer :: point, ray
-  real(kind=8) :: p(3)
+  class(ray_list_t),    pointer :: my_rays, packet
+  integer :: pt, ray, pck
 !-----------------------------------------------------------------------
   call trace_begin('rt_t%init_rt_internal')
   call self%task_t%init
@@ -60,19 +64,20 @@ SUBROUTINE init_rt_internal (self)
   self%dtime     = 2e-6
   if (mhd_patch%is_set(bits%static))    call self%set (bits%static)
   if (mhd_patch%is_set(bits%root_grid)) call self%set (bits%root_grid)
-
+  end associate
+  
   allocate(self%name)
   SELECT case(self%rt_type)
     case(2)
-      call ray_geometry%get_my_rays(my_rays, self%bundle_ID, .false.)                ! retrieve ray list for this direction
+      call ray_geometry%get_my_bundle(my_rays, self%bundle_ID)          ! retrieve ray list for this direction
       self%name = 'rt_forward'
     case(3)
-      call ray_geometry%get_my_rays(my_rays, self%bundle_ID, .false. )                ! retrieve ray list for this direction
+      call ray_geometry%get_my_bundle(my_rays, self%bundle_ID)          ! retrieve ray list for this direction
       self%name = 'rt_reverse'
   end SELECT
   self%my_rays => my_rays
-
-  if (self%solver ==  0) then                                        ! set the right solver
+  
+  if (self%solver ==  0) then                                           ! set the right solver
     self%solve => solve_internal_feautrier
   else
     self%solve => solve_internal_integral
@@ -81,20 +86,23 @@ SUBROUTINE init_rt_internal (self)
   !---------------------------------------------------------------------
   ! Allocate memory slots.
   !---------------------------------------------------------------------
-  allocate(self%i_in (microphysics%n_wl_bins, self%my_rays%n_rays))
-  allocate(self%i_in_time(self%my_rays%n_rays))
-  allocate(self%ds    (my_rays%max_n_points, my_rays%n_rays))
-  self%i_in(:,:) = 0
-  self%i_in_time = self%time
+  allocate(self%packet_data(self%my_rays%n_packets))
   
-  do ray = 1, self%my_rays%n_rays                                       ! loop over rays to copy coords and ds
-    do point = 1, self%my_rays%n_points(ray)
-      self%ds(point, ray) = my_rays%ds(point, ray) * self%cell_ds(1)
-    end do
+  packet => self%my_rays
+  do ray = 1, self%my_rays%n_packets
+    allocate(self%packet_data%bndry (microphysics%n_wl_bins, packet%n_rays))
+    allocate(self%packet_data%time(packet%n_rays))
+    allocate(self%packet_data%ds    (packet%n_points, packet%n_rays))
+    self%packet_data%bndry(:,:) = 0
+    self%packet_data%time = self%time
+    self%packet_data%ds = packet%ds * self%cell_ds(1) ! FIXME: should not be like this for non-cubic cells
+    packet => packet%next_packet
   end do
-
+  
+  nullify (packet, my_rays)
+ 
   if (io%verbose>2) call self%check
-  end associate
+  
   call trace_end
 END SUBROUTINE init_rt_internal
 
@@ -105,16 +113,17 @@ SUBROUTINE update_rt_internal (self)
   class(rt_internal_t) :: self
   integer :: wl, ray, point, p(3)
   character(len=16) :: stime
+  integer, save:: itimer=0
 !-----------------------------------------------------------------------
   write (stime,'(1p,g16.6)') self%time
-  call trace_begin('rt_t%update_rt_internal '//stime)
+  call trace_begin('rt_t%update_rt_internal '//stime,itimer=itimer)
 
   call self%solve
   call self%update_time
 
   if (io%verbose>2) call self%check
 
-  call trace_end
+  call trace_end (itimer)
 
 END SUBROUTINE update_rt_internal
 
@@ -128,8 +137,8 @@ SUBROUTINE get_upstream (self)
   !---------------------------------------------------------------------
   call trace_begin('rt_corrections_mod%get_upstream')
   
-  if (self%is_set(bits%has_BC)) then  ! FIXME - make inner/outer BCs separate. Currently only outer BC -9.9000002145767212
-    if (self%obc == 0) then
+  if (self%is_set(bits%has_BC)) then                                    ! FIXME - make inner/outer BCs separate. 
+    if (self%obc == 0) then                                             ! Currently only outer BC
       error stop "huh?"
     end if
     call self%get_correction_from_BC                                    ! get boundary value
@@ -162,6 +171,8 @@ SUBROUTINE get_upstream (self)
       end if  
     end if
   end if
+  
+  nullify (nbor)
   call trace_end
 END SUBROUTINE get_upstream
 
@@ -172,6 +183,7 @@ SUBROUTINE get_local_static (self)
   class(rt_internal_t) :: self
   class(rt_internal_t), pointer :: rt_nb
   class(link_t), pointer :: nbor
+  class(ray_list_t), pointer :: packet, nb_packet
   integer :: ray, nb_cell(3), lw(3), uw(3), nb_ray, nb_pt, try, lwall(3)
   integer :: fw_c(3)
   logical, dimension(:), allocatable :: updated
@@ -190,65 +202,82 @@ SUBROUTINE get_local_static (self)
     associate (rt => nbor%task)
     SELECT type (rt)
     class is (rt_internal_t)
+    
       select case(self%rt_type)
-        case(2)
-          lwall = self%my_rays%lwall
-        case(3)
-          lwall = self%my_rays%uwall
+      case(2)
+        lwall = self%my_rays%lwall
+      case(3)
+        lwall = self%my_rays%uwall
       end select
+      
       if (self%the_right_wall(self%link, nbor,lwall)) then              ! make sure nbor is on the right wall
         if (rt%rt_type == self%rt_type) then                            ! make sure nbor is of the right RT type
           rt_nb => rt
-          do ray = 1, self%my_rays%n_rays                               ! loop  over my rays
-            select case(self%rt_type)
+          packet => my_rays
+          do pck = 1, self%my_rays%n_packets                            ! loop over my ray packets
+            do ray = 1, packet%n_rays                                   ! loop  over my rays
+          
+              select case(self%rt_type)
               case(2)
-              fw_c = self%my_rays%fwd_coords(:,ray)                     ! select wall coordinates
-              lw   = -self%my_rays%pt_wall(:,2,1,ray)                   ! select right walls for the ray
-              uw   = -self%my_rays%pt_wall(:,1,1,ray)
+                fw_c = packet%fwd_coords(:,ray)                         ! select wall coordinates
+                lw   = -packet%pt_wall(:,2,1,ray)                       ! select right walls for the ray
+                uw   = -packet%pt_wall(:,1,1,ray)
               case(3)
-              fw_c =  self%my_rays%rev_coords(:,ray)                    ! select wall coordinates
-              lw   = -self%my_rays%pt_wall(:,1,1,ray)                   ! select right walls for the ray
-              uw   = -self%my_rays%pt_wall(:,2,1,ray)
-            end select
-            if (self%level >= rt_nb%level) then                         ! if i am not larger than my nbor
-              nb_cell = rt_nb%pos2cell(self%cell2pos(fw_c))             ! corresponding cell at the nbor mesh
-              if (all(nb_cell>=rt_nb%li).and.&
-                  all(nb_cell<=rt_nb%ui)) then                          ! double check that we pointed to the right spot
-                self%I_in   (:,ray) = rt_nb%my_rt_data%I_retrv(nb_cell,self%dir_ID,lw,uw) ! get the right intensity
-                self%I_in_time(ray) = rt_nb%time                        ! store the time of the update
-                updated(ray) = .true.                                   ! the ray was updated
-              end if
-            else                                                        ! i am larger than my nbor
+                fw_c =  packet%rev_coords(:,ray)                        ! select wall coordinates
+                lw   = -packet%pt_wall(:,1,1,ray)                       ! select right walls for the ray
+                uw   = -packet%pt_wall(:,2,1,ray)
+              end select
             
-              my_c_pos = self%cell2pos(fw_c)                            ! get the absolute cell position in the comp. domain
-              n_mean = 0                                                ! number of rays to be averaged
-              mean = 0                                                  ! mean intensity
-              do nb_ray = 1, rt_nb%my_rays%n_rays                       ! loop over nbor rays
-                try = -1                                                ! indicator whether this ray meets the criterion
-                select case(self%rt_type)
-                  case(2)
-                  do nb_pt = 1, rt_nb%my_rays%n_points(nb_ray)          ! find the last point in the ray before the wall in question
-                    if (point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
-                        my_c_pos, self%cell_ds)) try = nb_pt
-                  end do
-                  case(3)
-                  do nb_pt = rt_nb%my_rays%n_points(nb_ray), 1, -1      ! find the last point in the ray before the wall in question
-                    if (point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
-                        my_c_pos, self%cell_ds)) try = nb_pt
-                  end do
-                  end select
-                if (try > 0) then
-                  Iin = rt_nb%my_rt_data%I_retrv_ray(nb_ray,nb_pt,self%dir_ID) ! retrieve this intensity
-                  mean = mean + Iin
-                  n_mean = n_mean + 1.
+              if (self%level >= rt_nb%level) then                       ! if i am not larger than my nbor
+                nb_cell = rt_nb%pos2cell(self%cell2pos(fw_c))           ! corresponding cell at the nbor mesh
+                if (all(nb_cell>=rt_nb%li).and.&
+                    all(nb_cell<=rt_nb%ui)) then                        ! double check that we pointed to the right spot
+                  self%packet_data%bndry(:,ray) = &
+                  rt_nb%my_rt_data%I_retrv(nb_cell,self%dir_ID,lw,uw)   ! get the right intensity
+                  self%packet_data%time(ray) = rt_nb%time               ! store the time of the update
+                  updated(ray) = .true.                                 ! the ray was updated
                 end if
-              end do
-              if ((n_mean > 0).and.(self%time <= rt_nb%time)) then
-                self%I_in(:,ray) = mean/n_mean
-                self%I_in_time(ray) = rt_nb%time                        ! store the time of the update
-                updated(ray) = .true.                                   ! the ray was updated
+              else                                                      ! i am larger than my nbor
+            
+                my_c_pos = self%cell2pos(fw_c)                          ! get the absolute cell position in the comp. domain
+                n_mean = 0                                              ! number of rays to be averaged
+                mean = 0                                                ! mean intensity
+                
+                nb_packet => rt_nb%my_rays
+                do nb_pck = 1, rt_nb%my_rays%n_packets                  ! loop over nbor ray packets
+                  do nb_ray = 1, rt_nb%my_rays%n_rays                   ! loop over nbor rays
+                    try = -1                                            ! indicator whether this ray meets the criterion
+                    
+                    select case(self%rt_type)
+                    case(2)
+                      do nb_pt = 1, nb_packet%n_points                  ! find the last point in the ray before the wall in question
+                        if (point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
+                            my_c_pos, self%cell_ds)) try = nb_pt
+                      end do
+                    case(3)
+                      do nb_pt = nb_packet%n_points, 1, -1              ! find the last point in the ray before the wall in question
+                        if (point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
+                            my_c_pos, self%cell_ds)) try = nb_pt
+                      end do
+                    end select
+                    
+                    if (try > 0) then
+                      Iin = rt_nb%my_rt_data%I_retrv_ray(nb_ray,nb_pt,self%dir_ID) ! retrieve this intensity
+                      mean = mean + Iin
+                      n_mean = n_mean + 1.
+                    end if
+                  end do
+                  nb_packet => nb_packet%next_packet
+                end do
+                
+                if ((n_mean > 0).and.(self%time <= rt_nb%time)) then
+                  self%packet_data%bndry(:,ray) = mean/n_mean
+                  self%packet_data%time(ray) = rt_nb%time               ! store the time of the update
+                  updated(ray) = .true.                                 ! the ray was updated
+                end if
               end if
-            end if
+            end do
+          packet => packet%next_packet
           end do
         end if
       end if
@@ -262,10 +291,11 @@ SUBROUTINE get_local_static (self)
   if(.not.all(updated)) then                                                              ! TO DO: old test, to be moved to self%check
     print *, 'task ID, level, time, n_nbors', self%id, self%level, self%time, self%n_nbors
     print *, updated
-    print *, self%i_in_time
-    print *, self%i_in
     error stop "not all rays updated for in local static rt"
   end if
+  
+  nullify(rt_nb, nbor, packet, nb_packet)
+  deallocate(updated)
   
   if (io%verbose>2) call self%check_intensities(1)
   call trace_end  
@@ -299,20 +329,26 @@ END SUBROUTINE get_remote_dynamic
 !> =====================================================================
 SUBROUTINE get_correction_from_BC (self)
   class(rt_internal_t) :: self
-  integer :: ray
+  integer :: ray, pck
+  class(ray_list_t), pointer :: packet
   real(kind=8) :: ppos(3)
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_t%get_correction_from_BC')
   SELECT case(self%rt_type)
   case(0)
   case(1)
-  case(2,3)  
-    do ray = 1, self%my_rays%n_rays
-      ppos = self%absolute_point_position(ray, 1, self%rt_type)
-      if (self%obct == 0) then
-        call rt_boundary%set_obc(ppos,self%cell_ds,self%I_in(:,ray))
-      end if
+  case(2,3)
+    packet => self%my_rays
+    do pck =1, self%my_rays%n_packets
+      do ray = 1, packet%n_rays
+        ppos = self%absolute_point_position(ray, 1, self%rt_type)
+        if (self%obct == 0) then
+          call rt_boundary%set_obc(ppos,self%cell_ds,self%packet_data%bndry(:,ray))
+        end if
+      end do
+      packet => packet%next_packet
     end do
+  nullify (packet)
   end SELECT
   call trace_end
 END SUBROUTINE get_correction_from_BC
@@ -324,32 +360,36 @@ END SUBROUTINE get_correction_from_BC
 
 SUBROUTINE solve_internal_integral (self)
   class(rt_internal_t) :: self
-  real, dimension(:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
-  real, dimension(:,:), allocatable :: s, dtau, idtau, ctau, q
+  class(ray_list_t), pointer :: packet
+  real, dimension(:,:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
+  real, dimension(:,:,:), allocatable :: s, dtau, idtau, ctau, q
   real, dimension(microphysics%n_wl_bins) :: Ifw, I_in
-  integer :: pt, ipt, it, ray, wl, p(3), lw(3), uw(3)
+  integer :: pt, ipt, it, ray, wl, p(3), lw(3), uw(3), pck, nwb
   real    :: temp, dir_wgt
   !---------------------------------------------------------------------
   call trace_begin('rt_t%update_internal%solve_internal_integral')
   call self%get_upstream 
   
-  dir_wgt = 2.*pi/self%n_ray_dirs
-  associate (npt   => self%my_rays%n_points,nwb => microphysics%n_wl_bins, &
-             nrays => self%my_rays%n_rays,  rtd => self%my_rt_data, &
-               cell=> self%my_rays%cell_coords, &
-               mnp => self%my_rays%max_n_points)
+  dir_wgt = 2.*pi/self%n_ray_dirs * self%dir_weight
+  
+  nwb = microphysics%n_wl_bins
+  packet => self%my_rays
+  
+  do pck = 1, self%my_rays%n_packets
+    associate (npt => packet%n_points, nrays => packet%n_rays, &
+               rtd => self%my_rt_data, cell => packet%cell_coords)
 
-  allocate( dtau(nwb, mnp))
-  allocate(idtau(nwb, mnp))
-  allocate(ex0  (nwb, mnp))
-  allocate(ex1  (nwb, mnp))
-  allocate(ex2  (nwb, mnp))
-  allocate(ds1  (nwb, mnp))
-  allocate(d1s  (nwb, mnp))
-  allocate(d2s  (nwb, mnp))
-  allocate(s    (nwb, mnp))
-  allocate(q    (nwb, mnp))
-  allocate(ctau (nwb, mnp))
+    allocate( dtau(nwb, nrays, npt))
+    allocate(idtau(nwb, nrays, npt))
+    allocate(ex0  (nwb, nrays, npt))
+    allocate(ex1  (nwb, nrays, npt))
+    allocate(ex2  (nwb, nrays, npt))
+    allocate(ds1  (nwb, nrays, npt))
+    allocate(d1s  (nwb, nrays, npt))
+    allocate(d2s  (nwb, nrays, npt))
+    allocate(s    (nwb, nrays, npt))
+    allocate(q    (nwb, nrays, npt))
+    allocate(ctau (nwb, nrays, npt))
 
 
 
@@ -466,6 +506,7 @@ END SUBROUTINE solve_internal_feautrier
 !> =====================================================================
 SUBROUTINE check_rt_internal(self)
   class(rt_internal_t) :: self
+  integer :: i
 !-----------------------------------------------------------------------
   if(.not.associated(self%my_rt_data)) then
     error stop "rt_internal%check: my_rt_data is not associated"
@@ -474,12 +515,34 @@ SUBROUTINE check_rt_internal(self)
   if(.not.associated(self%solve)) then
     error stop "rt_internal%check: solver is not set"
   end if
-
-  if (any(isnan(self%ds))) then
-    print *,'=================== ds ================'
-    print *,self%ds
-    error stop "rt_internal%check: self%ds has NaN"
+  
+  if(.not.associated(self%packet_data)) then
+    error stop "rt_internal%check: packet data is missing"
   end if
+  
+  do i=1, size(self%packet_data)
+    if(.not.associated(self%packet_data[i]%bndry)) then
+      print *,'iter',i
+      error stop "rt_internal%check: packet data bndry is missing"
+    end if
+    
+    if(.not.associated(self%packet_data[i]%time)) then
+      print *,'iter',i
+      error stop "rt_internal%check: packet data time is missing"
+    end if
+    
+    if(.not.associated(self%packet_data[i]%ds)) then
+      print *,'iter',i
+      error stop "rt_internal%check: packet data ds is missing"
+    end if
+    
+    if (any(isnan(self%packet_data[i]%ds))) then
+      print *,'=================== ds ================'
+      print *,self%ds
+      error stop "rt_internal%check: self%ds has NaN"
+    end if
+  
+  end do
 
 END SUBROUTINE check_rt_internal
 
