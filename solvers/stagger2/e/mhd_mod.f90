@@ -70,6 +70,12 @@ SUBROUTINE init (self)
     self%mesh(i)%h(5+i) = -0.5
   end do
   call self%force%init
+  !-----------------------------------------------------------------------------
+  ! Radiation
+  !-----------------------------------------------------------------------------
+  allocate (self%rad)
+  self%rad%mesh => self%mesh
+  call self%rad%init
   call trace%end
 END SUBROUTINE init
 
@@ -319,6 +325,15 @@ SUBROUTINE update (self)
       call boundary%condition (Ez, self%mesh, [-0.5d0,-0.5d0,0d0])
     end if
     dBdt = -curl_up(ds,emf)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Radiation
+  !-----------------------------------------------------------------------------
+  if (self%rad%do_radiation) then
+    self%rad%rho => self%d
+    self%rad%temp= self%gas_temperature()
+    call self%rad%solve
+    dedt = dedt + self%rad%qq
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
