@@ -15,16 +15,18 @@ MODULE patch_mod
   USE task_mod
   USE link_mod
   USE mesh_mod
+  USE radiation_mod
   USE buffered_output_mod
   implicit none
   private
   integer, parameter:: ndim = 3, i_d=1
   type, extends(task_t), public:: patch_t
-    real, dimension(:,:,:,:,:,:), pointer:: mem
-    real, dimension(:,:,:,:,:), pointer:: vgas
-    real, dimension(:,:,:,:), pointer:: density
-    real, dimension(:,:,:,:), pointer:: pressure
-    type(mesh_t), dimension(3):: mesh
+    real, dimension(:,:,:,:,:,:), pointer:: mem      => null()
+    real, dimension(:,:,:,:,:),   pointer:: vgas     => null()
+    real, dimension(:,:,:,:),     pointer:: density  => null()
+    real, dimension(:,:,:,:),     pointer:: pressure => null()
+    type(mesh_t), dimension(:),   pointer:: mesh     => null()
+    type(radiation_t),            pointer:: rad      => null()
     real:: courant                      ! courant number
     real:: gamma=1.0                    ! gas gamma
     real:: dt_fixed, u_fixed, u_max     ! for fixed time step Courant condition
@@ -324,6 +326,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Special handling of collapsed dimensions
   !-----------------------------------------------------------------------------
+  allocate (self%mesh(3))
   self%mesh%ng = self%ng
   where (self%n==1)                             ! for collapsed dimensions
     self%mesh%ng = 0                            ! no guard zones
