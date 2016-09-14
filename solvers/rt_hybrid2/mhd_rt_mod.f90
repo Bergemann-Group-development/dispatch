@@ -56,7 +56,32 @@ SUBROUTINE update_mhd_rt(self)
   call trace_end
 END SUBROUTINE update_mhd_rt
 
-SUBROUTINE update_q(self, tt, q, p, nwb, op, temp, dirw)
+SUBROUTINE update_q(self, tt, nrays, npt, nwb, q, cell, op, dirw)
+  class(mhd_rt_t) :: self
+  integer :: p(3), nwb, wl, nrays, npt, ray, pt
+  real(kind=8) :: tt
+  real, dimension(nwb,nrays,npt) :: op, q
+  integer, dimension(3,npt,nrays):: cell
+  real :: dirw, temp, itemp
+  !---------------------------------------------------------------------
+  call trace_begin ('mhd_rt_t_%update_q',4)
+  if (tt > self%rt_q%t(self%it)) call self%rt_q%rotate(tt)
+  
+  do ray = 1, nrays
+    do pt = 1, npt
+      p = cell(:,pt,ray)
+      temp = self%cell_gas_temperature(p)
+      itemp = 1./temp
+      do wl =1, nwb
+        self%rt_q%q(p(1),p(2),p(3),self%it) = &
+        self%rt_q%q(p(1),p(2),p(3),self%it) + dirw*op(wl,ray,pt)*q(wl,ray,pt)*itemp
+      end do
+    end do
+  end do
+  call trace_end
+END SUBROUTINE update_q
+
+SUBROUTINE update_q_old(self, tt, q, p, nwb, op, temp, dirw)
   class(mhd_rt_t) :: self
   integer :: p(3), nwb, wl
   real(kind=8) :: tt
@@ -72,7 +97,7 @@ SUBROUTINE update_q(self, tt, q, p, nwb, op, temp, dirw)
     self%rt_q%q(p(1),p(2),p(3),self%it) + dirw*op(wl)*q(wl)*itemp
   end do
   call trace_end
-END SUBROUTINE update_q
+END SUBROUTINE update_q_old
 
 SUBROUTINE add_cr_heating (self,tt, temp)
   class(mhd_rt_t) :: self

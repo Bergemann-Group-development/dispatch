@@ -1,15 +1,9 @@
-MODULE ray_geometry_mod
+MODULE ray_geometry_v2_mod
   USE io_mod
   USE trace_mod
   implicit none
-  type, public :: rt_cell_t
-    integer :: ray, point, lwall(3), uwall(3)
-    class(rt_cell_t), pointer :: head => null()
-    class(rt_cell_t), pointer :: next => null()
-    class(rt_cell_t), pointer :: tail => null()
-  end type
     
-  type, public                         :: ray_t
+  type, public :: ray_t
     integer :: n_rays
     integer :: n_points
     integer :: lwall(3)
@@ -22,9 +16,6 @@ MODULE ray_geometry_mod
     integer, dimension(:,:  ), pointer   :: rev_coords  => null()       ! x|y|z,                   ray #
     real,    dimension(:,:  ), pointer   :: ds          => null()       ! ds   ,        ray point, ray #
     integer, dimension(:,:,:,:), pointer :: pt_wall     => null()       ! x|y|x, lw|uw, ray point, ray #
-    !type(rt_cell_t), dimension(:,:,:), pointer :: cell_domain => null()
-  !contains
-    !procedure :: store_cell_data
   end type
 ! ----------------------------------------------------------------------
   type, extends(ray_t), public:: ray_list_t
@@ -78,7 +69,7 @@ MODULE ray_geometry_mod
     procedure :: init_cylindrical
   end type
 ! ----------------------------------------------------------------------
-  type, public                       :: single_ray_t
+  type, public :: single_ray_t
     integer                          :: lwall(3)
     integer                          :: uwall(3)
     integer                          :: n_points
@@ -114,7 +105,7 @@ MODULE ray_geometry_mod
     procedure :: finish_ray
   end type
 ! ----------------------------------------------------------------------
-  type                         :: ray_point_t
+  type :: ray_point_t
     class(ray_point_t), pointer :: head => null()
     class(ray_point_t), pointer :: next => null()
     class(ray_point_t), pointer :: prev => null()
@@ -326,7 +317,7 @@ SUBROUTINE init_cartesian(self)
   end if
     
   deallocate (xt, yt, zt)
-  
+  print *, self%ray_list%directionality
   call trace_end
 END SUBROUTINE init_cartesian
 
@@ -1698,7 +1689,7 @@ SUBROUTINE test_ray_geometry(self, dir, bundle_ID, ray)
   class(ray_list_t), pointer :: list_dir, list_bundle, bundle
   integer :: dir, bundle_ID, ray, pt, p(3)
   
-  call get_my_rays(self,bundle, bundle_ID, .false.)
+  call get_my_bundle(self,bundle, bundle_ID, .false.)
   
   print *, 'Testing ray_geom for dir_ID, bundle_ID, ray:',bundle%dir_ID, bundle_ID, ray
   print *, 'n_rays in bundle:',bundle%n_rays
@@ -1708,4 +1699,4 @@ SUBROUTINE test_ray_geometry(self, dir, bundle_ID, ray)
   
 END SUBROUTINE test_ray_geometry
 
-END MODULE ray_geometry_mod
+END MODULE ray_geometry_v2_mod

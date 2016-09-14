@@ -1,0 +1,93 @@
+&io_params
+ verbose=0
+ do_trace=f
+ do_debug=f
+ do_output=f
+ do_legacy = t
+/
+
+&box_params
+ size=1,1,1
+ dims=4,4,4
+ origin=0.0,0.0,0.0
+ !origin=-0.5,-0.5,-0.5
+/
+
+&patch_params
+ nt=5
+ courant=0.2
+ grace=0.1
+ n=16,16,16
+/
+
+&rt_params
+ RT_solver  = 'integral'
+ cr_heating = 3.746e-24
+/
+
+&cartesian_ray_geometry_params
+! along x axis
+nx = 1
+xti = 0.
+dx = 1
+! along y axis
+ny = 1
+yti = 0.
+dy = 1
+! along z axis
+nz = 1
+zti = 0.
+dz = 1
+
+/
+
+&microphysics_params
+ source  = 'Stefan'
+ n_wl_bins  = 1
+/
+
+! Treatment of boundary conditions for RT solver. obc - outer boundaries, outside the simulation box.
+! ibc - inner boundaries, e.g. any objects (planets, stars, etc.)
+&rt_bc_params
+obc_treatment = 'custom'    !use code in initial_rt.f90
+!obc_treatment = 'reflective' ! not implemented yet
+!obc_treatment = 'periodic'   ! not implemented yet
+!ibc_treatment = 'initial'    ! not implemented yet
+!ibc_treatment = 'zero'       ! complete absorption, not implemented yet
+!ibc_treatment = 'reflective' ! not implemented yet
+ibc_treatment = 'ignore'     ! do nothing, continue as if there was no IB
+/
+
+&custom_bc_params
+cool_temp = 10   ! in kelvins
+hot_temp  = 2000
+/
+
+&out_params
+ end_time=0.020
+ out_time=0.001
+print_time=0.001
+ guard_zones=f
+ time_derivs=f
+/
+
+
+&mhd_params
+ nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
+ !     cs    pa  ofd  mas  kap  eta
+ gamma=1.666667
+/
+
+&timestep_params
+ time_order=2
+/
+
+&initial_params
+ clump_pos = 0.5,0.5,0.5 
+ !clump_pos = 0.6666,0.6666,0.6666
+ d0=1.0
+ clump_dfact=10.0
+ t0=290.0
+ clump_a=0.1
+ clump_b=0.06
+/

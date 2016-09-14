@@ -2,7 +2,7 @@ MODULE rt_data_mod
   USE bits_mod
   USE io_mod
   USE microphysics_mod
-  USE ray_geometry_mod
+  USE ray_geometry_v2_mod
   USE rt_mod
   USE trace_mod
   implicit none
@@ -18,20 +18,6 @@ MODULE rt_data_mod
   contains
     procedure :: init => int_data_init
   end type
-
-!----------------------------------------------------------------------- 
-!> Special dtau and exponent storage type. All cells can have more than 
-!> one ray per direction. 
-  type :: tau_data_t
-    integer :: lwall(3), uwall(3)
-    real, dimension(:), pointer :: ex0  => null()
-    real, dimension(:), pointer :: dtau => null()
-    class(tau_data_t),  pointer :: head => null()
-    class(tau_data_t),  pointer :: next => null()
-    class(tau_data_t),  pointer :: tail => null()
-  contains
-    procedure :: init => tau_data_init
-  end type
 !----------------------------------------------------------------------- 
   type, extends(rt_t), public :: rt_data_t
     integer :: n_cells(3)
@@ -40,13 +26,10 @@ MODULE rt_data_mod
     real, dimension(:,:,:,:), pointer :: opacity => null()              ! (x,y,z,wl_bin)
     real, dimension(:,:,:,:), pointer :: source  => null()              ! (x,y,z,wl_bin)
     type(int_data_t), dimension(:,:,:,:), pointer :: intensity => null()! (x,y,z,direction)
-    type(tau_data_t), dimension(:,:,:,:), pointer :: tau  => null()     ! (x,y,z,direction)
   contains
     procedure :: init   => init_rt_data
     procedure :: update => update_rt_data
     procedure :: check  => check_rt_data
-    procedure :: tau_upd
-    procedure :: tau_retrv
     procedure :: I_store
     procedure :: I_retrv
     procedure :: I_retrv_ray
@@ -95,9 +78,8 @@ SUBROUTINE init_rt_data(self)
   allocate(self%opacity(n(1), n(2), n(3), nwb)) ! opacity table
   allocate(self%source (n(1), n(2), n(3), nwb)) ! Source function table
   allocate(self%intensity(self%ui(1),self%ui(2),self%ui(3),self%n_ray_dirs))
-  allocate(self%tau (self%ui(1),self%ui(2),self%ui(3),self%n_ray_dirs))
   self%opacity = 0;   self%source = 0
-  self%n_tau_dat = 0; self%n_intensity_dat = 0
+  self%n_intensity_dat = 0
   end associate
   if (io%verbose>2) call self%check(1)             ! check if rt_data initialized ok  
   call trace_end  
@@ -129,8 +111,6 @@ SUBROUTINE update_rt_data (self)
   self%source (l(1):u(1),l(2):u(2),l(3):u(3),:) = &
   microphysics%source_fn%solve (temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%wl_bins) ! estimate the source function
   
-  call self%tau_upd                                                     ! update exponential factors
-  
   ! add cosmic ray heating
   call self%mhd_patch%add_cr_heating(self%time,temp(l(1):u(1),l(2):u(2),l(3):u(3)))  ! add cr heating 
   call self%update_time
@@ -146,7 +126,66 @@ END SUBROUTINE update_rt_data
 !> =====================================================================
 !> Store intensity
 !> =====================================================================
-SUBROUTINE I_store (self,I_st,c,pt,ray,dir,lw,uw)
+SUBROUTINE I_store (self,I_st,rays,dir_ID, rt_type)
+  class (rt_data_t) :: self
+  class (ray_list_t), pointer :: rays
+  type (int_data_t), pointer  :: this
+  real, dimension(:,:,:) :: I_st
+  integer, dimension(:,:,:), pointer :: lwp, uwp
+  integer :: dir_ID, rt_type, c(3), lw(3), uw(3), pt, ray
+  logical :: found
+!-----------------------------------------------------------------------
+  call trace_begin('rt_data_mod%I_store',4)
+  associate (I => self%intensity(:,:,:,dir_ID),&
+             nwb => microphysics%n_wl_bins)
+             
+  select case(rt_type)
+  case(2)
+    lwp => rays%pt_wall(:,1,:,:)
+    uwp => rays%pt_wall(:,2,:,:)
+  case(3)
+    lwp => rays%pt_wall(:,2,:,:)
+    uwp => rays%pt_wall(:,1,:,:)
+  end select
+  
+  do ray = 1, rays%n_rays
+    do pt = 1, rays%n_points
+      c = rays%cell_coords(:,pt,ray)
+      lw = lwp(:,pt,ray)
+      uw = uwp(:,pt,ray)
+      
+      if (.not.associated(I(c(1),c(2),c(3))%head)) then
+        call I(c(1),c(2),c(3))%init(ray,pt,lw,uw)                       ! if this cell is empty, initialize
+        self%n_intensity_dat = self%n_intensity_dat + 1                 ! increment total data entries
+        I(c(1),c(2),c(3))%head%I = I_st(:,ray,pt)
+      else
+        this  => I(c(1),c(2),c(3))%head
+        found = .false.
+        do while (associated(this%next).and.(found.eqv..false.))        ! loop over cell data
+          if (all(this%lwall == lw).and.all(this%uwall == uw).and.&
+                 (this%point == pt).and.   (this%ray   == ray)) then    ! find the right place to store
+            found = .true.
+            this%I = I_st(:,ray,pt)
+          else
+            this => this%next
+          end if
+        end do
+    
+        if (.not.found) then
+          call I(c(1),c(2),c(3))%init(ray,pt,lw,uw)                     ! if the right place not found, initialize a new one
+          self%n_intensity_dat = self%n_intensity_dat + 1               ! increment total data entries
+          I(c(1),c(2),c(3))%tail%I = I_st(:,ray,pt)
+        end if
+      end if  
+ 
+    end do
+  end do
+  end associate
+  nullify (this, lwp, uwp)
+  call trace_end
+END SUBROUTINE I_store
+
+SUBROUTINE I_store_old (self,I_st,c,pt,ray,dir,lw,uw)
   class (rt_data_t) :: self
   type (int_data_t), pointer :: this
   real, dimension(microphysics%n_wl_bins) :: I_st
@@ -182,7 +221,7 @@ SUBROUTINE I_store (self,I_st,c,pt,ray,dir,lw,uw)
   end if
   end associate
   call trace_end
-END SUBROUTINE I_store
+END SUBROUTINE I_store_old
 
 !> =====================================================================
 !> Retrieve intensity by cell
@@ -238,8 +277,6 @@ FUNCTION I_retrv_ray (self,ray,pt,dir) result (I_st)
   call trace_end
 END FUNCTION I_retrv_ray
 
-
-
 !> =====================================================================
 !> Initialize intensity storage for this cell
 !> =====================================================================
@@ -266,139 +303,6 @@ SUBROUTINE int_data_init(self,ray,pt,lw,uw)
   end if
   call trace_end
 END SUBROUTINE int_data_init
-
-!> =====================================================================
-!> Update exponential factors for the rt solver. Calculating the exponent
-!> is relatively the most expensive part of the integral rt solver. Thus
-!> it is done once before hand and is used by both directions to save time.
-!> =====================================================================
-SUBROUTINE tau_upd (self)
-  class (rt_data_t) :: self
-  class(ray_list_t), pointer :: ray_bundle, ray_dir
-  type (tau_data_t), pointer :: this
-  integer :: bID, dID, c(3), ray, pt, nwb, lw(3), uw(3)
-  real, dimension(microphysics%n_wl_bins) :: dtau
-  logical :: found
-!-----------------------------------------------------------------------
-  call trace_begin('rt_data_mod%tau_upd',4)
-  nwb = microphysics%n_wl_bins
-  bID = 0; dID = 0
-  ray_dir => ray_geometry%ray_list%head
-  do while (associated(ray_dir))                                        ! loop over all directions
-    dID = dID + 1
-    ray_bundle => ray_dir                            
-    do while (associated(ray_bundle))                                   ! loop over all bundles in this direction
-      bID = bID + 1
-      do ray = 1, ray_bundle%n_rays                                     ! loop over rays
-        do pt = 1, ray_bundle%n_points                             ! loop over points
-          c = ray_bundle%cell_coords(:,pt,ray)                          ! cell coord for this ray point
-          dtau = self%opacity(c(1),c(2),c(3),:)*ray_bundle%ds(pt,ray)   ! calculate dtau
-          associate (tau => self%tau(c(1),c(2),c(3),dID))               ! shortcut to this cell
-          select case(self%rt_type)
-          case(2)
-          lw = ray_bundle%pt_wall(:,1,pt,ray)                           ! ray starts crossing this cell from this wall
-          uw = ray_bundle%pt_wall(:,2,pt,ray)                           ! ray leaves cell through this wall
-          case(3)
-          lw = ray_bundle%pt_wall(:,2,pt,ray)                           ! ray starts crossing this cell from this wall
-          uw = ray_bundle%pt_wall(:,1,pt,ray)                           ! ray leaves cell through this wall
-          end select
-          if (.not.associated(tau%head)) then                           
-            call tau%init(ray,pt,lw,uw)                                 ! if this cell is empty, initialize
-            self%n_tau_dat = self%n_tau_dat + 1                         ! increment total data entries
-            tau%head%ex0  = exp(-dtau)
-            tau%head%dtau = dtau
-          else
-            this  => tau%head                                           ! start looping over cell entries
-            found = .false.
-            do while (associated(this%next).and..not.found)             ! loop over cell data
-              if (all(this%lwall == lw).and.all(this%uwall == uw).or.&
-                 (all(this%lwall == uw).and.all(this%uwall == lw))) then! find the right place to store. NOTE: direction is not important, but
-                found = .true.                                          ! both walls have to be the correct ones. There are no two parallel rays
-                this%ex0  = exp(-dtau)                                  ! crossing the same sets of walls in the same cell.
-                this%dtau = dtau
-              else
-                this => this%next
-              end if
-            end do
-            nullify(this)
-            if (.not.found) then
-              call tau%init(ray,pt,lw,uw)                               ! if the right place is not found, initialize a new one
-              self%n_tau_dat = self%n_tau_dat + 1                       ! increment total data entries
-              tau%tail%ex0  = exp(-dtau)
-              tau%tail%dtau = dtau
-            end if
-          end if
-                    
-          end associate
-        end do
-      end do
-    
-    
-      ray_bundle => ray_bundle%next_bundle                          ! take the next ray bundle
-    end do
-    nullify(ray_bundle)
-    ray_dir => ray_dir%next_dir                                     ! go to the next ray direction
-  end do
-  nullify(ray_dir)
-  call trace_end
-END SUBROUTINE tau_upd
-
-!> =====================================================================
-!> Retrieve intensity by cell
-!> =====================================================================
-SUBROUTINE tau_retrv (self,c,dir,lw,uw, ex0, dtau)
-  class (rt_data_t) :: self
-  type (tau_data_t), pointer :: this
-  real, dimension(microphysics%n_wl_bins) :: ex0, dtau
-  integer :: dir, lw(3), uw(3), c(3)
-  logical :: found
-! ----------------------------------------------------------------------
-  call trace_begin('rt_data_mod%tau_retrv',4)
-  associate (this => self%tau(c(1),c(2),c(3),dir)%head)
-  found = .false.
-  do while(associated(this).and..not.(found))                             ! loop over cell storage
-    if ((all(this%lwall == lw).and.all(this%uwall == uw)).or.&
-        (all(this%lwall == uw).and.all(this%uwall == lw))) then          ! find the right place to retrieve
-      found = .true.
-      ex0  = this%ex0                                                    ! retrieve the right data
-      dtau = this%dtau
-    end if
-    this => this%next
-  end do
-  nullify(this)
-  if (.not.found) error stop "ERROR: rt_data_mod%I_retrv did not find data entry" ! should not happen
-  
-  end associate
-  call trace_end
-END SUBROUTINE tau_retrv
-
-!> =====================================================================
-!> Initialize dtau and exponent storage for this cell
-!> =====================================================================
-SUBROUTINE tau_data_init(self,ray,pt,lw,uw)
-  class (tau_data_t) :: self
-  type  (tau_data_t), pointer :: new
-  integer :: nwb, ray, pt, lw(3), uw(3)
-!-----------------------------------------------------------------------
-  call trace_begin('rt_data_mod%tau_data_init',4)
-  nwb = microphysics%n_wl_bins
-  allocate (new)
-  allocate (new%dtau(nwb))
-  allocate (new%ex0(nwb))
-  new%lwall = lw                                                        ! store lower cell wall to ID the data
-  new%uwall = uw                                                        ! store upper cell wall to ID the data
-  if (.not.associated(self%head)) then                                  ! is it an empty cell
-    self%head => new
-    self%tail => new
-    new%head => new
-  else
-    self%tail%next => new
-    new%head  => self%head
-    self%tail => new 
-  end if
-  call trace_end
-END SUBROUTINE tau_data_init
-
 
 !> =====================================================================
 !> Test if rt_data module has any errors
