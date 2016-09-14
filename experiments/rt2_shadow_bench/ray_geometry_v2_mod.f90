@@ -402,7 +402,7 @@ SUBROUTINE add_axis(self, dir)
   ray%phi   = 0
   ray%directionality = self%dr
   allocate (ray%cell_coords(3,pmax(c),ray%n_rays))                      ! create ray table, containing x|y|z loc, for all n_cells and n_rays
-  allocate (ray%ds(pmax(c),ray%n_rays))                                 ! create ds table, containing ds for all points in all rays
+  allocate (ray%ds(ray%n_rays,pmax(c)))                                 ! create ds table, containing ds for all points in all rays
   allocate (ray%fwd_coords(3,ray%n_rays))                               ! create table, containing x|y|z coords for upstream position for particular ray, for all rays
   allocate (ray%rev_coords(3,ray%n_rays))                               ! create table, containing x|y|z coords for downstream position for particular ray, for all rays
   allocate (ray%pt_wall(3,2,pmax(c), ray%n_rays))                       ! lower and upper walls the ray crosses in the cell
@@ -424,7 +424,7 @@ SUBROUTINE add_axis(self, dir)
       do ic = self%li(c), self%ui(c)                                    ! move along ray direction
         p(c) = ic                                                       ! current cell position in terms of third axis
         ray%cell_coords(:,rp,ray_n) = p                                 ! cell position in particular ray
-        ray%ds(rp,ray_n)            = self%cell_dims(c)                 ! ray patch length in particular cell
+        ray%ds(ray_n,rp)            = self%cell_dims(c)                 ! ray patch length in particular cell
         ray%pt_wall(:,1,rp,ray_n) = ray%lwall                           ! ray enters the cell through this wall
         ray%pt_wall(:,2,rp,ray_n) = ray%uwall                           ! ray leaves the cell through this wall
         rp = rp+1                                                       ! increment ray point
@@ -1635,7 +1635,7 @@ SUBROUTINE finish_single_ray_list(self, bundle)
   ! Save the data
 
       allocate (ray%cell_coords(3,ray%n_points,ray%n_rays))               ! cell coords per point per ray in the bundle
-      allocate (ray%ds(ray%n_points,ray%n_rays))                          ! ds per point per ray in the bundle
+      allocate (ray%ds(ray%n_rays,ray%n_points))                          ! ds per point per ray in the bundle
       allocate (ray%fwd_coords(3,ray%n_rays))                             ! upstream cell coords per ray
       allocate (ray%rev_coords(3,ray%n_rays))                             ! downstream cell coords per ray
       allocate (ray%pt_wall(3,2,ray%n_points,ray%n_rays))                 ! wall info per point per ray
@@ -1645,7 +1645,7 @@ SUBROUTINE finish_single_ray_list(self, bundle)
       do while (associated(packet))                                       ! loop over all rays in the tree
         iray = iray + 1
         ray%cell_coords(:,:,iray) = packet%cell_coords                    ! save cell cords
-        ray%ds(:,iray)            = bundle%ds(:)                          ! save distances, traveled in those cells
+        ray%ds(iray,:)            = bundle%ds(:)                          ! save distances, traveled in those cells
         ray%pt_wall(:,:,:, iray)  = bundle%cell_walls                     ! save wall crossing info per point per ray
         ray%fwd_coords(:,iray)    = bundle%fwd_coords                     ! save upstream coords
         ray%rev_coords(:,iray)    = bundle%rev_coords                     ! save downstream coords

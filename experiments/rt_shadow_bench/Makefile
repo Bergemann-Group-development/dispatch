@@ -7,6 +7,7 @@ OPTS = optimized
 # Default target and methods
 UPD             = adams_bashforth
 SOLVER          = stagger2
+#RT_SOLVER       = hybrid2
 RT_SOLVER       = hybrid
 MESH            = staggered
 EXEC            = dispatch.x

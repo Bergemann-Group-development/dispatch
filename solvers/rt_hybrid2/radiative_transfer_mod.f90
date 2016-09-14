@@ -55,7 +55,7 @@ SUBROUTINE rt_setup (self)
     ! IMPORTANT: change first constant into mhd_patch%mesh%mesh_type after merge with curvilinear coords
 
     print *, 'Ray geometry: n_bundles, n_ray_dirs:',&
-              ray_geometry%head%n_ray_bundles, ray_geometry%n_ray_dirs
+              ray_geometry%head%n_ray_bundles, ray_geometry%head%n_ray_dirs
               
     call microphysics%init
     call rt_boundary%init

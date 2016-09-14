@@ -12,12 +12,12 @@ MODULE rt_boundary_mod
   real(8), parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
 
   type, public:: rt_boundary_t
-  !-------------- Default Parameters -----------------------------------
-  integer :: ibc, obc, n_wl_bins=1
-  real    :: lbox(3), ubox(3)
-  logical :: first_time=.true.
-  !-------------- Custom Parameters ------------------------------------
-  real    :: hot_temp, cool_temp
+    !-------------- Default Parameters -----------------------------------
+    integer :: ibc, obc, n_wl_bins=1
+    real    :: lbox(3), ubox(3)
+    logical :: first_time=.true.
+    !-------------- Custom Parameters ------------------------------------
+    real    :: hot_temp, cool_temp
   contains
     procedure :: init
     procedure :: set_ibc
@@ -30,8 +30,8 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(rt_boundary_t):: self
-  character(len=16)   :: obc_treatment ='custom' 
-  character(len=16)   :: ibc_treatment ='ignore' 
+  character(len=16)   :: obc_treatment ='custom'
+  character(len=16)   :: ibc_treatment ='ignore'
   real :: hot_temp = 1000, cool_temp = 10
   namelist /rt_bc_params/ obc_treatment, ibc_treatment
   namelist /custom_bc_params/ hot_temp, cool_temp
@@ -46,8 +46,8 @@ SUBROUTINE init (self)
     call scaling%init()
     select CASE(obc_treatment)
       case('custom')
-!> =====================================================================      
-!> Modify only this part and appropriate namelist      
+!> =====================================================================
+!> Modify only this part and appropriate namelist
 !> ---------------------------------------------------------------------
         self%obc = 0
         rewind (io%input)
@@ -60,7 +60,7 @@ SUBROUTINE init (self)
       case('periodic')
         self%obc = 2
       case default  ! custom is the default one
-        self%obc = 0      
+        self%obc = 0
     end SELECT
     select CASE(ibc_treatment)
       case('custom')
@@ -86,9 +86,9 @@ END SUBROUTINE set_ibc
 SUBROUTINE set_obc (self, ppos, ds, i_in)
   class (rt_boundary_t) :: self
   real(kind=8) :: ppos(3), ds(3), c
-  real, dimension(self%n_wl_bins) :: i_in
+  real(kind=4), dimension(self%n_wl_bins) :: i_in
 !> =====================================================================
-!> Should be modified only from here on  
+!> Should be modified only from here on
 !> =====================================================================
   c = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
   if (ppos(1) <= -0.5*self%lbox(1)) then
@@ -96,13 +96,13 @@ SUBROUTINE set_obc (self, ppos, ds, i_in)
   else if (ppos(1) >= 0.5*self%ubox(1)) then
     i_in(:) = c*self%cool_temp**4
   end if
-  
+
   if (ppos(2) <= -0.5*self%lbox(2)) then
     i_in(:) = c*self%cool_temp**4
   else if (ppos(2) >= 0.5*self%ubox(2)) then
     i_in(:) = c*self%cool_temp**4
   end if
-  
+
   if (ppos(3) <= -0.5*self%lbox(3)) then
     i_in(:) = c*self%cool_temp**4
   else if (ppos(3) >= 0.5*self%ubox(3)) then

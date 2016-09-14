@@ -14,7 +14,7 @@ MODULE rt_corrections_mod
   type, extends(rt_t), public     :: rt_correction_t
     type (rt_data_t),     pointer :: my_rt_data     => null()       ! corresponding rt data task
     type (rt_internal_t), pointer :: my_rt_internal => null()       ! corresponding internal RT task
-    real (kind=8), dimension(:,:),  pointer :: I_in => null()       ! (wl_bin, ray) incoming intensity. 
+    real (kind=4), dimension(:,:),  pointer :: I_in => null()       ! (wl_bin, ray) incoming intensity. 
     real (kind=8), dimension(:),    pointer :: I_in_time  => null() ! (ray, time)
     integer :: solver
   contains
@@ -88,9 +88,9 @@ SUBROUTINE update_rt_correction (self)
   class(rt_correction_t) :: self
   real, dimension(microphysics%n_wl_bins) :: I_in
   integer :: pt, ray, ipt, wl, p(3), lw(3), uw(3)
-  real(kind=8), dimension(:,:), pointer :: q
-  real(kind=8) :: dir_wgt
-  real(kind=8), dimension(:), allocatable :: Ifw
+  real(kind=4), dimension(:,:), pointer :: q
+  real(kind=4) :: dir_wgt
+  real(kind=4), dimension(:), allocatable :: Ifw
   real :: temp
   character(len=16) :: stime
 !-----------------------------------------------------------------------
@@ -214,7 +214,7 @@ SUBROUTINE get_local_static (self)
   class(link_t), pointer :: nbor
   integer:: ray, nb_cell(3), lw(3), uw(3), nb_ray, nb_pt, try
   logical, dimension(:), allocatable :: updated
-  real(kind=8), dimension(microphysics%n_wl_bins) :: mean, Iin
+  real(kind=4), dimension(microphysics%n_wl_bins) :: mean, Iin
   real(kind=8) :: n_mean ,my_c_pos(3)
   !---------------------------------------------------------------------  
   call trace_begin('rt_corrections_mod::get_local_static')

@@ -10,9 +10,9 @@ MODULE rt_internal_mod
   implicit none
 !-----------------------------------------------------------------------
   type :: internal_data_t
-    real, dimension(:,:), pointer :: bndry => null()                    ! (wl_bin, ray) incoming intensity. 
+    real, dimension(:,:), pointer :: bndry => null()                    ! (ray, wl_bin) incoming intensity. 
     real, dimension(:),   pointer :: time => null()                     ! (time)
-    real, dimension(:,:), pointer :: ds   => null()                     ! (point,ray)
+    real, dimension(:,:), pointer :: ds   => null()                     ! (ray,point)
   end type
 !-----------------------------------------------------------------------
   type,extends(rt_t), public :: rt_internal_t
@@ -89,12 +89,11 @@ SUBROUTINE init_rt_internal (self)
   ! Allocate memory slots.
   !---------------------------------------------------------------------
   allocate(self%packet_data(self%my_rays%n_packets))
-  
   packet => self%my_rays
   do ray = 1, self%my_rays%n_packets
-    allocate(self%packet_data(ray)%bndry (microphysics%n_wl_bins, packet%n_rays))
+    allocate(self%packet_data(ray)%bndry (packet%n_rays,microphysics%n_wl_bins))
     allocate(self%packet_data(ray)%time(packet%n_rays))
-    allocate(self%packet_data(ray)%ds    (packet%n_points, packet%n_rays))
+    allocate(self%packet_data(ray)%ds  (packet%n_rays,packet%n_points))
     self%packet_data(ray)%bndry(:,:) = 0
     self%packet_data(ray)%time = self%time
     self%packet_data(ray)%ds = packet%ds * self%cell_ds(1) ! FIXME: should not be like this for non-cubic cells
@@ -113,7 +112,6 @@ END SUBROUTINE init_rt_internal
 !> =====================================================================
 SUBROUTINE update_rt_internal (self)
   class(rt_internal_t) :: self
-  integer :: wl, ray, point, p(3)
   character(len=16) :: stime
   integer, save:: itimer=0
 !-----------------------------------------------------------------------
@@ -197,6 +195,7 @@ SUBROUTINE get_local_static (self)
   
   allocate (updated(self%my_rays%n_rays))                               ! make sure all intensities are updated
   updated = .false.
+  
   nbor => self%link%nbor
   do while(associated(nbor))
     nullify(rt_nb)
@@ -234,7 +233,7 @@ SUBROUTINE get_local_static (self)
                 nb_cell = rt_nb%pos2cell(self%cell2pos(fw_c))           ! corresponding cell at the nbor mesh
                 if (all(nb_cell>=rt_nb%li).and.&
                     all(nb_cell<=rt_nb%ui)) then                        ! double check that we pointed to the right spot
-                  self%packet_data(pck)%bndry(:,ray) = &
+                  self%packet_data(pck)%bndry(ray,:) = &
                   rt_nb%my_rt_data%I_retrv(nb_cell,self%dir_ID,lw,uw) ! get the right intensity
                   self%packet_data(pck)%time(ray) = rt_nb%time          ! store the time of the update
                   updated(ray) = .true.                                 ! the ray was updated
@@ -273,7 +272,7 @@ SUBROUTINE get_local_static (self)
                 end do
                 
                 if ((n_mean > 0).and.(self%time <= rt_nb%time)) then
-                  self%packet_data(pck)%bndry(:,ray) = mean/n_mean
+                  self%packet_data(pck)%bndry(ray,:) = mean/n_mean
                   self%packet_data(pck)%time(ray) = rt_nb%time          ! store the time of the update
                   updated(ray) = .true.                                 ! the ray was updated
                 end if
@@ -345,7 +344,7 @@ SUBROUTINE get_correction_from_BC (self)
       do ray = 1, packet%n_rays
         ppos = self%absolute_point_position(ray, 1, self%rt_type)
         if (self%obct == 0) then
-          call rt_boundary%set_obc(ppos,self%cell_ds,self%packet_data(pck)%bndry(:,ray))
+          call rt_boundary%set_obc(ppos,self%cell_ds,self%packet_data(pck)%bndry(ray,:))
         end if
       end do
       packet => packet%next_packet
@@ -402,7 +401,7 @@ SUBROUTINE solve_internal_integral (self)
         p = cell(:,pt,ray)    
             s(ray,:,pt) = rtd%source (p(1),p(2),p(3),:)
         dtau (ray,:,pt) = rtd%opacity(p(1),p(2),p(3),:) &
-                         *self%packet_data(pck)%ds(pt,ray)
+                         *self%packet_data(pck)%ds(ray,pt)
         ropac(ray,:,pt) = rtd%opacity(p(1),p(2),p(3),:)
       end do
     end do

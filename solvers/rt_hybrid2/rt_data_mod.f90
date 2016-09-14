@@ -157,7 +157,7 @@ SUBROUTINE I_store (self,I_st,rays,dir_ID, rt_type)
       if (.not.associated(I(c(1),c(2),c(3))%head)) then
         call I(c(1),c(2),c(3))%init(ray,pt,lw,uw)                       ! if this cell is empty, initialize
         self%n_intensity_dat = self%n_intensity_dat + 1                 ! increment total data entries
-        I(c(1),c(2),c(3))%head%I = I_st(:,ray,pt)
+        I(c(1),c(2),c(3))%head%I = I_st(ray,:,pt)
       else
         this  => I(c(1),c(2),c(3))%head
         found = .false.
@@ -165,7 +165,7 @@ SUBROUTINE I_store (self,I_st,rays,dir_ID, rt_type)
           if (all(this%lwall == lw).and.all(this%uwall == uw).and.&
                  (this%point == pt).and.   (this%ray   == ray)) then    ! find the right place to store
             found = .true.
-            this%I = I_st(:,ray,pt)
+            this%I = I_st(ray,:,pt)
           else
             this => this%next
           end if
@@ -174,7 +174,7 @@ SUBROUTINE I_store (self,I_st,rays,dir_ID, rt_type)
         if (.not.found) then
           call I(c(1),c(2),c(3))%init(ray,pt,lw,uw)                     ! if the right place not found, initialize a new one
           self%n_intensity_dat = self%n_intensity_dat + 1               ! increment total data entries
-          I(c(1),c(2),c(3))%tail%I = I_st(:,ray,pt)
+          I(c(1),c(2),c(3))%tail%I = I_st(ray,:,pt)
         end if
       end if  
  

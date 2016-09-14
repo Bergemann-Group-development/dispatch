@@ -56,16 +56,16 @@ SUBROUTINE update_mhd_rt(self)
   call trace_end
 END SUBROUTINE update_mhd_rt
 
-SUBROUTINE update_q(self, tt, nrays, npt, nwb, q, cell, op, dirw)
+SUBROUTINE update_q(self, time, nrays, npt, nwb, q, cell, op, dirw)
   class(mhd_rt_t) :: self
   integer :: p(3), nwb, wl, nrays, npt, ray, pt
-  real(kind=8) :: tt
-  real, dimension(nwb,nrays,npt) :: op, q
+  real(kind=8) :: time
+  real, dimension(nrays,nwb,npt) :: op, q
   integer, dimension(3,npt,nrays):: cell
   real :: dirw, temp, itemp
   !---------------------------------------------------------------------
   call trace_begin ('mhd_rt_t_%update_q',4)
-  if (tt > self%rt_q%t(self%it)) call self%rt_q%rotate(tt)
+  if (time > self%rt_q%t(self%it)) call self%rt_q%rotate(time)
   
   do ray = 1, nrays
     do pt = 1, npt
@@ -74,22 +74,23 @@ SUBROUTINE update_q(self, tt, nrays, npt, nwb, q, cell, op, dirw)
       itemp = 1./temp
       do wl =1, nwb
         self%rt_q%q(p(1),p(2),p(3),self%it) = &
-        self%rt_q%q(p(1),p(2),p(3),self%it) + dirw*op(wl,ray,pt)*q(wl,ray,pt)*itemp
+        self%rt_q%q(p(1),p(2),p(3),self%it) + dirw*op(ray,wl,pt)*q(ray,wl,pt)*itemp
       end do
     end do
   end do
   call trace_end
 END SUBROUTINE update_q
 
-SUBROUTINE update_q_old(self, tt, q, p, nwb, op, temp, dirw)
+SUBROUTINE update_q_old(self, time, q, p, nwb, op, temp, dirw)
   class(mhd_rt_t) :: self
   integer :: p(3), nwb, wl
-  real(kind=8) :: tt
-  real, dimension(nwb) :: op, q
-  real :: temp, itemp, dirw
+  real(kind=8) :: time
+  real(kind=4) :: dirw
+  real(kind=4), dimension(nwb) :: op, q
+  real :: temp, itemp
   !---------------------------------------------------------------------
   call trace_begin ('mhd_rt_t_%update_q',4)
-  if (tt > self%rt_q%t(self%it)) call self%rt_q%rotate(tt)
+  if (time > self%rt_q%t(self%it)) call self%rt_q%rotate(time)
   
   itemp = 1./temp
   do wl =1, nwb
@@ -99,20 +100,19 @@ SUBROUTINE update_q_old(self, tt, q, p, nwb, op, temp, dirw)
   call trace_end
 END SUBROUTINE update_q_old
 
-SUBROUTINE add_cr_heating (self,tt, temp)
+SUBROUTINE add_cr_heating (self, time, temp)
   class(mhd_rt_t) :: self
   real, dimension(:,:,:) :: temp
-  real(kind=8) :: tt
+  real(kind=8) :: time
   integer :: l(3), u(3)
   !---------------------------------------------------------------------
   call trace_begin ('mhd_rt_t_%add_cr_heating')
   l = self%mesh%li
   u = self%mesh%ui
   associate (rho => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1), &
-               q => self%rt_q%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it), &
-               t => temp)
+               q => self%rt_q%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it))
            
-  q = q + rho * microphysics%cr_heating / t
+  q = q + rho * microphysics%cr_heating / temp
   
   end associate
   call trace_end
@@ -141,9 +141,9 @@ SUBROUTINE apply_heating(self)
   call trace_end
 END SUBROUTINE apply_heating
 
-SUBROUTINE rotate_q(self, tt)
+SUBROUTINE rotate_q(self, time)
   class(rt_q_t) :: self
-  real (kind=8) :: tt
+  real (kind=8) :: time
 ! ----------------------------------------------------------------------
 
 END SUBROUTINE rotate_q

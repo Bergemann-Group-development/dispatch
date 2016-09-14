@@ -8,7 +8,7 @@ MODULE mhd_rt_mod
   private
   ! --------------------------------------------------------------------  
   type, public:: rt_q_t
-    real(kind=8), dimension(:,:,:,:), pointer :: q   => null()
+    real(kind=4), dimension(:,:,:,:), pointer :: q   => null()
     real(kind=8), dimension(:),       pointer :: t   => null()
     integer,      dimension(:),       pointer :: iit => null()
   contains
@@ -56,15 +56,16 @@ SUBROUTINE update_mhd_rt(self)
   call trace_end
 END SUBROUTINE update_mhd_rt
 
-SUBROUTINE update_q(self, tt, q, p, nwb, op, temp, dirw)
+SUBROUTINE update_q(self, time, q, p, nwb, op, temp, dirw)
   class(mhd_rt_t) :: self
   integer :: p(3), nwb, wl
-  real(kind=8) :: tt, dirw
-  real(kind=8), dimension(nwb) :: op, q
+  real(kind=8) :: time
+  real(kind=4) :: dirw
+  real(kind=4), dimension(nwb) :: op, q
   real :: temp, itemp
   !---------------------------------------------------------------------
   call trace_begin ('mhd_rt_t_%update_q',4)
-  if (tt > self%rt_q%t(self%it)) call self%rt_q%rotate(tt)
+  if (time > self%rt_q%t(self%it)) call self%rt_q%rotate(time)
   
   itemp = 1./temp
   do wl =1, nwb
@@ -74,10 +75,10 @@ SUBROUTINE update_q(self, tt, q, p, nwb, op, temp, dirw)
   call trace_end
 END SUBROUTINE update_q
 
-SUBROUTINE add_cr_heating (self,tt, temp)
+SUBROUTINE add_cr_heating (self,time, temp)
   class(mhd_rt_t) :: self
   real, dimension(:,:,:) :: temp
-  real(kind=8) :: tt
+  real(kind=8) :: time
   integer :: l(3), u(3)
   !---------------------------------------------------------------------
   call trace_begin ('mhd_rt_t_%add_cr_heating')
@@ -116,9 +117,9 @@ SUBROUTINE apply_heating(self)
   call trace_end
 END SUBROUTINE apply_heating
 
-SUBROUTINE rotate_q(self, tt)
+SUBROUTINE rotate_q(self, time)
   class(rt_q_t) :: self
-  real (kind=8) :: tt
+  real (kind=8) :: time
 ! ----------------------------------------------------------------------
 
 END SUBROUTINE rotate_q
