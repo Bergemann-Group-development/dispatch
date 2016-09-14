@@ -83,6 +83,7 @@ FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
 
 # Remove default rule for .f files.
 %.o: %.f
+%.o: %.mod
 #############################################################################
 # Pattern rules to get .o files from .f90 files
 %.o: %.f90 $(DEPDIR)/%.d
