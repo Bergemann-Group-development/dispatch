@@ -410,7 +410,7 @@ SUBROUTINE solve_internal_integral (self)
     pt = npt  
     idtau(:,:,1:pt) = 1. / dtau(:,:,1:pt)
 #if defined __INTEL_COMPILER
-      ex0(:,:,2:pt) = 2**(-dtau(:,:,2:pt)*1.44269504)
+      ex0(:,:,2:pt) = 2**(-dtau(:,:,2:pt)*1.44269504)                   ! first exponential coeff
 #elif defined __GFORTRAN__
       ex0(:,:,2:pt) = exp(-dtau(:,:,2:pt))                              ! first exponential coeff
 #endif

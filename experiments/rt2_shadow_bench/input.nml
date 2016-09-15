@@ -17,7 +17,7 @@
  nt=5
  courant=0.2
  grace=0.1
- n=16,16,16
+ n=8,8,8
 /
 
 &rt_params
@@ -27,16 +27,16 @@
 
 &cartesian_ray_geometry_params
 ! along x axis
-nx = 1
-xti = 0.
+nx = 2
+xti = 0.,30.
 dx = 1
 ! along y axis
-ny = 1
-yti = 0.
+ny = 2
+yti = 0.,30.
 dy = 1
 ! along z axis
-nz = 1
-zti = 0.
+nz = 2
+zti = 0.,30.
 dz = 1
 
 /
@@ -64,7 +64,7 @@ hot_temp  = 2000
 /
 
 &out_params
- end_time=0.009
+ end_time=0.020
  out_time=0.001
 print_time=0.001
  guard_zones=f

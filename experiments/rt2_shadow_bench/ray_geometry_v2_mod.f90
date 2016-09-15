@@ -36,6 +36,8 @@ MODULE ray_geometry_v2_mod
     integer :: packet_ID, n_packets
     integer :: bundle_n_rays
     integer :: directionality(3)                                        ! 1 - two directions, 2 - only forward, 3 - only reverse (x|y|z)
+  contains
+    procedure :: fill_ray_list_data
   end type
 ! ----------------------------------------------------------------------
   type, public :: ray_geometry_t
@@ -316,7 +318,6 @@ SUBROUTINE init_cartesian(self)
   end if
     
   deallocate (xt, yt, zt)
-  print *, self%ray_list%directionality
   call trace_end
 END SUBROUTINE init_cartesian
 
@@ -1552,17 +1553,45 @@ SUBROUTINE finish_ray(self, ray_point)
   call trace_end
 END SUBROUTINE finish_ray
 
+SUBROUTINE fill_ray_list_data(self, sray)
+  class(ray_list_t) :: self
+  class(single_ray_list_t), pointer :: sray, prev_sray
+  integer :: iray
+! ......................................................................
+  allocate (self%cell_coords(3,self%n_points,self%n_rays))              ! cell coords per point per ray in the bundle
+  allocate (self%ds(self%n_rays,self%n_points))                         ! ds per point per ray in the bundle
+  allocate (self%fwd_coords(3,self%n_rays))                             ! upstream cell coords per ray
+  allocate (self%rev_coords(3,self%n_rays))                             ! downstream cell coords per ray
+  allocate (self%pt_wall(3,2,self%n_points,self%n_rays))                ! wall info per point per ray
+  
+  iray = 0
+  do while (associated(sray))                                           ! loop over all rays in the tree
+    iray = iray + 1
+    self%cell_coords(:,:,iray) = sray%cell_coords                       ! save cell cords
+    self%ds(iray,:)            = sray%ds(:)                             ! save distances, traveled in those cells
+    self%pt_wall(:,:,:, iray)  = sray%cell_walls                        ! save wall crossing info per point per ray
+    self%fwd_coords(:,iray)    = sray%fwd_coords                        ! save upstream coords
+    self%rev_coords(:,iray)    = sray%rev_coords                        ! save downstream coords
+    prev_sray   => sray                                                 ! hold pointer to this ray
+    deallocate(sray%cell_coords, sray%ds, sray%cell_walls)
+    sray => sray%next_ray                                               ! go to next ray
+    deallocate (prev_sray)                                              ! deallocate previous ray
+  end do
+  nullify (sray, prev_sray)
+END SUBROUTINE fill_ray_list_data
+
 !> =====================================================================
 !> Subroutine to restructure ray tree into 2D sorted ray tables.
 !> =====================================================================
 SUBROUTINE finish_single_ray_list(self, bundle)
   class(ray_geometry_t)             :: self
   class(single_ray_list_t), pointer :: bundle, prev_bundle, next_bundle
-  class(single_ray_list_t), pointer :: packet, prev_packet, next_packet
-  class(ray_list_t),        pointer :: ray 
-  integer :: iray, npt, pt, bundle_n_rays
+  class(single_ray_list_t), pointer :: packet, prev_packet
+  class(single_ray_list_t), pointer :: sray
+  class(ray_list_t),        pointer :: ray, bndl
+  integer :: bundle_n_rays
   logical :: first_bundle
-  logical :: first_packet = .true.
+  logical :: first_packet
   logical :: new_bundle
 ! ......................................................................
   first_bundle = .true.
@@ -1573,12 +1602,14 @@ SUBROUTINE finish_single_ray_list(self, bundle)
     first_packet = .true.
     new_bundle = .true.
     self%n_ray_bundles = self%n_ray_bundles + 1                         ! increment ray bundle sets
+    next_bundle => bundle%next_bundle                                   ! save pointer to next bundle
     do while (associated(packet))                                       ! loop over ray packets in this bundle
     
       allocate (ray)                                                    ! alocate new ray packet
       bundle_n_rays = bundle_n_rays + 1
       ray%dir_ID    = self%n_ray_dirs                                   ! save direction ID
       ray%n_rays    = packet%n_rays                                     ! save number of rays in this bundle 
+      print *,ray%n_rays
       ray%n_points  = packet%n_points                                   ! save  number of points in the longest ray                
       ray%lwall     = bundle%lwall                                      ! save lower wall for this bundle
       ray%uwall     = bundle%uwall                                      ! save upper wall for this bundle
@@ -1587,83 +1618,58 @@ SUBROUTINE finish_single_ray_list(self, bundle)
       ray%phi       = self%phi
       ray%directionality = self%dr
     
-      if (new_bundle) then                                                ! only if it is a new bundle
-      
+      if (new_bundle) then                                              ! only if it is a new bundle
+        bndl => ray
+        new_bundle = .false.
         if (first_bundle) then
-          first_bundle = .false.                                          ! more steps for first bundle are needed
+          first_bundle = .false.                                        ! more steps for first bundle are needed
           ray%bundle_ID = 1
-          if (associated(self%ray_list%head)) then                        ! if ray bundle list is already present
-            ray%prev_dir => self%ray_list%last_dir                        ! add this bundle to the end of the direction list
-            ray%prev_dir%next_dir => ray                                  ! connect to previous direction
-            self%ray_list%last_dir => ray                                 ! make it the last direction
-            ray%head     => self%ray_list%head                            ! connect to the head of the ray list
-          else                                                            ! if ray bundle list is empty
-            self%ray_list%head => ray                                     ! link to self
+          ray%first_bundle => ray                                       ! this is the first bundle for this direction
+          ray%last_bundle  => ray                                       ! and also the last bundle for this direction
+          if (associated(self%ray_list%head)) then                      ! if ray bundle list is already present
+            ray%prev_dir => self%ray_list%last_dir                      ! add this bundle to the end of the direction list
+            ray%prev_dir%next_dir => ray                                ! connect to previous direction
+            self%ray_list%last_dir => ray                               ! make it the last direction
+            ray%head     => self%ray_list%head                          ! connect to the head of the ray list
+          else                                                          ! if ray bundle list is empty
+            self%ray_list => ray
+            self%ray_list%head => ray                                   ! link to self
             self%ray_list%last_dir => ray
-          end if
-           
-          ray%first_bundle => ray                                         ! this is the first bundle for this direction
-          ray%last_bundle  => ray                                         ! and also the last bundle for this direction
-          print *,associated(self%ray_list%last_dir%last_bundle)
-        else
-        
-          ray%head => self%ray_list%head                                  ! connect to the head of the ray list
-          ray%first_bundle => self%ray_list%last_dir%first_bundle         ! connect to the first bundle in this direction
-          ray%prev_bundle  => self%ray_list%last_dir%last_bundle          ! connect to previous bundle in this direction
-          ray%prev_bundle%next_bundle => ray                              ! connect previous bundle to this ray
-          self%ray_list%last_dir%last_bundle => ray                       ! make it the last bundle in this direction
+          end if         
+        else                                                            ! not the first bundle
+          ray%head => self%ray_list%head                                ! connect to the head of the ray list
+          ray%first_bundle => self%ray_list%last_dir%first_bundle       ! connect to the first bundle in this direction
+          ray%prev_bundle  => self%ray_list%last_dir%last_bundle        ! connect to previous bundle in this direction
+          ray%prev_bundle%next_bundle => ray                            ! connect previous bundle to this ray
+          self%ray_list%last_dir%last_bundle => ray                     ! make it the last bundle in this direction
           ray%bundle_ID = ray%prev_bundle%bundle_ID + 1
         end if  
       end if
-    
-      if (first_packet) then                                              ! now the same for packets
+      if (first_packet) then                                            ! now the same for packets
         first_packet = .false.
         ray%first_packet => ray
         ray%last_packet  => ray
         ray%packet_ID = 1
       else
-        ray%first_packet => self%ray_list%last_dir%last_bundle%first_packet ! connect to the first packet in this bundle
-        ray%prev_packet  => self%ray_list%last_dir%last_bundle%last_packet ! connect to the previous packet in this bundle
-        print *, ray%packet_ID, ray%bundle_id
-        print *, associated(self%ray_list), associated(self%ray_list%last_dir),&
-        associated(self%ray_list%last_dir%last_bundle)
+        ray%first_packet => bndl%first_packet                           ! connect to the first packet in this bundle
+        ray%prev_packet  => bndl%last_packet                            ! connect to the previous packet in this bundle
         ray%prev_packet%next_packet => ray
-        self%ray_list%last_dir%last_bundle%last_packet => ray
+        bndl%last_packet => ray
         ray%packet_ID = ray%prev_packet%packet_ID + 1
       end if      
-     
-  ! Save the data
 
-      allocate (ray%cell_coords(3,ray%n_points,ray%n_rays))               ! cell coords per point per ray in the bundle
-      allocate (ray%ds(ray%n_rays,ray%n_points))                          ! ds per point per ray in the bundle
-      allocate (ray%fwd_coords(3,ray%n_rays))                             ! upstream cell coords per ray
-      allocate (ray%rev_coords(3,ray%n_rays))                             ! downstream cell coords per ray
-      allocate (ray%pt_wall(3,2,ray%n_points,ray%n_rays))                 ! wall info per point per ray
-    
-      next_packet => packet%next_packet
-      iray = 0
-      do while (associated(packet))                                       ! loop over all rays in the tree
-        iray = iray + 1
-        ray%cell_coords(:,:,iray) = packet%cell_coords                    ! save cell cords
-        ray%ds(iray,:)            = bundle%ds(:)                          ! save distances, traveled in those cells
-        ray%pt_wall(:,:,:, iray)  = bundle%cell_walls                     ! save wall crossing info per point per ray
-        ray%fwd_coords(:,iray)    = bundle%fwd_coords                     ! save upstream coords
-        ray%rev_coords(:,iray)    = bundle%rev_coords                     ! save downstream coords
-        prev_packet   => packet                                           ! hold pointer to this ray
-        packet => packet%next_ray                                         ! go to next ray
-        deallocate (prev_packet)                                          ! deallocate previous ray
-      end do
-      packet => next_packet                                             ! move to next packet
+      sray => packet
+      packet => packet%next_packet                                      ! move to next packet
+      call ray%fill_ray_list_data(sray)      
     end do
     
     prev_bundle => bundle
     ray%bundle_n_rays = bundle_n_rays
-    bundle => bundle%next_bundle                                        ! move to next bundle
-    deallocate (prev_bundle)
+    bundle => next_bundle                                               ! move to next bundle
   end do
-  nullify (bundle)
+  nullify (bundle, next_bundle)
   nullify (packet)
-  nullify (ray)
+  nullify (ray, bndl)
 END SUBROUTINE finish_single_ray_list
 
 !> =====================================================================
