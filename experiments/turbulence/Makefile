@@ -8,6 +8,7 @@ OPTS = optimized
 UPD             = adams_bashforth
 SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
+RT_SOLVER       = cooling_function
 MESH            = staggered
 EXEC            = dispatch.x
 TOP             = ../..
