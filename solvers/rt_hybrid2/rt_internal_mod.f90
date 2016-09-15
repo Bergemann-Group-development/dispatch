@@ -409,7 +409,11 @@ SUBROUTINE solve_internal_integral (self)
     I_in = self%packet_data(pck)%bndry
     pt = npt  
     idtau(:,:,1:pt) = 1. / dtau(:,:,1:pt)
+#if defined __INTEL_COMPILER
+      ex0(:,:,2:pt) = 2**(-dtau(:,:,2:pt)*1.44269504)
+#elif defined __GFORTRAN__
       ex0(:,:,2:pt) = exp(-dtau(:,:,2:pt))                              ! first exponential coeff
+#endif
       ex1(:,:,2:pt) = 1.-ex0(:,:,2:pt)                                  ! second exponential coeff
       ex2(:,:,2:pt) = ex1(:,:,2:pt)-dtau(:,:,2:pt) *   ex0(:,:,2:pt)    ! third exponential coeff
       ds1(:,:,2:pt) = (s(:,:,2:pt) -s(:,:,1:pt-1)) * idtau(:,:,2:pt)    ! half-point centered dS/dtau
