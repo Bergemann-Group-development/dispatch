@@ -8,7 +8,6 @@ OPTS = optimized
 UPD             = adams_bashforth
 SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
-MESH            = staggered
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile

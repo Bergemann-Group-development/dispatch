@@ -9,7 +9,6 @@ UPD             = adams_bashforth
 SOLVER          = stagger2
 #RT_SOLVER       = hybrid2
 RT_SOLVER       = hybrid
-MESH            = staggered
 EXEC            = dispatch.x
 # opacities: 
 # grey: bell_lin_1994, semenov_2003, rt_shadow_bench

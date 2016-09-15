@@ -7,7 +7,6 @@ OPTS = optimized
 # Default target and methods
 UPD             = adams_bashforth
 SOLVER          = pic
-MESH            = staggered
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile

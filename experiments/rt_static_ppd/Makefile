@@ -7,7 +7,6 @@ OPTS = full_debug
 # Default target and methods
 UPD             = adams_bashforth
 SOLVER          = stagger2
-MESH            = staggered
 EXEC            = dispatch.x
 
 TOP             = ../..
