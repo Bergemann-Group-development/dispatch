@@ -1,3 +1,35 @@
+!> =====================================================================
+!> A module to set up ray geometry. Several different geometries can be 
+!> created if needed for different experiment geometries (e.g. cartesian,
+!> spherical, etc.). As an input the module needs the geometry index,
+!> lower and upper indices of the mesh (li, ui) and optionally cell
+!> sizes (otherwse they are assumed to be cubic and with unit size walls). 
+!> The resulting heararchy is such:
+!> ray ⊂ bundle ⊂ direction ⊂ geometry (⊂ indicates that A is a
+!> subset of B).
+!> to access levels: ray_geometry%ray_list%bundle%rays
+
+!> ray_geometry_t:  has pointers to optional different geometries, and contains
+!> all the information about itself - li, ui, cell dimensions, n_ray_dirs
+!> and a pointer to a list of ray directions
+
+!> ray_dirs_t: is a linked list of directions. Every direction has an unique ID
+!> for particular geometry, number of bundles and a directionality parameter, 
+!> which indicates, whether rays should go both ways or to only some particular
+!> direction and a pointer to bundles.
+
+!> ray_bndl_t: is a linked list of ray bundles. Every bundle has an unique ID
+!> for particular direction, direction ID for safekeeping, number of ray packets
+!> it contains, which face the bundle originates/terminates at (lwall and uwall
+!> accordingly), axis, along which the bundle is oriented (e.g. x|y|z in cartesian),
+!> theta and phi values of slanted rays.
+
+!> ray_t: is a ray packet, containing n_rays of rays of same length (n_points).
+!> it has all the necessary info about the ray - where it originates, where it
+!> terminates (fwd_coords/rev_coords, depending on direction), which cells
+!> it crosses (cell_coords), distance it traves through particular cell(ds),
+!> and which cell face it crosses when it enters and leaves the cell (pt_wall)
+!> =====================================================================
 MODULE ray_geometry_v2_mod
   USE io_mod
   USE trace_mod
