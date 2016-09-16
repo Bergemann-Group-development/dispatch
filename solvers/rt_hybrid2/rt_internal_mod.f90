@@ -22,7 +22,7 @@ MODULE rt_internal_mod
     integer :: bundle_ID, dir_ID
     integer :: lwall(3)
     real :: dir_weight
-    procedure (solve_internal_integral), pointer :: solve, solve2 => null()
+    procedure (solve_internal_integral_1st), pointer :: solve => null()
   contains
     procedure :: init   => init_rt_internal
     procedure :: update => update_rt_internal
@@ -34,7 +34,7 @@ MODULE rt_internal_mod
     procedure :: get_remote_static
     procedure :: get_remote_dynamic
     procedure :: get_correction_from_BC
-    procedure :: solve_internal_integral
+    procedure :: solve_internal_integral => solve_internal_integral_1st
     procedure :: solve_internal_feautrier
   end type
 !-----------------------------------------------------------------------
@@ -84,7 +84,7 @@ SUBROUTINE init_rt_internal (self)
   if (self%solver ==  0) then                                           ! set the right solver
     self%solve => solve_internal_feautrier
   else
-    self%solve => solve_internal_integral
+    self%solve => solve_internal_integral_1st
   end if
   
   self%dir_weight = 4.*pi/self%n_ray_dirs 
@@ -351,11 +351,94 @@ SUBROUTINE get_correction_from_BC (self)
 END SUBROUTINE get_correction_from_BC
 
 !> =====================================================================
-!> Solution of RTE using the Integral formulation. Iwf and Irv are 
-!> stored in case of overlapping patches.
+!> Solution of RTE using the 1st orderIntegral formulation. Iwf and Irv  
+!> are stored in case of overlapping patches.
 !> =====================================================================
 
-SUBROUTINE solve_internal_integral (self)
+SUBROUTINE solve_internal_integral_1st (self)
+  class(rt_internal_t) :: self
+  class(ray_t), pointer :: packet
+  real, dimension(:,:,:), allocatable :: ex0, ds, dtau
+  real, dimension(:,:,:), allocatable :: s, q, Ifw, ropac
+  real, dimension(:,:), allocatable :: I_in
+  integer :: pt, p(3), pck, nwb, ipk, ray
+  !---------------------------------------------------------------------
+  call trace_begin('rt_t%update_internal%solve_internal_integral')
+  call self%get_upstream 
+  
+  nwb = microphysics%n_wl_bins
+  packet => self%my_rays%rays
+
+  do pck = 1, self%my_rays%n_packets
+
+    associate (npt => packet%n_points, nrays => packet%n_rays, &
+               rtd => self%my_rt_data, cell => packet%cell_coords)
+
+    allocate( dtau(nrays, nwb, npt))
+    allocate(ex0  (nrays, nwb, npt))
+    allocate(ds   (nrays, nwb, npt))
+    allocate(s    (nrays, nwb, npt))
+    allocate(q    (nrays, nwb, npt))
+    allocate(Ifw  (nrays, nwb, npt))
+    allocate(I_in (nrays, nwb))
+    allocate(ropac(nrays, nwb,npt))
+
+    do ray = 1, nrays
+      do pt = 1, npt
+        p = cell(:,pt,ray)    
+            s(ray,:,pt) = rtd%source (p(1),p(2),p(3),:)
+        ropac(ray,:,pt) = rtd%opacity(p(1),p(2),p(3),:)
+        dtau (ray,:,pt) = ropac(ray,:,pt) * self%packet_data(pck)%ds(ray,pt)
+      end do
+    end do
+    
+    I_in = self%packet_data(pck)%bndry
+    pt = npt  
+#if defined __INTEL_COMPILER
+    ex0 = 2**(-dtau*1.44269504)                                         ! first exponential coeff
+#elif defined __GFORTRAN__
+    ex0 = exp(-dtau)                                                    ! first exponential coeff
+#endif
+    ds  = (1.  - ex0) * s                                               ! Source factor
+      !-----------------------------------------------------------------
+      ! Forward / reverse solutions
+      !-----------------------------------------------------------------
+    select case(self%rt_type)
+    case(2)                                                             ! forward
+      Ifw(:,:,1) = I_in * ex0(:,:,1) + ds(:,:,1)                        ! Intensity after the first point     
+      q  (:,:,1) = Ifw(:,:,1) - I_in                                    ! initial forward Q
+      if (npt > 1) then
+        Ifw(:,:,2:pt) = Ifw(:,:,1:pt-1) * ex0(:,:,2:pt) + ds(:,:,2:pt)  ! Intensity along the ray
+        q  (:,:,2:pt) = Ifw(:,:,2:pt  ) - Ifw(:,:,1:pt-1)
+      end if
+        
+    case(3)                                                             ! reverse
+      Ifw(:,:,pt) = I_in * ex0(:,:,pt) + ds(:,:,pt)
+      q  (:,:,pt) = Ifw(:,:,pt) - I_in                                  ! initial reverse Q
+      if (npt > 1) then
+        do pt = npt-1, 1, -1
+          Ifw(:,:,pt) = Ifw(:,:,pt+1) * ex0(:,:,pt) + ds(:,:,pt)
+          q  (:,:,pt) = Ifw(:,:,pt  ) - Ifw(:,:,pt+1)
+        end do
+      end if
+    end select
+
+    call rtd%I_store(Ifw,packet,self%dir_ID,self%rt_type)
+    call self%mhd_patch%update_q(self%time, nrays, npt, nwb, q, cell, ropac, self%dir_weight) 
+    deallocate(ex0, ds, s, dtau, q, Ifw, I_in, ropac)
+    end associate
+    packet => packet%next
+  end do
+  nullify (packet)
+  call trace_end
+END SUBROUTINE solve_internal_integral_1st
+
+!> =====================================================================
+!> Solution of RTE using the 2nd order Integral formulation.  
+!> Iwf and Irv are stored in case of overlapping patches.
+!> =====================================================================
+
+SUBROUTINE solve_internal_integral_2nd (self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet
   real, dimension(:,:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
@@ -404,19 +487,19 @@ SUBROUTINE solve_internal_integral (self)
     
     I_in = self%packet_data(pck)%bndry
     pt = npt  
-    idtau(:,:,1:pt) = 1. / dtau(:,:,1:pt)
+    idtau = 1. / dtau
 #if defined __INTEL_COMPILER
-      ex0(:,:,2:pt) = 2**(-dtau(:,:,2:pt)*1.44269504)                   ! first exponential coeff
+      ex0 = 2**(-dtau*1.44269504)                                       ! first exponential coeff
 #elif defined __GFORTRAN__
-      ex0(:,:,2:pt) = exp(-dtau(:,:,2:pt))                              ! first exponential coeff
+      ex0 = exp(-dtau)                                                  ! first exponential coeff
 #endif
-      ex1(:,:,2:pt) = 1.-ex0(:,:,2:pt)                                  ! second exponential coeff
-      ex2(:,:,2:pt) = ex1(:,:,2:pt)-dtau(:,:,2:pt) *   ex0(:,:,2:pt)    ! third exponential coeff
-      ds1(:,:,2:pt) = (s(:,:,2:pt) -s(:,:,1:pt-1)) * idtau(:,:,2:pt)    ! half-point centered dS/dtau
+      ex1 = 1.  - ex0                                                   ! second exponential coeff
+      ex2 = ex1 - dtau * ex0                                            ! third exponential coeff
+      ds1(:,:,2:pt) = (s(:,:,2:pt) -s(:,:,1:pt-1)) * idtau(:,:,1:pt-1)  ! half-point centered dS/dtau
       !-----------------------------------------------------------------
       !  dS/dtau and d2S/dtau2
       !-----------------------------------------------------------------
-     ctau(:,:,2:pt-1) = 1. / (dtau(:,:,3:pt) + dtau(:,:,2:pt-1))
+     ctau(:,:,2:pt-1) = 1. / (dtau(:,:,1:pt-1) + dtau(:,:,2:pt))
       d1s(:,:,2:pt-1) = &
      (ds1(:,:,3:pt  ) * dtau(:,:,2:pt-1) + ds1(:,:,2:pt-1) * &
      dtau(:,:,3:pt) ) * ctau(:,:,2:pt-1)                                ! dS/dtau, 2nd. order accurate
@@ -446,7 +529,7 @@ SUBROUTINE solve_internal_integral (self)
       q  (:,:,pt) = I_in -   s(:,:,pt)                                  ! initial reverse Q
       Ifw(:,:,pt) = I_in * ex0(:,:,pt) 
       do pt = npt-1, 1, -1
-        q(:,:,pt) =   q(:,:,pt+1) * ex0(:,:,pt+1) - d1s(:,:,pt) &
+        q(:,:,pt) =   q(:,:,pt+1) * ex0(:,:,pt+1) + d1s(:,:,pt) &
                   * ex1(:,:,pt+1) + d2s(:,:,pt  ) * ex2(:,:,pt+1)
         Ifw(:,:,pt) = q(:,:,pt  ) + s  (:,:,pt  )
       end do
@@ -461,7 +544,7 @@ SUBROUTINE solve_internal_integral (self)
   end do
   nullify (packet)
   call trace_end
-END SUBROUTINE solve_internal_integral
+END SUBROUTINE solve_internal_integral_2nd
 
 !> =====================================================================
 !> Solution of RTE using the Feautrier formulation. Forward and reverse

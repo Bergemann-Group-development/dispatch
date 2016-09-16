@@ -13,6 +13,7 @@ MODULE rt_data_mod
     integer :: ray, point, lwall(3), uwall(3)
     real, dimension(:), pointer :: I => null()
     class(int_data_t), pointer :: head => null()
+    class(int_data_t), pointer :: prev => null()
     class(int_data_t), pointer :: next => null()
     class(int_data_t), pointer :: tail => null()
   contains
@@ -297,9 +298,10 @@ SUBROUTINE int_data_init(self,ray,pt,lw,uw)
     self%tail => new
     new%head => new
   else
-    self%tail%next => new
     new%head  => self%head
-    self%tail => new 
+    new%prev  => self%tail
+    new%prev%next => new
+    self%tail => new
   end if
   call trace_end
 END SUBROUTINE int_data_init

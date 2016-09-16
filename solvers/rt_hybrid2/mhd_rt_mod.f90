@@ -128,8 +128,8 @@ SUBROUTINE apply_heating(self)
   u = self%mesh%ui
   !print *, 'DSDT now is... '
   !print *,self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,2)
-  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,2) = &
-  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,2) + &
+  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%it,2) = &
+  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%it,2) + &
   self%rt_q%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it)
   !print *, 'heating.. '
   !print *,self%rt_q%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it)
