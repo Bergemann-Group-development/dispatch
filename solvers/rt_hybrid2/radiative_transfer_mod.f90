@@ -30,7 +30,8 @@ SUBROUTINE rt_setup (self)
   class(experiment_t), pointer :: mhd_patch    
   class(rt_data_t),    pointer :: rt_data
   class(rt_internal_t),pointer :: internal
-  class(ray_list_t),   pointer :: ray_bundle, ray_dir
+  class(ray_dirs_t),   pointer :: ray_dir
+  class(ray_bndl_t),   pointer :: ray_bundle
   logical, save                :: first_time=.true.
   character(len=16)            :: RT_solver ='integral'      ! choice of RT solver
   integer:: solver, rt_type, a, b
@@ -54,8 +55,7 @@ SUBROUTINE rt_setup (self)
     call ray_geometry%init(1, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well 
     ! IMPORTANT: change first constant into mhd_patch%mesh%mesh_type after merge with curvilinear coords
 
-    print *, 'Ray geometry: n_bundles, n_ray_dirs:',&
-              ray_geometry%head%n_ray_bundles, ray_geometry%head%n_ray_dirs
+    print *, 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
               
     call microphysics%init
     call rt_boundary%init
@@ -103,14 +103,14 @@ SUBROUTINE rt_setup (self)
       !-----------------------------------------------------------------
       ! Loop over the ray bundles to construct the solutions
       !-----------------------------------------------------------------
-      ray_dir    => ray_geometry%head%ray_list%head
+      ray_dir    => ray_geometry%head%ray_list
       do while (associated(ray_dir))                                    ! loop over all directions
-        ray_bundle => ray_dir                            
+        ray_bundle => ray_dir%bundle                            
         do while (associated(ray_bundle))                               ! loop over all bundles in this direction
           ! ------------------------------------------------------------
           ! Loop over forward and/or reverse directions
           ! ------------------------------------------------------------
-          select case(ray_bundle%directionality(ray_bundle%axis))
+          select case(ray_dir%directionality(ray_bundle%axis))
           case(1)
           a = 2; b = 3
           case(2)
@@ -120,8 +120,8 @@ SUBROUTINE rt_setup (self)
           end select
           do rt_type = a,b
             allocate (internal, link)                                   ! the RT task and its link
-            internal%bundle_ID  =  ray_bundle%bundle_ID                 ! ray bundle ID
-            internal%dir_ID     =  ray_bundle%dir_ID                    ! ray direction ID
+            internal%bundle_ID  =  ray_bundle%ID                        ! ray bundle ID
+            internal%dir_ID     =  ray_dir%ID                           ! ray direction ID
             internal%my_rt_data => rt_data                              ! Pointer to rt_data task
             internal%mhd_patch  => mhd_patch                            ! Pointer to mhd_patch
             internal%rt_type    =  rt_type                              ! set the rt type
@@ -138,9 +138,9 @@ SUBROUTINE rt_setup (self)
           end do
           ! -------------------------------
           
-          ray_bundle => ray_bundle%next_bundle                          ! take the next ray bundle
+          ray_bundle => ray_bundle%next                                 ! take the next ray bundle
         end do
-        ray_dir => ray_dir%next_dir                                     ! go to the next ray direction
+        ray_dir => ray_dir%next                                         ! go to the next ray direction
       end do
     end SELECT 
     end associate

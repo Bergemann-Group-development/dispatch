@@ -19,6 +19,8 @@ MODULE rt_internal_mod
     type (rt_data_t),     pointer :: my_rt_data => null()
     class(internal_data_t), dimension(:), pointer :: packet_data => null() ! incoming intensities
     integer :: solver
+    integer :: bundle_ID, dir_ID
+    integer :: lwall(3)
     real :: dir_weight
     procedure (solve_internal_integral), pointer :: solve, solve2 => null()
   contains
@@ -43,7 +45,8 @@ CONTAINS
 !> =====================================================================
 SUBROUTINE init_rt_internal (self)
   class(rt_internal_t) :: self
-  class(ray_list_t),    pointer :: my_rays, packet
+  class(ray_bndl_t),    pointer :: my_rays
+  class(ray_t), pointer :: packet
   integer :: pt, ray, pck
 !-----------------------------------------------------------------------
   call trace_begin('rt_t%init_rt_internal')
@@ -66,16 +69,17 @@ SUBROUTINE init_rt_internal (self)
   if (mhd_patch%is_set(bits%root_grid)) call self%set (bits%root_grid)
   end associate
   
+  call ray_geometry%head%get_my_bundle(self%my_rays, self%dir_ID, self%bundle_ID)
+  
   allocate(self%name)
   SELECT case(self%rt_type)
     case(2)
-      call ray_geometry%head%get_my_bundle(my_rays, self%bundle_ID)          ! retrieve ray list for this direction
       self%name = 'rt_forward'
+      self%lwall = self%my_rays%lwall
     case(3)
-      call ray_geometry%head%get_my_bundle(my_rays, self%bundle_ID)          ! retrieve ray list for this direction
       self%name = 'rt_reverse'
-  end SELECT
-  self%my_rays => my_rays
+      self%lwall = self%my_rays%uwall
+  end SELECT 
   
   if (self%solver ==  0) then                                           ! set the right solver
     self%solve => solve_internal_feautrier
@@ -89,18 +93,18 @@ SUBROUTINE init_rt_internal (self)
   ! Allocate memory slots.
   !---------------------------------------------------------------------
   allocate(self%packet_data(self%my_rays%n_packets))
-  packet => self%my_rays
+  packet => self%my_rays%rays
   do ray = 1, self%my_rays%n_packets
     allocate(self%packet_data(ray)%bndry (packet%n_rays,microphysics%n_wl_bins))
     allocate(self%packet_data(ray)%time(packet%n_rays))
     allocate(self%packet_data(ray)%ds  (packet%n_rays,packet%n_points))
     self%packet_data(ray)%bndry(:,:) = 0
     self%packet_data(ray)%time = self%time
-    self%packet_data(ray)%ds = packet%ds * self%cell_ds(1) ! FIXME: should not be like this for non-cubic cells
-    packet => packet%next_packet
+    self%packet_data(ray)%ds = packet%ds * self%cell_ds(self%my_rays%axis) ! FIXME: should not be like this for non-cubic cells
+    packet => packet%next
   end do
   
-  nullify (packet, my_rays)
+  nullify (packet)
  
   if (io%verbose>2) call self%check
   
@@ -183,8 +187,8 @@ SUBROUTINE get_local_static (self)
   class(rt_internal_t) :: self
   class(rt_internal_t), pointer :: rt_nb
   class(link_t), pointer :: nbor
-  class(ray_list_t), pointer :: packet, nb_packet
-  integer :: ray, nb_cell(3), lw(3), uw(3), nb_ray, nb_pt, try, lwall(3)
+  class(ray_t), pointer :: packet, nb_packet
+  integer :: ray, nb_cell(3), lw(3), uw(3), nb_ray, nb_pt, try
   integer :: fw_c(3), pck, nb_pck
   logical, dimension(:), allocatable :: updated
   real, dimension(microphysics%n_wl_bins) :: mean, Iin
@@ -193,9 +197,8 @@ SUBROUTINE get_local_static (self)
   !---------------------------------------------------------------------  
   call trace_begin('rt_corrections_mod::get_local_static')
   
-  allocate (updated(self%my_rays%n_rays))                               ! make sure all intensities are updated
+  allocate (updated(self%my_rays%rays%n_rays))                          ! make sure all intensities are updated
   updated = .false.
-  
   nbor => self%link%nbor
   do while(associated(nbor))
     nullify(rt_nb)
@@ -203,18 +206,11 @@ SUBROUTINE get_local_static (self)
     associate (rt => nbor%task)
     SELECT type (rt)
     class is (rt_internal_t)
-    
-      select case(self%rt_type)
-      case(2)
-        lwall = self%my_rays%lwall
-      case(3)
-        lwall = self%my_rays%uwall
-      end select
       
-      if (self%the_right_wall(self%link, nbor,lwall)) then              ! make sure nbor is on the right wall
+      if (self%the_right_wall(self%link, nbor, self%lwall)) then        ! make sure nbor is on the right wall
         if (rt%rt_type == self%rt_type) then                            ! make sure nbor is of the right RT type
           rt_nb => rt
-          packet => self%my_rays
+          packet => self%my_rays%rays
           do pck = 1, self%my_rays%n_packets                            ! loop over my ray packets
             do ray = 1, packet%n_rays                                   ! loop  over my rays
           
@@ -244,9 +240,9 @@ SUBROUTINE get_local_static (self)
                 n_mean = 0                                              ! number of rays to be averaged
                 mean = 0                                                ! mean intensity
                 
-                nb_packet => rt_nb%my_rays
+                nb_packet => rt_nb%my_rays%rays
                 do nb_pck = 1, rt_nb%my_rays%n_packets                  ! loop over nbor ray packets
-                  do nb_ray = 1, rt_nb%my_rays%n_rays                   ! loop over nbor rays
+                  do nb_ray = 1, nb_packet%n_rays                       ! loop over nbor rays
                     try = -1                                            ! indicator whether this ray meets the criterion
                     
                     select case(self%rt_type)
@@ -268,7 +264,7 @@ SUBROUTINE get_local_static (self)
                       n_mean = n_mean + 1.
                     end if
                   end do
-                  nb_packet => nb_packet%next_packet
+                  nb_packet => nb_packet%next
                 end do
                 
                 if ((n_mean > 0).and.(self%time <= rt_nb%time)) then
@@ -278,7 +274,7 @@ SUBROUTINE get_local_static (self)
                 end if
               end if
             end do
-          packet => packet%next_packet
+          packet => packet%next
           end do
         end if
       end if
@@ -331,7 +327,7 @@ END SUBROUTINE get_remote_dynamic
 SUBROUTINE get_correction_from_BC (self)
   class(rt_internal_t) :: self
   integer :: ray, pck
-  class(ray_list_t), pointer :: packet
+  class(ray_t), pointer :: packet
   real(kind=8) :: ppos(3)
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_t%get_correction_from_BC')
@@ -339,7 +335,7 @@ SUBROUTINE get_correction_from_BC (self)
   case(0)
   case(1)
   case(2,3)
-    packet => self%my_rays
+    packet => self%my_rays%rays
     do pck =1, self%my_rays%n_packets
       do ray = 1, packet%n_rays
         ppos = self%absolute_point_position(ray, 1, self%rt_type)
@@ -347,7 +343,7 @@ SUBROUTINE get_correction_from_BC (self)
           call rt_boundary%set_obc(ppos,self%cell_ds,self%packet_data(pck)%bndry(ray,:))
         end if
       end do
-      packet => packet%next_packet
+      packet => packet%next
     end do
   nullify (packet)
   end SELECT
@@ -361,7 +357,7 @@ END SUBROUTINE get_correction_from_BC
 
 SUBROUTINE solve_internal_integral (self)
   class(rt_internal_t) :: self
-  class(ray_list_t), pointer :: packet
+  class(ray_t), pointer :: packet
   real, dimension(:,:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
   real, dimension(:,:,:), allocatable :: s, dtau, idtau, ctau, q, Ifw, ropac
   real, dimension(:,:), allocatable :: I_in
@@ -374,10 +370,10 @@ SUBROUTINE solve_internal_integral (self)
   dir_wgt = self%dir_weight
   
   nwb = microphysics%n_wl_bins
-  packet => self%my_rays
-  pck = 0
-  do while(associated(packet))
-  pck = pck +1
+  packet => self%my_rays%rays
+
+  do pck = 1, self%my_rays%n_packets
+
     associate (npt => packet%n_points, nrays => packet%n_rays, &
                rtd => self%my_rt_data, cell => packet%cell_coords)
 
@@ -461,7 +457,7 @@ SUBROUTINE solve_internal_integral (self)
     deallocate(ex0, ex1, ex2, ds1, d1s, d2s, ctau, s, dtau, &
                idtau, q, Ifw, I_in, ropac)
     end associate
-    packet => packet%next_packet
+    packet => packet%next
   end do
   nullify (packet)
   call trace_end

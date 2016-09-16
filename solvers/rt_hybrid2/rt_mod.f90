@@ -15,12 +15,12 @@ MODULE rt_mod
     type (link_t)      , pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
     class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task 
     class(link_t),       pointer :: link       => null()  ! pointer to self link in the task list 
-    type (ray_list_t),   pointer :: my_rays
+    class (ray_bndl_t),   pointer :: my_rays
     ! common items
     integer :: n_ray_dirs = 3
     integer :: geom = 1                                                 !cartesian = 1, spherical = 2, cylindrical = 3
     integer :: rt_freq = 1                                              ! how often rt tasks are done wrt experiment
-    integer :: bundle_ID, dir_ID, rt_type, li(3), ui(3)
+    integer :: rt_type, li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment 
     real(kind=8) :: cell_ds(3)
     real(8):: offset(3)                 ! this is used to compute indices, locations
@@ -248,12 +248,12 @@ FUNCTION absolute_point_position(self, ray, pt, bn) result (cell_pos)
   if (present(bn)) then
     select case(self%rt_type)
     case(2)
-      cp = self%my_rays%fwd_coords(:,ray)
+      cp = self%my_rays%rays%fwd_coords(:,ray)
     case(3)
-      cp = self%my_rays%rev_coords(:,ray)
+      cp = self%my_rays%rays%rev_coords(:,ray)
     end select
   else
-    cp = self%my_rays%cell_coords(:,pt,ray)
+    cp = self%my_rays%rays%cell_coords(:,pt,ray)
   end if
   cell_pos = self%position-0.5*self%size+(cp-self%li)*self%cell_ds
 END FUNCTION absolute_point_position
@@ -262,7 +262,7 @@ FUNCTION ray2cell(self, ray, pt) result (cell)
   class (rt_t) :: self
   integer :: ray, pt, cell(3)
 !-----------------------------------------------------------------------
-  cell = self%my_rays%cell_coords(:,pt,ray)
+  cell = self%my_rays%rays%cell_coords(:,pt,ray)
   
 END FUNCTION ray2cell
 

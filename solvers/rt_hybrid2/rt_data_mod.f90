@@ -128,7 +128,7 @@ END SUBROUTINE update_rt_data
 !> =====================================================================
 SUBROUTINE I_store (self,I_st,rays,dir_ID, rt_type)
   class (rt_data_t) :: self
-  class (ray_list_t), pointer :: rays
+  class (ray_t), pointer :: rays
   type (int_data_t), pointer  :: this
   real, dimension(:,:,:) :: I_st
   integer, dimension(:,:,:), pointer :: lwp, uwp
