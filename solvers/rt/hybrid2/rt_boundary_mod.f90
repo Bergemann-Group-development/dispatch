@@ -12,12 +12,11 @@ MODULE rt_boundary_mod
   real(8), parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
 
   type, public:: rt_boundary_t
-  !-------------- Default Parameters -----------------------------------
-  integer :: ibc, obc, n_wl_bins=1
-  real    :: lbox(3), ubox(3)
-  logical :: first_time=.true.
-  !-------------- Custom Parameters ------------------------------------
-  real    :: hot_temp, cool_temp
+    !-------------- Default Parameters -----------------------------------
+    integer :: ibc, obc, n_wl_bins=1
+    real    :: lbox(3), ubox(3)
+    !-------------- Custom Parameters ------------------------------------
+    real    :: hot_temp, cool_temp
   contains
     procedure :: init
     procedure :: set_ibc
@@ -30,50 +29,58 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(rt_boundary_t):: self
-  character(len=16)   :: obc_treatment ='custom' 
-  character(len=16)   :: ibc_treatment ='ignore' 
-  real :: hot_temp = 1000, cool_temp = 10
+  character(len=16), save :: obc_treatment ='custom'
+  character(len=16), save :: ibc_treatment ='ignore'
+  real, save :: hot_temp = 1000, cool_temp = 10
+  logical, save:: first_time=.true.
+  integer, save:: obc, ibc
   namelist /rt_bc_params/ obc_treatment, ibc_treatment
   namelist /custom_bc_params/ hot_temp, cool_temp
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
   !$omp critical (input_cr)
-  if (self%first_time) then
-    self%first_time = .false.
+  if (first_time) then
+    first_time = .false.
     rewind (io%input)
     read (io%input, rt_bc_params)
     if (io%master) write (*, rt_bc_params)
     call scaling%init()
     select CASE(obc_treatment)
       case('custom')
-!> =====================================================================      
-!> Modify only this part and appropriate namelist      
+!> =====================================================================
+!> Modify only this part and appropriate namelist
 !> ---------------------------------------------------------------------
-        self%obc = 0
+        obc = 0
         rewind (io%input)
         read (io%input, custom_bc_params)
-        self%hot_temp = hot_temp/scaling%temp
-        self%cool_temp = cool_temp/scaling%temp
+        hot_temp = hot_temp/scaling%temp
+        cool_temp = cool_temp/scaling%temp
 !> =====================================================================
       case('reflective')
-        self%obc = 1
+        obc = 1
       case('periodic')
-        self%obc = 2
+        obc = 2
       case default  ! custom is the default one
-        self%obc = 0      
+        obc = 0
     end SELECT
     select CASE(ibc_treatment)
       case('custom')
-        self%ibc = 0
+        ibc = 0
       case('zero')
-        self%ibc = 1
+        ibc = 1
       case('reflective')
-        self%ibc = 2
+        ibc = 2
       case default ! ignore is the default one.
-        self%ibc = 3
+        ibc = 3
     end SELECT
   end if
   !$omp end critical (input_cr)
+  self%ibc = ibc
+  self%obc = obc
+  if (obc==0) then
+    self%hot_temp = hot_temp
+    self%cool_temp = cool_temp
+  end if
 
   call trace_end
 END SUBROUTINE init
@@ -88,7 +95,7 @@ SUBROUTINE set_obc (self, ppos, ds, i_in)
   real(kind=8) :: ppos(3), ds(3), c
   real(kind=4), dimension(self%n_wl_bins) :: i_in
 !> =====================================================================
-!> Should be modified only from here on  
+!> Should be modified only from here on
 !> =====================================================================
   c = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
   if (ppos(1) <= -0.5*self%lbox(1)) then
@@ -96,13 +103,13 @@ SUBROUTINE set_obc (self, ppos, ds, i_in)
   else if (ppos(1) >= 0.5*self%ubox(1)) then
     i_in(:) = c*self%cool_temp**4
   end if
-  
+
   if (ppos(2) <= -0.5*self%lbox(2)) then
     i_in(:) = c*self%cool_temp**4
   else if (ppos(2) >= 0.5*self%ubox(2)) then
     i_in(:) = c*self%cool_temp**4
   end if
-  
+
   if (ppos(3) <= -0.5*self%lbox(3)) then
     i_in(:) = c*self%cool_temp**4
   else if (ppos(3) >= 0.5*self%ubox(3)) then

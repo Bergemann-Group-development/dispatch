@@ -2,6 +2,7 @@ MODULE ray_geometry_mod
   USE io_mod
   USE trace_mod
   implicit none
+  private
   type, public :: rt_cell_t
     integer :: ray, point, lwall(3), uwall(3)
     class(rt_cell_t), pointer :: head => null()
@@ -140,7 +141,7 @@ MODULE ray_geometry_mod
   end type 
 ! ----------------------------------------------------------------------
   type(ray_geometry_list_t), public :: ray_geometry
-  real(8), parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
+  real(8), public, parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
 CONTAINS
 !> =====================================================================
 !> Initialisation subroutine

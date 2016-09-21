@@ -1,4 +1,5 @@
 MODULE rt_internal_mod
+  USE io_mod
   USE bits_mod
   USE link_mod
   USE microphysics_mod
@@ -8,6 +9,7 @@ MODULE rt_internal_mod
   USE ray_geometry_v2_mod
   USE trace_mod
   implicit none
+  private
 !-----------------------------------------------------------------------
   type :: internal_data_t
     real, dimension(:,:), pointer :: bndry => null()                    ! (ray, wl_bin) incoming intensity. 
@@ -34,7 +36,7 @@ MODULE rt_internal_mod
     procedure :: get_remote_static
     procedure :: get_remote_dynamic
     procedure :: get_correction_from_BC
-    procedure :: solve_internal_integral => solve_internal_integral_2nd
+    procedure :: solve_internal_integral => solve_internal_integral_1st
     procedure :: solve_internal_feautrier
   end type
 !-----------------------------------------------------------------------
@@ -248,12 +250,12 @@ SUBROUTINE get_local_static (self)
                     select case(self%rt_type)
                     case(2)
                       do nb_pt = 1, nb_packet%n_points                  ! find the last point in the ray before the wall in question
-                        if (point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
+                        if (self%point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
                             my_c_pos, self%cell_ds)) try = nb_pt
                       end do
                     case(3)
                       do nb_pt = nb_packet%n_points, 1, -1              ! find the last point in the ray before the wall in question
-                        if (point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
+                        if (self%point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
                             my_c_pos, self%cell_ds)) try = nb_pt
                       end do
                     end select

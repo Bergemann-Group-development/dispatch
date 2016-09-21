@@ -19,6 +19,7 @@ MODULE radiative_transfer_mod
   USE trace_mod
   USE units_mod
   implicit none
+  private
 
   PUBLIC rt_setup
 CONTAINS

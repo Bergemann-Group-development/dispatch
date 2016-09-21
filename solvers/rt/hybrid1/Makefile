@@ -1,5 +1,5 @@
 # Append to VPATH
-VPATH := $(VPATH):$(TOP)/solvers/rt_$(RT_SOLVER)
+VPATH := $(VPATH):$(TOP)/solvers/rt/$(RT_SOLVER)
 
 # Dependencies
 mhd_rt_mod.o            : mhd_mod.o trace_mod.o microphysics_mod.o

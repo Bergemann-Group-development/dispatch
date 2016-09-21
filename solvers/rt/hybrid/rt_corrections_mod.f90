@@ -1,4 +1,5 @@
 MODULE rt_corrections_mod
+  USE io_mod
   USE bits_mod
   USE link_mod
   USE microphysics_mod
@@ -251,7 +252,7 @@ SUBROUTINE get_local_static (self)
               do nb_ray = 1, rt_nb%my_rays%n_rays                                         ! loop over nbor rays
                 try = -1                                                                  ! indicator whether this ray meets the criterion
                 do nb_pt = 1, rt_nb%my_rays%n_points(nb_ray)                              ! find the last point in the ray before the wall in question
-                  if (point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),my_c_pos, self%cell_ds)) try = nb_pt
+                  if (self%point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),my_c_pos, self%cell_ds)) try = nb_pt
                 end do
                 if (try > 0) then
                   Iin = rt_nb%my_rt_data%I_retrv_ray(nb_ray,nb_pt,self%dir_ID)            ! retrieve this intensity
@@ -358,7 +359,7 @@ END SUBROUTINE get_correction_from_BC
 !    do nb_ray = 1, nbor%my_rays%n_rays
 !      try = -1
 !      do nb_pt = 1, nbor%my_rays%n_points(nb_ray)    ! find the last point in the ray before the wall in question
-!        if (point_in_cell(nbor%ray2pos(nb_ray,nb_pt),my_c_pos, self%cell_ds)) try = nb_pt
+!        if (self%point_in_cell(nbor%ray2pos(nb_ray,nb_pt),my_c_pos, self%cell_ds)) try = nb_pt
 !      end do
 !      if (try > 0) then
 !        mean = mean + nbor%intensity(:, try, nb_ray)
