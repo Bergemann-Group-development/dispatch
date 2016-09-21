@@ -6,6 +6,7 @@ MODULE rt_data_mod
   USE rt_mod
   USE trace_mod
   implicit none
+  private
 !----------------------------------------------------------------------- 
 !> Special intensity storage type. All cells can have more than one ray
 !> per direction. 
