@@ -34,7 +34,7 @@ MODULE rt_internal_mod
     procedure :: get_remote_static
     procedure :: get_remote_dynamic
     procedure :: get_correction_from_BC
-    procedure :: solve_internal_integral => solve_internal_integral_1st
+    procedure :: solve_internal_integral => solve_internal_integral_2nd
     procedure :: solve_internal_feautrier
   end type
 !-----------------------------------------------------------------------

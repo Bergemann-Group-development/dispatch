@@ -2,7 +2,7 @@
  verbose=0
  do_trace=f
  do_debug=f
- do_output=f
+ do_output=t
  do_legacy = t
 /
 
@@ -27,16 +27,16 @@
 
 &cartesian_ray_geometry_params
 ! along x axis
-nx = 2
-xti = 0.,30.
+nx = 1
+xti = 0.
 dx = 1
 ! along y axis
-ny = 2
-yti = 0.,30.
+ny = 1
+yti = 0.
 dy = 1
 ! along z axis
-nz = 2
-zti = 0.,30.
+nz = 1
+zti = 0.
 dz = 1
 
 /
