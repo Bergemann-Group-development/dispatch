@@ -1,4 +1,5 @@
 MODULE rt_internal_mod
+  USE io_mod
   USE bits_mod
   USE microphysics_mod
   USE rt_mod
@@ -6,6 +7,7 @@ MODULE rt_internal_mod
   USE ray_geometry_mod
   USE trace_mod
   implicit none
+  private
 !-----------------------------------------------------------------------
   type,extends(rt_t), public :: rt_internal_t
     type (rt_data_t),               pointer :: my_rt_data => null()

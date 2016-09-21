@@ -34,6 +34,7 @@ MODULE ray_geometry_v2_mod
   USE io_mod
   USE trace_mod
   implicit none
+  private
 ! ----------------------------------------------------------------------
   type, public :: ray_t
     class(ray_t), pointer :: head => null()
@@ -52,7 +53,7 @@ MODULE ray_geometry_v2_mod
     procedure :: fill_ray_list_data
   end type
 ! ----------------------------------------------------------------------
-  type :: ray_bndl_t
+  type, public :: ray_bndl_t
     class(ray_bndl_t),  pointer :: head => null()
     class(ray_bndl_t),  pointer :: next => null()
     class(ray_bndl_t),  pointer :: prev => null()
@@ -68,7 +69,7 @@ MODULE ray_geometry_v2_mod
     real    :: phi                                                      ! angle of the ray in the axis plane [0, 360), stored in radians
   end type
 ! ----------------------------------------------------------------------
-  type :: ray_dirs_t
+  type, public :: ray_dirs_t
     class(ray_dirs_t), pointer :: head => null()
     class(ray_dirs_t), pointer :: next => null()
     class(ray_dirs_t), pointer :: prev => null()
@@ -192,7 +193,7 @@ MODULE ray_geometry_v2_mod
   end type 
 ! ----------------------------------------------------------------------
   type(ray_geometry_t), public :: ray_geometry
-  real(8), parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
+  real(8), public, parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
 CONTAINS
 
 !> =====================================================================

@@ -2,6 +2,7 @@ MODULE rt_mod
   USE experiment_mod
   USE bits_mod
   USE io_mod
+  USE trace_mod
   USE link_mod
   USE omp_mod
   USE ray_geometry_v2_mod
@@ -9,6 +10,8 @@ MODULE rt_mod
   USE experiment_mod
   USE rt_boundary_mod
   USE microphysics_mod
+  implicit none
+  private
 !----------------------------------------------------------------------- 
   type, extends(task_t), public :: rt_t
     type (experiment_t), pointer :: mhd_patch  => null()  ! pointer to MHD task
@@ -34,6 +37,7 @@ MODULE rt_mod
     procedure :: cell2pos
     procedure :: pos2cell
     procedure :: ray2pos
+    procedure :: point_in_cell
     procedure :: the_right_wall
     procedure :: update_time
   end type
@@ -294,9 +298,8 @@ FUNCTION ray2pos (self, ray, pt) result (p)
   
 END FUNCTION ray2pos
 
-
-
-FUNCTION point_in_cell (pt, cell, ds) result (out)
+FUNCTION point_in_cell (self, pt, cell, ds) result (out)
+  class(rt_t)  :: self
   real(kind=8) :: pt(3), cell(3), li(3), ui(3), ds(3)
   logical :: out
 !-----------------------------------------------------------------------
