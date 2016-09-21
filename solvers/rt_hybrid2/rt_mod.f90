@@ -1,5 +1,4 @@
 MODULE rt_mod
-  USE experiment_mod
   USE bits_mod
   USE io_mod
   USE trace_mod
@@ -7,6 +6,7 @@ MODULE rt_mod
   USE omp_mod
   USE ray_geometry_v2_mod
   USE task_mod
+  USE mesh_mod
   USE experiment_mod
   USE rt_boundary_mod
   USE microphysics_mod
@@ -15,7 +15,7 @@ MODULE rt_mod
 !----------------------------------------------------------------------- 
   type, extends(task_t), public :: rt_t
     type (experiment_t), pointer :: mhd_patch  => null()  ! pointer to MHD task
-    type (link_t)      , pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
+    type (link_t),       pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
     class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task 
     class(link_t),       pointer :: link       => null()  ! pointer to self link in the task list 
     class (ray_bndl_t),   pointer :: my_rays
@@ -27,9 +27,19 @@ MODULE rt_mod
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment 
     real(kind=8) :: cell_ds(3)
     real(8):: offset(3)                 ! this is used to compute indices, locations
+    !---------------------------------------------------------------------------
+    ! The pointers below, and the procedure 'init_mesh' that sets them, are
+    ! currently not used, but are to enable future implementations of RT solvers
+    ! that only know about density, temperature, ! and the mesh.  Such solvers
+    ! would not need a pointer to an experiment_t data type.
+    !---------------------------------------------------------------------------
+    class(mesh_t),       pointer :: mesh       => null()  ! pointer to mesh
+    real, dimension(:,:,:), pointer :: density => null()  ! pointer to density
+    real, dimension(:,:,:), pointer :: temperature => null()  ! pointer to temperature
   contains
     procedure :: find_upstream                                             
     procedure :: init => init_rt
+    procedure :: init_mesh
     procedure :: update => update_rt
     procedure :: init_obc
     procedure :: absolute_point_position
@@ -49,6 +59,15 @@ SUBROUTINE init_rt (self)
   !---------------------------------------------------------------------
   error stop "ERROR: rt_t%init_rt was called, but it is an empty subroutine"
 END SUBROUTINE init_rt
+
+SUBROUTINE init_mesh (self, mesh, density, temperature)
+  class(rt_t) :: self
+  class(mesh_t), pointer :: mesh
+  real, dimension(:,:,:), pointer :: density, temperature
+  self%mesh => mesh
+  self%density => density
+  self%temperature => temperature
+END SUBROUTINE init_mesh
 
 SUBROUTINE update_rt (self)
   class(rt_t) :: self
