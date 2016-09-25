@@ -288,7 +288,7 @@ END SUBROUTINE get_my_geometry
 !> Namelist parameters:
 !>   nx, ny, nz     : number of angles relative to x-, y-, z-axis
 !>   xti, yti, zti  : degrees relative to x-, y-, and z-axis
-!>   dx, dy, dz     : currently not used
+!>   dx, dy, dz     : ray directionality
 !> =====================================================================
 SUBROUTINE init_cartesian(self)
   class(ray_geometry_t) :: self
@@ -296,7 +296,7 @@ SUBROUTINE init_cartesian(self)
   real, dimension(:), allocatable :: xt, yt, zt                         ! FIXME: These seem to not be used
   real, dimension(5)              :: xti=0.0, yti=0.0, zti=0.0
   integer, save                   :: nx=1, ny=0, nz=0
-  integer, save                   :: dx=0, dy=0, dz=0                   ! FIXME: These seem to not be used
+  integer, save                   :: dx=0, dy=0, dz=0
 ! ......................................................................
   namelist /cartesian_ray_geometry_params/ nx, ny, nz, xti, yti, zti, dx, dy, dz
 ! ......................................................................
