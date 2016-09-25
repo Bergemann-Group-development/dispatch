@@ -7,9 +7,9 @@ MODULE rt_data_mod
   USE trace_mod
   implicit none
   private
-!----------------------------------------------------------------------- 
+!-----------------------------------------------------------------------
 !> Special intensity storage type. All cells can have more than one ray
-!> per direction. 
+!> per direction.
   type :: int_data_t
     integer :: ray, point, lwall(3), uwall(3)
     real, dimension(:), pointer :: I => null()
@@ -20,7 +20,7 @@ MODULE rt_data_mod
   contains
     procedure :: init => int_data_init
   end type
-!----------------------------------------------------------------------- 
+!-----------------------------------------------------------------------
   type, extends(rt_t), public :: rt_data_t
     integer :: n_cells(3)
     integer :: n_intensity_dat = 0                                      ! used for mpi comm
@@ -35,8 +35,9 @@ MODULE rt_data_mod
     procedure :: I_store
     procedure :: I_retrv
     procedure :: I_retrv_ray
+    procedure :: add_cr_heating
   end type
-!----------------------------------------------------------------------- 
+!-----------------------------------------------------------------------
 CONTAINS
 
 !> =====================================================================
@@ -83,8 +84,8 @@ SUBROUTINE init_rt_data(self)
   self%opacity = 0;   self%source = 0
   self%n_intensity_dat = 0
   end associate
-  if (io%verbose>2) call self%check(1)             ! check if rt_data initialized ok  
-  call trace_end  
+  if (io%verbose>2) call self%check(1)             ! check if rt_data initialized ok
+  call trace_end
 END SUBROUTINE init_rt_data
 
 !> =====================================================================
@@ -98,32 +99,51 @@ SUBROUTINE update_rt_data (self)
 !-----------------------------------------------------------------------
   write (stime,'(1p,g16.6)') self%time
   call trace_begin('rt_t%update_rt_data '//stime,itimer=itimer)
-  
+
   self%it  = self%mhd_patch%it
-  
+
   allocate (temp(size(self%source,1),size(self%source,2),size(self%source,3)))
-  associate  (l => self%li, u=>self%ui) 
+  associate  (l => self%li, u=>self%ui)
   rho => self%mhd_patch%mem(:,:,:,1,self%it,1)
-  
+
   temp(l(1):u(1),l(2):u(2),l(3):u(3)) = self%mhd_patch%gas_temperature_ngz() ! estimate temperature
-       
+
   self%opacity(l(1):u(1),l(2):u(2),l(3):u(3),:) = &
   microphysics%opacity%solve (rho(l(1):u(1),l(2):u(2),l(3):u(3)),&
   temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%n_wl_bins)  !FIXME : should pass wl_bins with info ! estimate opacity
   self%source (l(1):u(1),l(2):u(2),l(3):u(3),:) = &
   microphysics%source_fn%solve (temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%wl_bins) ! estimate the source function
-  
+
   ! add cosmic ray heating
-  call self%mhd_patch%add_cr_heating(self%time,temp(l(1):u(1),l(2):u(2),l(3):u(3)))  ! add cr heating 
+  call self%add_cr_heating(self%mhd_patch%time,temp(l(1):u(1),l(2):u(2),l(3):u(3)))  ! add cr heating
   call self%update_time
-  
+
   end associate
   deallocate (temp)
-  
+
   if (io%verbose>2) call self%check(2)
-    
+
   call trace_end (itimer)
 END SUBROUTINE update_rt_data
+
+!> =============================================================================
+!> Optionally add cosmic ray heating -- generic if applied before 'apply_heating'
+!> =============================================================================
+SUBROUTINE add_cr_heating (self, time, temp)
+  class(rt_data_t) :: self
+  real, dimension(:,:,:) :: temp
+  real(kind=8) :: time
+  integer :: l(3), u(3)
+  ! ----------------------------------------------------------------------------
+  call trace%begin ('mhd_rt_t_%add_cr_heating')
+  l = self%mhd_patch%mesh%li
+  u = self%mhd_patch%mesh%ui
+  associate (rho => self%mhd_patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1), &
+               q => self%mhd_patch%rt_q%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it))
+  q = q + rho * microphysics%cr_heating
+  end associate
+  call trace%end
+END SUBROUTINE add_cr_heating
 
 !> =====================================================================
 !> Store intensity
@@ -140,7 +160,7 @@ SUBROUTINE I_store (self,I_st,rays,dir_ID, rt_type)
   call trace_begin('rt_data_mod%I_store',4)
   associate (I => self%intensity(:,:,:,dir_ID),&
              nwb => microphysics%n_wl_bins)
-             
+
   select case(rt_type)
   case(2)
     lwp => rays%pt_wall(:,1,:,:)
@@ -149,13 +169,13 @@ SUBROUTINE I_store (self,I_st,rays,dir_ID, rt_type)
     lwp => rays%pt_wall(:,2,:,:)
     uwp => rays%pt_wall(:,1,:,:)
   end select
-  
+
   do ray = 1, rays%n_rays
     do pt = 1, rays%n_points
       c = rays%cell_coords(:,pt,ray)
       lw = lwp(:,pt,ray)
       uw = uwp(:,pt,ray)
-      
+
       if (.not.associated(I(c(1),c(2),c(3))%head)) then
         call I(c(1),c(2),c(3))%init(ray,pt,lw,uw)                       ! if this cell is empty, initialize
         self%n_intensity_dat = self%n_intensity_dat + 1                 ! increment total data entries
@@ -172,14 +192,14 @@ SUBROUTINE I_store (self,I_st,rays,dir_ID, rt_type)
             this => this%next
           end if
         end do
-    
+
         if (.not.found) then
           call I(c(1),c(2),c(3))%init(ray,pt,lw,uw)                     ! if the right place not found, initialize a new one
           self%n_intensity_dat = self%n_intensity_dat + 1               ! increment total data entries
           I(c(1),c(2),c(3))%tail%I = I_st(ray,:,pt)
         end if
-      end if  
- 
+      end if
+
     end do
   end do
   end associate
@@ -197,7 +217,7 @@ SUBROUTINE I_store_old (self,I_st,c,pt,ray,dir,lw,uw)
   call trace_begin('rt_data_mod%I_store',4)
   associate (I_nt => self%intensity(c(1),c(2),c(3),dir),&
              nwb => microphysics%n_wl_bins)
-  
+
   if (.not.associated(I_nt%head)) then
     call I_nt%init(ray,pt,lw,uw)                                        ! if this cell is empty, initialize
     self%n_intensity_dat = self%n_intensity_dat + 1                     ! increment total data entries
@@ -214,7 +234,7 @@ SUBROUTINE I_store_old (self,I_st,c,pt,ray,dir,lw,uw)
         this => this%next
       end if
     end do
-    
+
     if (.not.found) then
       call I_nt%init(ray,pt,lw,uw)                                      ! if the right place not found, initialize a new one
       self%n_intensity_dat = self%n_intensity_dat + 1                   ! increment total data entries
@@ -245,9 +265,9 @@ FUNCTION I_retrv (self,c,dir,lw,uw) result (I_st)
     end if
     this => this%next
   end do
-  
+
   if (.not.found) error stop "ERROR: rt_data_mod%I_retrv did not find data entry" ! should not happen
-  
+
   end associate
   call trace_end
 END FUNCTION I_retrv
@@ -272,9 +292,9 @@ FUNCTION I_retrv_ray (self,ray,pt,dir) result (I_st)
     end if
     this => this%next
   end do
-  
+
   if (.not.found) error stop "ERROR: rt_data_mod%I_retrv_ray did not find data entry"
-  
+
   end associate
   call trace_end
 END FUNCTION I_retrv_ray
@@ -320,7 +340,7 @@ SUBROUTINE check_rt_data(self, plc)
     if (plc ==1) error stop "rt_data%init: self%opacity has NaN"
     if (plc ==2) error stop "rt_data%update: self%opacity has NaN"
   end if
-  
+
   if (any(isnan(self%source))) then
     print *,'=================== source ================'
     print *,self%source

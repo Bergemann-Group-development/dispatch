@@ -77,6 +77,7 @@ FUNCTION source_Stefan (self, temp, wl) result (src)
   if (size(wl)>1) then
     error stop "Error: n_wl_bins >1, but Stefan source function is selected."
   end if
+  call trace_end
 END FUNCTION source_Stefan
 
 
