@@ -276,32 +276,44 @@ FUNCTION nbor_is_my_child (me, nbor) result (out)
   out = .true.
 END FUNCTION nbor_is_my_child
 
-
-FUNCTION absolute_point_position(self, ray, pt, bn) result (cell_pos)
+!> =====================================================================
+!> Find the absolute position of index 'ray' in ray packet 'rays'.
+!> If the optional bn parameter is present, the answer depends on
+!> the direction, otherwise 'pt' chooses the point along the ray.
+!> =====================================================================
+FUNCTION absolute_point_position (self, rays, ray, pt, bn) result (cell_pos)
   class (rt_t) :: self
+  type (ray_t), pointer :: rays
   integer, optional :: bn
   integer :: ray, pt, cp(3)
   real(kind=8) :: cell_pos(3)
 !-----------------------------------------------------------------------
+  call trace_begin ('rt_t%absolute_point_position', 4)
   if (present(bn)) then
     select case(self%rt_type)
     case(2)
-      cp = self%my_rays%rays%fwd_coords(:,ray)
+      ! self%my_rays
+      cp = rays%fwd_coords(:,ray)
     case(3)
-      cp = self%my_rays%rays%rev_coords(:,ray)
+      cp = rays%rev_coords(:,ray)
     end select
   else
-    cp = self%my_rays%rays%cell_coords(:,pt,ray)
+    cp = rays%cell_coords(:,pt,ray)
   end if
   cell_pos = self%position-0.5*self%size+(cp-self%li)*self%cell_ds
+  call trace_end
 END FUNCTION absolute_point_position
 
-FUNCTION ray2cell(self, ray, pt) result (cell)
+!> =====================================================================
+!> Return the cell integer coordinates of point 'pt' of index 'ray' in
+!> ray packet 'rays'.
+!> =====================================================================
+FUNCTION ray2cell(self, rays, ray, pt) result (cell)
   class (rt_t) :: self
+  type (ray_t), pointer :: rays
   integer :: ray, pt, cell(3)
 !-----------------------------------------------------------------------
-  cell = self%my_rays%rays%cell_coords(:,pt,ray)
-  
+  cell = rays%cell_coords(:,pt,ray)
 END FUNCTION ray2cell
 
 !> =====================================================================
@@ -326,14 +338,16 @@ FUNCTION pos2cell (self, p) result (cell)
   cell = nint((p-self%position+0.5_8*self%size)/self%cell_ds)+self%li
 END FUNCTION pos2cell
 
-
-FUNCTION ray2pos (self, ray, pt) result (p)
+!> =====================================================================
+!> Convert absolute position to integer index triple 'cell'
+!> =====================================================================
+FUNCTION ray2pos (self, rays, ray, pt) result (p)
   class(rt_t)  :: self
+  type (ray_t), pointer :: rays
   real(kind=8) :: p(3)
   integer :: ray, pt
 !-----------------------------------------------------------------------
-  p = self%cell2pos(self%ray2cell(ray,pt))
-  
+  p = self%cell2pos(self%ray2cell(rays,ray,pt))
 END FUNCTION ray2pos
 
 !> =====================================================================

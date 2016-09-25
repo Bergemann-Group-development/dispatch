@@ -8,7 +8,7 @@
 
 &box_params
  size=1,1,1
- dims=4,4,4
+ dims=3,3,3
  origin=0.0,0.0,0.0
  !origin=-0.5,-0.5,-0.5
 /
@@ -26,6 +26,12 @@
 /
 
 &cartesian_ray_geometry_params
+! along x axis
+nx = 2 xti = 0.,45. dx = 1
+! along y axis
+ny = 2 yti = 0.,45. dy = 1
+! along z axis
+nz = 2 zti = 0.,45. dz = 1
 /
 
 &ray_geometry_params

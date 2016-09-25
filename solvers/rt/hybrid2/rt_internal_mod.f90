@@ -251,12 +251,12 @@ SUBROUTINE get_local_static (self)
                     select case(self%rt_type)
                     case(2)
                       do nb_pt = 1, nb_packet%n_points                  ! find the last point in the ray before the wall in question
-                        if (self%point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
+                        if (self%point_in_cell(rt_nb%ray2pos(nb_packet,nb_ray,nb_pt),&
                             my_c_pos, self%cell_ds)) try = nb_pt
                       end do
                     case(3)
                       do nb_pt = nb_packet%n_points, 1, -1              ! find the last point in the ray before the wall in question
-                        if (self%point_in_cell(rt_nb%ray2pos(nb_ray,nb_pt),&
+                        if (self%point_in_cell(rt_nb%ray2pos(nb_packet,nb_ray,nb_pt),&
                             my_c_pos, self%cell_ds)) try = nb_pt
                       end do
                     end select
@@ -341,9 +341,10 @@ SUBROUTINE get_correction_from_BC (self)
     packet => self%my_rays%rays
     do pck =1, self%my_rays%n_packets
       do ray = 1, packet%n_rays
-        ppos = self%absolute_point_position(ray, 1, self%rt_type)
+        ! for each ray index in the packet, find a point position
+        ppos = self%absolute_point_position (packet, ray, 1, self%rt_type)
         if (self%obct == 0) then
-          call rt_boundary%set_obc(ppos,self%cell_ds,self%packet_data(pck)%bndry(ray,:))
+          call rt_boundary%set_obc (ppos, self%cell_ds, self%packet_data(pck)%bndry(ray,:))
         end if
       end do
       packet => packet%next
@@ -354,10 +355,9 @@ SUBROUTINE get_correction_from_BC (self)
 END SUBROUTINE get_correction_from_BC
 
 !> =====================================================================
-!> Solution of RTE using the 1st orderIntegral formulation. Iwf and Irv
+!> Solution of RTE using the 1st order Integral formulation. Iwf and Irv
 !> are stored in case of overlapping patches.
 !> =====================================================================
-
 SUBROUTINE solve_internal_integral_1st (self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet
@@ -427,7 +427,7 @@ SUBROUTINE solve_internal_integral_1st (self)
     end select
 
     call rtd%I_store(Ifw,packet,self%dir_ID,self%rt_type)
-    call self%update_q (q, ropac)
+    call self%update_q (packet, q, ropac)
     deallocate(ex0, ds, s, dtau, q, Ifw, I_in, ropac)
     end associate
     packet => packet%next
@@ -539,7 +539,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
     end select
 
     call rtd%I_store(Ifw,packet,self%dir_ID,self%rt_type)
-    call self%update_q (q, ropac)
+    call self%update_q (packet, q, ropac)
     deallocate(ex0, ex1, ex2, ds1, d1s, d2s, ctau, s, dtau, &
                idtau, q, Ifw, I_in, ropac)
     end associate
@@ -561,8 +561,9 @@ SUBROUTINE solve_internal_feautrier (self)
 
 END SUBROUTINE solve_internal_feautrier
 
-SUBROUTINE update_q (self, q, op)
+SUBROUTINE update_q (self, rays, q, op)
   class(rt_internal_t) :: self
+  type (ray_t), pointer :: rays
   integer :: p(3), wl, ray, pt
   real, dimension(:,:,:) :: op, q
   real, dimension(:,:,:,:), pointer :: qq
@@ -572,7 +573,7 @@ SUBROUTINE update_q (self, q, op)
   call trace_begin ('rt_internal_t_%update_q',4)
   dirw = self%dir_weight
   qq => self%mhd_patch%rt_q%q
-  cell => self%my_rays%rays%cell_coords
+  cell => rays%cell_coords
   do ray = 1, size(q,1)
     do pt = 1, size(q,3)
       p = cell(:,pt,ray)
