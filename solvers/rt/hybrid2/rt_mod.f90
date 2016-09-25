@@ -224,45 +224,6 @@ SUBROUTINE init_obc (self)
 END SUBROUTINE init_obc
 
 !> =====================================================================
-!> Check if mhd_rt_t tasks me and nbor share a common surface
-!> =====================================================================
-SUBROUTINE check_common_surface (me, nbor, wall, right, it)
-  type (experiment_t), pointer :: me, nbor
-  integer :: wall, w, s1, s2, it
-  logical :: right, ok
-!-----------------------------------------------------------------------
-  right = .false.
-  SELECT case(it)
-    case(1)
-      w = 1; s1 = 2; s2 = 3
-    case(2)
-      w = 2; s1 = 1; s2 = 3
-    case(3)
-      w = 3; s1 = 1; s2 = 2
-  end SELECT
-  ok = .false.
-  if (wall < 0) then
-    if ((nbor%position(w)-0.5_8*nbor%size(w)) > &
-          (me%position(w)+0.5_8*  me%size(w)+me%ds(w))) ok = .true.
-  else if (wall > 0) then
-    if ((nbor%position(w)+0.5_8*nbor%size(w)) > &
-          (me%position(w)-0.5_8*  me%size(w)-me%ds(w))) ok = .true.
-  else
-    right = .true.
-  end if
-  if (ok) then
-    if ((((nbor%position(s1)+0.5_8*nbor%size(s1)) >= &
-            (me%position(s1)-0.5_8*  me%size(s1)))  .and. &
-         ((nbor%position(s1)-0.5_8*nbor%size(s1)) <= &
-            (me%position(s1)+0.5_8*  me%size(s1)))) .and. &
-        (((nbor%position(s2)+0.5_8*nbor%size(s2)) >= &
-            (me%position(s2)-0.5_8*  me%size(s2)))  .and. &
-         ((nbor%position(s2)-0.5_8*nbor%size(s2)) <= &
-            (me%position(s2)+0.5_8*  me%size(s2))))) right = .true.
-  end if
-END SUBROUTINE check_common_surface
-
-!> =====================================================================
 !> Check if 'nbor' is fully contained inside 'me'
 !> =====================================================================
 FUNCTION nbor_is_my_child (me, nbor) result (out)
