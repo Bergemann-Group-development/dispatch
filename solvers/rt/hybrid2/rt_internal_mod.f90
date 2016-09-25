@@ -399,7 +399,7 @@ SUBROUTINE solve_internal_integral_1st (self)
     pt = npt
 #if defined __INTEL_COMPILER
     ex0 = 2**(-dtau*1.44269504)                                         ! first exponential coeff
-#elif defined __GFORTRAN__
+#else
     ex0 = exp(-dtau)                                                    ! first exponential coeff
 #endif
     ds  = (1.  - ex0) * s                                               ! Source factor
@@ -493,7 +493,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
     idtau = 1. / dtau
 #if defined __INTEL_COMPILER
       ex0 = 2**(-dtau*1.44269504)                                       ! first exponential coeff
-#elif defined __GFORTRAN__
+#else
       ex0 = exp(-dtau)                                                  ! first exponential coeff
 #endif
       ex1 = 1.  - ex0                                                   ! second exponential coeff
