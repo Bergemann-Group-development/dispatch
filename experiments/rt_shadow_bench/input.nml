@@ -1,6 +1,6 @@
 &io_params
  verbose=2
- do_trace=f
+ do_trace=t
  do_debug=f
  do_output=t
  do_legacy = t
@@ -23,6 +23,9 @@
 &rt_params
  RT_solver  = 'integral'
  cr_heating = 3.746e-24
+/
+
+&cartesian_ray_geometry_params
 /
 
 &ray_geometry_params
