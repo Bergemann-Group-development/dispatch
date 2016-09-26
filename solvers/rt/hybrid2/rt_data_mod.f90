@@ -170,8 +170,9 @@ SUBROUTINE I_store (self, I_st, rays, dir_ID, rt_type)
   integer, dimension(:,:,:), pointer :: lwp, uwp
   integer :: dir_ID, rt_type, c(3), lw(3), uw(3), pt, ray
   logical :: found
+  integer, save :: itimer=0
 !-----------------------------------------------------------------------
-  call trace_begin('rt_data_mod%I_store',4)
+  call trace_begin('rt_data_mod%I_store',4, itimer=itimer)
   associate (I => self%intensity(:,:,:,dir_ID),&
              nwb => microphysics%n_wl_bins)
 
@@ -189,6 +190,8 @@ SUBROUTINE I_store (self, I_st, rays, dir_ID, rt_type)
       c = rays%cell_coords(:,pt,ray)
       lw = lwp(:,pt,ray)
       uw = uwp(:,pt,ray)
+      if (io%verbose > 2) &
+        print '(a,2i5,5i4)', 'I_store: id, rays%id, ray, pt, c =', self%id, rays%id, ray, pt, c
 
       if (.not.associated(I(c(1),c(2),c(3))%head)) then
         call I(c(1),c(2),c(3))%init(ray,pt,lw,uw)                       ! if this cell is empty, initialize

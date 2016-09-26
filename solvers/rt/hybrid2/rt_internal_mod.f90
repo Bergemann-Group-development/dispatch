@@ -108,9 +108,10 @@ SUBROUTINE init_rt_internal (self)
   end do
   nullify (packet)
   if (io%verbose>1) then
-    write (*,'(a,i5,3x,a,i5,3x,a,i3,3x,a,i2,2(3x,a,f5.0))') &
+    write (*,'(a,i5,3x,a,i5,3x,a,i4,3x,a,i3,3x,a,i2,2(3x,a,f5.0))') &
       'rt_internal_t%id:', self%id, &
       'mhd_patch%id:', self%mhd_patch%id, &
+      'dir_ID:',self%my_rays%dir_ID, &
       'n_packets',self%my_rays%n_packets, &
       'axis:', self%my_rays%axis, &
       'theta:', self%my_rays%theta*radian, &
@@ -130,14 +131,20 @@ SUBROUTINE update_rt_internal (self)
 !-----------------------------------------------------------------------
   write (stime,'(1p,g16.6)') self%time
   call trace_begin('rt_t%update_rt_internal '//stime,itimer=itimer)
-
   call self%solve
   call self%update_time
-
-  if (io%verbose>2) call self%check
-
+  if (io%verbose > 2) then
+    write (*,'(a,i5,3x,a,i5,3x,a,i4,3x,a,i3,3x,a,i2,2(3x,a,f5.0))') &
+      'rt_internal_t%update:', self%id, &
+      'mhd_patch%id:', self%mhd_patch%id, &
+      'dir_ID:',self%my_rays%dir_ID, &
+      'n_packets',self%my_rays%n_packets, &
+      'axis:', self%my_rays%axis, &
+      'theta:', self%my_rays%theta*radian, &
+      'phi:', self%my_rays%phi*radian
+  end if
+  if (io%verbose > 1) call self%check
   call trace_end (itimer)
-
 END SUBROUTINE update_rt_internal
 
 !> =====================================================================
