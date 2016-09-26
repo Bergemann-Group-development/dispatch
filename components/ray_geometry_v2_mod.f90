@@ -650,22 +650,22 @@ SUBROUTINE add_diag(self, rep, dir)
     if (dp(a)==0) then                                                  ! if a direction == 0
       dp2d(1) = dp(b)                                                   ! prepare b direction for 2D traversal
       dp2d(2) = dp(c)                                                   ! prepare c direction for 2D traversal
-      init_step(1) = 0.5                                                ! cell center for a direction
+      init_step(1) = 1                                                ! cell center for a direction
       init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
-      init_step(3) = 0.5                                                ! passive cell step
+      init_step(3) = 1                                                ! passive cell step
       call self%traverse_2d(dp2d, b, c, a, init_step)                   ! proceed with 2D traversal
 
     else if (dp(b) == 0) then                                           ! if b direction == 0
       dp2d(1) = dp(a)                                                   ! prepare a direction for 2D traversal
       dp2d(2) = dp(c)                                                   ! prepare c direction for 2D traversal
-      init_step(1) = 0.5                                                ! cell center for a direction
+      init_step(1) = 1                                                ! cell center for a direction
       init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
-      init_step(3) = 0.5                                                ! passive cell step
+      init_step(3) = 1                                                ! passive cell step
       call self%traverse_2d(dp2d, a, c, b, init_step)                   ! proceed with 2D traversal
 
     else                                                                ! movement to all directions
-      init_step(1) = 0.5                                                ! cell center for a direction
-      init_step(2) = 0.5                                                ! cell center for b direction
+      init_step(1) = 1                                                ! cell center for a direction
+      init_step(2) = 1                                                ! cell center for b direction
       init_step(3) = 1                                                  ! cell wall for c direction (ray propagation direction)
       call self%traverse_3d (dp, a, b, c, init_step)                    ! proceed with 3D traversal
     end if
@@ -1798,6 +1798,7 @@ SUBROUTINE print_bundle (self, i)
   if (io%verbose < 3) return
   write (*,*) '    RAY_BUNDLE:', i
   write (*,*) '    number of packets:', self%n_packets
+  write (*,*) '    lwall, uwall:', self%lwall, self%uwall
   ray => self%rays
   j = 1
   do while (associated(ray))

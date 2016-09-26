@@ -33,9 +33,9 @@ MODULE rt_mod
     ! that only know about density, temperature, ! and the mesh.  Such solvers
     ! would not need a pointer to an experiment_t data type.
     !---------------------------------------------------------------------------
-    class(mesh_t),       pointer :: mesh       => null()  ! pointer to mesh
-    real, dimension(:,:,:), pointer :: density => null()  ! pointer to density
-    real, dimension(:,:,:), pointer :: temperature => null()  ! pointer to temperature
+    class(mesh_t),          pointer :: mesh    => null()                ! pointer to mesh
+    real, dimension(:,:,:), pointer :: density => null()                ! pointer to density
+    real, dimension(:,:,:), pointer :: temperature => null()            ! pointer to temperature
   contains
     procedure :: find_upstream
     procedure :: init => init_rt

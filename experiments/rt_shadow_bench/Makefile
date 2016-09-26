@@ -1,14 +1,14 @@
 
 # Option groups
-#OPTS = debug
+OPTS = debug
 #OPTS = full_debug
-OPTS = optimized
+#OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
 SOLVER          = stagger2
 #RT_SOLVER       = hybrid2
-RT_SOLVER       = hybrid
+RT_SOLVER       = hybrid2
 MESH            = staggered
 EXEC            = dispatch.x
 # opacities: 
