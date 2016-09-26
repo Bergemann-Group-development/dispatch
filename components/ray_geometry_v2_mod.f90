@@ -1796,7 +1796,8 @@ SUBROUTINE print_bundle (self, i)
   class(ray_t), pointer :: ray
   !.............................................................................
   if (io%verbose < 3) return
-  write (*,*) '    RAY_BUNDLE:', i
+  write (*,'(1x,a,i3,2(3x,a,f5.0))') &
+    '    RAY_BUNDLE:', i, 'theta:', self%theta*radian, 'phi:', self%phi*radian
   write (*,*) '    number of packets:', self%n_packets
   ray => self%rays
   j = 1

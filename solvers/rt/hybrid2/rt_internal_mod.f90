@@ -108,14 +108,16 @@ SUBROUTINE init_rt_internal (self)
   end do
   nullify (packet)
   if (io%verbose>1) then
-    write (*,'(a,i5,3x,a,i5,3x,a,i4,3x,a,i3,3x,a,i2,2(3x,a,f5.0))') &
+    write (*,'(a,i5,3x,a,i5,3x,a,i4,3x,a,i3,3x,a,i2,2(3x,a,f5.0),2(3x,a,3i2))') &
       'rt_internal_t%id:', self%id, &
       'mhd_patch%id:', self%mhd_patch%id, &
       'dir_ID:',self%my_rays%dir_ID, &
       'n_packets',self%my_rays%n_packets, &
       'axis:', self%my_rays%axis, &
       'theta:', self%my_rays%theta*radian, &
-      'phi:', self%my_rays%phi*radian
+      'phi:', self%my_rays%phi*radian, &
+      'lwall', self%my_rays%lwall, &
+      'uwall', self%my_rays%uwall
   end if
   if (io%verbose>2) call self%check
   call trace_end
