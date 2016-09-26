@@ -69,17 +69,15 @@ END SUBROUTINE init
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, rho, ee, pg, tt, ne, lnrk, lnsource)
+SUBROUTINE lookup (self, rho, ee, pg, tt, ne, rk, src)
   class (eos_t):: self
   real, dimension(:,:,:)             :: rho,ee
-  real, dimension(:,:,:)  , optional :: pg,tt,ne,lnrk
-  real, dimension(:,:,:,:), optional :: lnsource
+  real, dimension(:,:,:)  , optional :: pg,tt,ne,rk
+  real, dimension(:,:,:,:), optional :: src
   !.............................................................................
   real(kind=4), dimension(size(rho,1)):: px,py,f00,f01,f10,f11, &
     fx00,fx01,fx10,fx11,fy00,fy01,fy10,fy11
   integer, dimension(size(rho,1)):: np,np1,ik,ntab,ik1,ntab1
-  real, allocatable, dimension(:,:):: pbot0, dlnpdE_r, dlnpdlnr_E
-  logical, allocatable, dimension(:,:,:):: panic
   real:: rhm1,rhm2,drhm,algrk,eek,eek1,py1
   real:: qx,qy,pxqx,pxpx,qxqx,pypy,pyqy,qyqy,pxpy,qxqy,pxqy,qxpy
   logical:: newtable
@@ -91,17 +89,11 @@ SUBROUTINE lookup (self, rho, ee, pg, tt, ne, lnrk, lnsource)
   mx=size(rho,1)
   my=size(rho,2)
   mz=size(rho,3)
-  allocate (pbot0(mx,mz), dlnpdE_r(mx,mz), dlnpdlnr_E(mx,mz))
-  allocate (panic(mx,my,mz))
-  panic = .false.
   newtable = .false.
   !
   rhm1=log(rhm(1))
   rhm2=log(rhm(mrho))
   drhm=(rhm2-rhm1)/(mrho-1)
-  do iz=1,mz
-    panic(:,:,iz)=.false.
-  end do
   !-----------------------------------------------------------------------------
   ! Loop over points
   !-----------------------------------------------------------------------------
@@ -114,7 +106,6 @@ SUBROUTINE lookup (self, rho, ee, pg, tt, ne, lnrk, lnsource)
       algrk=1.+(log(rho(ix,iy,iz))-rhm1)/drhm
       np(ix)=max0(1,min0(mrho-1,int(algrk)))
       px(ix)=algrk-np(ix)
-      panic(ix,iy,iz)=panic(ix,iy,iz).or.px(ix).lt.-0.01.or.px(ix).gt.1.01
       !-------------------------------------------------------------------------
       ! Internal energy index -- this loop has indirect referencing (9 flops)
       !-------------------------------------------------------------------------
@@ -124,7 +115,6 @@ SUBROUTINE lookup (self, rho, ee, pg, tt, ne, lnrk, lnsource)
       eek       = max(eek,1.0)                          ! FIXME
       kee       = min(ntab(ix)-1,max(1,int(eek)))
       py(ix)     = eek-kee
-      panic(ix,iy,iz) = panic(ix,iy,iz).or.py(ix).lt.-0.01.or.py(ix).gt.1.01
       ik(ix)     = itab(np(ix))+kee-1
       ntab1(ix)  = mtab(np(ix)+1)
       kee1      = kee - nint((eemin(np(ix)+1)-eemin(np(ix))) &
@@ -139,7 +129,6 @@ SUBROUTINE lookup (self, rho, ee, pg, tt, ne, lnrk, lnsource)
       nbelow    = nbelow + merge(1,0,eek1<kee1)         ! FIXME
       eek1      = max(eek1,real(kee1))                  ! FIXME
       py1       = eek1-kee1
-      panic(ix,iy,iz) = panic(ix,iy,iz) .or. abs(py(ix)-py1).gt.0.001
     end do
     !---------------------------------------------------------------------------
     ! Separate loop for weights, vectorizes well
@@ -199,9 +188,9 @@ SUBROUTINE lookup (self, rho, ee, pg, tt, ne, lnrk, lnsource)
     ik  = ik  + 3*ntab
     ik1 = ik1 + 3*ntab1
     !---------------------------------------------------------------------------
-    if (present(lnrk)) then
+    if (present(rk)) then
      do ix=1,mx
-      lnrk(ix,iy,iz) = ( &
+      rk(ix,iy,iz) = ( &
          f00(ix) * tab(ik (ix))+  f01(ix) * tab(ik (ix) + 1) &
       +  f10(ix) * tab(ik1(ix))+  f11(ix) * tab(ik1(ix) + 1) &
       + fx00(ix) * tab(ik (ix) + 2 * ntab (ix)    ) &
@@ -256,12 +245,12 @@ SUBROUTINE lookup (self, rho, ee, pg, tt, ne, lnrk, lnsource)
     ik  = ik  + 3*ntab
     ik1 = ik1 + 3*ntab1
     !---------------------------------------------------------------------------
-    if (present(lnsource)) then
-     do j=1,size(lnsource,4)
+    if (present(src)) then
+     do j=1,size(src,4)
      do ix=1,mx
       ik (ix) = ik (ix) + 3*ntab (ix)
       ik1(ix) = ik1(ix) + 3*ntab1(ix)
-      lnsource(ix,iy,iz,j) = ( &
+      src(ix,iy,iz,j) = ( &
          f00(ix) * tab(ik (ix))+  f01(ix) * tab(ik (ix) + 1) &
       +  f10(ix) * tab(ik1(ix))+  f11(ix) * tab(ik1(ix) + 1) &
       + fx00(ix) * tab(ik (ix) + 2 * ntab (ix)    ) &
@@ -278,42 +267,6 @@ SUBROUTINE lookup (self, rho, ee, pg, tt, ne, lnrk, lnsource)
     end if
   end do
   end do
-  !-----------------------------------------------------------------------------
-  !  Any cause for panic ?
-  !-----------------------------------------------------------------------------
-  if (any(panic)) then
-    do iz=1,mz
-    do iy=1,my
-    do ix=1,mx
-      if (panic(ix,iy,iz)) then
-        algrk=1.+(log(rho(ix,iy,iz))-rhm1)/drhm
-        np(ix)=max0(1,min0(mrho-1,int(algrk)))
-        ntab(ix) = mtab(np(ix))
-        ntab1(ix)= mtab(np(ix)+1)
-        eek= 1.+(ee(ix,iy,iz)-eemin(np(ix)))/deetab(np(ix))
-        kee= min0(ntab(ix)-1,max0(1,int(eek)))
-        kee1= kee - nint((eemin(np(ix)+1)-eemin(np(ix)))/deetab(np(ix)))
-        kee1= min0(ntab1(ix)-1,max0(1,kee1))
-        py(ix)= eek-kee
-        eek1= 1.+(ee(ix,iy,iz)-eemin(np(ix)+1))/deetab(np(ix)+1)
-        py1  = eek1-kee1
-        print '(a)','ix,iy,iz,lnrho,rhm1,rhm2,np(ix),algrk:'
-        print '(3i4,3f8.3,i4,f8.3)',ix,iy,iz,log(rho(ix,iy,iz)),rhm1,rhm2,np(ix),algrk
-        print '(a)','ee(ix,iy,iz),eemin,eemax,eek,kee,py(ix),ntab:'
-        print '(a)','                         eek1,kee1,py1,ntab1:'
-        print '(4f8.3,i4,f8.3,i4/24x,f8.3,i4,f8.3,i4)',ee(ix,iy,iz), &
-          eemin(np(ix)),eemax(np(ix)),eek,kee,py(ix),ntab(ix),eek1,kee1,py1,ntab1(ix)
-        call mpi%abort('eos')
-      endif
-    end do
-    end do
-    end do
-  end if
-  !-----------------------------------------------------------------------------
-  !  Deallocate temporaries
-  !-----------------------------------------------------------------------------
-  deallocate (pbot0, dlnpdE_r, dlnpdlnr_E)
-  deallocate (panic)
 END SUBROUTINE lookup
 
 END MODULE eos_mod

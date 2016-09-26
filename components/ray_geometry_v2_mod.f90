@@ -1,9 +1,9 @@
 !> =====================================================================
-!> A module to set up ray geometry. Several different geometries can be 
+!> A module to set up ray geometry. Several different geometries can be
 !> created if needed for different experiment geometries (e.g. cartesian,
 !> spherical, etc.). As an input the module needs the geometry index,
 !> lower and upper indices of the mesh (li, ui) and optionally cell
-!> sizes (otherwse they are assumed to be cubic and with unit size walls). 
+!> sizes (otherwse they are assumed to be cubic and with unit size walls).
 !> The resulting heararchy is such:
 !> ray ⊂ bundle ⊂ direction ⊂ geometry (⊂ indicates that A is a
 !> subset of B).
@@ -14,7 +14,7 @@
 !> and a pointer to a list of ray directions
 
 !> ray_dirs_t: is a linked list of directions. Every direction has an unique ID
-!> for particular geometry, number of bundles and a directionality parameter, 
+!> for particular geometry, number of bundles and a directionality parameter,
 !> which indicates, whether rays should go both ways or to only some particular
 !> direction and a pointer to bundles.
 
@@ -32,6 +32,7 @@
 !> =====================================================================
 MODULE ray_geometry_v2_mod
   USE io_mod
+  USE io_unit_mod
   USE trace_mod
   implicit none
   private
@@ -51,6 +52,7 @@ MODULE ray_geometry_v2_mod
     integer, dimension(:,:,:,:), pointer :: pt_wall     => null()       ! x|y|x, lw|uw, ray point, ray #
   contains
     procedure :: fill_ray_list_data
+    procedure :: print => print_ray
   end type
 ! ----------------------------------------------------------------------
   type, public :: ray_bndl_t
@@ -67,6 +69,8 @@ MODULE ray_geometry_v2_mod
     integer :: axis                                                     ! identificator along which axis ray goes 1-3
     real    :: theta                                                    ! angle between ray and axis [0, 45], stored in radians
     real    :: phi                                                      ! angle of the ray in the axis plane [0, 360), stored in radians
+  contains
+    procedure :: print => print_bundle
   end type
 ! ----------------------------------------------------------------------
   type, public :: ray_dirs_t
@@ -78,6 +82,8 @@ MODULE ray_geometry_v2_mod
     integer :: ID
     integer :: n_bundles                                                ! number of bundles in this direction
     integer :: directionality(3)                                        ! 1 - two directions, 2 - only forward, 3 - only reverse (x|y|z)
+  contains
+    procedure :: print => print_dirs
   end type
 ! ----------------------------------------------------------------------
   type, public :: ray_geometry_t
@@ -107,6 +113,7 @@ MODULE ray_geometry_v2_mod
     procedure :: test_ray_geometry
     procedure :: traverse_2d
     procedure :: traverse_3d
+    procedure :: print => print_geometry
   end type
 ! ----------------------------------------------------------------------
   type :: single_ray_t
@@ -118,8 +125,8 @@ MODULE ray_geometry_v2_mod
     integer                          :: uwall(3)
     integer                          :: n_points
     integer, dimension(:,:), pointer :: cell_coords => null()  ! x|y|z, ray point
-    integer, dimension(3)            :: fwd_coords             ! x|y|z,           
-    integer, dimension(3)            :: rev_coords             ! x|y|z,          
+    integer, dimension(3)            :: fwd_coords             ! x|y|z,
+    integer, dimension(3)            :: rev_coords             ! x|y|z,
     real,    dimension(:  ), pointer :: ds          => null()  ! ds   , ray point
     integer, dimension(:,:,:), pointer :: cell_walls => null()  ! lw|uw(x,y,z), ray point
   contains
@@ -175,7 +182,7 @@ MODULE ray_geometry_v2_mod
     procedure :: hop            => hop_2D
     procedure :: restart        => restart_2D
     procedure :: get_downstream => get_downstream_2D
-  end type 
+  end type
 ! ----------------------------------------------------------------------
   type :: traverse_3d_t
     integer, dimension(3) :: cell_max, cell_min, cell_step, cell_pos
@@ -190,7 +197,7 @@ MODULE ray_geometry_v2_mod
     procedure :: restart        => restart_3D
     procedure :: get_downstream => get_downstream_3D
     procedure :: wall           => cw_3d
-  end type 
+  end type
 ! ----------------------------------------------------------------------
   type(ray_geometry_t), public :: ray_geometry
   real(8), public, parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
@@ -207,12 +214,12 @@ SUBROUTINE init (self, geometry, li, ui, cell_dims)
   integer :: geometry
 ! ......................................................................
   call trace_begin('ray_geometry_t%init')
-  
+
   allocate (new)
   new%geometry = geometry
   new%li = li
   new%ui = ui
-  
+
   if(present(cell_dims)) then
       new%cell_dims = cell_dims
     else
@@ -228,7 +235,7 @@ SUBROUTINE init (self, geometry, li, ui, cell_dims)
     new%prev%next => new
     self%tail     => new
   end if
-  
+
   select case(geometry)
     case(1)
       call new%init_cartesian
@@ -237,7 +244,8 @@ SUBROUTINE init (self, geometry, li, ui, cell_dims)
     case(3)
       call new%init_cylindrical
   end select
-  
+
+  call new%print
   call trace_end
 END SUBROUTINE init
 
@@ -250,7 +258,7 @@ SUBROUTINE get_my_geometry(self, geometry, li, ui, cell_dims, my_geom)
   logical :: found
 ! ......................................................................
   call trace_begin('ray_geometry_t%get_my_geometry')
-  
+
   if(.not.associated(self%head)) then
     call self%init(geometry, li, ui, cell_dims)
   else
@@ -263,10 +271,10 @@ SUBROUTINE get_my_geometry(self, geometry, li, ui, cell_dims, my_geom)
         found = .true.
       else
         this => this%next
-      end if 
+      end if
     end do
   end if
-  
+
   nullify(this)
   call trace_end
 END SUBROUTINE get_my_geometry
@@ -277,13 +285,18 @@ END SUBROUTINE get_my_geometry
 !> for arbitrary directions (or can be not created, if user doesn't need
 !> them), 45 degree rays inevitably cover all tree directions, so they
 !> should be treated carefully if one doesn't need some directions.
+!> Namelist parameters:
+!>   nx, ny, nz     : number of angles relative to x-, y-, z-axis
+!>   xti, yti, zti  : degrees relative to x-, y-, and z-axis
+!>   dx, dy, dz     : ray directionality
 !> =====================================================================
 SUBROUTINE init_cartesian(self)
   class(ray_geometry_t) :: self
-  integer                         :: i, nx, ny, nz, d45
-  real, dimension(:), allocatable :: xt, yt, zt
-  real, dimension(5)              :: xti, yti, zti
-  integer :: dx, dy, dz
+  integer                         :: i, d45
+  real, dimension(:), allocatable :: xt, yt, zt                         ! FIXME: These seem to not be used
+  real, dimension(5)              :: xti=0.0, yti=0.0, zti=0.0
+  integer, save                   :: nx=1, ny=0, nz=0
+  integer, save                   :: dx=0, dy=0, dz=0
 ! ......................................................................
   namelist /cartesian_ray_geometry_params/ nx, ny, nz, xti, yti, zti, dx, dy, dz
 ! ......................................................................
@@ -293,7 +306,7 @@ SUBROUTINE init_cartesian(self)
   self%init_done = .true.
   allocate(self%ray_list)
   self%n_ray_dirs = 0
-  
+
   rewind (io%input)
   read (io%input, cartesian_ray_geometry_params)
   self%dr(1) = dx
@@ -317,8 +330,9 @@ SUBROUTINE init_cartesian(self)
         call self%add_ray(xti(i),1)
       end if
     end do
+    deallocate (xt)
   end if
-  
+
   if (ny > 0) then
     allocate (yt(ny)); yt = yti(1:ny)
     do i = 1, ny
@@ -336,8 +350,9 @@ SUBROUTINE init_cartesian(self)
         call self%add_ray(yti(i),2)
       end if
     end do
+    deallocate (yt)
   end if
-  
+
   if (nz > 0) then
     allocate (zt(nz)); zt = zti(1:nz)
     do i = 1, nz
@@ -355,15 +370,15 @@ SUBROUTINE init_cartesian(self)
         call self%add_ray(zti(i),3)
       end if
     end do
+    deallocate (zt)
   end if
-    
-  deallocate (xt, yt, zt)
+
   call trace_end
 END SUBROUTINE init_cartesian
 
 !> =====================================================================
 !> Initialisation subroutine for cylindrical geometry
-!> =====================================================================    
+!> =====================================================================
 SUBROUTINE init_cylindrical(self)
   class(ray_geometry_t)      :: self
   integer                         :: i, nz, nR, nPhi
@@ -427,7 +442,7 @@ SUBROUTINE add_axis(self, dir)
     self%ray_list%head => ndir                                           ! if empty, point to itself
     self%ray_list%tail => ndir
   end if
-  
+
   ! --- Fill in direction info ---
   ndir%bundle => bndl
   ndir%n_bundles = 1
@@ -446,7 +461,7 @@ SUBROUTINE add_axis(self, dir)
   bndl%lwall(a) =  0;  bndl%uwall(a) = 0
   bndl%lwall(b) =  0;  bndl%uwall(b) = 0
   bndl%lwall(c) = -1;  bndl%uwall(c) = 1                                ! lower/upper wall for this direction
-  
+
   ! --- Fill in rays info ---
   ray%head  => ray
   ray%tail  => ray
@@ -459,7 +474,7 @@ SUBROUTINE add_axis(self, dir)
   allocate (ray%fwd_coords(3,ray%n_rays))                               ! create table, containing x|y|z coords for upstream position for particular ray, for all rays
   allocate (ray%rev_coords(3,ray%n_rays))                               ! create table, containing x|y|z coords for downstream position for particular ray, for all rays
   allocate (ray%pt_wall(3,2,pmax(c), ray%n_rays))                       ! lower and upper walls the ray crosses in the cell
-  
+
   ray_n = 1                                                             ! ray number
   do ia = self%li(a), self%ui(a)                                        ! iterate over cells in first axis
     do ib = self%li(b), self%ui(b)                                      ! iterate over cells in second axis
@@ -487,8 +502,8 @@ SUBROUTINE add_axis(self, dir)
 END SUBROUTINE add_axis
 
 !> =====================================================================
-!> Subroutine to add rays (except 0 and 45 degree angles). 
-!> Done using modified "fast voxel traversal" algorithm 
+!> Subroutine to add rays (except 0 and 45 degree angles).
+!> Done using modified "fast voxel traversal" algorithm
 !> (original, not modified, one is from Amanatides & Woo, 1987)
 !> =====================================================================
 SUBROUTINE add_ray(self, theta, dir)
@@ -501,7 +516,7 @@ SUBROUTINE add_ray(self, theta, dir)
   logical :: oob_dir
   ! ....................................................................
   call trace_begin('ray_geometry_t%add_ray', 4)
-  
+
   nphi=floor(360./theta)                                                ! equispaced solid angles for all rays
   allocate(phis(nphi))
   phis(1) = 0; t = 360./nphi                                            ! phi = 0 direction
@@ -509,38 +524,38 @@ SUBROUTINE add_ray(self, theta, dir)
   do a = 2, nphi-1                                                      ! create phis array, avoiding phi = 360
     phis(a) = phis(a-1) + t
   end do
-  
+
   phis(nphi) = phis(nphi-1) + t
   phis = phis/radian
   t = theta/radian
-  
+
   SELECT case(dir)
   case(1)
     a = 2; b = 3; c = 1                                                 ! along x axis
   case(2)
     a = 3; b = 1; c = 2                                                 ! along y axis
-  case(3)  
+  case(3)
     a = 1; b = 2; c = 3                                                 ! along z axis
   end SELECT
-  
+
   do pdir = 1, nphi                                                     ! loop over phis
     phi = phis(pdir)
     self%n_ray_dirs = self%n_ray_dirs + 1                               ! increment ray dirs
-    
-    self%axis = dir                              
+
+    self%axis = dir
     self%theta = t
     self%phi = phis(pdir)
-    
+
     dp(a) = sin(t)*cos(phi)*self%cell_dims(a)                           ! step size along a direction
     dp(b) = sin(t)*sin(phi)*self%cell_dims(b)                           ! step size along b direction
     dp(c) = cos(t)         *self%cell_dims(c)                           ! step size along c direction
-      
+
     round = anint(dp(a)*100.0)                                          ! removing computer uncertainties
     dp(a) = round/100.0                                                 ! and giving angle error of around 1 degree
                                                                           ! this is necessary in order to avoid infinite loops
-    round = anint(dp(b)*100.0)                                          ! and overabundance of ray points with machine epsilon 
+    round = anint(dp(b)*100.0)                                          ! and overabundance of ray points with machine epsilon
     dp(b) = round/100.0                                                 ! ds
-      
+
     round = anint(dp(c)*100.0)
     dp(c) = round/100.0
 
@@ -551,7 +566,7 @@ SUBROUTINE add_ray(self, theta, dir)
       init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
       init_step(3) = 0.5                                                ! passive cell step
       call self%traverse_2d(dp2d, b, c, a, init_step)                   ! proceed with 2D traversal
-        
+
     else if (dp(b) == 0) then                                           ! if b direction == 0
       dp2d(1) = dp(a)                                                   ! prepare a direction for 2D traversal
       dp2d(2) = dp(c)                                                   ! prepare c direction for 2D traversal
@@ -559,7 +574,7 @@ SUBROUTINE add_ray(self, theta, dir)
       init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
       init_step(3) = 0.5                                                ! passive cell step
       call self%traverse_2d(dp2d, a, c, b, init_step)                   ! proceed with 2D traversal
-        
+
     else                                                                ! movement to all directions
       init_step(1) = 0.5                                                ! cell center for a direction
       init_step(2) = 0.5                                                ! cell center for b direction
@@ -567,7 +582,7 @@ SUBROUTINE add_ray(self, theta, dir)
       call self%traverse_3d (dp, a, b, c, init_step)                    ! proceed with 3D traversal
     end if
   end do
-      
+
   deallocate(phis)
   call trace_end
 END SUBROUTINE add_ray
@@ -580,7 +595,7 @@ END SUBROUTINE add_ray
 !> Same as add_ray for one direction and only 2 rays for second direction.
 !> due to ray alignment, third direction is omitted.
 !> In this setup rays DO NOT go through cell centres, therefore they DO NOT
-!> cross cell corners - avoiding diagonal nbor problem. To set rays to go 
+!> cross cell corners - avoiding diagonal nbor problem. To set rays to go
 !> through cell centers, move ray from cell center to wall and vice-versa
 !> for 3D movement.
 !> =====================================================================
@@ -593,9 +608,9 @@ SUBROUTINE add_diag(self, rep, dir)
   integer :: rep, dir, nphi, a, b, c, pdir, round
 ! ......................................................................
   call trace_begin('ray_geometry_t%add_diag',4)
-  
+
   t = 45./radian
-  
+
   SELECT case(dir)
   case(1)
     a = 2; b = 3; c = 1                                                 ! along x axis
@@ -604,16 +619,16 @@ SUBROUTINE add_diag(self, rep, dir)
   case(3)
     a = 1; b = 2; c = 3                                                 ! along z axis
   end SELECT
-  
+
   SELECT case(rep)                                                      ! 45 degree rays can be added only twice
   case(1)
     nphi = 8
     phis(1:8) = (/0., 45., 90., 135., 180., 225., 270., 315./)
   case(2)
     nphi = 2
-    phis(1:2) = (/45., 315./)                                           
+    phis(1:2) = (/45., 315./)
   end SELECT
-    
+
   phis = phis/radian
   do pdir = 1, nphi                                                     ! loop over phis
     self%n_ray_dirs = self%n_ray_dirs + 1                               ! increment ray dirs
@@ -624,14 +639,14 @@ SUBROUTINE add_diag(self, rep, dir)
     dp(a) = sin(t)*cos(phi)*self%cell_dims(a)                           ! step size along a direction
     dp(b) = sin(t)*sin(phi)*self%cell_dims(b)                           ! step size along b direction
     dp(c) = cos(t)         *self%cell_dims(c)                           ! step size along c direction
-      
+
     round = anint(dp(a)*100.0)                                          ! removing computer uncertainties
     dp(a) = round/100.0                                                 ! and giving angle error of around 1 degree
     round = anint(dp(b)*100.0)                                          ! this is necessary in order to avoid infinite loops
-    dp(b) = round/100.0                                                 ! and overabundance of ray points with machine epsilon 
+    dp(b) = round/100.0                                                 ! and overabundance of ray points with machine epsilon
     round = anint(dp(c)*100.0)                                          ! ds
     dp(c) = round/100.0
-      
+
     if (dp(a)==0) then                                                  ! if a direction == 0
       dp2d(1) = dp(b)                                                   ! prepare b direction for 2D traversal
       dp2d(2) = dp(c)                                                   ! prepare c direction for 2D traversal
@@ -639,7 +654,7 @@ SUBROUTINE add_diag(self, rep, dir)
       init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
       init_step(3) = 0.5                                                ! passive cell step
       call self%traverse_2d(dp2d, b, c, a, init_step)                   ! proceed with 2D traversal
-      
+
     else if (dp(b) == 0) then                                           ! if b direction == 0
       dp2d(1) = dp(a)                                                   ! prepare a direction for 2D traversal
       dp2d(2) = dp(c)                                                   ! prepare c direction for 2D traversal
@@ -647,14 +662,14 @@ SUBROUTINE add_diag(self, rep, dir)
       init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
       init_step(3) = 0.5                                                ! passive cell step
       call self%traverse_2d(dp2d, a, c, b, init_step)                   ! proceed with 2D traversal
-        
+
     else                                                                ! movement to all directions
       init_step(1) = 0.5                                                ! cell center for a direction
       init_step(2) = 0.5                                                ! cell center for b direction
       init_step(3) = 1                                                  ! cell wall for c direction (ray propagation direction)
       call self%traverse_3d (dp, a, b, c, init_step)                    ! proceed with 3D traversal
     end if
-      
+
   end do
   call trace_end
 END SUBROUTINE add_diag
@@ -678,14 +693,14 @@ SUBROUTINE traverse_2d(self, dp, a, b, fc, init_step)
 call trace_begin('traverse_2d_t%traverse_2d',4)
   allocate(t)                                                           ! allocate traversal object
   allocate(ray_bundle)                                                  ! create ray tree to store rays
-  
+
   call t%init(dp, self%ui, self%li, a, b, fc)                           ! initialize traversal object
-  
+
   do ia = t%cell_min(1), t%cell_max(1), t%cell_step(1)                  ! loop over nominal direction
     do ib = t%cell_min(3), t%cell_max(3), t%cell_step(3)                ! loop over passive direction
       first_point = .true.
       allocate(ray)                                                     ! create new ray (point)
-      call t%posit(ia, ib, init_step, I_up)                             ! position traversal object                                
+      call t%posit(ia, ib, init_step, I_up)                             ! position traversal object
       do while (.not.t%oob)                                             ! loop until ray reaches wall at ray direction
         call ray%add_ray_point(t%cell_pos)                              ! add a ray point to the ray
         if (first_point) then                                           ! if it is the starting point, link stuff
@@ -695,7 +710,7 @@ call trace_begin('traverse_2d_t%traverse_2d',4)
           ray%tail%lwall = t%lw                                         ! ray enters the cell through this wall
           ray%tail%prev%uwall = -ray%tail%lwall                         ! ray leaves the cell through this wall
         end if
-        
+
         call t%hop                                                      ! hop to the next cell
         ray%tail%ds = t%ds                                              ! save distance traveled
         if (t%r_trace >= t%r_tot) then                                  ! if the ray is traced
@@ -711,7 +726,7 @@ call trace_begin('traverse_2d_t%traverse_2d',4)
             call t%restart(I_up)                                        ! and restart the nominal direction
           end if
         end if
-          
+
       end do
     end do
   end do
@@ -737,9 +752,9 @@ SUBROUTINE traverse_3d(self, dp, a, b, c, init_step)
   call trace_begin('traverse_3d_t%traverse_3d')
   allocate(t)                                                           ! allocate traversal object
   allocate(ray_bundle)                                                  ! create ray tree to store rays
-  
+
   call t%init(dp, self%ui, self%li, a, b, c)                            ! initialize traversal object
- 
+
   do ia = t%cell_min(1), t%cell_max(1), t%cell_step(1)                  ! loop over 1st direction
     do ib = t%cell_min(2), t%cell_max(2), t%cell_step(2)                ! loop over 2nd direction
       first_point = .true.
@@ -750,13 +765,13 @@ SUBROUTINE traverse_3d(self, dp, a, b, c, init_step)
         if (first_point) then
           ray%head%lwall = t%lw                                         ! ray enters the cell through this wall
           first_point = .false.
-        else 
+        else
           ray%tail%lwall = t%lw                                         ! ray enters the cell through this wall
           ray%tail%prev%uwall = -ray%tail%lwall                         ! ray leaves the cell through this wall
         end if
         call t%hop                                                      ! hop to the next cell
         ray%tail%ds = t%ds                                              ! save distance traveled
-                
+
         if (t%r_trace >= t%r_tot) then                                  ! if the ray is fully traced
           ray%tail%uwall = -t%lw
           call t%get_downstream(ray%head%rev)                           ! get ray downstream cell
@@ -770,17 +785,17 @@ SUBROUTINE traverse_3d(self, dp, a, b, c, init_step)
             first_point = .true.
           end if
         end if
-        
+
       end do
     end do
   end do
   call self%finish_single_ray_list(ray_bundle)                          ! save the ray tree to ray_geometry
-  deallocate(t)   
-END SUBROUTINE traverse_3D 
+  deallocate(t)
+END SUBROUTINE traverse_3D
 
 !> =====================================================================
 !> INPUT: self, step size along ray direction (dp), smallest cell coord (li)
-!> highest cell coord (ui), nominal direction (a), ray direction (b), 
+!> highest cell coord (ui), nominal direction (a), ray direction (b),
 !> fixed coord (fc)
 !> =====================================================================
 SUBROUTINE init_traverse_2D(self, dp, ui, li, a, b, fc)
@@ -790,7 +805,7 @@ SUBROUTINE init_traverse_2D(self, dp, ui, li, a, b, fc)
   integer               :: a, b, fc
 ! ......................................................................
   call trace_begin('traverse_2d_t%init')
-  self%a = a; self%b = b; self%fc = fc  
+  self%a = a; self%b = b; self%fc = fc
   self%cell_max(1) = ui(a)                                              ! last cell point along a axis
   self%cell_max(2) = ui(b)                                              ! last cell point along b axis
   self%cell_max(3) = ui(fc)                                             ! last cell point along fixed coord axis
@@ -826,35 +841,35 @@ SUBROUTINE posit_2D(self, ia, ib, init_step, upstream)
   self%cell_pos(self%b ) = self%cell_min(2)                             ! position in ray direction axis
   self%cell_pos(self%fc) = ib                                           ! position in passive axis
   self%lw = 0; self%uw = 0
-  
+
   if (init_step(1) == 1) then                                           ! initial ray position in a axis
     self%ray_p_init(1) = ia - self%cell_step(1)/2                       ! it starts from the wall
   else
     self%ray_p_init(1) = ia                                             ! or at predetermined position
   end if
-  
+
   if (init_step(2) == 1) then                                           ! initial ray position in ray direction
     self%ray_p_init(2) = self%cell_min(2) - self%cell_step(2)/2         ! it starts from the wall
   else
     self%ray_p_init(2) = self%cell_min(2)                               ! or at predetermined position
   end if
-  
+
   self%ray_p_last(1) = self%cell_max(1) + self%cell_step(1)/2           ! ray ends at cell wall
   self%ray_p_last(2) = self%cell_max(2) + self%cell_step(2)/2           ! ray ends at cell wall
-    
+
   if (self%cell_step(1) > 0) then                                       ! distance ray travels in a direction
-    self%ray_dist(1) = self%ray_p_last(1) - self%ray_p_init(1)  
+    self%ray_dist(1) = self%ray_p_last(1) - self%ray_p_init(1)
   else
     self%ray_dist(1) = self%ray_p_init(1) - self%ray_p_last(1)
   end if
-  
+
   self%ray_dist(2) = self%ray_p_last(2) - self%ray_p_init(2)            ! distance ray travels in ray direction axis
   self%ray_dist    = self%ray_dist * self%dstep                         ! total distance ray travels in each direction to reach the end of patch
   self%r_tot       = minval(self%ray_dist)                              ! determine the smallest distance
   self%ray_step(1) = init_step(1)
   self%ray_step(2) = init_step(2)
   self%ray_step    = self%ray_step * self%dstep                         ! distance along the ray to cross to another cell
-  
+
   if (init_step(1) == init_step(2)) then                                ! find upstream cell position
     upstream(self%a)  = self%cell_pos(self%a ) - self%cell_step(1)
     upstream(self%b)  = self%cell_pos(self%b ) - self%cell_step(2)
@@ -869,7 +884,7 @@ SUBROUTINE posit_2D(self, ia, ib, init_step, upstream)
     else
       self%lw(self%b) = 1
     end if
-  else if (init_step(1) > init_step(2)) then                    
+  else if (init_step(1) > init_step(2)) then
     upstream(self%a)  = self%cell_pos(self%a ) - self%cell_step(1)
     upstream(self%b)  = self%cell_pos(self%b )
     upstream(self%fc) = self%cell_pos(self%fc)
@@ -909,7 +924,7 @@ SUBROUTINE hop_2D (self)
              ds = ray_step(1)                                           ! save distance traveled
     r_trace     = r_trace + ray_step(1)                                 ! save total distance traveled (for sanity check)
     ray_step(1) = dstep(1)                                              ! reset distance to wall for 1
-    self%lw(a)  = -1 
+    self%lw(a)  = -1
   else if (ray_step(1) == ray_step(2)) then                             ! if both equal, move diagonally
     cell_pos(a) = cell_pos(a) + cell_step(1)                            ! cell position is diagonal to the old one
     cell_pos(b) = cell_pos(b) + cell_step(2)
@@ -945,7 +960,7 @@ SUBROUTINE get_downstream_2D (self, downstream)
   call hop_2D(self)                                                     ! make a hop
   downstream = self%cell_pos                                            ! that is your downstream cell
   ! determine which wall is crossed
-  if (cell_pos(self%a) /= downstream(self%a)) then   
+  if (cell_pos(self%a) /= downstream(self%a)) then
     if (self%cell_step(1) > 0) then
       self%uw(self%a) = 1
     else
@@ -954,7 +969,7 @@ SUBROUTINE get_downstream_2D (self, downstream)
   else
     self%uw(self%a) = 0
   end if
-  
+
   if (cell_pos(self%b) /= downstream(self%b)) then
     if (self%cell_step(2) > 0) then
       self%uw(self%b) = 1
@@ -964,8 +979,8 @@ SUBROUTINE get_downstream_2D (self, downstream)
   else
     self%uw(self%b) = 0
   end if
-  self%uw(self%fc) = 0 
-  
+  self%uw(self%fc) = 0
+
   self%cell_pos = cell_pos                                              ! reset cell position
   self%ray_step = ray_step                                              ! reset ray steps
   self%r_trace  = r_trace                                               ! reset total distance
@@ -1029,36 +1044,36 @@ SUBROUTINE posit_3D(self, ia, ib, init_step, upstream)
   if (init_step(1) == 1) then                                           ! determine whether ray starts
     self%ray_p_init(1) = ia - self%cell_step(1)/2                       ! at the wall or at the centre
   else                                                                  ! in terms of thjs direction
-    self%ray_p_init(1) = ia                                   
+    self%ray_p_init(1) = ia
   end if
-  
+
   if (init_step(2) == 1) then
     self%ray_p_init(2) = ib - self%cell_step(2)/2
   else
     self%ray_p_init(2) = ib
   end if
-      
+
   if (init_step(3) == 1) then
-    self%ray_p_init(3) = self%cell_min(3) - self%cell_step(3)/2 
+    self%ray_p_init(3) = self%cell_min(3) - self%cell_step(3)/2
   else
     self%ray_p_init(3) = self%cell_min(3)
   end if
-  
-  
+
+
   self%ray_p_last = self%cell_max + self%cell_step/2                    ! ray finishes at the wall
-  
+
   if (self%cell_step(1) > 0) then                                       ! estimate ray distance for a dirrection
     self%ray_dist(1) = self%ray_p_last(1) - self%ray_p_init(1)
   else
     self%ray_dist(1) = self%ray_p_init(1) - self%ray_p_last(1)
   end if
-  
+
   if (self%cell_step(2) > 0) then                                       ! estimate ray distance for b dirrection
     self%ray_dist(2) = self%ray_p_last(2) - self%ray_p_init(2)
   else
     self%ray_dist(2) = self%ray_p_init(2) - self%ray_p_last(2)
   end if
-  
+
   self%ray_dist(3) = self%ray_p_last(3) - self%ray_p_init(3)            ! estimate ray distance for c dirrection
   self%ray_dist    = self%ray_dist * self%dstep
   self%r_tot       = minval(self%ray_dist)                              ! determine the shortest path
@@ -1066,17 +1081,17 @@ SUBROUTINE posit_3D(self, ia, ib, init_step, upstream)
   if (self%r_tot< 0) then                                               ! never happens, but just in case
     error stop "ray_geometry:posit_3d: crap"
   end if
-  
+
   self%ray_step    = init_step                                          ! set initial ray steps
   self%ray_step    = self%ray_step * self%dstep                         ! normalise in axis point of view
-  
+
   if (init_step(1) == init_step(2)) then                                ! determine upstream cell position
     if  (init_step(2) == init_step(3)) then
       upstream(self%a) = self%cell_pos(self%a) - self%cell_step(1)
       upstream(self%b) = self%cell_pos(self%b) - self%cell_step(2)
       upstream(self%c) = self%cell_pos(self%c) - self%cell_step(3)
       call self%wall(1); call self%wall(2); call self%wall(3)           ! and the lower face
-      
+
     else if (init_step(2) < init_step(3)) then
       upstream(self%a) = self%cell_pos(self%a)
       upstream(self%b) = self%cell_pos(self%b)
@@ -1105,7 +1120,7 @@ SUBROUTINE posit_3D(self, ia, ib, init_step, upstream)
       upstream(self%a) = self%cell_pos(self%a)
       upstream(self%b) = self%cell_pos(self%b) - self%cell_step(2)
       upstream(self%c) = self%cell_pos(self%c)
-      call self%wall(1,0); call self%wall(2); call self%wall(3,0) 
+      call self%wall(1,0); call self%wall(2); call self%wall(3,0)
     else
       upstream(self%a) = self%cell_pos(self%a) - self%cell_step(1)
       upstream(self%b) = self%cell_pos(self%b)
@@ -1129,7 +1144,7 @@ SUBROUTINE posit_3D(self, ia, ib, init_step, upstream)
     upstream(self%b) = self%cell_pos(self%b)
     upstream(self%c) = self%cell_pos(self%c)
     call self%wall(1); call self%wall(2,0); call self%wall(3,0)
-  else 
+  else
     upstream(self%a) = self%cell_pos(self%a)
     upstream(self%b) = self%cell_pos(self%b) -  self%cell_step(2)
     upstream(self%c) = self%cell_pos(self%c)
@@ -1280,7 +1295,7 @@ SUBROUTINE get_downstream_3D (self, downstream)
   ray_step = self%ray_step
   cell_pos = self%cell_pos
   r_trace  = self%r_trace
-  
+
   call hop_3D(self)
   downstream = self%cell_pos
   self%uw = 0
@@ -1293,7 +1308,7 @@ SUBROUTINE get_downstream_3D (self, downstream)
   else
     self%uw(self%a) = 0
   end if
-  
+
   if (cell_pos(self%b) /= downstream(self%b)) then
     if (self%cell_step(2) > 0) then
       self%uw(self%b) =  1
@@ -1303,7 +1318,7 @@ SUBROUTINE get_downstream_3D (self, downstream)
   else
     self%uw(self%b) = 0
   end if
-  
+
   if (cell_pos(self%c) /= downstream(self%c)) then
     if (self%cell_step(3) > 0) then
       self%uw(self%c) =  1
@@ -1313,7 +1328,7 @@ SUBROUTINE get_downstream_3D (self, downstream)
   else
     self%uw(self%c) = 0
   end if
-  
+
   self%cell_pos = cell_pos
   self%ray_step = ray_step
   self%r_trace  = r_trace
@@ -1341,7 +1356,7 @@ SUBROUTINE restart_2D (self, upstream)
   self%r_trace            = 0                                           ! restart the ray total distance
   self%cell_pos(self%a)   = self%cell_min(1)                            ! restart the cell position in nominal axis
   self%ray_step(1)        = self%dstep(1)                               ! restart the distance, the ray has to travel in nominal axis
-  
+
   upstream(self%a)  = self%cell_pos(self%a) - self%cell_step(1)         ! get upstream cell position
   upstream(self%b)  = self%cell_pos(self%b)
   upstream(self%fc) = self%cell_pos(self%fc)
@@ -1384,7 +1399,7 @@ SUBROUTINE restart_3D (self, upstream)
     upstream(self%b)      = self%cell_pos(self%b)
     upstream(self%c)      = self%cell_pos(self%c)
     self%lw(self%a)  = -1; self%lw(self%b)  =  0; self%lw(self%c) =  0
-    
+
   else if ((self%reset_b).and.(.not.self%reset_a)) then
     self%ray_p_init(2)    = self%cell_min(2)      - self%cell_step(2)/2
     self%ray_p_last(2)    = self%cell_max(2)      + self%cell_step(2)/2
@@ -1399,8 +1414,8 @@ SUBROUTINE restart_3D (self, upstream)
     self%r_tot            = minval(self%ray_dist)
     self%r_trace          = 0
     self%cell_pos(self%b) = self%cell_min(2)
-    self%ray_step(2)      = self%dstep(2) 
-    upstream(self%a)      = self%cell_pos(self%a) 
+    self%ray_step(2)      = self%dstep(2)
+    upstream(self%a)      = self%cell_pos(self%a)
     upstream(self%b)      = self%cell_pos(self%b) - self%cell_step(2)
     upstream(self%c)      = self%cell_pos(self%c)
     self%lw(self%a)  = 0; self%lw(self%b)  =  -1; self%lw(self%c) =  0
@@ -1434,7 +1449,7 @@ SUBROUTINE restart_3D (self, upstream)
     self%lw(self%a)  = -1; self%lw(self%b)  =  -1; self%lw(self%c) =  0
   else
     error stop "ray_geometry: in reset 3D resets went haywire"
-  end if 
+  end if
   self%uw = 0
 END SUBROUTINE restart_3D
 
@@ -1448,7 +1463,7 @@ SUBROUTINE add_ray_point(self, p)
   class(ray_point_t), pointer :: point
   integer :: p(3)
 ! ......................................................................
-  call trace_begin('ray_geometry_t%add_ray_point')
+  call trace_begin('ray_geometry_t%add_ray_point', 4)
   allocate(point)
   if (associated(self%tail)) then
     point%prev => self%tail
@@ -1479,11 +1494,11 @@ SUBROUTINE fill_single_ray_data(self, ray)
 ! ......................................................................
   prev => ray%tail
   ray  => ray%head
-   
+
   self%lwall    = ray%lwall                                          ! store lower wall
   self%uwall    = prev%uwall                                            ! store upper wall
   self%n_points = ray%n_points                                          ! store number of points in this ray
-   
+
   allocate(self%cell_coords(3, ray%n_points))                           ! create a stiff array for this ray with cell cords
   allocate(self%ds (ray%n_points))                                      ! create a stiff array for this ray with ds
   allocate(self%cell_walls (3,2,ray%n_points))                          ! create a stiff array for this ray with cell uw and lw
@@ -1512,10 +1527,10 @@ SUBROUTINE finish_ray(self, ray_point)
   logical :: fnd_p, fnd_b
 ! ......................................................................
   call trace_begin('ray_geometry_t%finish_ray')
-  
+
   allocate (ray)                                                        ! allocate ray list
   call ray%fill_single_ray_data(ray_point)
-  
+
   if (.not.associated(self%head)) then                                  ! if the ray tree is empty
     allocate(bundle)
     self%head => bundle
@@ -1542,8 +1557,8 @@ SUBROUTINE finish_ray(self, ray_point)
       bundle%lwall = ray%lwall
       bundle%uwall = ray%uwall
     end if
-  end if  
-    
+  end if
+
   if (.not.associated(bundle%packets)) then
     allocate(packet)
     bundle%packets => packet
@@ -1572,7 +1587,7 @@ SUBROUTINE finish_ray(self, ray_point)
       packet%n_points = ray%n_points
     end if
   end if
-  
+
   if (.not.associated(packet%rays)) then
     packet%rays => ray
     ray%head => ray
@@ -1598,7 +1613,7 @@ SUBROUTINE fill_ray_list_data(self, sray)
   allocate (self%fwd_coords(3,self%n_rays))                             ! upstream cell coords per ray
   allocate (self%rev_coords(3,self%n_rays))                             ! downstream cell coords per ray
   allocate (self%pt_wall(3,2,self%n_points,self%n_rays))                ! wall info per point per ray
-  
+
   sray => sray%head
   iray = 0
   do while (associated(sray))                                           ! loop over all rays in the tree
@@ -1629,7 +1644,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
   class(single_ray_packet_t), pointer :: spacket, sp_prev
   class(single_ray_t),   pointer :: sray
 ! ......................................................................
-  
+
   ! --- Sort out direction issues ---
   allocate (dir)                                                        ! create new ray direction
   if (associated(self%ray_list%head)) then                              ! if ray list is not empty
@@ -1642,11 +1657,11 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     self%ray_list%head => dir                                           ! if empty, point to itself
     self%ray_list%tail => dir
   end if
-  
+
   dir%ID = self%n_ray_dirs
   dir%n_bundles = 0
   dir%directionality = self%dr
-  
+
   ! --- Go through single bundles ---
   sbundle => sbundle%head
   do while (associated(sbundle))                                        ! loop over ray bundles to be saved
@@ -1668,11 +1683,11 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
       dir%bundle%tail => bundle
       bundle%ID = bundle%prev%ID
     end if
-    
+
     bundle%lwall = sbundle%lwall
     bundle%uwall = sbundle%uwall
     bundle%n_packets = 0
-    
+
     ! --- Go through single packets ---
     spacket => sbundle%packets
     do while (associated(spacket))
@@ -1690,7 +1705,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
         bundle%rays%tail => ray
         ray%ID = ray%prev%ID
       end if
-      
+
       ray%n_rays = spacket%n_rays
       ray%n_points = spacket%n_points
       call ray%fill_ray_list_data(spacket%rays)
@@ -1725,7 +1740,7 @@ SUBROUTINE get_my_bundle (self, bundle, d_ID, b_ID)
       dir => dir%next
     end if
   end do
-  
+
   if (df) then
     bf = .false.
     bundle => dir%bundle
@@ -1738,9 +1753,9 @@ SUBROUTINE get_my_bundle (self, bundle, d_ID, b_ID)
     end do
     if (.not.bf) error stop "Appropriate bundle not found"
   else
-    error stop "Appropriate ray direction not found"  
-  end if  
-  
+    error stop "Appropriate ray direction not found"
+  end if
+
 END SUBROUTINE get_my_bundle
 
 
@@ -1748,14 +1763,88 @@ SUBROUTINE test_ray_geometry(self, dir, bundle_ID, ray)
   class(ray_geometry_t) :: self
   class(ray_bndl_t), pointer :: bundle
   integer :: dir, bundle_ID, ray, pt, p(3)
-  
+
   call self%get_my_bundle(bundle, dir, bundle_ID)
-  
+
   print *, 'Testing ray_geom for dir_ID, bundle_ID, ray:',bundle%dir_ID, bundle_ID, ray
   print *, 'packets in bundle:',bundle%n_packets
   print *, 'lwall, uwall', bundle%lwall, bundle%uwall
   print *, 'n_points in test ray:',bundle%rays%n_points
-  
+
 END SUBROUTINE test_ray_geometry
+
+!> =============================================================================
+!> Print summary info for ray_t
+!> =============================================================================
+SUBROUTINE print_ray (self, i)
+  class(ray_t) :: self
+  integer :: i
+  class(ray_t), pointer :: ray
+  !.............................................................................
+  if (io%verbose < 3) return
+  write (*,*) '      RAY_PACKET:', i
+  write (*,*) '      number of rays:', self%n_rays
+  write (*,*) '      number of points:', self%n_points
+END SUBROUTINE print_ray
+
+!> =============================================================================
+!> Print summary info for ray_bndl_t
+!> =============================================================================
+SUBROUTINE print_bundle (self, i)
+  class(ray_bndl_t) :: self
+  integer :: i, j
+  class(ray_t), pointer :: ray
+  !.............................................................................
+  if (io%verbose < 3) return
+  write (*,*) '    RAY_BUNDLE:', i
+  write (*,*) '    number of packets:', self%n_packets
+  ray => self%rays
+  j = 1
+  do while (associated(ray))
+    call ray%print (j)
+    j = j+1
+    ray => ray%next
+  end do
+END SUBROUTINE print_bundle
+
+!> =============================================================================
+!> Print summary info for ray_dirs_t
+!> =============================================================================
+SUBROUTINE print_dirs (self, i)
+  class(ray_dirs_t) :: self
+  integer :: i, j
+  class(ray_bndl_t), pointer :: ray_bndl
+  !.............................................................................
+  if (io%verbose < 2) return
+  write (*,*) '  RAY_DIR:', i
+  write (*,*) '  number of bundles:', self%n_bundles
+  ray_bndl => self%bundle
+  j = 1
+  do while (associated(ray_bndl))
+    call ray_bndl%print (j)
+    j = j+1
+    ray_bndl => ray_bndl%next
+  end do
+END SUBROUTINE print_dirs
+
+!> =============================================================================
+!> Print summary info for ray_geometry_t
+!> =============================================================================
+SUBROUTINE print_geometry (self)
+  class(ray_geometry_t) :: self
+  integer :: j
+  class(ray_dirs_t), pointer :: ray_dir
+  !.............................................................................
+  if (io%verbose < 1) return
+  write (*,*) 'RAY_GEOMETRY:'
+  write (*,*) 'number of directions:', self%n_ray_dirs
+  ray_dir => self%ray_list
+  j = 1
+  do while (associated(ray_dir))
+    call ray_dir%print (j)
+    j = j+1
+    ray_dir => ray_dir%next
+  end do
+END SUBROUTINE print_geometry
 
 END MODULE ray_geometry_v2_mod
