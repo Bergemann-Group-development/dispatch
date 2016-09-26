@@ -1,6 +1,7 @@
 !> =============================================================================
 !> Test showing that Fortran pointers are just pointers, not pointers to pointers,
-!> and demonstrating that one can allocate on dimensioned class pointers.
+!> demonstrating that one can allocate on dimensioned class pointers, and showing
+!> that "target, allocatable" is essentially equivalent to "pointer".
 !> =============================================================================
 PROGRAM test_pointers
   type:: a_t
@@ -10,7 +11,8 @@ PROGRAM test_pointers
     real:: b
   end type
   class(a_t), dimension(:), pointer:: aa, bb
-  type(b_t), dimension(:), pointer:: bp
+  class(a_t), dimension(:), target, allocatable:: cc
+  type(b_t), dimension(:), pointer:: bp, cp
   real, pointer:: a,b,c,d
   !.............................................................................
   allocate (a,b)
@@ -30,13 +32,23 @@ PROGRAM test_pointers
   !-----------------------------------------------------------------------------
   ! Need to select type to access the %b part of pointers to class(a_t)
   !-----------------------------------------------------------------------------
-  allocate (b_t::bb(5))
+  allocate (b_t::bb(5),cc(4))
   select type (bb)
-    type is (b_t)
+  type is (b_t)
     bb(:)%a = 2.
     bb(:)%b = 3.
     bp => bb
   end select
-  print *, bb%a
-  print *, bp%b
+  !-----------------------------------------------------------------------------
+  ! A class array of allocatable with target attribute works the same as an array 
+  ! pointers to class.
+  !-----------------------------------------------------------------------------
+  select type (cc)
+  type is (b_t)
+    cc(:)%a = 4.
+    cc(:)%b = 5.
+    cp => cc
+  end select
+  print *, cc%a
+  print *, cp%b
 END PROGRAM
