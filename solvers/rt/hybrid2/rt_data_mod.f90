@@ -84,6 +84,12 @@ SUBROUTINE init_rt_data(self)
   self%opacity = 0;   self%source = 0
   self%n_intensity_dat = 0
   end associate
+  if (io%verbose>1) then
+    write (*,'(a,i5,3x,a,i5,3x,a,i3)') &
+      '    rt_data_t%id:', self%id, &
+      'mhd_patch%id:', self%mhd_patch%id, &
+      'n_intensity_dat:', self%n_intensity_dat
+  end if
   if (io%verbose>2) call self%check(1)             ! check if rt_data initialized ok
   call trace_end
 END SUBROUTINE init_rt_data
@@ -146,9 +152,17 @@ SUBROUTINE add_cr_heating (self, time, temp)
 END SUBROUTINE add_cr_heating
 
 !> =====================================================================
-!> Store intensity
+!> Store intensity, cell-by-cell.  This is likely to be inefficient.
+!>
+!> Since all rays in a ray bundle end on the same wall, and all rays
+!> in a ray packed have the same length, one should be able to rip off
+!> the final intensity or q-value as an array, and store it in the
+!> rt_internal or rt_data task.
+!>
+!> Likewise, if a task contains a child task, which needs boundary
+!> values, these can be computed and inserted by the child.
 !> =====================================================================
-SUBROUTINE I_store (self,I_st,rays,dir_ID, rt_type)
+SUBROUTINE I_store (self, I_st, rays, dir_ID, rt_type)
   class (rt_data_t) :: self
   class (ray_t), pointer :: rays
   type (int_data_t), pointer  :: this
@@ -207,7 +221,14 @@ SUBROUTINE I_store (self,I_st,rays,dir_ID, rt_type)
   call trace_end
 END SUBROUTINE I_store
 
-SUBROUTINE I_store_old (self,I_st,c,pt,ray,dir,lw,uw)
+!> =====================================================================
+!> Store specific intensities in the rt_data_t, for later retrieval.
+!> FIXME: This is likely a bottleneck, and should be replaced by
+!> either pro-active copying from finished rt_internal_t tasks into
+!> downstream tasks, or else rt_internal_t tasks copying directly from
+!> upstream tasks.
+!> =====================================================================
+SUBROUTINE I_store_old (self, I_st, c, pt, ray, dir, lw, uw)
   class (rt_data_t) :: self
   type (int_data_t), pointer :: this
   real, dimension(microphysics%n_wl_bins) :: I_st
@@ -265,9 +286,14 @@ FUNCTION I_retrv (self,c,dir,lw,uw) result (I_st)
     end if
     this => this%next
   end do
-
-  if (.not.found) error stop "ERROR: rt_data_mod%I_retrv did not find data entry" ! should not happen
-
+  if (.not.found) then
+    print*,'rt_data_t%id:', self%id
+    print*,'cell:',c
+    print*,' dir:',dir
+    print*,'  lw:',lw
+    print*,'  uw:',uw
+    error stop "rt_data_mod%I_retrv did not find data entry" ! should not happen
+  end if
   end associate
   call trace_end
 END FUNCTION I_retrv

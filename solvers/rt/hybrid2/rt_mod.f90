@@ -18,7 +18,7 @@ MODULE rt_mod
     type (link_t),       pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
     class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task
     class(link_t),       pointer :: link       => null()  ! pointer to self link in the task list
-    class (ray_bndl_t),  pointer :: my_rays
+    class(ray_bndl_t),   pointer :: my_rays    => null()  ! pointer to list of ray bundles
     ! common items
     integer :: n_ray_dirs = 3
     integer :: geom = 1                                                 !cartesian = 1, spherical = 2, cylindrical = 3

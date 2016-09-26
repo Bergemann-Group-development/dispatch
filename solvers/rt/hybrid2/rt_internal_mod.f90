@@ -106,11 +106,17 @@ SUBROUTINE init_rt_internal (self)
     self%packet_data(ray)%ds = packet%ds * self%cell_ds(self%my_rays%axis) ! FIXME: should not be like this for non-cubic cells
     packet => packet%next
   end do
-
   nullify (packet)
-
+  if (io%verbose>1) then
+    write (*,'(a,i5,3x,a,i5,3x,a,i3,3x,a,i2,2(3x,a,f5.0))') &
+      'rt_internal_t%id:', self%id, &
+      'mhd_patch%id:', self%mhd_patch%id, &
+      'n_packets',self%my_rays%n_packets, &
+      'axis:', self%my_rays%axis, &
+      'theta:', self%my_rays%theta*radian, &
+      'phi:', self%my_rays%phi*radian
+  end if
   if (io%verbose>2) call self%check
-
   call trace_end
 END SUBROUTINE init_rt_internal
 
@@ -209,14 +215,16 @@ SUBROUTINE get_local_static (self)
     associate (rt => nbor%task)
     SELECT type (rt)
     class is (rt_internal_t)
-
       if (self%the_right_wall(self%link, nbor, self%lwall)) then        ! make sure nbor is on the right wall
         if (rt%rt_type == self%rt_type) then                            ! make sure nbor is of the right RT type
+          if (io%verbose > 1) write (*,'(a,i5,3x,a,i5)') &
+            'rt_internal task',self%id,'loading data from',rt%id
           rt_nb => rt
           packet => self%my_rays%rays
           do pck = 1, self%my_rays%n_packets                            ! loop over my ray packets
+            if (io%verbose > 2) write (*,*) 'packet', pck
             do ray = 1, packet%n_rays                                   ! loop  over my rays
-
+              if (io%verbose > 3) write (*,*) 'ray', ray
               select case(self%rt_type)
               case(2)
                 fw_c = packet%fwd_coords(:,ray)                         ! select wall coordinates
@@ -233,7 +241,7 @@ SUBROUTINE get_local_static (self)
                 if (all(nb_cell>=rt_nb%li).and.&
                     all(nb_cell<=rt_nb%ui)) then                        ! double check that we pointed to the right spot
                   self%packet_data(pck)%bndry(ray,:) = &
-                  rt_nb%my_rt_data%I_retrv(nb_cell,self%dir_ID,lw,uw) ! get the right intensity
+                  rt_nb%my_rt_data%I_retrv(nb_cell,self%dir_ID,lw,uw)   ! get the right intensity
                   self%packet_data(pck)%time(ray) = rt_nb%time          ! store the time of the update
                   updated(ray) = .true.                                 ! the ray was updated
                 end if
@@ -426,7 +434,7 @@ SUBROUTINE solve_internal_integral_1st (self)
       end if
     end select
 
-    call rtd%I_store(Ifw,packet,self%dir_ID,self%rt_type)
+    call rtd%I_store (Ifw, packet, self%dir_ID, self%rt_type)
     call self%update_q (packet, q, ropac)
     deallocate(ex0, ds, s, dtau, q, Ifw, I_in, ropac)
     end associate
@@ -538,7 +546,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
       end do
     end select
 
-    call rtd%I_store(Ifw,packet,self%dir_ID,self%rt_type)
+    call rtd%I_store (Ifw, packet, self%dir_ID, self%rt_type)
     call self%update_q (packet, q, ropac)
     deallocate(ex0, ex1, ex2, ds1, d1s, d2s, ctau, s, dtau, &
                idtau, q, Ifw, I_in, ropac)

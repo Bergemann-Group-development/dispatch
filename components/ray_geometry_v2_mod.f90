@@ -1463,7 +1463,7 @@ SUBROUTINE add_ray_point(self, p)
   class(ray_point_t), pointer :: point
   integer :: p(3)
 ! ......................................................................
-  call trace_begin('ray_geometry_t%add_ray_point')
+  call trace_begin('ray_geometry_t%add_ray_point', 4)
   allocate(point)
   if (associated(self%tail)) then
     point%prev => self%tail
