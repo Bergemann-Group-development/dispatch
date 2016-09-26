@@ -11,3 +11,8 @@ TOP = ../..
 include $(TOP)/config/Makefile
 
 test.x: mpi_mod.o $(EOS)
+
+perflog: test.x
+	mkdir -p performance
+	uname -a | tee -a performance/$(HOST).log
+	./test.x | tee -a performance/$(HOST).log

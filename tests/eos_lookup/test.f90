@@ -12,7 +12,6 @@ PROGRAM test_eos
   integer:: n=200, i
   !$omp threadprivate(pg,tt,rk,ne,src)
   !-----------------------------------------------------------------------------
-  call mpi%init
   call io%init ('lookup')
   call eos%init (n,n,n)
   allocate (rho(n,n,n), ee(n,n,n))
@@ -22,12 +21,16 @@ PROGRAM test_eos
   allocate (pg(n,n,n), tt(n,n,n), rk(n,n,n), ne(n,n,n))
   allocate (src(n,n,n,4))
   call tic
+  call eos%lookup (rho, ee)
+  call toc ('  void',n**3)
+  !$omp barrier
+  call tic
   call eos%lookup (rho, ee, pg=pg)
-  call toc ('pg',n**3)
+  call toc ('    pg',n**3)
   !$omp barrier
   call tic
   call eos%lookup (rho, ee, tt=tt, ne=ne)
-  call toc ('tt,ne',n**3)
+  call toc (' tt,ne',n**3)
   !$omp barrier
   call tic
   call eos%lookup (rho, ee, rk=rk, src=src)
@@ -35,7 +38,7 @@ PROGRAM test_eos
   !$omp barrier
   call tic
   call eos%lookup (rho, ee, pg=pg, tt=tt, ne=ne, rk=rk, src=src)
-  call toc ('all 8',n**3)
+  call toc (' all 8',n**3)
   !$omp end parallel
   print *,'  pg =', pg(1:4,1,1)
   print *,'  tt =', tt(1:4,1,1)

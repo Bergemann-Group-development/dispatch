@@ -66,12 +66,18 @@ SUBROUTINE lookup (self, lnr, ee, pg, tt, ne, rk, src)
   integer, dimension(size(lnr,1)):: ir, ie
   integer:: ix, iy, iz, iv
   integer:: mx, my, mz
+  logical:: skip
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays
   !-----------------------------------------------------------------------------
   mx=size(lnr,1)
   my=size(lnr,2)
   mz=size(lnr,3)
+  if (present(pg).or.present(tt).or.present(ne).or.present(rk).or.present(src)) then
+    skip = .false.
+  else
+    skip = .true.
+  end if
   !-----------------------------------------------------------------------------
   ! Loop over points
   !-----------------------------------------------------------------------------
@@ -98,42 +104,39 @@ SUBROUTINE lookup (self, lnr, ee, pg, tt, ne, rk, src)
     !  Table values, indirect addressing
     !---------------------------------------------------------------------------
     do ix=1,mx
-      f(ix,1,:) = table(ir(ix)  ,ie(ix)  ,:)
-      f(ix,2,:) = table(ir(ix)+1,ie(ix)  ,:)
-      f(ix,3,:) = table(ir(ix)  ,ie(ix)+1,:)
-      f(ix,4,:) = table(ir(ix)+1,ie(ix)+1,:)
+    do iv=1,mv
+      f(ix,1,iv) = table(ir(ix)  ,ie(ix)  ,iv)
+      f(ix,2,iv) = table(ir(ix)+1,ie(ix)  ,iv)
+      f(ix,3,iv) = table(ir(ix)  ,ie(ix)+1,iv)
+      f(ix,4,iv) = table(ir(ix)+1,ie(ix)+1,iv)
     end do
+    end do
+    if (skip) cycle
     !---------------------------------------------------------------------------
     !  Loop over table entries
     !---------------------------------------------------------------------------
     if (present(pg)) then
-     do ix=1,mx
-      pg(ix,iy,iz) = &
-         f(ix,1,1)*g(ix,1) &
-       + f(ix,2,1)*g(ix,2) &
-       + f(ix,3,1)*g(ix,3) &
-       + f(ix,4,1)*g(ix,4)
-     end do
+      pg(:,iy,iz) = &
+         f(:,1,1)*g(:,1) &
+       + f(:,2,1)*g(:,2) &
+       + f(:,3,1)*g(:,3) &
+       + f(:,4,1)*g(:,4)
     end if
     !---------------------------------------------------------------------------
     if (present(rk)) then
-     do ix=1,mx
-      rk(ix,iy,iz) = &
-         f(ix,1,2)*g(ix,1) &
-       + f(ix,2,2)*g(ix,2) &
-       + f(ix,3,2)*g(ix,3) &
-       + f(ix,4,2)*g(ix,4)
-     end do
+      rk(:,iy,iz) = &
+         f(:,1,2)*g(:,1) &
+       + f(:,2,2)*g(:,2) &
+       + f(:,3,2)*g(:,3) &
+       + f(:,4,2)*g(:,4)
     end if
     !---------------------------------------------------------------------------
     if (present(tt)) then
-     do ix=1,mx
-      tt(ix,iy,iz) = &
-         f(ix,1,3)*g(ix,1) &
-       + f(ix,2,3)*g(ix,2) &
-       + f(ix,3,3)*g(ix,3) &
-       + f(ix,4,3)*g(ix,4)
-     end do
+      tt(:,iy,iz) = &
+         f(:,1,3)*g(:,1) &
+       + f(:,2,3)*g(:,2) &
+       + f(:,3,3)*g(:,3) &
+       + f(:,4,3)*g(:,4)
     end if
     !---------------------------------------------------------------------------
     if (present(ne)) then
@@ -146,13 +149,11 @@ SUBROUTINE lookup (self, lnr, ee, pg, tt, ne, rk, src)
     !---------------------------------------------------------------------------
     if (present(src)) then
      do iv=1,size(src,4)
-     do ix=1,mx
-      src(ix,iy,iz,iv) = &
-         f(ix,1,4+iv)*g(ix,1) &
-       + f(ix,2,4+iv)*g(ix,2) &
-       + f(ix,3,4+iv)*g(ix,3) &
-       + f(ix,4,4+iv)*g(ix,4)
-     end do
+      src(:,iy,iz,iv) = &
+         f(:,1,4+iv)*g(:,1) &
+       + f(:,2,4+iv)*g(:,2) &
+       + f(:,3,4+iv)*g(:,3) &
+       + f(:,4,4+iv)*g(:,4)
      end do
     end if
   end do
