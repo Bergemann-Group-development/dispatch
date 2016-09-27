@@ -111,8 +111,7 @@ MODULE ray_geometry_v2_mod
     procedure :: init_spherical
     procedure :: init_cylindrical
     procedure :: test_ray_geometry
-    procedure :: traverse_2d
-    procedure :: traverse_3d
+    procedure :: traverse
     procedure :: print => print_geometry
   end type
 ! ----------------------------------------------------------------------
@@ -163,40 +162,29 @@ MODULE ray_geometry_v2_mod
     integer                     :: coords(3)
     integer                     :: fwd(3)
     integer                     :: rev(3)
-    integer                     :: uwall(3)
-    integer                     :: lwall(3)
+    integer                     :: uwall(3), uw(3)
+    integer                     :: lwall(3), lw(3)
     real                        :: ds
   contains
     procedure :: add_ray_point
   end type
 ! ----------------------------------------------------------------------
-  type :: traverse_2d_t
-    integer, dimension(3) :: cell_max, cell_min, cell_step, cell_pos
-    real, dimension(2) :: dstep, ray_step, ray_dist, ray_p_init, ray_p_last
-    real               :: r_tot, r_trace, ds
-    integer            :: a, b, fc, uw(3), lw(3)
-    logical            :: oob
+  type :: traverse_t
+    real, dimension(3) :: dstep, ray_step,  ray_p_init, ray_p_last
+    real(8) :: r_tot, r_trace, ray_dist(3)
+    real :: ds, cell_step(3)
+    integer :: cell_max(3), cell_min(3), cell_pos(3)
+    integer :: a, b, c, uw(3), lw(3), upstream(3), downstream(3)
+    integer :: lwall(3), uwall(3)
+    logical :: oob, reset(2)
   contains
-    procedure :: init           => init_traverse_2D
-    procedure :: posit          => posit_2D
-    procedure :: hop            => hop_2D
-    procedure :: restart        => restart_2D
-    procedure :: get_downstream => get_downstream_2D
-  end type
-! ----------------------------------------------------------------------
-  type :: traverse_3d_t
-    integer, dimension(3) :: cell_max, cell_min, cell_step, cell_pos
-    real, dimension(3) :: dstep, ray_step, ray_dist, ray_p_init, ray_p_last
-    real               :: r_tot, r_trace, ds
-    integer            :: a, b, c, uw(3), lw(3)
-    logical            :: oob, reset_a, reset_b
-  contains
-    procedure :: init           => init_traverse_3D
-    procedure :: posit          => posit_3D
-    procedure :: hop            => hop_3D
-    procedure :: restart        => restart_3D
-    procedure :: get_downstream => get_downstream_3D
-    procedure :: wall           => cw_3d
+    procedure :: init           => init_traverse
+    procedure :: posit
+    procedure :: hop 
+    procedure :: restart 
+    procedure :: get_downstream
+    procedure :: wall
+    procedure :: move
   end type
 ! ----------------------------------------------------------------------
   type(ray_geometry_t), public :: ray_geometry
@@ -508,10 +496,8 @@ END SUBROUTINE add_axis
 !> =====================================================================
 SUBROUTINE add_ray(self, theta, dir)
   class(ray_geometry_t) :: self
-  real    :: theta, t, phi
-  integer :: dir, nphi, a, b, c, pdir, round
-  real, dimension(3) :: dp, init_step
-  real, dimension(2) :: dp2d
+  integer :: dir, nphi, a, b, c, pdir
+  real :: dp(3), init_step(3), theta, t, phi
   real, dimension(:), allocatable :: phis
   logical :: oob_dir
   ! ....................................................................
@@ -550,37 +536,15 @@ SUBROUTINE add_ray(self, theta, dir)
     dp(b) = sin(t)*sin(phi)*self%cell_dims(b)                           ! step size along b direction
     dp(c) = cos(t)         *self%cell_dims(c)                           ! step size along c direction
 
-    round = anint(dp(a)*100.0)                                          ! removing computer uncertainties
-    dp(a) = round/100.0                                                 ! and giving angle error of around 1 degree
-                                                                          ! this is necessary in order to avoid infinite loops
-    round = anint(dp(b)*100.0)                                          ! and overabundance of ray points with machine epsilon
-    dp(b) = round/100.0                                                 ! ds
+                                                                        ! removing computer uncertainties
+    dp(a) = round(dp(a))                                                ! and giving angle error of around 1 degree
+    dp(b) = round(dp(b))                                                ! this is necessary in order to avoid infinite loops
+    dp(c) = round(dp(c))                                                ! and overabundance of ray points with machine epsilon ds
 
-    round = anint(dp(c)*100.0)
-    dp(c) = round/100.0
-
-    if (dp(a)==0) then                                                  ! if a direction == 0
-      dp2d(1) = dp(b)                                                   ! prepare b direction for 2D traversal
-      dp2d(2) = dp(c)                                                   ! prepare c direction for 2D traversal
-      init_step(1) = 0.5                                                ! cell center for b direction
-      init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
-      init_step(3) = 0.5                                                ! passive cell step
-      call self%traverse_2d(dp2d, b, c, a, init_step)                   ! proceed with 2D traversal
-
-    else if (dp(b) == 0) then                                           ! if b direction == 0
-      dp2d(1) = dp(a)                                                   ! prepare a direction for 2D traversal
-      dp2d(2) = dp(c)                                                   ! prepare c direction for 2D traversal
-      init_step(1) = 0.5                                                ! cell center for a direction
-      init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
-      init_step(3) = 0.5                                                ! passive cell step
-      call self%traverse_2d(dp2d, a, c, b, init_step)                   ! proceed with 2D traversal
-
-    else                                                                ! movement to all directions
-      init_step(1) = 0.5                                                ! cell center for a direction
-      init_step(2) = 0.5                                                ! cell center for b direction
-      init_step(3) = 1                                                  ! cell wall for c direction (ray propagation direction)
-      call self%traverse_3d (dp, a, b, c, init_step)                    ! proceed with 3D traversal
-    end if
+    init_step(1) = 0.5                                                  ! cell center for a direction
+    init_step(2) = 0.5                                                  ! cell center for b direction
+    init_step(3) = 1                                                    ! cell wall for c direction (ray propagation direction)
+    call self%traverse (dp, a, b, c, init_step)                         ! proceed with 3D traversal
   end do
 
   deallocate(phis)
@@ -599,12 +563,10 @@ END SUBROUTINE add_ray
 !> through cell centers, move ray from cell center to wall and vice-versa
 !> for 3D movement.
 !> =====================================================================
+
 SUBROUTINE add_diag(self, rep, dir)
   class(ray_geometry_t) :: self
-  real, dimension(3) :: init_step, dp
-  real, dimension(8) :: phis
-  real, dimension(2) :: dp2d
-  real    :: theta, t, phi
+  real :: init_step(3), dp(3), phis(8), theta, t, phi
   integer :: rep, dir, nphi, a, b, c, pdir, round
 ! ......................................................................
   call trace_begin('ray_geometry_t%add_diag',4)
@@ -648,140 +610,89 @@ SUBROUTINE add_diag(self, rep, dir)
     dp(c) = round/100.0
 
     if (dp(a)==0) then                                                  ! if a direction == 0
-      dp2d(1) = dp(b)                                                   ! prepare b direction for 2D traversal
-      dp2d(2) = dp(c)                                                   ! prepare c direction for 2D traversal
-      init_step(1) = 1                                                ! cell center for a direction
-      init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
-      init_step(3) = 1                                                ! passive cell step
-      call self%traverse_2d(dp2d, b, c, a, init_step)                   ! proceed with 2D traversal
+      init_step(1) = 0.5                                                ! cell center for a direction
+      init_step(2) = 1.                                                 ! cell wall for b direction
+      init_step(3) = 1.                                                 ! cell wall for c direction (ray propagation direction)
 
     else if (dp(b) == 0) then                                           ! if b direction == 0
-      dp2d(1) = dp(a)                                                   ! prepare a direction for 2D traversal
-      dp2d(2) = dp(c)                                                   ! prepare c direction for 2D traversal
-      init_step(1) = 1                                                ! cell center for a direction
-      init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
-      init_step(3) = 1                                                ! passive cell step
-      call self%traverse_2d(dp2d, a, c, b, init_step)                   ! proceed with 2D traversal
+      init_step(1) = 1.                                                 ! cell wall for a direction
+      init_step(2) = 0.5                                                ! cell center for b direction
+      init_step(3) = 1.                                                 ! cell wall for c direction (ray propagation direction)
 
     else                                                                ! movement to all directions
-      init_step(1) = 1                                                ! cell center for a direction
-      init_step(2) = 1                                                ! cell center for b direction
-      init_step(3) = 1                                                  ! cell wall for c direction (ray propagation direction)
-      call self%traverse_3d (dp, a, b, c, init_step)                    ! proceed with 3D traversal
+      init_step(1) = 1.                                                 ! cell wall for a direction
+      init_step(2) = 1.                                                 ! cell wall for b direction
+      init_step(3) = 1.                                                 ! cell wall for c direction (ray propagation direction)
     end if
+    call self%traverse (dp, a, b, c, init_step)                         ! proceed with 3D traversal
 
   end do
   call trace_end
 END SUBROUTINE add_diag
 
 !> =====================================================================
-!> Subroutine to traverse rays in 2D. Similar to "fast voxel traversal
-!> algorithm" (Amanatides & Woo, 1987) and appendix A in Rijkhorst et al. (2006),
-!> but without their serious drawbacks and is (probably) faster.
-!> input: self, step size inside the cells (dp), nominal direction (a),
-!> ray direction (b), fixed coordinate (fc), starting position (init_step)
-!> =====================================================================
-SUBROUTINE traverse_2d(self, dp, a, b, fc, init_step)
-  class(ray_geometry_t) :: self
-  class(ray_point_t), pointer :: ray
-  class(single_ray_bundle_t), pointer :: ray_bundle
-  class(traverse_2d_t), pointer :: t
-  integer :: a, b, fc, ia, ib
-  real    :: dp(2), init_step(3), I_up(3), lw(3)
-  logical :: first_point
-! ......................................................................
-call trace_begin('traverse_2d_t%traverse_2d',4)
-  allocate(t)                                                           ! allocate traversal object
-  allocate(ray_bundle)                                                  ! create ray tree to store rays
-
-  call t%init(dp, self%ui, self%li, a, b, fc)                           ! initialize traversal object
-
-  do ia = t%cell_min(1), t%cell_max(1), t%cell_step(1)                  ! loop over nominal direction
-    do ib = t%cell_min(3), t%cell_max(3), t%cell_step(3)                ! loop over passive direction
-      first_point = .true.
-      allocate(ray)                                                     ! create new ray (point)
-      call t%posit(ia, ib, init_step, I_up)                             ! position traversal object
-      do while (.not.t%oob)                                             ! loop until ray reaches wall at ray direction
-        call ray%add_ray_point(t%cell_pos)                              ! add a ray point to the ray
-        if (first_point) then                                           ! if it is the starting point, link stuff
-          ray%head%lwall = t%lw                                         ! ray enters the cell through this wall
-          first_point = .false.
-        else                                                            ! add it to the end
-          ray%tail%lwall = t%lw                                         ! ray enters the cell through this wall
-          ray%tail%prev%uwall = -ray%tail%lwall                         ! ray leaves the cell through this wall
-        end if
-
-        call t%hop                                                      ! hop to the next cell
-        ray%tail%ds = t%ds                                              ! save distance traveled
-        if (t%r_trace >= t%r_tot) then                                  ! if the ray is traced
-          ray%tail%uwall = -t%lw
-          call t%get_downstream(ray%head%rev)                           ! get ray downstream cell
-          ray%head%fwd = I_up                                           ! save ray upstream cell
-          call ray_bundle%finish_ray(ray)                               ! and save ray to the ray tree
-          if (t%cell_pos(b) > t%cell_max(2)) then                       ! if cell wall along the ray direction is reached
-            t%oob = .true.                                              ! this ray is done
-          else                                                          ! otherwise
-            allocate(ray)                                               ! get new ray
-            first_point = .true.
-            call t%restart(I_up)                                        ! and restart the nominal direction
-          end if
-        end if
-
-      end do
-    end do
-  end do
-  call self%finish_single_ray_list(ray_bundle)                          ! save the ray tree to ray_geometry
-  deallocate(t)
-  call trace_end
-END SUBROUTINE traverse_2D
-
-!> =====================================================================
 !> Subroutine to traverse rays in 3D. Similar to "fast voxel traversal
 !> algorithm" (Amanatides & Woo, 1987) and appendix A in Rijkhorst et al. (2006),
 !> but without their serious drawbacks and is faster.
 !> =====================================================================
-SUBROUTINE traverse_3d(self, dp, a, b, c, init_step)
-  class(ray_geometry_t)             :: self
-  class(ray_point_t),       pointer :: ray
+SUBROUTINE traverse(self, dp, a, b, c, init_step)
+  class(ray_geometry_t) :: self
+  class(ray_point_t), pointer :: ray
   class(single_ray_bundle_t), pointer :: ray_bundle
-  class(traverse_3d_t),     pointer :: t
-  integer            :: a, b, c, ia, ib
-  real, dimension(3) :: init_step, dp, I_up
+  class(traverse_t), pointer :: t
+  integer :: a, b, c, ia, ib
+  real :: init_step(3), dp(3)
   logical :: first_point
 ! ......................................................................
-  call trace_begin('traverse_3d_t%traverse_3d')
+  call trace_begin('traverse_t%traverse')
   allocate(t)                                                           ! allocate traversal object
   allocate(ray_bundle)                                                  ! create ray tree to store rays
 
   call t%init(dp, self%ui, self%li, a, b, c)                            ! initialize traversal object
-
   do ia = t%cell_min(1), t%cell_max(1), t%cell_step(1)                  ! loop over 1st direction
     do ib = t%cell_min(2), t%cell_max(2), t%cell_step(2)                ! loop over 2nd direction
       first_point = .true.
       allocate(ray)                                                     ! create new ray
-      call t%posit(ia, ib, init_step, I_up)                             ! position traversal object
+      call t%posit(ia, ib, init_step)                                   ! position traversal object
       do while(.not.t%oob)                                              ! loop until ray reaches wall at ray direction
         call ray%add_ray_point(t%cell_pos)                              ! add a ray point to the ray
         if (first_point) then
-          ray%head%lwall = t%lw                                         ! ray enters the cell through this wall
+          ray%head%lwall = t%lwall                                      ! ray enters the patch through this wall
+          ray%head%lw = t%lw                                            ! ray enters the cell through this wall
           first_point = .false.
         else
-          ray%tail%lwall = t%lw                                         ! ray enters the cell through this wall
-          ray%tail%prev%uwall = -ray%tail%lwall                         ! ray leaves the cell through this wall
+          ray%tail%lw =       t%lw                                      ! ray enters the cell through this wall
+          ray%tail%prev%uw = -t%lw                                      ! ray leaves the cell through this wall
         end if
+        
         call t%hop                                                      ! hop to the next cell
         ray%tail%ds = t%ds                                              ! save distance traveled
-
-        if (t%r_trace >= t%r_tot) then                                  ! if the ray is fully traced
-          ray%tail%uwall = -t%lw
-          call t%get_downstream(ray%head%rev)                           ! get ray downstream cell
-          ray%head%fwd = I_up                                           ! save ray upstream cell
+        
+        if (t%r_trace >= t%r_tot) then                                   ! if the ray is fully traced
+          ray%tail%uw = -t%lw
+          ray%head%rev = t%cell_pos
+          ray%head%fwd = t%upstream                                     ! save ray upstream cell
+          
+          if (t%cell_step(1) > 0) then
+            if (t%cell_pos(a) > self%ui(a)) ray%head%uwall(a) = 1
+          else
+            if (t%cell_pos(a) < self%li(a)) ray%head%uwall(a) = -1
+          end if
+          
+          if (t%cell_step(2) > 0) then
+            if (t%cell_pos(b) > self%ui(b)) ray%head%uwall(b) = 1
+          else
+            if (t%cell_pos(b) < self%li(b)) ray%head%uwall(b) = -1
+          end if
+          
+          if (t%cell_pos(c) > self%ui(c)) ray%head%uwall(c) = 1
+                                                 
           call ray_bundle%finish_ray(ray)                               ! and save ray to the ray tree
-          if (t%cell_pos(c) >= t%cell_max(3)) then                      ! if cell wall along the ray direction is reached
+          if (t%cell_pos(c) > t%cell_max(3)) then                       ! if cell wall along the ray direction is reached
               t%oob = .true.                                            ! this ray is done
           else                                                          ! otherwise
             allocate(ray)                                               ! get new ray
-            call t%restart(I_up)                                        ! and restart the 1st or 2nd direction
+            call t%restart                                              ! and restart the 1st or 2nd direction
             first_point = .true.
           end if
         end if
@@ -791,259 +702,83 @@ SUBROUTINE traverse_3d(self, dp, a, b, c, init_step)
   end do
   call self%finish_single_ray_list(ray_bundle)                          ! save the ray tree to ray_geometry
   deallocate(t)
-END SUBROUTINE traverse_3D
-
-!> =====================================================================
-!> INPUT: self, step size along ray direction (dp), smallest cell coord (li)
-!> highest cell coord (ui), nominal direction (a), ray direction (b),
-!> fixed coord (fc)
-!> =====================================================================
-SUBROUTINE init_traverse_2D(self, dp, ui, li, a, b, fc)
-  class(traverse_2d_t)  :: self
-  integer, dimension(3) :: li, ui
-  real, dimension(2)    :: dp
-  integer               :: a, b, fc
-! ......................................................................
-  call trace_begin('traverse_2d_t%init')
-  self%a = a; self%b = b; self%fc = fc
-  self%cell_max(1) = ui(a)                                              ! last cell point along a axis
-  self%cell_max(2) = ui(b)                                              ! last cell point along b axis
-  self%cell_max(3) = ui(fc)                                             ! last cell point along fixed coord axis
-  if (dp(1) < 0) then                                                   ! if ray goes from "top" to "bottom"
-    self%cell_min (1) =  self%cell_max(1)                               ! swap cell_max and cell_min
-    self%cell_max (1) =  li(a)                                          ! cell_max now is first cell point
-    self%cell_step(1) = -1                                              ! stepper now is negative
-    dp(1) = -dp(1)                                                      ! step size always has to be positive
-  else
-    self%cell_step(1) = 1                                               ! step through one cell to another
-    self%cell_min (1) = li(a)
-  end if
-  self%dstep = 1/dp                                                     ! distance the ray travels to go one step
-  self%cell_min(2)  = li(b);  self%cell_step(2) = 1                     ! ray direction is always positive
-  self%cell_min(3)  = li(fc); self%cell_step(3) = 1                     ! fixed coordinate
-  call trace_end
-END SUBROUTINE init_traverse_2D
-
-
-
-!> =====================================================================
-!> INPUT: self, position in nominal direction (ia) and passive direction (ib),
-!> distance to cell walls (init_step), upstream cell position for particular
-!> ray (upstream)
-!> =====================================================================
-SUBROUTINE posit_2D(self, ia, ib, init_step, upstream)
-  class (traverse_2d_t) :: self
-  real, dimension(3) :: init_step
-  real, dimension(3) :: upstream
-  integer               :: ia, ib
-! ......................................................................
-  self%cell_pos(self%a ) = ia                                           ! position in a axis
-  self%cell_pos(self%b ) = self%cell_min(2)                             ! position in ray direction axis
-  self%cell_pos(self%fc) = ib                                           ! position in passive axis
-  self%lw = 0; self%uw = 0
-
-  if (init_step(1) == 1) then                                           ! initial ray position in a axis
-    self%ray_p_init(1) = ia - self%cell_step(1)/2                       ! it starts from the wall
-  else
-    self%ray_p_init(1) = ia                                             ! or at predetermined position
-  end if
-
-  if (init_step(2) == 1) then                                           ! initial ray position in ray direction
-    self%ray_p_init(2) = self%cell_min(2) - self%cell_step(2)/2         ! it starts from the wall
-  else
-    self%ray_p_init(2) = self%cell_min(2)                               ! or at predetermined position
-  end if
-
-  self%ray_p_last(1) = self%cell_max(1) + self%cell_step(1)/2           ! ray ends at cell wall
-  self%ray_p_last(2) = self%cell_max(2) + self%cell_step(2)/2           ! ray ends at cell wall
-
-  if (self%cell_step(1) > 0) then                                       ! distance ray travels in a direction
-    self%ray_dist(1) = self%ray_p_last(1) - self%ray_p_init(1)
-  else
-    self%ray_dist(1) = self%ray_p_init(1) - self%ray_p_last(1)
-  end if
-
-  self%ray_dist(2) = self%ray_p_last(2) - self%ray_p_init(2)            ! distance ray travels in ray direction axis
-  self%ray_dist    = self%ray_dist * self%dstep                         ! total distance ray travels in each direction to reach the end of patch
-  self%r_tot       = minval(self%ray_dist)                              ! determine the smallest distance
-  self%ray_step(1) = init_step(1)
-  self%ray_step(2) = init_step(2)
-  self%ray_step    = self%ray_step * self%dstep                         ! distance along the ray to cross to another cell
-
-  if (init_step(1) == init_step(2)) then                                ! find upstream cell position
-    upstream(self%a)  = self%cell_pos(self%a ) - self%cell_step(1)
-    upstream(self%b)  = self%cell_pos(self%b ) - self%cell_step(2)
-    upstream(self%fc) = self%cell_pos(self%fc)
-    if (self%cell_step(1) > 0) then
-      self%lw(self%a) = -1
-    else
-      self%lw(self%a) = 1
-    end if
-    if (self%cell_step(2) > 0) then
-      self%lw(self%b) = -1
-    else
-      self%lw(self%b) = 1
-    end if
-  else if (init_step(1) > init_step(2)) then
-    upstream(self%a)  = self%cell_pos(self%a ) - self%cell_step(1)
-    upstream(self%b)  = self%cell_pos(self%b )
-    upstream(self%fc) = self%cell_pos(self%fc)
-    if (self%cell_step(1) > 0) then
-      self%lw(self%a) = -1
-    else
-      self%lw(self%a) = 1
-    end if
-  else
-    upstream(self%a)  = self%cell_pos(self%a )
-    upstream(self%b)  = self%cell_pos(self%b ) - self%cell_step(2)
-    upstream(self%fc) = self%cell_pos(self%fc)
-    if (self%cell_step(2) > 0) then
-      self%lw(self%b) = -1
-    else
-      self%lw(self%b) = 1
-    end if
-  end if
-  self%lw(self%fc) = 0
-  self%oob = .false.
-  self%r_trace = 0.                                                     ! distance, the ray has traveled
-END SUBROUTINE posit_2D
-
-!> =====================================================================
-!> Subroutine, which handles moving through cells in 2D
-!> =====================================================================
-SUBROUTINE hop_2D (self)
-  class (traverse_2d_t) :: self
-! ......................................................................
-  associate (dstep => self%dstep, ray_step => self%ray_step, &
-  cell_step => self%cell_step, cell_pos => self%cell_pos, &
-  r_trace => self%r_trace, ds => self%ds, a => self%a, b => self%b)
-  self%lw = 0
-  if (ray_step(1) < ray_step(2)) then                                   ! if cell wall in direction 1 is closer than in
-    cell_pos(a) = cell_pos(a) + cell_step(1)                            ! direction 2, hop to cell towards direction 1
-    ray_step(2) = ray_step(2) - ray_step(1)                             ! reduce the distance to wall in 2 with distance traveled
-             ds = ray_step(1)                                           ! save distance traveled
-    r_trace     = r_trace + ray_step(1)                                 ! save total distance traveled (for sanity check)
-    ray_step(1) = dstep(1)                                              ! reset distance to wall for 1
-    self%lw(a)  = -1
-  else if (ray_step(1) == ray_step(2)) then                             ! if both equal, move diagonally
-    cell_pos(a) = cell_pos(a) + cell_step(1)                            ! cell position is diagonal to the old one
-    cell_pos(b) = cell_pos(b) + cell_step(2)
-             ds = ray_step(1)                                           ! distance of both 1 and 2 is the same
-    r_trace     = r_trace + ray_step(1)                                 ! save total distance traveled
-    ray_step    = dstep                                                 ! reset distance to wall for 1 and 2
-    self%lw(a)  = -1
-    self%lw(b)  = -1
-  else
-    cell_pos(b) = cell_pos(b) + cell_step(2)                            ! if wall is closer in 2, move towards there
-    ray_step(1) = ray_step(1) - ray_step(2)                             ! reduce the distance to 1
-             ds = ray_step(2)                                           ! save distance traveled
-    r_trace     = r_trace + ray_step(2)                                 ! save total distance traveled
-    ray_step(2) = dstep(2)                                              ! reset distance to wall for 2
-    self%lw(b)  = -1
-  end if
-  end associate
-END SUBROUTINE hop_2D
-
-!> =====================================================================
-!> Get downstream coordinates for 2D case
-!> =====================================================================
-SUBROUTINE get_downstream_2D (self, downstream)
-  class (traverse_2d_t) :: self
-  real                  :: r_trace
-  real, dimension(2)    :: ray_step
-  integer, dimension(3) :: cell_pos, downstream
-! ......................................................................
-  ray_step = self%ray_step                                              ! save current ray steps
-  cell_pos = self%cell_pos                                              ! save current cell position
-  r_trace  = self%r_trace                                               ! save current distance
-  self%uw = 0
-  call hop_2D(self)                                                     ! make a hop
-  downstream = self%cell_pos                                            ! that is your downstream cell
-  ! determine which wall is crossed
-  if (cell_pos(self%a) /= downstream(self%a)) then
-    if (self%cell_step(1) > 0) then
-      self%uw(self%a) = 1
-    else
-      self%uw(self%a) = -1
-    end if
-  else
-    self%uw(self%a) = 0
-  end if
-
-  if (cell_pos(self%b) /= downstream(self%b)) then
-    if (self%cell_step(2) > 0) then
-      self%uw(self%b) = 1
-    else
-      self%uw(self%b) = -1
-    end if
-  else
-    self%uw(self%b) = 0
-  end if
-  self%uw(self%fc) = 0
-
-  self%cell_pos = cell_pos                                              ! reset cell position
-  self%ray_step = ray_step                                              ! reset ray steps
-  self%r_trace  = r_trace                                               ! reset total distance
-END SUBROUTINE get_downstream_2D
+END SUBROUTINE traverse
 
 !> =====================================================================
 !> INPUT: self, step size along ray direction (dp), smallest cell coord (li)
 !> highest cell coord (ui), nominal direction (a, b), ray direction (c)
 !> =====================================================================
-SUBROUTINE init_traverse_3D(self, dp, ui, li, a, b, c)
-  class(traverse_3d_t) :: self
-  integer, dimension(3)   :: li, ui
-  real, dimension(3)   :: dp
-  integer              :: a, b, c
+SUBROUTINE init_traverse(self, dp, ui, li, a, b, c)
+  class(traverse_t) :: self
+  integer :: a, b, c, li(3), ui(3)
+  real :: dp(3)
 ! ......................................................................
-  call trace_begin('traverse_3d_t%init')
+  call trace_begin('traverse_t%init')
   self%a = a; self%b = b; self%c = c                                    ! convenience
   self%cell_max(1) = ui(a)                                              ! last cell point along a axis
   self%cell_max(2) = ui(b)                                              ! last cell point along b axis
   self%cell_max(3) = ui(c)                                              ! last cell point along c axis
-  if (dp(a) < 0) then                                                   ! if ray goes from "top" to "bottom"
-    self%cell_min (1) =  self%cell_max(1)                               ! swap cell_max and cell_min
-    self%cell_max (1) =  li(a)                                          ! cell_max now is first cell point
-    self%cell_step(1) = -1                                              ! stepper now is negative
-    dp(a) = -dp(a)                                                      ! step size always has to be positive
+  self%cell_min(1) = li(a)                                              ! first cell point along a axis
+  self%cell_min(2) = li(b)                                              ! first cell point along b axis
+  self%cell_min(3) = li(c)                                              ! first cell point along c axis
+  
+  if (dp(a) /= 0) then
+    if (dp(a) < 0) then                                                 ! if ray goes from "top" to "bottom"
+      self%cell_min (1) =  self%cell_max(1)                             ! swap cell_max and cell_min
+      self%cell_max (1) =  li(a)                                        ! cell_max now is first cell point
+      self%cell_step(1) = -1                                            ! stepper now is negative
+      dp(a) = -dp(a)                                                    ! step size always has to be positive
+    else
+      self%cell_step(1) = 1                                             ! step through one cell to another
+      self%cell_min (1) = li(a)
+    end if
+    self%dstep(1) = 1/dp(a)                                    ! distance the ray travels to go one step
   else
-    self%cell_step(1) = 1                                               ! step through one cell to another
-    self%cell_min (1) = li(a)
+    self%cell_step(1) = 1
+    self%dstep(1) = 0
   end if
-  if (dp(b) < 0) then                                                   ! if ray goes from "top" to "bottom"
-    self%cell_min (2) = self%cell_max(2)                                ! swap cell_max and cell_min
-    self%cell_max (2) = li(b)                                           ! cell_max now is first cell point
-    self%cell_step(2) = -1                                              ! stepper now is negative
-    dp(b)        = -dp(b)                                               ! step size always has to be positive
+  
+  if (dp(b) /= 0) then
+    if (dp(b) < 0) then                                                 ! if ray goes from "top" to "bottom"
+      self%cell_min (2) = self%cell_max(2)                              ! swap cell_max and cell_min
+      self%cell_max (2) = li(b)                                         ! cell_max now is first cell point
+      self%cell_step(2) = -1                                            ! stepper now is negative
+      dp(b)        = -dp(b)                                             ! step size always has to be positive
+    else
+      self%cell_step(2) = 1
+      self%cell_min (2) = li(b)
+    end if
+    self%dstep(2) = 1/dp(b)                                    ! distance the ray travels to go one step
   else
     self%cell_step(2) = 1
-    self%cell_min (2) = li(b)
+    self%dstep(2) = 0
   end if
-  self%dstep(1) = 1/dp(a)                                               ! distance the ray travels to go one step
-  self%dstep(2) = 1/dp(b)                                               ! distance the ray travels to go one step
-  self%dstep(3) = 1/dp(c)                                               ! distance the ray travels to go one step
-  self%cell_min(3)  = li(c); self%cell_step(3) = 1                      ! ray direction is always positive
+  
+  self%dstep(3) = 1/dp(c)                                      ! distance the ray travels to go one step. dp(c) cannot be zero
+  self%cell_min(3)  = li(c); self%cell_step(3) = 1                      ! and ray direction is always positive
+  
   call trace_end
-END SUBROUTINE init_traverse_3D
+END SUBROUTINE init_traverse
 
 !> =====================================================================
 !> INPUT: self, position in nominal directions (ia, ib),
 !> distance to cell walls (init_step), upstream cell position for particular
 !> ray (upstream)
 !> =====================================================================
-SUBROUTINE posit_3D(self, ia, ib, init_step, upstream)
-  class (traverse_3d_t) :: self
+SUBROUTINE posit(self, ia, ib, init_step)
+  class (traverse_t) :: self
   real, dimension(3) :: init_step
-  real, dimension(3) :: upstream
-  integer :: ia, ib
+  integer :: ia, ib, x, u
 ! ......................................................................
   self%cell_pos(self%a) = ia                                            ! position in a axis
   self%cell_pos(self%b) = ib                                            ! position in b axis
   self%cell_pos(self%c) = self%cell_min(3)                              ! starting position for c axis
-  self%lw = 0; self%uw = 0
+  self%lw = 0; self%lwall = 0
+  self%uw = 0; self%uwall = 0
+  
   if (init_step(1) == 1) then                                           ! determine whether ray starts
     self%ray_p_init(1) = ia - self%cell_step(1)/2                       ! at the wall or at the centre
-  else                                                                  ! in terms of thjs direction
+  else                                                                  ! in terms of this direction
     self%ray_p_init(1) = ia
   end if
 
@@ -1061,24 +796,26 @@ SUBROUTINE posit_3D(self, ia, ib, init_step, upstream)
 
 
   self%ray_p_last = self%cell_max + self%cell_step/2                    ! ray finishes at the wall
-
-  if (self%cell_step(1) > 0) then                                       ! estimate ray distance for a dirrection
-    self%ray_dist(1) = self%ray_p_last(1) - self%ray_p_init(1)
-  else
-    self%ray_dist(1) = self%ray_p_init(1) - self%ray_p_last(1)
-  end if
-
-  if (self%cell_step(2) > 0) then                                       ! estimate ray distance for b dirrection
-    self%ray_dist(2) = self%ray_p_last(2) - self%ray_p_init(2)
-  else
-    self%ray_dist(2) = self%ray_p_init(2) - self%ray_p_last(2)
-  end if
+  
+  do x = 1,2
+    if (self%dstep(x) /= 0) then
+      if (self%cell_step(x) > 0) then                                     ! estimate ray distance for a/b dirrection
+        self%ray_dist(x) = self%ray_p_last(x) - self%ray_p_init(x)
+      else
+        self%ray_dist(x) = self%ray_p_init(x) - self%ray_p_last(x)
+      end if
+    else
+      self%ray_dist(x) = 0
+    end if
+  end do
 
   self%ray_dist(3) = self%ray_p_last(3) - self%ray_p_init(3)            ! estimate ray distance for c dirrection
+  
   self%ray_dist    = self%ray_dist * self%dstep
-  self%r_tot       = minval(self%ray_dist)                              ! determine the shortest path
+  
+  self%r_tot       = minval(self%ray_dist, (self%ray_dist.GT.0))        ! determine the shortest path
 
-  if (self%r_tot< 0) then                                               ! never happens, but just in case
+  if (self%r_tot<= 0) then                                              ! never happens, but just in case
     error stop "ray_geometry:posit_3d: crap"
   end if
 
@@ -1087,81 +824,76 @@ SUBROUTINE posit_3D(self, ia, ib, init_step, upstream)
 
   if (init_step(1) == init_step(2)) then                                ! determine upstream cell position
     if  (init_step(2) == init_step(3)) then
-      upstream(self%a) = self%cell_pos(self%a) - self%cell_step(1)
-      upstream(self%b) = self%cell_pos(self%b) - self%cell_step(2)
-      upstream(self%c) = self%cell_pos(self%c) - self%cell_step(3)
-      call self%wall(1); call self%wall(2); call self%wall(3)           ! and the lower face
-
+      call self%wall(1  ); call self%wall(2  ); call self%wall(3  )           ! and the lower face
     else if (init_step(2) < init_step(3)) then
-      upstream(self%a) = self%cell_pos(self%a)
-      upstream(self%b) = self%cell_pos(self%b)
-      upstream(self%c) = self%cell_pos(self%c) - self%cell_step(3)
-      call self%wall(1,0); call self%wall(2,0); call self%wall(3)
+      call self%wall(1,0); call self%wall(2,0); call self%wall(3  )
     else
-      upstream(self%a) = self%cell_pos(self%a) - self%cell_step(1)
-      upstream(self%b) = self%cell_pos(self%b) - self%cell_step(2)
-      upstream(self%c) = self%cell_pos(self%c)
-      call self%wall(1); call self%wall(2); call self%wall(3,0)
+      call self%wall(1  ); call self%wall(2  ); call self%wall(3,0)
     end if
+    
   else if (init_step(2) == init_step(3)) then
     if (init_step(1) < init_step(3)) then
-      upstream(self%a) = self%cell_pos(self%a)
-      upstream(self%b) = self%cell_pos(self%b) - self%cell_step(2)
-      upstream(self%c) = self%cell_pos(self%c) - self%cell_step(3)
-      call self%wall(1,0); call self%wall(2); call self%wall(3)
+      call self%wall(1,0); call self%wall(2  ); call self%wall(3  )
     else
-      upstream(self%a) = self%cell_pos(self%a) - self%cell_step(1)
-      upstream(self%b) = self%cell_pos(self%b)
-      upstream(self%c) = self%cell_pos(self%c)
-      call self%wall(1); call self%wall(2,0); call self%wall(3,0)
+      call self%wall(1  ); call self%wall(2,0); call self%wall(3,0)
     end if
+    
   else if (init_step(1) == init_step(3)) then
     if (init_step(1) < init_step(2)) then
-      upstream(self%a) = self%cell_pos(self%a)
-      upstream(self%b) = self%cell_pos(self%b) - self%cell_step(2)
-      upstream(self%c) = self%cell_pos(self%c)
-      call self%wall(1,0); call self%wall(2); call self%wall(3,0)
+      call self%wall(1,0); call self%wall(2  ); call self%wall(3,0)
     else
-      upstream(self%a) = self%cell_pos(self%a) - self%cell_step(1)
-      upstream(self%b) = self%cell_pos(self%b)
-      upstream(self%c) = self%cell_pos(self%c) - self%cell_step(3)
-      call self%wall(1); call self%wall(2,0); call self%wall(3)
+      call self%wall(1  ); call self%wall(2,0); call self%wall(3  )
     end if
+    
   else if (init_step(1) < init_step(3)) then
     if (init_step(2) < init_step(3)) then
-      upstream(self%a) = self%cell_pos(self%a)
-      upstream(self%b) = self%cell_pos(self%b)
-      upstream(self%c) = self%cell_pos(self%c) - self%cell_step(3)
-      call self%wall(1,0); call self%wall(2,0); call self%wall(3)
+      call self%wall(1,0); call self%wall(2,0); call self%wall(3  )
     else
-      upstream(self%a) = self%cell_pos(self%a)
-      upstream(self%b) = self%cell_pos(self%b) -  self%cell_step(2)
-      upstream(self%c) = self%cell_pos(self%c)
-      call self%wall(1,0); call self%wall(2); call self%wall(3,0)
+      call self%wall(1,0); call self%wall(2  ); call self%wall(3,0)
     end if
+    
   else if (init_step(1) > init_step(2)) then
-    upstream(self%a) = self%cell_pos(self%a) - self%cell_step(1)
-    upstream(self%b) = self%cell_pos(self%b)
-    upstream(self%c) = self%cell_pos(self%c)
-    call self%wall(1); call self%wall(2,0); call self%wall(3,0)
+    call self%wall(1  ); call self%wall(2,0); call self%wall(3,0)
+    
   else
-    upstream(self%a) = self%cell_pos(self%a)
-    upstream(self%b) = self%cell_pos(self%b) -  self%cell_step(2)
-    upstream(self%c) = self%cell_pos(self%c)
-    call self%wall(1,0); call self%wall(2); call self%wall(3,0)
+    call self%wall(1,0); call self%wall(2  ); call self%wall(3,0)
   end if
+  
+  do x = 1,3
+    SELECT case(x)
+    case(1)
+      u = self%a
+    case(2)
+      u = self%b
+    case(3)
+      u = self%c
+    end SELECT
+    if (self%dstep(x) /= 0 ) then
+      self%upstream(u) = self%cell_pos(u) - self%cell_step(x)
+    else
+      self%upstream(u) = self%cell_pos(u)
+    end if
+  
+    if (self%lw(u) < 0) then
+      if (self%cell_pos(u) - 1 < self%cell_min(x)) self%lwall(u) = -1
+    else if (self%lw(u) > 0) then
+      if (self%cell_pos(u) + 1 > self%cell_min(x)) self%lwall(u) = 1
+    end if
+
+  end do
+  
   self%oob     = .false.
-  self%reset_a = .false.
-  self%reset_b = .false.
+  self%reset(1) = .false.
+  self%reset(2) = .false.
   self%r_trace = 0.
-END SUBROUTINE posit_3D
+END SUBROUTINE posit
 
 !> =====================================================================
 !> Convenience. Sets the lower wall index. it is self%wall
 !> =====================================================================
-SUBROUTINE cw_3d(self, axis, zero)
-  class (traverse_3d_t) :: self
-  integer               :: axis, c
+SUBROUTINE wall(self, axis, zero)
+  class (traverse_t) :: self
+  integer            :: axis, c
   integer, optional     :: zero
   !---------------------------------------------------------------------
   SELECT case(axis)
@@ -1172,123 +904,138 @@ SUBROUTINE cw_3d(self, axis, zero)
   case(3)
     c = self%c
   end SELECT
+  
   if(present(zero)) then
     self%lw(c) = 0
   else
-    if (self%cell_step(axis) > 0) then
-      self%lw(c) = -1
-    else
-      self%lw(c) = 1
+    if (self%dstep(axis) /= 0) then
+      if (self%cell_step(axis) > 0) then
+        self%lw(c) = -1
+      else
+        self%lw(c) = 1
+      end if
     end if
   end if
-END SUBROUTINE cw_3d
+END SUBROUTINE wall
 
 !> =====================================================================
 !> Subroutine, which handles moving through cells in 3D
 !> =====================================================================
-SUBROUTINE hop_3D (self)
-  class (traverse_3d_t) :: self
-! ......................................................................
-  associate (dstep => self%dstep, ray_step => self%ray_step, &
-  cell_step => self%cell_step, cell_pos => self%cell_pos, &
-  r_trace => self%r_trace, ds => self%ds, a => self%a, b => self%b, c => self%c)
-  if (ray_step(1) == ray_step(2)) then
-    if (ray_step(2) == ray_step(3)) then
-      cell_pos(a) = cell_pos(a) + cell_step(1)
-      cell_pos(b) = cell_pos(b) + cell_step(2)
-      cell_pos(c) = cell_pos(c) + cell_step(3)
-               ds = ray_step(1)
-      r_trace     = r_trace + ray_step(1)
-      ray_step    = dstep
-    else if (ray_step(2) < ray_step(3)) then
-      cell_pos(a) = cell_pos(a) + cell_step(1)
-      cell_pos(b) = cell_pos(b) + cell_step(2)
-               ds = ray_step(1)
-      ray_step(3) = ray_step(3) - ray_step(1)
-      r_trace     = r_trace + ray_step(1)
-      ray_step(1) = dstep(1)
-      ray_step(2) = dstep(2)
-    else
-      cell_pos(c) = cell_pos(c) + cell_step(3)
-               ds = ray_step(3)
-      ray_step(1) = ray_step(1) - ray_step(3)
-      ray_step(2) = ray_step(2) - ray_step(3)
-      r_trace     = r_trace + ray_step(3)
-      ray_step(3) = dstep(3)
-    end if
-  else if (ray_step(2) == ray_step(3)) then
-    if (ray_step(1) < ray_step(3)) then
-      cell_pos(a) = cell_pos(a) + cell_step(1)
-               ds = ray_step(1)
-      ray_step(2) = ray_step(2) - ray_step(1)
-      ray_step(3) = ray_step(3) - ray_step(1)
-      r_trace     = r_trace + ray_step(1)
-      ray_step(1) = dstep(1)
-    else
-      cell_pos(b) = cell_pos(b) + cell_step(2)
-      cell_pos(c) = cell_pos(c) + cell_step(3)
-               ds = ray_step(2)
-      ray_step(1) = ray_step(1) - ray_step(2)
-      r_trace     = r_trace + ray_step(2)
-      ray_step(2) = dstep(2)
-      ray_step(3) = dstep(3)
-    end if
-  else if (ray_step(1) == ray_step(3)) then
-    if (ray_step(2) < ray_step(3)) then
-      cell_pos(b) = cell_pos(b) + cell_step(2)
-               ds = ray_step(2)
-      ray_step(1) = ray_step(1) - ray_step(2)
-      ray_step(3) = ray_step(3) - ray_step(2)
-      r_trace     = r_trace + ray_step(2)
-      ray_step(2) = dstep(2)
-    else
-      cell_pos(a) = cell_pos(a) + cell_step(1)
-      cell_pos(c) = cell_pos(c) + cell_step(3)
-               ds = ray_step(1)
-      ray_step(2) = ray_step(2) - ray_step(1)
-      r_trace     = r_trace + ray_step(1)
-      ray_step(1) = dstep(1)
-      ray_step(3) = dstep(3)
-    end if
-  else if (ray_step(1) < ray_step(2)) then
-    if (ray_step(1) < ray_step(3)) then
-      cell_pos(a) = cell_pos(a) + cell_step(1)
-               ds = ray_step(1)
-      ray_step(2) = ray_step(2) - ray_step(1)
-      ray_step(3) = ray_step(3) - ray_step(1)
-      r_trace     = r_trace + ray_step(1)
-      ray_step(1) = dstep(1)
-    else
-      cell_pos(c) = cell_pos(c) + cell_step(3)
-               ds = ray_step(3)
-      ray_step(1) = ray_step(1) - ray_step(3)
-      ray_step(2) = ray_step(2) - ray_step(3)
-      r_trace     = r_trace + ray_step(3)
-      ray_step(3) = dstep(3)
-    end if
-  else if (ray_step(2) < ray_step(3)) then
-    cell_pos(b) = cell_pos(b) + cell_step(2)
-             ds = ray_step(2)
-    ray_step(1) = ray_step(1) - ray_step(2)
-    ray_step(3) = ray_step(3) - ray_step(2)
-    r_trace     = r_trace + ray_step(2)
-    ray_step(2) = dstep(2)
-  else
-    cell_pos(c) = cell_pos(c) + cell_step(3)
-             ds = ray_step(3)
-    ray_step(1) = ray_step(1) - ray_step(3)
-    ray_step(2) = ray_step(2) - ray_step(3)
-    r_trace     = r_trace + ray_step(3)
-    ray_step(3) = dstep(3)
+SUBROUTINE move (self, a, b, c)
+  class (traverse_t)  :: self
+  integer :: a, b, c, adv(3)
+  real(8) :: trace
+! ----------------------------------------------------------------------
+  adv = 0
+  trace = 0
+  if (a > 0) then
+    self%cell_pos(self%a) = self%cell_pos(self%a) + self%cell_step(1)
+    self%ds = self%ray_step(1)
+    trace = self%ray_step(1)
+    self%ray_step(1) = self%dstep(1)
+    if (b == 0) adv(2) = 1
+    if (c == 0) adv(3) = 1
+    self%lw(self%a) = -1
   end if
+  
+  if (b > 0) then
+    self%cell_pos(self%b) = self%cell_pos(self%b) + self%cell_step(2)
+    self%ds = self%ray_step(2)
+    trace = self%ray_step(2)
+    self%ray_step(2) = self%dstep(2)
+    if (a == 0) adv(1) = 1
+    if (c == 0) adv(3) = 1
+    self%lw(self%b) = -1
+  end if
+  
+  if (c > 0) then
+    self%cell_pos(self%c) = self%cell_pos(self%c) + self%cell_step(3)
+    self%ds = self%ray_step(3)
+    trace = self%ray_step(3)
+    self%ray_step(3) = self%dstep(3)
+    if (a == 0) adv(1) = 1
+    if (b == 0) adv(2) = 1
+    self%lw(self%c) = -1
+  end if
+  
+  if (adv(1) > 0) self%ray_step(1) = self%ray_step(1) - trace
+  if (adv(2) > 0) self%ray_step(2) = self%ray_step(2) - trace
+  if (adv(3) > 0) self%ray_step(3) = self%ray_step(3) - trace
+  self%r_trace = self%r_trace + trace
+END SUBROUTINE move
+
+SUBROUTINE hop (self)
+  class (traverse_t) :: self
+  integer :: a, ta
+! ......................................................................
+  associate (dstep => self%dstep, ray_step => self%ray_step)
+  
+  if (all(dstep > 0)) then
+    if (ray_step(1) == ray_step(2)) then
+      if (ray_step(2) == ray_step(3)) then
+        call self%move(1,1,1)
+      else if (ray_step(2) < ray_step(3)) then 
+        call self%move(1,1,0)
+      else
+        call self%move(0,0,1)
+      end if
+      
+    else if (ray_step(2) == ray_step(3)) then
+      if (ray_step(1) < ray_step(3)) then
+        call self%move(1,0,0)
+      else
+        call self%move(0,1,1)
+      end if
+      
+    else if (ray_step(1) == ray_step(3)) then
+      if (ray_step(2) < ray_step(3)) then
+        call self%move(0,1,0)
+      else
+        call self%move(1,0,1)
+      end if
+      
+    else if (ray_step(1) < ray_step(2)) then
+      if (ray_step(1) < ray_step(3)) then
+        call self%move(1,0,0)
+      else
+        call self%move(0,0,1)
+      end if
+      
+    else if (ray_step(2) < ray_step(3)) then
+      call self%move(0,1,0)
+      
+    else
+      call self%move(0,0,1)
+    end if
+    
+  else                                                                  ! 2D
+    if (dstep(1) == 0) then
+      a = 2; ta = self%b
+    else if (dstep(2) == 0) then
+      a = 1; ta = self%a 
+    else
+      error stop "ERROR: hop: dstep(3) == 0 or some dstep < 0"
+    end if
+    if (ray_step(a) < ray_step(3)) then                                   ! if cell wall in direction 1 is closer than in
+      if (a == 1) call self%move(1,0,0)
+      if (a == 2) call self%move(0,1,0)
+    else if (ray_step(a) == ray_step(3)) then                             ! if both equal, move diagonally
+      if (a == 1) call self%move(1,0,1)
+      if (a == 2) call self%move(0,1,1)
+    else
+      call self%move(0,0,1)                                             ! move along axis
+    end if
+    
+  end if
+    
   end associate
-END SUBROUTINE hop_3D
+END SUBROUTINE hop
 
 !> =====================================================================
 !> Obtain downstream cell position
 !> =====================================================================
-SUBROUTINE get_downstream_3D (self, downstream)
-  class (traverse_3d_t) :: self
+SUBROUTINE get_downstream (self, downstream)
+  class (traverse_t) :: self
   real                  :: r_trace
   integer, dimension(3) :: cell_pos, downstream, ray_step
 ! ......................................................................
@@ -1296,7 +1043,7 @@ SUBROUTINE get_downstream_3D (self, downstream)
   cell_pos = self%cell_pos
   r_trace  = self%r_trace
 
-  call hop_3D(self)
+  call self%hop
   downstream = self%cell_pos
   self%uw = 0
   if (cell_pos(self%a) /= downstream(self%a)) then
@@ -1332,55 +1079,29 @@ SUBROUTINE get_downstream_3D (self, downstream)
   self%cell_pos = cell_pos
   self%ray_step = ray_step
   self%r_trace  = r_trace
-END SUBROUTINE get_downstream_3D
-
-!> =====================================================================
-!> restart the ray when it hits a side-wall (invoke pseudo-periodic
-!> boundaries). This is for 2D case (less steps needed than in 3D ->
-!> is faster
-!> =====================================================================
-SUBROUTINE restart_2D (self, upstream)
-  class(traverse_2d_t) :: self
-  real, dimension(3)   :: upstream
-! ......................................................................
-  self%ray_p_init(1)      = self%cell_min(1)   - self%cell_step(1)/2    ! ray starts at the wall
-  self%ray_p_last(1)      = self%cell_max(1)   + self%cell_step(1)/2    ! ray ends at the wall
-  if (self%cell_step(1) > 0) then                                       ! scheck ray direction
-    self%ray_dist(1)      = self%ray_p_last(1) - self%ray_p_init(1)     ! and calculate distance to the wall
-  else
-    self%ray_dist(1)      = self%ray_p_init(1) - self%ray_p_last(1)
-  end if
-  self%ray_dist(1)        = self%ray_dist(1)   * self%dstep(1)          ! determine new ray distance
-  self%ray_dist(2)        = self%ray_dist(2)   - self%r_trace           ! but save the distance, traveled in ray direction
-  self%r_tot              = minval(self%ray_dist)                       ! find the minimal value
-  self%r_trace            = 0                                           ! restart the ray total distance
-  self%cell_pos(self%a)   = self%cell_min(1)                            ! restart the cell position in nominal axis
-  self%ray_step(1)        = self%dstep(1)                               ! restart the distance, the ray has to travel in nominal axis
-
-  upstream(self%a)  = self%cell_pos(self%a) - self%cell_step(1)         ! get upstream cell position
-  upstream(self%b)  = self%cell_pos(self%b)
-  upstream(self%fc) = self%cell_pos(self%fc)
-  self%uw = 0
-  self%lw(self%a)  = -1; self%lw(self%b)  =  0; self%lw(self%fc) =  0   ! save wall data
-END SUBROUTINE restart_2D
+END SUBROUTINE get_downstream
 
 !> =====================================================================
 !> restart the ray when it hits a side-wall (invoke pseudo-periodic
 !> boundaries). This is for the general, 3D case.
 !> =====================================================================
-SUBROUTINE restart_3D (self, upstream)
-  class(traverse_3d_t) :: self
-  real, dimension(3), intent(inout) :: upstream
+SUBROUTINE restart (self)
+  class(traverse_t) :: self
+  integer :: x, p(3)
 ! ......................................................................
-  if (((self%cell_pos(self%a) >= self%cell_max(1)).and.(self%cell_step(1)>0)).or.(&
-  (self%cell_pos(self%a) <= self%cell_max(1)).and.(self%cell_step(1)<0))) then
-    self%reset_a = .true.
-  end if
-  if (((self%cell_pos(self%b) >= self%cell_max(2)).and.(self%cell_step(2)>0)).or.(&
-     (self%cell_pos(self%b) <= self%cell_max(2)).and.(self%cell_step(2)<0))) then
-    self%reset_b = .true.
-  end if
-  if((self%reset_a).and.(.not.self%reset_b)) then
+  p(1) = self%a; p(2) = self%b; p(3) = self%c
+  self%lwall = 0; self%lw = 0
+  do x = 1,2
+    if (self%dstep(x) /= 0) then
+      if (self%cell_step(x) > 0) then
+        if (self%cell_pos(p(x)) > self%cell_max(x)) self%reset(x) = .true.
+      else
+        if (self%cell_pos(p(x)) < self%cell_max(x)) self%reset(x) = .true.
+      end if
+    end if
+  end do
+  if((self%reset(1)).and.(.not.self%reset(2))) then
+  
     self%ray_p_init(1)    = self%cell_min(1)   - self%cell_step(1)/2
     self%ray_p_last(1)    = self%cell_max(1)   + self%cell_step(1)/2
     if (self%cell_step(1) > 0) then
@@ -1388,19 +1109,25 @@ SUBROUTINE restart_3D (self, upstream)
     else
       self%ray_dist(1)    = self%ray_p_init(1) - self%ray_p_last(1)
     end if
-    self%ray_dist(1)      = self%ray_dist(1)   * self%dstep(1)
-    self%ray_dist(2)      = self%ray_dist(2)   - self%r_trace
-    self%ray_dist(3)      = self%ray_dist(3)   - self%r_trace
-    self%r_tot            = minval(self%ray_dist)
+    self%ray_dist(1)      = self%ray_dist(1) * self%dstep(1)
+    if (self%dstep(2) /= 0) self%ray_dist(2) = self%ray_dist(2) - self%r_trace
+    if (self%dstep(3) /= 0) self%ray_dist(3) = self%ray_dist(3) - self%r_trace
+    self%r_tot            = minval(self%ray_dist, (self%ray_dist.GT.0))
     self%r_trace          = 0
     self%cell_pos(self%a) = self%cell_min(1)
     self%ray_step(1)      = self%dstep(1)
-    upstream(self%a)      = self%cell_pos(self%a) - self%cell_step(1)
-    upstream(self%b)      = self%cell_pos(self%b)
-    upstream(self%c)      = self%cell_pos(self%c)
-    self%lw(self%a)  = -1; self%lw(self%b)  =  0; self%lw(self%c) =  0
+    self%upstream(self%a) = self%cell_pos(self%a) - self%cell_step(1)
+    self%upstream(self%b) = self%cell_pos(self%b)
+    self%upstream(self%c) = self%cell_pos(self%c)
+    if (self%cell_step(1) > 0) then
+      self%lwall(self%a) = -1
+      self%lw(self%a) = -1
+    else
+      self%lwall(self%a) = 1
+      self%lw(self%a) = 1
+    end if
 
-  else if ((self%reset_b).and.(.not.self%reset_a)) then
+  else if ((self%reset(2)).and.(.not.self%reset(1))) then
     self%ray_p_init(2)    = self%cell_min(2)      - self%cell_step(2)/2
     self%ray_p_last(2)    = self%cell_max(2)      + self%cell_step(2)/2
     if (self%cell_step(2) > 0) then
@@ -1408,50 +1135,70 @@ SUBROUTINE restart_3D (self, upstream)
     else
       self%ray_dist(2)    = self%ray_p_init(2)    - self%ray_p_last(2)
     end if
-    self%ray_dist(2)      = self%ray_dist(2)      * self%dstep(2)
-    self%ray_dist(1)      = self%ray_dist(1)      - self%r_trace
-    self%ray_dist(3)      = self%ray_dist(3)      - self%r_trace
-    self%r_tot            = minval(self%ray_dist)
+    self%ray_dist(2)      = self%ray_dist(2) * self%dstep(2)
+    if (self%dstep(1) /= 0) self%ray_dist(1) = self%ray_dist(1) - self%r_trace
+    if (self%dstep(3) /= 0) self%ray_dist(3) = self%ray_dist(3) - self%r_trace
+    self%r_tot            = minval(self%ray_dist, (self%ray_dist.GT.0))
     self%r_trace          = 0
     self%cell_pos(self%b) = self%cell_min(2)
     self%ray_step(2)      = self%dstep(2)
-    upstream(self%a)      = self%cell_pos(self%a)
-    upstream(self%b)      = self%cell_pos(self%b) - self%cell_step(2)
-    upstream(self%c)      = self%cell_pos(self%c)
-    self%lw(self%a)  = 0; self%lw(self%b)  =  -1; self%lw(self%c) =  0
-  else if ((self%reset_a).and.(self%reset_b)) then
+    self%upstream(self%a) = self%cell_pos(self%a)
+    self%upstream(self%b) = self%cell_pos(self%b) - self%cell_step(2)
+    self%upstream(self%c) = self%cell_pos(self%c)
+    if (self%cell_step(2) > 0) then
+      self%lwall(self%b) = -1
+      self%lw(self%b) = -1
+    else
+      self%lwall(self%b) = 1
+      self%lw(self%b) = 1
+    end if
+    
+  else if (self%reset(1).and.self%reset(2)) then
     self%ray_p_init(1)    = self%cell_min(1)      - self%cell_step(1)/2
     self%ray_p_last(1)    = self%cell_max(1)      + self%cell_step(1)/2
     self%ray_p_init(2)    = self%cell_min(2)      - self%cell_step(2)/2
     self%ray_p_last(2)    = self%cell_max(2)      + self%cell_step(2)/2
-    if (self%cell_step(1) > 0) then
-      self%ray_dist(1)    = self%ray_p_last(1)    - self%ray_p_init(1)
-    else
-      self%ray_dist(1)    = self%ray_p_init(1)    - self%ray_p_last(1)
-    end if
-    if (self%cell_step(2) > 0) then
-      self%ray_dist(2)    = self%ray_p_last(2)    - self%ray_p_init(2)
-    else
-      self%ray_dist(2)    = self%ray_p_init(2)    - self%ray_p_last(2)
-    end if
+    do x = 1,2
+      if (self%cell_step(x) > 0) then
+        self%ray_dist(x)    = self%ray_p_last(x)    - self%ray_p_init(x)
+      else
+        self%ray_dist(x)    = self%ray_p_init(x)    - self%ray_p_last(x)
+      end if
+    end do
     self%ray_dist(1)      = self%ray_dist(1)      * self%dstep(1)
     self%ray_dist(2)      = self%ray_dist(2)      * self%dstep(2)
     self%ray_dist(3)      = self%ray_dist(3)      - self%r_trace
-    self%r_tot            = minval(self%ray_dist)
+    self%r_tot            = minval(self%ray_dist, (self%ray_dist.GT.0))
     self%r_trace          = 0
     self%cell_pos(self%a) = self%cell_min(1)
     self%cell_pos(self%b) = self%cell_min(2)
     self%ray_step(1)      = self%dstep(1)
     self%ray_step(2)      = self%dstep(2)
-    upstream(self%a)      = self%cell_pos(self%a) - self%cell_step(1)
-    upstream(self%b)      = self%cell_pos(self%b) - self%cell_step(2)
-    upstream(self%c)      = self%cell_pos(self%c)
-    self%lw(self%a)  = -1; self%lw(self%b)  =  -1; self%lw(self%c) =  0
+    self%upstream(self%a)      = self%cell_pos(self%a) - self%cell_step(1)
+    self%upstream(self%b)      = self%cell_pos(self%b) - self%cell_step(2)
+    self%upstream(self%c)      = self%cell_pos(self%c)
+    if (self%cell_step(1) > 0) then
+      self%lwall(self%a) = -1
+      self%lw(self%a) = -1
+    else
+      self%lwall(self%a) = 1
+      self%lw(self%a) = 1
+    end if
+    if (self%cell_step(2) > 0) then
+      self%lwall(self%b) = -1
+      self%lw(self%b) = -1
+    else
+      self%lwall(self%b) = 1
+      self%lw(self%b) = 1
+    end if
+    
   else
     error stop "ray_geometry: in reset 3D resets went haywire"
   end if
   self%uw = 0
-END SUBROUTINE restart_3D
+  self%reset(1) = .false.
+  self%reset(2) = .false.
+END SUBROUTINE restart
 
 !> =====================================================================
 !> Subroutine to create linked-list of ray points. Later this list is
@@ -1490,13 +1237,14 @@ END SUBROUTINE add_ray_point
 SUBROUTINE fill_single_ray_data(self, ray)
   class(single_ray_t) :: self
   class(ray_point_t), pointer :: ray, prev
-  integer :: pt
+  integer :: pt, li(3), ui(3), w
 ! ......................................................................
   prev => ray%tail
   ray  => ray%head
 
-  self%lwall    = ray%lwall                                          ! store lower wall
-  self%uwall    = prev%uwall                                            ! store upper wall
+  self%lwall = ray%lwall
+  self%uwall = ray%uwall
+  
   self%n_points = ray%n_points                                          ! store number of points in this ray
 
   allocate(self%cell_coords(3, ray%n_points))                           ! create a stiff array for this ray with cell cords
@@ -1504,13 +1252,12 @@ SUBROUTINE fill_single_ray_data(self, ray)
   allocate(self%cell_walls (3,2,ray%n_points))                          ! create a stiff array for this ray with cell uw and lw
   self%fwd_coords = ray%fwd                                             ! save upstream cell coords
   self%rev_coords = ray%rev                                             ! save downstream cell coords
-
   pt=1
   do while (associated(ray))                                            ! loop over ray points
     self%cell_coords(:,pt)  = ray%coords                                ! save ray point coords
     self%ds(pt)             = ray%ds                                    ! save ray point ds
-    self%cell_walls(:,1,pt) = ray%lwall                                 ! save ray entry wall
-    self%cell_walls(:,2,pt) = ray%uwall                                 ! save ray exit wall
+    self%cell_walls(:,1,pt) = ray%lw                                    ! save ray entry wall
+    self%cell_walls(:,2,pt) = ray%uw                                    ! save ray exit wall
     prev => ray                                                         ! save previous point
     ray => ray%next                                                     ! go to next point
     deallocate(prev)                                                    ! deallocate previous point
@@ -1681,13 +1428,12 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
       bundle%prev => dir%bundle%tail
       bundle%prev%next => bundle
       dir%bundle%tail => bundle
-      bundle%ID = bundle%prev%ID
+      bundle%ID = bundle%prev%ID + 1
     end if
 
     bundle%lwall = sbundle%lwall
     bundle%uwall = sbundle%uwall
     bundle%n_packets = 0
-
     ! --- Go through single packets ---
     spacket => sbundle%packets
     do while (associated(spacket))
@@ -1703,9 +1449,8 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
         ray%prev => bundle%rays%tail
         ray%prev%next => ray
         bundle%rays%tail => ray
-        ray%ID = ray%prev%ID
+        ray%ID = ray%prev%ID + 1
       end if
-
       ray%n_rays = spacket%n_rays
       ray%n_points = spacket%n_points
       call ray%fill_ray_list_data(spacket%rays)
@@ -1717,7 +1462,6 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     sbundle => sbundle%next
     deallocate(sb_prev)
   end do
-
 END SUBROUTINE finish_single_ray_list
 
 !> =====================================================================
@@ -1796,7 +1540,8 @@ SUBROUTINE print_bundle (self, i)
   class(ray_t), pointer :: ray
   !.............................................................................
   if (io%verbose < 3) return
-  write (*,*) '    RAY_BUNDLE:', i
+  write (*,'(1x,a,i3,2(3x,a,f5.0))') &
+    '    RAY_BUNDLE:', i, 'theta:', self%theta*radian, 'phi:', self%phi*radian
   write (*,*) '    number of packets:', self%n_packets
   write (*,*) '    lwall, uwall:', self%lwall, self%uwall
   ray => self%rays
@@ -1847,5 +1592,19 @@ SUBROUTINE print_geometry (self)
     ray_dir => ray_dir%next
   end do
 END SUBROUTINE print_geometry
+
+FUNCTION round(a,digit) result (b)
+  real :: a, b, rof
+  integer, optional :: digit
+! ----------------------------------------------------------------------
+  if (present(digit)) then
+    rof = 10**digit
+  else 
+    rof = 100.0
+  end if
+  
+  b = anint(a*rof)
+  b = b/rof
+END FUNCTION round
 
 END MODULE ray_geometry_v2_mod
