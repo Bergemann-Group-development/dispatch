@@ -15,6 +15,8 @@ MODULE rt_internal_mod
     real, dimension(:,:), pointer :: bndry => null()                    ! (ray, wl_bin) incoming intensity.
     real, dimension(:),   pointer :: time => null()                     ! (time)
     real, dimension(:,:), pointer :: ds   => null()                     ! (ray,point)
+    real, dimension(:,:), pointer :: I_out => null()                    ! leaving intensity
+    integer, dimension(:,:), pointer :: cell => null()                  ! convenience, to identify which cell the ray point corresponds to
   end type
 !-----------------------------------------------------------------------
   type,extends(rt_t), public :: rt_internal_t
@@ -39,6 +41,7 @@ MODULE rt_internal_mod
     procedure :: solve_internal_integral => solve_internal_integral_1st
     procedure :: solve_internal_feautrier
     procedure :: update_q
+    procedure :: I_retrv
   end type
 !-----------------------------------------------------------------------
 CONTAINS
@@ -50,7 +53,7 @@ SUBROUTINE init_rt_internal (self)
   class(rt_internal_t) :: self
   class(ray_bndl_t),    pointer :: my_rays
   class(ray_t), pointer :: packet
-  integer :: pt, ray, pck
+  integer :: pt, ray, pck, r
 !-----------------------------------------------------------------------
   call trace_begin('rt_t%init_rt_internal')
   call self%task_t%init
@@ -99,11 +102,23 @@ SUBROUTINE init_rt_internal (self)
   packet => self%my_rays%rays
   do ray = 1, self%my_rays%n_packets
     allocate(self%packet_data(ray)%bndry (packet%n_rays,microphysics%n_wl_bins))
+    allocate(self%packet_data(ray)%I_out (packet%n_rays,microphysics%n_wl_bins))
+    allocate(self%packet_data(ray)%cell (3,packet%n_rays))
     allocate(self%packet_data(ray)%time(packet%n_rays))
     allocate(self%packet_data(ray)%ds  (packet%n_rays,packet%n_points))
     self%packet_data(ray)%bndry(:,:) = 0
+    self%packet_data(ray)%I_out(:,:) = 0
     self%packet_data(ray)%time = self%time
     self%packet_data(ray)%ds = packet%ds * self%cell_ds(self%my_rays%axis) ! FIXME: should not be like this for non-cubic cells
+    select case(self%rt_type)
+    case(2)
+      pt = packet%n_points
+    case(3)
+      pt = 1
+    end select
+    do r = 1, packet%n_rays
+      self%packet_data(ray)%cell(:,r) = packet%cell_coords(:,pt,r)
+    end do
     packet => packet%next
   end do
   nullify (packet)
@@ -206,7 +221,7 @@ SUBROUTINE get_local_static (self)
   class(rt_internal_t), pointer :: rt_nb
   class(link_t), pointer :: nbor
   class(ray_t), pointer :: packet, nb_packet
-  integer :: ray, nb_cell(3), lw(3), uw(3), nb_ray, nb_pt, try
+  integer :: ray, nb_cell(3), nb_ray, nb_pt, try
   integer :: fw_c(3), pck, nb_pck
   logical, dimension(:), allocatable :: updated
   real, dimension(microphysics%n_wl_bins) :: mean, Iin
@@ -237,20 +252,17 @@ SUBROUTINE get_local_static (self)
               select case(self%rt_type)
               case(2)
                 fw_c = packet%fwd_coords(:,ray)                         ! select wall coordinates
-                lw   = -packet%pt_wall(:,2,1,ray)                       ! select right walls for the ray
-                uw   = -packet%pt_wall(:,1,1,ray)
               case(3)
                 fw_c =  packet%rev_coords(:,ray)                        ! select wall coordinates
-                lw   = -packet%pt_wall(:,1,1,ray)                       ! select right walls for the ray
-                uw   = -packet%pt_wall(:,2,1,ray)
               end select
 
               if (self%level >= rt_nb%level) then                       ! if i am not larger than my nbor
                 nb_cell = rt_nb%pos2cell(self%cell2pos(fw_c))           ! corresponding cell at the nbor mesh
                 if (all(nb_cell>=rt_nb%li).and.&
                     all(nb_cell<=rt_nb%ui)) then                        ! double check that we pointed to the right spot
-                  self%packet_data(pck)%bndry(ray,:) = &
-                  rt_nb%my_rt_data%I_retrv(nb_cell,self%dir_ID,lw,uw)   ! get the right intensity
+                   self%packet_data(pck)%bndry(ray,:) = &
+                     self%I_retrv(rt_nb, nb_cell)
+         
                   self%packet_data(pck)%time(ray) = rt_nb%time          ! store the time of the update
                   updated(ray) = .true.                                 ! the ray was updated
                 end if
@@ -279,7 +291,7 @@ SUBROUTINE get_local_static (self)
                     end select
 
                     if (try > 0) then
-                      Iin = rt_nb%my_rt_data%I_retrv_ray(nb_ray,nb_pt,self%dir_ID) ! retrieve this intensity
+                      Iin = self%I_retrv(rt_nb, nb_packet%cell_coords(:,nb_ray, try))
                       mean = mean + Iin
                       n_mean = n_mean + 1.
                     end if
@@ -317,6 +329,45 @@ SUBROUTINE get_local_static (self)
   if (io%verbose>2) call self%check_intensities(1)
   call trace_end
 END SUBROUTINE get_local_static
+
+!> Slow for now. Will be optimised.
+FUNCTION I_retrv(self, nbor, c) result (I_out)
+  class(rt_internal_t) :: self
+  class(rt_internal_t), pointer :: nbor
+  class(ray_t), pointer :: packet
+  integer :: c(3),  my_ray, nb_ray
+  real, dimension(microphysics%n_wl_bins) :: I_out
+  logical :: fnd
+  integer, save :: itimer=0
+  !---------------------------------------------------------------------
+  call trace_begin('rt_internal_mod%I_retrv',4, itimer=itimer)
+  fnd = .false.
+  packet => nbor%my_rays%rays
+  do while (associated(packet).and..not.fnd)
+    do nb_ray = 1, packet%n_rays
+      if (all(nbor%packet_data(packet%id)%cell(:,nb_ray) == c)) then
+        fnd = .true.
+        I_out = nbor%packet_data(packet%id)%I_out(nb_ray,:)
+      end if
+    end do
+    packet => packet%next
+  end do
+
+  if (.not.fnd) then
+  print *,'looking for cell:', c
+  print *,'my/nbor rt type:', self%rt_type, nbor%rt_type
+  print *,'my/nbor dir ID:', self%dir_ID, nbor%dir_ID
+  print *,'example of nbor wall cell coords:'
+  print *, nbor%packet_data(1)%cell(:,1)
+  print *, 'size n_rays, n_cell', size(nbor%packet_data), size(nbor%packet_data(1)%cell,2)
+
+ 
+   error stop "I retrv not working..."
+  else 
+    print *,'for task',self%id,'I found successfully'
+  end if
+  call trace_end
+END FUNCTION I_retrv
 
 !> =====================================================================
 !> Upstream data is on different MPI rank, but tasks are not moving.
@@ -380,7 +431,7 @@ SUBROUTINE solve_internal_integral_1st (self)
   class(ray_t), pointer :: packet
   real, dimension(:,:,:), allocatable :: ex0, ds, dtau
   real, dimension(:,:,:), allocatable :: s, q, Ifw, ropac
-  real, dimension(:,:), allocatable :: I_in
+  real, dimension(:,:), allocatable :: I_in, I_out
   integer :: pt, p(3), pck, nwb, ipk, ray
   !---------------------------------------------------------------------
   call trace_begin('rt_t%update_internal%solve_internal_integral')
@@ -431,7 +482,7 @@ SUBROUTINE solve_internal_integral_1st (self)
         Ifw(:,:,2:pt) = Ifw(:,:,1:pt-1) * ex0(:,:,2:pt) + ds(:,:,2:pt)  ! Intensity along the ray
         q  (:,:,2:pt) = Ifw(:,:,2:pt  ) - Ifw(:,:,1:pt-1)
       end if
-
+      self%packet_data(pck)%I_out = Ifw(:,:,npt)
     case(3)                                                             ! reverse
       Ifw(:,:,pt) = I_in * ex0(:,:,pt) + ds(:,:,pt)
       q  (:,:,pt) = Ifw(:,:,pt) - I_in                                  ! initial reverse Q
@@ -441,9 +492,9 @@ SUBROUTINE solve_internal_integral_1st (self)
           q  (:,:,pt) = Ifw(:,:,pt  ) - Ifw(:,:,pt+1)
         end do
       end if
+      self%packet_data(pck)%I_out = Ifw(:,:,1)
     end select
-
-    call rtd%I_store (Ifw, packet, self%dir_ID, self%rt_type)
+    
     call self%update_q (packet, q, ropac)
     deallocate(ex0, ds, s, dtau, q, Ifw, I_in, ropac)
     end associate
@@ -462,7 +513,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet
   real, dimension(:,:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
-  real, dimension(:,:,:), allocatable :: s, dtau, idtau, ctau, q, Ifw, ropac
+  real, dimension(:,:,:), allocatable :: s, dtau, idtau, ctau, q, ropac
   real, dimension(:,:), allocatable :: I_in
   integer :: pt, ipt, it, ray, wl, p(3), pck, nwb, ipk
   real    :: temp, dir_wgt
@@ -490,7 +541,6 @@ SUBROUTINE solve_internal_integral_2nd (self)
     allocate(d2s  (nrays, nwb, npt))
     allocate(s    (nrays, nwb, npt))
     allocate(q    (nrays, nwb, npt))
-    allocate(Ifw  (nrays, nwb, npt))
     allocate(ctau (nrays, nwb, npt))
     allocate(I_in (nrays, nwb))
     allocate(ropac(nrays, nwb,npt))
@@ -538,27 +588,24 @@ SUBROUTINE solve_internal_integral_2nd (self)
     select case(self%rt_type)
     case(2)                                                             ! forward
       q  (:,:,1) = I_in -   s(:,:,1)                                    ! initial forward Q
-      Ifw(:,:,1) = I_in * ex0(:,:,1)                                    ! Storing intensity after first point
       do pt = 2, npt
         q(:,:,pt) = q(:,:,pt-1) * ex0(:,:,pt) - d1s(:,:,pt) &
                   * ex1(:,:,pt) + d2s(:,:,pt) * ex2(:,:,pt)
-        Ifw(:,:,pt) = q(:,:,pt) + s  (:,:,pt)
       end do
+      self%packet_data(pck)%I_out = q(:,:,npt) + s(:,:,npt)
 
     case(3)                                                             ! reverse
       q  (:,:,pt) = I_in -   s(:,:,pt)                                  ! initial reverse Q
-      Ifw(:,:,pt) = I_in * ex0(:,:,pt)
       do pt = npt-1, 1, -1
         q(:,:,pt) =   q(:,:,pt+1) * ex0(:,:,pt+1) + d1s(:,:,pt) &
                   * ex1(:,:,pt+1) + d2s(:,:,pt  ) * ex2(:,:,pt+1)
-        Ifw(:,:,pt) = q(:,:,pt  ) + s  (:,:,pt  )
       end do
+      self%packet_data(pck)%I_out = q(:,:,1) + s(:,:,1)
     end select
 
-    call rtd%I_store (Ifw, packet, self%dir_ID, self%rt_type)
     call self%update_q (packet, q, ropac)
     deallocate(ex0, ex1, ex2, ds1, d1s, d2s, ctau, s, dtau, &
-               idtau, q, Ifw, I_in, ropac)
+               idtau, q, I_in, ropac)
     end associate
     packet => packet%next
   end do
