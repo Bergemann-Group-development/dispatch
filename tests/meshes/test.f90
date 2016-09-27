@@ -2,12 +2,13 @@
 !> Program to test functionality of mesh generation and destruction.
 !> =============================================================================
 PROGRAM test
-  USE mesh_mod
   USE io_mod
+  USE mesh_mod
   USE patch_mod
   implicit none
 
-  class(mesh_t), allocatable, dimension(:) :: gridCart, gridSph, gridCyl
+  class(mesh_t), allocatable:: meshSingle
+  class(mesh_t), allocatable, dimension(:):: meshCart, meshSph, meshCyl
   class(patch_t), pointer :: patch
   class(mesh_t), pointer :: m3
   class(mesh_t), pointer, dimension(:) :: m
@@ -15,55 +16,82 @@ PROGRAM test
   integer :: nTheta, i, l(3), u(3)
   real :: ds(3)
   real(8) :: z
-  real(8), parameter :: pi = 3.14159265359
-  !.............................................................................
+  real(8), parameter :: pi = asin(1.0d0) * 2.0d0
+  !-----------------------------------------------------------------------------
   io%verbose = 1
+
+  !-----------------------------------------------------------------------------
+  ! Test an individual meshes
+  !-----------------------------------------------------------------------------
+  print*,repeat("=",70)
+  print*,"**Individual meshes**"
+  print*,repeat("-",25)
+
+  allocate (cylindrical_mesh:: meshSingle)
+  meshSingle%type = 'cylindrical_mesh'
+  meshSingle%idir = 3
+  call meshSingle%init(10,2,1.0d0,0.5d0,0.0d0)
+  call meshSingle%init_geometry(3,0.0d0)
+  call meshSingle%print()
+  print*,meshSingle%dvol3f(1)
+  deallocate (meshSingle)
+
+  allocate (spherical_mesh:: meshSingle)
+  meshSingle%type = 'spherical_mesh'
+  meshSingle%idir = 2
+  call meshSingle%init(10,2,1.0d0,0.5d0,0.0d0)
+  call meshSingle%init_geometry(meshSingle%idir,0.0d0)
+  call meshSingle%print()
+  print*,associated(meshSingle%dvol3f)," (should be F)"
+  if (associated(meshSingle%dvol3f)) print*,meshSingle%dvol3f(1)
+  print*,meshSingle%h32f(3)
+  deallocate (meshSingle)
 
   !-----------------------------------------------------------------------------
   ! Test collections of meshes
   !-----------------------------------------------------------------------------
+  print*,repeat("=",70)
   print*,"**Sets of meshes**"
-  print*,"======================="
 
   ! ---- Cartesian; all metric factors should be 1.0 ----
-  call MeshFactory(mesh_types%Cartesian, gridCart, s=[1.0d0,1.0d0,1.0d0], &
+  call MeshFactory(mesh_types%Cartesian, meshCart, s=[1.0d0,1.0d0,1.0d0], &
                       p=[0.0d0,0.0d0,0.0d0])
-  call gridCart(1)%print()
+  call meshCart(1)%print()
 
   print*,"h31c; result should be: T,F,F"
-  do i=1,size(gridCart)
-    select type (gridCart)
+  do i=1,size(meshCart)
+    select type (meshCart)
     class is (mesh_t)
-      print*,associated(gridCart(i)%h31c)
+      print*,associated(meshCart(i)%h31c)
     end select
     ! allocate and set staggering indices.
-    allocate(gridCart(i)%h(8))
-    gridCart(i)%h = 0.0
-    gridCart(i)%h(i) = -0.5
+    allocate(meshCart(i)%h(8))
+    meshCart(i)%h = 0.0
+    meshCart(i)%h(i) = -0.5
   end do
-  print*,gridCart%d
-  print*,gridCart(1)%h
+  print*,meshCart%d
+  print*,meshCart(1)%h
 
   print*,"Columns 2 and 3 should be identical:"
-  associate (m1r => gridCart(1)%r)
-  do i=gridCart(1)%lb,gridCart(1)%ub
-    print*,i,gridCart(1)%r(i),m1r(i)
+  associate (m1r => meshCart(1)%r)
+  do i=meshCart(1)%lb,meshCart(1)%ub
+    print*,i,meshCart(1)%r(i),m1r(i)
   end do
   end associate
   print*,"======================="
 
   ! ---- cylindrical ----
-  call MeshFactory(mesh_types%cylindrical, gridCyl, n=[1,10,45], &
+  call MeshFactory(mesh_types%cylindrical, meshCyl, n=[1,10,45], &
                       s=[1.0d0,0.5d0,2.0d0*pi], p=[0.0d0,0.0d0,0.0d0], &
                       origin=[0.0d0,0.1d0,0.5d0*pi],ng=[0,3,3])
-  call gridCyl(1)%print()
-  call gridCyl(2)%print()
-  call gridCyl(3)%print()
+  call meshCyl(1)%print()
+  call meshCyl(2)%print()
+  call meshCyl(3)%print()
 
   print*,"The third column should be the absolute value of the first:"
-  select type (gridCyl)
+  select type (meshCyl)
   type is (cylindrical_mesh)
-    associate(cmesh => gridCyl(2))
+    associate(cmesh => meshCyl(2))
     if (associated(cmesh%h32c)) then
       do i=cmesh%li,cmesh%ui
         print*,i,cmesh%r(i),cmesh%h32c(i),cmesh%dar32c(i)
@@ -72,14 +100,14 @@ PROGRAM test
     end associate
   end select
 
-  select type (gridCyl)
+  select type (meshCyl)
   type is (cylindrical_mesh)
-    if (associated(gridCyl(1)%dvol1c)) print*,gridCyl(1)%d,gridCyl(1)%dvol1c(1),"(both should be 1.0)"
+    if (associated(meshCyl(1)%dvol1c)) print*,meshCyl(1)%d,meshCyl(1)%dvol1c(1),"(both should be 1.0)"
   end select
 
-  select type (gridCyl)
+  select type (meshCyl)
   type is (cylindrical_mesh)
-    associate (cmesh => gridCyl(3))
+    associate (cmesh => meshCyl(3))
     print*,associated(cmesh%h32f)," (should be F)"
     print*,associated(cmesh%dvol3c)," (should be T)"
     print*,cmesh%zeta," (should be 0.5 * pi = 1.570796...)"
@@ -89,13 +117,13 @@ PROGRAM test
 
   ! ---- spherical ----
   nTheta = 10
-  call MeshFactory(mesh_types%spherical, gridSph, n=[15,nTheta,90], &
+  call MeshFactory(mesh_types%spherical, meshSph, n=[15,nTheta,90], &
                       s=[1.0d0,pi,2.0d0*pi], p=[0.0d0,0.0d0,0.0d0], origin=[1.0d0,0.0d0,0.0d0])
-  call gridSph(1)%print()
-  call gridSph(2)%print()
-  select type (gridSph)
+  call meshSph(1)%print()
+  call meshSph(2)%print()
+  select type (meshSph)
   type is (spherical_mesh)
-    associate (cmesh2 => gridSph(2))
+    associate (cmesh2 => meshSph(2))
     print*,cmesh2%xi," (should be 0)"
     print*,allocated(cmesh2%zeta)," (should be F)"
     print*,cmesh2%xi," (should be 0)"
@@ -106,9 +134,9 @@ PROGRAM test
     end associate
   end select
 
-  select type (gridSph)
+  select type (meshSph)
   type is (spherical_mesh)
-    associate(cmesh3 => gridSph(3))
+    associate(cmesh3 => meshSph(3))
     print*,cmesh3%zeta," (should be 0)"
     print*,allocated(cmesh3%xi)," (should be F)"
     end associate
@@ -116,9 +144,9 @@ PROGRAM test
 
   print*,"======================="
 
-  call MeshRecycler(gridCart)
-  call MeshRecycler(gridCyl)
-  call MeshRecycler(gridSph)
+  call MeshRecycler(meshCart)
+  call MeshRecycler(meshCyl)
+  call MeshRecycler(meshSph)
 
   !-----------------------------------------------------------------------------
   ! Test integration with patches
@@ -165,22 +193,36 @@ PROGRAM test
   print*,"Columns 2, 3, 4 and 5 should be identical:"
   m => patch%mesh
   m3 => patch%mesh(3)
-  associate (m3r => patch%mesh(3)%r, mm => patch%mesh)
+  associate (m3r => patch%mesh(3)%r)
   do i=m3%lb,m3%ub
     print*,i,m(3)%r(i),m3%r(i),patch%mesh(3)%r(i),m3r(i)
   end do
+  end associate
 
   select type(m3)
   type is (Cartesian_mesh)
-    print*,'Cartesian mesh recognised'
+    print*,'m3: Cartesian mesh recognised'
   type is (cylindrical_mesh)
-    print*,'Cylindrical mesh recognised'
+    print*,'m3: Cylindrical mesh recognised'
   type is (spherical_mesh)
-    print*,'Spherical mesh recognised'
+    print*,'m3: Spherical mesh recognised'
   class default
-    print*,'Unknown mesh type!'
+    print*,'m3: Unknown mesh type!'
   end select
-  end associate
+
+  ! NOTE!: the following code causes an ICE in gfortran v5.4.1 and earlier.
+!  associate (m2 => patch%mesh(2))
+!  select type(m2)
+!  type is (Cartesian_mesh)
+!    print*,'m2: Cartesian mesh recognised'
+!  type is (cylindrical_mesh)
+!    print*,'m2: Cylindrical mesh recognised'
+!  type is (spherical_mesh)
+!    print*,'m2: Spherical mesh recognised'
+!  class default
+!    print*,'m3: Unknown mesh type!'
+!  end select
+!  end associate
   
   deallocate(patch)
 
