@@ -55,7 +55,6 @@ MODULE mesh_mod
                           ! the root grid's) coords; replacement for `p`.
     real(8) :: origin = 0.0 ! position of the patch's lower left corner in relative,
                             ! native coords.; always = 0 in Cartesian coords.
-    real(8) :: urc        ! upper right corner of the patch; defined as `llc + s`; for convenience.
     real(4) :: centre        ! volume centroid of the current mesh in its own coord. system
     real(4), dimension(:), allocatable :: r  ! coordinate relative to patch centre
     real(4), dimension(:), allocatable :: h  ! offset for staggered variables;
@@ -365,12 +364,16 @@ SUBROUTINE print_mesh (self)
   end select
   print'(a,3i8)', "n, ng, gn: ", self%n, self%ng, self%gn
   print'(a,6i8)', "lb, lo, li, ub, uo, ui: ", self%lb, self%lo, self%li, self%ub, self%uo, self%ui
-  print'(a,3x,3g16.8)', "lf, uf, p: ",self%lf, self%uf, self%p
-  print'(a,3x,3g16.8)', "origin, centre, llc: ",self%origin, self%centre, self%llc
+  print'(a,3x,6g16.8)', "lf, uf, p, s, d, b: ",self%lf, self%uf, self%p, self%s, self%d, self%b
+  print'(a,3x,4g16.8)', "origin, centre, llc, o: ",self%origin, self%centre, self%llc, self%o
   do i=1,self%gn
     print*,i,self%r(i)
   end do
-END SUBROUTINE
+
+  if (allocated(self%zeta)) print*,"phi axis offset: ", self%zeta
+  if (allocated(self%xi)) print*,"theta axis offset: ", self%xi
+
+END SUBROUTINE print_mesh
 
 !> =============================================================================
 !> Dummy initialise for a Cartesian mesh: All scale factors are one and all
