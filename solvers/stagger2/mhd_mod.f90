@@ -429,7 +429,7 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
   real(8):: dt_AD_inp
   real(8):: dt_Ohm_inp
   !.............................................................................
-  call trace_begin('mhd_t%nonideal_MHD_courant')
+  call trace%begin('mhd_t%nonideal_MHD_courant')
   call self%lock%set ('nonideal_MHD_courant')
   if (io%verbose>2) &
     print*, 'nonideal_MHD_courant: u_max, ds', self%u_max, minval(self%ds)
@@ -459,7 +459,7 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'nonideal_MHD_courant:', &
       self%id, self%dtime, self%nonideal_MHD_courant, self%u_max
   call self%lock%unset ('nonideal_MHD_courant')
-  call trace_end
+  call trace%end
 END SUBROUTINE nonideal_MHD_courant_condition
 
 !> =============================================================================

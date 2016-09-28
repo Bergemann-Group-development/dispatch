@@ -1,9 +1,9 @@
 &io_params
- verbose=3
+ verbose=2
  do_trace=f
  do_debug=f
- do_output=t
- do_legacy = t
+ do_output=f
+ do_legacy=t
 /
 
 &box_params

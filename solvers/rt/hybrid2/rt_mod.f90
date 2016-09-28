@@ -15,7 +15,7 @@ MODULE rt_mod
 !-----------------------------------------------------------------------
   type, extends(task_t), public :: rt_t
     type (experiment_t), pointer :: mhd_patch  => null()  ! pointer to MHD task
-    type (link_t),       pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
+    class(link_t),       pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
     class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task
     class(link_t),       pointer :: link       => null()  ! pointer to self link in the task list
     class(ray_bndl_t),   pointer :: my_rays    => null()  ! pointer to list of ray bundles
@@ -97,7 +97,7 @@ END SUBROUTINE set_periodic_BC
 !> =====================================================================
 FUNCTION the_right_wall (self, me, nbor, wall) result (answer)
   class(rt_t) :: self
-  type (link_t),        pointer :: me, nbor
+  class (link_t),        pointer :: me, nbor
   class (experiment_t), pointer :: mhd, nb_mhd
   integer :: wall(3)
   real (kind=8) :: d(3)
@@ -227,7 +227,7 @@ END SUBROUTINE init_obc
 !> Check if 'nbor' is fully contained inside 'me'
 !> =====================================================================
 FUNCTION nbor_is_my_child (me, nbor) result (out)
-  type (experiment_t), pointer :: me, nbor
+  class (experiment_t), pointer :: me, nbor
   real(kind=8) :: me_li, me_ui, nbor_li, nbor_ui
   logical :: out
 !-----------------------------------------------------------------------
@@ -244,7 +244,7 @@ END FUNCTION nbor_is_my_child
 !> =====================================================================
 FUNCTION absolute_point_position (self, rays, ray, pt, bn) result (cell_pos)
   class (rt_t) :: self
-  type (ray_t), pointer :: rays
+  class (ray_t), pointer :: rays
   integer, optional :: bn
   integer :: ray, pt, cp(3)
   real(kind=8) :: cell_pos(3)
@@ -271,7 +271,7 @@ END FUNCTION absolute_point_position
 !> =====================================================================
 FUNCTION ray2cell(self, rays, ray, pt) result (cell)
   class (rt_t) :: self
-  type (ray_t), pointer :: rays
+  class (ray_t), pointer :: rays
   integer :: ray, pt, cell(3)
 !-----------------------------------------------------------------------
   cell = rays%cell_coords(:,pt,ray)
@@ -304,7 +304,7 @@ END FUNCTION pos2cell
 !> =====================================================================
 FUNCTION ray2pos (self, rays, ray, pt) result (p)
   class(rt_t)  :: self
-  type (ray_t), pointer :: rays
+  class(ray_t), pointer :: rays
   real(kind=8) :: p(3)
   integer :: ray, pt
 !-----------------------------------------------------------------------

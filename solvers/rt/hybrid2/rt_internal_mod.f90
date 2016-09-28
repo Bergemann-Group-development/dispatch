@@ -627,7 +627,7 @@ END SUBROUTINE solve_internal_feautrier
 
 SUBROUTINE update_q (self, rays, q, op)
   class(rt_internal_t) :: self
-  type (ray_t), pointer :: rays
+  class(ray_t), pointer :: rays
   integer :: p(3), wl, ray, pt
   real, dimension(:,:,:) :: op, q
   real, dimension(:,:,:,:), pointer :: qq
