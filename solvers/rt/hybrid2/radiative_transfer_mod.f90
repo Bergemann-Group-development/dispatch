@@ -210,7 +210,7 @@ END SUBROUTINE connect_corr_nbors
 !> =============================================================================
 SUBROUTINE add_upstream_nbors (self)
   class(list_t):: self
-  class(link_t),       pointer :: rt_list, my_mhd_nbor, nb_mhd
+  class(link_t),       pointer :: rt_list, my_mhd_nbor, nb_mhd, nb_mhd_prev
   class(link_t),       pointer :: rt, my_mhd_l, nb_mhd_nbor, nb_rt_l, nb_mhd_l
   class(rt_internal_t),pointer :: rtc, nb_rt
   integer:: wall(3), n_connected, n_found, n_non_child
@@ -255,7 +255,9 @@ SUBROUTINE add_upstream_nbors (self)
             end associate
             nb_mhd_nbor => nb_mhd_nbor%next                             ! move to next upstream mhd nbor's nbor
           end do
+          nb_mhd_prev => nb_mhd
           nb_mhd => nb_mhd%next                                         ! move to next upstream nbor
+          deallocate(nb_mhd_prev)
         end do
       end if
     end SELECT

@@ -95,16 +95,16 @@ END SUBROUTINE set_periodic_BC
 !> the triple index 'wall', where e.g. the right and left x-walls are
 !> indicated by wall(1) = +1/-1.
 !> =====================================================================
-FUNCTION the_right_wall (self, me, nbor, wall) result (answer)
+FUNCTION the_right_wall (self, nbor, wall) result (answer)
   class(rt_t) :: self
-  class (link_t),        pointer :: me, nbor
+  class (link_t),        pointer :: nbor
   class (experiment_t), pointer :: mhd, nb_mhd
-  integer :: wall(3)
+  integer :: wall(3), x
   real (kind=8) :: d(3)
-  logical :: answer
+  logical :: answer, allw(3)
 !-----------------------------------------------------------------------
   answer = .false.
-  associate (my_type => me%task)
+  associate (my_type => self%MHD_link%task)
   SELECT type (my_type)
   type is (experiment_t)
     mhd => my_type
@@ -122,41 +122,31 @@ FUNCTION the_right_wall (self, me, nbor, wall) result (answer)
   end SELECT
   end associate
   !
+  allw = .false.
   if (abs(nb_mhd%level-mhd%level)<2) then                               ! connect only +/- 1 or same level
-    if (wall(1) > 0) then
-      if (mhd%position(1) < nb_mhd%position(1)) then
-        if (mhd%position(1)+mhd%size(1)*0.5d0 > &
-        nb_mhd%position(1) - nb_mhd%size(1)*0.5d0 - nb_mhd%ds(1)) answer = .true.
+   
+    do x = 1,3
+    
+    if (wall(x) > 0) then
+      if (mhd%position(x) < nb_mhd%position(x)) then
+        if (mhd%position(x)+mhd%size(x)*0.5d0 > &
+        nb_mhd%position(x) - nb_mhd%size(x)*0.5d0 - nb_mhd%ds(x)) allw(x) = .true.
       end if
-    else if (wall(1) < 0) then
-      if (mhd%position(1) > nb_mhd%position(1)) then
-        if (mhd%position(1)-mhd%size(1)*0.5d0 < &
-        nb_mhd%position(1) + nb_mhd%size(1)*0.5d0 + nb_mhd%ds(1)) answer = .true.
+    else if (wall(x) < 0) then
+      if (mhd%position(x) > nb_mhd%position(x)) then
+        if (mhd%position(x)-mhd%size(x)*0.5d0 < &
+        nb_mhd%position(x) + nb_mhd%size(x)*0.5d0 + nb_mhd%ds(x)) allw(x) = .true.
       end if
+    else 
+      allw(x) = .true.
     end if
-    if (wall(2) > 0) then
-      if (mhd%position(2) < nb_mhd%position(2)) then
-        if (mhd%position(2)+mhd%size(2)*0.5d0 > &
-        nb_mhd%position(2) - nb_mhd%size(2)*0.5d0 - nb_mhd%ds(2)) answer = .true.
-      end if
-    else if (wall(2) < 0) then
-      if (mhd%position(2) > nb_mhd%position(2)) then
-        if (mhd%position(2)-mhd%size(2)*0.5d0 < &
-        nb_mhd%position(2) + nb_mhd%size(2)*0.5d0 + nb_mhd%ds(2)) answer = .true.
-      end if
-    end if
-    if (wall(3) > 0) then
-      if (mhd%position(3) < nb_mhd%position(3)) then
-        if (mhd%position(3)+mhd%size(3)*0.5d0 > &
-        nb_mhd%position(3) - nb_mhd%size(3)*0.5d0 - nb_mhd%ds(3)) answer = .true.
-      end if
-    else if (wall(3) < 0) then
-      if (mhd%position(3) > nb_mhd%position(3)) then
-        if (mhd%position(3)-mhd%size(3)*0.5d0 < &
-        nb_mhd%position(3) + nb_mhd%size(3)*0.5d0 + nb_mhd%ds(3)) answer = .true.
-      end if
-    end if
+    
+    end do
   end if
+  
+  if (all(allw)) answer = .true.
+  nullify (mhd, nb_mhd)
+  
 END FUNCTION the_right_wall
 
 !> =====================================================================
@@ -165,12 +155,20 @@ END FUNCTION the_right_wall
 !> =====================================================================
 SUBROUTINE find_upstream (self, nbor_l, found)
   class(rt_t)  :: self
-  class(link_t), pointer :: nbor_l
+  class(link_t), pointer :: nbor_l, nul
   class(link_t), pointer :: nbor, my_mhd_l, new
   class(experiment_t), pointer :: my_task, nbor_task
   integer :: found, wall(3)
 ! ----------------------------------------------------------------------
   call trace_begin('rt_t%find_upstream')
+  
+  select case(self%rt_type)                                             ! select the right upstream wall
+  case(2)
+    wall = self%my_rays%lwall
+  case(3)
+    wall = self%my_rays%uwall
+  end select
+  
   found = 0
   allocate (nbor_l)
   my_task => self%mhd_patch
@@ -181,16 +179,10 @@ SUBROUTINE find_upstream (self, nbor_l, found)
     class is (experiment_t)
       nbor_task => nbtask
       if (.not.nbor_is_my_child(my_task, nbor_task)) then
-        select case(self%rt_type)
-        case(2)
-          wall = self%my_rays%lwall
-        case(3)
-          wall = self%my_rays%uwall
-        end select
         ! if the nbor has a wall common with our upstream wall
         ! allocate a new link, pointing to the nbor task, and
         ! prepend it to the list starting with nbor_l
-        if (self%the_right_wall (self%mhd_link, nbor, wall)) then
+        if (self%the_right_wall (nbor, wall)) then
           allocate(new)
           new%task => nbor_task
           new%link => nbor%link
@@ -209,7 +201,9 @@ SUBROUTINE find_upstream (self, nbor_l, found)
     end associate
     nbor => nbor%next
   end do
+  nul => nbor_l
   nbor_l => nbor_l%next
+  deallocate(nul)
   call trace_end
 END SUBROUTINE find_upstream
 

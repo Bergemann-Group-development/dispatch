@@ -38,7 +38,7 @@ MODULE rt_internal_mod
     procedure :: get_remote_static
     procedure :: get_remote_dynamic
     procedure :: get_correction_from_BC
-    procedure :: solve_internal_integral => solve_internal_integral_1st
+    procedure :: solve_internal_integral => solve_internal_integral_2nd
     procedure :: solve_internal_feautrier
     procedure :: update_q
     procedure :: I_retrv
@@ -223,15 +223,15 @@ SUBROUTINE get_local_static (self)
   class(ray_t), pointer :: packet, nb_packet
   integer :: ray, nb_cell(3), nb_ray, nb_pt, try
   integer :: fw_c(3), pck, nb_pck
-  logical, dimension(:), allocatable :: updated
+  logical, dimension(:), allocatable :: updated, all_upd
   real, dimension(microphysics%n_wl_bins) :: mean, Iin
   real :: n_mean
   real(8) :: my_c_pos(3)
   !---------------------------------------------------------------------
   call trace_begin('rt_corrections_mod::get_local_static')
 
-  allocate (updated(self%my_rays%rays%n_rays))                          ! make sure all intensities are updated
-  updated = .false.
+  allocate(all_upd(self%my_rays%n_packets))
+  all_upd = .false.
   nbor => self%link%nbor
   do while(associated(nbor))
     nullify(rt_nb)
@@ -239,15 +239,20 @@ SUBROUTINE get_local_static (self)
     associate (rt => nbor%task)
     SELECT type (rt)
     class is (rt_internal_t)
-      if (self%the_right_wall(self%link, nbor, self%lwall)) then        ! make sure nbor is on the right wall
+      if (self%the_right_wall(nbor, self%lwall)) then                   ! make sure nbor is on the right wall
         if (rt%rt_type == self%rt_type) then                            ! make sure nbor is of the right RT type
           if (io%verbose > 1) write (*,'(a,i5,3x,a,i5)') &
             'rt_internal task',self%id,'loading data from',rt%id
+            
           rt_nb => rt
           packet => self%my_rays%rays
+          
           do pck = 1, self%my_rays%n_packets                            ! loop over my ray packets
+            allocate (updated(packet%n_rays))                              ! make sure all intensities are updated
+            
             if (io%verbose > 2) write (*,*) 'packet', pck
             do ray = 1, packet%n_rays                                   ! loop  over my rays
+            
               if (io%verbose > 3) write (*,*) 'ray', ray
               select case(self%rt_type)
               case(2)
@@ -306,6 +311,8 @@ SUBROUTINE get_local_static (self)
                 end if
               end if
             end do
+            if (all(updated)) all_upd(pck) = .true.
+            deallocate(updated)
           packet => packet%next
           end do
         end if
@@ -317,14 +324,13 @@ SUBROUTINE get_local_static (self)
   nbor => nbor%next
   end do
 
-  if(.not.all(updated)) then                                                              ! TO DO: old test, to be moved to self%check
+  if(.not.all(all_upd)) then                                                              ! TO DO: old test, to be moved to self%check
     print *, 'task ID, level, time, n_nbors', self%id, self%level, self%time, self%n_nbors
     print *, updated
     error stop "not all rays updated for in local static rt"
   end if
-
+  deallocate(all_upd)
   nullify(rt_nb, nbor, packet, nb_packet)
-  deallocate(updated)
 
   if (io%verbose>2) call self%check_intensities(1)
   call trace_end
@@ -353,19 +359,6 @@ FUNCTION I_retrv(self, nbor, c) result (I_out)
     packet => packet%next
   end do
 
-  if (.not.fnd) then
-  print *,'looking for cell:', c
-  print *,'my/nbor rt type:', self%rt_type, nbor%rt_type
-  print *,'my/nbor dir ID:', self%dir_ID, nbor%dir_ID
-  print *,'example of nbor wall cell coords:'
-  print *, nbor%packet_data(1)%cell(:,1)
-  print *, 'size n_rays, n_cell', size(nbor%packet_data), size(nbor%packet_data(1)%cell,2)
-
- 
-   error stop "I retrv not working..."
-  else 
-    print *,'for task',self%id,'I found successfully'
-  end if
   call trace_end
 END FUNCTION I_retrv
 

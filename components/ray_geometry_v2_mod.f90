@@ -567,7 +567,7 @@ END SUBROUTINE add_ray
 SUBROUTINE add_diag(self, rep, dir)
   class(ray_geometry_t) :: self
   real :: init_step(3), dp(3), phis(8), theta, t, phi
-  integer :: rep, dir, nphi, a, b, c, pdir, round
+  integer :: rep, dir, nphi, a, b, c, pdir
 ! ......................................................................
   call trace_begin('ray_geometry_t%add_diag',4)
 
@@ -575,11 +575,11 @@ SUBROUTINE add_diag(self, rep, dir)
 
   SELECT case(dir)
   case(1)
+    a = 1; b = 2; c = 3                                                 ! along z axis
+  case(3)
     a = 2; b = 3; c = 1                                                 ! along x axis
   case(2)
     a = 3; b = 1; c = 2                                                 ! along y axis
-  case(3)
-    a = 1; b = 2; c = 3                                                 ! along z axis
   end SELECT
 
   SELECT case(rep)                                                      ! 45 degree rays can be added only twice
@@ -588,45 +588,46 @@ SUBROUTINE add_diag(self, rep, dir)
     phis(1:8) = (/0., 45., 90., 135., 180., 225., 270., 315./)
   case(2)
     nphi = 2
-    phis(1:2) = (/45., 315./)
+    phis(1:2) = (/90., 270./)
   end SELECT
+  
+  if (rep < 3) then
+    phis = phis/radian
+    do pdir = 1, nphi                                                     ! loop over phis
+      self%n_ray_dirs = self%n_ray_dirs + 1                               ! increment ray dirs
+      self%axis  = dir
+      self%theta = t
+      self%phi   = phis(pdir)
+      phi=phis(pdir)
+      dp(a) = sin(t)*cos(phi)*self%cell_dims(a)                           ! step size along a direction
+      dp(b) = sin(t)*sin(phi)*self%cell_dims(b)                           ! step size along b direction
+      dp(c) = cos(t)         *self%cell_dims(c)                           ! step size along c direction
 
-  phis = phis/radian
-  do pdir = 1, nphi                                                     ! loop over phis
-    self%n_ray_dirs = self%n_ray_dirs + 1                               ! increment ray dirs
-    self%axis  = dir
-    self%theta = t
-    self%phi   = phis(pdir)
-    phi=phis(dir)
-    dp(a) = sin(t)*cos(phi)*self%cell_dims(a)                           ! step size along a direction
-    dp(b) = sin(t)*sin(phi)*self%cell_dims(b)                           ! step size along b direction
-    dp(c) = cos(t)         *self%cell_dims(c)                           ! step size along c direction
+                                                                        ! removing computer uncertainties
+      dp(a) = round(dp(a))                                                ! and giving angle error of around 1 degree
+      dp(b) = round(dp(b))                                                ! this is necessary in order to avoid infinite loops
+      dp(c) = round(dp(c))                                                ! and overabundance of ray points with machine epsilon ds
 
-    round = anint(dp(a)*100.0)                                          ! removing computer uncertainties
-    dp(a) = round/100.0                                                 ! and giving angle error of around 1 degree
-    round = anint(dp(b)*100.0)                                          ! this is necessary in order to avoid infinite loops
-    dp(b) = round/100.0                                                 ! and overabundance of ray points with machine epsilon
-    round = anint(dp(c)*100.0)                                          ! ds
-    dp(c) = round/100.0
+      if (dp(a)==0) then                                                  ! if a direction == 0
+        init_step(1) = 0.5                                                ! cell center for a direction
+        init_step(2) = 1.                                                 ! cell wall for b direction
+        init_step(3) = 1.                                                 ! cell wall for c direction (ray propagation direction)
 
-    if (dp(a)==0) then                                                  ! if a direction == 0
-      init_step(1) = 0.5                                                ! cell center for a direction
-      init_step(2) = 1.                                                 ! cell wall for b direction
-      init_step(3) = 1.                                                 ! cell wall for c direction (ray propagation direction)
+      else if (dp(b) == 0) then                                           ! if b direction == 0
+        init_step(1) = 1.                                                 ! cell wall for a direction
+        init_step(2) = 0.5                                                ! cell center for b direction
+        init_step(3) = 1.                                                 ! cell wall for c direction (ray propagation direction)
 
-    else if (dp(b) == 0) then                                           ! if b direction == 0
-      init_step(1) = 1.                                                 ! cell wall for a direction
-      init_step(2) = 0.5                                                ! cell center for b direction
-      init_step(3) = 1.                                                 ! cell wall for c direction (ray propagation direction)
+      else                                                                ! movement to all directions
+        init_step(1) = 1.                                                 ! cell wall for a direction
+        init_step(2) = 1.                                                 ! cell wall for b direction
+        init_step(3) = 1.                                                 ! cell wall for c direction (ray propagation direction)
+      end if
+    !print *,self%theta*radian, self%phi*radian, self%axis, rep
+      call self%traverse (dp, a, b, c, init_step)                         ! proceed with 3D traversal
 
-    else                                                                ! movement to all directions
-      init_step(1) = 1.                                                 ! cell wall for a direction
-      init_step(2) = 1.                                                 ! cell wall for b direction
-      init_step(3) = 1.                                                 ! cell wall for c direction (ray propagation direction)
-    end if
-    call self%traverse (dp, a, b, c, init_step)                         ! proceed with 3D traversal
-
-  end do
+    end do
+  end if
   call trace_end
 END SUBROUTINE add_diag
 
@@ -667,7 +668,7 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
         
         call t%hop                                                      ! hop to the next cell
         ray%tail%ds = t%ds                                              ! save distance traveled
-        
+
         if (t%r_trace >= t%r_tot) then                                   ! if the ray is fully traced
           ray%tail%uw = -t%lw
           ray%head%rev = t%cell_pos
@@ -824,6 +825,7 @@ SUBROUTINE posit(self, ia, ib, init_step)
 
   if (init_step(1) == init_step(2)) then                                ! determine upstream cell position
     if  (init_step(2) == init_step(3)) then
+    
       call self%wall(1  ); call self%wall(2  ); call self%wall(3  )           ! and the lower face
     else if (init_step(2) < init_step(3)) then
       call self%wall(1,0); call self%wall(2,0); call self%wall(3  )
@@ -893,26 +895,26 @@ END SUBROUTINE posit
 !> =====================================================================
 SUBROUTINE wall(self, axis, zero)
   class (traverse_t) :: self
-  integer            :: axis, c
+  integer            :: axis, x
   integer, optional     :: zero
   !---------------------------------------------------------------------
   SELECT case(axis)
   case(1)
-    c = self%a
+    x = self%a
   case(2)
-    c = self%b
+    x = self%b
   case(3)
-    c = self%c
+    x = self%c
   end SELECT
   
   if(present(zero)) then
-    self%lw(c) = 0
+    self%lw(x) = 0
   else
     if (self%dstep(axis) /= 0) then
       if (self%cell_step(axis) > 0) then
-        self%lw(c) = -1
+        self%lw(x) = -1
       else
-        self%lw(c) = 1
+        self%lw(x) = 1
       end if
     end if
   end if
@@ -966,7 +968,7 @@ END SUBROUTINE move
 
 SUBROUTINE hop (self)
   class (traverse_t) :: self
-  integer :: a, ta
+  integer :: a
 ! ......................................................................
   associate (dstep => self%dstep, ray_step => self%ray_step)
   
@@ -1010,9 +1012,9 @@ SUBROUTINE hop (self)
     
   else                                                                  ! 2D
     if (dstep(1) == 0) then
-      a = 2; ta = self%b
+      a = 2
     else if (dstep(2) == 0) then
-      a = 1; ta = self%a 
+      a = 1
     else
       error stop "ERROR: hop: dstep(3) == 0 or some dstep < 0"
     end if
