@@ -402,13 +402,6 @@ SUBROUTINE rotate (self)
   !.............................................................................
   call trace_begin ('patch_mod::rotate',itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Call timestep update procedure to fill the next time slot with values
-  !-----------------------------------------------------------------------------
-  if (io%verbose > 1) then
-    write (io_unit%log,'(a,7i10)')   'patch_mod::rotate iit =', self%iit
-    write (io_unit%log,'(a,7f10.6)') 'patch_mod::rotate   t =', self%t(self%iit)
-  end if
-  !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
   if (self%root_grid.or.self%is_set(bits%root_grid)) then
@@ -428,35 +421,9 @@ SUBROUTINE rotate (self)
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
   !-----------------------------------------------------------------------------
-  ! Time slot rotation.  Note that self%time should be the LAST of these
-  ! updates, since we do not want to enforce a critical region, and the
-  ! new self%time is what a task is judged on!
+  ! Task time slot rotation
   !-----------------------------------------------------------------------------
-  call trace_tag ('patch_mod::update mem_cr')
-  !call self%lock%set ('rotate')
-  !!$omp flush
-  time = self%time + self%dtime
-  self%dt(self%it) = self%dtime                         ! just updated
-  self%dt(self%new)= self%dtime                         ! next estimate
-  self%t(self%new) = time                               ! initial time
-  self%iit(self%nt) = self%new                          ! right-most slot
-  new = self%new
-  !$omp atomic write
-  self%it = new                                         ! update time slot, new
-  self%new = mod(self%new,self%nt)+1                    ! increment / rotate
-  self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
-  self%iit(self%nt) = self%new                          ! new right-most slot
-  self%istep = self%istep + 1
-  !$omp atomic write
-  self%time = time
-  if (io%verbose>2) &
-   write (io_unit%log,*) 'patch id:',self%id,'  it:',self%it,'  new:',self%new
-  if (io%verbose>3) &
-   write (io_unit%log,*) 'patch iit:', self%iit
-  if (io%verbose>3) &
-   write (io_unit%log,*) 'patch t(iit):', self%t(self%iit)
-  !!$omp flush
-  !call self%lock%unset ('rotate')
+  call self%task_t%rotate
   call trace_end (itimer)
 END SUBROUTINE rotate
 
@@ -1041,8 +1008,8 @@ SUBROUTINE courant_condition (self)
   real(8):: dtime
   !.............................................................................
   call trace_begin('patch_mod::courant')
-  if (io%verbose>2) &
-    write (io_unit%log,*) 'courant: u_max, ds', self%u_max, minval(self%ds)
+  if (io%verbose>1) &
+    write (io_unit%log,*) self%id, ' courant: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
     dtime = self%dt_fixed
     self%courant = dtime*self%u_max/minval(self%ds)
