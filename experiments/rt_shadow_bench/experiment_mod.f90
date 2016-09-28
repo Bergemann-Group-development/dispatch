@@ -49,6 +49,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call self%initial%init()
   call self%initial%initial_conditions(self)
+  call self%stats ('initial')
   call trace_end
 END SUBROUTINE init
 

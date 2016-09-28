@@ -83,6 +83,7 @@ MODULE patch_mod
     procedure:: header_to_patch
     procedure:: local_iit
     procedure:: time_interpolate
+    procedure:: stats
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1315,5 +1316,42 @@ FUNCTION task2patch (task) RESULT (patch)
   stop
   end select
 END FUNCTION
+
+!> =============================================================================
+SUBROUTINE stats (self, label)
+  class (patch_t):: self
+  character(len=*):: label
+  integer:: iv
+  real(8), dimension(4):: si, sb
+  do iv=1,self%nv
+    call scalar_stats (self%mem(:,:,:,iv,self%it,1), self%mesh%li, self%mesh%ui, si)
+    call scalar_stats (self%mem(:,:,:,iv,self%it,1), self%mesh%lb, self%mesh%ub, sb)
+    write (io_unit%log,'(a,i3,1p,2(3x,4g12.4))') &
+      trim(label)//' stats: iv, min, aver, rms, max =', iv, si, sb
+  end do
+contains
+  subroutine scalar_stats (f, l, u, s)
+    real, dimension(:,:,:):: f
+    integer:: l(3), u(3)
+    real(8):: s(4)
+    integer:: ix, iy, iz
+    s(2) = 0d0
+    s(3) = 0d0
+    s(1) = f(1,1,1)
+    s(4) = f(1,1,1)
+    do iz=l(3),u(3)
+    do iy=l(2),u(2)
+    do ix=l(1),u(1)
+      s(2) = s(2) + f(ix,iy,iz)
+      s(3) = s(3) + f(ix,iy,iz)**2
+      s(1) = min(s(1),f(ix,iy,iz))
+      s(4) = max(s(4),f(ix,iy,iz))
+    end do
+    end do
+    end do
+    s(2) = s(2)/product(u-l+1)
+    s(3) = sqrt(max(0d0,s(3)/product(u-l+1)-s(2)**2))
+  end subroutine
+END SUBROUTINE
 
 END MODULE
