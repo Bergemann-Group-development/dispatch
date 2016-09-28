@@ -132,9 +132,9 @@ FUNCTION the_right_wall (self, nbor, wall) result (answer)
   !
   allw = .false.
   if (abs(nb_mhd%level-mhd%level)<2) then                               ! connect only +/- 1 or same level
-   
+
     do x = 1,3
-    
+
     if (wall(x) > 0) then
       if (mhd%position(x) < nb_mhd%position(x)) then
         if (mhd%position(x)+mhd%size(x)*0.5d0 > &
@@ -145,16 +145,16 @@ FUNCTION the_right_wall (self, nbor, wall) result (answer)
         if (mhd%position(x)-mhd%size(x)*0.5d0 < &
         nb_mhd%position(x) + nb_mhd%size(x)*0.5d0 + nb_mhd%ds(x)) allw(x) = .true.
       end if
-    else 
+    else
       allw(x) = .true.
     end if
-    
+
     end do
   end if
-  
+
   if (all(allw)) answer = .true.
   nullify (mhd, nb_mhd)
-  
+
 END FUNCTION the_right_wall
 
 !> =====================================================================
@@ -169,14 +169,14 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   integer :: found, wall(3)
 ! ----------------------------------------------------------------------
   call trace_begin('rt_t%find_upstream')
-  
+
   select case(self%rt_type)                                             ! select the right upstream wall
   case(2)
     wall = self%my_rays%lwall
   case(3)
     wall = self%my_rays%uwall
   end select
-  
+
   found = 0
   allocate (nbor_l)
   my_task => self%mhd_patch
@@ -339,13 +339,9 @@ END FUNCTION point_in_cell
 SUBROUTINE update_time(self)
   class(rt_t) :: self
 !-----------------------------------------------------------------------
-  if (self%time < 0) then
-    self%time  = self%mhd_patch%time + self%dtime
-    self%dtime = self%mhd_patch%dtime * self%rt_freq
-  else
-    self%dtime = self%mhd_patch%dtime * self%rt_freq
-    self%time  = self%time + self%dtime
-  end if
+  self%t(self%new) = self%mhd_patch%time
+  self%dtime = self%mhd_patch%dtime * self%rt_freq
+  self%time  = self%mhd_patch%time + self%mhd_patch%dtime*(self%rt_freq-1)
 END SUBROUTINE update_time
 
 END MODULE rt_mod
