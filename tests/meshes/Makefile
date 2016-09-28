@@ -8,4 +8,6 @@ EXEC = test.x
 TOP = ../..
 include $(TOP)/config/Makefile
 
+LDFLAGS += -cpp
+
 test.x: mesh_mod.o io_mod.o patch_mod.o

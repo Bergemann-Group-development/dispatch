@@ -353,7 +353,7 @@ SUBROUTINE print_mesh (self)
   !.............................................................................
 
   if (io%verbose <= 0) return
-  print*,'mesh%print:'
+  print*,'::mesh%print::'
   select type(self)
   type is(Cartesian_mesh)
     print*,'Cartesian', self%idir
@@ -364,15 +364,17 @@ SUBROUTINE print_mesh (self)
   end select
   print'(a,3i8)', "n, ng, gn: ", self%n, self%ng, self%gn
   print'(a,6i8)', "lb, lo, li, ub, uo, ui: ", self%lb, self%lo, self%li, self%ub, self%uo, self%ui
-  print'(a,3x,6g16.8)', "lf, uf, p, s, d, b: ",self%lf, self%uf, self%p, self%s, self%d, self%b
+  print'(a,3x,3g16.8)', "lf, uf, p: ",self%lf, self%uf, self%p
+  print'(a,3x,3g16.8)', "s, d, b: ", self%s, self%d, self%b
   print'(a,3x,4g16.8)', "origin, centre, llc, o: ",self%origin, self%centre, self%llc, self%o
   do i=1,self%gn
-    print*,i,self%r(i)
+    print'(i4,f14.8)',i,self%r(i)
   end do
 
   if (allocated(self%zeta)) print*,"phi axis offset: ", self%zeta
   if (allocated(self%xi)) print*,"theta axis offset: ", self%xi
 
+  print*,'----------'
 END SUBROUTINE print_mesh
 
 !> =============================================================================
