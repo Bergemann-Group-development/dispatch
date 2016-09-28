@@ -54,10 +54,18 @@ MODULE rt_mod
 !-----------------------------------------------------------------------
   CONTAINS
 
+!> =====================================================================
+!> Initialize rt_t tasks, by first getting a uniq id, and then allocating
+!> the extra arrays needed to handle time slices.
+!> =====================================================================
 SUBROUTINE init_rt (self)
   class(rt_t) :: self
   !---------------------------------------------------------------------
-  error stop "ERROR: rt_t%init_rt was called, but it is an empty subroutine"
+  call self%task_t%init
+  allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
+  self%it = 1
+  self%new = 2
+  self%grace = 0.0
 END SUBROUTINE init_rt
 
 !> =====================================================================
@@ -320,9 +328,13 @@ FUNCTION point_in_cell (self, pt, cell, ds) result (out)
 END FUNCTION point_in_cell
 
 !> =====================================================================
-!> Update the time of an rt_t task.  If the time is negative, use the
-!> existing mhd_patch%dtime, but set the next self%dtime to a multiple
-!> thereof, and use that in future calls.
+!> Update the time of an rt_t task.  Set self%time to the earliest point
+!> in time when the task should next be updated, while setting the time
+!> slot in self%t() to the actual time of the MHD task, so inter- and
+!> extrapolations are correct.
+!>
+!> NOTE: This procedure should be called exactly when the physical data
+!> on which the task is based is collected
 !> =====================================================================
 SUBROUTINE update_time(self)
   class(rt_t) :: self

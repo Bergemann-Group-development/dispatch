@@ -122,6 +122,8 @@ SUBROUTINE print ()
     calls = calls + ncalls(i)
   end do
   if (io_unit%master) then
+    print '(23x,a,7x,a,10x,a,7x,a,5x,a)', &
+      'procedure', 'calls', 'time', 'percent', 'time/call'
     do i=1,ntimer
       print 1, trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
       1 format(a32,1p,2g15.3,2g12.3)

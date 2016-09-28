@@ -20,7 +20,6 @@ MODULE mhd_rt_mod
     procedure :: init_rt
     procedure :: update
     procedure :: apply_heating
-    procedure :: rotate
   end type
   ! ----------------------------------------------------------------------------
 CONTAINS
@@ -82,14 +81,5 @@ SUBROUTINE apply_heating (self)
   !error stop "stopping"
   call trace%end
 END SUBROUTINE apply_heating
-
-!> =============================================================================
-!> Rotate the time slots, if time has advanced enough -- separately for MHD
-!> and RT (FIXME: this part is not done yet)
-!> =============================================================================
-SUBROUTINE rotate (self)
-  class(mhd_rt_t) :: self
-  ! ----------------------------------------------------------------------------
-END SUBROUTINE rotate
 
 END MODULE mhd_rt_mod

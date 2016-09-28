@@ -13,7 +13,7 @@ MODULE rt_data_mod
   !type :: int_data_t
   !  integer :: ray, point
     !integer ::lwall(3), uwall(3)
-   ! real, dimension(:), allocatable :: I 
+   ! real, dimension(:), allocatable :: I
     !class(int_data_t), pointer :: head => null()
     !class(int_data_t), pointer :: prev => null()
     !class(int_data_t), pointer :: next => null()
@@ -52,7 +52,7 @@ SUBROUTINE init_rt_data(self)
   integer :: i, j, k, d
   !---------------------------------------------------------------------
   call trace_begin('rt_t%init_rt_data')
-  call self%task_t%init
+  call self%rt_t%init
   self%type = 'rt_data_t'
   associate (mhd_patch => self%mhd_patch, n => self%n_cells, &
                    nwb => microphysics%n_wl_bins)
@@ -84,7 +84,7 @@ SUBROUTINE init_rt_data(self)
   allocate(self%opacity(n(1), n(2), n(3), nwb)) ! opacity table
   allocate(self%source (n(1), n(2), n(3), nwb)) ! Source function table
   !allocate(self%intensity(self%ui(1),self%ui(2),self%ui(3),self%n_ray_dirs))
-  
+
  ! do i = 1, self%ui(1)
  !   do j = 1, self%ui(2)
  !     do k = 1, self%ui(3)
@@ -94,8 +94,8 @@ SUBROUTINE init_rt_data(self)
  !     end do
  !   end do
  ! end do
-  
-  
+
+
   self%opacity = 0;   self%source = 0
   !self%n_intensity_dat = product(n)*self%n_ray_dirs*microphysics%n_wl_bins
   end associate
@@ -119,7 +119,7 @@ SUBROUTINE update_rt_data (self)
   integer, save:: itimer=0
 !-----------------------------------------------------------------------
   write (stime,'(1p,g16.6)') self%time
-  call trace_begin('rt_t%update_rt_data '//stime,itimer=itimer)
+  call trace_begin('rt_t%update_rt_data', itimer=itimer)
 
   self%it  = self%mhd_patch%it
 
@@ -195,7 +195,7 @@ END SUBROUTINE add_cr_heating
 !      c = rays%cell_coords(:,pt,ray)
 !      if (io%verbose > 2) &
 !        print '(a,2i5,5i4)', 'I_store: id, rays%id, ray, pt, c =', self%id, rays%id, ray, pt, c
-        
+
 !      I(c(1),c(2),c(3))%I = I_st(ray,:,pt)
 
 !    end do
