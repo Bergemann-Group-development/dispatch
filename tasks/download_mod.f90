@@ -191,9 +191,9 @@ SUBROUTINE same_static (self)
     end associate
     nbor => nbor%next
   end do
-  if (n/=26) then
-    write (io_unit%log,'(a,i3,a,i9)') &
-      'download_mod::same_static: ERROR, only',n,' nbors contributed to', target%id
+  if (io%verbose > 2 .and. n /= 26) then
+    write (io_unit%log,'(a,i4,a,i9)') &
+      'download_mod::same_static: WARNING,',n,' nbors contributed to', target%id
   end if
   call trace_end(itimer)
 END SUBROUTINE same_static

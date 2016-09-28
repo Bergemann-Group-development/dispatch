@@ -53,6 +53,7 @@ SUBROUTINE init_rt_data(self)
   !---------------------------------------------------------------------
   call trace_begin('rt_t%init_rt_data')
   call self%task_t%init
+  self%type = 'rt_data_t'
   associate (mhd_patch => self%mhd_patch, n => self%n_cells, &
                    nwb => microphysics%n_wl_bins)
   !---------------------------------------------------------------------

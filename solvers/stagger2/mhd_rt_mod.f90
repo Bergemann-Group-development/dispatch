@@ -33,6 +33,7 @@ SUBROUTINE init_rt (self)
   integer :: nt = 5
   ! ----------------------------------------------------------------------------
   call trace%begin ('mhd_rt_t_%init')
+  self%type = 'mhd_rt_t'
   ! --- initialise heating tables ---
   allocate (self%rt_q)
   allocate (self%rt_q%q(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn,nt))

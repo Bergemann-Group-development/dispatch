@@ -149,6 +149,7 @@ SUBROUTINE rt_setup (self)
   end do
   call add_upstream_nbors(task_list)                                    ! connect the corrections
   !call add_internal_nbors(task_list)
+  call task_list%print
   list => task_list
   call self%append_list(list)                                           ! add rt task list to the main task list
   call trace_end

@@ -6,6 +6,14 @@
  do_legacy=t
 /
 
+&out_params
+ end_time=0.009
+ out_time=0.001
+ print_time=0.0
+ guard_zones=f
+ time_derivs=f
+/
+
 &box_params
  size=1,1,1
  dims=3,3,3
@@ -60,15 +68,6 @@ ibc_treatment = 'ignore'     ! do nothing, continue as if there was no IB
 cool_temp = 10   ! in kelvins
 hot_temp  = 2000
 /
-
-&out_params
- end_time=0.009
- out_time=0.001
-print_time=0.001
- guard_zones=f
- time_derivs=f
-/
-
 
 &mhd_params
  nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0

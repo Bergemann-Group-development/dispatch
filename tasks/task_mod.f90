@@ -50,6 +50,7 @@ MODULE task_mod
     class(task_t), pointer:: parent
     type(lock_t):: lock                 ! OMP lock
     character(len=4):: kind='task'
+    character(len=12):: type='task_t'
   contains
     procedure:: init
     procedure:: dnload => void

@@ -57,6 +57,7 @@ SUBROUTINE init_rt_internal (self)
 !-----------------------------------------------------------------------
   call trace_begin('rt_t%init_rt_internal')
   call self%task_t%init
+  self%type = 'rt_internal_t'
   associate (mhd_patch => self%mhd_patch)
   self%position  = mhd_patch%position
   self%offset    = mhd_patch%offset
@@ -241,7 +242,7 @@ SUBROUTINE get_local_static (self)
     class is (rt_internal_t)
       if (self%the_right_wall(nbor, self%lwall)) then                   ! make sure nbor is on the right wall
         if (rt%rt_type == self%rt_type) then                            ! make sure nbor is of the right RT type
-          if (io%verbose > 1) write (*,'(a,i5,3x,a,i5)') &
+          if (io%verbose > 3) write (*,'(a,i5,3x,a,i5)') &
             'rt_internal task',self%id,'loading data from',rt%id
             
           rt_nb => rt
@@ -250,10 +251,10 @@ SUBROUTINE get_local_static (self)
           do pck = 1, self%my_rays%n_packets                            ! loop over my ray packets
             allocate (updated(packet%n_rays))                              ! make sure all intensities are updated
             
-            if (io%verbose > 2) write (*,*) 'packet', pck
+            if (io%verbose > 3) write (*,*) 'packet', pck
             do ray = 1, packet%n_rays                                   ! loop  over my rays
             
-              if (io%verbose > 3) write (*,*) 'ray', ray
+              if (io%verbose > 4) write (*,*) 'ray', ray
               select case(self%rt_type)
               case(2)
                 fw_c = packet%fwd_coords(:,ray)                         ! select wall coordinates
