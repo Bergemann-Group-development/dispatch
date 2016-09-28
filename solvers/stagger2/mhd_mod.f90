@@ -86,12 +86,6 @@ SUBROUTINE init (self)
     self%mesh(i)%h(5+i) = -0.5
   end do
   call self%force%init
-  !-----------------------------------------------------------------------------
-  ! Radiation
-  !-----------------------------------------------------------------------------
-  allocate (self%rad)
-  self%rad%mesh => self%mesh
-  call self%rad%init
   call trace%end
 END SUBROUTINE init
 
@@ -394,15 +388,6 @@ SUBROUTINE update (self)
         dsdt = dsdt + H_AD*d/pg
       end if
     end if  
-    !---------------------------------------------------------------------------
-    ! Radiation heating / cooling
-    !---------------------------------------------------------------------------
-    if (self%rad%do_radiation) then
-      self%rad%rho => self%d
-      self%rad%temp = self%gas_temperature()
-      call self%rad%solve
-      dsdt = dsdt + self%rad%qq/self%rad%temp
-    end if
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, E, J, fd, fx, fy, fz, fm)

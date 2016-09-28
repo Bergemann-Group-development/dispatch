@@ -70,12 +70,7 @@ SUBROUTINE init (self)
   self%riemann = riemann
   self%courant = courant_factor
   self%gamma = gamma
-  !------------------------------------------------------------------------------
-  ! Initialize radiative transfer part, which may or may not be used
-  !------------------------------------------------------------------------------
-  allocate (self%rad)
-  self%rad%mesh => self%mesh
-  call self%rad%init
+
   call trace_end
 END SUBROUTINE init
 
@@ -104,20 +99,7 @@ SUBROUTINE update (self)
   allocate (self%fl(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
-  !-----------------------------------------------------------------------------
-  ! If a radiation solver is active, call it, to make the solution available
-  ! inside the trace3d predictor step, perform the godudov update, and then
-  ! add the heating / cooling to the total energy per unit volume
-  !-----------------------------------------------------------------------------
-  if (self%rad%do_radiation) then
-    self%rad%rho => self%uin(:,:,:,1)           ! point to current density
-    call self%temperature(self%rad%temp)        ! compute temperature
-    call self%rad%solve                         ! solve for self%rad%qq
-  end if
-  call godunov (self)                           ! use self%rad%qq in trace3d
-  if (self%rad%do_radiation) then
-    self%unew(:,:,:,5) = self%unew(:,:,:,5) + self%dtime*self%rad%qq
-  end if
+  call godunov (self)
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
@@ -439,7 +421,7 @@ subroutine trace3d(self)
   real(dp)::drz, duz, dvz, dwz, dpz, daz
   real(dp)::sr0, su0, sv0, sw0, sp0, sa0
   integer,save:: itimer=0
-  associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm, qq=>self%rad%qq)
+  associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::trace3d', itimer=itimer)
   dtdx = self%dtime/self%mesh(1)%d
@@ -479,7 +461,7 @@ subroutine trace3d(self)
 
         ! Source terms (including transverse derivatives)
         sr0 = -u*drx-v*dry-w*drz - (dux+dvy+dwz)*r
-        sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p + qq(i,j,k)/r
+        sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p
         su0 = -u*dux-v*duy-w*duz - (dpx        )/r
         sv0 = -u*dvx-v*dvy-w*dvz - (dpy        )/r
         sw0 = -u*dwx-v*dwy-w*dwz - (dpz        )/r

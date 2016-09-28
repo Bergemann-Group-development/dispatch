@@ -67,11 +67,3 @@
  riemann='hllc'
  do_isothermal=t
 /
-&radiation_params
- do_radiation=f
- !type='Rosen'
- !type='Dalgarno'
- !type='Casiana'
- !type='Shure'
- type='Gnedin'
-/
