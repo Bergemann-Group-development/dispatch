@@ -123,16 +123,16 @@ SUBROUTINE print ()
   end do
   if (io_unit%master) then
     do i=1,ntimer
-      print 1, trim(names(i)), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
-      1 format(a32,1p,g15.3,2g10.2)
+      print 1, trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
+      1 format(a32,1p,2g15.3,2g12.3)
     end do
   end if
   updates = max(1.0,real(n_update-n_previous))
   musppt = min(omp%ncores,omp%nthreads)*sec*1d6/updates
   if (io_unit%master) &
-    print 2, "TOTAL thread time, calls", total, calls, musppt, 'core-mus/cell-upd', &
+    print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
       sec, 'wall sec'
-    2 format(a32,1p,g15.3,g10.2,2(g10.3,2x,a,5x))
+    2 format(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))
   if (io_unit%verbose>1) &
     write (io_unit%log,'(a,1p,e9.2,3x,a,g10.3)') 'timer_mod::print, updates =', &
       updates,'mus/p =', musppt
