@@ -562,7 +562,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
       !-----------------------------------------------------------------
       !  dS/dtau and d2S/dtau2
       !-----------------------------------------------------------------
-     ctau(:,:,2:pt-1) = 1. / (dtau(:,:,1:pt-1) + dtau(:,:,2:pt))
+     ctau(:,:,2:pt-1) = 1. / (dtau(:,:,2:pt-1) + dtau(:,:,3:pt))
       d1s(:,:,2:pt-1) = &
      (ds1(:,:,3:pt  ) * dtau(:,:,2:pt-1) + ds1(:,:,2:pt-1) * &
      dtau(:,:,3:pt) ) * ctau(:,:,2:pt-1)                                ! dS/dtau, 2nd. order accurate

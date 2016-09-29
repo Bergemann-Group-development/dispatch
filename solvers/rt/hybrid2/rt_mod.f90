@@ -329,9 +329,9 @@ SUBROUTINE update_time(self)
 !-----------------------------------------------------------------------
   if (self%time < 0) then
     self%time  = self%mhd_patch%time + self%dtime
-    self%dtime = self%mhd_patch%dtime * self%rt_freq
+    self%dtime = 0.001
   else
-    self%dtime = self%mhd_patch%dtime * self%rt_freq
+    self%dtime = 0.001
     self%time  = self%time + self%dtime
   end if
 END SUBROUTINE update_time
