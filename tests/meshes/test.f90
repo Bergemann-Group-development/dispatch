@@ -69,11 +69,12 @@ PROGRAM test
     end select
     ! allocate and set staggering indices.
     allocate(meshCart(i)%h(8))
+    meshCart(i)%h = 0.0
     meshCart(i)%h(i) = -0.5
   end do
   print'(3(1pg12.4E2),a)',meshCart%d," (should be 6.25e-2 x3)"
   print'(8(1pg11.3))',meshCart(1)%h
-  print*,"(the first element should be -0.5; the rest could have any value)"
+  print*,"(the first element should be -0.5; the rest should be 0)"
   print*,''
 
   block
