@@ -456,23 +456,23 @@ SUBROUTINE print_nbors (self, label)
   !.............................................................................
   if (io%verbose < 2) return
   if (present(label)) then
-    if (trim(label) /= '') print'(a)', label
+    if (trim(label) /= '') write (io_unit%log,'(a)') label
   end if
-  print'(a,i5,2x,a,f14.8,2x,a,l3,2x,a,i3,2x,a,$)', &
+  write (io_unit%log,'(a,i5,2x,a,f14.8,2x,a,l3,2x,a,i3,2x,a,$)') &
     'task', self%task%id, 'time', self%task%time, &
     'ready', self%task%is_set(bits%ready), 'level', self%task%level, 'nbors:'
-  if (io%verbose>4) print*,''
+  if (io%verbose>4) write (io_unit%log,*) ''
   link => self%nbor
   do while (associated(link))
     if (io%verbose>4) then
-      print '(i7,f14.8,l3)', &
+      write (io_unit%log,'(i7,f14.8,l3)') &
         link%task%id, link%task%time, link%task%is_set(bits%ready)
     else
-      print '(i4,l2,$)', link%task%id, link%task%is_set(bits%ready)
+      write (io_unit%log,'(i4,l2,$)') link%task%id, link%task%is_set(bits%ready)
     end if
     link => link%next
   end do
-  print*,''
+  write (io_unit%log,*) ''
 END SUBROUTINE print_nbors
 
 !> =============================================================================

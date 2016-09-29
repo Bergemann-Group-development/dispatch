@@ -156,7 +156,8 @@ SUBROUTINE update (self)
   if (associated(head)) then
     task => head%task                                   ! head task
     if (io%verbose > 1) then
-      write (io_unit%log,*) 'thread', omp%thread,' takes', task%id, self%nq
+      write (io_unit%log,'(a,i4,a,i5,2x,a,2x,i4)') &
+        'thread', omp%thread,' takes', task%id, trim(task%type), self%nq
       flush (io_unit%log)
     end if
     !---------------------------------------------------------------------------
@@ -177,9 +178,10 @@ SUBROUTINE update (self)
     ! previous time steps are saved.
     !----------------------------------------------------------------------------
     if (io%verbose>1) &
-      write (io_unit%log,'(a,i4,2x,a,i7,2x,a,i7,2x,a,i4,i4,l3)') &
-      'thread', omp_mythread, 'task', task%id, &
-      'step', task%istep, 'n, nq', self%n, self%nq, associated(head%nbor)
+      write (io_unit%log,'(a,i4,2x,a,i7,2x,a,2x,a,i7,2x,a,1p,2g14.6,2x,a,2i5,l3)') &
+      'thread', omp_mythread, 'task', task%id, trim(task%type), &
+      'step', task%istep, 'dt, time:', task%dtime, task%time, &
+      'n, nq', self%n, self%nq, associated(head%nbor)
     select type (task)
     class is (patch_t)
     call task%rotate
@@ -535,6 +537,7 @@ SUBROUTINE print_tasks (self, label)
   link => self%head
   do while (associated(link))
     write (io_unit%log,'(i4,g15.6,l5)') link%task%id, link%task%time, link%task%is_set(bits%ready)
+    if (io%verbose > 2) call link%print_nbors
     link => link%next
   end do
   write (io_unit%log,*) ''

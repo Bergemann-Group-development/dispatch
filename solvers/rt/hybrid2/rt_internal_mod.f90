@@ -42,6 +42,7 @@ MODULE rt_internal_mod
     procedure :: solve_internal_feautrier
     procedure :: update_q
     procedure :: I_retrv
+    procedure :: print
   end type
 !-----------------------------------------------------------------------
 CONTAINS
@@ -56,7 +57,8 @@ SUBROUTINE init_rt_internal (self)
   integer :: pt, ray, pck, r
 !-----------------------------------------------------------------------
   call trace_begin('rt_t%init_rt_internal')
-  call self%task_t%init
+  call self%rt_t%init
+  self%type = 'rt_internal_t'
   associate (mhd_patch => self%mhd_patch)
   self%position  = mhd_patch%position
   self%offset    = mhd_patch%offset
@@ -122,8 +124,15 @@ SUBROUTINE init_rt_internal (self)
     packet => packet%next
   end do
   nullify (packet)
+  if (io%verbose>2) call self%check
+  call trace_end
+END SUBROUTINE init_rt_internal
+
+SUBROUTINE print (self)
+  class (rt_internal_t):: self
+  !.............................................................................
   if (io%verbose>1) then
-    write (*,'(a,i5,3x,a,i5,3x,a,i4,3x,a,i3,3x,a,i2,2(3x,a,f5.0),2(3x,a,3i2))') &
+    write (*,'(a,i5,3x,a,i5,3x,a,i4,3x,a,i3,3x,a,i2,2(3x,a,f5.0),2(3x,a,3i2),3x,a,i4)') &
       'rt_internal_t%id:', self%id, &
       'mhd_patch%id:', self%mhd_patch%id, &
       'dir_ID:',self%my_rays%dir_ID, &
@@ -132,11 +141,10 @@ SUBROUTINE init_rt_internal (self)
       'theta:', self%my_rays%theta*radian, &
       'phi:', self%my_rays%phi*radian, &
       'lwall', self%my_rays%lwall, &
-      'uwall', self%my_rays%uwall
+      'uwall', self%my_rays%uwall, &
+      'nbors', self%n_nbors
   end if
-  if (io%verbose>2) call self%check
-  call trace_end
-END SUBROUTINE init_rt_internal
+END SUBROUTINE print
 
 !> =====================================================================
 !> Update internal RT solution
@@ -146,8 +154,9 @@ SUBROUTINE update_rt_internal (self)
   character(len=16) :: stime
   integer, save:: itimer=0
 !-----------------------------------------------------------------------
-  write (stime,'(1p,g16.6)') self%time
-  call trace_begin('rt_t%update_rt_internal '//stime,itimer=itimer)
+  !write (stime,'(1p,g16.6)') self%time
+  !call trace_begin('rt_t%update_rt_internal '//stime,itimer=itimer)
+  call self%get_upstream
   call self%solve
   call self%update_time
   if (io%verbose > 2) then
@@ -161,7 +170,7 @@ SUBROUTINE update_rt_internal (self)
       'phi:', self%my_rays%phi*radian
   end if
   if (io%verbose > 1) call self%check
-  call trace_end (itimer)
+  !call trace_end (itimer)
 END SUBROUTINE update_rt_internal
 
 !> =====================================================================
@@ -171,8 +180,9 @@ SUBROUTINE get_upstream (self)
   class(rt_internal_t) :: self
   logical:: static, local
   class(link_t), pointer:: nbor
+  integer, save :: itimer=0
   !---------------------------------------------------------------------
-  call trace_begin('rt_corrections_mod%get_upstream')
+  call trace_begin('rt_internal_t%get_upstream', itimer=itimer)
 
   if (self%is_set(bits%has_BC)) then                                    ! FIXME - make inner/outer BCs separate.
     if (self%obc == 0) then                                             ! Currently only outer BC
@@ -210,7 +220,7 @@ SUBROUTINE get_upstream (self)
   end if
 
   nullify (nbor)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE get_upstream
 
 !> =====================================================================
@@ -241,19 +251,19 @@ SUBROUTINE get_local_static (self)
     class is (rt_internal_t)
       if (self%the_right_wall(nbor, self%lwall)) then                   ! make sure nbor is on the right wall
         if (rt%rt_type == self%rt_type) then                            ! make sure nbor is of the right RT type
-          if (io%verbose > 1) write (*,'(a,i5,3x,a,i5)') &
+          if (io%verbose > 3) write (*,'(a,i5,3x,a,i5)') &
             'rt_internal task',self%id,'loading data from',rt%id
-            
+
           rt_nb => rt
           packet => self%my_rays%rays
-          
+
           do pck = 1, self%my_rays%n_packets                            ! loop over my ray packets
             allocate (updated(packet%n_rays))                              ! make sure all intensities are updated
-            
-            if (io%verbose > 2) write (*,*) 'packet', pck
+
+            if (io%verbose > 3) write (*,*) 'packet', pck
             do ray = 1, packet%n_rays                                   ! loop  over my rays
-            
-              if (io%verbose > 3) write (*,*) 'ray', ray
+
+              if (io%verbose > 4) write (*,*) 'ray', ray
               select case(self%rt_type)
               case(2)
                 fw_c = packet%fwd_coords(:,ray)                         ! select wall coordinates
@@ -267,7 +277,7 @@ SUBROUTINE get_local_static (self)
                     all(nb_cell<=rt_nb%ui)) then                        ! double check that we pointed to the right spot
                    self%packet_data(pck)%bndry(ray,:) = &
                      self%I_retrv(rt_nb, nb_cell)
-         
+
                   self%packet_data(pck)%time(ray) = rt_nb%time          ! store the time of the update
                   updated(ray) = .true.                                 ! the ray was updated
                 end if
@@ -426,9 +436,10 @@ SUBROUTINE solve_internal_integral_1st (self)
   real, dimension(:,:,:), allocatable :: s, q, Ifw, ropac
   real, dimension(:,:), allocatable :: I_in, I_out
   integer :: pt, p(3), pck, nwb, ipk, ray
+  integer, save :: itimer=0
   !---------------------------------------------------------------------
   call trace_begin('rt_t%update_internal%solve_internal_integral')
-  call self%get_upstream
+  call trace_begin('rt_internal_t%integral_1st', itimer=itimer)
 
   nwb = microphysics%n_wl_bins
   packet => self%my_rays%rays
@@ -487,14 +498,14 @@ SUBROUTINE solve_internal_integral_1st (self)
       end if
       self%packet_data(pck)%I_out = Ifw(:,:,1)
     end select
-    
+
     call self%update_q (packet, q, ropac)
     deallocate(ex0, ds, s, dtau, q, Ifw, I_in, ropac)
     end associate
     packet => packet%next
   end do
   nullify (packet)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE solve_internal_integral_1st
 
 !> =====================================================================
@@ -510,9 +521,9 @@ SUBROUTINE solve_internal_integral_2nd (self)
   real, dimension(:,:), allocatable :: I_in
   integer :: pt, ipt, it, ray, wl, p(3), pck, nwb, ipk
   real    :: temp, dir_wgt
+  integer, save :: itimer=0
   !---------------------------------------------------------------------
-  call trace_begin('rt_t%update_internal%solve_internal_integral')
-  call self%get_upstream
+  call trace_begin('rt_internal_t%integral_2nd', itimer=itimer)
 
   dir_wgt = self%dir_weight
 
@@ -603,7 +614,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
     packet => packet%next
   end do
   nullify (packet)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE solve_internal_integral_2nd
 
 !> =====================================================================

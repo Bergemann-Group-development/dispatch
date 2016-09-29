@@ -83,6 +83,7 @@ MODULE patch_mod
     procedure:: header_to_patch
     procedure:: local_iit
     procedure:: time_interpolate
+    procedure:: stats
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -401,13 +402,6 @@ SUBROUTINE rotate (self)
   !.............................................................................
   call trace_begin ('patch_mod::rotate',itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Call timestep update procedure to fill the next time slot with values
-  !-----------------------------------------------------------------------------
-  if (io%verbose > 1) then
-    write (io_unit%log,'(a,7i10)')   'patch_mod::rotate iit =', self%iit
-    write (io_unit%log,'(a,7f10.6)') 'patch_mod::rotate   t =', self%t(self%iit)
-  end if
-  !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
   if (self%root_grid.or.self%is_set(bits%root_grid)) then
@@ -427,35 +421,9 @@ SUBROUTINE rotate (self)
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
   !-----------------------------------------------------------------------------
-  ! Time slot rotation.  Note that self%time should be the LAST of these
-  ! updates, since we do not want to enforce a critical region, and the
-  ! new self%time is what a task is judged on!
+  ! Task time slot rotation
   !-----------------------------------------------------------------------------
-  call trace_tag ('patch_mod::update mem_cr')
-  !call self%lock%set ('rotate')
-  !!$omp flush
-  time = self%time + self%dtime
-  self%dt(self%it) = self%dtime                         ! just updated
-  self%dt(self%new)= self%dtime                         ! next estimate
-  self%t(self%new) = time                               ! initial time
-  self%iit(self%nt) = self%new                          ! right-most slot
-  new = self%new
-  !$omp atomic write
-  self%it = new                                         ! update time slot, new
-  self%new = mod(self%new,self%nt)+1                    ! increment / rotate
-  self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
-  self%iit(self%nt) = self%new                          ! new right-most slot
-  self%istep = self%istep + 1
-  !$omp atomic write
-  self%time = time
-  if (io%verbose>2) &
-   write (io_unit%log,*) 'patch id:',self%id,'  it:',self%it,'  new:',self%new
-  if (io%verbose>3) &
-   write (io_unit%log,*) 'patch iit:', self%iit
-  if (io%verbose>3) &
-   write (io_unit%log,*) 'patch t(iit):', self%t(self%iit)
-  !!$omp flush
-  !call self%lock%unset ('rotate')
+  call self%task_t%rotate
   call trace_end (itimer)
 END SUBROUTINE rotate
 
@@ -1040,8 +1008,8 @@ SUBROUTINE courant_condition (self)
   real(8):: dtime
   !.............................................................................
   call trace_begin('patch_mod::courant')
-  if (io%verbose>2) &
-    write (io_unit%log,*) 'courant: u_max, ds', self%u_max, minval(self%ds)
+  if (io%verbose>1) &
+    write (io_unit%log,*) self%id, ' courant: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
     dtime = self%dt_fixed
     self%courant = dtime*self%u_max/minval(self%ds)
@@ -1315,5 +1283,42 @@ FUNCTION task2patch (task) RESULT (patch)
   stop
   end select
 END FUNCTION
+
+!> =============================================================================
+SUBROUTINE stats (self, label)
+  class (patch_t):: self
+  character(len=*):: label
+  integer:: iv
+  real(8), dimension(4):: si, sb
+  do iv=1,self%nv
+    call scalar_stats (self%mem(:,:,:,iv,self%it,1), self%mesh%li, self%mesh%ui, si)
+    call scalar_stats (self%mem(:,:,:,iv,self%it,1), self%mesh%lb, self%mesh%ub, sb)
+    write (io_unit%log,'(a,i3,1p,2(3x,4g12.4))') &
+      trim(label)//' stats: iv, min, aver, rms, max =', iv, si, sb
+  end do
+contains
+  subroutine scalar_stats (f, l, u, s)
+    real, dimension(:,:,:):: f
+    integer:: l(3), u(3)
+    real(8):: s(4)
+    integer:: ix, iy, iz
+    s(2) = 0d0
+    s(3) = 0d0
+    s(1) = f(1,1,1)
+    s(4) = f(1,1,1)
+    do iz=l(3),u(3)
+    do iy=l(2),u(2)
+    do ix=l(1),u(1)
+      s(2) = s(2) + f(ix,iy,iz)
+      s(3) = s(3) + f(ix,iy,iz)**2
+      s(1) = min(s(1),f(ix,iy,iz))
+      s(4) = max(s(4),f(ix,iy,iz))
+    end do
+    end do
+    end do
+    s(2) = s(2)/product(u-l+1)
+    s(3) = sqrt(max(0d0,s(3)/product(u-l+1)-s(2)**2))
+  end subroutine
+END SUBROUTINE
 
 END MODULE

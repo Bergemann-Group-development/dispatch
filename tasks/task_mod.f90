@@ -50,10 +50,12 @@ MODULE task_mod
     class(task_t), pointer:: parent
     type(lock_t):: lock                 ! OMP lock
     character(len=4):: kind='task'
+    character(len=12):: type='task_t'
   contains
     procedure:: init
     procedure:: dnload => void
     procedure:: update => void
+    procedure:: rotate
     procedure:: output
     procedure:: info
     procedure:: is_ahead_of
@@ -107,6 +109,58 @@ SUBROUTINE init (self)
   call self%lock%init (self%kind)
   call trace_end
 END SUBROUTINE
+
+!> =============================================================================
+!> Rotate time slots.  The initial conditions are in slot 1, and the first time
+!> step puts new values in the 'new' slot 2, while saving the time step used in
+!> dt(1). Then the current slot (it) becomes 2, and the new one becomes 3, etc.
+!> This way, there is no need to copy memory btw time steps.
+!> =============================================================================
+SUBROUTINE rotate (self)
+  class(task_t):: self
+  integer:: iv, nv, new
+  real(8):: time
+  integer, save:: itimer=0
+  !.............................................................................
+  call trace_begin ('task_mod::rotate')
+  !-----------------------------------------------------------------------------
+  ! Call timestep update procedure to fill the next time slot with values
+  !-----------------------------------------------------------------------------
+  if (io%verbose > 1) then
+    write (io_unit%log,'(a,7i10)')   'task_mod::rotate iit =', self%iit
+    write (io_unit%log,'(a,7f10.6)') 'task_mod::rotate   t =', self%t(self%iit)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Time slot rotation.  Note that self%time should be the LAST of these
+  ! updates, since we do not want to enforce a critical region, and the
+  ! new self%time is what a task is judged on!
+  !-----------------------------------------------------------------------------
+  !call self%lock%set ('rotate')
+  !!$omp flush
+  time = self%time + self%dtime
+  self%dt(self%it) = self%dtime                         ! just updated
+  self%dt(self%new)= self%dtime                         ! next estimate
+  self%t(self%new) = time                               ! initial time
+  self%iit(self%nt) = self%new                          ! right-most slot
+  new = self%new
+  !$omp atomic write
+  self%it = new                                         ! update time slot, new
+  self%new = mod(self%new,self%nt)+1                    ! increment / rotate
+  self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
+  self%iit(self%nt) = self%new                          ! new right-most slot
+  self%istep = self%istep + 1
+  !$omp atomic write
+  self%time = time
+  if (io%verbose>2) &
+   write (io_unit%log,*) 'task id:',self%id,'  it:',self%it,'  new:',self%new
+  if (io%verbose>3) &
+   write (io_unit%log,*) 'task iit:', self%iit
+  if (io%verbose>3) &
+   write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
+  !!$omp flush
+  !call self%lock%unset ('rotate')
+  call trace_end
+END SUBROUTINE rotate
 
 !> =============================================================================
 !> =============================================================================

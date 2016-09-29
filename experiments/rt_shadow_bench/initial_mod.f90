@@ -46,8 +46,8 @@ SUBROUTINE init (self)
   self%clump_pos = clump_pos
   self%clump_a = clump_a
   self%clump_b = clump_b
-  self%d0 = d0/scaling%d
-  self%t0 = t0/scaling%temp
+  self%d0 = d0 !/scaling%d
+  self%t0 = t0 !/scaling%temp
   self%clump_dfact = clump_dfact
 
   call trace_end

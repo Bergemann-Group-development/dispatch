@@ -54,10 +54,18 @@ MODULE rt_mod
 !-----------------------------------------------------------------------
   CONTAINS
 
+!> =====================================================================
+!> Initialize rt_t tasks, by first getting a uniq id, and then allocating
+!> the extra arrays needed to handle time slices.
+!> =====================================================================
 SUBROUTINE init_rt (self)
   class(rt_t) :: self
   !---------------------------------------------------------------------
-  error stop "ERROR: rt_t%init_rt was called, but it is an empty subroutine"
+  call self%task_t%init
+  allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
+  self%it = 1
+  self%new = 2
+  self%grace = 0.0
 END SUBROUTINE init_rt
 
 !> =====================================================================
@@ -124,9 +132,9 @@ FUNCTION the_right_wall (self, nbor, wall) result (answer)
   !
   allw = .false.
   if (abs(nb_mhd%level-mhd%level)<2) then                               ! connect only +/- 1 or same level
-   
+
     do x = 1,3
-    
+
     if (wall(x) > 0) then
       if (mhd%position(x) < nb_mhd%position(x)) then
         if (mhd%position(x)+mhd%size(x)*0.5d0 > &
@@ -137,16 +145,16 @@ FUNCTION the_right_wall (self, nbor, wall) result (answer)
         if (mhd%position(x)-mhd%size(x)*0.5d0 < &
         nb_mhd%position(x) + nb_mhd%size(x)*0.5d0 + nb_mhd%ds(x)) allw(x) = .true.
       end if
-    else 
+    else
       allw(x) = .true.
     end if
-    
+
     end do
   end if
-  
+
   if (all(allw)) answer = .true.
   nullify (mhd, nb_mhd)
-  
+
 END FUNCTION the_right_wall
 
 !> =====================================================================
@@ -320,20 +328,20 @@ FUNCTION point_in_cell (self, pt, cell, ds) result (out)
 END FUNCTION point_in_cell
 
 !> =====================================================================
-!> Update the time of an rt_t task.  If the time is negative, use the
-!> existing mhd_patch%dtime, but set the next self%dtime to a multiple
-!> thereof, and use that in future calls.
+!> Update the time of an rt_t task.  Set self%time to the earliest point
+!> in time when the task should next be updated, while setting the time
+!> slot in self%t() to the actual time of the MHD task, so inter- and
+!> extrapolations are correct.
+!>
+!> NOTE: This procedure should be called exactly when the physical data
+!> on which the task is based is collected
 !> =====================================================================
 SUBROUTINE update_time(self)
   class(rt_t) :: self
 !-----------------------------------------------------------------------
-  if (self%time < 0) then
-    self%time  = self%mhd_patch%time + self%dtime
-    self%dtime = 0.001
-  else
-    self%dtime = 0.001
-    self%time  = self%time + self%dtime
-  end if
+  self%t(self%new) = self%mhd_patch%time
+  self%dtime = self%mhd_patch%dtime * self%rt_freq
+  self%time  = self%mhd_patch%time + self%mhd_patch%dtime*(self%rt_freq-1)
 END SUBROUTINE update_time
 
 END MODULE rt_mod
