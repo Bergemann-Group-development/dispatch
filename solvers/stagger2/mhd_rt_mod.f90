@@ -67,18 +67,11 @@ SUBROUTINE apply_heating (self)
   call trace%begin ('mhd_rt_t_%apply_heating')
   l = self%mesh%li
   u = self%mesh%ui
-  !print *, 'DSDT now is... '
-  !print *,self%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%it,2)
+
   self%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%it,2) = &
   self%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%it,2) + &
   self%rt_q%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it)
-  !print *, 'heating.. '
-  !print *,self%rt_q%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it)
-  !print *, 'after heating was applied:'
-  !print *,self%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%it,2)
-  !print *, 'AND S IS ORIGINALY:'
-  !print *,self%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%it,1)
-  !error stop "stopping"
+
   call trace%end
 END SUBROUTINE apply_heating
 
