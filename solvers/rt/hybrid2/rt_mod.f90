@@ -169,14 +169,14 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   integer :: found, wall(3)
 ! ----------------------------------------------------------------------
   call trace_begin('rt_t%find_upstream')
-
+  
   select case(self%rt_type)                                             ! select the right upstream wall
   case(2)
     wall = self%my_rays%lwall
   case(3)
     wall = self%my_rays%uwall
   end select
-
+  
   found = 0
   allocate (nbor_l)
   my_task => self%mhd_patch

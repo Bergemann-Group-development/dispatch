@@ -16,7 +16,6 @@ MODULE microphysics_mod
     ! add other types, e.g. chemistry when needed
   contains
     procedure :: init
-    procedure :: dtau
     procedure :: set_wl_bins
   end type
   
@@ -52,28 +51,6 @@ SUBROUTINE init (self)
   end if
   call trace_end
 END SUBROUTINE init
-
-
-!> =============================================================================
-!> compute dtau given opacity and step ds along the ray
-!> =============================================================================
-FUNCTION dtau (self, ds, opacity, wlens)
-  class(microphysics_t) :: self
-  real, dimension(:,:)    :: ds
-  real, dimension(:,:,:)  :: opacity
-  real, dimension(:)   :: wlens
-  real, dimension(size(opacity,1), size(opacity,2), size(wlens)):: dtau
-  integer :: i, j
-  !-----------------------------------------------------------------------------
-  ! in DISPATCH ray geometry points are on the cell borders, so dtau doesn't
-  ! have to be downstaggered and is siply opacity*optical path length
-  !-----------------------------------------------------------------------------
-  call trace_begin('microphysics_mod::dtau')
-  do i = 1, size(wlens)
-    dtau(:,:,i) = ds(:,:)*opacity(:,:,i)
-  end do
-  call trace_end
-END FUNCTION dtau
 
 SUBROUTINE set_wl_bins(self)
   class(microphysics_t) :: self

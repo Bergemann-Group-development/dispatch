@@ -566,7 +566,8 @@ END SUBROUTINE add_ray
 
 SUBROUTINE add_diag(self, rep, dir)
   class(ray_geometry_t) :: self
-  real :: init_step(3), dp(3), phis(8), theta, t, phi
+  real :: init_step(3), dp(3), theta, t, phi
+  real, dimension(8) :: phis
   integer :: rep, dir, nphi, a, b, c, pdir
 ! ......................................................................
   call trace_begin('ray_geometry_t%add_diag',4)
@@ -592,13 +593,13 @@ SUBROUTINE add_diag(self, rep, dir)
   end SELECT
   
   if (rep < 3) then
-    phis = phis/radian
+    !phis = phis/radian
     do pdir = 1, nphi                                                     ! loop over phis
       self%n_ray_dirs = self%n_ray_dirs + 1                               ! increment ray dirs
       self%axis  = dir
       self%theta = t
       self%phi   = phis(pdir)
-      phi=phis(pdir)
+      phi=phis(pdir)/radian
       dp(a) = sin(t)*cos(phi)*self%cell_dims(a)                           ! step size along a direction
       dp(b) = sin(t)*sin(phi)*self%cell_dims(b)                           ! step size along b direction
       dp(c) = cos(t)         *self%cell_dims(c)                           ! step size along c direction

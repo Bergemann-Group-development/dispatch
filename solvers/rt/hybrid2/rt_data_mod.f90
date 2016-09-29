@@ -8,34 +8,15 @@ MODULE rt_data_mod
   implicit none
   private
 !-----------------------------------------------------------------------
-!> Special intensity storage type. All cells can have more than one ray
-!> per direction.
-  !type :: int_data_t
-  !  integer :: ray, point
-    !integer ::lwall(3), uwall(3)
-   ! real, dimension(:), allocatable :: I
-    !class(int_data_t), pointer :: head => null()
-    !class(int_data_t), pointer :: prev => null()
-    !class(int_data_t), pointer :: next => null()
-    !class(int_data_t), pointer :: tail => null()
-  !contains
-  !  procedure :: init => int_data_init
-  !end type
-!-----------------------------------------------------------------------
   type, extends(rt_t), public :: rt_data_t
     integer :: n_cells(3)
-  !  integer :: n_intensity_dat = 0                                      ! used for mpi comm
     integer :: n_tau_dat = 0                                            ! used for mpi comm
     real, dimension(:,:,:,:), pointer :: opacity => null()              ! (x,y,z,wl_bin)
     real, dimension(:,:,:,:), pointer :: source  => null()              ! (x,y,z,wl_bin)
-    !type(int_data_t), dimension(:,:,:,:), pointer :: intensity => null()! (x,y,z,direction)
   contains
     procedure :: init   => init_rt_data
     procedure :: update => update_rt_data
     procedure :: check  => check_rt_data
-    !procedure :: I_store
-    !procedure :: I_retrv_cell
-    !procedure :: I_retrv_ray
     procedure :: add_cr_heating
   end type
 !-----------------------------------------------------------------------
@@ -83,27 +64,13 @@ SUBROUTINE init_rt_data(self)
   self%n_ray_dirs = ray_geometry%head%n_ray_dirs
   allocate(self%opacity(n(1), n(2), n(3), nwb)) ! opacity table
   allocate(self%source (n(1), n(2), n(3), nwb)) ! Source function table
-  !allocate(self%intensity(self%ui(1),self%ui(2),self%ui(3),self%n_ray_dirs))
-
- ! do i = 1, self%ui(1)
- !   do j = 1, self%ui(2)
- !     do k = 1, self%ui(3)
- !       do d = 1, self%n_ray_dirs
- !         allocate (self%intensity(i,j,k,d)%I(nwb))
- !       end do
- !     end do
- !   end do
- ! end do
-
-
+  
   self%opacity = 0;   self%source = 0
-  !self%n_intensity_dat = product(n)*self%n_ray_dirs*microphysics%n_wl_bins
   end associate
   if (io%verbose>1) then
     write (*,'(a,i5,3x,a,i5,3x,a,i3)') &
       '    rt_data_t%id:', self%id, &
-      'mhd_patch%id:', self%mhd_patch%id!, &
-   !   'n_intensity_dat:', self%n_intensity_dat
+      'mhd_patch%id:', self%mhd_patch%id
   end if
   if (io%verbose>2) call self%check(1)             ! check if rt_data initialized ok
   call trace_end
@@ -165,105 +132,6 @@ SUBROUTINE add_cr_heating (self, time, temp)
   end associate
   call trace%end
 END SUBROUTINE add_cr_heating
-
-!> =====================================================================
-!> Store intensity, cell-by-cell.  This is likely to be inefficient.
-!>
-!> Since all rays in a ray bundle end on the same wall, and all rays
-!> in a ray packed have the same length, one should be able to rip off
-!> the final intensity or q-value as an array, and store it in the
-!> rt_internal or rt_data task.
-!>
-!> Likewise, if a task contains a child task, which needs boundary
-!> values, these can be computed and inserted by the child.
-!> =====================================================================
-!SUBROUTINE I_store (self, I_st, rays, dir_ID, rt_type)
-!  class (rt_data_t) :: self
-!  class (ray_t), pointer :: rays
-!  type (int_data_t), pointer  :: this
-!  real, dimension(:,:,:) :: I_st
-!  integer :: dir_ID, rt_type, c(3), pt, ray
-!  logical :: found
-!  integer, save :: itimer=0
-!-----------------------------------------------------------------------
-!  call trace_begin('rt_data_mod%I_store',4, itimer=itimer)
-!  associate (I => self%intensity(:,:,:,dir_ID),&
-!             nwb => microphysics%n_wl_bins)
-
-!  do ray = 1, rays%n_rays
-!    do pt = 1, rays%n_points
-!      c = rays%cell_coords(:,pt,ray)
-!      if (io%verbose > 2) &
-!        print '(a,2i5,5i4)', 'I_store: id, rays%id, ray, pt, c =', self%id, rays%id, ray, pt, c
-
-!      I(c(1),c(2),c(3))%I = I_st(ray,:,pt)
-
-!    end do
-!  end do
-!  end associate
-!  nullify (this, rays)
-!  call trace_end
-!END SUBROUTINE I_store
-
-!> =====================================================================
-!> Retrieve intensity by cell
-!> =====================================================================
-!FUNCTION I_retrv_cell (self,c,dir) result (I_st)
-!  class (rt_data_t) :: self
-!  real, dimension(microphysics%n_wl_bins) :: I_st
-!  integer :: dir, c(3)
-! ----------------------------------------------------------------------
-!  call trace_begin('rt_data_mod%I_retrv',4)
-!  I_st = self%intensity(c(1),c(2),c(3),dir)%I                           ! retrieve the right intensity
-!  call trace_end
-!END FUNCTION I_retrv_cell
-
-!> =====================================================================
-!> Retrieve intensity by rays. Doesn't work.
-!> =====================================================================
-!FUNCTION I_retrv_ray (self,ray,pt,dir) result (I_st)
-!  class (rt_data_t) :: self
-!  type (int_data_t), pointer :: this
-!  real, dimension(microphysics%n_wl_bins) :: I_st
-!  integer :: dir, ray,pt, c(3)
-!  logical :: found
-! ----------------------------------------------------------------------
-!  call trace_begin('rt_data_mod%I_retrv_ray',4)
-!  associate (this => self%intensity(c(1),c(2),c(3),dir))
-!  found = .false.
-
-
-!  if (.not.found) error stop "ERROR: rt_data_mod%I_retrv_ray did not find data entry"
-!  error stop "ERROR: I_retrv_ray in rt_data_mod doesn't work!!"
-!  end associate
-!  call trace_end
-!END FUNCTION I_retrv_ray
-
-!> =====================================================================
-!> Initialize intensity storage for this cell
-!> =====================================================================
-!SUBROUTINE int_data_init(self,ray,pt)
-!  class (int_data_t) :: self
-!  type  (int_data_t), pointer :: new
-!  integer :: ray, pt
-!-----------------------------------------------------------------------
-!  call trace_begin('rt_data_mod%int_data_init',4)
-!  allocate (new)
-!  allocate (new%I(microphysics%n_wl_bins))
-!  new%ray = ray                                                         ! store ray number to ID the data
-!  new%point = pt                                                        ! store point in ray to ID the data
-!  if (.not.associated(self%head)) then                                  ! is it an empty cell
-!    self%head => new
-!    self%tail => new
-!    new%head => new
-!  else
-!    new%head  => self%head
-!    new%prev  => self%tail
-!    new%prev%next => new
-!    self%tail => new
-!  end if
-!  call trace_end
-!END SUBROUTINE int_data_init
 
 !> =====================================================================
 !> Test if rt_data module has any errors

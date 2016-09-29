@@ -14,7 +14,7 @@ MODULE rt_internal_mod
   type :: internal_data_t
     real, dimension(:,:), pointer :: bndry => null()                    ! (ray, wl_bin) incoming intensity.
     real, dimension(:),   pointer :: time => null()                     ! (time)
-    real, dimension(:,:), pointer :: ds   => null()                     ! (ray,point)
+    !real, dimension(:,:), pointer :: ds   => null()                     ! (ray,point) NOTE: not needed for MARCONI
     real, dimension(:,:), pointer :: I_out => null()                    ! leaving intensity
     integer, dimension(:,:), pointer :: cell => null()                  ! convenience, to identify which cell the ray point corresponds to
   end type
@@ -25,9 +25,10 @@ MODULE rt_internal_mod
     integer :: solver
     integer :: bundle_ID, dir_ID
     integer :: lwall(3)
-    real :: dir_weight
+    real :: dir_weight, ray_ds
     procedure (solve_internal_integral_1st), pointer :: solve => null()
   contains
+    procedure :: dtau
     procedure :: init   => init_rt_internal
     procedure :: update => update_rt_internal
     procedure :: check  => check_rt_internal
@@ -102,16 +103,17 @@ SUBROUTINE init_rt_internal (self)
   !---------------------------------------------------------------------
   allocate(self%packet_data(self%my_rays%n_packets))
   packet => self%my_rays%rays
+  self%ray_ds = packet%ds(1,1) * self%cell_ds(self%my_rays%axis)
   do ray = 1, self%my_rays%n_packets
     allocate(self%packet_data(ray)%bndry (packet%n_rays,microphysics%n_wl_bins))
     allocate(self%packet_data(ray)%I_out (packet%n_rays,microphysics%n_wl_bins))
     allocate(self%packet_data(ray)%cell (3,packet%n_rays))
     allocate(self%packet_data(ray)%time(packet%n_rays))
-    allocate(self%packet_data(ray)%ds  (packet%n_rays,packet%n_points))
+    !allocate(self%packet_data(ray)%ds  (packet%n_rays,packet%n_points))  - not needed for MARCONI
     self%packet_data(ray)%bndry(:,:) = 0
     self%packet_data(ray)%I_out(:,:) = 0
     self%packet_data(ray)%time = self%time
-    self%packet_data(ray)%ds = packet%ds * self%cell_ds(self%my_rays%axis) ! FIXME: should not be like this for non-cubic cells
+    !self%packet_data(ray)%ds = packet%ds * self%cell_ds(self%my_rays%axis) ! FIXME: should not be like this for non-cubic cells
     select case(self%rt_type)
     case(2)
       pt = packet%n_points
@@ -426,6 +428,24 @@ SUBROUTINE get_correction_from_BC (self)
 END SUBROUTINE get_correction_from_BC
 
 !> =====================================================================
+!> compute dtau given opacity and step ds along the ray
+!> =====================================================================
+FUNCTION dtau (self, opacity) result (dt)
+  class(rt_internal_t) :: self
+  real, dimension(:,:,:)  :: opacity
+  real, dimension(size(opacity,1), size(opacity,2), size(opacity,3)):: dt
+  integer :: i, j
+  !---------------------------------------------------------------------
+  call trace_begin('rt_internal_t%dtau')
+  associate (n=>size(opacity,3))
+  dt = opacity
+  dt(:,:,2:) = dt(:,:,1:n-1) + opacity(:,:,1:n-1)
+  dt = 0.5*self%ray_ds*dt
+  end associate
+  call trace_end
+END FUNCTION dtau
+
+!> =====================================================================
 !> Solution of RTE using the 1st order Integral formulation. Iwf and Irv
 !> are stored in case of overlapping patches.
 !> =====================================================================
@@ -438,7 +458,6 @@ SUBROUTINE solve_internal_integral_1st (self)
   integer :: pt, p(3), pck, nwb, ipk, ray
   integer, save :: itimer=0
   !---------------------------------------------------------------------
-  call trace_begin('rt_t%update_internal%solve_internal_integral')
   call trace_begin('rt_internal_t%integral_1st', itimer=itimer)
 
   nwb = microphysics%n_wl_bins
@@ -463,10 +482,9 @@ SUBROUTINE solve_internal_integral_1st (self)
         p = cell(:,pt,ray)
             s(ray,:,pt) = rtd%source (p(1),p(2),p(3),:)
         ropac(ray,:,pt) = rtd%opacity(p(1),p(2),p(3),:)
-        dtau (ray,:,pt) = ropac(ray,:,pt) * self%packet_data(pck)%ds(ray,pt)
       end do
     end do
-
+    dtau = self%dtau(ropac)
     I_in = self%packet_data(pck)%bndry
     pt = npt
 #if defined __INTEL_COMPILER
@@ -553,12 +571,11 @@ SUBROUTINE solve_internal_integral_2nd (self)
       do pt = 1, npt
         p = cell(:,pt,ray)
             s(ray,:,pt) = rtd%source (p(1),p(2),p(3),:)
-        dtau (ray,:,pt) = rtd%opacity(p(1),p(2),p(3),:) &
-                         *self%packet_data(pck)%ds(ray,pt)
         ropac(ray,:,pt) = rtd%opacity(p(1),p(2),p(3),:)
       end do
     end do
-
+    
+    dtau = self%dtau(ropac)
     I_in = self%packet_data(pck)%bndry
     pt = npt
     idtau = 1. / dtau
@@ -573,7 +590,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
       !-----------------------------------------------------------------
       !  dS/dtau and d2S/dtau2
       !-----------------------------------------------------------------
-     ctau(:,:,2:pt-1) = 1. / (dtau(:,:,1:pt-1) + dtau(:,:,2:pt))
+     ctau(:,:,2:pt-1) = 1. / (dtau(:,:,2:pt-1) + dtau(:,:,3:pt))
       d1s(:,:,2:pt-1) = &
      (ds1(:,:,3:pt  ) * dtau(:,:,2:pt-1) + ds1(:,:,2:pt-1) * &
      dtau(:,:,3:pt) ) * ctau(:,:,2:pt-1)                                ! dS/dtau, 2nd. order accurate
@@ -684,16 +701,16 @@ SUBROUTINE check_rt_internal(self)
       error stop "rt_internal%check: packet data time is missing"
     end if
 
-    if(.not.associated(self%packet_data(i)%ds)) then
-      print *,'iter',i
-      error stop "rt_internal%check: packet data ds is missing"
-    end if
+    !if(.not.associated(self%packet_data(i)%ds)) then
+    !  print *,'iter',i
+    !  error stop "rt_internal%check: packet data ds is missing"
+    !end if
 
-    if (any(isnan(self%packet_data(i)%ds))) then
-      print *,'=================== ds ================'
-      print *,self%packet_data(i)%ds
-      error stop "rt_internal%check: self%ds has NaN"
-    end if
+    !if (any(isnan(self%packet_data(i)%ds))) then
+    !!  print *,'=================== ds ================'
+    !  print *,self%packet_data(i)%ds
+    !  error stop "rt_internal%check: self%ds has NaN"
+    !end if
 
   end do
 

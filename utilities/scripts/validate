@@ -7,6 +7,7 @@
 # -r       : reset (create .val files even if fails)
 # -q       : quiet output
 # -x       : skip execution
+# -host    : set the Makefile HOST variable
 # -h       : help
 # --help   : help
 # dir1 ..  : experiment directories
@@ -47,9 +48,15 @@ while ($#argv > 0)
     case -q:
       unsetenv tee
       breaksw
+    # permit an optional HOST to be passed to the Makefile
+    case -host:
+      shift
+      set host = $1
+      breaksw
     # list of directories
     default:
       set dirs = ( $dirs $1 )
+      echo $dirs
   endsw
   shift
 end
@@ -71,7 +78,11 @@ foreach d ( $dirs )
   # go to experiment directory and find the trailing name
   echo "cd $d"
   cd $d
-  set d = dispatch
+  if (-e dispatch.f90) then
+     set d = dispatch
+  else if (-e test.f90) then
+     set d = test
+  endif
 
   # make a validate/ subdir, with *.f90 files, cd there
   mkdir -p validate/data
@@ -83,16 +94,23 @@ foreach d ( $dirs )
   set path = ( {,../,../../}../../../utilities/scripts $path )
 
   # make an input.nml, if it isn't already there
+  set fake_input = 0
   if (! -e input.nml) then
     if (-e ../validate.nml) then
        cp -p ../validate.nml input.nml
     else
-       echo "Creating validation/input.nml from input.nml"
-       grep -q do_validate ../input.nml
-       if ($status) then
-         sed -e '/io_params/s/$/ do_validate=t/' < ../input.nml > input.nml
+       if (-e ../input.nml) then
+          echo "Creating validation/input.nml from input.nml"
+          grep -q do_validate ../input.nml
+          if ($status) then
+            sed -e '/io_params/s/$/ do_validate=t/' < ../input.nml > input.nml
+          else
+            sed -e '/do_validate/s/do_validate=[fF]/do_validate=t/' < ../input.nml > input.nml
+          endif
        else
-         sed -e '/do_validate/s/do_validate=[fF]/do_validate=t/' < ../input.nml > input.nml
+          # make a fake input.nml
+          echo "" > ./input.nml
+          set fake_input = 1
        endif
     endif
   endif
@@ -109,7 +127,11 @@ foreach d ( $dirs )
   # make command
   if (! $?nomake) then
     set lab = "make"
-    set cmd = "(make clean; make OPTS=validate)"
+    if (! $?host) then
+      set cmd = "(make clean; make OPTS=validate)"
+    else
+      set cmd = "(make clean; make OPTS=validate HOST=$host)"
+    endif
     validate_cmd $opt $lab "$cmd"
     @ s += $status
   endif
@@ -139,7 +161,11 @@ foreach d ( $dirs )
     echo "validation OK"
     make clean >& /dev/null
     \rm -rf data
+    \rm -f *.f90 Makefile
+    \rm $d.x
   endif
+
+  if ($fake_input) rm -f input.nml
 
   # back to initial dir
   cd $wd
