@@ -61,6 +61,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
+  self%type = 'mhd_t'
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -203,14 +204,14 @@ SUBROUTINE update (self)
     ! Fast mode speed + velocity
     pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
-    if (io%verbose>2) then
+    if (io%verbose>3) then
       self%u_max = self%fmaxval(cs)
       print*,'u_max',self%u_max
       self%u_max = self%fmaxval(cs + sqrt(pp))
       print*,'u_max',self%u_max
     end if
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
-    if (io%verbose>2) print*,'u_max',self%u_max
+    if (io%verbose>3) print*,'u_max',self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb
     ! Total diagonal stress
@@ -229,14 +230,14 @@ SUBROUTINE update (self)
     pa = self%nu(2)*d*du**2                               ! dimension: pressure
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)
-    if (io%verbose>2) then
+    if (io%verbose>3) then
       self%u_max = self%fmaxval(cs)
       print*,'u_max',self%u_max
       self%u_max = self%fmaxval(cs + sqrt(pp))
       print*,'u_max',self%u_max
     end if
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
-    if (io%verbose>2) print*,'u_max',self%u_max
+    if (io%verbose>3) print*,'u_max',self%u_max
     pp = pg + pa
     ! Total diagondal stress, with density factor
     du = dx*self%nu(1)*cs
@@ -252,7 +253,7 @@ SUBROUTINE update (self)
   fm = p+fd                                             ! mass flux
   dddt = -div(ds,fm)                                    ! density derivative
   self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))
-  if (io%verbose>2) print*,'u_max',self%u_max
+  if (io%verbose>3) print*,'u_max',self%u_max
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
@@ -414,7 +415,7 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
   real(8):: dt_AD_inp
   real(8):: dt_Ohm_inp
   !.............................................................................
-  call trace_begin('mhd_t%nonideal_MHD_courant')
+  call trace%begin('mhd_t%nonideal_MHD_courant')
   call self%lock%set ('nonideal_MHD_courant')
   if (io%verbose>2) &
     print*, 'nonideal_MHD_courant: u_max, ds', self%u_max, minval(self%ds)
@@ -444,7 +445,7 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'nonideal_MHD_courant:', &
       self%id, self%dtime, self%nonideal_MHD_courant, self%u_max
   call self%lock%unset ('nonideal_MHD_courant')
-  call trace_end
+  call trace%end
 END SUBROUTINE nonideal_MHD_courant_condition
 
 !> =============================================================================

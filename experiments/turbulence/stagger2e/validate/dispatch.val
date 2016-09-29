@@ -103,6 +103,9 @@
  T_TURN= 0.300000012    ,
  TYPE="single_solenoidal               ",
  /
+&RADIATION_PARAMS
+ DO_RADIATION=F,
+ /
 init_cartesian: id, rank, size, pos =       1     0    2.500000E-01  2.500000E-01  2.500000E-01    0.000000E+00  0.000000E+00  0.000000E+00  FF
 init_cartesian: id, rank, size, pos =       2     0    2.500000E-01  2.500000E-01  2.500000E-01    2.500000E-01  0.000000E+00  0.000000E+00  FF
 init_cartesian: id, rank, size, pos =       3     0    2.500000E-01  2.500000E-01  2.500000E-01    5.000000E-01  0.000000E+00  0.000000E+00  FF

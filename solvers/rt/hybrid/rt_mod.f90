@@ -2,13 +2,16 @@ MODULE rt_mod
   USE experiment_mod
   USE bits_mod
   USE io_mod
+  USE trace_mod
   USE link_mod
   USE omp_mod
-  USE ray_geometry_v2_mod
+  USE ray_geometry_mod
   USE task_mod
   USE experiment_mod
   USE rt_boundary_mod
   USE microphysics_mod
+  implicit none
+  private
 !----------------------------------------------------------------------- 
   type, extends(task_t), public :: rt_t
     type (experiment_t), pointer :: mhd_patch  => null()  ! pointer to MHD task
@@ -32,8 +35,11 @@ MODULE rt_mod
     procedure :: absolute_point_position
     procedure :: ray2cell
     procedure :: cell2pos
+    procedure :: cell2ray
     procedure :: pos2cell
+    procedure :: pos2ray
     procedure :: ray2pos
+    procedure :: point_in_cell
     procedure :: the_right_wall
     procedure :: update_time
   end type
@@ -136,7 +142,7 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   class(link_t), pointer :: my_mhd_l
   class(link_t), pointer :: nbor, nbor_l, new
   class(experiment_t), pointer :: my_task, nbor_task
-  integer :: found, wall(3)
+  integer :: found
 ! ----------------------------------------------------------------------
   call trace_begin('rt_t%find_upstream')
   found = 0
@@ -150,13 +156,7 @@ SUBROUTINE find_upstream (self, nbor_l, found)
     class is (experiment_t)
       nbor_task => nbtask
       if (.not.nbor_is_my_child(my_task, nbor_task)) then
-        select case(self%rt_type)
-        case(2)
-          wall = self%my_rays%lwall
-        case(3)
-          wall = self%my_rays%uwall
-        end select
-        if (self%the_right_wall(self%mhd_link, nbor, wall)) then
+        if (self%the_right_wall(self%mhd_link, nbor, self%my_rays%lwall)) then
           allocate(new)
           new%task => nbor_task
           new%link => nbor%link
@@ -228,7 +228,7 @@ END SUBROUTINE check_common_surface
 
 FUNCTION nbor_is_my_child(me, nbor) result (out)
   type (experiment_t), pointer :: me, nbor
-  real(kind=8) :: me_li, me_ui, nbor_li, nbor_ui
+  !real(kind=8) :: me_li, me_ui, nbor_li, nbor_ui
   logical :: out
 !-----------------------------------------------------------------------
   out = .false.
@@ -246,12 +246,7 @@ FUNCTION absolute_point_position(self, ray, pt, bn) result (cell_pos)
   real(kind=8) :: cell_pos(3)
 !-----------------------------------------------------------------------
   if (present(bn)) then
-    select case(self%rt_type)
-    case(2)
-      cp = self%my_rays%fwd_coords(:,ray)
-    case(3)
-      cp = self%my_rays%rev_coords(:,ray)
-    end select
+    cp = self%my_rays%fwd_coords(:,ray)
   else
     cp = self%my_rays%cell_coords(:,pt,ray)
   end if
@@ -284,6 +279,39 @@ FUNCTION pos2cell (self, p) result (cell)
   
 END FUNCTION pos2cell
 
+! orient = 1 - lwall, orient = 2 - uwall
+SUBROUTINE cell2ray (self, c, w, ray, pt, found)
+  class(rt_t) :: self
+  type(rt_cell_t), pointer :: cell
+  integer :: c(3), ray, pt, w(3), orient, wall(3)
+  logical :: found
+!-----------------------------------------------------------------------
+  cell => self%my_rays%cell_domain(c(1),c(2),c(3))%head
+  wall = cell%lwall
+  found = .false.
+  do while(associated(cell))
+    if(.not.found) then
+      if (all(wall == w)) then
+        ray = cell%ray
+        pt = cell%point
+        found = .true.
+        return
+      else
+        cell => cell%next
+      end if
+    end if
+  end do
+END SUBROUTINE cell2ray
+
+SUBROUTINE pos2ray (self, p, w, ray, pt, found)
+  class(rt_t) :: self
+  real(kind=8) :: p(3)
+  integer :: w(3), ray, pt
+  logical :: found
+!-----------------------------------------------------------------------
+  call self%cell2ray(self%pos2cell(p), w, ray, pt, found)
+  
+END SUBROUTINE pos2ray
 
 FUNCTION ray2pos (self, ray, pt) result (p)
   class(rt_t)  :: self
@@ -294,9 +322,8 @@ FUNCTION ray2pos (self, ray, pt) result (p)
   
 END FUNCTION ray2pos
 
-
-
-FUNCTION point_in_cell (pt, cell, ds) result (out)
+FUNCTION point_in_cell (self, pt, cell, ds) result (out)
+  class(rt_t)  :: self
   real(kind=8) :: pt(3), cell(3), li(3), ui(3), ds(3)
   logical :: out
 !-----------------------------------------------------------------------

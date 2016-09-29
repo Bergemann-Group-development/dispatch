@@ -2,7 +2,7 @@
  verbose=0
  do_trace=f
  do_debug=f
- do_output=f
+ do_output=t
  do_legacy = t
 /
 
@@ -17,7 +17,7 @@
  nt=5
  courant=0.2
  grace=0.1
- n=16,16,16
+ n=8,8,8
 /
 
 &rt_params
@@ -64,7 +64,7 @@ hot_temp  = 2000
 /
 
 &out_params
- end_time=0.009
+ end_time=0.020
  out_time=0.001
 print_time=0.001
  guard_zones=f

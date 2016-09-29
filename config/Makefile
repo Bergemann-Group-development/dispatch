@@ -42,7 +42,7 @@ endif
 sinclude $(TOP)/io/Makefile
 #sinclude $(TOP)/operators/Makefile
 sinclude $(TOP)/solvers/$(SOLVER)/Makefile
-sinclude $(TOP)/solvers/rt_$(RT_SOLVER)/Makefile
+sinclude $(TOP)/solvers/rt/$(RT_SOLVER)/Makefile
 sinclude $(TOP)/components/Makefile
 sinclude $(TOP)/lists/Makefile
 sinclude $(TOP)/tasks/Makefile
@@ -82,6 +82,7 @@ FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
 
 # Remove default rule for .f files.
 %.o: %.f
+%.o: %.mod
 #############################################################################
 # Pattern rules to get .o files from .f90 files
 %.o: %.f90 $(DEPDIR)/%.d

@@ -40,6 +40,7 @@ MODULE mhd_mod
     procedure:: update
     procedure:: log_density
     procedure:: log_pressure
+    procedure:: temperature
     procedure:: grav_potential
     procedure:: velocity_magnitude
     procedure:: magnetic_field_magnitude
@@ -99,6 +100,9 @@ SUBROUTINE update (self)
   allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
   call godunov (self)
+  !-----------------------------------------------------------------------------
+  ! Deallocate
+  !-----------------------------------------------------------------------------
   deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%c,self%s)
   call trace_end
 END SUBROUTINE update
@@ -708,6 +712,16 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv,error)
     stop
   end if
 end subroutine solver
+
+!> =============================================================================
+SUBROUTINE temperature (self, v)
+  class(mhd_t):: self
+  real, dimension(:,:,:):: v
+  !-----------------------------------------------------------------------------
+  v = (self%unew(:,:,:,5)/self%unew(:,:,:,1) &
+    - 0.5*(self%unew(:,:,:,2)**2+self%unew(:,:,:,3)**2+self%unew(:,:,:,4)**2)) &
+    *(self%gamma-1.0)
+END SUBROUTINE
 
 !> =============================================================================
 SUBROUTINE log_density (self, v)

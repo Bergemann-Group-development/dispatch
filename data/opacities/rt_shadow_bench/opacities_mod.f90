@@ -8,7 +8,7 @@ MODULE opacities_mod
   USE trace_mod
   USE scaling_mod
   implicit none
-    
+  private
   type, public ::  opacity_t
     real :: t0    = 290
     real :: rho0 = 1
@@ -63,9 +63,9 @@ END FUNCTION rt_shadow_opacity
 !> =============================================================================
 FUNCTION opac_gr (rho, temp, wl) result(kappa)
   real(4), dimension(:,:,:), intent(in) :: rho, temp
+  integer :: wl, iwl
   real(4), dimension(size(rho,1),size(rho,2),size(rho,3)) :: rho0
   real(4), dimension(size(rho,1),size(rho,2),size(rho,3), wl) :: kappa
-  integer :: iwl, wl
   real(4) :: op_sc, sc_rho
   !.............................................................................
   op_sc = scaling%m/scaling%l**2

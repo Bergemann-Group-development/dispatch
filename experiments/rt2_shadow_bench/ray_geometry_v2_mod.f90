@@ -1,75 +1,118 @@
+!> =====================================================================
+!> A module to set up ray geometry. Several different geometries can be 
+!> created if needed for different experiment geometries (e.g. cartesian,
+!> spherical, etc.). As an input the module needs the geometry index,
+!> lower and upper indices of the mesh (li, ui) and optionally cell
+!> sizes (otherwse they are assumed to be cubic and with unit size walls). 
+!> The resulting heararchy is such:
+!> ray ⊂ bundle ⊂ direction ⊂ geometry (⊂ indicates that A is a
+!> subset of B).
+!> to access levels: ray_geometry%ray_list%bundle%rays
+
+!> ray_geometry_t:  has pointers to optional different geometries, and contains
+!> all the information about itself - li, ui, cell dimensions, n_ray_dirs
+!> and a pointer to a list of ray directions
+
+!> ray_dirs_t: is a linked list of directions. Every direction has an unique ID
+!> for particular geometry, number of bundles and a directionality parameter, 
+!> which indicates, whether rays should go both ways or to only some particular
+!> direction and a pointer to bundles.
+
+!> ray_bndl_t: is a linked list of ray bundles. Every bundle has an unique ID
+!> for particular direction, direction ID for safekeeping, number of ray packets
+!> it contains, which face the bundle originates/terminates at (lwall and uwall
+!> accordingly), axis, along which the bundle is oriented (e.g. x|y|z in cartesian),
+!> theta and phi values of slanted rays.
+
+!> ray_t: is a ray packet, containing n_rays of rays of same length (n_points).
+!> it has all the necessary info about the ray - where it originates, where it
+!> terminates (fwd_coords/rev_coords, depending on direction), which cells
+!> it crosses (cell_coords), distance it traves through particular cell(ds),
+!> and which cell face it crosses when it enters and leaves the cell (pt_wall)
+!> =====================================================================
 MODULE ray_geometry_v2_mod
   USE io_mod
   USE trace_mod
   implicit none
-    
+! ----------------------------------------------------------------------
   type, public :: ray_t
+    class(ray_t), pointer :: head => null()
+    class(ray_t), pointer :: next => null()
+    class(ray_t), pointer :: prev => null()
+    class(ray_t), pointer :: tail => null()
+    integer :: ID
     integer :: n_rays
     integer :: n_points
-    integer :: lwall(3)
-    integer :: uwall(3)
-    integer :: axis                                                     ! identificator along which axis ray goes 1-3
-    real    :: theta                                                    ! angle between ray and axis [0, 45], stored in radians
-    real    :: phi                                                      ! angle of the ray in the axis plane [0, 360), stored in radians
     integer, dimension(:,:,:), pointer   :: cell_coords => null()       ! x|y|z,        ray point, ray #
     integer, dimension(:,:  ), pointer   :: fwd_coords  => null()       ! x|y|z,                   ray #
     integer, dimension(:,:  ), pointer   :: rev_coords  => null()       ! x|y|z,                   ray #
     real,    dimension(:,:  ), pointer   :: ds          => null()       ! ds   ,        ray point, ray #
     integer, dimension(:,:,:,:), pointer :: pt_wall     => null()       ! x|y|x, lw|uw, ray point, ray #
+  contains
+    procedure :: fill_ray_list_data
   end type
 ! ----------------------------------------------------------------------
-  type, extends(ray_t), public:: ray_list_t
-    class(ray_list_t), pointer :: head         => null()
-    class(ray_list_t), pointer :: next_dir     => null()
-    class(ray_list_t), pointer :: prev_dir     => null()
-    class(ray_list_t), pointer :: last_dir     => null()
-    class(ray_list_t), pointer :: first_bundle => null()
-    class(ray_list_t), pointer :: next_bundle  => null()
-    class(ray_list_t), pointer :: prev_bundle  => null()
-    class(ray_list_t), pointer :: last_bundle  => null()
-    class(ray_list_t), pointer :: first_packet => null()
-    class(ray_list_t), pointer :: next_packet  => null()
-    class(ray_list_t), pointer :: prev_packet  => null()
-    class(ray_list_t), pointer :: last_packet  => null()
-    integer :: dir_ID, n_dirs
-    integer :: bundle_ID, n_bundles
-    integer :: packet_ID, n_packets
-    integer :: bundle_n_rays
+  type :: ray_bndl_t
+    class(ray_bndl_t),  pointer :: head => null()
+    class(ray_bndl_t),  pointer :: next => null()
+    class(ray_bndl_t),  pointer :: prev => null()
+    class(ray_bndl_t),  pointer :: tail => null()
+    class(ray_t), pointer :: rays => null()
+    integer :: ID
+    integer :: dir_ID
+    integer :: n_packets                                                ! number of packets in this bundle
+    integer :: lwall(3)
+    integer :: uwall(3)
+    integer :: axis                                                     ! identificator along which axis ray goes 1-3
+    real    :: theta                                                    ! angle between ray and axis [0, 45], stored in radians
+    real    :: phi                                                      ! angle of the ray in the axis plane [0, 360), stored in radians
+  end type
+! ----------------------------------------------------------------------
+  type :: ray_dirs_t
+    class(ray_dirs_t), pointer :: head => null()
+    class(ray_dirs_t), pointer :: next => null()
+    class(ray_dirs_t), pointer :: prev => null()
+    class(ray_dirs_t), pointer :: tail => null()
+    class(ray_bndl_t), pointer :: bundle => null()
+    integer :: ID
+    integer :: n_bundles                                                ! number of bundles in this direction
     integer :: directionality(3)                                        ! 1 - two directions, 2 - only forward, 3 - only reverse (x|y|z)
   end type
 ! ----------------------------------------------------------------------
   type, public :: ray_geometry_t
-    integer :: n_ray_dirs, n_ray_bundles
+    class(ray_geometry_t), pointer :: head => null()
+    class(ray_geometry_t), pointer :: next => null()
+    class(ray_geometry_t), pointer :: prev => null()
+    class(ray_geometry_t), pointer :: tail => null()
+    class(ray_dirs_t), pointer :: ray_list => null()
+    integer :: n_ray_dirs
     integer :: li(3), ui(3)
     integer :: cell_dims(3)
     integer :: geometry = 1 !cartesian = 1, spherical = 2, cylindrical = 3
     logical :: init_done = .false.
-    class(ray_list_t), pointer :: ray_list => null()
     integer :: axis, dr(3)                                              ! convenience
     real    :: theta, phi                                               ! convenience
   contains
     procedure :: add_axis
     procedure :: add_diag
     procedure :: add_ray
-    procedure :: get_my_bundle
     procedure :: finish_single_ray_list
-    procedure :: test_ray_geometry
-  end type
-! ----------------------------------------------------------------------
-  type, extends(ray_geometry_t), public :: ray_geometry_list_t
-    class(ray_geometry_list_t), pointer :: head => null()
-    class(ray_geometry_list_t), pointer :: next => null()
-    class(ray_geometry_list_t), pointer :: prev => null()
-    class(ray_geometry_list_t), pointer :: tail => null()
-  contains
+    procedure :: get_my_bundle
     procedure :: get_my_geometry
     procedure :: init
     procedure :: init_cartesian
     procedure :: init_spherical
     procedure :: init_cylindrical
+    procedure :: test_ray_geometry
+    procedure :: traverse_2d
+    procedure :: traverse_3d
   end type
 ! ----------------------------------------------------------------------
-  type, public :: single_ray_t
+  type :: single_ray_t
+    class(single_ray_t), pointer :: head => null()
+    class(single_ray_t), pointer :: next => null()
+    class(single_ray_t), pointer :: prev => null()
+    class(single_ray_t), pointer :: tail => null()
     integer                          :: lwall(3)
     integer                          :: uwall(3)
     integer                          :: n_points
@@ -78,31 +121,29 @@ MODULE ray_geometry_v2_mod
     integer, dimension(3)            :: rev_coords             ! x|y|z,          
     real,    dimension(:  ), pointer :: ds          => null()  ! ds   , ray point
     integer, dimension(:,:,:), pointer :: cell_walls => null()  ! lw|uw(x,y,z), ray point
+  contains
+    procedure :: fill_single_ray_data
   end type
 ! ----------------------------------------------------------------------
-  type, extends(single_ray_t), public:: single_ray_list_t
-    class(single_ray_list_t), pointer :: head        => null()
-    class(single_ray_list_t), pointer :: next_bundle => null()
-    class(single_ray_list_t), pointer :: prev_bundle => null()
-    class(single_ray_list_t), pointer :: last_bundle => null()
-    class(single_ray_list_t), pointer :: first_packet => null()
-    class(single_ray_list_t), pointer :: next_packet  => null()
-    class(single_ray_list_t), pointer :: prev_packet  => null()
-    class(single_ray_list_t), pointer :: last_packet  => null()
-    class(single_ray_list_t), pointer :: first_ray   => null()
-    class(single_ray_list_t), pointer :: next_ray    => null()
-    class(single_ray_list_t), pointer :: prev_ray    => null()
-    class(single_ray_list_t), pointer :: last_ray    => null()
-    integer                           :: n_rays
-    integer                           :: max_n_points
-    integer                           :: bundle_ID
-    integer                           :: packet_ID
-    integer :: axis                                                     ! identificator along which axis ray goes 1-3
-    real    :: theta                                                    ! angle between ray and axis [0, 45], stored in radians
-    real    :: phi                                                      ! angle of the ray in the axis plane [0, 360), stored in radians
+  type :: single_ray_packet_t
+    class(single_ray_packet_t), pointer :: head => null()
+    class(single_ray_packet_t), pointer :: next => null()
+    class(single_ray_packet_t), pointer :: prev => null()
+    class(single_ray_packet_t), pointer :: tail => null()
+    class(single_ray_t), pointer:: rays => null()
+    integer :: n_rays, n_points
+  end type
+! ----------------------------------------------------------------------
+  type :: single_ray_bundle_t
+    class(single_ray_bundle_t), pointer :: head => null()
+    class(single_ray_bundle_t), pointer :: next => null()
+    class(single_ray_bundle_t), pointer :: prev => null()
+    class(single_ray_bundle_t), pointer :: tail => null()
+    class(single_ray_packet_t), pointer :: packets  => null()
+    integer :: lwall(3)
+    integer :: uwall(3)
   contains
     procedure :: finish_ray
-    procedure :: fill_single_ray_data
   end type
 ! ----------------------------------------------------------------------
   type :: ray_point_t
@@ -150,7 +191,7 @@ MODULE ray_geometry_v2_mod
     procedure :: wall           => cw_3d
   end type 
 ! ----------------------------------------------------------------------
-  type(ray_geometry_list_t), public :: ray_geometry
+  type(ray_geometry_t), public :: ray_geometry
   real(8), parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
 CONTAINS
 
@@ -158,8 +199,8 @@ CONTAINS
 !> Initialisation subroutine for ray geometry
 !> =====================================================================
 SUBROUTINE init (self, geometry, li, ui, cell_dims)
-  class(ray_geometry_list_t) :: self
-  class(ray_geometry_list_t), pointer :: new
+  class(ray_geometry_t) :: self
+  class(ray_geometry_t), pointer :: new
   integer, optional :: cell_dims
   integer :: li(3), ui(3)
   integer :: geometry
@@ -200,8 +241,8 @@ SUBROUTINE init (self, geometry, li, ui, cell_dims)
 END SUBROUTINE init
 
 SUBROUTINE get_my_geometry(self, geometry, li, ui, cell_dims, my_geom)
-  class(ray_geometry_list_t) :: self
-  class(ray_geometry_list_t), pointer :: this, my_geom
+  class(ray_geometry_t) :: self
+  class(ray_geometry_t), pointer :: this, my_geom
   integer, optional :: cell_dims
   integer :: li(3), ui(3)
   integer :: geometry
@@ -224,7 +265,7 @@ SUBROUTINE get_my_geometry(self, geometry, li, ui, cell_dims, my_geom)
       end if 
     end do
   end if
-
+  
   nullify(this)
   call trace_end
 END SUBROUTINE get_my_geometry
@@ -237,7 +278,7 @@ END SUBROUTINE get_my_geometry
 !> should be treated carefully if one doesn't need some directions.
 !> =====================================================================
 SUBROUTINE init_cartesian(self)
-  class(ray_geometry_list_t)      :: self
+  class(ray_geometry_t) :: self
   integer                         :: i, nx, ny, nz, d45
   real, dimension(:), allocatable :: xt, yt, zt
   real, dimension(5)              :: xti, yti, zti
@@ -316,7 +357,6 @@ SUBROUTINE init_cartesian(self)
   end if
     
   deallocate (xt, yt, zt)
-  print *, self%ray_list%directionality
   call trace_end
 END SUBROUTINE init_cartesian
 
@@ -324,7 +364,7 @@ END SUBROUTINE init_cartesian
 !> Initialisation subroutine for cylindrical geometry
 !> =====================================================================    
 SUBROUTINE init_cylindrical(self)
-  class(ray_geometry_list_t)      :: self
+  class(ray_geometry_t)      :: self
   integer                         :: i, nz, nR, nPhi
   real, dimension(:), allocatable :: zt, Rt, Phit
   real, dimension(5)              :: zti, Rti, Phiti
@@ -339,7 +379,7 @@ END SUBROUTINE init_cylindrical
 !> Initialisation subroutine for spherical geometry
 !> =====================================================================
 SUBROUTINE init_spherical(self)
-  class(ray_geometry_list_t)      :: self
+  class(ray_geometry_t)      :: self
   integer                         :: i, nr, ntheta, nphi
   real, dimension(:), allocatable :: rt, thetat, phit
   real, dimension(5)              :: rti, thetati, phiti
@@ -356,11 +396,12 @@ END SUBROUTINE init_spherical
 !> angles. Adds stiff ray arrays instantly.
 !> =====================================================================
 SUBROUTINE add_axis(self, dir)
-  class(ray_geometry_t)     :: self
-  type(ray_list_t), pointer :: ray 
-  integer                   :: dir, ia, ib, ic, ray_n, a, b, c, rp
-  real                      :: ds
-  integer     :: p(3), pmax(3)
+  class(ray_geometry_t) :: self
+  class(ray_dirs_t), pointer :: ndir
+  class(ray_bndl_t), pointer :: bndl
+  class(ray_t),      pointer :: ray
+  integer :: dir, ia, ib, ic, ray_n, a, b, c, rp, p(3), pmax(3)
+  real    :: ds
 ! ......................................................................
   call trace_begin('ray_geometry_t%add_axis', 4)
   pmax = (self%ui - self%li) + 1                                        ! Total number of points
@@ -374,45 +415,50 @@ SUBROUTINE add_axis(self, dir)
     a = 1; b = 2; c = 3                                                 ! along z axis
   end SELECT
   ! Create new ray bundle and add it to ray_geometry
-  allocate (ray)                                                        ! create new ray
+  allocate (ndir, bndl, ray)                                            ! create new ray
   if (associated(self%ray_list%head)) then                              ! if ray list is not empty
-    ray%prev_dir => self%ray_list%last_dir
-    ray%prev_dir%next_dir  => ray
-    self%ray_list%last_dir => ray
-    ray%head => self%ray_list%head
+    ndir%prev => self%ray_list%tail
+    ndir%prev%next => ndir
+    self%ray_list%tail => ndir
+    ndir%head => self%ray_list%head
   else
-    self%ray_list => ray
-    self%ray_list%head => ray                                           ! if empty, point to itself
-    self%ray_list%last_dir => ray
+    self%ray_list => ndir
+    self%ray_list%head => ndir                                           ! if empty, point to itself
+    self%ray_list%tail => ndir
   end if
-  ray%first_bundle => ray                                               ! it is a single bundle
-  ray%last_bundle  => ray
-  ray%first_packet => ray                                               ! it is a single packet
-  ray%last_packet  => ray
-  self%n_ray_bundles = self%n_ray_bundles + 1                           ! adding new bundle
-  ray%dir_ID         = self%n_ray_dirs                                  ! it's ID corresponds to it's direction
-  ray%bundle_ID      = 1                                                ! it's bundle_ID
-  ray%n_bundles      = 1                                                ! single bundle in this direction
-  ray%packet_ID      = 1                                                ! it's packet ID
-  ray%n_packets      = 1
-  ray%n_rays         = pmax(a)*pmax(b)                                  ! number of rays in this direction
-  ray%n_points       = pmax(c)                                          ! number of points per ray corresponds to n_cells in that direction
-  ray%axis  = c
-  ray%theta = 0
-  ray%phi   = 0
-  ray%directionality = self%dr
+  
+  ! --- Fill in direction info ---
+  ndir%bundle => bndl
+  ndir%n_bundles = 1
+  ndir%directionality = self%dr
+  ndir%ID = self%n_ray_dirs
+  ! --- Fill in bundle info ---
+  bndl%head   => bndl
+  bndl%tail   => bndl
+  bndl%rays   => ray
+  bndl%axis  = c
+  bndl%theta = 0
+  bndl%phi   = 0
+  bndl%ID = 1
+  bndl%dir_ID = ndir%ID
+  bndl%n_packets = 1
+  bndl%lwall(a) =  0;  bndl%uwall(a) = 0
+  bndl%lwall(b) =  0;  bndl%uwall(b) = 0
+  bndl%lwall(c) = -1;  bndl%uwall(c) = 1                                ! lower/upper wall for this direction
+  
+  ! --- Fill in rays info ---
+  ray%head  => ray
+  ray%tail  => ray
+  ray%ID = 1                                                            ! it's packet ID
+  ray%n_rays    = pmax(a)*pmax(b)                                       ! number of rays in this direction
+  ray%n_points  = pmax(c)                                               ! number of points per ray corresponds to n_cells in that direction
+
   allocate (ray%cell_coords(3,pmax(c),ray%n_rays))                      ! create ray table, containing x|y|z loc, for all n_cells and n_rays
   allocate (ray%ds(ray%n_rays,pmax(c)))                                 ! create ds table, containing ds for all points in all rays
   allocate (ray%fwd_coords(3,ray%n_rays))                               ! create table, containing x|y|z coords for upstream position for particular ray, for all rays
   allocate (ray%rev_coords(3,ray%n_rays))                               ! create table, containing x|y|z coords for downstream position for particular ray, for all rays
   allocate (ray%pt_wall(3,2,pmax(c), ray%n_rays))                       ! lower and upper walls the ray crosses in the cell
-
-  ray%lwall(a) = 0
-  ray%uwall(a) = 0
-  ray%lwall(b) = 0
-  ray%uwall(b) = 0
-  ray%lwall(c) = -1                                                     ! lower wall for this direction
-  ray%uwall(c) = 1                                                      ! upper wall for this direction
+  
   ray_n = 1                                                             ! ray number
   do ia = self%li(a), self%ui(a)                                        ! iterate over cells in first axis
     do ib = self%li(b), self%ui(b)                                      ! iterate over cells in second axis
@@ -425,8 +471,8 @@ SUBROUTINE add_axis(self, dir)
         p(c) = ic                                                       ! current cell position in terms of third axis
         ray%cell_coords(:,rp,ray_n) = p                                 ! cell position in particular ray
         ray%ds(ray_n,rp)            = self%cell_dims(c)                 ! ray patch length in particular cell
-        ray%pt_wall(:,1,rp,ray_n) = ray%lwall                           ! ray enters the cell through this wall
-        ray%pt_wall(:,2,rp,ray_n) = ray%uwall                           ! ray leaves the cell through this wall
+        ray%pt_wall(:,1,rp,ray_n) = bndl%lwall                          ! ray enters the cell through this wall
+        ray%pt_wall(:,2,rp,ray_n) = bndl%uwall                          ! ray leaves the cell through this wall
         rp = rp+1                                                       ! increment ray point
       end do
       ray%rev_coords(a,ray_n) = p(a)                                    ! downstream position in terms of first axis
@@ -435,7 +481,7 @@ SUBROUTINE add_axis(self, dir)
       ray_n = ray_n + 1                                                 ! move to next ray
     end do
   end do
-
+  nullify(ndir, bndl, ray)
   call trace_end
 END SUBROUTINE add_axis
 
@@ -445,11 +491,11 @@ END SUBROUTINE add_axis
 !> (original, not modified, one is from Amanatides & Woo, 1987)
 !> =====================================================================
 SUBROUTINE add_ray(self, theta, dir)
-  class(ray_geometry_t)           :: self
-  real                            :: theta, t, phi
-  integer                         :: dir, nphi, a, b, c, pdir, round
-  real, dimension(3)              :: dp, init_step
-  real, dimension(2)              :: dp2d
+  class(ray_geometry_t) :: self
+  real    :: theta, t, phi
+  integer :: dir, nphi, a, b, c, pdir, round
+  real, dimension(3) :: dp, init_step
+  real, dimension(2) :: dp2d
   real, dimension(:), allocatable :: phis
   logical :: oob_dir
   ! ....................................................................
@@ -503,7 +549,7 @@ SUBROUTINE add_ray(self, theta, dir)
       init_step(1) = 0.5                                                ! cell center for b direction
       init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
       init_step(3) = 0.5                                                ! passive cell step
-      call traverse_2d(self, dp2d, b, c, a, init_step)                  ! proceed with 2D traversal
+      call self%traverse_2d(dp2d, b, c, a, init_step)                   ! proceed with 2D traversal
         
     else if (dp(b) == 0) then                                           ! if b direction == 0
       dp2d(1) = dp(a)                                                   ! prepare a direction for 2D traversal
@@ -511,13 +557,13 @@ SUBROUTINE add_ray(self, theta, dir)
       init_step(1) = 0.5                                                ! cell center for a direction
       init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
       init_step(3) = 0.5                                                ! passive cell step
-      call traverse_2d(self, dp2d, a, c, b, init_step)                  ! proceed with 2D traversal
+      call self%traverse_2d(dp2d, a, c, b, init_step)                   ! proceed with 2D traversal
         
     else                                                                ! movement to all directions
       init_step(1) = 0.5                                                ! cell center for a direction
       init_step(2) = 0.5                                                ! cell center for b direction
       init_step(3) = 1                                                  ! cell wall for c direction (ray propagation direction)
-      call traverse_3d (self, dp, a, b, c, init_step)                   ! proceed with 3D traversal
+      call self%traverse_3d (dp, a, b, c, init_step)                    ! proceed with 3D traversal
     end if
   end do
       
@@ -538,12 +584,12 @@ END SUBROUTINE add_ray
 !> for 3D movement.
 !> =====================================================================
 SUBROUTINE add_diag(self, rep, dir)
-  class(ray_geometry_t)      :: self
-  real                       :: theta, t, phi
-  integer                    :: rep, dir, nphi, a, b, c, pdir, round
-  real, dimension(3)         :: init_step, dp
-  real, dimension(8)         :: phis
-  real, dimension(2)         :: dp2d
+  class(ray_geometry_t) :: self
+  real, dimension(3) :: init_step, dp
+  real, dimension(8) :: phis
+  real, dimension(2) :: dp2d
+  real    :: theta, t, phi
+  integer :: rep, dir, nphi, a, b, c, pdir, round
 ! ......................................................................
   call trace_begin('ray_geometry_t%add_diag',4)
   
@@ -591,7 +637,7 @@ SUBROUTINE add_diag(self, rep, dir)
       init_step(1) = 0.5                                                ! cell center for a direction
       init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
       init_step(3) = 0.5                                                ! passive cell step
-      call traverse_2d(self, dp2d, b, c, a, init_step)                  ! proceed with 2D traversal
+      call self%traverse_2d(dp2d, b, c, a, init_step)                   ! proceed with 2D traversal
       
     else if (dp(b) == 0) then                                           ! if b direction == 0
       dp2d(1) = dp(a)                                                   ! prepare a direction for 2D traversal
@@ -599,13 +645,13 @@ SUBROUTINE add_diag(self, rep, dir)
       init_step(1) = 0.5                                                ! cell center for a direction
       init_step(2) = 1                                                  ! cell wall for c direction (ray propagation direction)
       init_step(3) = 0.5                                                ! passive cell step
-      call traverse_2d(self, dp2d, a, c, b, init_step)                  ! proceed with 2D traversal
+      call self%traverse_2d(dp2d, a, c, b, init_step)                   ! proceed with 2D traversal
         
     else                                                                ! movement to all directions
       init_step(1) = 0.5                                                ! cell center for a direction
       init_step(2) = 0.5                                                ! cell center for b direction
       init_step(3) = 1                                                  ! cell wall for c direction (ray propagation direction)
-      call traverse_3d (self, dp, a, b, c, init_step)                   ! proceed with 3D traversal
+      call self%traverse_3d (dp, a, b, c, init_step)                    ! proceed with 3D traversal
     end if
       
   end do
@@ -620,10 +666,10 @@ END SUBROUTINE add_diag
 !> ray direction (b), fixed coordinate (fc), starting position (init_step)
 !> =====================================================================
 SUBROUTINE traverse_2d(self, dp, a, b, fc, init_step)
-  class(ray_geometry_t)              :: self
-  class(ray_point_t), pointer        :: ray
-  class(single_ray_list_t) , pointer :: ray_bundle
-  class(traverse_2d_t), pointer      :: t
+  class(ray_geometry_t) :: self
+  class(ray_point_t), pointer :: ray
+  class(single_ray_bundle_t), pointer :: ray_bundle
+  class(traverse_2d_t), pointer :: t
   integer :: a, b, fc, ia, ib
   real    :: dp(2), init_step(3), I_up(3), lw(3)
   logical :: first_point
@@ -631,9 +677,6 @@ SUBROUTINE traverse_2d(self, dp, a, b, fc, init_step)
 call trace_begin('traverse_2d_t%traverse_2d',4)
   allocate(t)                                                           ! allocate traversal object
   allocate(ray_bundle)                                                  ! create ray tree to store rays
-  ray_bundle%axis = self%axis
-  ray_bundle%theta = self%theta
-  ray_bundle%phi = self%phi
   
   call t%init(dp, self%ui, self%li, a, b, fc)                           ! initialize traversal object
   
@@ -684,7 +727,7 @@ END SUBROUTINE traverse_2D
 SUBROUTINE traverse_3d(self, dp, a, b, c, init_step)
   class(ray_geometry_t)             :: self
   class(ray_point_t),       pointer :: ray
-  class(single_ray_list_t), pointer :: ray_bundle
+  class(single_ray_bundle_t), pointer :: ray_bundle
   class(traverse_3d_t),     pointer :: t
   integer            :: a, b, c, ia, ib
   real, dimension(3) :: init_step, dp, I_up
@@ -693,9 +736,6 @@ SUBROUTINE traverse_3d(self, dp, a, b, c, init_step)
   call trace_begin('traverse_3d_t%traverse_3d')
   allocate(t)                                                           ! allocate traversal object
   allocate(ray_bundle)                                                  ! create ray tree to store rays
-  ray_bundle%axis = self%axis
-  ray_bundle%theta = self%theta
-  ray_bundle%phi = self%phi
   
   call t%init(dp, self%ui, self%li, a, b, c)                            ! initialize traversal object
  
@@ -1414,13 +1454,13 @@ SUBROUTINE add_ray_point(self, p)
     point%prev%next => point
     point%head => self%head
     self%tail => point
-    self%head%n_points = self%head%n_points + 1      ! increment number of points in this ray
+    self%head%n_points = self%head%n_points + 1                         ! increment number of points in this ray
   else
     self%head => point
     self%tail => point
     self%head%n_points = 1
   end if
-  point%coords   = p                                 ! set coordinates
+  point%coords   = p                                                    ! set coordinates
   call trace_end
 END SUBROUTINE add_ray_point
 
@@ -1431,15 +1471,15 @@ END SUBROUTINE add_ray_point
 !> INPUT: self, linked list of ray points (ray_point)
 !> =====================================================================
 
-SUBROUTINE fill_single_ray_data(self, ray_pt)
-  class(single_ray_list_t) :: self
-  class(ray_point_t), pointer :: ray_pt, prev, ray
+SUBROUTINE fill_single_ray_data(self, ray)
+  class(single_ray_t) :: self
+  class(ray_point_t), pointer :: ray, prev
   integer :: pt
 ! ......................................................................
-   prev => ray_pt%tail
-   ray  => ray_pt%head
+  prev => ray%tail
+  ray  => ray%head
    
-  self%lwall    = ray%lwall                                             ! store lower wall
+  self%lwall    = ray%lwall                                          ! store lower wall
   self%uwall    = prev%uwall                                            ! store upper wall
   self%n_points = ray%n_points                                          ! store number of points in this ray
    
@@ -1460,259 +1500,260 @@ SUBROUTINE fill_single_ray_data(self, ray_pt)
     deallocate(prev)                                                    ! deallocate previous point
     pt = pt+1
   end do
-  deallocate(ray_pt)
 END SUBROUTINE fill_single_ray_data
 
-
 SUBROUTINE finish_ray(self, ray_point)
-  class(single_ray_list_t)           :: self
-  class(single_ray_list_t), pointer  :: ray, bundle, packet
-  class(ray_point_t),       pointer  :: ray_point
+  class(single_ray_bundle_t) :: self
+  class(single_ray_bundle_t), pointer :: bundle
+  class(single_ray_packet_t), pointer :: packet
+  class(single_ray_t), pointer  :: ray
+  class(ray_point_t),  pointer  :: ray_point
   logical :: fnd_p, fnd_b
 ! ......................................................................
   call trace_begin('ray_geometry_t%finish_ray')
-  
   
   allocate (ray)                                                        ! allocate ray list
   call ray%fill_single_ray_data(ray_point)
   
   if (.not.associated(self%head)) then                                  ! if the ray tree is empty
-    self%head        => ray
-    ray%last_bundle  => ray
-    ray%first_packet => ray
-    ray%last_packet  => ray
-    ray%first_ray    => ray
-    ray%last_ray     => ray
-    ray%bundle_ID = 1                                                   ! first bundle in this list
-    ray%packet_ID = 1                                                   ! first packet in this bundle
-    ray%n_rays    = 1                                                   ! number of rays
-    ray%max_n_points = ray%n_points                                     ! max number of points in this ray list
+    allocate(bundle)
+    self%head => bundle
+    self%tail => bundle
+    bundle%lwall = ray%lwall
+    bundle%uwall = ray%uwall
   else
-    ray%head => self%head                                               ! must be created
     bundle => self%head
     fnd_b = .false.
-    
-    do while (associated(bundle).and..not.fnd_b)                        ! Find the right bundle
+    do while (associated(bundle).and..not.fnd_b)
       if (all(bundle%lwall == ray%lwall).and. &                         ! bundles are defined by which walls
           all(bundle%uwall == ray%uwall)) then                          ! the ray enters and leaves the patch
         fnd_b = .true.
       else
-        bundle => bundle%next_bundle
+        bundle => bundle%next
       end if
     end do
-    
-    if (.not.fnd_b) then                                                ! bundle is not found, therefore a new one
-      ray%prev_bundle => self%head%last_bundle
-      ray%prev_bundle%next_bundle => ray
-      self%head%last_bundle => ray
-      ray%first_packet => ray
-      ray%last_packet  => ray
-      ray%first_ray    => ray
-      ray%last_ray     => ray
-      ray%bundle_ID    =  ray%prev_bundle%bundle_ID + 1                 ! get new bundle ID
-      ray%packet_ID    =  1                                             ! first packet in this bundle
-      ray%n_rays       =  1
-      ray%max_n_points =  ray%n_points
-    else                                                                ! we found the bundle, now let's look for the right packet
-      fnd_p = .false.
-      packet => bundle%first_packet
-      ray%bundle_ID = bundle%bundle_ID
-      
-      do while (associated(packet).and..not.fnd_p)
-        if (ray%n_points == packet%n_points) then                       ! rays with same number of points are packed together
-          fnd_p = .true.
-        else
-          packet => packet%next_packet
-        end if
-      end do
-      
-      if (fnd_p) then                                                   ! the right packet found. Add this ray to this packet.
-        packet%n_rays = packet%n_rays + 1                               ! increment number of rays in this packet
-        
-        ray%packet_ID = packet%packet_ID
-        ray%first_ray => packet
-        ray%prev_ray  => packet%last_ray
-        ray%prev_ray%next_ray => ray
-        packet%last_ray => ray
-      else                                                              ! the right packet not found. Create a new packet.
-        ray%first_packet => bundle
-        ray%prev_packet  => bundle%last_packet
-        ray%prev_packet%next_packet => ray
-        ray%first_ray => ray
-        ray%last_ray  => ray
-        bundle%last_packet => ray
-        ray%packet_ID = ray%prev_packet%packet_ID + 1                   ! get new packet ID
-        ray%n_rays    = 1
-        ray%max_n_points =  ray%n_points
-      end if
-      
+    if(.not.fnd_b) then
+      allocate(bundle)
+      bundle%head => self%head
+      bundle%prev => self%tail
+      bundle%prev%next => bundle
+      self%tail => bundle
+      bundle%lwall = ray%lwall
+      bundle%uwall = ray%uwall
     end if
-  end if 
+  end if  
+    
+  if (.not.associated(bundle%packets)) then
+    allocate(packet)
+    bundle%packets => packet
+    packet%head => packet
+    packet%tail => packet
+    packet%n_rays = 1
+    packet%n_points = ray%n_points
+  else
+    packet => bundle%packets
+    fnd_p = .false.
+    do while (associated(packet).and..not.fnd_p)
+      if (ray%n_points == packet%n_points) then                         ! rays with same number of points are packed together
+        fnd_p = .true.
+        packet%n_rays = packet%n_rays + 1
+      else
+        packet => packet%next
+      end if
+    end do
+    if(.not.fnd_p) then
+      allocate(packet)
+      packet%head => bundle%packets
+      packet%prev => bundle%packets%tail
+      packet%prev%next => packet
+      bundle%packets%tail => packet
+      packet%n_rays = 1
+      packet%n_points = ray%n_points
+    end if
+  end if
+  
+  if (.not.associated(packet%rays)) then
+    packet%rays => ray
+    ray%head => ray
+    ray%tail => ray
+  else
+    ray%head => packet%rays
+    ray%prev => packet%rays%tail
+    ray%prev%next => ray
+    packet%rays%tail => ray
+  end if
+
   nullify (ray, bundle, packet, ray_point)
   call trace_end
 END SUBROUTINE finish_ray
 
+SUBROUTINE fill_ray_list_data(self, sray)
+  class(ray_t) :: self
+  class(single_ray_t), pointer :: sray, prev_sray
+  integer :: iray
+! ......................................................................
+  allocate (self%cell_coords(3,self%n_points,self%n_rays))              ! cell coords per point per ray in the bundle
+  allocate (self%ds(self%n_rays,self%n_points))                         ! ds per point per ray in the bundle
+  allocate (self%fwd_coords(3,self%n_rays))                             ! upstream cell coords per ray
+  allocate (self%rev_coords(3,self%n_rays))                             ! downstream cell coords per ray
+  allocate (self%pt_wall(3,2,self%n_points,self%n_rays))                ! wall info per point per ray
+  
+  sray => sray%head
+  iray = 0
+  do while (associated(sray))                                           ! loop over all rays in the tree
+    iray = iray + 1
+    self%cell_coords(:,:,iray) = sray%cell_coords                       ! save cell cords
+    self%ds(iray,:)            = sray%ds(:)                             ! save distances, traveled in those cells
+    self%pt_wall(:,:,:, iray)  = sray%cell_walls                        ! save wall crossing info per point per ray
+    self%fwd_coords(:,iray)    = sray%fwd_coords                        ! save upstream coords
+    self%rev_coords(:,iray)    = sray%rev_coords                        ! save downstream coords
+    prev_sray   => sray                                                 ! hold pointer to this ray
+    deallocate(sray%cell_coords, sray%ds, sray%cell_walls)
+    sray => sray%next                                                   ! go to next ray
+    deallocate (prev_sray)                                              ! deallocate previous ray
+  end do
+  nullify (sray, prev_sray)
+END SUBROUTINE fill_ray_list_data
+
 !> =====================================================================
 !> Subroutine to restructure ray tree into 2D sorted ray tables.
 !> =====================================================================
-SUBROUTINE finish_single_ray_list(self, bundle)
-  class(ray_geometry_t)             :: self
-  class(single_ray_list_t), pointer :: bundle, prev_bundle, next_bundle
-  class(single_ray_list_t), pointer :: packet, prev_packet, next_packet
-  class(ray_list_t),        pointer :: ray 
-  integer :: iray, npt, pt, bundle_n_rays
-  logical :: first_bundle
-  logical :: first_packet = .true.
-  logical :: new_bundle
+SUBROUTINE finish_single_ray_list(self, sbundle)
+  class(ray_geometry_t) :: self
+  class(ray_dirs_t), pointer :: dir
+  class(ray_bndl_t), pointer :: bundle
+  class(ray_t)     , pointer :: ray
+  ! ---
+  class(single_ray_bundle_t), pointer :: sbundle, sb_prev
+  class(single_ray_packet_t), pointer :: spacket, sp_prev
+  class(single_ray_t),   pointer :: sray
 ! ......................................................................
-  first_bundle = .true.
-  bundle => bundle%head
-  do while (associated(bundle))                                         ! loop over ray bundles to be saved
-    bundle_n_rays = 0
-    packet => bundle%first_packet
-    first_packet = .true.
-    new_bundle = .true.
-    self%n_ray_bundles = self%n_ray_bundles + 1                         ! increment ray bundle sets
-    do while (associated(packet))                                       ! loop over ray packets in this bundle
+  
+  ! --- Sort out direction issues ---
+  allocate (dir)                                                        ! create new ray direction
+  if (associated(self%ray_list%head)) then                              ! if ray list is not empty
+    dir%prev => self%ray_list%tail
+    dir%prev%next => dir
+    self%ray_list%tail => dir
+    dir%head => self%ray_list%head
+  else
+    self%ray_list => dir
+    self%ray_list%head => dir                                           ! if empty, point to itself
+    self%ray_list%tail => dir
+  end if
+  
+  dir%ID = self%n_ray_dirs
+  dir%n_bundles = 0
+  dir%directionality = self%dr
+  
+  ! --- Go through single bundles ---
+  sbundle => sbundle%head
+  do while (associated(sbundle))                                        ! loop over ray bundles to be saved
+    dir%n_bundles = dir%n_bundles + 1
+    allocate(bundle)
+    bundle%dir_ID = dir%ID
+    bundle%axis  = self%axis
+    bundle%theta = self%theta
+    bundle%phi   = self%phi
+    if (.not.associated(dir%bundle)) then
+      dir%bundle => bundle
+      bundle%head => bundle
+      bundle%tail => bundle
+      bundle%ID = 1
+    else
+      bundle%head => dir%bundle
+      bundle%prev => dir%bundle%tail
+      bundle%prev%next => bundle
+      dir%bundle%tail => bundle
+      bundle%ID = bundle%prev%ID
+    end if
     
-      allocate (ray)                                                    ! alocate new ray packet
-      bundle_n_rays = bundle_n_rays + 1
-      ray%dir_ID    = self%n_ray_dirs                                   ! save direction ID
-      ray%n_rays    = packet%n_rays                                     ! save number of rays in this bundle 
-      ray%n_points  = packet%n_points                                   ! save  number of points in the longest ray                
-      ray%lwall     = bundle%lwall                                      ! save lower wall for this bundle
-      ray%uwall     = bundle%uwall                                      ! save upper wall for this bundle
-      ray%axis      = self%axis
-      ray%theta     = self%theta
-      ray%phi       = self%phi
-      ray%directionality = self%dr
+    bundle%lwall = sbundle%lwall
+    bundle%uwall = sbundle%uwall
+    bundle%n_packets = 0
     
-      if (new_bundle) then                                                ! only if it is a new bundle
-      
-        if (first_bundle) then
-          first_bundle = .false.                                          ! more steps for first bundle are needed
-          ray%bundle_ID = 1
-          if (associated(self%ray_list%head)) then                        ! if ray bundle list is already present
-            ray%prev_dir => self%ray_list%last_dir                        ! add this bundle to the end of the direction list
-            ray%prev_dir%next_dir => ray                                  ! connect to previous direction
-            self%ray_list%last_dir => ray                                 ! make it the last direction
-            ray%head     => self%ray_list%head                            ! connect to the head of the ray list
-          else                                                            ! if ray bundle list is empty
-            self%ray_list%head => ray                                     ! link to self
-            self%ray_list%last_dir => ray
-          end if
-           
-          ray%first_bundle => ray                                         ! this is the first bundle for this direction
-          ray%last_bundle  => ray                                         ! and also the last bundle for this direction
-          print *,associated(self%ray_list%last_dir%last_bundle)
-        else
-        
-          ray%head => self%ray_list%head                                  ! connect to the head of the ray list
-          ray%first_bundle => self%ray_list%last_dir%first_bundle         ! connect to the first bundle in this direction
-          ray%prev_bundle  => self%ray_list%last_dir%last_bundle          ! connect to previous bundle in this direction
-          ray%prev_bundle%next_bundle => ray                              ! connect previous bundle to this ray
-          self%ray_list%last_dir%last_bundle => ray                       ! make it the last bundle in this direction
-          ray%bundle_ID = ray%prev_bundle%bundle_ID + 1
-        end if  
-      end if
-    
-      if (first_packet) then                                              ! now the same for packets
-        first_packet = .false.
-        ray%first_packet => ray
-        ray%last_packet  => ray
-        ray%packet_ID = 1
+    ! --- Go through single packets ---
+    spacket => sbundle%packets
+    do while (associated(spacket))
+      bundle%n_packets = bundle%n_packets + 1
+      allocate(ray)
+      if (.not.associated(bundle%rays)) then
+        bundle%rays => ray
+        ray%head => ray
+        ray%tail => ray
+        ray%ID = 1
       else
-        ray%first_packet => self%ray_list%last_dir%last_bundle%first_packet ! connect to the first packet in this bundle
-        ray%prev_packet  => self%ray_list%last_dir%last_bundle%last_packet ! connect to the previous packet in this bundle
-        print *, ray%packet_ID, ray%bundle_id
-        print *, associated(self%ray_list), associated(self%ray_list%last_dir),&
-        associated(self%ray_list%last_dir%last_bundle)
-        ray%prev_packet%next_packet => ray
-        self%ray_list%last_dir%last_bundle%last_packet => ray
-        ray%packet_ID = ray%prev_packet%packet_ID + 1
-      end if      
-     
-  ! Save the data
-
-      allocate (ray%cell_coords(3,ray%n_points,ray%n_rays))               ! cell coords per point per ray in the bundle
-      allocate (ray%ds(ray%n_rays,ray%n_points))                          ! ds per point per ray in the bundle
-      allocate (ray%fwd_coords(3,ray%n_rays))                             ! upstream cell coords per ray
-      allocate (ray%rev_coords(3,ray%n_rays))                             ! downstream cell coords per ray
-      allocate (ray%pt_wall(3,2,ray%n_points,ray%n_rays))                 ! wall info per point per ray
-    
-      next_packet => packet%next_packet
-      iray = 0
-      do while (associated(packet))                                       ! loop over all rays in the tree
-        iray = iray + 1
-        ray%cell_coords(:,:,iray) = packet%cell_coords                    ! save cell cords
-        ray%ds(iray,:)            = bundle%ds(:)                          ! save distances, traveled in those cells
-        ray%pt_wall(:,:,:, iray)  = bundle%cell_walls                     ! save wall crossing info per point per ray
-        ray%fwd_coords(:,iray)    = bundle%fwd_coords                     ! save upstream coords
-        ray%rev_coords(:,iray)    = bundle%rev_coords                     ! save downstream coords
-        prev_packet   => packet                                           ! hold pointer to this ray
-        packet => packet%next_ray                                         ! go to next ray
-        deallocate (prev_packet)                                          ! deallocate previous ray
-      end do
-      packet => next_packet                                             ! move to next packet
+        ray%head => bundle%rays
+        ray%prev => bundle%rays%tail
+        ray%prev%next => ray
+        bundle%rays%tail => ray
+        ray%ID = ray%prev%ID
+      end if
+      
+      ray%n_rays = spacket%n_rays
+      ray%n_points = spacket%n_points
+      call ray%fill_ray_list_data(spacket%rays)
+      sp_prev => spacket
+      spacket => spacket%next
+      deallocate(sp_prev)
     end do
-    
-    prev_bundle => bundle
-    ray%bundle_n_rays = bundle_n_rays
-    bundle => bundle%next_bundle                                        ! move to next bundle
-    deallocate (prev_bundle)
+    sb_prev => sbundle
+    sbundle => sbundle%next
+    deallocate(sb_prev)
   end do
-  nullify (bundle)
-  nullify (packet)
-  nullify (ray)
+
 END SUBROUTINE finish_single_ray_list
 
 !> =====================================================================
 !> Sort through the ray geometry list and select appropriate ray bundles
 !> for particular direction
 !> =====================================================================
-SUBROUTINE get_my_bundle (self, bundle, bundle_ID)
+SUBROUTINE get_my_bundle (self, bundle, d_ID, b_ID)
   class(ray_geometry_t) :: self
-  class(ray_list_t), pointer :: list_dir, list_bundle, bundle
-  integer :: bundle_ID
-  logical :: bundle_found
+  class(ray_bndl_t), pointer :: bundle
+  class(ray_dirs_t), pointer :: dir
+  integer :: b_ID, d_ID
+  logical :: df, bf
 !-----------------------------------------------------------------------
-  bundle_found = .false.
-  list_dir => self%ray_list%head
-  list_bundle => list_dir
-  do while (associated(list_dir).and.(bundle_found.eqv..false.))
-    do while (associated(list_bundle).and.(bundle_found.eqv..false.))
-      if (bundle_ID == list_bundle%bundle_id) then
-        bundle_found = .true.
-        bundle => list_bundle
-      else
-        list_bundle => list_bundle%next_bundle
-      end if
-    end do
-    if (bundle_found.eqv..true.) then 
-      return
+  df = .false.
+  dir => self%ray_list%head
+  do while (associated(dir).and.(.not.df))
+    if (dir%id == d_ID) then
+      df = .true.
     else
-      list_dir => list_dir%next_dir
-      list_bundle => list_dir
+      dir => dir%next
     end if
   end do
-  if (bundle_found.eqv..false.) then
-  error stop "Appropriate direction not found. Very strange."
-  end if
+  
+  if (df) then
+    bf = .false.
+    bundle => dir%bundle
+    do while(associated(bundle).and.(.not.bf))
+      if (bundle%id == b_ID) then
+        bf = .true.
+      else
+        bundle => bundle%next
+      end if
+    end do
+    if (.not.bf) error stop "Appropriate bundle not found"
+  else
+    error stop "Appropriate ray direction not found"  
+  end if  
+  
 END SUBROUTINE get_my_bundle
 
 
 SUBROUTINE test_ray_geometry(self, dir, bundle_ID, ray)
   class(ray_geometry_t) :: self
-  class(ray_list_t), pointer :: list_dir, list_bundle, bundle
+  class(ray_bndl_t), pointer :: bundle
   integer :: dir, bundle_ID, ray, pt, p(3)
   
-  call self%get_my_bundle(bundle, bundle_ID)
+  call self%get_my_bundle(bundle, dir, bundle_ID)
   
   print *, 'Testing ray_geom for dir_ID, bundle_ID, ray:',bundle%dir_ID, bundle_ID, ray
-  print *, 'n_rays in bundle:',bundle%n_rays
+  print *, 'packets in bundle:',bundle%n_packets
   print *, 'lwall, uwall', bundle%lwall, bundle%uwall
-  print *, 'n_points in test ray:',bundle%n_points
-  print *, 'cell coords in ray domain , ray info from cell domain'
+  print *, 'n_points in test ray:',bundle%rays%n_points
   
 END SUBROUTINE test_ray_geometry
 
