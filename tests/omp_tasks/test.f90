@@ -1,29 +1,44 @@
 !> *****************************************************************************
-!> Module with list handling for generic class task_t objects
 PROGRAM test
+  USE omp_lib
   USE mpi_mod
   USE omp_mod
   USE omp_timer_mod
   implicit none
-  integer:: i, j
+  integer:: i, j, n, parent, child, task
   !-----------------------------------------------------------------------------
   call mpi%init
   call omp%init
-  !$omp parallel
-  !$omp single
-  do i=0,10
-    if (i==mpi%rank) then
-      j = i
-      !$omp task
-      print*,mpi%rank,omp%thread,j,' start'
-      call delay (real(mpi%rank+2))
-      print*,mpi%rank,omp%thread,j,' end'
-      !$omp end task
-    end if
+  !-----------------------------------------------------------------------------
+  ! Each of the OMP_NUM_THREAD tasks makes 10 iterations, each time spawning a
+  ! new task, which is costly.  The total number of tasks started is thus 10*
+  ! omp_num_threads(). When the omp_num_thread() tasks are finished with the 
+  ! loop (takes very little time), they wait for their 10 sub-tasks, which means
+  ! their thread is suspended, and may in fact take on any of the sub-tasks.
+  ! When all 10 sub-tasks are done, the initial thread wakes up and finishes.
+  !-----------------------------------------------------------------------------
+  n = 0
+  call tic
+  !$omp parallel private (parent, child)
+  do i=1,10
+    parent = omp_get_thread_num()
+    !$omp task
+    !$omp critical
+    n = n+1
+    task = n
+    !$omp end critical
+    child = omp_get_thread_num()
+    print*,mpi%rank,parent,' starts', child,' on task',task
+    call delay (real(mpi%rank+2))
+    child = omp_get_thread_num()
+    print*,mpi%rank,parent,'   ends', child,' on task',task
+    !$omp end task
   end do
-  !$omp end single
-  print*,mpi%rank,omp%thread,' done'
+  print*,mpi%rank,parent,' loop done'
+  !$omp taskwait
+  print*,mpi%rank,parent,' wait done'
   !$omp end parallel
+  call toc ('took')
   call mpi%end
 CONTAINS
   !-----------------------------------------------------------------------------
