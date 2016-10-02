@@ -25,7 +25,8 @@ MODULE task_mod
     integer(8):: nupdate=0
   end type
   type(thread_t), dimension(:), pointer:: threads
-  integer, save:: nx=5, ny=5, ntask
+  integer, save:: nx=21, ny=21, ntask
+  integer(8):: n
   real, save:: rn=3e8
   character(len=64), save:: format='(i10,f12.6,2x,a20,3i5,3x,2f6.2)'
 CONTAINS
@@ -52,10 +53,10 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE update (self)
   class(task_t):: self
-  integer(8):: i, n, thread
+  integer(8):: i, thread
   !-----------------------------------------------------------------------------
   self%n = 0
-  n = rn
+  n = rn*5**2/nx**2
   do i=1,n
     self%n = self%n+i
   end do
@@ -139,8 +140,9 @@ PROGRAM test
   write (*,format) omp_get_thread_num(),wallclock(),'  after taskwait'
   wc = wallclock()-wc
   print '(a20,f7.3)','total time =', wc
-  print '(a20,f7.3)','nanosec/iteration =', 1e9*wc*min(ncore,omp_get_num_threads())/(rn*ntask)
+  print '(a20,f7.3)','nanosec/iteration =', 1e9*wc*min(ncore,omp_get_num_threads())/(n*ntask)
   print '(a20,i7)'  ,'number of tasks   =', ntask
+  print '(a20,f7.3)','millisec per task =', 1e3*wc*min(ncore,omp_get_num_threads())/ntask
   print '(a20,20i5)'  ,'number of updates =', threads%nupdate
   !$omp end master
   !$omp end parallel
