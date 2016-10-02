@@ -114,15 +114,17 @@ PROGRAM test
   end do
   write (*,format) omp_get_thread_num(),wallclock(),'created task', task%id, task%ix, task%iy
   !-----------------------------------------------------------------------------
-  ! Start an OMP task chain for each boundary task_t instance, five times
+  ! Start an OMP task chain for each boundary task_t instance, five times.
+  ! Note that is NECESSARY that new OMP task created in the do loop creates
+  ! a private copy of the task pointer, since otherwise it will become modified
+  ! in the next iteration, possibly / likely even before the task actually starts.
   !-----------------------------------------------------------------------------
   do iter=1,5
     task => head
     do while (associated(task))
       if (task%iy==1) then
-        tmp => task
-        !$omp task firstprivate (tmp)
-        call tmp%update
+        !$omp task firstprivate (task)
+        call task%update
         !$omp end task
       end if
       task => task%next
