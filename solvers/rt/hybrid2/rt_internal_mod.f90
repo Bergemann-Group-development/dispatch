@@ -654,8 +654,9 @@ SUBROUTINE update_q (self, rays, q, op)
   real, dimension(:,:,:,:), pointer :: qq
   integer, dimension(:,:,:), pointer :: cell
   real :: dirw
+  integer, save:: itimer=0
   !---------------------------------------------------------------------
-  call trace_begin ('rt_internal_t_%update_q',4)
+  call trace_begin ('rt_internal_t_%update_q', 4, itimer=itimer)
   dirw = self%dir_weight
   qq => self%mhd_patch%rt_q%q
   cell => rays%cell_coords
@@ -668,7 +669,7 @@ SUBROUTINE update_q (self, rays, q, op)
       end do
     end do
   end do
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE update_q
 
 !> =====================================================================
