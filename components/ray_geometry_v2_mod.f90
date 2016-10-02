@@ -98,6 +98,7 @@ MODULE ray_geometry_v2_mod
     integer :: cell_dims(3)
     integer :: geometry = 1 !cartesian = 1, spherical = 2, cylindrical = 3
     logical :: init_done = .false.
+    logical :: space_diagonals = .true.
     integer :: axis, dr(3)                                              ! convenience
     real    :: theta, phi                                               ! convenience
   contains
@@ -286,8 +287,10 @@ SUBROUTINE init_cartesian(self)
   real, dimension(5)              :: xti=0.0, yti=0.0, zti=0.0
   integer, save                   :: nx=1, ny=0, nz=0
   integer, save                   :: dx=0, dy=0, dz=0
+  logical, save                   :: space_diagonals=.true.
 ! ......................................................................
-  namelist /cartesian_ray_geometry_params/ nx, ny, nz, xti, yti, zti, dx, dy, dz
+  namelist /cartesian_ray_geometry_params/ &
+    nx, ny, nz, xti, yti, zti, dx, dy, dz, space_diagonals
 ! ......................................................................
   call trace_begin('ray_geometry_t%init_cartesian',2)
   !> TO DO: add an option for 2D simulation setup (i.e. any(cell_dims) == 0)
@@ -301,6 +304,7 @@ SUBROUTINE init_cartesian(self)
   self%dr(1) = dx
   self%dr(2) = dy
   self%dr(3) = dz
+  self%space_diagonals = space_diagonals
   d45 = 0                                                               ! flag for 45 degree angles
   if (nx > 0) then
     allocate (xt(nx)); xt = xti(1:nx)
@@ -586,8 +590,13 @@ SUBROUTINE add_diag(self, rep, dir)
 
   SELECT case(rep)                                                      ! 45 degree rays can be added only twice
   case(1)
-    nphi = 8
-    phis(1:8) = (/0., 45., 90., 135., 180., 225., 270., 315./)/radian
+    if (self%space_diagonals) then
+      nphi = 8
+      phis(1:8) = (/0., 45., 90., 135., 180., 225., 270., 315./)/radian
+    else
+      nphi = 4
+      phis(1:4) = (/0., 90., 180., 270./)/radian
+    end if
   case(2)
     nphi = 2
     phis(1:2) = (/90., 270./)/radian

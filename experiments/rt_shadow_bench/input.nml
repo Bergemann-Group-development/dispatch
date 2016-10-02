@@ -1,5 +1,5 @@
 &io_params
- verbose=1
+ verbose=4
  do_trace=f
  do_debug=f
  do_output=f
@@ -25,7 +25,7 @@
  nt=5
  courant=0.2
  grace=0.1
- n=24,24,24
+ n=21,21,21
 /
 
 &rt_params
@@ -40,6 +40,8 @@ nx = 2 xti = 0.,45. dx = 1
 ny = 2 yti = 0.,45. dy = 1
 ! along z axis
 nz = 2 zti = 0.,45. dz = 1
+! use space_diagonals?
+space_diagonals=t
 /
 
 &ray_geometry_params
