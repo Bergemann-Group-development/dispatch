@@ -1,0 +1,161 @@
+CYGWIN_NT-6.1 Aake-T430s 2.3.1(0.291/5/3) 2015-11-14 12:44 x86_64 Cygwin
+model name	: Intel(R) Core(TM) i7-3520M CPU @ 2.90GHz
+loop length = 3.E+08
+ number of   cores =           2
+ number of threads =           5
+         0    0.000023          created task    1    1    1
+         0    0.000044          created task    2    1    2
+         0    0.000054          created task    3    1    3
+         0    0.000064          created task    4    1    4
+         0    0.000073          created task    5    1    5
+         0    0.000082          created task    6    2    1
+         0    0.000093          created task    7    2    2
+         0    0.000102          created task    8    2    3
+         0    0.000112          created task    9    2    4
+         0    0.000121          created task   10    2    5
+         0    0.000131          created task   11    3    1
+         0    0.000140          created task   12    3    2
+         0    0.000150          created task   13    3    3
+         0    0.000159          created task   14    3    4
+         0    0.000168          created task   15    3    5
+         0    0.000178          created task   16    4    1
+         0    0.000188          created task   17    4    2
+         0    0.000197          created task   18    4    3
+         0    0.000208          created task   19    4    4
+         0    0.000218          created task   20    4    5
+         0    0.000229          created task   21    5    1
+         0    0.000238          created task   22    5    2
+         0    0.000248          created task   23    5    3
+         0    0.000257          created task   24    5    4
+         0    0.000267          created task   25    5    5
+         0    0.040540       before taskwait
+         1    0.122959    update   end: task    6    2    1     1.00
+         2    0.127532    update   end: task    1    1    1     1.00
+         3    0.146830    update   end: task   11    3    1     1.00
+         1    0.252699    update   end: task    7    2    2     1.00
+         2    0.259075    update   end: task    2    1    2     1.00
+         4    0.276812    update   end: task   16    4    1     1.00
+         3    0.284982    update   end: task   12    3    2     1.00
+         0    0.308860    update   end: task   21    5    1     1.00
+         1    0.380790    update   end: task    8    2    3     1.00
+         2    0.390954    update   end: task    3    1    3     1.00
+         3    0.422073    update   end: task   13    3    3     1.00
+         1    0.501951    update   end: task    9    2    4     1.00
+         2    0.522135    update   end: task    4    1    4     1.00
+         3    0.564295    update   end: task   14    3    4     1.00
+         4    0.565529    update   end: task   17    4    2     1.00
+         0    0.596074    update   end: task   22    5    2     1.00
+         1    0.633182    update   end: task   10    2    5     1.00
+         2    0.652623    update   end: task    5    1    5     1.00
+         3    0.705310    update   end: task   15    3    5     1.00
+         1    0.760388    update   end: task   21    5    1     2.00
+         2    0.781000    update   end: task    1    1    1     2.00
+         4    0.840408    update   end: task   18    4    3     1.00
+         3    0.848167    update   end: task    6    2    1     2.00
+         0    0.869979    update   end: task   23    5    3     1.00
+         1    0.888008    update   end: task   22    5    2     2.00
+         2    0.910090    update   end: task    2    1    2     2.00
+         3    0.991543    update   end: task    7    2    2     2.00
+         1    1.012902    update   end: task   23    5    3     2.00
+         2    1.040782    update   end: task    3    1    3     2.00
+         4    1.126545    update   end: task   19    4    4     1.00
+         3    1.129698    update   end: task    8    2    3     2.00
+         1    1.139730    update   end: task   24    5    4     1.00
+         0    1.157285    update   end: task   24    5    4     2.00
+         2    1.169652    update   end: task    4    1    4     2.00
+         2    1.281453    update   end: task    5    1    5     2.00
+         1    1.282149    update   end: task   25    5    5     1.00
+         3    1.309883    update   end: task    9    2    4     2.00
+         1    1.409441    update   end: task   16    4    1     2.00
+         4    1.410911    update   end: task   20    4    5     1.00
+         2    1.413087    update   end: task   11    3    1     2.00
+         0    1.441578    update   end: task   25    5    5     2.00
+         3    1.447321    update   end: task   10    2    5     2.00
+         1    1.536679    update   end: task   17    4    2     2.00
+         2    1.541371    update   end: task   12    3    2     2.00
+         3    1.590784    update   end: task    1    1    1     3.00
+         1    1.660088    update   end: task   18    4    3     2.00
+         2    1.672398    update   end: task   13    3    3     2.00
+         4    1.696214    update   end: task   21    5    1     3.00
+         0    1.726913    update   end: task   16    4    1     3.00
+         3    1.728462    update   end: task    2    1    2     3.00
+         1    1.789137    update   end: task   19    4    4     2.00
+         2    1.800931    update   end: task   14    3    4     2.00
+         3    1.877270    update   end: task    3    1    3     3.00
+         1    1.918768    update   end: task   20    4    5     2.00
+         2    1.930428    update   end: task   15    3    5     2.00
+         4    2.001067    update   end: task   22    5    2     3.00
+         3    2.020311    update   end: task    4    1    4     3.00
+         0    2.030740    update   end: task   17    4    2     3.00
+         1    2.048064    update   end: task    6    2    1     3.00
+         2    2.061679    update   end: task   11    3    1     3.00
+         2    2.170159    update   end: task   12    3    2     3.00
+         1    2.192807    update   end: task    7    2    2     3.00
+         3    2.208868    update   end: task    5    1    5     3.00
+         4    2.272425    update   end: task   23    5    3     3.00
+         2    2.296283    update   end: task   13    3    3     3.00
+         0    2.306307    update   end: task   18    4    3     3.00
+         1    2.323153    update   end: task    8    2    3     3.00
+         3    2.352645    update   end: task   16    4    1     4.00
+         2    2.424810    update   end: task   14    3    4     3.00
+         1    2.451293    update   end: task    9    2    4     3.00
+         3    2.496234    update   end: task   17    4    2     4.00
+         4    2.545665    update   end: task   24    5    4     3.00
+         2    2.557606    update   end: task   15    3    5     3.00
+         0    2.577744    update   end: task   19    4    4     3.00
+         1    2.581779    update   end: task   10    2    5     3.00
+         3    2.633398    update   end: task   18    4    3     4.00
+         2    2.686113    update   end: task   21    5    1     4.00
+         1    2.713428    update   end: task    1    1    1     4.00
+         3    2.776945    update   end: task   19    4    4     4.00
+         4    2.810391    update   end: task   25    5    5     3.00
+         2    2.814753    update   end: task   22    5    2     4.00
+         0    2.842412    update   end: task   20    4    5     3.00
+         1    2.845433    update   end: task    2    1    2     4.00
+         3    2.920170    update   end: task   20    4    5     4.00
+         2    2.942626    update   end: task   23    5    3     4.00
+         1    2.977233    update   end: task    3    1    3     4.00
+         3    3.064561    update   end: task   11    3    1     4.00
+         4    3.073643    update   end: task    6    2    1     4.00
+         2    3.074407    update   end: task   24    5    4     4.00
+         0    3.106393    update   end: task   11    3    1     5.00
+         1    3.109671    update   end: task    4    1    4     4.00
+         3    3.202032    update   end: task   12    3    2     4.00
+         2    3.205419    update   end: task   25    5    5     4.00
+         1    3.242211    update   end: task    5    1    5     4.00
+         2    3.336499    update   end: task   16    4    1     5.00
+         4    3.336557    update   end: task    7    2    2     4.00
+         3    3.339891    update   end: task   13    3    3     4.00
+         0    3.361628    update   end: task   12    3    2     5.00
+         1    3.374598    update   end: task   21    5    1     5.00
+         3    3.477830    update   end: task   14    3    4     4.00
+         0    3.496229    update   end: task   13    3    3     5.00
+         1    3.507162    update   end: task   22    5    2     5.00
+         4    3.579954    update   end: task    8    2    3     4.00
+         2    3.601983    update   end: task   17    4    2     5.00
+         3    3.615953    update   end: task   15    3    5     4.00
+         0    3.630054    update   end: task   14    3    4     5.00
+         1    3.639122    update   end: task   23    5    3     5.00
+         3    3.758843    update   end: task    1    1    1     5.00
+         0    3.764609    update   end: task   15    3    5     5.00
+         1    3.771190    update   end: task   24    5    4     5.00
+         4    3.837086    update   end: task    9    2    4     4.00
+         2    3.860006    update   end: task   18    4    3     5.00
+         0    3.900379    update   end: task    6    2    1     5.00
+         1    3.902445    update   end: task   25    5    5     5.00
+         3    3.907375    update   end: task    2    1    2     5.00
+         4    3.999640    update   end: task   10    2    5     4.00
+         2    4.020414    update   end: task   19    4    4     5.00
+         3    4.028805    update   end: task    3    1    3     5.00
+         0    4.037956    update   end: task    7    2    2     5.00
+         3    4.116807    update   end: task    4    1    4     5.00
+         2    4.139379    update   end: task   20    4    5     5.00
+         0    4.146323    update   end: task    8    2    3     5.00
+         3    4.200566    update   end: task    5    1    5     5.00
+         0    4.228234    update   end: task    9    2    4     5.00
+         0    4.294422    update   end: task   10    2    5     5.00
+         0    4.294470        after taskwait
+        total time =  4.294
+ nanosec/iteration =  0.229
+ number of tasks   =    125
+ number of updates =   20   30   30   30   15
