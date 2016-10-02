@@ -34,10 +34,8 @@ MODULE rt_internal_mod
     procedure :: check  => check_rt_internal
     procedure :: check_intensities => check_rt_get_intensities
     procedure :: get_upstream
-    procedure :: get_local_static
-    procedure :: get_local_dynamic
-    procedure :: get_remote_static
-    procedure :: get_remote_dynamic
+    procedure :: get_static
+    procedure :: get_dynamic
     procedure :: get_correction_from_BC
     procedure :: solve_internal_integral => solve_internal_integral_2nd
     procedure :: solve_internal_feautrier
@@ -206,18 +204,10 @@ SUBROUTINE get_upstream (self)
       nbor => nbor%next
     end do
 
-    if (local) then                                                     ! select appropriate mode
-      if (static) then
-        call self%get_local_static
-      else
-        call self%get_local_dynamic
-      end if
+    if (static) then
+      call self%get_static
     else
-      if (static) then
-        call self%get_remote_static
-      else
-        call self%get_remote_dynamic
-      end if
+      call self%get_dynamic
     end if
   end if
 
@@ -228,7 +218,7 @@ END SUBROUTINE get_upstream
 !> =====================================================================
 !> Upstream data is on same MPI rank and tasks are not moving.
 !> =====================================================================
-SUBROUTINE get_local_static (self)
+SUBROUTINE get_static (self)
   class(rt_internal_t) :: self
   class(rt_internal_t), pointer :: rt_nb
   class(link_t), pointer :: nbor
@@ -240,7 +230,7 @@ SUBROUTINE get_local_static (self)
   real :: n_mean
   real(8) :: my_c_pos(3)
   !---------------------------------------------------------------------
-  call trace_begin('rt_corrections_mod::get_local_static')
+  call trace_begin('rt_corrections_mod::get_static')
 
   allocate(all_upd(self%my_rays%n_packets))
   all_upd = .false.
@@ -346,7 +336,7 @@ SUBROUTINE get_local_static (self)
 
   if (io%verbose>2) call self%check_intensities(1)
   call trace_end
-END SUBROUTINE get_local_static
+END SUBROUTINE get_static
 
 !> Slow for now. Will be optimised.
 FUNCTION I_retrv(self, nbor, c) result (I_out)
@@ -374,28 +364,11 @@ FUNCTION I_retrv(self, nbor, c) result (I_out)
   call trace_end
 END FUNCTION I_retrv
 
-!> =====================================================================
-!> Upstream data is on different MPI rank, but tasks are not moving.
-!> !!! TEMPORARY REMOVED !!!
-!> =====================================================================
-SUBROUTINE get_remote_static (self)
-  class(rt_internal_t) :: self
-  !---------------------------------------------------------------------
-  error stop "ERROR: remote same static not implemented"
-END SUBROUTINE get_remote_static
-
-SUBROUTINE get_local_dynamic (self)
+SUBROUTINE get_dynamic (self)
   class(rt_internal_t) :: self
   !---------------------------------------------------------------------
   error stop "ERROR: local different dynamic not implemented"
-END SUBROUTINE get_local_dynamic
-
-SUBROUTINE get_remote_dynamic (self)
-  class(rt_internal_t) :: self
-  !---------------------------------------------------------------------
-  error stop "ERROR: remote same dynamic not implemented"
-END SUBROUTINE get_remote_dynamic
-
+END SUBROUTINE get_dynamic
 
 !> =====================================================================
 !> Upstream data is from boundary conditions.
@@ -574,7 +547,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
         ropac(ray,:,pt) = rtd%opacity(p(1),p(2),p(3),:)
       end do
     end do
-    
+
     dtau = self%dtau(ropac)
     I_in = self%packet_data(pck)%bndry
     pt = npt
