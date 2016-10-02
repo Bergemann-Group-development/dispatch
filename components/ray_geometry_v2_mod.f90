@@ -49,7 +49,7 @@ MODULE ray_geometry_v2_mod
     integer, dimension(:,:  ), pointer   :: fwd_coords  => null()       ! x|y|z,                   ray #
     integer, dimension(:,:  ), pointer   :: rev_coords  => null()       ! x|y|z,                   ray #
     real,    dimension(:,:  ), pointer   :: ds          => null()       ! ds   ,        ray point, ray #
-    integer, dimension(:,:,:,:), pointer :: pt_wall     => null()       ! x|y|x, lw|uw, ray point, ray #
+!    integer, dimension(:,:,:,:), pointer :: pt_wall     => null()       ! x|y|x, lw|uw, ray point, ray #
   contains
     procedure :: fill_ray_list_data
     procedure :: print => print_ray
@@ -462,7 +462,7 @@ SUBROUTINE add_axis(self, dir)
   allocate (ray%ds(ray%n_rays,pmax(c)))                                 ! create ds table, containing ds for all points in all rays
   allocate (ray%fwd_coords(3,ray%n_rays))                               ! create table, containing x|y|z coords for upstream position for particular ray, for all rays
   allocate (ray%rev_coords(3,ray%n_rays))                               ! create table, containing x|y|z coords for downstream position for particular ray, for all rays
-  allocate (ray%pt_wall(3,2,pmax(c), ray%n_rays))                       ! lower and upper walls the ray crosses in the cell
+!  allocate (ray%pt_wall(3,2,pmax(c), ray%n_rays))                       ! lower and upper walls the ray crosses in the cell
 
   ray_n = 1                                                             ! ray number
   do ia = self%li(a), self%ui(a)                                        ! iterate over cells in first axis
@@ -476,8 +476,8 @@ SUBROUTINE add_axis(self, dir)
         p(c) = ic                                                       ! current cell position in terms of third axis
         ray%cell_coords(:,rp,ray_n) = p                                 ! cell position in particular ray
         ray%ds(ray_n,rp)            = self%cell_dims(c)                 ! ray patch length in particular cell
-        ray%pt_wall(:,1,rp,ray_n) = bndl%lwall                          ! ray enters the cell through this wall
-        ray%pt_wall(:,2,rp,ray_n) = bndl%uwall                          ! ray leaves the cell through this wall
+!        ray%pt_wall(:,1,rp,ray_n) = bndl%lwall                          ! ray enters the cell through this wall
+!        ray%pt_wall(:,2,rp,ray_n) = bndl%uwall                          ! ray leaves the cell through this wall
         rp = rp+1                                                       ! increment ray point
       end do
       ray%rev_coords(a,ray_n) = p(a)                                    ! downstream position in terms of first axis
@@ -1362,7 +1362,7 @@ SUBROUTINE fill_ray_list_data(self, sray)
   allocate (self%ds(self%n_rays,self%n_points))                         ! ds per point per ray in the bundle
   allocate (self%fwd_coords(3,self%n_rays))                             ! upstream cell coords per ray
   allocate (self%rev_coords(3,self%n_rays))                             ! downstream cell coords per ray
-  allocate (self%pt_wall(3,2,self%n_points,self%n_rays))                ! wall info per point per ray
+!  allocate (self%pt_wall(3,2,self%n_points,self%n_rays))                ! wall info per point per ray
 
   sray => sray%head
   iray = 0
@@ -1370,7 +1370,7 @@ SUBROUTINE fill_ray_list_data(self, sray)
     iray = iray + 1
     self%cell_coords(:,:,iray) = sray%cell_coords                       ! save cell cords
     self%ds(iray,:)            = sray%ds(:)                             ! save distances, traveled in those cells
-    self%pt_wall(:,:,:, iray)  = sray%cell_walls                        ! save wall crossing info per point per ray
+!    self%pt_wall(:,:,:, iray)  = sray%cell_walls                        ! save wall crossing info per point per ray
     self%fwd_coords(:,iray)    = sray%fwd_coords                        ! save upstream coords
     self%rev_coords(:,iray)    = sray%rev_coords                        ! save downstream coords
     prev_sray   => sray                                                 ! hold pointer to this ray
@@ -1525,13 +1525,15 @@ END SUBROUTINE test_ray_geometry
 !> =============================================================================
 SUBROUTINE print_ray (self, i)
   class(ray_t) :: self
-  integer :: i
-  class(ray_t), pointer :: ray
+  integer :: i, j
   !.............................................................................
   if (io%verbose < 3) return
-  write (*,*) '      RAY_PACKET:', i
-  write (*,*) '      number of rays:', self%n_rays
-  write (*,*) '      number of points:', self%n_points
+  write (*,*) '      RAY_PACKET:', i,'   rays:', self%n_rays
+  if (io%verbose < 4) return
+  do j=1,self%n_rays
+    print '("ray, start, stop:",i4,4(3x,3(i4)))', &
+      j, self%rev_coords(:,j), self%fwd_coords(:,j) !, self%pt_wall(:,:,1,j)
+  end do
 END SUBROUTINE print_ray
 
 !> =============================================================================
@@ -1550,10 +1552,10 @@ SUBROUTINE print_bundle (self, i)
     ray => ray%next
   end do
   self%n_points = n
-  write (*,'(1x,a,i3,2(3x,a,f5.0))') &
-    '    RAY_BUNDLE:', i, 'theta:', self%theta*radian, 'phi:', self%phi*radian
-  write (*,*) '    number of packets:', self%n_packets, n
-  write (*,*) '    lwall, uwall:', self%lwall, self%uwall
+  write (*,'(1x,a,i3,2(3x,a,f5.0),2x,a,2(2x,3i3),2x,a,2i5)') &
+    '    RAY_BUNDLE:', i, 'theta:', self%theta*radian, 'phi:', self%phi*radian, &
+    'lwall, uwall:', self%lwall, self%uwall, &
+    'packets, points:', self%n_packets, n
   ray => self%rays
   j = 1
   do while (associated(ray))
