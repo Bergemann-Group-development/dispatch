@@ -587,20 +587,19 @@ SUBROUTINE add_diag(self, rep, dir)
   SELECT case(rep)                                                      ! 45 degree rays can be added only twice
   case(1)
     nphi = 8
-    phis(1:8) = (/0., 45., 90., 135., 180., 225., 270., 315./)
+    phis(1:8) = (/0., 45., 90., 135., 180., 225., 270., 315./)/radian
   case(2)
     nphi = 2
-    phis(1:2) = (/90., 270./)
+    phis(1:2) = (/90., 270./)/radian
   end SELECT
 
   if (rep < 3) then
-    !phis = phis/radian
     do pdir = 1, nphi                                                     ! loop over phis
       self%n_ray_dirs = self%n_ray_dirs + 1                               ! increment ray dirs
       self%axis  = dir
       self%theta = t
       self%phi   = phis(pdir)
-      phi=phis(pdir)/radian
+      phi=phis(pdir)
       dp(a) = sin(t)*cos(phi)*self%cell_dims(a)                           ! step size along a direction
       dp(b) = sin(t)*sin(phi)*self%cell_dims(b)                           ! step size along b direction
       dp(c) = cos(t)         *self%cell_dims(c)                           ! step size along c direction
