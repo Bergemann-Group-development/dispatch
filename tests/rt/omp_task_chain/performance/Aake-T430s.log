@@ -90850,3 +90850,35 @@ loop length = 3.E+08
  number of tasks   =  50000
  millisec per task =  0.167
  number of updates =   12300    6400   12600    6400   12300
+CYGWIN_NT-6.1 Aake-T430s 2.3.1(0.291/5/3) 2015-11-14 12:44 x86_64 Cygwin
+model name	: Intel(R) Core(TM) i7-3520M CPU @ 2.90GHz
+loop length = 3.E+08
+ number of   cores =           2
+ number of threads =           5
+         0    0.008402          created task 40000   200   200
+         0    2.866823       before taskwait
+         0    4.188720        after taskwait
+        total time =  4.189
+ nanosec/iteration =  0.223
+ number of tasks   = 200000
+ millisec per task =  0.042
+ number of updates =   50000   50000   25600   25600   48800
+CYGWIN_NT-6.1 Aake-T430s 2.3.1(0.291/5/3) 2015-11-14 12:44 x86_64 Cygwin
+model name	: Intel(R) Core(TM) i7-3520M CPU @ 2.90GHz
+loop length = 3.E+08
+ number of   cores =           2
+ number of threads =           5
+         0    0.020876          created task102400   320   320
+CYGWIN_NT-6.1 Aake-T430s 2.3.1(0.291/5/3) 2015-11-14 12:44 x86_64 Cygwin
+model name	: Intel(R) Core(TM) i7-3520M CPU @ 2.90GHz
+loop length = 3.E+08
+ number of   cores =           2
+ number of threads =           5
+         0    0.020882          created task 102400    320    320
+         0    3.375201       before taskwait
+         0    4.209404        after taskwait
+        total time =  4.209
+ nanosec/iteration =  0.225
+ number of tasks   = 512000
+ millisec per task =  0.016
+ number of updates =  131840  128000   64320  124160   63680

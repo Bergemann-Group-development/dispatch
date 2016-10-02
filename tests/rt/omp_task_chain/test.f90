@@ -25,10 +25,10 @@ MODULE task_mod
     integer(8):: nupdate=0
   end type
   type(thread_t), dimension(:), pointer:: threads
-  integer, save:: nx=100, ny=100, ntask
+  integer, save:: nx=320, ny=320, ntask
   integer(8):: n
   real, save:: rn=3e8
-  character(len=64), save:: format='(i10,f12.6,2x,a20,3i6,3x,2f6.2)'
+  character(len=64), save:: format='(i10,f12.6,2x,a20,3i7,3x,2f6.2)'
 CONTAINS
 
 !> =============================================================================
