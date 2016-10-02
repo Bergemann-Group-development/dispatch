@@ -25,10 +25,10 @@ MODULE task_mod
     integer(8):: nupdate=0
   end type
   type(thread_t), dimension(:), pointer:: threads
-  integer, save:: nx=21, ny=21, ntask
+  integer, save:: nx=100, ny=100, ntask
   integer(8):: n
   real, save:: rn=3e8
-  character(len=64), save:: format='(i10,f12.6,2x,a20,3i5,3x,2f6.2)'
+  character(len=64), save:: format='(i10,f12.6,2x,a20,3i6,3x,2f6.2)'
 CONTAINS
 
 !> =============================================================================
@@ -62,8 +62,8 @@ SUBROUTINE update (self)
   end do
   self%time = self%time + self%dtime
   thread = omp_get_thread_num()
-  write (*,format) thread,wallclock(),' update   end: task', &
-    self%id, self%ix, self%iy, self%time
+  !write (*,format) thread,wallclock(),' update   end: task', &
+    !self%id, self%ix, self%iy, self%time
   !$omp atomic
   ntask = ntask+1
   threads(thread)%nupdate = threads(thread)%nupdate+1
@@ -106,13 +106,13 @@ PROGRAM test
      if (ix==1 .and. iy==1) head => task
      if (associated(prev)) prev%next => task
      call task%init (ix,iy)
-     write (*,format) omp_get_thread_num(),wallclock(),'created task', task%id, task%ix, task%iy
      if (iy > 1) then
        prev%child => task
      end if
      prev => task
   end do
   end do
+  write (*,format) omp_get_thread_num(),wallclock(),'created task', task%id, task%ix, task%iy
   !-----------------------------------------------------------------------------
   ! Start an OMP task chain for each boundary task_t instance, five times
   !-----------------------------------------------------------------------------
@@ -143,7 +143,7 @@ PROGRAM test
   print '(a20,f7.3)','nanosec/iteration =', 1e9*wc*min(ncore,omp_get_num_threads())/(n*ntask)
   print '(a20,i7)'  ,'number of tasks   =', ntask
   print '(a20,f7.3)','millisec per task =', 1e3*wc*min(ncore,omp_get_num_threads())/ntask
-  print '(a20,20i5)'  ,'number of updates =', threads%nupdate
+  print '(a20,20i8)'  ,'number of updates =', threads%nupdate
   !$omp end master
   !$omp end parallel
 END PROGRAM
