@@ -73,7 +73,6 @@ MODULE task_mod
     procedure:: distance                ! return the distance btw two patches
     procedure:: pack
   end type
-
   integer, save:: id=0
 CONTAINS
 
@@ -102,6 +101,7 @@ SUBROUTINE init (self)
     id = id+mpi%size
     self%id = id
   end if
+  id = self%id
   scene%n_patch = self%id
   !$omp end critical
   if (io%verbose>2) &
