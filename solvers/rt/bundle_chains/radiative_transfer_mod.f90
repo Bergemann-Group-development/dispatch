@@ -1,3 +1,7 @@
+!> =============================================================================
+!> Module for setting up the radiative transfer, and the relations between the
+!> RT tasks and ray systems.
+!> =============================================================================
 MODULE radiative_transfer_mod
   USE bits_mod
   USE experiment_mod
@@ -20,10 +24,12 @@ MODULE radiative_transfer_mod
   USE units_mod
   implicit none
   private
-
   PUBLIC rt_setup
 CONTAINS
 
+!> =============================================================================
+!> The only procedure callable from the outside
+!> =============================================================================
 SUBROUTINE rt_setup (self)
   class(list_t)                :: self
   class(task_list_t),  pointer :: task_list                  ! local task list
@@ -63,18 +69,13 @@ SUBROUTINE rt_setup (self)
       solver = 1
     end SELECT
   end if
-
   call ray_geometry%init(1, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
   ! IMPORTANT: change first constant into mhd_patch%mesh%mesh_type after merge with curvilinear coords
-
-  print *, 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
-
+  write (io_unit%log,*) 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
   call microphysics%init
   call rt_boundary%init
-
   rt_boundary%ubox = mhd_patch%box                                    ! FIXME : add bndry patches
   rt_boundary%lbox = 0.0
-
   allocate(task_list)
   call task_list%list_t%init ('rt task list')
   t_list => self%head
@@ -155,14 +156,13 @@ SUBROUTINE rt_setup (self)
             call task_list%append_link(link)                            ! insert into the task list
           end do
           ! -------------------------------
-
           ray_bundle => ray_bundle%next                                 ! take the next ray bundle
         end do
         ray_dir => ray_dir%next                                         ! go to the next ray direction
       end do
     end SELECT
     end associate
-    print *,'mhd_rt_t%id, n_nbors:', mhd_patch%id, mhd_patch%n_nbors, n_rt
+    write (io_unit%log,*) 'mhd_rt_t%id, n_nbors:', mhd_patch%id, mhd_patch%n_nbors, n_rt
     t_list => t_list%next                                               ! go to the next mhd task
   end do
   call add_upstream_nbors(task_list)                                    ! connect the corrections
@@ -171,9 +171,11 @@ SUBROUTINE rt_setup (self)
   list => task_list
   call self%append_list(list)                                           ! add rt task list to the main task list
   call trace_end
-  print *, '=================================='
-  print *, 'INIT RT DONE'
-  print *, '=================================='
+  if (io%master) then
+    print *, '=================================='
+    print *, 'INIT RT DONE'
+    print *, '=================================='
+  end if
 END SUBROUTINE rt_setup
 
 !> =====================================================================
@@ -219,7 +221,6 @@ SUBROUTINE connect_corr_nbors(self, nbor, nb_l)
   link2%check =.false.
   call self%add_nbor_by_rank(link2)
   if (present(nb_l)) nb_l => link2
-
 END SUBROUTINE connect_corr_nbors
 
 !> =============================================================================
@@ -236,11 +237,10 @@ SUBROUTINE add_upstream_nbors (self)
   call trace_begin('radiative_transfer_mod%add_correction_nbors ')
   !$omp critical (list_cr)
   rt_list => self%head
-
-  do while (associated(rt_list))                                    ! loop through task_list
+  do while (associated(rt_list))                                        ! loop through task_list
     associate (this => rt_list%task)
     SELECT TYPE (this)
-    type is (rt_internal_t)                                           ! select correction tasks
+    type is (rt_internal_t)                                             ! select correction tasks
       rt  => rt_list
       rtc => this
       n_connected = 0
@@ -255,10 +255,9 @@ SUBROUTINE add_upstream_nbors (self)
           do while (associated(nb_mhd_nbor))
             associate (nb_rt_nb => nb_mhd_nbor%task)
             SELECT TYPE (nb_rt_nb)
-            type is (rt_internal_t)                                   ! select upstream rt correction tasks
+            type is (rt_internal_t)                                     ! select upstream rt correction tasks
               nb_rt   => nb_rt_nb
               nb_rt_l => nb_mhd_nbor
-
               if ((rtc%dir_ID  == nb_rt%dir_ID).and.&                   ! check if they are the needed ones
                   (rtc%rt_type == nb_rt%rt_type)) then
                 if (rtc%id/=nb_rt%id) then
@@ -268,7 +267,6 @@ SUBROUTINE add_upstream_nbors (self)
                   end if
                 end if
               end if
-
             end SELECT
             end associate
             nb_mhd_nbor => nb_mhd_nbor%next                             ! move to next upstream mhd nbor's nbor
@@ -284,9 +282,7 @@ SUBROUTINE add_upstream_nbors (self)
   end do
   !$omp end critical (list_cr)
   call trace_end
-
 END SUBROUTINE add_upstream_nbors
-
 
 !> =============================================================================
 !> Finalize the neighbor lists for internal solution tasks by connecting
@@ -301,21 +297,15 @@ SUBROUTINE add_internal_nbors (self)
   call trace_begin('radiative_transfer_mod%add_rt_nbors ')
   !$omp critical (list_cr)
   rt_tasks => self%head
-
-  do while (associated(rt_tasks))                                    ! loop through task_list
-
+  do while (associated(rt_tasks))                                      ! loop through task_list
     associate (me => rt_tasks%task)
     SELECT TYPE (me)
-
       type is (rt_internal_t)
       me_li = me%position - 0.5*me%size
       me_ui = me%position + 0.5*me%size
      ! slow, but clean
-
       rt_tasks2 => self%head
-
       do while (associated(rt_tasks2))
-
         associate (nb => rt_tasks2%task)
         SELECT TYPE (nb)
           type is (rt_internal_t)
@@ -323,7 +313,6 @@ SUBROUTINE add_internal_nbors (self)
             if (me%level /= nb%level) then
               nb_li = me%position - 0.5*me%size
               nb_ui = me%position + 0.5*me%size
-
               SELECT case(me%level - nb%level)
               case (1)
                 if ((all(me_li<nb_li)).and.(all(me_ui>nb_ui))) &
@@ -331,23 +320,19 @@ SUBROUTINE add_internal_nbors (self)
               case (-1)
                 if ((all(me_li>nb_li)).and.(all(me_ui<nb_ui))) &
                      call connect_nbors (rt_tasks, rt_tasks2)
-
               end SELECT
             end if
           end if
-
         end SELECT
         end associate
         rt_tasks2 => rt_tasks2%next
       end do
-
     end SELECT
     end associate
     rt_tasks => rt_tasks%next
   end do
   !$omp end critical (list_cr)
   call trace_end
-
 END SUBROUTINE add_internal_nbors
 
 END MODULE radiative_transfer_mod
