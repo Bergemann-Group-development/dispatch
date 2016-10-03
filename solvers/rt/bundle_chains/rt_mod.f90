@@ -261,7 +261,7 @@ FUNCTION absolute_point_position (self, rays, ray, pt, bn) result (cell_pos)
       cp = rays%rev_coords(:,ray)
     end select
   else
-    cp = rays%cell_coords(:,pt,ray)
+    cp = rays%coords(:,pt,ray)
   end if
   cell_pos = self%position-0.5*self%size+(cp-self%li)*self%cell_ds
   call trace_end
@@ -276,7 +276,7 @@ FUNCTION ray2cell(self, rays, ray, pt) result (cell)
   class (ray_t), pointer :: rays
   integer :: ray, pt, cell(3)
 !-----------------------------------------------------------------------
-  cell = rays%cell_coords(:,pt,ray)
+  cell = rays%coords(:,pt,ray)
 END FUNCTION ray2cell
 
 !> =====================================================================

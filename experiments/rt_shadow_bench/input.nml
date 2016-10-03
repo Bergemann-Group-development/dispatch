@@ -1,5 +1,5 @@
 &io_params
- verbose=5
+ verbose=3
  do_trace=f
  do_debug=f
  do_output=f
@@ -25,7 +25,7 @@
  nt=5
  courant=0.2
  grace=0.1
- n=6,6,6
+ n=21,21,21
 /
 
 &rt_params
