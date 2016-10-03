@@ -653,7 +653,6 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
   allocate(ray_bundle)                                                  ! create ray tree to store rays
   call t%init(dp, self%ui, self%li, a, b, c)                            ! initialize traversal object
   ray_bundle%dstep = t%dstep                                            ! save for fast access later
-  print*,'mk1',ray_bundle%dstep
   do ia = t%cell_min(1), t%cell_max(1)                                  ! loop over 1st direction
     do ib = t%cell_min(2), t%cell_max(2)                                ! loop over 2nd direction
       first_point = .true.
@@ -694,7 +693,6 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
       end do
     end do
   end do
-  print*,'mk2',ray_bundle%dstep
   call self%finish_single_ray_list(ray_bundle)                          ! save the ray tree to ray_geometry
   deallocate(t)
 END SUBROUTINE traverse
@@ -1031,7 +1029,6 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     bundle%lwall = sbundle%lwall
     bundle%uwall = sbundle%uwall
     bundle%dstep = sbundle%dstep
-    print*,'mk2', sbundle%dstep
     bundle%n_packets = 0
     ! --- Go through single packets ---
     spacket => sbundle%packets
