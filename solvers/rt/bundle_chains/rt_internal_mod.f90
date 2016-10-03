@@ -22,6 +22,7 @@ MODULE rt_internal_mod
     class (ray_bndl_t), pointer :: bundle
     type (rt_data_t),     pointer :: my_rt_data => null()
     class(internal_data_t), dimension(:), pointer :: packet_data => null() ! incoming intensities
+    type (rt_internal_t), pointer:: upstream, downstream                       ! connnected tasks
     integer :: solver
     integer :: BC_direction=0
     integer :: bundle_ID, dir_ID
@@ -35,6 +36,7 @@ MODULE rt_internal_mod
     procedure :: check  => check_rt_internal
     procedure :: check_intensities => check_rt_get_intensities
     procedure :: needs_BC
+    procedure :: bundle_connects_to
     procedure :: get_upstream
     procedure :: get_static
     procedure :: get_dynamic
@@ -187,6 +189,32 @@ LOGICAL FUNCTION needs_BC (self)
     end if
   end if
 END FUNCTION needs_BC
+
+!> =============================================================================
+!> Check if the rays in self match up in the downstream with the rays in other
+!> =============================================================================
+FUNCTION bundle_connects_to (self, other) RESULT (out)
+  class (rt_internal_t)          :: self
+  class (rt_internal_t), pointer :: other
+  integer, dimension(3) :: di, fwd, rev
+  logical :: out
+  !.............................................................................
+  out = .false.
+  if (self%bundle%dir_ID /= other%bundle%dir_ID)     return             ! different dir
+  if (self%mhd_patch%id == other%mhd_patch%id)       return             ! same patch
+  if (.not.self%mhd_patch%overlaps(other%mhd_patch)) return             ! no overlap
+  if (self%is_set(bits%has_BC+bits%boundary))        return             ! boundary patch
+  di = nint(self%mhd_patch%distance(other%mhd_patch)/self%mhd_patch%ds) ! index shift
+  rev =  self%bundle%rays%rev_coords(:,1) -  self%bundle%dstep          ! output from self
+  fwd = other%bundle%rays%fwd_coords(:,1)                               ! input to other
+  if (all(di+rev==fwd)) out = .true.                                    ! perfect match
+  if (io%verbose > 2) then
+    write (io_unit%log,'(2i5,l3,5(3x,a,3i4))') &
+      self%id, other%id, &
+      out, 'di:',di, 'rev:',rev, 'fwd:',fwd, &
+      'step:',self%bundle%dstep, 'BC_dir:',self%BC_direction
+  end if
+END function bundle_connects_to
 
 !> =====================================================================
 !> Select appropriate method to get the upstream values
