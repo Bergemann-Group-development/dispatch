@@ -482,6 +482,7 @@ SUBROUTINE add_axis(self, dir)
       ray_n = ray_n + 1                                                 ! move to next ray
     end do
   end do
+  bndl%dstep = 0;  bndl%dstep(dir) = 1                                  ! bundle dstep
   nullify(ndir, bndl, ray)
   call trace_end
 END SUBROUTINE add_axis
@@ -652,6 +653,7 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
   allocate(ray_bundle)                                                  ! create ray tree to store rays
   call t%init(dp, self%ui, self%li, a, b, c)                            ! initialize traversal object
   ray_bundle%dstep = t%dstep                                            ! save for fast access later
+  print*,'mk1',ray_bundle%dstep
   do ia = t%cell_min(1), t%cell_max(1)                                  ! loop over 1st direction
     do ib = t%cell_min(2), t%cell_max(2)                                ! loop over 2nd direction
       first_point = .true.
@@ -680,7 +682,7 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
             end if
           end do
           call ray_bundle%finish_ray(ray)                               ! and save ray to the ray tree
-          if (t%pos(t%p(3)) > t%cell_max(3)+0.5) then                        ! if cell wall along the ray direction is reached
+          if (t%pos(t%p(3)) > t%cell_max(3)+0.5) then                   ! if cell wall along the ray direction is reached
               t%oob = .true.                                            ! this ray is done
           else                                                          ! otherwise
             allocate(ray)                                               ! get new ray
@@ -692,6 +694,7 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
       end do
     end do
   end do
+  print*,'mk2',ray_bundle%dstep
   call self%finish_single_ray_list(ray_bundle)                          ! save the ray tree to ray_geometry
   deallocate(t)
 END SUBROUTINE traverse
@@ -716,15 +719,12 @@ SUBROUTINE init_traverse(self, dp, ui, li, a, b, c)
   self%ds = 1/dp(c)
   self%dstep = 0
   if (dp(a) /= 0) then
-    self%dstep(a) = nint(dp(a)*self%ds)                                       ! distance between points along a axis
+    self%dstep(a) = nint(dp(a)*self%ds)                                 ! distance between points along a axis
   end if
-
   if (dp(b) /= 0) then
-    self%dstep(b) = nint(dp(b)*self%ds)                                       ! distance between points along b axis
+    self%dstep(b) = nint(dp(b)*self%ds)                                 ! distance between points along b axis
   end if
-
   self%dstep(c) = 1                                                     ! distance between points along c axis
-
   call trace_end
 END SUBROUTINE init_traverse
 
@@ -878,6 +878,7 @@ SUBROUTINE finish_ray(self, ray_point)
 
   if (.not.associated(self%head)) then                                  ! if the ray tree is empty
     allocate(bundle)
+    bundle%dstep = self%dstep
     self%head => bundle
     self%tail => bundle
     bundle%lwall = ray%lwall
@@ -895,6 +896,7 @@ SUBROUTINE finish_ray(self, ray_point)
     end do
     if(.not.fnd_b) then
       allocate(bundle)
+      bundle%dstep = self%dstep
       bundle%head => self%head
       bundle%prev => self%tail
       bundle%prev%next => bundle
@@ -1029,6 +1031,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     bundle%lwall = sbundle%lwall
     bundle%uwall = sbundle%uwall
     bundle%dstep = sbundle%dstep
+    print*,'mk2', sbundle%dstep
     bundle%n_packets = 0
     ! --- Go through single packets ---
     spacket => sbundle%packets
