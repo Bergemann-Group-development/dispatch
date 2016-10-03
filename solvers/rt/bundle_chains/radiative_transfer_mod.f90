@@ -111,6 +111,7 @@ SUBROUTINE rt_setup (self)
       rt_data%rt_type = 0                                               ! set the rt type
       rt_data%n_ray_dirs = ray_geometry%n_ray_dirs
       rt_data%rt_freq    =  rt_freq                                     ! integer frequency, relative to MHD task
+      rt_data%position = mhd_patch%position
       call rt_data%init                                                 ! initialise
       n_rt = n_rt+1
       call connect_nbors(t_list,link)                                   ! connect rt_data and mhd task
@@ -148,6 +149,7 @@ SUBROUTINE rt_setup (self)
             internal%BC_direction = mhd_rt_patch%BC_direction           ! pass on
             link%task => internal                                       ! connect to RT task
             internal%nt = mhd_patch%nt
+            internal%position = mhd_patch%position
             call internal%init                                          ! initialize in ray direction
             n_rt = n_rt+1
             call connect_nbors(link,t_list)                             ! correction checks if MHD is ready, MHD does not do that
