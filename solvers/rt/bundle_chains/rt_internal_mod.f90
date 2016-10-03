@@ -23,6 +23,7 @@ MODULE rt_internal_mod
     type (rt_data_t),     pointer :: my_rt_data => null()
     class(internal_data_t), dimension(:), pointer :: packet_data => null() ! incoming intensities
     integer :: solver
+    integer :: BC_direction=0
     integer :: bundle_ID, dir_ID
     integer :: lwall(3)
     real :: dir_weight, ray_ds
@@ -33,6 +34,7 @@ MODULE rt_internal_mod
     procedure :: update => update_rt_internal
     procedure :: check  => check_rt_internal
     procedure :: check_intensities => check_rt_get_intensities
+    procedure :: needs_BC
     procedure :: get_upstream
     procedure :: get_static
     procedure :: get_dynamic
@@ -172,6 +174,19 @@ SUBROUTINE update_rt_internal (self)
   if (io%verbose > 1) call self%check
   !call trace_end (itimer)
 END SUBROUTINE update_rt_internal
+
+!> =============================================================================
+!> =============================================================================
+LOGICAL FUNCTION needs_BC (self)
+  class (rt_internal_t)          :: self
+  !.............................................................................
+  needs_BC = .false.
+  if (self%mhd_patch%is_set(bits%has_BC+bits%boundary)) then            ! boundary
+    if (self%BC_direction > 0) then                                     ! valid BC_direction
+      if (self%bundle%dstep(self%BC_direction) > 0) needs_BC = .true.   ! step in BC_direction
+    end if
+  end if
+END FUNCTION needs_BC
 
 !> =====================================================================
 !> Select appropriate method to get the upstream values

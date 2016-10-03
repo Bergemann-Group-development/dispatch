@@ -145,6 +145,7 @@ SUBROUTINE rt_setup (self)
             internal%rt_freq    =  rt_freq                              ! integer frequency, relative to MHD task
             internal%mhd_link   => t_list                               ! Pointer to mhd_patch's link
             internal%link       => link                                 ! convenience
+            internal%BC_direction = mhd_rt_patch%BC_direction           ! pass on
             link%task => internal                                       ! connect to RT task
             internal%nt = mhd_patch%nt
             call internal%init                                          ! initialize in ray direction
