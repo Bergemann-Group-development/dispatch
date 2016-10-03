@@ -679,7 +679,7 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
         call t%hop                                                      ! hop to the next cell
         ray%tail%ds = t%ds                                              ! save distance traveled
 
-        if (t%r_trace >= t%r_tot) then                                   ! if the ray is fully traced
+        if (t%r_trace > t%r_tot) then                                   ! if the ray is fully traced
           ray%tail%uw = -t%lw
           ray%head%rev = t%cell_pos
           ray%head%fwd = t%upstream                                     ! save ray upstream cell
@@ -1534,14 +1534,20 @@ END SUBROUTINE test_ray_geometry
 !> =============================================================================
 SUBROUTINE print_ray (self, i)
   class(ray_t) :: self
-  integer :: i, j
+  integer :: i, j, k
   !.............................................................................
   if (io%verbose < 3) return
   write (*,*) '      RAY_PACKET:', i,'   rays:', self%n_rays
   if (io%verbose < 4) return
   do j=1,self%n_rays
     print '("ray, start, stop:",i4,4(3x,3(i4)))', &
-      j, self%rev_coords(:,j), self%fwd_coords(:,j) !, self%pt_wall(:,:,1,j)
+      j, self%fwd_coords(:,j), self%rev_coords(:,j) !, self%pt_wall(:,:,1,j)
+    if (io%verbose > 4) then
+      do k = 1, self%n_points
+        print '("poin,  position:",i4,4(3x,3(i4)))', &
+      k, self%cell_coords(:,k,j)
+      end do
+    end if
   end do
 END SUBROUTINE print_ray
 

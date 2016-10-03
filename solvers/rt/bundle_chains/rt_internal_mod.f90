@@ -6,7 +6,7 @@ MODULE rt_internal_mod
   USE rt_mod
   USE rt_data_mod
   USE rt_boundary_mod
-  USE ray_geometry_v2_mod
+  USE ray_geometry_v3_mod
   USE trace_mod
   implicit none
   private

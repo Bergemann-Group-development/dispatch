@@ -4,7 +4,7 @@ MODULE rt_mod
   USE trace_mod
   USE link_mod
   USE omp_mod
-  USE ray_geometry_v2_mod
+  USE ray_geometry_v3_mod
   USE task_mod
   USE mesh_mod
   USE experiment_mod
