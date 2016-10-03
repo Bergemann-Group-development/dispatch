@@ -4,17 +4,17 @@ MODULE rt_mod
   USE trace_mod
   USE link_mod
   USE omp_mod
-  USE ray_geometry_v3_mod
+  USE ray_geometry_v2_mod
   USE task_mod
   USE mesh_mod
-  USE experiment_mod
+  USE mhd_mod
   USE rt_boundary_mod
   USE microphysics_mod
   implicit none
   private
 !-----------------------------------------------------------------------
   type, extends(task_t), public :: rt_t
-    type (experiment_t), pointer :: mhd_patch  => null()  ! pointer to MHD task
+    type (mhd_t),        pointer :: mhd_patch  => null()  ! pointer to MHD task
     class(link_t),       pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
     class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task
     class(link_t),       pointer :: link       => null()  ! pointer to self link in the task list
@@ -33,9 +33,10 @@ MODULE rt_mod
     ! that only know about density, temperature, ! and the mesh.  Such solvers
     ! would not need a pointer to an experiment_t data type.
     !---------------------------------------------------------------------------
-    class(mesh_t),          pointer :: mesh    => null()                ! pointer to mesh
-    real, dimension(:,:,:), pointer :: density => null()                ! pointer to density
-    real, dimension(:,:,:), pointer :: temperature => null()            ! pointer to temperature
+    class(mesh_t),            pointer :: mesh    => null()              ! pointer to mesh
+    real, dimension(:,:,:),   pointer :: density => null()              ! pointer to density
+    real, dimension(:,:,:),   pointer :: temperature => null()          ! pointer to temperature
+    real, dimension(:,:,:,:), pointer :: q       => null()              ! (x,y,z,nt)
   contains
     procedure :: find_upstream
     procedure :: init => init_rt
@@ -63,6 +64,7 @@ SUBROUTINE init_rt (self)
   !---------------------------------------------------------------------
   call self%task_t%init
   allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
+  self%nt = 5
   self%it = 1
   self%new = 2
   self%grace = 0.0
@@ -106,7 +108,7 @@ END SUBROUTINE set_periodic_BC
 FUNCTION the_right_wall (self, nbor, wall) result (answer)
   class(rt_t) :: self
   class (link_t),        pointer :: nbor
-  class (experiment_t), pointer :: mhd, nb_mhd
+  class (mhd_t), pointer :: mhd, nb_mhd
   integer :: wall(3), x
   real (kind=8) :: d(3)
   logical :: answer, allw(3)
@@ -114,7 +116,7 @@ FUNCTION the_right_wall (self, nbor, wall) result (answer)
   answer = .false.
   associate (my_type => self%MHD_link%task)
   SELECT type (my_type)
-  type is (experiment_t)
+  type is (mhd_t)
     mhd => my_type
   class is (rt_t)
     mhd => my_type%mhd_patch
@@ -123,7 +125,7 @@ FUNCTION the_right_wall (self, nbor, wall) result (answer)
   !
   associate (nbor_type => nbor%task)
   SELECT type (nbor_type)
-  type is (experiment_t)
+  type is (mhd_t)
     nb_mhd => nbor_type
   class is (rt_t)
     nb_mhd => nbor_type%mhd_patch                                       ! if I got an RT task to test, switch to corresponding MHD patch
@@ -165,18 +167,18 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   class(rt_t)  :: self
   class(link_t), pointer :: nbor_l, nul
   class(link_t), pointer :: nbor, my_mhd_l, new
-  class(experiment_t), pointer :: my_task, nbor_task
+  class(mhd_t), pointer :: my_task, nbor_task
   integer :: found, wall(3)
 ! ----------------------------------------------------------------------
   call trace_begin('rt_t%find_upstream')
-  
+
   select case(self%rt_type)                                             ! select the right upstream wall
   case(2)
     wall = self%my_rays%lwall
   case(3)
     wall = self%my_rays%uwall
   end select
-  
+
   found = 0
   allocate (nbor_l)
   my_task => self%mhd_patch
@@ -184,7 +186,7 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   do while (associated(nbor))
     associate (nbtask => nbor%task)
     SELECT type (nbtask)
-    class is (experiment_t)
+    class is (mhd_t)
       nbor_task => nbtask
       if (.not.nbor_is_my_child(my_task, nbor_task)) then
         ! if the nbor has a wall common with our upstream wall
@@ -229,7 +231,7 @@ END SUBROUTINE init_obc
 !> Check if 'nbor' is fully contained inside 'me'
 !> =====================================================================
 FUNCTION nbor_is_my_child (me, nbor) result (out)
-  class (experiment_t), pointer :: me, nbor
+  class (mhd_t), pointer :: me, nbor
   real(kind=8) :: me_li, me_ui, nbor_li, nbor_ui
   logical :: out
 !-----------------------------------------------------------------------
@@ -261,7 +263,7 @@ FUNCTION absolute_point_position (self, rays, ray, pt, bn) result (cell_pos)
       cp = rays%rev_coords(:,ray)
     end select
   else
-    cp = rays%coords(:,pt,ray)
+    cp = rays%cell_coords(:,pt,ray)
   end if
   cell_pos = self%position-0.5*self%size+(cp-self%li)*self%cell_ds
   call trace_end
@@ -276,7 +278,7 @@ FUNCTION ray2cell(self, rays, ray, pt) result (cell)
   class (ray_t), pointer :: rays
   integer :: ray, pt, cell(3)
 !-----------------------------------------------------------------------
-  cell = rays%coords(:,pt,ray)
+  cell = rays%cell_coords(:,pt,ray)
 END FUNCTION ray2cell
 
 !> =====================================================================

@@ -4,10 +4,11 @@ MODULE radiative_transfer_mod
   USE io_mod
   USE list_mod
   USE mhd_mod
+  USE mhd_rt_mod
   USE microphysics_mod
   USE omp_mod
   USE patch_mod
-  USE ray_geometry_v3_mod
+  USE ray_geometry_v2_mod
   USE rt_mod
   USE rt_boundary_mod
   USE rt_data_mod
@@ -28,7 +29,8 @@ SUBROUTINE rt_setup (self)
   class(task_list_t),  pointer :: task_list                  ! local task list
   class(list_t),       pointer :: list
   class(link_t),       pointer :: t_list, link, rt_data_l, internal_l
-  class(experiment_t), pointer :: mhd_patch
+  class(mhd_t),        pointer :: mhd_patch
+  class(mhd_rt_t),     pointer :: mhd_rt_patch
   class(rt_data_t),    pointer :: rt_data
   class(rt_internal_t),pointer :: internal
   class(ray_dirs_t),   pointer :: ray_dir
@@ -77,22 +79,29 @@ SUBROUTINE rt_setup (self)
   call task_list%list_t%init ('rt task list')
   t_list => self%head
   do while (associated(t_list))
-
     !-------------------------------------------------------------------
-    ! Get the right type of the task (mhd_t)
+    ! Get the right type of the task for the init call (mhd_rt_t)
     !-------------------------------------------------------------------
     associate (mhd => t_list%task)
     SELECT TYPE(mhd)
-    type is (experiment_t)
+    class is (mhd_rt_t)
+      mhd_rt_patch => mhd
+      allocate (rt_data, link)                                          ! the internal RT task and its link
+      mhd_rt_patch%rt_data => rt_data
+      call mhd_rt_patch%init_rt
+    END SELECT
+    !-------------------------------------------------------------------
+    ! Get the right type of the task to pick up other properties (mhd_t)
+    !-------------------------------------------------------------------
+    SELECT TYPE(mhd)
+    class is (mhd_t)
       mhd_patch => mhd
-      call mhd_patch%init_rt
       n_rt = 0
       !-----------------------------------------------------------------
       ! Construct the RT task for the RT data storage and update and add
       ! it to the task list, giving it a nbor list consisting of only
       ! the MHD task.
       !-----------------------------------------------------------------
-      allocate (rt_data, link)                                          ! the internal RT task and its link
       rt_data%mhd_patch => mhd_patch                                    ! Pointer to mhd_patch
       rt_data%mhd_link  => t_list                                       ! Pointer to mhd_patch's link
       link%task         => rt_data                                      ! connect to RT task

@@ -2,7 +2,7 @@ MODULE rt_data_mod
   USE bits_mod
   USE io_mod
   USE microphysics_mod
-  USE ray_geometry_v3_mod
+  USE ray_geometry_v2_mod
   USE rt_mod
   USE trace_mod
   implicit none
@@ -62,11 +62,12 @@ SUBROUTINE init_rt_data(self)
   allocate(self%name)
   self%name       = 'rt_data'
   self%n_ray_dirs = ray_geometry%head%n_ray_dirs
-  allocate(self%opacity(n(1), n(2), n(3), nwb)) ! opacity table
-  allocate(self%source (n(1), n(2), n(3), nwb)) ! Source function table
-  
-  self%opacity = 0;   self%source = 0
+  allocate(self%q      (n(1), n(2), n(3), self%nt)) ! net heating
+  allocate(self%opacity(n(1), n(2), n(3), nwb))     ! opacity table
+  allocate(self%source (n(1), n(2), n(3), nwb))     ! Source function table
+  self%q = 0.0; self%opacity = 0;   self%source = 0
   end associate
+  !
   if (io%verbose>1) then
     write (*,'(a,i5,3x,a,i5,3x,a,i3)') &
       '    rt_data_t%id:', self%id, &
@@ -127,7 +128,7 @@ SUBROUTINE add_cr_heating (self, time, temp)
   l = self%mhd_patch%mesh%li
   u = self%mhd_patch%mesh%ui
   associate (rho => self%mhd_patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1), &
-               q => self%mhd_patch%rt_q%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it))
+               q => self%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it))
   q = q + rho * microphysics%cr_heating
   end associate
   call trace%end

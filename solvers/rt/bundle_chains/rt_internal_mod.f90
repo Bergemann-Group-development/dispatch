@@ -6,7 +6,7 @@ MODULE rt_internal_mod
   USE rt_mod
   USE rt_data_mod
   USE rt_boundary_mod
-  USE ray_geometry_v3_mod
+  USE ray_geometry_v2_mod
   USE trace_mod
   implicit none
   private
@@ -101,7 +101,7 @@ SUBROUTINE init_rt_internal (self)
   !---------------------------------------------------------------------
   allocate(self%packet_data(self%my_rays%n_packets))
   packet => self%my_rays%rays
-  self%ray_ds = packet%ds * self%cell_ds(self%my_rays%axis)
+  self%ray_ds = packet%ds(1,1) * self%cell_ds(self%my_rays%axis)
   do ray = 1, self%my_rays%n_packets
     allocate(self%packet_data(ray)%bndry (packet%n_rays,microphysics%n_wl_bins))
     allocate(self%packet_data(ray)%I_out (packet%n_rays,microphysics%n_wl_bins))
@@ -119,7 +119,7 @@ SUBROUTINE init_rt_internal (self)
       pt = 1
     end select
     do r = 1, packet%n_rays
-      self%packet_data(ray)%cell(:,r) = packet%coords(:,pt,r)
+      self%packet_data(ray)%cell(:,r) = packet%cell_coords(:,pt,r)
     end do
     packet => packet%next
   end do
@@ -298,7 +298,7 @@ SUBROUTINE get_static (self)
                     end select
 
                     if (try > 0) then
-                      Iin = self%I_retrv(rt_nb, nb_packet%coords(:,nb_ray, try))
+                      Iin = self%I_retrv(rt_nb, nb_packet%cell_coords(:,nb_ray, try))
                       mean = mean + Iin
                       n_mean = n_mean + 1.
                     end if
@@ -439,7 +439,7 @@ SUBROUTINE solve_internal_integral_1st (self)
   do pck = 1, self%my_rays%n_packets
 
     associate (npt => packet%n_points, nrays => packet%n_rays, &
-               rtd => self%my_rt_data, cell => packet%coords)
+               rtd => self%my_rt_data, cell => packet%cell_coords)
 
     allocate( dtau(nrays, nwb, npt))
     allocate(ex0  (nrays, nwb, npt))
@@ -524,7 +524,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
   do pck = 1, self%my_rays%n_packets
 
     associate (npt => packet%n_points, nrays => packet%n_rays, &
-               rtd => self%my_rt_data, cell => packet%coords)
+               rtd => self%my_rt_data, cell => packet%cell_coords)
 
     allocate( dtau(nrays, nwb, npt))
     allocate(idtau(nrays, nwb, npt))
@@ -631,8 +631,8 @@ SUBROUTINE update_q (self, rays, q, op)
   !---------------------------------------------------------------------
   call trace_begin ('rt_internal_t_%update_q', 4, itimer=itimer)
   dirw = self%dir_weight
-  qq => self%mhd_patch%rt_q%q
-  cell => rays%coords
+  qq => self%my_rt_data%q
+  cell => rays%cell_coords
   do ray = 1, size(q,1)
     do pt = 1, size(q,3)
       p = cell(:,pt,ray)

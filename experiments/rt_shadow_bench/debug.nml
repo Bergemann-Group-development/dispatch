@@ -1,5 +1,5 @@
 &io_params
- verbose=4
+ verbose=3
  do_trace=f
  do_debug=f
  do_output=f
