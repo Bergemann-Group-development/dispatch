@@ -8,7 +8,7 @@ MODULE radiative_transfer_mod
   USE microphysics_mod
   USE omp_mod
   USE patch_mod
-  USE ray_geometry_v2_mod
+  USE ray_geometry_v3_mod
   USE rt_mod
   USE rt_boundary_mod
   USE rt_data_mod
