@@ -116,19 +116,23 @@ FUNCTION the_right_wall (self, nbor, wall) result (answer)
   answer = .false.
   associate (my_type => self%MHD_link%task)
   SELECT type (my_type)
-  type is (mhd_t)
+  class is (mhd_t)
     mhd => my_type
   class is (rt_t)
     mhd => my_type%mhd_patch
+  class default
+    error stop '(1) in rt_mod::the_right_wall'
   END SELECT
   end associate
   !
   associate (nbor_type => nbor%task)
   SELECT type (nbor_type)
-  type is (mhd_t)
+  class is (mhd_t)
     nb_mhd => nbor_type
   class is (rt_t)
     nb_mhd => nbor_type%mhd_patch                                       ! if I got an RT task to test, switch to corresponding MHD patch
+  class default
+    error stop '(2) in rt_mod::the_right_wall'
   end SELECT
   end associate
   !
