@@ -44,14 +44,14 @@ SUBROUTINE rt_setup (self)
   namelist /rt_params/ RT_solver, cr_heating, rt_freq
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer::rt_setup')
-
   associate (mhd => self%head%task)
   SELECT TYPE(mhd)
-    type is (experiment_t)
+  class is (mhd_t)
     mhd_patch => mhd
+  class default
+    error stop '(1) in rt_setup'
   end SELECT
   end associate
-
   if (first_time) then
     first_time = .false.
     rewind (io%input); read (io%input, rt_params)
