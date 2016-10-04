@@ -8,6 +8,7 @@ MODULE experiment_mod
   USE patch_mod
   USE mhd_mod
   USE boundary_mod
+  USE timestep_mod
   implicit none
   private
   type, public, extends(mhd_t):: experiment_t
@@ -49,27 +50,28 @@ SUBROUTINE init (self)
   call self%mhd_t%init
 
   if (first_time) then
-    first_time = .false.
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*,experiment_params)
-  end if
-  self%d => self%mem(:,:,:,1,self%it,1)
-  self%s => self%mem(:,:,:,  2,self%it,1)
-  self%p => self%mem(:,:,:,3:5,self%it,1)
-  self%B => self%mem(:,:,:,6:8,self%it,1)
-!  d=>self%d; s=>self%s
-!  p=>self%p; B=>self%B
-!  px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
-!  Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
 
-  self%w_BE      = w_BE
-  self%p_BE      = p_BE
-  self%a_BE      = a_BE
-  self%r_BE      = r_BE
-  !self%mhd       = .false.
-  boundary%r_BE  = r_BE
-  self%amplitude = amplitude
+    self%d => self%mem(:,:,:,1,self%it,1)
+    self%s => self%mem(:,:,:,  2,self%it,1)
+    self%p => self%mem(:,:,:,3:5,self%it,1)
+    self%B => self%mem(:,:,:,6:8,self%it,1)
+  !  d=>self%d; s=>self%s
+  !  p=>self%p; B=>self%B
+  !  px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
+  !  Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
+  
+    self%w_BE      = w_BE
+    self%p_BE      = p_BE
+    self%a_BE      = a_BE
+    self%r_BE      = r_BE
+    !self%mhd       = .false.
+    boundary%r_BE  = r_BE
+    self%amplitude = amplitude  
+  end if
+
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Approximate a Bonnor-Ebert sphere
   !-----------------------------------------------------------------------------
@@ -102,6 +104,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update(self)
   class(experiment_t):: self
+  type(timestep_t):: timestep
   integer:: i, j, k, ii(3), iv
   real:: x, y, z, r, ntot, nout
   !.............................................................................
@@ -110,61 +113,37 @@ associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
   !-----------------------------------------------------------------------------
   ! Set phi=0 at and outside the boundary
   !-----------------------------------------------------------------------------
-  do k=1,gn(3)
-  do j=1,gn(2)
-  do i=1,gn(1)
-    x = (i-(gn(1)+1)*0.5)*ds(1) + pos(1)
-    y = (j-(gn(2)+1)*0.5)*ds(2) + pos(2)
-    z = (k-(gn(3)+1)*0.5)*ds(3) + pos(3)
-    r = sqrt(x**2+y**2+z**2)
-    if (r > self%r_BE) then
-      self%mem(i,j,k,1,self%it,1) = 0.
-    end if
-  !print*,'self%mem(i,j,k,1,self%it,1)',self%mem(i,j,k,1,self%it,1)
-  end do
-  end do
-  end do
+!  if (self%it .ne. 1) then
+!    self%mem(:,:,:,:,self%it,:) = self%mem(:,:,:,:,self%it-1,:)
+!    self%d => self%mem(:,:,:,1,self%it,1)
+!  endif
   !-----------------------------------------------------------------------------
   ! This is where d(f)/dt is computed, so zap to zero outside the boundary,
   ! treating staggered components separately
   !-----------------------------------------------------------------------------
+!  print*,'before mhd self%dt and minval(self%mem(:,:,:,1,self%it,1))',self%dt, minval(self%mem(:,:,:,1,self%it,1))
   call self%mhd_t%update
-  ntot = 0.0
-  nout = 0.0
+!  print*,'after mhd self%dt and minval(self%mem(:,:,:,1,self%it,1))',self%dt, minval(self%mem(:,:,:,1,self%it,1))
+  !call self%mhd_t%nonideal_MHD_courant_condition(self%dt_Ohm,self%dt_AD)
+  call self%patch_t%courant_condition()
+  call self%check_density('before timestep')
   do k=1,gn(3)
   do j=1,gn(2)
   do i=1,gn(1)
-    ntot = ntot+1.0
     x = (i-(gn(1)+1)*0.5)*ds(1) + pos(1)
     y = (j-(gn(2)+1)*0.5)*ds(2) + pos(2)
     z = (k-(gn(3)+1)*0.5)*ds(3) + pos(3)
     r = sqrt(x**2+y**2+z**2)
     if (r > self%r_BE) then
-      nout = nout+1.0
-      self%mem(i,j,k,1  ,self%it,2) = 0.
-      self%mem(i,j,k,2  ,self%it,2) = 0.
-    end if
-    x = (i-(gn(1)+2)*0.5)*ds(1) + pos(1)
-    r = sqrt(x**2+y**2+z**2)
-    if (r > self%r_BE) then
-      self%mem(i,j,k,3,self%it,2) = 0.
-    end if
-    x = (i-(gn(1)+1)*0.5)*ds(1) + pos(1)
-    y = (j-(gn(2)+2)*0.5)*ds(2) + pos(2)
-    r = sqrt(x**2+y**2+z**2)
-    if (r > self%r_BE) then
-      self%mem(i,j,k,4,self%it,2) = 0.
-    end if
-    y = (j-(gn(2)+1)*0.5)*ds(2) + pos(2)
-    z = (k-(gn(3)+2)*0.5)*ds(3) + pos(3)
-    r = sqrt(x**2+y**2+z**2)
-    if (r > self%r_BE) then
-      self%mem(i,j,k,5,self%it,2) = 0.
+      self%d(i,j,k) = 2e-11
     end if
   end do
   end do
   end do
-  !print*,'fraction outside:',nout/ntot, pos, ds
+!  print*,'before timestep self%dt and minval(self%mem(:,:,:,1,self%it,1))',self%dt, minval(self%mem(:,:,:,1,self%it,1))
+  call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density('after timestep')
+
 end associate
   !
   call trace_end

@@ -11,7 +11,7 @@ PROGRAM dispatch
   real:: position(3)=0.0, size(3)=1.0
   !.............................................................................
   call mpi%init
-  call io%init('turbulence')
+  call io%init('BE-sphere')
   call cartesian%init                   ! Initialize the patch list and patches
   call cartesian%task_list%execute      ! update the list = update member patches
   call mpi%end
