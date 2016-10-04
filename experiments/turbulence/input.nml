@@ -8,6 +8,9 @@
 ! produces data files named data/other_ppp_tttt.dat, where ppp is the patch number
 ! and tttt is the snapshot number.
 
+&timer_params
+ sec_per_report=2
+/
 &io_params
  verbose=1
  do_validate=f

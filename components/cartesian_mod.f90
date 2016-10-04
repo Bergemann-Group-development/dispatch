@@ -106,15 +106,12 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   ! Set the boundary and virtual bits, based on overlap with patches on our rank
   !-----------------------------------------------------------------------------
-  print*,associated(patch_list%head)
   call patch_list%reset_status
-  print*,associated(patch_list%head)
   !-----------------------------------------------------------------------------
   ! Initialize patches on our rank and virtual patches. This needs to be done
   ! without changing the link chain in the patch_list for other threads.
   !-----------------------------------------------------------------------------
   !xomp parallel private(link,thread,task)
-  print*,associated(patch_list%head)
   link => patch_list%head
   thread = 0
   do while (associated(link))
@@ -143,7 +140,8 @@ SUBROUTINE init (self, label)
         end if
       end select
     end if
-    thread = mod(thread+1,omp%nthreads)
+    if (omp_in_parallel()) &
+      thread = mod(thread+1,omp%nthreads)
     link => link%next
   end do
   !xomp barrier
