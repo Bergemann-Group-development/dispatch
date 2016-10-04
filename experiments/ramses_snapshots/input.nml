@@ -13,23 +13,19 @@
  rank_load=5e-3
  size=0.001
  centre_on_sink=t
- merge_octs=t
+ merge_octs=f
 /
 
 &patch_params
- level=6
  size=1.0,1.0,1.0
- pos=0.0,0.0,0.0
- !n=55,55,55
  n=128,128,128
- u=0,0,0
  ng=2
 /
 
 &out_params
-end_time=0.5
-out_time=0.00125
-max_files=4000
+ end_time=0.408
+ out_time=0.00125
+ max_files=4000
 /
 
 &mhd_params
