@@ -7,6 +7,7 @@ MODULE rt_internal_mod
   USE rt_data_mod
   USE rt_boundary_mod
   USE ray_geometry_v3_mod
+  USE mesh_mod
   USE trace_mod
   implicit none
   private
@@ -40,6 +41,7 @@ MODULE rt_internal_mod
     procedure :: check_intensities => check_rt_get_intensities
     procedure :: needs_BC
     procedure :: bundle_connects_to
+    procedure :: still_inside
     procedure :: get_upstream
     procedure :: get_static
     procedure :: get_dynamic
@@ -163,7 +165,7 @@ SUBROUTINE update_rt_internal (self)
 !-----------------------------------------------------------------------
   !write (stime,'(1p,g16.6)') self%time
   !call trace_begin('rt_t%update_rt_internal '//stime,itimer=itimer)
-  call self%get_upstream
+  !call self%get_upstream
   call self%solve
   call self%update_time
   if (io%verbose > 2) then
@@ -182,13 +184,52 @@ SUBROUTINE update_rt_internal (self)
 END SUBROUTINE update_rt_internal
 
 !> =====================================================================
+!> =====================================================================
+LOGICAL FUNCTION still_inside (self)
+  class (rt_internal_t) :: self
+  type (mesh_t), pointer :: m
+  integer :: axis, i
+  !.....................................................................
+  still_inside = .true.
+  axis = self%BC_direction
+  if (axis/=0) then
+    i = self%bundle%rays%rev_coords(axis,1)
+    m => self%mhd_patch%mesh(axis)
+    if (m%p + m%r(i) > m%b) still_inside = .false.
+    !print*,'mk', self%id, axis, i, real(m%p), real(m%r(i)), real(m%b), still_inside
+  !else
+    !i = 0
+    !print*,'mk', self%id, axis, i, still_inside
+  end if
+END FUNCTION still_inside
+
+!> =====================================================================
 !> Solve the RT along a chain, recursively. These tasks are not necessarily
-!> at !> the same time, so time interpolation is needed when passing on net
+!> at the same time, so time interpolation is needed when passing on net
 !> radiation intensities.
 !> =====================================================================
 SUBROUTINE recurse (self)
   class (rt_internal_t) :: self
-  if (associated(self%downstream)) call self%downstream%solve
+  integer :: id
+  !.....................................................................
+  call trace_begin ('rt_internal_t%recurse')
+  call self%solve
+  call self%update_time
+  if (io%verbose > 2) then
+    if (associated(self%downstream)) then
+      id = self%downstream%id
+    else
+      id = 0
+    end if
+    write (io_unit%log,'("integral_1st, id:",2i5,3x,"theta, phi:",2f5.0,3x,3i4,2l3,i5)') &
+      self%id, self%bundle%axis, self%bundle%theta*radian, self%bundle%phi*radian, &
+      nint(self%position/self%mhd_patch%ds), associated(self%downstream), &
+      self%still_inside(), id
+  end if
+  if (associated(self%downstream).and.self%still_inside()) then
+    call self%downstream%recurse
+  end if
+  call trace_end
 END SUBROUTINE recurse
 
 !> =============================================================================
@@ -199,7 +240,9 @@ LOGICAL FUNCTION needs_BC (self)
   needs_BC = .false.
   if (self%mhd_patch%is_set(bits%has_BC+bits%boundary)) then            ! boundary
     if (self%BC_direction > 0) then                                     ! valid BC_direction
-      if (self%bundle%dstep(self%BC_direction) > 0) needs_BC = .true.   ! step in BC_direction
+      if (self%still_inside()) then
+        if (self%bundle%dstep(self%BC_direction) > 0) needs_BC = .true. ! step in BC_direction
+      end if
     end if
   end if
 END FUNCTION needs_BC
@@ -485,19 +528,19 @@ SUBROUTINE solve_internal_integral_1st (self)
   real, dimension(:,:,:), allocatable :: ex0, ds, dtau
   real, dimension(:,:,:), allocatable :: s, q, Ifw, ropac
   real, dimension(:,:), allocatable :: I_in, I_out
-  integer :: pt, p(3), pck, nwb, ipk, ray
-  integer, save :: itimer=0
+  integer :: pt, p(3), pck, nwb, ipk, ray, id
+  integer, save :: itimer(2)=0
+  logical, parameter :: detailed_timer=.false.
   !---------------------------------------------------------------------
-  call trace_begin('rt_internal_t%integral_1st', itimer=itimer)
-
+  if (.not.detailed_timer) &
+  call trace_begin('rt_internal_t%integral_1st', itimer=itimer(1))
   nwb = microphysics%n_wl_bins
   packet => self%bundle%rays
-
   do pck = 1, self%bundle%n_packets
-
+    if (detailed_timer) &
+      call trace_begin('rt_internal_t%integral_1st(1)', itimer=itimer(1))
     associate (npt => packet%n_points, nrays => packet%n_rays, &
                rtd => self%my_rt_data, cell => packet%coords)
-
     allocate( dtau(nrays, nwb, npt))
     allocate(ex0  (nrays, nwb, npt))
     allocate(ds   (nrays, nwb, npt))
@@ -506,7 +549,6 @@ SUBROUTINE solve_internal_integral_1st (self)
     allocate(Ifw  (nrays, nwb, npt))
     allocate(I_in (nrays, nwb))
     allocate(ropac(nrays, nwb,npt))
-
     do ray = 1, nrays
       do pt = 1, npt
         p = cell(:,pt,ray)
@@ -522,6 +564,10 @@ SUBROUTINE solve_internal_integral_1st (self)
 #else
     ex0 = exp(-dtau)                                                    ! first exponential coeff
 #endif
+    if (detailed_timer) then
+      call trace_end (itimer(1))
+      call trace_begin('rt_internal_t%integral_1st(2)', itimer=itimer(2))
+    end if
     ds  = (1.  - ex0) * s                                               ! Source factor
       !-----------------------------------------------------------------
       ! Forward / reverse solutions
@@ -546,14 +592,16 @@ SUBROUTINE solve_internal_integral_1st (self)
       end if
       self%packet_data(pck)%I_out = Ifw(:,:,1)
     end select
-
     call self%update_q (packet, q, ropac)
     deallocate(ex0, ds, s, dtau, q, Ifw, I_in, ropac)
     end associate
     packet => packet%next
+    if (detailed_timer) &
+      call trace_end (itimer(2))
   end do
   nullify (packet)
-  call trace_end (itimer)
+  if (.not.detailed_timer) &
+  call trace_end (itimer(1))
 END SUBROUTINE solve_internal_integral_1st
 
 !> =====================================================================

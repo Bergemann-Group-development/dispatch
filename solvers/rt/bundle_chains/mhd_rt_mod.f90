@@ -62,6 +62,7 @@ SUBROUTINE bundle_chain (self)
   class (mhd_rt_t) :: self
   class (rt_internal_t), pointer :: task
   ! --------------------------------------------------------------------
+  call trace_begin ('mhd_rt_t_%bundle_chain')
   task => self%first_internal
   do while (associated(task))
     !$omp task firstprivate (task)
@@ -71,6 +72,7 @@ SUBROUTINE bundle_chain (self)
     task => task%next
   end do
   !$omp taskwait
+  call trace_end
 END SUBROUTINE bundle_chain
 
 END MODULE mhd_rt_mod
