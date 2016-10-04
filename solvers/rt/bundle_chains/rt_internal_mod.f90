@@ -179,7 +179,6 @@ SUBROUTINE update_rt_internal (self)
       'phi:', self%bundle%phi*radian
   end if
   if (io%verbose > 1) call self%check
-  if (associated(self%downstream)) call self%downstream%update
   !call trace_end (itimer)
 END SUBROUTINE update_rt_internal
 
@@ -208,7 +207,7 @@ END FUNCTION still_inside
 !> at the same time, so time interpolation is needed when passing on net
 !> radiation intensities.
 !> =====================================================================
-SUBROUTINE recurse (self)
+RECURSIVE SUBROUTINE recurse (self)
   class (rt_internal_t) :: self
   integer :: id
   !.....................................................................

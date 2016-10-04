@@ -197,6 +197,7 @@ SUBROUTINE add_downstream (self)
   class(rt_internal_t),pointer :: rtc, nb_rt
   integer:: wall(3), n_connected, n_found, n_non_child
   class(task_t), pointer :: this, that
+  class(rt_internal_t), pointer :: ithis, ithat
   !.....................................................................
   call trace_begin('radiative_transfer_mod%add_correction_nbors ')
   !$omp critical (list_cr)
@@ -210,7 +211,9 @@ SUBROUTINE add_downstream (self)
         that => try%task
         SELECT TYPE (that)
         class is (rt_internal_t)
-          if (this%bundle_connects_to(that)) then
+          ithis => this
+          ithat => that
+          if (ithis%bundle_connects_to(ithat)) then
             this%downstream => that
             that%upstream => this
             if (io%verbose > 1) &
