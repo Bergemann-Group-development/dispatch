@@ -19,10 +19,12 @@ MODULE rt_internal_mod
   end type
 !-----------------------------------------------------------------------
   type,extends(rt_t), public :: rt_internal_t
+    type (rt_internal_t), pointer :: next      => null()                ! list of internal task
+    type (rt_internal_t), pointer:: upstream   => null()                ! upstream task
+    type (rt_internal_t), pointer:: downstream => null()                ! downstream tasks
     class (ray_bndl_t), pointer :: bundle
     type (rt_data_t),     pointer :: my_rt_data => null()
     class(internal_data_t), dimension(:), pointer :: packet_data => null() ! incoming intensities
-    type (rt_internal_t), pointer:: upstream, downstream                       ! connnected tasks
     integer :: solver
     integer :: BC_direction=0
     integer :: bundle_ID, dir_ID
@@ -33,6 +35,7 @@ MODULE rt_internal_mod
     procedure :: dtau
     procedure :: init   => init_rt_internal
     procedure :: update => update_rt_internal
+    procedure :: recurse
     procedure :: check  => check_rt_internal
     procedure :: check_intensities => check_rt_get_intensities
     procedure :: needs_BC
@@ -174,8 +177,19 @@ SUBROUTINE update_rt_internal (self)
       'phi:', self%bundle%phi*radian
   end if
   if (io%verbose > 1) call self%check
+  if (associated(self%downstream)) call self%downstream%update
   !call trace_end (itimer)
 END SUBROUTINE update_rt_internal
+
+!> =====================================================================
+!> Solve the RT along a chain, recursively. These tasks are not necessarily
+!> at !> the same time, so time interpolation is needed when passing on net
+!> radiation intensities.
+!> =====================================================================
+SUBROUTINE recurse (self)
+  class (rt_internal_t) :: self
+  if (associated(self%downstream)) call self%downstream%solve
+END SUBROUTINE recurse
 
 !> =============================================================================
 !> =============================================================================

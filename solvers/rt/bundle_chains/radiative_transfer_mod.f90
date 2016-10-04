@@ -152,8 +152,12 @@ SUBROUTINE rt_setup (self)
             internal%position = mhd_patch%position
             call internal%init                                          ! initialize in ray direction
             n_rt = n_rt+1
-            !call connect_nbors(link,t_list)                             ! correction checks if MHD is ready, MHD does not do that
-            !call connect_corr_nbors(rt_data_l,link)                     ! internal checks if correction is ready, corr does not do that
+            if (internal%needs_BC()) then                               ! if this is boundary bundle
+              if (associated(mhd_rt_patch%first_internal)) then
+                internal%next => mhd_rt_patch%first_internal%next       ! point to the next internal
+              end if
+              mhd_rt_patch%first_internal => internal                   ! prepend the new one
+            end if
             call internal%print
             call task_list%append_link(link)                            ! insert into the task list
           end do
@@ -249,13 +253,9 @@ SUBROUTINE add_downstream (self)
         that => try%task
         SELECT TYPE (that)
         class is (rt_internal_t)
-          if (this%bundle_connects_to (that)) then
+          if (this%bundle_connects_to(that)) then
             this%downstream => that
-            if (that%needs_BC()) then
-              nullify (that%upstream)
-            else
-              that%upstream => this
-            end if
+            that%upstream => this
             if (io%verbose > 1) &
               write(io_unit%log,'(1x,a,i5,a,i5,3x,a,2(3f6.1,3x),a,3i3)') &
                 'downstream nbor of',this%id,' is',this%downstream%id, &
