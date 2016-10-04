@@ -16,7 +16,7 @@ PROGRAM test
   !-----------------------------------------------------------------------------
  
   call omp%init
-  n = 61
+  n = 51
   allocate(mem(n,n,n))
   allocate(new(n,n*n))
   allocate(cb(n,n*n))
@@ -31,7 +31,7 @@ PROGRAM test
   do x=1,n
     do y=1,n
       do z = 1,n
-      mem(x,y,z) = 10000*x+100*y+z
+      mem(x,y,z) = 10000*x+y+z/100.
       end do 
     end do
   end do
@@ -86,48 +86,53 @@ PROGRAM test
   call tic
   do x=1,n
     do y=1,npt(x)
-      p = cell(:,y,x)
+      p = cell(:,x,y)
       cb(x,y) = mem(p(1),p(2),p(3))   
     end do
   end do
   call toc('cell based lookup in 2D', i1)
   
+
+  
   call tic
   do x=1,n
     y=npt(x)
-    p = cell(:,y,x)
+    p = cell(:,x,y)
     cb(x,1:y) = mem(p(1),p(2),:)   
   end do
   call toc('cell based lookup in 2D, striding over z', i1)
   
+   
+  
   call tic
   do x=1,n, 5
     do y=1,npt(x)
-      p = cell(:,y,x)
+      p = cell(:,x,y)
       cb(x,y) = mem(p(1),p(2),p(3))   
     end do
     iy=x+1
     do y=1,npt(iy)
-      p = cell(:,y,iy)
+      p = cell(:,iy,y)
       cb(iy,y) = mem(p(1),p(2),p(3))   
     end do
     iy=x+2
     do y=1,npt(iy)
-      p = cell(:,y,iy)
+      p = cell(:,iy,y)
       cb(iy,y) = mem(p(1),p(2),p(3))   
     end do
     iy=x+3
     do y=1,npt(iy)
-      p = cell(:,y,iy)
+      p = cell(:,iy,y)
       cb(iy,y) = mem(p(1),p(2),p(3))   
     end do
     iy=x+4
     do y=1,npt(iy)
-      p = cell(:,y,iy)
+      p = cell(:,iy,y)
       cb(iy,y) = mem(p(1),p(2),p(3))   
     end do
   end do
   call toc('cell based lookup in 2D, 1st loop unrolled', i1)
+  
   
     call tic
   do x=1,n, 5
@@ -153,6 +158,12 @@ PROGRAM test
   end do
   
   call toc('cell based lookup in 2D, striding over z, 1st loop unrolled', i1)
+  
+  !   do x=1,n
+  !  do y = 1, npt(x)
+  !    print *, cb(x,y), 'cell', cell(:,x,y)
+  !  end do
+  !end do
   
   call tic
   do y=1,n
