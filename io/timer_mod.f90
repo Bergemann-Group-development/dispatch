@@ -130,7 +130,11 @@ SUBROUTINE print ()
     end do
   end if
   updates = max(1.0,real(n_update-n_previous))
-  musppt = min(omp%ncores,omp%nthreads)*sec*1d6/updates
+  !-----------------------------------------------------------------------------
+  ! 'sec' measure wall clock time on a single thread, while 'total' is a sum over
+  ! all procedures being measured, over all threads.
+  !-----------------------------------------------------------------------------
+  musppt = sec*1d6/updates
   if (io_unit%master) &
     print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
       sec, 'wall sec'
