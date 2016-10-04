@@ -14,16 +14,15 @@ MODULE rt_mod
   private
 !-----------------------------------------------------------------------
   type, extends(task_t), public :: rt_t
-    type (mhd_t),        pointer :: mhd_patch  => null()  ! pointer to MHD task
+    class(mhd_t),        pointer :: mhd_patch  => null()  ! pointer to MHD task
     class(link_t),       pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
-    class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task
     class(link_t),       pointer :: link       => null()  ! pointer to self link in the task list
-    class(ray_bndl_t),   pointer :: my_rays    => null()  ! pointer to list of ray bundles
     ! common items
     integer :: n_ray_dirs = 3
     integer :: geom = 1                                                 !cartesian = 1, spherical = 2, cylindrical = 3
     integer :: rt_freq = 1                                              ! how often rt tasks are done wrt experiment
-    integer :: rt_type, li(3), ui(3)
+    integer :: rt_type                                                  ! =2 for fwd, =3 for reverse?
+    integer :: li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment
     real(kind=8) :: cell_ds(3)
     real(8):: offset(3)                 ! this is used to compute indices, locations
@@ -38,7 +37,6 @@ MODULE rt_mod
     real, dimension(:,:,:),   pointer :: temperature => null()          ! pointer to temperature
     real, dimension(:,:,:,:), pointer :: q       => null()              ! (x,y,z,nt)
   contains
-    procedure :: find_upstream
     procedure :: init => init_rt
     procedure :: init_mesh
     procedure :: update => update_rt
@@ -116,19 +114,23 @@ FUNCTION the_right_wall (self, nbor, wall) result (answer)
   answer = .false.
   associate (my_type => self%MHD_link%task)
   SELECT type (my_type)
-  type is (mhd_t)
+  class is (mhd_t)
     mhd => my_type
   class is (rt_t)
     mhd => my_type%mhd_patch
+  class default
+    error stop '(1) in rt_mod::the_right_wall'
   END SELECT
   end associate
   !
   associate (nbor_type => nbor%task)
   SELECT type (nbor_type)
-  type is (mhd_t)
+  class is (mhd_t)
     nb_mhd => nbor_type
   class is (rt_t)
     nb_mhd => nbor_type%mhd_patch                                       ! if I got an RT task to test, switch to corresponding MHD patch
+  class default
+    error stop '(2) in rt_mod::the_right_wall'
   end SELECT
   end associate
   !
@@ -160,71 +162,13 @@ FUNCTION the_right_wall (self, nbor, wall) result (answer)
 END FUNCTION the_right_wall
 
 !> =====================================================================
-!> Return a linked list starting with nbor_l with upstream walls of the
-!> self rt_t task.
-!> =====================================================================
-SUBROUTINE find_upstream (self, nbor_l, found)
-  class(rt_t)  :: self
-  class(link_t), pointer :: nbor_l, nul
-  class(link_t), pointer :: nbor, my_mhd_l, new
-  class(mhd_t), pointer :: my_task, nbor_task
-  integer :: found, wall(3)
-! ----------------------------------------------------------------------
-  call trace_begin('rt_t%find_upstream')
-
-  select case(self%rt_type)                                             ! select the right upstream wall
-  case(2)
-    wall = self%my_rays%lwall
-  case(3)
-    wall = self%my_rays%uwall
-  end select
-
-  found = 0
-  allocate (nbor_l)
-  my_task => self%mhd_patch
-  nbor => self%mhd_link%nbor
-  do while (associated(nbor))
-    associate (nbtask => nbor%task)
-    SELECT type (nbtask)
-    class is (mhd_t)
-      nbor_task => nbtask
-      if (.not.nbor_is_my_child(my_task, nbor_task)) then
-        ! if the nbor has a wall common with our upstream wall
-        ! allocate a new link, pointing to the nbor task, and
-        ! prepend it to the list starting with nbor_l
-        if (self%the_right_wall (nbor, wall)) then
-          allocate(new)
-          new%task => nbor_task
-          new%link => nbor%link
-          if (associated(nbor_l%next)) then
-            new%next => nbor_l%next
-            nbor_l%next%prev => new
-            nbor_l%next => new
-          else
-            nbor_l%next => new
-            new%prev => nbor_l
-          end if
-          found = found + 1
-        end if
-      end if
-    end SELECT
-    end associate
-    nbor => nbor%next
-  end do
-  nul => nbor_l
-  nbor_l => nbor_l%next
-  deallocate(nul)
-  call trace_end
-END SUBROUTINE find_upstream
-
-!> =====================================================================
 !> =====================================================================
 SUBROUTINE init_obc (self)
   class(rt_t) :: self
 !-----------------------------------------------------------------------
   call self%set(bits%has_BC)
   self%obc = 1
-  self%my_nb_link%check = .true.
+!  self%my_nb_link%check = .true.
 END SUBROUTINE init_obc
 
 !> =====================================================================

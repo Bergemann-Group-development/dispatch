@@ -66,6 +66,7 @@ MODULE ray_geometry_v3_mod
     integer :: n_points
     integer :: lwall(3)
     integer :: uwall(3)
+    integer :: dstep(3)                                                 ! traverse index increment
     integer :: axis                                                     ! identificator along which axis ray goes 1-3
     real    :: theta                                                    ! angle between ray and axis [0, 45], stored in radians
     real    :: phi                                                      ! angle of the ray in the axis plane [0, 360), stored in radians
@@ -149,6 +150,7 @@ MODULE ray_geometry_v3_mod
     class(single_ray_packet_t), pointer :: packets  => null()
     integer :: lwall(3)
     integer :: uwall(3)
+    integer :: dstep(3)
   contains
     procedure :: finish_ray
   end type
@@ -172,7 +174,7 @@ MODULE ray_geometry_v3_mod
   type :: traverse_t
     real :: ds                                                          ! distance a ray travels between points
     integer :: dstep(3)                                                 ! distance the ray covers by moving one cell size
-    integer :: cell_max(3), cell_min(3)    
+    integer :: cell_max(3), cell_min(3)
     integer :: p(3), upstream(3), downstream(3)
     integer :: lwall(3)
     integer :: pos(3)
@@ -480,6 +482,7 @@ SUBROUTINE add_axis(self, dir)
       ray_n = ray_n + 1                                                 ! move to next ray
     end do
   end do
+  bndl%dstep = 0;  bndl%dstep(dir) = 1                                  ! bundle dstep
   nullify(ndir, bndl, ray)
   call trace_end
 END SUBROUTINE add_axis
@@ -649,6 +652,7 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
   allocate(t)                                                           ! allocate traversal object
   allocate(ray_bundle)                                                  ! create ray tree to store rays
   call t%init(dp, self%ui, self%li, a, b, c)                            ! initialize traversal object
+  ray_bundle%dstep = t%dstep                                            ! save for fast access later
   do ia = t%cell_min(1), t%cell_max(1)                                  ! loop over 1st direction
     do ib = t%cell_min(2), t%cell_max(2)                                ! loop over 2nd direction
       first_point = .true.
@@ -668,8 +672,8 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
                 (t%pos < t%cell_min))) then                             ! if the ray is fully traced
           ray%head%rev = t%pos
           ray%head%fwd = t%upstream                                     ! save ray upstream cell
-          
-          do x = 1,3      
+
+          do x = 1,3
             if (t%dstep(t%p(x)) < 0 ) then
               if (t%pos(t%p(x)) < t%cell_min(x)) ray%head%uwall(t%p(x)) = -1
             else
@@ -677,7 +681,7 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
             end if
           end do
           call ray_bundle%finish_ray(ray)                               ! and save ray to the ray tree
-          if (t%pos(t%p(3)) > t%cell_max(3)+0.5) then                        ! if cell wall along the ray direction is reached
+          if (t%pos(t%p(3)) > t%cell_max(3)+0.5) then                   ! if cell wall along the ray direction is reached
               t%oob = .true.                                            ! this ray is done
           else                                                          ! otherwise
             allocate(ray)                                               ! get new ray
@@ -713,15 +717,12 @@ SUBROUTINE init_traverse(self, dp, ui, li, a, b, c)
   self%ds = 1/dp(c)
   self%dstep = 0
   if (dp(a) /= 0) then
-    self%dstep(a) = nint(dp(a)*self%ds)                                       ! distance between points along a axis
+    self%dstep(a) = nint(dp(a)*self%ds)                                 ! distance between points along a axis
   end if
-  
   if (dp(b) /= 0) then
-    self%dstep(b) = nint(dp(b)*self%ds)                                       ! distance between points along b axis
+    self%dstep(b) = nint(dp(b)*self%ds)                                 ! distance between points along b axis
   end if
-  
   self%dstep(c) = 1                                                     ! distance between points along c axis
-
   call trace_end
 END SUBROUTINE init_traverse
 
@@ -740,10 +741,10 @@ SUBROUTINE posit(self, ia, ib, init_step)
   self%pos(self%p(3)) = self%cell_min(3)                                ! starting position for c axis
   self%lwall = 0
 
-   
+
   do x = 1,3
     self%upstream(self%p(x)) = self%pos(self%p(x)) - self%dstep(self%p(x))
-  
+
     if (self%dstep(self%p(x)) > 0 ) then
       if (self%upstream(self%p(x)) < self%cell_min(x)) self%lwall(self%p(x)) = -1
     else
@@ -774,7 +775,7 @@ SUBROUTINE restart (self)
       end if
     end if
   end do
-  
+
   do x = 1,2
     if(self%reset(x)) then
       if (self%dstep(self%p(x)) > 0) then
@@ -784,17 +785,17 @@ SUBROUTINE restart (self)
       end if
     end if
   end do
-  
+
   do x = 1,3
     self%upstream(self%p(x)) = self%pos(self%p(x)) - self%dstep(self%p(x))
-  
+
     if (self%dstep(self%p(x)) > 0 ) then
       if (self%upstream(self%p(x)) < self%cell_min(x)) self%lwall(self%p(x)) = -1
     else
       if (self%upstream(self%p(x)) > self%cell_max(x)) self%lwall(self%p(x)) = 1
     end if
   end do
-  
+
   self%reset(1) = .false.
   self%reset(2) = .false.
 END SUBROUTINE restart
@@ -875,6 +876,7 @@ SUBROUTINE finish_ray(self, ray_point)
 
   if (.not.associated(self%head)) then                                  ! if the ray tree is empty
     allocate(bundle)
+    bundle%dstep = self%dstep
     self%head => bundle
     self%tail => bundle
     bundle%lwall = ray%lwall
@@ -892,6 +894,7 @@ SUBROUTINE finish_ray(self, ray_point)
     end do
     if(.not.fnd_b) then
       allocate(bundle)
+      bundle%dstep = self%dstep
       bundle%head => self%head
       bundle%prev => self%tail
       bundle%prev%next => bundle
@@ -1025,6 +1028,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
 
     bundle%lwall = sbundle%lwall
     bundle%uwall = sbundle%uwall
+    bundle%dstep = sbundle%dstep
     bundle%n_packets = 0
     ! --- Go through single packets ---
     spacket => sbundle%packets

@@ -11,6 +11,7 @@ MODULE mhd_rt_mod
   ! --------------------------------------------------------------------
   type, public, extends(mhd_t):: mhd_rt_t
     type(rt_data_t), pointer:: rt_data => null()
+    integer:: BC_direction=0
   contains
     procedure :: init_rt
     procedure :: update => update_mhd_rt
@@ -40,6 +41,7 @@ SUBROUTINE update_mhd_rt(self)
   ! --------------------------------------------------------------------
   call trace_begin ('mhd_rt_t_%update_mhd_rt')
   ! --- Update MHD, whatever it means ---
+  call self%rt_data%update
   call self%mhd_t%update
   ! --- Update dsdt by addind Q ---
   q => self%rt_data%q(:,:,:,self%it)  ! FIXME: should be interpolation in time

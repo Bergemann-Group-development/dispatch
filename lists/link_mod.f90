@@ -233,7 +233,7 @@ SUBROUTINE add_nbor_by_rank (self, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_rank', 3)
-  if (io%verbose>1) &
+  if (io%verbose>2) &
   write (io_unit%log,*) '  adding task', this%task%id, &
     this%task%is_set(bits%boundary), this%task%is_set(bits%virtual), &
     ' to nbor list of', self%task%id
