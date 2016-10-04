@@ -14,14 +14,14 @@ MODULE rt_mod
   private
 !-----------------------------------------------------------------------
   type, extends(task_t), public :: rt_t
-    class(mhd_t),        pointer :: mhd_patch  => null()  ! pointer to MHD task
-    class(link_t),       pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
-    class(link_t),       pointer :: link       => null()  ! pointer to self link in the task list
+    class(mhd_t),  pointer :: mhd_patch  => null()  ! pointer to MHD task
+    class(link_t), pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
+    class(link_t), pointer :: link       => null()  ! pointer to self link in the task list
     ! common items
     integer :: n_ray_dirs = 3
-    integer :: geom = 1                                                 !cartesian = 1, spherical = 2, cylindrical = 3
+    integer :: geom = 1                                                 ! cartesian = 1, spherical = 2, cylindrical = 3
     integer :: rt_freq = 1                                              ! how often rt tasks are done wrt experiment
-    integer :: rt_type                                                  ! =2 for fwd, =3 for reverse?
+    integer :: rt_type                                                  ! =2 for fwd, =3 for reverse
     integer :: li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment
     real(kind=8) :: cell_ds(3)

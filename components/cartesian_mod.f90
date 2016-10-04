@@ -95,7 +95,7 @@ SUBROUTINE init (self, label)
       patch%box = self%size
       patch%size = self%size/self%dims
       icoords = mpi_coords%rank_to_coords(rank)*patches_per_mpi + [i,j,k]
-      patch%position = icoords*patch%size
+      patch%position = (icoords+0.5d0)*patch%size
       call patch%set(bits%static)
       task=> patch
       call patch_list%append (task)

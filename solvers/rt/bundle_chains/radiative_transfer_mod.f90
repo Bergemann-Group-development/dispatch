@@ -114,7 +114,6 @@ SUBROUTINE rt_setup (self)
       rt_data%position = mhd_patch%position
       call rt_data%init                                                 ! initialise
       n_rt = n_rt+1
-      call connect_nbors(t_list,link)                                   ! connect rt_data and mhd task
       call task_list%append_link(link)                                  ! insert rt_data into the task list
       !-----------------------------------------------------------------
       ! Loop over the ray bundles to construct the solutions
@@ -152,8 +151,15 @@ SUBROUTINE rt_setup (self)
             internal%position = mhd_patch%position
             call internal%init                                          ! initialize in ray direction
             n_rt = n_rt+1
-            !call connect_nbors(link,t_list)                             ! correction checks if MHD is ready, MHD does not do that
-            !call connect_corr_nbors(rt_data_l,link)                     ! internal checks if correction is ready, corr does not do that
+            if (internal%needs_BC()) then                               ! if this is boundary bundle
+              if (associated(mhd_rt_patch%first_internal)) then
+                internal%next => mhd_rt_patch%first_internal%next       ! point to the next internal
+              end if
+              mhd_rt_patch%first_internal => internal                   ! prepend the new one
+              write (io_unit%log,*) &
+                'bundle chain: id, axis =', internal%id, internal%bundle%axis, &
+                real(internal%bundle%theta*radian), real(internal%bundle%phi*radian)
+            end if
             call internal%print
             call task_list%append_link(link)                            ! insert into the task list
           end do
@@ -178,51 +184,6 @@ SUBROUTINE rt_setup (self)
   end if
 END SUBROUTINE rt_setup
 
-!> =====================================================================
-!> My separate nbor connectors. The original one in link_mod does not do
-!> the job right for rt. Second one is for connecting rt_internal and
-!> corresponding corrections. Both checks are deactivated by default. If
-!> task becomes a BC one, it activates itself's link.
-!> =====================================================================
-SUBROUTINE connect_nbors(self, nbor)
-  class(link_t), pointer :: self
-  class(link_t), pointer :: nbor, link1, link2
-! -------------------------------------------------------------------
-  allocate(link1, link2)
-  link1%task   => self%task
-  link1%link   => self
-  link1%parent => self%parent
-  link1%check = .false.
-  call nbor%add_nbor_by_rank(link1)
-  link2%task   => nbor%task
-  link2%link   => nbor
-  link2%parent => nbor%parent
-  call self%add_nbor_by_rank(link2)
-END SUBROUTINE connect_nbors
-
-!> =====================================================================
-!> My separate nbor connectors. This version deactivates both links and
-!> saves the link of the correction task for it to be altered upon need
-!> =====================================================================
-SUBROUTINE connect_corr_nbors(self, nbor, nb_l)
-  class(link_t), pointer           :: self
-  class(link_t), pointer           :: nbor, link1, link2
-  class(link_t), pointer, optional :: nb_l
-! -------------------------------------------------------------------
-  allocate(link1, link2)
-  link1%task   => self%task
-  link1%link   => self
-  link1%parent => self%parent
-  link1%check = .false.
-  call nbor%add_nbor_by_rank(link1)
-  link2%task   => nbor%task
-  link2%link   => nbor
-  link2%parent => nbor%parent
-  link2%check =.false.
-  call self%add_nbor_by_rank(link2)
-  if (present(nb_l)) nb_l => link2
-END SUBROUTINE connect_corr_nbors
-
 !> =============================================================================
 !> Finalize the neighbor lists for upstream correction tasks by connecting
 !> them to appropriate up/down nbors.
@@ -236,6 +197,7 @@ SUBROUTINE add_downstream (self)
   class(rt_internal_t),pointer :: rtc, nb_rt
   integer:: wall(3), n_connected, n_found, n_non_child
   class(task_t), pointer :: this, that
+  class(rt_internal_t), pointer :: ithis, ithat
   !.....................................................................
   call trace_begin('radiative_transfer_mod%add_correction_nbors ')
   !$omp critical (list_cr)
@@ -249,13 +211,11 @@ SUBROUTINE add_downstream (self)
         that => try%task
         SELECT TYPE (that)
         class is (rt_internal_t)
-          if (this%bundle_connects_to (that)) then
+          ithis => this
+          ithat => that
+          if (ithis%bundle_connects_to(ithat)) then
             this%downstream => that
-            if (that%needs_BC()) then
-              nullify (that%upstream)
-            else
-              that%upstream => this
-            end if
+            that%upstream => this
             if (io%verbose > 1) &
               write(io_unit%log,'(1x,a,i5,a,i5,3x,a,2(3f6.1,3x),a,3i3)') &
                 'downstream nbor of',this%id,' is',this%downstream%id, &
@@ -310,11 +270,11 @@ SUBROUTINE add_internal_nbors (self)
               nb_ui = me%position + 0.5*me%size
               SELECT case(me%level - nb%level)
               case (1)
-                if ((all(me_li<nb_li)).and.(all(me_ui>nb_ui))) &
-                     call connect_nbors (rt_tasks, rt_tasks2)
+                !if ((all(me_li<nb_li)).and.(all(me_ui>nb_ui))) &
+                     !call connect_nbors (rt_tasks, rt_tasks2)
               case (-1)
-                if ((all(me_li>nb_li)).and.(all(me_ui<nb_ui))) &
-                     call connect_nbors (rt_tasks, rt_tasks2)
+                !if ((all(me_li>nb_li)).and.(all(me_ui<nb_ui))) &
+                     !call connect_nbors (rt_tasks, rt_tasks2)
               end SELECT
             end if
           end if

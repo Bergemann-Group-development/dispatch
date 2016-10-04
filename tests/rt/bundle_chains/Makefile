@@ -12,4 +12,4 @@ test: test.x
 	mkdir -p performance
 	( uname -a; grep "model name" /proc/cpuinfo | head -1; ./test.x ) | tee -a performance/$(HOST).log
 
-test.x: omp_mod.o omp_timer_mod.o
+test.x: io_unit_mod.o

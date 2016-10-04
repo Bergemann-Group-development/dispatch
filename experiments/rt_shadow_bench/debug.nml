@@ -1,5 +1,9 @@
+&timer_params
+ sec_per_report=2
+/
+
 &io_params
- verbose=2
+ verbose=1
  do_trace=f
  do_debug=f
  do_output=f
@@ -7,7 +11,7 @@
 /
 
 &out_params
- end_time=0.009
+ end_time=0.20
  out_time=0.001
  print_time=0.0
  guard_zones=f
@@ -25,7 +29,7 @@
  nt=5
  courant=0.2
  grace=0.1
- n=6,6,6
+ n=21,21,21
 /
 
 &rt_params

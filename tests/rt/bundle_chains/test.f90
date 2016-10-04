@@ -6,22 +6,22 @@
 !> modules were put in separate files, the Makefile dependencies would not have
 !> any circular dependencies. Graphically, one can draw the hierarchy as
 !>
-!>            task_t
-!>           /  |   \
-!>          /   |    link_t
-!>         /    |   /   \
-!>        /    patch_t   list_t
-!>       /       |          |
-!>      /       mhd_t       |
-!>     /       /   |        |
-!>    rt_data_t    |        |
-!>    |       \    |        |
-!> rt_bundle_t \   |        |
-!>           \  \  |        |
-!>           mhd_rt_t       |
-!>              |           |
-!>         experiment_t     |
-!>                    \     |
+!>            task_t                Legend: "|"  = pointer
+!>           // ||  \                       "||" = extension/inheritence
+!>          //  ||   link_t
+!>         //   ||   /   \
+!>        //   patch_t   list_t
+!>       //      ||         ||
+!>      //     mhd_t        ||
+!>     //     /   ||        ||
+!>   rt_data_t    ||        ||
+!>    ||      \   ||        ||
+!> rt_bundle_t \  ||        ||
+!>           \  \ ||        ||
+!>           mhd_rt_t       ||
+!>              ||          ||
+!>       experiment_t       ||
+!>                   \      ||
 !>                    task_list_t
 !>
 !> =============================================================================
@@ -73,7 +73,6 @@ MODULE patch_mod
   private
   type, public, extends(task_t) :: patch_t
     class (link_t), pointer :: nbor => null()
-    class (task_t), pointer :: task => null()
     real, dimension(:,:,:,:,:,:), pointer :: mem => null()
   end type
 END MODULE patch_mod
@@ -121,7 +120,7 @@ MODULE rt_data_mod
   implicit none
   private
   type, public, extends(task_t) :: rt_data_t
-    class (mhd_t),          pointer :: mhd
+    class (mhd_t),          pointer :: mhd => null()
     real, dimension(:,:,:), pointer :: source, opacity
     real, dimension(:,:,:), pointer :: q
   contains
@@ -161,7 +160,7 @@ CONTAINS
 !> Updating consist of computing the local solution, pointing the input net
 !> intensity if the downstream task to its output, and calling that task update
 !> -----------------------------------------------------------------------------
-SUBROUTINE update (self)
+RECURSIVE SUBROUTINE update (self)
   class (rt_bundle_t) :: self
   !.............................................................................
   ! ... solve the RT for the bundle
@@ -183,10 +182,10 @@ MODULE mhd_rt_mod
   implicit none
   private
   type, public, extends(mhd_t) :: mhd_rt_t
-    class (mhd_t),        pointer :: mhd
-    class (rt_data_t),    pointer :: rt_data
-    class (rt_bundle_t),  pointer :: bundle_chain
-    class (mhd_rt_t),     pointer :: downstream
+    class (mhd_t),        pointer :: mhd => null()
+    class (rt_data_t),    pointer :: rt_data => null()
+    class (rt_bundle_t),  pointer :: bundle_chain => null()
+    class (mhd_rt_t),     pointer :: downstream => null()
   contains
     procedure :: init
     procedure :: update
@@ -265,16 +264,16 @@ END SUBROUTINE execute
 END MODULE task_list_mod
 
 !> -----------------------------------------------------------------------------
-!> MOdule for setting up the RT part of the data and procedures
+!> Module for setting up the RT part of the data and procedures
 !> -----------------------------------------------------------------------------
-MODULE rt_mod
+MODULE rt_lab_mod
   USE link_mod
   USE task_list_mod
   USE experiment_mod
   USE rt_bundle_mod
   implicit none
   private
-  type, public :: rt_t
+  type, public :: rt_lab_t  ! create a "lab" where one can run experiments
   contains
     procedure :: init
   end type
@@ -285,9 +284,9 @@ CONTAINS
 !> the downstream links in the rt_internal tasks.
 !> -----------------------------------------------------------------------------
 SUBROUTINE init (self, task_list)
-  class (rt_t):: self
+  class (rt_lab_t):: self
   type (task_list_t), pointer :: task_list
-  type (link_t),       pointer :: link
+  type (link_t),      pointer :: link
   !.............................................................................
   link => task_list%head
   do while (associated(link))
@@ -301,7 +300,7 @@ SUBROUTINE init (self, task_list)
     link => link%next
   end do
 END SUBROUTINE init
-END MODULE rt_mod
+END MODULE rt_lab_mod
 
 !> -----------------------------------------------------------------------------
 !> Setting up the experiment consists of first setting up the MHD experiment,
@@ -309,12 +308,12 @@ END MODULE rt_mod
 !> -----------------------------------------------------------------------------
 PROGRAM test
   USE link_mod
-  USE rt_mod
+  USE rt_lab_mod
   USE task_list_mod
   USE experiment_mod
   implicit none
   type (task_list_t), pointer :: task_list
-  type (rt_t) :: rt
+  type (rt_lab_t) :: rt
   !.............................................................................
   ! ... use some standard MHD setup to generate a task list ...
   call rt%init (task_list)
