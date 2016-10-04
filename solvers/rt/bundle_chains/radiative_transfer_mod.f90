@@ -151,7 +151,7 @@ SUBROUTINE rt_setup (self)
             internal%position = mhd_patch%position
             call internal%init                                          ! initialize in ray direction
             n_rt = n_rt+1
-            if (internal%needs_BC()) then                               ! if this is boundary bundle
+            if (internal%chain_start()) then                            ! bundle chain start?
               if (associated(mhd_rt_patch%first_internal)) then
                 internal%next => mhd_rt_patch%first_internal%next       ! point to the next internal
               end if
