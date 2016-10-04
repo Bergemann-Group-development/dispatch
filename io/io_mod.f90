@@ -93,13 +93,14 @@ SUBROUTINE init (self, name)
     io_unit%verbose = verbose
     if (omp_trace .and. omp%nthreads>1) then
       log_unit = 100+omp%mythread()
-      write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%mythread()
+      write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread
     else
       log_unit = 100
       write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
       if (.not.omp%master) io_unit%verbose = -2
     end if
-    open (log_unit, file=filename, form='formatted', status='unknown')
+    if (omp%master .or. omp_trace) &
+      open (log_unit, file=filename, form='formatted', status='unknown')
     io_unit%log = log_unit
     !$omp end critical
     write (io_unit%log,'(a,i4,2l4)') &
