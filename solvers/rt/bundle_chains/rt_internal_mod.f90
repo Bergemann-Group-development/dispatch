@@ -41,7 +41,8 @@ MODULE rt_internal_mod
     procedure :: check_intensities => check_rt_get_intensities
     procedure :: needs_BC
     procedure :: bundle_connects_to
-    procedure :: still_inside
+    procedure :: chain_start
+    procedure :: chain_stop
     procedure :: get_upstream
     procedure :: get_static
     procedure :: get_dynamic
@@ -184,23 +185,47 @@ END SUBROUTINE update_rt_internal
 
 !> =====================================================================
 !> =====================================================================
-LOGICAL FUNCTION still_inside (self)
+LOGICAL FUNCTION chain_start (self)
   class (rt_internal_t) :: self
   type (mesh_t), pointer :: m
   integer :: axis, i
   !.....................................................................
-  still_inside = .true.
+  chain_start = .false.
+  axis = self%BC_direction
+  if (axis /= 0) then
+    if (self%BC_direction == +1 .and. self%rt_type == 2) then
+      i = self%bundle%rays%fwd_coords(axis,1)
+      m => self%mhd_patch%mesh(axis)
+      if (m%p + m%r(i) < 0.0) chain_start = .true.
+    else if (self%BC_direction == -1 .and. self%rt_type == 3) then
+      i = self%bundle%rays%rev_coords(axis,1)
+      m => self%mhd_patch%mesh(axis)
+      if (m%p + m%r(i) > m%b) chain_start = .true.
+    end if
+  end if
+END FUNCTION chain_start
+
+!> =====================================================================
+!> =====================================================================
+LOGICAL FUNCTION chain_stop (self)
+  class (rt_internal_t) :: self
+  type (mesh_t), pointer :: m
+  integer :: axis, i
+  !.....................................................................
+  chain_stop = .false.
   axis = self%BC_direction
   if (axis/=0) then
-    i = self%bundle%rays%rev_coords(axis,1)
-    m => self%mhd_patch%mesh(axis)
-    if (m%p + m%r(i) > m%b) still_inside = .false.
-    !print*,'mk', self%id, axis, i, real(m%p), real(m%r(i)), real(m%b), still_inside
-  !else
-    !i = 0
-    !print*,'mk', self%id, axis, i, still_inside
+    if (self%BC_direction == -1 .and. self%rt_type == 3) then
+      i = self%bundle%rays%fwd_coords(axis,1)
+      m => self%mhd_patch%mesh(axis)
+      if (m%p + m%r(i) < 0.0) chain_stop = .true.
+    else if (self%BC_direction == +1 .and. self%rt_type == 2) then
+      i = self%bundle%rays%rev_coords(axis,1)
+      m => self%mhd_patch%mesh(axis)
+      if (m%p + m%r(i) > m%b) chain_stop = .true.
+    end if
   end if
-END FUNCTION still_inside
+END FUNCTION chain_stop
 
 !> =====================================================================
 !> Solve the RT along a chain, recursively. These tasks are not necessarily
@@ -223,9 +248,9 @@ RECURSIVE SUBROUTINE recurse (self)
     write (io_unit%log,'("integral_1st, id:",2i5,3x,"theta, phi:",2f5.0,3x,3i4,2l3,i5)') &
       self%id, self%bundle%axis, self%bundle%theta*radian, self%bundle%phi*radian, &
       nint(self%position/self%mhd_patch%ds), associated(self%downstream), &
-      self%still_inside(), id
+      self%chain_stop(), id
   end if
-  if (associated(self%downstream).and.self%still_inside()) then
+  if (associated(self%downstream) .and. .not.self%chain_stop()) then
     call self%downstream%recurse
   end if
   call trace_end
@@ -239,7 +264,7 @@ LOGICAL FUNCTION needs_BC (self)
   needs_BC = .false.
   if (self%mhd_patch%is_set(bits%has_BC+bits%boundary)) then            ! boundary
     if (self%BC_direction > 0) then                                     ! valid BC_direction
-      if (self%still_inside()) then
+      if (.not.self%chain_stop()) then
         if (self%bundle%dstep(self%BC_direction) > 0) needs_BC = .true. ! step in BC_direction
       end if
     end if
