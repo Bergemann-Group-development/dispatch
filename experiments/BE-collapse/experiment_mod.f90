@@ -38,39 +38,39 @@ SUBROUTINE init (self)
   integer, save:: levelmax=0
   real:: x, y, z
   logical:: first_time = .true.
-  real:: w_BE=5.0, p_BE=1.0, a_BE=0.10, r_BE=0.45, amplitude=10., r
+  real, save:: w_BE=5.0, p_BE=1.0, a_BE=0.10, r_BE=0.45, amplitude=10., r
   namelist /experiment_params/ w_BE, p_BE, a_BE, r_BE, amplitude, levelmax
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
-  print*, 'start init'
   call io%init
   call trace_begin ('experiment_t%init')
   self%nv = 8
   call self%mhd_t%init
 
   if (first_time) then
+    first_time = .false.
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*,experiment_params)
+  end if
 
-    self%d => self%mem(:,:,:,1,self%it,1)
-    self%s => self%mem(:,:,:,  2,self%it,1)
-    self%p => self%mem(:,:,:,3:5,self%it,1)
-    self%B => self%mem(:,:,:,6:8,self%it,1)
+  self%d => self%mem(:,:,:,1,self%it,1)
+  self%s => self%mem(:,:,:,  2,self%it,1)
+  self%p => self%mem(:,:,:,3:5,self%it,1)
+  self%B => self%mem(:,:,:,6:8,self%it,1)
   !  d=>self%d; s=>self%s
   !  p=>self%p; B=>self%B
   !  px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   !  Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
   
-    self%w_BE      = w_BE
-    self%p_BE      = p_BE
-    self%a_BE      = a_BE
-    self%r_BE      = r_BE
-    !self%mhd       = .false.
-    boundary%r_BE  = r_BE
-    self%amplitude = amplitude  
-  end if
+  self%w_BE      = w_BE
+  self%p_BE      = p_BE
+  self%a_BE      = a_BE
+  self%r_BE      = r_BE
+  !self%mhd       = .false.
+  boundary%r_BE  = r_BE
+  self%amplitude = amplitude
 
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Approximate a Bonnor-Ebert sphere
