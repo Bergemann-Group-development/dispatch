@@ -14,6 +14,7 @@
  do_trace=f
  do_debug=f
  do_output=t
+ !output_legacy = t
 /
 &box_params
  size=1,1,1
@@ -32,12 +33,12 @@
  courant=0.2
  grace=0.3
  n=24,24,24
- dt_fixed=0.000000001
+ dt_fixed=0.001
 /
 &out_params
  end_time=0.501
- out_time=  0.00000001
- print_time=0.00000005
+ out_time=  0.01
+ print_time=0.05
  guard_zones=f
  time_derivs=f
 /

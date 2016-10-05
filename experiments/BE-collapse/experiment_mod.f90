@@ -79,9 +79,9 @@ SUBROUTINE init (self)
     do k=1,self%gn(3)
     do j=1,self%gn(2)
     do i=1,self%gn(1)
-      x = (i-(self%gn(1)+1)*0.5)*self%ds(1) + self%position(1)
-      y = (j-(self%gn(2)+1)*0.5)*self%ds(2) + self%position(2)
-      z = (k-(self%gn(3)+1)*0.5)*self%ds(3) + self%position(3)
+      x = (i-(self%gn(1)+1)*0.5)*self%ds(1) 
+      y = (j-(self%gn(2)+1)*0.5)*self%ds(2) 
+      z = (k-(self%gn(3)+1)*0.5)*self%ds(3) 
       r = sqrt(x**2+y**2+z**2)/self%w_BE
       r = min(r,r_BE/w_BE)
       self%d(i,j,k)  = self%amplitude*exp(-r**self%p_BE/(1.+r**self%p_BE/log(r**2/self%a_BE)))
@@ -91,11 +91,6 @@ SUBROUTINE init (self)
     end do
     end do
   end if
-  !-----------------------------------------------------------------------------
-  ! Initial condition for phi
-  !-----------------------------------------------------------------------------
-  self%phi = 0.0
-  !
   call trace_end
 END SUBROUTINE init
 
@@ -110,36 +105,37 @@ SUBROUTINE update(self)
   !.............................................................................
   call trace_begin('experiment_t%update')
 associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
-  !-----------------------------------------------------------------------------
-  ! Set phi=0 at and outside the boundary
-  !-----------------------------------------------------------------------------
 !  if (self%it .ne. 1) then
 !    self%mem(:,:,:,:,self%it,:) = self%mem(:,:,:,:,self%it-1,:)
 !    self%d => self%mem(:,:,:,1,self%it,1)
 !  endif
-  !-----------------------------------------------------------------------------
-  ! This is where d(f)/dt is computed, so zap to zero outside the boundary,
-  ! treating staggered components separately
-  !-----------------------------------------------------------------------------
+
 !  print*,'before mhd self%dt and minval(self%mem(:,:,:,1,self%it,1))',self%dt, minval(self%mem(:,:,:,1,self%it,1))
   call self%mhd_t%update
 !  print*,'after mhd self%dt and minval(self%mem(:,:,:,1,self%it,1))',self%dt, minval(self%mem(:,:,:,1,self%it,1))
   !call self%mhd_t%nonideal_MHD_courant_condition(self%dt_Ohm,self%dt_AD)
-  call self%patch_t%courant_condition()
   call self%check_density('before timestep')
+  self%d => self%mem(:,:,:,  1,self%it,1)
+  self%s => self%mem(:,:,:,  2,self%it,1)
+  self%p => self%mem(:,:,:,3:5,self%it,1)
+  self%B => self%mem(:,:,:,6:8,self%it,1)
   do k=1,gn(3)
   do j=1,gn(2)
   do i=1,gn(1)
-    x = (i-(gn(1)+1)*0.5)*ds(1) + pos(1)
-    y = (j-(gn(2)+1)*0.5)*ds(2) + pos(2)
-    z = (k-(gn(3)+1)*0.5)*ds(3) + pos(3)
+    x = (i-(gn(1)+1)*0.5)*ds(1) 
+    y = (j-(gn(2)+1)*0.5)*ds(2) 
+    z = (k-(gn(3)+1)*0.5)*ds(3) 
     r = sqrt(x**2+y**2+z**2)
     if (r > self%r_BE) then
-      self%d(i,j,k) = 2e-11
+      self%d(i,j,k) =   max(self%d(i,j,k),1e-7)
+      self%s(i,j,k) =   0.
+      self%p(i,j,k,:) = 0.
+      self%B(i,j,k,:) = 0.
     end if
   end do
   end do
   end do
+  call self%patch_t%courant_condition()
 !  print*,'before timestep self%dt and minval(self%mem(:,:,:,1,self%it,1))',self%dt, minval(self%mem(:,:,:,1,self%it,1))
   call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density('after timestep')
