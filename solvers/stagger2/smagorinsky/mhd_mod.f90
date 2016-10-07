@@ -330,8 +330,8 @@ SUBROUTINE output (self, experiment_name)
   logical:: exists
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
-  !$omp critical (output_cr)
   call self%patch_t%output (experiment_name)
+  !$omp critical (output_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout-1
   inquire(file=filename, exist=exists)

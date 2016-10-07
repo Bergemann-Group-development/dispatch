@@ -510,6 +510,7 @@ SUBROUTINE output (self, experiment_name)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
+  !$omp critical (out_cr)
   call trace_begin('patch_mod::output', itimer=itimer)
   do while (self%time > self%out_next .and. self%out_next <= self%end_time)
     if (io%do_legacy) then
@@ -525,6 +526,7 @@ SUBROUTINE output (self, experiment_name)
     self%iout = self%iout+1
   end do
   call trace_end (itimer)
+  !$omp end critical (out_cr)
 END SUBROUTINE output
 
 !> =============================================================================
@@ -754,17 +756,16 @@ SUBROUTINE output_legacy (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a log file, with files written by this rank
   !-----------------------------------------------------------------------------
-  !$omp critical (io_cr)
   write (logname,'(a)') trim(io%outputname)//'log'
   if (first_time) then
     first_time = .false.
     if (io%master) print*, 'output data file log written to '//trim(logname)
-    open (io%log_unit,file=trim(logname),status='unknown')
+    open (io%data_unit,file=trim(logname),status='unknown')
   else
-    open (io%log_unit,file=trim(logname),status='unknown',position='append')
+    open (io%data_unit,file=trim(logname),status='unknown',position='append')
   end if
   write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout
-  write (io%log_unit,'(a)') trim(filename)
+  write (io%data_unit,'(a)') trim(filename)
   ds = self%box/2.0**io%levelmax
   do i=1,3
     if (self%size(i) > 0.0) then
@@ -772,10 +773,10 @@ SUBROUTINE output_legacy (self, experiment_name)
       ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/ds(i) - 1.0
     end if
   end do
-  write (io%log_unit,'(1p,e14.6,3(2x,3e14.6),1x,i3.1)') self%time, self%position, self%ds, &
+  write (io%data_unit,'(1p,e14.6,3(2x,3e14.6),1x,i3.1)') self%time, self%position, self%ds, &
         self%velocity, self%level
-  write (io%log_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
-  close (io%log_unit)
+  write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
+  close (io%data_unit)
 
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
@@ -790,12 +791,10 @@ SUBROUTINE output_legacy (self, experiment_name)
   write (io%data_unit,'(3(1i8.1,1x),i2.1,1x,a)') self%id, self%iout, self%istep, &
         1, trim(self%kind)
   close (io%data_unit)
-  !$omp end critical (io_cr)
 
   !-----------------------------------------------------------------------------
   ! Write a binary file with the data cube.
   !-----------------------------------------------------------------------------
-  !$omp critical (io_cr)
   n = u-l+1
   open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
     status='unknown', recl=real32*product(n))
@@ -834,7 +833,6 @@ SUBROUTINE output_legacy (self, experiment_name)
     end do
   end do
   close (io%data_unit)
-  !$omp end critical (io_cr)
 
   call trace_end
 END SUBROUTINE output_legacy
