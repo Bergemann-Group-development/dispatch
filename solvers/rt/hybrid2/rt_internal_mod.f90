@@ -6,7 +6,7 @@ MODULE rt_internal_mod
   USE rt_mod
   USE rt_data_mod
   USE rt_boundary_mod
-  USE ray_geometry_v2_mod
+  USE ray_geometry_v3_mod
   USE trace_mod
   implicit none
   private
@@ -34,10 +34,8 @@ MODULE rt_internal_mod
     procedure :: check  => check_rt_internal
     procedure :: check_intensities => check_rt_get_intensities
     procedure :: get_upstream
-    procedure :: get_local_static
-    procedure :: get_local_dynamic
-    procedure :: get_remote_static
-    procedure :: get_remote_dynamic
+    procedure :: get_static
+    procedure :: get_dynamic
     procedure :: get_correction_from_BC
     procedure :: solve_internal_integral => solve_internal_integral_2nd
     procedure :: solve_internal_feautrier
@@ -103,7 +101,7 @@ SUBROUTINE init_rt_internal (self)
   !---------------------------------------------------------------------
   allocate(self%packet_data(self%my_rays%n_packets))
   packet => self%my_rays%rays
-  self%ray_ds = packet%ds(1,1) * self%cell_ds(self%my_rays%axis)
+  self%ray_ds = packet%ds * self%cell_ds(self%my_rays%axis)
   do ray = 1, self%my_rays%n_packets
     allocate(self%packet_data(ray)%bndry (packet%n_rays,microphysics%n_wl_bins))
     allocate(self%packet_data(ray)%I_out (packet%n_rays,microphysics%n_wl_bins))
@@ -121,7 +119,7 @@ SUBROUTINE init_rt_internal (self)
       pt = 1
     end select
     do r = 1, packet%n_rays
-      self%packet_data(ray)%cell(:,r) = packet%cell_coords(:,pt,r)
+      self%packet_data(ray)%cell(:,r) = packet%coords(:,pt,r)
     end do
     packet => packet%next
   end do
@@ -206,18 +204,10 @@ SUBROUTINE get_upstream (self)
       nbor => nbor%next
     end do
 
-    if (local) then                                                     ! select appropriate mode
-      if (static) then
-        call self%get_local_static
-      else
-        call self%get_local_dynamic
-      end if
+    if (static) then
+      call self%get_static
     else
-      if (static) then
-        call self%get_remote_static
-      else
-        call self%get_remote_dynamic
-      end if
+      call self%get_dynamic
     end if
   end if
 
@@ -228,7 +218,7 @@ END SUBROUTINE get_upstream
 !> =====================================================================
 !> Upstream data is on same MPI rank and tasks are not moving.
 !> =====================================================================
-SUBROUTINE get_local_static (self)
+SUBROUTINE get_static (self)
   class(rt_internal_t) :: self
   class(rt_internal_t), pointer :: rt_nb
   class(link_t), pointer :: nbor
@@ -240,7 +230,7 @@ SUBROUTINE get_local_static (self)
   real :: n_mean
   real(8) :: my_c_pos(3)
   !---------------------------------------------------------------------
-  call trace_begin('rt_corrections_mod::get_local_static')
+  call trace_begin('rt_corrections_mod::get_static')
 
   allocate(all_upd(self%my_rays%n_packets))
   all_upd = .false.
@@ -308,7 +298,7 @@ SUBROUTINE get_local_static (self)
                     end select
 
                     if (try > 0) then
-                      Iin = self%I_retrv(rt_nb, nb_packet%cell_coords(:,nb_ray, try))
+                      Iin = self%I_retrv(rt_nb, nb_packet%coords(:,nb_ray, try))
                       mean = mean + Iin
                       n_mean = n_mean + 1.
                     end if
@@ -346,7 +336,7 @@ SUBROUTINE get_local_static (self)
 
   if (io%verbose>2) call self%check_intensities(1)
   call trace_end
-END SUBROUTINE get_local_static
+END SUBROUTINE get_static
 
 !> Slow for now. Will be optimised.
 FUNCTION I_retrv(self, nbor, c) result (I_out)
@@ -374,28 +364,11 @@ FUNCTION I_retrv(self, nbor, c) result (I_out)
   call trace_end
 END FUNCTION I_retrv
 
-!> =====================================================================
-!> Upstream data is on different MPI rank, but tasks are not moving.
-!> !!! TEMPORARY REMOVED !!!
-!> =====================================================================
-SUBROUTINE get_remote_static (self)
-  class(rt_internal_t) :: self
-  !---------------------------------------------------------------------
-  error stop "ERROR: remote same static not implemented"
-END SUBROUTINE get_remote_static
-
-SUBROUTINE get_local_dynamic (self)
+SUBROUTINE get_dynamic (self)
   class(rt_internal_t) :: self
   !---------------------------------------------------------------------
   error stop "ERROR: local different dynamic not implemented"
-END SUBROUTINE get_local_dynamic
-
-SUBROUTINE get_remote_dynamic (self)
-  class(rt_internal_t) :: self
-  !---------------------------------------------------------------------
-  error stop "ERROR: remote same dynamic not implemented"
-END SUBROUTINE get_remote_dynamic
-
+END SUBROUTINE get_dynamic
 
 !> =====================================================================
 !> Upstream data is from boundary conditions.
@@ -466,7 +439,7 @@ SUBROUTINE solve_internal_integral_1st (self)
   do pck = 1, self%my_rays%n_packets
 
     associate (npt => packet%n_points, nrays => packet%n_rays, &
-               rtd => self%my_rt_data, cell => packet%cell_coords)
+               rtd => self%my_rt_data, cell => packet%coords)
 
     allocate( dtau(nrays, nwb, npt))
     allocate(ex0  (nrays, nwb, npt))
@@ -551,7 +524,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
   do pck = 1, self%my_rays%n_packets
 
     associate (npt => packet%n_points, nrays => packet%n_rays, &
-               rtd => self%my_rt_data, cell => packet%cell_coords)
+               rtd => self%my_rt_data, cell => packet%coords)
 
     allocate( dtau(nrays, nwb, npt))
     allocate(idtau(nrays, nwb, npt))
@@ -574,7 +547,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
         ropac(ray,:,pt) = rtd%opacity(p(1),p(2),p(3),:)
       end do
     end do
-    
+
     dtau = self%dtau(ropac)
     I_in = self%packet_data(pck)%bndry
     pt = npt
@@ -654,11 +627,12 @@ SUBROUTINE update_q (self, rays, q, op)
   real, dimension(:,:,:,:), pointer :: qq
   integer, dimension(:,:,:), pointer :: cell
   real :: dirw
+  integer, save:: itimer=0
   !---------------------------------------------------------------------
-  call trace_begin ('rt_internal_t_%update_q',4)
+  call trace_begin ('rt_internal_t_%update_q', 4, itimer=itimer)
   dirw = self%dir_weight
   qq => self%mhd_patch%rt_q%q
-  cell => rays%cell_coords
+  cell => rays%coords
   do ray = 1, size(q,1)
     do pt = 1, size(q,3)
       p = cell(:,pt,ray)
@@ -668,7 +642,7 @@ SUBROUTINE update_q (self, rays, q, op)
       end do
     end do
   end do
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE update_q
 
 !> =====================================================================

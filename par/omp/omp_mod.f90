@@ -5,6 +5,7 @@ MODULE omp_mod
   USE io_unit_mod
   implicit none
   private
+  public:: omp_get_thread_num, omp_get_num_threads, omp_in_parallel
   logical, save:: omp_trace=.false.
   type, public:: omp_t
     integer:: thread=0

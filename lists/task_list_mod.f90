@@ -109,6 +109,7 @@ SUBROUTINE execute (self)
   !$omp end parallel
   call timer%print
   call toc ('rank time', n_update)
+  if (io%master) write (*,*) "task list finished."
   !if (io%master) &
   !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
   !    max(1,(download%n_differ+download%n_same))
@@ -165,6 +166,11 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     if (task%is_set (bits%frozen+bits%virtual)) then
       if (task%iout == 0) call task%output(self%name)
+      ! if a frozen task is set to ready, make it not ready
+      if (task%is_set(bits%ready)) then
+        !$omp atomic
+        self%na = self%na - 1
+      end if
       call trace_end
       return
     end if

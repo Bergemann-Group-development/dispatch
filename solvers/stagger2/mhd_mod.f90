@@ -44,6 +44,7 @@ MODULE mhd_mod
     procedure:: velocity_magnitude => void
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
+    procedure:: apply_heating
   end type
 CONTAINS
 
@@ -79,7 +80,7 @@ SUBROUTINE init (self)
   end if
   if (mhd_AD) then
     self%mhd_AD = mhd_AD
-    self%gamma_AD  = gamma_AD 
+    self%gamma_AD  = gamma_AD
     self%rho_ions  = rho_ions
   endif
   do i=1,3
@@ -155,9 +156,9 @@ SUBROUTINE update (self)
   if (self%mhd_AD) then
     call allocate_vectors (self%gn, Ud, E_AD)
     Ud_x=>Ud(:,:,:,1)
-    Ud_y=>Ud(:,:,:,2) 
+    Ud_y=>Ud(:,:,:,2)
     Ud_z=>Ud(:,:,:,3)
-    call allocate_scalars (self%gn, ambi, H_AD)    
+    call allocate_scalars (self%gn, ambi, H_AD)
   end if
   Ex=>E(:,:,:,1); Ey=>E(:,:,:,2); Ez=>E(:,:,:,3)
   Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
@@ -351,24 +352,24 @@ SUBROUTINE update (self)
     dBdt = -curl_up(ds,E)
     if (self%mhd_AD) then
       !---------------------------------------------------------------------------
-      ! Below is the actual ambipolar drift parameter as given in equation 20 in Padoan, Zweibel and Nordlund (2000). 
-      ! To only write ambi, the definition in Padoan et al. is already multiplied by density**(-3/2) 
-      ! as it appears in the calculation of the drift velocity. The term d**1.5 is a cosnequence of the single fluid 
-      ! approximation and the relation 
+      ! Below is the actual ambipolar drift parameter as given in equation 20 in Padoan, Zweibel and Nordlund (2000).
+      ! To only write ambi, the definition in Padoan et al. is already multiplied by density**(-3/2)
+      ! as it appears in the calculation of the drift velocity. The term d**1.5 is a cosnequence of the single fluid
+      ! approximation and the relation
       ! n_i = K(n_n/10^5cm^-3)^k + K' (n_n/10^3 cm^-3)^-2
-      ! K = 3*10^-3cm^-3, k=0.5 and K'=4.64*10^-4cm^-3. 
-      ! based on assuming that dust grains do NOT affect ionization balance significantly 
-      ! => second term falls off quickly => n_i~n_n^0.5 
-      ! In order to compute this parameter correctly, we need to know TEMPERATURE, 
-      ! RESOLUTION (not directly applicable here because we use AMR), BOX LENGTH, AVERAGE DENSITY, 
+      ! K = 3*10^-3cm^-3, k=0.5 and K'=4.64*10^-4cm^-3.
+      ! based on assuming that dust grains do NOT affect ionization balance significantly
+      ! => second term falls off quickly => n_i~n_n^0.5
+      ! In order to compute this parameter correctly, we need to know TEMPERATURE,
+      ! RESOLUTION (not directly applicable here because we use AMR), BOX LENGTH, AVERAGE DENSITY,
       ! COSMIC-RAY IONISATION (K_i parameter: K_i = n_i*n_H**(-0.5) = x_i*n_H**(-0.5) ) and AVERAGE VOLUMETRIC FLOW RATE av_sigv:
       !---------------------------------------------------------------------------
       ! ambi = 0.28 * (0.1*T)**0.5 * (N/128d0) * (L/10d0)**(-1) * (av_n/200d0)**(-0.5) * (K_i/1e-5)**(-1) * (av_sigv/2e-9)**(-1) * d**(-1.5)
-      ! 
-      ! Alternative definition in Duffin and Pudritz (2008) assumes constant parameter for gamma_AD 
+      !
+      ! Alternative definition in Duffin and Pudritz (2008) assumes constant parameter for gamma_AD
       ! gamma_AD = av_sigv / (m_i + m_n) = 3.28e13 g^-1cm^3s^-1
       !ambi = 1.4 / (gamma_AD*d**1.5)
-      !rho_i = 1. 
+      !rho_i = 1.
       ambi = 1./(self%gamma_AD*d*self%rho_ions**0.5)
       Ud_x = xdn(ambi) * (zup(Jy)*xdn(zup(Bz)) - yup(Jz)*xdn(yup(By)))
       Ud_y = ydn(ambi) * (xup(Jz)*ydn(xup(Bx)) - zup(Jx)*ydn(zup(Bz)))
@@ -388,7 +389,7 @@ SUBROUTINE update (self)
         H_AD = self%rho_ions * d * self%gamma_AD * (xup(Ud_x)**2 + yup(Ud_y)**2 + zup(Ud_z)**2)
         dsdt = dsdt + H_AD*d/pg
       end if
-    end if  
+    end if
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, E, J, fd, fx, fy, fz, fm)
@@ -398,7 +399,7 @@ SUBROUTINE update (self)
   end if
   if (self%mhd_AD) then
     call deallocate_vectors (Ud, E_AD)
-    call deallocate_scalars (ambi,H_AD)            
+    call deallocate_scalars (ambi,H_AD)
   end if
   if (.not.self%do_pebbles) then
     call deallocate_vectors (U)
@@ -458,10 +459,11 @@ SUBROUTINE output (self, experiment_name)
   logical:: exists
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
-  !$omp critical (output_cr)
   call self%patch_t%output (experiment_name)
+  !$omp critical (output_cr)
+  print*,trim(io%outputname),self%id, self%iout
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
-    self%id, self%iout-1
+    self%id, self%iout
   inquire(file=filename, exist=exists)
   if (exists) then
     open (io%data_unit, file=trim(filename), form='formatted', status='old', &
@@ -516,7 +518,7 @@ FUNCTION cell_gas_pressure(self, c) RESULT (pg)
 END FUNCTION cell_gas_pressure
 
 !> =============================================================================
-!> temperature from ideal gas law, taking into account that the temperature is 
+!> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
 !> =============================================================================
 FUNCTION gas_temperature (self) RESULT (tmp)
@@ -599,6 +601,11 @@ SUBROUTINE void (self, v)
   real, dimension(:,:,:), pointer:: v
   !-----------------------------------------------------------------------------
   v = 0.0
+END SUBROUTINE
+
+SUBROUTINE apply_heating (self, q)
+  class (mhd_t):: self
+  real, dimension(:,:,:):: q
 END SUBROUTINE
 
 END MODULE mhd_mod

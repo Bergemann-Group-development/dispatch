@@ -43,7 +43,7 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   character(len=64):: filename
   integer, save:: id_debug=-1
-  logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
+  logical, save:: first_time=.true., omp_trace=.true., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.true., do_flags=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
@@ -89,22 +89,23 @@ SUBROUTINE init (self, name)
     call system ('mkdir -p '//trim(self%outputname))
     if (self%master.and.first_time) write (*,io_params)
     !$omp parallel
-    !$omp critical
+    !$omp critical (open_cr)
     io_unit%verbose = verbose
     if (omp_trace .and. omp%nthreads>1) then
       log_unit = 100+omp%mythread()
-      write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%mythread()
+      write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread
     else
       log_unit = 100
       write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
       if (.not.omp%master) io_unit%verbose = -2
     end if
-    open (log_unit, file=filename, form='formatted', status='unknown')
+    if (omp%master .or. omp_trace) &
+      open (log_unit, file=filename, form='formatted', status='unknown')
     io_unit%log = log_unit
-    !$omp end critical
     write (io_unit%log,'(a,i4,2l4)') &
       'io_mod::init io_unit%log, io_unit%master, io_unit%verbose:', &
       io_unit%log, io_unit%master, io_unit%verbose
+    !$omp end critical (open_cr)
     !$omp end parallel
     if (verbose>0.or.self%master) &
       print*, 'logfile:', filename

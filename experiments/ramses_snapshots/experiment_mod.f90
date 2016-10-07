@@ -35,6 +35,7 @@ SUBROUTINE update (self)
   ! the update procedure for this experiment has been intentionally disabled;
   ! it is not designed to be evolved on its own, but rather used as a set up for
   ! another experiment.
+  self%dtime = 0.001 ! dummy time step
   call trace_end
 END SUBROUTINE update
 

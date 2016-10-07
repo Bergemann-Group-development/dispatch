@@ -2,7 +2,7 @@ MODULE rt_data_mod
   USE bits_mod
   USE io_mod
   USE microphysics_mod
-  USE ray_geometry_v2_mod
+  USE ray_geometry_v3_mod
   USE rt_mod
   USE trace_mod
   implicit none
