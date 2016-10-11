@@ -7,7 +7,6 @@ OPTS = debug
 #OPTS =
 
 # Problem specification
-MESH = centered
 PDE = advection
 
 # Common configuration

@@ -81,7 +81,7 @@ END SUBROUTINE cleanup
 !> =============================================================================
 FUNCTION single_solenoidal (self, m) RESULT (ff)
   class(initial_t)      :: self
-  type(mesh_t)          :: m(3)
+  class(mesh_t)          :: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -118,7 +118,7 @@ END FUNCTION single_solenoidal
 !> =============================================================================
 FUNCTION single_compressive (self, m) RESULT (ff)
   class(initial_t)        :: self
-  type(mesh_t)          :: m(3)
+  class(mesh_t)          :: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -155,7 +155,7 @@ END FUNCTION single_compressive
 !> =============================================================================
 FUNCTION single_advection (self, m) RESULT (ff)
   class(initial_t)        :: self
-  type(mesh_t)          :: m(3)
+  class(mesh_t)          :: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -193,7 +193,7 @@ END FUNCTION single_advection
 FUNCTION raw (self, m) RESULT (ff)
   USE io_unit_mod
   class(initial_t)      :: self
-  type(mesh_t)          :: m(3)
+  class(mesh_t)          :: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   real, dimension(:), allocatable:: u, d
   !.............................................................................

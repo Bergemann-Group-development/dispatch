@@ -7,7 +7,6 @@ OPTS = full_debug
 #OPTS =
 
 # Problem specification
-MESH = centered
 PROBLEM = advection
 TIMESTEP = adams_bashforth
 

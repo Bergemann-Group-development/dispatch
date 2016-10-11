@@ -15,7 +15,6 @@ MODULE patch_mod
   USE task_mod
   USE link_mod
   USE mesh_mod
-  USE radiation_mod
   USE buffered_output_mod
   implicit none
   private
@@ -25,7 +24,7 @@ MODULE patch_mod
     real, dimension(:,:,:,:,:),   pointer:: vgas     => null()
     real, dimension(:,:,:,:),     pointer:: density  => null()
     real, dimension(:,:,:,:),     pointer:: pressure => null()
-    type(mesh_t), dimension(:),   pointer:: mesh     => null()
+    class(mesh_t), dimension(:), allocatable:: mesh
     real:: courant                      ! courant number
     real:: gamma=1.0                    ! gas gamma
     real:: dt_fixed, u_fixed, u_max     ! for fixed time step Courant condition
@@ -38,6 +37,7 @@ MODULE patch_mod
     logical:: root_grid=.false.
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
+    logical:: staggered=.true.
     class(link_t), pointer:: link       ! this could be useful
     !---------------------------------------------------------------------------
     ! HACK below:  FIXME
@@ -45,10 +45,16 @@ MODULE patch_mod
     real:: grav                         ! gravitational consant (code units)
     integer:: i_d                       ! density inddex
     real(8):: ds(3)                     ! convenience
-    integer:: n(3)=0, ng(3)=2           ! convient default
+    integer:: n(3)=0, ng(3)=2           ! convenient default
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
     integer:: i,j,k                     ! should go!  FIXME
-    real(8):: offset(3)                 ! this is used to compute indices
+    real(8):: offset(3)                 ! this is used to compute indices, locations
+    real(8):: llc(3)=0d0                ! the lower left corner of the patch in *root grid* coords.
+    real(8):: origin(3)=0d0             ! the lower left corner of the patch in its *own* coords.
+    integer :: mesh_type = 1            ! default: Cartesian mesh; FIXME (there must be a better way)
+    real(8):: grid_vel(3) = 0d0         ! velocity of the patch in its native coords. and
+                                        ! units (e.g. rad/s for the phi coord.); for
+                                        ! Cartesian coords., equal to `velocity`.
   contains
     procedure:: check_error
     procedure:: init
@@ -73,10 +79,15 @@ MODULE patch_mod
     procedure:: is_set
     procedure:: is_clear
     procedure:: myposition
+    procedure:: myposition_staggered
     procedure:: periodic_grid
     procedure:: extrapolate_guards
-    procedure:: fmaxval                 ! interior max value
-    procedure:: fminval                 ! interior min value
+    procedure, private :: fminval4
+    procedure, private :: fminval8
+    procedure, private :: fmaxval4
+    procedure, private :: fmaxval8
+    generic, public :: fminval => fminval4, fminval8  ! interior min value
+    generic, public :: fmaxval => fmaxval4, fmaxval8  ! interior max value
     procedure:: courant_condition
     procedure:: check_density
     procedure:: patch_to_header
@@ -84,6 +95,9 @@ MODULE patch_mod
     procedure:: local_iit
     procedure:: time_interpolate
     procedure:: stats
+    procedure:: MapVectors
+    procedure:: beyond_patch_edge
+    procedure:: myfloatindex_scalar
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -326,26 +340,31 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Special handling of collapsed dimensions
   !-----------------------------------------------------------------------------
-  allocate (self%mesh(3))
-  self%mesh%ng = self%ng
   where (self%n==1)                             ! for collapsed dimensions
-    self%mesh%ng = 0                            ! no guard zones
+    self%ng = 0                                 ! no guard zones
     self%box = 1                                ! make sure it is non-zero
     self%ds = minval(self%ds)                   ! then set to reasonable val
     self%size = self%ds                         ! one cell thick
+    self%llc = self%position
   end where
+  if (self%mesh_type == mesh_types%Cartesian) then
+    self%origin = self%llc
+  end if
   !-----------------------------------------------------------------------------
-  ! Initialize the meshes, afterwards imposing the external values box size and
-  ! position
+  ! Initialize and allocate the meshes, afterwards imposing the external values
+  ! box size and position
   !-----------------------------------------------------------------------------
-  self%mesh%id = self%id
-  self%mesh%n  = self%n
-  self%mesh%s  = self%size
+  call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
+                   p=self%position, origin=self%origin)
+  ! intialise staggering indices; it is the responsibility of the *solver* to 
+  ! assign non-zero values to this variable (if any).
   do i=1,3
-    call self%mesh(i)%init
-    self%mesh(i)%b = self%box(i)
-    self%mesh(i)%p = self%position(i)
+    allocate(self%mesh(i)%h(self%nv))
+    self%mesh(i)%h = 0.0
+    if (self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
   end do
+  self%mesh%b = self%box
+  self%mesh%llc = self%llc
   !-----------------------------------------------------------------------------
   ! Hack for backwards compatibility
   !-----------------------------------------------------------------------------
@@ -429,14 +448,78 @@ END SUBROUTINE rotate
 
 !> =============================================================================
 !> This function gives the physical position of an index triple (patch point)
+!> in absolute Cartesian coords.
 !> =============================================================================
 FUNCTION myposition (self, ii) RESULT(out)
   class(patch_t):: self
-  real(8):: out(3)
-  integer:: ii(3)
+  integer, intent(in):: ii(3)
+  real(8):: out(3), cellpos(3)
   !.............................................................................
-  out = self%position + (ii-self%offset)*self%ds
-END FUNCTION
+  cellpos = (real(ii-self%li,kind=8) + merge(0.5,0.0,self%n>1)) * self%ds &
+          + self%origin ! in patch coords.
+  ! convert to Cartesian coords.
+  if (self%mesh_type == mesh_types%cylindrical) then
+    cellpos = CylindricalToCartesian(cellpos(1), cellpos(2), cellpos(3))
+  else if (self%mesh_type == mesh_types%spherical) then
+    cellpos = SphericalToCartesian(cellpos(1), cellpos(2), cellpos(3))
+  end if
+  out = cellpos ! absolute position
+END FUNCTION myposition
+
+!> =============================================================================
+!> Scalar version of the previous function, but **including staggering factor**.
+!> For the conversion to Cartesian coords., all three indices are required!
+!> =============================================================================
+FUNCTION myposition_staggered (self, ii, idir, h) RESULT(out)
+  class(patch_t):: self
+  integer, intent(in):: ii(3), idir
+  real(8):: out, cellpos(3)
+  real(4), optional :: h
+  real(4) :: hlocal
+  !.............................................................................
+  if (present(h)) then
+    hlocal = h
+  else
+    hlocal = 0.0
+  end if
+
+  cellpos = (real(ii-self%li,kind=8) + merge(0.5 + hlocal,0.0,self%n(idir)>1)) &
+          * self%ds + self%origin ! in patch coords.
+  ! convert to Cartesian coords.
+  if (self%mesh_type == mesh_types%cylindrical) then
+    cellpos = CylindricalToCartesian(cellpos(1), cellpos(2), cellpos(3))
+  else if (self%mesh_type == mesh_types%spherical) then
+    cellpos = SphericalToCartesian(cellpos(1), cellpos(2), cellpos(3))
+  end if
+  out = cellpos(idir)  ! absolute position
+
+END FUNCTION myposition_staggered
+
+!> =============================================================================
+FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
+  class(patch_t) :: self
+  real(8), intent(in) :: cpos(3)
+  integer, intent(in) :: idir
+  real(4), intent(in) :: h
+  real(8) :: pp(3), ppCart(3), out, intermezzo
+  !.............................................................................
+  ! convert to native patch coords.
+  if (self%mesh_type == mesh_types%Cartesian) then
+    ! do nothing
+    pp = cpos
+  else if (self%mesh_type == mesh_types%spherical) then
+    ppCart = cpos - self%position ! Cart. coords to centre of patch's coord. system
+    pp = CartesianToSpherical(ppCart(1), ppCart(2), ppCart(3))
+  else if (self%mesh_type == mesh_types%cylindrical) then
+    ppCart = cpos - self%position ! Cart. coords to centre of patch's coord. system
+    pp = CartesianToCylindrical(ppCart(1), ppCart(2), ppCart(3))
+  end if
+  
+  intermezzo = (pp(idir) - self%origin(idir)) / self%ds(idir) + self%li(idir) &
+             - merge(0.5 + h,0.0,self%n(idir)>1)
+  out = intermezzo
+  
+END FUNCTION myfloatindex_scalar
 
 !> =============================================================================
 !> Periodic mapping of a grid -- typically the root grid
@@ -784,12 +867,12 @@ SUBROUTINE output_legacy (self, experiment_name)
   if (io%master .and. io%verbose>=0) &
     print'(a,3x,"time:",f9.5)', 'patch_mod::output: file= '//trim(filename), self%out_next
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  write (io%data_unit,'(1p,e18.10,3(2x,3e18.10)1x,i3.1)') self%time, self%position, self%ds, &
-        self%velocity, self%level
+  write (io%data_unit,'(1p,e18.10,6(2x,3e18.10)1x,i3.1)') self%time, self%position, self%ds, &
+        self%velocity, self%origin, self%llc, self%mesh%centre, self%level
   write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1)') int(self%box/self%ds+0.5), u-l+1, &
         li, ui, self%n, self%gn, self%ng, self%nv
   write (io%data_unit,'(3(1i8.1,1x),i2.1,1x,a)') self%id, self%iout, self%istep, &
-        1, trim(self%kind)
+        self%mesh_type, trim(self%kind)
   close (io%data_unit)
 
   !-----------------------------------------------------------------------------
@@ -1098,24 +1181,43 @@ LOGICAL FUNCTION is_clear (self, bit)
   is_clear = (iand(self%status, bit) == 0)
 !  call trace_end
 END FUNCTION
+
 !> =============================================================================
-FUNCTION fmaxval (self, f)
+FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
   real:: fmaxval
   class(patch_t):: self
-  real, dimension(:,:,:):: f
+  real, dimension(:,:,:), intent(in):: f
   fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
                      self%mesh(2)%li:self%mesh(2)%ui, &
                      self%mesh(3)%li:self%mesh(3)%ui))
-END FUNCTION
+END FUNCTION fmaxval4
 !> =============================================================================
-FUNCTION fminval (self, f)
+FUNCTION fminval4 (self, f) RESULT(fminval)
   real:: fminval
   class(patch_t):: self
-  real, dimension(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn):: f
+  real, dimension(:,:,:), intent(in):: f
   fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
                      self%mesh(2)%li:self%mesh(2)%ui, &
                      self%mesh(3)%li:self%mesh(3)%ui))
-END FUNCTION
+END FUNCTION fminval4
+!> =============================================================================
+FUNCTION fmaxval8 (self, f) RESULT (fmaxval)
+  real(8):: fmaxval
+  class(patch_t):: self
+  real(8), dimension(:,:,:), intent(in):: f
+  fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui))
+END FUNCTION fmaxval8
+!> =============================================================================
+FUNCTION fminval8 (self, f) RESULT(fminval)
+  real(8):: fminval
+  class(patch_t):: self
+  real(8), dimension(:,:,:), intent(in):: f
+  fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui))
+END FUNCTION fminval8
 
 !> =============================================================================
 !> Check if the density is negative somewhere, counting points in the interior
@@ -1318,5 +1420,79 @@ contains
     s(3) = sqrt(max(0d0,s(3)/product(u-l+1)-s(2)**2))
   end subroutine
 END SUBROUTINE
+
+!> =============================================================================
+FUNCTION MapVectors (self, in, target, ii, jj) result (out)
+  class(patch_t) :: self
+  class(patch_t), pointer :: target
+  real, dimension(:), intent(in):: in
+  real:: out(size(in))
+  integer, intent(in) :: ii(3), jj(3)
+  !.............................................................................
+  print*,'Not implemented error! patch_t%MapVectors'
+END FUNCTION MapVectors
+
+!> =============================================================================
+FUNCTION beyond_patch_edge (self, idir, position) result (outside)
+  class(patch_t) :: self
+  integer, intent(in) :: idir
+  real(8), intent(in) :: position(3)
+  logical :: outside
+  real(8) :: edge, curvpos(3)
+  !.............................................................................
+
+  if (self%n(idir) == 1) then
+    outside = .false.
+    return
+  endif
+
+  select case (self%mesh_type)
+  case (1) ! Cartesian
+    edge = 0.5 * self%gsize(idir)
+    outside = abs(position(idir)-self%position(idir)) > edge
+  case (2) ! spherical
+    curvpos = position - self%position
+    curvpos = CartesianToSpherical(curvpos(1), curvpos(2), curvpos(3))
+    select case (idir)
+    case (1)
+      edge = self%gsize(idir) + self%origin(idir)
+      outside = abs(curvpos(idir)) > edge .or. abs(curvpos(idir)) < self%origin(idir)
+    case (2)
+      if (allocated(self%mesh)) then
+        edge = self%gsize(idir) + self%mesh(2)%xi
+      else
+        edge = self%gsize(idir)
+      end if
+      outside = abs(curvpos(idir)) > edge
+    case (3)
+      if (allocated(self%mesh)) then
+        edge = self%gsize(idir) + self%mesh(3)%zeta
+      else
+        edge = self%gsize(idir)
+      end if
+      outside = abs(curvpos(idir)) > edge
+    end select
+    outside = abs(curvpos(idir)) > edge
+  case (3) ! cylindrical
+    curvpos = position - self%position
+    curvpos = CartesianToCylindrical(curvpos(1), curvpos(2), curvpos(3))
+    select case (idir)
+    case (1)
+      edge = 0.5 * self%gsize(idir)
+      outside = abs(curvpos(idir)) > edge
+    case (2)
+      edge = self%gsize(idir) + self%origin(idir)
+      outside = abs(curvpos(idir)) > edge .or. abs(curvpos(idir)) < self%origin(idir)
+    case (3)
+      if (allocated(self%mesh)) then
+        edge = self%gsize(idir) + self%mesh(3)%zeta
+      else
+        edge = self%gsize(idir)
+      end if
+      outside = abs(curvpos(idir)) > edge
+    end select
+  end select
+
+END FUNCTION beyond_patch_edge
 
 END MODULE

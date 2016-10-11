@@ -273,7 +273,7 @@ SUBROUTINE different_static (link)
   class(patch_t), pointer:: target, source
   integer:: ix, iy, iz, jx(2), jy(2), jz(2), ii(3), jt(2)
   real:: pt(2), old_score
-  type(mesh_t), pointer:: m(:)
+  class(mesh_t), pointer:: m(:)
   !-----------------------------------------------------------------------------
   ! XY-planes in the two Z guard zones
   !-----------------------------------------------------------------------------

@@ -7,7 +7,6 @@
 OPTS =
 
 # Problem specification
-MESH = centered
 PROBLEM = advection
 UPD = adams_bashforth
 EXEC = dispatch.x

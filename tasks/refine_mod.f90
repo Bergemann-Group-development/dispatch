@@ -10,6 +10,7 @@ MODULE refine_mod
   USE bits_mod
   USE task_mod
   USE patch_mod
+  USE mesh_mod
   USE experiment_mod
   implicit none
   private
@@ -163,42 +164,51 @@ END FUNCTION
 FUNCTION check_log_pressure (self, patch) RESULT(out)
   class(refine_t):: self
   class(experiment_t), pointer:: patch
+  class(mesh_t), pointer:: mx, my, mz
   real, dimension(:,:,:), pointer:: p, v
   logical:: out
   !.............................................................................
-  associate(m=>patch%mesh)
-  allocate (v(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui))
-  end associate
+  mx => patch%mesh(1)
+  my => patch%mesh(2)
+  mz => patch%mesh(3)
+  allocate (v(mx%li:mx%ui,my%li:my%ui,mz%li:mz%ui))
   call patch%log_pressure (v)
   out = check_max_diff (self, patch, v)
+  nullify (mx, my, mz)
   deallocate (v)
 END FUNCTION
 !> =============================================================================
 FUNCTION check_velocity (self, patch) RESULT(out)
   class(refine_t):: self
   class(experiment_t), pointer:: patch
+  class(mesh_t), pointer:: mx, my, mz
   real, dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
-  associate(m=>patch%mesh)
-  allocate (v(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui))
-  end associate
+  mx => patch%mesh(1)
+  my => patch%mesh(2)
+  mz => patch%mesh(3)
+  allocate (v(mx%li:mx%ui,my%li:my%ui,mz%li:mz%ui))
   call patch%velocity_magnitude (v)
   out = check_max_diff (self, patch, v)
+  nullify (mx, my, mz)
   deallocate (v)
 END FUNCTION
 !> =============================================================================
 FUNCTION check_magnetic_field (self, patch) RESULT(out)
   class(refine_t):: self
   class(experiment_t), pointer:: patch
+  class(mesh_t), pointer:: mx, my, mz
   real, dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
-  associate(m=>patch%mesh)
-  allocate (v(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui))
-  end associate
+  mx => patch%mesh(1)
+  my => patch%mesh(2)
+  mz => patch%mesh(3)
+  allocate (v(mx%li:mx%ui,my%li:my%ui,mz%li:mz%ui))
   call patch%magnetic_field_magnitude (v)
   out = check_max_diff (self, patch, v)
+  nullify (mx, my, mz)
   deallocate (v)
 END FUNCTION
 !> =============================================================================
