@@ -361,7 +361,8 @@ SUBROUTINE init (self)
   do i=1,3
     allocate(self%mesh(i)%h(self%nv))
     self%mesh(i)%h = 0.0
-    if (self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
+    !!! this is for ZEUS only
+    !!!if (self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
   end do
   self%mesh%b = self%box
   self%mesh%llc = self%llc
