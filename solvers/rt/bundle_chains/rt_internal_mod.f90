@@ -187,7 +187,7 @@ END SUBROUTINE update_rt_internal
 !> =====================================================================
 LOGICAL FUNCTION chain_start (self)
   class (rt_internal_t) :: self
-  type (mesh_t), pointer :: m
+  class (mesh_t), pointer :: m
   integer :: axis, i
   !.....................................................................
   chain_start = .false.
@@ -209,7 +209,7 @@ END FUNCTION chain_start
 !> =====================================================================
 LOGICAL FUNCTION chain_stop (self)
   class (rt_internal_t) :: self
-  type (mesh_t), pointer :: m
+  class (mesh_t), pointer :: m
   integer :: axis, i
   !.....................................................................
   chain_stop = .false.

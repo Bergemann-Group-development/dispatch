@@ -12,6 +12,7 @@ MODULE ramses_mod
   USE mpi_mod
   USE task_mod
   USE patch_mod
+  USE mesh_mod
   USE mhd_mod
   USE scaling_mod
   USE units_mod
@@ -1231,6 +1232,7 @@ END SUBROUTINE merge_ramses_octs
 FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
   class(link_t), pointer :: link, nbor
   class(patch_t), pointer :: patch, nbor_patch, merger
+  class(mesh_t), pointer :: pm, nm, mm
   real, intent(in) :: dpos(3)
   integer :: it, ix, iy, iz, iv, idir, adir, dum(1), o(3)
   !.............................................................................
@@ -1256,8 +1258,9 @@ FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
 
   ! fill variable array
   it = merger%it
-  associate (pm => patch%mesh(adir), nm => nbor_patch%mesh(adir), &
-             mm => merger%mesh(adir))
+  pm => patch%mesh(adir)
+  nm => nbor_patch%mesh(adir)
+  mm => merger%mesh(adir)
   ! first copy over `patch`
   ! this offset formula reasonably assumes edges of RAMSES octs are co-spatial.
   o = 0
@@ -1286,7 +1289,7 @@ FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
     end do
   end do
   ! done.
-  end associate
+  nullify (pm, nm, mm)
 
 END FUNCTION merge_neighbours
 

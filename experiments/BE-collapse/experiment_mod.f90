@@ -76,9 +76,9 @@ SUBROUTINE init (self)
   ! Physical initial conditions: Approximate a Bonnor-Ebert sphere
   !-----------------------------------------------------------------------------
   if (self%time==0.0) then
-    do k=1,self%gn(3)
-    do j=1,self%gn(2)
-    do i=1,self%gn(1)
+    do k=self%mesh(3)%lb,self%mesh(3)%ub
+    do j=self%mesh(2)%lb,self%mesh(2)%ub
+    do i=self%mesh(1)%lb,self%mesh(1)%ub
       x = self%mesh(1)%r(i) + (self%position(1) - self%box(1)*0.5d0)
       y = self%mesh(2)%r(j) + (self%position(2) - self%box(2)*0.5d0)
       z = self%mesh(3)%r(k) + (self%position(3) - self%box(3)*0.5d0)

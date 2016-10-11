@@ -57,7 +57,7 @@ END SUBROUTINE init
 !> =============================================================================
 FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
   class(initial_t) :: self
-  type(mesh_t) :: m(3)
+  class(mesh_t), allocatable, dimension(:) :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   real, intent(in) :: gamma
   !.............................................................................
