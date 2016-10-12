@@ -1,5 +1,5 @@
 --------------------------------------------------------------------------------
- mpi.f90 $Id: 042d89c7e959900811e6e6417f5be7a9849ebf93 $                                                                 
+ mpi.f90 $Id: db394b622ccdca9f69e87542fd4d5721aea3c38e $                                                                 
  MPI initialized, mpi%size =      1
  MPI implementation provides only support for serial MPI calls by any thread
 --------------------------------------------------------------------------------
@@ -15,7 +15,7 @@
  DO_VALIDATE=T,
  DO_LEGACY=T,
  LEVELMAX=         10,
- OMP_TRACE=F,
+ OMP_TRACE=T,
  ID_DEBUG=         -1,
  /
  logfile:data/0000.log                                                   
@@ -101,17 +101,14 @@
  DO_ISOTHERMAL=T,
  CSOUND=  1.00000000    ,
  /
-&RADIATION_PARAMS
- DO_RADIATION=F,
- /
-init_cartesian: id, rank, size, pos =       1     0    5.000000E-01  5.000000E-01  5.000000E-01    0.000000E+00  0.000000E+00  0.000000E+00  FF
-init_cartesian: id, rank, size, pos =       2     0    5.000000E-01  5.000000E-01  5.000000E-01    5.000000E-01  0.000000E+00  0.000000E+00  FF
-init_cartesian: id, rank, size, pos =       3     0    5.000000E-01  5.000000E-01  5.000000E-01    0.000000E+00  5.000000E-01  0.000000E+00  FF
-init_cartesian: id, rank, size, pos =       4     0    5.000000E-01  5.000000E-01  5.000000E-01    5.000000E-01  5.000000E-01  0.000000E+00  FF
-init_cartesian: id, rank, size, pos =       5     0    5.000000E-01  5.000000E-01  5.000000E-01    0.000000E+00  0.000000E+00  5.000000E-01  FF
-init_cartesian: id, rank, size, pos =       6     0    5.000000E-01  5.000000E-01  5.000000E-01    5.000000E-01  0.000000E+00  5.000000E-01  FF
-init_cartesian: id, rank, size, pos =       7     0    5.000000E-01  5.000000E-01  5.000000E-01    0.000000E+00  5.000000E-01  5.000000E-01  FF
-init_cartesian: id, rank, size, pos =       8     0    5.000000E-01  5.000000E-01  5.000000E-01    5.000000E-01  5.000000E-01  5.000000E-01  FF
+init_cartesian: id, rank, size, pos =       1     0    5.000000E-01  5.000000E-01  5.000000E-01    2.500000E-01  2.500000E-01  2.500000E-01  FF
+init_cartesian: id, rank, size, pos =       2     0    5.000000E-01  5.000000E-01  5.000000E-01    7.500000E-01  2.500000E-01  2.500000E-01  FF
+init_cartesian: id, rank, size, pos =       3     0    5.000000E-01  5.000000E-01  5.000000E-01    2.500000E-01  7.500000E-01  2.500000E-01  FF
+init_cartesian: id, rank, size, pos =       4     0    5.000000E-01  5.000000E-01  5.000000E-01    7.500000E-01  7.500000E-01  2.500000E-01  FF
+init_cartesian: id, rank, size, pos =       5     0    5.000000E-01  5.000000E-01  5.000000E-01    2.500000E-01  2.500000E-01  7.500000E-01  FF
+init_cartesian: id, rank, size, pos =       6     0    5.000000E-01  5.000000E-01  5.000000E-01    7.500000E-01  2.500000E-01  7.500000E-01  FF
+init_cartesian: id, rank, size, pos =       7     0    5.000000E-01  5.000000E-01  5.000000E-01    2.500000E-01  7.500000E-01  7.500000E-01  FF
+init_cartesian: id, rank, size, pos =       8     0    5.000000E-01  5.000000E-01  5.000000E-01    7.500000E-01  7.500000E-01  7.500000E-01  FF
 &TIMESTEP_PARAMS
  VERBOSE=          0,
  TIME_ORDER=          2,
@@ -724,3 +721,4 @@ upd       3   5   1  0  0.499998  6.6666E-03   3.00    0.00E+00  0.00E+00    1.0
 upd       2   5   1  0  0.499998  6.6666E-03   3.00    0.00E+00  0.00E+00    1.000000E+00  1.000000E+00    4.85E+06    3    2 F F          15
 upd       1   5   1  0  0.499998  6.6666E-03   3.00    0.00E+00  0.00E+00    1.000000E+00  1.000000E+00    4.86E+06    2    1 F F          15
 upd       8   5   1  0  0.499998  6.6666E-03   3.00    0.00E+00  0.00E+00    1.000000E+00  1.000000E+00    4.86E+06    1    0 F F          15
+ task list finished.

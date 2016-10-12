@@ -8,6 +8,7 @@ rm -f *.o *.mod *.stackdump
  [ FC ] timer_mod.o
  [ FC ] io_mod.o
  [ FC ] trace_mod.o
+ [ FC ] kinds_mod.o
  [ FC ] mesh_mod.o
  [ FC ] bits_mod.o
  [ FC ] scene_mod.o
@@ -15,7 +16,6 @@ rm -f *.o *.mod *.stackdump
  [ FC ] task_mod.o
  [ FC ] buffered_output_mod.o
  [ FC ] link_mod.o
- [ FC ] radiation_mod.o
  [ FC ] patch_mod.o
  [ FC ] amr_parameters.o
  [ FC ] hydro_parameters.o

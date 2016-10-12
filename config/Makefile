@@ -194,6 +194,8 @@ info:
 	@echo "$B  LDFLAGS     $N= $(LDFLAGS)"
 	@echo "$B  LIBS        $N= $(LIBS)"
 	@echo "$B  EXEC        $N= $(EXEC)"
+compiler:
+	@echo "$(COMPILER)"
 
 #############################################################################
 # Check where options are set
