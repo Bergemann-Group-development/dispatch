@@ -71,7 +71,7 @@
  a0=0.0,0.0,0.0
  u0=0,0,0
  b0=0,0,0
- !type='ramses256'
+ !type='exa256'
  type='raw'
 /
 &ramses_params
