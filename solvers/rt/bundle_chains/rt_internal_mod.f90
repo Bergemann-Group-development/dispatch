@@ -120,7 +120,6 @@ SUBROUTINE init_rt_internal (self)
   ir = 1
   do ray = 1, self%bundle%n_packets
     irm = ir + packet%n_rays -1
-    print *, packet%n_rays, ir, irm, size(self%I_in,1), self%bundle%n_rays
     self%packet_data(ray)%I_in  => self%I_in(ir:irm,:)
     self%packet_data(ray)%I_out => self%I_out(ir:irm,:)
     allocate(self%packet_data(ray)%cell (3,packet%n_rays))
@@ -522,10 +521,10 @@ SUBROUTINE get_same_static_chain (self)
   
   select case(self%rt_type)
   case(2)
-  mbid = self%bundle%next_chain_bndl_fw
+  mbid = self%bundle%next_chain_bndl_rev
   nb_ray_pos => self%bundle%ray_chain_rev
   case(3)
-  mbid = self%bundle%next_chain_bndl_rev
+  mbid = self%bundle%next_chain_bndl_fw
   nb_ray_pos => self%bundle%ray_chain_fw
   end select
   
