@@ -45,7 +45,7 @@ MODULE patch_mod
     real:: grav                         ! gravitational consant (code units)
     integer:: i_d                       ! density inddex
     real(8):: ds(3)                     ! convenience
-    integer:: n(3)=0, ng(3)=2           ! convenient default
+    integer:: n(3)=16, ng(3)=2          ! convenient defaults
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
     integer:: i,j,k                     ! should go!  FIXME
     real(8):: offset(3)                 ! this is used to compute indices, locations
@@ -275,7 +275,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
-  integer, save:: n(3), ng(3), nv, nt, nw, max_files=100
+  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=100
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false.
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
@@ -310,9 +310,7 @@ SUBROUTINE init (self)
   !print *, 'MK', omp_mythread, self%id, self%nt, nt
   !$omp end critical (input_cr)
   ! reasonable values of self%n should take precedence over a saved value of `n`.
-  if (any(self%n == 0)) then
-    self%n           = n                        ! patch dimensions
-  end if
+  self%n           = n                          ! patch dimensions
   self%ng          = ng                         ! number of guard zones
   self%nv          = nv                         ! number of variables
   self%nw          = nw                         ! number of work indices
