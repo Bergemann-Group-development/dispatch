@@ -6,7 +6,6 @@ OPTS = debug
 
 # Default target and methods
 UPD             = adams_bashforth
-MESH            = staggered
 SOLVERS         = compastro
 EXEC            = dispatch.x
 TOP             = ../..

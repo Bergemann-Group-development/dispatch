@@ -22,6 +22,7 @@ set patches = ( )
 setenv tee 1
 
 # parse argument list
+set host = $HOST
 while ($#argv > 0)
   switch ($1)
     case -h:
@@ -88,7 +89,7 @@ foreach d ( $dirs )
   mkdir -p validate/data
   echo "cd validate/"
   cd validate/
-  ln -s ../*.f90 .
+  ln -sf ../*.f90 .
 
   # make sure we have validate_cmd in the path
   set path = ( {,../,../../}../../../utilities/scripts $path )
@@ -140,13 +141,13 @@ foreach d ( $dirs )
   if (! $?noexec) then
     foreach f (*.nml)
       if ($f == "input.nml") then
-        set lab = "$d"
+        set lab = "${d}_$host"
         set cmd = "./$d.x"
       else
-        set lab = "${d}_$f:r"
+        set lab = "${d}_${f:r}_$host"
         set cmd = "./$d.x $f"
       endif
-        validate_cmd $opt $lab "$cmd"
+      validate_cmd $opt $lab "$cmd"
       @ s += $status
     end
   endif

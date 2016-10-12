@@ -10,7 +10,6 @@ SOLVER          = stagger2
 #RT_SOLVER       = hybrid
 #RT_SOLVER       = hybrid2
 RT_SOLVER       = bundle_chains
-MESH            = staggered
 EXEC            = dispatch.x
 # opacities: 
 # grey: bell_lin_1994, semenov_2003, rt_shadow_bench

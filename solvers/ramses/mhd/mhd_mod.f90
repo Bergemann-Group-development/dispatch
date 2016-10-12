@@ -73,6 +73,7 @@ SUBROUTINE init (self)
   self%riemann = riemann
   self%courant = courant_factor
   self%gamma = gamma
+  self%staggered = .false.
   call trace_end
 END SUBROUTINE init
 

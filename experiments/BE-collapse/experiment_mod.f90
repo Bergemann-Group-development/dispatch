@@ -38,50 +38,50 @@ SUBROUTINE init (self)
   integer, save:: levelmax=0
   real:: x, y, z
   logical:: first_time = .true.
-  real:: w_BE=5.0, p_BE=1.0, a_BE=0.10, r_BE=0.45, amplitude=10., r
+  real, save:: w_BE=5.0, p_BE=1.0, a_BE=0.10, r_BE=0.45, amplitude=10., r
   namelist /experiment_params/ w_BE, p_BE, a_BE, r_BE, amplitude, levelmax
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure
   !-----------------------------------------------------------------------------
-  print*, 'start init'
   call io%init
   call trace_begin ('experiment_t%init')
   self%nv = 8
   call self%mhd_t%init
 
   if (first_time) then
+    first_time = .false.
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*,experiment_params)
+  end if
 
-    self%d => self%mem(:,:,:,1,self%it,1)
-    self%s => self%mem(:,:,:,  2,self%it,1)
-    self%p => self%mem(:,:,:,3:5,self%it,1)
-    self%B => self%mem(:,:,:,6:8,self%it,1)
+  self%d => self%mem(:,:,:,1,self%it,1)
+  self%s => self%mem(:,:,:,  2,self%it,1)
+  self%p => self%mem(:,:,:,3:5,self%it,1)
+  self%B => self%mem(:,:,:,6:8,self%it,1)
   !  d=>self%d; s=>self%s
   !  p=>self%p; B=>self%B
   !  px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   !  Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
   
-    self%w_BE      = w_BE
-    self%p_BE      = p_BE
-    self%a_BE      = a_BE
-    self%r_BE      = r_BE
-    !self%mhd       = .false.
-    boundary%r_BE  = r_BE
-    self%amplitude = amplitude  
-  end if
+  self%w_BE      = w_BE
+  self%p_BE      = p_BE
+  self%a_BE      = a_BE
+  self%r_BE      = r_BE
+  !self%mhd       = .false.
+  boundary%r_BE  = r_BE
+  self%amplitude = amplitude
 
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Approximate a Bonnor-Ebert sphere
   !-----------------------------------------------------------------------------
   if (self%time==0.0) then
-    do k=1,self%gn(3)
-    do j=1,self%gn(2)
-    do i=1,self%gn(1)
-      x = (i-(self%gn(1)+1)*0.5)*self%ds(1) + self%position(1)
-      y = (j-(self%gn(2)+1)*0.5)*self%ds(2) + self%position(2)
-      z = (k-(self%gn(3)+1)*0.5)*self%ds(3) + self%position(3)
+    do k=self%mesh(3)%lb,self%mesh(3)%ub
+    do j=self%mesh(2)%lb,self%mesh(2)%ub
+    do i=self%mesh(1)%lb,self%mesh(1)%ub
+      x = self%mesh(1)%r(i) + (self%position(1) - self%box(1)*0.5d0)
+      y = self%mesh(2)%r(j) + (self%position(2) - self%box(2)*0.5d0)
+      z = self%mesh(3)%r(k) + (self%position(3) - self%box(3)*0.5d0)
       r = sqrt(x**2+y**2+z**2)/self%w_BE
       r = min(r,r_BE/w_BE)
       self%d(i,j,k)  = self%amplitude*exp(-r**self%p_BE/(1.+r**self%p_BE/log(r**2/self%a_BE)))
@@ -122,9 +122,9 @@ associate (li=>self%li,ui=>self%ui,gn=>self%gn,ds=>self%ds,pos=>self%position)
   do k=1,gn(3)
   do j=1,gn(2)
   do i=1,gn(1)
-    x = (i-(gn(1)+1)*0.5)*ds(1) + pos(1)
-    y = (j-(gn(2)+1)*0.5)*ds(2) + pos(2)
-    z = (k-(gn(3)+1)*0.5)*ds(3) + pos(3)
+    x = self%mesh(1)%r(i) + (self%position(1) - self%box(1)*0.5d0)
+    y = self%mesh(2)%r(j) + (self%position(2) - self%box(2)*0.5d0)
+    z = self%mesh(3)%r(k) + (self%position(3) - self%box(3)*0.5d0)
     r = sqrt(x**2+y**2+z**2)
     if (r > self%r_BE) then
       self%d(i,j,k) =   max(self%d(i,j,k),1e-7)

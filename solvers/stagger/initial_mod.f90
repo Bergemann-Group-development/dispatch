@@ -73,7 +73,7 @@ END SUBROUTINE init
 !> =============================================================================
 FUNCTION single_solenoidal (self, m) RESULT (ff)
   class(initial_t)      :: self
-  type(mesh_t)          :: m(3)
+  class(mesh_t), allocatable, dimension(:):: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -111,7 +111,7 @@ END FUNCTION single_solenoidal
 !> =============================================================================
 FUNCTION single_compressive (self, m) RESULT (ff)
   class(initial_t)        :: self
-  type(mesh_t)          :: m(3)
+  class(mesh_t), allocatable, dimension(:):: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -147,7 +147,7 @@ END FUNCTION single_compressive
 !> =============================================================================
 FUNCTION single_advection (self, m) RESULT (ff)
   class(initial_t)        :: self
-  type(mesh_t)          :: m(3)
+  class(mesh_t), allocatable, dimension(:):: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random

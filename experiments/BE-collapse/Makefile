@@ -9,7 +9,6 @@ UPD             = adams_bashforth
 #SOLVER          = ramses/hydro
 SOLVER          = stagger2
 RT_SOLVER       = cooling_function
-MESH            = staggered
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile

@@ -38,7 +38,7 @@ END SUBROUTINE
 FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
-  type(mesh_t):: m(3)
+  class(mesh_t), allocatable, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
   real, dimension(:,:,:):: Ux, Uy, Uz
   !.............................................................................

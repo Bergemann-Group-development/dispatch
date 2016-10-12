@@ -85,7 +85,7 @@ END SUBROUTINE cleanup
 !> =============================================================================
 FUNCTION single_solenoidal (self, m) RESULT (ff)
   class(initial_t)      :: self
-  type(mesh_t)          :: m(3)
+  class(mesh_t), allocatable, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -119,7 +119,7 @@ END FUNCTION single_solenoidal
 !> =============================================================================
 FUNCTION single_compressive (self, m) RESULT (ff)
   class(initial_t)        :: self
-  type(mesh_t)          :: m(3)
+  class(mesh_t), allocatable, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -153,7 +153,7 @@ END FUNCTION single_compressive
 !> =============================================================================
 FUNCTION single_advection (self, m) RESULT (ff)
   class(initial_t)        :: self
-  type(mesh_t)          :: m(3)
+  class(mesh_t), allocatable, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -188,7 +188,7 @@ END FUNCTION single_advection
 FUNCTION exa256 (self, m) RESULT (ff)
   USE io_unit_mod
   class(initial_t)      :: self
-  type(mesh_t)          :: m(3)
+  class(mesh_t), allocatable, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   real, dimension(:), allocatable:: u, d
   !.............................................................................
@@ -237,12 +237,14 @@ END FUNCTION exa256
 FUNCTION raw (self, m) RESULT (ff)
   USE io_unit_mod
   class(initial_t):: self
-  type(mesh_t):: m(3)
+  class(mesh_t), allocatable, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8):: ff
   !.............................................................................
-  integer:: n(3), i(3), iv, iw
+  integer:: n(3), i(3), iv, iw, iostat
   integer, save:: mv=4
   logical, save:: first_time=.true.
+  character(len=64), save:: filename = 'data/exa256/t0.02.stag'
+  namelist /raw_params/ filename
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t::raw')
   !$omp critical (raw_cr)
@@ -255,9 +257,11 @@ FUNCTION raw (self, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   if (first_time) then
     first_time = .false.
+    rewind (io%input); read (io%input,raw_params,iostat=iostat) 
+    if (io%master) write (*,raw_params)
     n = nint(m%b/m%d)
     allocate (buffer(n(1),n(2),n(3),mv))
-    open (io_unit%data, file='data/exa256/t0.02.stag', form='unformatted', &
+    open (io_unit%data, file=filename, form='unformatted', &
       access='direct', recl=4*product(n))
     do iv=1,mv
       read (io_unit%data, rec=iv) buffer(:,:,:,iv)

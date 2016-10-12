@@ -4,7 +4,6 @@
 OPTS = optimized
 
 # Common configuration
-MESH  = staggered
 EXEC = test.x
 TOP = ../..
 include $(TOP)/config/Makefile

@@ -75,7 +75,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self, id, iit, dt, mem, mesh)
   class(timestep_t):: self
-  type(mesh_t):: mesh(:)
+  class(mesh_t):: mesh(:)
   integer:: id, nt
   integer, dimension(:):: iit
   real(8), dimension(:):: dt

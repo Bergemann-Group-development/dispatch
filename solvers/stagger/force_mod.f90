@@ -65,7 +65,7 @@ END SUBROUTINE init
 FUNCTION single_solenoidal (self, time, m) RESULT (ff)
   class(force_t)        :: self
   real(8)               :: time
-  type(mesh_t)          :: m(3)
+  class(mesh_t), allocatable, dimension(:):: m(3)
   type(vector_t)        :: ff
   !.............................................................................
   type(random_t)        :: random

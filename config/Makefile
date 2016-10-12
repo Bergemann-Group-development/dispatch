@@ -46,9 +46,8 @@ sinclude $(TOP)/solvers/rt/$(RT_SOLVER)/Makefile
 sinclude $(TOP)/components/Makefile
 sinclude $(TOP)/lists/Makefile
 sinclude $(TOP)/tasks/Makefile
-sinclude $(TOP)/meshes/$(MESH)/Makefile
+sinclude $(TOP)/meshes/Makefile
 sinclude $(TOP)/microphysics/Makefile
-sinclude $(TOP)/patches/$(MESH)/Makefile
 sinclude $(TOP)/timestep/$(UPD)/Makefile
 sinclude $(TOP)/data/opacities/$(OPACITIES)/Makefile
 sinclude $(TOP)/particles/Makefile

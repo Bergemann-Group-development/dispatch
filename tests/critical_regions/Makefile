@@ -7,7 +7,6 @@ OPTS = optimized
 #OPTS = 
 
 # This should be different from dispatch.x for simpe tests, to disable the normal OBJ list
-MESH = staggered
 EXEC = test.x
 
 # Common configuration
