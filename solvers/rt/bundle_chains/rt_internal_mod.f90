@@ -172,7 +172,7 @@ SUBROUTINE update_rt_internal (self)
 !-----------------------------------------------------------------------
   !write (stime,'(1p,g16.6)') self%time
   !call trace_begin('rt_t%update_rt_internal '//stime,itimer=itimer)
-  !call self%get_upstream
+  call self%get_upstream
   call self%solve
   call self%update_time
   if (io%verbose > 2) then
