@@ -9,6 +9,8 @@ PROGRAM test
 
   class(mesh_t), allocatable:: meshSingle
   class(mesh_t), allocatable, dimension(:), target:: meshCart, meshSph, meshCyl
+  type(Cartesian_mesh), allocatable, dimension(:), target:: meshCart2
+  type(Cartesian_mesh), dimension(3), target:: meshCart3
   class(patch_t), pointer :: patch
   class(mesh_t), pointer, dimension(:) :: m
 
@@ -33,6 +35,13 @@ PROGRAM test
   call meshSingle%init_geometry(3,0.0d0)
   call meshSingle%print()
   print'(a,1pg13.6E2,a)',"dvol3f(1) = ",meshSingle%dvol3f(1), " (should be 0.1)"
+
+  print*,"Columns 2 and 3 should be identical"
+  associate (msr => meshSingle%r)
+  do i=meshSingle%lb,meshSingle%ub
+    print*,i,meshSingle%r(i),msr(i)
+  end do
+  end associate
   deallocate (meshSingle)
 
   allocate (spherical_mesh:: meshSingle)
@@ -166,10 +175,109 @@ PROGRAM test
     end associate
   end select
 
+  block
+  class(mesh_t), pointer:: m1
+  m1 => meshSph(1)
+  ! here's another place where gfortran (v5.4.1 and earlier) chokes.
+#ifdef __GFORTRAN__
+  print*,"Columns 2, 3 and 4 should be identical:"
+  associate (m1r => meshSph(1)%r)
+  do i=meshSph(1)%lb,meshSph(1)%ub
+    print*,i,meshSph(1)%r(i),m1r(i),m1%r(i)
+  end do
+  end associate
+#else
+  print*,"Columns 2 - 5 should be identical:"
+  associate (m1r => meshSph(1)%r, m11=> meshSph(1))
+  do i=meshSph(1)%lb,meshSph(1)%ub
+    print*,i,meshSph(1)%r(i),m1r(i),m1%r(i),m11%r(i)
+  end do
+  end associate
+#endif
+
+  print*,"Columns 2, 3 and 4 should be identical:"
+  select type (meshSph)
+  type is (spherical_mesh)
+    associate (m1r => meshSph(1)%r)
+    do i=meshSph(1)%lb,meshSph(1)%ub
+      print*,i,meshSph(1)%r(i),m1r(i),m1%r(i)
+    end do
+    end associate
+  end select
+
+  nullify (m1)
+  end block
+
   call MeshRecycler(meshCart)
   call MeshRecycler(meshCyl)
   call MeshRecycler(meshSph)
   print*,repeat("-",20)
+  print*,repeat("-",20)
+
+  ! -------- Cartesian 2; all metric factors should be 1.0 --------
+  allocate(meshCart2(3))
+  do i=1,3
+    meshCart2(i)%idir = i
+    call meshCart2(i)%init(5,2,1.0d0,0.0d0,0.0d0)
+  end do
+  call meshCart2(1)%print()
+  call meshCart2(2)%print()
+  call meshCart2(3)%print()
+
+  block
+  class(mesh_t), pointer:: m1
+  m1 => meshCart2(1)
+  ! here's another place where gfortran (v5.4.1 and earlier) chokes.
+#ifdef __GFORTRAN__
+  print*,"Columns 2, 3 and 4 should be identical:"
+  associate (m1r => meshCart2(1)%r)
+  do i=meshCart2(1)%lb,meshCart2(1)%ub
+    print*,i,meshCart2(1)%r(i),m1r(i),m1%r(i)
+  end do
+  end associate
+#else
+  print*,"Columns 2 - 5 should be identical:"
+  associate (m1r => meshCart2(1)%r, m11=> meshCart2(1))
+  do i=meshCart2(1)%lb,meshCart2(1)%ub
+    print*,i,meshCart2(1)%r(i),m1r(i),m1%r(i),m11%r(i)
+  end do
+  end associate
+#endif
+  nullify (m1)
+  end block
+  deallocate(meshCart2)
+  print*,repeat("-",20)
+  
+  ! -------- Cartesian 3; all metric factors should be 1.0 --------
+  do i=1,3
+    meshCart3(i)%idir = i
+    call meshCart3(i)%init(6,2,1.0d0,0.5d0,0.0d0)
+  end do
+  call meshCart3(1)%print()
+  call meshCart3(2)%print()
+  call meshCart3(3)%print()
+
+  block
+  class(mesh_t), pointer:: m1
+  m1 => meshCart3(1)
+  ! here's another place where gfortran (v5.4.1 and earlier) chokes.
+#ifdef __GFORTRAN__
+  print*,"Columns 2, 3 and 4 should be identical:"
+  associate (m1r => meshCart3(1)%r)
+  do i=meshCart3(1)%lb,meshCart3(1)%ub
+    print*,i,meshCart3(1)%r(i),m1r(i),m1%r(i)
+  end do
+  end associate
+#else
+  print*,"Columns 2 - 5 should be identical:"
+  associate (m1r => meshCart3(1)%r, m11=> meshCart3(1))
+  do i=meshCart3(1)%lb,meshCart3(1)%ub
+    print*,i,meshCart3(1)%r(i),m1r(i),m1%r(i),m11%r(i)
+  end do
+  end associate
+#endif
+  nullify (m1)
+  end block
 
   !-----------------------------------------------------------------------------
   ! Test integration with patches
@@ -255,6 +363,16 @@ PROGRAM test
     print*,'m3: Spherical mesh recognised'
   class default
     print*,'m3: Unknown mesh type!'
+  end select
+
+  print*,"Columns 2, 3, 4 and 5 should be identical:"
+  select type(m)
+  type is (cylindrical_mesh)
+    associate (m3r => patch%mesh(3)%r)
+    do i=m3%lb,m3%ub
+      print'(i4.1,4(1x,1pe14.6))',i,m(3)%r(i),m3%r(i),patch%mesh(3)%r(i),m3r(i)
+    end do
+    end associate
   end select
 
   nullify (m, m3)
