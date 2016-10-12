@@ -484,7 +484,7 @@ SUBROUTINE qconsistency (self, ident)
   real(8):: time
   !.............................................................................
   !if (self%debug < 1) return
-  call trace_begin ('list_mod::qconsistency',0)
+  call trace_begin ('list_mod::qconsistency',4)
   n = 0
   link => self%queue
   if (associated(link)) then

@@ -113,6 +113,7 @@ SUBROUTINE barrier_ (mp, label, delay)
   integer:: i
   real:: a = 1.0
   !.............................................................................
+  if (.not.mp%ok) return
   if (present(delay)) then
     !call sleep(delay)
     do i=1,delay*1000000

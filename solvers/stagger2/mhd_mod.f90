@@ -12,7 +12,7 @@ MODULE mhd_mod
   USE stagger_mod
   USE patch_mod
   USE force_mod
-  USE boundary_mod
+  !USE boundary_mod
   USE download_mod
   implicit none
   private

@@ -26,7 +26,6 @@ MODULE task_list_mod
   USE trace_mod
   USE refine_mod
   USE download_mod
-  USE timestep_mod
   USE buffered_output_mod
   USE timer_mod
   USE load_balance_mod
