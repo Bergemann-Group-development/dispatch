@@ -60,10 +60,16 @@ MODULE ray_geometry_v3_mod
     class(ray_bndl_t),  pointer :: prev => null()
     class(ray_bndl_t),  pointer :: tail => null()
     class(ray_t), pointer :: rays => null()
+    integer, dimension(:), pointer :: ray_chain_fw  => null()
+    integer, dimension(:), pointer :: ray_chain_rev => null()
     integer :: ID
     integer :: dir_ID
     integer :: n_packets                                                ! number of packets in this bundle
+    integer :: n_rays                                                   ! total number of rays in this bundle
     integer :: n_points
+    integer :: l_chain         = 0                                      ! bundle-chain length
+    integer :: next_chain_bndl_fw = -1
+    integer :: next_chain_bndl_rev = -1
     integer :: lwall(3)
     integer :: uwall(3)
     integer :: dstep(3)                                                 ! traverse index increment
@@ -125,6 +131,7 @@ MODULE ray_geometry_v3_mod
     integer                          :: lwall(3)
     integer                          :: uwall(3)
     integer                          :: n_points
+    integer                          :: ID
     integer, dimension(:,:), pointer :: coords => null()  ! x|y|z, ray point
     integer, dimension(3)            :: fwd_coords             ! x|y|z,
     integer, dimension(3)            :: rev_coords             ! x|y|z,
@@ -139,7 +146,7 @@ MODULE ray_geometry_v3_mod
     class(single_ray_packet_t), pointer :: prev => null()
     class(single_ray_packet_t), pointer :: tail => null()
     class(single_ray_t), pointer:: rays => null()
-    integer :: n_rays, n_points
+    integer :: n_rays, n_points, packet_ID
   end type
 ! ----------------------------------------------------------------------
   type :: single_ray_bundle_t
@@ -151,6 +158,8 @@ MODULE ray_geometry_v3_mod
     integer :: lwall(3)
     integer :: uwall(3)
     integer :: dstep(3)
+    integer :: l_chain = 0
+    integer :: bundle_ID
   contains
     procedure :: finish_ray
   end type
@@ -185,7 +194,25 @@ MODULE ray_geometry_v3_mod
     procedure :: restart
   end type
 ! ----------------------------------------------------------------------
+  type :: chain_data_t
+    integer, dimension(:), pointer :: nr_ID => null()                   ! next ray ID
+    integer, dimension(:), pointer :: n_ID => null()                    ! new ID in the final list
+    integer, dimension(:), pointer :: p_ID => null()                    ! my packet ID
+    integer, dimension(:), pointer :: b_ID => null()                    ! my bundle ID
+    integer :: n_rays
+  contains
+    procedure :: init         => init_chain_data
+    procedure :: add_ray      => chain_data_add_ray
+    procedure :: destroy      => destroy_chain_data
+    procedure :: add_next_ray => chain_data_add_next_ray
+    procedure :: new_id       => chain_data_new_ID
+    procedure :: packet_id    => chain_data_packet_ID
+    procedure :: bundle_id    => chain_data_bundle_ID
+    procedure :: finalize_direction
+  end type
+! ----------------------------------------------------------------------
   type(ray_geometry_t), public :: ray_geometry
+  type(chain_data_t) :: chain_data
   real(8), public, parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
 CONTAINS
 
@@ -447,6 +474,8 @@ SUBROUTINE add_axis(self, dir)
   bndl%ID = 1
   bndl%dir_ID = ndir%ID
   bndl%n_packets = 1
+  bndl%n_rays    = pmax(a)*pmax(b)                                       ! number of rays in this direction
+  bndl%l_chain = 1
   bndl%lwall(a) =  0;  bndl%uwall(a) = 0
   bndl%lwall(b) =  0;  bndl%uwall(b) = 0
   bndl%lwall(c) = -1;  bndl%uwall(c) = 1                                ! lower/upper wall for this direction
@@ -644,11 +673,13 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
   class(ray_point_t), pointer :: ray
   class(single_ray_bundle_t), pointer :: ray_bundle
   class(traverse_t), pointer :: t
-  integer :: a, b, c, ia, ib, x
+  integer :: a, b, c, ia, ib, x, r_id, nr_id, or_id
   real :: init_step(3), dp(3)
   logical :: first_point
 ! ......................................................................
   call trace_begin('traverse_t%traverse')
+  call chain_data%init(self%ui)                                         ! initialize chain data storage
+  r_id = 0; nr_id = 0                                                   ! nullify ray and next ray IDs
   allocate(t)                                                           ! allocate traversal object
   allocate(ray_bundle)                                                  ! create ray tree to store rays
   call t%init(dp, self%ui, self%li, a, b, c)                            ! initialize traversal object
@@ -657,6 +688,9 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
     do ib = t%cell_min(2), t%cell_max(2)                                ! loop over 2nd direction
       first_point = .true.
       allocate(ray)                                                     ! create new ray
+      r_id = r_id + 1                                                   ! increment ray ID
+      or_id = r_id
+      call chain_data%add_ray                                           ! increment n_rays in chain data
       call t%posit(ia, ib, init_step)                                   ! position traversal object
       do while(.not.t%oob)                                              ! loop until ray reaches wall at ray direction
         call ray%add_ray_point(t%pos)                                   ! add a ray point to the ray
@@ -680,12 +714,16 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
               if (t%pos(t%p(x)) > t%cell_max(x)) ray%head%uwall(t%p(x)) = 1
             end if
           end do
-          call ray_bundle%finish_ray(ray)                               ! and save ray to the ray tree
+          call ray_bundle%finish_ray(ray, r_id)                         ! and save ray to the ray tree
           if (t%pos(t%p(3)) > t%cell_max(3)+0.5) then                   ! if cell wall along the ray direction is reached
               t%oob = .true.                                            ! this ray is done
+              call chain_data%add_next_ray(r_id, or_id)
           else                                                          ! otherwise
             allocate(ray)                                               ! get new ray
             call t%restart                                              ! and restart the 1st or 2nd direction
+            nr_id = r_id + 1
+            call chain_data%add_next_ray(r_id, nr_id)
+            r_id = nr_id
             first_point = .true.
           end if
         end if
@@ -695,6 +733,8 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
   end do
   call self%finish_single_ray_list(ray_bundle)                          ! save the ray tree to ray_geometry
   deallocate(t)
+  call chain_data%finalize_direction(self%ray_list%tail%bundle)
+  call chain_data%destroy
 END SUBROUTINE traverse
 
 !> =====================================================================
@@ -861,17 +901,19 @@ SUBROUTINE fill_single_ray_data(self, ray)
   end do
 END SUBROUTINE fill_single_ray_data
 
-SUBROUTINE finish_ray(self, ray_point)
+SUBROUTINE finish_ray(self, ray_point, id)
   class(single_ray_bundle_t) :: self
   class(single_ray_bundle_t), pointer :: bundle
   class(single_ray_packet_t), pointer :: packet
   class(single_ray_t), pointer  :: ray
   class(ray_point_t),  pointer  :: ray_point
+  integer :: id
   logical :: fnd_p, fnd_b
 ! ......................................................................
   call trace_begin('ray_geometry_t%finish_ray')
 
   allocate (ray)                                                        ! allocate ray list
+  ray%id = id
   call ray%fill_single_ray_data(ray_point)
 
   if (.not.associated(self%head)) then                                  ! if the ray tree is empty
@@ -881,6 +923,7 @@ SUBROUTINE finish_ray(self, ray_point)
     self%tail => bundle
     bundle%lwall = ray%lwall
     bundle%uwall = ray%uwall
+    bundle%bundle_ID = 1
   else
     bundle => self%head
     fnd_b = .false.
@@ -901,6 +944,7 @@ SUBROUTINE finish_ray(self, ray_point)
       self%tail => bundle
       bundle%lwall = ray%lwall
       bundle%uwall = ray%uwall
+      bundle%bundle_ID = bundle%prev%bundle_ID + 1
     end if
   end if
 
@@ -911,6 +955,7 @@ SUBROUTINE finish_ray(self, ray_point)
     packet%tail => packet
     packet%n_rays = 1
     packet%n_points = ray%n_points
+    packet%packet_ID = 1
   else
     packet => bundle%packets
     fnd_p = .false.
@@ -930,6 +975,7 @@ SUBROUTINE finish_ray(self, ray_point)
       bundle%packets%tail => packet
       packet%n_rays = 1
       packet%n_points = ray%n_points
+      packet%packet_ID = packet%prev%packet_ID + 1
     end if
   end if
 
@@ -943,15 +989,16 @@ SUBROUTINE finish_ray(self, ray_point)
     ray%prev%next => ray
     packet%rays%tail => ray
   end if
-
+  call chain_data%bundle_ID(ray%id,bundle%bundle_ID)
+  call chain_data%packet_ID(ray%id,packet%packet_ID)
   nullify (ray, bundle, packet, ray_point)
   call trace_end
 END SUBROUTINE finish_ray
 
-SUBROUTINE fill_ray_list_data(self, sray)
+SUBROUTINE fill_ray_list_data(self, sray,r_id)
   class(ray_t) :: self
   class(single_ray_t), pointer :: sray, prev_sray
-  integer :: iray
+  integer :: iray, r_id
 ! ......................................................................
   allocate (self%coords(3,self%n_points,self%n_rays))              ! cell coords per point per ray in the bundle
   allocate (self%fwd_coords(3,self%n_rays))                             ! upstream cell coords per ray
@@ -962,9 +1009,11 @@ SUBROUTINE fill_ray_list_data(self, sray)
   self%ds = sray%ds
   do while (associated(sray))                                           ! loop over all rays in the tree
     iray = iray + 1
+    r_id = r_id +1
     self%coords(:,:,iray) = sray%coords                                 ! save cell cords
     self%fwd_coords(:,iray)    = sray%fwd_coords                        ! save upstream coords
     self%rev_coords(:,iray)    = sray%rev_coords                        ! save downstream coords
+    call chain_data%new_id(sray%id,r_id)
     prev_sray   => sray                                                 ! hold pointer to this ray
     deallocate(sray%coords)
     sray => sray%next                                                   ! go to next ray
@@ -985,8 +1034,8 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
   class(single_ray_bundle_t), pointer :: sbundle, sb_prev
   class(single_ray_packet_t), pointer :: spacket, sp_prev
   class(single_ray_t),   pointer :: sray
+  integer :: r_id
 ! ......................................................................
-
   ! --- Sort out direction issues ---
   allocate (dir)                                                        ! create new ray direction
   if (associated(self%ray_list%head)) then                              ! if ray list is not empty
@@ -1007,6 +1056,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
   ! --- Go through single bundles ---
   sbundle => sbundle%head
   do while (associated(sbundle))                                        ! loop over ray bundles to be saved
+    r_id = 0
     dir%n_bundles = dir%n_bundles + 1
     allocate(bundle)
     bundle%dir_ID = dir%ID
@@ -1017,19 +1067,18 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
       dir%bundle => bundle
       bundle%head => bundle
       bundle%tail => bundle
-      bundle%ID = 1
     else
       bundle%head => dir%bundle
       bundle%prev => dir%bundle%tail
       bundle%prev%next => bundle
       dir%bundle%tail => bundle
-      bundle%ID = bundle%prev%ID + 1
     end if
-
+    bundle%ID = sbundle%bundle_ID
     bundle%lwall = sbundle%lwall
     bundle%uwall = sbundle%uwall
     bundle%dstep = sbundle%dstep
     bundle%n_packets = 0
+    bundle%n_rays = 0
     ! --- Go through single packets ---
     spacket => sbundle%packets
     do while (associated(spacket))
@@ -1039,17 +1088,17 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
         bundle%rays => ray
         ray%head => ray
         ray%tail => ray
-        ray%ID = 1
       else
         ray%head => bundle%rays
         ray%prev => bundle%rays%tail
         ray%prev%next => ray
         bundle%rays%tail => ray
-        ray%ID = ray%prev%ID + 1
       end if
+      ray%ID = spacket%packet_ID
       ray%n_rays = spacket%n_rays
+      bundle%n_rays = bundle%n_rays + spacket%n_rays
       ray%n_points = spacket%n_points
-      call ray%fill_ray_list_data(spacket%rays)
+      call ray%fill_ray_list_data(spacket%rays, r_id)
       sp_prev => spacket
       spacket => spacket%next
       deallocate(sp_prev)
@@ -1151,10 +1200,10 @@ SUBROUTINE print_bundle (self, i)
     ray => ray%next
   end do
   self%n_points = n
-  write (*,'(1x,a,i3,2(3x,a,f5.0),2x,a,2(2x,3i3),2x,a,2i5)') &
+  write (*,'(1x,a,i3,2(3x,a,f5.0),2x,a,2(2x,3i3),2x,a,4i5)') &
     '    RAY_BUNDLE:', i, 'theta:', self%theta*radian, 'phi:', self%phi*radian, &
     'lwall, uwall:', self%lwall, self%uwall, &
-    'packets, points:', self%n_packets, n
+    'packets, dstep:', self%n_packets, self%dstep
   ray => self%rays
   j = 1
   do while (associated(ray))
@@ -1217,5 +1266,138 @@ FUNCTION round(a,digit) result (b)
   b = nint(a*rof)
   b = b/rof
 END FUNCTION round
+    
+SUBROUTINE init_chain_data(self, n)
+  class(chain_data_t) :: self
+  integer :: n(3)
+! ----------------------------------------------------------------------
+  allocate(self%nr_ID(n(1)*n(2)*3))
+  allocate(self%n_ID(n(1)*n(2)*3))
+  allocate(self%b_ID(n(1)*n(2)*3))
+  allocate(self%p_ID(n(1)*n(2)*3))
+  self%nr_id = 0; self%n_id = 0; self%b_id = 0; self%p_Id = 0
+  self%n_rays = 0
+END SUBROUTINE init_chain_data
+
+SUBROUTINE destroy_chain_data(self)
+  class(chain_data_t) :: self
+! ----------------------------------------------------------------------
+  deallocate(self%nr_ID)
+  deallocate(self%n_ID)
+  deallocate(self%b_ID)
+END SUBROUTINE destroy_chain_data
+
+SUBROUTINE chain_data_add_ray(self)
+  class(chain_data_t) :: self
+! ----------------------------------------------------------------------
+  self%n_rays = self%n_rays+1
+END SUBROUTINE chain_data_add_ray
+
+SUBROUTINE chain_data_add_next_ray(self,m,n)
+  class(chain_data_t) :: self
+  integer :: m, n
+! ----------------------------------------------------------------------
+  self%nr_ID(m) = n
+END SUBROUTINE chain_data_add_next_ray
+
+SUBROUTINE chain_data_new_ID (self, m, n)
+  class(chain_data_t) :: self
+  integer :: m, n
+! ----------------------------------------------------------------------
+  self%n_ID(m) = n
+END SUBROUTINE chain_data_new_ID
+
+SUBROUTINE chain_data_packet_ID(self, m, n)
+  class(chain_data_t) :: self
+  integer :: m, n
+! ----------------------------------------------------------------------
+  self%p_ID(m) = n
+END SUBROUTINE chain_data_packet_ID
+
+SUBROUTINE chain_data_bundle_ID(self, m, n)
+  class(chain_data_t) :: self
+  integer :: m, n
+! ----------------------------------------------------------------------
+  self%b_ID(m) = n
+END SUBROUTINE chain_data_bundle_ID
+
+SUBROUTINE finalize_direction(self, bundle)
+  class(chain_data_t) :: self
+  class(ray_bndl_t), pointer   :: bundle, bnd, bndr
+  integer :: ray
+  logical :: fnd, fnd2
+! ----------------------------------------------------------------------
+  do ray = 1, self%n_rays
+    ! find current bundle
+    bnd => bundle
+    fnd = .false.
+    do while(associated(bnd).and..not.fnd)
+      if (self%b_ID(ray) == bnd%id) then
+        fnd = .true.
+      else  
+        bnd => bnd%next
+      end if
+    end do
+    
+    ! find forward bundle to store reverse data there
+    bndr => bundle
+    fnd2 = .false.
+    do while(associated(bndr).and..not.fnd2)
+      if (self%b_ID(self%nr_ID(ray)) == bndr%id) then
+        fnd2 = .true.
+      else  
+        bndr => bndr%next
+      end if
+    end do
+    
+    if (fnd) then
+      if (.not.(associated(bnd%ray_chain_fw))) allocate(bnd%ray_chain_fw(bnd%n_rays))
+      if (self%nr_ID(ray) /= 0) then
+        bnd%ray_chain_fw(self%n_ID(ray)) = self%n_ID(self%nr_ID(ray))   ! forward
+        if (bnd%next_chain_bndl_fw < 0) then
+          bnd%next_chain_bndl_fw = self%b_ID(self%nr_ID(ray))           ! forward
+        else
+          if (bnd%next_chain_bndl_fw /= self%b_ID(self%nr_ID(ray))) then
+            error stop "finalize direction: b_ID mismatch"
+          end if
+        end if
+        if (self%nr_id(ray) == ray) then
+          bnd%l_chain =1
+        else if (self%nr_id(self%nr_id(ray)) == ray) then 
+          bnd%l_chain = 2
+        else if (self%nr_id(self%nr_id(self%nr_id(ray))) == ray) then
+          bnd%l_chain = 3
+        else if (self%nr_id(self%nr_id(self%nr_id(self%nr_id(ray)))) == ray) then
+          bnd%l_chain = 4
+        else if (self%nr_id(self%nr_id(self%nr_id(self%nr_id(self%nr_id(ray))))) == ray) then
+          bnd%l_chain = 5
+        else
+          error stop "finalize direction: when will it end???"
+        end if 
+      else  
+        bnd%l_chain = 1
+      end if
+    else
+      error stop "finalize direction: bundle not found by b_ID"
+    end if
+    
+    if (fnd2) then
+      if (.not.(associated(bndr%ray_chain_rev))) allocate(bndr%ray_chain_rev(bndr%n_rays))
+      if (self%nr_ID(ray) /= 0) then
+        bndr%ray_chain_rev(self%n_ID(self%nr_ID(ray))) = self%n_ID(ray) ! reverse
+        if (bndr%next_chain_bndl_rev < 0) then
+          bndr%next_chain_bndl_rev = self%b_ID(ray)                     ! reverse
+        else
+          if (bndr%next_chain_bndl_rev /= self%b_ID(ray)) then
+            error stop "finalize direction: rev b_ID mismatch"
+          end if
+        end if
+      end if
+    else
+      error stop "finalize direction: fw bundle not found by b_ID"
+    end if
+    
+  end do
+END SUBROUTINE finalize_direction
 
 END MODULE ray_geometry_v3_mod

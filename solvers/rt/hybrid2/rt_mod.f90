@@ -18,7 +18,7 @@ MODULE rt_mod
     class(link_t),       pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
     class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task
     class(link_t),       pointer :: link       => null()  ! pointer to self link in the task list
-    class(ray_bndl_t),   pointer :: my_rays    => null()  ! pointer to list of ray bundles
+    class(ray_bndl_t),   pointer :: bundle     => null()  ! pointer to list of ray bundles
     ! common items
     integer :: n_ray_dirs = 3
     integer :: geom = 1                                                 !cartesian = 1, spherical = 2, cylindrical = 3
@@ -172,9 +172,9 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   
   select case(self%rt_type)                                             ! select the right upstream wall
   case(2)
-    wall = self%my_rays%lwall
+    wall = self%bundle%lwall
   case(3)
-    wall = self%my_rays%uwall
+    wall = self%bundle%uwall
   end select
   
   found = 0
@@ -255,7 +255,7 @@ FUNCTION absolute_point_position (self, rays, ray, pt, bn) result (cell_pos)
   if (present(bn)) then
     select case(self%rt_type)
     case(2)
-      ! self%my_rays
+      ! self%bundle
       cp = rays%fwd_coords(:,ray)
     case(3)
       cp = rays%rev_coords(:,ray)

@@ -7,10 +7,10 @@ PROGRAM test
   integer:: x, y, z, n, dstep(3), ray, pt, p(3), r1,r2,r3, iy
   integer:: ray1, ray2, i1,i2
   integer,dimension(:), allocatable :: npt
-  real, dimension(:,:,:), pointer:: mem, cb2
+  real(8), dimension(:,:,:), pointer:: mem, cb2
   integer, dimension(:,:,:), pointer :: cell
   integer, dimension(:,:,:,:), pointer :: cell3d
-  real, dimension(:,:), pointer:: cb, new
+  real(8), dimension(:,:), pointer:: cb, new
   integer, dimension(:,:), pointer:: npt2
   logical :: cont
   !-----------------------------------------------------------------------------
@@ -31,7 +31,7 @@ PROGRAM test
   do x=1,n
     do y=1,n
       do z = 1,n
-      mem(x,y,z) = 10000*x+y+z/100.
+      mem(x,y,z) = 100*x+y+real(z)*0.01
       end do 
     end do
   end do
@@ -91,7 +91,11 @@ PROGRAM test
     end do
   end do
   call toc('cell based lookup in 2D', i1)
-  
+       do x=1,n
+    do y = 1, npt(x)
+      print *, cb(x,y), 'cell', cell(:,x,y)
+    end do
+  end do
 
   
   call tic
@@ -158,12 +162,6 @@ PROGRAM test
   end do
   
   call toc('cell based lookup in 2D, striding over z, 1st loop unrolled', i1)
-  
-  !   do x=1,n
-  !  do y = 1, npt(x)
-  !    print *, cb(x,y), 'cell', cell(:,x,y)
-  !  end do
-  !end do
   
   call tic
   do y=1,n

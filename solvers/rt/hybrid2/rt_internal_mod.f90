@@ -12,16 +12,17 @@ MODULE rt_internal_mod
   private
 !-----------------------------------------------------------------------
   type :: internal_data_t
-    real, dimension(:,:), pointer :: bndry => null()                    ! (ray, wl_bin) incoming intensity.
+    real, dimension(:,:), pointer :: I_in  => null()                    ! (ray, wl_bin) incoming intensity.
+    real, dimension(:,:), pointer :: I_out => null()                    ! leaving intensity
     real, dimension(:),   pointer :: time => null()                     ! (time)
     !real, dimension(:,:), pointer :: ds   => null()                     ! (ray,point) NOTE: not needed for MARCONI
-    real, dimension(:,:), pointer :: I_out => null()                    ! leaving intensity
     integer, dimension(:,:), pointer :: cell => null()                  ! convenience, to identify which cell the ray point corresponds to
   end type
 !-----------------------------------------------------------------------
   type,extends(rt_t), public :: rt_internal_t
     type (rt_data_t),     pointer :: my_rt_data => null()
     class(internal_data_t), dimension(:), pointer :: packet_data => null() ! incoming intensities
+    real, dimension(:,:), allocatable, target :: I_in, I_out
     integer :: solver
     integer :: bundle_ID, dir_ID
     integer :: lwall(3)
@@ -34,8 +35,9 @@ MODULE rt_internal_mod
     procedure :: check  => check_rt_internal
     procedure :: check_intensities => check_rt_get_intensities
     procedure :: get_upstream
-    procedure :: get_static
-    procedure :: get_dynamic
+    procedure :: get_same_static_chain
+    procedure :: get_static_legacy
+    procedure :: get_dynamic_legacy
     procedure :: get_correction_from_BC
     procedure :: solve_internal_integral => solve_internal_integral_2nd
     procedure :: solve_internal_feautrier
@@ -51,9 +53,9 @@ CONTAINS
 !> =====================================================================
 SUBROUTINE init_rt_internal (self)
   class(rt_internal_t) :: self
-  class(ray_bndl_t),    pointer :: my_rays
+  class(ray_bndl_t),    pointer :: bundle
   class(ray_t), pointer :: packet
-  integer :: pt, ray, pck, r
+  integer :: pt, ray, pck, ir, irm, r
 !-----------------------------------------------------------------------
   call trace_begin('rt_t%init_rt_internal')
   call self%rt_t%init
@@ -76,16 +78,16 @@ SUBROUTINE init_rt_internal (self)
   if (mhd_patch%is_set(bits%root_grid)) call self%set (bits%root_grid)
   end associate
 
-  call ray_geometry%head%get_my_bundle(self%my_rays, self%dir_ID, self%bundle_ID)
+  call ray_geometry%head%get_my_bundle(self%bundle, self%dir_ID, self%bundle_ID)
 
   allocate(self%name)
   SELECT case(self%rt_type)
     case(2)
       self%name = 'rt_forward'
-      self%lwall = self%my_rays%lwall
+      self%lwall = self%bundle%lwall
     case(3)
       self%name = 'rt_reverse'
-      self%lwall = self%my_rays%uwall
+      self%lwall = self%bundle%uwall
   end SELECT
 
   if (self%solver ==  0) then                                           ! set the right solver
@@ -99,19 +101,22 @@ SUBROUTINE init_rt_internal (self)
   !---------------------------------------------------------------------
   ! Allocate memory slots.
   !---------------------------------------------------------------------
-  allocate(self%packet_data(self%my_rays%n_packets))
-  packet => self%my_rays%rays
-  self%ray_ds = packet%ds * self%cell_ds(self%my_rays%axis)
-  do ray = 1, self%my_rays%n_packets
-    allocate(self%packet_data(ray)%bndry (packet%n_rays,microphysics%n_wl_bins))
-    allocate(self%packet_data(ray)%I_out (packet%n_rays,microphysics%n_wl_bins))
-    allocate(self%packet_data(ray)%cell (3,packet%n_rays))
-    allocate(self%packet_data(ray)%time(packet%n_rays))
+  allocate(self%packet_data(self%bundle%n_packets))
+  allocate(self%I_in(self%bundle%n_rays)
+  allocate(self%I_out(self%bundle%n_rays)
+  self%I_in = 0; self%I_out = 0
+  packet => self%bundle%rays
+  self%ray_ds = packet%ds * self%cell_ds(self%bundle%axis)
+  ir = 1
+  do pck = 1, self%bundle%n_packets
+    irm = packet%n_rays - 1
+    self%packet_data(pck)%I_in  => self%I_in(ir:irm)
+    self%packet_data(pck)%I_out => self%I_out(ir:irm)
+    allocate(self%packet_data(pck)%cell (3,packet%n_rays))
+    allocate(self%packet_data(pck)%time(packet%n_rays))
     !allocate(self%packet_data(ray)%ds  (packet%n_rays,packet%n_points))  - not needed for MARCONI
-    self%packet_data(ray)%bndry(:,:) = 0
-    self%packet_data(ray)%I_out(:,:) = 0
-    self%packet_data(ray)%time = self%time
-    !self%packet_data(ray)%ds = packet%ds * self%cell_ds(self%my_rays%axis) ! FIXME: should not be like this for non-cubic cells
+    self%packet_data(pck)%time = self%time
+    !self%packet_data(ray)%ds = packet%ds * self%cell_ds(self%bundle%axis) ! FIXME: should not be like this for non-cubic cells
     select case(self%rt_type)
     case(2)
       pt = packet%n_points
@@ -119,9 +124,10 @@ SUBROUTINE init_rt_internal (self)
       pt = 1
     end select
     do r = 1, packet%n_rays
-      self%packet_data(ray)%cell(:,r) = packet%coords(:,pt,r)
+      self%packet_data(pck)%cell(:,r) = packet%coords(:,pt,r)
     end do
     packet => packet%next
+    ir = ir + irm
   end do
   nullify (packet)
   if (io%verbose>2) call self%check
@@ -135,13 +141,13 @@ SUBROUTINE print (self)
     write (*,'(a,i5,3x,a,i5,3x,a,i4,3x,a,i3,3x,a,i2,2(3x,a,f5.0),2(3x,a,3i2),3x,a,i4)') &
       'rt_internal_t%id:', self%id, &
       'mhd_patch%id:', self%mhd_patch%id, &
-      'dir_ID:',self%my_rays%dir_ID, &
-      'n_packets',self%my_rays%n_packets, &
-      'axis:', self%my_rays%axis, &
-      'theta:', self%my_rays%theta*radian, &
-      'phi:', self%my_rays%phi*radian, &
-      'lwall', self%my_rays%lwall, &
-      'uwall', self%my_rays%uwall, &
+      'dir_ID:',self%bundle%dir_ID, &
+      'n_packets',self%bundle%n_packets, &
+      'axis:', self%bundle%axis, &
+      'theta:', self%bundle%theta*radian, &
+      'phi:', self%bundle%phi*radian, &
+      'lwall', self%bundle%lwall, &
+      'uwall', self%bundle%uwall, &
       'nbors', self%n_nbors
   end if
 END SUBROUTINE print
@@ -163,11 +169,11 @@ SUBROUTINE update_rt_internal (self)
     write (*,'(a,i5,3x,a,i5,3x,a,i4,3x,a,i3,3x,a,i2,2(3x,a,f5.0))') &
       'rt_internal_t%update:', self%id, &
       'mhd_patch%id:', self%mhd_patch%id, &
-      'dir_ID:',self%my_rays%dir_ID, &
-      'n_packets',self%my_rays%n_packets, &
-      'axis:', self%my_rays%axis, &
-      'theta:', self%my_rays%theta*radian, &
-      'phi:', self%my_rays%phi*radian
+      'dir_ID:',self%bundle%dir_ID, &
+      'n_packets',self%bundle%n_packets, &
+      'axis:', self%bundle%axis, &
+      'theta:', self%bundle%theta*radian, &
+      'phi:', self%bundle%phi*radian
   end if
   if (io%verbose > 1) call self%check
   !call trace_end (itimer)
@@ -205,9 +211,9 @@ SUBROUTINE get_upstream (self)
     end do
 
     if (static) then
-      call self%get_static
+      call self%get_static_legacy
     else
-      call self%get_dynamic
+      call self%get_dynamic_legacy
     end if
   end if
 
@@ -216,9 +222,56 @@ SUBROUTINE get_upstream (self)
 END SUBROUTINE get_upstream
 
 !> =====================================================================
+!> Upstream data is on same refinement level. Direct lookup
+!> =====================================================================
+SUBROUTINE get_same_static_chain (self)
+  class(rt_internal_t) :: self
+  class(rt_internal_t), pointer :: rt_nb
+  class(link_t), pointer :: nbor
+  logical :: fnd
+  integer :: mbid
+  !---------------------------------------------------------------------
+  call trace_begin('rt_corrections_mod::get_same_static_chain')
+  
+  select case(self%rt_type)
+  case(2)
+  mbid = self%bundle%next_chain_bndl_fw
+  case(3)
+  mbid = self%bundle%next_chain_bndl_rev
+  end select
+  
+  fnd = .false.
+  nullify(rt_nb)
+  nbor => self%link%nbor
+  do while (associated(nbor).and..not.fnd)
+    associate (rt => nbor%task)
+    SELECT type (rt)
+    class is (rt_internal_t)
+    if (rt%bundle%ID == mbid) then
+    rt_nb => rt
+    fnd = .true.
+    end SELECT
+    end associate
+  end do
+  
+  if (fnd)
+    select case(self%bundle%l_chain)
+    case(:2)
+    
+    case default
+  
+    end select
+  else
+    error stop "get_same_static_chain: right nbor not found"
+  end if
+
+  call trace_end
+END SUBROUTINE get_same_static_chain
+
+!> =====================================================================
 !> Upstream data is on same MPI rank and tasks are not moving.
 !> =====================================================================
-SUBROUTINE get_static (self)
+SUBROUTINE get_static_legacy (self)
   class(rt_internal_t) :: self
   class(rt_internal_t), pointer :: rt_nb
   class(link_t), pointer :: nbor
@@ -230,9 +283,9 @@ SUBROUTINE get_static (self)
   real :: n_mean
   real(8) :: my_c_pos(3)
   !---------------------------------------------------------------------
-  call trace_begin('rt_corrections_mod::get_static')
+  call trace_begin('rt_corrections_mod::get_static_legacy')
 
-  allocate(all_upd(self%my_rays%n_packets))
+  allocate(all_upd(self%bundle%n_packets))
   all_upd = .false.
   nbor => self%link%nbor
   do while(associated(nbor))
@@ -247,9 +300,9 @@ SUBROUTINE get_static (self)
             'rt_internal task',self%id,'loading data from',rt%id
 
           rt_nb => rt
-          packet => self%my_rays%rays
+          packet => self%bundle%rays
 
-          do pck = 1, self%my_rays%n_packets                            ! loop over my ray packets
+          do pck = 1, self%bundle%n_packets                            ! loop over my ray packets
             allocate (updated(packet%n_rays))                              ! make sure all intensities are updated
 
             if (io%verbose > 3) write (*,*) 'packet', pck
@@ -279,8 +332,8 @@ SUBROUTINE get_static (self)
                 n_mean = 0                                              ! number of rays to be averaged
                 mean = 0                                                ! mean intensity
 
-                nb_packet => rt_nb%my_rays%rays
-                do nb_pck = 1, rt_nb%my_rays%n_packets                  ! loop over nbor ray packets
+                nb_packet => rt_nb%bundle%rays
+                do nb_pck = 1, rt_nb%bundle%n_packets                  ! loop over nbor ray packets
                   do nb_ray = 1, nb_packet%n_rays                       ! loop over nbor rays
                     try = -1                                            ! indicator whether this ray meets the criterion
 
@@ -336,7 +389,7 @@ SUBROUTINE get_static (self)
 
   if (io%verbose>2) call self%check_intensities(1)
   call trace_end
-END SUBROUTINE get_static
+END SUBROUTINE get_static_legacy
 
 !> Slow for now. Will be optimised.
 FUNCTION I_retrv(self, nbor, c) result (I_out)
@@ -350,7 +403,7 @@ FUNCTION I_retrv(self, nbor, c) result (I_out)
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_mod%I_retrv',4, itimer=itimer)
   fnd = .false.
-  packet => nbor%my_rays%rays
+  packet => nbor%bundle%rays
   do while (associated(packet).and..not.fnd)
     do nb_ray = 1, packet%n_rays
       if (all(nbor%packet_data(packet%id)%cell(:,nb_ray) == c)) then
@@ -364,11 +417,11 @@ FUNCTION I_retrv(self, nbor, c) result (I_out)
   call trace_end
 END FUNCTION I_retrv
 
-SUBROUTINE get_dynamic (self)
+SUBROUTINE get_dynamic_legacy (self)
   class(rt_internal_t) :: self
   !---------------------------------------------------------------------
   error stop "ERROR: local different dynamic not implemented"
-END SUBROUTINE get_dynamic
+END SUBROUTINE get_dynamic_legacy
 
 !> =====================================================================
 !> Upstream data is from boundary conditions.
@@ -384,8 +437,8 @@ SUBROUTINE get_correction_from_BC (self)
   case(0)
   case(1)
   case(2,3)
-    packet => self%my_rays%rays
-    do pck =1, self%my_rays%n_packets
+    packet => self%bundle%rays
+    do pck =1, self%bundles%n_packets
       do ray = 1, packet%n_rays
         ! for each ray index in the packet, find a point position
         ppos = self%absolute_point_position (packet, ray, 1, self%rt_type)
@@ -434,9 +487,9 @@ SUBROUTINE solve_internal_integral_1st (self)
   call trace_begin('rt_internal_t%integral_1st', itimer=itimer)
 
   nwb = microphysics%n_wl_bins
-  packet => self%my_rays%rays
+  packet => self%bundle%rays
 
-  do pck = 1, self%my_rays%n_packets
+  do pck = 1, self%bundle%n_packets
 
     associate (npt => packet%n_points, nrays => packet%n_rays, &
                rtd => self%my_rt_data, cell => packet%coords)
@@ -519,9 +572,9 @@ SUBROUTINE solve_internal_integral_2nd (self)
   dir_wgt = self%dir_weight
 
   nwb = microphysics%n_wl_bins
-  packet => self%my_rays%rays
+  packet => self%bundle%rays
 
-  do pck = 1, self%my_rays%n_packets
+  do pck = 1, self%bundle%n_packets
 
     associate (npt => packet%n_points, nrays => packet%n_rays, &
                rtd => self%my_rt_data, cell => packet%coords)
@@ -731,7 +784,7 @@ SUBROUTINE check_rt_corrections(self)
     error stop "rt_corrections%check: rt_t%my_nb_link is not associated"
   end if
 
-  if(.not.associated(self%my_rays)) then
+  if(.not.associated(self%bundle)) then
     error stop "rt_corrections%check: rt_t%my_rays is not associated"
   end if
 

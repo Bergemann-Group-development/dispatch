@@ -158,7 +158,7 @@ SUBROUTINE rt_setup (self)
               mhd_rt_patch%first_internal => internal                   ! prepend the new one
               write (io_unit%log,*) &
                 'bundle chain: id, axis =', internal%id, internal%bundle%axis, &
-                real(internal%bundle%theta*radian), real(internal%bundle%phi*radian)
+                real(internal%bundle%theta*radian), real(internal%bundle%phi*radian), internal%bundle%lwall, internal%bundle%uwall
             end if
             call internal%print
             call task_list%append_link(link)                            ! insert into the task list
