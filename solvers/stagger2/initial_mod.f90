@@ -83,10 +83,10 @@ END SUBROUTINE cleanup
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-FUNCTION single_solenoidal (self, m) RESULT (ff)
+SUBROUTINE single_solenoidal (self, m, ff)
   class(initial_t)      :: self
   class(mesh_t), allocatable, dimension(:):: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
@@ -112,15 +112,15 @@ FUNCTION single_solenoidal (self, m) RESULT (ff)
     end do
   end do
   call trace_end
-END FUNCTION single_solenoidal
+END SUBROUTINE single_solenoidal
 
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-FUNCTION single_compressive (self, m) RESULT (ff)
+SUBROUTINE single_compressive (self, m, ff)
   class(initial_t)        :: self
   class(mesh_t), allocatable, dimension(:):: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
@@ -146,15 +146,15 @@ FUNCTION single_compressive (self, m) RESULT (ff)
     end do
   end do
   call trace_end
-END FUNCTION single_compressive
+END SUBROUTINE single_compressive
 
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-FUNCTION single_advection (self, m) RESULT (ff)
+SUBROUTINE single_advection (self, m, ff)
   class(initial_t)        :: self
   class(mesh_t), allocatable, dimension(:):: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
@@ -180,16 +180,16 @@ FUNCTION single_advection (self, m) RESULT (ff)
     end do
   end do
   call trace_end
-END FUNCTION single_advection
+END SUBROUTINE single_advection
 
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-FUNCTION exa256 (self, m) RESULT (ff)
+SUBROUTINE exa256 (self, m, ff)
   USE io_unit_mod
   class(initial_t)      :: self
   class(mesh_t), allocatable, dimension(:):: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  real, dimension(:,:,:,:) :: ff
   real, dimension(:), allocatable:: u, d
   !.............................................................................
   integer               :: ix, iy, iz, jy, jz, rec
@@ -229,16 +229,16 @@ FUNCTION exa256 (self, m) RESULT (ff)
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
   call trace_end
-END FUNCTION exa256
+END SUBROUTINE exa256
 
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-FUNCTION raw (self, m) RESULT (ff)
+SUBROUTINE raw (self, m, ff)
   USE io_unit_mod
   class(initial_t):: self
   class(mesh_t), allocatable, dimension(:):: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8):: ff
+  real, dimension(:,:,:,:):: ff
   !.............................................................................
   integer:: n(3), i(3), iv, iw, iostat
   integer, save:: mv=4
@@ -284,6 +284,6 @@ FUNCTION raw (self, m) RESULT (ff)
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
   !$omp end critical (raw_cr)
   call trace_end
-END FUNCTION raw
+END SUBROUTINE raw
 
 END MODULE
