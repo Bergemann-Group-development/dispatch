@@ -1428,7 +1428,8 @@ FUNCTION MapVectors (self, in, target, ii, jj) result (out)
   real:: out(size(in))
   integer, intent(in) :: ii(3), jj(3)
   !.............................................................................
-  print*,'Not implemented error! patch_t%MapVectors'
+  out = in
+  error stop 'Not implemented error! patch_t%MapVectors'
 END FUNCTION MapVectors
 
 !> =============================================================================

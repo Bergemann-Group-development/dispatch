@@ -77,7 +77,7 @@ foreach d ( $dirs )
   mkdir -p validate/data
   echo "cd validate/"
   cd validate/
-  ln -sf ../*.f90 .
+  ln -sf ../data ../*.f90 .
 
   # make sure we have validate_cmd in the path
   set path = ( {,../,../../}../../../utilities/scripts $path )
@@ -140,8 +140,7 @@ foreach d ( $dirs )
     endif
   else
     echo "validation OK"
-    make clean >& /dev/null
-    \rm -rf data
+    make cleaner >& /dev/null
   endif
 
   # back to initial dir
