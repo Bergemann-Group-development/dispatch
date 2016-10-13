@@ -33,11 +33,13 @@ SUBROUTINE init (self)
   class(timer_t):: self
   logical, save:: first_time=.true.
   integer:: ignore
-  namelist /timer_params/ sec_per_report
+  integer, save:: ncore=0
+  namelist /timer_params/ sec_per_report, ncore
   !.............................................................................
   !$omp critical (timer_cr)
   if (first_time) then
     first_time = .false.
+    ncore = omp%ncore
     rewind (io_unit%input)
     read (io_unit%input, timer_params, iostat=ignore)
     if (io_unit%master) write (*, timer_params)
@@ -45,6 +47,7 @@ SUBROUTINE init (self)
     allocate (timers(0:omp%nthreads-1))
   end if
   !$omp end critical (timer_cr)
+  omp%ncore = ncore
 END SUBROUTINE init
 
 !> =============================================================================
