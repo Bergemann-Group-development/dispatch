@@ -1,0 +1,115 @@
+--------------------------------------------------------------------------------
+ mpi.f90 $Id: db394b622ccdca9f69e87542fd4d5721aea3c38e $                                                                 
+ MPI initialized, mpi%size =      1
+ MPI implementation provides only support for serial MPI calls by any thread
+--------------------------------------------------------------------------------
+ n_socket =   1
+   n_core =   2
+ n_thread =   1
+&IO_PARAMS
+ VERBOSE=          2,
+ DO_DEBUG=F,
+ DO_TRACE=F,
+ DO_OUTPUT=F,
+ DO_FLAGS=F,
+ DO_VALIDATE=T,
+ DO_LEGACY=T,
+ LEVELMAX=         10,
+ OMP_TRACE=T,
+ ID_DEBUG=         -1,
+ /
+ logfile:data/0000.log                                                   
+ =======================================================================
+ NOTE: Reading parameters from input.nml
+ This version was compiled with default real KIND=4
+ =======================================================================
+&TIMER_PARAMS
+ SEC_PER_REPORT=  10.000000000000000     ,
+ /
+&BOX_PARAMS
+ SIZE= 3*1.0000000000000000       ,
+ DIMS= 3*8          ,
+ MPI_DIMS= 3*1          ,
+ ORIGIN= 3*0.0000000000000000       ,
+ FACE_NBORS=F,
+ /
+ n_socket =   1
+   n_core =   2
+ n_thread =   1
+             trying mpi_dims =    1    1    1    T
+              Using mpi_dims =    1    1    1
+&MPI_MESG_PARAMS
+ EVERY_RECV=          1,
+ EVERY_SEND=          5,
+ DELAY_MS=  3.00000000    ,
+ WAIT=F,
+ /
+&TASK_LIST_PARAMS
+ DEBUG=          0,
+ MAX_STALLED=     100000,
+ RETRY_STALLED=       1000,
+ /
+&LOAD_BALANCE_PARAMS
+ ON=F,
+ CADENCE=  1.00000000    ,
+ THRESHOLD=  10.0000000    ,
+ GRACE= 0.300000012    ,
+ DURATION=  0.00000000    ,
+ ONLY_INITIAL=F,
+ /
+&TASK_LIST_PARAMS
+ DEBUG=          0,
+ MAX_STALLED=     100000,
+ RETRY_STALLED=       1000,
+ /
+&LOAD_BALANCE_PARAMS
+ ON=F,
+ CADENCE=  1.00000000    ,
+ THRESHOLD=  10.0000000    ,
+ GRACE= 0.300000012    ,
+ DURATION=  0.00000000    ,
+ ONLY_INITIAL=F,
+ /
+&INITIAL_PARAMS
+ SEED=        -33,
+ K= 3*3.00000000      ,
+ A0= 3*0.00000000      ,
+ U0= 3*0.00000000      ,
+ B0= 3*0.00000000      ,
+ D0=  1.00000000    ,
+ S0=  0.00000000    ,
+ MHD=F,
+ TYPE="raw                             ",
+ /
+&PATCH_PARAMS
+ SIZE= 3*0.12500000000000000      ,
+ N= 3*32         ,
+ NV=          5,
+ NW=          1,
+ NG= 3*2          ,
+ NT=          5,
+ COURANT= 0.200000003    ,
+ U_FIXED= -1.00000000    ,
+ DT_FIXED= -1.00000000    ,
+ GRACE= 0.100000001    ,
+ /
+&OUT_PARAMS
+ OUT_TIME=  1.99999996E-02,
+ END_TIME=  2.01500002E-02,
+ PRINT_TIME=  0.00000000    ,
+ MAX_FILES=        100,
+ GUARD_ZONES=F,
+ TIME_DERIVS=F,
+ /
+&RAMSES_PARAMS
+ GAMMA=  1.00001001    ,
+ RIEMANN="hllc      ",
+ SLOPE_TYPE=          2,
+ COURANT_FACTOR= 0.800000012    ,
+ SMALLR=  9.99999975E-05,
+ SMALLC= 0.500000000    ,
+ DO_ISOTHERMAL=T,
+ CSOUND=  1.00000000    ,
+ /
+At line 290 of file ../../../../solvers/ramses/hydro/initial_mod.f90 (unit = 3, file = '')
+Fortran runtime error: File 'data/exa256/t0.02.raw' does not exist
