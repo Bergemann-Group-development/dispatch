@@ -1,5 +1,5 @@
 ;+ -----------------------------------------------------------------------------
- PRO make_linear_table, infile, outfile
+ PRO make_linear_table, infile, outfile, plot=plot
 ; make a table with linear instead of log variables
 ;- -----------------------------------------------------------------------------
   common ctable,ttmean,rhm,drhm,eemin,eemax,dee,mtab,itab,tab
@@ -28,6 +28,21 @@
         tab[j:j+ntab-1]=tab[j:j+ntab-1]*tab[i:i+ntab-1]
         i=j+ntab
       end
+    end
+  end
+  if keyword_set(plot) then begin
+    i=itab[plot]-1
+    n=mtab[plot]
+    window,4,xsize=1200,ysize=600
+    !p.multi=[0,4,2]
+    !p.charsize=1.6
+    ee=eemin[plot]+dee[0]*findgen(n)
+    print,'rho =',rhm[plot]
+    print,'ee =',eemin[plot],ee[0],dee[0],ee[n-1],eemax[plot]
+    for iv=0,nvar-1 do begin
+      if iv eq 2 then f=tab[i:i+n-1] else f=alog(tab[i:i+n-1])
+      plot,ee,f,psym=-1
+      i=i+3*n
     end
   end
   ;-----------------------------------------------------------------------------

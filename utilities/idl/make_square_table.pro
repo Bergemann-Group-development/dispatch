@@ -1,5 +1,5 @@
 ;+ -----------------------------------------------------------------------------
- PRO make_square_table, infile, outfile, dlr=dlr_new, dee=dee_new
+ PRO make_square_table, infile, outfile, dlr=dlr_new, dee=dee_new, plot=plot
 ; make a table with linear instead of log variables
 ;- -----------------------------------------------------------------------------
   common ctable,ttmean,rhm,drhm,eemin,eemax,dee,mtab,itab,tab
@@ -36,18 +36,32 @@
   ;-----------------------------------------------------------------------------
   for ilr=0,nlr-1 do begin
     lr = lr0 + ilr*dlr_new
-    i1 = long((lr-lr0)/drhm+0.5)
-    ee2 = eemin[i1]
-    ee3 = eemax[i1]
-    iee0 = long((ee2-ee0)/dee_new+0.5)
-    iee1 = long((ee3-ee0)/dee_new+0.5)
-    nee = iee1-iee0+1
-    iee = iee0+lindgen(nee)
+    i1 = long((lr-lr0)/drhm)
+    ee2 = (eemin[i1] > eemin[i1+1])
+    ee3 = (eemax[i1] < eemax[i1+1])
+    iee0 = long((ee2-ee0)/dee_new+1.0)
+    iee1 = long((ee3-ee0)/dee_new)
+    n = iee1-iee0+1
+    iee = iee0+lindgen(n)
     ee = ee0 + dee_new*iee
-    lr = replicate(lr0 + ilr*dlr_new,nee)
+    lr = replicate(lr0 + ilr*dlr_new,n)
     for iv=0,nvar-1 do begin
       v = lookup(lr,ee,iv=iv)
       table[iee,ilr,iv] = v
+    end
+  end
+  if keyword_set(plot) then begin
+    window,8,xsize=1200,ysize=600
+    !p.multi=[0,4,2]
+    ilr=long((alog(rhm[plot])-lr0)/dlr_new)
+    i0=long((eemin[plot]-ee0)/dee_new+1.0)
+    i1=long((eemax[plot]-ee0)/dee_new)
+    ee=ee0+dee_new*(i0+findgen(i1-i0+1))
+    print,eemin[plot],ee[0],dee[0],ee[i1-i0],eemax[plot]
+    for iv=0,nvar-1 do begin
+      f=table[i0:i1,ilr,iv]
+      if iv ne 2 then f=alog(f)
+      plot,ee,f,psym=-1
     end
   end
   ;-----------------------------------------------------------------------------

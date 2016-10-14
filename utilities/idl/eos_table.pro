@@ -72,5 +72,20 @@ PRO eos_table,file,sstab=sstab,quiet=quiet,plot=plot, $
     drhm=(rhm2-rhm1)/(mrho-1)
 
     if keyword_set(sstab) then sstab
-    if keyword_set(plot) then plottablim
-end
+    ;if keyword_set(plot) then plottablim
+    if keyword_set(plot) then begin
+      i=itab[plot]-1
+      n=mtab[plot]
+      window,0,xsize=1200,ysize=600
+      !p.multi=[0,4,2]
+      !p.charsize=1.6
+      ee=eemin[plot]+dee[0]*findgen(n)
+      print,'ee =',eemin[plot],ee[0],dee[0],ee[n-1],eemax[plot]
+      print,'rho =',rhm[plot]
+      for iv=0,nvar-1 do begin
+        plot,ee,tab[i:i+n-1],psym=-1,xstyle=3
+        i=i+3*n
+      end
+      return
+    end
+END
