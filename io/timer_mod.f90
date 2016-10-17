@@ -136,8 +136,11 @@ SUBROUTINE print ()
   !-----------------------------------------------------------------------------
   ! 'sec' measure wall clock time on a single thread, while 'total' is a sum over
   ! all procedures being measured, over all threads.
+  ! 'updates' is the total number of active-cell updates (i.e. not including
+  ! ghost cells) across *all* threads.
+  ! `musppt` is defined to be the number of microseconds per update per thread.
   !-----------------------------------------------------------------------------
-  musppt = sec*1d6/updates
+  musppt = sec * 1d6 * omp%nthreads / updates
   if (io_unit%master) &
     print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
       sec, 'wall sec'
