@@ -120,10 +120,10 @@ else
 .SUFFIXES: .x.mic .x .o .f90 .f .w
 .f90.x.mic: $(OBJ)
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
-	$(E)$(LD) $(LDFLAGS) $(OBJ) $< -o $@ $(LIBS)
+	$(E)$(LD) $(LDFLAGS) $(OBJ) $< *.o -o $@ $(LIBS)
 .f90.x: $(OBJ)
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
-	$(E)$(LD) $(LDFLAGS) $(OBJ) $< -o $@ $(LIBS)
+	$(E)$(LD) $(LDFLAGS) $(OBJ) $< *.o -o $@ $(LIBS)
 .f90.o:
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
 	$(E)$(F90) $(FFLAGS) -c $< -o $@

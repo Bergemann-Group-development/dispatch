@@ -29,6 +29,7 @@ MODULE load_balance_mod
     procedure:: imbalance
     procedure:: measure_load
   end type
+  integer, save:: n_io_rank_info=4*4+8*6
   type:: io_rank_info_t
     sequence
     logical:: ok
@@ -86,6 +87,9 @@ SUBROUTINE init (self)
   end if
   self%on = on
   next_info = cadence
+#if defined HAS_SIZEOF
+  n_io_rank_info = sizeof(io_rank_info_t)/4
+#endif
 END SUBROUTINE init
 
 !> =============================================================================
@@ -108,7 +112,7 @@ SUBROUTINE pack (self, info, mesg)
   integer:: n
   !.............................................................................
   call trace_begin ('rank_info_mod::pack')
-  n = sizeof(io_rank_info)/4
+  n = n_io_rank_info
   allocate (mesg)
   allocate (mesg%buffer(n))
   allocate (mesg%reqs(rank_info_list%n))
@@ -144,7 +148,7 @@ SUBROUTINE unpack (self, buffer)
   integer:: n
   !.............................................................................
   call trace_begin ('rank_info_mod::pack')
-  n = sizeof(io_rank_info)/4
+  n = n_io_rank_info
   call anonymous_copy (n, buffer, io_rank_info)
   if (io_rank_info%rank==mpi%rank) return
   !-----------------------------------------------------------------------------

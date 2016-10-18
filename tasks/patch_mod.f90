@@ -102,6 +102,7 @@ MODULE patch_mod
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
   !-----------------------------------------------------------------------------
+  integer, save:: n_header = 14*4 + 7*8 + 5*8*3 + 2*8*8 + 1*4*8 + 2*4*3
   type header_t
     sequence
     integer:: version=1
@@ -116,6 +117,8 @@ MODULE patch_mod
     integer:: nt
     integer:: nv                        ! number of variables
     integer:: it
+    integer:: nq=0
+    integer:: npad=0
     real(8):: time
     real(8):: end_time
     real(8):: out_next
@@ -126,15 +129,13 @@ MODULE patch_mod
     real(8):: position(3)
     real(8):: velocity(3)
     real(8):: size(3)
+    real(8):: box(3)                    ! the periodic wrapping size
+    real(8):: ds(3)
     real(8), dimension(8):: t
     real(8), dimension(8):: dt
     integer, dimension(8):: iit
-    real(8):: box(3)                    ! the periodic wrapping size
-    real(8):: ds(3)
     integer:: n(3)=16                   ! convenience
     integer:: ng(3)=2                   ! convenience
-    integer:: nq=0
-    integer:: npad=0
   end type
   !-----------------------------------------------------------------------------
   ! Template task, with procedure to place it it MPI-space
@@ -155,7 +156,7 @@ SUBROUTINE patch_to_header (self, head)
   type(header_t):: head
   integer:: nt
   !-----------------------------------------------------------------------------
-  head%n_header   = sizeof(head)/4
+  head%n_header   = n_header
   head%n_data     = product(self%gn)*self%nv
   head%id         = self%id
   head%status     = self%status
@@ -403,6 +404,9 @@ SUBROUTINE init (self)
   self%new = self%iit(nt)                       ! short-hand
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
+#if defined HAS_SIZEOF
+  n_header = sizeof(header)/4
+#endif
   call trace_end
 END SUBROUTINE init
 
@@ -618,7 +622,7 @@ SUBROUTINE output_new (self)
   class(patch_t):: self
   !.............................................................................
   type(header_t):: header
-  integer:: n_header, n_buf, n_data, ibuf, it1, it2, iv
+  integer:: n_buf, n_data, ibuf, it1, it2, iv
   real(4), dimension(:), pointer:: buffer
   real, dimension(:,:,:), pointer:: var
   real:: pt
@@ -626,7 +630,6 @@ SUBROUTINE output_new (self)
   ! Compute size of buffer and allocate -- it will be freed by the writer
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::output_new')
-  n_header = sizeof(header)/4
   n_buf = product(self%gn)
   n_data = n_header + self%nv*n_buf
   allocate (buffer(n_data), var(self%gn(1),self%gn(2),self%gn(3)))
@@ -662,7 +665,7 @@ SUBROUTINE pack (self, mesg)
   class(mesg_t), pointer:: mesg
   !.............................................................................
   type(header_t):: header
-  integer:: n_header, n_var, ibuf, iv, it
+  integer:: n_var, ibuf, iv, it
   real, dimension(:,:,:), pointer:: var
   real:: pt
   integer:: itimer=0
@@ -671,7 +674,6 @@ SUBROUTINE pack (self, mesg)
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::pack', itimer=itimer)
   allocate (mesg)
-  n_header = sizeof(header)/4
   n_var = product(self%gn)
   mesg%nbuf = n_header + self%nv*n_var
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
@@ -730,7 +732,7 @@ SUBROUTINE unpack (self, buffer)
   class(patch_t):: self
   !.............................................................................
   type(header_t):: header
-  integer:: n_header, n_buf, ibuf, iv, it
+  integer:: n_buf, ibuf, iv, it
   integer, dimension(:), pointer:: buffer
   real, dimension(:,:,:), pointer:: var
   real:: pt
@@ -740,7 +742,6 @@ SUBROUTINE unpack (self, buffer)
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::unpack', itimer=itimer)
   !write (io_unit%log,*) 'unpack patch id', self%id
-  n_header = sizeof(header)/4
   n_buf = product(self%gn)
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info from sequenced header
