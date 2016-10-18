@@ -49,13 +49,13 @@ SUBROUTINE init (self)
   else
     self%nv = 5
   end if
+  self%mhd = self%initial%mhd
   call self%mhd_t%init
   call self%set(bits%static)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
   call self%initial%selected(self%mesh, self%mem(:,:,:,:,1,1))
-  self%mhd = self%initial%mhd
   self%time = self%initial%time
   self%t(self%it) = self%initial%time
   !call self%periodic_grid

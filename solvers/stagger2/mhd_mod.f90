@@ -85,7 +85,7 @@ SUBROUTINE init (self)
   endif
   do i=1,3
     self%mesh(i)%h(2+i) = -0.5
-    self%mesh(i)%h(5+i) = -0.5
+    if (self%mhd) self%mesh(i)%h(5+i) = -0.5
   end do
   call self%force%init
   call trace%end
