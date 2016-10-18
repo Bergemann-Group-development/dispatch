@@ -55,7 +55,7 @@ END SUBROUTINE init
 !> =============================================================================
 !> Initial conditions, callable also from refine_mod.f90
 !> =============================================================================
-FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
+SUBROUTINE initial_conditions (self, m, gamma, ff)
   class(initial_t) :: self
   class(mesh_t), allocatable, dimension(:) :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
@@ -64,6 +64,7 @@ FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
   integer:: ix, iy, iz                                       ! loop indices
   real:: entropy, twopi, xa, ya, za, xb, yb, zb, d0          ! local variables
   real,dimension(:,:,:),allocatable :: vecpot
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   !.............................................................................
   call trace_begin ('initial_t%init_mhd_vars')
 
@@ -100,9 +101,9 @@ FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
     ! initialise vector potential
     do iz=m(3)%lb,m(3)%ub
       do iy=m(2)%lb,m(2)%ub
-        ya = m(2)%p + m(2)%r(iy) - 0.5*m(2)%d
+        ya = m(2)%p + r2(iy) - 0.5*m(2)%d
         do ix=m(1)%lb,m(1)%ub
-          xa = m(1)%p + m(1)%r(ix) - 0.5*m(1)%d
+          xa = m(1)%p + r1(ix) - 0.5*m(1)%d
           vecpot(ix,iy,iz) = (self%b0 / twopi) * ( 0.5 * cos(2.0 * twopi * xa) + cos(twopi  * ya) )
         end do
       end do
@@ -110,10 +111,10 @@ FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
 
     do iz=m(3)%lb,m(3)%ub
       do iy=m(2)%lb,m(2)%ub-1
-        yb = m(2)%p + m(2)%r(iy)
+        yb = m(2)%p + r2(iy)
         print*,iy,yb
         do ix=m(1)%lb,m(1)%ub-1
-          xb = m(1)%p + m(1)%r(ix)
+          xb = m(1)%p + r1(ix)
           ff(ix,iy,iz,3) = -d0 * self%v0 * sin(twopi * yb)
           ff(ix,iy,iz,4) =  d0 * self%v0 * sin(twopi * xb)
           ff(ix,iy,iz,6) =  (vecpot(ix,iy+1,iz) - vecpot(ix,iy  ,iz) ) / m(2)%d
@@ -129,9 +130,9 @@ FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
 
     ! initialise vector potential
     do iz=m(3)%lb,m(3)%ub
-      za = m(3)%p + m(3)%r(iz) - 0.5*m(3)%d
+      za = m(3)%p + r3(iz) - 0.5*m(3)%d
       do iy=m(2)%lb,m(2)%ub
-        ya = m(2)%p + m(2)%r(iy) - 0.5*m(2)%d
+        ya = m(2)%p + r2(iy) - 0.5*m(2)%d
         do ix=m(1)%lb,m(1)%ub
           vecpot(ix,iy,iz) = self%b0 / twopi * ( 0.5d0 * cos (2.0 * twopi * ya) + cos (twopi  * za) )
         end do
@@ -139,9 +140,9 @@ FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
     end do
 
     do iz=m(3)%lb,m(3)%ub-1
-      zb = m(3)%p + m(3)%r(iz)
+      zb = m(3)%p + r3(iz)
       do iy=m(2)%lb,m(2)%ub-1
-        yb = m(2)%p + m(2)%r(iy)
+        yb = m(2)%p + r2(iy)
         do ix=m(1)%lb,m(1)%ub
           ff(ix,iy,iz,4) = -d0 * self%v0 * sin(twopi * zb)
           ff(ix,iy,iz,5) =  d0 * self%v0 * sin(twopi * yb)
@@ -157,20 +158,20 @@ FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
 
     ! initialise vector potential
     do iz=m(3)%lb,m(3)%ub
-      za = m(3)%p + m(3)%r(iz) - 0.5*m(3)%d
+      za = m(3)%p + r3(iz) - 0.5*m(3)%d
       do iy=m(2)%lb,m(2)%ub
         do ix=m(1)%lb,m(1)%ub
-          xa = m(1)%p + m(1)%r(iy) - 0.5*m(1)%d
+          xa = m(1)%p + r1(iy) - 0.5*m(1)%d
           vecpot(ix,iy,iz) = self%b0 / twopi * ( 0.5d0 * cos (2.0 * twopi * za) + cos (twopi  * xa) )
         end do
       end do
     end do
 
     do iz=m(3)%lb,m(3)%ub-1
-      zb = m(3)%p + m(3)%r(iz)
+      zb = m(3)%p + r3(iz)
       do iy=m(2)%lb,m(2)%ub
         do ix=m(1)%lb,m(1)%ub-1
-          xb = m(1)%p + m(1)%r(ix)
+          xb = m(1)%p + r1(ix)
           ff(ix,iy,iz,5) = -d0 * self%v0 * sin(twopi * xb)
           ff(ix,iy,iz,3) =  d0 * self%v0 * sin(twopi * zb)
           ff(ix,iy,iz,8) =  (vecpot(ix+1,iy,iz) - vecpot(ix+1,iy,iz) ) / m(1)%d
@@ -183,6 +184,7 @@ FUNCTION initial_conditions (self, m, gamma) RESULT (ff)
   deallocate(vecpot)
 
   call trace_end
-END FUNCTION initial_conditions
+  end associate
+END SUBROUTINE initial_conditions
 
 END MODULE initial_mod

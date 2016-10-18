@@ -12,7 +12,6 @@ MODULE mhd_mod
   USE stagger_mod
   USE patch_mod
   USE force_mod
-  USE boundary_mod
   USE download_mod
   implicit none
   private
@@ -301,11 +300,6 @@ associate (d=>self%d, dddt=>self%dddt, &
     Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
-    if (self%is_set (bits%has_BC)) then
-      call boundary%condition (Ex, self%mesh, [0d0,-0.5d0,-0.5d0])
-      call boundary%condition (Ey, self%mesh, [-0.5d0,0d0,-0.5d0])
-      call boundary%condition (Ez, self%mesh, [-0.5d0,-0.5d0,0d0])
-    end if
     dBdt = -curl_up(ds,emf)
   end if
   !-----------------------------------------------------------------------------

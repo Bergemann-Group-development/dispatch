@@ -133,7 +133,7 @@ SUBROUTINE init (self, label)
           1 format(a,i8,i6,1p,2(2x,3e14.6),2x,2l1)
           flush (io_unit%log)
         end if
-        if (io_unit%verbose>1) then
+        if (io_unit%verbose>1 .and. io_unit%master) then
           write (io_unit%output,1) &
             'init_cartesian: id, rank, size, pos =', &
             task%id, task%rank, task%size, task%position, &

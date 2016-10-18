@@ -38,7 +38,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call self%initial%init()
   self%mhd = .true.
-  self%mem(:,:,:,:,1,1) = self%initial%init_mhd_vars(self%mesh,self%gamma)
+  call self%initial%init_mhd_vars(self%mesh, self%gamma, self%mem(:,:,:,:,1,1))
   print*, 'mk2', minval(self%mem(:,:,:,3,1,1)), maxval(self%mem(:,:,:,3,1,1))
   !
   call trace_end

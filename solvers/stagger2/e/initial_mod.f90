@@ -83,9 +83,9 @@ END SUBROUTINE cleanup
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-FUNCTION single_solenoidal (self, m) RESULT (ff)
+SUBROUTINE single_solenoidal (self, m, ff)
   class(initial_t)      :: self
-  class(mesh_t), allocatable, dimension(:):: m(3)
+  class(mesh_t), allocatable, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -94,12 +94,13 @@ FUNCTION single_solenoidal (self, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal')
   self%phi = 0.0
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    kz   =  pi2*self%k(3)*(r3(iz)+m(3)%p)/m(3)%b + self%phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0
         ff(ix,iy,iz,2) = self%e0
         ff(ix,iy,iz,3) = self%a0(1)*(sin(ky)+sin(kz))
@@ -111,13 +112,14 @@ FUNCTION single_solenoidal (self, m) RESULT (ff)
       end do
     end do
   end do
+  end associate
   call trace_end
-END FUNCTION single_solenoidal
+END SUBROUTINE single_solenoidal
 
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-FUNCTION single_compressive (self, m) RESULT (ff)
+SUBROUTINE single_compressive (self, m, ff)
   class(initial_t)        :: self
   class(mesh_t), allocatable, dimension(:):: m(3)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
@@ -128,12 +130,13 @@ FUNCTION single_compressive (self, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive')
   self%phi = 0.0
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    kz   =  pi2*self%k(3)*(r3(iz)+m(3)%p)/m(3)%b + self%phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0
         ff(ix,iy,iz,2) = self%e0
         ff(ix,iy,iz,3) = self%u0(1)*sin(kx)
@@ -145,15 +148,16 @@ FUNCTION single_compressive (self, m) RESULT (ff)
       end do
     end do
   end do
+  end associate
   call trace_end
-END FUNCTION single_compressive
+END SUBROUTINE single_compressive
 
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-FUNCTION single_advection (self, m) RESULT (ff)
+SUBROUTINE single_advection (self, m, ff)
   class(initial_t)        :: self
-  class(mesh_t), allocatable, dimension(:):: m(3)
+  class(mesh_t), allocatable, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -162,12 +166,13 @@ FUNCTION single_advection (self, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive')
   self%phi = 0.0
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    kz   =  pi2*self%k(3)*(r3(iz)+m(3)%p)/m(3)%b + self%phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
         ff(ix,iy,iz,2) = self%e0
         ff(ix,iy,iz,3) = self%d0*self%u0(1)
@@ -179,16 +184,17 @@ FUNCTION single_advection (self, m) RESULT (ff)
       end do
     end do
   end do
+  end associate
   call trace_end
-END FUNCTION single_advection
+END SUBROUTINE single_advection
 
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-FUNCTION exa256 (self, m) RESULT (ff)
+SUBROUTINE exa256 (self, m, ff)
   USE io_unit_mod
   class(initial_t)      :: self
-  class(mesh_t), allocatable, dimension(:):: m(3)
+  class(mesh_t), allocatable, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   real, dimension(:), allocatable:: u, d
   !.............................................................................
@@ -230,15 +236,15 @@ FUNCTION exa256 (self, m) RESULT (ff)
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
   call trace_end
-END FUNCTION exa256
+END SUBROUTINE exa256
 
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-FUNCTION raw (self, m) RESULT (ff)
+SUBROUTINE raw (self, m, ff)
   USE io_unit_mod
   class(initial_t):: self
-  class(mesh_t):: m(3)
+  class(mesh_t), allocatable, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8):: ff
   !.............................................................................
   integer:: n(3), i(3), iv, iw
@@ -282,6 +288,6 @@ FUNCTION raw (self, m) RESULT (ff)
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
   !$omp end critical (raw_cr)
   call trace_end
-END FUNCTION raw
+END SUBROUTINE raw
 
 END MODULE

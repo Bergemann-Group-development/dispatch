@@ -12,15 +12,18 @@
  sec_per_report=2
 /
 &io_params
- verbose=1
+ verbose=2
  do_validate=f
  do_trace=f
  do_debug=f
  do_output=f
+ omp_trace=t
 /
 &box_params
  size=1,1,1
- dims=2,2,2
+ !dims=16,16,16
+ !dims=8,8,8
+ dims=8,8,8
  origin=0,0,0
 /
 &experiment_params
@@ -29,7 +32,8 @@
  nt=5
  courant=0.2
  grace=0.3
- n=20,20,20
+ n=16,16,16
+ !n=32,32,32
 !dt_fixed=0.001
 /
 &out_params
@@ -57,7 +61,10 @@
  a0=0.0,0.0,0.0
  u0=0,0,0
  b0=0,0,0.3
- type='single_compressive'
+ !type='single_compressive'
+ !type='single_solenoidal'
+ type='single_advection'
+ !type='raw'
 /
 &ramses_params
  courant_factor=0.8
