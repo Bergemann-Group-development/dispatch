@@ -340,7 +340,6 @@ SUBROUTINE measure_load (self, head)
   class (task_t), pointer:: task
   real:: load, sum, sum_cost, cells, sum_cells, ready
   real(8):: dt, sum_dt, wc
-  integer:: n, n1
   integer, save:: itimer
   logical:: ok, active
   !-----------------------------------------------------------------------------
@@ -390,8 +389,8 @@ SUBROUTINE measure_load (self, head)
                     + 0.1*head%task%time        ! .. queue time
   end if
   if (io%verbose > 1) &
-    write (io_unit%log,'(a,3i5,1p,3e12.3)') 'measure_load: n,n1,nq,load,cost,dt =', &
-      n, n1, rank_info%nq, rank_info%cost, rank_info%dtime
+    write (io_unit%log,'(a,3i5,1p,3e12.3)') 'measure_load: nq,load,cost,dt =', &
+      rank_info%nq, rank_info%cost, rank_info%dtime
   call trace_end (itimer)
 END SUBROUTINE measure_load
 

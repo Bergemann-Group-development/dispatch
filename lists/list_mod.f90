@@ -796,8 +796,10 @@ FUNCTION overlaps (self, task1, task2, label)
     block
     real(8):: limit(3)
     limit = 0.501*(task1%size+task2%size)
-    write (io_unit%log,'(a,2i4,2(3f8.2,3x),l3)') 'overlap:', task1%id, task2%id, &
-     (task1%position-task2%position)/limit, dist/limit, overlaps
+    !write (io_unit%log,'(a,2i4,2(3f8.2,3x),l3)') 'overlap:', task1%id, task2%id, &
+    ! (task1%position-task2%position)/limit, dist/limit, overlaps
+    write (io_unit%log,'(a,2i4,1(3f8.2,3x),l3)') 'overlap:', task1%id, task2%id, &
+     (task1%position-task2%position)/limit, overlaps
     end block
   end if
   call trace_end

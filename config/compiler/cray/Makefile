@@ -1,7 +1,7 @@
 # Default for cray fortran.
 # Note cray does not support auto-generation of dependencies (AUTO=no).
 OPT = -O1
-DEBUG = -g -h fp0
+DEBUG =
 HW =
 AUTO = no
 
