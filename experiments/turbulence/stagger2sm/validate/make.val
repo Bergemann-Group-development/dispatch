@@ -8,6 +8,7 @@ rm -f *.o *.mod *.stackdump
  [ FC ] timer_mod.o
  [ FC ] io_mod.o
  [ FC ] trace_mod.o
+ [ FC ] kinds_mod.o
  [ FC ] mesh_mod.o
  [ FC ] bits_mod.o
  [ FC ] scene_mod.o
@@ -20,7 +21,6 @@ rm -f *.o *.mod *.stackdump
  [ FC ] vector_mod.o
  [ FC ] random_mod.o
  [ FC ] force_mod.o
- [ FC ] boundary_mod.o
  [ FC ] cgs_mod.o
  [ FC ] scaling_mod.o
  [ FC ] download_mod.o

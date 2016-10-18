@@ -63,7 +63,7 @@ END SUBROUTINE init
 FUNCTION single_solenoidal (self, time, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t)        :: self
   real(8)               :: time
-  class(mesh_t)         :: m(3)
+  class(mesh_t), allocatable, dimension(:) :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
   real, dimension(:,:,:):: Ux, Uy, Uz
   !.............................................................................
@@ -81,11 +81,11 @@ FUNCTION single_solenoidal (self, time, Ux, Uy, Uz, m) RESULT (ff)
 
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz = pi2*self%k(3)*(r3(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    kz = pi2*self%k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + self%phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky = pi2*self%k(2)*(r2(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      ky = pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx = pi2*self%k(1)*(r1(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        kx = pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%a(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,2) = self%a(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,3) = self%a(3)*(sin(kx)+sin(ky))

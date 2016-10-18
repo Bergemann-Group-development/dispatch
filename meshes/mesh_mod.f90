@@ -56,8 +56,8 @@ MODULE mesh_mod
     real(8) :: origin = 0.0 ! position of the patch's lower left corner in relative,
                             ! native coords.; always = 0 in Cartesian coords.
     real(4) :: centre        ! volume centroid of the current mesh in its own coord. system
-    real(4), dimension(:), allocatable :: r  ! coordinate relative to patch centre
-    real(4), dimension(:), allocatable :: h  ! offset for staggered variables;
+    real(8), dimension(:), allocatable :: r  ! coordinate relative to patch centre
+    real(8), dimension(:), allocatable :: h  ! offset for staggered variables;
                                              ! should be initialised in `mhd_t%init`
     character(len=16):: type = ''
     real(8), allocatable :: zeta  ! position angle of the phi = 0 axis relative to the x-axis (cyl. and sph. coords.).
