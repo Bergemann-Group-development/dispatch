@@ -87,7 +87,7 @@ SUBROUTINE init (self)
   end if
   self%on = on
   next_info = cadence
-#if defined HAS_SIZEOF
+#ifndef _CRAYFTN
   n_io_rank_info = sizeof(io_rank_info_t)/4
 #endif
 END SUBROUTINE init

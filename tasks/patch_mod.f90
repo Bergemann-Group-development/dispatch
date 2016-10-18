@@ -404,7 +404,7 @@ SUBROUTINE init (self)
   self%new = self%iit(nt)                       ! short-hand
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
-#if defined HAS_SIZEOF
+#ifndef _CRAYFTN
   n_header = sizeof(header)/4
 #endif
   call trace_end
