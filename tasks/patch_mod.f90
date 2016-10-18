@@ -102,7 +102,7 @@ MODULE patch_mod
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
   !-----------------------------------------------------------------------------
-  integer, save:: n_header = 14*4 + 7*8 + 5*8*3 + 2*8*8 + 1*4*8 + 2*4*3
+  integer, save:: n_header = (14*4 + 7*8 + 5*8*3 + 2*8*8 + 1*4*8 + 2*4*3)/4
   type header_t
     sequence
     integer:: version=1
@@ -405,7 +405,14 @@ SUBROUTINE init (self)
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
 #ifndef _CRAYFTN
+  block
+  type(header_t):: header
+  if (n_header*4 /= sizeof(header)) then
+    print *, n_header*4, sizeof(header)
+    error stop 'The hardwired patch_mod::n_header is incorrect'
+  end if
   n_header = sizeof(header)/4
+  end block
 #endif
   call trace_end
 END SUBROUTINE init

@@ -29,7 +29,7 @@ MODULE load_balance_mod
     procedure:: imbalance
     procedure:: measure_load
   end type
-  integer, save:: n_io_rank_info=4*4+8*6
+  integer, save:: n_io_rank_info = (4*4 + 6*8)/4
   type:: io_rank_info_t
     sequence
     logical:: ok
@@ -67,7 +67,7 @@ MODULE load_balance_mod
     procedure:: pack
     procedure:: unpack
     procedure:: check_load
-    procedure:: print
+    procedure:: print => print_lb
   end type
   type(load_balance_t), public:: load_balance
 CONTAINS
@@ -88,7 +88,14 @@ SUBROUTINE init (self)
   self%on = on
   next_info = cadence
 #ifndef _CRAYFTN
-  n_io_rank_info = sizeof(io_rank_info_t)/4
+  block
+  type(io_rank_info_t):: io_rank_info
+  if (n_io_rank_info*4 /= sizeof(io_rank_info)) then
+    print *, n_io_rank_info*4, sizeof(io_rank_info)
+    error stop 'The hardwired loadbalance_mod::n_io_rank_info is incorrect'
+  end if
+  n_io_rank_info = sizeof(io_rank_info)/4
+  end block
 #endif
 END SUBROUTINE init
 
@@ -431,7 +438,7 @@ END FUNCTION find
 !> =============================================================================
 !> Print a rank_info list
 !> =============================================================================
-SUBROUTINE print (self, time)
+SUBROUTINE print_lb (self, time)
   class(load_balance_t):: self
   real(8):: time
   class(rank_info_t), pointer:: nbor_info
@@ -454,7 +461,7 @@ SUBROUTINE print (self, time)
     nbor_info => nbor_info%next
   end do
   !$omp end critical (rank_info_list_cr)
-END SUBROUTINE print
+END SUBROUTINE print_lb
 
 !> =============================================================================
 !> Decide whether to give up ownership of a patch, to increase the load of an
