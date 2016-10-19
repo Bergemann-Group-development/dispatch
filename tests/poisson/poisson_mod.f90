@@ -127,7 +127,7 @@ SUBROUTINE solve (self, mesh, rho, phi, iters)
     error = maxval(abs(residual(l(1):u(1),l(2):u(2),l(3):u(3))))
     if (io%verbose > 2) then
       write (io_unit%log, '(a,i5,1p,e14.6)') 'poisson_t%solve: iter, error =', iter, error
-      call flush (io_unit%log)
+      flush (io_unit%log)
     end if
     if (error < self%tolerance*rho0) then
       iters = iter

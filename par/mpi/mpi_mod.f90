@@ -191,7 +191,7 @@ SUBROUTINE abort_mpi (mp, reason)
 !...............................................................................
   print*, mpi_rank, 'mpi_abort: '//trim(reason)
   write(io_unit%log,'(3(a,i6,2x))') 'mpi_abort: thread =',omp%thread,trim(reason)
-  call flush (io_unit%log)
+  flush (io_unit%log)
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
   call exit
 END SUBROUTINE abort_mpi
@@ -211,7 +211,7 @@ SUBROUTINE barrier_mpi (mp, label)
   if (mpi_trace) print *,  mpi_rank, 'barrier_mpi: '//label
   if (mp%verbose > 2) then
     write (output,*) mpi_rank, 'barrier_mpi: '//label
-    call flush (output)
+    flush (output)
   end if
   call MPI_Barrier (mpi_comm_world, mpi_err)
 END SUBROUTINE barrier_mpi
@@ -228,7 +228,7 @@ SUBROUTINE assert (mp, message, code)
     write(*,*)      mpi_rank,' error: '//trim(message)
     if (mp%verbose > 1) then
       write(output,*) mpi_rank,' error: '//trim(message)
-      call flush (output)
+      flush (output)
     end if
   end if
 END SUBROUTINE assert

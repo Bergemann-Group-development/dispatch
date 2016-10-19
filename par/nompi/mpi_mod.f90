@@ -132,7 +132,7 @@ SUBROUTINE abort_mpi (mp, reason)
   print*,'nompi_abort: '//trim(reason)
   if (mp%verbose > 2) then
     write(output,'(3(a,2x,i6))') 'nompi_abort: rank =',mpi_rank,'thread',trim(reason)
-    call flush (output)
+    flush (output)
   end if
   call exit
 END SUBROUTINE abort_mpi
@@ -151,7 +151,7 @@ SUBROUTINE barrier_mpi (mp, label)
   if (mpi_trace) print *,  mpi_rank, 'barrier_nompi: '//label
   if (mp%verbose > 2) then
     write (output,*) mpi_rank, 'barrier_nompi: '//label
-    call flush (output)
+    flush (output)
   end if
 END SUBROUTINE barrier_mpi
 
@@ -167,7 +167,7 @@ SUBROUTINE assert (mp, message, code)
     write(*,*)      mpi_rank,' error: '//trim(message)
     if (mp%verbose > 1) then
       write(output,*) mpi_rank,' error: '//trim(message)
-      call flush (output)
+      flush (output)
     end if
   end if
 END SUBROUTINE assert
