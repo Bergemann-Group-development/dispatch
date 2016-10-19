@@ -352,24 +352,28 @@ SUBROUTINE update (self)
     dBdt = -curl_up(ds,E)
     if (self%mhd_AD) then
       !---------------------------------------------------------------------------
-      ! Below is the actual ambipolar drift parameter as given in equation 20 in Padoan, Zweibel and Nordlund (2000).
-      ! To only write ambi, the definition in Padoan et al. is already multiplied by density**(-3/2)
-      ! as it appears in the calculation of the drift velocity. The term d**1.5 is a cosnequence of the single fluid
-      ! approximation and the relation
-      ! n_i = K(n_n/10^5cm^-3)^k + K' (n_n/10^3 cm^-3)^-2
+      ! Below is the actual ambipolar drift parameter as given in equation 20 in
+      ! Padoan, Zweibel and Nordlund (2000).
+      ! To only write ambi, the definition in Padoan et al. is already multiplied
+      ! by density**(-3/2) as it appears in the calculation of the drift velocity.
+      ! The term d**1.5 is a cosnequence of the single fluid approximation and the
+      ! relation n_i = K(n_n/10^5cm^-3)^k + K' (n_n/10^3 cm^-3)^-2
       ! K = 3*10^-3cm^-3, k=0.5 and K'=4.64*10^-4cm^-3.
       ! based on assuming that dust grains do NOT affect ionization balance significantly
       ! => second term falls off quickly => n_i~n_n^0.5
       ! In order to compute this parameter correctly, we need to know TEMPERATURE,
-      ! RESOLUTION (not directly applicable here because we use AMR), BOX LENGTH, AVERAGE DENSITY,
-      ! COSMIC-RAY IONISATION (K_i parameter: K_i = n_i*n_H**(-0.5) = x_i*n_H**(-0.5) ) and AVERAGE VOLUMETRIC FLOW RATE av_sigv:
+      ! RESOLUTION (not directly applicable here because we use AMR), BOX LENGTH,
+      ! AVERAGE DENSITY, COSMIC-RAY IONISATION (K_i parameter: 
+      ! K_i = n_i*n_H**(-0.5) = x_i*n_H**(-0.5) ) and AVERAGE VOLUMETRIC FLOW RATE av_sigv:
       !---------------------------------------------------------------------------
-      ! ambi = 0.28 * (0.1*T)**0.5 * (N/128d0) * (L/10d0)**(-1) * (av_n/200d0)**(-0.5) * (K_i/1e-5)**(-1) * (av_sigv/2e-9)**(-1) * d**(-1.5)
+      ! ambi = 0.28 * (0.1*T)**0.5 * (N/128d0) * (L/10d0)**(-1) * (av_n/200d0)**(-0.5) 
+      !      * (K_i/1e-5)**(-1) * (av_sigv/2e-9)**(-1) * d**(-1.5)
       !
-      ! Alternative definition in Duffin and Pudritz (2008) assumes constant parameter for gamma_AD
+      ! Alternative definition in Duffin and Pudritz (2008) assumes constant parameter
+      ! for gamma_AD
       ! gamma_AD = av_sigv / (m_i + m_n) = 3.28e13 g^-1cm^3s^-1
-      !ambi = 1.4 / (gamma_AD*d**1.5)
-      !rho_i = 1.
+      ! ambi = 1.4 / (gamma_AD*d**1.5)
+      ! rho_i = 1.
       ambi = 1./(self%gamma_AD*d*self%rho_ions**0.5)
       Ud_x = xdn(ambi) * (zup(Jy)*xdn(zup(Bz)) - yup(Jz)*xdn(yup(By)))
       Ud_y = ydn(ambi) * (xup(Jz)*ydn(xup(Bx)) - zup(Jx)*ydn(zup(Bz)))

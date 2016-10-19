@@ -205,7 +205,7 @@ SUBROUTINE test_status (self)
   end do
   test = iand(self%task%status,bits%internal+bits%boundary+bits%virtual+bits%external)
   if (status /= test) then
-    write (io_unit%log,'(i9,2xa,i6,2(2x,4l3))') self%task%id, 'inconsistent bits', &
+    write (io_unit%log,'(i9,2x,a,i6,2(2x,4l3))') self%task%id, 'inconsistent bits', &
       self%task%rank, &
       self%task%is_set(bits%internal), &
       self%task%is_set(bits%boundary), &

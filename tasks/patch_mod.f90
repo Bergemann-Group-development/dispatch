@@ -652,7 +652,7 @@ SUBROUTINE output_new (self)
   !-----------------------------------------------------------------------------
   it1 = self%iit(self%nt-2)
   it2 = self%iit(self%nt-1)
-  pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1e-30)
+  pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1d-30)
   do iv=1,self%nv
     var = self%mem(:,:,:,iv,it1,1)*(1.-pt) + self%mem(:,:,:,iv,it2,1)*pt
     call anonymous_copy (n_buf, var, buffer(ibuf))
@@ -874,7 +874,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   if (io%master .and. io%verbose>=0) &
     print'(a,3x,"time:",f9.5)', 'patch_mod::output: file= '//trim(filename), self%out_next
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  write (io%data_unit,'(1p,e18.10,6(2x,3e18.10)1x,i3.1)') self%time, self%position, self%ds, &
+  write (io%data_unit,'(1p,e18.10,6(2x,3e18.10),1x,i3.1)') self%time, self%position, self%ds, &
         self%velocity, self%origin, self%llc, self%mesh%centre, self%level
   write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1)') int(self%box/self%ds+0.5), u-l+1, &
         li, ui, self%n, self%gn, self%ng, self%nv
@@ -908,7 +908,7 @@ SUBROUTINE output_legacy (self, experiment_name)
       else
         it2 = self%iit(self%nt-1)
         it = it2
-        pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1e-30)
+        pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1d-30)
         if (self%t(it2)==self%t(it1)) pt=0.0
         qt = 1.0-pt
         buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
@@ -1127,7 +1127,7 @@ FUNCTION point_distance (self, p1, p2) RESULT (out)
   class(patch_t):: self
   real(8):: p1(3), p2(3), out
   !.............................................................................
-  out = maxval(abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box))
+  out = maxval(abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box))
 END FUNCTION point_distance
 
 !> =============================================================================
@@ -1137,7 +1137,7 @@ FUNCTION point_distances (self, p1, p2) RESULT (out)
   class(patch_t):: self
   real(8):: p1(3), p2(3), out(3)
   !.............................................................................
-  out = abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1e-30))-0.5_8*self%box)
+  out = abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box)
 END FUNCTION point_distances
 
 !> =============================================================================
