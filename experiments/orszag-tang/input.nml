@@ -1,6 +1,6 @@
 &io_params
- do_trace=t
- verbose=0
+ do_trace=f
+ verbose=2
  do_debug=f
  do_output=t
 /

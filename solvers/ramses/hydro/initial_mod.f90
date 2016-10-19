@@ -94,12 +94,13 @@ SUBROUTINE single_solenoidal (self, m, ff)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal')
   self%phi = 0.0
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    kz   =  pi2*self%k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + self%phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0
         ff(ix,iy,iz,2) = self%a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,3) = self%a0(2)*(sin(kz)+sin(kx))
@@ -114,6 +115,7 @@ SUBROUTINE single_solenoidal (self, m, ff)
       end do
     end do
   end do
+  end associate
   call trace_end
 END SUBROUTINE single_solenoidal
 
@@ -131,12 +133,13 @@ SUBROUTINE single_compressive (self, m, ff)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive')
   self%phi = 0.0
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    kz   =  pi2*self%k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + self%phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0
         ff(ix,iy,iz,2) = self%u0(1)*sin(kx)
         ff(ix,iy,iz,3) = self%u0(2)*sin(ky)
@@ -151,6 +154,7 @@ SUBROUTINE single_compressive (self, m, ff)
       end do
     end do
   end do
+  end associate
   call trace_end
 END SUBROUTINE single_compressive
 
@@ -168,12 +172,13 @@ SUBROUTINE single_advection (self, m, ff)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive')
   self%phi = 0.0
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*self%k(3)*(m(3)%r(iz)+m(3)%p)/m(3)%b + self%phi(3)
+    kz   =  pi2*self%k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + self%phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
+      ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
+        kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,1) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
         ff(ix,iy,iz,2) = self%d0*self%u0(1)
         ff(ix,iy,iz,3) = self%d0*self%u0(2)
@@ -188,6 +193,7 @@ SUBROUTINE single_advection (self, m, ff)
       end do
     end do
   end do
+  end associate
   call trace_end
 END SUBROUTINE single_advection
 
@@ -293,7 +299,7 @@ SUBROUTINE raw (self, m, ff)
     end do
     close (io_unit%data)
   end if
-  i = 1 + nint(m%p/m%d)-m%n/2                            ! index offsets
+  i = 1 + nint(m%p/m%d) - m%n/2                          ! index offsets
   ff = 0.0
   do iv=1,mv
     ff(m(1)%li:m(1)%ui, &
