@@ -55,12 +55,13 @@ SUBROUTINE init (self, label)
   ! or assigned automatically by mpi_coords%init.
   !-----------------------------------------------------------------------------
   if (mpi%size == 1) then
-    mpi_dims = 1
-  end if
-  if (product(mpi_dims)==1) then
-    call mpi_coords%init (dims=dims)
+    mpi_coords%dims = 1
   else
-    call mpi_coords%init (mpi_dims=mpi_dims)
+    if (product(mpi_dims)==1) then
+      call mpi_coords%init (dims=dims)
+    else
+      call mpi_coords%init (mpi_dims=mpi_dims)
+    end if
   end if
   mpi_dims = mpi_coords%dims
   patches_per_mpi = self%dims/mpi_dims

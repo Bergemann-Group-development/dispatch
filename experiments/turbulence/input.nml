@@ -12,7 +12,7 @@
  sec_per_report=2
 /
 &io_params
- verbose=2
+ verbose=1
  do_validate=f
  do_trace=f
  do_debug=f
@@ -32,8 +32,8 @@
  nt=5
  courant=0.2
  grace=0.3
- n=16,16,16
- !n=32,32,32
+ !n=16,16,16
+ n=32,32,32
 !dt_fixed=0.001
 /
 &out_params

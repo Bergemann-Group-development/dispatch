@@ -11,7 +11,7 @@ MODULE timer_mod
   integer, save:: ntimer=0
   type:: timer_t
     integer(8):: calls(maxproc)=0
-    real(8), dimension(maxproc):: start, total
+    real(8), dimension(maxproc):: start=0d0, total=0d0
   contains
     procedure:: init
     procedure:: begin
@@ -44,6 +44,7 @@ SUBROUTINE init (self)
     read (io_unit%input, timer_params, iostat=ignore)
     if (io_unit%master) write (*, timer_params)
     next_report_sec = sec_per_report
+    omp%nthreads = max(1,omp%nthreads)
     allocate (timers(0:omp%nthreads-1))
   end if
   !$omp end critical (timer_cr)
