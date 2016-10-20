@@ -1,7 +1,7 @@
 ! $Id$
 
 &timer_params
- sec_per_report=10.
+ sec_per_report=30.
 /
 &mpi_mesg_params
  every_send=5
@@ -11,7 +11,7 @@
  max_stalled=100000
 /
 &io_params
- verbose=2
+ verbose=1
  do_validate=f
  do_trace=f
  do_debug=f
@@ -42,7 +42,9 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.02015
+ !end_time=0.02015
+ !end_time=0.021
+ end_time=0.2
  out_time=0.02
  print_time=0.0
  guard_zones=f

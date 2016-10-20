@@ -106,20 +106,19 @@ END FUNCTION
 SUBROUTINE toc_r (label, n)
   implicit none
   character(len=*):: label
-  real:: n, f
+  real:: n
   real(8):: omp_get_wtime
   !.............................................................................
   if (io_unit%do_validate) return
   wt = (omp_get_wtime() - wt)
   n_core = max(omp%ncores,1)
-  f = max(omp%nthreads/real(n_core),1.0)
   write (io_unit%log,1) label, trim(time_str(wt)), &
-    trim(time_str(wt/f/max(n,1.))), '/upd,', n, 'updates'
+    trim(time_str(wt*n_core/max(n,1.))), '/upd,', n, 'updates'
   1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a)
   flush (io_unit%log)
   if (mpi%rank==0.and.omp%thread==0) &
     print 1, label, trim(time_str(wt)), &
-      trim(time_str(wt/f/max(n,1.))), '/upd,', n, 'updates'
+      trim(time_str(wt*n_core/max(n,1.))), '/upd,', n, 'updates'
   flush (6)
   wt = omp_get_wtime()
 END SUBROUTINE toc_r
