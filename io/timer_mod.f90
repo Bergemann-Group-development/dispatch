@@ -141,7 +141,7 @@ SUBROUTINE print ()
   ! ghost cells) across *all* threads.
   ! `musppt` is defined to be the number of microseconds per update per thread.
   !-----------------------------------------------------------------------------
-  musppt = sec * 1d6 * omp%nthreads / updates
+  musppt = sec*1d6*min(omp%nthreads,omp%ncores)/updates
   if (io_unit%master) &
     print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
       sec, 'wall sec'
