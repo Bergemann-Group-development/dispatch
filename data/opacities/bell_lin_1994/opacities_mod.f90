@@ -47,10 +47,10 @@ END SUBROUTINE init_bell_lin
 !>   opacity formula is used, the smoothing will need to be re-derived.  See JPR's
 !>   notes titled "Lin & Papaloizou analytic opacity function" from April 2013.
 !> =============================================================================
-FUNCTION BellLinOpacity (self,rho0, temp0, nwb) RESULT (kappa)
+SUBROUTINE BellLinOpacity (self,rho0, temp0, nwb, kappa)
   class(opacity_t) :: self
-  real(4), dimension(:,:,:), intent(in) :: rho0, temp0
-  real(4), dimension(size(rho0,1),size(rho0,2),size(rho0,3), nwb) :: kappa
+  real(4), dimension(:,:,:), pointer :: rho0, temp0
+  real(4), dimension(:,:,:,:), pointer :: kappa
   real(8), dimension(size(rho0,1),size(rho0,2),size(rho0,3)) :: k123, kappad, rho, temp
   real(8), dimension(size(rho0,1),size(rho0,2),size(rho0,3), 8) :: k
   integer :: i, nwb
@@ -87,6 +87,6 @@ FUNCTION BellLinOpacity (self,rho0, temp0, nwb) RESULT (kappa)
   end if
   end associate
   call trace_end
-END FUNCTION BellLinOpacity
+END SUBROUTINE BellLinOpacity
 
 END MODULE opacities_mod

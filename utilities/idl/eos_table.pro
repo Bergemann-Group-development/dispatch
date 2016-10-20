@@ -24,7 +24,7 @@ PRO eos_table,file,sstab=sstab,quiet=quiet,plot=plot, $
     common ctable2,mrho,iupdte,nvar,mbox,xmin,dbox,ul,ut,ur,eps,tff,grv,abnd
     common ctable3,tmean,tamp,xcorr,thmin,thmax,dth
 
-    default,file,'table.dat'
+;    default,file,'table.dat'
     close,2
     openr,2,file,_extra=_extra,/f77
     mrho=0L

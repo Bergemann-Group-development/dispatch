@@ -83,7 +83,7 @@ END SUBROUTINE init_rt_data
 SUBROUTINE update_rt_data (self)
   class(rt_data_t) :: self
   character(len=16):: stime
-  real, dimension(:,:,:), pointer :: rho, temp
+  real, dimension(:,:,:), pointer :: rho, s
   integer, save:: itimer=0
 !-----------------------------------------------------------------------
   write (stime,'(1p,g16.6)') self%time
@@ -91,24 +91,15 @@ SUBROUTINE update_rt_data (self)
 
   self%it  = self%mhd_patch%it
 
-  allocate (temp(size(self%source,1),size(self%source,2),size(self%source,3)))
-  associate  (l => self%li, u=>self%ui)
   rho => self%mhd_patch%mem(:,:,:,1,self%it,1)
-
-  temp(l(1):u(1),l(2):u(2),l(3):u(3)) = self%mhd_patch%gas_temperature_ngz() ! estimate temperature
-
-  self%opacity(l(1):u(1),l(2):u(2),l(3):u(3),:) = &
-  microphysics%opacity%solve (rho(l(1):u(1),l(2):u(2),l(3):u(3)),&
-  temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%n_wl_bins)  !FIXME : should pass wl_bins with info ! estimate opacity
-  self%source (l(1):u(1),l(2):u(2),l(3):u(3),:) = &
-  microphysics%source_fn%solve (temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%wl_bins) ! estimate the source function
-
-  ! add cosmic ray heating
-  call self%add_cr_heating(self%mhd_patch%time,temp(l(1):u(1),l(2):u(2),l(3):u(3)))  ! add cr heating
-  call self%update_time
-
+  s   => self%mhd_patch%mem(:,:,:,2,self%it,1)
+  associate (gam => self%mhd_patch%gamma, cs => self%mhd_patch%csound)
+  call microphysics%get_data(rho = rho, entropy = s, source_fn = self%source, &
+                             opacity = self%opacity, gam = gam, cs = cs)
   end associate
-  deallocate (temp)
+  ! add cosmic ray heating
+  call self%add_cr_heating(self%mhd_patch%time)  ! add cr heating
+  call self%update_time
 
   if (io%verbose>2) call self%check(2)
 
@@ -118,9 +109,8 @@ END SUBROUTINE update_rt_data
 !> =============================================================================
 !> Optionally add cosmic ray heating -- generic if applied before 'apply_heating'
 !> =============================================================================
-SUBROUTINE add_cr_heating (self, time, temp)
+SUBROUTINE add_cr_heating (self, time)
   class(rt_data_t) :: self
-  real, dimension(:,:,:) :: temp
   real(kind=8) :: time
   integer :: l(3), u(3)
   ! ----------------------------------------------------------------------------

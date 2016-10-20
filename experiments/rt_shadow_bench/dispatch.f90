@@ -7,11 +7,13 @@ PROGRAM dispatch
   USE mpi_mod
   USE cartesian_mod
   USE radiative_transfer_mod
+  USE eos_mod
   type (cartesian_t):: cartesian
   type (task_list_t), pointer:: task_list
   !.............................................................................
   call mpi%init
   call io%init('shadow benchmark')
+  call eos%init('stagger2')
   call cartesian%init                   ! Initialize the patch list and patches
   task_list => cartesian%task_list
   call rt_setup (task_list)             ! add RT tasks to the task list

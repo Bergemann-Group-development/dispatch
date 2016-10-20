@@ -3,6 +3,7 @@ MODULE source_function_mod
   USE units_mod
   USE io_mod
   USE trace_mod
+  USE eos_mod
   implicit none
   private
   !  -------------------------------------------------------------------
@@ -52,33 +53,55 @@ SUBROUTINE init (self, source)
     self%solve => source_Planck
   case('Stefan')
     self%solve => source_Stefan
+  case('eos_lookup')
+    self%solve => source_eos_lookup
+  case default
+    print *, "source_function_mod::init: source function",source," not recognised"
+    error stop "stopping"
   end SELECT
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!> =====================================================================
+!> Source function is looked up from the EOS table. Suitable for Stagger
+!> solver.
+!> =====================================================================
+SUBROUTINE source_eos_lookup (self, rho, entr, wl, src)
+  class(source_function_t) :: self
+  real, dimension(:,:,:) :: rho
+  real, dimension(:,:,:), optional :: entr
+  real, dimension(:), optional :: wl
+  real, dimension(:,:,:,:) :: src
+!-----------------------------------------------------------------------
+  call trace_begin('source_function_mod::source_eos_lookup',2)
+  call eos%lookup(rho=rho, s=entr,src=src)
+  call trace_end
+END SUBROUTINE source_eos_lookup
+
+!> =====================================================================
 !> Simplest source function. The integrated Planck function is proportional
 !> to Stefan's constant times the fourth power of the temperature, divided by pi.
 !> This is the relevant source function when the opacity is constant as a
 !> function of wavelength, so one can integrate over wavelength before solving
 !> the radiative transfer equation.
-!> =============================================================================
-FUNCTION source_Stefan (self, temp, wl) result (src)
+!> =====================================================================
+SUBROUTINE source_Stefan (self, temp, dummy, wl, src)
   class(source_function_t) :: self
-  real, dimension(:,:,:)   :: temp
-  real, dimension(:)       :: wl
-  real, dimension(size(temp,1),size(temp,2),size(temp,3),size(wl)) :: src
+  real, dimension(:,:,:) :: temp
+  real, dimension(:), optional     :: wl
+  real, dimension(:,:,:), optional :: dummy
+  real, dimension(:,:,:,:) :: src
   real (kind=8):: lambda, sc_stf
   integer:: iwl
   !.............................................................................
   call trace_begin('source_function_mod::source_Stefan',2)
   sc_stf = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
   src(:,:,:,1) = sc_stf*temp**4
-  if (size(wl)>1) then
-    error stop "Error: n_wl_bins >1, but Stefan source function is selected."
+  if (size(src,4)>1) then
+    error stop "source_function_mod::source_Stefan: n_wl_bins >1, but Stefan source function is selected."
   end if
   call trace_end
-END FUNCTION source_Stefan
+END SUBROUTINE source_Stefan
 
 
 !> =============================================================================
@@ -88,11 +111,12 @@ END FUNCTION source_Stefan
 !> choosing how to interpolate.  This is only slightly slower than if one knows
 !> everything is in range.
 !> =============================================================================
-FUNCTION source_Planck (self, temp, wl) result(src)
+SUBROUTINE source_Planck (self, temp, dummy, wl, src)
   class(source_function_t) :: self
   real, dimension(:,:,:)   :: temp
-  real, dimension(:)     :: wl
-  real, dimension(size(temp,1),size(temp,2),size(temp,3),size(wl)) :: src
+  real, dimension(:), optional     :: wl
+  real, dimension(:,:,:), optional :: dummy
+  real, dimension(:,:,:,:) :: src
   !.....................................................................
   real,    dimension(size(temp,1),size(temp,2),size(temp,3)) :: p
   integer, dimension(size(temp,1),size(temp,2),size(temp,3)) :: k
@@ -127,7 +151,7 @@ FUNCTION source_Planck (self, temp, wl) result(src)
   end do
   
   call trace_end  
-END FUNCTION source_Planck
+END SUBROUTINE source_Planck
 
 FUNCTION flook(self,k) result (pp)
   class(source_function_t)  :: self
@@ -143,7 +167,6 @@ FUNCTION flook(self,k) result (pp)
 END FUNCTION flook
 
 !> OUTDATED:
-
 !> =============================================================================
 !> The planck function, normalized to give radiation per unit \ln\lambda,  for
 !> a given temperature and wavelength. Input and output are in code units, but

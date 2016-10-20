@@ -27,10 +27,10 @@ SUBROUTINE init_shadow_opacity(self)
   call trace_end
 END SUBROUTINE init_shadow_opacity
 
-FUNCTION rt_shadow_opacity (self, rho, temp, nwb) RESULT (kappa)
+SUBROUTINE rt_shadow_opacity (self, rho, temp, nwb, kappa)
   class(opacity_t) :: self
-  real(4), dimension(:,:,:), intent(in) :: rho, temp
-  real(4), dimension(size(rho,1),size(rho,2),size(rho,3), nwb) :: kappa
+  real(4), dimension(:,:,:), pointer :: rho, temp
+  real(4), dimension(:,:,:,:), pointer :: kappa
   integer :: nwb, wl
   !.....................................................................
   call trace_begin('opacity_mod::rt_shadow_opacity',3)
@@ -55,17 +55,17 @@ FUNCTION rt_shadow_opacity (self, rho, temp, nwb) RESULT (kappa)
   end if
   
   call trace_end
-END FUNCTION rt_shadow_opacity
+END SUBROUTINE rt_shadow_opacity
 
 !> =============================================================================
 !> Set the opacity to be constant per unit mass and independent of temperature
 !> assuming kappa_grey is 1 gm cm-3
 !> =============================================================================
-FUNCTION opac_gr (rho, temp, wl) result(kappa)
-  real(4), dimension(:,:,:), intent(in) :: rho, temp
+SUBROUTINE opac_gr (rho, temp, wl, kappa)
+  real(4), dimension(:,:,:), pointer :: rho, temp
   integer :: wl, iwl
   real(4), dimension(size(rho,1),size(rho,2),size(rho,3)) :: rho0
-  real(4), dimension(size(rho,1),size(rho,2),size(rho,3), wl) :: kappa
+  real(4), dimension(:,:,:,:), pointer :: kappa
   real(4) :: op_sc, sc_rho
   !.............................................................................
   op_sc = scaling%m/scaling%l**2
@@ -86,6 +86,6 @@ FUNCTION opac_gr (rho, temp, wl) result(kappa)
     end if
   end if
   
-END FUNCTION opac_gr
+END SUBROUTINE opac_gr
 
 END MODULE opacities_mod
