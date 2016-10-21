@@ -20,7 +20,7 @@ SUBROUTINE condition (self, mem, m, h)
   class(boundary_t)      :: self
   real, dimension(:,:,:) :: mem
   class(mesh_t)          :: m(3)
-  real(8)                :: h(3)
+  real                   :: h(3)
   !-----------------------------------------------------------------------------
 END SUBROUTINE condition
 

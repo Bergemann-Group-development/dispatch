@@ -18,7 +18,7 @@ MODULE patch_mod
   USE buffered_output_mod
   implicit none
   private
-  integer, parameter:: ndim = 3, i_d=1
+  integer, parameter:: ndim = 3
   type, extends(task_t), public:: patch_t
     real, dimension(:,:,:,:,:,:), pointer:: mem      => null()
     real, dimension(:,:,:,:,:),   pointer:: vgas     => null()
@@ -355,7 +355,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
                    p=self%position, origin=self%origin)
-  ! intialise staggering indices; it is the responsibility of the *solver* to 
+  ! intialise staggering indices; it is the responsibility of the *solver* to
   ! assign non-zero values to this variable (if any).
   do i=1,3
     allocate(self%mesh(i)%h(self%nv))
@@ -524,11 +524,11 @@ FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
     ppCart = cpos - self%position ! Cart. coords to centre of patch's coord. system
     pp = CartesianToCylindrical(ppCart(1), ppCart(2), ppCart(3))
   end if
-  
+
   intermezzo = (pp(idir) - self%origin(idir)) / self%ds(idir) + self%li(idir) &
              - merge(0.5 + h,0.0,self%n(idir)>1)
   out = intermezzo
-  
+
 END FUNCTION myfloatindex_scalar
 
 !> =============================================================================

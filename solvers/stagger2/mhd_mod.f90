@@ -12,7 +12,6 @@ MODULE mhd_mod
   USE stagger_mod
   USE patch_mod
   USE force_mod
-  !USE boundary_mod
   USE download_mod
   implicit none
   private
@@ -27,6 +26,7 @@ MODULE mhd_mod
     real(8):: dt_Ohm, dt_AD, nonideal_MHD_courant
     logical:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
     type(force_t):: force
+    integer:: i_e=2, i_px=3, i_py=4, i_pz=5, i_bx=6, i_by=7, i_bz=8
   contains
     procedure:: init
     procedure:: update
@@ -363,10 +363,10 @@ SUBROUTINE update (self)
       ! => second term falls off quickly => n_i~n_n^0.5
       ! In order to compute this parameter correctly, we need to know TEMPERATURE,
       ! RESOLUTION (not directly applicable here because we use AMR), BOX LENGTH,
-      ! AVERAGE DENSITY, COSMIC-RAY IONISATION (K_i parameter: 
+      ! AVERAGE DENSITY, COSMIC-RAY IONISATION (K_i parameter:
       ! K_i = n_i*n_H**(-0.5) = x_i*n_H**(-0.5) ) and AVERAGE VOLUMETRIC FLOW RATE av_sigv:
       !---------------------------------------------------------------------------
-      ! ambi = 0.28 * (0.1*T)**0.5 * (N/128d0) * (L/10d0)**(-1) * (av_n/200d0)**(-0.5) 
+      ! ambi = 0.28 * (0.1*T)**0.5 * (N/128d0) * (L/10d0)**(-1) * (av_n/200d0)**(-0.5)
       !      * (K_i/1e-5)**(-1) * (av_sigv/2e-9)**(-1) * d**(-1.5)
       !
       ! Alternative definition in Duffin and Pudritz (2008) assumes constant parameter

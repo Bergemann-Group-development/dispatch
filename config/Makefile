@@ -43,6 +43,7 @@ sinclude $(TOP)/io/Makefile
 #sinclude $(TOP)/operators/Makefile
 sinclude $(TOP)/solvers/$(SOLVER)/Makefile
 sinclude $(TOP)/solvers/rt/$(RT_SOLVER)/Makefile
+sinclude $(TOP)/solvers/poisson/Makefile
 sinclude $(TOP)/components/Makefile
 sinclude $(TOP)/lists/Makefile
 sinclude $(TOP)/tasks/Makefile

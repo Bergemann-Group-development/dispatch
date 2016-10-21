@@ -6,23 +6,17 @@ MODULE experiment_mod
   USE io_mod
   USE trace_mod
   USE patch_mod
-  USE mhd_mod
+  USE gmhd_mod
   USE boundary_mod
   USE timestep_mod
   implicit none
   private
-  type, public, extends(mhd_t):: experiment_t
+  type, public, extends(gmhd_t):: experiment_t
     real:: w_BE
     real:: p_BE
     real:: a_BE
     real:: r_BE
     real:: amplitude
-    real:: phi
-    real:: i_phi
-    real:: i_s
-    real:: i_px
-    real:: i_py
-    real:: i_pz
   contains
     procedure:: init
     procedure:: update
@@ -63,7 +57,7 @@ SUBROUTINE init (self)
   !  p=>self%p; B=>self%B
   !  px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   !  Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
-  
+
   self%w_BE      = w_BE
   self%p_BE      = p_BE
   self%a_BE      = a_BE
@@ -86,7 +80,7 @@ SUBROUTINE init (self)
       r = min(r,r_BE/w_BE)
       self%d(i,j,k)  = self%amplitude*exp(-r**self%p_BE/(1.+r**self%p_BE/log(r**2/self%a_BE)))
       self%p(i,j,k,1) = 0. ; self%p(i,j,k,2) = 0. ; self%p(i,j,k,3) = 0.
-      self%B(i,j,k,1) = 0. ; self%B(i,j,k,2) = 0. ; self%B(i,j,k,3) = 0.      
+      self%B(i,j,k,1) = 0. ; self%B(i,j,k,2) = 0. ; self%B(i,j,k,3) = 0.
     end do
     end do
     end do
