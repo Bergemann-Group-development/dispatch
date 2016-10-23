@@ -44,7 +44,7 @@ SUBROUTINE init (self)
      first_time = .false.
      rewind (io%input)
      read (io%input, initial_params)
-     mhd = any(b0 /= 0.0)
+     mhd = mhd .and. any(b0 /= 0.0)
      if (io%master) write (*, initial_params)
    end if
    !$omp end critical (input_cr)
@@ -106,9 +106,11 @@ SUBROUTINE single_solenoidal (self, m, ff)
         ff(ix,iy,iz,3) = self%a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,4) = self%a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,5) = self%a0(3)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,6) = self%b0(1)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,7) = self%b0(2)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,8) = self%b0(3)*(sin(kx)+sin(ky))
+        if (mhd) then
+          ff(ix,iy,iz,6) = self%b0(1)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,7) = self%b0(2)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,8) = self%b0(3)*(sin(kx)+sin(ky))
+        end if
       end do
     end do
   end do
@@ -142,9 +144,11 @@ SUBROUTINE single_compressive (self, m, ff)
         ff(ix,iy,iz,3) = self%u0(1)*sin(kx)
         ff(ix,iy,iz,4) = self%u0(2)*sin(ky)
         ff(ix,iy,iz,5) = self%u0(3)*sin(kz)
-        ff(ix,iy,iz,6) = self%b0(1)
-        ff(ix,iy,iz,7) = self%b0(2)
-        ff(ix,iy,iz,8) = self%b0(3)
+        if (mhd) then
+          ff(ix,iy,iz,6) = self%b0(1)
+          ff(ix,iy,iz,7) = self%b0(2)
+          ff(ix,iy,iz,8) = self%b0(3)
+        end if
       end do
     end do
   end do
@@ -178,9 +182,11 @@ SUBROUTINE single_advection (self, m, ff)
         ff(ix,iy,iz,3) = self%d0*self%u0(1)
         ff(ix,iy,iz,4) = self%d0*self%u0(2)
         ff(ix,iy,iz,5) = self%d0*self%u0(3)
-        ff(ix,iy,iz,6) = self%b0(3)*sin(kz)
-        ff(ix,iy,iz,7) = self%b0(1)*sin(kx)
-        ff(ix,iy,iz,8) = self%b0(2)*sin(ky)
+        if (mhd) then
+          ff(ix,iy,iz,6) = self%b0(3)*sin(kz)
+          ff(ix,iy,iz,7) = self%b0(1)*sin(kx)
+          ff(ix,iy,iz,8) = self%b0(2)*sin(ky)
+        end if
       end do
     end do
   end do
