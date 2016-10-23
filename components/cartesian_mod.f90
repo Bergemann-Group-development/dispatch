@@ -90,12 +90,11 @@ SUBROUTINE init (self, label)
       !---------------------------------------------------------------------------
       allocate (patch)
       patch%rank = rank
-      patch%id = 1 + rank + &
-        mpi%size*(i + patches_per_mpi(1)*(j + k*patches_per_mpi(2)))
+      icoords = mpi_coords%rank_to_coords(rank)*patches_per_mpi + [i,j,k]
+      patch%id = 1 + icoords(1) + self%dims(1)*(icoords(2) + icoords(3)*self%dims(2))
       patch%i = i; patch%j = j; patch%k = k
       patch%box = self%size
       patch%size = self%size / self%dims
-      icoords = mpi_coords%rank_to_coords(rank)*patches_per_mpi + [i,j,k]
       patch%position = (icoords+0.5d0)*patch%size + origin
       patch%llc = patch%position - 0.5 * patch%size
       patch%origin = patch%llc

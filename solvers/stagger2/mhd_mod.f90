@@ -465,7 +465,6 @@ SUBROUTINE output (self, experiment_name)
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
   call self%patch_t%output (experiment_name)
   !$omp critical (output_cr)
-  print*,trim(io%outputname),self%id, self%iout
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout
   inquire(file=filename, exist=exists)
