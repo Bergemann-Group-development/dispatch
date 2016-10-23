@@ -58,6 +58,12 @@ SUBROUTINE init (self)
     smallc, do_isothermal, csound
 !...............................................................................
   call trace_begin('mhd_mod::init')
+
+  ! Fool-proofing
+  if (self%mhd) then
+    call mpi%abort('This is the RAMSES hydro solver. But MHD is turned on!')
+  end if
+
   call self%patch_t%init
   !$omp critical (pde)
   if (first_time) then
@@ -71,6 +77,7 @@ SUBROUTINE init (self)
   self%courant = courant_factor
   self%gamma = gamma
   self%staggered = .false.
+
   call trace_end
 END SUBROUTINE init
 
