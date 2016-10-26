@@ -26,6 +26,7 @@
 !> =============================================================================
 MODULE mpi_mod
   USE omp_mod
+  USE omp_timer_mod
   USE io_unit_mod
   implicit none
   include 'mpif.h'              ! some systems require this instead of 'use mpi'
@@ -68,7 +69,6 @@ CONTAINS
 SUBROUTINE init (mp, mpi_dims, dims)
   class(mpi_t):: mp
   integer, optional, dimension(3):: mpi_dims, dims
-  integer:: rank
   !.............................................................................
   if (first_time) then
     first_time = .false.
@@ -109,15 +109,14 @@ END SUBROUTINE
 SUBROUTINE barrier_ (mp, label, delay)
   class(mpi_t):: mp
   character(len=*), optional:: label
-  integer, optional:: delay
+  real, optional:: delay
   integer:: i
-  real:: a = 1.0
+  real(8):: wc
   !.............................................................................
   if (.not.mp%ok) return
   if (present(delay)) then
-    !call sleep(delay)
-    do i=1,delay*1000000
-      a = a + sin(a)
+    wc = wallclock()
+    do while (wallclock()-wc < delay)
     end do
   end if
   if (present(label)) then

@@ -8,6 +8,7 @@ MODULE patch_mod
   USE omp_mod
   USE omp_lock_mod
   USE omp_timer_mod
+  USE timer_mod
   USE mpi_mesg_mod
   USE bits_mod
   USE trace_mod
