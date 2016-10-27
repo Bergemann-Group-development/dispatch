@@ -4,24 +4,40 @@
 !> OMP active.
 !> *****************************************************************************
 MODULE omp_timer_mod
-  USE io_unit_mod
-  USE omp_mod
   implicit none
   private
+  real(8), external:: omp_get_wtime
+  type omp_timer_t
+  contains
+    procedure, nopass:: wallclock
+    procedure, nopass:: delay
+  end type
+  type(omp_timer_t), public:: omp_timer
   public wallclock
 CONTAINS
 
 !> =============================================================================
 FUNCTION wallclock() result (delta)
-  real(kind=8):: time, delta
-  real(kind=8), save:: offset=-1.
-  real(8):: omp_get_wtime
-!...............................................................................
+  real(8):: time, delta
+  real(8), save:: offset=-1.
+  !.............................................................................
   time = omp_get_wtime()
   if (offset == -1.) then
     offset=time
   end if
   delta = time-offset
 END FUNCTION wallclock
+
+!> =============================================================================
+!> Active spin delay
+!> =============================================================================
+SUBROUTINE delay (delta)
+  real:: delta
+  real(8):: wc
+  !.............................................................................
+  wc = wallclock()
+  do while (wallclock()-wc < delta)
+  end do
+END SUBROUTINE delay
 
 END MODULE omp_timer_mod
