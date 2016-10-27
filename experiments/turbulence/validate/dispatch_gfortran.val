@@ -1,5 +1,5 @@
 --------------------------------------------------------------------------------
- mpi.f90 $Id: db394b622ccdca9f69e87542fd4d5721aea3c38e $                                                                 
+ mpi.f90 $Id: 60a78eb30bd8b573679e227176feffb0d78bbf41 $                                                                 
  MPI initialized, mpi%size =      1
  MPI implementation provides only support for serial MPI calls by any thread
 --------------------------------------------------------------------------------
@@ -34,11 +34,6 @@
  ORIGIN= 3*0.0000000000000000       ,
  FACE_NBORS=F,
  /
- n_socket =   1
-   n_core =   2
- n_thread =   1
-             trying mpi_dims =    1    1    1    T
-              Using mpi_dims =    1    1    1
 &MPI_MESG_PARAMS
  EVERY_RECV=          1,
  EVERY_SEND=          5,
@@ -69,13 +64,13 @@
  B0= 2*0.00000000      , 0.300000012    ,
  D0=  1.00000000    ,
  S0=  0.00000000    ,
- MHD=T,
+ MHD=F,
  TYPE="single_compressive              ",
  /
 &PATCH_PARAMS
  SIZE= 3*0.50000000000000000      ,
  N= 3*20         ,
- NV=          8,
+ NV=          5,
  NW=          2,
  NG= 3*2          ,
  NT=          5,
