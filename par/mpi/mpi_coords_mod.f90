@@ -143,7 +143,7 @@ SUBROUTINE print (mp)
         print *, 'mpi%dn     =', mp%dn
         print *, 'mpi%up     =', mp%up
       end if
-      call mpi%barrier (delay=1)
+      call mpi%barrier (delay=0.25)
     end do
   else if (mp%master) then
     print *, "WARNING: no MPI cartesian coordinates"

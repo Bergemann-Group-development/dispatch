@@ -106,7 +106,7 @@ SUBROUTINE single_solenoidal (self, m, ff)
         ff(ix,iy,iz,3) = self%a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,4) = self%a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,5) = self%a0(3)*(sin(kx)+sin(ky))
-        if (mhd) then
+        if (self%mhd) then
           ff(ix,iy,iz,6) = self%b0(1)*(sin(kx)+sin(ky))
           ff(ix,iy,iz,7) = self%b0(2)*(sin(kx)+sin(ky))
           ff(ix,iy,iz,8) = self%b0(3)*(sin(kx)+sin(ky))
@@ -144,7 +144,7 @@ SUBROUTINE single_compressive (self, m, ff)
         ff(ix,iy,iz,3) = self%u0(1)*sin(kx)
         ff(ix,iy,iz,4) = self%u0(2)*sin(ky)
         ff(ix,iy,iz,5) = self%u0(3)*sin(kz)
-        if (mhd) then
+        if (self%mhd) then
           ff(ix,iy,iz,6) = self%b0(1)
           ff(ix,iy,iz,7) = self%b0(2)
           ff(ix,iy,iz,8) = self%b0(3)
@@ -182,7 +182,7 @@ SUBROUTINE single_advection (self, m, ff)
         ff(ix,iy,iz,3) = self%d0*self%u0(1)
         ff(ix,iy,iz,4) = self%d0*self%u0(2)
         ff(ix,iy,iz,5) = self%d0*self%u0(3)
-        if (mhd) then
+        if (self%mhd) then
           ff(ix,iy,iz,6) = self%b0(3)*sin(kz)
           ff(ix,iy,iz,7) = self%b0(1)*sin(kx)
           ff(ix,iy,iz,8) = self%b0(2)*sin(ky)

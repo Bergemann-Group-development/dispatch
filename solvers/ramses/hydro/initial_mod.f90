@@ -33,7 +33,7 @@ CONTAINS
 SUBROUTINE init (self)
    class(initial_t):: self
    integer, save:: seed=-33
-   logical, save:: mhd=.true.
+   logical, save:: mhd=.false.
    real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0
    character(len=32), save:: type='single_solenoidal'
    namelist /initial_params/ seed, k, a0, u0, b0, d0, s0, mhd, type
@@ -44,7 +44,7 @@ SUBROUTINE init (self)
      first_time = .false.
      rewind (io%input)
      read (io%input, initial_params)
-     mhd = any(b0 /= 0.0)
+     mhd = mhd .and. any(b0 /= 0.0)
      if (io%master) write (*, initial_params)
    end if
    !$omp end critical (input_cr)

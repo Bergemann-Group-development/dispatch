@@ -16,6 +16,7 @@ MODULE task_list_mod
   USE omp_mod
   USE omp_lock_mod
   USE omp_timer_mod
+  USE timer_mod
   USE mpi_mod
   USE mpi_mesg_mod
   USE list_mod
