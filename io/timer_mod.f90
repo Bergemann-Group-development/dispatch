@@ -39,7 +39,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(timer_t):: self
   logical, save:: first_time=.true.
-  integer:: ignore
+  integer:: ignore, i
   integer, save:: ncores=0
   namelist /timer_params/ sec_per_report, ncores
   !.............................................................................
@@ -56,6 +56,12 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (timer_cr)
   omp%ncores = ncores
+  ntimer = 0
+  do i=0,omp%nthreads-1
+    timers(i)%calls = 0
+    timers(i)%start = 0d0
+    timers(i)%total = 0d0
+  end do
 END SUBROUTINE init
 
 !> =============================================================================
