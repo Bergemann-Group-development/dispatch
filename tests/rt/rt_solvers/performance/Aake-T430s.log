@@ -25,60 +25,62 @@ model name	: Intel(R) Core(TM) i7-3520M CPU @ 2.90GHz
  /
  RAY_GEOMETRY:
  number of directions:          13
- ray_geometry%init:  2.18 s,  2.18 s/upd,  1.00E+00 updates   1 threads
- rt_data%init:  10.0 ms,  10.0 ms/upd,  1.00E+00 updates   1 threads
- rt_data%set:  151. ms,  151. ms/upd,  1.00E+00 updates   1 threads
- rt_obj_xx%init:  8.45 ms,  8.45 ms/upd,  1.00E+00 updates   1 threads
- solve 2nd1:  192. ms,  48.0 ns/upd,  4.00E+06 updates   1 threads
+ ray_geometry%init:  2.25 s,  2.25 s/upd,  1.00E+00 updates   1 threads
+ rt_data%init:  8.88 ms,  8.88 ms/upd,  1.00E+00 updates   1 threads
+ rt_data%set:  154. ms,  154. ms/upd,  1.00E+00 updates   1 threads
+ rt_obj_xx%init:  8.84 ms,  8.84 ms/upd,  1.00E+00 updates   1 threads
+ solve 2nd1:  158. ms,  39.5 ns/upd,  4.00E+06 updates   1 threads
                        procedure       calls          time       percent     time/call
-               solve_2nd1: begin       1.00          7.654E-02    42.5       7.654E-02
-             solve_2nd1: ex0,ex1       1.00          6.457E-02    35.9       6.457E-02
-            solve_2nd1: transfer       1.00          2.675E-02    14.9       2.675E-02
-         rt_internal_t_%update_q       1.00          1.223E-02    6.79       1.223E-02
-        TOTAL thread time, calls       4.00          0.180        100.       2.546E+06  core-mus/cell-upd         2.55      wall sec
- solve 2nd1:  192. ms,  48.2 ns/upd,  4.00E+06 updates   1 threads
+               solve_2nd1: begin       1.00          2.017E-04   0.139       2.017E-04
+                          copy_p       2.00          3.246E-02    22.3       1.623E-02
+             solve_2nd1: ex0,ex1       1.00          7.057E-02    48.5       7.057E-02
+            solve_2nd1: transfer       1.00          3.001E-02    20.6       3.001E-02
+         rt_internal_t_%update_q       1.00          1.240E-02    8.51       1.240E-02
+        TOTAL thread time, calls       6.00          0.146        100.       2.584E+06  core-mus/cell-upd         2.58      wall sec
+ solve 2nd1:  151. ms,  37.7 ns/upd,  4.00E+06 updates   1 threads
                        procedure       calls          time       percent     time/call
-               solve_2nd1: begin       1.00          7.695E-02    42.7       7.695E-02
-             solve_2nd1: ex0,ex1       1.00          6.433E-02    35.7       6.433E-02
-            solve_2nd1: transfer       1.00          2.649E-02    14.7       2.649E-02
-         rt_internal_t_%update_q       1.00          1.225E-02    6.80       1.225E-02
-        TOTAL thread time, calls       4.00          0.180        100.       1.932E+05  core-mus/cell-upd        0.193      wall sec
+               solve_2nd1: begin       1.00          1.946E-04   0.140       1.946E-04
+                          copy_p       2.00          3.093E-02    22.3       1.546E-02
+             solve_2nd1: ex0,ex1       1.00          6.547E-02    47.2       6.547E-02
+            solve_2nd1: transfer       1.00          2.821E-02    20.3       2.821E-02
+         rt_internal_t_%update_q       1.00          1.388E-02    10.0       1.388E-02
+        TOTAL thread time, calls       6.00          0.139        100.       1.515E+05  core-mus/cell-upd        0.151      wall sec
  q0 run           1   1.75494876E-07
  q0 run           2   1.07288372E-06
  q0 run           3   1.95075176E-03
  q0 run           4   9.44751446E-06
- solve 2nd2:  210. ms,  52.6 ns/upd,  4.00E+06 updates   1 threads
+ solve 2nd2:  220. ms,  55.2 ns/upd,  4.00E+06 updates   1 threads
                        procedure       calls          time       percent     time/call
-               solve_2nd2: begin       1.00          7.902E-02    40.6       7.902E-02
-             solve_2nd2: ex0,ex1       1.00          7.533E-02    38.7       7.533E-02
-            solve_2nd2: transfer       1.00          2.778E-02    14.3       2.778E-02
-         rt_internal_t_%update_q       1.00          1.234E-02    6.35       1.234E-02
-        TOTAL thread time, calls       4.00          0.194        100.       2.353E+05  core-mus/cell-upd        0.235      wall sec
- solve 2nd2:  215. ms,  53.9 ns/upd,  4.00E+06 updates   1 threads
+               solve_2nd2: begin       1.00          8.002E-02    39.1       8.002E-02
+             solve_2nd2: ex0,ex1       1.00          7.950E-02    38.9       7.950E-02
+            solve_2nd2: transfer       1.00          3.010E-02    14.7       3.010E-02
+         rt_internal_t_%update_q       1.00          1.497E-02    7.32       1.497E-02
+        TOTAL thread time, calls       4.00          0.205        100.       2.452E+05  core-mus/cell-upd        0.245      wall sec
+ solve 2nd2:  228. ms,  57.2 ns/upd,  4.00E+06 updates   1 threads
                        procedure       calls          time       percent     time/call
-               solve_2nd2: begin       1.00          8.048E-02    40.5       8.048E-02
-             solve_2nd2: ex0,ex1       1.00          7.819E-02    39.3       7.819E-02
-            solve_2nd2: transfer       1.00          2.800E-02    14.1       2.800E-02
-         rt_internal_t_%update_q       1.00          1.217E-02    6.12       1.217E-02
-        TOTAL thread time, calls       4.00          0.199        100.       2.160E+05  core-mus/cell-upd        0.216      wall sec
+               solve_2nd2: begin       1.00          8.392E-02    39.5       8.392E-02
+             solve_2nd2: ex0,ex1       1.00          8.386E-02    39.5       8.386E-02
+            solve_2nd2: transfer       1.00          2.960E-02    13.9       2.960E-02
+         rt_internal_t_%update_q       1.00          1.497E-02    7.05       1.497E-02
+        TOTAL thread time, calls       4.00          0.212        100.       2.293E+05  core-mus/cell-upd        0.229      wall sec
  q0 run           1   1.75494876E-07
  q0 run           2   1.07288372E-06
  q0 run           3   1.95075176E-03
  q0 run           4   9.44751446E-06
- solve 2nd3:  229. ms,  57.4 ns/upd,  4.00E+06 updates   1 threads
+ solve 2nd3:  239. ms,  59.8 ns/upd,  4.00E+06 updates   1 threads
                        procedure       calls          time       percent     time/call
-               solve_2nd3: begin       1.00          7.757E-02    36.1       7.757E-02
-             solve_2nd3: ex0,ex1       1.00          7.478E-02    34.8       7.478E-02
-            solve_2nd3: transfer       1.00          5.037E-02    23.4       5.037E-02
-         rt_internal_t_%update_q       1.00          1.222E-02    5.69       1.222E-02
-        TOTAL thread time, calls       4.00          0.215        100.       2.492E+05  core-mus/cell-upd        0.249      wall sec
- solve 2nd3:  231. ms,  57.8 ns/upd,  4.00E+06 updates   1 threads
+               solve_2nd3: begin       1.00          8.249E-02    36.6       8.249E-02
+             solve_2nd3: ex0,ex1       1.00          7.875E-02    34.9       7.875E-02
+            solve_2nd3: transfer       1.00          5.062E-02    22.5       5.062E-02
+         rt_internal_t_%update_q       1.00          1.353E-02    6.00       1.353E-02
+        TOTAL thread time, calls       4.00          0.225        100.       2.605E+05  core-mus/cell-upd        0.260      wall sec
+ solve 2nd3:  232. ms,  58.2 ns/upd,  4.00E+06 updates   1 threads
                        procedure       calls          time       percent     time/call
-               solve_2nd3: begin       1.00          8.051E-02    37.2       8.051E-02
-             solve_2nd3: ex0,ex1       1.00          7.525E-02    34.8       7.525E-02
-            solve_2nd3: transfer       1.00          4.827E-02    22.3       4.827E-02
-         rt_internal_t_%update_q       1.00          1.234E-02    5.70       1.234E-02
-        TOTAL thread time, calls       4.00          0.216        100.       2.320E+05  core-mus/cell-upd        0.232      wall sec
+               solve_2nd3: begin       1.00          8.090E-02    37.0       8.090E-02
+             solve_2nd3: ex0,ex1       1.00          7.681E-02    35.1       7.681E-02
+            solve_2nd3: transfer       1.00          4.879E-02    22.3       4.879E-02
+         rt_internal_t_%update_q       1.00          1.221E-02    5.58       1.221E-02
+        TOTAL thread time, calls       4.00          0.219        100.       2.333E+05  core-mus/cell-upd        0.233      wall sec
  q0 run           1   1.75494876E-07
  q0 run           2   1.07288372E-06
  q0 run           3   1.95075176E-03

@@ -38,10 +38,12 @@ MODULE radiation_mod
     procedure :: init => init_internal
     !procedure :: solve => solve_1st
     procedure :: solve => solve_2nd1
+    procedure :: copy_p
     procedure :: update_q
   end type
   !logical, parameter :: detailed_timer=.false.
   logical, parameter :: detailed_timer=.true.
+  integer, save :: itimer_p = 0
   integer, save :: itimer_q = 0
 CONTAINS
 
@@ -208,13 +210,12 @@ END SUBROUTINE init_internal
 SUBROUTINE update_q (self, rays, q, dummy)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: rays
-  integer :: p(3), wl, ray, pt
+  integer :: p(3), ray, pt, run
   real, dimension(:,:,:) :: q
   real, dimension(:,:,:,:), pointer :: qq
   real, dimension(:,:,:), pointer, optional :: dummy
   integer, dimension(:,:,:), pointer :: cell
   real :: dirw
-  integer :: run
   !---------------------------------------------------------------------
   call trace_begin ('rt_internal_t_%update_q', 4, itimer=itimer_q)
   dirw = self%dir_weight
@@ -231,6 +232,27 @@ SUBROUTINE update_q (self, rays, q, dummy)
   end do
   call trace_end (itimer_q)
 END SUBROUTINE update_q
+
+SUBROUTINE copy_p (self, rays, in, out)
+  class(rt_internal_t) :: self
+  class(ray_t), pointer :: rays
+  integer :: p(3), ray, pt, run
+  real, dimension(:,:,:)   , pointer :: out
+  real, dimension(:,:,:,:) , pointer :: in
+  integer, dimension(:,:,:), pointer :: cell
+  !---------------------------------------------------------------------
+  call trace_begin ('copy_p', 4, itimer=itimer_p)
+  cell => rays%coords
+  do ray = 1, size(out,1)
+    do pt = 1, size(out,3)
+      p = cell(:,pt,ray)
+      do run=1,self%nrun
+        out(ray,run,pt) = in(p(1),p(2),p(3),run)
+      end do
+    end do
+  end do
+  call trace_end (itimer_p)
+END SUBROUTINE copy_p
 
 SUBROUTINE solve_1st (self)
   class(rt_internal_t) :: self
@@ -333,12 +355,14 @@ SUBROUTINE solve_2nd1 (self)
   class(rt_data_t), pointer :: rtd
   real, dimension(:,:,:), pointer :: ex0, ds1, d1s, d2s
   real, dimension(:,:,:), pointer :: s, dtau, q, ropac
+  real, dimension(:,:,:,:), pointer :: ss, ddtau
   real, dimension(:,:), pointer :: I_in, ctau
-  integer :: pt, npt, nrays, it, ray, wl, p(3), pck, nwb, ipk
+  integer :: pt, npt, nrays, it, ray, wl, p(3), pck, nwb, ipk, iwb
   integer :: itimer(4)=0
   !---------------------------------------------------------------------
   if (detailed_timer) then
     itimer = 0
+    itimer_p = 0
     itimer_q = 0
     call timer%init
   end if
@@ -354,6 +378,8 @@ SUBROUTINE solve_2nd1 (self)
     cell => packet%coords
     nrays = packet%n_rays
     npt =  packet%n_points
+    ddtau => rtd%dtau
+    ss    => rtd%source
 
     allocate( dtau(nrays, nwb, npt))
     allocate(ex0  (nrays, nwb, npt))
@@ -364,16 +390,13 @@ SUBROUTINE solve_2nd1 (self)
     allocate(q    (nrays, nwb, npt))
     allocate(ctau (nrays, nwb))
     allocate(I_in (nrays, nwb))
-
-    do ray = 1, nrays
-      do pt = 1, npt
-        p = cell(:,pt,ray)
-           s(ray,:,pt) = rtd%source(p(1),p(2),p(3),:)
-        dtau(ray,:,pt) = rtd%dtau  (p(1),p(2),p(3),:)
-      end do
-    end do
     if (detailed_timer) then
       call trace_end (itimer(1))
+    end if
+
+    call self%copy_p (packet, ss, s)
+    call self%copy_p (packet, ddtau, dtau)
+    if (detailed_timer) then
       call trace_begin('solve_2nd1: ex0,ex1', itimer=itimer(2))
     end if
 
@@ -433,10 +456,10 @@ SUBROUTINE solve_2nd1 (self)
     case default
       error stop "unknown rt type"     
     end select
-    
     if (detailed_timer) then
       call trace_end (itimer(3))
     end if
+
     call self%update_q (packet, q, ropac)
     deallocate(ex0, ds1, d1s, d2s, ctau, s, dtau, q, I_in)
     packet => packet%next
