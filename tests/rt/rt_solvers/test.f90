@@ -392,12 +392,27 @@ SUBROUTINE solve_2nd1 (self)
     allocate(I_in (nrays, nwb))
     if (detailed_timer) then
       call trace_end (itimer(1))
+      call trace_begin('solve_2nd2: s, dtau', itimer=itimer(2))
     end if
 
-    call self%copy_p (packet, ss, s)
-    call self%copy_p (packet, ddtau, dtau)
+    !call self%copy_p (packet, ss, s)
+    !call self%copy_p (packet, ddtau, dtau)
+
+    do ray = 1, nrays
+      do pt = 1, npt
+        p = cell(:,pt,ray)
+           s(ray,:,pt) = rtd%source(p(1),p(2),p(3),:)
+      end do
+    end do
+    do ray = 1, nrays
+      do pt = 1, npt
+        p = cell(:,pt,ray)
+        dtau(ray,:,pt) = rtd%dtau  (p(1),p(2),p(3),:)
+      end do
+    end do
     if (detailed_timer) then
-      call trace_begin('solve_2nd1: ex0,ex1', itimer=itimer(2))
+      call trace_end (itimer(2))
+      call trace_begin('solve_2nd2: ex0,ex1', itimer=itimer(3))
     end if
 
     I_in = self%packet_data(pck)%I_in
@@ -411,8 +426,8 @@ SUBROUTINE solve_2nd1 (self)
     end do
 !#endif
     if (detailed_timer) then
-      call trace_end (itimer(2))
-      call trace_begin('solve_2nd1: transfer', itimer=itimer(3))
+      call trace_end (itimer(3))
+      call trace_begin('solve_2nd1: transfer', itimer=itimer(4))
     end if
 
     !-------------------------------------------------------------------
@@ -457,7 +472,7 @@ SUBROUTINE solve_2nd1 (self)
       error stop "unknown rt type"     
     end select
     if (detailed_timer) then
-      call trace_end (itimer(3))
+      call trace_end (itimer(4))
     end if
 
     call self%update_q (packet, q, ropac)
@@ -516,7 +531,11 @@ SUBROUTINE solve_2nd2(self)
     allocate(q(nrays, nrun, npt))
     allocate(I_in (nrays, nrun))
     allocate(ctau (nrays, nrun))
-  
+    if (detailed_timer) then
+      call trace_end (itimer(1))
+      call trace_begin('solve_2nd2: s, datu', itimer=itimer(2))
+    end if
+
     do ray = 1, nrays
       do pt = 1, npt
         p = cell(:,pt,ray)
@@ -525,8 +544,8 @@ SUBROUTINE solve_2nd2(self)
       end do
     end do
     if (detailed_timer) then
-      call trace_end (itimer(1))
-      call trace_begin('solve_2nd2: ex0,ex1', itimer=itimer(2))
+      call trace_end (itimer(2))
+      call trace_begin('solve_2nd2: ex0,ex1', itimer=itimer(3))
     end if
 
     I_in = self%packet_data(pck)%I_in
@@ -538,8 +557,8 @@ SUBROUTINE solve_2nd2(self)
       ds1dtau(:,:,pt) = (s(:,:,pt)-s(:,:,pt-1))/dtau(:,:,pt)
     end do
     if (detailed_timer) then
-      call trace_end (itimer(2))
-      call trace_begin('solve_2nd2: transfer', itimer=itimer(3))
+      call trace_end (itimer(3))
+      call trace_begin('solve_2nd2: transfer', itimer=itimer(4))
     end if
 
     do pt = 2, npt-1
@@ -567,7 +586,7 @@ SUBROUTINE solve_2nd2(self)
       self%packet_data(pck)%I_out = q(:,:,1) + s(:,:,1)
     end select
     if (detailed_timer) then
-      call trace_end (itimer(3))
+      call trace_end (itimer(4))
     end if
 
     call self%update_q (packet, q)
