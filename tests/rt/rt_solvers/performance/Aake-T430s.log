@@ -25,40 +25,40 @@ model name	: Intel(R) Core(TM) i7-3520M CPU @ 2.90GHz
  /
  RAY_GEOMETRY:
  number of directions:          13
- ray_geometry%init:  2.29 s,  4.59 s/upd,  1.00E+00 updates
- rt_data%init:  9.56 ms,  19.1 ms/upd,  1.00E+00 updates
- rt_data%set:  156. ms,  312. ms/upd,  1.00E+00 updates
- rt_obj_xx%init:  8.77 ms,  17.5 ms/upd,  1.00E+00 updates
+ ray_geometry%init:  2.24 s,  2.24 s/upd,  1.00E+00 updates   1 threads
+ rt_data%init:  9.50 ms,  9.50 ms/upd,  1.00E+00 updates   1 threads
+ rt_data%set:  146. ms,  146. ms/upd,  1.00E+00 updates   1 threads
+ rt_obj_xx%init:  9.24 ms,  9.24 ms/upd,  1.00E+00 updates   1 threads
  q0 run           1   499999.500    
  q0 run           2   1.00000098E+12
  q0 run           3   3.00000291E+18
  q0 run           4   3971.37891    
- solve 2nd1:  200. ms,  100. ns/upd,  4.00E+06 updates
+ solve 2nd1:  203. ms,  50.8 ns/upd,  4.00E+06 updates   1 threads
                        procedure       calls          time       percent     time/call
-   rt_internal_t%integral_1st(1)       1.00          8.033E-02    43.0       8.033E-02
-   rt_internal_t%integral_1st(2)       1.00          6.544E-02    35.1       6.544E-02
-   rt_internal_t%integral_1st(3)       1.00          2.823E-02    15.1       2.823E-02
-         rt_internal_t_%update_q       1.00          1.265E-02    6.78       1.265E-02
-        TOTAL thread time, calls       4.00          0.187        100.       2.699E+06  core-mus/cell-upd         2.70      wall sec
- solve 2nd1:  199. ms,  99.5 ns/upd,  4.00E+06 updates
+   rt_internal_t%integral_1st(1)       1.00          8.290E-02    43.5       8.290E-02
+   rt_internal_t%integral_1st(2)       1.00          6.708E-02    35.2       6.708E-02
+   rt_internal_t%integral_1st(3)       1.00          2.790E-02    14.7       2.790E-02
+         rt_internal_t_%update_q       1.00          1.249E-02    6.56       1.249E-02
+        TOTAL thread time, calls       4.00          0.190        100.       2.639E+06  core-mus/cell-upd         2.64      wall sec
+ solve 2nd1:  207. ms,  51.7 ns/upd,  4.00E+06 updates   1 threads
                        procedure       calls          time       percent     time/call
-   rt_internal_t%integral_1st(1)       1.00          7.936E-02    42.5       7.936E-02
-   rt_internal_t%integral_1st(2)       1.00          6.654E-02    35.6       6.654E-02
-   rt_internal_t%integral_1st(3)       1.00          2.712E-02    14.5       2.712E-02
-         rt_internal_t_%update_q       1.00          1.368E-02    7.33       1.368E-02
-        TOTAL thread time, calls       4.00          0.187        100.       1.994E+05  core-mus/cell-upd        0.199      wall sec
+   rt_internal_t%integral_1st(1)       1.00          8.060E-02    41.7       8.060E-02
+   rt_internal_t%integral_1st(2)       1.00          7.045E-02    36.4       7.045E-02
+   rt_internal_t%integral_1st(3)       1.00          2.956E-02    15.3       2.956E-02
+         rt_internal_t_%update_q       1.00          1.268E-02    6.56       1.268E-02
+        TOTAL thread time, calls       4.00          0.193        100.       2.076E+05  core-mus/cell-upd        0.208      wall sec
  q0 run           1   1.75494876E-07
  q0 run           2   1.07288372E-06
  q0 run           3   1.95075176E-03
  q0 run           4   9.44751446E-06
- solve 2nd2:  231. ms,  115. ns/upd,  4.00E+06 updates
- solve 2nd2:  220. ms,  110. ns/upd,  4.00E+06 updates
+ solve 2nd2:  213. ms,  53.4 ns/upd,  4.00E+06 updates   1 threads
+ solve 2nd2:  218. ms,  54.5 ns/upd,  4.00E+06 updates   1 threads
  q0 run           1   1.75494876E-07
  q0 run           2   1.07288372E-06
  q0 run           3   1.95075176E-03
  q0 run           4   9.44751446E-06
- solve 2nd3:  229. ms,  114. ns/upd,  4.00E+06 updates
- solve 2nd3:  236. ms,  118. ns/upd,  4.00E+06 updates
+ solve 2nd3:  235. ms,  58.9 ns/upd,  4.00E+06 updates   1 threads
+ solve 2nd3:  234. ms,  58.6 ns/upd,  4.00E+06 updates   1 threads
  q0 run           1   1.75494876E-07
  q0 run           2   1.07288372E-06
  q0 run           3   1.95075176E-03

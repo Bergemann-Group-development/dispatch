@@ -25,7 +25,6 @@ MODULE timer_mod
   real(8), save:: sec_per_report=10d0, sec=0d0, next_report_sec
   real(8), save:: prev1=0d0
   real(8), save:: prev2=0d0
-  integer, save:: n_core = 0
   integer(8), save:: n_update=0
   interface toc
     module procedure toc_i4, toc_i8, toc_1
@@ -255,17 +254,18 @@ SUBROUTINE toc_r (label, n)
   character(len=*):: label
   real:: n
   real(8):: omp_get_wtime
+  integer:: n_threads
   !.............................................................................
   if (io_unit%do_validate) return
   wt = (omp_get_wtime() - wt)
-  n_core = max(omp%ncores,1)
+  n_threads = max(min(omp%nthreads,omp%ncores),1)
   write (io_unit%log,1) label, trim(time_str(wt)), &
-    trim(time_str(wt*n_core/max(n,1.))), '/upd,', n, 'updates'
-  1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a)
+    trim(time_str(wt*n_threads/max(n,1.))), '/upd,', n, 'updates', n_threads, 'threads'
+  1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a, i4, 1x, a)
   flush (io_unit%log)
   if (mpi%rank==0.and.omp%thread==0) &
     print 1, label, trim(time_str(wt)), &
-      trim(time_str(wt*n_core/max(n,1.))), '/upd,', n, 'updates'
+      trim(time_str(wt*n_threads/max(n,1.))), '/upd,', n, 'updates', n_threads, 'threads'
   flush (6)
   wt = omp_get_wtime()
 END SUBROUTINE toc_r
