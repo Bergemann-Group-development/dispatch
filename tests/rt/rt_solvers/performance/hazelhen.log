@@ -1,0 +1,60 @@
+ &IO_PARAMS
+ VERBOSE =           1,
+ DO_DEBUG        = F,
+ DO_TRACE        = F,
+ DO_OUTPUT       = F,
+ DO_FLAGS        = F,
+ DO_VALIDATE     = F,
+ DO_LEGACY       = T,
+ LEVELMAX        =          10,
+ OMP_TRACE       = T,
+ ID_DEBUG        =          -1
+ /
+ logfile:data/0000.log                                                   
+ =======================================================================
+ NOTE: Reading parameters from input.nml
+ This version was compiled with default real KIND=4
+ =======================================================================
+--------------------------------------------------------------------------------
+ io_mod.f90 $Id: bb97da23fb1296bec9358b44d56e60c817b22d35 $        0.00
+ &TIMER_PARAMS
+ SEC_PER_REPORT  =   10.0000000000000     ,
+ NCORES  =          24
+ /
+ RAY_GEOMETRY:
+ number of directions:          13
+ ray_geometry%init:  2.54 s,  2.54 s/upd,  1.00E+00 updates   1 threads
+ rt_data%init:  26.1 ms,  26.1 ms/upd,  1.00E+00 updates   1 threads
+ rt_data%set:  114. ms,  114. ms/upd,  1.00E+00 updates   1 threads
+ rt_obj_xx%init:  3.77 ms,  3.77 ms/upd,  1.00E+00 updates   1 threads
+ solve 2nd1:  107. ms,  26.9 ns/upd,  4.00E+06 updates   1 threads
+                       procedure       calls          time       percent     time/call
+   rt_internal_t%integral_1st(1)       1.00          6.834E-02    63.5       6.834E-02
+   rt_internal_t%integral_1st(2)       1.00          8.405E-03    7.81       8.405E-03
+   rt_internal_t%integral_1st(3)       1.00          1.864E-02    17.3       1.864E-02
+         rt_internal_t_%update_q       1.00          1.226E-02    11.4       1.226E-02
+        TOTAL thread time, calls       4.00          0.108        100.       2.825E+06  core-mus/cell-upd         2.82      wall sec
+ solve 2nd1:  88.4 ms,  22.1 ns/upd,  4.00E+06 updates   1 threads
+                       procedure       calls          time       percent     time/call
+   rt_internal_t%integral_1st(1)       1.00          4.955E-02    56.0       4.955E-02
+   rt_internal_t%integral_1st(2)       1.00          8.375E-03    9.47       8.375E-03
+   rt_internal_t%integral_1st(3)       1.00          1.830E-02    20.7       1.830E-02
+         rt_internal_t_%update_q       1.00          1.218E-02    13.8       1.218E-02
+        TOTAL thread time, calls       4.00          8.841E-02    100.       8.860E+04  core-mus/cell-upd        8.860E-02  wall sec
+ q0 run           1  1.7878045E-07
+ q0 run           2  4.7683645E-07
+ q0 run           3  1.9509339E-03
+ q0 run           4  8.6156488E-06
+ solve 2nd2:  108. ms,  27.1 ns/upd,  4.00E+06 updates   1 threads
+ solve 2nd2:  102. ms,  25.6 ns/upd,  4.00E+06 updates   1 threads
+ q0 run           1  1.1699658E-07
+ q0 run           2  3.5762733E-07
+ q0 run           3  1.9506478E-03
+ q0 run           4  8.6156488E-06
+ solve 2nd3:  107. ms,  26.8 ns/upd,  4.00E+06 updates   1 threads
+ solve 2nd3:  107. ms,  26.7 ns/upd,  4.00E+06 updates   1 threads
+ q0 run           1  1.7878045E-07
+ q0 run           2  4.7683645E-07
+ q0 run           3  1.9509339E-03
+ q0 run           4  8.6750688E-06
+Application 5752217 resources: utime ~3s, stime ~1s, Rss ~17784, inblocks ~8671, outblocks ~19896

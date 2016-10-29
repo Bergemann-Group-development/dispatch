@@ -698,11 +698,6 @@ PROGRAM test
   call rt_obj_fw%init(nrun)
   call rt_obj_rv%init(nrun)
   call toc('rt_obj_xx%init')
-  rt_data%P = rt_data%source + rt_data%q
-  rt_data%error = (rt_data%q-rt_data%q0)/rt_data%P
-  do run =1,nrun
-    print *,'q0 run',run,maxval(abs(rt_data%error(:,:,:,run)))
-  end do
 
   rt_data%q = 0.0
   call rt_obj_fw%solve
