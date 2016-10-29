@@ -11,6 +11,7 @@ TOP = ../../..
 include $(TOP)/config/Makefile
 
 test: test.x
+	mkdir -p performance
 	( uname -a; grep "model name" /proc/cpuinfo | head -1; ./test.x ) | tee -a performance/$(HOST).log
 
 test.x: omp_mod.o omp_timer_mod.o ray_geometry_v3_mod.o
