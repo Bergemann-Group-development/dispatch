@@ -61,13 +61,13 @@
  end do
  cput=dtime(cpu)
 
-! print *,'  i      tau         S           P           Q          err'
+ print *,'  i      tau         S           P           Q          Q0          err'
  maxerr = 0.
  do i=1,n
    P = s(i)+q(i)
    error = (q(i)-q0(i))/P
-   maxerr = max(maxerr,error)
-!   print '(i4,4e12.4,f12.6)',i, tau(i), s(i), P, q(i), error
+   maxerr = max(maxerr,abs(error))
+   print '(i4,5e12.4,f12.6)',i, tau(i), s(i), P, q(i), q0(i), error
  end do
  print *,(1.-Irv1/Jrv1),(1.-IfwN/JfwN),maxerr
  print *,'cpu =',cput

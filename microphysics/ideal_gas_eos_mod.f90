@@ -61,6 +61,7 @@ SUBROUTINE lookup_stagger (self, rho, s, pg, tt, ne, rk, src, gam, csound)
   real, dimension(:,:,:),   optional :: pg, tt, ne, rk
   real, dimension(:,:,:,:), optional :: src
   real, optional :: gam, csound
+  integer:: x, y, z
   !.....................................................................
 
   !---------------------------------------------------------------------
@@ -83,7 +84,14 @@ SUBROUTINE lookup_stagger (self, rho, s, pg, tt, ne, rk, src, gam, csound)
       if (gam==1.0) then
         tt = csound**2
       else
-        tt = (rho**gam*exp(s/rho*(gam-1)))/rho
+        do x = 1,size(rho,1)
+        do y = 1,size(rho,2)
+        do z = 1,size(rho,3)
+        !print *,rho(x,y,z), gam, s(x,y,z), 'xyz', x, y, z
+        tt(x,y,z) = (rho(x,y,z)**gam*exp(s(x,y,z)/rho(x,y,z)*(gam-1)))/rho(x,y,z)
+        end do
+        end do
+        end do
       end if
     end if
   end if

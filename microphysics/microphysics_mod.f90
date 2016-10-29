@@ -67,7 +67,7 @@ SUBROUTINE get_data(self, rho, entropy, source_fn, opacity, gam, cs)
     call eos%lookup(rho = rho, s=entropy, tt=temp, gam = gam, csound = cs)
     call self%opacity%solve(rho, temp, self%n_wl_bins, opacity)
     call self%source_fn%solve(temp=temp,wl=self%wl_bins,src=source_fn)
-    
+    deallocate(temp)
   case(2)  ! stagger eos
     call eos%lookup(rho=rho,s=entropy,src=source_fn,rk=opacity(:,:,:,1))
     if (size(opacity,4)>1) then

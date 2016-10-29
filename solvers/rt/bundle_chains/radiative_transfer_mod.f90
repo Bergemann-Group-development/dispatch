@@ -7,6 +7,7 @@ MODULE radiative_transfer_mod
   USE experiment_mod
   USE io_mod
   USE list_mod
+  USE mesh_mod
   USE mhd_mod
   USE mhd_rt_mod
   USE microphysics_mod
@@ -35,6 +36,7 @@ SUBROUTINE rt_setup (self)
   class(task_list_t),  pointer :: task_list                  ! local task list
   class(list_t),       pointer :: list
   class(link_t),       pointer :: t_list, link, rt_data_l, internal_l
+  class(mesh_t),       pointer :: mesh
   class(mhd_t),        pointer :: mhd_patch
   class(mhd_rt_t),     pointer :: mhd_rt_patch
   class(rt_data_t),    pointer :: rt_data
@@ -69,8 +71,18 @@ SUBROUTINE rt_setup (self)
       solver = 1
     end SELECT
   end if
-  call ray_geometry%init(1, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
-  ! IMPORTANT: change first constant into mhd_patch%mesh%mesh_type after merge with curvilinear coords
+  
+  mesh => mhd_patch%mesh(1) 
+  select type(mesh)
+    type is(Cartesian_mesh)
+      call ray_geometry%init(1, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
+    type is(spherical_mesh)
+      call ray_geometry%init(2, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
+    type is(cylindrical_mesh)
+      call ray_geometry%init(3, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
+  end select
+  nullify(mesh)
+  
   write (io_unit%log,*) 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
   call microphysics%init
   call rt_boundary%init
@@ -137,6 +149,7 @@ SUBROUTINE rt_setup (self)
             allocate (internal, link)                                   ! the RT task and its link
             internal%bundle_ID  =  ray_bundle%ID                        ! ray bundle ID
             internal%dir_ID     =  ray_dir%ID                           ! ray direction ID
+            internal%bundle     => ray_bundle
             internal%my_rt_data => rt_data                              ! Pointer to rt_data task
             internal%mhd_patch  => mhd_patch                            ! Pointer to mhd_patch
             internal%rt_type    =  rt_type                              ! set the rt type

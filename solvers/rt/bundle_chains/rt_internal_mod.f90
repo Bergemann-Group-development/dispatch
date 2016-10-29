@@ -16,7 +16,6 @@ MODULE rt_internal_mod
     real, dimension(:,:), pointer :: I_in  => null()                    ! (ray, wl_bin) incoming intensity.
     real, dimension(:,:), pointer :: I_out => null()                    ! leaving intensity
     real, dimension(:),   pointer :: time => null()                     ! (time)
-    integer, dimension(:,:), pointer :: cell => null()                  ! convenience, to identify which cell the ray point corresponds to
   end type
 !-----------------------------------------------------------------------
   type,extends(rt_t), public :: rt_internal_t
@@ -34,7 +33,8 @@ MODULE rt_internal_mod
     real :: dir_weight, ray_ds
     procedure (solve_internal_integral_1st), pointer :: solve => null()
   contains
-    procedure :: dtau
+    procedure :: dtau_staggered
+    procedure :: dtau_centered
     procedure :: init   => init_rt_internal
     procedure :: update => update_rt_internal
     procedure :: recurse
@@ -88,8 +88,6 @@ SUBROUTINE init_rt_internal (self)
   if (mhd_patch%is_set(bits%root_grid)) call self%set (bits%root_grid)
   end associate
 
-  call ray_geometry%head%get_my_bundle(self%bundle, self%dir_ID, self%bundle_ID)
-
   allocate(self%name)
   SELECT case(self%rt_type)
     case(2)
@@ -122,20 +120,11 @@ SUBROUTINE init_rt_internal (self)
     irm = ir + packet%n_rays -1
     self%packet_data(ray)%I_in  => self%I_in(ir:irm,:)
     self%packet_data(ray)%I_out => self%I_out(ir:irm,:)
-    allocate(self%packet_data(ray)%cell (3,packet%n_rays))
     allocate(self%packet_data(ray)%time(packet%n_rays))
     !allocate(self%packet_data(ray)%ds  (packet%n_rays,packet%n_points))  - not needed for MARCONI
     self%packet_data(ray)%time = self%time
     !self%packet_data(ray)%ds = packet%ds * self%cell_ds(self%bundle%axis) ! FIXME: should not be like this for non-cubic cells
-    select case(self%rt_type)
-    case(2)
-      pt = packet%n_points
-    case(3)
-      pt = 1
-    end select
-    do r = 1, packet%n_rays
-      self%packet_data(ray)%cell(:,r) = packet%coords(:,pt,r)
-    end do
+
     packet => packet%next
     ir = irm + 1
   end do
@@ -479,7 +468,7 @@ FUNCTION I_retrv(self, nbor, c) result (I_out)
   class(rt_internal_t) :: self
   class(rt_internal_t), pointer :: nbor
   class(ray_t), pointer :: packet
-  integer :: c(3),  my_ray, nb_ray
+  integer :: c(3),  my_ray, nb_ray, rid
   real, dimension(microphysics%n_wl_bins) :: I_out
   logical :: fnd
   integer, save :: itimer=0
@@ -487,12 +476,22 @@ FUNCTION I_retrv(self, nbor, c) result (I_out)
   call trace_begin('rt_internal_mod%I_retrv',4, itimer=itimer)
   fnd = .false.
   packet => nbor%bundle%rays
-  do while (associated(packet).and..not.fnd)
-    do nb_ray = 1, packet%n_rays
-      if (all(nbor%packet_data(packet%id)%cell(:,nb_ray) == c)) then
-        fnd = .true.
+  do while (associated(packet).and..not.fnd)                            ! loop over nbor ray packets
+    do nb_ray = 1, packet%n_rays                                        ! loop over rays in the nbor ray packet
+    
+      select case(nbor%rt_type)                                         ! is it fwd or reverse ray direction
+        case(2)                                                         ! forward
+          rid = 1                                                       ! looking for first point
+        case(3)                                                         ! reverse
+          rid = packet%n_points                                         ! looking for last point
+      end select
+      
+      if (all(packet%coords(:,rid,nb_ray) == c)) then                   ! if cell coords match with what we are looking for
+        fnd = .true.                                                    ! we have found the cell
         I_out = nbor%packet_data(packet%id)%I_out(nb_ray,:)
+        return
       end if
+      
     end do
     packet => packet%next
   end do
@@ -609,15 +608,47 @@ FUNCTION dtau (self, opacity) result (dt)
 END FUNCTION dtau
 
 !> =====================================================================
+!> compute dtau given opacity and step ds along the ray
+!> =====================================================================
+SUBROUTINE dtau_staggered (self, opacity, dt)
+  class(rt_internal_t) :: self
+  real, dimension(:,:,:), pointer :: opacity, dt
+  integer :: i, j
+  !---------------------------------------------------------------------
+  call trace_begin('rt_internal_t%dtau_staggered')
+  associate (n=>size(opacity,3))
+  dt = opacity
+  dt(:,:,2:) = dt(:,:,1:n-1) + opacity(:,:,1:n-1)
+  dt = 0.5*self%ray_ds*dt
+  end associate
+  call trace_end
+END SUBROUTINE dtau_staggered
+
+!> =====================================================================
+!> compute dtau given opacity and step ds along the ray
+!> =====================================================================
+SUBROUTINE dtau_centered (self, opacity, dt)
+  class(rt_internal_t) :: self
+  real, dimension(:,:,:), pointer :: opacity, dt
+  integer :: i, j
+  !---------------------------------------------------------------------
+  call trace_begin('rt_internal_t%dtau_centered')
+  dt = opacity *self%ray_ds
+  call trace_end
+END SUBROUTINE dtau_centered
+
+!> =====================================================================
 !> Solution of RTE using the 1st order Integral formulation. Iwf and Irv
-!> are stored in case of overlapping patches.
+!> can be stored in case of overlapping patches. First order accurate
+!> means around 12 percent errors for exponential rt problem and up to
+!> 35 percent for sin rt problem.
 !> =====================================================================
 SUBROUTINE solve_internal_integral_1st (self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet
-  real, dimension(:,:,:), allocatable :: ex0, ds, dtau
-  real, dimension(:,:,:), allocatable :: s, q, Ifw, ropac
-  real, dimension(:,:), allocatable :: I_in, I_out
+  real, dimension(:,:,:), pointer :: ex0, ds, dtau
+  real, dimension(:,:,:), pointer :: s, q, Ifw, ropac
+  real, dimension(:,:), pointer :: I_in, I_out
   integer :: pt, p(3), pck, nwb, ipk, ray, id
   integer, save :: itimer(2)=0
   logical, parameter :: detailed_timer=.false.
@@ -646,22 +677,27 @@ SUBROUTINE solve_internal_integral_1st (self)
         ropac(ray,:,pt) = rtd%opacity(p(1),p(2),p(3),:)
       end do
     end do
-    dtau = self%dtau(ropac)
+    call self%dtau_staggered(ropac, dtau)
     I_in = self%packet_data(pck)%I_in
-    pt = npt
+
+    do pt = 2, npt    
 #if defined __INTEL_COMPILER
-    ex0 = 2**(-dtau*1.44269504)                                         ! first exponential coeff
+    ex0(pt) = 2**(-dtau(pt)*1.44269504)                                 ! first exponential coeff
 #else
-    ex0 = exp(-dtau)                                                    ! first exponential coeff
+    ex0(pt) = exp(-dtau(pt))                                            ! first exponential coeff
 #endif
+    ds(pt)  = (1.-ex0(pt))*s(pt-1)                                      ! Source factor
+    end do
+    
     if (detailed_timer) then
       call trace_end (itimer(1))
       call trace_begin('rt_internal_t%integral_1st(2)', itimer=itimer(2))
     end if
-    ds  = (1.  - ex0) * s                                               ! Source factor
+    
       !-----------------------------------------------------------------
       ! Forward / reverse solutions
       !-----------------------------------------------------------------
+    pt = npt
     select case(self%rt_type)
     case(2)                                                             ! forward
       Ifw(:,:,1) = I_in * ex0(:,:,1) + ds(:,:,1)                        ! Intensity after the first point
@@ -702,9 +738,9 @@ END SUBROUTINE solve_internal_integral_1st
 SUBROUTINE solve_internal_integral_2nd (self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet
-  real, dimension(:,:,:), allocatable :: ex0, ex1, ex2, ds1, d1s, d2s
-  real, dimension(:,:,:), allocatable :: s, dtau, idtau, ctau, q, ropac
-  real, dimension(:,:), allocatable :: I_in
+  real, dimension(:,:,:), pointer :: ex0, ex1, ex2, ds1, d1s, d2s
+  real, dimension(:,:,:), pointer :: s, dtau, idtau, ctau, q, ropac
+  real, dimension(:,:), pointer :: I_in
   integer :: pt, ipt, it, ray, wl, p(3), pck, nwb, ipk
   real    :: temp, dir_wgt
   integer, save :: itimer=0
@@ -743,7 +779,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
       end do
     end do
 
-    dtau = self%dtau(ropac)
+    call self%dtau_staggered(ropac, dtau)
     I_in = self%packet_data(pck)%I_in
     pt = npt
     idtau = 1. / dtau

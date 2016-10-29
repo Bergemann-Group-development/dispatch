@@ -15,6 +15,7 @@ MODULE mhd_mod
   USE eos_mod
   !USE boundary_mod
   USE download_mod
+  USE eos_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t

@@ -66,7 +66,7 @@ SUBROUTINE transfer (N, dtau, S, Ifw0, Irv1, Q, Irv0, Ifw1)
 !  Reverse rays (2a+3m)
 !
   qre(n) = Irv1 - s(n)                                                  ! initial reverse Q
-  q(n) = 0.5*(qre(n)+qfw(n))                                            ! mean Q
+  q(n) = 0.5*(qre(n))                                            ! mean Q
   do i=n-1,1,-1
     qre(i) = &
        qre(i+1)*ex0(i+1) + dsdtau(i)*ex1(i+1) + d2sdtau2(i)*ex2(i+1)    ! formal solution backwards

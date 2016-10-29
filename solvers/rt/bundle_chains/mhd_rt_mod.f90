@@ -11,7 +11,7 @@ MODULE mhd_rt_mod
   ! --------------------------------------------------------------------
   type, public, extends(mhd_t):: mhd_rt_t
     type(rt_data_t), pointer:: rt_data => null()
-    type(rt_internal_t), pointer:: first_internal
+    type(rt_internal_t), pointer:: first_internal => null()
     integer:: BC_direction=0
   contains
     procedure :: init_rt

@@ -43,17 +43,17 @@ SUBROUTINE init_rt_data(self)
   self%li       = mhd_patch%li
   self%ui       = mhd_patch%ui
   self%n_cells  = mhd_patch%gn
-  self%position = mhd_patch%position                ! task position
+  self%position = mhd_patch%position                                    ! task position
   self%offset   = mhd_patch%offset
-  self%level    = mhd_patch%level                   ! task level
-  self%velocity = mhd_patch%velocity                ! task velocity
-  self%size     = mhd_patch%size                    ! task size
-  self%cell_ds  = mhd_patch%ds                      ! cell size
-  self%it       = mhd_patch%it                      ! task time
+  self%level    = mhd_patch%level                                       ! task level
+  self%velocity = mhd_patch%velocity                                    ! task velocity
+  self%size     = mhd_patch%size                                        ! task size
+  self%cell_ds  = mhd_patch%ds                                          ! cell size
+  self%it       = mhd_patch%it                                          ! task time
   self%end_time = self%mhd_patch%end_time
   self%out_time = self%mhd_patch%out_time
-  self%time     = -3                                ! initial time
-  self%dtime    = 1e-6                              ! initial dtime
+  self%time     = -3                                                    ! initial time
+  self%dtime    = 1e-6                                                  ! initial dtime
   if (mhd_patch%is_set(bits%static))    call self%set (bits%static)
   if (mhd_patch%is_set(bits%root_grid)) call self%set(bits%root_grid)
   !---------------------------------------------------------------------
@@ -62,9 +62,9 @@ SUBROUTINE init_rt_data(self)
   allocate(self%name)
   self%name       = 'rt_data'
   self%n_ray_dirs = ray_geometry%head%n_ray_dirs
-  allocate(self%q      (n(1), n(2), n(3), self%nt)) ! net heating
-  allocate(self%opacity(n(1), n(2), n(3), nwb))     ! opacity table
-  allocate(self%source (n(1), n(2), n(3), nwb))     ! Source function table
+  allocate(self%q      (n(1), n(2), n(3), self%nt))                     ! net heating
+  allocate(self%opacity(n(1), n(2), n(3), nwb))                         ! opacity table
+  allocate(self%source (n(1), n(2), n(3), nwb))                         ! Source function table
   self%q = 0.0; self%opacity = 0;   self%source = 0
   end associate
   !
@@ -73,7 +73,7 @@ SUBROUTINE init_rt_data(self)
       '    rt_data_t%id:', self%id, &
       'mhd_patch%id:', self%mhd_patch%id
   end if
-  if (io%verbose>2) call self%check(1)             ! check if rt_data initialized ok
+  if (io%verbose>2) call self%check(1)                                  ! check if rt_data initialized ok
   call trace_end
 END SUBROUTINE init_rt_data
 
@@ -100,7 +100,7 @@ SUBROUTINE update_rt_data (self)
   ! add cosmic ray heating
   call self%add_cr_heating(self%mhd_patch%time)  ! add cr heating
   call self%update_time
-
+  nullify (rho, s)
   if (io%verbose>2) call self%check(2)
 
   call trace_end (itimer)

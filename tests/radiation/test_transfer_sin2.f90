@@ -16,8 +16,8 @@
  implicit none
  real, allocatable, dimension(:,:) :: s, q, dtau
  real, allocatable, dimension(:)   :: q0, tau, Ifw1, IfwN, Irv1, IrvN
- integer :: i, j, k, n, m, niter, iter, nn(6)
- real :: taumin, taumax, cput, cpu(2), dtime
+ integer :: i, j, k, n, m, niter, iter, nn(6), nmod
+ real :: taumin, taumax, cput, cpu(2), dtime, dlogtau
  real :: JfwN, Jrv1, P, error, pi, maxerr
  real(kind=8) dtau1
 
@@ -68,11 +68,15 @@
 
 ! print *,'  i      tau         S           P           Q          err'
  maxerr = 0.
+nmod=0.1/n*5.+0.1
+ print*,'nmod',nmod
  do i=1,n
-   P = s(1,i)+q(1,i)
-   error = (q(1,i)-q0(i))/P
+   P = s(i)+q(i)
+   error = (q(i)-q0(i))/P
    maxerr = max(maxerr,error)
-!   print '(i4,4e12.4,f12.6)',i, tau(i), s(i), P, q(i), error
+   if (mod(i-1,nmod) == 0) then
+     print '(i4,4e12.4,f12.6)',i, alog10(tau(i)), s(i), P, q(i), error
+   endif
  end do
  print *,(1.-Irv1(1)/Jrv1),(1.-IfwN(1)/JfwN),maxerr
  print *,'cpu =',cput

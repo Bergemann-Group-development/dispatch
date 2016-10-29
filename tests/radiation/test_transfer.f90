@@ -18,16 +18,16 @@
  integer :: i, n, m, niter, iter, nmod
  real :: logtaumin, logtaumax, dlogtau, logtau, cput, cpu(2), dtime
  real :: Ifw1, IfwN, Irv1, IrvN, P, error, sigma
-
+n=91
  logtaumin = -6.
  logtaumax = +3.
- dlogtau = 0.1
+ dlogtau = (logtaumax-logtaumin)/float(n-1)!0.1
  sigma = 1.4
 
- n = (logtaumax-logtaumin)/dlogtau + 1.5
+ !n = (logtaumax-logtaumin)/dlogtau + 1.5
  allocate (s(n), tau(n), q(n), q0(n), dtau(n))
 
- do m=1,4
+ do m=4,4
  do i=1,n
    logtau  = logtaumin+dlogtau*(i-1)
    tau(i) = 10.**logtau
@@ -40,7 +40,7 @@
    case (3)
      q0(i)  = 6.*tau(i)+3.*exp(-tau(i))
    case (4)
-     s(i)   = (erf(logtau/sigma)+1)*0.5
+     s(i)   = (erf(logtau/sigma)+1.)*0.5
      q0(i)  = 0.
    end select
    if (i > 1) dtau(i) = tau(i)-tau(i-1)
@@ -59,8 +59,8 @@
  case (4)
    Ifw1 = 0.
    IrvN = s(n)
-   ! tau(1) = 1e-10
-   s(1)   = (erf(alog10(tau(1))/sigma)+1)*0.5
+    tau(1) = 1e-10
+   s(1)   = (erf(alog10(tau(1))/sigma)+1.)*0.5
    dtau(2) = tau(2)-tau(1)
  end select
  !IrvN = S(n)
@@ -79,16 +79,16 @@
    call transfer (n,dtau,s,ifw1,irvN,q,irv1,ifwN)
  end do
  cput=dtime(cpu)
-
- print *,'  i  log(tau)         S           P           Q          err'
+ print *, 'Ifw1=',Ifw1
+ print *,'  i  log(tau)         S           P           Q       Q0        err'
  nmod=0.1/dlogtau*5.+0.1
  print*,'nmod',nmod
  do i=1,n
    P = s(i)+q(i)
    error = (q(i)-q0(i))/P
-   if (mod(i-1,nmod) == 0) then
-     print '(i4,4e12.4,f12.6)',i, alog10(tau(i)), s(i), P, q(i), error
-   endif
+  ! if (mod(i-1,nmod) == 0) then
+     print '(i4,5e12.4,f12.6)',i, alog10(tau(i)), s(i), P, q(i), q0(i), error
+  ! endif
  end do
  print *,'cpu =',cput
  print '(1x,a,f6.1)','ns/pt =',cput*1e9/(n*niter)

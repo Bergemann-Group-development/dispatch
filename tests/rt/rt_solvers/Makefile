@@ -1,16 +1,16 @@
 # Option groups
 #OPTS = debug
-#OPTS = full_debug
-OPTS = optimized
+OPTS = full_debug
+#OPTS = optimized
 
-def: test
+def: test2
 
 # Common configuration
-EXEC = test.x
+EXEC = test2.x
 TOP = ../../..
 include $(TOP)/config/Makefile
 
-test: test.x
-	( uname -a; grep "model name" /proc/cpuinfo | head -1; ./test.x ) | tee -a performance/$(HOST).log
+test2: test2.x
+	( uname -a; grep "model name" /proc/cpuinfo | head -1; ./test2.x ) | tee -a performance/$(HOST).log
 
-test.x: omp_mod.o omp_timer_mod.o ray_geometry_v3_mod.o
+test2.x: omp_mod.o omp_timer_mod.o ray_geometry_v3_mod.o

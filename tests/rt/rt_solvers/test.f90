@@ -37,7 +37,7 @@ MODULE radiation_mod
   contains
     procedure :: init => init_internal
     !procedure :: solve => solve_1st
-    procedure :: solve => solve_2nd
+    procedure :: solve => solve_2nd3
     procedure :: update_q
   end type
 CONTAINS
