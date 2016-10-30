@@ -791,6 +791,8 @@ PROGRAM test
 
   rt_data%q = 0.0
   call rt_obj_fw%solve
+  rt_data%q = 0.0
+  call rt_obj_fw%solve
   call rt_obj_rv%solve
   rt_data%P = rt_data%source + rt_data%q
   rt_data%error = (rt_data%q-rt_data%q0)/rt_data%P
