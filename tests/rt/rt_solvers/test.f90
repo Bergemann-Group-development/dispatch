@@ -211,7 +211,7 @@ SUBROUTINE update_q (self, rays, q, dummy)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: rays
   integer :: p(3), ray, pt, run
-  real, dimension(:,:,:) :: q
+  real, dimension(:,:,:), intent(in) :: q
   real, dimension(:,:,:,:), pointer :: qq
   real, dimension(:,:,:), pointer, optional :: dummy
   integer, dimension(:,:,:), pointer :: cell
@@ -237,8 +237,8 @@ SUBROUTINE copy_p (self, rays, in, out)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: rays
   integer :: p(3), ray, pt, run
-  real, dimension(:,:,:)   , pointer :: out
-  real, dimension(:,:,:,:) , pointer :: in
+  real, dimension(:,:,:)   , pointer, intent(out) :: out
+  real, dimension(:,:,:,:) , pointer, intent(in)  :: in
   integer, dimension(:,:,:), pointer :: cell
   !---------------------------------------------------------------------
   call trace_begin ('copy_p', 4, itimer=itimer_p)
@@ -246,6 +246,7 @@ SUBROUTINE copy_p (self, rays, in, out)
   do ray = 1, size(out,1)
     do pt = 1, size(out,3)
       p = cell(:,pt,ray)
+      !$vector alwys
       do run=1,self%nrun
         out(ray,run,pt) = in(p(1),p(2),p(3),run)
       end do
