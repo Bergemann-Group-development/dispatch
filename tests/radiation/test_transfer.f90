@@ -27,7 +27,7 @@ n=91
  !n = (logtaumax-logtaumin)/dlogtau + 1.5
  allocate (s(n), tau(n), q(n), q0(n), dtau(n))
 
- do m=4,4
+ do m=1,4
  do i=1,n
    logtau  = logtaumin+dlogtau*(i-1)
    tau(i) = 10.**logtau
