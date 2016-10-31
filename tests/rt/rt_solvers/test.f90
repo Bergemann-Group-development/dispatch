@@ -3,7 +3,7 @@
 MODULE radiation_mod
   USE omp_mod
   USE omp_timer_mod
-    USE trace_mod
+  USE trace_mod
   USE timer_mod
   USE ray_geometry_v3_mod
   implicit none
@@ -11,11 +11,11 @@ MODULE radiation_mod
     real, dimension(:,:,:,:), pointer :: opacity => null()              ! (x,y,z,wl_bin)
     real, dimension(:,:,:,:), pointer :: source  => null()              ! (x,y,z,wl_bin)
     real, dimension(:,:,:,:), pointer :: Q0      => null()              ! (x,y,z,wl_bin)
-    real, dimension(:,:,:,:), pointer :: Q      => null()              ! (x,y,z,wl_bin)
+    real, dimension(:,:,:,:), pointer :: Q       => null()              ! (x,y,z,wl_bin)
     real, dimension(:,:,:,:), pointer :: dtau    => null()              ! (x,y,z,wl_bin)
     real, dimension(:,:,:,:), pointer :: tau     => null()              ! (x,y,z,wl_bin)
-    real, dimension(:,:,:,:), pointer :: P     => null()              ! (x,y,z,wl_bin)
-    real, dimension(:,:,:,:), pointer :: error     => null()              ! (x,y,z,wl_bin)
+    real, dimension(:,:,:,:), pointer :: P       => null()              ! (x,y,z,wl_bin)
+    real, dimension(:,:,:,:), pointer :: error   => null()              ! (x,y,z,wl_bin)
     integer :: n(3), nrun
   contains
     procedure :: init => init_data
@@ -37,9 +37,14 @@ MODULE radiation_mod
   contains
     procedure :: init => init_internal
     !procedure :: solve => solve_1st
-    procedure :: solve => solve_2nd3
+    procedure :: solve => solve_2nd1
+    procedure :: copy_p
     procedure :: update_q
   end type
+  !logical, parameter :: detailed_timer=.false.
+  logical, parameter :: detailed_timer=.true.
+  integer, save :: itimer_p = 0
+  integer, save :: itimer_q = 0
 CONTAINS
 
 SUBROUTINE init_data(self, ng, nrun)
@@ -205,16 +210,14 @@ END SUBROUTINE init_internal
 SUBROUTINE update_q (self, rays, q, dummy)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: rays
-  integer :: p(3), wl, ray, pt
+  integer :: p(3), ray, pt, run
   real, dimension(:,:,:) :: q
   real, dimension(:,:,:,:), pointer :: qq
   real, dimension(:,:,:), pointer, optional :: dummy
   integer, dimension(:,:,:), pointer :: cell
   real :: dirw
-  integer :: run
-  integer, save:: itimer=0
   !---------------------------------------------------------------------
-  call trace_begin ('rt_internal_t_%update_q', 4, itimer=itimer)
+  call trace_begin ('rt_internal_t_%update_q', 4, itimer=itimer_q)
   dirw = self%dir_weight
   qq => self%my_rt_data%q
   cell => rays%coords
@@ -227,8 +230,29 @@ SUBROUTINE update_q (self, rays, q, dummy)
       end do
     end do
   end do
-  call trace_end (itimer)
+  call trace_end (itimer_q)
 END SUBROUTINE update_q
+
+SUBROUTINE copy_p (self, rays, in, out)
+  class(rt_internal_t) :: self
+  class(ray_t), pointer :: rays
+  integer :: p(3), ray, pt, run
+  real, dimension(:,:,:)   , pointer :: out
+  real, dimension(:,:,:,:) , pointer :: in
+  integer, dimension(:,:,:), pointer :: cell
+  !---------------------------------------------------------------------
+  call trace_begin ('copy_p', 4, itimer=itimer_p)
+  cell => rays%coords
+  do ray = 1, size(out,1)
+    do pt = 1, size(out,3)
+      p = cell(:,pt,ray)
+      do run=1,self%nrun
+        out(ray,run,pt) = in(p(1),p(2),p(3),run)
+      end do
+    end do
+  end do
+  call trace_end (itimer_p)
+END SUBROUTINE copy_p
 
 SUBROUTINE solve_1st (self)
   class(rt_internal_t) :: self
@@ -237,17 +261,19 @@ SUBROUTINE solve_1st (self)
   real, dimension(:,:,:), pointer :: s, q, Ifw, ropac
   real, dimension(:,:), pointer :: I_in, I_out
   integer :: pt, p(3), pck, nwb, ipk, ray, id
-  integer, save :: itimer(2)=0
-  logical, parameter :: detailed_timer=.false.
+  integer :: itimer(4)=0
   !---------------------------------------------------------------------
+  if (detailed_timer) then
+    itimer = 0
+    itimer_q = 0
+    call timer%init
+  end if
   call tic
-  if (.not.detailed_timer) &
-  call trace_begin('rt_internal_t%integral_1st', itimer=itimer(1))
   nwb = self%nrun
   packet => self%bundle%rays
   do pck = 1, self%bundle%n_packets
     if (detailed_timer) &
-      call trace_begin('rt_internal_t%integral_1st(1)', itimer=itimer(1))
+      call trace_begin('solve_1st', itimer=itimer(1))
     associate (npt => packet%n_points, nrays => packet%n_rays, &
                rtd => self%my_rt_data, cell => packet%coords)
     allocate( dtau(nrays, nwb, npt))
@@ -258,6 +284,7 @@ SUBROUTINE solve_1st (self)
     allocate(Ifw  (nrays, nwb, npt))
     allocate(I_in (nrays, nwb))
     allocate(ropac(nrays, nwb,npt))
+
     do ray = 1, nrays
       do pt = 1, npt
         p = cell(:,pt,ray)
@@ -265,6 +292,10 @@ SUBROUTINE solve_1st (self)
         dtau(ray,:,pt) = rtd%dtau(p(1),p(2),p(3),:)
       end do
     end do
+    if (detailed_timer) then
+      call trace_end (itimer(1))
+      call trace_begin('solve_1st', itimer=itimer(2))
+    end if
 
     I_in = self%packet_data(pck)%I_in
 
@@ -275,8 +306,8 @@ SUBROUTINE solve_1st (self)
       ds(:,:,1)  = (1.-ex0(:,:,1))*s(:,:,1)                          ! Source factor
     
     if (detailed_timer) then
-      call trace_end (itimer(1))
-      call trace_begin('rt_internal_t%integral_1st(2)', itimer=itimer(2))
+      call trace_end (itimer(2))
+      call trace_begin('solve_1st', itimer=itimer(3))
     end if
     
       !-----------------------------------------------------------------
@@ -299,41 +330,56 @@ SUBROUTINE solve_1st (self)
       q  = Ifw - s
       self%packet_data(pck)%I_out = Ifw(:,:,1) !* ex0(:,:,1) + ds(:,:,1)
     end select
+    if (detailed_timer) then
+      call trace_end (itimer(3))
+    end if
     call self%update_q (packet, q, ropac)
     deallocate(ex0, ds, s, dtau, q, Ifw, I_in, ropac)
     end associate
     packet => packet%next
-    if (detailed_timer) &
-      call trace_end (itimer(2))
   end do
   nullify (packet)
-  call toc('solve 2nd', product(self%my_rt_data%n)*self%nrun)
-  if (.not.detailed_timer) &
-  call trace_end (itimer(1))
+  call toc('solve 1st', product(self%my_rt_data%n)*self%nrun)
+  if (detailed_timer) then
+    call timer%print
+  end if
 END SUBROUTINE solve_1st
 
-SUBROUTINE solve_2nd (self)
+!> =============================================================================
+!> This solver formulation uses loops over points
+!> =============================================================================
+SUBROUTINE solve_2nd1 (self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet => null()
   integer, dimension(:,:,:), pointer   :: cell => null()
   class(rt_data_t), pointer :: rtd
   real, dimension(:,:,:), pointer :: ex0, ds1, d1s, d2s
   real, dimension(:,:,:), pointer :: s, dtau, q, ropac
+  real, dimension(:,:,:,:), pointer :: ss, ddtau
   real, dimension(:,:), pointer :: I_in, ctau
-  integer :: pt, npt, nrays, it, ray, wl, p(3), pck, nwb, ipk
-  integer, save :: itimer=0
+  integer :: pt, npt, nrays, it, ray, wl, p(3), pck, nwb, ipk, iwb
+  integer :: itimer(4)=0
   !---------------------------------------------------------------------
-  
-  call trace_begin('rt_internal_t%integral_2nd', itimer=itimer)
+  if (detailed_timer) then
+    itimer = 0
+    itimer_p = 0
+    itimer_q = 0
+    call timer%init
+  end if
   call tic
   nwb = self%nrun                                                       ! wl bins represent different tests here
   packet => self%bundle%rays
 
   rtd => self%my_rt_data
   do pck = 1, self%bundle%n_packets
+    if (detailed_timer) then
+      call trace_begin('solve_2nd1: begin', itimer=itimer(1))
+    end if
     cell => packet%coords
     nrays = packet%n_rays
     npt =  packet%n_points
+    ddtau => rtd%dtau
+    ss    => rtd%source
 
     allocate( dtau(nrays, nwb, npt))
     allocate(ex0  (nrays, nwb, npt))
@@ -344,14 +390,30 @@ SUBROUTINE solve_2nd (self)
     allocate(q    (nrays, nwb, npt))
     allocate(ctau (nrays, nwb))
     allocate(I_in (nrays, nwb))
+    if (detailed_timer) then
+      call trace_end (itimer(1))
+      call trace_begin('solve_2nd2: s, dtau', itimer=itimer(2))
+    end if
+
+    !call self%copy_p (packet, ss, s)
+    !call self%copy_p (packet, ddtau, dtau)
 
     do ray = 1, nrays
       do pt = 1, npt
         p = cell(:,pt,ray)
            s(ray,:,pt) = rtd%source(p(1),p(2),p(3),:)
+      end do
+    end do
+    do ray = 1, nrays
+      do pt = 1, npt
+        p = cell(:,pt,ray)
         dtau(ray,:,pt) = rtd%dtau  (p(1),p(2),p(3),:)
       end do
     end do
+    if (detailed_timer) then
+      call trace_end (itimer(2))
+      call trace_begin('solve_2nd2: ex0,ex1', itimer=itimer(3))
+    end if
 
     I_in = self%packet_data(pck)%I_in
     
@@ -359,28 +421,33 @@ SUBROUTINE solve_2nd (self)
 !      ex0 = 2**(-dtau*1.44269504)                                       ! first exponential coeff
 !#else
     do pt = 2, npt
-      ex0(:,:,pt) = exp(-dtau(:,:,pt))                                                  ! first exponential coeff
-      ds1(:,:,pt) = (s(:,:,pt) - s(:,:,pt-1)) / dtau(:,:,pt)  ! half-point centered dS/dtau
+      ex0(:,:,pt) = exp(-dtau(:,:,pt))                                   ! first exponential coeff
+      ds1(:,:,pt) = (s(:,:,pt) - s(:,:,pt-1)) / dtau(:,:,pt)             ! half-point centered dS/dtau
     end do
 !#endif
+    if (detailed_timer) then
+      call trace_end (itimer(3))
+      call trace_begin('solve_2nd1: transfer', itimer=itimer(4))
+    end if
 
-      !-----------------------------------------------------------------
-      !  dS/dtau and d2S/dtau2
-      !-----------------------------------------------------------------
+    !-------------------------------------------------------------------
+    !  dS/dtau and d2S/dtau2
+    !-------------------------------------------------------------------
     do pt=2, npt-1  
-     ctau = 1. / (dtau(:,:,pt+1) + dtau(:,:,pt))
-      d1s(:,:,pt) = (ds1(:,:,pt+1) * dtau(:,:,pt) + ds1(:,:,pt) * dtau(:,:,pt+1) ) * ctau                                ! dS/dtau, 2nd. order accurate
-      d2s(:,:,pt) = (ds1(:,:,pt+1) - ds1(:,:,pt))* 2. * ctau                                ! d2S/dtau2, 2nd. order accurate
+      ctau = 1. / (dtau(:,:,pt+1) + dtau(:,:,pt))
+      d1s(:,:,pt) = (ds1(:,:,pt+1) * dtau(:,:,pt) &
+                  + ds1(:,:,pt) * dtau(:,:,pt+1) ) * ctau               ! dS/dtau, 2nd. order accurate
+      d2s(:,:,pt) = (ds1(:,:,pt+1) - ds1(:,:,pt))* 2. * ctau            ! d2S/dtau2, 2nd. order accurate
     end do
 
-      d2s(:,:,1)  = d2s(:,:,2)                                          ! assume constant d2S/dtau2
-      d1s(:,:,1)  = d1s(:,:,2)    - dtau(:,:,2)  * d2s(:,:,2)           ! extrapolate to 1
-      d2s(:,:,npt) = d2s(:,:,npt-1)                                       ! assume constant d2S/dtau2
-      d1s(:,:,npt) = d1s(:,:,npt-1) + dtau(:,:,npt) * d2s(:,:,npt)          ! extrapolate to n
-      !-----------------------------------------------------------------
-      !  Internal forward or reverse solutions
-      !-----------------------------------------------------------------
-      
+    d2s(:,:,1)  = d2s(:,:,2)                                            ! assume constant d2S/dtau2
+    d1s(:,:,1)  = d1s(:,:,2)    - dtau(:,:,2)  * d2s(:,:,2)             ! extrapolate to 1
+    d2s(:,:,npt) = d2s(:,:,npt-1)                                       ! assume constant d2S/dtau2
+    d1s(:,:,npt) = d1s(:,:,npt-1) + dtau(:,:,npt) * d2s(:,:,npt)        ! extrapolate to n
+
+    !-------------------------------------------------------------------
+    !  Internal forward or reverse solutions
+    !-------------------------------------------------------------------
     select case(self%rt_type)
     case(2)                                                             ! forward
       q  (:,:,1) = I_in - s(:,:,1)                                      ! initial forward Q
@@ -404,16 +471,24 @@ SUBROUTINE solve_2nd (self)
     case default
       error stop "unknown rt type"     
     end select
-    
+    if (detailed_timer) then
+      call trace_end (itimer(4))
+    end if
+
     call self%update_q (packet, q, ropac)
     deallocate(ex0, ds1, d1s, d2s, ctau, s, dtau, q, I_in)
     packet => packet%next
   end do
   nullify (packet,rtd,cell)
-  call toc('solve 2nd', product(self%my_rt_data%n)*self%nrun)
-  call trace_end (itimer)
-END SUBROUTINE solve_2nd
+  call toc('solve 2nd1', product(self%my_rt_data%n)*self%nrun)
+  if (detailed_timer) then
+    call timer%print
+  end if
+END SUBROUTINE solve_2nd1
 
+!> =============================================================================
+!> This solver formulation uses nested loops over points
+!> =============================================================================
 SUBROUTINE solve_2nd2(self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet => null()
@@ -424,7 +499,13 @@ SUBROUTINE solve_2nd2(self)
   
   real, dimension(:,:), pointer :: I_in, ctau
   integer :: pt, npt, nrun, nrays, p(3), nr,pck,ray ! nrays, it, ray, wl, p(3), pck, nwb, ipk
+  integer :: itimer(4)=0
   !---------------------------------------------------------------------
+  if (detailed_timer) then
+    itimer = 0
+    itimer_q = 0
+    call timer%init
+  end if
   call tic
   nrun = self%nrun                                                       ! wl bins represent different tests here
   packet => self%bundle%rays
@@ -432,6 +513,9 @@ SUBROUTINE solve_2nd2(self)
   rtd => self%my_rt_data
   
   do pck = 1, self%bundle%n_packets
+    if (detailed_timer) then
+      call trace_begin('solve_2nd2: begin', itimer=itimer(1))
+    end if
     cell => packet%coords
     nrays = packet%n_rays
     npt =  packet%n_points
@@ -447,7 +531,11 @@ SUBROUTINE solve_2nd2(self)
     allocate(q(nrays, nrun, npt))
     allocate(I_in (nrays, nrun))
     allocate(ctau (nrays, nrun))
-  
+    if (detailed_timer) then
+      call trace_end (itimer(1))
+      call trace_begin('solve_2nd2: s, datu', itimer=itimer(2))
+    end if
+
     do ray = 1, nrays
       do pt = 1, npt
         p = cell(:,pt,ray)
@@ -455,6 +543,11 @@ SUBROUTINE solve_2nd2(self)
         dtau(ray,:,pt) = rtd%dtau  (p(1),p(2),p(3),:)
       end do
     end do
+    if (detailed_timer) then
+      call trace_end (itimer(2))
+      call trace_begin('solve_2nd2: ex0,ex1', itimer=itimer(3))
+    end if
+
     I_in = self%packet_data(pck)%I_in
 
     do pt = 2, npt
@@ -463,6 +556,10 @@ SUBROUTINE solve_2nd2(self)
       ex2(:,:,pt) = ex1(:,:,pt)-dtau(:,:,pt)*ex0(:,:,pt)
       ds1dtau(:,:,pt) = (s(:,:,pt)-s(:,:,pt-1))/dtau(:,:,pt)
     end do
+    if (detailed_timer) then
+      call trace_end (itimer(3))
+      call trace_begin('solve_2nd2: transfer', itimer=itimer(4))
+    end if
 
     do pt = 2, npt-1
       ctau = 1./(dtau(:,:,pt+1)+dtau(:,:,pt))
@@ -488,14 +585,24 @@ SUBROUTINE solve_2nd2(self)
       end do
       self%packet_data(pck)%I_out = q(:,:,1) + s(:,:,1)
     end select
+    if (detailed_timer) then
+      call trace_end (itimer(4))
+    end if
+
     call self%update_q (packet, q)
     deallocate(dtau,ex0,ex1,ex2,ds1dtau,dsdtau,d2sdtau2,s,q,I_in,ctau)
     packet => packet%next
   end do
   nullify (packet,rtd,cell)
   call toc('solve 2nd2', product(self%my_rt_data%n)*self%nrun)
+  if (detailed_timer) then
+    call timer%print
+  end if
 END SUBROUTINE solve_2nd2
 
+!> =============================================================================
+!> This solver formulation uses index notation
+!> =============================================================================
 SUBROUTINE solve_2nd3 (self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet => null()
@@ -505,16 +612,23 @@ SUBROUTINE solve_2nd3 (self)
   real, dimension(:,:,:), pointer :: s, dtau, q, ropac, ctau
   real, dimension(:,:), pointer :: I_in
   integer :: pt, npt, nrays, it, ray, wl, p(3), pck, nwb, ipk
-  integer, save :: itimer=0
+  integer :: itimer(4)=0
   !---------------------------------------------------------------------
-  
-  call trace_begin('rt_internal_t%integral_2nd', itimer=itimer)
+  if (detailed_timer) then
+    itimer = 0
+    itimer_q = 0
+    call timer%init
+  end if
+  call tic
   
   nwb = self%nrun                                                       ! wl bins represent different tests here
   packet => self%bundle%rays
 
   rtd => self%my_rt_data
   do pck = 1, self%bundle%n_packets
+    if (detailed_timer) then
+      call trace_begin('solve_2nd3: begin', itimer=itimer(1))
+    end if
     cell => packet%coords
     nrays = packet%n_rays
     npt =  packet%n_points
@@ -536,31 +650,40 @@ SUBROUTINE solve_2nd3 (self)
         dtau(ray,:,pt) = rtd%dtau  (p(1),p(2),p(3),:)
       end do
     end do
-call tic
+    if (detailed_timer) then
+      call trace_end (itimer(1))
+      call trace_begin('solve_2nd3: ex0,ex1', itimer=itimer(2))
+    end if
+
     I_in = self%packet_data(pck)%I_in
     
 !#if defined __INTEL_COMPILER
 !      ex0 = 2**(-dtau*1.44269504)                                       ! first exponential coeff
 !#else
-      ex0(:,:,2:npt) = exp(-dtau(:,:,2:npt))                            ! first exponential coeff
-      ds1(:,:,2:npt) = (s(:,:,2:npt) - s(:,:,1:npt-1)) / dtau(:,:,2:npt)  ! half-point centered dS/dtau
+    ex0(:,:,2:npt) = exp(-dtau(:,:,2:npt))                              ! first exponential coeff
+    ds1(:,:,2:npt) = (s(:,:,2:npt) - s(:,:,1:npt-1)) / dtau(:,:,2:npt)  ! half-point centered dS/dtau
 !#endif
+    if (detailed_timer) then
+      call trace_end (itimer(2))
+      call trace_begin('solve_2nd3: transfer', itimer=itimer(3))
+    end if
 
-      !-----------------------------------------------------------------
-      !  dS/dtau and d2S/dtau2
-      !-----------------------------------------------------------------
-     ctau = 1. / (dtau(:,:,3:npt) + dtau(:,:,2:npt-1))
-      d1s(:,:,2:npt-1) = (ds1(:,:,3:npt) * dtau(:,:,2:npt-1) + ds1(:,:,2:npt-1) * dtau(:,:,3:npt) ) * ctau                                ! dS/dtau, 2nd. order accurate
-      d2s(:,:,2:npt-1) = (ds1(:,:,3:npt) - ds1(:,:,2:npt-1))* 2. * ctau                                ! d2S/dtau2, 2nd. order accurate
+    !-------------------------------------------------------------------
+    !  dS/dtau and d2S/dtau2
+    !-------------------------------------------------------------------
+    ctau = 1. / (dtau(:,:,3:npt) + dtau(:,:,2:npt-1))
+    d1s(:,:,2:npt-1) = (ds1(:,:,3:npt) * dtau(:,:,2:npt-1) &
+                     + ds1(:,:,2:npt-1) * dtau(:,:,3:npt) ) * ctau      ! dS/dtau, 2nd. order accurate
+    d2s(:,:,2:npt-1) = (ds1(:,:,3:npt) - ds1(:,:,2:npt-1))* 2. * ctau   ! d2S/dtau2, 2nd. order accurate
 
-      d2s(:,:,1)  = d2s(:,:,2)                                          ! assume constant d2S/dtau2
-      d1s(:,:,1)  = d1s(:,:,2)    - dtau(:,:,2)  * d2s(:,:,2)           ! extrapolate to 1
-      d2s(:,:,npt) = d2s(:,:,npt-1)                                       ! assume constant d2S/dtau2
-      d1s(:,:,npt) = d1s(:,:,npt-1) + dtau(:,:,npt) * d2s(:,:,npt)          ! extrapolate to n
-      !-----------------------------------------------------------------
-      !  Internal forward or reverse solutions
-      !-----------------------------------------------------------------
-      
+    d2s(:,:,1)  = d2s(:,:,2)                                            ! assume constant d2S/dtau2
+    d1s(:,:,1)  = d1s(:,:,2)    - dtau(:,:,2)  * d2s(:,:,2)             ! extrapolate to 1
+    d2s(:,:,npt) = d2s(:,:,npt-1)                                       ! assume constant d2S/dtau2
+    d1s(:,:,npt) = d1s(:,:,npt-1) + dtau(:,:,npt) * d2s(:,:,npt)        ! extrapolate to n
+
+    !-------------------------------------------------------------------
+    !  Internal forward or reverse solutions
+    !-------------------------------------------------------------------
     select case(self%rt_type)
     case(2)                                                             ! forward
       q  (:,:,1) = I_in - s(:,:,1)                                      ! initial forward Q
@@ -589,13 +712,19 @@ call tic
     case default
       error stop "unknown rt type"     
     end select
+    if (detailed_timer) then
+      call trace_end (itimer(3))
+    end if
+
     call self%update_q (packet, q, ropac)
     deallocate(ex0, ds1, d1s, d2s, ctau, s, dtau, q, I_in)
     packet => packet%next
   end do
   nullify (packet,rtd,cell)
-  call toc('solve 2nd', product(self%my_rt_data%n)*self%nrun)
-  call trace_end (itimer)
+  call toc('solve 2nd3', product(self%my_rt_data%n)*self%nrun)
+  if (detailed_timer) then
+    call timer%print
+  end if
 END SUBROUTINE solve_2nd3
 
 END MODULE radiation_mod
@@ -633,10 +762,17 @@ PROGRAM test
   nwb = 1  ! n wl bins
   nrun = 4
   
+  call tic
   call ray_geometry%init(1,l,n)
+  call toc('ray_geometry%init')
+
   allocate (rt_data)
+  call tic
   call rt_data%init(n,nrun)
+  call toc('rt_data%init')
+  call tic
   call rt_data%set
+  call toc('rt_data%set')
   
   allocate (rt_obj_fw, rt_obj_rv)
   rt_obj_fw%rt_type = 2
@@ -648,36 +784,48 @@ PROGRAM test
   call ray_geometry%head%get_my_bundle(rt_obj_fw%bundle, dir,bnd)
   call ray_geometry%head%get_my_bundle(rt_obj_rv%bundle, dir,bnd)
 
+  call tic
   call rt_obj_fw%init(nrun)
   call rt_obj_rv%init(nrun)
-  
-  cput=dtime(cpu)
+  call toc('rt_obj_xx%init')
+
+  rt_data%q = 0.0
   call rt_obj_fw%solve
   call rt_obj_rv%solve
-  cput=dtime(cpu)
-  print *,'cpu =',cput
-
   rt_data%P = rt_data%source + rt_data%q
   rt_data%error = (rt_data%q-rt_data%q0)/rt_data%P
-  
-  
-do run =1,nrun
-maxerr = maxval(abs(rt_data%error(:,:,:,run)))
-!print *,'q0 run',run
-do i=1,n(1)
-!print *, rt_data%q0(i,1,1,run),rt_data%q(i,3,3,run)
-end do
-end do
-
-do run =1, nrun
-print *, 'forward I_in: ', rt_obj_fw%I_in(1,run)
-print *,'  i run   X   Y   Z     tau         S           P           Q          Q0          err'
-  do i=1,n(1)
-    c = rt_obj_fw%bundle%rays%coords(:,i,1)
-    print '(5i4,5e12.4,f12.6)',i,run, c(1), c(2), c(3), rt_data%tau(i,1,1,run), &
-    rt_data%source(i,1,1,run), rt_data%P(i,1,1,run), rt_data%q(i,1,1,run), rt_data%q0(i,1,1,run), rt_data%error(i,1,1,run)
+  do run =1,nrun
+    print *,'q0 run',run,maxval(abs(rt_data%error(:,:,:,run)))
   end do
-end do
+
+  rt_data%q = 0.0
+  call solve_2nd2(rt_obj_fw)
+  call solve_2nd2(rt_obj_Rv)
+  rt_data%P = rt_data%source + rt_data%q
+  rt_data%error = (rt_data%q-rt_data%q0)/rt_data%P
+  do run =1,nrun
+    print *,'q0 run',run,maxval(abs(rt_data%error(:,:,:,run)))
+  end do
+
+  rt_data%q = 0.0
+  call solve_2nd3(rt_obj_fw)
+  call solve_2nd3(rt_obj_Rv)
+  rt_data%P = rt_data%source + rt_data%q
+  rt_data%error = (rt_data%q-rt_data%q0)/rt_data%P
+  do run =1,nrun
+    print *,'q0 run',run,maxval(abs(rt_data%error(:,:,:,run)))
+  end do
+
+!do run =1, nrun
+!print *, 'forward I_in: ', rt_obj_fw%I_in(1,run)
+!print *,'  i run   X   Y   Z     tau         S           P           Q          Q0          err'
+  !do i=1,n(1)
+    !c = rt_obj_fw%bundle%rays%coords(:,i,1)
+    !print '(5i4,5e12.4,f12.6)',i,run, c(1), c(2), c(3), rt_data%tau(i,1,1,run), &
+    !rt_data%source(i,1,1,run), rt_data%P(i,1,1,run), rt_data%q(i,1,1,run), rt_data%q0(i,1,1,run), rt_data%error(i,1,1,run)
+  !end do
+!end do
+
 !cput=dtime(cpu)
 ! do iter=1,niter
 !   call transfer (n,dtau,s,ifw1,irvN,q,irv1,ifwN)
