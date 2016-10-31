@@ -49,6 +49,7 @@ MODULE rt_internal_mod
     procedure :: get_static_legacy
     procedure :: get_dynamic_legacy
     procedure :: get_correction_from_BC
+    procedure :: ray_vol_map
     procedure :: solve_internal_integral => solve_internal_integral_2nd
     procedure :: solve_internal_feautrier
     procedure :: update_q
@@ -101,7 +102,7 @@ SUBROUTINE init_rt_internal (self)
   if (self%solver ==  0) then                                           ! set the right solver
     self%solve => solve_internal_feautrier
   else
-    self%solve => solve_internal_integral_1st
+    self%solve => solve_internal_integral_2nd
   end if
 
   self%dir_weight = 4.*pi/self%n_ray_dirs
@@ -162,6 +163,10 @@ SUBROUTINE update_rt_internal (self)
   !write (stime,'(1p,g16.6)') self%time
   !call trace_begin('rt_t%update_rt_internal '//stime,itimer=itimer)
   call self%get_upstream
+  if (self%my_rt_data%time < self%time) then
+  print *,"FORCE UPDATING RT_DATA, AS IT IS BEHIND THE INTERNAL!!!!"
+  call self%my_rt_data%update
+  end if
   call self%solve
   call self%update_time
   if (io%verbose > 2) then
@@ -232,6 +237,10 @@ RECURSIVE SUBROUTINE recurse (self)
   integer :: id
   !.....................................................................
   call trace_begin ('rt_internal_t%recurse')
+   if (self%my_rt_data%time < self%time) then
+  print *,"FORCE UPDATING RT_DATA, AS IT IS BEHIND THE INTERNAL!!!!"
+  call self%my_rt_data%update
+  end if
   call self%solve
   call self%update_time
   if (io%verbose > 2) then
@@ -682,11 +691,11 @@ SUBROUTINE solve_internal_integral_1st (self)
 
     do pt = 2, npt    
 #if defined __INTEL_COMPILER
-    ex0(pt) = 2**(-dtau(pt)*1.44269504)                                 ! first exponential coeff
+    ex0(:,:,pt) = 2**(-dtau(:,:,pt)*1.44269504)                                 ! first exponential coeff
 #else
-    ex0(pt) = exp(-dtau(pt))                                            ! first exponential coeff
+    ex0(:,:,pt) = exp(-dtau(:,:,pt))                                            ! first exponential coeff
 #endif
-    ds(pt)  = (1.-ex0(pt))*s(pt-1)                                      ! Source factor
+    ds(:,:,pt)  = (1.-ex0(:,:,pt))*s(:,:,pt-1)                                      ! Source factor
     end do
     
     if (detailed_timer) then
@@ -734,14 +743,16 @@ END SUBROUTINE solve_internal_integral_1st
 !> Solution of RTE using the 2nd order Integral formulation.
 !> Iwf and Irv are stored in case of overlapping patches.
 !> =====================================================================
-
 SUBROUTINE solve_internal_integral_2nd (self)
   class(rt_internal_t) :: self
-  class(ray_t), pointer :: packet
-  real, dimension(:,:,:), pointer :: ex0, ex1, ex2, ds1, d1s, d2s
-  real, dimension(:,:,:), pointer :: s, dtau, idtau, ctau, q, ropac
-  real, dimension(:,:), pointer :: I_in
-  integer :: pt, ipt, it, ray, wl, p(3), pck, nwb, ipk
+  class(ray_t), pointer :: packet => null()
+  class(rt_data_t), pointer :: rtd
+  integer, dimension (:,:,:), pointer :: cell => null()
+  real, dimension(:,:,:,:), pointer :: c_source, c_opac
+  real, dimension(:,:,:), pointer :: ex0, ds1, d1s, d2s
+  real, dimension(:,:,:), pointer :: s, dtau, q, opac
+  real, dimension(:,:), pointer :: I_in, ctau
+  integer :: pt, npt, it, ray, wl, p(3), pck, nwb, ipk, iwb, nrays
   real    :: temp, dir_wgt
   integer, save :: itimer=0
   !---------------------------------------------------------------------
@@ -751,90 +762,140 @@ SUBROUTINE solve_internal_integral_2nd (self)
 
   nwb = microphysics%n_wl_bins
   packet => self%bundle%rays
-
+  rtd    => self%my_rt_data
+  
   do pck = 1, self%bundle%n_packets
+    cell     => packet%coords
+    nrays    =  packet%n_rays
+    npt      =  packet%n_points
+    c_opac   => rtd%opacity                                             ! cell - based opacity
+    C_source => rtd%source                                              ! cell - based source function
 
-    associate (npt => packet%n_points, nrays => packet%n_rays, &
-               rtd => self%my_rt_data, cell => packet%coords)
+    allocate(dtau(nrays, nwb, npt+2))
+    allocate(ex0 (nrays, nwb, npt+2))
+    allocate(ds1 (nrays, nwb, npt+2))
+    allocate(d1s (nrays, nwb, npt))
+    allocate(d2s (nrays, nwb, npt))
+    allocate(s   (nrays, nwb, npt+2))
+    allocate(q   (nrays, nwb, npt))
+    allocate(opac(nrays, nwb, npt+2))
+    allocate(ctau(nrays, nwb))
+    allocate(I_in(nrays, nwb))
+!    print *,"ray dir ID, bundle ID, pck id:", self%bundle%dir_ID, self%bundle%id, packet%id
+!    print *, "rt type, rt data ID", self%rt_type, rtd%id
+!    print *,"self%time, rtd%time", self%time, rtd%time
+!    print *,"axis, theta,phi", self%bundle%axis, self%bundle%theta, self%bundle%phi
+!print *,"getting source"
+    call self%ray_vol_map (packet, nwb, c_source, s)                    ! Map source function onto rays
+!print *, "getting opac"
+    call self%ray_vol_map (packet, nwb, c_opac, opac)                   ! Map opacities onto rays
+    call self%dtau_staggered(opac, dtau)                                ! Calculate dtau
 
-    allocate( dtau(nrays, nwb, npt))
-    allocate(idtau(nrays, nwb, npt))
-    allocate(ex0  (nrays, nwb, npt))
-    allocate(ex1  (nrays, nwb, npt))
-    allocate(ex2  (nrays, nwb, npt))
-    allocate(ds1  (nrays, nwb, npt))
-    allocate(d1s  (nrays, nwb, npt))
-    allocate(d2s  (nrays, nwb, npt))
-    allocate(s    (nrays, nwb, npt))
-    allocate(q    (nrays, nwb, npt))
-    allocate(ctau (nrays, nwb, npt))
-    allocate(I_in (nrays, nwb))
-    allocate(ropac(nrays, nwb,npt))
-
-    do ray = 1, nrays
-      do pt = 1, npt
-        p = cell(:,pt,ray)
-            s(ray,:,pt) = rtd%source (p(1),p(2),p(3),:)
-        ropac(ray,:,pt) = rtd%opacity(p(1),p(2),p(3),:)
-      end do
-    end do
-
-    call self%dtau_staggered(ropac, dtau)
     I_in = self%packet_data(pck)%I_in
-    pt = npt
-    idtau = 1. / dtau
+
 #if defined __INTEL_COMPILER
-      ex0 = 2**(-dtau*1.44269504)                                       ! first exponential coeff
+    do pt = 1, npt+1
+      ex0(:,:,pt) = 2**(-dtau(:,:,pt+1)*1.44269504)                     ! first exponential coeff
+      ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)          ! half-point centered dS/dtau
+    end do   
 #else
-      ex0 = exp(-dtau)                                                  ! first exponential coeff
+    do pt = 1, npt+1
+      ex0(:,:,pt) = exp(-dtau(:,:,pt+1))                                  ! first exponential coeff
+      if (any(dtau(:,:,pt+1) ==0)) print *,'dtau zero'
+      ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)            ! half-point centered dS/dtau
+    end do                                                 
 #endif
-      ex1 = 1.  - ex0                                                   ! second exponential coeff
-      ex2 = ex1 - dtau * ex0                                            ! third exponential coeff
-      ds1(:,:,2:pt) = (s(:,:,2:pt) -s(:,:,1:pt-1)) * idtau(:,:,1:pt-1)  ! half-point centered dS/dtau
-      !-----------------------------------------------------------------
-      !  dS/dtau and d2S/dtau2
-      !-----------------------------------------------------------------
-     ctau(:,:,2:pt-1) = 1. / (dtau(:,:,2:pt-1) + dtau(:,:,3:pt))
-      d1s(:,:,2:pt-1) = &
-     (ds1(:,:,3:pt  ) * dtau(:,:,2:pt-1) + ds1(:,:,2:pt-1) * &
-     dtau(:,:,3:pt) ) * ctau(:,:,2:pt-1)                                ! dS/dtau, 2nd. order accurate
-      d2s(:,:,2:pt-1) = (ds1(:,:,3:pt  ) - ds1(:,:,2:pt-1))* &
-                   2. * ctau(:,:,2:pt-1)                                ! d2S/dtau2, 2nd. order accurate
 
+    !-------------------------------------------------------------------
+    !  dS/dtau and d2S/dtau2
+    !-------------------------------------------------------------------
+    do pt=1, npt  
+      ctau = 1. / (dtau(:,:,pt+2) + dtau(:,:,pt+1))
+      d1s(:,:,pt) =(ds1(:,:,pt+1) * dtau(:,:,pt+1) &
+                  + ds1(:,:,pt  ) * dtau(:,:,pt+2))      * ctau         ! dS/dtau, 2nd. order accurate
+      d2s(:,:,pt)= (ds1(:,:,pt+1) - ds1 (:,:,pt  )) * 2. * ctau         ! d2S/dtau2, 2nd. order accurate
+    end do
+    !d2s(:,:,1)  = d2s(:,:,2)                                            ! assume constant d2S/dtau2
+    !d1s(:,:,1)  = d1s(:,:,2)      - dtau(:,:,2) * d2s(:,:,2)            ! extrapolate to 1
+    !d2s(:,:,npt) = d2s(:,:,npt-1)                                       ! assume constant d2S/dtau2
+    !d1s(:,:,npt) = d1s(:,:,npt-1) + dtau(:,:,npt) * d2s(:,:,npt)        ! extrapolate to n
 
-      d2s(:,:,1)  = d2s(:,:,2)                                          ! assume constant d2S/dtau2
-      d1s(:,:,1)  = d1s(:,:,2)    - dtau(:,:,2)  * d2s(:,:,2)           ! extrapolate to 1
-      d2s(:,:,pt) = d2s(:,:,pt-1)                                       ! assume constant d2S/dtau2
-      d1s(:,:,pt) = d1s(:,:,pt-1) + dtau(:,:,pt) * d2s(:,:,pt)          ! extrapolate to n
-      !-----------------------------------------------------------------
-      !  Internal forward or reverse solutions
-      !-----------------------------------------------------------------
-
+    !-----------------------------------------------------------------
+    !  Internal forward or reverse solutions
+    !-----------------------------------------------------------------
     select case(self%rt_type)
     case(2)                                                             ! forward
-      q  (:,:,1) = I_in -   s(:,:,1)                                    ! initial forward Q
+      q  (:,:,1) = I_in - s(:,:,1)                                      ! initial forward Q
       do pt = 2, npt
         q(:,:,pt) = q(:,:,pt-1) * ex0(:,:,pt) - d1s(:,:,pt) &
-                  * ex1(:,:,pt) + d2s(:,:,pt) * ex2(:,:,pt)
-      end do
+                  * (1. - ex0(:,:,pt)) + d2s(:,:,pt) &
+                  * (1. - ex0(:,:,pt) - dtau(:,:,pt)*ex0(:,:,pt))
+      end do      
       self%packet_data(pck)%I_out = q(:,:,npt) + s(:,:,npt)
     case(3)                                                             ! reverse
-      q  (:,:,pt) = I_in -   s(:,:,pt)                                  ! initial reverse Q
+      q  (:,:,npt) = I_in - s(:,:,npt)                                  ! initial reverse Q
       do pt = npt-1, 1, -1
         q(:,:,pt) =   q(:,:,pt+1) * ex0(:,:,pt+1) + d1s(:,:,pt) &
-                  * ex1(:,:,pt+1) + d2s(:,:,pt  ) * ex2(:,:,pt+1)
+                  * (1. - ex0(:,:,pt+1)) + d2s(:,:,pt  ) &
+                  * (1. - ex0(:,:,pt+1) - dtau(:,:,pt+1)*ex0(:,:,pt+1))
       end do
       self%packet_data(pck)%I_out = q(:,:,1) + s(:,:,1)
+    case default
+      error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"     
     end select
-    call self%update_q (packet, q, ropac)
-    deallocate(ex0, ex1, ex2, ds1, d1s, d2s, ctau, s, dtau, &
-               idtau, q, I_in, ropac)
-    end associate
+
+    call self%update_q (packet, q, opac)
+    deallocate(dtau, ex0, ds1, d1s, d2s, s, q, opac, ctau, I_in)
     packet => packet%next
   end do
-  nullify (packet)
+  nullify (packet,rtd,cell)
   call trace_end (itimer)
 END SUBROUTINE solve_internal_integral_2nd
+
+!> =====================================================================
+!> Map cell data onto rays
+!> =====================================================================
+SUBROUTINE ray_vol_map (self, rays, nwb, in, out)
+  class(rt_internal_t) :: self
+  class(ray_t), pointer :: rays
+  integer :: p(3), ray, pt, nwb, wl
+  real, dimension(:,:,:)   , pointer, intent(out) :: out
+  real, dimension(:,:,:,:) , pointer, intent(in)  :: in
+  integer, dimension(:,:,:), pointer :: cell
+  !---------------------------------------------------------------------
+  cell => rays%coords
+  !if (nwb > 1) then
+    do ray = 1, size(out,1)
+      do pt = 2, size(out,3)-1                                          ! First and last points ommitted
+        p = cell(:,pt-1,ray)
+        !DIR$ SIMD
+        do wl=1,nwb
+          out(ray,wl,pt) = in(p(1),p(2),p(3),wl)
+        end do
+      end do
+      !DIR$ SIMD
+      do wl=1,nwb
+        out(ray,wl,1) = in(rays%fwd_coords(1,ray), &
+        rays%fwd_coords(2,ray), rays%fwd_coords(3,ray), wl)             ! Get the first point
+        out(ray,wl,size(out,3)) = in(rays%rev_coords(1,ray), &
+        rays%rev_coords(2,ray), rays%rev_coords(3,ray), wl)             ! Get the last point
+      end do
+    end do
+    
+  if (any(in==0)) then
+  error stop "ray vol map in=0"
+!  else
+!  print *,"ray_vol_map says OK for IN"
+  end if
+    if (any(out==0)) then
+    do pt = 1, size(out,3)
+    print *,"pt",pt, out(:,:,pt)
+    end do
+  error stop "ray vol map out=0"
+!  else
+!  print *,"ray_vol_map says OK for OUT"
+  end if
+END SUBROUTINE ray_vol_map
 
 !> =====================================================================
 !> Solution of RTE using the Feautrier formulation. Forward and reverse

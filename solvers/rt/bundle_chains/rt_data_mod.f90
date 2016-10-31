@@ -102,7 +102,6 @@ SUBROUTINE update_rt_data (self)
   call self%update_time
   nullify (rho, s)
   if (io%verbose>2) call self%check(2)
-
   call trace_end (itimer)
 END SUBROUTINE update_rt_data
 
