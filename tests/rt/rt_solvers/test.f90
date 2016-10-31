@@ -495,6 +495,128 @@ SUBROUTINE solve_2nd1 (self)
   end if
 END SUBROUTINE solve_2nd1
 
+SUBROUTINE solve_2nd12 (self)
+  class(rt_internal_t) :: self
+  class(ray_t), pointer :: packet => null()
+  integer, dimension(:,:,:), pointer   :: cell => null()
+  class(rt_data_t), pointer :: rtd
+  real, dimension(:,:,:), pointer :: ex0, ds1, d1s, d2s
+  real, dimension(:,:,:), pointer :: s, dtau, q, ropac, ctau
+  real, dimension(:,:,:,:), pointer :: ss, ddtau
+  real, dimension(:,:), pointer :: I_in
+  integer :: pt, npt, nrays, it, ray, wl, p(3), pck, nwb, ipk, iwb
+  integer :: itimer(4)=0
+  !---------------------------------------------------------------------
+  if (detailed_timer) then
+    itimer = 0
+    itimer_p = 0
+    itimer_q = 0
+    call timer%init
+  end if
+  call tic
+  nwb = self%nrun                                                       ! wl bins represent different tests here
+  packet => self%bundle%rays
+
+  rtd => self%my_rt_data
+  do pck = 1, self%bundle%n_packets
+    if (detailed_timer) then
+      call trace_begin('solve_2nd1-2: begin', itimer=itimer(1))
+    end if
+    cell => packet%coords
+    nrays = packet%n_rays
+    npt =  packet%n_points
+    ddtau => rtd%dtau
+    ss    => rtd%source
+
+    allocate( dtau(nrays, nwb, npt))
+    allocate(ex0  (nrays, nwb, npt))
+    allocate(ds1  (nrays, nwb, npt))
+    allocate(d1s  (nrays, nwb, npt))
+    allocate(d2s  (nrays, nwb, npt))
+    allocate(s    (nrays, nwb, npt))
+    allocate(q    (nrays, nwb, npt))
+    allocate(ctau (nrays, nwb,npt-2))
+    allocate(I_in (nrays, nwb))
+
+    if (detailed_timer) then
+      call trace_end (itimer(1))
+    end if
+
+    call self%copy_p (packet, ss, s)
+    call self%copy_p (packet, ddtau, dtau)
+
+    if (detailed_timer) then
+      call trace_begin('solve_2nd1-2: ex0,ex1', itimer=itimer(3))
+    end if
+
+    I_in = self%packet_data(pck)%I_in
+    
+!#if defined __INTEL_COMPILER
+!      ex0 = 2**(-dtau*1.44269504)                                       ! first exponential coeff
+!#else
+    !do pt = 2, npt
+    !  ex0(:,:,pt) = exp(-dtau(:,:,pt))                                   ! first exponential coeff
+    !  ds1(:,:,pt) = (s(:,:,pt) - s(:,:,pt-1)) / dtau(:,:,pt)             ! half-point centered dS/dtau
+    !end do
+    ex0(:,:,2:npt) = exp(-dtau(:,:,2:npt))                              ! first exponential coeff
+    ds1(:,:,2:npt) = (s(:,:,2:npt) - s(:,:,1:npt-1)) / dtau(:,:,2:npt)  ! half-point centered dS/dtau
+!#endif
+    if (detailed_timer) then
+      call trace_end (itimer(3))
+      call trace_begin('solve_2nd1-2: transfer', itimer=itimer(4))
+    end if
+
+    !-------------------------------------------------------------------
+    !  dS/dtau and d2S/dtau2
+    !-------------------------------------------------------------------
+    
+    ctau = 1. / (dtau(:,:,3:npt) + dtau(:,:,2:npt-1))
+    d1s(:,:,2:npt-1) = (ds1(:,:,3:npt) * dtau(:,:,2:npt-1) &
+                     + ds1(:,:,2:npt-1) * dtau(:,:,3:npt) ) * ctau      ! dS/dtau, 2nd. order accurate
+    d2s(:,:,2:npt-1) = (ds1(:,:,3:npt) - ds1(:,:,2:npt-1))* 2. * ctau   ! d2S/dtau2, 2nd. order accurate
+    d2s(:,:,1)  = d2s(:,:,2)                                            ! assume constant d2S/dtau2
+    d1s(:,:,1)  = d1s(:,:,2)    - dtau(:,:,2)  * d2s(:,:,2)             ! extrapolate to 1
+    d2s(:,:,npt) = d2s(:,:,npt-1)                                       ! assume constant d2S/dtau2
+    d1s(:,:,npt) = d1s(:,:,npt-1) + dtau(:,:,npt) * d2s(:,:,npt)        ! extrapolate to n
+
+    !-------------------------------------------------------------------
+    !  Internal forward or reverse solutions
+    !-------------------------------------------------------------------
+    select case(self%rt_type)
+    case(2)                                                             ! forward
+      q  (:,:,1) = I_in - s(:,:,1)                                      ! initial forward Q
+      do pt = 2, npt
+        q(:,:,pt) = q(:,:,pt-1) * ex0(:,:,pt) - d1s(:,:,pt) &
+                  * (1. - ex0(:,:,pt)) + d2s(:,:,pt) &
+                  * (1. - ex0(:,:,pt) - dtau(:,:,pt)*ex0(:,:,pt))
+      end do      
+      self%packet_data(pck)%I_out = q(:,:,npt) + s(:,:,npt)
+    case(3)                                                             ! reverse
+      q  (:,:,npt) = I_in - s(:,:,npt)                                  ! initial reverse Q
+      do pt = npt-1, 1, -1
+        q(:,:,pt) =   q(:,:,pt+1) * ex0(:,:,pt+1) + d1s(:,:,pt) &
+                  * (1. - ex0(:,:,pt+1)) + d2s(:,:,pt  ) &
+                  * (1. - ex0(:,:,pt+1) - dtau(:,:,pt+1)*ex0(:,:,pt+1))
+      end do
+      self%packet_data(pck)%I_out = q(:,:,1) + s(:,:,1)
+    case default
+      error stop "unknown rt type"     
+    end select
+    if (detailed_timer) then
+      call trace_end (itimer(4))
+    end if
+
+    call self%update_q (packet, q, ropac)
+    deallocate(ex0, ds1, d1s, d2s, ctau, s, dtau, q, I_in)
+    packet => packet%next
+  end do
+  nullify (packet,rtd,cell)
+  call toc('solve 2nd1-2', product(self%my_rt_data%n)*self%nrun)
+  if (detailed_timer) then
+    call timer%print
+  end if
+END SUBROUTINE solve_2nd12
+
 !> =============================================================================
 !> This solver formulation uses loops over points, and precomputes  ex0, ex1,
 !> and ex2 factors.
@@ -829,6 +951,15 @@ PROGRAM test
   rt_data%q = 0.0
   call rt_obj_fw%solve
   call rt_obj_rv%solve
+  rt_data%P = rt_data%source + rt_data%q
+  rt_data%error = (rt_data%q-rt_data%q0)/rt_data%P
+  do run =1,nrun
+    print *,'q0 run',run,maxval(abs(rt_data%error(:,:,:,run)))
+  end do
+  
+    rt_data%q = 0.0
+  call solve_2nd12(rt_obj_fw)
+  call solve_2nd12(rt_obj_Rv)
   rt_data%P = rt_data%source + rt_data%q
   rt_data%error = (rt_data%q-rt_data%q0)/rt_data%P
   do run =1,nrun
