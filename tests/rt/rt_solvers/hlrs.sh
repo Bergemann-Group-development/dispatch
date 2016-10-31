@@ -2,6 +2,7 @@
 #PBS -N rt_speed
 #PBS -l nodes=1:ppn=1
 #PBS -l walltime=0:02:00             
+#PBS -m e -M aake@nbi.ku.dk
 
 # Change to the direcotry that the job was submitted from
 cd $PBS_O_WORKDIR
@@ -20,5 +21,6 @@ export OMP_NUM_THREADS=1
 
 # Launch the parallel job to the allocated compute nodes
 make clean
-make COMPILER=ifort HW="-qopt-report -vec-threshold0" test.x
+#make COMPILER=ifort HW="-qopt-report -vec-threshold0" test.x
+make COMPILER=ifort HW="-qopt-report" test.x
 aprun -n $PBS_NUM_NODES -N 1 -d $OMP_NUM_THREADS -j 1 ./test.x | tee -a performance/hazelhen.log
