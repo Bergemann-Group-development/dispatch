@@ -1,14 +1,22 @@
 &io_params
- verbose=0
+ verbose=1
  do_trace=f
  do_debug=f
- do_output=t
- do_legacy = t
+ do_output=f
+ do_legacy=t
+/
+
+&out_params
+ end_time=0.009
+ out_time=0.001
+ print_time=0.0
+ guard_zones=f
+ time_derivs=f
 /
 
 &box_params
  size=1,1,1
- dims=4,4,4
+ dims=3,3,3
  origin=0.0,0.0,0.0
  !origin=-0.5,-0.5,-0.5
 /
@@ -17,7 +25,7 @@
  nt=5
  courant=0.2
  grace=0.1
- n=8,8,8
+ n=32,32,32
 /
 
 &rt_params
@@ -25,23 +33,27 @@
  cr_heating = 3.746e-24
 /
 
+&eos_params
+/
+
 &cartesian_ray_geometry_params
 ! along x axis
-nx = 1
-xti = 0.
-dx = 1
+nx = 2 xti = 0.,45. dx = 1
 ! along y axis
-ny = 1
-yti = 0.
-dy = 1
+ny = 2 yti = 0.,45. dy = 1
 ! along z axis
-nz = 1
-zti = 0.
-dz = 1
+nz = 2 zti = 0.,45. dz = 1
+! use space_diagonals?
+space_diagonals=t
+/
 
+&ray_geometry_params
+ n_dirs=1
+ thetas = 0
 /
 
 &microphysics_params
+ !source  = 'eos_lookup'
  source  = 'Stefan'
  n_wl_bins  = 1
 /
@@ -62,15 +74,6 @@ ibc_treatment = 'ignore'     ! do nothing, continue as if there was no IB
 cool_temp = 10   ! in kelvins
 hot_temp  = 2000
 /
-
-&out_params
- end_time=0.020
- out_time=0.001
-print_time=0.001
- guard_zones=f
- time_derivs=f
-/
-
 
 &mhd_params
  nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0

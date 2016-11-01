@@ -46,8 +46,8 @@ SUBROUTINE init (self)
   self%clump_pos = clump_pos
   self%clump_a = clump_a
   self%clump_b = clump_b
-  self%d0 = d0/scaling%d
-  self%t0 = t0/scaling%temp
+  self%d0 = d0 !/scaling%d
+  self%t0 = t0 !/scaling%temp
   self%clump_dfact = clump_dfact
 
   call trace_end
@@ -97,7 +97,6 @@ SUBROUTINE initial_conditions (self, patch)
         ! the clump is initially in pressure equilibrium with the ambient medium
         f(ix,iy,iz,2) = (log(p0) - log(f(ix,iy,iz,1)) * patch%gamma) &
                       * f(ix,iy,iz,1) / (patch%gamma - 1.0)
-
 
         ! momentum components
         f(ix,iy,iz,3) = 0.0

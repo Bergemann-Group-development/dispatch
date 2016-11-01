@@ -43,17 +43,17 @@ SUBROUTINE init_rt_data(self)
   self%li       = mhd_patch%li
   self%ui       = mhd_patch%ui
   self%n_cells  = mhd_patch%gn
-  self%position = mhd_patch%position                ! task position
+  self%position = mhd_patch%position                                    ! task position
   self%offset   = mhd_patch%offset
-  self%level    = mhd_patch%level                   ! task level
-  self%velocity = mhd_patch%velocity                ! task velocity
-  self%size     = mhd_patch%size                    ! task size
-  self%cell_ds  = mhd_patch%ds                      ! cell size
-  self%it       = mhd_patch%it                      ! task time
+  self%level    = mhd_patch%level                                       ! task level
+  self%velocity = mhd_patch%velocity                                    ! task velocity
+  self%size     = mhd_patch%size                                        ! task size
+  self%cell_ds  = mhd_patch%ds                                          ! cell size
+  self%it       = mhd_patch%it                                          ! task time
   self%end_time = self%mhd_patch%end_time
   self%out_time = self%mhd_patch%out_time
-  self%time     = -3                                ! initial time
-  self%dtime    = 1e-6                              ! initial dtime
+  self%time     = -3                                                    ! initial time
+  self%dtime    = 1e-6                                                  ! initial dtime
   if (mhd_patch%is_set(bits%static))    call self%set (bits%static)
   if (mhd_patch%is_set(bits%root_grid)) call self%set(bits%root_grid)
   !---------------------------------------------------------------------
@@ -62,17 +62,18 @@ SUBROUTINE init_rt_data(self)
   allocate(self%name)
   self%name       = 'rt_data'
   self%n_ray_dirs = ray_geometry%head%n_ray_dirs
-  allocate(self%opacity(n(1), n(2), n(3), nwb)) ! opacity table
-  allocate(self%source (n(1), n(2), n(3), nwb)) ! Source function table
-  
-  self%opacity = 0;   self%source = 0
+  allocate(self%q      (n(1), n(2), n(3), self%nt))                     ! net heating
+  allocate(self%opacity(n(1), n(2), n(3), nwb))                         ! opacity table
+  allocate(self%source (n(1), n(2), n(3), nwb))                         ! Source function table
+  self%q = 0.0; self%opacity = 0;   self%source = 0
   end associate
+  !
   if (io%verbose>1) then
     write (*,'(a,i5,3x,a,i5,3x,a,i3)') &
       '    rt_data_t%id:', self%id, &
       'mhd_patch%id:', self%mhd_patch%id
   end if
-  if (io%verbose>2) call self%check(1)             ! check if rt_data initialized ok
+  if (io%verbose>2) call self%check(1)                                  ! check if rt_data initialized ok
   call trace_end
 END SUBROUTINE init_rt_data
 
@@ -82,44 +83,36 @@ END SUBROUTINE init_rt_data
 SUBROUTINE update_rt_data (self)
   class(rt_data_t) :: self
   character(len=16):: stime
-  real, dimension(:,:,:), pointer :: rho, temp
+  real, dimension(:,:,:), pointer :: rho, s
   integer, save:: itimer=0
+  real::ot
 !-----------------------------------------------------------------------
   write (stime,'(1p,g16.6)') self%time
   call trace_begin('rt_t%update_rt_data', itimer=itimer)
 
   self%it  = self%mhd_patch%it
 
-  allocate (temp(size(self%source,1),size(self%source,2),size(self%source,3)))
-  associate  (l => self%li, u=>self%ui)
   rho => self%mhd_patch%mem(:,:,:,1,self%it,1)
-
-  temp(l(1):u(1),l(2):u(2),l(3):u(3)) = self%mhd_patch%gas_temperature_ngz() ! estimate temperature
-
-  self%opacity(l(1):u(1),l(2):u(2),l(3):u(3),:) = &
-  microphysics%opacity%solve (rho(l(1):u(1),l(2):u(2),l(3):u(3)),&
-  temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%n_wl_bins)  !FIXME : should pass wl_bins with info ! estimate opacity
-  self%source (l(1):u(1),l(2):u(2),l(3):u(3),:) = &
-  microphysics%source_fn%solve (temp(l(1):u(1),l(2):u(2),l(3):u(3)), microphysics%wl_bins) ! estimate the source function
-
-  ! add cosmic ray heating
-  call self%add_cr_heating(self%mhd_patch%time,temp(l(1):u(1),l(2):u(2),l(3):u(3)))  ! add cr heating
-  call self%update_time
-
+  s   => self%mhd_patch%mem(:,:,:,2,self%it,1)
+  associate (gam => self%mhd_patch%gamma, cs => self%mhd_patch%csound)
+  call microphysics%get_data(rho = rho, entropy = s, source_fn = self%source, &
+                             opacity = self%opacity, gam = gam, cs = cs)
   end associate
-  deallocate (temp)
-
+  ! add cosmic ray heating
+  call self%add_cr_heating(self%mhd_patch%time)  ! add cr heating
+  ot=self%time
+  call self%update_time
+  print *,'updated rt_data',self%id,'old time, new time',ot,self%time
+  nullify (rho, s)
   if (io%verbose>2) call self%check(2)
-
   call trace_end (itimer)
 END SUBROUTINE update_rt_data
 
 !> =============================================================================
 !> Optionally add cosmic ray heating -- generic if applied before 'apply_heating'
 !> =============================================================================
-SUBROUTINE add_cr_heating (self, time, temp)
+SUBROUTINE add_cr_heating (self, time)
   class(rt_data_t) :: self
-  real, dimension(:,:,:) :: temp
   real(kind=8) :: time
   integer :: l(3), u(3)
   ! ----------------------------------------------------------------------------
@@ -127,7 +120,7 @@ SUBROUTINE add_cr_heating (self, time, temp)
   l = self%mhd_patch%mesh%li
   u = self%mhd_patch%mesh%ui
   associate (rho => self%mhd_patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1), &
-               q => self%mhd_patch%rt_q%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it))
+               q => self%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it))
   q = q + rho * microphysics%cr_heating
   end associate
   call trace%end

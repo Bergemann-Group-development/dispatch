@@ -61,11 +61,11 @@ SUBROUTINE init_rt (self)
   class(rt_t) :: self
   !---------------------------------------------------------------------
   call self%task_t%init
-  allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
   self%nt = 5
   self%it = 1
   self%new = 2
   self%grace = 0.0
+  allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
 END SUBROUTINE init_rt
 
 !> =====================================================================

@@ -20,9 +20,9 @@ MODULE rt_internal_mod
 !-----------------------------------------------------------------------
   type,extends(rt_t), public :: rt_internal_t
     type (rt_internal_t), pointer :: next      => null()                ! list of internal task
-    type (rt_internal_t), pointer:: upstream   => null()                ! upstream task
-    type (rt_internal_t), pointer:: downstream => null()                ! downstream tasks
-    class (ray_bndl_t), pointer :: bundle
+    type (rt_internal_t), pointer :: upstream   => null()                ! upstream task
+    type (rt_internal_t), pointer :: downstream => null()                ! downstream tasks
+    class (ray_bndl_t),   pointer :: bundle     => null()
     type (rt_data_t),     pointer :: my_rt_data => null()
     class(internal_data_t), dimension(:), pointer :: packet_data => null() ! incoming intensities
     real, dimension(:,:), pointer :: I_in, I_out
@@ -105,7 +105,7 @@ SUBROUTINE init_rt_internal (self)
     self%solve => solve_internal_integral_2nd
   end if
 
-  self%dir_weight = 4.*pi/self%n_ray_dirs
+  self%dir_weight = 2.*pi/self%n_ray_dirs
 
   !---------------------------------------------------------------------
   ! Allocate memory slots.

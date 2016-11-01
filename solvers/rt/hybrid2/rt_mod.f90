@@ -7,18 +7,18 @@ MODULE rt_mod
   USE ray_geometry_v3_mod
   USE task_mod
   USE mesh_mod
-  USE experiment_mod
+  USE mhd_mod
   USE rt_boundary_mod
   USE microphysics_mod
   implicit none
   private
 !-----------------------------------------------------------------------
   type, extends(task_t), public :: rt_t
-    type (experiment_t), pointer :: mhd_patch  => null()  ! pointer to MHD task
-    class(link_t),       pointer :: mhd_link   => null()  ! pointer to MHD link to access it's nbors
-    class(link_t),       pointer :: my_nb_link => null()  ! pointer for corrections towards itself as nbor of internal rt task
-    class(link_t),       pointer :: link       => null()  ! pointer to self link in the task list
-    class(ray_bndl_t),   pointer :: bundle     => null()  ! pointer to list of ray bundles
+    class(mhd_t),       pointer :: mhd_patch  => null()                 ! pointer to MHD task
+    class(link_t),      pointer :: mhd_link   => null()                 ! pointer to MHD link to access it's nbors
+    class(link_t),      pointer :: my_nb_link => null()                 ! pointer for corrections towards itself as nbor of internal rt task
+    class(link_t),      pointer :: link       => null()                 ! pointer to self link in the task list
+    class (ray_bndl_t), pointer :: bundle     => null() 
     ! common items
     integer :: n_ray_dirs = 3
     integer :: geom = 1                                                 !cartesian = 1, spherical = 2, cylindrical = 3
@@ -26,29 +26,30 @@ MODULE rt_mod
     integer :: rt_type, li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment
     real(kind=8) :: cell_ds(3)
-    real(8):: offset(3)                 ! this is used to compute indices, locations
+    real(8):: offset(3)                                                 ! this is used to compute indices, locations
     !---------------------------------------------------------------------------
     ! The pointers below, and the procedure 'init_mesh' that sets them, are
     ! currently not used, but are to enable future implementations of RT solvers
     ! that only know about density, temperature, ! and the mesh.  Such solvers
     ! would not need a pointer to an experiment_t data type.
     !---------------------------------------------------------------------------
-    class(mesh_t),          pointer :: mesh    => null()                ! pointer to mesh
-    real, dimension(:,:,:), pointer :: density => null()                ! pointer to density
-    real, dimension(:,:,:), pointer :: temperature => null()            ! pointer to temperature
+    class(mesh_t),            pointer :: mesh        => null()          ! pointer to mesh
+    real, dimension(:,:,:),   pointer :: density     => null()          ! pointer to density
+    real, dimension(:,:,:),   pointer :: temperature => null()          ! pointer to temperature
+    real, dimension(:,:,:,:), pointer :: q           => null()          ! (x,y,z,nt)
   contains
+    procedure :: absolute_point_position
+    procedure :: cell2pos
     procedure :: find_upstream
     procedure :: init => init_rt
     procedure :: init_mesh
-    procedure :: update => update_rt
     procedure :: init_obc
-    procedure :: absolute_point_position
-    procedure :: ray2cell
-    procedure :: cell2pos
-    procedure :: pos2cell
-    procedure :: ray2pos
     procedure :: point_in_cell
+    procedure :: pos2cell
+    procedure :: ray2cell
+    procedure :: ray2pos
     procedure :: the_right_wall
+    procedure :: update => update_rt
     procedure :: update_time
   end type
 !-----------------------------------------------------------------------
@@ -62,10 +63,11 @@ SUBROUTINE init_rt (self)
   class(rt_t) :: self
   !---------------------------------------------------------------------
   call self%task_t%init
-  allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
+  self%nt = 5
   self%it = 1
   self%new = 2
   self%grace = 0.0
+  allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
 END SUBROUTINE init_rt
 
 !> =====================================================================
@@ -106,7 +108,7 @@ END SUBROUTINE set_periodic_BC
 FUNCTION the_right_wall (self, nbor, wall) result (answer)
   class(rt_t) :: self
   class (link_t),        pointer :: nbor
-  class (experiment_t), pointer :: mhd, nb_mhd
+  class (mhd_t), pointer :: mhd, nb_mhd
   integer :: wall(3), x
   real (kind=8) :: d(3)
   logical :: answer, allw(3)
@@ -114,19 +116,23 @@ FUNCTION the_right_wall (self, nbor, wall) result (answer)
   answer = .false.
   associate (my_type => self%MHD_link%task)
   SELECT type (my_type)
-  type is (experiment_t)
+  class is (mhd_t)
     mhd => my_type
   class is (rt_t)
     mhd => my_type%mhd_patch
+  class default
+    error stop '(1) in rt_mod::the_right_wall'
   END SELECT
   end associate
   !
   associate (nbor_type => nbor%task)
   SELECT type (nbor_type)
-  type is (experiment_t)
+  class is (mhd_t)
     nb_mhd => nbor_type
   class is (rt_t)
     nb_mhd => nbor_type%mhd_patch                                       ! if I got an RT task to test, switch to corresponding MHD patch
+  class default
+    error stop '(2) in rt_mod::the_right_wall'
   end SELECT
   end associate
   !
@@ -165,7 +171,7 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   class(rt_t)  :: self
   class(link_t), pointer :: nbor_l, nul
   class(link_t), pointer :: nbor, my_mhd_l, new
-  class(experiment_t), pointer :: my_task, nbor_task
+  class(mhd_t), pointer :: my_task, nbor_task
   integer :: found, wall(3)
 ! ----------------------------------------------------------------------
   call trace_begin('rt_t%find_upstream')
@@ -184,7 +190,7 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   do while (associated(nbor))
     associate (nbtask => nbor%task)
     SELECT type (nbtask)
-    class is (experiment_t)
+    class is (mhd_t)
       nbor_task => nbtask
       if (.not.nbor_is_my_child(my_task, nbor_task)) then
         ! if the nbor has a wall common with our upstream wall
@@ -229,7 +235,7 @@ END SUBROUTINE init_obc
 !> Check if 'nbor' is fully contained inside 'me'
 !> =====================================================================
 FUNCTION nbor_is_my_child (me, nbor) result (out)
-  class (experiment_t), pointer :: me, nbor
+  class (mhd_t), pointer :: me, nbor
   real(kind=8) :: me_li, me_ui, nbor_li, nbor_ui
   logical :: out
 !-----------------------------------------------------------------------
@@ -340,8 +346,9 @@ SUBROUTINE update_time(self)
   class(rt_t) :: self
 !-----------------------------------------------------------------------
   self%t(self%new) = self%mhd_patch%time
+  self%time  = self%mhd_patch%time + self%dtime*(self%rt_freq)
   self%dtime = self%mhd_patch%dtime * self%rt_freq
-  self%time  = self%mhd_patch%time + self%mhd_patch%dtime*(self%rt_freq-1)
+  
 END SUBROUTINE update_time
 
 END MODULE rt_mod

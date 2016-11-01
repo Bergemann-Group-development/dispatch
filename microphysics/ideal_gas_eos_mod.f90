@@ -5,6 +5,7 @@ MODULE eos_mod
   USE io_mod
   USE io_unit_mod
   USE mpi_mod
+  USE scaling_mod
   implicit none
   private
   logical, save:: first_time=.true.
