@@ -74,7 +74,7 @@ SUBROUTINE source_eos_lookup (self, rho, entr, wl, src)
   real, dimension(:,:,:,:) :: src
 !-----------------------------------------------------------------------
   call trace_begin('source_function_mod::source_eos_lookup',2)
-  call eos%lookup(rho=rho, s=entr,src=src)
+  call eos%lookup(rho=rho, ee=entr,src=src)
   call trace_end
 END SUBROUTINE source_eos_lookup
 

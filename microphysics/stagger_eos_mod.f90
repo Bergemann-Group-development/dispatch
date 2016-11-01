@@ -10,16 +10,26 @@ MODULE eos_mod
   !---------------------------------------------------------------------
   ! Table related parameters
   !---------------------------------------------------------------------
-  integer, parameter:: mr=101, ms=101, mv=8, mbox=4
-  real, parameter:: lnrmin=-6.0, lnrmax=6.0, smin=1.0, smax=10.
-  real, parameter:: dlnr=(lnrmax-lnrmin)/(mr-1), ds=(smax-smin)/(ms-1)
-  real, parameter:: clnr=1./dlnr, cs=1./ds
-  integer, allocatable, dimension(:,:,:):: table
+  ! real(kind=4):: eosxmin,ur,ul,ut,eps,tff,grv,abnd,dbox  
+  !mr=101, ms=101, mv=8, mbox=4
+  !real, parameter:: lnrmin=-6.0, lnrmax=6.0, eemin=1.0, eemax=10.
+  !real, parameter:: dlnr=(lnrmax-lnrmin)/(mr-1), dee=(smax-smin)/(ms-1)
+  !real, parameter:: clnr=1./dlnr, cs=1./ds
+  
   logical, save:: first_time=.true.
   !---------------------------------------------------------------------
   ! Public part
   !---------------------------------------------------------------------
   type, public:: eos_t
+    integer :: mbox = 4                                                 ! # of opacity bins
+    integer :: nvar = 8                                                 ! number of variables
+    real(4) :: dbox = 10.                                               ! opacity bin spacing
+    real(4) :: ul, ut, ur, eps, tff, grv, abnd                          ! some other basic parameters (??)
+    integer :: nlnrho, nee                                              ! $ of ln(rho), ee entries
+    real(4) :: lnrho_min, dlnrho                                        ! ln(rho) scale
+    real(4) :: ee_min, dee                                              ! ee scale (energy or entropy)
+    real(4) :: clnrho, cee                                              ! 1/dlnrho, 1/dee
+    real(4), allocatable, dimension(:,:,:):: table                      ! table
     integer :: eos_type = 2
     logical:: on = .false.
     procedure(lookup_stagger), pointer :: lookup => null()
@@ -35,21 +45,49 @@ CONTAINS
 SUBROUTINE init (self, solver)
   class (eos_t):: self
   character(len=8) :: solver
-  integer:: ie, ir, iv
+  real(4) :: xmin !, dbox, ul,ut,ur,eos,tff,grv,abnd
+  !real(4) :: lnrho_max, lnrho_min, dlnrho
+  !real(4) :: ee_max, ee_min, dee
+  !integer :: mbox, nlnrho, nee
+  character(len=64):: tablefile
+  logical:: do_eos
   namelist /eos_params/ do_eos, tablefile
   !---------------------------------------------------------------------
   !$omp critical (eos_cr)
   if (first_time) then
     first_time = .false.
     self%on = .true.
-    allocate (table(mr,me,mv))
-    do ir=1,mr
-    do ie=1,me
-    do iv=1,mv
-      table(ir,ie,iv) = lnrmin+dlnr*(ir-1) + eemin+dee*(ie-1) + iv
-    end do
-    end do
-    end do
+    tablefile = '../../data/eos/stagger_eos_square_table.dat'
+    rewind (io%input); read (io%input,eos_params)
+    if (io%master) write (*,eos_params)
+    !-----------------------------------------------------------------------------
+    ! Read the table file
+    !-----------------------------------------------------------------------------
+    open (io_unit%data, file=tablefile, form='unformatted', status='old', action='read')
+    read (io_unit%data) self%mbox, xmin, self%dbox, self%ul, &
+    self%ut, self%ur, self%eps, self%tff, self%grv, self%abnd
+    print *,'mbox, xmin, dbox, ul, ut, ur, eps, tff, grv, abnd'
+    print *, self%mbox, xmin, self%dbox, self%ul, &
+    self%ut, self%ur, self%eps, self%tff, self%grv, self%abnd
+    read (io_unit%data) self%nlnrho, self%lnrho_min, self%dlnrho
+    print *,'nlnrho, lnrho_min, dlnrho'
+    print *, self%nlnrho, self%lnrho_min, self%dlnrho
+    read (io_unit%data) self%nee, self%ee_min, self%dee
+    print *,'nee, ee_min, dee'
+    print *, self%nee, self%ee_min, self%dee
+    read (io_unit%data) self%nlnrho, self%lnrho_min, self%dlnrho
+    print *,'nlnrho, lnrho_min, dlnrho'
+    print *, self%nlnrho, self%lnrho_min, self%dlnrho
+    read (io_unit%data) self%nee, self%ee_min, self%dee
+    print *,'nee, ee_min, dee'
+    print *, self%nee, self%ee_min, self%dee
+    allocate (self%table(self%nee,self%nlnrho,self%nvar))
+    read (io_unit%data) self%table
+    self%clnrho=1./self%dlnrho
+    self%cee=1./self%dee
+    
+    print *,'nlnrho, lnrho_min, dlnrho'
+    print *, self%nlnrho, self%lnrho_min, self%dlnrho
     select case(solver)
     case('stagger ')
       self%lookup => lookup_stagger
@@ -75,16 +113,16 @@ END SUBROUTINE init
 !> ne - electron pressure; rk - rho*kappa; src - source function;
 !> gam - adiabatic index, csound - sound speed.
 !> =====================================================================
-SUBROUTINE lookup_stagger (self, rho, s, pg, tt, ne, rk, src, gam, csound)
+SUBROUTINE lookup_stagger (self, rho, ee, pg, tt, ne, rk, src, gam, csound)
   class (eos_t):: self
-  real, dimension(:,:,:), intent(in) :: rho, s
+  real, dimension(:,:,:), intent(in) :: rho, ee
   real, dimension(:,:,:),   optional :: pg, tt, ne, rk
   real, dimension(:,:,:,:), optional :: src
   real, optional :: gam, csound
   !.....................................................................
   real, dimension(size(rho,1),size(rho,2),size(rho,3)):: lnr
   real, dimension(size(rho,1)):: pr, pe, qr, qe
-  real, dimension(size(rho,1),4,mv):: f
+  real, dimension(size(rho,1),4,self%nvar):: f
   real, dimension(size(rho,1),4):: g
   integer, dimension(size(rho,1)):: ir, ie
   integer:: ix, iy, iz, iv
@@ -110,12 +148,12 @@ SUBROUTINE lookup_stagger (self, rho, s, pg, tt, ne, rk, src, gam, csound)
     !-------------------------------------------------------------------------
     ! Addresses and weights, vectorized
     !-------------------------------------------------------------------------
-    pr = 1.+(lnr(:,iy,iz)-lnrmin)*clnr
-    pe = 1.+( ee(:,iy,iz)-eemin )*cee
+    pr = 1.+(lnr(:,iy,iz)-self%lnrho_min)*self%clnrho
+    pe = 1.+( ee(:,iy,iz)-self%ee_min )*self%cee
     ir = pr
     ie = pe
-    ir = max(1,min(ir,mr))
-    ie = max(1,min(ie,me))
+    ir = max(1,min(ir,self%nlnrho))
+    ie = max(1,min(ie,self%nee))
     pr = pr-ir
     pe = pe-ie
     qr = 1.0-pr
@@ -128,11 +166,11 @@ SUBROUTINE lookup_stagger (self, rho, s, pg, tt, ne, rk, src, gam, csound)
     !  Table values, indirect addressing
     !---------------------------------------------------------------------------
     do ix=1,mx
-    do iv=1,mv
-      f(ix,1,iv) = table(ir(ix)  ,ie(ix)  ,iv)
-      f(ix,2,iv) = table(ir(ix)+1,ie(ix)  ,iv)
-      f(ix,3,iv) = table(ir(ix)  ,ie(ix)+1,iv)
-      f(ix,4,iv) = table(ir(ix)+1,ie(ix)+1,iv)
+    do iv=1,self%nvar
+      f(ix,1,iv) = self%table(ir(ix)  ,ie(ix)  ,iv)
+      f(ix,2,iv) = self%table(ir(ix)+1,ie(ix)  ,iv)
+      f(ix,3,iv) = self%table(ir(ix)  ,ie(ix)+1,iv)
+      f(ix,4,iv) = self%table(ir(ix)+1,ie(ix)+1,iv)
     end do
     end do
     if (skip) cycle

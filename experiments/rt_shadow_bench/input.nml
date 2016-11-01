@@ -33,6 +33,10 @@
  cr_heating = 3.746e-24
 /
 
+&eos_params
+
+/
+
 &cartesian_ray_geometry_params
 ! along x axis
 nx = 2 xti = 0.,45. dx = 1
@@ -50,6 +54,7 @@ space_diagonals=t
 /
 
 &microphysics_params
+ !source  = 'eos_lookup'
  source  = 'Stefan'
  n_wl_bins  = 1
 /

@@ -55,9 +55,9 @@ END SUBROUTINE init
 !> ne - electron pressure; rk - rho*kappa; src - source function;
 !> gam - adiabatic index, csound - sound speed.
 !> =====================================================================
-SUBROUTINE lookup_stagger (self, rho, s, pg, tt, ne, rk, src, gam, csound)
+SUBROUTINE lookup_stagger (self, rho, ee, pg, tt, ne, rk, src, gam, csound)
   class (eos_t):: self
-  real, dimension(:,:,:), intent(in) :: rho, s
+  real, dimension(:,:,:), intent(in) :: rho, ee
   real, dimension(:,:,:),   optional :: pg, tt, ne, rk
   real, dimension(:,:,:,:), optional :: src
   real, optional :: gam, csound
@@ -71,7 +71,7 @@ SUBROUTINE lookup_stagger (self, rho, s, pg, tt, ne, rk, src, gam, csound)
     if (gam==1.0) then
       pg = rho*csound**2
     else
-      pg = rho**gam*exp(s/rho*(gam-1))
+      pg = rho**gam*exp(ee/rho*(gam-1))
     end if
   end if
   !---------------------------------------------------------------------
@@ -88,7 +88,7 @@ SUBROUTINE lookup_stagger (self, rho, s, pg, tt, ne, rk, src, gam, csound)
         do y = 1,size(rho,2)
         do z = 1,size(rho,3)
         !print *,rho(x,y,z), gam, s(x,y,z), 'xyz', x, y, z
-        tt(x,y,z) = (rho(x,y,z)**gam*exp(s(x,y,z)/rho(x,y,z)*(gam-1)))/rho(x,y,z)
+        tt(x,y,z) = (rho(x,y,z)**gam*exp(ee(x,y,z)/rho(x,y,z)*(gam-1)))/rho(x,y,z)
         end do
         end do
         end do

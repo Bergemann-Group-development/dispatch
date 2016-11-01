@@ -10,6 +10,7 @@ SOLVER          = stagger2
 #RT_SOLVER       = hybrid
 #RT_SOLVER       = hybrid2
 RT_SOLVER       = bundle_chains
+#EOS             = stagger
 EOS             = ideal_gas
 EXEC            = dispatch.x
 # opacities: 
