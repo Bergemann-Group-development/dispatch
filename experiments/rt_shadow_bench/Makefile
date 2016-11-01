@@ -1,8 +1,8 @@
 
 # Option groups
 #OPTS = debug
-OPTS = full_debug
-#OPTS = optimized
+#OPTS = full_debug
+OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
@@ -10,8 +10,8 @@ SOLVER          = stagger2
 #RT_SOLVER       = hybrid
 #RT_SOLVER       = hybrid2
 RT_SOLVER       = bundle_chains
-EOS             = stagger
-#EOS             = ideal_gas
+#EOS             = stagger
+EOS             = ideal_gas
 EXEC            = dispatch.x
 # opacities: 
 # grey: bell_lin_1994, semenov_2003, rt_shadow_bench
