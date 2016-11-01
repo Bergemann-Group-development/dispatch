@@ -8,10 +8,10 @@
   ;-----------------------------------------------------------------------------
   ; For those variables in the table that are logarithmic, change to linear
   ;-----------------------------------------------------------------------------
-  default,infile ,'table_linear.dat'
-  default,outfile,'table_square.dat'
-  default, dlr_new, 0.1
-  default, dee_new, 0.01
+  infile = 'table_linear.dat'
+  outfile = 'table_square.dat'
+  dlr_new = 0.1
+  dee_new = 0.01
   eos_table, infile
   print,'dee:',dee[0]
   mlr=mrho

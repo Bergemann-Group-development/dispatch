@@ -54,9 +54,9 @@ space_diagonals=t
 /
 
 &microphysics_params
- !source  = 'eos_lookup'
- source  = 'Stefan'
- n_wl_bins  = 1
+ source  = 'eos_lookup'
+ !source  = 'Stefan'
+ n_wl_bins  = 4
 /
 
 ! Treatment of boundary conditions for RT solver. obc - outer boundaries, outside the simulation box.

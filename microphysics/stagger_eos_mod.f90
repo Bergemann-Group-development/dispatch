@@ -64,30 +64,20 @@ SUBROUTINE init (self, solver)
     ! Read the table file
     !-----------------------------------------------------------------------------
     open (io_unit%data, file=tablefile, form='unformatted', status='old', action='read')
-    read (io_unit%data) self%mbox, xmin, self%dbox, self%ul, &
+    read (io_unit%data) self%nvar, xmin, self%dbox, self%ul, &
     self%ut, self%ur, self%eps, self%tff, self%grv, self%abnd
     print *,'mbox, xmin, dbox, ul, ut, ur, eps, tff, grv, abnd'
     print *, self%mbox, xmin, self%dbox, self%ul, &
     self%ut, self%ur, self%eps, self%tff, self%grv, self%abnd
     read (io_unit%data) self%nlnrho, self%lnrho_min, self%dlnrho
-    print *,'nlnrho, lnrho_min, dlnrho'
-    print *, self%nlnrho, self%lnrho_min, self%dlnrho
     read (io_unit%data) self%nee, self%ee_min, self%dee
-    print *,'nee, ee_min, dee'
-    print *, self%nee, self%ee_min, self%dee
     read (io_unit%data) self%nlnrho, self%lnrho_min, self%dlnrho
-    print *,'nlnrho, lnrho_min, dlnrho'
-    print *, self%nlnrho, self%lnrho_min, self%dlnrho
+
     read (io_unit%data) self%nee, self%ee_min, self%dee
-    print *,'nee, ee_min, dee'
-    print *, self%nee, self%ee_min, self%dee
-    allocate (self%table(self%nee,self%nlnrho,self%nvar))
+    allocate (self%table(self%nlnrho,self%nee,self%nvar))
     read (io_unit%data) self%table
     self%clnrho=1./self%dlnrho
     self%cee=1./self%dee
-    
-    print *,'nlnrho, lnrho_min, dlnrho'
-    print *, self%nlnrho, self%lnrho_min, self%dlnrho
     select case(solver)
     case('stagger ')
       self%lookup => lookup_stagger
