@@ -110,9 +110,10 @@ SUBROUTINE set_stacksize (nv)
 #ifdef __INTEL_COMPILER
   call getenv ('OMP_STACKSIZE', envvar)
   if (envvar /= '' .and. io_unit%master .and. first_time) then
+    if (.not.printed) print '(1x,a)', &
+      '*************************************************************************************'
     print '(1x,a)', &
-    '*************************************************************************************', &
-    '* WARNING: environment variable OMP_STACKSIZE is set, but ifort uses KMP_STACKSIZE'
+      '* WARNING: environment variable OMP_STACKSIZE is set, but ifort uses KMP_STACKSIZE'
     printed = .true.
   end if
   stacksize = kmp_get_stacksize_s()
@@ -121,11 +122,16 @@ SUBROUTINE set_stacksize (nv)
   if (new_stacksize > stacksize) then
     call kmp_set_stacksize_s(new_stacksize)
     if (io_unit%master .and. first_time) then
-      print '(1x,a,i4,a)', &
-      '* WARNING! OpenMP stacksize has been reset to ', new_stacksize/1024**2, &
+      if (.not.printed) print '(1x,a)', &
+        '*************************************************************************************'
+      print '(1x,a,f5.1,a)', &
+      '* WARNING! OpenMP stacksize has been reset to ', new_stacksize/1024.**2, &
       ' MB to avoid segfault'
       printed = .true.
     end if
+  else if (first_time) then
+    print '(1x,a,f5.1,a)', 'OpenMP stacksize default:', stacksize/1024.**2, ' MB'
+    first_time = .false.
   endif
 #else
   call getenv ('OMP_STACKSIZE', envvar)
