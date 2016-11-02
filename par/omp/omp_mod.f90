@@ -18,6 +18,7 @@ MODULE omp_mod
     procedure:: init
     procedure, nopass:: mythread
     procedure, nopass:: numthreads => omp_numthreads
+    procedure, nopass:: set_stacksize
   end type
   logical, public, save:: omp_master
   integer, public, save:: omp_nthreads
@@ -87,6 +88,75 @@ INTEGER FUNCTION omp_numthreads()
   omp_numthreads = 1
 #endif
 END FUNCTION
+
+!> =============================================================================
+!> Adjust OMP_STACKSIZE according to number of passive scalars, with baseline
+!> being 4M for MHD
+!> =============================================================================
+SUBROUTINE set_stacksize (nv)
+#ifdef __INTEL_COMPILER
+#ifdef _OPENMP
+  USE omp_lib, only : kmp_set_stacksize_s, kmp_get_stacksize_s, kmp_size_t_kind
+  integer(kind=kmp_size_t_kind) :: stacksize, new_stacksize
+  real:: r
+#endif
+#endif
+  integer:: nv, recommended
+  character(len=16):: envvar
+  logical, save:: first_time=.true., printed=.false.
+  !-----------------------------------------------------------------------------
+  recommended = (4*1024**2*nv) / 8
+#ifdef _OPENMP
+#ifdef __INTEL_COMPILER
+  call getenv ('OMP_STACKSIZE', envvar)
+  if (envvar /= '' .and. io_unit%master .and. first_time) then
+    if (.not.printed) print '(1x,a)', &
+      '*************************************************************************************'
+    print '(1x,a)', &
+      '* WARNING: environment variable OMP_STACKSIZE is set, this assumes non-Intel MPI'
+    printed = .true.
+  end if
+  stacksize = kmp_get_stacksize_s()
+  new_stacksize = recommended
+  if (kind(r)==kind(1.0E0_8)) new_stacksize = new_stacksize * 2
+  if (new_stacksize > stacksize) then
+    call kmp_set_stacksize_s(new_stacksize)
+    if (io_unit%master .and. first_time) then
+      if (.not.printed) print '(1x,a)', &
+        '*************************************************************************************'
+      print '(1x,a,f5.1,a)', &
+      '* WARNING! OpenMP stacksize has been reset to ', new_stacksize/1024.**2, &
+      ' MB to avoid segfault'
+      printed = .true.
+    end if
+  else if (first_time) then
+    print '(1x,a,f5.1,a)', 'OpenMP stacksize default:', stacksize/1024.**2, ' MB'
+    first_time = .false.
+  endif
+#else
+  call getenv ('KMP_STACKSIZE', envvar)
+  if (envvar /= '' .and. io_unit%master .and. first_time) then
+    if (.not.printed) print '(1x,a)', &
+      '*************************************************************************************'
+    print '(1x,a)', &
+      '* WARNING: environment variable KMP_STACKSIZE is set, this assumes Intel MPI'
+    printed = .true.
+  end if
+  call getenv ('OMP_STACKSIZE', envvar)
+  if (envvar == '' .and. io_unit%master .and. first_time) then
+    print '(/,1x,a,/,1x,a,i9)', &
+    '*************************************************************************************', &
+    '* WARNING: environment variable OMP_STACKSIZE not set, recommended value =',recommended
+    printed = .true.
+  end if
+#endif
+#endif
+  if (printed .and. io_unit%master .and. first_time) then
+    first_time = .false.
+    print '(1x,a)', &
+    '*************************************************************************************'
+  end if
+END SUBROUTINE set_stacksize
 
 !> =============================================================================
 !> Attempt to determine the actual number of cores. If /proc/cpuinfo exists

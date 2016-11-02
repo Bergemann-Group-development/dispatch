@@ -354,6 +354,7 @@ SUBROUTINE init (self)
   ! Initialize and allocate the meshes, afterwards imposing the external values
   ! box size and position
   !-----------------------------------------------------------------------------
+  call omp%set_stacksize (self%nv)
   call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
                    p=self%position, origin=self%origin)
   ! intialise staggering indices; it is the responsibility of the *solver* to 
