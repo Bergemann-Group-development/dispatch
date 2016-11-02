@@ -781,16 +781,10 @@ SUBROUTINE solve_internal_integral_2nd (self)
     allocate(opac(nrays, nwb, npt+2))
     allocate(ctau(nrays, nwb))
     allocate(I_in(nrays, nwb))
-!    print *,"ray dir ID, bundle ID, pck id:", self%bundle%dir_ID, self%bundle%id, packet%id
-!    print *, "rt type, rt data ID", self%rt_type, rtd%id
-!    print *,"self%time, rtd%time", self%time, rtd%time
-!    print *,"axis, theta,phi", self%bundle%axis, self%bundle%theta, self%bundle%phi
-!print *,"getting source"
+
     call self%ray_vol_map (packet, nwb, c_source, s)                    ! Map source function onto rays
-!print *, "getting opac"
     call self%ray_vol_map (packet, nwb, c_opac, opac)                   ! Map opacities onto rays
     call self%dtau_staggered(opac, dtau)                                ! Calculate dtau
-
     I_in = self%packet_data(pck)%I_in
 
 #if defined __INTEL_COMPILER
@@ -815,10 +809,6 @@ SUBROUTINE solve_internal_integral_2nd (self)
                   + ds1(:,:,pt  ) * dtau(:,:,pt+2))      * ctau         ! dS/dtau, 2nd. order accurate
       d2s(:,:,pt)= (ds1(:,:,pt+1) - ds1 (:,:,pt  )) * 2. * ctau         ! d2S/dtau2, 2nd. order accurate
     end do
-    !d2s(:,:,1)  = d2s(:,:,2)                                            ! assume constant d2S/dtau2
-    !d1s(:,:,1)  = d1s(:,:,2)      - dtau(:,:,2) * d2s(:,:,2)            ! extrapolate to 1
-    !d2s(:,:,npt) = d2s(:,:,npt-1)                                       ! assume constant d2S/dtau2
-    !d1s(:,:,npt) = d1s(:,:,npt-1) + dtau(:,:,npt) * d2s(:,:,npt)        ! extrapolate to n
 
     !-----------------------------------------------------------------
     !  Internal forward or reverse solutions

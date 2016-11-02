@@ -1,9 +1,9 @@
 MODULE radiative_transfer_mod
   USE bits_mod
-  USE experiment_mod
   USE io_mod
   USE list_mod
-  USE mhd_mod
+  USE mesh_mod
+  USE mhd_rt_mod
   USE microphysics_mod
   USE omp_mod
   USE patch_mod
@@ -28,7 +28,8 @@ SUBROUTINE rt_setup (self)
   class(task_list_t),  pointer :: task_list                  ! local task list
   class(list_t),       pointer :: list
   class(link_t),       pointer :: t_list, link, rt_data_l, internal_l
-  class(experiment_t), pointer :: mhd_patch
+  class(mesh_t),       pointer :: mesh
+  class(mhd_rt_t),     pointer :: mhd_patch
   class(rt_data_t),    pointer :: rt_data
   class(rt_internal_t),pointer :: internal
   class(ray_dirs_t),   pointer :: ray_dir
@@ -45,7 +46,7 @@ SUBROUTINE rt_setup (self)
 
   associate (mhd => self%head%task)
   SELECT TYPE(mhd)
-    type is (experiment_t)
+    class is (mhd_rt_t)
     mhd_patch => mhd
   end SELECT
   end associate
@@ -62,10 +63,18 @@ SUBROUTINE rt_setup (self)
     end SELECT
   end if
 
-  call ray_geometry%init(1, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
-  ! IMPORTANT: change first constant into mhd_patch%mesh%mesh_type after merge with curvilinear coords
+  mesh => mhd_patch%mesh(1) 
+  select type(mesh)
+    type is(Cartesian_mesh)
+      call ray_geometry%init(1, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
+    type is(spherical_mesh)
+      call ray_geometry%init(2, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
+    type is(cylindrical_mesh)
+      call ray_geometry%init(3, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
+  end select
+  nullify(mesh)
 
-  print *, 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
+  write (io_unit%log,*) 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
 
   call microphysics%init
   call rt_boundary%init
@@ -83,9 +92,8 @@ SUBROUTINE rt_setup (self)
     !-------------------------------------------------------------------
     associate (mhd => t_list%task)
     SELECT TYPE(mhd)
-    type is (experiment_t)
+    class is (mhd_rt_t)
       mhd_patch => mhd
-      call mhd_patch%init_rt
       n_rt = 0
       !-----------------------------------------------------------------
       ! Construct the RT task for the RT data storage and update and add
@@ -97,11 +105,12 @@ SUBROUTINE rt_setup (self)
       rt_data%mhd_link  => t_list                                       ! Pointer to mhd_patch's link
       link%task         => rt_data                                      ! connect to RT task
       rt_data_l => link                                                 ! save the link
-      rt_data%link => link
+      rt_data%link => link                                              ! link to oneself link in the task list
       rt_data%rt_type = 0                                               ! set the rt type
-      rt_data%n_ray_dirs = ray_geometry%n_ray_dirs
-      rt_data%rt_freq    =  rt_freq                                     ! integer frequency, relative to MHD task
+      rt_data%n_ray_dirs = ray_geometry%n_ray_dirs                      ! self explanatory
+      rt_data%rt_freq    =  rt_freq                                     ! execution frequency, relative to MHD task
       call rt_data%init                                                 ! initialise
+      mhd_patch%rt_data => rt_data                                      ! link rt_data to mhd_patch
       n_rt = n_rt+1
       call connect_nbors(t_list,link)                                   ! connect rt_data and mhd task
       call task_list%append_link(link)                                  ! insert rt_data into the task list
@@ -219,63 +228,62 @@ END SUBROUTINE connect_corr_nbors
 !> =============================================================================
 SUBROUTINE add_upstream_nbors (self)
   class(list_t):: self
-  class(link_t),       pointer :: rt_list, my_mhd_nbor, nb_mhd, nb_mhd_prev
-  class(link_t),       pointer :: rt, my_mhd_l, nb_mhd_nbor, nb_rt_l, nb_mhd_l
-  class(rt_internal_t),pointer :: rtc, nb_rt
-  integer:: wall(3), n_connected, n_found, n_non_child
+  class(link_t), pointer :: rt_list     !, my_mhd_nbor, nb_mhd, nb_mhd_prev
+  class(link_t), pointer :: rt, try     !my_mhd_l, nb_mhd_nbor, nb_rt_l, nb_mhd_l
+  class(task_t), pointer :: this, that
+  class(rt_internal_t), pointer :: ithis, ithat
+  integer:: wall(3)
   !.....................................................................
   call trace_begin('radiative_transfer_mod%add_correction_nbors ')
   !$omp critical (list_cr)
   rt_list => self%head
 
-  do while (associated(rt_list))                                    ! loop through task_list
-    associate (this => rt_list%task)
-    SELECT TYPE (this)
-    type is (rt_internal_t)                                           ! select correction tasks
-      rt  => rt_list
-      rtc => this
-      n_connected = 0
-      n_found = 0
-      nullify(nb_mhd)
-      call rtc%find_upstream(nb_mhd, n_found)                           ! find upstream mhd nbors for this task
-      if (n_found < 1) then
-        call rtc%init_obc                                               ! if no upstream found - initialize it as an outer boundary
-      else
-        do while (associated(nb_mhd))                                   ! loop over upstream mhd patches
-          nb_mhd_nbor => nb_mhd%link%nbor
-          do while (associated(nb_mhd_nbor))
-            associate (nb_rt_nb => nb_mhd_nbor%task)
-            SELECT TYPE (nb_rt_nb)
-            type is (rt_internal_t)                                   ! select upstream rt correction tasks
-              nb_rt   => nb_rt_nb
-              nb_rt_l => nb_mhd_nbor
-
-              if ((rtc%dir_ID  == nb_rt%dir_ID).and.&                   ! check if they are the needed ones
-                  (rtc%rt_type == nb_rt%rt_type)) then
-                if (rtc%id/=nb_rt%id) then
-                  if (abs(rtc%level-nb_rt%level)<2) then                ! only +/- one level difference is concerned
-                    call connect_nbors (nb_rt_l%link, rt)               ! connect these correction tasks
-                    n_connected = n_connected+1
+  do while (associated(rt_list))                                        ! loop through task_list
+    this => rt_list%task
+    SELECT TYPE (this) 
+    type is (rt_internal_t)                                             ! select internal tasks
+      ithis => this
+      if (ithis%has_OB()) then
+        call ithis%init_obc
+        go to 9
+      end if
+      try => self%head
+      do while (associated(try))
+        that => try%task
+        if (that%id /= this%id) then
+          SELECT TYPE (that)
+          class is (rt_internal_t)
+            ithat => that
+            if ((ithat%dir_id == ithis%dir_id).and. &
+                (ithat%rt_type==ithis%rt_type)) then
+              select case(this%rt_type)                                     ! select the right upstream wall
+              case(2)
+                wall = this%bundle%lwall
+              case(3)
+                wall = this%bundle%uwall
+              end select
+              if (abs(ithis%level-ithat%level)<2) then
+                if (ithis%the_right_wall(try,wall)) then
+                  if (ithis%bundle_connects_to(ithat)) then
+                    call connect_nbors (try, rt_list)                         ! connect these correction tasks
+                    call ithis%add_upstream(try)
+                    go to 9
                   end if
                 end if
+              else
+                error stop "radiative_transfer_mod::add_upstream_nbors:: (1)"
               end if
-
-            end SELECT
-            end associate
-            nb_mhd_nbor => nb_mhd_nbor%next                             ! move to next upstream mhd nbor's nbor
-          end do
-          nb_mhd_prev => nb_mhd
-          nb_mhd => nb_mhd%next                                         ! move to next upstream nbor
-          deallocate(nb_mhd_prev)
-        end do
-      end if
+            end if
+          END SELECT
+        end if
+        try => try%next
+      end do
     end SELECT
-    end associate
-    rt_list => rt_list%next                                             ! move to next rt task
+9 rt_list => rt_list%next                                             ! move to next rt task
   end do
   !$omp end critical (list_cr)
   call trace_end
-
+ 
 END SUBROUTINE add_upstream_nbors
 
 

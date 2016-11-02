@@ -88,7 +88,7 @@ SUBROUTINE lookup_stagger (self, rho, ee, pg, tt, ne, rk, src, gam, csound)
         do x = 1,size(rho,1)
         do y = 1,size(rho,2)
         do z = 1,size(rho,3)
-        !print *,rho(x,y,z), gam, s(x,y,z), 'xyz', x, y, z
+        !print *,rho(x,y,z), gam, ee(x,y,z), 'xyz', x, y, z
         tt(x,y,z) = (rho(x,y,z)**gam*exp(ee(x,y,z)/rho(x,y,z)*(gam-1)))/rho(x,y,z)
         end do
         end do
