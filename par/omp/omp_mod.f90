@@ -102,32 +102,46 @@ SUBROUTINE set_stacksize (nv)
 #endif
 #endif
   integer:: nv, recommended
-  character(len=16):: stacksize
-  logical, save:: first_time=.true.
+  character(len=16):: envvar
+  logical, save:: first_time=.true., printed=.false.
   !-----------------------------------------------------------------------------
   recommended = (4*1024**2*nv) / 8
 #ifdef _OPENMP
 #ifdef __INTEL_COMPILER
+  call getenv ('OMP_STACKSIZE', envvar)
+  if (envvar /= '' .and. io_unit%master .and. first_time) then
+    print '(1x,a)', &
+    '*************************************************************************************', &
+    '* WARNING: environment variable OMP_STACKSIZE is set, but ifort uses KMP_STACKSIZE'
+    printed = .true.
+  end if
   stacksize = kmp_get_stacksize_s()
   new_stacksize = recommended
   if (kind(r)==kind(1.0E0_8)) new_stacksize = new_stacksize * 2
   if (new_stacksize > stacksize) then
-     call kmp_set_stacksize_s(new_stacksize)
-     if (io_unit%master) print *, &
-       'WARNING! OpenMP stacksize has been reset to ', new_stacksize/1024**2, &
-       'MB to avoid segfault'
+    call kmp_set_stacksize_s(new_stacksize)
+    if (io_unit%master .and. first_time) then
+      print '(1x,a,i4,a)', &
+      '* WARNING! OpenMP stacksize has been reset to ', new_stacksize/1024**2, &
+      ' MB to avoid segfault'
+      printed = .true.
+    end if
   endif
 #else
-  call getenv ('OMP_STACKSIZE', stacksize)
-  if (stacksize == '' .and. io_unit%master .and. first_time) then
-    first_time = .false.
-    print '(/,2x,a,/,2x,a,i9,a,/,2x,a,/)', &
+  call getenv ('OMP_STACKSIZE', envvar)
+  if (envvar == '' .and. io_unit%master .and. first_time) then
+    print '(/,1x,a,/,1x,a,i9)', &
     '*************************************************************************************', &
-    '* WARNING: environment variable OMP_STACKSIZE not set, recommended value =',recommended,' *', &
-    '*************************************************************************************'
+    '* WARNING: environment variable OMP_STACKSIZE not set, recommended value =',recommended
+    printed = .true.
   end if
 #endif
 #endif
+  if (printed .and. io_unit%master .and. first_time) then
+    first_time = .false.
+    print '(1x,a)', &
+    '*************************************************************************************'
+  end if
 END SUBROUTINE set_stacksize
 
 !> =============================================================================
