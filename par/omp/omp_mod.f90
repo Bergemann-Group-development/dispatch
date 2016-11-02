@@ -113,7 +113,7 @@ SUBROUTINE set_stacksize (nv)
     if (.not.printed) print '(1x,a)', &
       '*************************************************************************************'
     print '(1x,a)', &
-      '* WARNING: environment variable OMP_STACKSIZE is set, but ifort uses KMP_STACKSIZE'
+      '* WARNING: environment variable OMP_STACKSIZE is set, this assumes non-Intel MPI'
     printed = .true.
   end if
   stacksize = kmp_get_stacksize_s()
@@ -134,6 +134,14 @@ SUBROUTINE set_stacksize (nv)
     first_time = .false.
   endif
 #else
+  call getenv ('KMP_STACKSIZE', envvar)
+  if (envvar /= '' .and. io_unit%master .and. first_time) then
+    if (.not.printed) print '(1x,a)', &
+      '*************************************************************************************'
+    print '(1x,a)', &
+      '* WARNING: environment variable KMP_STACKSIZE is set, this assumes Intel MPI'
+    printed = .true.
+  end if
   call getenv ('OMP_STACKSIZE', envvar)
   if (envvar == '' .and. io_unit%master .and. first_time) then
     print '(/,1x,a,/,1x,a,i9)', &
