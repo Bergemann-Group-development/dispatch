@@ -18,6 +18,7 @@ MODULE omp_mod
     procedure:: init
     procedure, nopass:: mythread
     procedure, nopass:: numthreads => omp_numthreads
+    procedure, nopass:: set_stacksize
   end type
   logical, public, save:: omp_master
   integer, public, save:: omp_nthreads
@@ -87,6 +88,47 @@ INTEGER FUNCTION omp_numthreads()
   omp_numthreads = 1
 #endif
 END FUNCTION
+
+!> =============================================================================
+!> Adjust OMP_STACKSIZE according to number of passive scalars, with baseline
+!> being 4M for MHD
+!> =============================================================================
+SUBROUTINE set_stacksize (nv)
+#ifdef __INTEL_COMPILER
+#ifdef _OPENMP
+  USE omp_lib, only : kmp_set_stacksize_s, kmp_get_stacksize_s, kmp_size_t_kind
+  integer(kind=kmp_size_t_kind) :: stacksize, new_stacksize
+  real:: r
+#endif
+#endif
+  integer:: nv, recommended
+  character(len=16):: stacksize
+  logical, save:: first_time=.true.
+  !-----------------------------------------------------------------------------
+  recommended = (4*1024**2*nv) / 8
+#ifdef _OPENMP
+#ifdef __INTEL_COMPILER
+  stacksize = kmp_get_stacksize_s()
+  new_stacksize = recommended
+  if (kind(r)==kind(1.0E0_8)) new_stacksize = new_stacksize * 2
+  if (new_stacksize > stacksize) then
+     call kmp_set_stacksize_s(new_stacksize)
+     if (io_unit%master) print *, &
+       'WARNING! OpenMP stacksize has been reset to ', new_stacksize/1024**2, &
+       'MB to avoid segfault'
+  endif
+#else
+  call getenv ('OMP_STACKSIZE', stacksize)
+  if (stacksize == '' .and. io_unit%master .and. first_time) then
+    first_time = .false.
+    print '(/,2x,a,/,2x,a,i9,a,/,2x,a,/)', &
+    '*************************************************************************************', &
+    '* WARNING: environment variable OMP_STACKSIZE not set, recommended value =',recommended,' *', &
+    '*************************************************************************************'
+  end if
+#endif
+#endif
+END SUBROUTINE set_stacksize
 
 !> =============================================================================
 !> Attempt to determine the actual number of cores. If /proc/cpuinfo exists
