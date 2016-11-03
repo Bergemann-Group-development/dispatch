@@ -74,7 +74,8 @@ SUBROUTINE rt_setup (self)
   end select
   nullify(mesh)
 
-  write (io_unit%log,*) 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
+  write (io_unit%log,*) 'Ray geometry: n_ray_dirs:', &
+  ray_geometry%head%n_ray_dirs
 
   call microphysics%init
   call rt_boundary%init

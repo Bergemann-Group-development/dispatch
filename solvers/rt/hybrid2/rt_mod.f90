@@ -157,10 +157,6 @@ LOGICAL FUNCTION the_right_wall (self, nbor, wall)
 
     end do
   end if
-  if (self%id == 1181) then
-  print *, wall, mhd%position, nb_mhd%position
-  print *, allw
-  end if
   if (all(allw)) the_right_wall = .true.
   nullify (mhd, nb_mhd)
 

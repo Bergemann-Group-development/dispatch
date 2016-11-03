@@ -589,7 +589,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
   real, dimension(:,:), pointer :: I_in, ctau
   integer :: pt, npt, it, ray, wl, p(3), pck, nwb, ipk, iwb, nrays
   real    :: temp, dir_wgt
-  integer, save :: itimer=0
+  integer, save :: itimer=0, itimer2=0
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_t%integral_2nd', itimer=itimer)
 
@@ -616,12 +616,13 @@ SUBROUTINE solve_internal_integral_2nd (self)
     allocate(opac(nrays, nwb, npt+2))
     allocate(ctau(nrays, nwb))
     allocate(I_in(nrays, nwb))
-
+    call trace_begin('rt_t%update_rt_internal%ray_vol_map ',itimer=itimer2)
     call self%ray_vol_map (packet, nwb, c_source, s)                    ! Map source function onto rays
     call self%ray_vol_map (packet, nwb, c_opac, opac)                   ! Map opacities onto rays
+    call trace_end (itimer2)
     call self%dtau(opac, dtau)                                          ! Calculate dtau
     I_in = self%packet_data(pck)%I_in
-
+    
 #if defined __INTEL_COMPILER
     do pt = 1, npt+1
       ex0(:,:,pt) = 2**(-dtau(:,:,pt+1)*1.44269504)                     ! first exponential coeff
@@ -763,13 +764,12 @@ END SUBROUTINE update_q
 !> =====================================================================
 !> Check if the rays in self match up in the upstream with the rays in other
 !> =====================================================================
-FUNCTION bundle_connects_to (self, other) RESULT (out)
+LOGICAL FUNCTION bundle_connects_to (self, other)
   class (rt_internal_t)          :: self
   class (rt_internal_t), pointer :: other
   integer :: pp, fwd(3), rev(3)
-  logical :: out
   !.............................................................................
-  out = .false.
+  bundle_connects_to = .false.
   if (.not.self%mhd_patch%overlaps(other%mhd_patch)) return             ! no overlap
   if (self%is_set(bits%has_BC+bits%boundary))        return             ! boundary patch
   
@@ -792,7 +792,7 @@ FUNCTION bundle_connects_to (self, other) RESULT (out)
     rev = other%bundle%rays%fwd_coords(:,pp)                             
   end select
   
-  if (all(other%pos2cell(self%cell2pos(fwd))==rev)) out = .true.        
+  if (all(other%pos2cell(self%cell2pos(fwd))==rev)) bundle_connects_to = .true.        
    
 END function bundle_connects_to
 

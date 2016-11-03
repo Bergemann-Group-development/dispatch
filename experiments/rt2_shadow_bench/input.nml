@@ -25,7 +25,7 @@
  nt=5
  courant=0.2
  grace=0.1
- n=32,32,32
+ n=21,21,21
 /
 
 &rt_params
