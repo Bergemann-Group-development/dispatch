@@ -285,9 +285,13 @@ END FUNCTION point_in_cell
 SUBROUTINE update_time(self)
   class(rt_t) :: self
 !-----------------------------------------------------------------------
-  self%t(self%new) = self%mhd_patch%time
-  self%dtime = self%mhd_patch%dtime * self%rt_freq
-  self%time  = self%mhd_patch%time + self%mhd_patch%dtime*(self%rt_freq-1)
+  if (self%time < 0) then
+    self%t(self%new) = self%mhd_patch%time
+    self%time  = self%mhd_patch%time + self%dtime*(self%rt_freq)
+  else
+    self%dtime = self%mhd_patch%dtime * self%rt_freq
+    call self%rotate
+  end if
 END SUBROUTINE update_time
 
 END MODULE rt_mod
