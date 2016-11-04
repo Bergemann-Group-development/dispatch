@@ -101,6 +101,7 @@ SUBROUTINE execute (self)
   call mpi%barrier ('task_list_mod::execute')
   call tic
   call timer%print
+  call timer%init
   !$omp parallel
   do while (self%na > 0)
     call self%update
@@ -177,6 +178,8 @@ SUBROUTINE update (self)
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
     call task%update                                    ! update the task
+    !$omp atomic
+    mpi_mesg%n_update = mpi_mesg%n_update+1
     !----------------------------------------------------------------------------
     ! The rotate procedure in the generic patch_t module is responsible for
     ! updating the time, and rotating the memory slots where information about
@@ -349,7 +352,7 @@ SUBROUTINE unpack (self, mesg)
     !---------------------------------------------------------------------------
     ! Unpack a patch message (which includes swapping the roles of boundary bits).
     ! Since an already existing patch may, at any one time, be under investigation
-    ! by check_nbors, it must be protected by a critical region (or an OMP 
+    ! by check_nbors, it must be protected by a critical region (or an OMP
     ! lock) while it is being updated here
     !---------------------------------------------------------------------------
     call task%unpack (mesg%buffer)

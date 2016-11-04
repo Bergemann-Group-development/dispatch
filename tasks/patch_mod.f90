@@ -357,7 +357,7 @@ SUBROUTINE init (self)
   call omp%set_stacksize (self%nv)
   call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
                    p=self%position, origin=self%origin)
-  ! intialise staggering indices; it is the responsibility of the *solver* to 
+  ! intialise staggering indices; it is the responsibility of the *solver* to
   ! assign non-zero values to this variable (if any).
   do i=1,3
     allocate(self%mesh(i)%h(self%nv))
@@ -526,11 +526,11 @@ FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
     ppCart = cpos - self%position ! Cart. coords to centre of patch's coord. system
     pp = CartesianToCylindrical(ppCart(1), ppCart(2), ppCart(3))
   end if
-  
+
   intermezzo = (pp(idir) - self%origin(idir)) / self%ds(idir) + self%li(idir) &
              - merge(0.5 + h,0.0,self%n(idir)>1)
   out = intermezzo
-  
+
 END FUNCTION myfloatindex_scalar
 
 !> =============================================================================
@@ -947,7 +947,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     if (self%time>=self%print_next) then
       if (self%print_time > 0) &
         self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
-      if (io%verbose<1 .and. self%id/=1) return
+      if (io%verbose<0 .and. self%id/=1) return
       nv = 1
       if (io%verbose>2) nv = self%nv
       do iv=1,nv
@@ -957,20 +957,26 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
           self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
           self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-          real(n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual), self%status
+          real(n_update), ntask, nq, &
+          mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, mpi_mesg%n_send, mpi_mesg%n_recv, &
+          self%is_set(bits%boundary), self%is_set(bits%virtual)
       end do
-      if (io%verbose<2 .and. self%id/=1) return
-      do iv=1,nv
-        1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,2x,e10.2,2i5,2l2,o12)
-        if (io%master .or. self%id==1) &
-          print 1, &
-          'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, self%dtime, self%u_max, &
-          self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-          self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-          self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-          self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-          real(n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual), self%status
-      end do
+      if (io%verbose>1 .or. self%id==1) then
+        do iv=1,nv
+          1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,2x,e10.2,2i5,i6,4i5,2l2,o12)
+          if (io%master .or. self%id==1) &
+            print 1, &
+            'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, self%dtime, self%u_max, &
+            self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+            self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+            self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+            self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+            real(n_update), ntask, nq, &
+            mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, mpi_mesg%n_send, mpi_mesg%n_recv, &
+            self%is_set(bits%boundary), self%is_set(bits%virtual)
+        end do
+      end if
+      mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0; mpi_mesg%n_send=0; mpi_mesg%n_recv=0
     end if
   end if
 END SUBROUTINE info

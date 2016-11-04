@@ -62,9 +62,10 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
   write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
   if (io%verbose>=verbose) then
     wc = wallclock()
-    write(io_unit%log,fmt) omp_mythread, wc, trim(id)//' begin'
-    flush(io_unit%log)
-    if (io%master) then
+    if (io%omp_trace) then
+      write(io_unit%log,fmt) omp_mythread, wc, trim(id)//' begin'
+      flush(io_unit%log)
+    else if (io%master) then
       write(io%output,fmt) omp_mythread, wc, trim(id)//' begin'
       flush(io%output)
     end if
@@ -86,9 +87,10 @@ SUBROUTINE trace_tag (id)
     write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
     wc = wallclock()
     level  = max(level-1,1)
-    write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
-    flush(io_unit%log)
-    if (io%master) then
+    if (io%omp_trace) then
+      write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
+      flush(io_unit%log)
+    else if (io%master) then
       write(io%output,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
       flush(io%output)
     end if
@@ -114,9 +116,10 @@ SUBROUTINE trace_end (itimer)
   if (io%verbose>=verbose) then
     write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
     wc = wallclock()
-    write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' end'
-    flush(io_unit%log)
-    if (io%master) then
+    if (io%omp_trace) then
+      write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' end'
+      flush(io_unit%log)
+    else if (io%master) then
       write(io%output,fmt) omp_mythread, wc, trim(tracing(level))//' end'
       flush(io%output)
     end if

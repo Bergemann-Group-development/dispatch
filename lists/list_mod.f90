@@ -6,6 +6,7 @@ MODULE list_mod
   USE omp_mod
   USE omp_lock_mod
   USE mpi_mod
+  USE mpi_mesg_mod
   USE trace_mod
   USE bits_mod
   USE task_mod
@@ -399,7 +400,9 @@ SUBROUTINE check_ready (self, link, set_debug)
   integer, save:: itimer=0
   !.............................................................................
   if (link%task%is_set (bits%virtual+bits%external)) return
-  call trace_begin('list_mod::check_ready '//self%name, 2, itimer)
+  call trace_begin('list_mod::check_ready '//self%name, 2, itimer=itimer)
+  !$omp atomic
+  mpi_mesg%n_check = mpi_mesg%n_check+1
   if (present(set_debug)) then
     debug = set_debug
   else
@@ -949,6 +952,7 @@ SUBROUTINE queue_by_time (self, this)
   !-----------------------------------------------------------------------------
   if (this%task%is_set(bits%virtual) .or. this%task%has_finished()) return
   call trace_begin ('list_mod::queue_by_time ')
+  mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
   ! Lock the queue while inserting the task
   !-----------------------------------------------------------------------------
