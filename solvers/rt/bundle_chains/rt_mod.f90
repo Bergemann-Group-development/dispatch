@@ -103,15 +103,15 @@ END SUBROUTINE set_periodic_BC
 !> the triple index 'wall', where e.g. the right and left x-walls are
 !> indicated by wall(1) = +1/-1.
 !> =====================================================================
-FUNCTION the_right_wall (self, nbor, wall) result (answer)
+LOGICAL FUNCTION the_right_wall (self, nbor, wall)
   class(rt_t) :: self
   class (link_t),        pointer :: nbor
   class (mhd_t), pointer :: mhd, nb_mhd
   integer :: wall(3), x
   real (kind=8) :: d(3)
-  logical :: answer, allw(3)
+  logical :: allw(3)
 !-----------------------------------------------------------------------
-  answer = .false.
+  the_right_wall = .false.
   associate (my_type => self%MHD_link%task)
   SELECT type (my_type)
   class is (mhd_t)
@@ -156,7 +156,7 @@ FUNCTION the_right_wall (self, nbor, wall) result (answer)
     end do
   end if
 
-  if (all(allw)) answer = .true.
+  if (all(allw)) the_right_wall = .true.
   nullify (mhd, nb_mhd)
 
 END FUNCTION the_right_wall
@@ -285,9 +285,13 @@ END FUNCTION point_in_cell
 SUBROUTINE update_time(self)
   class(rt_t) :: self
 !-----------------------------------------------------------------------
-  self%t(self%new) = self%mhd_patch%time
-  self%dtime = self%mhd_patch%dtime * self%rt_freq
-  self%time  = self%mhd_patch%time + self%mhd_patch%dtime*(self%rt_freq-1)
+  if (self%time < 0) then
+    self%t(self%new) = self%mhd_patch%time
+    self%time  = self%mhd_patch%time + self%dtime*(self%rt_freq)
+  else
+    self%dtime = self%mhd_patch%dtime * self%rt_freq
+    call self%rotate
+  end if
 END SUBROUTINE update_time
 
 END MODULE rt_mod

@@ -89,8 +89,6 @@ SUBROUTINE update_rt_data (self)
   write (stime,'(1p,g16.6)') self%time
   call trace_begin('rt_t%update_rt_data', itimer=itimer)
 
-  self%it  = self%mhd_patch%it
-
   rho => self%mhd_patch%mem(:,:,:,1,self%it,1)
   s   => self%mhd_patch%mem(:,:,:,2,self%it,1)
   associate (gam => self%mhd_patch%gamma, cs => self%mhd_patch%csound)

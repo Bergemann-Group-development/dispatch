@@ -31,7 +31,7 @@ MODULE rt_internal_mod
     integer :: bundle_ID, dir_ID
     integer :: lwall(3)
     real :: dir_weight, ray_ds
-    procedure (solve_internal_integral_1st), pointer :: solve => null()
+    procedure (solve_internal_integral_2nd), pointer :: solve => null()
   contains
     procedure :: dtau_staggered
     procedure :: dtau_centered
@@ -281,7 +281,7 @@ END FUNCTION needs_BC
 FUNCTION bundle_connects_to (self, other) RESULT (out)
   class (rt_internal_t)          :: self
   class (rt_internal_t), pointer :: other
-  integer, dimension(3) :: di, fwd, rev
+  integer :: pp, di(3), fwd(3), rev(3)
   logical :: out
   !.............................................................................
   out = .false.
@@ -289,16 +289,39 @@ FUNCTION bundle_connects_to (self, other) RESULT (out)
   if (self%mhd_patch%id == other%mhd_patch%id)       return             ! same patch
   if (.not.self%mhd_patch%overlaps(other%mhd_patch)) return             ! no overlap
   if (self%is_set(bits%has_BC+bits%boundary))        return             ! boundary patch
-  di = nint(self%mhd_patch%distance(other%mhd_patch)/self%mhd_patch%ds) ! index shift
-  rev =  self%bundle%rays%rev_coords(:,1) -  self%bundle%dstep          ! output from self
-  fwd = other%bundle%rays%fwd_coords(:,1)                               ! input to other
-  if (all(di+rev==fwd)) out = .true.                                    ! perfect match
-  if (io%verbose > 2) then
-    write (io_unit%log,'(2i5,l3,5(3x,a,3i4))') &
-      self%id, other%id, &
-      out, 'di:',di, 'rev:',rev, 'fwd:',fwd, &
-      'step:',self%bundle%dstep, 'BC_dir:',self%BC_direction
-  end if
+  !di = nint(self%mhd_patch%distance(other%mhd_patch)/self%mhd_patch%ds) ! index shift
+  !rev =  self%bundle%rays%rev_coords(:,1) -  self%bundle%dstep          ! output from self
+  !fwd = other%bundle%rays%fwd_coords(:,1)                               ! input to other
+  !if (all(di+rev==fwd)) out = .true.                                    ! perfect match
+  !if (io%verbose > 2) then
+  !  write (io_unit%log,'(2i5,l3,5(3x,a,3i4))') &
+  !    self%id, other%id, &
+  !    out, 'di:',di, 'rev:',rev, 'fwd:',fwd, &
+  !    'step:',self%bundle%dstep, 'BC_dir:',self%BC_direction
+  !end if
+  
+    out = .false. 
+  select case(self%rt_type)
+  case(2)
+    fwd =  self%bundle%rays%fwd_coords(:,1) + self%bundle%dstep         ! testing only one ray in the bundle for now... For AMR: needs to run
+    if (self%bundle%l_chain <2) then                                    ! through all the rays and if ANY has a match - add to the list...
+      pp = 1
+    else
+      pp = self%bundle%ray_chain_fw(1)
+    end if      
+    rev = other%bundle%rays%rev_coords(:,pp)                             
+  case(3)
+    fwd =  self%bundle%rays%rev_coords(:,1) - self%bundle%dstep   
+    if (self%bundle%l_chain <2) then
+      pp = 1
+    else
+      pp = self%bundle%ray_chain_rev(1)      
+    end if 
+    rev = other%bundle%rays%fwd_coords(:,pp)                             
+  end select
+  if (all(other%pos2cell(self%cell2pos(fwd))==rev)) out = .true.   
+  
+  
 END function bundle_connects_to
 
 !> =====================================================================
@@ -527,7 +550,7 @@ SUBROUTINE get_same_static_chain (self)
   !---------------------------------------------------------------------
   call trace_begin('rt_corrections_mod::get_same_static_chain')
   
-  select case(self%rt_type)
+    select case(self%rt_type)
   case(2)
   mbid = self%bundle%next_chain_bndl_rev
   nb_ray_pos => self%bundle%ray_chain_rev
@@ -535,36 +558,17 @@ SUBROUTINE get_same_static_chain (self)
   mbid = self%bundle%next_chain_bndl_fw
   nb_ray_pos => self%bundle%ray_chain_fw
   end select
+  rt_nb => self%upstream
   
-  fnd = .false.
+  select case(self%bundle%l_chain)
+  case(:2)
+    self%I_in = rt_nb%I_out
+  case default
+    do ray = 1, self%bundle%n_rays
+      self%I_in(ray,:) = rt_nb%I_out(nb_ray_pos(ray),:)
+    end do
+  end select
   nullify(rt_nb)
-  nbor => self%link%nbor
-  do while (associated(nbor).and..not.fnd)
-    associate (rt => nbor%task)
-    SELECT type (rt)
-    class is (rt_internal_t)
-    if (rt%bundle%ID == mbid) then
-    rt_nb => rt
-    fnd = .true.
-    end if
-    end SELECT
-    end associate
-  end do
-  
-  if (fnd) then
-    select case(self%bundle%l_chain)
-    case(:2)
-      self%I_in = rt_nb%I_out
-    case default
-      do ray = 1, self%bundle%n_rays
-        self%I_in(ray,:) = rt_nb%I_out(nb_ray_pos(ray),:)
-      end do
-    end select
-  else
-    error stop "get_same_static_chain: right nbor not found"
-  end if
-  
-  nullify(nb_ray_pos, rt_nb, nbor)
   call trace_end
 END SUBROUTINE get_same_static_chain
 
@@ -754,7 +758,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
   real, dimension(:,:), pointer :: I_in, ctau
   integer :: pt, npt, it, ray, wl, p(3), pck, nwb, ipk, iwb, nrays
   real    :: temp, dir_wgt
-  integer, save :: itimer=0
+  integer, save :: itimer=0, itimer2=0
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_t%integral_2nd', itimer=itimer)
 
@@ -781,18 +785,12 @@ SUBROUTINE solve_internal_integral_2nd (self)
     allocate(opac(nrays, nwb, npt+2))
     allocate(ctau(nrays, nwb))
     allocate(I_in(nrays, nwb))
-!    print *,"ray dir ID, bundle ID, pck id:", self%bundle%dir_ID, self%bundle%id, packet%id
-!    print *, "rt type, rt data ID", self%rt_type, rtd%id
-!    print *,"self%time, rtd%time", self%time, rtd%time
-!    print *,"axis, theta,phi", self%bundle%axis, self%bundle%theta, self%bundle%phi
-!print *,"getting source"
+call trace_begin('rt_internal_t%ray_vol_map', itimer=itimer2)
     call self%ray_vol_map (packet, nwb, c_source, s)                    ! Map source function onto rays
-!print *, "getting opac"
     call self%ray_vol_map (packet, nwb, c_opac, opac)                   ! Map opacities onto rays
     call self%dtau_staggered(opac, dtau)                                ! Calculate dtau
-
     I_in = self%packet_data(pck)%I_in
-
+call trace_end (itimer2)
 #if defined __INTEL_COMPILER
     do pt = 1, npt+1
       ex0(:,:,pt) = 2**(-dtau(:,:,pt+1)*1.44269504)                     ! first exponential coeff
@@ -815,10 +813,6 @@ SUBROUTINE solve_internal_integral_2nd (self)
                   + ds1(:,:,pt  ) * dtau(:,:,pt+2))      * ctau         ! dS/dtau, 2nd. order accurate
       d2s(:,:,pt)= (ds1(:,:,pt+1) - ds1 (:,:,pt  )) * 2. * ctau         ! d2S/dtau2, 2nd. order accurate
     end do
-    !d2s(:,:,1)  = d2s(:,:,2)                                            ! assume constant d2S/dtau2
-    !d1s(:,:,1)  = d1s(:,:,2)      - dtau(:,:,2) * d2s(:,:,2)            ! extrapolate to 1
-    !d2s(:,:,npt) = d2s(:,:,npt-1)                                       ! assume constant d2S/dtau2
-    !d1s(:,:,npt) = d1s(:,:,npt-1) + dtau(:,:,npt) * d2s(:,:,npt)        ! extrapolate to n
 
     !-----------------------------------------------------------------
     !  Internal forward or reverse solutions

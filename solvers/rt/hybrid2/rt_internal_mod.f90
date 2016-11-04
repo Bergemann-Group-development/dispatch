@@ -2,6 +2,7 @@ MODULE rt_internal_mod
   USE io_mod
   USE bits_mod
   USE link_mod
+  USE mesh_mod
   USE microphysics_mod
   USE rt_mod
   USE rt_data_mod
@@ -18,31 +19,40 @@ MODULE rt_internal_mod
   end type
 !-----------------------------------------------------------------------
   type,extends(rt_t), public :: rt_internal_t
-    type (rt_data_t),  pointer :: my_rt_data => null()
+    type (link_t), pointer :: upstream => null()                        ! quick access for intensities. list, if there is more than one
+    type (rt_data_t),  pointer :: my_rt_data => null()                  ! self explanatory            >>  upstream (e.g. in case of AMR)
     class(internal_data_t), dimension(:), pointer :: packet_data => null() ! incoming intensities
     real, dimension(:,:), pointer :: I_in, I_out
     integer :: solver
     integer :: bundle_ID, dir_ID
     integer :: lwall(3)
+    integer :: n_upstream                                               ! Number of upstream sources
     real :: dir_weight, ray_ds
     procedure (solve_internal_integral_2nd), pointer :: solve => null()
   contains
-    procedure :: dtau
+!> Task management
     procedure :: init   => init_rt_internal
     procedure :: update => update_rt_internal
+    procedure :: print
     procedure :: check  => check_rt_internal
-    procedure :: check_intensities => check_rt_get_intensities
-    procedure :: get_upstream
+    procedure :: check_intensities => check_rt_get_intensities 
+!> Boundary handling
+    procedure :: add_upstream
+    procedure :: bundle_connects_to
+    procedure :: get_dynamic_legacy
     procedure :: get_same_static
     procedure :: get_static_legacy
-    procedure :: get_dynamic_legacy
     procedure :: get_correction_from_BC
+    procedure :: get_upstream
+    procedure :: has_OB
+    procedure :: I_retrv
+    procedure :: remove_upstream
+!> Internal procedures
+    procedure :: dtau
     procedure :: ray_vol_map
     procedure :: solve_internal_integral => solve_internal_integral_2nd
     procedure :: solve_internal_feautrier
     procedure :: update_q
-    procedure :: I_retrv
-    procedure :: print
   end type
 !-----------------------------------------------------------------------
 CONTAINS
@@ -125,7 +135,7 @@ SUBROUTINE print (self)
   class (rt_internal_t):: self
   !.............................................................................
   if (io%verbose>1) then
-    write (*,'(a,i5,3x,a,i5,3x,a,i4,3x,a,i3,3x,a,i2,2(3x,a,f5.0),2(3x,a,3i2),3x,a,i4)') &
+    write (*,'(a,i5,3x,a,i5,3x,a,i4,3x,a,i3,3x,a,i2,2(3x,a,f5.0),2(3x,a,3i2),2(3x,a,i4))') &
       'rt_internal_t%id:', self%id, &
       'mhd_patch%id:', self%mhd_patch%id, &
       'dir_ID:',self%bundle%dir_ID, &
@@ -135,7 +145,8 @@ SUBROUTINE print (self)
       'phi:', self%bundle%phi*radian, &
       'lwall', self%bundle%lwall, &
       'uwall', self%bundle%uwall, &
-      'nbors', self%n_nbors
+      'nbors', self%n_nbors, &
+      'n_upstream', self%n_upstream
   end if
 END SUBROUTINE print
 
@@ -154,7 +165,8 @@ SUBROUTINE update_rt_internal (self)
   call self%solve
   ot=self%time
   call self%update_time
-  print *,'updated internal',self%id,'old time, new time',ot,self%time
+  !print *,'updated internal',self%id,'old time, new time',ot,self%time, self%is_set(bits%has_BC)
+
   if (io%verbose > 2) then
     write (*,'(a,i5,3x,a,i5,3x,a,i4,3x,a,i3,3x,a,i2,2(3x,a,f5.0))') &
       'rt_internal_t%update:', self%id, &
@@ -188,7 +200,7 @@ SUBROUTINE get_upstream (self)
   else
     static = .true.; local = .true.; same = .true.                      ! not moving? on this rank? same level?
     if (self%is_clear(bits%static)) static = .false.
-    nbor => self%link%nbor
+    nbor => self%upstream
     do while (associated(nbor))                                         ! check nbors for these logicals
       associate (this => nbor%task)
       SELECT type(this)
@@ -344,49 +356,41 @@ END SUBROUTINE get_static_legacy
 !> =====================================================================
 SUBROUTINE get_same_static (self)
   class(rt_internal_t) :: self
-  class(rt_internal_t), pointer :: rt_nb
-  class(link_t), pointer :: nbor
-  logical :: fnd
+  class(rt_internal_t), pointer :: rt_nb => null()
+  class(link_t), pointer :: nbor => null()
   integer :: mbid, ray
   integer, dimension(:), pointer :: nb_ray_pos
   !---------------------------------------------------------------------
-  call trace_begin('rt_corrections_mod::get_same_static_chain')
+  call trace_begin('rt_corrections_mod::get_same_static')
+  if (self%n_upstream > 1) then                                         ! this should not happen.
+    error stop "rt_internal::get_same_static:: (1)"
+  end if
   
   select case(self%rt_type)
   case(2)
-  mbid = self%bundle%next_chain_bndl_fw
-  case(3)
   mbid = self%bundle%next_chain_bndl_rev
+  nb_ray_pos => self%bundle%ray_chain_rev
+  case(3)
+  mbid = self%bundle%next_chain_bndl_fw
+  nb_ray_pos => self%bundle%ray_chain_fw
   end select
+  nbor => self%upstream
+  associate(this => nbor%task)
+  SELECT type(this)
+  type is (rt_internal_t)
+    rt_nb => this
+  end SELECT
+  end associate
   
-  fnd = .false.
+  select case(self%bundle%l_chain)
+  case(:2)
+    self%I_in = rt_nb%I_out
+  case default
+    do ray = 1, self%bundle%n_rays
+      self%I_in(ray,:) = rt_nb%I_out(nb_ray_pos(ray),:)
+    end do
+  end select
   nullify(rt_nb)
-  nbor => self%link%nbor
-  do while (associated(nbor).and..not.fnd)
-    associate (rt => nbor%task)
-    SELECT type (rt)
-    class is (rt_internal_t)
-    if (rt%bundle%ID == mbid) then
-    rt_nb => rt
-    fnd = .true.
-    end if
-    end SELECT
-    end associate
-  end do
-  
-  if (fnd) then
-    select case(self%bundle%l_chain)
-    case(:2)
-      self%I_in = rt_nb%I_out
-    case default
-      do ray = 1, self%bundle%n_rays
-        self%I_in(ray,:) = rt_nb%I_out(nb_ray_pos(ray),:)
-      end do
-    end select
-  else
-    error stop "get_same_static: right nbor not found"
-  end if
-
   call trace_end
 END SUBROUTINE get_same_static
 
@@ -585,7 +589,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
   real, dimension(:,:), pointer :: I_in, ctau
   integer :: pt, npt, it, ray, wl, p(3), pck, nwb, ipk, iwb, nrays
   real    :: temp, dir_wgt
-  integer, save :: itimer=0
+  integer, save :: itimer=0, itimer2=0
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_t%integral_2nd', itimer=itimer)
 
@@ -612,12 +616,13 @@ SUBROUTINE solve_internal_integral_2nd (self)
     allocate(opac(nrays, nwb, npt+2))
     allocate(ctau(nrays, nwb))
     allocate(I_in(nrays, nwb))
-
+    call trace_begin('rt_t%update_rt_internal%ray_vol_map ',itimer=itimer2)
     call self%ray_vol_map (packet, nwb, c_source, s)                    ! Map source function onto rays
     call self%ray_vol_map (packet, nwb, c_opac, opac)                   ! Map opacities onto rays
+    call trace_end (itimer2)
     call self%dtau(opac, dtau)                                          ! Calculate dtau
     I_in = self%packet_data(pck)%I_in
-
+    
 #if defined __INTEL_COMPILER
     do pt = 1, npt+1
       ex0(:,:,pt) = 2**(-dtau(:,:,pt+1)*1.44269504)                     ! first exponential coeff
@@ -757,6 +762,117 @@ SUBROUTINE update_q (self, rays, q, op)
 END SUBROUTINE update_q
 
 !> =====================================================================
+!> Check if the rays in self match up in the upstream with the rays in other
+!> =====================================================================
+LOGICAL FUNCTION bundle_connects_to (self, other)
+  class (rt_internal_t)          :: self
+  class (rt_internal_t), pointer :: other
+  integer :: pp, fwd(3), rev(3)
+  !.............................................................................
+  bundle_connects_to = .false.
+  if (.not.self%mhd_patch%overlaps(other%mhd_patch)) return             ! no overlap
+  if (self%is_set(bits%has_BC+bits%boundary))        return             ! boundary patch
+  
+  select case(self%rt_type)
+  case(2)
+    fwd =  self%bundle%rays%fwd_coords(:,1) + self%bundle%dstep         ! testing only one ray in the bundle for now... For AMR: needs to run
+    if (self%bundle%l_chain <2) then                                    ! through all the rays and if ANY has a match - add to the list...
+      pp = 1
+    else
+      pp = self%bundle%ray_chain_fw(1)
+    end if      
+    rev = other%bundle%rays%rev_coords(:,pp)                             
+  case(3)
+    fwd =  self%bundle%rays%rev_coords(:,1) - self%bundle%dstep   
+    if (self%bundle%l_chain <2) then
+      pp = 1
+    else
+      pp = self%bundle%ray_chain_rev(1)      
+    end if 
+    rev = other%bundle%rays%fwd_coords(:,pp)                             
+  end select
+  
+  if (all(other%pos2cell(self%cell2pos(fwd))==rev)) bundle_connects_to = .true.        
+   
+END function bundle_connects_to
+
+!> =====================================================================
+!> =====================================================================
+LOGICAL FUNCTION has_OB (self)
+  class (rt_internal_t) :: self
+  class (mesh_t), pointer :: m
+  integer :: i(3), a, d(3)
+  !.....................................................................
+  has_OB = .false.
+  d = self%bundle%dstep
+  
+  if (self%rt_type == 2) then
+    i = self%bundle%rays%fwd_coords(:,1)
+    do a=1,3
+      m => self%mhd_patch%mesh(a)
+      if (d(a)<0) then
+        if (m%p + m%r(i(a)) > m%b) has_OB = .true.
+      else 
+        if (m%p + m%r(i(a)) < 0.0) has_OB = .true.
+      end if
+    end do
+  else if (self%rt_type == 3) then
+    i = self%bundle%rays%rev_coords(:,1)
+    do a=1,3
+      m => self%mhd_patch%mesh(a)
+      if (d(a) < 0) then
+        if (m%p + m%r(i(a)) < 0.0) has_OB = .true.
+      else
+        if (m%p + m%r(i(a)) > m%b) has_OB = .true.
+      end if
+    end do
+  end if
+END FUNCTION has_OB
+
+!> =====================================================================
+!> Add a new nbor for a quick lookup of incoming intensities.
+!> =====================================================================
+SUBROUTINE add_upstream(self, ups)
+  class(rt_internal_t) :: self
+  class(link_t), pointer :: ups, new
+  !---------------------------------------------------------------------
+  allocate(new)
+  new%task => ups%task                                                  ! simple task connection
+  if(associated(self%upstream)) then
+    self%upstream%prev => new
+    new%next => self%upstream
+    self%upstream => new
+  else
+    self%upstream => new
+  end if
+  self%n_upstream = self%n_upstream + 1
+END SUBROUTINE add_upstream
+
+!> =====================================================================
+!> Remove  nbor from the quick lookup list.
+!> =====================================================================
+SUBROUTINE remove_upstream(self, ups)
+  class(rt_internal_t) :: self
+  class(link_t), pointer :: ups, this, prev
+  logical :: done = .false.
+  !--------------------------------------------------------------------- 
+  this => self%upstream
+  do while(associated(this).and..not.done)
+    if (associated(this%task,ups%task)) then
+      if (associated(prev)) then
+        prev%next => ups%next
+      else
+        self%upstream => ups%next
+      end if
+      self%n_upstream = self%n_upstream - 1
+      done = .true.
+    end if
+    prev => this
+    this => this%next
+  end do  
+END SUBROUTINE remove_upstream
+
+!> =====================================================================
 !> Test if rt_internal module has any errors
 !> =====================================================================
 SUBROUTINE check_rt_internal(self)
@@ -843,8 +959,6 @@ SUBROUTINE check_rt_corrections(self)
   if(.not.associated(self%bundle)) then
     error stop "rt_corrections%check: rt_t%my_rays is not associated"
   end if
-
-
 END SUBROUTINE check_rt_corrections
 
 END MODULE rt_internal_mod

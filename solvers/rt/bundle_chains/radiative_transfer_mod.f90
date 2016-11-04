@@ -101,7 +101,7 @@ SUBROUTINE rt_setup (self)
       mhd_rt_patch => mhd
       allocate (rt_data, link)                                          ! the internal RT task and its link
       mhd_rt_patch%rt_data => rt_data
-      call mhd_rt_patch%init_rt
+      call mhd_rt_patch%init_rt                                         ! NOTE: isn't it already initialised in experiment_mod?
     END SELECT
     !-------------------------------------------------------------------
     ! Get the right type of the task to pick up other properties (mhd_t)

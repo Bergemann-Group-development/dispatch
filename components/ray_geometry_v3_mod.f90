@@ -479,6 +479,8 @@ SUBROUTINE add_axis(self, dir)
   bndl%lwall(a) =  0;  bndl%uwall(a) = 0
   bndl%lwall(b) =  0;  bndl%uwall(b) = 0
   bndl%lwall(c) = -1;  bndl%uwall(c) = 1                                ! lower/upper wall for this direction
+  bndl%next_chain_bndl_fw  = 1
+  bndl%next_chain_bndl_rev = 1
 
   ! --- Fill in rays info ---
   ray%head  => ray
@@ -720,6 +722,7 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
               call chain_data%add_next_ray(r_id, or_id)
           else                                                          ! otherwise
             allocate(ray)                                               ! get new ray
+            call chain_data%add_ray
             call t%restart                                              ! and restart the 1st or 2nd direction
             nr_id = r_id + 1
             call chain_data%add_next_ray(r_id, nr_id)
@@ -733,8 +736,25 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
   end do
   call self%finish_single_ray_list(ray_bundle)                          ! save the ray tree to ray_geometry
   deallocate(t)
+  !print *,'CHAIN DATA n_rays', chain_data%n_rays
+  !print *,'nr_id', size(chain_data%nr_ID)
+  !print *, chain_data%nr_ID
+  !print *,'n_id', size(chain_data%n_ID)
+  !print *, chain_data%n_ID
+  !print *,'p_id', size(chain_data%p_ID)
+  !print *, chain_data%p_ID
+  !print *,'b_id',size(chain_data%b_ID)
+  !print *, chain_data%b_ID
   call chain_data%finalize_direction(self%ray_list%tail%bundle)
   call chain_data%destroy
+  !print *, '======'
+  !print *, 'bundle ID, dir ID:',self%ray_list%tail%bundle%ID, self%ray_list%tail%bundle%dir_ID
+  !print *, 'self%ray_list%tail%bundle%ray_chain_fw',self%ray_list%tail%bundle%ray_chain_fw
+  !print *, 'next chain', self%ray_list%tail%bundle%next_chain_bndl_fw
+  !print *,'---'
+  !print *,'self%ray_list%tail%bundle%ray_chain_rev',self%ray_list%tail%bundle%ray_chain_rev
+  !print *, 'prev chain', self%ray_list%tail%bundle%next_chain_bndl_rev
+  
 END SUBROUTINE traverse
 
 !> =====================================================================

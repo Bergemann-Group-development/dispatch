@@ -49,7 +49,8 @@ SUBROUTINE init_rt_data(self)
   self%velocity = mhd_patch%velocity                                    ! task velocity
   self%size     = mhd_patch%size                                        ! task size
   self%cell_ds  = mhd_patch%ds                                          ! cell size
-  self%it       = mhd_patch%it                                          ! task time
+  self%it       = mhd_patch%it                                          ! task time slot
+  self%nt       = mhd_patch%nt
   self%end_time = self%mhd_patch%end_time
   self%out_time = self%mhd_patch%out_time
   self%time     = -3                                                    ! initial time
@@ -89,20 +90,20 @@ SUBROUTINE update_rt_data (self)
 !-----------------------------------------------------------------------
   write (stime,'(1p,g16.6)') self%time
   call trace_begin('rt_t%update_rt_data', itimer=itimer)
-
-  self%it  = self%mhd_patch%it
-
+  !print *,'updating rt_data'
+  !print *,'rt_data time,it,nt', self%time,self%it,self%nt
+  !print *, 'mhd patch time, it,nt', self%mhd_patch%time,self%mhd_patch%it,self%mhd_patch%nt
   rho => self%mhd_patch%mem(:,:,:,1,self%it,1)
   s   => self%mhd_patch%mem(:,:,:,2,self%it,1)
   associate (gam => self%mhd_patch%gamma, cs => self%mhd_patch%csound)
   call microphysics%get_data(rho = rho, entropy = s, source_fn = self%source, &
                              opacity = self%opacity, gam = gam, cs = cs)
   end associate
-  ! add cosmic ray heating
-  call self%add_cr_heating(self%mhd_patch%time)  ! add cr heating
+  
+  call self%add_cr_heating                                              ! add cosmic ray heating
   ot=self%time
   call self%update_time
-  print *,'updated rt_data',self%id,'old time, new time',ot,self%time
+ ! print *,'updated rt_data',self%id,'old time, new time',ot,self%time
   nullify (rho, s)
   if (io%verbose>2) call self%check(2)
   call trace_end (itimer)
@@ -111,9 +112,8 @@ END SUBROUTINE update_rt_data
 !> =============================================================================
 !> Optionally add cosmic ray heating -- generic if applied before 'apply_heating'
 !> =============================================================================
-SUBROUTINE add_cr_heating (self, time)
+SUBROUTINE add_cr_heating (self)
   class(rt_data_t) :: self
-  real(kind=8) :: time
   integer :: l(3), u(3)
   ! ----------------------------------------------------------------------------
   call trace%begin ('mhd_rt_t_%add_cr_heating')
