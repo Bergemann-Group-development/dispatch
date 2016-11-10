@@ -8,8 +8,11 @@
 ! produces data files named data/other_ppp_tttt.dat, where ppp is the patch number
 ! and tttt is the snapshot number.
 
+&timer_params
+ sec_per_report=2
+/
 &io_params
- verbose=2
+ verbose=1
  do_validate=f
  do_trace=f
  do_debug=f
@@ -17,7 +20,7 @@
 /
 &box_params
  size=1,1,1
- dims=4,4,4
+ dims=8,8,8
  origin=0,0,0
 /
 &experiment_params
@@ -27,7 +30,7 @@
  nw=2
  courant=0.2
  grace=0.3
- n=20,20,20
+ n=32,32,32
 !dt_fixed=0.001
 /
 &out_params
@@ -54,7 +57,7 @@
  k=3,3,3
  a0=0.0,0.0,0.0
  u0=0,0,0
- b0=0,0,0.3
+ b0=0,0,0.0
  type='single_compressive'
 /
 &ramses_params
