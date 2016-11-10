@@ -101,7 +101,6 @@ SUBROUTINE execute (self)
   call mpi%barrier ('task_list_mod::execute')
   call tic
   call timer%print
-  call timer%init
   !$omp parallel
   do while (self%na > 0)
     call self%update
