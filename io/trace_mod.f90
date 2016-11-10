@@ -108,7 +108,9 @@ SUBROUTINE trace_end (itimer)
   integer:: verbose
   real(8):: wc
   !.............................................................................
-  if (present(itimer)) call timer%end(itimer)
+  if (present(itimer)) then
+    if (itimer>0) call timer%end(itimer)
+  end if
   if (.not.io%do_trace) return
   level  = max(level-1,1)
   indent = max(indent,4)
