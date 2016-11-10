@@ -17,7 +17,10 @@ MODULE cartesian_mod
     type(task_list_t), pointer:: task_list
   contains
     procedure init
+    procedure, nopass:: diagnostics
   end type
+  real, save:: gb=0.0                   ! GB per process
+  integer, save:: np=0                  ! patches per process
   public task_list_t                    ! export, to avoid excessive USE
 CONTAINS
 
@@ -124,6 +127,10 @@ SUBROUTINE init (self, label)
       select type (task)
       type is (experiment_t)
         call task%init
+        !$omp atomic
+        gb = gb + product(task%gn)*task%nv*task%nt*task%nw*4.0/1024.**3
+        !$omp atomic
+        np = np + 1
         if (all(self%dims==1)) call task%set(bits%root_grid)
         if (io%verbose>0) then
           write (io_unit%log,1) &
@@ -146,6 +153,7 @@ SUBROUTINE init (self, label)
       thread = mod(thread+1,omp%nthreads)
     link => link%next
   end do
+  call self%diagnostics
   !xomp barrier
   !xomp end parallel
   !-----------------------------------------------------------------------------
@@ -173,5 +181,13 @@ SUBROUTINE init (self, label)
   call self%task_list%init_all_nbors
   call trace_end
 END SUBROUTINE init
+
+!> =============================================================================
+!> Diagnostics: Number of patches and GB of mem
+!> =============================================================================
+SUBROUTINE diagnostics
+  print '(a,i6)',     'Patches per process:', np
+  print '(a,f6.2,a)', ' Memory per process:', gb, ' GB'
+END SUBROUTINE
 
 END MODULE cartesian_mod
