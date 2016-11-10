@@ -142,8 +142,10 @@ SUBROUTINE print ()
     print '(23x,a,7x,a,10x,a,7x,a,5x,a)', &
       'procedure', 'calls', 'time', 'percent', 'time/call'
     do i=1,ntimer
-      print 1, trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
-      1 format(a32,1p,2g15.3,2g12.3)
+      if (proc(i)/total > 1e-4) then
+        print 1, trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
+        1 format(a32,1p,2g15.3,2g12.3)
+      end if
     end do
   end if
   updates = max(1.0,real(n_update-n_previous))
