@@ -456,7 +456,7 @@ end subroutine llf
 
 !> =============================================================================
 !> =============================================================================
-subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error)
+subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
   REAL(dp)::SL,SR
@@ -470,7 +470,7 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error)
   REAL(dp)::ro,uo,ptoto,etoto
   REAL(dp)::smallp
   INTEGER ::ivar, i
-  LOGICAL :: error
+  LOGICAL :: error,detailed_timer
   !
   ! constants
   smallp = smallc**2/gamma

@@ -46,6 +46,7 @@ MODULE mhd_mod
     procedure:: magnetic_field_magnitude
   end type
   logical:: first_time=.true.
+  logical:: detailed_timer=.false.
   character(len=16):: eqn='mhd'
   real(kind=8):: courant_number=0.2
 CONTAINS
@@ -55,7 +56,7 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hllc'
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, do_isothermal, csound
+    smallc, do_isothermal, csound, detailed_timer
 !...............................................................................
   call trace_begin('mhd_mod::init')
 
@@ -86,12 +87,13 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer:: n(3)
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_mod::update')
   !----------------------------------------------------------------------------
   ! Fill guard zones and checks whether to do output
   !----------------------------------------------------------------------------
   call download%download_link (self%link, all_cells=.true.)
+  call trace_begin ('mhd_t%update', itimer=itimer)
   call self%output
   !-----------------------------------------------------------------------------
   ! Memory mapping and allocations
@@ -106,12 +108,14 @@ SUBROUTINE update (self)
   allocate (self%fl(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
+  if (detailed_timer) call trace_end (itimer)
   call godunov (self)
+  if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
   deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%c,self%s)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================
@@ -131,6 +135,7 @@ subroutine godunov (self)
   !-----------------------------------------------------------------------------
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
+  if (.not.detailed_timer) call trace_begin ('mhd_mod::godunov')
   li = self%mesh%li
   ui = self%mesh%ui
   call check_small (self, uin)
@@ -138,7 +143,7 @@ subroutine godunov (self)
   !-----------------------------------------------------------------------------
   ! Conservative update, looping over internal cells only
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_mod::godunov', itimer=itimer)
+  if (detailed_timer) call trace_begin ('mhd_mod::godunov', itimer=itimer)
   unew = uin
   do ivar=1,self%nv
     do idim=1,self%ndim
@@ -169,7 +174,9 @@ subroutine check_small (self, uu)
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
   real(dp):: c,d,u,v,w,p,ekin
   integer, save:: nprint=10
+  integer,save:: itimer=0
   !-----------------------------------------------------------------------------
+  if (detailed_timer) call trace_begin ('mhd_t%check_small', itimer=itimer)
   n_smalld = 0
   n_smallp = 0
   lo = self%mesh%lb
@@ -208,6 +215,7 @@ subroutine check_small (self, uu)
   if (n_smalld+n_smallp > 0) then
     write (io_unit%log,*) 'small: id,nr,np', self%id,n_smalld,n_smallp
   end if
+  if (detailed_timer) call trace_end (itimer)
 end subroutine
 
 !> =============================================================================
@@ -217,15 +225,14 @@ end subroutine
 subroutine unsplit(self)
   class(mhd_t):: self
   real(dp):: dtds(3)
-  integer,save:: itimer=0
   !-----------------------------------------------------------------------------
+  call trace_begin ('mhd_t%unsplit')
   call ctoprim(self)                  ! Primitive variables, sound speeds
-  call self%courant_condition         ! compute dt
+  call self%courant_condition (detailed_timer)
   call uslope(self)                   ! TVD slopes
   call trace3d(self)                  ! predictor step
-  call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
   call cmpflxm(self)                  ! Solve for 1D flux in X direction
-  call trace_end (itimer)
+  call trace_end
 end subroutine unsplit
 
 !> =============================================================================
@@ -237,7 +244,11 @@ subroutine ctoprim (self)
   integer,save:: itimer=0
   associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_mod::ctoprim', itimer=itimer)
+  if (detailed_timer) then
+    call trace_begin ('mhd_mod::ctoprim', itimer=itimer)
+  else
+    call trace_begin ('mhd_mod::ctoprim')
+  end if
   smallp = smallr*smallc**2/gamma
   q(:,:,:,1) = max(uin(:,:,:,1),smallr)
   s = 1.d0/q(:,:,:,1)
@@ -270,7 +281,11 @@ subroutine uslope(self)
   integer,save:: itimer=0
   associate (q=>self%q, dq=>self%dq)
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_mod::uslope', itimer=itimer)
+  if (detailed_timer) then
+    call trace_begin ('mhd_mod::uslope', itimer=itimer)
+  else
+    call trace_begin ('mhd_mod::uslope')
+  end if
   !
   l = self%mesh%lo
   u = self%mesh%uo
@@ -430,7 +445,11 @@ subroutine trace3d(self)
   integer,save:: itimer=0
   associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_mod::trace3d', itimer=itimer)
+  if (detailed_timer) then
+    call trace_begin ('mhd_mod::trace3d', itimer=itimer)
+  else
+    call trace_begin ('mhd_mod::trace3d')
+  end if
   dtdx = self%dtime/self%mesh(1)%d
   dtdy = self%dtime/self%mesh(2)%d
   dtdz = self%dtime/self%mesh(3)%d
@@ -537,26 +556,38 @@ subroutine cmpflxm(self)
   real(dp), dimension(self%mesh(1)%gn,self%nv):: qleft, qright, fgdnv
   real(dp):: dtds(3)
   logical:: error
+  integer,save:: itimer=0
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
+  if (detailed_timer) then
+    call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
+  else
+    call trace_begin ('mhd_mod::cmpflxm')
+  end if
   error = .false.
   dtds = self%dtime/self%mesh%d
   lb = self%mesh%li
   ub = self%mesh%uo
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
-      qleft (lb(1):ub(1),1) = qm(lb(1):ub(1),j,k,1,1); qright(lb(1):ub(1),1) = qp(lb(1):ub(1),j,k,1,1)
-      qleft (lb(1):ub(1),2) = qm(lb(1):ub(1),j,k,2,1); qright(lb(1):ub(1),2) = qp(lb(1):ub(1),j,k,2,1)
-      qleft (lb(1):ub(1),3) = qm(lb(1):ub(1),j,k,5,1); qright(lb(1):ub(1),3) = qp(lb(1):ub(1),j,k,5,1)
-      qleft (lb(1):ub(1),4) = qm(lb(1):ub(1),j,k,3,1); qright(lb(1):ub(1),4) = qp(lb(1):ub(1),j,k,3,1)
-      qleft (lb(1):ub(1),5) = qm(lb(1):ub(1),j,k,4,1); qright(lb(1):ub(1),5) = qp(lb(1):ub(1),j,k,4,1)
-      call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error)
+      do i = lb(1),ub(1)
+        qleft (i,1) = qm(i,j,k,1,1); qright(i,1) = qp(i,j,k,1,1)
+        qleft (i,2) = qm(i,j,k,2,1); qright(i,2) = qp(i,j,k,2,1)
+        qleft (i,3) = qm(i,j,k,5,1); qright(i,3) = qp(i,j,k,5,1)
+        qleft (i,4) = qm(i,j,k,3,1); qright(i,4) = qp(i,j,k,3,1)
+        qleft (i,5) = qm(i,j,k,4,1); qright(i,5) = qp(i,j,k,4,1)
+      end do
+      if (detailed_timer) call trace_end (itimer)
+      call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error,detailed_timer)
+      if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
       if (error) call error_handler('x', j, k, lb(1), ub(1))
-      fl(lb(1):ub(1),j,k,1,1) = fgdnv(lb(1):ub(1),1)*dtds(1)
-      fl(lb(1):ub(1),j,k,2,1) = fgdnv(lb(1):ub(1),2)*dtds(1)
-      fl(lb(1):ub(1),j,k,5,1) = fgdnv(lb(1):ub(1),3)*dtds(1)
-      fl(lb(1):ub(1),j,k,3,1) = fgdnv(lb(1):ub(1),4)*dtds(1)
-      fl(lb(1):ub(1),j,k,4,1) = fgdnv(lb(1):ub(1),5)*dtds(1)
+      do i = lb(1),ub(1)
+        fl(i,j,k,1,1) = fgdnv(i,1)*dtds(1)
+        fl(i,j,k,2,1) = fgdnv(i,2)*dtds(1)
+        fl(i,j,k,5,1) = fgdnv(i,3)*dtds(1)
+        fl(i,j,k,3,1) = fgdnv(i,4)*dtds(1)
+        fl(i,j,k,4,1) = fgdnv(i,5)*dtds(1)
+      end do
     end do
   end do
   if (any(self%mesh%gn/=self%mesh(1)%gn)) then
@@ -565,42 +596,54 @@ subroutine cmpflxm(self)
   else
     do k = lb(3),ub(3)
       do i = lb(1),ub(1)
-        qleft (lb(2):ub(2),1) = qm(i,lb(2):ub(2),k,1,2); qright(lb(2):ub(2),1) = qp(i,lb(2):ub(2),k,1,2)
-        qleft (lb(2):ub(2),2) = qm(i,lb(2):ub(2),k,3,2); qright(lb(2):ub(2),2) = qp(i,lb(2):ub(2),k,3,2)
-        qleft (lb(2):ub(2),3) = qm(i,lb(2):ub(2),k,5,2); qright(lb(2):ub(2),3) = qp(i,lb(2):ub(2),k,5,2)
-        qleft (lb(2):ub(2),4) = qm(i,lb(2):ub(2),k,2,2); qright(lb(2):ub(2),4) = qp(i,lb(2):ub(2),k,2,2)
-        qleft (lb(2):ub(2),5) = qm(i,lb(2):ub(2),k,4,2); qright(lb(2):ub(2),5) = qp(i,lb(2):ub(2),k,4,2)
-        call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error)
+        do j = lb(2),ub(2)
+          qleft (j,1) = qm(i,j,k,1,2); qright(j,1) = qp(i,j,k,1,2)
+          qleft (j,2) = qm(i,j,k,3,2); qright(j,2) = qp(i,j,k,3,2)
+          qleft (j,3) = qm(i,j,k,5,2); qright(j,3) = qp(i,j,k,5,2)
+          qleft (j,4) = qm(i,j,k,2,2); qright(j,4) = qp(i,j,k,2,2)
+          qleft (j,5) = qm(i,j,k,4,2); qright(j,5) = qp(i,j,k,4,2)
+        end do
+        if (detailed_timer) call trace_end (itimer)
+        call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error,detailed_timer)
+        if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
         if (error) call error_handler('y', i, k, lb(2), ub(2))
-        fl(i,lb(2):ub(2),k,1,2) = fgdnv(lb(2):ub(2),1)*dtds(2)
-        fl(i,lb(2):ub(2),k,3,2) = fgdnv(lb(2):ub(2),2)*dtds(2)
-        fl(i,lb(2):ub(2),k,5,2) = fgdnv(lb(2):ub(2),3)*dtds(2)
-        fl(i,lb(2):ub(2),k,2,2) = fgdnv(lb(2):ub(2),4)*dtds(2)
-        fl(i,lb(2):ub(2),k,4,2) = fgdnv(lb(2):ub(2),5)*dtds(2)
+        do j = lb(2),ub(2)
+          fl(i,j,k,1,2) = fgdnv(j,1)*dtds(2)
+          fl(i,j,k,3,2) = fgdnv(j,2)*dtds(2)
+          fl(i,j,k,5,2) = fgdnv(j,3)*dtds(2)
+          fl(i,j,k,2,2) = fgdnv(j,4)*dtds(2)
+          fl(i,j,k,4,2) = fgdnv(j,5)*dtds(2)
+        end do
       end do
     end do
     do j = lb(2),ub(2)
       do i = lb(1),ub(1)
-        qleft (lb(3):ub(3),1) = qm(i,j,lb(3):ub(3),1,3); qright(lb(3):ub(3),1) = qp(i,j,lb(3):ub(3),1,3)
-        qleft (lb(3):ub(3),2) = qm(i,j,lb(3):ub(3),4,3); qright(lb(3):ub(3),2) = qp(i,j,lb(3):ub(3),4,3)
-        qleft (lb(3):ub(3),3) = qm(i,j,lb(3):ub(3),5,3); qright(lb(3):ub(3),3) = qp(i,j,lb(3):ub(3),5,3)
-        qleft (lb(3):ub(3),4) = qm(i,j,lb(3):ub(3),2,3); qright(lb(3):ub(3),4) = qp(i,j,lb(3):ub(3),2,3)
-        qleft (lb(3):ub(3),5) = qm(i,j,lb(3):ub(3),3,3); qright(lb(3):ub(3),5) = qp(i,j,lb(3):ub(3),3,3)
-        call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error)
+        do k = lb(3),ub(3)
+          qleft (k,1) = qm(i,j,k,1,3); qright(k,1) = qp(i,j,k,1,3)
+          qleft (k,2) = qm(i,j,k,4,3); qright(k,2) = qp(i,j,k,4,3)
+          qleft (k,3) = qm(i,j,k,5,3); qright(k,3) = qp(i,j,k,5,3)
+          qleft (k,4) = qm(i,j,k,2,3); qright(k,4) = qp(i,j,k,2,3)
+          qleft (k,5) = qm(i,j,k,3,3); qright(k,5) = qp(i,j,k,3,3)
+        end do
+        if (detailed_timer) call trace_end (itimer)
+        call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error,detailed_timer)
+        if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
         if (error) call error_handler('z', i, j, lb(3), ub(3))
-        fl(i,j,lb(3):ub(3),1,3) = fgdnv(lb(3):ub(3),1)*dtds(3)
-        fl(i,j,lb(3):ub(3),4,3) = fgdnv(lb(3):ub(3),2)*dtds(3)
-        fl(i,j,lb(3):ub(3),5,3) = fgdnv(lb(3):ub(3),3)*dtds(3)
-        fl(i,j,lb(3):ub(3),2,3) = fgdnv(lb(3):ub(3),4)*dtds(3)
-        fl(i,j,lb(3):ub(3),3,3) = fgdnv(lb(3):ub(3),5)*dtds(3)
+        do k = lb(3),ub(3)
+          fl(i,j,k,1,3) = fgdnv(k,1)*dtds(3)
+          fl(i,j,k,4,3) = fgdnv(k,2)*dtds(3)
+          fl(i,j,k,5,3) = fgdnv(k,3)*dtds(3)
+          fl(i,j,k,2,3) = fgdnv(k,4)*dtds(3)
+          fl(i,j,k,3,3) = fgdnv(k,5)*dtds(3)
+        end do
       end do
     end do
   end if
   end associate
+  call trace_end (itimer)
 contains
   subroutine cmpflxm_y
   ! local variables
-  real(dp), dimension(self%mesh(2)%gn,self%nv):: qleft, qright, fgdnv
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   !-----------------------------------------------------------------------------
@@ -614,8 +657,10 @@ contains
       qleft (:,3) = qm(i,:,k,5,2); qright(:,3) = qp(i,:,k,5,2)
       qleft (:,4) = qm(i,:,k,2,2); qright(:,4) = qp(i,:,k,2,2)
       qleft (:,5) = qm(i,:,k,4,2); qright(:,5) = qp(i,:,k,4,2)
-      call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error)
+      if (detailed_timer) call trace_end (itimer)
+      call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('y', i, k, lb(2), ub(2))
+      if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
       fl(i,:,k,1,2) = fgdnv(:,1)*dtds(2)
       fl(i,:,k,3,2) = fgdnv(:,2)*dtds(2)
       fl(i,:,k,5,2) = fgdnv(:,3)*dtds(2)
@@ -630,7 +675,6 @@ contains
   subroutine cmpflxm_z
   ! local variables
   integer:: i, j, k, lb(3), ub(3)
-  real(dp), dimension(self%mesh(3)%gn,self%nv):: qleft, qright, fgdnv
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   dtds = self%dtime/self%mesh%d       ! needed here
@@ -643,8 +687,10 @@ contains
       qleft (:,3) = qm(i,j,:,5,3); qright(:,3) = qp(i,j,:,5,3)
       qleft (:,4) = qm(i,j,:,2,3); qright(:,4) = qp(i,j,:,2,3)
       qleft (:,5) = qm(i,j,:,3,3); qright(:,5) = qp(i,j,:,3,3)
-      call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error)
+      if (detailed_timer) call trace_end (itimer)
+      call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('z', i, j, lb(3), ub(3))
+      if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
       fl(i,j,:,1,3) = fgdnv(:,1)*dtds(3)
       fl(i,j,:,4,3) = fgdnv(:,2)*dtds(3)
       fl(i,j,:,5,3) = fgdnv(:,3)*dtds(3)
@@ -694,11 +740,11 @@ end subroutine cmpflxm
 !> =============================================================================
 !> Selection of 1-D solvers
 !> =============================================================================
-subroutine solver (self,ngrid,qleft,qright,fgdnv,error)
+subroutine solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
   class(mhd_t):: self
   integer:: ngrid
-  real(dp),dimension(ngrid,self%nv):: qleft,qright,fgdnv
-  logical:: error
+  real(dp),dimension(:,:):: qleft,qright,fgdnv
+  logical:: error, detailed_timer
   !.............................................................................
   if(self%riemann.eq.'acoustic')then
     call riemann%acoustic(qleft,qright,fgdnv,ngrid,self%nv)
@@ -707,7 +753,7 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv,error)
   else if (self%riemann.eq.'llf')then
     call riemann%llf     (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'hllc')then
-    call riemann%hllc    (qleft,qright,fgdnv,ngrid,self%nv,error)
+    call riemann%hllc    (qleft,qright,fgdnv,ngrid,self%nv,error,detailed_timer)
   else if (self%riemann.eq.'hllc_a')then
     call riemann%hllc_a  (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'hllc_v')then
