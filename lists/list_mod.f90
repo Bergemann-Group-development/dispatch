@@ -246,8 +246,9 @@ SUBROUTINE check_nbors (self, link)
   class(task_t), pointer:: task, nbtask
   integer:: n_check, n_ready, n_blocked, n_cleared, n_remain
   logical:: is_clear
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_mod::check_nbors '//self%name)
+  call trace_begin('list_mod::check_nbors '//self%name, itimer=itimer)
   !$omp critical (list_cr)
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
@@ -258,7 +259,9 @@ SUBROUTINE check_nbors (self, link)
     is_clear = nbtask%is_clear(bits%ready)
     if (is_clear .and. nbor%check) then               ! needs checking?
       n_blocked = n_blocked+1
+      call trace_end (itimer)
       call self%check_ready (nbor%link)               ! pointer back
+      call trace_begin('list_mod::check_nbors', itimer=itimer)
       if (nbtask%is_set(bits%ready)) then
         n_cleared = n_cleared+1
       else
@@ -277,7 +280,9 @@ SUBROUTINE check_nbors (self, link)
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%virtual+bits%external)) then
     call task%clear(bits%ready)                       ! needs new check
+    call trace_end (itimer)
     call self%check_ready (link)                      ! finally check link task
+    call trace_begin('list_mod::check_nbors', itimer=itimer)
     self%n_nbor = self%n_nbor + 1
     if (io%verbose>2) write (io_unit%log,'(a,i9,l3,12(2x,a,i4))') &
       'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
@@ -286,7 +291,7 @@ SUBROUTINE check_nbors (self, link)
     if (io%verbose>3) call self%print
   end if
   !$omp end critical (list_cr)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE check_nbors
 
 !> =============================================================================
@@ -400,7 +405,7 @@ SUBROUTINE check_ready (self, link, set_debug)
   integer, save:: itimer=0
   !.............................................................................
   if (link%task%is_set (bits%virtual+bits%external)) return
-  call trace_begin('list_mod::check_ready '//self%name, 2, itimer=itimer)
+  call trace%begin('list_mod::check_ready ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_check = mpi_mesg%n_check+1
   if (present(set_debug)) then
@@ -439,7 +444,7 @@ SUBROUTINE check_ready (self, link, set_debug)
   end if
 9 continue
   !xomp end critical (list_cr)
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE check_ready
 
 !> =============================================================================
