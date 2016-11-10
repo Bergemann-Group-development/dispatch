@@ -942,9 +942,11 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   character(len=64), optional:: experiment_name
   !.............................................................................
   integer:: iv, nv
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (io%verbose>=0) then
     if (self%time>=self%print_next) then
+      call trace%begin ('patch_t%info', itimer=itimer)
       if (self%print_time > 0) &
         self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
       if (io%verbose<0 .and. self%id/=1) return
@@ -977,6 +979,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         end do
       end if
       mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0; mpi_mesg%n_send=0; mpi_mesg%n_recv=0
+      call trace%end (itimer)
     end if
   end if
 END SUBROUTINE info
@@ -1099,11 +1102,17 @@ END FUNCTION highest
 !> =============================================================================
 !> Courant condition, one way or another
 !> =============================================================================
-SUBROUTINE courant_condition (self)
+SUBROUTINE courant_condition (self, detailed_timer)
   class(patch_t):: self
+  logical:: detailed_timer
   real(8):: dtime
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('patch_mod::courant')
+  if (detailed_timer) then
+    call trace_begin('patch_mod::courant', itimer=itimer)
+  else
+    call trace_begin('patch_mod::courant')
+  end if
   if (io%verbose>1) &
     write (io_unit%log,*) self%id, ' courant: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
@@ -1125,7 +1134,7 @@ SUBROUTINE courant_condition (self)
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE courant_condition
 
 !> =============================================================================
