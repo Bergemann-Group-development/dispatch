@@ -175,41 +175,49 @@ END SUBROUTINE print
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE tic
+SUBROUTINE tic (time)
   implicit none
+  real(8), optional:: time
   !.............................................................................
   real(8):: omp_get_wtime
-  wt = omp_get_wtime()
+  if (present(time)) then
+    time = omp_get_wtime()
+  else
+    wt = omp_get_wtime()
+  end if
 END SUBROUTINE tic
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE toc_1 (label)
+SUBROUTINE toc_1 (label, time)
   implicit none
   character(len=*):: label
+  real(8), optional:: time
   integer:: n
   !.............................................................................
-  call toc_r (label, 1.0)
+  call toc_r (label, 1.0, time)
 END SUBROUTINE toc_1
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE toc_i4 (label, n)
+SUBROUTINE toc_i4 (label, n, time)
   implicit none
   character(len=*):: label
+  real(8), optional:: time
   integer:: n
   !.............................................................................
-  call toc_r (label, real(n))
+  call toc_r (label, real(n), time)
 END SUBROUTINE toc_i4
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE toc_i8 (label, n)
+SUBROUTINE toc_i8 (label, n, time)
   implicit none
   character(len=*):: label
+  real(8), optional:: time
   integer(8):: n
   !.............................................................................
-  call toc_r (label, real(n))
+  call toc_r (label, real(n), time)
 END SUBROUTINE toc_i8
 
 !> =============================================================================
@@ -257,25 +265,34 @@ END FUNCTION
 !> Print the time used per thread.  Overuse is compensated for by the factor f =
 !> the number of threads per core.
 !> =============================================================================
-SUBROUTINE toc_r (label, n)
+SUBROUTINE toc_r (label, n, time)
   implicit none
   character(len=*):: label
   real:: n
-  real(8):: omp_get_wtime
+  real(8), optional:: time
+  real(8):: omp_get_wtime, dtime
   integer:: n_threads
   !.............................................................................
   if (io_unit%do_validate) return
-  wt = (omp_get_wtime() - wt)
+  if (present(time)) then
+    dtime = (omp_get_wtime() - time)
+  else
+    dtime = (omp_get_wtime() - wt)
+  end if
   n_threads = max(min(omp%nthreads,omp%ncores),1)
-  write (io_unit%log,1) label, trim(time_str(wt)), &
-    trim(time_str(wt*n_threads/max(n,1.))), '/upd,', n, 'updates', n_threads, 'threads'
+  write (io_unit%log,1) label, trim(time_str(dtime)), &
+    trim(time_str(dtime*n_threads/max(n,1.))), '/upd,', n, 'updates', n_threads, 'threads'
   1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a, i4, 1x, a)
   flush (io_unit%log)
   if (mpi%rank==0.and.omp%thread==0) &
-    print 1, label, trim(time_str(wt)), &
-      trim(time_str(wt*n_threads/max(n,1.))), '/upd,', n, 'updates', n_threads, 'threads'
+    print 1, label, trim(time_str(dtime)), &
+      trim(time_str(dtime*n_threads/max(n,1.))), '/upd,', n, 'updates', n_threads, 'threads'
   flush (6)
-  wt = omp_get_wtime()
+  if (present(time)) then
+    time = omp_get_wtime()
+  else
+    wt = omp_get_wtime()
+  end if
 END SUBROUTINE toc_r
 
 END MODULE timer_mod

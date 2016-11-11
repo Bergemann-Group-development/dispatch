@@ -82,6 +82,7 @@ SUBROUTINE execute (self)
   USE omp_timer_mod
   class(task_list_t):: self
   class(link_t), pointer:: link, rem
+  real(8):: sec
   !-----------------------------------------------------------------------------
   ! Set virtual and boundary bits
   !-----------------------------------------------------------------------------
@@ -99,7 +100,7 @@ SUBROUTINE execute (self)
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
   call mpi%barrier ('task_list_mod::execute')
-  call tic
+  call tic (time=sec)
   call timer%print
   !$omp parallel
   do while (self%na > 0)
@@ -107,7 +108,7 @@ SUBROUTINE execute (self)
   end do
   !$omp end parallel
   call timer%print
-  call toc ('rank time', n_update)
+  call toc ('rank time', n_update, time=sec)
   if (io%master) write (*,*) "task list finished."
   !if (io%master) &
   !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
