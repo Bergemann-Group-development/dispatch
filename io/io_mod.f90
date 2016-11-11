@@ -83,25 +83,31 @@ SUBROUTINE init (self, name)
     open (self%input, file=self%inputname, form='formatted', status='old')
     rewind (io_unit%input)
     read (io_unit%input, io_params, iostat=iostat)
-    !---------------------------------------------------------------------------
-    ! Open an MPI rank--and possible OMP thread--specific log file
-    !---------------------------------------------------------------------------
-    call system ('mkdir -p '//trim(self%outputname))
     if (self%master.and.first_time) write (*,io_params)
+    !---------------------------------------------------------------------------
+    ! OMP specific setup
+    !---------------------------------------------------------------------------
     !$omp parallel
     !$omp critical (open_cr)
-    io_unit%verbose = verbose
-    if (omp_trace .and. omp%nthreads>1) then
-      log_unit = 100+omp%mythread()
-      write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread
+    if (omp%master) then
+      io_unit%verbose = verbose
     else
-      log_unit = 100
-      write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
-      if (.not.omp%master) io_unit%verbose = -2
+      io_unit%verbose = -2
     end if
-    if (omp%master .or. omp_trace) &
-      open (log_unit, file=filename, form='formatted', status='unknown')
-    io_unit%log = log_unit
+    !---------------------------------------------------------------------------
+    ! Open MPI rank and OMP thread-specific log files
+    !---------------------------------------------------------------------------
+    call system ('mkdir -p '//trim(self%outputname))
+    if (omp_trace .and. omp%nthreads>1) then
+      io_unit%log = 110+omp%mythread()
+      write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread
+      open (io_unit%log, file=filename, form='formatted', status='unknown')
+    else
+      io_unit%log = io_unit%mpi
+    end if
+    write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
+    open (io_unit%mpi, file=filename, form='formatted', status='unknown')
+    log_unit = io_unit%log
     write (io_unit%log,'(a,i4,2l4)') &
       'io_mod::init io_unit%log, io_unit%master, io_unit%verbose:', &
       io_unit%log, io_unit%master, io_unit%verbose
@@ -109,7 +115,7 @@ SUBROUTINE init (self, name)
     !$omp end parallel
     if (verbose>0.or.self%master) &
       print*, 'logfile:', filename
-    self%log_unit = io_unit%log 
+    self%log_unit = io_unit%log
     if (self%master) then
       print*,'======================================================================='
       print*,'NOTE: Reading parameters from '//trim(self%inputname)

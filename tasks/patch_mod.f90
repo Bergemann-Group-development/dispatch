@@ -962,6 +962,20 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           real(n_update), ntask, nq, &
           mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, mpi_mesg%n_send, mpi_mesg%n_recv, &
           self%is_set(bits%boundary), self%is_set(bits%virtual)
+        if (io%verbose>1) then
+          !$omp critical (info_cr)
+          write (io_unit%mpi,1) &
+            'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
+            self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+            self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+            self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+            self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+            real(n_update), ntask, nq, &
+            mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, mpi_mesg%n_send, mpi_mesg%n_recv, &
+            self%is_set(bits%boundary), self%is_set(bits%virtual)
+          flush (io_unit%mpi)
+          !$omp end critical (info_cr)
+        end if
       end do
       if (io%verbose>1 .or. self%id==1) then
         do iv=1,nv

@@ -13,7 +13,9 @@
 !> update procedure in $(TOP)/lists/task_list_mod.f90.
 !> =============================================================================
 MODULE experiment_mod
+  USE omp_mod
   USE io_mod
+  USE io_unit_mod
   USE bits_mod
   USE trace_mod
   USE mhd_mod
@@ -82,7 +84,18 @@ SUBROUTINE update (self)
     first_time = .false.
     call self%initial%cleanup
   end if
+  if (io%verbose>1) then
+    !$omp critical (info_cr)
+    write(io_unit%mpi,*) 'thread start', omp%thread, self%id
+    !$omp end critical (info_cr)
+  end if
   call self%mhd_t%update
+  if (io%verbose>1) then
+    !$omp critical (info_cr)
+    write(io_unit%mpi,*) 'thread end  ', omp%thread, self%id
+    flush (io_unit%mpi)
+    !$omp end critical (info_cr)
+  end if
   if (io%verbose>2) &
     call self%check_density('after timestep')
   call trace_end
