@@ -960,7 +960,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
           self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
           real(n_update), ntask, nq, &
-          mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, mpi_mesg%n_send, mpi_mesg%n_recv, &
+          mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
+          mpi_mesg%n_send, mpi_mesg%n_recv, mpi_mesg%n_delay, &
           self%is_set(bits%boundary), self%is_set(bits%virtual)
         if (io%verbose>0) then
           !$omp critical (info_cr)
@@ -971,7 +972,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
             real(n_update), ntask, nq, &
-            mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, mpi_mesg%n_send, mpi_mesg%n_recv, &
+            mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
+            mpi_mesg%n_send, mpi_mesg%n_recv, mpi_mesg%n_delay, &
             self%is_set(bits%boundary), self%is_set(bits%virtual)
           flush (io_unit%mpi)
           !$omp end critical (info_cr)
@@ -979,7 +981,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       end do
       if (io%verbose>1 .or. self%id==1) then
         do iv=1,nv
-          1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,2x,e10.2,2i5,i6,4i5,2l2,o12)
+          1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,2i5,i6,5i5,2l2,o12)
           if (io%master .or. self%id==1) &
             print 1, &
             'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, self%dtime, self%u_max, &
@@ -988,11 +990,13 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
             real(n_update), ntask, nq, &
-            mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, mpi_mesg%n_send, mpi_mesg%n_recv, &
+            mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
+            mpi_mesg%n_send, mpi_mesg%n_recv, mpi_mesg%n_delay, &
             self%is_set(bits%boundary), self%is_set(bits%virtual)
         end do
       end if
-      mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0; mpi_mesg%n_send=0; mpi_mesg%n_recv=0
+      mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0;
+      mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_delay=0
       call trace%end (itimer)
     end if
   end if

@@ -127,6 +127,7 @@ SUBROUTINE update (self)
   class(task_t), pointer:: task
   class(mesg_t), pointer:: mesg
   logical:: already_busy
+  real(8):: wc
   !.............................................................................
   call trace_begin('task_list_t%update')
   !call self%check_flags
@@ -183,7 +184,10 @@ SUBROUTINE update (self)
     !----------------------------------------------------------------------------
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
+    wc = wallclock()
     call task%update                                    ! update the task
+    !$omp atomic write
+    mpi_mesg%delay_ms = 1d3*(wallclock()-wc)
     !$omp atomic
     mpi_mesg%n_update = mpi_mesg%n_update+1
     !----------------------------------------------------------------------------

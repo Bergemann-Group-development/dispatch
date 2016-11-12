@@ -44,6 +44,8 @@ MODULE mpi_mesg_mod
     integer:: n_update=0
     integer:: n_send=0
     integer:: n_recv=0
+    integer:: n_delay=0
+    real:: delay_ms=0.0
   contains
     procedure:: init
     procedure:: check
@@ -399,8 +401,10 @@ SUBROUTINE delay (self, n)
   wc = wallclock()
   write (io_unit%log,*) wc,'delay:',n
   flush (io_unit%log)
-  do while ((wallclock()-wc) < 1e-3*delay_ms)
+  do while ((wallclock()-wc) < 1e-3*mpi_mesg%delay_ms)
   end do
+  !$omp atomic
+  self%n_delay = self%n_delay + 1
   call trace%end (itimer)
 END SUBROUTINE delay
 
