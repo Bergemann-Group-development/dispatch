@@ -173,26 +173,27 @@ FUNCTION ddxdn (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: ds(3), c
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = ddxdn_16 (ds,a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = ddxdn_20 (ds,a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = ddxdn_24 (ds,a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = ddxdn_32 (ds,a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = ddxdn_36 (ds,a)
     end if
-  else if (size(a,1) > 1) then
+  else if (n(1) > 1) then
     b(1,:,:) = 0.0
     c = 1./ds(1)
-    do iz=1,size(a,3)
-    do iy=1,size(a,2)
-    do ix=2,size(a,1)
+    do iz=1,n(3)
+    do iy=1,n(2)
+    do ix=2,n(1)
       b(ix,iy,iz) = c*(a(ix  ,iy,iz) - a(ix-1,iy,iz))
     end do
     end do
@@ -206,27 +207,28 @@ END FUNCTION ddxdn
 FUNCTION ddydn (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
   real    :: ds(3), c
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = ddydn_16 (ds,a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = ddydn_20 (ds,a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = ddydn_24 (ds,a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = ddydn_32 (ds,a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = ddydn_36 (ds,a)
     end if
-  else if (size(a,2) > 1) then
+  else if (n(2) > 1) then
     b(:,1,:) = 0.0
     c = 1./ds(2)
-    do iz=1,size(a,3)
-    do iy=2,size(a,2)
-    do ix=1,size(a,1)
+    do iz=1,n(3)
+    do iy=2,n(2)
+    do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy  ,iz) - a(ix,iy-1,iz))
     end do
     end do
@@ -241,26 +243,27 @@ FUNCTION ddzdn (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: ds(3), c
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = ddzdn_16 (ds,a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = ddzdn_20 (ds,a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = ddzdn_24 (ds,a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = ddzdn_32 (ds,a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = ddzdn_36 (ds,a)
     end if
-  else if (size(a,3) > 1) then
+  else if (n(3) > 1) then
     b(:,:,1) = 0.0
     c = 1./ds(3)
-    do iz=2,size(a,3)
-    do iy=1,size(a,2)
-    do ix=1,size(a,1)
+    do iz=2,n(3)
+    do iy=1,n(2)
+    do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy,iz  ) - a(ix,iy,iz-1))
     end do
     end do
@@ -274,27 +277,29 @@ END FUNCTION ddzdn
 FUNCTION ddxup (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
   real    :: ds(3), c
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = ddxup_16 (ds,a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = ddxup_20 (ds,a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = ddxup_24 (ds,a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = ddxup_32 (ds,a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = ddxup_36 (ds,a)
     end if
-  else if (size(a,1) > 1) then
-    b(size(a,1),:,:) = 0.0
+  else if (n(1) > 1) then
+    b(n(1),:,:) = 0.0
     c = 1./ds(1)
-    do iz=1,size(a,3)
-    do iy=1,size(a,2)
-    do ix=1,size(a,1)-1
+    !print*,'mk'
+    do iz=1,n(3)
+    do iy=1,n(2)
+    do ix=1,n(1)-1
       b(ix,iy,iz) = c*(a(ix+1,iy,iz) - a(ix  ,iy,iz))
     end do
     end do
@@ -308,27 +313,28 @@ END FUNCTION ddxup
 FUNCTION ddyup (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
   real    :: ds(3), c
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = ddyup_16 (ds,a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = ddyup_20 (ds,a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = ddyup_24 (ds,a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = ddyup_32 (ds,a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = ddyup_36 (ds,a)
     end if
-  else if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,size(a,2),:) = 0.0
+  else if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,n(2),:) = 0.0
     c = 1./ds(2)
-    do iz=1,size(a,3)
-    do iy=1,size(a,2)-1
-    do ix=1,size(a,1)
+    do iz=1,n(3)
+    do iy=1,n(2)-1
+    do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy+1,iz) - a(ix,iy  ,iz))
     end do
     end do
@@ -342,27 +348,28 @@ END FUNCTION ddyup
 FUNCTION ddzup (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
   real    :: ds(3), c
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = ddzup_16 (ds,a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = ddzup_20 (ds,a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = ddzup_24 (ds,a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = ddzup_32 (ds,a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = ddzup_36 (ds,a)
     end if
-  else if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,:,size(a,3)) = 0.0
+  else if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,:,n(3)) = 0.0
     c = 1./ds(3)
-    do iz=1,size(a,3)-1
-    do iy=1,size(a,2)
-    do ix=1,size(a,1)
+    do iz=1,n(3)-1
+    do iy=1,n(2)
+    do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy,iz+1) - a(ix,iy,iz  ))
     end do
     end do
@@ -377,26 +384,27 @@ FUNCTION xdn (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = xdn_16 (a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = xdn_20 (a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = xdn_24 (a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = xdn_32 (a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = xdn_36 (a)
     end if
-  else if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  else if (n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
     b(1,:,:) = a(1,:,:)
-    do iz=1,size(a,3)
-    do iy=1,size(a,2)
-    do ix=2,size(a,1)
+    do iz=1,n(3)
+    do iy=1,n(2)
+    do ix=2,n(1)
       b(ix,iy,iz) = c*(a(ix  ,iy,iz) + a(ix-1,iy,iz))
     end do
     end do
@@ -411,26 +419,27 @@ FUNCTION ydn (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = ydn_16 (a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = ydn_20 (a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = ydn_24 (a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = ydn_32 (a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = ydn_36 (a)
     end if
-  else if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  else if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
     b(:,1,:) = a(:,1,:)
-    do iz=1,size(a,3)
-    do iy=2,size(a,2)
-    do ix=1,size(a,1)
+    do iz=1,n(3)
+    do iy=2,n(2)
+    do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy-1,iz))
     end do
     end do
@@ -445,26 +454,27 @@ FUNCTION zdn (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = zdn_16 (a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = zdn_20 (a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = zdn_24 (a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = zdn_32 (a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = zdn_36 (a)
     end if
-  else if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  else if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
     b(:,:,1) = a(:,:,1)
-    do iz=2,size(a,3)
-    do iy=1,size(a,2)
-    do ix=1,size(a,1)
+    do iz=2,n(3)
+    do iy=1,n(2)
+    do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy,iz-1))
     end do
     end do
@@ -479,26 +489,27 @@ FUNCTION xup (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = xup_16 (a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = xup_20 (a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = xup_24 (a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = xup_32 (a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = xup_36 (a)
     end if
-  else if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  else if (n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
-    b(size(a,1),:,:) = a(size(a,1),:,:)
-    do iz=1,size(a,3)
-    do iy=1,size(a,2)
-    do ix=1,size(a,1)-1
+    b(n(1),:,:) = a(n(1),:,:)
+    do iz=1,n(3)
+    do iy=1,n(2)
+    do ix=1,n(1)-1
       b(ix,iy,iz) = c*(a(ix+1,iy,iz) + a(ix  ,iy,iz))
     end do
     end do
@@ -513,26 +524,27 @@ FUNCTION yup (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = yup_16 (a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = yup_20 (a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = yup_24 (a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = yup_32 (a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = yup_36 (a)
     end if
-  else if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  else if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
-    b(:,size(a,2),:) = a(:,size(a,2),:)
-    do iz=1,size(a,3)
-    do iy=1,size(a,2)-1
-    do ix=1,size(a,1)
+    b(:,n(2),:) = a(:,n(2),:)
+    do iz=1,n(3)
+    do iy=1,n(2)-1
+    do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy+1,iz) + a(ix,iy  ,iz))
     end do
     end do
@@ -547,26 +559,27 @@ FUNCTION zup (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (hardwire) then
-    if (all(shape(a)==[16,16,16])) then
+    if (all(n==[16,16,16])) then
       b = zup_16 (a)
-    else if (all(shape(a)==[20,20,20])) then
+    else if (all(n==[20,20,20])) then
       b = zup_20 (a)
-    else if (all(shape(a)==[24,24,24])) then
+    else if (all(n==[24,24,24])) then
       b = zup_24 (a)
-    else if (all(shape(a)==[32,32,32])) then
+    else if (all(n==[32,32,32])) then
       b = zup_32 (a)
-    else if (all(shape(a)==[36,36,36])) then
+    else if (all(n==[36,36,36])) then
       b = zup_36 (a)
     end if
-  else if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  else if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
-    b(:,:,size(a,3)) = a(:,:,size(a,3))
-    do iz=1,size(a,3)-1
-    do iy=1,size(a,2)
-    do ix=1,size(a,1)
+    b(:,:,n(3)) = a(:,:,n(3))
+    do iz=1,n(3)-1
+    do iy=1,n(2)
+    do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy,iz+1) + a(ix,iy,iz  ))
     end do
     end do
