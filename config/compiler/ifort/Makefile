@@ -7,8 +7,8 @@ PREC = 4
 
 # Depending on MPI use mpif90 or not
 ifeq ($(strip $(MPI)),mpi)
-  F90 = mpif90 -cpp -assume byterecl -diag-disable remark -DPREC=$(PREC)
-  LD  = mpif90
+  F90 = mpiifort -cpp -assume byterecl -diag-disable remark -DPREC=$(PREC)
+  LD  = mpiifort
 else
   F90 = ifort -cpp -assume byterecl -diag-disable remark -DPREC=$(PREC)
   LD  = ifort
