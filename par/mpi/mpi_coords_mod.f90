@@ -30,6 +30,7 @@
 !> =============================================================================
 MODULE mpi_coords_mod
   USE mpi_mod
+  USE timer_mod
   implicit none
   private
   include 'mpif.h'
@@ -92,8 +93,8 @@ END FUNCTION coords_to_rank
 !> =============================================================================
 !> Extent the basic MPI object with MPI coordinate info
 !> =============================================================================
-SUBROUTINE init (mp, mpi_dims, dims)
-  class(mpi_coords_t):: mp
+SUBROUTINE init (self, mpi_dims, dims)
+  class(mpi_coords_t):: self
   integer, optional:: mpi_dims(3), dims(3)
   interface
     subroutine mpi_create_mpi (mpi_dims, dims)
@@ -101,23 +102,23 @@ SUBROUTINE init (mp, mpi_dims, dims)
     end subroutine
   end interface
   !.............................................................................
-  call mp%mpi_t%init
-  call cart_create_mpi (mp, mpi_dims, dims=dims)
-  mp%coords = mpi_cord3
-  mp%dims   = mpi_dim3
-  mp%plane  = mpi_plane
-  mp%beam   = mpi_beam
-  mp%dn     = mpi_dn
-  mp%up     = mpi_up
-  mp%ok     = ok
-  mpi_coords%cart_comm = mp%cart_comm
-  mpi_coords%coords = mp%coords
-  mpi_coords%dims   = mp%dims
-  mpi_coords%plane  = mp%plane
-  mpi_coords%beam   = mp%beam
-  mpi_coords%dn     = mp%dn
-  mpi_coords%up     = mp%up
-  mpi_coords%ok     = mp%ok
+  call self%mpi_t%init
+  call cart_create_mpi (self, mpi_dims, dims=dims)
+  self%coords = mpi_cord3
+  self%dims   = mpi_dim3
+  self%plane  = mpi_plane
+  self%beam   = mpi_beam
+  self%dn     = mpi_dn
+  self%up     = mpi_up
+  self%ok     = ok
+  mpi_coords%cart_comm = self%cart_comm
+  mpi_coords%coords = self%coords
+  mpi_coords%dims   = self%dims
+  mpi_coords%plane  = self%plane
+  mpi_coords%beam   = self%beam
+  mpi_coords%dn     = self%dn
+  mpi_coords%up     = self%up
+  mpi_coords%ok     = self%ok
   if (mpi%size /= product(mpi_dim3)) then
     print*,'inconstent mpi%size:', mpi%size, mpi_dim3
     stop
@@ -126,26 +127,26 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE print (mp)
-  class(mpi_coords_t):: mp
+SUBROUTINE print (self)
+  class(mpi_coords_t):: self
   integer:: rank
   !.............................................................................
-  if (mp%ok) then
-    call mp%mpi_t%print
-    do rank=0,mp%size-1
-      if (rank==mp%rank) then
+  if (self%ok) then
+    call self%mpi_t%print
+    do rank=0,self%size-1
+      if (rank==self%rank) then
         print *,'...............................................'
-        print *, 'mpi%rank   =', mp%rank
-        print *, 'mpi%dims   =', mp%dims
-        print *, 'mpi%coords =', mp%coords
-        print *, 'mpi%beam   =', mp%beam
-        print *, 'mpi%plane  =', mp%plane
-        print *, 'mpi%dn     =', mp%dn
-        print *, 'mpi%up     =', mp%up
+        print *, 'mpi%rank   =', self%rank
+        print *, 'mpi%dims   =', self%dims
+        print *, 'mpi%coords =', self%coords
+        print *, 'mpi%beam   =', self%beam
+        print *, 'mpi%plane  =', self%plane
+        print *, 'mpi%dn     =', self%dn
+        print *, 'mpi%up     =', self%up
       end if
       call mpi%barrier (delay=0.25)
     end do
-  else if (mp%master) then
+  else if (self%master) then
     print *, "WARNING: no MPI cartesian coordinates"
   end if
 END SUBROUTINE
@@ -157,14 +158,15 @@ END SUBROUTINE
 !> dimension to get product(dims) = mpi%size.  If mpi_dims is present, the
 !> dims(3) information is ignored, even if present.
 !> =============================================================================
-SUBROUTINE cart_create_mpi (mp, mpi_dims, dims)
+SUBROUTINE cart_create_mpi (self, mpi_dims, dims)
   implicit none
-  class(mpi_coords_t):: mp
+  class(mpi_coords_t):: self
   integer, dimension(3), optional:: mpi_dims, dims
   integer:: i, m, color, size, n(3)
   integer:: mpi_err
   character(len=120), save:: id= &
     'mpi_coords.f90 $Id$'
+  integer, save:: itimer=0
 !-------------------------------------------------------------------------------
   mpi_reorder = .true.
   mpi_periodic = .true.
@@ -177,24 +179,24 @@ SUBROUTINE cart_create_mpi (mp, mpi_dims, dims)
     if (present(dims)) then
       ok = test_is_ok()
     else
-      ok = product(mpi_dims)==mp%size
+      ok = product(mpi_dims)==self%size
     end if
-    if (mp%rank==0) print'(a,i7,2x,3i5)',' mpi%size, mpi_dims =', mp%size, mpi_dims
+    if (self%rank==0) print'(a,i7,2x,3i5)',' mpi%size, mpi_dims =', self%size, mpi_dims
   else
     if (present(dims)) then
-      if (product(dims)/mp%size*mp%size == product(dims)) then
+      if (product(dims)/self%size*self%size == product(dims)) then
         do while (.true.)
-          m = mp%size**0.333334
-          if (m**3 == mp%size) then
+          m = self%size**0.333334
+          if (m**3 == self%size) then
             mpi_dim3 = [m,m,m]; if (test_is_ok()) exit
           end if
-          m = mp%size**0.500001
-          if (m**2 == mp%size) then
+          m = self%size**0.500001
+          if (m**2 == self%size) then
             mpi_dim3 = [m,m, 1]; if (test_is_ok()) exit
             mpi_dim3 = [m, 1,m]; if (test_is_ok()) exit
             mpi_dim3 = [ 1,m,m]; if (test_is_ok()) exit
           end if
-          m = mp%size
+          m = self%size
             mpi_dim3 = [m,1,1]; if (test_is_ok()) exit
             mpi_dim3 = [1,m,1]; if (test_is_ok()) exit
             mpi_dim3 = [1,1,m]; if (test_is_ok()) exit
@@ -207,20 +209,20 @@ SUBROUTINE cart_create_mpi (mp, mpi_dims, dims)
       call fail ('WARNING: either mpi_dims(3) or dims(3) must be present')
     end if
   end if
-  if (mp%size /= product(mpi_dim3)) then
+  if (self%size /= product(mpi_dim3)) then
     call fail ('WARNING: mpi%size must be equal to product(mpi_dims) =', &
       product(mpi_dim3))
   end if
   if (.not. ok) return
   call MPI_Cart_create (mpi_comm_world, 3, mpi_dim3, mpi_periodic, mpi_reorder, &
                         mpi_comm_cart, mpi_err)
-  mp%cart_comm = mpi_comm_cart
-  if (mp%rank==0) print '(13x,a,3i5)', ' Using mpi_dims =', mpi_dim3
+  self%cart_comm = mpi_comm_cart
+  if (self%rank==0) print '(13x,a,3i5)', ' Using mpi_dims =', mpi_dim3
   call mpi%assert ('cart_creat_mpi: cart', mpi_err)
   !-----------------------------------------------------------------------------
   ! Compute mpi_cord3; our coordinates in Cartesian MPI space
   !-----------------------------------------------------------------------------
-  call MPI_Cart_coords (mpi_comm_cart, mp%rank, 3, mpi_cord3, mpi_err)          ! mpi_cord3(i) = mpi_[xyz]
+  call MPI_Cart_coords (mpi_comm_cart, self%rank, 3, mpi_cord3, mpi_err)        ! mpi_cord3(i) = mpi_[xyz]
   call mpi%assert ('cart_creat_mpi: mpi_cord3', mpi_err)
   do i=1,3
     !---------------------------------------------------------------------------
@@ -231,7 +233,7 @@ SUBROUTINE cart_create_mpi (mp, mpi_dims, dims)
     !---------------------------------------------------------------------------
     ! Compute mpi_plane; the communicators for planes in MPI-space
     !---------------------------------------------------------------------------
-    call MPI_Comm_split (mpi_comm_world, mpi_cord3(i), mp%rank, mpi_plane(i),&  ! mpi_plane(
+    call MPI_Comm_split (mpi_comm_world, mpi_cord3(i), self%rank, mpi_plane(i),&! mpi_plane(
                          mpi_err)
     call mpi%assert ('cart_creat_mpi: mpi_plane', mpi_err)
     !---------------------------------------------------------------------------
@@ -247,14 +249,14 @@ SUBROUTINE cart_create_mpi (mp, mpi_dims, dims)
   CONTAINS
     logical function test_is_ok ()
       n = dims/mpi_dim3
-      test_is_ok = all(n*mpi_dim3 == dims) .and. product(mpi_dim3)==mp%size
+      test_is_ok = all(n*mpi_dim3 == dims) .and. product(mpi_dim3)==self%size
       ok = test_is_ok
-      if (mp%rank==0) print '(13x,a,3i5,l5)', 'trying mpi_dims =', mpi_dim3, ok
+      if (self%rank==0) print '(13x,a,3i5,l5)', 'trying mpi_dims =', mpi_dim3, ok
     end function
     subroutine fail (label, i)
       character(len=*):: label
       integer, optional:: i
-      if (mp%rank==0) then
+      if (self%rank==0) then
         if (present(i)) then
           print *, label, i
         else
@@ -266,12 +268,12 @@ END SUBROUTINE cart_create_mpi
 !
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE finalize (mp)
+SUBROUTINE finalize (self)
   implicit none
-  class(mpi_coords_t):: mp
+  class(mpi_coords_t):: self
   integer:: mpi_err, i
   !
-  if (mp%ok) then
+  if (self%ok) then
     call MPI_Comm_Free(mpi_comm_cart,mpi_err)
     do i=1,3
       call MPI_Comm_Free(mpi_plane(i),mpi_err)
