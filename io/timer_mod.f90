@@ -29,8 +29,9 @@ MODULE timer_mod
   interface toc
     module procedure toc_i4, toc_i8, toc_1
   end interface
+  integer, save:: otimer=0
   real(8), save:: wt=0d0
-  !$omp threadprivate (wt)
+  !$omp threadprivate (wt,otimer)
   public tic, toc, n_update
 CONTAINS
 
@@ -74,6 +75,9 @@ SUBROUTINE begin (self, name, itimer)
   !.............................................................................
   if (io_unit%do_validate) return
   thread = omp%mythread()
+  if (itimer /= otimer) then
+    call self%end (otimer)
+  end if
   if (itimer==0) then
     !$omp critical (timer_cr)
     ok = .true.
@@ -89,6 +93,7 @@ SUBROUTINE begin (self, name, itimer)
     !$omp end critical (timer_cr)
   end if
   timers(thread)%start(itimer) = wallclock()
+  otimer = itimer
 END SUBROUTINE begin
 
 !> =============================================================================
@@ -114,6 +119,7 @@ SUBROUTINE end (self, itimer)
       end if
     end if
   end if
+  otimer = 0
 END SUBROUTINE end
 
 !> =============================================================================
