@@ -30,7 +30,8 @@ MODULE trace_mod
   integer, save:: verbosity(maxlev)                             ! verbosity level
   integer, private, save:: indent=4                             ! trace indent
   integer, private, save:: level=1                              ! trace level
-  !$omp threadprivate(indent,level,tracing,verbosity)
+  integer, private, save:: otimer=0                             ! previous value
+  !$omp threadprivate(indent,level,tracing,verbosity,otimer)
 PUBLIC trace_begin, trace_tag, trace_end
 CONTAINS
 
@@ -46,6 +47,8 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
   !.............................................................................
   if (present(itimer)) then
     call timer%begin (id, itimer)
+    if (itimer /= otimer) call trace_end (itimer)
+    otimer = itimer
   end if
   if (.not.io%do_trace) return
   tracing(level) = trim(id)
@@ -127,6 +130,7 @@ SUBROUTINE trace_end (itimer)
     end if
   end if
   indent = max(indent-3,4)
+  otimer = 0
 END SUBROUTINE trace_end
 
 END MODULE trace_mod

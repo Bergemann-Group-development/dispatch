@@ -1118,12 +1118,12 @@ END FUNCTION highest
 !> =============================================================================
 SUBROUTINE courant_condition (self, detailed_timer)
   class(patch_t):: self
-  logical:: detailed_timer
+  logical, optional:: detailed_timer
   real(8):: dtime
   integer, save:: itimer=0
   !.............................................................................
-  if (detailed_timer) then
-    call trace_begin('patch_mod::courant', itimer=itimer)
+  if (present(detailed_timer)) then
+    if (detailed_timer) call trace_begin('patch_mod::courant', itimer=itimer)
   else
     call trace_begin('patch_mod::courant')
   end if
