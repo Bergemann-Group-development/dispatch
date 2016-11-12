@@ -126,6 +126,7 @@ SUBROUTINE update (self)
   class(link_t), pointer:: head
   class(task_t), pointer:: task
   class(mesg_t), pointer:: mesg
+  logical:: already_busy
   !.............................................................................
   call trace_begin('task_list_t%update')
   !call self%check_flags
@@ -149,22 +150,27 @@ SUBROUTINE update (self)
     ! one time.
     !---------------------------------------------------------------------------
     self%queue => head%next_time
-    head%task%nq = self%nq                              ! for info print
+    task => head%task                                   ! head task
+    task%nq = self%nq                                   ! for info print
     !$omp atomic
     self%nq = self%nq-1                                 ! decrement queue count
+    already_busy = task%is_set (bits%busy)
+    if (.not.already_busy) call head%task%set (bits%busy)
   end if
   !$omp end critical (list_cr)
   if (associated(head)) then
-    task => head%task                                   ! head task
     if (io%verbose > 1) then
       write (io_unit%log,'(a,i4,a,i5,2x,a,2x,i4)') &
         'thread', omp%thread,' takes', task%id, trim(task%type), self%nq
       flush (io_unit%log)
     end if
     !---------------------------------------------------------------------------
-    ! If the task is frozen (e.g. because it has finished), return
+    ! If the task is busy or frozen (e.g. because it has finished), return
     !---------------------------------------------------------------------------
-    if (task%is_set (bits%frozen+bits%virtual)) then
+    if (already_busy) then
+      call trace_end
+      return
+    else if (task%is_set (bits%frozen+bits%virtual)) then
       if (task%iout == 0) call task%output(self%name)
       ! if a frozen task is set to ready, make it not ready
       if (task%is_set(bits%ready)) then
@@ -215,15 +221,15 @@ SUBROUTINE update (self)
     ! of its nbors that became new boundary patches over to relevant ranks,
     ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
     !-----------------------------------------------------------------------------
-    if (task%is_set(bits%boundary)) then              ! boundary patch?
-      head%task%nq = self%nq                          ! make sure to pass on
-      if (load_balance%check_load (head)) then        ! sell?
+    if (task%is_set(bits%boundary)) then                ! boundary patch?
+      head%task%nq = self%nq                            ! make sure to pass on
+      if (load_balance%check_load (head)) then          ! sell?
          self%na = self%na-1
          self%nb = self%nb-1
          self%nv = self%nv-1
          call self%count_status
       end if
-      call head%send_to_vnbors                        ! send to virtual nbors
+      call head%send_to_vnbors                          ! send to virtual nbors
     end if
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the
@@ -232,6 +238,7 @@ SUBROUTINE update (self)
     ! bit will prevent it being checked, but its nbors still need to be checked
     !-----------------------------------------------------------------------------
     call self%check_nbors (head)                        ! any nbors ready?
+    call task%clear (bits%busy)                         ! clear busy bit
     !$omp atomic write
     stalled = 0
     call mpi_mesg%diagnostics (0)
