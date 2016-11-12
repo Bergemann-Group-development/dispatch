@@ -47,7 +47,7 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
   !.............................................................................
   if (present(itimer)) then
     call timer%begin (id, itimer)
-    if (itimer /= otimer) call trace_end (itimer)
+    if (itimer/=otimer .and. otimer>0) call trace_end (itimer)
     otimer = itimer
   end if
   if (.not.io%do_trace) return
