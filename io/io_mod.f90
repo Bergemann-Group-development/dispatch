@@ -113,7 +113,7 @@ SUBROUTINE init (self, name)
       io_unit%log, io_unit%master, io_unit%verbose
     !$omp end critical (open_cr)
     !$omp end parallel
-    if (verbose>0.or.self%master) &
+    if (verbose>1.or.self%master) &
       print*, 'logfile:', filename
     self%log_unit = io_unit%log
     if (self%master) then

@@ -962,7 +962,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           real(n_update), ntask, nq, &
           mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, mpi_mesg%n_send, mpi_mesg%n_recv, &
           self%is_set(bits%boundary), self%is_set(bits%virtual)
-        if (io%verbose>1) then
+        if (io%verbose>0) then
           !$omp critical (info_cr)
           write (io_unit%mpi,1) &
             'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &

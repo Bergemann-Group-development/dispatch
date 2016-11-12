@@ -9,6 +9,7 @@ MODULE cartesian_mod
   USE link_mod
   USE task_list_mod
   USE experiment_mod
+  USE timer_mod
   implicit none
   private
   type, public:: cartesian_t
@@ -46,9 +47,10 @@ SUBROUTINE init (self, label)
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
   logical:: face_nbors=.false.
   integer:: thread, icoords(3)
+  integer:: itimer=0
   namelist /box_params/ size, dims, mpi_dims, origin, face_nbors
   !.............................................................................
-  call trace_begin ('cartesian_mod::init')
+  call trace_begin ('cartesian_mod::init',itimer=itimer)
   rewind (io%input); read (io%input, box_params)
   if (io%master) write (*, box_params)
   self%dims = dims
@@ -127,6 +129,7 @@ SUBROUTINE init (self, label)
       select type (task)
       type is (experiment_t)
         call task%init
+        call trace_begin ('cartesian_mod::init',itimer=itimer)
         !$omp atomic
         gb = gb + product(task%gn)*task%nv*task%nt*task%nw*4.0/1024.**3
         !$omp atomic
@@ -179,15 +182,17 @@ SUBROUTINE init (self, label)
   ! Construct neighbor lists used to perform checks for ready status
   !-----------------------------------------------------------------------------
   call self%task_list%init_all_nbors
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE init
 
 !> =============================================================================
 !> Diagnostics: Number of patches and GB of mem
 !> =============================================================================
 SUBROUTINE diagnostics
-  print '(a,i6)',     'Patches per process:', np
-  print '(a,f6.2,a)', ' Memory per process:', gb, ' GB'
+  if (mpi%master) then
+    print '(a,i6)',     'Patches per process:', np
+    print '(a,f6.2,a)', ' Memory per process:', gb, ' GB'
+  end if
 END SUBROUTINE
 
 END MODULE cartesian_mod
