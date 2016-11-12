@@ -19,7 +19,7 @@ MODULE patch_mod
   USE buffered_output_mod
   implicit none
   private
-  integer, parameter:: ndim = 3, i_d=1
+  integer, parameter:: ndim = 3
   type, extends(task_t), public:: patch_t
     real, dimension(:,:,:,:,:,:), pointer:: mem      => null()
     real, dimension(:,:,:,:,:),   pointer:: vgas     => null()

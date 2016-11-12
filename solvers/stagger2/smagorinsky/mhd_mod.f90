@@ -21,6 +21,7 @@ MODULE mhd_mod
     real:: nu(6), csound
     logical:: mhd=.true.
     type(force_t):: force
+    integer:: i_e=2, i_px=3, i_py=4, i_pz=5, i_bx=6, i_by=7, i_bz=8
   contains
     procedure:: init
     procedure:: update
@@ -211,9 +212,7 @@ associate (d=>self%d, dddt=>self%dddt, &
   self%u_max = max(self%u_max,-0.4*dx*self%fminval(dddt/d))
   if (io%verbose>2) print*,'u_max',self%u_max
   !-----------------------------------------------------------------------------
-  ! Conservation of entropy.  The formulation that works best so far is to make
-  ! the diffusive entropy flux directly proportional to the diffusive mass flux,
-  ! plus a contribution proportional to the gradient of specific entropy ss.
+  ! Conservation of energy
   !-----------------------------------------------------------------------------
   if (self%gamma /= 1.0) then
     ee = e/d
@@ -366,7 +365,7 @@ FUNCTION cell_gas_pressure(self, c) RESULT (pg)
 END FUNCTION cell_gas_pressure
 
 !> =============================================================================
-!> temperature from ideal gas law, taking into account that the temperature is 
+!> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
 !> =============================================================================
 FUNCTION gas_temperature (self) RESULT (tmp)
