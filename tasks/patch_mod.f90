@@ -132,6 +132,7 @@ MODULE patch_mod
     real(8):: size(3)
     real(8):: box(3)                    ! the periodic wrapping size
     real(8):: ds(3)
+    real(8):: send_time
     real(8), dimension(8):: t
     real(8), dimension(8):: dt
     integer, dimension(8):: iit
@@ -182,8 +183,12 @@ SUBROUTINE patch_to_header (self, head)
   head%dt(1:nt)   = self%dt
   head%iit(1:nt)  = self%iit
   head%nq         = self%nq
+  head%send_time  = wallclock()
   if (io%verbose > 1) &
-    write (io_unit%log,*) 'patch_to_header: id, nq =', head%id, head%nq, self%is_set(bits%swap_request)
+    write (io_unit%log,'(f12.6,3x,a,i7,i4,l3,2i4,f8.4)') &
+      wallclock(), 'patch_to_header: id, nq =', self%id, &
+      self%nq, self%is_set(bits%swap_request), &
+      mpi_mesg%sent_list%n, mpi_mesg%recv_list%n
 END SUBROUTINE patch_to_header
 
 !> =============================================================================
@@ -217,8 +222,12 @@ SUBROUTINE header_to_patch (self, head)
   self%dt         = head%dt(1:nt)
   self%iit        = head%iit(1:nt)
   self%nq         = head%nq
+  self%latency    = wallclock() - head%send_time
   if (io%verbose > 1) &
-    write (io_unit%log,*) 'header_to_patch: id, nq =', self%id, self%nq, self%is_set(bits%swap_request)
+    write (io_unit%log,'(f12.6,3x,a,i7,i4,l3,2i4,f8.4)') &
+      wallclock(), 'header_to_patch: id, nq =', self%id, &
+      self%nq, self%is_set(bits%swap_request), &
+      mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency
 END SUBROUTINE header_to_patch
 
 !> =============================================================================

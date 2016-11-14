@@ -51,6 +51,7 @@ MODULE task_mod
     type(lock_t):: lock                 ! OMP lock
     character(len=4):: kind='task'
     character(len=12):: type='task_t'
+    real:: latency=0.0                  ! MPI message latency
   contains
     procedure:: init
     procedure:: dnload => void
