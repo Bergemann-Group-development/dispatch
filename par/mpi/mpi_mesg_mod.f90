@@ -45,10 +45,13 @@ MODULE mpi_mesg_mod
     integer:: n_send=0
     integer:: n_recv=0
     integer:: n_delay=0
+    integer:: n_unpk=0
     real:: delay_ms=0.0
+    integer:: max_recv
+    integer:: max_probe
+    integer:: min_nq
   contains
     procedure:: init
-    procedure:: check
     procedure:: get
     procedure:: sent
     procedure:: delay
@@ -56,11 +59,14 @@ MODULE mpi_mesg_mod
   end type
   type(mpi_mesg_t), public:: mpi_mesg
   real, save:: delay_ms=3.0
+  integer, save:: min_nq=10                     ! min ready q size for MPI_Test
+  integer, save:: max_sent=3                    ! max outstanding patch sends
+  integer, save:: max_recv=4                    ! max outstanding patch recvs
   integer, save:: max_probe=5                   ! max loop count in MPI_Probe
   integer, save:: every_send=5                  ! how often to check send_list
   integer, save:: every_recv=1                  ! how often to check recv_list
+  logical, save:: wait=.false.                  ! if true, always use MPI_Wait
   logical, save:: debug=.false.
-  logical, save:: wait=.false.
 CONTAINS
 
 !> =============================================================================
