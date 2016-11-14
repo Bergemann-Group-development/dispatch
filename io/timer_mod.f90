@@ -273,7 +273,7 @@ SUBROUTINE toc_r (label, n, time)
   real:: n
   real(8), optional:: time
   real(8):: omp_get_wtime, dtime
-  integer:: n_threads
+  integer:: n_cores
   !.............................................................................
   if (io_unit%do_validate) return
   if (present(time)) then
@@ -281,14 +281,18 @@ SUBROUTINE toc_r (label, n, time)
   else
     dtime = (omp_get_wtime() - wt)
   end if
-  n_threads = max(min(omp%nthreads,omp%ncores),1)
+  n_cores = max(min(omp%nthreads,omp%ncores),1)
   write (io_unit%log,1) label, trim(time_str(dtime)), &
-    trim(time_str(dtime*n_threads/max(n,1.))), '/upd,', n, 'updates', n_threads, 'threads'
-  1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a, i4, 1x, a)
+    trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
+    mpi%size, merge('processes,','process,  ',mpi%size>1), &
+    n_cores, merge('cores/process','core/process ',n_cores>1)
+  1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a, 3(i4, 1x, a))
   flush (io_unit%log)
   if (mpi%rank==0.and.omp%thread==0) &
     print 1, label, trim(time_str(dtime)), &
-      trim(time_str(dtime*n_threads/max(n,1.))), '/upd,', n, 'updates', n_threads, 'threads'
+      trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
+      mpi%size, merge('processes,','process,  ',mpi%size>1), &
+      n_cores, merge('cores/process','core/process ',n_cores>1)
   flush (6)
   if (present(time)) then
     time = omp_get_wtime()

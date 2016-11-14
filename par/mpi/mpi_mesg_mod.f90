@@ -275,7 +275,7 @@ SUBROUTINE delete (self, mesg)
   class(mesg_list_t):: self
   class(mesg_t), pointer:: mesg
   !.............................................................................
-  deallocate (mesg%buffer)
+  if (associated(mesg%buffer)) deallocate (mesg%buffer)
   if (associated(mesg%reqs)) deallocate (mesg%reqs)
   deallocate (mesg)
 END SUBROUTINE delete

@@ -109,7 +109,7 @@ SUBROUTINE execute (self)
   end do
   !$omp end parallel
   call timer%print
-  call toc ('rank time', n_update, time=sec)
+  call toc ('wall time', n_update, time=sec)
   if (io%master) write (*,*) "task list finished."
   !if (io%master) &
   !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
@@ -421,7 +421,9 @@ SUBROUTINE check_mpi (self)
   !-----------------------------------------------------------------------------
   ! Prune the send list, if necessary
   !-----------------------------------------------------------------------------
+  !$omp critical (sent_cr)
   call mpi_mesg%sent_list%check_sent
+  !$omp end critical (sent_cr)
   i=1; wc(i) = wallclock()-wc(0)
   if (wc(i) > check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
