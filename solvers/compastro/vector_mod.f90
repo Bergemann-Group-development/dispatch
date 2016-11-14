@@ -322,9 +322,9 @@ FUNCTION grads (in) RESULT(out)
   type(scalar_t), intent(in):: in
   !-----------------------------------------------------------------------------
   call trace_begin ('grad')
-  print *, sizeof(out%x)
-  print *, sizeof(out%y)
-  print *, sizeof(out%z)
+  print *, storage_size(out%x)
+  print *, storage_size(out%y)
+  print *, storage_size(out%z)
   call out%allocate (in)
   !out%x = out%d%dx (in%f)
   !out%y = out%d%dy (in%f)

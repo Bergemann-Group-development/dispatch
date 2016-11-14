@@ -90,11 +90,11 @@ SUBROUTINE init (self)
 #ifndef _CRAYFTN
   block
   type(io_rank_info_t):: io_rank_info
-  if (n_io_rank_info*4 /= sizeof(io_rank_info)) then
-    print *, n_io_rank_info*4, sizeof(io_rank_info)
+  if (n_io_rank_info*4 /= storage_size(io_rank_info)/8) then
+    print *, n_io_rank_info*4, storage_size(io_rank_info)/8
     error stop 'The hardwired loadbalance_mod::n_io_rank_info is incorrect'
   end if
-  n_io_rank_info = sizeof(io_rank_info)/4
+  n_io_rank_info = storage_size(io_rank_info)/32
   end block
 #endif
 END SUBROUTINE init

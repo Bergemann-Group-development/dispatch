@@ -406,16 +406,14 @@ SUBROUTINE init (self)
   self%new = self%iit(nt)                       ! short-hand
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
-#ifndef _CRAYFTN
   block
   type(header_t):: header
-  if (n_header*4 /= sizeof(header)) then
-    print *, n_header*4, sizeof(header)
-    error stop 'The hardwired patch_mod::n_header is incorrect'
+  n_header = storage_size(header)/32             ! 32 bits per word
+  if (n_header*4 /= storage_size(header)/8) then
+    print *, n_header*4, storage_size(header)/8
+    error stop 'n_header is incorrect'
   end if
-  n_header = sizeof(header)/4
   end block
-#endif
   call trace_end
 END SUBROUTINE init
 
