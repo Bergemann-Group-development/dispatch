@@ -65,10 +65,12 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
+!> If itimer==0, find a suitable value for it, and store the name with it.
+!> The name argument is not needed when itimer has already been assigned a value.
 !> =============================================================================
 SUBROUTINE begin (self, name, itimer)
   class(timer_t):: self
-  character(len=*):: name
+  character(len=*), optional:: name
   integer:: itimer, thread, i
   logical:: ok
   !.............................................................................

@@ -70,11 +70,12 @@ SUBROUTINE send (self, rank)
   class(mesg_t):: self
   integer:: rank, req, ierr
   !.............................................................................
-!  if (io%verbose>1) then
+  call trace%begin ('mesg_t%send')
+  if (io%verbose>1) then
     write (io_unit%log,*) &
     'mpi_mesg::send id, nbuf, to =', self%id, self%nbuf, rank
     flush (io_unit%log)
-!  end if
+  end if
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
@@ -90,6 +91,7 @@ SUBROUTINE send (self, rank)
   end if
   !$omp atomic
   mpi_mesg%n_send = mpi_mesg%n_send+1
+  call trace%end
 END SUBROUTINE send
 
 !> =============================================================================

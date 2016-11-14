@@ -36,6 +36,7 @@ PUBLIC trace_begin, trace_tag, trace_end
 CONTAINS
 
 !> =============================================================================
+!> Start a new trace level, and a new timer epoch.
 !> =============================================================================
 SUBROUTINE trace_begin (id, set_verbose, itimer)
   implicit none
@@ -44,11 +45,20 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
   character(len=mch):: fmt
   integer:: verbose
   real(8):: wc
-  !.............................................................................
+  !-----------------------------------------------------------------------------
+  ! If a different timer epoch is still open, as signalled by the previous itimer
+  ! value, stored in otimer, then close that timer epoch by calling timer_end
+  !-----------------------------------------------------------------------------
   if (present(itimer)) then
+    if (itimer/=otimer .and. otimer>0) call timer%end (otimer)
     call timer%begin (id, itimer)
-    if (itimer/=otimer .and. otimer>0) call trace_end (itimer)
     otimer = itimer
+  !-----------------------------------------------------------------------------
+  ! If no new itimer value is given, but an old timer epoch is still open, then
+  ! close it
+  !-----------------------------------------------------------------------------
+  else if (otimer > 0) then
+    call timer%end (otimer)
   end if
   if (.not.io%do_trace) return
   tracing(level) = trim(id)
@@ -102,6 +112,9 @@ SUBROUTINE trace_tag (id)
 END SUBROUTINE trace_tag
 
 !> =============================================================================
+!> End a trace level.  If the previous trace%begin call had an itimer argument,
+!> the value is remembered in otimer, and that timer epoch can thus be closed,
+!> even if an itimer argument is not given.
 !> =============================================================================
 SUBROUTINE trace_end (itimer)
   implicit none
@@ -110,10 +123,13 @@ SUBROUTINE trace_end (itimer)
   character(len=mch):: fmt
   integer:: verbose
   real(8):: wc
-  !.............................................................................
+  !-----------------------------------------------------------------------------
   if (present(itimer)) then
-    if (itimer>0) call timer%end(itimer)
+    call timer%end(itimer)
+  else if (otimer > 0) then
+    call timer%end(otimer)
   end if
+  otimer = 0
   if (.not.io%do_trace) return
   level  = max(level-1,1)
   indent = max(indent,4)
@@ -130,7 +146,6 @@ SUBROUTINE trace_end (itimer)
     end if
   end if
   indent = max(indent-3,4)
-  otimer = 0
 END SUBROUTINE trace_end
 
 END MODULE trace_mod

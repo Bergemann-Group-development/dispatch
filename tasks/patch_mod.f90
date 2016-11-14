@@ -1134,7 +1134,11 @@ SUBROUTINE courant_condition (self, detailed_timer)
   integer, save:: itimer=0
   !.............................................................................
   if (present(detailed_timer)) then
-    if (detailed_timer) call trace_begin('patch_mod::courant', itimer=itimer)
+    if (detailed_timer) then
+      call trace_begin('patch_mod::courant', itimer=itimer)
+    else
+      call trace_begin('patch_mod::courant')
+    end if
   else
     call trace_begin('patch_mod::courant')
   end if
@@ -1159,7 +1163,11 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
+  if (detailed_timer) then
   call trace_end (itimer)
+  else
+    call trace_end
+  end if
 END SUBROUTINE courant_condition
 
 !> =============================================================================

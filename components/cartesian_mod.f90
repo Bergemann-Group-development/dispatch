@@ -129,7 +129,6 @@ SUBROUTINE init (self, label)
       select type (task)
       type is (experiment_t)
         call task%init
-        call trace_begin ('cartesian_mod::init',itimer=itimer)
         !$omp atomic
         gb = gb + product(task%gn)*task%nv*task%nt*task%nw*4.0/1024.**3
         !$omp atomic

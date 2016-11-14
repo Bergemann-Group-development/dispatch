@@ -13,6 +13,7 @@ MODULE list_mod
   USE patch_mod
   USE link_mod
   USE load_balance_mod
+  USE timer_mod
   implicit none
   private
   type, public:: list_t
@@ -248,7 +249,7 @@ SUBROUTINE check_nbors (self, link)
   logical:: is_clear
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_mod::check_nbors '//self%name, itimer=itimer)
+  call trace_begin('list_t%check_nbors', itimer=itimer)
   !$omp critical (list_cr)
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
@@ -259,9 +260,9 @@ SUBROUTINE check_nbors (self, link)
     is_clear = nbtask%is_clear(bits%ready)
     if (is_clear .and. nbor%check) then               ! needs checking?
       n_blocked = n_blocked+1
-      call trace_end (itimer)
+      call timer%end (itimer)
       call self%check_ready (nbor%link)               ! pointer back
-      call trace_begin('list_mod::check_nbors', itimer=itimer)
+      call timer%begin (itimer=itimer)
       if (nbtask%is_set(bits%ready)) then
         n_cleared = n_cleared+1
       else
@@ -269,8 +270,6 @@ SUBROUTINE check_nbors (self, link)
       end if
       if (nbtask%id==io%id_debug) &
         write (io_unit%log,*) io%id_debug, 'mk checked by:', task%id, nbtask%is_set(bits%ready)
-    else
-      n_ready = n_ready+1
     end if
     nbor => nbor%next                                 ! next nbor
   end do
@@ -280,9 +279,9 @@ SUBROUTINE check_nbors (self, link)
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%virtual+bits%external)) then
     call task%clear(bits%ready)                       ! needs new check
-    call trace_end (itimer)
+    call timer%end (itimer)
     call self%check_ready (link)                      ! finally check link task
-    call trace_begin('list_mod::check_nbors', itimer=itimer)
+    call timer%begin (itimer=itimer)
     self%n_nbor = self%n_nbor + 1
     if (io%verbose>2) write (io_unit%log,'(a,i9,l3,12(2x,a,i4))') &
       'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
