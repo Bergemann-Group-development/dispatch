@@ -675,7 +675,7 @@ SUBROUTINE pack (self, mesg)
   integer:: n_var, ibuf, iv, it
   real, dimension(:,:,:), pointer:: var
   real:: pt
-  integer:: itimer=0
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Compute size of buffer and allocate -- it will be freed by the writer
   !-----------------------------------------------------------------------------

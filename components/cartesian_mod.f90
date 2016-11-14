@@ -47,7 +47,7 @@ SUBROUTINE init (self, label)
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
   logical:: face_nbors=.false.
   integer:: thread, icoords(3)
-  integer:: itimer=0
+  integer, save:: itimer=0
   namelist /box_params/ size, dims, mpi_dims, origin, face_nbors
   !.............................................................................
   call trace_begin ('cartesian_mod::init',itimer=itimer)
