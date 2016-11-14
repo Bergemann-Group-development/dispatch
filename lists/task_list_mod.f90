@@ -45,6 +45,7 @@ MODULE task_list_mod
     procedure:: print => print_tasklist
     procedure:: print_tasks
   end type
+  real, save:: check_ms=10.
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
 CONTAINS
 
@@ -58,7 +59,7 @@ SUBROUTINE init (self, name)
   class(link_t), pointer:: link
   integer:: iostat
   integer:: debug=0
-  namelist /task_list_params/ debug, max_stalled, retry_stalled
+  namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -134,7 +135,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
-  call self%check_mpi                                 ! check incoming MPI
+  call self%check_mpi                                   ! check incoming MPI
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in a very brief critical region
   !-----------------------------------------------------------------------------
@@ -334,8 +335,6 @@ SUBROUTINE unpack (self, mesg)
   if (task%is_set (bits%boundary)) then
     write (io_unit%log,'(f12.6,2x,a,i9)') wallclock(), &
       'task_list_mod::unpack ERROR, received mpi_mesg for boundary task:', task%id
-    deallocate (mesg%buffer)
-    deallocate (mesg)
     go to 9
   end if
   if (task%is_set (bits%ready)) then
@@ -350,8 +349,6 @@ SUBROUTINE unpack (self, mesg)
     end do
     write (io_unit%log,'(f12.6,2x,a,i9,l3)') wallclock(), &
       'task_list_mod::unpack ERROR, received mpi_mesg for task with ready bit:', task%id, found
-    deallocate (mesg%buffer)
-    deallocate (mesg)
     go to 9
   end if
   !---------------------------------------------------------------------------
@@ -396,8 +393,6 @@ SUBROUTINE unpack (self, mesg)
     call link%update_nbor_status (link)
     call self%count_status
   end if
-  deallocate (mesg%buffer)
-  deallocate (mesg)
 9 continue
   !-----------------------------------------------------------------------------
   ! As the task has now been updated, we need to check if any of the neighbors
@@ -411,30 +406,82 @@ SUBROUTINE unpack (self, mesg)
 END SUBROUTINE unpack
 
 !> =============================================================================
-!> Check for and unpack MPI messages
+!> Check for and unpack MPI messages.
 !> =============================================================================
 SUBROUTINE check_mpi (self)
   class(task_list_t):: self
-  class(mesg_t), pointer:: mesg
-  logical:: wait
+  class(mesg_t), pointer:: mesg, next
+  integer, save:: itimer=0
+  integer:: i, n, max_recv
+  real(8):: wc(0:10)=0.0
   !.............................................................................
   if (mpi%size <= 1) return
-  call trace_begin ('task_list_mod::check_mpi', 1)
+  wc(0) = wallclock()
+  call trace_begin ('task_list_mod::check_mpi', 1, itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Check for new or completed incoming and outgoing messages
+  ! Prune the send list, if necessary
   !-----------------------------------------------------------------------------
-  wait = self%nq < 10
-  !wait = .false.
-  call mpi_mesg%check (wait)
+  call mpi_mesg%sent_list%check_sent
+  i=1; wc(i) = wallclock()-wc(0)
+  if (wc(i) > check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
-  ! Get and unpack available message buffers
+  ! 1st step: probe for new messages and check for completeness. Unpack any that
+  ! are complete and add the rest to the recv_list.
   !-----------------------------------------------------------------------------
   call mpi_mesg%get (mesg)
+  n = 0
   do while (associated(mesg))
-    call self%unpack (mesg)
+    if (mesg%is_complete()) then
+      call self%unpack (mesg)
+      call mpi_mesg%recv_list%delete (mesg)
+    else
+      !$omp critical (recv_cr)
+      call mpi_mesg%recv_list%add (mesg)
+      !$omp end critical (recv_cr)
+    end if
+    n = n+1
+    if (n > mpi_mesg%max_probe) exit
     call mpi_mesg%get (mesg)
   end do
-  call trace_end
+  i=i+1; wc(i) = wallclock()-wc(0)
+  if (wc(i) > check_ms*1e-3)  go to 9
+  !-----------------------------------------------------------------------------
+  ! 2nd step: if there are more than max_recv messages in recv_list, then wait
+  ! for and unpack enough messages to reach the limit.  If task_list%nq is less
+  ! then min_nq, reduce the max_recv to zero, forcing a wait on all receives.
+  !-----------------------------------------------------------------------------
+  max_recv = merge(mpi_mesg%max_recv,0,self%nq >= mpi_mesg%min_nq)
+  if (mpi_mesg%recv_list%n > max_recv) then
+    !$omp critical (recv_cr)
+    mesg => mpi_mesg%recv_list%head
+    do while (mpi_mesg%recv_list%n > max_recv)
+      next => mesg%next
+      call mesg%wait_for_completion
+      call self%unpack (mesg)
+      call mpi_mesg%recv_list%remove (mesg)
+      mesg => next
+    end do
+    !$omp end critical (recv_cr)
+  end if
+  i=i+1; wc(i) = wallclock()-wc(0)
+  if (wc(i) > check_ms*1e-3) go to 9
+  !-----------------------------------------------------------------------------
+  ! 3rd step: check the rest of the recv_list for completed messages, and unpack
+  ! and remove any that are found
+  !-----------------------------------------------------------------------------
+  do while (associated(mesg))
+    next => mesg%next
+    if (mesg%is_complete()) then
+      call self%unpack (mesg)
+      !$omp critical (recv_cr)
+      call mpi_mesg%recv_list%remove (mesg)
+      !$omp end critical (recv_cr)
+    end if
+    mesg => next
+  end do
+  i=i+1; wc(i) = wallclock()-wc(0)
+9 write (io_unit%log, '(a,6f10.4)') 'check_mpi times:', wc(1:i)
+  call trace_end (itimer)
 END SUBROUTINE check_mpi
 
 !> =============================================================================
