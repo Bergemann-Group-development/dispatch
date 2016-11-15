@@ -421,9 +421,11 @@ SUBROUTINE check_mpi (self)
   !-----------------------------------------------------------------------------
   ! Prune the send list, if necessary
   !-----------------------------------------------------------------------------
+  call timer%end (itimer=itimer)
   !$omp critical (sent_cr)
   call mpi_mesg%sent_list%check_sent
   !$omp end critical (sent_cr)
+  call timer%begin (itimer=itimer)
   i=1; wc(i) = wallclock()-wc(0)
   if (wc(i) > check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
@@ -434,7 +436,9 @@ SUBROUTINE check_mpi (self)
   n = 0
   do while (associated(mesg))
     if (mesg%is_complete()) then
+      call timer%end (itimer=itimer)
       call self%unpack (mesg)
+      call timer%begin (itimer=itimer)
       call mpi_mesg%recv_list%delete (mesg)
     else
       !$omp critical (recv_cr)
@@ -443,7 +447,9 @@ SUBROUTINE check_mpi (self)
     end if
     n = n+1
     if (n > mpi_mesg%max_probe) exit
+    call timer%end (itimer=itimer)
     call mpi_mesg%get (mesg)
+    call timer%begin (itimer=itimer)
   end do
   i=i+1; wc(i) = wallclock()-wc(0)
   if (wc(i) > check_ms*1e-3)  go to 9
@@ -458,8 +464,10 @@ SUBROUTINE check_mpi (self)
     mesg => mpi_mesg%recv_list%head
     do while (mpi_mesg%recv_list%n > max_recv)
       next => mesg%next
+      call timer%end (itimer=itimer)
       call mesg%wait_for_completion
       call self%unpack (mesg)
+      call timer%begin (itimer=itimer)
       call mpi_mesg%recv_list%remove (mesg)
       mesg => next
     end do
@@ -471,6 +479,7 @@ SUBROUTINE check_mpi (self)
   ! 3rd step: check the rest of the recv_list for completed messages, and unpack
   ! and remove any that are found
   !-----------------------------------------------------------------------------
+  call timer%end (itimer=itimer)
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_complete()) then
@@ -481,6 +490,7 @@ SUBROUTINE check_mpi (self)
     end if
     mesg => next
   end do
+  call timer%end (itimer=itimer)
   i=i+1; wc(i) = wallclock()-wc(0)
 9 write (io_unit%log, '(a,6f10.4)') 'check_mpi times:', wc(1:i)
   call trace_end (itimer)

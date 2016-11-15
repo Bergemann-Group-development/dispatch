@@ -990,7 +990,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             flush (io_unit%mpi)
             !$omp end critical (info_cr)
           end if
-         end do
+        end do
         if (io%verbose>1 .or. self%id==1) then
           if (io%master) then
             if (n_lines<=0) then
@@ -1019,11 +1019,12 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
               self%is_set(bits%boundary), self%is_set(bits%virtual)
             1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,3i5,8i4,l3,l1,o12)
             end do
+            counts = 0
           end if
-          mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0
-          mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
-          mpi_mesg%n_delay=0
         end if
+        mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0
+        mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
+        mpi_mesg%n_delay=0
       end if
       call trace%end (itimer)
     end if
