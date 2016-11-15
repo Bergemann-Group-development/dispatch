@@ -13,8 +13,8 @@
  sec_per_report=5
 /
 &io_params
- verbose=2
- do_trace=t
+ verbose=1
+ do_trace=f
  do_debug=f
  do_output=f
  id_debug=0

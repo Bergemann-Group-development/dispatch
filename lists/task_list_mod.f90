@@ -314,6 +314,8 @@ END FUNCTION find_task
 !> =============================================================================
 !> Unpack a message, where the MPI tag is the task id.  Use that to search
 !> for the task, apply its unpack method, and check if any nbors become ready.
+!> This entire operation should be threadsafe, since no other thread should be
+!> working on the same message and the same patch.
 !> =============================================================================
 SUBROUTINE unpack (self, mesg)
   class(task_list_t):: self
@@ -329,6 +331,7 @@ SUBROUTINE unpack (self, mesg)
   !$omp critical (list_cr)
   link => self%find_task (mesg%id)
   task => link%task
+  !$omp end critical (list_cr)
   !-----------------------------------------------------------------------------
   ! Guard against lingering extra messages to a swapped patch
   !-----------------------------------------------------------------------------
@@ -338,6 +341,7 @@ SUBROUTINE unpack (self, mesg)
     go to 9
   end if
   if (task%is_set (bits%ready)) then
+    !$omp critical (list_cr)
     found = .false.
     link => self%queue
     do while (associated(link))
@@ -347,6 +351,7 @@ SUBROUTINE unpack (self, mesg)
       end if
       link => link%next_time
     end do
+    !$omp end critical (list_cr)
     write (io_unit%log,'(f12.6,2x,a,i9,l3)') wallclock(), &
       'task_list_mod::unpack ERROR, received mpi_mesg for task with ready bit:', task%id, found
     go to 9
@@ -364,6 +369,7 @@ SUBROUTINE unpack (self, mesg)
   ! If the boundary+swap bits are set, this is a task that has just changed
   ! rank, and it needs to have its nbor relations re-initialized. This includes
   ! resorting (removing + re-adding) the nbor's nbor lists in rank order.
+  ! FIXME: The load balancing steps should be checked for threadsafe operation
   !---------------------------------------------------------------------------
   if (task%is_set(bits%swap_request) .and. task%is_set(bits%boundary)) then
     self%na = self%na+1; self%nb = self%nb+1; self%nv = self%nv-1
@@ -401,7 +407,6 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
   if (io%verbose>1) &
     call link%test_nbor_status
-  !$omp end critical (list_cr)
   call self%check_nbors (link)
 END SUBROUTINE unpack
 
@@ -430,7 +435,9 @@ SUBROUTINE check_mpi (self)
   if (wc(i) > check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
   ! 1st step: probe for new messages and check for completeness. Unpack any that
-  ! are complete and add the rest to the recv_list.
+  ! are complete and add the rest to the recv_list.  Note that the probing for
+  ! new messages is threadsafe (if the MPI library supports it), so only the
+  ! list handling needs to be protected here.
   !-----------------------------------------------------------------------------
   call mpi_mesg%get (mesg)
   n = 0
@@ -457,6 +464,9 @@ SUBROUTINE check_mpi (self)
   ! 2nd step: if there are more than max_recv messages in recv_list, then wait
   ! for and unpack enough messages to reach the limit.  If task_list%nq is less
   ! then min_nq, reduce the max_recv to zero, forcing a wait on all receives.
+  ! This step is potentially a bottleneck, since it contains an MPI_Wait.  It
+  ! could be speeded up by taking the completed messsages out of the recv_list,
+  ! and saving them for unpacking in a threadprivate unpack list.
   !-----------------------------------------------------------------------------
   max_recv = merge(mpi_mesg%max_recv,0,self%nq >= mpi_mesg%min_nq)
   if (mpi_mesg%recv_list%n > max_recv) then
@@ -477,20 +487,21 @@ SUBROUTINE check_mpi (self)
   if (wc(i) > check_ms*1e-3) go to 9
   !-----------------------------------------------------------------------------
   ! 3rd step: check the rest of the recv_list for completed messages, and unpack
-  ! and remove any that are found
+  ! and remove any that are found.  This traversal must in principle also be
+  ! protected, and the same remark as above applies.
   !-----------------------------------------------------------------------------
-  call timer%end (itimer=itimer)
+  !$omp critical (recv_cr)
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_complete()) then
+      call timer%end (itimer=itimer)
       call self%unpack (mesg)
-      !$omp critical (recv_cr)
+      call timer%begin (itimer=itimer)
       call mpi_mesg%recv_list%remove (mesg)
-      !$omp end critical (recv_cr)
     end if
     mesg => next
   end do
-  call timer%end (itimer=itimer)
+  !$omp end critical (recv_cr)
   i=i+1; wc(i) = wallclock()-wc(0)
 9 write (io_unit%log, '(a,6f10.4)') 'check_mpi times:', wc(1:i)
   call trace_end (itimer)

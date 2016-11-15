@@ -43,7 +43,7 @@ MODULE mpi_mesg_mod
   !
   type, public:: mpi_mesg_t
     logical:: initialized=.false.
-    type(mesg_list_t):: sent_list, recv_list, unpack_list
+    type(mesg_list_t):: sent_list, recv_list
     integer:: n_check=0
     integer:: n_ready=0
     integer:: n_update=0
@@ -63,6 +63,8 @@ MODULE mpi_mesg_mod
     procedure:: diagnostics
   end type
   type(mpi_mesg_t), public:: mpi_mesg
+  type(mesg_list_t), public:: unpk_list
+  !$threadprivate (unpk_list)
   real, save:: delay_ms=3.0
   integer, save:: min_nq=10                     ! min ready q size for MPI_Test
   integer, save:: max_sent=5                    ! max outstanding patch sends
@@ -120,24 +122,30 @@ SUBROUTINE check_sent (self)
   if (mpi%size <= 1 .or. .not.associated(self%head)) return
   call trace%begin ('mpi_mesg_t%check_sent', itimer=itimer)
   !-----------------------------------------------------------------------------
+  ! If there are more than max_sent messages pending, bring the number down with
+  ! wait_all on the oldest ones.
   !-----------------------------------------------------------------------------
-  mesg => self%head                                             ! top of list
-  do while (self%n > max_sent)
-    next => mesg%next
-    call timer%end (itimer=itimer)
-    call mesg%wait_all
-    call self%remove (mesg)
-    call timer%begin (itimer=itimer)
-    mesg => next
-    if (.not.associated(mesg)) then
-      call trace%end (itimer)
-      return
-    end if
-  end do
+  if (self%n > max_sent) then
+    !xomp critical (sent_cr)
+    mesg => self%head                                             ! top of list
+    do while (self%n > max_sent)
+      next => mesg%next
+      call timer%end (itimer=itimer)
+      call mesg%wait_all
+      call self%remove (mesg)
+      call timer%begin (itimer=itimer)
+      mesg => next
+      if (.not.associated(mesg)) then
+        call trace%end (itimer)
+        exit
+      end if
+    end do
+    !xomp end critical (sent_cr)
+  end if
   !-----------------------------------------------------------------------------
   ! Only test for sent messages completion 'every_send' time; there is no need
   ! to rush with the deallocation of mesg buffers, and the test cost can be
-  ! significant.
+  ! significant.  Note that this counted 'per thread'; every is threadprivate!
   !-----------------------------------------------------------------------------
   if (every>0) then
     every = every-1
@@ -147,7 +155,11 @@ SUBROUTINE check_sent (self)
     every = every_send
   end if
   !-----------------------------------------------------------------------------
+  ! This must be done in a critical region, since it traverses a list that may
+  ! be manipulated by other threads.  Apart from the testing itself, this is a
+  ! fast traversal, since the onlu action is deallocation / message deletion.
   !-----------------------------------------------------------------------------
+  !xomp critical (sent_cr)
   do while (associated(mesg))
     next => mesg%next                                           ! in case removed
     call timer%end (itimer=itimer)
@@ -158,11 +170,12 @@ SUBROUTINE check_sent (self)
     end if
     mesg => next                                                ! true next
   end do
+  !xomp end critical (sent_cr)
   call trace%end (itimer)
 END SUBROUTINE check_sent
 
 !> =============================================================================
-!> Test if all requests are complete
+!> Test if all requests (sending to several ranks) are complete for this mesg
 !> =============================================================================
 SUBROUTINE test_all (self, flag)
   class(mesg_t):: self
@@ -190,7 +203,7 @@ SUBROUTINE test_all (self, flag)
 END SUBROUTINE test_all
 
 !> =============================================================================
-!> Wait for all requests to complete
+!> Wait for all requests related to this mesg to complete
 !> =============================================================================
 SUBROUTINE wait_all (self)
   class(mesg_t):: self
@@ -216,7 +229,9 @@ SUBROUTINE wait_all (self)
 END SUBROUTINE wait_all
 
 !> =============================================================================
-!> Append a mesg at the end of the message list
+!> Append a mesg at the end of the message list.  Since adding and removing use
+!> the same critical region to protect the list handling, there is no need for
+!> atomic, but let's keep it for safe measure for now.
 !> =============================================================================
 SUBROUTINE add (self, mesg)
   class(mesg_list_t):: self
@@ -247,7 +262,6 @@ SUBROUTINE remove (self, mesg)
   class(mesg_list_t):: self
   class(mesg_t), pointer:: mesg
   !.............................................................................
-  !$omp critical (mesg_list_cr)
   if (associated(mesg%prev)) then               ! associated(prev) => not head
     mesg%prev%next => mesg%next                 ! cut out forwards
   else                                          ! mesg is head
@@ -265,7 +279,6 @@ SUBROUTINE remove (self, mesg)
   call self%delete (mesg)                       ! deallocate message
   !$omp atomic
   self%n = self%n-1                             ! decrement count
-  !$omp end critical (mesg_list_cr)
 END SUBROUTINE remove
 
 !> =============================================================================
@@ -334,7 +347,7 @@ SUBROUTINE init (self)
   if (io%verbose>0) write (io_unit%log,*) 'mpi_mesg_mod::init'
   self%sent_list%name = 'sent_list'
   self%recv_list%name = 'recv_list'
-  self%unpack_list%name = 'unpk_list'
+  unpk_list%name = 'unpk_list'
   self%initialized = .true.
   self%min_nq = min_nq
   self%max_recv = max_recv
