@@ -51,6 +51,7 @@ MODULE task_mod
     type(lock_t):: lock                 ! OMP lock
     character(len=4):: kind='task'
     character(len=12):: type='task_t'
+    real:: latency=0.0                  ! MPI message latency
   contains
     procedure:: init
     procedure:: dnload => void
@@ -72,6 +73,7 @@ MODULE task_mod
     procedure:: overlaps
     procedure:: distance                ! return the distance btw two patches
     procedure:: pack
+    procedure:: unpack
   end type
   integer, save:: id=0
 CONTAINS
@@ -332,9 +334,17 @@ FUNCTION distance (self, task) RESULT (out)
   out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
 END FUNCTION distance
 
+
 SUBROUTINE pack (self, mesg)
   class(task_t):: self
   class(mesg_t), pointer:: mesg
+  call mpi%abort ('task_t%pack called')
+END SUBROUTINE
+
+SUBROUTINE unpack (self, buffer)
+  class(task_t):: self
+  integer, dimension(:), pointer:: buffer
+  call mpi%abort ('task_t%unpack called')
 END SUBROUTINE
 
 END MODULE task_mod

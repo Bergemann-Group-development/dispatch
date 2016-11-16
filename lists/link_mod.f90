@@ -181,7 +181,7 @@ SUBROUTINE test_nbor_status (self)
 END SUBROUTINE test_nbor_status
 
 !> =============================================================================
-!> Check the status of an link with respect to its nbors
+!> Check the status of a link task  with respect to its nbors
 !> =============================================================================
 SUBROUTINE test_status (self)
   class(link_t):: self
@@ -205,18 +205,22 @@ SUBROUTINE test_status (self)
   end do
   test = iand(self%task%status,bits%internal+bits%boundary+bits%virtual+bits%external)
   if (status /= test) then
-    write (io_unit%log,'(i9,2x,a,i6,2(2x,4l3))') self%task%id, 'inconsistent bits', &
+    write (io_unit%log,'(i9,2x,a,i6,2(2x,4l1))') self%task%id, 'inconsistent:', &
       self%task%rank, &
       self%task%is_set(bits%internal), &
       self%task%is_set(bits%boundary), &
-      self%task%is_set(bits%virtual), &
-      self%task%is_set(bits%external)
+      self%task%is_set(bits%virtual) , &
+      self%task%is_set(bits%external), &
+      iand(status,bits%internal)/=0, &
+      iand(status,bits%boundary)/=0, &
+      iand(status,bits%virtual )/=0, &
+      iand(status,bits%external)/=0
     n = 0
     nbor => self%nbor
     do while (associated(nbor))
       n = n+1
       write (io_unit%log,'(2i9,2x,a,2i6)') self%task%id, nbor%task%id, &
-        'inconsistent bits',self%task%rank,nbor%task%rank
+        'inconsistent ranks', self%task%rank, nbor%task%rank
       nbor => nbor%next
     end do
     if (n==0) write (io_unit%log,*) self%task%id, ' inconsistent bits: has no nbors'

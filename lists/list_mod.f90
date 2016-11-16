@@ -13,6 +13,7 @@ MODULE list_mod
   USE patch_mod
   USE link_mod
   USE load_balance_mod
+  USE timer_mod
   implicit none
   private
   type, public:: list_t
@@ -248,7 +249,7 @@ SUBROUTINE check_nbors (self, link)
   logical:: is_clear
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_mod::check_nbors '//self%name, itimer=itimer)
+  call trace_begin('list_t%check_nbors', itimer=itimer)
   !$omp critical (list_cr)
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
@@ -259,9 +260,9 @@ SUBROUTINE check_nbors (self, link)
     is_clear = nbtask%is_clear(bits%ready)
     if (is_clear .and. nbor%check) then               ! needs checking?
       n_blocked = n_blocked+1
-      call trace_end (itimer)
+      call timer%end (itimer)
       call self%check_ready (nbor%link)               ! pointer back
-      call trace_begin('list_mod::check_nbors', itimer=itimer)
+      call timer%begin (itimer=itimer)
       if (nbtask%is_set(bits%ready)) then
         n_cleared = n_cleared+1
       else
@@ -269,8 +270,6 @@ SUBROUTINE check_nbors (self, link)
       end if
       if (nbtask%id==io%id_debug) &
         write (io_unit%log,*) io%id_debug, 'mk checked by:', task%id, nbtask%is_set(bits%ready)
-    else
-      n_ready = n_ready+1
     end if
     nbor => nbor%next                                 ! next nbor
   end do
@@ -280,9 +279,9 @@ SUBROUTINE check_nbors (self, link)
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%virtual+bits%external)) then
     call task%clear(bits%ready)                       ! needs new check
-    call trace_end (itimer)
+    call timer%end (itimer)
     call self%check_ready (link)                      ! finally check link task
-    call trace_begin('list_mod::check_nbors', itimer=itimer)
+    call timer%begin (itimer=itimer)
     self%n_nbor = self%n_nbor + 1
     if (io%verbose>2) write (io_unit%log,'(a,i9,l3,12(2x,a,i4))') &
       'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
@@ -642,64 +641,53 @@ END SUBROUTINE init_all_nbors
 SUBROUTINE reset_status (self)
   class(list_t):: self
   class(link_t), pointer:: link, nbor
-  integer:: n_internal, n_boundary, n_virtual
+  integer:: n_internal, n_boundary, n_virtual, n_external
   !-----------------------------------------------------------------------------
   ! Clear virtual and boundary bits
   !-----------------------------------------------------------------------------
   write (io%log_unit,*) 'reset_status'
   n_internal = 0
   n_boundary = 0
-  n_virtual = 0
+  n_virtual  = 0
+  n_external = 0
   !$omp critical (list_cr)
-  link => self%head
-  do while (associated(link))
-    call link%task%clear(bits%virtual+bits%boundary)
-    link => link%next
-  end do
   !-----------------------------------------------------------------------------
-  ! Set virtual bit
+  ! Set bit
   !-----------------------------------------------------------------------------
   link => self%head
   do while (associated(link))
-    n_internal = n_internal + 1
-    call link%task%set(bits%internal)
-    if (link%task%rank /= mpi%rank) then
-      call link%task%set(bits%virtual)
-      call link%task%clear(bits%internal)
-      n_virtual  = n_virtual  + 1
-      n_internal = n_internal - 1
+    if (link%task%rank == mpi%rank) then
+      nbor => link%nbor
+      call link%task%set(bits%internal)
+      call link%task%clear(bits%virtual+bits%external)
+      do while (associated(nbor))
+        if (nbor%task%rank/=mpi%rank) then
+          call link%task%set(bits%boundary)
+          call link%task%clear(bits%internal)
+          exit
+        end if
+        nbor => nbor%next
+      end do
+    else
+      nbor => link%nbor
+      call link%task%set(bits%external)
+      call link%task%clear(bits%internal+bits%boundary)
+      do while (associated(nbor))
+        if (link%task%id==io%id_debug) write (io_unit%log,'(a,i5,2i4,3f9.4)') &
+          'mk2', nbor%task%id, link%task%rank, nbor%task%rank, link%task%position-nbor%task%position
+        if (nbor%task%rank==mpi%rank) then
+          call link%task%set(bits%virtual)
+          call link%task%clear(bits%external)
+          exit
+        end if
+        nbor => nbor%next
+      end do
     end if
-    link => link%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! Set boundary bit
-  !-----------------------------------------------------------------------------
-  link => self%head
-  do while (associated(link))
-    nbor => link%nbor
-    do while (associated(nbor))
-      if (io%verbose>2) then
-        write (io%log_unit,'(2(a,i7,i4,2l4,5x,a,3i4,10x))') &
-          'link:', link%task%id, link%task%rank, &
-                   link%task%is_set(bits%boundary), &
-                   link%task%is_set(bits%virtual), &
-          'pos:', self%intpos(link%task), &
-          'nbor:', nbor%task%id, nbor%task%rank, &
-                   nbor%task%is_set(bits%boundary), &
-                   nbor%task%is_set(bits%virtual), &
-          'pos:', self%intpos(nbor%task,link%task)
-      end if
-      if (link%task%rank==mpi%rank .and. nbor%task%is_set(bits%virtual)) then
-        call link%task%set(bits%boundary)
-        call link%task%clear(bits%internal)
-        exit
-      end if
-      nbor => nbor%next
-    end do
-    if (link%task%is_set(bits%boundary)) then
-      n_boundary = n_boundary + 1
-      n_internal = n_internal - 1
-    end if
+    write (io_unit%log,'(a,i5,z10)') 'mk1', link%task%rank, link%task%status
+    n_internal = n_internal + merge(1,0,link%task%is_set(bits%internal))
+    n_boundary = n_boundary + merge(1,0,link%task%is_set(bits%boundary))
+    n_virtual  = n_virtual  + merge(1,0,link%task%is_set(bits%virtual ))
+    n_external = n_external + merge(1,0,link%task%is_set(bits%external))
     link => link%next
   end do
   self%nb = n_boundary
@@ -800,14 +788,15 @@ FUNCTION overlaps (self, task1, task2, label)
   else
     overlaps = all(self%distance(task1,task2) < 0.50000001_8*(task1%size+task2%size))
   end if
-  if (self%debug>3.or.present(label)) then
+  if (task2%id==io%id_debug .or. present(label)) then
     block
     real(8):: limit(3)
-    limit = 0.501*(task1%size+task2%size)
+    limit = 0.50000001_8*(task1%size+task2%size)
     !write (io_unit%log,'(a,2i4,2(3f8.2,3x),l3)') 'overlap:', task1%id, task2%id, &
     ! (task1%position-task2%position)/limit, dist/limit, overlaps
-    write (io_unit%log,'(a,2i4,1(3f8.2,3x),l3)') 'overlap:', task1%id, task2%id, &
-     (task1%position-task2%position)/limit, overlaps
+    write (io_unit%log,'(a,2i4,2(3f8.3,3x),l3)') 'overlap:', task1%id, task2%id, &
+     (task1%position-task2%position)/limit, &
+     self%distance(task1,task2), overlaps
     end block
   end if
   call trace_end
@@ -957,6 +946,7 @@ SUBROUTINE queue_by_time (self, this)
   !-----------------------------------------------------------------------------
   if (this%task%is_set(bits%virtual) .or. this%task%has_finished()) return
   call trace_begin ('list_mod::queue_by_time ')
+  !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
   ! Lock the queue while inserting the task

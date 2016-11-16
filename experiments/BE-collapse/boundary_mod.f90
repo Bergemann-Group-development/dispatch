@@ -21,9 +21,11 @@ CONTAINS
 SUBROUTINE sphere (self, patch, f, value, extra)
   class(boundary_t):: self
   class(patch_t):: patch
+  real, dimension(:,:,:), pointer :: f
+  real:: value
+  real:: extra
   integer:: i, j, k, ii(3), iv
-  real:: x, y, z, r, ntot, nout, value, extra
-  real(kind=8), dimension(patch%gn(1),patch%gn(2),patch%gn(3)) :: f
+  real:: x, y, z, r, ntot, nout
 associate (gn=>patch%gn, ds=>patch%ds, pos=>patch%position)
   !.............................................................................
   call trace_begin('boundary_mod::boundary_t%bdry_phi', 4)

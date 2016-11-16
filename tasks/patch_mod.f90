@@ -19,7 +19,7 @@ MODULE patch_mod
   USE buffered_output_mod
   implicit none
   private
-  integer, parameter:: ndim = 3, i_d=1
+  integer, parameter:: ndim = 3
   type, extends(task_t), public:: patch_t
     real, dimension(:,:,:,:,:,:), pointer:: mem      => null()
     real, dimension(:,:,:,:,:),   pointer:: vgas     => null()
@@ -132,6 +132,7 @@ MODULE patch_mod
     real(8):: size(3)
     real(8):: box(3)                    ! the periodic wrapping size
     real(8):: ds(3)
+    real(8):: send_time
     real(8), dimension(8):: t
     real(8), dimension(8):: dt
     integer, dimension(8):: iit
@@ -182,8 +183,12 @@ SUBROUTINE patch_to_header (self, head)
   head%dt(1:nt)   = self%dt
   head%iit(1:nt)  = self%iit
   head%nq         = self%nq
+  head%send_time  = wallclock()
   if (io%verbose > 1) &
-    write (io_unit%log,*) 'patch_to_header: id, nq =', head%id, head%nq, self%is_set(bits%swap_request)
+    write (io_unit%log,'(f12.6,3x,a,i7,i4,l3,2i4,f8.4)') &
+      wallclock(), 'patch_to_header: id, nq =', self%id, &
+      self%nq, self%is_set(bits%swap_request), &
+      mpi_mesg%sent_list%n, mpi_mesg%recv_list%n
 END SUBROUTINE patch_to_header
 
 !> =============================================================================
@@ -217,8 +222,12 @@ SUBROUTINE header_to_patch (self, head)
   self%dt         = head%dt(1:nt)
   self%iit        = head%iit(1:nt)
   self%nq         = head%nq
+  self%latency    = wallclock() - head%send_time
   if (io%verbose > 1) &
-    write (io_unit%log,*) 'header_to_patch: id, nq =', self%id, self%nq, self%is_set(bits%swap_request)
+    write (io_unit%log,'(f12.6,3x,a,i7,i4,l3,2i4,f8.4)') &
+      wallclock(), 'header_to_patch: id, nq =', self%id, &
+      self%nq, self%is_set(bits%swap_request), &
+      mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency
 END SUBROUTINE header_to_patch
 
 !> =============================================================================
@@ -406,16 +415,14 @@ SUBROUTINE init (self)
   self%new = self%iit(nt)                       ! short-hand
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
-#ifndef _CRAYFTN
   block
   type(header_t):: header
-  if (n_header*4 /= sizeof(header)) then
-    print *, n_header*4, sizeof(header)
-    error stop 'The hardwired patch_mod::n_header is incorrect'
+  n_header = storage_size(header)/32             ! 32 bits per word
+  if (n_header*4 /= storage_size(header)/8) then
+    print *, n_header*4, storage_size(header)/8
+    error stop 'n_header is incorrect'
   end if
-  n_header = sizeof(header)/4
   end block
-#endif
   call trace_end
 END SUBROUTINE init
 
@@ -677,7 +684,7 @@ SUBROUTINE pack (self, mesg)
   integer:: n_var, ibuf, iv, it
   real, dimension(:,:,:), pointer:: var
   real:: pt
-  integer:: itimer=0
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Compute size of buffer and allocate -- it will be freed by the writer
   !-----------------------------------------------------------------------------
@@ -943,6 +950,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !.............................................................................
   integer:: iv, nv
   integer, save:: itimer=0
+  integer, save:: n_lines=0, max_lines=25
+  integer, save:: counts(7)=0
   !-----------------------------------------------------------------------------
   if (io%verbose>=0) then
     if (self%time>=self%print_next) then
@@ -952,47 +961,71 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       if (io%verbose<0 .and. self%id/=1) return
       nv = 1
       if (io%verbose>2) nv = self%nv
-      do iv=1,nv
-        write (io_unit%log,1) &
-          'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
-          self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-          self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-          self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-          self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-          real(n_update), ntask, nq, &
-          mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, mpi_mesg%n_send, mpi_mesg%n_recv, &
-          self%is_set(bits%boundary), self%is_set(bits%virtual)
-        if (io%verbose>0) then
-          !$omp critical (info_cr)
-          write (io_unit%mpi,1) &
+      if (io%verbose>0) then
+        do iv=1,nv
+          write (io_unit%log,1) &
             'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
             self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
             real(n_update), ntask, nq, &
-            mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, mpi_mesg%n_send, mpi_mesg%n_recv, &
+            mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
+            mpi_mesg%n_send, mpi_mesg%n_recv, mpi_mesg%n_unpk, mpi_mesg%n_delay, &
+            mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, &
             self%is_set(bits%boundary), self%is_set(bits%virtual)
-          flush (io_unit%mpi)
-          !$omp end critical (info_cr)
-        end if
-      end do
-      if (io%verbose>1 .or. self%id==1) then
-        do iv=1,nv
-          1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,2x,e10.2,2i5,i6,4i5,2l2,o12)
-          if (io%master .or. self%id==1) &
-            print 1, &
-            'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, self%dtime, self%u_max, &
-            self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-            self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-            self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-            self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-            real(n_update), ntask, nq, &
-            mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, mpi_mesg%n_send, mpi_mesg%n_recv, &
-            self%is_set(bits%boundary), self%is_set(bits%virtual)
+          if (io%verbose>0 .and. io_unit%mpi/=io_unit%log) then
+            !$omp critical (info_cr)
+            write (io_unit%mpi,1) &
+              'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
+              self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+              self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+              self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+              self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+              real(n_update), ntask, nq, &
+              mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
+              mpi_mesg%n_send, mpi_mesg%n_recv, mpi_mesg%n_unpk, mpi_mesg%n_delay, &
+              mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, &
+              self%is_set(bits%boundary), self%is_set(bits%virtual)
+            flush (io_unit%mpi)
+            !$omp end critical (info_cr)
+          end if
         end do
+        if (io%verbose>1 .or. self%id==1) then
+          if (io%master) then
+            if (n_lines<=0) then
+              print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
+                         //'6....+....7....+....8....+....9....+....0....+....ntsk   nq ' &
+                         //' chk rdy upd snt prb unp dly snq rcq  BV'
+              n_lines = max_lines
+            end if
+            !$omp atomic
+            n_lines = n_lines-1
+          end if
+          counts = counts + &
+            [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
+             mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
+             mpi_mesg%n_delay]
+          if (io%master .or. self%id==1) then
+            do iv=1,nv
+              print 1, &
+              'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, self%dtime, self%u_max, &
+              self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+              self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+              self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+              self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+              real(n_update), ntask, nq, counts, &
+              mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, &
+              self%is_set(bits%boundary), self%is_set(bits%virtual)
+            1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,3i5,8i4,l3,l1,o12)
+            end do
+            counts = 0
+          end if
+        end if
+        mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0
+        mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
+        mpi_mesg%n_delay=0
       end if
-      mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0; mpi_mesg%n_send=0; mpi_mesg%n_recv=0
       call trace%end (itimer)
     end if
   end if
@@ -1123,7 +1156,11 @@ SUBROUTINE courant_condition (self, detailed_timer)
   integer, save:: itimer=0
   !.............................................................................
   if (present(detailed_timer)) then
-    if (detailed_timer) call trace_begin('patch_mod::courant', itimer=itimer)
+    if (detailed_timer) then
+      call trace_begin('patch_mod::courant', itimer=itimer)
+    else
+      call trace_begin('patch_mod::courant')
+    end if
   else
     call trace_begin('patch_mod::courant')
   end if
@@ -1148,7 +1185,11 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
-  call trace_end (itimer)
+  if (detailed_timer) then
+    call trace_end (itimer)
+  else
+    call trace_end
+  end if
 END SUBROUTINE courant_condition
 
 !> =============================================================================

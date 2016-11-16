@@ -47,7 +47,7 @@ SUBROUTINE init (self, label)
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
   logical:: face_nbors=.false.
   integer:: thread, icoords(3)
-  integer:: itimer=0
+  integer, save:: itimer=0
   namelist /box_params/ size, dims, mpi_dims, origin, face_nbors
   !.............................................................................
   call trace_begin ('cartesian_mod::init',itimer=itimer)
@@ -84,6 +84,7 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   allocate (patch_list)
   call patch_list%init ('patch_list')
+  patch_list%size = self%size
   do rank=0,mpi_coords%size-1
     do k=0,patches_per_mpi(3)-1
     do j=0,patches_per_mpi(2)-1
@@ -111,8 +112,10 @@ SUBROUTINE init (self, label)
     end do
   end do
   !-----------------------------------------------------------------------------
-  ! Set the boundary and virtual bits, based on overlap with patches on our rank
+  ! Construct neighbor lists used to perform checks for ready status, and
+  ! set the boundary and virtual bits, based on overlap with patches on our rank
   !-----------------------------------------------------------------------------
+  call patch_list%init_all_nbors
   call patch_list%reset_status
   !-----------------------------------------------------------------------------
   ! Initialize patches on our rank and virtual patches. This needs to be done
@@ -129,7 +132,6 @@ SUBROUTINE init (self, label)
       select type (task)
       type is (experiment_t)
         call task%init
-        call trace_begin ('cartesian_mod::init',itimer=itimer)
         !$omp atomic
         gb = gb + product(task%gn)*task%nv*task%nt*task%nw*4.0/1024.**3
         !$omp atomic
@@ -170,7 +172,7 @@ SUBROUTINE init (self, label)
     if (task%rank == mpi%rank .or. task%is_set(bits%virtual)) then
       call self%task_list%append_link (link)
     else
-      deallocate (patch)
+      if (associated(task)) deallocate (task)
       deallocate (link)
     end if
     link => next

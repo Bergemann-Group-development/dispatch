@@ -22,6 +22,7 @@ MODULE mhd_mod
     real:: cdtd
     logical:: mhd=.true.
     type(force_t):: force
+    integer:: i_e=2, i_px=3, i_py=4, i_pz=5, i_bx=6, i_by=7, i_bz=8
   contains
     procedure:: init
     procedure:: update
@@ -378,7 +379,7 @@ FUNCTION cell_gas_pressure(self, c) RESULT (pg)
 END FUNCTION cell_gas_pressure
 
 !> =============================================================================
-!> temperature from ideal gas law, taking into account that the temperature is 
+!> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
 !> =============================================================================
 FUNCTION gas_temperature (self) RESULT (tmp)
