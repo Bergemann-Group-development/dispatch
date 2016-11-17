@@ -10,6 +10,8 @@ COMPILER = gfortran
 MPI = mpi
 MOD = mod
 AUTO = yes
+EOS_READER = simple
+EOS_TYPE   = E
 
 #############################################################################
 # Check for options

@@ -114,6 +114,6 @@ P_SI2cgs=rho_SI2cgs*E_SI2cgs
 for j in range(nrho):
     for i in range(nT):
         E=eint(rho[j],T[i])*E_SI2cgs
-        P=d.k_B*T[i]*rho[j]/fmu(rho[j],T[i])*P_SI2cgs
+        P=d.k_B*T[i]*rho[j]/(d.m_u*fmu(rho[j],T[i])*P_SI2cgs)
         f.write('{:12.6e} {:12.6e}\n'.format(P,E))
 f.close()

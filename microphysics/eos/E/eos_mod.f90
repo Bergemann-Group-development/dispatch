@@ -5,14 +5,15 @@ MODULE eos_mod
   USE io_mod
   USE trace_mod
   USE eos_reader_mod
+  USE lagrange_mod
   implicit none
   private
   type, public:: eos_t
     integer:: nd, ne
-    real:: lnd_min, lnd_max, lnd_stp
-    real:: lne_min, lne_max, lne_stp
-    real, dimension(:), pointer:: lnd, lne
-    real, dimension(:,:,:), pointer:: table
+    real(8):: lnd_min, lnd_max, lnd_stp
+    real(8):: lne_min, lne_max, lne_stp
+    real(8), dimension(:), pointer:: lnd, lne
+    real(8), dimension(:,:,:), pointer:: table
   contains
     procedure:: init
     procedure:: pressure
@@ -27,8 +28,8 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class (eos_t):: self
-  real, dimension(:), pointer:: x, y
-  real:: Emin, Emax, E, T, P
+  real(8), dimension(:), pointer:: x, y
+  real(8):: Emin, Emax, E, T, P
   integer:: i, j, nd, ne
   associate (reader=>eos_reader)
   !-----------------------------------------------------------------------------
@@ -82,7 +83,7 @@ SUBROUTINE init (self)
       P = interpolate (x, y, T)         ! find the pressure at T
       self%table(i,j,1) = P             ! store the pressure
       self%table(i,j,2) = T             ! store the temperature
-      print *, i, j, E, T, P
+      print '(2i5,1p,3e15.6)', i, j, T, P, E
     end do
   end do
   call trace%end
@@ -93,15 +94,16 @@ END SUBROUTINE init
 !-------------------------------------------------------------------------------
 FUNCTION interpolate (x, y, x0) RESULT (out)
   !USE lagrange_mod
-  real, dimension(:):: x, y
-  real:: x0, out, p
+  real(8), dimension(:):: x, y
+  real(8):: x0, out, p
   integer:: i
   !-----------------------------------------------------------------------------
-  do i=2,size(x)-1
-    if (x(i) > x0) exit
-  end do
-  p = (x0-x(i-1))/(x(i)-x(i-1))
-  out = (1.0-p)*y(i-1) + p*y(i)
+  !do i=2,size(x)-1
+  !  if (x(i) > x0) exit
+  !end do
+  !p = (x0-x(i-1))/(x(i)-x(i-1))
+  !out = (1.0-p)*y(i-1) + p*y(i)
+  out = lagrange%sequence (x0, x, y)
 END FUNCTION interpolate
 
 FUNCTION pressure (self, lnd, lne) RESULT (out)

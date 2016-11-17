@@ -7,25 +7,26 @@ MODULE lagrange_mod
   type, public:: lagrange_t
     integer:: verbose=0
   contains
-    procedure lagrange_interpolation
-    procedure lagrange_weights
-    procedure lagrange_interval
-    procedure lagrange_sequence
-    procedure lagrange_sequence_weights
+    procedure interpolation
+    procedure weights
+    procedure interval
+    procedure sequence
+    procedure sequence_weights
   end type
+  type(lagrange_t), public:: lagrange
 CONTAINS
 
 !> -----------------------------------------------------------------------------
 !> Classical Lagrange interpolation
 !> -----------------------------------------------------------------------------
-FUNCTION lagrange_interpolation (self, x0, x, y, n) RESULT(f)
+FUNCTION interpolation (self, x0, x, y) RESULT(f)
   class(lagrange_t):: self
-  real(kind=8), dimension(n):: x, y
+  real(kind=8), dimension(:):: x, y
   real(kind=8):: x0, f, g
   integer:: n, i, j
-  integer:: ii(n)
   !.............................................................................
   f = 0.0
+  n = size(x)
   do i=1,n
     g = y(i)
     do j=1,n
@@ -33,40 +34,43 @@ FUNCTION lagrange_interpolation (self, x0, x, y, n) RESULT(f)
     end do
     f = f + g
   end do
-END FUNCTION lagrange_interpolation
+END FUNCTION interpolation
 
 !> -----------------------------------------------------------------------------
 !> Classical Lagrange interpolation weights.  w(i) is the contribution factor
 !> of a value y(i) to the function value at x0, given that there are mesh points
 !> at x = [x(j), j=1,n], so the function value f(x0) = sum(y(i)*w(i))
 !> -----------------------------------------------------------------------------
-FUNCTION lagrange_weights (self, x0, x, n) RESULT(w)
+FUNCTION weights (self, x0, x) RESULT(w)
   class(lagrange_t):: self
-  real(kind=8), dimension(n):: x, w
+  real(kind=8), dimension(:):: x
+  real(kind=8), dimension(size(x)):: w
   real(kind=8):: x0, g
   integer:: n, i, j
   !.............................................................................
+  n = size(x)
   do i=1,n
     w(i) = 1.0
     do j=1,n
       w(i) = merge(w(i),w(i)*(x0-x(j))/(x(i)-x(j)),j==i)
     end do
   end do
-END FUNCTION lagrange_weights
+END FUNCTION weights
 
 !> -----------------------------------------------------------------------------
 !> Prepare to use Lagrange interpolation of given order to interpolate to
 !> coordinate x0 in a sequence that may be longer than needed
 !> -----------------------------------------------------------------------------
-SUBROUTINE lagrange_interval (self, x0, x, n, i0, i2, o, order)
+SUBROUTINE interval (self, x0, x, i0, i2, o, order)
   class(lagrange_t):: self
-  integer:: n
   integer, optional:: order
-  real(kind=8), dimension(n):: x, y
+  real(kind=8), dimension(:):: x
+  real(kind=8), dimension(size(x)):: y
   real(kind=8):: x0, f
-  integer:: i0, i1, i2, o
+  integer:: i0, i1, i2, o, n
   !.............................................................................
   ! Default order = 3, or n-1 if that is smaller
+  n = size(x)
   o = 3
   if (present(order)) o = order
   o = min(o,n-1)
@@ -109,27 +113,27 @@ SUBROUTINE lagrange_interval (self, x0, x, n, i0, i2, o, order)
   if (self%verbose>0) then
     print*,'lagrange_interval: i0, i2, o =', i0, i2, o
   end if
-END SUBROUTINE lagrange_interval
+END SUBROUTINE interval
 
 !> -----------------------------------------------------------------------------
 !> Use Lagrange interpolation of given order to interpolate to coordinate x0
 !> in a sequence that may be longer than needed
 !> -----------------------------------------------------------------------------
-FUNCTION lagrange_sequence (self, x0, x, y, n, order, correct) RESULT(f)
+FUNCTION sequence (self, x0, x, y, order, correct) RESULT(f)
   class(lagrange_t):: self
-  integer:: n
   integer, optional:: order
   real(kind=8), optional:: correct
-  real(kind=8), dimension(n):: x, y
+  real(kind=8), dimension(:):: x, y
   real(kind=8):: x0, f
-  integer:: i0, i2, o
+  integer:: i0, i2, o, n
   !.............................................................................
-  call self%lagrange_interval (x0, x, n, i0, i2, o, order)
+  n = size(x)
+  call self%interval (x0, x, i0, i2, o, order)
   if (self%verbose>0) then
     print'(" i0,i2,order=",3i3,4x,"x0,x,y  =",1p,18g12.4)', &
       i0, i2, o, x0, x(i0:i2), y(i0:i2)
   end if
-  f = self%lagrange_interpolation (x0, x(i0:i2), y(i0:i2), i2-i0+1)
+  f = self%interpolation (x0, x(i0:i2), y(i0:i2))
   if (self%verbose>0) then
     if (present(correct)) then
       print'(" i0,i2,order=",3i3,4x,"x0,x,y,f,correct=",1p,18g12.4)', &
@@ -139,23 +143,23 @@ FUNCTION lagrange_sequence (self, x0, x, y, n, order, correct) RESULT(f)
         i0, i2, o, x0, x(i0:i2), y(i0:i2), f
     end if
   end if
-END FUNCTION lagrange_sequence
+END FUNCTION sequence
 
 !> -----------------------------------------------------------------------------
 !> Use Lagrange interpolation of given order to get weights for interpolate to
 !> coordinate x0 in a sequence of increasing x that may be longer than needed
 !> -----------------------------------------------------------------------------
-SUBROUTINE lagrange_sequence_weights (self, x0, x, n, i0, i2, w, order)
+SUBROUTINE sequence_weights (self, x0, x, i0, i2, w, order)
   class(lagrange_t):: self
-  integer:: n
   integer, optional:: order
-  real(kind=8), dimension(n):: x, w
+  real(kind=8), dimension(:):: x, w
   real(kind=8):: x0
-  integer:: i0, i2, o
+  integer:: i0, i2, o, n
   !.............................................................................
-  call self%lagrange_interval (x0, x, n, i0, i2, o, order)
+  n = size(x)
+  call self%interval (x0, x, i0, i2, o, order)
   w = 0d0
-  w(1:i2-i0+1) = self%lagrange_weights (x0, x(i0:i2), i2-i0+1)
-END SUBROUTINE lagrange_sequence_weights
+  w(1:i2-i0+1) = self%weights (x0, x(i0:i2))
+END SUBROUTINE sequence_weights
 
 END MODULE

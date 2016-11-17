@@ -8,8 +8,8 @@ MODULE eos_reader_mod
   type, public:: eos_reader_t
     integer:: skip=1
     integer:: nT, nd
-    real, dimension(:), pointer:: T, d
-    real, dimension(:,:,:), pointer:: table
+    real(8), dimension(:), pointer:: T, d
+    real(8), dimension(:,:,:), pointer:: table
     character(len=64):: dir='data/eos'
   contains
     procedure:: init
