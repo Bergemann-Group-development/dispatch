@@ -130,7 +130,7 @@ class table_t(object):
                 
     def rescale(self):
         print 'rescaling the table'
-        for t in range(0,self.nr):
+        for t in range(0,self.nt):
             self.ts[t] = np.log10(10**self.ts[t]/sc.temp)
         for r in range(0,self.nr):
             self.rs[r] = np.log10(10**self.rs[r]/sc.d)
