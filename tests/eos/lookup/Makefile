@@ -7,7 +7,7 @@ OPTS = optimized
 SOLVER = stagger2/e
 EOS = eos_table_mod.o
 EXEC = test.x
-TOP = ../..
+TOP = ../../..
 include $(TOP)/config/Makefile
 
 test.x: mpi_mod.o $(EOS)
