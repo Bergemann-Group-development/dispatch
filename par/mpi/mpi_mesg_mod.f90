@@ -26,6 +26,8 @@ MODULE mpi_mesg_mod
     procedure:: wait_for_completion
     procedure:: is_complete
   end type
+  integer(8) :: n_wait_all=0  , n_wait_for=0
+  real(8)    :: t_wait_all=0d0, t_wait_for=0d0
   !
   type, public:: mesg_list_t
     class(mesg_t), pointer:: head => null()
@@ -56,6 +58,7 @@ MODULE mpi_mesg_mod
     integer:: max_recv
     integer:: max_probe
     integer:: min_nq
+    logical:: wait=.false.
   contains
     procedure:: init
     procedure:: get
@@ -130,7 +133,8 @@ SUBROUTINE check_sent (self, nq)
   ! If there are more than max_sent messages pending, bring the number down with
   ! wait_all on the oldest ones.
   !-----------------------------------------------------------------------------
-  m = merge(max_sent,1,nq >= mpi_mesg%min_nq)
+  !m = merge(max_sent,0,nq >= mpi_mesg%min_nq)
+  m = mpi_mesg%min_nq
   !$omp atomic read
   n = self%n
   if (n > m) then
@@ -231,7 +235,7 @@ SUBROUTINE wait_all (self)
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('mesg_t%wait_all', itimer=itimer)
-  if (io%verbose>0) wc = wallclock()
+  if (io%verbose >= 0) wc = wallclock()
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call MPI_WAITALL (self%nreq, self%reqs, MPI_STATUSES_IGNORE, ierr)
@@ -239,10 +243,14 @@ SUBROUTINE wait_all (self)
   else
     call MPI_WAITALL (self%nreq, self%reqs, MPI_STATUSES_IGNORE, ierr)
   end if
-  if (io%verbose>0) then
+  if (io%verbose >= 0) then
     wc = wallclock()-wc
-    write (io_unit%log,*) wallclock(), ' wait_all:', self%id, wc
-    flush (io_unit%log)
+    !$omp atomic
+    n_wait_all = n_wait_all + 1
+    !$omp atomic
+    t_wait_all = t_wait_all + wc
+    if (io%verbose > 0) &
+      write (io_unit%log,*) wallclock(), ' wait_all:', self%id, wc
   end if
   call trace_end
 END SUBROUTINE wait_all
@@ -380,6 +388,7 @@ SUBROUTINE init (self)
   self%min_nq = min_nq
   self%max_recv = max_recv
   self%max_probe = max_probe
+  self%wait = wait
   call self%test
 END SUBROUTINE init
 
@@ -514,11 +523,11 @@ contains
     integer:: stat(MPI_STATUS_SIZE)
     real(8):: wc
     !---------------------------------------------------------------------------
-    if (mpi_mesg%recv_list%n > max_recv .or. wait) then
+    if (mpi_mesg%recv_list%n > max_recv .or. mpi_mesg%wait) then
       if (io%verbose>1) then
         wc = wallclock()
         write (io_unit%log,*) wc, &
-          'is_complete waiting for id', self%id, mpi_mesg%recv_list%n, wait
+          'is_complete waiting for id', self%id, mpi_mesg%recv_list%n, mpi_mesg%wait
         flush (io_unit%log)
       end if
       if (mpi%mode == MPI_THREAD_SERIALIZED) then
@@ -531,7 +540,7 @@ contains
       if (io%verbose>1) then
         wc = wallclock()-wc
         write (io_unit%log,*) wallclock(), &
-          'is_complete:', self%id, wc, mpi_mesg%recv_list%n, wait
+          'is_complete:', self%id, wc, mpi_mesg%recv_list%n, mpi_mesg%wait
       end if
       is_complete = .true.
     else
@@ -559,7 +568,7 @@ SUBROUTINE wait_for_completion (self)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
   call trace%begin ('mesg_t%wait_for_completion', itimer=itimer)
-  if (io%verbose>0) wc=wallclock()
+  if (io%verbose>=0) wc=wallclock()
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call MPI_WAIT (self%req, stat, ierr)
@@ -567,8 +576,15 @@ SUBROUTINE wait_for_completion (self)
   else
     call MPI_WAIT (self%req, stat, ierr)
   end if
-  if (io%verbose>0) &
-    write (io_unit%log,*) 'wait_for_completion', self%id, wallclock()-wc
+  if (io%verbose >= 0) then
+    wc = wallclock()-wc
+    !$omp atomic
+    n_wait_for = n_wait_for + 1
+    !$omp atomic
+    t_wait_for = t_wait_for + wc
+    if (io%verbose > 0) &
+      write (io_unit%log,*) 'wait_for_completion', self%id, wc
+  end if
   call trace%end (itimer)
 END SUBROUTINE wait_for_completion
 
@@ -595,13 +611,13 @@ END SUBROUTINE delay
 !> =============================================================================
 !> Diagnostic printout, called when task_list_mod::update stalls
 !> =============================================================================
-SUBROUTINE diagnostics (self, onoff)
+SUBROUTINE diagnostics (self, flag)
   class(mpi_mesg_t):: self
-  integer:: onoff
+  integer:: flag
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  debug = onoff>0
-  if (debug) then
+  debug = flag>0
+  if (flag==9) then
     !$omp critical (abort_cr)
     call trace%begin ('mpi_mesg%diagnostics', itimer=itimer)
     call self%sent_list%print ('ABORT')
@@ -609,6 +625,16 @@ SUBROUTINE diagnostics (self, onoff)
     flush (io_unit%log)
     call trace%end (itimer)
     !$omp end critical (abort_cr)
+  end if
+  if (flag==1) then
+    if (omp%master) then
+      write (io_unit%mpi,*) 'average wait_for time:', t_wait_for/max(n_wait_for,1_8)
+      write (io_unit%mpi,*) 'average wait_all time:', t_wait_all/max(n_wait_all,1_8)
+    end if
+    if (mpi%master) then
+      write (io_unit%output,*) 'average wait_for time:', t_wait_for/max(n_wait_for,1_8)
+      write (io_unit%output,*) 'average wait_all time:', t_wait_all/max(n_wait_all,1_8)
+    end if
   end if
 END SUBROUTINE diagnostics
 

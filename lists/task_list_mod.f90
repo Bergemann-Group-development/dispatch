@@ -107,10 +107,14 @@ SUBROUTINE execute (self)
   do while (self%na > 0)
     call self%update
   end do
-  !$omp end parallel
   call timer%print
+  call mpi_mesg%diagnostics(1)
   call toc ('wall time', n_update, time=sec)
   if (io%master) write (*,*) "task list finished."
+  write (io_unit%log,*) 'thread',omp%thread,' arrived'
+  flush (io_unit%log)
+
+  !$omp end parallel
   !if (io%master) &
   !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
   !    max(1,(download%n_differ+download%n_same))
@@ -246,7 +250,7 @@ SUBROUTINE update (self)
     call task%clear (bits%busy)                         ! clear busy bit
     !$omp atomic write
     stalled = 0
-    call mpi_mesg%diagnostics (0)
+    !call mpi_mesg%diagnostics (0)
   else
     !$omp critical (stalled_cr)
     stalled = stalled+1
