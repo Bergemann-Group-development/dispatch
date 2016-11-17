@@ -612,9 +612,9 @@ SUBROUTINE apply_heating (self, q)
   !---------------------------------------------------------------------
   l = self%mesh%li
   u = self%mesh%ui
-  !self%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%it,2) = &
-  !self%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%it,2) + &
-  !q(l(1):u(1),l(2):u(2),l(3):u(3))
+  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%it,2) = &
+  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%it,2) + &
+  q(l(1):u(1),l(2):u(2),l(3):u(3))
 END SUBROUTINE apply_heating
 
 END MODULE mhd_mod

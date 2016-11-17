@@ -22,6 +22,7 @@ MODULE rt_mod
     ! common items
     integer :: n_ray_dirs = 3
     integer :: geom = 1                                                 !cartesian = 1, spherical = 2, cylindrical = 3
+    integer :: n_var                                                    ! number of variables
     integer :: rt_freq = 1                                              ! how often rt tasks are done wrt experiment
     integer :: rt_type, li(3), ui(3)
     integer :: ibc = 0, obc = 0, ibct = 3, obct = 0                     ! inner/outer boundary condition, treatment
@@ -52,7 +53,44 @@ MODULE rt_mod
     procedure :: update => update_rt
     procedure :: update_time
   end type
-!-----------------------------------------------------------------------
+!-----------------------------------------------------------------------------
+! Sequential header, for MPI and I/O
+!-----------------------------------------------------------------------------
+  integer, save:: rt_n_header = (14*4 + 7*8 + 5*8*3 + 2*8*8 + 1*4*8 + 2*4*3)/4
+  type rt_header_t
+    sequence
+    integer:: version=1
+    integer:: n_header                                                  ! number of header entries
+    integer:: n_data                                                    ! number of data entries
+    integer:: id
+    integer:: status
+    integer:: rank
+    integer:: istep
+    integer:: iout
+    integer:: level
+    integer:: nt
+    integer:: nv                        ! number of variables
+    integer:: it
+    integer:: nq=0
+    integer:: npad=0
+    real(8):: time
+    real(8):: end_time
+    real(8):: out_next
+    real(8):: out_time
+    real(8):: print_next
+    real(8):: print_time
+    real(8):: dtime
+    real(8):: position(3)
+    real(8):: velocity(3)
+    real(8):: size(3)
+    real(8):: box(3)                    ! the periodic wrapping size
+    real(8):: ds(3)
+    real(8), dimension(8):: t
+    real(8), dimension(8):: dt
+    integer, dimension(8):: iit
+    integer:: n(3)=16                   ! convenience
+    integer:: ng(3)=2                   ! convenience
+  end type
   CONTAINS
 
 !> =====================================================================
@@ -352,5 +390,218 @@ SUBROUTINE update_time(self)
     call self%rotate
   end if
 END SUBROUTINE update_time
+
+!> =============================================================================
+!> Copy he most important fields to a sequenced header, for communication and I/O
+!> =============================================================================
+SUBROUTINE rt_to_header (self, head)
+  class(rt_t):: self
+  type(header_t):: head
+  integer:: nt
+  !-----------------------------------------------------------------------------
+  head%n_header   = n_header
+  head%n_data     = product(self%gn)*self%nv
+  head%id         = self%id
+  head%status     = self%status
+  head%rank       = self%rank
+  head%istep      = self%istep
+  head%iout       = self%iout
+  head%level      = self%level
+  head%time       = self%time
+  head%end_time   = self%end_time
+  head%out_next   = self%out_next
+  head%out_time   = self%out_time
+  head%print_next = self%print_next
+  head%print_time = self%print_time
+  head%dtime      = self%dtime
+  head%position   = self%position
+  head%velocity   = self%velocity
+  head%size       = self%size
+  head%it         = self%it
+  head%nt         = self%nt
+  nt              = self%nt
+  head%t(1:nt)    = self%t
+  head%dt(1:nt)   = self%dt
+  head%iit(1:nt)  = self%iit
+  head%nq         = self%nq
+  if (io%verbose > 1) &
+    write (io_unit%log,*) 'patch_to_header: id, nq =', head%id, head%nq, self%is_set(bits%swap_request)
+END SUBROUTINE patch_to_header
+
+!> =============================================================================
+!> Copy he most important fields to a sequenced header, for communication and I/O
+!> =============================================================================
+SUBROUTINE header_to_patch (self, head)
+  class(patch_t):: self
+  type(header_t):: head
+  integer:: nt
+  !-----------------------------------------------------------------------------
+  self%id         = head%id
+  self%status     = head%status
+  self%rank       = head%rank
+  self%istep      = head%istep
+  self%iout       = head%iout
+  self%level      = head%level
+  self%time       = head%time
+  self%end_time   = head%end_time
+  self%out_next   = head%out_next
+  self%out_time   = head%out_time
+  self%print_next = head%print_next
+  self%print_time = head%print_time
+  self%dtime      = head%dtime
+  self%position   = head%position
+  self%velocity   = head%velocity
+  self%size       = head%size
+  self%it         = head%it
+  self%nt         = head%nt
+  nt              = head%nt
+  self%t          = head%t(1:nt)
+  self%dt         = head%dt(1:nt)
+  self%iit        = head%iit(1:nt)
+  self%nq         = head%nq
+  if (io%verbose > 1) &
+    write (io_unit%log,*) 'header_to_patch: id, nq =', self%id, self%nq, self%is_set(bits%swap_request)
+END SUBROUTINE header_to_patch
+
+!> =============================================================================
+!> Pack patch info into a buffer, for MPI communication
+!> =============================================================================
+SUBROUTINE pack (self, mesg)
+  class(patch_t):: self
+  class(mesg_t), pointer:: mesg
+  !.............................................................................
+  type(header_t):: header
+  integer:: n_var, ibuf, iv, it
+  real, dimension(:,:,:), pointer:: var
+  real:: pt
+  integer:: itimer=0
+  !-----------------------------------------------------------------------------
+  ! Compute size of buffer and allocate -- it will be freed by the writer
+  !-----------------------------------------------------------------------------
+  call trace_begin ('patch_mod::pack', itimer=itimer)
+  allocate (mesg)
+  n_var = product(self%gn)
+  mesg%nbuf = n_header + self%nv*n_var
+  if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
+    mesg%nbuf = mesg%nbuf+ self%nv*n_var
+  end if
+  allocate (mesg%buffer(mesg%nbuf))
+  allocate (mesg%reqs(self%n_nbors))
+  mesg%id = self%id                                             ! MPI message tag
+  mesg%nreq = 0                                                 ! reset counter
+  !-----------------------------------------------------------------------------
+  ! Copy relevant patch info to sequenced header, and copy that to the buffer
+  !-----------------------------------------------------------------------------
+  if (io%verbose > 1) then
+    write (io_unit%log,1) 'patch_mod::pack, id, nq, time, status:', &
+    self%id, self%nq, self%time, &
+    self%is_set (bits%internal), &
+    self%is_set (bits%boundary), &
+    self%is_set (bits%virtual), &
+    self%is_set (bits%external), &
+    self%is_set (bits%swap_request)
+    1 format(a,2i9,f12.6,2x,5l1)
+    flush (io_unit%log)
+  end if
+  call patch_to_header (self, header)
+  ibuf = 1
+  call anonymous_copy (n_header, header, mesg%buffer(ibuf))
+  ibuf = ibuf + n_header
+  !-----------------------------------------------------------------------------
+  ! Copy the variables to the output buffer.  If the bdry+swap bit are set,
+  ! copy as a minimum also the previous time slot
+  !-----------------------------------------------------------------------------
+  do iv=1,self%nv
+    call anonymous_copy (n_var, self%mem(:,:,:,iv,self%it,1), mesg%buffer(ibuf))
+    ibuf = ibuf + n_var
+  end do
+  if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
+    it = mod(self%it-1+self%nt-1,self%nt)+1
+    if (io%verbose>1) then
+      write (io_unit%log,*) self%id, 'extra time slot packed', it
+      flush (io_unit%log)
+    end if
+    do iv=1,self%nv
+      call anonymous_copy (n_var, self%mem(:,:,:,iv,it,1), mesg%buffer(ibuf))
+      ibuf = ibuf + n_var
+    end do
+  end if
+  if (io%verbose > 2) &
+    write (io_unit%log,*) self%id, 'after pack', minval(self%mem(:,:,:,1,self%it,1))
+  call trace_end (itimer)
+END SUBROUTINE pack
+
+!> =============================================================================
+!> Pack patch info into a buffer, for MPI communication
+!> =============================================================================
+SUBROUTINE unpack (self, buffer)
+  class(patch_t):: self
+  !.............................................................................
+  type(header_t):: header
+  integer:: n_buf, ibuf, iv, it
+  integer, dimension(:), pointer:: buffer
+  real, dimension(:,:,:), pointer:: var
+  real:: pt
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  ! Compute size of buffer
+  !-----------------------------------------------------------------------------
+  call trace_begin ('patch_mod::unpack', itimer=itimer)
+  !write (io_unit%log,*) 'unpack patch id', self%id
+  n_buf = product(self%gn)
+  !-----------------------------------------------------------------------------
+  ! Copy relevant patch info from sequenced header
+  !-----------------------------------------------------------------------------
+  ibuf = 1
+  call anonymous_copy (n_header, buffer(ibuf), header)
+  ibuf = ibuf + n_header
+  if (io%verbose > 2) write (io_unit%log,1) 'patch_mod::unpk id, nq, time before:', &
+    self%id, self%nq, self%time
+  call self%header_to_patch (header)
+  if (io%verbose > 1) write (io_unit%log,1) 'patch_mod::unpk id, nq, time  after:', &
+    self%id, self%nq, self%time, &
+    self%is_set (bits%internal), &
+    self%is_set (bits%boundary), &
+    self%is_set (bits%virtual), &
+    self%is_set (bits%external), &
+    self%is_set (bits%swap_request)
+    1 format(a,2i9,f12.6,2x,5l1)
+  !-----------------------------------------------------------------------------
+  ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
+  ! ready bit, which is an indicator of a patch being in the ready queue, which
+  ! an incoming patch is not.
+  !-----------------------------------------------------------------------------
+  if (self%is_set(bits%boundary)) then
+    call self%set   (bits%virtual)
+    call self%clear (bits%boundary)
+  else if (self%is_set(bits%virtual)) then
+    call self%set   (bits%boundary)
+    call self%clear (bits%virtual)
+  end if
+  call self%clear (bits%ready)
+  !-----------------------------------------------------------------------------
+  ! Copy the variables from the output buffer.  If this is swap of patch roles
+  ! expect at least one more time slot.
+  !-----------------------------------------------------------------------------
+  do iv=1,self%nv
+    call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
+    ibuf = ibuf + n_buf
+  end do
+  if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
+    it = mod(self%it-1+self%nt-1,self%nt)+1
+    if (io%verbose>0) then
+      write (io_unit%log,*) self%id, 'extra time slot unpacked', it
+      flush (io_unit%log)
+    end if
+    do iv=1,self%nv
+      call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,it,1))
+      ibuf = ibuf + n_buf
+    end do
+  end if
+  if (io%verbose > 2) &
+    write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
+  call trace_end (itimer)
+END SUBROUTINE unpack
+
 
 END MODULE rt_mod

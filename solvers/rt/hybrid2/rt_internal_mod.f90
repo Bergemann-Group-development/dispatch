@@ -616,10 +616,10 @@ SUBROUTINE solve_internal_integral_2nd (self)
     allocate(opac(nrays, nwb, npt+2))
     allocate(ctau(nrays, nwb))
     allocate(I_in(nrays, nwb))
-    call trace_begin('rt_t%update_rt_internal%ray_vol_map ',itimer=itimer2)
+   ! call trace_begin('rt_t%update_rt_internal%ray_vol_map ',itimer=itimer2)
     call self%ray_vol_map (packet, nwb, c_source, s)                    ! Map source function onto rays
     call self%ray_vol_map (packet, nwb, c_opac, opac)                   ! Map opacities onto rays
-    call trace_end (itimer2)
+   ! call trace_end (itimer2)
     call self%dtau(opac, dtau)                                          ! Calculate dtau
     I_in = self%packet_data(pck)%I_in
     
