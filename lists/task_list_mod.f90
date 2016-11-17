@@ -416,41 +416,43 @@ END SUBROUTINE unpack
 SUBROUTINE check_mpi (self)
   class(task_list_t):: self
   class(mesg_t), pointer:: mesg, next
+  type(mesg_list_t):: unpk_tmp, recv_tmp
   integer, save:: itimer=0
-  integer:: i, n, max_recv
+  integer:: i, n, max_recv, nq
   real(8):: wc(0:10)=0.0
   !.............................................................................
   if (mpi%size <= 1) return
+  unpk_tmp%name = 'unpk_tmp'
+  recv_tmp%name = 'recv_tmp'
   wc(0) = wallclock()
   call trace_begin ('task_list_mod::check_mpi', 1, itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Prune the send list, if necessary
+  ! Step 1: Prune the send list -- critical regions are handled inside
   !-----------------------------------------------------------------------------
+  !$omp atomic read
+  nq = self%nq
   call timer%end (itimer=itimer)
-  !$omp critical (sent_cr)
-  call mpi_mesg%sent_list%check_sent
-  !$omp end critical (sent_cr)
+  call mpi_mesg%sent_list%check_sent (nq)
   call timer%begin (itimer=itimer)
   i=1; wc(i) = wallclock()-wc(0)
   if (wc(i) > check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
-  ! 1st step: probe for new messages and check for completeness. Unpack any that
-  ! are complete and add the rest to the recv_list.  Note that the probing for
-  ! new messages is threadsafe (if the MPI library supports it), so only the
-  ! list handling needs to be protected here.
+  ! Step 2: probe for new messages and check for completeness. Put messages on
+  ! one of two thread-local lists, depending on if complete or not.  The probing
+  ! can be done outside (recv_cr), but it may be necessary to serialize on systems
+  ! that do not support fully multi-threaded MPI
   !-----------------------------------------------------------------------------
+  call unpk_tmp%reset
+  call recv_tmp%reset
+  call timer%end (itimer=itimer)
   call mpi_mesg%get (mesg)
+  call timer%begin (itimer=itimer)
   n = 0
   do while (associated(mesg))
     if (mesg%is_complete()) then
-      call timer%end (itimer=itimer)
-      call self%unpack (mesg)
-      call timer%begin (itimer=itimer)
-      call mpi_mesg%recv_list%delete (mesg)
+      call unpk_tmp%add (mesg)
     else
-      !$omp critical (recv_cr)
-      call mpi_mesg%recv_list%add (mesg)
-      !$omp end critical (recv_cr)
+      call recv_tmp%add (mesg)
     end if
     n = n+1
     if (n > mpi_mesg%max_probe) exit
@@ -458,52 +460,99 @@ SUBROUTINE check_mpi (self)
     call mpi_mesg%get (mesg)
     call timer%begin (itimer=itimer)
   end do
+  !-----------------------------------------------------------------------------
+  ! Move pending receive messages to the recv_list.  This part must be in a
+  ! (recv_cr) critical region, but is very fast
+  !-----------------------------------------------------------------------------
+  !$omp critical (recv_cr)
+  mesg => recv_tmp%head
+  do while (associated(mesg))
+    next => mesg%next
+    call recv_tmp%remove (mesg)
+    call mpi_mesg%recv_list%add (mesg)
+    mesg => next
+  end do
+  !$omp end critical (recv_cr)
+  !-----------------------------------------------------------------------------
+  ! Now we can unpack messages from the thread-local list, outside of (recv_cr)
+  !-----------------------------------------------------------------------------
+  mesg => unpk_tmp%head
+  do while (associated(mesg))
+    next => mesg%next
+    call timer%end (itimer=itimer)
+    call self%unpack (mesg)
+    call timer%begin (itimer=itimer)
+    call unpk_tmp%remove (mesg)
+    call unpk_tmp%delete (mesg)
+    mesg => next
+  end do
   i=i+1; wc(i) = wallclock()-wc(0)
   if (wc(i) > check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
-  ! 2nd step: if there are more than max_recv messages in recv_list, then wait
+  ! Step 3: if there are more than max_recv messages in recv_list, then wait
   ! for and unpack enough messages to reach the limit.  If task_list%nq is less
   ! then min_nq, reduce the max_recv to zero, forcing a wait on all receives.
-  ! This step is potentially a bottleneck, since it contains an MPI_Wait.  It
-  ! could be speeded up by taking the completed messsages out of the recv_list,
-  ! and saving them for unpacking in a threadprivate unpack list.
+  ! By splitting the operation into one part that moves the messages to a
+  ! thead-local list, and a second part that does the wait and unpack, we
+  ! minimize the blocking of other threads.
   !-----------------------------------------------------------------------------
   max_recv = merge(mpi_mesg%max_recv,0,self%nq >= mpi_mesg%min_nq)
-  if (mpi_mesg%recv_list%n > max_recv) then
+  call unpk_tmp%reset
+  !$omp atomic read
+  n = mpi_mesg%recv_list%n
+  if (n > max_recv) then
     !$omp critical (recv_cr)
     mesg => mpi_mesg%recv_list%head
     do while (mpi_mesg%recv_list%n > max_recv)
       next => mesg%next
-      call timer%end (itimer=itimer)
-      call mesg%wait_for_completion
-      call self%unpack (mesg)
-      call timer%begin (itimer=itimer)
       call mpi_mesg%recv_list%remove (mesg)
+      call unpk_tmp%add (mesg)
       mesg => next
     end do
     !$omp end critical (recv_cr)
   end if
+  mesg => unpk_tmp%head
+  do while (associated(mesg))
+    next => mesg%next
+    call timer%end (itimer=itimer)
+    call mesg%wait_for_completion ()
+    call self%unpack (mesg)
+    call timer%begin (itimer=itimer)
+    call unpk_tmp%remove (mesg)
+    call unpk_tmp%delete (mesg)
+    mesg => next
+  end do
   i=i+1; wc(i) = wallclock()-wc(0)
   if (wc(i) > check_ms*1e-3) go to 9
   !-----------------------------------------------------------------------------
-  ! 3rd step: check the rest of the recv_list for completed messages, and unpack
-  ! and remove any that are found.  This traversal must in principle also be
-  ! protected, and the same remark as above applies.
+  ! Step 4: check the rest of the recv_list for completed messages.  The (fast)
+  ! traversal is protected inside (recv_cr), but unpacking from the local list
+  ! can be done outside.
   !-----------------------------------------------------------------------------
+  call unpk_tmp%reset
   !$omp critical (recv_cr)
+  mesg => mpi_mesg%recv_list%head
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_complete()) then
-      call timer%end (itimer=itimer)
-      call self%unpack (mesg)
-      call timer%begin (itimer=itimer)
       call mpi_mesg%recv_list%remove (mesg)
+      call unpk_tmp%add (mesg)
     end if
     mesg => next
   end do
   !$omp end critical (recv_cr)
+  mesg => unpk_tmp%head
+  do while (associated(mesg))
+    next => mesg%next
+    call timer%end (itimer=itimer)
+    call self%unpack (mesg)
+    call timer%begin (itimer=itimer)
+    call unpk_tmp%remove (mesg)
+    call unpk_tmp%delete (mesg)
+    mesg => next
+  end do
   i=i+1; wc(i) = wallclock()-wc(0)
-9 write (io_unit%log, '(a,6f10.4)') 'check_mpi times:', wc(1:i)
+9 write (io_unit%log, '(a,6f10.4)') 'check_mpi times:', wc(1:i)-wc(0:i-1)
   call trace_end (itimer)
 END SUBROUTINE check_mpi
 

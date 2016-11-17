@@ -499,7 +499,9 @@ SUBROUTINE send_to_vnbors (self)
   !.............................................................................
   call trace_begin('link_mod::send_to_vnbors', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Send to all unique ranks in the nbor list (which is sorted by rank)
+  ! Send to all unique ranks in the nbor list (which is sorted by rank).  The
+  ! task%pack procedure is only called once (at the first send), and each new
+  ! send adds requests to its reqs() array of send requests.
   !-----------------------------------------------------------------------------
   rank = -1                                                     ! previous rank
   nbor => self%nbor                                             ! first nbor
@@ -533,9 +535,7 @@ SUBROUTINE send_to_vnbors (self)
   !-----------------------------------------------------------------------------
   ! Add the message to mesg%sent_list, if it was sent, and clear the swap bit
   !-----------------------------------------------------------------------------
-  if (flag) then
-    call mpi_mesg%sent (mesg)                                   ! add to sent_list
-  end if
+  if (flag) call mpi_mesg%sent (mesg)                           ! add to sent_list
   call self%task%clear (bits%swap_request)
   call trace_end (itimer)
 END SUBROUTINE send_to_vnbors

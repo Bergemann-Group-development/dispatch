@@ -30,12 +30,13 @@ MODULE mpi_mesg_mod
   type, public:: mesg_list_t
     class(mesg_t), pointer:: head => null()
     class(mesg_t), pointer:: tail => null()
-    character(len=16):: name
+    character(len=16):: name='mesg_list'
     integer:: n=0
   contains
     procedure:: add
     procedure:: remove
     procedure:: delete
+    procedure:: reset
     procedure:: check_sent
     procedure:: print => print_list
     procedure:: count
@@ -61,6 +62,7 @@ MODULE mpi_mesg_mod
     procedure:: sent
     procedure:: delay
     procedure:: diagnostics
+    procedure:: test
   end type
   type(mpi_mesg_t), public:: mpi_mesg
   type(mesg_list_t), public:: unpk_list
@@ -110,13 +112,16 @@ END SUBROUTINE send
 !> =============================================================================
 !> Check messages on a sent_list for completeness
 !> =============================================================================
-SUBROUTINE check_sent (self)
+SUBROUTINE check_sent (self, nq)
   class(mesg_list_t):: self
+  integer:: nq
   class(mesg_t), pointer:: mesg, next
+  type(mesg_list_t):: sent_tmp
   logical:: flag
   integer, save:: every=0
   integer, save:: itimer=0
   real(8):: wc
+  integer:: n, m
   !$omp threadprivate (every)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1 .or. .not.associated(self%head)) return
@@ -125,22 +130,34 @@ SUBROUTINE check_sent (self)
   ! If there are more than max_sent messages pending, bring the number down with
   ! wait_all on the oldest ones.
   !-----------------------------------------------------------------------------
-  if (self%n > max_sent) then
-    !xomp critical (sent_cr)
+  m = merge(max_sent,1,nq >= mpi_mesg%min_nq)
+  !$omp atomic read
+  n = self%n
+  if (n > m) then
+    !$omp critical (sent_cr)
+    call sent_tmp%reset
+    sent_tmp%name = 'sent_tmp'
     mesg => self%head                                             ! top of list
-    do while (self%n > max_sent)
+    do while (self%n > m)
+      next => mesg%next
+      call self%remove (mesg)
+      call sent_tmp%add (mesg)
+      mesg => next
+    end do
+    !$omp end critical (sent_cr)
+    !---------------------------------------------------------------------------
+    ! Now we can wait on those messages outside of any critical region
+    !---------------------------------------------------------------------------
+    mesg => sent_tmp%head                                             ! top of list
+    do while (associated(mesg))
       next => mesg%next
       call timer%end (itimer=itimer)
       call mesg%wait_all
-      call self%remove (mesg)
       call timer%begin (itimer=itimer)
+      call sent_tmp%remove (mesg)
+      call sent_tmp%delete (mesg)
       mesg => next
-      if (.not.associated(mesg)) then
-        call trace%end (itimer)
-        exit
-      end if
     end do
-    !xomp end critical (sent_cr)
   end if
   !-----------------------------------------------------------------------------
   ! Only test for sent messages completion 'every_send' time; there is no need
@@ -157,9 +174,10 @@ SUBROUTINE check_sent (self)
   !-----------------------------------------------------------------------------
   ! This must be done in a critical region, since it traverses a list that may
   ! be manipulated by other threads.  Apart from the testing itself, this is a
-  ! fast traversal, since the onlu action is deallocation / message deletion.
+  ! fast traversal, since the only action is deallocation / message deletion.
   !-----------------------------------------------------------------------------
-  !xomp critical (sent_cr)
+  !$omp critical (sent_cr)
+  mesg => self%head                                             ! top of list
   do while (associated(mesg))
     next => mesg%next                                           ! in case removed
     call timer%end (itimer=itimer)
@@ -167,10 +185,11 @@ SUBROUTINE check_sent (self)
     call timer%begin (itimer=itimer)
     if (flag) then
       call self%remove (mesg)                                   ! yes, remove
+      call self%delete (mesg)                                   ! deallocate
     end if
     mesg => next                                                ! true next
   end do
-  !xomp end critical (sent_cr)
+  !$omp end critical (sent_cr)
   call trace%end (itimer)
 END SUBROUTINE check_sent
 
@@ -276,7 +295,6 @@ SUBROUTINE remove (self, mesg)
     write (io_unit%log,*) trim(self%name)//' remove mesg OK', mesg%id, self%n
     flush (io_unit%log)
   end if
-  call self%delete (mesg)                       ! deallocate message
   !$omp atomic
   self%n = self%n-1                             ! decrement count
 END SUBROUTINE remove
@@ -294,6 +312,16 @@ SUBROUTINE delete (self, mesg)
 END SUBROUTINE delete
 
 !> =============================================================================
+!> Reset the mesg_list
+!> =============================================================================
+SUBROUTINE reset (self)
+  class(mesg_list_t):: self
+  !.............................................................................
+  nullify (self%head)
+  nullify (self%tail)
+END SUBROUTINE reset
+
+!> =============================================================================
 !> Print a list of messages
 !> =============================================================================
 SUBROUTINE print_list (self, label)
@@ -305,7 +333,7 @@ SUBROUTINE print_list (self, label)
     write (io_unit%log,*) '------------------ '//label//' ------------------'
   mesg => self%head
   do while (associated(mesg))
-    write (io_unit%log,'(a,i5,i9,2i5)') 'mesg_list: '//self%name, &
+    write (io_unit%log,'(a,i5,i9,2i5)') ' mesg_list: '//self%name, &
       self%n, mesg%id, mesg%sender, mesg%ntry
     mesg => mesg%next
   end do
@@ -352,14 +380,47 @@ SUBROUTINE init (self)
   self%min_nq = min_nq
   self%max_recv = max_recv
   self%max_probe = max_probe
+  call self%test
 END SUBROUTINE init
+
+!> =============================================================================
+!> Test the components
+!> =============================================================================
+SUBROUTINE test (self)
+  class(mpi_mesg_t):: self
+  type (mesg_list_t):: test_list
+  class (mesg_t), pointer:: mesg, next
+  integer:: i, n=3
+  !.............................................................................
+  do i=1,n
+    allocate (mesg)
+    allocate (mesg%buffer(10))
+    mesg%id = i
+    call test_list%add (mesg)
+  end do
+  call test_list%print ('test1')
+  mesg => test_list%head
+  do i=1,n-1
+    next => mesg%next
+    call test_list%remove (mesg)
+    call test_list%delete (mesg)
+    mesg => next
+  end do
+  call test_list%print ('test2')
+  mesg => test_list%head
+  call test_list%remove (mesg)
+  call test_list%delete (mesg)
+  if (io%master) write (io_unit%log,*) &
+    associated(test_list%head), associated(test_list%tail)
+  call test_list%print ('test3')
+END SUBROUTINE test
 
 !> =============================================================================
 !> Add a message to the sent_list, in a critical region
 !> =============================================================================
 SUBROUTINE sent (self, mesg)
   class(mpi_mesg_t):: self
-  class(mesg_t), pointer:: mesg, next
+  class(mesg_t), pointer:: mesg
   !-----------------------------------------------------------------------------
   !$omp critical (sent_cr)
   call self%sent_list%add (mesg)
@@ -390,9 +451,9 @@ SUBROUTINE get (self, mesg)
   ! Probe for incoming messages
   !-----------------------------------------------------------------------------
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
-    !$omp critical (unpk_cr)
+    !$omp critical (mpi_cr)
     call probe_for
-    !$omp end critical (unpk_cr)
+    !$omp end critical (mpi_cr)
   else
     call probe_for
   end if
@@ -460,7 +521,13 @@ contains
           'is_complete waiting for id', self%id, mpi_mesg%recv_list%n, wait
         flush (io_unit%log)
       end if
-      call MPI_WAIT (self%req, stat, ierr)
+      if (mpi%mode == MPI_THREAD_SERIALIZED) then
+        !$omp critical (mpi_cr)
+        call MPI_WAIT (self%req, stat, ierr)
+        !$omp end critical (mpi_cr)
+      else
+        call MPI_WAIT (self%req, stat, ierr)
+      end if
       if (io%verbose>1) then
         wc = wallclock()-wc
         write (io_unit%log,*) wallclock(), &
@@ -468,7 +535,13 @@ contains
       end if
       is_complete = .true.
     else
-      call MPI_TEST (self%req, is_complete, stat, ierr)
+      if (mpi%mode == MPI_THREAD_SERIALIZED) then
+        !$omp critical (mpi_cr)
+        call MPI_TEST (self%req, is_complete, stat, ierr)
+        !$omp end critical (mpi_cr)
+      else
+        call MPI_TEST (self%req, is_complete, stat, ierr)
+      end if
     end if
   end subroutine check_recv
 END FUNCTION is_complete
@@ -487,7 +560,13 @@ SUBROUTINE wait_for_completion (self)
   if (mpi%size <= 1) return
   call trace%begin ('mesg_t%wait_for_completion', itimer=itimer)
   if (io%verbose>0) wc=wallclock()
-  call MPI_WAIT (self%req, stat, ierr)
+  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+    !$omp critical (mpi_cr)
+    call MPI_WAIT (self%req, stat, ierr)
+    !$omp end critical (mpi_cr)
+  else
+    call MPI_WAIT (self%req, stat, ierr)
+  end if
   if (io%verbose>0) &
     write (io_unit%log,*) 'wait_for_completion', self%id, wallclock()-wc
   call trace%end (itimer)
