@@ -7,10 +7,11 @@ MODULE units_mod
   type, public:: const_t
     character(len=16):: name='cgs'
     real(kind=8):: m_u = 1.6726d-24
+    real(kind=8):: amu = 1.66054d-24
     real(kind=8):: k_b = 1.3807d-16
     real(kind=8):: h_p = 6.6260755d-27
     real(kind=8):: c = 2.999792d10
-    real(kind=8):: stefan = 6.67d-8
+    real(kind=8):: stefan = 5.67d-5
     real(kind=8):: grav = 6.67d-8
     real(kind=8):: AU = 1.498d13
     real(kind=8):: pc = 3.086d18
