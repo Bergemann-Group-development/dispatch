@@ -22,7 +22,7 @@ MODULE eos_mod
 CONTAINS
 
 !> =============================================================================
-!> The eos reader is supposed to deliver table date in the eos_reader data 
+!> The eos reader is supposed to deliver table date in the eos_reader data
 !> type, with pressure and internal energy in an (nT,nd,2) table, with NT
 !> temperature value T(nT), and nd density values d(nd).
 !> =============================================================================
@@ -46,18 +46,19 @@ SUBROUTINE init (self)
   Emin = reader%table(1,1,2)
   Emax = reader%table(1,1,2)
   do j=1,nd
-  do i=1,ne
-    Emin = min(Emin,reader%table(i,j,2))
-    Emax = max(Emax,reader%table(i,j,2))
+    do i=1,ne
+      Emin = min(Emin,reader%table(i,j,2))
+      Emax = max(Emax,reader%table(i,j,2))
+    end do
+    !print '(a,1p,2e15.6)', 'Emin, Emax =', minval(reader%table(:,j,2)), maxval(reader%table(:,j,2))
   end do
-  end do
-  print *, 'Emin, Emax =', Emin, Emax
+  print '(a,1p,2e15.6)', 'Emin, Emax =', Emin, Emax
   !-----------------------------------------------------------------------------
   ! Construct table x- and y-values
   !-----------------------------------------------------------------------------
   self%lne_min = log(Emin)
   self%lne_max = log(Emax)
-  self%lne_stp = (self%lne_max-self%lne_min)/(nd-1.0)
+  self%lne_stp = (self%lne_max-self%lne_min)/(ne-1.0)
   do i=1,ne
     self%lne(i) = self%lne_min + (i-1)*self%lne_stp
   end do
@@ -69,11 +70,11 @@ SUBROUTINE init (self)
     self%lnd(j) = self%lnd_min + (j-1)*self%lnd_stp
   end do
   !-----------------------------------------------------------------------------
-  ! For each density, interpolate in the table to find the T corrsponding to 
+  ! For each density, interpolate in the table to find the T corrsponding to
   ! the new table E, and then again, to find the pressure at that T
   !-----------------------------------------------------------------------------
-  do j=1,nd
-    do i=1,ne
+  do i=1,ne
+    do j=1,nd
       E = exp(self%lne(i))              ! new table E-value
       x => reader%table(:,j,2)          ! x-values = known E-values
       y => reader%T                     ! y-values = known T-values
@@ -86,6 +87,18 @@ SUBROUTINE init (self)
       print '(2i5,1p,3e15.6)', i, j, T, P, E
     end do
   end do
+  open (io_unit%data, file='tmp.dat', form='formatted', status='unknown')
+  write (io_unit%data,*) ne
+  write (io_unit%data,*) self%lne
+  write (io_unit%data,*) nd
+  write (io_unit%data,*) self%lnd
+  do j=1,nd
+    write (io_unit%data,*) j, exp(self%lnd(j))
+    do i=1,ne
+      write (io_unit%data,'(1p,2e15.6)') self%table(i,j,:)
+    end do
+  end do
+  close (io_unit%data)
   call trace%end
   end associate
 END SUBROUTINE init
