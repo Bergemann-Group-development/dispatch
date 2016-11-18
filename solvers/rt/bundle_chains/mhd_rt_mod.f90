@@ -19,6 +19,7 @@ MODULE mhd_rt_mod
     procedure :: update
     procedure :: bundle_chain
     procedure :: output_legacy => rt_output_legacy
+    procedure :: output => rt_output
   end type
 ! ----------------------------------------------------------------------
 CONTAINS
@@ -50,6 +51,7 @@ SUBROUTINE update(self)
   q => self%rt_data%q(:,:,:,self%it)  ! FIXME: should be interpolation in time
   call self%mhd_t%apply_heating (q)
   call self%mhd_t%update
+  call self%output
   call trace_end
 END SUBROUTINE update
 
@@ -94,7 +96,7 @@ SUBROUTINE rt_output_legacy (self, experiment_name)
   real:: pt, qt
   real, dimension(:,:,:), pointer:: buf
   !-----------------------------------------------------------------------------
-  call trace_begin('patch_mod::output_legacy')
+  call trace_begin('mhd_rt_mod::output_legacy')
   self%max_files = self%max_files-1
   if (self%max_files <= 0) then
     write (io_unit%log,*) 'TOO MANY FILES'
@@ -128,7 +130,7 @@ SUBROUTINE rt_output_legacy (self, experiment_name)
   else
     open (io%data_unit,file=trim(logname),status='unknown',position='append')
   end if
-  write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout
+  write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout-1
   write (io%data_unit,'(a)') trim(filename)
   ds = self%box/2.0**io%levelmax
   do i=1,3
@@ -146,12 +148,12 @@ SUBROUTINE rt_output_legacy (self, experiment_name)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   if (io%master .and. io%verbose>=0) &
-    print'(a,3x,"time:",f9.5)', 'patch_mod::output: file= '//trim(filename), self%out_next
+    print'(a,3x,"time:",f9.5)', 'mhd_rt_mod::output: file= '//trim(filename), self%out_next
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   write (io%data_unit,'(1p,e18.10,6(2x,3e18.10),1x,i3.1)') self%time, self%position, self%ds, &
         self%velocity, self%origin, self%llc, self%mesh%centre, self%level
   write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1)') int(self%box/self%ds+0.5), u-l+1, &
-        li, ui, self%n, self%gn, self%ng, self%nv
+        li, ui, self%n, self%gn, self%ng, self%nv+1 ! +1 for mean intensity
   write (io%data_unit,'(3(1i8.1,1x),i2.1,1x,a)') self%id, self%iout, self%istep, &
         self%mesh_type, trim(self%kind)
   close (io%data_unit)
@@ -195,23 +197,40 @@ SUBROUTINE rt_output_legacy (self, experiment_name)
     end do
     !--------------------------------------------------------------------------
     ! integrated rt quantities
-!    allocate (buf(n(1),n(2),n(3))
-!    it1 = self%iit(self%nt-2)
-!    it2 = self%iit(self%nt-1)
-!    pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1d-30)
-!    if (self%t(it2)==self%t(it1)) pt=0.0
-!    qt = 1.0-pt
-!    buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
-!        + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
-!    if (io%verbose>1) &
-!        write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
-!          trim(filename),iv,it,jo,minval(buf),maxval(buf),pt
-!      write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
-!    deallocate (buf)
+    allocate (buf(n(1),n(2),n(3)))
+    it1 = self%iit(self%nt-2)
+    it2 = self%iit(self%nt-1)
+    pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1d-30)
+    if (self%t(it2)==self%t(it1)) pt=0.0
+    qt = 1.0-pt
+    buf = self%rt_data%intensity(l(1):u(1),l(2):u(2),l(3):u(3),1)
+    if (io%verbose>1) &
+        write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
+          trim(filename),iv,it,jo,minval(buf),maxval(buf),pt
+      write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
+    deallocate (buf)
   end do
   close (io%data_unit)
 
   call trace_end
 END SUBROUTINE rt_output_legacy
+
+!> =============================================================================
+SUBROUTINE rt_output (self, experiment_name)
+  class(mhd_rt_t):: self
+  character(len=64) filename, logname, experiment_name
+  optional:: experiment_name
+  integer, save:: old_iout=0
+  !-----------------------------------------------------------------------------
+  if (.not.io%do_output) return
+  !$omp critical (out_cr)
+  call trace_begin('mhd_rt_mod::output')
+  if (old_iout < self%iout) then
+    call self%output_legacy
+  end if
+  old_iout = self%iout
+  call trace_end
+  !$omp end critical (out_cr)
+END SUBROUTINE rt_output
 
 END MODULE mhd_rt_mod
