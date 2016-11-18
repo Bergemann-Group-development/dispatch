@@ -36,6 +36,7 @@ MODULE rt_mod
     real, dimension(:,:,:),   pointer :: density => null()              ! pointer to density
     real, dimension(:,:,:),   pointer :: temperature => null()          ! pointer to temperature
     real, dimension(:,:,:,:), pointer :: q       => null()              ! (x,y,z,nt)
+    logical :: do_output = .false.                                      ! rt data output will be done?
   contains
     procedure :: init => init_rt
     procedure :: init_mesh
