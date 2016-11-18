@@ -48,7 +48,6 @@ class Patch(Task):
 
         # line 1: time, pos(1:3), ds(1:3), vel(1:3), origin(1:3), llc(1:3), cent(1:3)
         line = fp.readline().split()
-        print len(line)
         self.time = float(line[0])
         self.pos  = (float(line[1]),float(line[2]),float(line[3]))
         self.dx = (float(line[4]),float(line[5]),float(line[6]))
@@ -57,17 +56,17 @@ class Patch(Task):
         self.llc = (float(line[13]),float(line[14]),float(line[15]))
         self.centre = (float(line[16]),float(line[17]),float(line[18]))
         self.level = int(line[19])
-        self.quality = float(line[20])
 
         # line 2: m(1:3), n(1:3), li(1:3), ui(1:3), gn(1:3), nghost(1:3), nvar
         line = fp.readline().split()
         self.m  = (int(line[0]),int(line[1]),int(line[2]))
-        self.n  = (int(line[3]),int(line[4]),int(line[5]))
+        self.nwrite  = (int(line[3]),int(line[4]),int(line[5]))
         self.li = (int(line[6]),int(line[7]),int(line[8]))
         self.ui = (int(line[9]),int(line[10]),int(line[11]))
-        self.gn = (int(line[12]),int(line[13]),int(line[14]))
-        self.nghost = (int(line[15]),int(line[16]),int(line[17]))
-        self.nvar = int(line[18])
+        self.n  = (int(line[12]),int(line[13]),int(line[14]))
+        self.gn = (int(line[15]),int(line[16]),int(line[17]))
+        self.nghost = (int(line[18]),int(line[19]),int(line[20]))
+        self.nvar = int(line[21])
 
         # line 3: id, iout, istep, mesh_type
         line = fp.readline().split()
@@ -95,7 +94,6 @@ class Patch(Task):
             print "          l.l.c.:", self.llc
             print "     vol. centre:", self.centre
             print "           level:", self.level
-            print "         quality:", self.quality
             print "       task type:", self.task_type
 
         self.corners = self.determine_corners()
@@ -113,7 +111,7 @@ class Patch(Task):
         """
 
         if self.__data is None:
-            self.__data = self._read_legacy_data(self.filename+'.dat', self.n, self.nvar)
+            self.__data = self._read_legacy_data(self.filename+'.dat', self.nwrite, self.nvar)
 
         return self.__data
 
@@ -238,19 +236,6 @@ def get_mesh_type(current_mesh_type):
         raise Exception("Unrecognised mesh type!")
 
     return mesh_string
-
-def dispatch_grid(p):
-    """
-    Given grid information for a patch, calculate the three *cell-centred*
-    coordinate arrays in the coord. system of the patch.
-
-    """
-
-    x1 = p.active_corners[0][0] + np.arange(p.n[0]) * p.dx[0] + 0.5 * p.dx[0]
-    x2 = p.active_corners[0][1] + np.arange(p.n[1]) * p.dx[1] + 0.5 * p.dx[1]
-    x3 = p.active_corners[0][2] + np.arange(p.n[2]) * p.dx[2] + 0.5 * p.dx[2]
-
-    return (x1, x2, x3)
 
 def plotting_grid(root, p, x_i, slicedir, sliceloc, truecoords=False):
     """
