@@ -19,7 +19,7 @@ MODULE rt_data_mod
     procedure :: update => update_rt_data
     procedure :: check  => check_rt_data
     procedure :: add_cr_heating
-    procedure :: I_store
+    procedure :: store_mean_I
   end type
 !-----------------------------------------------------------------------
 CONTAINS
@@ -149,7 +149,7 @@ END SUBROUTINE check_rt_data
 !> =====================================================================
 !> Store intensity
 !> =====================================================================
-SUBROUTINE I_store (self,I_st,rays,dirw)
+SUBROUTINE store_mean_I (self,I_st,rays,dirw)
   class (rt_data_t) :: self
   class (ray_t), pointer :: rays
   real, dimension(:,:,:) :: I_st
@@ -171,6 +171,6 @@ SUBROUTINE I_store (self,I_st,rays,dirw)
   end associate
 
   call trace_end
-END SUBROUTINE I_store
+END SUBROUTINE store_mean_I
 
 END MODULE rt_data_mod

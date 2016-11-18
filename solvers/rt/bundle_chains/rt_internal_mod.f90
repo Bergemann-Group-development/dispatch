@@ -103,7 +103,7 @@ SUBROUTINE init_rt_internal (self)
     self%solve => solve_internal_feautrier
   else
     if (self%do_output) then
-      self%solve => solve_internal_integral_2nd_i_store
+      self%solve => solve_internal_integral_2nd_store_mean_intensity
     else
       self%solve => solve_internal_integral_2nd
     end if
@@ -854,7 +854,7 @@ END SUBROUTINE solve_internal_integral_2nd
 !> Solution of RTE using the 2nd order Integral formulation.
 !> Iwf and Irv are stored in case of overlapping patches.
 !> =====================================================================
-SUBROUTINE solve_internal_integral_2nd_i_store (self)
+SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet => null()
   class(rt_data_t), pointer :: rtd
@@ -948,13 +948,13 @@ call trace_end (itimer2)
       error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"     
     end select
     call self%update_q (packet, q, opac)
-    call self%my_rt_data%I_store(Ifw,packet,self%dir_weight)
+    call self%my_rt_data%store_mean_I(Ifw,packet,self%dir_weight)
     deallocate(dtau, ex0, ds1, d1s, d2s, s, q, opac, ctau, I_in, Ifw)
     packet => packet%next
   end do
   nullify (packet,rtd,cell)
   call trace_end (itimer)
-END SUBROUTINE solve_internal_integral_2nd_i_store
+END SUBROUTINE solve_internal_integral_2nd_store_mean_intensity
 
 !> =====================================================================
 !> Map cell data onto rays
