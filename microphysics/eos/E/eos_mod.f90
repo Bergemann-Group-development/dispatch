@@ -5,6 +5,7 @@ MODULE eos_mod
   USE io_mod
   USE trace_mod
   USE eos_reader_mod
+  USE opac_reader_mod
   USE lagrange_mod
   implicit none
   private
@@ -84,7 +85,7 @@ SUBROUTINE init (self)
       P = interpolate (x, y, T)         ! find the pressure at T
       self%table(i,j,1) = P             ! store the pressure
       self%table(i,j,2) = T             ! store the temperature
-      print '(2i5,1p,3e15.6)', i, j, T, P, E
+      !print '(2i5,1p,3e15.6)', i, j, T, P, E
     end do
   end do
   open (io_unit%data, file='tmp.dat', form='formatted', status='unknown')
@@ -111,11 +112,6 @@ FUNCTION interpolate (x, y, x0) RESULT (out)
   real(8):: x0, out, p
   integer:: i
   !-----------------------------------------------------------------------------
-  !do i=2,size(x)-1
-  !  if (x(i) > x0) exit
-  !end do
-  !p = (x0-x(i-1))/(x(i)-x(i-1))
-  !out = (1.0-p)*y(i-1) + p*y(i)
   out = lagrange%sequence (x0, x, y)
 END FUNCTION interpolate
 
