@@ -184,6 +184,7 @@ SUBROUTINE init (self, label)
   ! Construct neighbor lists used to perform checks for ready status
   !-----------------------------------------------------------------------------
   call self%task_list%init_all_nbors
+  call self%task_list%print_tasks
   call trace_end (itimer)
 END SUBROUTINE init
 
