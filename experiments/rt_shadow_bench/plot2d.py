@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm, ticker
 from dispatch_data import *
 import itertools
-import ipdb
+#import ipdb
 
 def dump_min_max(p):
     """
