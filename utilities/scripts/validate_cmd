@@ -1,6 +1,7 @@
 #!/bin/csh
 
 setenv OMP_NUM_THREADS 1
+echo "HOST = $HOST"
 
 set label = "$1"
 shift
@@ -8,7 +9,11 @@ set cmd = "$*"
 
 set date = `date +%y%m%d_%H%M`
 
-#echo " "
+if ($?RESET) then
+  echo "WARNING: resetting $label.val"
+  cp -p $label.{log,val}
+  exit(0)
+endif
 
 if ($?tee) then
   set cmd = "$cmd |& tee $label.log"
