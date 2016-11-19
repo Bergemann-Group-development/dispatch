@@ -10,7 +10,7 @@ MODULE eos_mod
   implicit none
   private
   type, public:: eos_t
-    integer:: nd, ne
+    integer:: nd, ne, nv
     real(8):: lnd_min, lnd_max, lnd_stp
     real(8):: lne_min, lne_max, lne_stp
     real(8), dimension(:), pointer:: lnd, lne
@@ -18,6 +18,7 @@ MODULE eos_mod
   contains
     procedure:: init
     procedure:: pressure
+    procedure:: lookup
   end type
   type (eos_t), public:: eos
 CONTAINS
@@ -115,10 +116,130 @@ FUNCTION interpolate (x, y, x0) RESULT (out)
   out = lagrange%sequence (x0, x, y)
 END FUNCTION interpolate
 
-FUNCTION pressure (self, lnd, lne) RESULT (out)
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+FUNCTION pressure (self, lnd, lne) RESULT (pg)
   class (eos_t):: self
-  real:: lnd, lne, out
+  real, dimension(:,:,:):: lnd, lne
+  real, dimension(size(lnd,1),size(lnd,2),size(lnd,3)):: pg
+  !-----------------------------------------------------------------------------
+  call self%lookup (lnd, lne, pg=pg)
 END FUNCTION pressure
+
+!> =============================================================================
+!> General EOS lookup routine, returning values in optional arguments
+!> =============================================================================
+SUBROUTINE lookup (self, lnr, lne, pg, tt, ne, rk, src)
+  class (eos_t):: self
+  real, dimension(:,:,:), intent(in) :: lnr, lne
+  real, dimension(:,:,:),   optional :: pg, tt, ne, rk
+  real, dimension(:,:,:,:), optional :: src
+  !.............................................................................
+  real, dimension(size(lnr,1)):: pr, pe, qr, qe
+  real, dimension(size(lnr,1),4,size(self%table,3)):: f
+  real, dimension(size(lnr,1),4):: g
+  integer, dimension(size(lnr,1)):: ir, ie
+  integer:: ix, iy, iz, iv
+  integer:: mx, my, mz, md, me, mv
+  real:: clnd, clne
+  logical:: skip
+  !-----------------------------------------------------------------------------
+  ! Allocate temporary arrays
+  !-----------------------------------------------------------------------------
+  mx = size(lnr,1)
+  my = size(lnr,2)
+  mz = size(lnr,3)
+  mv=  self%nv
+  md = self%nd
+  me = self%ne
+  if (present(pg).or.present(tt).or.present(ne).or.present(rk).or.present(src)) then
+    skip = .false.
+  else
+    skip = .true.
+  end if
+  !-----------------------------------------------------------------------------
+  ! Loop over points
+  !-----------------------------------------------------------------------------
+  clnd = 1./self%lnd_stp
+  clne = 1./self%lne_stp
+  do iz=1,mz
+  do iy=1,my
+    !-------------------------------------------------------------------------
+    ! Addresses and weights, vectorized
+    !-------------------------------------------------------------------------
+    pr = 1.+(lnr(:,iy,iz)-self%lnd_min)*clnd
+    pe = 1.+(lne(:,iy,iz)-self%lne_min)*clne
+    ir = pr
+    ie = pe
+    ir = max(1,min(ir,md))
+    ie = max(1,min(ie,me))
+    pr = pr-ir
+    pe = pe-ie
+    qr = 1.0-pr
+    qe = 1.0-pe
+    g(:,1) = qr*qe
+    g(:,2) = pr*qe
+    g(:,3) = qr*pe
+    g(:,4) = pr*pe
+    !---------------------------------------------------------------------------
+    !  Table values, indirect addressing
+    !---------------------------------------------------------------------------
+    do ix=1,mx
+    do iv=1,mv
+      f(ix,1,iv) = self%table(ir(ix)  ,ie(ix)  ,iv)
+      f(ix,2,iv) = self%table(ir(ix)+1,ie(ix)  ,iv)
+      f(ix,3,iv) = self%table(ir(ix)  ,ie(ix)+1,iv)
+      f(ix,4,iv) = self%table(ir(ix)+1,ie(ix)+1,iv)
+    end do
+    end do
+    if (skip) cycle
+    !---------------------------------------------------------------------------
+    !  Loop over table entries
+    !---------------------------------------------------------------------------
+    if (present(pg)) then
+      pg(:,iy,iz) = &
+         f(:,1,1)*g(:,1) &
+       + f(:,2,1)*g(:,2) &
+       + f(:,3,1)*g(:,3) &
+       + f(:,4,1)*g(:,4)
+    end if
+    !---------------------------------------------------------------------------
+    if (present(rk)) then
+      rk(:,iy,iz) = &
+         f(:,1,2)*g(:,1) &
+       + f(:,2,2)*g(:,2) &
+       + f(:,3,2)*g(:,3) &
+       + f(:,4,2)*g(:,4)
+    end if
+    !---------------------------------------------------------------------------
+    if (present(tt)) then
+      tt(:,iy,iz) = &
+         f(:,1,3)*g(:,1) &
+       + f(:,2,3)*g(:,2) &
+       + f(:,3,3)*g(:,3) &
+       + f(:,4,3)*g(:,4)
+    end if
+    !---------------------------------------------------------------------------
+    if (present(ne)) then
+      ne(:,iy,iz) = &
+         f(:,1,4)*g(:,1) &
+       + f(:,2,4)*g(:,2) &
+       + f(:,3,4)*g(:,3) &
+       + f(:,4,4)*g(:,4)
+    end if
+    !---------------------------------------------------------------------------
+    if (present(src)) then
+     do iv=1,size(src,4)
+      src(:,iy,iz,iv) = &
+         f(:,1,4+iv)*g(:,1) &
+       + f(:,2,4+iv)*g(:,2) &
+       + f(:,3,4+iv)*g(:,3) &
+       + f(:,4,4+iv)*g(:,4)
+     end do
+    end if
+  end do
+  end do
+END SUBROUTINE lookup
 
 END MODULE eos_mod
 
