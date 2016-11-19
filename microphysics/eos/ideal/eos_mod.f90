@@ -8,12 +8,7 @@ MODULE eos_mod
   implicit none
   private
   type, public:: eos_t
-    integer:: nd, ne, nv
     real:: gamma
-    real(8):: lnd_min, lnd_max, lnd_stp
-    real(8):: lne_min, lne_max, lne_stp
-    real(8), dimension(:), pointer:: lnd, lne
-    real(8), dimension(:,:,:), pointer:: table
   contains
     procedure:: init
     procedure:: pressure
@@ -30,9 +25,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class (eos_t):: self
-  real(8), dimension(:), pointer:: x, y
-  real(8):: Emin, Emax, E, T, P
-  integer:: i, j, nd, ne, iostat
+  integer:: iostat
   real, save:: gamma=5./3.
   namelist /eos_params/ gamma
   !-----------------------------------------------------------------------------
@@ -78,7 +71,11 @@ SUBROUTINE lookup (self, dim, d, e, pg, tt, rk, src, gamma)
   if (present(gamma)) then
     self%gamma = gamma
   end if
-  pg = (self%gamma-1.0)*d*e
+  if (present(d).and.present(e)) then
+    pg = (self%gamma-1.0)*d*e
+  else
+    call mpi%abort ('eos_t: missing d or e in call')
+  end if
   if (present(rk)) then
     rk = d
   end if

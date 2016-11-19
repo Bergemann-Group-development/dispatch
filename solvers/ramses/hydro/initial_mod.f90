@@ -91,8 +91,9 @@ SUBROUTINE single_solenoidal (self, m, ff)
   type(random_t)        :: random
   integer               :: ix, iy, iz
   real(8)               :: kx, ky, kz
+  integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t:single_solenoidal')
+  call trace_begin('initial_t:single_solenoidal', itimer=itimer)
   self%phi = 0.0
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -130,8 +131,9 @@ SUBROUTINE single_compressive (self, m, ff)
   type(random_t)        :: random
   integer               :: ix, iy, iz
   real(8)               :: kx, ky, kz
+  integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t:single_compressive')
+  call trace_begin('initial_t:single_compressive', itimer=itimer)
   self%phi = 0.0
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -169,8 +171,9 @@ SUBROUTINE single_advection (self, m, ff)
   type(random_t)        :: random
   integer               :: ix, iy, iz
   real(8)               :: kx, ky, kz
+  integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t:single_compressive')
+  call trace_begin('initial_t:single_compressive', itimer=itimer)
   self%phi = 0.0
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -213,7 +216,7 @@ SUBROUTINE exa256 (self, m, ff)
   logical, save:: first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t::exa256')
+  call trace_begin('initial_t::exa256', itimer=itimer)
   self%mhd = .false.
   ff(:,:,:,:) = 0.0
   allocate (u(m(1)%n))
@@ -278,8 +281,9 @@ SUBROUTINE raw (self, m, ff)
   integer:: n(3), i(3), iv
   integer, save:: mv=4
   logical, save:: first_time=.true.
+  integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t::raw')
+  call trace_begin('initial_t::raw', itimer=itimer)
   !$omp critical (raw_cr)
   self%mhd = .false.
   self%time = 0.02
