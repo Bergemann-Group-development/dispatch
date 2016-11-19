@@ -16,7 +16,7 @@
 /
 &box_params
  size=1,1,1
- dims=2,2,2
+ dims=4,4,4
  origin=0,0,0
 /
 &experiment_params
@@ -29,7 +29,7 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.501
+ end_time=0.1
  out_time=0.05
  print_time=0.0
  guard_zones=f
