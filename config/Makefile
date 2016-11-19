@@ -80,6 +80,7 @@ ifeq ($(COMPILER),ifort)
 endif
 POSTCOMPILE= mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
 FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
+SRC = $(subst .d,.w,$(notdir $(wildcard $(DEPDIR)/*.d)))
 
 # Remove default rule for .f files.
 %.o: %.f
@@ -160,8 +161,10 @@ cleanest: cleaner cleandata cleanlog clean-deps cleandirs
 
 #############################################################################
 # Generate list of source files
-files: 
-	@echo "$(FILES)"
+files: $(FILES)
+	@echo $(FILES)
+src: $(SRC)
+
 # Generate list of dependencies
 deps: files
 	@make files > files.txt
