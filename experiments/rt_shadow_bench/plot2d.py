@@ -156,8 +156,8 @@ if __name__ == "__main__":
     pysize = [0.0,1.0]
     #pltvar = ['d']
     pltvar = ['J']
-    cmin   = [0.0]
-    cmax   = [5.0]
+    cmin   = [1e-11]
+    cmax   = [2e-11]
     clog   = [  0]
     slicedir = 3  # given with respect to the root grid (typically patch id = 1)
     sliceloc = 0.501 # coord. of slice to be taken

@@ -49,6 +49,7 @@ MODULE rt_internal_mod
     procedure :: get_static_legacy
     procedure :: get_dynamic_legacy
     procedure :: get_correction_from_BC
+    procedure :: has_OB
     procedure :: ray_vol_map
     procedure :: solve_internal_integral => solve_internal_integral_2nd
     procedure :: solve_internal_feautrier
@@ -206,6 +207,8 @@ LOGICAL FUNCTION chain_start (self)
       m => self%mhd_patch%mesh(axis)
       if (m%p + m%r(i) > m%b) chain_start = .true.
     end if
+  else
+    if (self%has_OB()) chain_start = .true.
   end if
 END FUNCTION chain_start
 
@@ -241,10 +244,7 @@ RECURSIVE SUBROUTINE recurse (self)
   integer :: id
   !.....................................................................
   call trace_begin ('rt_internal_t%recurse')
-   if (self%my_rt_data%time < self%time) then
-  print *,"FORCE UPDATING RT_DATA, AS IT IS BEHIND THE INTERNAL!!!!"
-  call self%my_rt_data%update
-  end if
+
   call self%solve
   call self%update_time
   if (io%verbose > 2) then
@@ -259,6 +259,7 @@ RECURSIVE SUBROUTINE recurse (self)
       self%chain_stop(), id
   end if
   if (associated(self%downstream) .and. .not.self%chain_stop()) then
+  print *,"CHAIN IS MOVING..."
     call self%downstream%recurse
   end if
   call trace_end
@@ -278,6 +279,38 @@ LOGICAL FUNCTION needs_BC (self)
     end if
   end if
 END FUNCTION needs_BC
+
+
+LOGICAL FUNCTION has_OB (self)
+  class (rt_internal_t) :: self
+  class (mesh_t), pointer :: m
+  integer :: i(3), a, d(3)
+  !.....................................................................
+  has_OB = .false.
+  d = self%bundle%dstep
+  
+  if (self%rt_type == 2) then
+    i = self%bundle%rays%fwd_coords(:,1)
+    do a=1,3
+      m => self%mhd_patch%mesh(a)
+      if (d(a)<0) then
+        if (m%p + m%r(i(a)) > m%b) has_OB = .true.
+      else 
+        if (m%p + m%r(i(a)) < 0.0) has_OB = .true.
+      end if
+    end do
+  else if (self%rt_type == 3) then
+    i = self%bundle%rays%rev_coords(:,1)
+    do a=1,3
+      m => self%mhd_patch%mesh(a)
+      if (d(a) < 0) then
+        if (m%p + m%r(i(a)) < 0.0) has_OB = .true.
+      else
+        if (m%p + m%r(i(a)) > m%b) has_OB = .true.
+      end if
+    end do
+  end if
+END FUNCTION has_OB
 
 !> =============================================================================
 !> Check if the rays in self match up in the downstream with the rays in other
@@ -338,13 +371,14 @@ SUBROUTINE get_upstream (self)
   integer, save :: itimer=0
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_t%get_upstream', itimer=itimer)
-
+print *,'getting upstream values'
   if (self%is_set(bits%has_BC)) then                                    ! FIXME - make inner/outer BCs separate.
     if (self%obc == 0) then                                             ! Currently only outer BC
       error stop "huh?"
     end if
     call self%get_correction_from_BC                                    ! get boundary value
   else
+  print *,'getting from elsewhere'
     static = .true.; local = .true.; same = .true.                      ! not moving? on this rank? same level?
     if (self%is_clear(bits%static)) static = .false.
     nbor => self%link%nbor
@@ -553,7 +587,7 @@ SUBROUTINE get_same_static_chain (self)
   integer, dimension(:), pointer :: nb_ray_pos
   !---------------------------------------------------------------------
   call trace_begin('rt_corrections_mod::get_same_static_chain')
-  
+  print *,'getting same static in chain'
     select case(self%rt_type)
   case(2)
   mbid = self%bundle%next_chain_bndl_rev
@@ -572,6 +606,8 @@ SUBROUTINE get_same_static_chain (self)
       self%I_in(ray,:) = rt_nb%I_out(nb_ray_pos(ray),:)
     end do
   end select
+  !print *,rt_nb%I_out
+  !print *,self%I_in
   nullify(rt_nb)
   call trace_end
 END SUBROUTINE get_same_static_chain
@@ -586,6 +622,7 @@ SUBROUTINE get_correction_from_BC (self)
   real(kind=8) :: ppos(3)
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_t%get_correction_from_BC')
+  print *,'getting BC vals'
   SELECT case(self%rt_type)
   case(0)
   case(1)
@@ -765,7 +802,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
   integer, save :: itimer=0, itimer2=0
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_t%integral_2nd', itimer=itimer)
-
+  call self%get_upstream
   dir_wgt = self%dir_weight
 
   nwb = microphysics%n_wl_bins
@@ -868,7 +905,7 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
   integer, save :: itimer=0, itimer2=0
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_t%integral_2nd', itimer=itimer)
-
+  call self%get_upstream
   dir_wgt = self%dir_weight
 
   nwb = microphysics%n_wl_bins
@@ -898,6 +935,7 @@ call trace_begin('rt_internal_t%ray_vol_map', itimer=itimer2)
     call self%ray_vol_map (packet, nwb, c_opac, opac)                   ! Map opacities onto rays
     call self%dtau_staggered(opac, dtau)                                ! Calculate dtau
     I_in = self%packet_data(pck)%I_in
+
 call trace_end (itimer2)
 #if defined __INTEL_COMPILER
     do pt = 1, npt+1

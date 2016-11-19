@@ -25,12 +25,11 @@
  nt=5
  courant=0.2
  grace=0.1
- n=21,21,21
+ n=32,32,32
 /
 
 &rt_params
  RT_solver  = 'integral'
- cr_heating = 3.746e-24
  store_rt = t
 /
 
@@ -56,6 +55,7 @@ space_diagonals=t
 &microphysics_params
  !source  = 'eos_lookup'
  source  = 'Stefan'
+ cr_heating = 3.746e-24
  n_wl_bins  = 1
 /
 

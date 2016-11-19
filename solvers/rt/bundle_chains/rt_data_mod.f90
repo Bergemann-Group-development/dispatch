@@ -67,7 +67,10 @@ SUBROUTINE init_rt_data(self)
   allocate(self%q      (n(1), n(2), n(3), self%nt))                     ! net heating
   allocate(self%opacity(n(1), n(2), n(3), nwb))                         ! opacity table
   allocate(self%source (n(1), n(2), n(3), nwb))                         ! Source function table
-  if (self%do_output)  allocate(self%intensity (n(1), n(2), n(3), nwb, self%nt)) 
+  if (self%do_output)  then
+    allocate(self%intensity (n(1), n(2), n(3), nwb, self%nt)) 
+    self%intensity = 0
+  end if
   self%q = 0.0; self%opacity = 0;   self%source = 0
   end associate
   !

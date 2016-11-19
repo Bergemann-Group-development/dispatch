@@ -175,6 +175,10 @@ SUBROUTINE rt_setup (self)
               write (io_unit%log,*) &
                 'bundle chain: id, axis =', internal%id, internal%bundle%axis, &
                 real(internal%bundle%theta*radian), real(internal%bundle%phi*radian), internal%bundle%lwall, internal%bundle%uwall
+            else
+              write (io_unit%log,*) &
+                'bundle chain not added: id, axis =', internal%id, internal%bundle%axis, &
+                real(internal%bundle%theta*radian), real(internal%bundle%phi*radian), internal%bundle%lwall, internal%bundle%uwall
             end if
             call internal%print
             call task_list%append_link(link)                            ! insert into the task list
@@ -243,6 +247,11 @@ SUBROUTINE add_downstream (self)
         END SELECT
         try => try%next
       end do
+      if (ithis%has_OB()) then
+        call ithis%init_obc
+      else
+        error stop "WTF?"
+      end if
       if (io%verbose > 2) &
         write(io_unit%log,'(1x,a,i5,3x,a,3f6.1,3x,a,3i3,3x,a)') &
          'downstream nbor of', this%id, &
