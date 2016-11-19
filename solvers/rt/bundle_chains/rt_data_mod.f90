@@ -13,11 +13,13 @@ MODULE rt_data_mod
     integer :: n_tau_dat = 0                                            ! used for mpi comm
     real, dimension(:,:,:,:), pointer :: opacity => null()              ! (x,y,z,wl_bin)
     real, dimension(:,:,:,:), pointer :: source  => null()              ! (x,y,z,wl_bin)
+    real, dimension(:,:,:,:,:), pointer :: intensity => null()            ! (x,y,z,wl_bin)
   contains
     procedure :: init   => init_rt_data
     procedure :: update => update_rt_data
     procedure :: check  => check_rt_data
     procedure :: add_cr_heating
+    procedure :: store_mean_I
   end type
 !-----------------------------------------------------------------------
 CONTAINS
@@ -65,6 +67,7 @@ SUBROUTINE init_rt_data(self)
   allocate(self%q      (n(1), n(2), n(3), self%nt))                     ! net heating
   allocate(self%opacity(n(1), n(2), n(3), nwb))                         ! opacity table
   allocate(self%source (n(1), n(2), n(3), nwb))                         ! Source function table
+  if (self%do_output)  allocate(self%intensity (n(1), n(2), n(3), nwb, self%nt)) 
   self%q = 0.0; self%opacity = 0;   self%source = 0
   end associate
   !
@@ -88,7 +91,6 @@ SUBROUTINE update_rt_data (self)
 !-----------------------------------------------------------------------
   write (stime,'(1p,g16.6)') self%time
   call trace_begin('rt_t%update_rt_data', itimer=itimer)
-
   rho => self%mhd_patch%mem(:,:,:,1,self%it,1)
   s   => self%mhd_patch%mem(:,:,:,2,self%it,1)
   associate (gam => self%mhd_patch%gamma, cs => self%mhd_patch%csound)
@@ -98,6 +100,7 @@ SUBROUTINE update_rt_data (self)
   ! add cosmic ray heating
   call self%add_cr_heating(self%mhd_patch%time)  ! add cr heating
   call self%update_time
+ ! if (self%do_output)  self%intensity (:,:,:,:,self%it) = 0. 
   nullify (rho, s)
   if (io%verbose>2) call self%check(2)
   call trace_end (itimer)
@@ -142,5 +145,32 @@ SUBROUTINE check_rt_data(self, plc)
     if (plc ==2) error stop "rt_data%update: self%source has NaN"
   end if
 END SUBROUTINE check_rt_data
+
+!> =====================================================================
+!> Store intensity
+!> =====================================================================
+SUBROUTINE store_mean_I (self,I_st,rays,dirw)
+  class (rt_data_t) :: self
+  class (ray_t), pointer :: rays
+  real, dimension(:,:,:) :: I_st
+  real :: dirw
+  integer :: c(3), pt, ray
+!-----------------------------------------------------------------------
+  call trace_begin('rt_data_mod%I_store',4)
+  associate (I => self%intensity(:,:,:,:, self%it),&
+             nwb => microphysics%n_wl_bins)
+             
+  
+  do ray = 1, rays%n_rays
+    do pt = 1, rays%n_points
+      c = rays%coords(:,pt,ray)
+      I(c(1),c(2),c(3),:) = I(c(1),c(2),c(3),:) + I_st(ray,:,pt)*dirw
+    end do
+  end do
+ ! print *,I(:,:,:,:)
+  end associate
+
+  call trace_end
+END SUBROUTINE store_mean_I
 
 END MODULE rt_data_mod

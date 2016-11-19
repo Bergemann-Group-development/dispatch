@@ -38,15 +38,22 @@ def data():
 
 d=data()
 
+def saha(f):
+    if (f<1e3):
+        g=-f/2.0 + np.sqrt(f**2/4.0 + f)
+    else:
+        g=1.0-1.0/f
+    return g
+
 def fH2(rho,T):
     N_b = rho/d.m_u
     f = (2.0*np.pi*d.m_u*d.k_B*T/d.h**2)**1.5*np.exp(-d.X[0]/(d.k_B*T))*2./(2.*N_b)
-    return -f/2.0 + np.sqrt(f**2/4.0 + f)
+    return saha(f)
 
 def fH(rho,T):
     N_b = rho/d.m_u
     f = (2.0*np.pi*d.m_e*d.k_B*T/d.h**2)**1.5*np.exp(-d.X[1]/(d.k_B*T))*2./N_b
-    return -f/2.0 + np.sqrt(f**2/4.0 + f)
+    return saha(f)
 
 def fmu(rho,T):
     f_H2=0.5*(1.0-fH2(rho,T))
@@ -91,4 +98,35 @@ pl.loglog(TT,EE)
 pl.title('rho = {} SI'.format(rho))
 pl.xlabel('T')
 pl.ylabel('Eint')
+
+# Write out an ascoii-format EOS table
+nT=101
+nrho=81
+T=np.logspace(0.5,4.5,nT)
+rho=np.logspace(-15.+4.,-7+4.,nrho)
+
+f=open('EOS.cgs','w')
+f.write('# nT,nrho followed by (in CGS) T[0:nT-1], rho[0:nrho-1] and [P[i,j],E[i,j]] on each line\n')
+f.write('{}\n'.format(nT))
+for i in range(nT):
+    f.write('{:12.6e}\n'.format(T[i]))
+f.write('{}\n'.format(nrho))
+for j in range(nrho):
+    f.write('{:12.6e}\n'.format(rho[j]))
+f.write('{} {} {}\n'.format(2,nT,nrho))
+E_SI2cgs=1e7
+rho_SI2cgs=1e-3
+P_SI2cgs=rho_SI2cgs*E_SI2cgs
+table=np.zeros([nT,nrho,2],dtype=np.float32)
+for j in range(nrho):
+    for i in range(nT):
+        E=eint(rho[j],T[i])*E_SI2cgs
+        P=d.k_B*T[i]*rho[j]/(d.m_u*fmu(rho[j],T[i]))*P_SI2cgs
+        table[i,j,0]=P/P_SI2cgs
+        table[i,j,1]=E/E_SI2cgs
+        f.write('{:12.6e} {:12.6e}\n'.format(P,E))
+f.close()
+
+pl.loglog(T,table[:,0,1])
+pl.loglog(T,table[:,nrho-1,1])
 pl.show()

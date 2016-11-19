@@ -49,7 +49,8 @@ SUBROUTINE rt_setup (self)
   real,    save :: cr_heating=4.4e-27
   integer, save :: solver, rt_type, a, b
   integer, save :: rt_freq=1
-  namelist /rt_params/ RT_solver, cr_heating, rt_freq
+  logical, save :: store_rt = .false.
+  namelist /rt_params/ RT_solver, cr_heating, rt_freq, store_rt
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer::rt_setup')
   associate (mhd => self%head%task)
@@ -121,6 +122,7 @@ SUBROUTINE rt_setup (self)
       rt_data_l => link                                                 ! save the link
       rt_data%link => link
       rt_data%rt_type = 0                                               ! set the rt type
+      if (store_rt) rt_data%do_output = .true.
       rt_data%n_ray_dirs = ray_geometry%n_ray_dirs
       rt_data%rt_freq    =  rt_freq                                     ! integer frequency, relative to MHD task
       rt_data%position = mhd_patch%position
@@ -155,6 +157,7 @@ SUBROUTINE rt_setup (self)
             internal%rt_type    =  rt_type                              ! set the rt type
             internal%n_ray_dirs =  ray_geometry%head%n_ray_dirs
             internal%solver     =  solver                               ! set the rt solver type
+            if (store_rt) internal%do_output = .true.
             internal%rt_freq    =  rt_freq                              ! integer frequency, relative to MHD task
             internal%mhd_link   => t_list                               ! Pointer to mhd_patch's link
             internal%link       => link                                 ! convenience

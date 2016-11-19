@@ -48,7 +48,7 @@ MODULE patch_mod
     real(8):: ds(3)                     ! convenience
     integer:: n(3)=16, ng(3)=2          ! convenient defaults
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
-    integer:: i,j,k                     ! should go!  FIXME
+    integer:: ipos(3)                   ! integer position
     real(8):: offset(3)                 ! this is used to compute indices, locations
     real(8):: llc(3)=0d0                ! the lower left corner of the patch in *root grid* coords.
     real(8):: origin(3)=0d0             ! the lower left corner of the patch in its *own* coords.
@@ -1185,10 +1185,12 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
-  if (detailed_timer) then
-    call trace_end (itimer)
-  else
-    call trace_end
+  if (present(detailed_timer)) then
+    if (detailed_timer) then
+      call trace_end (itimer)
+    else
+      call trace_end
+    end if
   end if
 END SUBROUTINE courant_condition
 

@@ -35,7 +35,7 @@ SUBROUTINE rt_shadow_opacity (self, rho, temp, nwb, kappa)
   !.....................................................................
   call trace_begin('opacity_mod::rt_shadow_opacity',3)
   
-  kappa(:,:,:,1) = ((temp(:,:,:)*self%t0)**(-3.5)*(rho(:,:,:)*self%rho0)**2)
+  kappa(:,:,:,1) = ((temp(:,:,:)*self%t0)**(-3.5)*(rho(:,:,:)*self%rho0)**2)*scaling%m/scaling%l**2
   
   if (nwb>1) then
    do wl = 2, nwb

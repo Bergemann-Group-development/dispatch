@@ -17,7 +17,7 @@ MODULE io_mod
     integer:: levelmax
     integer:: word_size=4
     integer:: id_debug=0
-    character(len=64):: inputname, outputname, datadir='data'
+    character(len=64):: inputname, outputname, datadir='data', top
     character(len=1):: sep = '/'
   contains
     procedure:: init
@@ -42,12 +42,13 @@ SUBROUTINE init (self, name)
   integer, save:: verbose=0, levelmax=10
   character(len=*), optional:: name
   character(len=64):: filename
+  character(len=64), save:: top='../../'
   integer, save:: id_debug=-1
   logical, save:: first_time=.true., omp_trace=.true., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.true., do_flags=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
-    do_validate, do_legacy, levelmax, omp_trace, id_debug
+    do_validate, do_legacy, levelmax, omp_trace, id_debug, top
   real:: test
   integer:: iostat
   !.............................................................................
@@ -134,6 +135,7 @@ SUBROUTINE init (self, name)
   self%omp_trace = omp_trace
   self%levelmax  = levelmax
   self%inputname = inputname
+  self%top       = top
   io_unit%do_validate = do_validate
   call print_id (id)
   call timer%init
