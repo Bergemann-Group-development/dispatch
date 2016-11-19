@@ -14,6 +14,7 @@ MODULE mhd_rt_mod
     type(rt_data_t), pointer:: rt_data => null()
     type(rt_internal_t), pointer:: first_internal => null()
     integer:: BC_direction=0
+    integer:: prev_iout=0
   contains
     procedure :: init_rt
     procedure :: update
@@ -220,15 +221,14 @@ SUBROUTINE rt_output (self, experiment_name)
   class(mhd_rt_t):: self
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
-  integer, save:: old_iout=0
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   !$omp critical (out_cr)
   call trace_begin('mhd_rt_mod::output')
-  if (old_iout < self%iout) then
+  if (self%prev_iout < self%iout) then
     call self%output_legacy
   end if
-  old_iout = self%iout
+  self%prev_iout = self%iout
   call trace_end
   !$omp end critical (out_cr)
 END SUBROUTINE rt_output

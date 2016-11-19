@@ -150,11 +150,12 @@ if __name__ == "__main__":
     gamma = 5.0/3.0
     datadir = './data/'
     prefix = ''
-    ptimes = [1.0e-3]
+    ptimes = [7.0e-3]
     t_eps = 0.03
     pxsize = [0.0,1.0]
     pysize = [0.0,1.0]
-    pltvar = ['d']
+    #pltvar = ['d']
+    pltvar = ['J']
     cmin   = [0.0]
     cmax   = [5.0]
     clog   = [  0]
@@ -221,7 +222,7 @@ if __name__ == "__main__":
 
             x_i = dispatch_grid(p)
             xp, yp, cut_mask, slice_index = plotting_grid(root, p, x_i, slicedir, sliceloc,
-                                               truecoords=truecoords,sliceeps=0.005)
+                                               truecoords=truecoords,sliceeps=0.006)
             if (np.ma.count_masked(xp) == np.product(p.nwrite) or
                 np.ma.count_masked(yp) == np.product(p.nwrite)):
                    print "Skipping ID {0}..".format(p.id)
