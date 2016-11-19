@@ -48,7 +48,7 @@ SUBROUTINE init (self, label)
   real(8):: size(3) = [1.0,1.0,1.0]
   integer:: dims(3) = [4,4,4]
   integer:: mpi_dims(3) = [1,1,1]
-  integer:: npatch, nvpatch, nbpatch
+  integer:: npatch, nvpatch, nbpatch, nlpatch
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
   logical:: face_nbors=.false.
   integer:: thread, icoords(3),ipos(3)
@@ -86,7 +86,7 @@ SUBROUTINE init (self, label)
   do dim=1,3
     nn(:,dim) = merge([-1,1],[0,0],self%dims(dim)>1)
   end do
-  npatch=0; nvpatch=0; nbpatch=0
+  npatch=0; nvpatch=0; nbpatch=0; nlpatch=0
   !-----------------------------------------------------------------------------
   ! Allocate an array of links, pointing to patches, and give the patches each
   ! id, rank, size, position, integer position, and status bits.  Discard
@@ -109,7 +109,12 @@ SUBROUTINE init (self, label)
     patch%origin = patch%llc
     call patch%set(bits%static)
     if (all(self%dims==1)) call task%set(bits%root_grid)
-    call patch%set(merge(bits%internal,bits%external,rank==mpi%rank))
+    rank = patch%rank
+    if (rank==mpi%rank) then
+      call patch%set(bits%internal)
+    else
+      call patch%set(bits%external)
+    end if
     !---------------------------------------------------------------------------
     ! Set the patch status bits, by checking the ranks of neighbor patches
     !---------------------------------------------------------------------------
@@ -119,24 +124,25 @@ SUBROUTINE init (self, label)
       if (i1==0.and.j1==0.and.k1==0) cycle
       ipos = modulo([i+i1,j+j1,k+k1],self%dims)
       nbrank = mpi_coords%coords_to_rank(ipos/patches_per_mpi)
-      if (rank==mpi%rank .and. nbrank/=rank) then
+      if (rank==mpi%rank .and. nbrank/=mpi%rank) then
         call patch%set(bits%boundary)
         call patch%clear(bits%internal)
-        nbpatch = nbpatch+1
       end if
-      if (rank/=mpi%rank .and. nbrank==rank) then
+      if (rank/=mpi%rank .and. nbrank==mpi%rank) then
         call patch%set(bits%virtual)
         call patch%clear(bits%external)
-        nvpatch = nvpatch+1
       end if
     end do
     end do
     end do
+    if (rank == mpi%rank) nlpatch=nlpatch+1
     if (patch%is_set(bits%external)) then
       deallocate (patch)
     else
       task => patch
       call self%task_list%append_link (link)
+      if (patch%is_set(bits%boundary))  nbpatch = nbpatch+1
+      if (patch%is_set(bits%virtual ))  nvpatch = nvpatch+1
       npatch = npatch+1
     end if
   end do
@@ -174,43 +180,45 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   link => self%task_list%head
   !$omp parallel
-  !$omp single
+  !$omp master
   do while (associated(link))
-    !$omp task firstprivate(link) private(task) shared(gb,np)
+    !xomp task firstprivate(link) private(task,patch) shared(gb,np)
     task => link%task
     select type (task)
     class is (experiment_t)
+      patch => task
       call timer%end (itimer=itimer)
-      call task%init
+      call patch%init
       call timer%begin (itimer=itimer)
       !$omp atomic
-      gb = gb + storage_size(task%mem)*product(shape(task%mem))/(8*1024.**3)
+      gb = gb + storage_size(patch%mem)*product(shape(patch%mem))/(8*1024.**3)
       !$omp atomic
       np = np + 1
       if (io%verbose>0) then
         write (io_unit%log,1) &
           'init_cartesian: id, rank, size, pos =', &
-          task%id, task%rank, task%size, task%position, &
-          task%is_set(bits%boundary), task%is_set(bits%virtual)
+          patch%id, patch%rank, patch%size, patch%position, &
+          patch%is_set(bits%boundary), patch%is_set(bits%virtual)
         1 format(a,i8,i6,1p,2(2x,3e14.6),2x,2l1)
         flush (io_unit%log)
       end if
       if (io_unit%verbose>1 .and. io_unit%master) then
         write (io_unit%output,1) &
           'init_cartesian: id, rank, size, pos =', &
-          task%id, task%rank, task%size, task%position, &
-          task%is_set(bits%boundary), task%is_set(bits%virtual)
+          patch%id, patch%rank, patch%size, patch%position, &
+          patch%is_set(bits%boundary), patch%is_set(bits%virtual)
         flush (io_unit%log)
       end if
     end select
-    !$omp end task
+    !xomp end task
     link => link%next
   end do
-  !$omp end single
+  !$omp end master
   !$omp end parallel
   !call task_list%reset_status
   call self%diagnostics
-  write (io_unit%log,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
+  write (io_unit%mpi,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
+  write (io_unit%mpi,*) nlpatch,' local patches'
   flush (io%log_unit)
   call self%task_list%print_tasks
   call trace_end (itimer)
