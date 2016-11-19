@@ -3,6 +3,7 @@
 !> =============================================================================
 MODULE eos_mod
   USE io_mod
+  USE mpi_mod
   USE trace_mod
   USE eos_reader_mod
   USE opacity_reader_mod
@@ -120,35 +121,34 @@ END FUNCTION interpolate
 !-------------------------------------------------------------------------------
 FUNCTION pressure (self, lnd, lne) RESULT (pg)
   class (eos_t):: self
-  real, dimension(:,:,:):: lnd, lne
+  real, dimension(:,:,:), pointer:: lnd, lne
   real, dimension(size(lnd,1),size(lnd,2),size(lnd,3)):: pg
   !-----------------------------------------------------------------------------
-  call self%lookup (lnd, lne, pg=pg)
+  call self%lookup ([size(lnd,1),size(lnd,2),size(lnd,3)], lnd, lne, pg=pg)
 END FUNCTION pressure
 
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, lnr, lne, pg, tt, ne, rk, src)
+SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src)
   class (eos_t):: self
-  real, dimension(:,:,:), intent(in) :: lnr, lne
-  real, dimension(:,:,:),   optional :: pg, tt, ne, rk
+  integer:: dim(3)
+  real, dimension(:,:,:), intent(in), pointer, optional :: lnd, lne
+  real, dimension(:,:,:),   optional :: d, e, pg, tt, ne, rk
   real, dimension(:,:,:,:), optional :: src
   !.............................................................................
-  real, dimension(size(lnr,1)):: pr, pe, qr, qe
-  real, dimension(size(lnr,1),4,size(self%table,3)):: f
-  real, dimension(size(lnr,1),4):: g
-  integer, dimension(size(lnr,1)):: ir, ie
+  real, dimension(:,:,:), pointer:: lnd_loc, lne_loc
+  real, dimension(dim(1)):: pr, pe, qr, qe
+  real, dimension(dim(1),4,size(self%table,3)):: f
+  real, dimension(dim(1),4):: g
+  integer, dimension(dim(1)):: ir, ie
   integer:: ix, iy, iz, iv
-  integer:: mx, my, mz, md, me, mv
+  integer:: md, me, mv
   real:: clnd, clne
   logical:: skip
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays
   !-----------------------------------------------------------------------------
-  mx = size(lnr,1)
-  my = size(lnr,2)
-  mz = size(lnr,3)
   mv=  self%nv
   md = self%nd
   me = self%ne
@@ -157,18 +157,34 @@ SUBROUTINE lookup (self, lnr, lne, pg, tt, ne, rk, src)
   else
     skip = .true.
   end if
+  if (present(lnd)) then
+    lnd_loc => lnd
+  else if (present(d)) then
+    allocate (lnd_loc(dim(1),dim(2),dim(3)))
+    lnd = log(d)
+  else
+    call mpi%abort ('eos_t: missing density')
+  end if
+  if (present(lne)) then
+    lne_loc => lne
+  else if (present(e)) then
+    allocate (lne_loc(dim(1),dim(2),dim(3)))
+    lne = log(e)
+  else
+    call mpi%abort ('eos_t: missing internal energy')
+  end if
   !-----------------------------------------------------------------------------
   ! Loop over points
   !-----------------------------------------------------------------------------
   clnd = 1./self%lnd_stp
   clne = 1./self%lne_stp
-  do iz=1,mz
-  do iy=1,my
+  do iz=1,dim(3)
+  do iy=1,dim(2)
     !-------------------------------------------------------------------------
     ! Addresses and weights, vectorized
     !-------------------------------------------------------------------------
-    pr = 1.+(lnr(:,iy,iz)-self%lnd_min)*clnd
-    pe = 1.+(lne(:,iy,iz)-self%lne_min)*clne
+    pr = 1.+(lnd_loc(:,iy,iz)-self%lnd_min)*clnd
+    pe = 1.+(lne_loc(:,iy,iz)-self%lne_min)*clne
     ir = pr
     ie = pe
     ir = max(1,min(ir,md))
@@ -184,7 +200,7 @@ SUBROUTINE lookup (self, lnr, lne, pg, tt, ne, rk, src)
     !---------------------------------------------------------------------------
     !  Table values, indirect addressing
     !---------------------------------------------------------------------------
-    do ix=1,mx
+    do ix=1,dim(1)
     do iv=1,mv
       f(ix,1,iv) = self%table(ir(ix)  ,ie(ix)  ,iv)
       f(ix,2,iv) = self%table(ir(ix)+1,ie(ix)  ,iv)
@@ -239,6 +255,8 @@ SUBROUTINE lookup (self, lnr, lne, pg, tt, ne, rk, src)
     end if
   end do
   end do
+  if (present(d)) deallocate (lnd_loc)
+  if (present(e)) deallocate (lne_loc)
 END SUBROUTINE lookup
 
 END MODULE eos_mod

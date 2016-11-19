@@ -22,6 +22,7 @@ MODULE mhd_mod
   USE mpi_mod
   USE omp_mod
   USE download_mod
+  USE eos_mod
   implicit none
   PRIVATE
   type, public, extends(patch_t):: mhd_t
@@ -242,6 +243,7 @@ subroutine ctoprim (self)
   class(mhd_t):: self
   real(dp):: smallp, dtxhalf
   integer,save:: itimer=0
+  real, dimension(:,:,:), pointer:: d, e, pg
   associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
@@ -256,7 +258,15 @@ subroutine ctoprim (self)
   q(:,:,:,3) = uin(:,:,:,3)*s
   q(:,:,:,4) = uin(:,:,:,4)*s
   s = q(:,:,:,2)**2+q(:,:,:,3)**2+q(:,:,:,4)**2
-  q(:,:,:,5)=max((gamma-one)*(uin(:,:,:,5)-half*q(:,:,:,1)*s(:,:,:)),smallp)
+  !-----------------------------------------------------------------------------
+  ! Equation-of-state: s is the internal energy, and pg is the gas pressure
+  !-----------------------------------------------------------------------------
+  s=max((uin(:,:,:,5)-half*q(:,:,:,1)*s(:,:,:)),smallp)
+  d => q(:,:,:,1)
+  e => s
+  pg => q(:,:,:,5)
+  call eos%lookup (self%gn, d=d, e=e, pg=pg)
+  !
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
   self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
                           + c + abs(q(:,:,:,3)) &
