@@ -48,7 +48,7 @@ MODULE patch_mod
     real(8):: ds(3)                     ! convenience
     integer:: n(3)=16, ng(3)=2          ! convenient defaults
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
-    integer:: i,j,k                     ! should go!  FIXME
+    integer:: ipos(3)                   ! integer position
     real(8):: offset(3)                 ! this is used to compute indices, locations
     real(8):: llc(3)=0d0                ! the lower left corner of the patch in *root grid* coords.
     real(8):: origin(3)=0d0             ! the lower left corner of the patch in its *own* coords.

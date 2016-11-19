@@ -51,7 +51,7 @@ SUBROUTINE init (self, label)
   integer:: npatch, nvpatch, nbpatch
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
   logical:: face_nbors=.false.
-  integer:: thread, icoords(3), idx(3)
+  integer:: thread, icoords(3),ipos(3)
   integer, save:: itimer=0
   namelist /box_params/ size, dims, mpi_dims, origin, face_nbors
   !.............................................................................
@@ -101,7 +101,9 @@ SUBROUTINE init (self, label)
     ! relative to the full box by origin.
     !---------------------------------------------------------------------------
     allocate (link,patch); link%task => patch; patch%link => link
+    task => link%task
     links(i,j,k)%p => link
+    patch%ipos = [i,j,k]
     patch%rank = mpi_coords%coords_to_rank ([i,j,k]/patches_per_mpi)
     patch%id = 1+i+self%dims(1)*(j+k*self%dims(2))
     patch%box = self%size
@@ -116,8 +118,8 @@ SUBROUTINE init (self, label)
     do j1=nn(1,2),nn(2,2)
     do i1=nn(1,1),nn(2,1)
       if (i1==0.and.j1==0.and.k1==0) cycle
-      idx = modulo([i+i1,j+j1,k+k1],self%dims)
-      nbrank = mpi_coords%coords_to_rank(idx/patches_per_mpi)
+      ipos = modulo([i+i1,j+j1,k+k1],self%dims)
+      nbrank = mpi_coords%coords_to_rank(ipos/patches_per_mpi)
       if (rank==mpi%rank .and. nbrank/=rank) then
         call patch%set(bits%boundary)
         call patch%clear(bits%internal)
@@ -144,15 +146,23 @@ SUBROUTINE init (self, label)
   ! Add an nbor list to each patch
   !-----------------------------------------------------------------------------
   link => self%task_list%head
+  print*,'MK9'
   do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (experiment_t)
+      patch => task
+    class default
+      error stop 'xx'
+    end select
     do k1=nn(1,3),nn(2,3)
     do j1=nn(1,2),nn(2,2)
     do i1=nn(1,1),nn(2,1)
       if (i1==0.and.j1==0.and.k1==0) cycle
       allocate (nbor)
-      idx = modulo([i+i1,j+j1,k+k1],self%dims)
-      nbor%task => links(idx(1),idx(2),idx(3))%p%task
-      nbor%link => links(idx(1),idx(2),idx(3))%p
+      ipos = modulo(patch%ipos+[i1,j1,k1],self%dims)
+      nbor%task => links(ipos(1),ipos(2),ipos(3))%p%task
+      nbor%link => links(ipos(1),ipos(2),ipos(3))%p
       call link%add_nbor_by_rank (nbor)
     end do
     end do
@@ -199,10 +209,11 @@ SUBROUTINE init (self, label)
   end do
   !$omp end single
   !$omp end parallel
-  call task_list%reset_status
+  !call task_list%reset_status
   call self%diagnostics
   write (io_unit%log,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
   flush (io%log_unit)
+  call self%task_list%print_tasks
   call trace_end (itimer)
 END SUBROUTINE init
 
