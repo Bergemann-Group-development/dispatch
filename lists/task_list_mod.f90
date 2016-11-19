@@ -47,6 +47,7 @@ MODULE task_list_mod
   end type
   real, save:: check_ms=10.
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
+  integer, save:: min_nq=2**30
 CONTAINS
 
 !> =============================================================================
@@ -103,18 +104,23 @@ SUBROUTINE execute (self)
   call mpi%barrier ('task_list_mod::execute')
   call tic (time=sec)
   call timer%print
+  self%n_tasks = self%na
   !$omp parallel
   do while (self%na > 0)
     call self%update
+    if (self%na == self%n_tasks) then
+      !$omp atomic
+      min_nq = min(min_nq,self%nq)
+    end if
   end do
   call timer%print
   call mpi_mesg%diagnostics(1)
+  !$omp end parallel
   call toc ('wall time', n_update, time=sec)
-  if (io%master) write (*,*) "task list finished."
+  if (io%master) write (*,*) "task list finished, min_nq =", min_nq
   write (io_unit%log,*) 'thread',omp%thread,' arrived'
   flush (io_unit%log)
 
-  !$omp end parallel
   !if (io%master) &
   !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
   !    max(1,(download%n_differ+download%n_same))
