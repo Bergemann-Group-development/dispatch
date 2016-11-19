@@ -130,12 +130,13 @@ END FUNCTION pressure
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src)
+SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, dimension(:,:,:), intent(in), pointer, optional :: lnd, lne
   real, dimension(:,:,:),   optional :: d, e, pg, tt, ne, rk
   real, dimension(:,:,:,:), optional :: src
+  real, optional:: gamma
   !.............................................................................
   real, dimension(:,:,:), pointer:: lnd_loc, lne_loc
   real, dimension(dim(1)):: pr, pe, qr, qe

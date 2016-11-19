@@ -7,8 +7,8 @@ OPTS = optimized
 # Default target and methods
 SOLVER          = ramses/hydro
 TOP             = ../..
-EOS_TYPE        = ideal
-#EOS_TYPE        = E
+#EOS             = ideal
+#EOS             = tabular_e
 #EOS_DATA        = simple
 #OPACITY         = semenov_etal_2003
 EXEC            = dispatch.x
