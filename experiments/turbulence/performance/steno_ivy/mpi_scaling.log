@@ -1,0 +1,5 @@
+ wall time:  33.1 s,  517. ns/upd,  6.40E+08 updates/process,   1 process,    10 cores/process
+ wall time:  34.3 s,  536. ns/upd,  6.40E+08 updates/process,   2 processes,  10 cores/process
+ wall time:  35.2 s,  551. ns/upd,  6.40E+08 updates/process,   4 processes,  10 cores/process
+ wall time:  36.0 s,  563. ns/upd,  6.40E+08 updates/process,   8 processes,  10 cores/process
+ wall time:  35.5 s,  555. ns/upd,  6.40E+08 updates/process,  16 processes,  10 cores/process

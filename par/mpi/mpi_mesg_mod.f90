@@ -134,7 +134,7 @@ SUBROUTINE check_sent (self, nq)
   ! wait_all on the oldest ones.
   !-----------------------------------------------------------------------------
   !m = merge(max_sent,0,nq >= mpi_mesg%min_nq)
-  m = mpi_mesg%min_nq
+  m = max_sent
   !$omp atomic read
   n = self%n
   if (n > m) then
@@ -152,6 +152,7 @@ SUBROUTINE check_sent (self, nq)
     !---------------------------------------------------------------------------
     ! Now we can wait on those messages outside of any critical region
     !---------------------------------------------------------------------------
+    write (io_unit%log,*) 'WAITALL: n,m,sent_list%n,sent_tmp%n =', n, m, self%n, sent_tmp%n
     mesg => sent_tmp%head                                             ! top of list
     do while (associated(mesg))
       next => mesg%next
@@ -627,14 +628,19 @@ SUBROUTINE diagnostics (self, flag)
     !$omp end critical (abort_cr)
   end if
   if (flag==1) then
-    if (omp%master) then
-      write (io_unit%mpi,*) 'average wait_for time:', t_wait_for/max(n_wait_for,1_8)
-      write (io_unit%mpi,*) 'average wait_all time:', t_wait_all/max(n_wait_all,1_8)
+    !$omp single
+    write (io_unit%mpi,1) 'average wait_for time:', t_wait_for/max(n_wait_for,1_8), &
+      ', with', real(n_wait_for),' waits'
+    write (io_unit%mpi,1) 'average wait_all time:', t_wait_all/max(n_wait_all,1_8), &
+      ', with', real(n_wait_all), ' waits'
+    1 format(a,1p,2(e10.2,a))
+    if (io%master) then
+      write (io_unit%output,1) 'average wait_for time:', t_wait_for/max(n_wait_for,1_8), &
+        ', with', real(n_wait_for), ' waits'
+      write (io_unit%output,1) 'average wait_all time:', t_wait_all/max(n_wait_all,1_8), &
+        ', with', real(n_wait_all), ' waits'
     end if
-    if (mpi%master) then
-      write (io_unit%output,*) 'average wait_for time:', t_wait_for/max(n_wait_for,1_8)
-      write (io_unit%output,*) 'average wait_all time:', t_wait_all/max(n_wait_all,1_8)
-    end if
+    !$omp end single
   end if
 END SUBROUTINE diagnostics
 
