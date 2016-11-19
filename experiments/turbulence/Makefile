@@ -7,9 +7,10 @@ OPTS = optimized
 # Default target and methods
 SOLVER          = ramses/hydro
 TOP             = ../..
-OPACITY         = semenov_etal_2003
-EOS_TYPE        = E
-EOS_DATA        = simple
+EOS_TYPE        = ideal
+#EOS_TYPE        = E
+#EOS_DATA        = simple
+#OPACITY         = semenov_etal_2003
 EXEC            = dispatch.x
 sinclude $(TOP)/config/Makefile
 

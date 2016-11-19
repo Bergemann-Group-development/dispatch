@@ -41,7 +41,6 @@ MODULE mhd_mod
     procedure:: update
     procedure:: log_density
     procedure:: log_pressure
-    procedure:: temperature
     procedure:: grav_potential
     procedure:: velocity_magnitude
     procedure:: magnetic_field_magnitude
@@ -265,7 +264,7 @@ subroutine ctoprim (self)
   d => q(:,:,:,1)
   e => s
   pg => q(:,:,:,5)
-  call eos%lookup (self%gn, d=d, e=e, pg=pg)
+  call eos%lookup (self%gn, d=d, e=e, pg=pg, gamma=self%gamma)
   !
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
   self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
@@ -775,16 +774,6 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
     stop
   end if
 end subroutine solver
-
-!> =============================================================================
-SUBROUTINE temperature (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-  v = (self%unew(:,:,:,5)/self%unew(:,:,:,1) &
-    - 0.5*(self%unew(:,:,:,2)**2+self%unew(:,:,:,3)**2+self%unew(:,:,:,4)**2)) &
-    *(self%gamma-1.0)
-END SUBROUTINE
 
 !> =============================================================================
 SUBROUTINE log_density (self, v)
