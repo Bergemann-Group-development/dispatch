@@ -88,18 +88,14 @@ SUBROUTINE init (self, label)
   end do
   npatch=0; nvpatch=0; nbpatch=0
   !-----------------------------------------------------------------------------
-  ! Allocate an array of linke, pointing to patches, and give the patches each
-  ! id, rank, size, position, and status bits
+  ! Allocate an array of links, pointing to patches, and give the patches each
+  ! id, rank, size, position, integer position, and status bits.  Discard
+  ! external patches and add the rest to the task_list.
   !-----------------------------------------------------------------------------
   allocate (links(0:self%dims(1)-1,0:self%dims(2)-1,0:self%dims(3)-1))
   do k=0,self%dims(3)-1
   do j=0,self%dims(2)-1
   do i=0,self%dims(1)-1
-    !------------------------------------------------------------------------
-    ! Allocate all patches, give them a unique id, and find their position,
-    ! counted in integer multiples of their size by icoords, and centered
-    ! relative to the full box by origin.
-    !---------------------------------------------------------------------------
     allocate (link,patch); link%task => patch; patch%link => link
     task => link%task
     links(i,j,k)%p => link
@@ -114,6 +110,9 @@ SUBROUTINE init (self, label)
     call patch%set(bits%static)
     if (all(self%dims==1)) call task%set(bits%root_grid)
     call patch%set(merge(bits%internal,bits%external,rank==mpi%rank))
+    !---------------------------------------------------------------------------
+    ! Set the patch status bits, by checking the ranks of neighbor patches
+    !---------------------------------------------------------------------------
     do k1=nn(1,3),nn(2,3)
     do j1=nn(1,2),nn(2,2)
     do i1=nn(1,1),nn(2,1)
@@ -138,6 +137,7 @@ SUBROUTINE init (self, label)
     else
       task => patch
       call self%task_list%append_link (link)
+      npatch = npatch+1
     end if
   end do
   end do
@@ -146,7 +146,6 @@ SUBROUTINE init (self, label)
   ! Add an nbor list to each patch
   !-----------------------------------------------------------------------------
   link => self%task_list%head
-  print*,'MK9'
   do while (associated(link))
     task => link%task
     select type (task)
@@ -171,7 +170,7 @@ SUBROUTINE init (self, label)
   end do
   deallocate (links)
   !-----------------------------------------------------------------------------
-  ! Initialize patches on our rank and virtual patches, in parallel
+  ! Initialize patches on our rank and virtual patches, in parallel OMP tasks
   !-----------------------------------------------------------------------------
   link => self%task_list%head
   !$omp parallel
@@ -185,7 +184,7 @@ SUBROUTINE init (self, label)
       call task%init
       call timer%begin (itimer=itimer)
       !$omp atomic
-      gb = gb + storage_size(patch%mem)/1024.**3
+      gb = gb + storage_size(task%mem)*product(shape(task%mem))/(8*1024.**3)
       !$omp atomic
       np = np + 1
       if (io%verbose>0) then
@@ -222,8 +221,8 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE diagnostics
   if (mpi%master) then
-    print '(a,i6)',     'Patches per process:', np
-    print '(a,f6.2,a)', ' Memory per process:', gb, ' GB'
+    print '(a,i8)',     'Patches per process:', np
+    print '(a,f8.3,a)', ' Memory per process:', gb, ' GB'
   end if
 END SUBROUTINE
 
