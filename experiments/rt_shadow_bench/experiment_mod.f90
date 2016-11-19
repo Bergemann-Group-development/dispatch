@@ -44,7 +44,7 @@ SUBROUTINE init (self)
   self%mhd = .false.
   call self%mhd_rt_t%init()
   call self%set(bits%static)
-  self%BC_direction = 1
+  !self%BC_direction = 1
   if (self%position(1) - self%size(1) < 0.0) then
     call self%set(bits%has_BC)
   else if (self%position(1) + self%size(1) > self%box(1)) then

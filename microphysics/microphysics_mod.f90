@@ -33,8 +33,8 @@ SUBROUTINE init (self)
   class(microphysics_t) :: self
   logical :: first_time=.true.                  ! namelist on first invocation
   character(len=16) :: source ='Planck'         ! choice of source funcion
-  integer           :: i, n_wl_bins = 1, cr_heating = 0
-  real              :: x, dx
+  integer           :: i, n_wl_bins = 1
+  real              :: x, dx, cr_heating = 0
   namelist /microphysics_params/ source, n_wl_bins, cr_heating
   !-----------------------------------------------------------------------------
   ! Read standard parameters and copy to structure

@@ -728,7 +728,6 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
    ! call trace_end (itimer2)
     call self%dtau(opac, dtau)                                          ! Calculate dtau
     I_in = self%packet_data(pck)%I_in
-    
 #if defined __INTEL_COMPILER
     do pt = 1, npt+1
       ex0(:,:,pt) = 2**(-dtau(:,:,pt+1)*1.44269504)                     ! first exponential coeff

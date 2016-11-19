@@ -30,7 +30,6 @@
 
 &rt_params
  RT_solver  = 'integral'
- cr_heating = 3.746e-24
  store_rt = t
 /
 
@@ -57,6 +56,7 @@ space_diagonals=t
  !source  = 'eos_lookup'
  source  = 'Stefan'
  n_wl_bins  = 1
+ cr_heating = 0!3.746e-24
 /
 
 ! Treatment of boundary conditions for RT solver. obc - outer boundaries, outside the simulation box.
