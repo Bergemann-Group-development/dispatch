@@ -10,9 +10,6 @@ COMPILER = gfortran
 MPI = mpi
 MOD = mod
 AUTO = yes
-EOS_TYPE    = E
-EOS_READER  = simple
-OPAC_READER = stub
 
 #############################################################################
 # Check for options

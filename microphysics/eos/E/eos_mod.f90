@@ -5,7 +5,7 @@ MODULE eos_mod
   USE io_mod
   USE trace_mod
   USE eos_reader_mod
-  USE opac_reader_mod
+  USE opacity_reader_mod
   USE lagrange_mod
   implicit none
   private
