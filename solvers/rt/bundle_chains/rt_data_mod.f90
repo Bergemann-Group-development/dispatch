@@ -91,7 +91,6 @@ SUBROUTINE update_rt_data (self)
 !-----------------------------------------------------------------------
   write (stime,'(1p,g16.6)') self%time
   call trace_begin('rt_t%update_rt_data', itimer=itimer)
-
   rho => self%mhd_patch%mem(:,:,:,1,self%it,1)
   s   => self%mhd_patch%mem(:,:,:,2,self%it,1)
   associate (gam => self%mhd_patch%gamma, cs => self%mhd_patch%csound)
@@ -101,7 +100,7 @@ SUBROUTINE update_rt_data (self)
   ! add cosmic ray heating
   call self%add_cr_heating(self%mhd_patch%time)  ! add cr heating
   call self%update_time
-  if (self%do_output)  self%intensity (:,:,:,:,self%it) = 0. 
+ ! if (self%do_output)  self%intensity (:,:,:,:,self%it) = 0. 
   nullify (rho, s)
   if (io%verbose>2) call self%check(2)
   call trace_end (itimer)
@@ -166,9 +165,9 @@ SUBROUTINE store_mean_I (self,I_st,rays,dirw)
     do pt = 1, rays%n_points
       c = rays%coords(:,pt,ray)
       I(c(1),c(2),c(3),:) = I(c(1),c(2),c(3),:) + I_st(ray,:,pt)*dirw
- 
     end do
   end do
+ ! print *,I(:,:,:,:)
   end associate
 
   call trace_end

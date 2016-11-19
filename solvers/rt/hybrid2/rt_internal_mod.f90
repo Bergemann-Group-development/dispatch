@@ -102,7 +102,11 @@ SUBROUTINE init_rt_internal (self)
   if (self%solver ==  0) then                                           ! set the right solver
     self%solve => solve_internal_feautrier
   else
-    self%solve => solve_internal_integral_2nd
+   if (self%do_output) then
+      self%solve => solve_internal_integral_2nd_store_mean_intensity
+    else
+      self%solve => solve_internal_integral_2nd
+   end if
   end if
 
   self%dir_weight = 2.*pi/self%n_ray_dirs                               ! 4pi/(2*n_ray_dirs)
@@ -669,7 +673,6 @@ SUBROUTINE solve_internal_integral_2nd (self)
     case default
       error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"     
     end select
-
     call self%update_q (packet, q, opac)
     deallocate(dtau, ex0, ds1, d1s, d2s, s, q, opac, ctau, I_in)
     packet => packet%next
@@ -677,6 +680,111 @@ SUBROUTINE solve_internal_integral_2nd (self)
   nullify (packet,rtd,cell)
   call trace_end (itimer)
 END SUBROUTINE solve_internal_integral_2nd
+
+
+
+SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
+  class(rt_internal_t) :: self
+  class(ray_t), pointer :: packet => null()
+  class(rt_data_t), pointer :: rtd
+  integer, dimension (:,:,:), pointer :: cell => null()
+  real, dimension(:,:,:,:), pointer :: c_source, c_opac
+  real, dimension(:,:,:), pointer :: ex0, ds1, d1s, d2s
+  real, dimension(:,:,:), pointer :: s, dtau, q, opac, Ifw
+  real, dimension(:,:), pointer :: I_in, ctau
+  integer :: pt, npt, it, ray, wl, p(3), pck, nwb, ipk, iwb, nrays
+  real    :: temp, dir_wgt
+  integer, save :: itimer=0, itimer2=0
+  !---------------------------------------------------------------------
+  call trace_begin('rt_internal_t%integral_2nd', itimer=itimer)
+
+  dir_wgt = self%dir_weight
+
+  nwb = microphysics%n_wl_bins
+  packet => self%bundle%rays
+  rtd    => self%my_rt_data
+  
+  do pck = 1, self%bundle%n_packets
+    cell     => packet%coords
+    nrays    =  packet%n_rays
+    npt      =  packet%n_points
+    c_opac   => rtd%opacity                                             ! cell - based opacity
+    c_source => rtd%source                                              ! cell - based source function
+
+    allocate(dtau(nrays, nwb, npt+2))
+    allocate(ex0 (nrays, nwb, npt+2))
+    allocate(ds1 (nrays, nwb, npt+2))
+    allocate(d1s (nrays, nwb, npt))
+    allocate(d2s (nrays, nwb, npt))
+    allocate(s   (nrays, nwb, npt+2))
+    allocate(q   (nrays, nwb, npt))
+    allocate(opac(nrays, nwb, npt+2))
+    allocate(ctau(nrays, nwb))
+    allocate(I_in(nrays, nwb))
+    allocate(Ifw  (nrays, nwb, npt))
+   ! call trace_begin('rt_t%update_rt_internal%ray_vol_map ',itimer=itimer2)
+    call self%ray_vol_map (packet, nwb, c_source, s)                    ! Map source function onto rays
+    call self%ray_vol_map (packet, nwb, c_opac, opac)                   ! Map opacities onto rays
+   ! call trace_end (itimer2)
+    call self%dtau(opac, dtau)                                          ! Calculate dtau
+    I_in = self%packet_data(pck)%I_in
+    
+#if defined __INTEL_COMPILER
+    do pt = 1, npt+1
+      ex0(:,:,pt) = 2**(-dtau(:,:,pt+1)*1.44269504)                     ! first exponential coeff
+      ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)          ! half-point centered dS/dtau
+    end do   
+#else
+    do pt = 1, npt+1
+      ex0(:,:,pt) = exp(-dtau(:,:,pt+1))                                  ! first exponential coeff
+      if (any(dtau(:,:,pt+1) ==0)) print *,'dtau zero'
+      ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)            ! half-point centered dS/dtau
+    end do                                                 
+#endif
+
+    !-------------------------------------------------------------------
+    !  dS/dtau and d2S/dtau2
+    !-------------------------------------------------------------------
+    do pt=1, npt  
+      ctau = 1. / (dtau(:,:,pt+2) + dtau(:,:,pt+1))
+      d1s(:,:,pt) =(ds1(:,:,pt+1) * dtau(:,:,pt+1) &
+                  + ds1(:,:,pt  ) * dtau(:,:,pt+2))      * ctau         ! dS/dtau, 2nd. order accurate
+      d2s(:,:,pt)= (ds1(:,:,pt+1) - ds1 (:,:,pt  )) * 2. * ctau         ! d2S/dtau2, 2nd. order accurate
+    end do
+
+    !-----------------------------------------------------------------
+    !  Internal forward or reverse solutions
+    !-----------------------------------------------------------------
+    select case(self%rt_type)
+    case(2)                                                             ! forward
+      q  (:,:,1) = I_in - s(:,:,1)                                      ! initial forward Q
+      do pt = 2, npt
+        q(:,:,pt) = q(:,:,pt-1) * ex0(:,:,pt) - d1s(:,:,pt) &
+                  * (1. - ex0(:,:,pt)) + d2s(:,:,pt) &
+                  * (1. - ex0(:,:,pt) - dtau(:,:,pt)*ex0(:,:,pt))
+        Ifw(:,:,pt) = q(:,:,pt) + s(:,:,pt)
+      end do      
+      self%packet_data(pck)%I_out = q(:,:,npt) + s(:,:,npt)
+    case(3)                                                             ! reverse
+      q  (:,:,npt) = I_in - s(:,:,npt)                                  ! initial reverse Q
+      do pt = npt-1, 1, -1
+        q(:,:,pt) =   q(:,:,pt+1) * ex0(:,:,pt+1) + d1s(:,:,pt) &
+                  * (1. - ex0(:,:,pt+1)) + d2s(:,:,pt  ) &
+                  * (1. - ex0(:,:,pt+1) - dtau(:,:,pt+1)*ex0(:,:,pt+1))
+         Ifw(:,:,pt) = q(:,:,pt) + s(:,:,pt)
+      end do
+      self%packet_data(pck)%I_out = q(:,:,1) + s(:,:,1)
+    case default
+      error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"     
+    end select
+    call self%my_rt_data%store_mean_I(Ifw,packet,self%dir_weight)
+    call self%update_q (packet, q, opac)
+    deallocate(dtau, ex0, ds1, d1s, d2s, s, q, opac, ctau, I_in, Ifw)
+    packet => packet%next
+  end do
+  nullify (packet,rtd,cell)
+  call trace_end (itimer)
+END SUBROUTINE solve_internal_integral_2nd_store_mean_intensity
 
 !> =====================================================================
 !> Map cell data onto rays
