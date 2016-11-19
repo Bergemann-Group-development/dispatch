@@ -86,7 +86,11 @@ FUNCTION coords_to_rank (self, coords) result (rank)
   class(mpi_coords_t):: self
   integer:: coords(3), rank
   !.............................................................................
-  call MPI_CART_RANK (self%cart_comm, coords, rank, mpi_err)
+  if (mpi%size==1) then
+    rank=0
+  else
+    call MPI_CART_RANK (self%cart_comm, coords, rank, mpi_err)
+  end if
   call mpi%assert ('MPI_CART_RANK', mpi_err)
 END FUNCTION coords_to_rank
 

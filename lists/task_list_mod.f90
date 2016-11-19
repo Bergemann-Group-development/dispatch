@@ -669,8 +669,11 @@ SUBROUTINE print_tasks (self, label)
   end if
   link => self%head
   do while (associated(link))
-    write (io_unit%log,'(i4,g15.6,l5)') link%task%id, link%task%time, link%task%is_set(bits%ready)
-    if (io%verbose > 2) call link%print_nbors
+    if (io%verbose < 3) then
+      write (io_unit%log,'(i4,g15.6,l5)') link%task%id, link%task%time, link%task%is_set(bits%ready)
+    else
+      call link%print_nbors
+    end if
     link => link%next
   end do
   write (io_unit%log,*) ''
