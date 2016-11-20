@@ -169,13 +169,15 @@ SUBROUTINE rt_setup (self)
             n_rt = n_rt+1
             if (internal%chain_start()) then                            ! bundle chain start?
               if (associated(mhd_rt_patch%first_internal)) then
-                internal%next => mhd_rt_patch%first_internal%next       ! point to the next internal
+                internal%next => mhd_rt_patch%first_internal            ! point to the next internal
               end if
+              internal%lead=1
               mhd_rt_patch%first_internal => internal                   ! prepend the new one
               write (io_unit%log,*) &
                 'bundle chain: id, axis =', internal%id, internal%bundle%axis, &
                 real(internal%bundle%theta*radian), real(internal%bundle%phi*radian), internal%bundle%lwall, internal%bundle%uwall
             else
+            internal%lead=0
               write (io_unit%log,*) &
                 'bundle chain not added: id, axis =', internal%id, internal%bundle%axis, &
                 real(internal%bundle%theta*radian), real(internal%bundle%phi*radian), internal%bundle%lwall, internal%bundle%uwall
@@ -226,6 +228,9 @@ SUBROUTINE add_downstream (self)
     this => rt_list%task
     SELECT TYPE (this)
     class is (rt_internal_t)                                             ! select correction tasks
+      if (this%has_OB()) then
+        call this%init_obc
+      end if
       try => self%head
       do while (associated(try))
         that => try%task
@@ -234,8 +239,8 @@ SUBROUTINE add_downstream (self)
           ithis => this
           ithat => that
           if (ithis%bundle_connects_to(ithat)) then
-            this%downstream => that
-            that%upstream => this
+            ithis%downstream => ithat
+            ithat%upstream => ithis
             if (io%verbose > 1) &
               write(io_unit%log,'(1x,a,i5,a,i5,3x,a,2(3f6.1,3x),a,3i3)') &
                 'downstream nbor of',this%id,' is',this%downstream%id, &
@@ -247,11 +252,7 @@ SUBROUTINE add_downstream (self)
         END SELECT
         try => try%next
       end do
-      if (ithis%has_OB()) then
-        call ithis%init_obc
-      else
-        error stop "WTF?"
-      end if
+
       if (io%verbose > 2) &
         write(io_unit%log,'(1x,a,i5,3x,a,3f6.1,3x,a,3i3,3x,a)') &
          'downstream nbor of', this%id, &

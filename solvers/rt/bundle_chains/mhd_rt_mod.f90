@@ -206,7 +206,7 @@ SUBROUTINE rt_output_legacy (self, experiment_name)
     if (self%t(it2)==self%t(it1)) pt=0.0
     qt = 1.0-pt
     buf = self%rt_data%intensity(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it)
-
+    print *, buf(:,18,:)
     if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
           trim(filename),iv,it,jo,minval(buf),maxval(buf),pt

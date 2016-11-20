@@ -64,7 +64,16 @@ SUBROUTINE lookup_stagger (self, rho, ee, pg, tt, ne, rk, src, gam, csound)
   real, optional :: gam, csound
   integer:: x, y, z
   !.....................................................................
-
+if (any(rho<=0)) then
+         print *, 'RHO OR S LT 0'
+        print *, rho
+        print *,'---'
+        error stop "stopping"
+        end if
+        if (gam < 1) then
+        error stop 'gam is lt 1'
+        end if
+        
   !---------------------------------------------------------------------
   ! Gas pressure
   !---------------------------------------------------------------------
@@ -88,7 +97,10 @@ SUBROUTINE lookup_stagger (self, rho, ee, pg, tt, ne, rk, src, gam, csound)
         do x = 1,size(rho,1)
         do y = 1,size(rho,2)
         do z = 1,size(rho,3)
-        !print *,rho(x,y,z), gam, ee(x,y,z), 'xyz', x, y, z
+        if (rho(x,y,x)<0) then
+        print *, rho(x,y,z), z,y,z
+        error stop "stopping"
+        end if
         tt(x,y,z) = (rho(x,y,z)**gam*exp(ee(x,y,z)/rho(x,y,z)*(gam-1)))/rho(x,y,z)
         end do
         end do

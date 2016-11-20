@@ -90,21 +90,28 @@ SUBROUTINE update_rt_data (self)
   class(rt_data_t) :: self
   character(len=16):: stime
   real, dimension(:,:,:), pointer :: rho, s
+  real, dimension(:,:,:,:),pointer::op,src
   integer, save:: itimer=0
+  integer :: l(3), u(3)
 !-----------------------------------------------------------------------
   write (stime,'(1p,g16.6)') self%time
+  l = self%mhd_patch%mesh%li
+  u = self%mhd_patch%mesh%ui
   call trace_begin('rt_t%update_rt_data', itimer=itimer)
-  rho => self%mhd_patch%mem(:,:,:,1,self%it,1)
-  s   => self%mhd_patch%mem(:,:,:,2,self%it,1)
+  print *, self%it, self%mhd_patch%it
+  rho => self%mhd_patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%mhd_patch%it,1)
+  s   => self%mhd_patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),2,self%mhd_patch%it,1)
+  op  => self%opacity(l(1):u(1),l(2):u(2),l(3):u(3),:)  !fake added
+  src => self%source(l(1):u(1),l(2):u(2),l(3):u(3),:)   !fake added
   associate (gam => self%mhd_patch%gamma, cs => self%mhd_patch%csound)
-  call microphysics%get_data(rho = rho, entropy = s, source_fn = self%source, &
-                             opacity = self%opacity, gam = gam, cs = cs)
+  call microphysics%get_data(rho = rho, entropy = s, source_fn = src, &
+                             opacity = op, gam = gam, cs = cs)
   end associate
   ! add cosmic ray heating
   call self%add_cr_heating(self%mhd_patch%time)  ! add cr heating
   call self%update_time
  ! if (self%do_output)  self%intensity (:,:,:,:,self%it) = 0. 
-  nullify (rho, s)
+  nullify (rho, s,op,src)
   if (io%verbose>2) call self%check(2)
   call trace_end (itimer)
 END SUBROUTINE update_rt_data

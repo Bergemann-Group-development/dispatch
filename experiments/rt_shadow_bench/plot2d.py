@@ -150,14 +150,14 @@ if __name__ == "__main__":
     gamma = 5.0/3.0
     datadir = './data/'
     prefix = ''
-    ptimes = [7.0e-3]
+    ptimes = [1.0e-3]
     t_eps = 0.03
     pxsize = [0.0,1.0]
     pysize = [0.0,1.0]
     #pltvar = ['d']
     pltvar = ['J']
-    cmin   = [1e-11]
-    cmax   = [2e-11]
+    cmin   = [0]
+    cmax   = [1e-10]
     clog   = [  0]
     slicedir = 3  # given with respect to the root grid (typically patch id = 1)
     sliceloc = 0.501 # coord. of slice to be taken

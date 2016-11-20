@@ -150,7 +150,7 @@ if __name__ == "__main__":
     gamma = 5.0/3.0
     datadir = './data/'
     prefix = ''
-    ptimes = [4.0e-3]
+    ptimes = [1.0e-3]
     t_eps = 0.03
     pxsize = [0.0,1.0]
     pysize = [0.0,1.0]

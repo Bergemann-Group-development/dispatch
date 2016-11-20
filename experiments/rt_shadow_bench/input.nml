@@ -7,7 +7,7 @@
 /
 
 &out_params
- end_time=0.009
+ end_time=0.002
  out_time=0.001
  print_time=0.0
  guard_zones=t
@@ -38,11 +38,11 @@
 
 &cartesian_ray_geometry_params
 ! along x axis
-nx = 2 xti = 0.,45. dx = 1
+nx = 1 xti = 0. dx = 1
 ! along y axis
-ny = 2 yti = 0.,45. dy = 1
+ny = 1 yti = 0. dy = 1
 ! along z axis
-nz = 2 zti = 0.,45. dz = 1
+nz = 1 zti = 0. dz = 1
 ! use space_diagonals?
 space_diagonals=t
 /
@@ -73,7 +73,7 @@ ibc_treatment = 'ignore'     ! do nothing, continue as if there was no IB
 
 &custom_bc_params
 cool_temp = 10   ! in kelvins
-hot_temp  = 2000
+hot_temp  = 20000
 /
 
 &mhd_params

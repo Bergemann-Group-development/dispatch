@@ -29,27 +29,30 @@ MODULE rt_internal_mod
     integer :: solver
     integer :: BC_direction=0
     integer :: bundle_ID, dir_ID
-    integer :: lwall(3)
+    integer :: lwall(3), lead
     real :: dir_weight, ray_ds
     procedure (solve_internal_integral_2nd), pointer :: solve => null()
   contains
+! task-related
+    procedure :: init   => init_rt_internal                             ! initialization
+    procedure :: update => update_rt_internal                           ! task update - not used
+    procedure :: check  => check_rt_internal                            ! check that values make sense
+    procedure :: check_intensities => check_rt_get_intensities          ! check that values make sense
+! interaction between tasks
+    procedure :: recurse                                                ! recursive task update
+    procedure :: needs_BC                                               ! boundary value is needed
+    procedure :: bundle_connects_to                                     ! check if nbor is at downstream of me
+    procedure :: chain_start                                            ! check if the chain starts with me
+    procedure :: chain_stop                                             ! check if the chain should stop with me
+    procedure :: get_upstream                                           ! select method to get the upstream values 
+    procedure :: get_same_static_chain                                  ! get from chain, upstream is static and same level
+    procedure :: get_static_legacy                                      ! old way to get static
+    procedure :: get_dynamic_legacy                                     ! not implemented yet
+    procedure :: get_correction_from_BC                                 ! get intensities from boundary
+    procedure :: has_OB                                                 ! check if I am at the boundary
+! solving
     procedure :: dtau_staggered
     procedure :: dtau_centered
-    procedure :: init   => init_rt_internal
-    procedure :: update => update_rt_internal
-    procedure :: recurse
-    procedure :: check  => check_rt_internal
-    procedure :: check_intensities => check_rt_get_intensities
-    procedure :: needs_BC
-    procedure :: bundle_connects_to
-    procedure :: chain_start
-    procedure :: chain_stop
-    procedure :: get_upstream
-    procedure :: get_same_static_chain
-    procedure :: get_static_legacy
-    procedure :: get_dynamic_legacy
-    procedure :: get_correction_from_BC
-    procedure :: has_OB
     procedure :: ray_vol_map
     procedure :: solve_internal_integral => solve_internal_integral_2nd
     procedure :: solve_internal_feautrier
@@ -197,19 +200,19 @@ LOGICAL FUNCTION chain_start (self)
   !.....................................................................
   chain_start = .false.
   axis = self%BC_direction
-  if (axis /= 0) then
-    if (self%BC_direction == +1 .and. self%rt_type == 2) then
-      i = self%bundle%rays%fwd_coords(axis,1)
-      m => self%mhd_patch%mesh(axis)
-      if (m%p + m%r(i) < 0.0) chain_start = .true.
-    else if (self%BC_direction == -1 .and. self%rt_type == 3) then
-      i = self%bundle%rays%rev_coords(axis,1)
-      m => self%mhd_patch%mesh(axis)
-      if (m%p + m%r(i) > m%b) chain_start = .true.
-    end if
-  else
+  !if (axis /= 0) then
+  !  if (self%BC_direction == +1 .and. self%rt_type == 2) then
+  !    i = self%bundle%rays%fwd_coords(axis,1)
+  !    m => self%mhd_patch%mesh(axis)
+  !    if (m%p + m%r(i) < 0.0) chain_start = .true.
+  !  else if (self%BC_direction == -1 .and. self%rt_type == 3) then
+  !    i = self%bundle%rays%rev_coords(axis,1)
+  !    m => self%mhd_patch%mesh(axis)
+  !    if (m%p + m%r(i) > m%b) chain_start = .true.
+  !  end if
+  !else
     if (self%has_OB()) chain_start = .true.
-  end if
+  !end if
 END FUNCTION chain_start
 
 !> =====================================================================
@@ -244,10 +247,13 @@ RECURSIVE SUBROUTINE recurse (self)
   integer :: id
   !.....................................................................
   call trace_begin ('rt_internal_t%recurse')
-
+  if (self%my_rt_data%time < self%time) then
+  print *,"FORCE UPDATING RT_DATA, AS IT IS BEHIND THE INTERNAL!!!!"
+  call self%my_rt_data%update
+  end if
   call self%solve
   call self%update_time
-  if (io%verbose > 2) then
+  if (io%verbose > 1) then
     if (associated(self%downstream)) then
       id = self%downstream%id
     else
@@ -258,8 +264,16 @@ RECURSIVE SUBROUTINE recurse (self)
       nint(self%position/self%mhd_patch%ds), associated(self%downstream), &
       self%chain_stop(), id
   end if
+  if (.not.associated(self%downstream) .and. (self%is_set(bits%has_BC))) then
+    print *,self%lead,'fucker has bs, but no downstream',self%id, self%rt_type
+    print *,'upstream presence:',associated(self%upstream)
+  end if
+  if (associated(self%downstream) .and. (self%is_clear(bits%has_BC))) then
+    print *,self%lead,'this one has no bs, but a downstream',self%id, self%rt_type
+    print *,'upstream presence:',associated(self%upstream)
+  end if
   if (associated(self%downstream) .and. .not.self%chain_stop()) then
-  print *,"CHAIN IS MOVING..."
+  print *,'CHAIN IS MOVING...'
     call self%downstream%recurse
   end if
   call trace_end
@@ -283,10 +297,34 @@ END FUNCTION needs_BC
 
 LOGICAL FUNCTION has_OB (self)
   class (rt_internal_t) :: self
+  integer :: i(3), d(3),t
+  real(8) :: p(3)
+  !.....................................................................
+  has_OB = .false.
+  d = self%bundle%dstep
+  if (self%rt_type == 2) then
+    i = self%bundle%rays%fwd_coords(:,1)
+    p = self%cell2pos(i)
+  else if (self%rt_type == 3) then
+    i = self%bundle%rays%rev_coords(:,1)
+    p = self%cell2pos(i)
+  end if
+  
+  do t = 1,3
+    if (d(t)>0) then
+      if (p(t)<rt_boundary%lbox(t)) has_OB = .true.
+    else
+      if (p(t)>rt_boundary%ubox(t)) has_OB = .true.
+    end if
+  end do
+END FUNCTION has_OB
+
+LOGICAL FUNCTION has_OB_legacy (self)
+  class (rt_internal_t) :: self
   class (mesh_t), pointer :: m
   integer :: i(3), a, d(3)
   !.....................................................................
-  has_OB = .false.
+  has_OB_legacy = .false.
   d = self%bundle%dstep
   
   if (self%rt_type == 2) then
@@ -294,9 +332,11 @@ LOGICAL FUNCTION has_OB (self)
     do a=1,3
       m => self%mhd_patch%mesh(a)
       if (d(a)<0) then
-        if (m%p + m%r(i(a)) > m%b) has_OB = .true.
+        if (m%p + m%r(i(a)) > m%b) has_OB_legacy = .true.
+        print *, self%id,'1ob: m%p,m%r(i(a), m%b,pos',m%p, m%r(i(a)),m%b,self%mhd_patch%position/self%mhd_patch%ds
       else 
-        if (m%p + m%r(i(a)) < 0.0) has_OB = .true.
+        if (m%p + m%r(i(a)) < 0.0) has_OB_legacy = .true.
+        print *, self%id,'2ob: m%p,m%r(i(a), m%b,pos',m%p, m%r(i(a)),m%b,self%mhd_patch%position/self%mhd_patch%ds
       end if
     end do
   else if (self%rt_type == 3) then
@@ -304,13 +344,16 @@ LOGICAL FUNCTION has_OB (self)
     do a=1,3
       m => self%mhd_patch%mesh(a)
       if (d(a) < 0) then
-        if (m%p + m%r(i(a)) < 0.0) has_OB = .true.
+        if (m%p + m%r(i(a)) < 0.0) has_OB_legacy = .true.
+        print *, self%id,'3ob: m%p,m%r(i(a), m%b,pos',m%p, m%r(i(a)),m%b,self%mhd_patch%position/self%mhd_patch%ds
       else
-        if (m%p + m%r(i(a)) > m%b) has_OB = .true.
+        if (m%p + m%r(i(a)) > m%b) has_OB_legacy = .true.
+        print *, self%id,'4ob: m%p,m%r(i(a), m%b,pos',m%p, m%r(i(a)),m%b,self%mhd_patch%position/self%mhd_patch%ds
       end if
     end do
   end if
-END FUNCTION has_OB
+END FUNCTION has_OB_legacy
+
 
 !> =============================================================================
 !> Check if the rays in self match up in the downstream with the rays in other
@@ -318,45 +361,40 @@ END FUNCTION has_OB
 FUNCTION bundle_connects_to (self, other) RESULT (out)
   class (rt_internal_t)          :: self
   class (rt_internal_t), pointer :: other
-  integer :: pp, di(3), fwd(3), rev(3)
-  logical :: out
+  integer :: pp, ray, last_pt(3), rev(3)
+  logical :: out, tout(3)
   !.............................................................................
   out = .false.
+  tout=.false.
   if (self%bundle%dir_ID /= other%bundle%dir_ID)     return             ! different dir
   if (self%mhd_patch%id == other%mhd_patch%id)       return             ! same patch
   if (.not.self%mhd_patch%overlaps(other%mhd_patch)) return             ! no overlap
-  if (self%is_set(bits%has_BC+bits%boundary))        return             ! boundary patch
-  !di = nint(self%mhd_patch%distance(other%mhd_patch)/self%mhd_patch%ds) ! index shift
-  !rev =  self%bundle%rays%rev_coords(:,1) -  self%bundle%dstep          ! output from self
-  !fwd = other%bundle%rays%fwd_coords(:,1)                               ! input to other
-  !if (all(di+rev==fwd)) out = .true.                                    ! perfect match
-  !if (io%verbose > 2) then
-  !  write (io_unit%log,'(2i5,l3,5(3x,a,3i4))') &
-  !    self%id, other%id, &
-  !    out, 'di:',di, 'rev:',rev, 'fwd:',fwd, &
-  !    'step:',self%bundle%dstep, 'BC_dir:',self%BC_direction
-  !end if
+ ! if (self%is_set(bits%has_BC+bits%boundary))        return             ! boundary patch  << why was this even considered? 
   
-    out = .false. 
-  select case(self%rt_type)
+  ray = 1                                                               ! testing only one ray in the bundle for now... For AMR: needs to run
+  select case(self%rt_type)                                             ! through all the rays and if ANY has a match - add to the list...
   case(2)
-    fwd =  self%bundle%rays%fwd_coords(:,1) + self%bundle%dstep         ! testing only one ray in the bundle for now... For AMR: needs to run
-    if (self%bundle%l_chain <2) then                                    ! through all the rays and if ANY has a match - add to the list...
+    last_pt =  self%bundle%rays%coords(:,self%bundle%rays%n_points,ray) ! taking the coordinates of the last point in the ray 
+    if (self%bundle%l_chain <2) then                                    
       pp = 1
     else
-      pp = self%bundle%ray_chain_fw(1)
+      pp = self%bundle%ray_chain_fw(1)                                  ! the ray location in the next bundle in the chain
     end if      
-    rev = other%bundle%rays%rev_coords(:,pp)                             
+    rev = other%bundle%rays%fwd_coords(:,pp)                            ! zeroth point in the ray (location of incoming intensity)                             
   case(3)
-    fwd =  self%bundle%rays%rev_coords(:,1) - self%bundle%dstep   
+    last_pt =  self%bundle%rays%coords(:,1,ray)                         ! first point is the last point in reverse   
     if (self%bundle%l_chain <2) then
       pp = 1
     else
       pp = self%bundle%ray_chain_rev(1)      
     end if 
-    rev = other%bundle%rays%fwd_coords(:,pp)                             
+    rev = other%bundle%rays%rev_coords(:,pp)                             
   end select
-  if (all(other%pos2cell(self%cell2pos(fwd))==rev)) out = .true.   
+  last_pt = other%pos2cell(self%cell2pos(last_pt))
+  do pp = 1,3
+    if (last_pt(pp) == rev(pp)) tout(pp) = .true.
+  end do
+  if (all(tout)) out = .true.   
   
   
 END function bundle_connects_to
@@ -378,7 +416,6 @@ print *,'getting upstream values'
     end if
     call self%get_correction_from_BC                                    ! get boundary value
   else
-  print *,'getting from elsewhere'
     static = .true.; local = .true.; same = .true.                      ! not moving? on this rank? same level?
     if (self%is_clear(bits%static)) static = .false.
     nbor => self%link%nbor
@@ -797,14 +834,15 @@ SUBROUTINE solve_internal_integral_2nd (self)
   real, dimension(:,:,:), pointer :: ex0, ds1, d1s, d2s
   real, dimension(:,:,:), pointer :: s, dtau, q, opac
   real, dimension(:,:), pointer :: I_in, ctau
-  integer :: pt, npt, it, ray, wl, p(3), pck, nwb, ipk, iwb, nrays
+  integer :: pt, npt, it, ray, wl, p(3), pck, nwb, ipk, iwb, nrays, l(3),u(3)
   real    :: temp, dir_wgt
   integer, save :: itimer=0, itimer2=0
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_t%integral_2nd', itimer=itimer)
   call self%get_upstream
   dir_wgt = self%dir_weight
-
+  l = self%mhd_patch%mesh%li  ! fake added
+  u = self%mhd_patch%mesh%ui  ! fake added
   nwb = microphysics%n_wl_bins
   packet => self%bundle%rays
   rtd    => self%my_rt_data
@@ -813,8 +851,8 @@ SUBROUTINE solve_internal_integral_2nd (self)
     cell     => packet%coords
     nrays    =  packet%n_rays
     npt      =  packet%n_points
-    c_opac   => rtd%opacity                                             ! cell - based opacity
-    C_source => rtd%source                                              ! cell - based source function
+    c_opac   => rtd%opacity(l(1):u(1),l(2):u(2),l(3):u(3),:)  !added limits                                             ! cell - based opacity
+    C_source => rtd%source(l(1):u(1),l(2):u(2),l(3):u(3),:)   !added limits                              ! cell - based source function
 
     allocate(dtau(nrays, nwb, npt+2))
     allocate(ex0 (nrays, nwb, npt+2))
@@ -827,8 +865,8 @@ SUBROUTINE solve_internal_integral_2nd (self)
     allocate(ctau(nrays, nwb))
     allocate(I_in(nrays, nwb))
 call trace_begin('rt_internal_t%ray_vol_map', itimer=itimer2)
-    call self%ray_vol_map (packet, nwb, c_source, s)                    ! Map source function onto rays
-    call self%ray_vol_map (packet, nwb, c_opac, opac)                   ! Map opacities onto rays
+    call self%ray_vol_map (packet, nwb, c_source, s,2)       !added last integer             ! Map source function onto rays
+    call self%ray_vol_map (packet, nwb, c_opac, opac,1)                   ! Map opacities onto rays
     call self%dtau_staggered(opac, dtau)                                ! Calculate dtau
     I_in = self%packet_data(pck)%I_in
 call trace_end (itimer2)
@@ -900,14 +938,15 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
   real, dimension(:,:,:), pointer :: ex0, ds1, d1s, d2s
   real, dimension(:,:,:), pointer :: s, dtau, q, opac, Ifw
   real, dimension(:,:), pointer :: I_in, ctau
-  integer :: pt, npt, it, ray, wl, p(3), pck, nwb, ipk, iwb, nrays
+  integer :: pt, npt, it, ray, wl, p(3), pck, nwb, ipk, iwb, nrays, l(3), u(3)
   real    :: temp, dir_wgt
   integer, save :: itimer=0, itimer2=0
   !---------------------------------------------------------------------
   call trace_begin('rt_internal_t%integral_2nd', itimer=itimer)
   call self%get_upstream
   dir_wgt = self%dir_weight
-
+  l = self%mhd_patch%mesh%li
+  u = self%mhd_patch%mesh%ui
   nwb = microphysics%n_wl_bins
   packet => self%bundle%rays
   rtd    => self%my_rt_data
@@ -916,8 +955,8 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
     cell     => packet%coords
     nrays    =  packet%n_rays
     npt      =  packet%n_points
-    c_opac   => rtd%opacity                                             ! cell - based opacity
-    C_source => rtd%source                                              ! cell - based source function
+    c_opac   => rtd%opacity(l(1):u(1),l(2):u(2),l(3):u(3),:)                                             ! cell - based opacity
+    C_source => rtd%source(l(1):u(1),l(2):u(2),l(3):u(3),:)                                              ! cell - based source function
 
     allocate(dtau(nrays, nwb, npt+2))
     allocate(ex0 (nrays, nwb, npt+2))
@@ -931,8 +970,8 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
     allocate(I_in(nrays, nwb))
     allocate(Ifw  (nrays, nwb, npt))
 call trace_begin('rt_internal_t%ray_vol_map', itimer=itimer2)
-    call self%ray_vol_map (packet, nwb, c_source, s)                    ! Map source function onto rays
-    call self%ray_vol_map (packet, nwb, c_opac, opac)                   ! Map opacities onto rays
+    call self%ray_vol_map (packet, nwb, c_source, s,2)                    ! Map source function onto rays
+    call self%ray_vol_map (packet, nwb, c_opac, opac,1)                   ! Map opacities onto rays
     call self%dtau_staggered(opac, dtau)                                ! Calculate dtau
     I_in = self%packet_data(pck)%I_in
 
@@ -995,9 +1034,114 @@ call trace_end (itimer2)
 END SUBROUTINE solve_internal_integral_2nd_store_mean_intensity
 
 !> =====================================================================
+!> Map cell data onto rays. A workaround for guard zone values.
+!> =====================================================================
+SUBROUTINE ray_vol_map (self, rays, nwb, in, out,what)
+  class(rt_internal_t) :: self
+  class(ray_t), pointer :: rays
+  integer :: p(3), ray, pt, nwb, wl,cl(3), what
+  real, dimension(:,:,:)   , pointer, intent(out) :: out
+  real, dimension(:,:,:,:) , pointer, intent(in)  :: in
+  integer, dimension(:,:,:), pointer :: cell
+  integer, dimension(:), pointer :: nb_ray_pos
+  !---------------------------------------------------------------------
+  cell => rays%coords
+  !if (nwb > 1) then
+    do ray = 1, size(out,1)
+      do pt = 2, size(out,3)-1                                          ! First and last points ommitted
+        p = cell(:,pt-1,ray)
+        !DIR$ SIMD
+        do wl=1,nwb
+          out(ray,wl,pt) = in(p(1)-2,p(2)-2,p(3)-2,wl)
+        end do
+      end do
+      !DIR$ SIMD
+        do wl=1,nwb
+        select case(self%rt_type)
+        case(2)
+          if(associated(self%upstream)) then
+            nb_ray_pos => self%bundle%ray_chain_rev
+            if (self%bundle%l_chain<2) then
+              cl = self%upstream%bundle%rays%coords(:,1,ray)
+            else
+            cl = self%upstream%bundle%rays%coords(:,1,nb_ray_pos(ray))    ! weak spot - need to sort through packets!
+            end if
+            if (what==1) out(ray,wl,1) = self%upstream%my_rt_data%opacity(cl(1),cl(2),cl(3),wl)
+            if (what==2) out(ray,wl,1) = self%upstream%my_rt_data%source(cl(1),cl(2),cl(3),wl)
+          else
+            out(ray,wl,1) = out(ray,wl,2)
+          end if
+          if(associated(self%downstream)) then
+            if (self%my_rt_data%time > self%downstream%my_rt_data%time) then
+              print *,"go hardcore: update nbor rt data", self%rt_type
+              call self%downstream%my_rt_data%update
+            end if
+            nb_ray_pos => self%bundle%ray_chain_fw
+            if (self%bundle%l_chain<2) then
+            cl = self%downstream%bundle%rays%coords(:,self%downstream%bundle%rays%n_points,ray)
+            else
+            cl = self%downstream%bundle%rays%coords(:,self%downstream%bundle%rays%n_points,nb_ray_pos(ray))
+            end if
+            if (what==1) out(ray,wl,size(out,3)) = self%downstream%my_rt_data%opacity(cl(1),cl(2),cl(3),wl)
+            if (what==2) out(ray,wl,size(out,3)) = self%downstream%my_rt_data%source(cl(1),cl(2),cl(3),wl)
+            ! worst case scenario - nbor has no data as well...
+            if (out(ray,wl,size(out,3)) == 0) then
+            print *,'worst case scenario..'
+            out(ray,wl,size(out,3)) = out(ray,wl,size(out,3)-1)
+            end if
+          else
+            out(ray,wl,size(out,3)) = out(ray,wl,size(out,3)-1)
+          end if
+        case(3)
+          if(associated(self%downstream)) then
+            if (self%my_rt_data%time > self%downstream%my_rt_data%time) then
+              print *,"go hardcore: update nbor rt data", self%rt_type
+              call self%downstream%my_rt_data%update
+            end if
+            nb_ray_pos => self%bundle%ray_chain_rev
+            cl = self%downstream%bundle%rays%coords(:,1,nb_ray_pos(ray))
+            if (what==1) out(ray,wl,size(out,3)) = self%downstream%my_rt_data%opacity(cl(1),cl(2),cl(3),wl)
+            if (what==2) out(ray,wl,size(out,3)) = self%downstream%my_rt_data%source(cl(1),cl(2),cl(3),wl)
+            if (out(ray,wl,size(out,3)) == 0)then
+            print *,'worst case scenario..'
+             out(ray,wl,size(out,3)) = out(ray,wl,size(out,3)-1)
+             end if
+          else
+            out(ray,wl,size(out,3)) = out(ray,wl,size(out,3)-1)
+          end if
+          if(associated(self%upstream)) then
+            nb_ray_pos => self%bundle%ray_chain_fw
+            cl = self%upstream%bundle%rays%coords(:,self%upstream%bundle%n_points,nb_ray_pos(ray))
+            if (what==1) out(ray,wl,1) = self%upstream%my_rt_data%opacity(cl(1),cl(2),cl(3),wl)
+            if (what==2) out(ray,wl,1) = self%upstream%my_rt_data%source(cl(1),cl(2),cl(3),wl)
+          else
+            out(ray,wl,1) = out(ray,wl,2)
+          end if
+        end select
+       end do
+    end do
+    out(1,1,:) = out(2,1,:)  !corner is somehow always 0...
+  nullify(nb_ray_pos)  
+  if (any(in==0)) then
+  print *, in
+  error stop "ray vol map in=0"
+!  else
+!  print *,"ray_vol_map says OK for IN"
+  end if
+    if (any(out==0)) then
+    do pt = 1, size(out,3)
+    print *,"pt",pt, out(:,:,pt)
+    end do
+  error stop "ray vol map out=0"
+!  else
+!  print *,"ray_vol_map says OK for OUT"
+  end if
+END SUBROUTINE ray_vol_map
+
+!> =====================================================================
 !> Map cell data onto rays
 !> =====================================================================
-SUBROUTINE ray_vol_map (self, rays, nwb, in, out)
+SUBROUTINE ray_vol_map_good (self, rays, nwb, in, out)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: rays
   integer :: p(3), ray, pt, nwb, wl
@@ -1025,6 +1169,7 @@ SUBROUTINE ray_vol_map (self, rays, nwb, in, out)
     end do
     
   if (any(in==0)) then
+  print *, in
   error stop "ray vol map in=0"
 !  else
 !  print *,"ray_vol_map says OK for IN"
@@ -1037,7 +1182,8 @@ SUBROUTINE ray_vol_map (self, rays, nwb, in, out)
 !  else
 !  print *,"ray_vol_map says OK for OUT"
   end if
-END SUBROUTINE ray_vol_map
+END SUBROUTINE ray_vol_map_good
+
 
 !> =====================================================================
 !> Solution of RTE using the Feautrier formulation. Forward and reverse
