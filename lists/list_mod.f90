@@ -821,7 +821,6 @@ SUBROUTINE append_list (self, task_list)
   integer:: n
   !-----------------------------------------------------------------------------
   call trace_begin ('list_mod::append_list')
-  !$omp critical (list_cr)
   self%tail%next => task_list%head
   self%tail      => task_list%tail
   self%n = self%n + task_list%n
@@ -836,7 +835,6 @@ SUBROUTINE append_list (self, task_list)
   else
     write (io_unit%log,*) trim(self%name)//': inconsistent append of '//task_list%name
   end if
-  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE append_list
 
