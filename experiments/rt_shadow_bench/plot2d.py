@@ -156,11 +156,11 @@ if __name__ == "__main__":
     pysize = [0.0,1.0]
     #pltvar = ['d']
     pltvar = ['J']
-    cmin   = [0]
-    cmax   = [1e-10]
-    clog   = [  0]
+    cmin   = [1e-10]
+    cmax   = [1e-5]
+    clog   = [  1]
     slicedir = 3  # given with respect to the root grid (typically patch id = 1)
-    sliceloc = 0.501 # coord. of slice to be taken
+    sliceloc = 0.481 # coord. of slice to be taken
     showgrids = True
     showgridno = False
     output_png = False

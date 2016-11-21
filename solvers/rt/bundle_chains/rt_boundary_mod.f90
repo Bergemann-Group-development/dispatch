@@ -98,21 +98,21 @@ SUBROUTINE set_obc (self, ppos, ds, i_in)
 !> Should be modified only from here on
 !> =====================================================================
   c = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
-  if (ppos(1) <= -0.5*self%lbox(1)) then
+  if (ppos(1) <= self%lbox(1)) then
     i_in(:) = c*self%hot_temp**4
-  else if (ppos(1) >= 0.5*self%ubox(1)) then
+  else if (ppos(1) >= self%ubox(1)) then
     i_in(:) = c*self%cool_temp**4
   end if
 
-  if (ppos(2) <= -0.5*self%lbox(2)) then
+  if (ppos(2) <= self%lbox(2)) then
     i_in(:) = c*self%cool_temp**4
-  else if (ppos(2) >= 0.5*self%ubox(2)) then
+  else if (ppos(2) >= self%ubox(2)) then
     i_in(:) = c*self%cool_temp**4
   end if
 
-  if (ppos(3) <= -0.5*self%lbox(3)) then
+  if (ppos(3) <= self%lbox(3)) then
     i_in(:) = c*self%cool_temp**4
-  else if (ppos(3) >= 0.5*self%ubox(3)) then
+  else if (ppos(3) >= self%ubox(3)) then
     i_in(:) = c*self%cool_temp**4
   end if
 END SUBROUTINE set_obc

@@ -366,7 +366,8 @@ FUNCTION bundle_connects_to (self, other) RESULT (out)
   !.............................................................................
   out = .false.
   tout=.false.
-  if (self%bundle%dir_ID /= other%bundle%dir_ID)     return             ! different dir
+  if (self%bundle%dir_ID /= other%bundle%dir_ID)     return             ! different bundle
+  if (self%rt_type /= other%rt_type)                 return             ! different direction
   if (self%mhd_patch%id == other%mhd_patch%id)       return             ! same patch
   if (.not.self%mhd_patch%overlaps(other%mhd_patch)) return             ! no overlap
  ! if (self%is_set(bits%has_BC+bits%boundary))        return             ! boundary patch  << why was this even considered? 
@@ -442,7 +443,10 @@ print *,'getting upstream values'
     end if
     
   end if
-
+  if (any(self%i_in==0)) then
+  print *,"i_in zero", self%id, 'up id', self%upstream%id
+  error stop 'stopping'
+  end if
   nullify (nbor)
   call trace_end (itimer)
 END SUBROUTINE get_upstream
@@ -643,8 +647,10 @@ SUBROUTINE get_same_static_chain (self)
       self%I_in(ray,:) = rt_nb%I_out(nb_ray_pos(ray),:)
     end do
   end select
-  !print *,rt_nb%I_out
-  !print *,self%I_in
+  print *,'i out,dir id, rt type', rt_nb%id, rt_nb%dir_id, rt_nb%rt_type
+  print *,rt_nb%I_out
+  print *,'i_in,dir id, rt type', self%id, self%dir_id, self%rt_type
+  print *,self%I_in
   nullify(rt_nb)
   call trace_end
 END SUBROUTINE get_same_static_chain
@@ -1005,25 +1011,36 @@ call trace_end (itimer2)
     select case(self%rt_type)
     case(2)                                                             ! forward
       q  (:,:,1) = I_in - s(:,:,1)                                      ! initial forward Q
+      Ifw(:,:,1) = I_in
       do pt = 2, npt
         q(:,:,pt) = q(:,:,pt-1) * ex0(:,:,pt) - d1s(:,:,pt) &
                   * (1. - ex0(:,:,pt)) + d2s(:,:,pt) &
                   * (1. - ex0(:,:,pt) - dtau(:,:,pt)*ex0(:,:,pt))
-        Ifw(:,:,pt) = q(:,:,pt) + s(:,:,pt)
+        Ifw(:,:,pt) = q(:,:,pt) + s(:,:,pt+1)
       end do      
       self%packet_data(pck)%I_out = q(:,:,npt) + s(:,:,npt)
     case(3)                                                             ! reverse
       q  (:,:,npt) = I_in - s(:,:,npt)                                  ! initial reverse Q
+      Ifw(:,:,npt) = I_in
       do pt = npt-1, 1, -1
         q(:,:,pt) =   q(:,:,pt+1) * ex0(:,:,pt+1) + d1s(:,:,pt) &
                   * (1. - ex0(:,:,pt+1)) + d2s(:,:,pt  ) &
                   * (1. - ex0(:,:,pt+1) - dtau(:,:,pt+1)*ex0(:,:,pt+1))
-        Ifw(:,:,pt) = q(:,:,pt) + s(:,:,pt)
+        Ifw(:,:,pt) = q(:,:,pt) + s(:,:,pt-1)
       end do
       self%packet_data(pck)%I_out = q(:,:,1) + s(:,:,1)
     case default
       error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"     
     end select
+    if (any(self%packet_data(pck)%I_out==0)) then
+    print *,"i out zero", self%id, self%rt_type, self%is_set(bits%has_bc)
+    print *,self%packet_data(pck)%I_out
+    end if
+    print *,'id, dir id, rt type', self%id, self%dir_id, self%rt_type,'i_out',self%packet_data(pck)%I_out
+    if (any(i_in ==0)) then
+    print *,I_in
+    error stop 'ifw zero'
+    end if
     call self%update_q (packet, q, opac)
     call self%my_rt_data%store_mean_I(Ifw,packet,self%dir_weight)
     deallocate(dtau, ex0, ds1, d1s, d2s, s, q, opac, ctau, I_in, Ifw)

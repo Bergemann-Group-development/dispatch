@@ -13,7 +13,7 @@ MODULE rt_data_mod
     integer :: n_tau_dat = 0                                            ! used for mpi comm
     real, dimension(:,:,:,:), pointer :: opacity => null()              ! (x,y,z,wl_bin)
     real, dimension(:,:,:,:), pointer :: source  => null()              ! (x,y,z,wl_bin)
-    real, dimension(:,:,:,:,:), pointer :: intensity => null()            ! (x,y,z,wl_bin)
+    real, dimension(:,:,:,:), pointer :: intensity => null()            ! (x,y,z,wl_bin)
   contains
     procedure :: init   => init_rt_data
     procedure :: update => update_rt_data
@@ -68,7 +68,7 @@ SUBROUTINE init_rt_data(self)
   allocate(self%opacity(n(1), n(2), n(3), nwb))                         ! opacity table
   allocate(self%source (n(1), n(2), n(3), nwb))                         ! Source function table
   if (self%do_output)  then
-    allocate(self%intensity (n(1), n(2), n(3), nwb, self%nt)) 
+    allocate(self%intensity (n(1), n(2), n(3), nwb)) 
     self%intensity = 0
   end if
   self%q = 0.0; self%opacity = 0;   self%source = 0
@@ -110,7 +110,7 @@ SUBROUTINE update_rt_data (self)
   ! add cosmic ray heating
   call self%add_cr_heating(self%mhd_patch%time)  ! add cr heating
   call self%update_time
- ! if (self%do_output)  self%intensity (:,:,:,:,self%it) = 0. 
+ ! if (self%do_output)  self%intensity (:,:,:,:) = 0. 
   nullify (rho, s,op,src)
   if (io%verbose>2) call self%check(2)
   call trace_end (itimer)
@@ -167,14 +167,13 @@ SUBROUTINE store_mean_I (self,I_st,rays,dirw)
   integer :: c(3), pt, ray
 !-----------------------------------------------------------------------
   call trace_begin('rt_data_mod%I_store',4)
-  associate (I => self%intensity(:,:,:,:, self%it),&
-             nwb => microphysics%n_wl_bins)
+  associate (nwb => microphysics%n_wl_bins)
              
   
   do ray = 1, rays%n_rays
     do pt = 1, rays%n_points
       c = rays%coords(:,pt,ray)
-      I(c(1),c(2),c(3),:) = I(c(1),c(2),c(3),:) + I_st(ray,:,pt)*dirw
+      self%intensity(c(1),c(2),c(3),:) = self%intensity(c(1),c(2),c(3),:) + I_st(ray,:,pt)*dirw
     end do
   end do
  ! print *,I(:,:,:,:)
