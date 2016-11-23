@@ -31,13 +31,18 @@ def readT(file,nT,nP):
             table[j,i,:]=line
     return table,logT
 
-file='h_tab_p2.dat'
+file='h_tab_p1.dat'
 nT,nP=scan(file)
 print nT,nP
 
 table,logT=readT(file,nT,nP)
 
-title=('P','H2','H','log(rho)','log(S)','log(U)','g1','g2','g3','g4','grad_ad')
+title=('P','H2','H','log(rho)','log(S)','log(U)',
+  'd(log(rho))/d(log(T)) at constant P',
+  'd(log(rho))/d(log(P)) at constant T',
+  'd(log(S)/d(log(T)) at constant P',
+  'd(log(S)/d(log(P)) at constant T',
+  'grad_ad')
 for k in range(10):
     #pl.subplot(3,4,k+1)
     pl.figure(k)
