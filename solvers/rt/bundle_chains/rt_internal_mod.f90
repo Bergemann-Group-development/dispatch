@@ -11,6 +11,13 @@ MODULE rt_internal_mod
   USE trace_mod
   implicit none
   private
+  
+  type :: rt_chain_t
+    class(rt_t), pointer :: element
+    type(rt_chain_t), pointer :: next => null()
+    type(rt_chain_t), pointer :: head => null()
+    type(rt_chain_t), pointer :: tail => null()
+  end type
 !-----------------------------------------------------------------------
   type :: internal_data_t
     real, dimension(:,:), pointer :: I_in  => null()                    ! (ray, wl_bin) incoming intensity.
@@ -22,6 +29,7 @@ MODULE rt_internal_mod
     type (rt_internal_t), pointer :: next      => null()                ! list of internal task
     type (rt_internal_t), pointer :: upstream   => null()                ! upstream task
     type (rt_internal_t), pointer :: downstream => null()                ! downstream tasks
+    class(rt_chain_t), pointer :: test_pnt => null()
     class (ray_bndl_t),   pointer :: bundle     => null()
     type (rt_data_t),     pointer :: my_rt_data => null()
     class(internal_data_t), dimension(:), pointer :: packet_data => null() ! incoming intensities
@@ -245,12 +253,16 @@ END FUNCTION chain_stop
 RECURSIVE SUBROUTINE recurse (self)
   class (rt_internal_t) :: self
   integer :: id
+  class(rt_chain_t), pointer :: test
   !.....................................................................
   call trace_begin ('rt_internal_t%recurse')
   if (self%my_rt_data%time < self%time) then
   print *,"FORCE UPDATING RT_DATA, AS IT IS BEHIND THE INTERNAL!!!!"
   call self%my_rt_data%update
   end if
+  allocate(test)
+  self%test_pnt => test
+  test%element => self%downstream
   call self%solve
   call self%update_time
   if (io%verbose > 1) then
@@ -939,6 +951,7 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet => null()
   class(rt_data_t), pointer :: rtd
+  class(rt_internal_t), pointer :: tpn
   integer, dimension (:,:,:), pointer :: cell => null()
   real, dimension(:,:,:,:), pointer :: c_source, c_opac
   real, dimension(:,:,:), pointer :: ex0, ds1, d1s, d2s
@@ -956,7 +969,16 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
   nwb = microphysics%n_wl_bins
   packet => self%bundle%rays
   rtd    => self%my_rt_data
-  
+  associate(tp=>self%test_pnt%element)
+  select type(tp)
+  class is(rt_internal_t)
+    print *,'maybe success'
+    tpn => tp
+  if (associated(tpn,self%downstream)) then
+  error stop "success!"
+  end if
+  end select
+  end associate
   do pck = 1, self%bundle%n_packets
     cell     => packet%coords
     nrays    =  packet%n_rays
@@ -1055,12 +1077,13 @@ END SUBROUTINE solve_internal_integral_2nd_store_mean_intensity
 !> =====================================================================
 SUBROUTINE ray_vol_map (self, rays, nwb, in, out,what)
   class(rt_internal_t) :: self
-  class(ray_t), pointer :: rays
-  integer :: p(3), ray, pt, nwb, wl,cl(3), what
+  class(ray_t), pointer :: rays, pck
+  integer :: p(3), ray, pt, nwb, wl,cl(3), what,tray
   real, dimension(:,:,:)   , pointer, intent(out) :: out
   real, dimension(:,:,:,:) , pointer, intent(in)  :: in
   integer, dimension(:,:,:), pointer :: cell
   integer, dimension(:), pointer :: nb_ray_pos
+  logical :: fnd
   !---------------------------------------------------------------------
   cell => rays%coords
   !if (nwb > 1) then
@@ -1081,7 +1104,7 @@ SUBROUTINE ray_vol_map (self, rays, nwb, in, out,what)
             if (self%bundle%l_chain<2) then
               cl = self%upstream%bundle%rays%coords(:,1,ray)
             else
-            cl = self%upstream%bundle%rays%coords(:,1,nb_ray_pos(ray))    ! weak spot - need to sort through packets!
+            cl = self%upstream%bundle%rays%coords(:,1,nb_ray_pos(ray))    ! weak spot - need to sort through packets?!
             end if
             if (what==1) out(ray,wl,1) = self%upstream%my_rt_data%opacity(cl(1),cl(2),cl(3),wl)
             if (what==2) out(ray,wl,1) = self%upstream%my_rt_data%source(cl(1),cl(2),cl(3),wl)
@@ -1095,9 +1118,21 @@ SUBROUTINE ray_vol_map (self, rays, nwb, in, out,what)
             end if
             nb_ray_pos => self%bundle%ray_chain_fw
             if (self%bundle%l_chain<2) then
-            cl = self%downstream%bundle%rays%coords(:,self%downstream%bundle%rays%n_points,ray)
+              cl = self%downstream%bundle%rays%coords(:,self%downstream%bundle%rays%n_points,ray)
             else
-            cl = self%downstream%bundle%rays%coords(:,self%downstream%bundle%rays%n_points,nb_ray_pos(ray))
+              pck => self%downstream%bundle%rays
+              fnd = .false.
+              tray = ray
+              do while(.not.fnd)
+                if (tray>pck%n_rays) then
+                  tray = tray - pck%n_rays
+                  pck => pck%next
+                else
+                  fnd = .true.
+                end if  
+              end do
+            print *, pck%n_rays, tray,nb_ray_pos(tray)
+            cl = self%downstream%bundle%rays%coords(:,pck%n_points,nb_ray_pos(tray))
             end if
             if (what==1) out(ray,wl,size(out,3)) = self%downstream%my_rt_data%opacity(cl(1),cl(2),cl(3),wl)
             if (what==2) out(ray,wl,size(out,3)) = self%downstream%my_rt_data%source(cl(1),cl(2),cl(3),wl)
@@ -1137,7 +1172,7 @@ SUBROUTINE ray_vol_map (self, rays, nwb, in, out,what)
         end select
        end do
     end do
-    out(1,1,:) = out(2,1,:)  !corner is somehow always 0...
+    if (self%bundle%n_points>1)  out(1,:,1) = out(1,:,2)  !corner is somehow always 0...
   nullify(nb_ray_pos)  
   if (any(in==0)) then
   print *, in
@@ -1146,6 +1181,7 @@ SUBROUTINE ray_vol_map (self, rays, nwb, in, out,what)
 !  print *,"ray_vol_map says OK for IN"
   end if
     if (any(out==0)) then
+    print *,self%dir_id, self%id, self%rt_type
     do pt = 1, size(out,3)
     print *,"pt",pt, out(:,:,pt)
     end do

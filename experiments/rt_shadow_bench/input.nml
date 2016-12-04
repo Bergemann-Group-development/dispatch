@@ -38,11 +38,11 @@
 
 &cartesian_ray_geometry_params
 ! along x axis
-nx = 1 xti = 0. dx = 1
+nx = 2 xti = 0.,45. dx = 1
 ! along y axis
-ny = 1 yti = 0. dy = 1
+ny = 2 yti = 0.,45. dy = 1
 ! along z axis
-nz = 1 zti = 0. dz = 1
+nz = 2 zti = 0.,45. dz = 1
 ! use space_diagonals?
 space_diagonals=t
 /
