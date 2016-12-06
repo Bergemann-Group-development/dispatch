@@ -5,13 +5,17 @@
 OPTS = optimized
 
 # Default target and methods
+EXEC            = dispatch.x
 SOLVER          = ramses/hydro
 TOP             = ../..
+# Ideal or tabular EOS
 #EOS             = ideal
 #EOS             = tabular_e
-#EOS_DATA        = simple
-#OPACITY         = semenov_etal_2003
-EXEC            = dispatch.x
+#OPACITY         = tabular_e
+# Tomida & Hori, with opacity
+#EOS_DATA        = Tomida+Hori_2016
+#OPACITY_DATA    = Tomida+Hori_2016
+
 sinclude $(TOP)/config/Makefile
 
 # List the .o files the main program depends on after the colon:

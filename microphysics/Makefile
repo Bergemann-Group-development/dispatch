@@ -1,10 +1,7 @@
-# Set search path
-VPATH := $(VPATH):$(TOP)/microphysics
 
-sinclude $(TOP)/data/opacities/Makefile
+# Source the EOS and opacity Makefiles
 sinclude $(TOP)/microphysics/eos/Makefile
+sinclude $(TOP)/microphysics/opacities/Makefile
 
 # Dependencies
-microphysics_mod.o      : opacities_mod.o scaling_mod.o io_mod.o source_function_mod.o cgs_mod.o
-$(EOS)_eos_mod.o        : io_mod.o io_unit_mod.o mpi_mod.o scaling_mod.o
-source_function_mod.o   : io_mod.o trace_mod.o scaling_mod.o cgs_mod.o $(EOS)_eos_mod.o
+microphysics_mod.o      : io_mod.o io_unit_mod.o trace_mod.o scaling_mod.o cgs_mod.o opacities_mod.o source_function_mod.o

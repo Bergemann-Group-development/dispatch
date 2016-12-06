@@ -5,10 +5,10 @@ SHELL = /bin/bash
 
 #############################################################################
 # Defalt compiler and directives
-OMP=yes
 COMPILER = gfortran
-MPI = mpi
-MOD = mod
+OMP  = yes
+MPI  = mpi
+MOD  = mod
 AUTO = yes
 
 #############################################################################
