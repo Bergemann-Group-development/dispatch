@@ -12,9 +12,9 @@ TOP             = ../..
 #EOS             = ideal
 #OPACITY         = stub
 # Tomida & Hori, with opacity
-EOS             = tabular_e
-OPACITY         = Tomida+Hori_2016
-EOS_DATA        = Tomida+Hori_2016
+#EOS             = tabular_e
+#OPACITY         = Tomida+Hori_2016
+#EOS_DATA        = Tomida+Hori_2016
 
 sinclude $(TOP)/config/Makefile
 
