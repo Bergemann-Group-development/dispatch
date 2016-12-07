@@ -7,6 +7,7 @@ MODULE eos_mod
   USE trace_mod
   USE eos_reader_mod
   USE lagrange_mod
+  USE scaling_mod
   implicit none
   private
   type, public:: eos_t
@@ -31,12 +32,14 @@ CONTAINS
 SUBROUTINE init (self)
   class (eos_t):: self
   real(8), dimension(:), pointer:: x, y
-  real(8):: Emin, Emax, E, T, P
+  real(8):: log_Emin, log_Emax, Pmin, Pmax, E, T, P, log_T, log_P, log_E
   integer:: i, j, nd, ne
   associate (reader=>eos_reader)
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
   call reader%init
+  if (io%master) print *, &
+ '------------------------ constructing fast EOS table -------------------------'
   nd = reader%nd
   ne = reader%nT
   self%nd = nd
@@ -45,26 +48,18 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Fint extremum values of internal energy
   !-----------------------------------------------------------------------------
-  Emin = reader%table(1,1,2)
-  Emax = reader%table(1,1,2)
-  do j=1,nd
-    do i=1,ne
-      Emin = min(Emin,reader%table(i,j,2))
-      Emax = max(Emax,reader%table(i,j,2))
-    end do
-    !print '(a,1p,2e15.6)', 'Emin, Emax =', minval(reader%table(:,j,2)), maxval(reader%table(:,j,2))
-  end do
-  print '(a,1p,2e15.6)', 'Emin, Emax =', Emin, Emax
+  log_Emin = maxval(reader%table( 1,:,2))
+  log_Emax = minval(reader%table(ne,:,2))
   !-----------------------------------------------------------------------------
   ! Construct table x- and y-values
   !-----------------------------------------------------------------------------
-  self%lne_min = log(Emin)
-  self%lne_max = log(Emax)
+  self%lne_min = log_Emin*log(10.)
+  self%lne_max = log_Emax*log(10.)
   self%lne_stp = (self%lne_max-self%lne_min)/(ne-1.0)
   do i=1,ne
     self%lne(i) = self%lne_min + (i-1)*self%lne_stp
   end do
-  self%lnd = log(reader%d)
+  self%lnd = reader%log_d*log(10.)
   self%lnd_min = self%lnd(1)
   self%lnd_max = self%lnd(nd)
   self%lnd_stp = (self%lnd_max-self%lnd_min)/(nd-1.0)
@@ -77,18 +72,47 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   do i=1,ne
     do j=1,nd
-      E = exp(self%lne(i))              ! new table E-value
-      x => reader%table(:,j,2)          ! x-values = known E-values
-      y => reader%T                     ! y-values = known T-values
-      T = interpolate (x, y, E)         ! find the corresponding T
-      x => reader%T                     ! x-values = table T-values
-      y => reader%table(:,j,1)          ! y-values = table P-values
-      P = interpolate (x, y, T)         ! find the pressure at T
-      self%table(i,j,1) = P             ! store the pressure
-      self%table(i,j,2) = T             ! store the temperature
+      E = exp(self%lne(i))              ! new table lnE-value
+      log_E = log10(E)
+      x => reader%table(:,j,2)          ! x-values = known log_E-values
+      y => reader%log_T                 ! y-values = known T-values
+      log_T = interpolate (x, y, log_E) ! find the corresponding log_T
+      x => reader%log_T                 ! x-values = table log_T-values
+      y => reader%table(:,j,1)          ! y-values = table log_P-values
+      log_P = interpolate (x, y, log_T) ! find the log pressure at log_T
+      self%table(i,j,1) = 10.**log_P    ! store the linear pressure
+      self%table(i,j,2) = 10.**log_T    ! store the linear temperature
+      if ((i==1.or.i==ne).and.(j==1.or.j==nd))then
+        print '(2i5,3(2x,a,1p,2e12.4))', i, j, &
+          ' log_E, E:', log_E, 10.**log_E, &
+          ' log_T, T:', log_T, 10.**log_T, &
+          ' log_P, P:', log_P, 10.**log_P
+      end if
       !print '(2i5,1p,3e15.6)', i, j, T, P, E
     end do
   end do
+  !-----------------------------------------------------------------------------
+  ! Rescaling table to code units
+  !-----------------------------------------------------------------------------
+  print 1, 'Emin, Emax [cgs]  =', 10.**log_Emin, 10.**log_Emax
+  1 format(1x,a,1p,2e15.6)
+  log_Emin = log_Emin - log10(scaling%u**2)
+  log_Emax = log_Emax - log10(scaling%u**2)
+  print 1, 'Emin, Emax [code] =', 10.**log_Emin, 10.**log_Emax
+  Pmin = minval(self%table(:,:,1))
+  Pmax = maxval(self%table(:,:,1))
+  print 1, 'Pmin, Pmax [cgs]  =', Pmin, Pmax
+  Pmin = Pmin/(scaling%d*scaling%u**2)
+  Pmax = Pmax/(scaling%d*scaling%u**2)
+  print 1, 'Pmin, Pmax [code] =', Pmin, Pmax
+  print 1, 'Tmin, Tmax [K]    =', minval(self%table(:,:,2)), &
+                                  maxval(self%table(:,:,2))
+  self%lnd = self%lnd - log(scaling%d)
+  self%lne = self%lne - log(scaling%u**2)
+  self%table(:,:,1) = self%table(:,:,1)/(scaling%d*scaling%u**2)
+  !-----------------------------------------------------------------------------
+  ! Write out the table as a text file
+  !-----------------------------------------------------------------------------
   open (io_unit%data, file='tmp.dat', form='formatted', status='unknown')
   write (io_unit%data,*) ne
   write (io_unit%data,*) self%lne
