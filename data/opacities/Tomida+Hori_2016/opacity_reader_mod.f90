@@ -3,54 +3,152 @@
 !> Rosseland and Planck means
 !> =============================================================================
 MODULE opacity_reader_mod
+  USE io_mod
   USE io_unit_mod
   USE trace_mod
+  USE eos_mod
+  USE lagrange_mod
+  USE scaling_mod
+  USE timer_mod
   implicit none
   private
   type, public:: opacity_reader_t
-    integer:: nT=450, nd=450, nw=2
-    real(8), dimension(:), pointer:: log_T => null()
-    real(8), dimension(:), pointer:: log_d => null()
-    real(8), dimension(:,:,:), pointer:: table
+    integer:: nT=450, nd=450, nv=2
+    real, dimension(:), pointer:: log_T => null()
+    real, dimension(:), pointer:: log_d => null()
   contains
     procedure:: init
   end type
+  real, dimension(:,:,:), pointer:: table1, table2, table
   type (opacity_reader_t), public:: opacity_reader
 CONTAINS
 
 !> =============================================================================
-!> Read in the data from a specific table file, which we might as well
+!> Read in opacity data from a table file, the size of which we might as well
 !> hardwire, since it is specific
 !> =============================================================================
 SUBROUTINE init (self)
   class (opacity_reader_t):: self
   real:: row(3)
-  integer:: iT, id, iw
+  integer:: iT, id, iv, i, j, k
+  real, dimension(:), pointer:: x, y
+  real, dimension(:,:,:), pointer:: table1, table2
   !-----------------------------------------------------------------------------
   call trace%begin ('opacity_reader_t%init (Tomida+Hori_2016)')
+  call timer%tic
   if (io_unit%master) print *, &
  '---------------- reading opacity data by Tomida & Hori 2016 ------------------'
-  allocate (self%log_T(self%nT), self%log_d(self%nd), self%table(self%nT,self%nd,self%nw))
+  allocate (self%log_T(self%nT), self%log_d(self%nd), table1(self%nT,self%nd,self%nv))
   open (io_unit%tmp+1, form='formatted', status='old', &
         file=trim(io_unit%top)//'/data/opacities/Tomida+Hori_2016/kr.dat')
   open (io_unit%tmp+2, form='formatted', status='old', &
         file=trim(io_unit%top)//'/data/opacities/Tomida+Hori_2016/kp.dat')
-  do iT=1,self%nT
-    do id=1,self%nd
-      do iw=1,self%nw
-        read (io_unit%tmp+iw,*) row
-        self%table(iT,id,iw) = 10.**row(3)
+  do k=1,self%nv
+    do i=1,self%nT
+      do j=1,self%nd
+        read (io_unit%tmp+k,*) row
+        table1(i,j,k) = row(3)
+        self%log_d(j) = row(1)
       end do
-      self%log_d(id) = row(1)
+      self%log_T(i) = row(2)
     end do
-    self%log_T(iT) = row(2)
+    if (io%verbose > 0 .and. io%master) then
+      print 1, k, 'log_kappa_min, log_kappa_max [cgs] =', minval(table1(:,:,k)), &
+                                                          maxval(table1(:,:,k))
+      1 format(i3,2x,a,1p,2e12.4)
+    end if
+    close (io_unit%tmp+k)
   end do
-  close (io_unit%tmp+1)
-  close (io_unit%tmp+2)
-  print 1, 'T_min, T_max [K]    =', 10.**self%log_T(1), 10.**self%log_T(self%nT)
-  print 1, 'd_min, d_max [cgs0] =', 10.**self%log_d(1), 10.**self%log_d(self%nd)
-  1 format(1x,a,1p,2e15.6)
+  if (io%verbose > 0 .and. io%master) then
+    print 2, 'T_min, T_max [K]    =', 10.**self%log_T(1), 10.**self%log_T(self%nT)
+    print 2, 'd_min, d_max [cgs0] =', 10.**self%log_d(1), 10.**self%log_d(self%nd)
+  end if
+  2 format(1x,a,1p,2e15.6)
+!> =============================================================================
+!> We now have data as a function of (log_T,log_d), and we need to be interpolate
+!> and append to the eos%table
+!> =============================================================================
+  if (io%master) print *, &
+  '------------------------- append to fast EOS table --------------------------'
+  !-----------------------------------------------------------------------------
+  ! For each temperature, interpolate in density to the EOS table values
+  !-----------------------------------------------------------------------------
+  allocate (table2(self%nT,eos%nd,self%nv))
+  x => self%log_d
+  do k=1,self%nv
+    do i=1,self%nT
+      y => table1(i,:,k)
+      do j=1,eos%nd
+        table2(i,j,k) = interpolate(x, y, real(eos%lnd(j)/log(10.)+log10(scaling%d)))
+        if (io%verbose > 2 .and. io%master) then
+          if ((i==1.or.i==252.or.i==253.or.i==self%nT).and.(j==1.or.j==eos%nd)) &
+            print *, i, j, k, self%log_T(i), &
+              eos%lnd(j)/log(10.)+log10(scaling%d), table2(i,j,k)
+        end if
+      end do
+    end do
+    if (io%verbose > 0 .and. io%master) then
+      print 3, k, 'log_kappa_min, log_kappa_max [cgs] =', &
+        minval(table2(:,:,k)), minloc(table2(:,:,k)), &
+        maxval(table2(:,:,k)), maxloc(table2(:,:,k))
+      3 format(i3,2x,a,1p,2(e12.4,2i4))
+    end if
+  end do
+  !-----------------------------------------------------------------------------
+  ! For each density, interpolate in temperature to the EOS table values, which
+  ! are eos%table(:,:,2)
+  !-----------------------------------------------------------------------------
+  allocate (table(eos%ne,eos%nd,eos%nv+self%nv))
+  table(:,:,1:eos%nv) = eos%table
+  x => self%log_T                       ! opacity table temperatures
+  print*,x(1), x(self%nT)
+  do k=1,self%nv
+    do j=1,eos%nd
+      y => table2(:,j,k)                   ! interpolated table values
+      do i=1,eos%ne
+        table(i,j,eos%nv+k) = 10.**interpolate(x, y, log10(eos%table(i,j,2)))
+        if (io%verbose > 2 .and. io%master) then
+          if ((i==1.or.i==eos%ne).and.(j==1.or.j==eos%nd)) &
+            print *, i, j, k, log10(eos%table(i,j,2)), &
+              eos%lnd(j)/log(10.)+log10(scaling%d), table(i,j,eos%nv+k)
+        end if
+      end do
+    end do
+    !---------------------------------------------------------------------------
+    ! Rescaling table to code units, area per unit mass
+    !---------------------------------------------------------------------------
+    if (io%verbose > 0 .and. io%master) then
+      print 3, k, 'kappa_min, kappa_max [cgs]  =', &
+        minval(table(:,:,k)), minloc(table(:,:,k)), &
+        maxval(table(:,:,k)), maxloc(table(:,:,k))
+      table(:,:,eos%nv+k) = table(:,:,eos%nv+k)/(scaling%l**2/scaling%m)
+      print 3, k, 'kappa_min, kappa_max [code] =', &
+        minval(table(:,:,k)), minloc(table(:,:,k)), &
+        maxval(table(:,:,k)), maxloc(table(:,:,k))
+    end if
+  end do
+  !-----------------------------------------------------------------------------
+  ! Deallocate the reader table and the old EOS table, insert the new EOS table
+  ! and register the new table size
+  !-----------------------------------------------------------------------------
+  deallocate (eos%table, table1, table2)
+  eos%table => table
+  eos%i_kappa = eos%nv+1
+  eos%nv = eos%nv+self%nv
+  call timer%toc ('opacity_reader%init')
   call trace%end
 END SUBROUTINE init
+
+!-------------------------------------------------------------------------------
+! Interpolation using Lagrange interpolation in short sequences
+!-------------------------------------------------------------------------------
+FUNCTION interpolate (x, y, x0) RESULT (out)
+  !USE lagrange_mod
+  real, dimension(:):: x, y
+  real:: x0, out, p
+  integer:: i
+  !-----------------------------------------------------------------------------
+  out = lagrange%sequence (x0, x, y)
+END FUNCTION interpolate
 
 END MODULE opacity_reader_mod
