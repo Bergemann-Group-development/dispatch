@@ -8,14 +8,16 @@ MODULE eos_mod
   USE eos_reader_mod
   USE lagrange_mod
   USE scaling_mod
+  USE timer_mod
   implicit none
   private
   type, public:: eos_t
     integer:: nd, ne, nv
-    real(8):: lnd_min, lnd_max, lnd_stp
-    real(8):: lne_min, lne_max, lne_stp
-    real(8), dimension(:), pointer:: lnd, lne
-    real(8), dimension(:,:,:), pointer:: table
+    integer:: i_kappa=0
+    real:: lnd_min, lnd_max, lnd_stp
+    real:: lne_min, lne_max, lne_stp
+    real, dimension(:), pointer:: lnd, lne
+    real, dimension(:,:,:), pointer:: table
   contains
     procedure:: init
     procedure:: pressure
@@ -31,13 +33,14 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class (eos_t):: self
-  real(8), dimension(:), pointer:: x, y
-  real(8):: log_Emin, log_Emax, Pmin, Pmax, E, T, P, log_T, log_P, log_E
+  real, dimension(:), pointer:: x, y
+  real:: log_Emin, log_Emax, Pmin, Pmax, E, T, P, log_T, log_P, log_E
   integer:: i, j, nd, ne
   associate (reader=>eos_reader)
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
   call reader%init
+  call timer%tic
   if (io%master) print *, &
  '------------------------ constructing fast EOS table -------------------------'
   nd = reader%nd
@@ -82,11 +85,13 @@ SUBROUTINE init (self)
       log_P = interpolate (x, y, log_T) ! find the log pressure at log_T
       self%table(i,j,1) = 10.**log_P    ! store the linear pressure
       self%table(i,j,2) = 10.**log_T    ! store the linear temperature
-      if ((i==1.or.i==ne).and.(j==1.or.j==nd))then
-        print '(2i5,3(2x,a,1p,2e12.4))', i, j, &
-          ' log_E, E:', log_E, 10.**log_E, &
-          ' log_T, T:', log_T, 10.**log_T, &
-          ' log_P, P:', log_P, 10.**log_P
+      if (io%verbose > 0 .and. io%master) then
+        if ((i==1.or.i==ne).and.(j==1.or.j==nd))then
+          print '(2i5,3(2x,a,1p,2e12.4))', i, j, &
+            ' log_E, E:', log_E, 10.**log_E, &
+            ' log_T, T:', log_T, 10.**log_T, &
+            ' log_P, P:', log_P, 10.**log_P
+        end if
       end if
       !print '(2i5,1p,3e15.6)', i, j, T, P, E
     end do
@@ -94,37 +99,29 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Rescaling table to code units
   !-----------------------------------------------------------------------------
-  print 1, 'Emin, Emax [cgs]  =', 10.**log_Emin, 10.**log_Emax
-  1 format(1x,a,1p,2e15.6)
-  log_Emin = log_Emin - log10(scaling%u**2)
-  log_Emax = log_Emax - log10(scaling%u**2)
-  print 1, 'Emin, Emax [code] =', 10.**log_Emin, 10.**log_Emax
-  Pmin = minval(self%table(:,:,1))
-  Pmax = maxval(self%table(:,:,1))
-  print 1, 'Pmin, Pmax [cgs]  =', Pmin, Pmax
-  Pmin = Pmin/(scaling%d*scaling%u**2)
-  Pmax = Pmax/(scaling%d*scaling%u**2)
-  print 1, 'Pmin, Pmax [code] =', Pmin, Pmax
-  print 1, 'Tmin, Tmax [K]    =', minval(self%table(:,:,2)), &
-                                  maxval(self%table(:,:,2))
+  if (io%verbose > 0 .and. io%master) then
+    print 1, 'Emin, Emax [cgs]  =', 10.**log_Emin, 10.**log_Emax
+    1 format(1x,a,1p,2e15.6)
+    log_Emin = log_Emin - log10(scaling%u**2)
+    log_Emax = log_Emax - log10(scaling%u**2)
+    print 1, 'Emin, Emax [code] =', 10.**log_Emin, 10.**log_Emax
+    Pmin = minval(self%table(:,:,1))
+    Pmax = maxval(self%table(:,:,1))
+    print 1, 'Pmin, Pmax [cgs]  =', Pmin, Pmax
+    Pmin = Pmin/(scaling%d*scaling%u**2)
+    Pmax = Pmax/(scaling%d*scaling%u**2)
+    print 1, 'Pmin, Pmax [code] =', Pmin, Pmax
+    print 1, 'Tmin, Tmax [K]    =', minval(self%table(:,:,2)), &
+                                    maxval(self%table(:,:,2))
+  end if
   self%lnd = self%lnd - log(scaling%d)
   self%lne = self%lne - log(scaling%u**2)
   self%table(:,:,1) = self%table(:,:,1)/(scaling%d*scaling%u**2)
   !-----------------------------------------------------------------------------
-  ! Write out the table as a text file
+  ! Deallocate the reader table, which we don't need anymore
   !-----------------------------------------------------------------------------
-  open (io_unit%data, file='tmp.dat', form='formatted', status='unknown')
-  write (io_unit%data,*) ne
-  write (io_unit%data,*) self%lne
-  write (io_unit%data,*) nd
-  write (io_unit%data,*) self%lnd
-  do j=1,nd
-    write (io_unit%data,*) j, exp(self%lnd(j))
-    do i=1,ne
-      write (io_unit%data,'(1p,2e15.6)') self%table(i,j,:)
-    end do
-  end do
-  close (io_unit%data)
+  deallocate (eos_reader%table)
+  call timer%toc ('eos_t%init')
   call trace%end
   end associate
 END SUBROUTINE init
@@ -133,8 +130,8 @@ END SUBROUTINE init
 !-------------------------------------------------------------------------------
 FUNCTION interpolate (x, y, x0) RESULT (out)
   !USE lagrange_mod
-  real(8), dimension(:):: x, y
-  real(8):: x0, out, p
+  real, dimension(:):: x, y
+  real:: x0, out, p
   integer:: i
   !-----------------------------------------------------------------------------
   out = lagrange%sequence (x0, x, y)
@@ -284,4 +281,3 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
 END SUBROUTINE lookup
 
 END MODULE eos_mod
-

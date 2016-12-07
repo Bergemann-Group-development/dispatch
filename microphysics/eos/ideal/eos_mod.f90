@@ -30,6 +30,8 @@ SUBROUTINE init (self)
   namelist /eos_params/ gamma
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
+  if (io%master) print *, &
+ '------------------------ ideal equation-of-state -----------------------------'
   rewind (io%input); read (io%input, eos_params, iostat=iostat)
   if (iostat == 0) then
     if (io%master) write (io%output, eos_params)

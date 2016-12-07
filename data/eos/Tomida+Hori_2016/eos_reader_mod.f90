@@ -22,17 +22,19 @@
 !> =============================================================================
 !> =============================================================================
 MODULE eos_reader_mod
+  USE io_mod
   USE io_unit_mod
   USE trace_mod
+  USE timer_mod
   implicit none
   private
   type, public:: eos_reader_t
     integer:: nd=461, nT=761, nv=3
-    real(8), dimension(:), pointer:: T => null()
-    real(8), dimension(:), pointer:: d => null()
-    real(8), dimension(:), pointer:: log_T => null()
-    real(8), dimension(:), pointer:: log_d => null()
-    real(8), dimension(:,:,:), pointer:: table
+    real, dimension(:), pointer:: T => null()
+    real, dimension(:), pointer:: d => null()
+    real, dimension(:), pointer:: log_T => null()
+    real, dimension(:), pointer:: log_d => null()
+    real, dimension(:,:,:), pointer:: table
   contains
     procedure:: init
   end type
@@ -66,6 +68,7 @@ SUBROUTINE init (self)
     file=trim(io_unit%top)//'/data/eos/Tomida+Hori_2016/tomida.dat')
   !-----------------------------------------------------------------------------
   allocate (self%table(nT,nd,3), self%log_T(nT), self%log_d(nd))
+  call timer%tic
   call skip_lines (19)
   do id=1,nd
     call skip_lines (2)
@@ -80,10 +83,13 @@ SUBROUTINE init (self)
     self%log_d(id) = row(1)                     ! log10(density)
   end do
   close (io_unit%tmp)
-  print *,'log(T):', self%log_T(1), self%log_T(nT)
-  print *,'log(d):', self%log_d(1), self%log_d(nd)
-  print *,'log(P):', minval(self%table(:,:,1)), maxval(self%table( :,:,1))
-  print *,'log(U):', maxval(self%table(1,:,2)), minval(self%table(nT,:,2))
+  if (io%verbose > 0 .and. io%master) then
+    print *,'log(T):', self%log_T(1), self%log_T(nT)
+    print *,'log(d):', self%log_d(1), self%log_d(nd)
+    print *,'log(P):', minval(self%table(:,:,1)), maxval(self%table( :,:,1))
+    print *,'log(U):', maxval(self%table(1,:,2)), minval(self%table(nT,:,2))
+  end if
+  call timer%toc ('eos_reader%init')
   call trace%end
   end associate
 END SUBROUTINE init
