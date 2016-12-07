@@ -13,7 +13,10 @@ MODULE eos_mod
   private
   type, public:: eos_t
     integer:: nd, ne, nv
-    integer:: i_kappa=0
+    integer:: i_pg    = 1
+    integer:: i_tt    = 2
+    integer:: i_kappa = 3
+    integer:: i_src   = 4
     real:: lnd_min, lnd_max, lnd_stp
     real:: lne_min, lne_max, lne_stp
     real, dimension(:), pointer:: lnd, lne
@@ -235,26 +238,26 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
     !---------------------------------------------------------------------------
     if (present(pg)) then
       pg(:,iy,iz) = &
-         f(:,1,1)*g(:,1) &
-       + f(:,2,1)*g(:,2) &
-       + f(:,3,1)*g(:,3) &
-       + f(:,4,1)*g(:,4)
-    end if
-    !---------------------------------------------------------------------------
-    if (present(rk)) then
-      rk(:,iy,iz) = &
-         f(:,1,2)*g(:,1) &
-       + f(:,2,2)*g(:,2) &
-       + f(:,3,2)*g(:,3) &
-       + f(:,4,2)*g(:,4)
+         f(:,1,self%i_pg)*g(:,1) &
+       + f(:,2,self%i_pg)*g(:,2) &
+       + f(:,3,self%i_pg)*g(:,3) &
+       + f(:,4,self%i_pg)*g(:,4)
     end if
     !---------------------------------------------------------------------------
     if (present(tt)) then
+      rk(:,iy,iz) = &
+         f(:,1,self%i_tt)*g(:,1) &
+       + f(:,2,self%i_tt)*g(:,2) &
+       + f(:,3,self%i_tt)*g(:,3) &
+       + f(:,4,self%i_tt)*g(:,4)
+    end if
+    !---------------------------------------------------------------------------
+    if (present(rk)) then
       tt(:,iy,iz) = &
-         f(:,1,3)*g(:,1) &
-       + f(:,2,3)*g(:,2) &
-       + f(:,3,3)*g(:,3) &
-       + f(:,4,3)*g(:,4)
+         f(:,1,self%i_kappa)*g(:,1) &
+       + f(:,2,self%i_kappa)*g(:,2) &
+       + f(:,3,self%i_kappa)*g(:,3) &
+       + f(:,4,self%i_kappa)*g(:,4)
     end if
     !---------------------------------------------------------------------------
     if (present(ne)) then
@@ -266,12 +269,12 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
     end if
     !---------------------------------------------------------------------------
     if (present(src)) then
-     do iv=1,size(src,4)
+     do iv=0,size(src,4)-1
       src(:,iy,iz,iv) = &
-         f(:,1,4+iv)*g(:,1) &
-       + f(:,2,4+iv)*g(:,2) &
-       + f(:,3,4+iv)*g(:,3) &
-       + f(:,4,4+iv)*g(:,4)
+         f(:,1,self%i_src+iv)*g(:,1) &
+       + f(:,2,self%i_src+iv)*g(:,2) &
+       + f(:,3,self%i_src+iv)*g(:,3) &
+       + f(:,4,self%i_src+iv)*g(:,4)
      end do
     end if
   end do
