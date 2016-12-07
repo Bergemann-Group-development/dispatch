@@ -1,7 +1,7 @@
-VPATH := $(VPATH):$(TOP)/data/opacities/$(OPACITY)
 
 ifeq ($(OPACITY),)
-else
-  sinclude $(TOP)/data/opacities/$(OPACITY)/Makefile
+  OPACITY = stub
 endif
+VPATH := $(VPATH):$(TOP)/data/opacities/$(OPACITY)
+sinclude          $(TOP)/data/opacities/$(OPACITY)/Makefile
 

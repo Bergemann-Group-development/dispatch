@@ -136,6 +136,7 @@ SUBROUTINE init (self, name)
   self%levelmax  = levelmax
   self%inputname = inputname
   self%top       = top
+  io_unit%top    = top
   io_unit%do_validate = do_validate
   call print_id (id)
   call timer%init

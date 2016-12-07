@@ -17,6 +17,9 @@ MODULE timer_mod
     procedure:: begin
     procedure:: end
     procedure, nopass:: print
+    procedure, nopass:: tic
+    procedure, nopass:: toc_1, toc_i4, toc_i8, toc_r
+    generic:: toc => toc_1, toc_i4, toc_i8, toc_r
   end type
   character(len=64), dimension(maxproc):: names
   type(timer_t), pointer:: timers(:)
@@ -288,12 +291,17 @@ SUBROUTINE toc_r (label, n, time)
     n_cores, merge('cores/process','core/process ',n_cores>1)
   1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a, 3(i4, 1x, a))
   flush (io_unit%log)
-  if (mpi%rank==0.and.omp%thread==0) &
-    print 1, label, trim(time_str(dtime)), &
-      trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
-      mpi%size, merge('processes,','process,  ',mpi%size>1), &
-      n_cores, merge('cores/process','core/process ',n_cores>1)
-  flush (6)
+  if (mpi%rank==0.and.omp%thread==0) then
+    if (n>1.0) then
+      print 1, label, trim(time_str(dtime)), &
+        trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
+        mpi%size, merge('processes,','process,  ',mpi%size>1), &
+        n_cores, merge('cores/process','core/process ',n_cores>1)
+    else
+      print 1, label, trim(time_str(dtime))
+    end if
+    flush (6)
+  end if
   if (present(time)) then
     time = omp_get_wtime()
   else

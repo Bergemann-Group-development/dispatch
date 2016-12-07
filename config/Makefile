@@ -5,10 +5,10 @@ SHELL = /bin/bash
 
 #############################################################################
 # Defalt compiler and directives
-OMP=yes
 COMPILER = gfortran
-MPI = mpi
-MOD = mod
+OMP  = yes
+MPI  = mpi
+MOD  = mod
 AUTO = yes
 
 #############################################################################
@@ -50,7 +50,6 @@ sinclude $(TOP)/tasks/Makefile
 sinclude $(TOP)/meshes/Makefile
 sinclude $(TOP)/microphysics/Makefile
 sinclude $(TOP)/timestep/$(UPD)/Makefile
-sinclude $(TOP)/data/opacities/$(OPACITIES)/Makefile
 sinclude $(TOP)/particles/Makefile
 sinclude $(TOP)/states/Makefile
 
