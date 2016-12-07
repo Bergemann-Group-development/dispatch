@@ -2,7 +2,7 @@
 !> Read the kappa data from Tomida & Hori 2016, which comes in two tables, with
 !> Rosseland and Planck means
 !> =============================================================================
-MODULE opacity_reader_mod
+MODULE opacity_mod
   USE io_mod
   USE io_unit_mod
   USE trace_mod
@@ -12,7 +12,7 @@ MODULE opacity_reader_mod
   USE timer_mod
   implicit none
   private
-  type, public:: opacity_reader_t
+  type, public:: opacity_t
     integer:: nT=450, nd=450, nv=2
     real, dimension(:), pointer:: log_T => null()
     real, dimension(:), pointer:: log_d => null()
@@ -20,7 +20,7 @@ MODULE opacity_reader_mod
     procedure:: init
   end type
   real, dimension(:,:,:), pointer:: table1, table2, table
-  type (opacity_reader_t), public:: opacity_reader
+  type (opacity_t), public:: opacity
 CONTAINS
 
 !> =============================================================================
@@ -28,13 +28,13 @@ CONTAINS
 !> hardwire, since it is specific
 !> =============================================================================
 SUBROUTINE init (self)
-  class (opacity_reader_t):: self
+  class (opacity_t):: self
   real:: row(3)
   integer:: iT, id, iv, i, j, k
   real, dimension(:), pointer:: x, y
   real, dimension(:,:,:), pointer:: table1, table2
   !-----------------------------------------------------------------------------
-  call trace%begin ('opacity_reader_t%init (Tomida+Hori_2016)')
+  call trace%begin ('opacity_t%init (Tomida+Hori_2016)')
   call timer%tic
   if (io_unit%master) print *, &
  '---------------- reading opacity data by Tomida & Hori 2016 ------------------'
@@ -101,7 +101,6 @@ SUBROUTINE init (self)
   allocate (table(eos%ne,eos%nd,eos%nv+self%nv))
   table(:,:,1:eos%nv) = eos%table
   x => self%log_T                       ! opacity table temperatures
-  print*,x(1), x(self%nT)
   do k=1,self%nv
     do j=1,eos%nd
       y => table2(:,j,k)                   ! interpolated table values
@@ -151,4 +150,4 @@ FUNCTION interpolate (x, y, x0) RESULT (out)
   out = lagrange%sequence (x0, x, y)
 END FUNCTION interpolate
 
-END MODULE opacity_reader_mod
+END MODULE opacity_mod
