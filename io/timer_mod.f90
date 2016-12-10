@@ -18,7 +18,10 @@ MODULE timer_mod
     procedure:: end
     procedure, nopass:: print
     procedure, nopass:: tic
-    procedure, nopass:: toc_1, toc_i4, toc_i8, toc_r
+    procedure, nopass:: toc_1
+    procedure, nopass:: toc_i4
+    procedure, nopass:: toc_i8
+    procedure, nopass:: toc_r
     generic:: toc => toc_1, toc_i4, toc_i8, toc_r
   end type
   character(len=64), dimension(maxproc):: names
