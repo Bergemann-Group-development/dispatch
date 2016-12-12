@@ -12,7 +12,8 @@ MODULE eos_mod
   implicit none
   private
   type, public:: eos_t
-    integer:: nd, ne, nv
+    integer:: nd, ne
+    integer:: nv      = 2
     integer:: i_pg    = 1
     integer:: i_tt    = 2
     integer:: i_kappa = 3
@@ -34,11 +35,12 @@ CONTAINS
 !> type, with pressure and internal energy in an (nT,nd,2) table, with NT
 !> temperature value T(nT), and nd density values d(nd).
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self,nv)
   class (eos_t):: self
   real, dimension(:), pointer:: x, y
   real:: log_Emin, log_Emax, Pmin, Pmax, E, T, P, log_T, log_P, log_E
   integer:: i, j, nd, ne
+  integer,optional :: nv
   associate (reader=>eos_reader)
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
@@ -46,11 +48,12 @@ SUBROUTINE init (self)
   call timer%tic
   if (io%master) print *, &
  '------------------------ constructing fast EOS table -------------------------'
+  if (present(nv)) self%nv = nv
   nd = reader%nd
   ne = reader%nT
   self%nd = nd
   self%ne = ne
-  allocate (self%lnd(nd), self%lne(ne), self%table(ne,nd,2))
+  allocate (self%lnd(nd), self%lne(ne), self%table(ne,nd,self%nv))
   !-----------------------------------------------------------------------------
   ! Fint extremum values of internal energy
   !-----------------------------------------------------------------------------
