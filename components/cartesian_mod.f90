@@ -96,7 +96,7 @@ SUBROUTINE init (self, label)
   do k=0,self%dims(3)-1
   do j=0,self%dims(2)-1
   do i=0,self%dims(1)-1
-    allocate (link,patch); link%task => patch; patch%link => link
+    allocate (link, patch); link%task => patch; patch%link => link
     task => link%task
     links(i,j,k)%p => null()
     patch%ipos = [i,j,k]
@@ -137,7 +137,7 @@ SUBROUTINE init (self, label)
     end do
     if (rank == mpi%rank) nlpatch=nlpatch+1
     if (patch%is_set(bits%external)) then
-      deallocate (patch)
+      deallocate (patch, link)
     else
       links(i,j,k)%p => link
       task => patch
