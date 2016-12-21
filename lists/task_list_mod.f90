@@ -96,11 +96,13 @@ SUBROUTINE execute (self)
   do while (associated(link))
     call link%task%clear(bits%ready)
     call self%check_ready (link)
+    call link%count_behind
     link => link%next
   end do
   !-----------------------------------------------------------------------------
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
+  call self%check_links ('task_list_t%execute')
   call mpi%barrier ('task_list_mod::execute')
   call tic (time=sec)
   call timer%print

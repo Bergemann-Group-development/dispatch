@@ -170,6 +170,7 @@ SUBROUTINE init (self, label)
         allocate (nbor)
         nbor%task => links(ipos(1),ipos(2),ipos(3))%p%task
         nbor%link => links(ipos(1),ipos(2),ipos(3))%p
+        nbor%nbor => nbor%link
         call link%add_nbor_by_rank (nbor)
       end if
     end do

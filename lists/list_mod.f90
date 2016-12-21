@@ -48,6 +48,7 @@ MODULE list_mod
     procedure:: check_all
     procedure:: check_oldest
     procedure:: check_queue
+    procedure:: check_links
     procedure:: init_nbors
     procedure:: init_all_nbors
     procedure:: remove_parents
@@ -251,10 +252,12 @@ SUBROUTINE check_nbors (self, link)
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
   !$omp critical (list_cr)
+  call link%count_behind                              ! need a full count
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
   nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
+    call link%update_behind (nbor)                    ! update counters
     nbtask => nbor%task                               ! neighbor task
     n_check = n_check+1
     is_clear = nbtask%is_clear(bits%ready)
@@ -434,6 +437,7 @@ SUBROUTINE check_ready (self, link)
     call self%queue_by_time (link)                      ! add task to queue
     call self%qconsistency(3)
     !xomp end critical (list_cr)
+    print *, 'check_ready: task queued =', task%id
   end if
 9 continue
   !xomp end critical (list_cr)
@@ -1069,6 +1073,36 @@ SUBROUTINE check_queue (self)
   if (nq /= self%nq) write (io_unit%log,*)'ERROR: inconsistent number of tasks in queue', nq, self%nq
   !$omp end critical (list_cr)
 END SUBROUTINE check_queue
+
+!> =============================================================================
+!> Check that nbor links are consistent
+!> =============================================================================
+SUBROUTINE check_links (self, label)
+  class(list_t):: self
+  class(link_t), pointer:: nbor
+  character(len=*), optional:: label
+  class(link_t), pointer:: link
+  integer:: n=0
+  !.............................................................................
+  if (present(label).and.io%master) print *,'check_links: '//label
+  !$omp critical (list_cr)
+  link => self%head
+  do while (associated(link))
+    nbor => link%nbor
+    n = 0
+    do while (associated(nbor))
+      if (.not.(associated(nbor%link).and.associated(nbor%nbor))) &
+        print *, 'check_nbor_links: ERROR'
+      if (nbor%link%task%id /= nbor%task%id) print *, 'check_nbor_links: ERROR', nbor%task%id
+      if (nbor%nbor%task%id /= nbor%task%id) print *, 'check_nbor_links: ERROR', nbor%task%id
+      n = n+1
+      nbor => nbor%next
+    end do
+    !print *, link%task%id, n, ' nbors'
+    link => link%next
+  end do
+  !$omp end critical (list_cr)
+END SUBROUTINE check_links
 
 !> =============================================================================
 !> Insert 'new' task before 'old' task

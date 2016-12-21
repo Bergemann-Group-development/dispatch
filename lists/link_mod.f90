@@ -20,6 +20,7 @@ MODULE link_mod
     class(link_t), pointer :: prev => null()         ! previous link in task list
     class(link_t), pointer :: parent => null()       ! parent task link
     class(link_t), pointer :: next_time => null()    ! next link in time order
+    real(kind=8):: last_check = 0.0_8
     logical:: check = .true.
   contains
     procedure:: add_nbor_by_quality
@@ -35,6 +36,10 @@ MODULE link_mod
     procedure:: send_to_vnbors
     procedure:: print_nbors
     procedure:: test_nbor_status
+    procedure:: count_behind
+    procedure:: update_behind
+    procedure:: check_behind
+    procedure:: was_ahead_of
   end type
   logical, save:: debug=.false.
 CONTAINS
@@ -81,11 +86,13 @@ SUBROUTINE make_new_nbor (self, selfp, that)
   allocate (link1)                              ! for our own nbors chain
   link1%task => that%task                       ! the link points to that task
   link1%nbor => that                            ! link to the nbor link
+  link1%link => that                            ! link to the nbor link
   link1%parent => that%parent                   ! direct link to task parent
   call self%add_nbor_by_quality (link1)         ! add to that chain in quality order
   allocate (link2)                              ! for that's nbors chain
   link2%task => self%task                       ! that's new link points to my task
   link2%nbor => selfp                           ! pointer back to self
+  link2%link => selfp                           ! pointer back to self
   link2%parent => selfp%parent                  ! direct link to self parent
   call that%add_nbor_by_quality (link2)         ! add to my nbors chain in quality order
   call trace_end
@@ -229,7 +236,7 @@ END SUBROUTINE test_status
 
 !> =============================================================================
 !> Add a link node into the nbors list of self, in increasing rank order.
-!> self must be a link whose 'nbors' points to a chain of nbors
+!> self must be a link whose 'nbor' points to a chain of nbors
 !> =============================================================================
 SUBROUTINE add_nbor_by_rank (self, this)
   class(link_t):: self
@@ -539,5 +546,134 @@ SUBROUTINE send_to_vnbors (self)
   call self%task%clear (bits%swap_request)
   call trace_end (itimer)
 END SUBROUTINE send_to_vnbors
+
+!> =============================================================================
+!> Count how many nbors are behind in time
+!> =============================================================================
+SUBROUTINE count_behind (self)
+  class(link_t):: self
+  class(task_t), pointer:: task, nbtask
+  class(link_t), pointer:: nbor
+  integer, save:: itimer=0
+  integer:: n_behind
+  !.............................................................................
+  if (self%task%is_set (bits%virtual+bits%external)) return
+  call trace%begin('list_mod::count_behind', itimer=itimer)
+  task => self%task
+  n_behind = task%n_behind
+  task%n_behind = 0
+  nbor => self%nbor
+  !$omp critical (time_cr)
+  do while (associated (nbor))
+    nbtask => nbor%task
+    if ((.not.nbtask%is_ahead_of(task)) .and. nbtask%is_clear(bits%external)) then
+      task%n_behind = task%n_behind + 1
+    end if
+    nbor%last_check = nbtask%time
+    nbor => nbor%next
+  end do
+  self%last_check = task%time
+  !$omp end critical (time_cr)
+  if (task%n_behind /= n_behind) &
+    print *, 'count_behind: task, n_behind =', task%id, task%n_behind, n_behind
+  call trace%end (itimer)
+END SUBROUTINE count_behind
+
+!> =============================================================================
+!> Update the status of the n_behind count on self%task, and on nbor%task.
+!> nbor is a node in the linked list starting at self%nbor, and nbor%link
+!> points to the corresponding nbor node, whose nbor list starts at nbor%link%nbor
+!> behind, then decrement self's n_behind and increment nbor's n_behind.  It the
+!> nbor task is behind, and was ahead, do the opposite.
+!> =============================================================================
+SUBROUTINE update_behind (self, nbor)
+  class(link_t):: self
+  class(link_t), pointer:: nbor, myself
+  integer, save:: itimer=0
+  !.............................................................................
+  call trace%begin('list_mod::update_behind', itimer=itimer)
+  !print *, 'forward check: ', self%task%id, nbor%task%id, associated(nbor%link), associated(nbor%nbor)
+  call self%check_behind (nbor)
+  !print *, 'task:', self%task%id, 'nbor:', nbor%task%id, 'nbor%nbor:', nbor%nbor%task%id
+  myself => nbor%link%nbor
+  myself => nbor%link%nbor
+  do while (associated(myself))
+    if (myself%task%id == self%task%id) then
+      !print *, 'reverse check: ', nbor%nbor%task%id, myself%task%id
+      call nbor%link%check_behind (myself)
+      call trace%end (itimer)
+      return
+    end if
+    myself => myself%next
+  end do
+  print *, 'ERROR: did not find myself id =', self%task%id
+  call trace%end (itimer)
+END SUBROUTINE update_behind
+
+!> =============================================================================
+!> Update behind counts for self and nbor:  If the nbor task is ahead, and was
+!> behind, then decrement self's n_behind and increment nbor's n_behind.  It the
+!> nbor task is behind, and was ahead, do the opposite.
+!> =============================================================================
+SUBROUTINE check_behind (self, nbor)
+  class(link_t):: self
+  class(link_t), pointer:: nbor
+  class(task_t), pointer:: task, nbta
+  logical:: old, new
+  integer, save:: itimer=0
+  !.............................................................................
+  call trace%begin('list_mod::check_behind', itimer=itimer)
+  task => self%task
+  nbta => nbor%task
+  !$omp critical (time_cr)
+  old = nbor%was_ahead_of (self)
+  new = nbta%is_ahead_of (task)
+  if (new) then
+    if (.not.old) then
+       task%n_behind = task%n_behind - 1
+       !print *, 'check_behind: task- =', task%id, task%n_behind
+       if (task%n_behind == 0) then
+         print *, 'task is ready:', task%id
+       else if (task%n_behind < 0) then
+         print *, 'ERROR: task%n_behind is negative for task', task%id
+       end if
+    end if
+  else
+    if (old) then
+       task%n_behind = task%n_behind + 1
+       !print *, 'check_behind: task+ =', nbta%id, nbta%n_behind
+    end if
+  end if
+  print '(a,2(i5,i3,2f10.6),2l4)',' check_behind: task, nbta =', &
+    task%id, task%n_behind, self%last_check, self%task%time, &
+    nbta%id, nbta%n_behind, nbor%last_check, nbor%task%time, &
+    !task%id, task%n_behind, &
+    !nbta%id, nbta%n_behind, &
+    old, new
+  self%last_check = task%time
+  nbor%last_check = nbta%time
+  !$omp end critical (time_cr)
+  call trace%end (itimer)
+END SUBROUTINE check_behind
+
+!> =============================================================================
+!> Check if self was ahead of nbor, using self%task%dtime*self%task%grace as the
+!> grace time.
+!> =============================================================================
+LOGICAL FUNCTION was_ahead_of (self, nbor)
+  class (link_t):: self, nbor
+  !.............................................................................
+  was_ahead_of = self%last_check + self%task%dtime*self%task%grace >= nbor%last_check
+END FUNCTION
+
+!> =============================================================================
+!> Check if self was behind nbor, using self%task%dtime*self%task%grace as the
+!> grace time.
+!> =============================================================================
+LOGICAL FUNCTION was_behind (self, nbor)
+  class (link_t):: self, nbor
+  !.............................................................................
+  was_behind = self%last_check + self%task%dtime*self%task%grace < nbor%last_check
+END FUNCTION
 
 END MODULE link_mod

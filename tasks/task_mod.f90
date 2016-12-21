@@ -29,6 +29,7 @@ MODULE task_mod
     integer:: new=2
     integer:: verbose=1
     integer:: nq=999
+    integer:: n_behind=0
     real(8):: time = 0d0
     real(8):: end_time = 1d0
     real(8):: out_next = 0d0
