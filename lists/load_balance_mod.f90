@@ -492,6 +492,7 @@ FUNCTION check_load (self, head) RESULT (sell)
   ! Only one thread should do load balancing, and that thread should make sure
   ! to use omp critical (list_cr) whenever it needs to access the task list.
   !-----------------------------------------------------------------------------
+  sell = .false.
   if (.not.self%on) return
   !$omp critical (loadb_cr)
   wc = wallclock()
@@ -513,7 +514,6 @@ FUNCTION check_load (self, head) RESULT (sell)
   ! If load balancing is on, and we have information, and it's time, or if an
   ! earlier case has left an excess, go ahead
   !-----------------------------------------------------------------------------
-  sell = .false.
   if (rank_info%ok .and. wc<duration) then
     !---------------------------------------------------------------------------
     ! Among the virtual patches that surround the head boundary patch, find one
