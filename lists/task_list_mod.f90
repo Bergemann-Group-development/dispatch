@@ -102,7 +102,6 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
-  call self%check_links ('task_list_t%execute')
   call mpi%barrier ('task_list_mod::execute')
   call tic (time=sec)
   call timer%print

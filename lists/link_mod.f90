@@ -574,8 +574,8 @@ SUBROUTINE count_behind (self)
   end do
   self%last_check = task%time
   !$omp end critical (time_cr)
-  if (task%n_behind /= n_behind) &
-    print *, 'count_behind: task, n_behind =', task%id, task%n_behind, n_behind
+  !if (task%n_behind /= n_behind) &
+  !  print *, 'count_behind: task, n_behind =', task%id, task%n_behind, n_behind
   call trace%end (itimer)
 END SUBROUTINE count_behind
 
@@ -622,7 +622,7 @@ SUBROUTINE check_behind (self, nbor)
   logical:: old, new
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin('list_mod::check_behind', itimer=itimer)
+  call trace%begin('list_mod::check_behind')
   task => self%task
   nbta => nbor%task
   !$omp critical (time_cr)
@@ -633,7 +633,7 @@ SUBROUTINE check_behind (self, nbor)
        task%n_behind = task%n_behind - 1
        !print *, 'check_behind: task- =', task%id, task%n_behind
        if (task%n_behind == 0) then
-         print *, 'task is ready:', task%id
+         !print *, 'task is ready:', task%id
        else if (task%n_behind < 0) then
          print *, 'ERROR: task%n_behind is negative for task', task%id
        end if
@@ -644,12 +644,12 @@ SUBROUTINE check_behind (self, nbor)
        !print *, 'check_behind: task+ =', nbta%id, nbta%n_behind
     end if
   end if
-  print '(a,2(i5,i3,2f10.6),2l4)',' check_behind: task, nbta =', &
-    task%id, task%n_behind, self%last_check, self%task%time, &
-    nbta%id, nbta%n_behind, nbor%last_check, nbor%task%time, &
-    !task%id, task%n_behind, &
-    !nbta%id, nbta%n_behind, &
-    old, new
+  !print '(a,2(i5,i3,2f10.6),2l4)',' check_behind: task, nbta =', &
+  !  task%id, task%n_behind, self%last_check, self%task%time, &
+  !  nbta%id, nbta%n_behind, nbor%last_check, nbor%task%time, &
+  !  !task%id, task%n_behind, &
+  !  !nbta%id, nbta%n_behind, &
+  !  old, new
   self%last_check = task%time
   nbor%last_check = nbta%time
   !$omp end critical (time_cr)
