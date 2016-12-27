@@ -251,10 +251,12 @@ SUBROUTINE check_nbors (self, link)
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
   !$omp critical (list_cr)
+  call link%count_behind                              ! need a full count
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
   nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
+    call link%update_behind (nbor)                    ! update counters
     nbtask => nbor%task                               ! neighbor task
     n_check = n_check+1
     is_clear = nbtask%is_clear(bits%ready)
@@ -306,7 +308,7 @@ SUBROUTINE check_all (self)
   !$omp critical (list_cr)
   link => self%head
   do while (associated (link))                          ! keep going until end
-    call self%check_ready (link, 1)                     ! link ready?
+    call self%check_ready (link)                        ! link ready?
     link => link%next
   end do
   if (.not.associated(self%queue)) then
@@ -317,7 +319,7 @@ SUBROUTINE check_all (self)
         if (link%task%is_set (bits%ready)) then
           write (io_unit%log,*) 'clearing ready bit on', link%task%id
           call link%task%clear (bits%ready)
-          call self%check_ready (link, 1)               ! link ready?
+          call self%check_ready (link)                  ! link ready?
         end if
       end if
       link => link%next
@@ -364,7 +366,7 @@ SUBROUTINE check_oldest (self)
     if (oldest%task%is_set (bits%ready)) then
       write (io_unit%log,*) 'clearing ready bit on', oldest%task%id
       call oldest%task%clear (bits%ready)
-      call self%check_ready (oldest, 1)                 ! oldest ready?
+      call self%check_ready (oldest)                    ! oldest ready?
     end if
   else
     write (io_unit%log,*) 'the oldest task is not active: v, e =', &
@@ -393,31 +395,25 @@ END SUBROUTINE check_oldest
 !> =============================================================================
 !> Check if the link task is ready, and if so, add it to self (the ready_queue)
 !> =============================================================================
-SUBROUTINE check_ready (self, link, set_debug)
+SUBROUTINE check_ready (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
   class(task_t), pointer:: task, nbtask
-  class(link_t), pointer:: nbor, scan
-  integer:: set_debug, debug=0
-  optional:: set_debug
-  logical:: ahead, is_clear
+  class(link_t), pointer:: nbor
+  logical:: ahead
   integer, save:: itimer=0
   !.............................................................................
   if (link%task%is_set (bits%virtual+bits%external)) return
   call trace%begin('list_mod::check_ready ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_check = mpi_mesg%n_check+1
-  if (present(set_debug)) then
-    debug = set_debug
-  else
-    debug = 0
-  end if
   !xomp critical (list_cr)
   call self%qconsistency(1)
   task => link%task                                     ! already checked?
   if (task%is_clear(bits%ready)) then
     nbor => link%nbor                                   ! start on nbor list
     do while (associated (nbor))                        ! keep going until end
+      !call nbor%update_behind (link)
       nbtask => nbor%task
       ahead = nbtask%is_ahead_of(task)
       if (ahead .or. nbtask%is_set(bits%external)) then
@@ -440,6 +436,7 @@ SUBROUTINE check_ready (self, link, set_debug)
     call self%queue_by_time (link)                      ! add task to queue
     call self%qconsistency(3)
     !xomp end critical (list_cr)
+    !print *, 'check_ready: task queued =', task%id
   end if
 9 continue
   !xomp end critical (list_cr)

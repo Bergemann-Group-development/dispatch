@@ -96,9 +96,9 @@ SUBROUTINE init (self, label)
   do k=0,self%dims(3)-1
   do j=0,self%dims(2)-1
   do i=0,self%dims(1)-1
-    allocate (link,patch); link%task => patch; patch%link => link
+    allocate (link, patch); link%task => patch; patch%link => link
     task => link%task
-    links(i,j,k)%p => link
+    links(i,j,k)%p => null()
     patch%ipos = [i,j,k]
     patch%rank = mpi_coords%coords_to_rank ([i,j,k]/patches_per_mpi)
     patch%id = 1+i+self%dims(1)*(j+k*self%dims(2))
@@ -137,8 +137,9 @@ SUBROUTINE init (self, label)
     end do
     if (rank == mpi%rank) nlpatch=nlpatch+1
     if (patch%is_set(bits%external)) then
-      deallocate (patch)
+      deallocate (patch, link)
     else
+      links(i,j,k)%p => link
       task => patch
       call self%task_list%append_link (link)
       if (patch%is_set(bits%boundary))  nbpatch = nbpatch+1
@@ -164,11 +165,14 @@ SUBROUTINE init (self, label)
     do j1=nn(1,2),nn(2,2)
     do i1=nn(1,1),nn(2,1)
       if (i1==0.and.j1==0.and.k1==0) cycle
-      allocate (nbor)
       ipos = modulo(patch%ipos+[i1,j1,k1],self%dims)
-      nbor%task => links(ipos(1),ipos(2),ipos(3))%p%task
-      nbor%link => links(ipos(1),ipos(2),ipos(3))%p
-      call link%add_nbor_by_rank (nbor)
+      if (associated(links(ipos(1),ipos(2),ipos(3))%p)) then
+        allocate (nbor)
+        nbor%task => links(ipos(1),ipos(2),ipos(3))%p%task
+        nbor%link => links(ipos(1),ipos(2),ipos(3))%p
+        nbor%nbor => nbor%link
+        call link%add_nbor_by_rank (nbor)
+      end if
     end do
     end do
     end do

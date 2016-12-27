@@ -950,9 +950,12 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !.............................................................................
   integer:: iv, nv
   integer, save:: itimer=0
-  integer, save:: n_lines=0, max_lines=25
-  integer, save:: counts(7)=0
+  integer, parameter:: max_lines=25
+  integer, save:: n_lines=0
+  integer:: counts(7)
   !-----------------------------------------------------------------------------
+  1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,3i5,8i4,l3,l1,o12)
+  counts(:) = 0
   if (io%verbose>=0) then
     if (self%time>=self%print_next) then
       call trace%begin ('patch_t%info', itimer=itimer)
@@ -991,16 +994,17 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             !$omp end critical (info_cr)
           end if
         end do
-        if (io%verbose>1 .or. self%id==1) then
+        if (io%verbose>0 .or. self%id==1) then
           if (io%master) then
+            !$omp critical (info_cr2)
             if (n_lines<=0) then
               print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
                          //'6....+....7....+....8....+....9....+....0....+....ntsk   nq ' &
                          //' chk rdy upd snt prb unp dly snq rcq  BV'
               n_lines = max_lines
             end if
-            !$omp atomic
             n_lines = n_lines-1
+            !$omp end critical (info_cr2)
           end if
           counts = counts + &
             [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
@@ -1017,9 +1021,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
               real(n_update), ntask, nq, counts, &
               mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, &
               self%is_set(bits%boundary), self%is_set(bits%virtual)
-            1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,3i5,8i4,l3,l1,o12)
             end do
-            counts = 0
           end if
         end if
         mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0
