@@ -1331,8 +1331,8 @@ END FUNCTION local_iit
 SUBROUTINE time_interpolate (self, source, jt, pt)
   class(patch_t):: self, source
   integer:: jt(2)
-  integer:: i, it, iit(self%nt), verbose
-  real(8):: pt(2), dt
+  integer:: i, id, it, iit(self%nt), verbose
+  real(8):: pt(2), dt1, t(self%nt), dt(self%nt)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin ('task_t::time_interpolate',3,itimer=itimer)
@@ -1340,40 +1340,45 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   !-----------------------------------------------------------------------------
   ! In case of e.g. an error in initial conditions, choose a valid default
   !-----------------------------------------------------------------------------
-  iit = source%local_iit()
+  !$omp critical (time_cr)
+  iit = source%iit
+  t   = source%t
+  dt  = source%dt
+  id  = source%id
+  !$omp end critical (time_cr)
   jt = iit(1:2)
   !-----------------------------------------------------------------------------
   ! As long as the first source time is earlier than, or equal to the target
   ! time, renew the interval.  Initially, when all times are zero, we are left
   ! with the interval nt-2:nt-1 and dt=0d0, which means slot nt-1 is used.
   !-----------------------------------------------------------------------------
-  do i=2,source%nt-2
-    if (source%t(iit(i)) <= self%time) then
+  do i=2,self%nt-2
+    if (t(iit(i)) <= self%time) then
       jt = iit(i:i+1)
     end if
   end do
   !-----------------------------------------------------------------------------
   ! A vanishing source time interval happens only at the initial condition ...
   !-----------------------------------------------------------------------------
-  dt = source%t(jt(2))-source%t(jt(1))
-  if (dt==0d0) then
+  dt1 = t(jt(2))-t(jt(1))
+  if (dt1==0d0) then
     pt(2) = 1d0
   !-----------------------------------------------------------------------------
   ! If a task lags behind, prevent backwards time interpolation, with a warning
   !-----------------------------------------------------------------------------
   else
-    pt(2) = (self%time - source%t(jt(1)))/dt
+    pt(2) = (self%time - t(jt(1)))/dt1
     if (pt(2) < -self%grace) then
       write (io_unit%log,1) &
         'patch_mod::time_interpolate WARNING: backward extrapolation, trg,src,pt:', &
-        self%id, source%id, pt(2)
+        self%id, id, pt(2)
       1 format(a,2i9,f7.2,1p,3g16.7)
       pt(2) = -self%grace
       verbose = 3
     else if (pt(2) > 1.001+self%grace) then
       write (io_unit%log,1) &
         'patch_mod::time_interpolate WARNING: forward extrapolation, trg,src,pt:', &
-        self%id, source%id, pt(2), dt, source%dt(jt(1)), source%dt(jt(2))
+        self%id, id, pt(2), dt1, dt(jt(1)), dt(jt(2))
       pt(2) = 1.0+self%grace
       verbose = 3
     end if
@@ -1383,10 +1388,10 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
     write (io_unit%log,'(a,2i5,2f7.3,1p,g16.6)') &
       'patch_mod::time_interpolation jt, pt, target', &
       jt, pt, self%time
-    do i=1,source%nt
+    do i=1,self%nt
       write (io_unit%log,'(a,3i4,1p,2g16.6)') &
         'patch_mod::time_interpolation i,iit,src%iit,src%t,src%dt:', &
-        i, iit(i), source%iit(i), source%t(i), source%dt(i)
+        i, iit(i), iit(i), t(i), dt(i)
     end do
     flush (io_unit%log)
   end if

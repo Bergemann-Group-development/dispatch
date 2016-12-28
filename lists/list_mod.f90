@@ -249,7 +249,7 @@ SUBROUTINE check_nbors (self, link)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
-  !$omp critical (list_cr)
+  !$omp critical (time_cr)
   call link%task%clear (bits%ready)                     ! clear for queueing
   call link%count_behind                                ! need a full count
   nbor => link%nbor                                     ! first nbor
@@ -268,7 +268,7 @@ SUBROUTINE check_nbors (self, link)
   if (link%task%n_behind==0) then
     call self%queue_by_time (link)
   end if
-  !$omp end critical (list_cr)
+  !$omp end critical (time_cr)
   if (io%verbose>3) call self%print
   call trace_end (itimer)
 END SUBROUTINE check_nbors
