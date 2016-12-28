@@ -139,6 +139,7 @@ SUBROUTINE rotate (self)
   ! new self%time is what a task is judged on!
   !-----------------------------------------------------------------------------
   !call self%lock%set ('rotate')
+  !$omp critical (list_cr)
   !!$omp flush
   time = self%time + self%dtime
   self%dt(self%it) = self%dtime                         ! just updated
@@ -162,6 +163,7 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
   !!$omp flush
   !call self%lock%unset ('rotate')
+  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE rotate
 

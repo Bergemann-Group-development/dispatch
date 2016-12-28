@@ -561,11 +561,11 @@ SUBROUTINE count_behind (self)
   !.............................................................................
   if (self%task%is_set (bits%virtual+bits%external)) return
   call trace%begin('list_mod::count_behind', itimer=itimer)
+  !!omp critical (behind_cr)
   task => self%task
   n_behind = task%n_behind
   task%n_behind = 0
   nbor => self%nbor
-  !$omp critical (time_cr)
   do while (associated (nbor))
     nbtask => nbor%task
     if ((.not.nbtask%is_ahead_of(task)) .and. nbtask%is_clear(bits%external)) then
@@ -575,9 +575,9 @@ SUBROUTINE count_behind (self)
     nbor => nbor%next
   end do
   self%last_check = task%time
-  !$omp end critical (time_cr)
   !if (task%n_behind /= n_behind) &
   !  print *, 'count_behind: task, n_behind =', task%id, task%n_behind, n_behind
+  !!omp end critical (behind_cr)
   call trace%end (itimer)
 END SUBROUTINE count_behind
 
@@ -600,15 +600,15 @@ SUBROUTINE update_behind (self, nbor)
   !print *, 'task:', self%task%id, 'nbor:', nbor%task%id, 'nbor%nbor:', nbor%nbor%task%id
   if (associated(nbor%link)) then
     if (associated(nbor%link%nbor)) then
-  myself => nbor%link%nbor
-  do while (associated(myself))
-    if (myself%task%id == self%task%id) then
-      !print *, 'reverse check: ', nbor%nbor%task%id, myself%task%id
-      call nbor%link%check_behind (myself)
+      myself => nbor%link%nbor
+      do while (associated(myself))
+        if (myself%task%id == self%task%id) then
+          !print *, 'reverse check: ', nbor%nbor%task%id, myself%task%id
+          call nbor%link%check_behind (myself)
           goto 9
-    end if
-    myself => myself%next
-  end do
+        end if
+        myself => myself%next
+      end do
     else
       print *,'ERROR: nbor%link%nbor not associated', nbor%task%id
       call dump_behind (self, nbor)
@@ -649,7 +649,6 @@ SUBROUTINE check_behind (self, nbor)
   call trace%begin('list_mod::check_behind')
   task => self%task
   nbta => nbor%task
-  !$omp critical (time_cr)
   old = nbor%was_ahead_of (self)
   new = nbta%is_ahead_of (task)
   if (new) then
@@ -676,7 +675,6 @@ SUBROUTINE check_behind (self, nbor)
   !  old, new
   self%last_check = task%time
   nbor%last_check = nbta%time
-  !$omp end critical (time_cr)
   call trace%end (itimer)
 END SUBROUTINE check_behind
 

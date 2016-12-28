@@ -245,53 +245,32 @@ SUBROUTINE check_nbors (self, link)
   class(link_t), pointer:: link
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
-  integer:: n_check, n_ready, n_blocked, n_cleared, n_remain
   logical:: is_clear
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
   !$omp critical (list_cr)
-  call link%count_behind                              ! need a full count
-  task => link%task                                   ! main task
-  n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
-  nbor => link%nbor                                   ! first nbor
-  do while (associated (nbor))                        ! keep going until end
-    call link%update_behind (nbor)                    ! update counters
-    nbtask => nbor%task                               ! neighbor task
-    n_check = n_check+1
-    is_clear = nbtask%is_clear(bits%ready)
-    if (is_clear .and. nbor%check) then               ! needs checking?
-      n_blocked = n_blocked+1
-      call timer%end (itimer)
-      call self%check_ready (nbor%link)               ! pointer back
-      call timer%begin (itimer=itimer)
-      if (nbtask%is_set(bits%ready)) then
-        n_cleared = n_cleared+1
-      else
-        n_remain = n_remain+1
+  call link%task%clear (bits%ready)                     ! clear for queueing
+  call link%count_behind                                ! need a full count
+  nbor => link%nbor                                     ! first nbor
+  do while (associated (nbor))                          ! for all nbors
+    if (nbor%task%is_clear (bits%ready)) then           ! cleard for counting?
+      call link%update_behind (nbor)                    ! update counters
+      if (nbor%task%n_behind==0) then                   ! if ready
+        call nbor%task%set (bits%ready)                 ! block from queueing
+        call self%queue_by_time (nbor%link)             ! add to ready queue
       end if
-      if (nbtask%id==io%id_debug) &
-        write (io_unit%log,*) io%id_debug, 'mk checked by:', task%id, nbtask%is_set(bits%ready)
     end if
-    nbor => nbor%next                                 ! next nbor
+    nbor => nbor%next                                   ! next nbor
   end do
   !-----------------------------------------------------------------------------
-  ! Since we may be called upon to check nbors of a patch that should not itself
-  ! be checked, we check if any bits are set indicating this to be the case
+  ! Check the main task last; it's up to queue_by_time to check bits
   !-----------------------------------------------------------------------------
-  if (task%is_clear (bits%virtual+bits%external)) then
-    call task%clear(bits%ready)                       ! needs new check
-    call timer%end (itimer)
-    call self%check_ready (link)                      ! finally check link task
-    call timer%begin (itimer=itimer)
-    self%n_nbor = self%n_nbor + 1
-    if (io%verbose>2) write (io_unit%log,'(a,i9,l3,12(2x,a,i4))') &
-      'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
-      'neighbors:',n_check, 'blocked:',n_blocked, 'ready:', n_ready, &
-      'cleared:',n_cleared, 'remain:', n_remain
-    if (io%verbose>3) call self%print
+  if (link%task%n_behind==0) then
+    call self%queue_by_time (link)
   end if
   !$omp end critical (list_cr)
+  if (io%verbose>3) call self%print
   call trace_end (itimer)
 END SUBROUTINE check_nbors
 
