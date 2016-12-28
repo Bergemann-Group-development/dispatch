@@ -42,6 +42,7 @@ MODULE link_mod
     procedure:: check_behind
     procedure:: was_ahead_of
     procedure:: check_nbor_links
+    procedure:: lock_nbors
   end type
   logical, save:: debug=.false.
 CONTAINS
@@ -707,6 +708,25 @@ SUBROUTINE check_nbor_links (self, label)
   end if
   call trace%end
 END SUBROUTINE check_nbor_links
+
+!> =============================================================================
+SUBROUTINE lock_nbors (self, set)
+  class(link_t):: self
+  logical:: set
+  class(link_t), pointer:: nbor
+  !.............................................................................
+  call trace%begin('list_mod::lock_nbors')
+  nbor => self%nbor
+  do while (associated(nbor))
+    if (set) then
+      call nbor%task%lock%set
+    else
+      call nbor%task%lock%unset
+    end if
+    nbor => nbor%next
+  end do
+  call trace%end
+END SUBROUTINE lock_nbors
 
 !> =============================================================================
 !> Check if self was ahead of nbor, using self%task%dtime*self%task%grace as the

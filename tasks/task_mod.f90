@@ -49,7 +49,7 @@ MODULE task_mod
     real(8), dimension(:), pointer:: dt
     character(len=32), pointer:: name
     class(task_t), pointer:: parent
-    type(lock_t):: lock                 ! OMP lock
+    type(lock_t):: lock, time_lock      ! OMP lock
     character(len=4):: kind='task'
     character(len=12):: type='task_t'
     real:: latency=0.0                  ! MPI message latency
@@ -110,6 +110,7 @@ SUBROUTINE init (self)
   if (io%verbose>2) &
     write (io%log_unit,*) 'patch id', self%id
   call self%lock%init (self%kind)
+  call self%time_lock%init (self%kind)
   call trace_end
 END SUBROUTINE
 
@@ -138,9 +139,8 @@ SUBROUTINE rotate (self)
   ! updates, since we do not want to enforce a critical region, and the
   ! new self%time is what a task is judged on!
   !-----------------------------------------------------------------------------
-  !call self%lock%set ('rotate')
-  !!$omp flush
-  !$omp critical (time_cr)
+  call self%time_lock%set
+  !!omp critical (time_cr)
   time = self%time + self%dtime
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
@@ -161,9 +161,9 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task iit:', self%iit
   if (io%verbose>3) &
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
-  !!$omp flush
-  !call self%lock%unset ('rotate')
-  !$omp end critical (time_cr)
+  !!omp end critical (time_cr)
+  !$omp flush
+  call self%time_lock%unset
   call trace_end
 END SUBROUTINE rotate
 

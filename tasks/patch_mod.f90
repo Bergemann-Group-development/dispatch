@@ -1340,12 +1340,15 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   !-----------------------------------------------------------------------------
   ! In case of e.g. an error in initial conditions, choose a valid default
   !-----------------------------------------------------------------------------
-  !$omp critical (time_cr)
+  !!omp critical (time_cr)
+  call source%time_lock%set
+  !$omp flush
   iit = source%iit
   t   = source%t
   dt  = source%dt
   id  = source%id
-  !$omp end critical (time_cr)
+  call source%time_lock%unset
+  !!omp end critical (time_cr)
   jt = iit(1:2)
   !-----------------------------------------------------------------------------
   ! As long as the first source time is earlier than, or equal to the target
