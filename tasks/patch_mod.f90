@@ -1183,13 +1183,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
-  if (present(detailed_timer)) then
-    if (detailed_timer) then
-      call trace_end (itimer)
-    else
-      call trace_end
-    end if
-  end if
+  call trace_end (itimer)
 END SUBROUTINE courant_condition
 
 !> =============================================================================
@@ -1339,8 +1333,9 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   integer:: jt(2)
   integer:: i, it, iit(self%nt), verbose
   real(8):: pt(2), dt
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin ('task_t::time_interpolate',3)
+  call trace_begin ('task_t::time_interpolate',3,itimer=itimer)
   verbose = io_unit%verbose
   !-----------------------------------------------------------------------------
   ! In case of e.g. an error in initial conditions, choose a valid default
@@ -1408,7 +1403,7 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
       pt(1)=1d0; pt(2)=0d0
     end if
   end if
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE time_interpolate
 
 !> =============================================================================

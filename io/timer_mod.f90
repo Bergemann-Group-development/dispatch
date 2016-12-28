@@ -5,6 +5,7 @@ MODULE timer_mod
   USE io_unit_mod
   USE omp_mod
   USE omp_timer_mod
+  USE omp_lib
   implicit none
   private
   integer, parameter:: maxproc=100
@@ -81,7 +82,7 @@ SUBROUTINE begin (self, name, itimer)
   logical:: ok
   !.............................................................................
   if (io_unit%do_validate) return
-  thread = omp%mythread()
+  thread = omp_get_thread_num()
   if (itimer==0) then
     !$omp critical (timer_cr)
     ok = .true.
@@ -108,12 +109,13 @@ SUBROUTINE end (self, itimer)
   real(8):: wc
   !.............................................................................
   if (io_unit%do_validate) return
-  thread = omp%mythread()
+  thread = omp_get_thread_num()
   if (itimer > 0) then
     wc = wallclock()
     timers(thread)%calls(itimer) = timers(thread)%calls(itimer) + 1
     timers(thread)%total(itimer) = timers(thread)%total(itimer) + &
       wc - timers(thread)%start(itimer)
+    timers(thread)%start(itimer) = wc
     if (io_unit%master) then
       sec = wc - prev1
       if (sec > sec_per_report) then
