@@ -211,47 +211,56 @@ SUBROUTINE print (self)
 END SUBROUTINE
 
 !> =============================================================================
-!> Set and clear status bits
+!> Set status bits
 !> =============================================================================
-SUBROUTINE set (self, bit)
+SUBROUTINE set (self, bits)
   class (task_t):: self
-  integer:: bit
+  integer:: bits
   !.............................................................................
 !  call trace_begin ('task_t%set')
   !$omp atomic
-  self%status = ior(self%status, bit)
+  self%status = ior(self%status, bits)
 !  call trace_end
 END SUBROUTINE
+
 !> =============================================================================
-SUBROUTINE clear (self, bit)
+!> Clear status bits
+!> =============================================================================
+SUBROUTINE clear (self, bits)
   class (task_t):: self
-  integer:: bit
+  integer:: bits
   !.............................................................................
 !  call trace_begin ('task_t%clear')
   !$omp atomic
-  self%status = iand(self%status, not(bit))
+  self%status = iand(self%status, not(bits))
 !  call trace_end
 END SUBROUTINE
+
 !> =============================================================================
-LOGICAL FUNCTION is_set (self, bit)
+!> Check if ANY of the bits is set (argument can be sum of bits)
+!> =============================================================================
+LOGICAL FUNCTION is_set (self, bits)
   class (task_t):: self
-  integer:: bit, status
+  integer:: bits, status
   !.............................................................................
 !  call trace_begin ('task_t%is_set')
   !$omp atomic read
   status = self%status
-  is_set = (iand(status, bit) /= 0)
+  is_set = (iand(status, bits) /= 0)
 !  call trace_end
 END FUNCTION
+
 !> =============================================================================
-LOGICAL FUNCTION is_clear (self, bit)
+!> Check that ALL bits are clear (argument can be sum of bits)
+!> =============================================================================
+LOGICAL FUNCTION is_clear (self, bits)
   class (task_t):: self
-  integer:: bit, status
+  integer:: bits, status
   !.............................................................................
 !  call trace_begin ('task_t%is_clear')
   !$omp atomic read
   status = self%status
-  is_clear = (iand(status, bit) == 0)
+  is_clear = (iand(status, bits) == 0)
 !  call trace_end
 END FUNCTION
 

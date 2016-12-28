@@ -75,10 +75,6 @@ MODULE patch_mod
     procedure:: nearest                 ! the nearest index that maps to patch point
     procedure:: lowest                  ! the lowest index that maps to patch point
     procedure:: highest                 ! the highest index that maps to patch point
-    procedure:: set
-    procedure:: clear
-    procedure:: is_set
-    procedure:: is_clear
     procedure:: myposition
     procedure:: myposition_staggered
     procedure:: periodic_grid
@@ -1225,45 +1221,6 @@ FUNCTION overlaps_point (self, idir, point)
   !.............................................................................
   overlaps_point = all(abs(point-self%position) < 0.5*(self%gn-1)*self%ds)
 END FUNCTION overlaps_point
-
-!> =============================================================================
-!> Set and clear status bits
-!> =============================================================================
-SUBROUTINE set (self, bit)
-  class (patch_t):: self
-  integer:: bit
-  !.............................................................................
-!  call trace_begin ('patch_mod::set')
-  self%status = ior(self%status, bit)
-!  call trace_end
-END SUBROUTINE
-!> =============================================================================
-SUBROUTINE clear (self, bit)
-  class (patch_t):: self
-  integer:: bit
-  !.............................................................................
-!  call trace_begin ('patch_mod::clear')
-  self%status = iand(self%status, not(bit))
-!  call trace_end
-END SUBROUTINE
-!> =============================================================================
-LOGICAL FUNCTION is_set (self, bit)
-  class (patch_t):: self
-  integer:: bit
-  !.............................................................................
-!  call trace_begin ('patch_mod::is_set')
-  is_set = (iand(self%status, bit) /= 0)
-!  call trace_end
-END FUNCTION
-!> =============================================================================
-LOGICAL FUNCTION is_clear (self, bit)
-  class (patch_t):: self
-  integer:: bit
-  !.............................................................................
-!  call trace_begin ('patch_mod::is_clear')
-  is_clear = (iand(self%status, bit) == 0)
-!  call trace_end
-END FUNCTION
 
 !> =============================================================================
 FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
