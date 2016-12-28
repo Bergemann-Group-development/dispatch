@@ -936,26 +936,40 @@ SUBROUTINE queue_by_time (self, this)
   class(link_t), pointer:: this
   class(link_t), pointer:: next, prev
   class(task_t), pointer:: task
+  integer:: i, n
   !-----------------------------------------------------------------------------
   ! Refuse to queue virtual tasks and finished tasks
   !-----------------------------------------------------------------------------
-  if (this%task%is_set(bits%virtual) .or. this%task%has_finished()) return
+  if (this%task%is_set(bits%virtual+bits%external) .or. this%task%has_finished()) return
   call trace_begin ('list_mod::queue_by_time ')
+  !call this%check_nbor_links ('q1')
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
   ! Lock the queue while inserting the task
   !-----------------------------------------------------------------------------
+  !!omp critical (queue_cr)
   call this%task%set(bits%ready)                       ! mark as checked
   if (io%verbose>2) &
     write (io_unit%log,'(1x,a,i9,a,f10.5)') 'list_mod::queue_by_time: adding task', &
       this%task%id, ' at time', this%task%time
   nullify (prev)
   next => self%queue
+  n = 0
   do while (associated(next))
+    n = n+1
+    if (n > self%na+100) then
+      print *,'ERROR: stuck in queue_by_time', n
+      next => self%queue
+      do i=1,n
+        print *, next%task%id, next%task%time
+        next => next%next_time
+      end do
+      stop
+    end if
     if (associated(next%task, this%task)) then
       write (io_unit%log,*) omp_mythread, ' WARNING: task', this%task%id, ' is already on ready queue'
-      return
+      go to 9
     else if (next%task%time > this%task%time) then
       this%next_time => next
       if (associated(prev)) then
@@ -973,8 +987,7 @@ SUBROUTINE queue_by_time (self, this)
       end if
       !$omp atomic
       self%nq = self%nq+1
-      call trace_end
-      return
+      go to 9
     end if
     prev => next
     next => next%next_time
@@ -994,6 +1007,8 @@ SUBROUTINE queue_by_time (self, this)
     self%queue => this
   end if
   nullify (this%next_time)
+9 continue
+  !!omp end critical (queue_cr)
   call trace_end
 END SUBROUTINE queue_by_time
 
