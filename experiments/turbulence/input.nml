@@ -18,7 +18,7 @@
  sec_per_report=2
 /
 &io_params
- verbose=0
+ verbose=1
  do_validate=f
  do_trace=f
  do_debug=f
@@ -27,9 +27,10 @@
 /
 &box_params
  size=1,1,1
- !dims=16,16,16
- !dims=8,8,8
- dims=8,8,8
+ !dims=3*16
+ dims=3*12
+ !dims=3*10
+ !dims=3*8
  origin=0,0,0
 /
 &experiment_params
@@ -38,12 +39,17 @@
  nt=5
  courant=0.2
  grace=0.3
+ !n=3*64
+ !n=3*32
+ !n=3*28
+ !n=3*24
+ n=21,21,21
  !n=16,16,16
- n=32,32,32
+ !n=32,32,32
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.010
+ end_time=0.020
  out_time=0.05
  print_time=0.0
  guard_zones=f

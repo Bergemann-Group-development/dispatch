@@ -249,14 +249,12 @@ SUBROUTINE check_nbors (self, link)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
+  !$omp critical (time_cr)
   call link%task%clear (bits%ready)                     ! clear for queueing
-  call link%lock_nbors (.true.)
-  !$omp flush
-  !!omp critical (time_cr)
   call link%count_behind                                ! need a full count
   nbor => link%nbor                                     ! first nbor
   do while (associated (nbor))                          ! for all nbors
-    if (nbor%task%is_clear (bits%ready)) then           ! cleared for counting?
+    if (nbor%task%is_clear (bits%ready)) then           ! cleard for counting?
       call link%update_behind (nbor)                    ! update counters
       if (nbor%task%n_behind==0) then                   ! if ready
         call self%queue_by_time (nbor%link)             ! add to ready queue
@@ -264,8 +262,7 @@ SUBROUTINE check_nbors (self, link)
     end if
     nbor => nbor%next                                   ! next nbor
   end do
-  !!omp end critical (time_cr)
-  call link%lock_nbors (.false.)
+  !$omp end critical (time_cr)
   !-----------------------------------------------------------------------------
   ! Check the main task last; it's up to queue_by_time to check bits
   !-----------------------------------------------------------------------------
@@ -906,7 +903,7 @@ SUBROUTINE queue_by_time (self, this)
   !-----------------------------------------------------------------------------
   ! Lock the queue while inserting the task
   !-----------------------------------------------------------------------------
-  !$omp critical (list_cr)
+  !!omp critical (queue_cr)
   if (io%verbose>2) &
     write (io_unit%log,'(1x,a,i9,a,f10.5)') 'list_mod::queue_by_time: adding task', &
       task%id, ' at time', task%time
@@ -965,7 +962,7 @@ SUBROUTINE queue_by_time (self, this)
   end if
   nullify (this%next_time)
 9 continue
-  !$omp end critical (list_cr)
+  !!omp end critical (queue_cr)
   call trace_end
 END SUBROUTINE queue_by_time
 

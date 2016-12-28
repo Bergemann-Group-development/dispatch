@@ -42,7 +42,6 @@ MODULE link_mod
     procedure:: check_behind
     procedure:: was_ahead_of
     procedure:: check_nbor_links
-    procedure:: lock_nbors
   end type
   logical, save:: debug=.false.
 CONTAINS
@@ -559,26 +558,25 @@ SUBROUTINE count_behind (self)
   class(link_t), pointer:: nbor
   integer, save:: itimer=0
   integer:: n_behind
+  real(8):: nbtime, nbdtime
   !.............................................................................
   if (self%task%is_set (bits%virtual+bits%external)) return
   call trace%begin('list_mod::count_behind', itimer=itimer)
-  !!omp critical (behind_cr)
   task => self%task
   n_behind = task%n_behind
   task%n_behind = 0
   nbor => self%nbor
   do while (associated (nbor))
     nbtask => nbor%task
-    if ((.not.nbtask%is_ahead_of(task)) .and. nbtask%is_clear(bits%external)) then
+    nbtime = nbtask%time
+    nbdtime = nbtask%dtime
+    if (nbtime + nbdtime*nbtask%grace < task%time) then
       task%n_behind = task%n_behind + 1
     end if
-    nbor%last_check = nbtask%time
+    nbor%last_check = nbtime
     nbor => nbor%next
   end do
   self%last_check = task%time
-  !if (task%n_behind /= n_behind) &
-  !  print *, 'count_behind: task, n_behind =', task%id, task%n_behind, n_behind
-  !!omp end critical (behind_cr)
   call trace%end (itimer)
 END SUBROUTINE count_behind
 
@@ -708,25 +706,6 @@ SUBROUTINE check_nbor_links (self, label)
   end if
   call trace%end
 END SUBROUTINE check_nbor_links
-
-!> =============================================================================
-SUBROUTINE lock_nbors (self, set)
-  class(link_t):: self
-  logical:: set
-  class(link_t), pointer:: nbor
-  !.............................................................................
-  call trace%begin('list_mod::lock_nbors')
-  nbor => self%nbor
-  do while (associated(nbor))
-    if (set) then
-      call nbor%task%lock%set
-    else
-      call nbor%task%lock%unset
-    end if
-    nbor => nbor%next
-  end do
-  call trace%end
-END SUBROUTINE lock_nbors
 
 !> =============================================================================
 !> Check if self was ahead of nbor, using self%task%dtime*self%task%grace as the

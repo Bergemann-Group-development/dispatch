@@ -990,7 +990,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             !$omp end critical (info_cr)
           end if
         end do
-        if (io%verbose>0 .or. self%id==1) then
+        if (io%verbose>0 .and. self%id==1 .or. io%verbose>1) then
           if (io%master) then
             !$omp critical (info_cr2)
             if (n_lines<=0) then
@@ -1341,13 +1341,10 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   ! In case of e.g. an error in initial conditions, choose a valid default
   !-----------------------------------------------------------------------------
   !!omp critical (time_cr)
-  call source%time_lock%set
-  !$omp flush
   iit = source%iit
   t   = source%t
   dt  = source%dt
   id  = source%id
-  call source%time_lock%unset
   !!omp end critical (time_cr)
   jt = iit(1:2)
   !-----------------------------------------------------------------------------
