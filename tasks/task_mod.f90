@@ -139,6 +139,7 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   !call self%lock%set ('rotate')
   !!$omp flush
+  !$omp critical (time_cr)
   time = self%time + self%dtime
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
@@ -161,6 +162,7 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
   !!$omp flush
   !call self%lock%unset ('rotate')
+  !$omp end critical (time_cr)
   call trace_end
 END SUBROUTINE rotate
 

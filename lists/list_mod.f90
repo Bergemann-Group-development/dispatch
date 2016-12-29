@@ -250,7 +250,7 @@ SUBROUTINE check_nbors (self, link)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
-  !$omp critical (list_cr)
+  !$omp critical (time_cr)
   task => link%task                                   ! main task
   n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
   nbor => link%nbor                                   ! first nbor
@@ -289,7 +289,7 @@ SUBROUTINE check_nbors (self, link)
       'cleared:',n_cleared, 'remain:', n_remain
     if (io%verbose>3) call self%print
   end if
-  !$omp end critical (list_cr)
+  !$omp end critical (time_cr)
   call trace_end (itimer)
 END SUBROUTINE check_nbors
 
@@ -405,8 +405,8 @@ SUBROUTINE check_ready (self, link)
   call trace%begin('list_mod::check_ready ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_check = mpi_mesg%n_check+1
-  !xomp critical (list_cr)
-  call self%qconsistency(1)
+  !xomp critical (queue_cr)
+  !call self%qconsistency(1)
   task => link%task                                     ! already checked?
   if (task%is_clear(bits%ready)) then
     nbor => link%nbor                                   ! start on nbor list
@@ -429,14 +429,14 @@ SUBROUTINE check_ready (self, link)
     end do
     if (task%id==io%id_debug.or.io%verbose>1) &
       write (io_unit%log,1) task%id, '   ok at', task%time
-    !xomp critical (list_cr)
+    !$omp critical (queue_cr)
     call self%qconsistency(2)
     call self%queue_by_time (link)                      ! add task to queue
     call self%qconsistency(3)
-    !xomp end critical (list_cr)
+    !$omp end critical (queue_cr)
   end if
 9 continue
-  !xomp end critical (list_cr)
+  !xomp end critical (queue_cr)
   call trace%end (itimer)
 END SUBROUTINE check_ready
 
@@ -952,7 +952,7 @@ SUBROUTINE queue_by_time (self, this)
   do while (associated(next))
     if (associated(next%task, this%task)) then
       write (io_unit%log,*) omp_mythread, ' WARNING: task', this%task%id, ' is already on ready queue'
-      return
+      go to 9
     else if (next%task%time > this%task%time) then
       this%next_time => next
       if (associated(prev)) then
@@ -970,8 +970,7 @@ SUBROUTINE queue_by_time (self, this)
       end if
       !$omp atomic
       self%nq = self%nq+1
-      call trace_end
-      return
+      go to 9
     end if
     prev => next
     next => next%next_time
@@ -991,6 +990,7 @@ SUBROUTINE queue_by_time (self, this)
     self%queue => this
   end if
   nullify (this%next_time)
+9 continue
   call trace_end
 END SUBROUTINE queue_by_time
 
