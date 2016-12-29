@@ -2,6 +2,7 @@ module riemann_mod
   use amr_parameters
   use hydro_parameters
   USE io_mod
+  USE trace_mod
   USE mpi_mod
   implicit none
   private
@@ -471,7 +472,9 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
   REAL(dp)::smallp
   INTEGER ::ivar, i
   LOGICAL :: error,detailed_timer
+  INTEGER, SAVE:: itimer=0
   !
+  if (detailed_timer) call trace_begin ('riemann::hllc', itimer=itimer)
   ! constants
   smallp = smallc**2/gamma
   entho = one/(gamma-one)
@@ -516,7 +519,7 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
           i,rr,Pr,ur,ecinr,etotr,Ptotr,cfastr,SR,SR-ur
         1 format(a,i4,1p,10e12.3)
         error = .true.
-        return 
+        return
       end if
       !
       ! Compute acoustic star state
@@ -530,7 +533,7 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
         print 1, 'HLLC: ustar,Ptotstar', i,ustar,Ptotstar
         call mpi%abort ('HLLC')
         error = .true.
-        return 
+        return
       end if
       !
       ! Left star region variables
@@ -649,6 +652,7 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
       fgdnv(i,ivar) = fgdnv(i,1)*merge(qleft(i,ivar),qright(i,ivar),fgdnv(i,1)>0)
     end do
   end do
+  if (detailed_timer) call trace_end (itimer)
 end subroutine hllc
 
 !> =============================================================================

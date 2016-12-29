@@ -43,7 +43,7 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.101
+ end_time=0.010
  out_time=0.05
  print_time=0.0
  guard_zones=f
@@ -73,6 +73,7 @@
  !type='raw'
 /
 &ramses_params
+ detailed_timer=f
  courant_factor=0.8
  !courant_factor=0.266667
  gamma=1.00001

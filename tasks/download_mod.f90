@@ -91,7 +91,7 @@ SUBROUTINE same_static (self)
   integer, save:: itimer=0
   logical:: ahead
   !.............................................................................
-  call trace_begin('download_mod::same_static',itimer=itimer)
+  call trace_begin ('download_mod::same_static', itimer=itimer)
   target => task2patch(self%task)
   n = 0
   nbor => self%nbor
@@ -102,7 +102,9 @@ SUBROUTINE same_static (self)
     class is (patch_t)
     source => this
       it = target%it
+      call trace_end (itimer)
       call target%time_interpolate (source, jt, pt)
+      call trace_begin ('download_mod::same_static', itimer=itimer)
       do iv=1,source%nv
         call target%dnload_range (source, l1, u1, o)
         ntot = product(u1-l1+1)

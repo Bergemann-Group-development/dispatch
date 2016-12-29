@@ -75,10 +75,6 @@ MODULE patch_mod
     procedure:: nearest                 ! the nearest index that maps to patch point
     procedure:: lowest                  ! the lowest index that maps to patch point
     procedure:: highest                 ! the highest index that maps to patch point
-    procedure:: set
-    procedure:: clear
-    procedure:: is_set
-    procedure:: is_clear
     procedure:: myposition
     procedure:: myposition_staggered
     procedure:: periodic_grid
@@ -1187,13 +1183,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
-  if (present(detailed_timer)) then
-    if (detailed_timer) then
-      call trace_end (itimer)
-    else
-      call trace_end
-    end if
-  end if
+  call trace_end (itimer)
 END SUBROUTINE courant_condition
 
 !> =============================================================================
@@ -1225,45 +1215,6 @@ FUNCTION overlaps_point (self, idir, point)
   !.............................................................................
   overlaps_point = all(abs(point-self%position) < 0.5*(self%gn-1)*self%ds)
 END FUNCTION overlaps_point
-
-!> =============================================================================
-!> Set and clear status bits
-!> =============================================================================
-SUBROUTINE set (self, bit)
-  class (patch_t):: self
-  integer:: bit
-  !.............................................................................
-!  call trace_begin ('patch_mod::set')
-  self%status = ior(self%status, bit)
-!  call trace_end
-END SUBROUTINE
-!> =============================================================================
-SUBROUTINE clear (self, bit)
-  class (patch_t):: self
-  integer:: bit
-  !.............................................................................
-!  call trace_begin ('patch_mod::clear')
-  self%status = iand(self%status, not(bit))
-!  call trace_end
-END SUBROUTINE
-!> =============================================================================
-LOGICAL FUNCTION is_set (self, bit)
-  class (patch_t):: self
-  integer:: bit
-  !.............................................................................
-!  call trace_begin ('patch_mod::is_set')
-  is_set = (iand(self%status, bit) /= 0)
-!  call trace_end
-END FUNCTION
-!> =============================================================================
-LOGICAL FUNCTION is_clear (self, bit)
-  class (patch_t):: self
-  integer:: bit
-  !.............................................................................
-!  call trace_begin ('patch_mod::is_clear')
-  is_clear = (iand(self%status, bit) == 0)
-!  call trace_end
-END FUNCTION
 
 !> =============================================================================
 FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
@@ -1380,48 +1331,57 @@ END FUNCTION local_iit
 SUBROUTINE time_interpolate (self, source, jt, pt)
   class(patch_t):: self, source
   integer:: jt(2)
-  integer:: i, it, iit(self%nt), verbose
-  real(8):: pt(2), dt
+  integer:: i, id, it, iit(self%nt), verbose
+  real(8):: pt(2), dt1, t(self%nt), dt(self%nt)
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin ('task_t::time_interpolate',3)
+  call trace_begin ('task_t::time_interpolate',3,itimer=itimer)
   verbose = io_unit%verbose
   !-----------------------------------------------------------------------------
   ! In case of e.g. an error in initial conditions, choose a valid default
   !-----------------------------------------------------------------------------
-  iit = source%local_iit()
+  !!omp critical (time_cr)
+  call source%time_lock%set
+  !$omp flush
+  iit = source%iit
+  t   = source%t
+  dt  = source%dt
+  id  = source%id
+  call source%time_lock%unset
+  !!omp end critical (time_cr)
   jt = iit(1:2)
   !-----------------------------------------------------------------------------
   ! As long as the first source time is earlier than, or equal to the target
   ! time, renew the interval.  Initially, when all times are zero, we are left
   ! with the interval nt-2:nt-1 and dt=0d0, which means slot nt-1 is used.
   !-----------------------------------------------------------------------------
-  do i=2,source%nt-2
-    if (source%t(iit(i)) <= self%time) then
+  do i=2,self%nt-2
+    if (t(iit(i)) <= self%time) then
       jt = iit(i:i+1)
     end if
   end do
   !-----------------------------------------------------------------------------
   ! A vanishing source time interval happens only at the initial condition ...
   !-----------------------------------------------------------------------------
-  dt = source%t(jt(2))-source%t(jt(1))
-  if (dt==0d0) then
+  dt1 = t(jt(2))-t(jt(1))
+  if (dt1==0d0) then
     pt(2) = 1d0
   !-----------------------------------------------------------------------------
   ! If a task lags behind, prevent backwards time interpolation, with a warning
   !-----------------------------------------------------------------------------
   else
-    pt(2) = (self%time - source%t(jt(1)))/dt
+    pt(2) = (self%time - t(jt(1)))/dt1
     if (pt(2) < -self%grace) then
       write (io_unit%log,1) &
         'patch_mod::time_interpolate WARNING: backward extrapolation, trg,src,pt:', &
-        self%id, source%id, pt(2)
+        self%id, id, pt(2)
       1 format(a,2i9,f7.2,1p,3g16.7)
       pt(2) = -self%grace
       verbose = 3
     else if (pt(2) > 1.001+self%grace) then
       write (io_unit%log,1) &
         'patch_mod::time_interpolate WARNING: forward extrapolation, trg,src,pt:', &
-        self%id, source%id, pt(2), dt, source%dt(jt(1)), source%dt(jt(2))
+        self%id, id, pt(2), dt1, dt(jt(1)), dt(jt(2))
       pt(2) = 1.0+self%grace
       verbose = 3
     end if
@@ -1431,10 +1391,10 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
     write (io_unit%log,'(a,2i5,2f7.3,1p,g16.6)') &
       'patch_mod::time_interpolation jt, pt, target', &
       jt, pt, self%time
-    do i=1,source%nt
+    do i=1,self%nt
       write (io_unit%log,'(a,3i4,1p,2g16.6)') &
         'patch_mod::time_interpolation i,iit,src%iit,src%t,src%dt:', &
-        i, iit(i), source%iit(i), source%t(i), source%dt(i)
+        i, iit(i), iit(i), t(i), dt(i)
     end do
     flush (io_unit%log)
   end if
@@ -1451,7 +1411,7 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
       pt(1)=1d0; pt(2)=0d0
     end if
   end if
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE time_interpolate
 
 !> =============================================================================
