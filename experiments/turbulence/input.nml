@@ -11,14 +11,15 @@
 &load_balance_params
 /
 &mpi_mesg_params
- delay_ms=500
- max_probe=2
+ max_sent=50
+ max_recv=100
+ min_nq=10
 /
 &timer_params
- sec_per_report=2
+ sec_per_report=5
 /
 &io_params
- verbose=0
+ verbose=1
  do_validate=f
  do_trace=f
  do_debug=f
@@ -26,10 +27,15 @@
  omp_trace=t
 /
 &box_params
- size=1,1,1
- !dims=16,16,16
- !dims=8,8,8
- dims=8,8,8
+ size=1,1,1 dims=10,10,10 mpi_dims=1,1,1                !  1 proces
+!size=2,2,2 dims=20,20,20 mpi_dims=2,2,2                !  8 processes =  4 nodes
+!size=4,4,4 dims=40,40,40 mpi_dims=4,4,4                ! 64 processes = 32 nodes, 1280x1280x1280 cells
+!size=2,4,4 dims=20,40,40                               ! 32 processes = 16 nodes, 1280x1280x1280 cells
+ !size=1,1,1
+ !dims=3*16
+ !dims=3*12
+ !dims=3*10
+ !dims=3*8
  origin=0,0,0
 /
 &experiment_params
@@ -38,12 +44,16 @@
  nt=5
  courant=0.2
  grace=0.3
- !n=16,16,16
- n=32,32,32
+ !n=3*64
+ !n=3*32
+ !n=3*28
+ n=3*24
+ !n=3*21
+ !n=3*16
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.101
+ end_time=0.020
  out_time=0.05
  print_time=0.0
  guard_zones=f
@@ -73,6 +83,7 @@
  !type='raw'
 /
 &ramses_params
+ detailed_timer=f
  courant_factor=0.8
  !courant_factor=0.266667
  gamma=1.00001

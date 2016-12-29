@@ -11,15 +11,13 @@
  sec_per_report=10
 /
 &io_params
- verbose=-1
+ verbose=1
  do_trace=f
  do_debug=f
  do_output=f
 /
 &box_params
- size=2,2,1
- !dims=16,16,8
- dims=10,10,5
+ size=2,2,2 dims=20,20,20 mpi_dims=2,2,2
  origin=0,0,0
 /
 &experiment_params
