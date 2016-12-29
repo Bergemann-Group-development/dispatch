@@ -3,7 +3,7 @@
 ! Input file for speed measurements
 
 &mpi_mesg_params
- max_sent=50
+ max_sent=500
  max_recv=100
  min_nq=10
 /
@@ -11,7 +11,7 @@
  sec_per_report=10
 /
 &io_params
- verbose=1
+ verbose=0
  do_trace=f
  do_debug=f
  do_output=f
@@ -27,8 +27,9 @@
  nw=1
  courant=0.2
  grace=0.3
- n=50,50,50
- !n=64,64,64
+ !n=3*64
+ !n=3*50
+ n=3*32
 !dt_fixed=0.001
 /
 &out_params

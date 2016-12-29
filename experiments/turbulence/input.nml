@@ -11,7 +11,7 @@
 &load_balance_params
 /
 &mpi_mesg_params
- max_sent=50
+ max_sent=500
  max_recv=100
  min_nq=10
 /
@@ -45,9 +45,9 @@
  courant=0.2
  grace=0.3
  !n=3*64
- !n=3*32
+ n=3*32
  !n=3*28
- n=3*24
+ !n=3*24
  !n=3*21
  !n=3*16
 !dt_fixed=0.001
