@@ -96,7 +96,6 @@ SUBROUTINE execute (self)
   do while (associated(link))
     call link%task%clear(bits%ready)
     call self%check_ready (link)
-    call link%count_behind
     link => link%next
   end do
   !-----------------------------------------------------------------------------
