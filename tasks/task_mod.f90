@@ -124,6 +124,8 @@ SUBROUTINE rotate (self)
   integer:: iv, nv, new, i
   real(8):: time
   integer, save:: itimer=0
+  real(8), pointer:: rptr
+  integer, pointer:: iptr
   !.............................................................................
   call trace_begin ('task_mod::rotate',itimer=itimer)
   !-----------------------------------------------------------------------------
@@ -143,8 +145,9 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   !!omp critical (time_cr)
   time = self%time + self%dtime
+  rptr => self%dt(self%it)
   !$omp atomic write
-  self%dt(self%it) = self%dtime                         ! just updated
+  rptr = self%dtime                                     ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = time                               ! initial time
   new = self%new
@@ -152,11 +155,13 @@ SUBROUTINE rotate (self)
   self%it = new                                         ! update time slot, new
   self%new = mod(self%new,self%nt)+1                    ! increment / rotate
   do i=1,self%nt-1
+    iptr => self%iit(i)
     !$omp atomic write
-    self%iit(i) = self%iit(i+1)
+    iptr = self%iit(i+1)
   end do
+  iptr => self%iit(self%nt)
   !$omp atomic write
-  self%iit(self%nt) = self%new                          ! new right-most slot
+  iptr = self%new                                       ! new right-most slot
   !$omp atomic update
   self%istep = self%istep + 1
   !$omp atomic write
