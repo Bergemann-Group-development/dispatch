@@ -49,7 +49,7 @@ MODULE task_mod
     real(8), dimension(:), pointer:: dt
     character(len=32), pointer:: name
     class(task_t), pointer:: parent
-    type(lock_t):: lock, time_lock      ! OMP lock
+    type(lock_t):: lock                 ! OMP lock
     character(len=4):: kind='task'
     character(len=12):: type='task_t'
     real:: latency=0.0                  ! MPI message latency
@@ -110,7 +110,6 @@ SUBROUTINE init (self)
   if (io%verbose>2) &
     write (io%log_unit,*) 'patch id', self%id
   call self%lock%init (self%kind)
-  call self%time_lock%init (self%kind)
   call trace_end
 END SUBROUTINE
 
@@ -122,11 +121,13 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE rotate (self)
   class(task_t):: self
-  integer:: iv, nv, new
+  integer:: iv, nv, new, i
   real(8):: time
   integer, save:: itimer=0
+  real(8), pointer:: rptr
+  integer, pointer:: iptr
   !.............................................................................
-  call trace_begin ('task_mod::rotate')
+  call trace_begin ('task_mod::rotate',itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Call timestep update procedure to fill the next time slot with values
   !-----------------------------------------------------------------------------
@@ -137,21 +138,31 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Time slot rotation.  Note that self%time should be the LAST of these
   ! updates, since we do not want to enforce a critical region, and the
-  ! new self%time is what a task is judged on!
+  ! new self%time is what a task is judged on!  Also, note that the only time
+  ! slot information accessed from other tasks is self%it, self%time, self%iit,
+  ! self%t(iit(1:nt-1)), and self%dt(iit(1:nt-1)).  The iit((nt) entries are
+  ! not accessed.
   !-----------------------------------------------------------------------------
-  call self%time_lock%set
   !!omp critical (time_cr)
   time = self%time + self%dtime
-  self%dt(self%it) = self%dtime                         ! just updated
+  rptr => self%dt(self%it)
+  !$omp atomic write
+  rptr = self%dtime                                     ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = time                               ! initial time
-  self%iit(self%nt) = self%new                          ! right-most slot
   new = self%new
   !$omp atomic write
   self%it = new                                         ! update time slot, new
   self%new = mod(self%new,self%nt)+1                    ! increment / rotate
-  self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
-  self%iit(self%nt) = self%new                          ! new right-most slot
+  do i=1,self%nt-1
+    iptr => self%iit(i)
+    !$omp atomic write
+    iptr = self%iit(i+1)
+  end do
+  iptr => self%iit(self%nt)
+  !$omp atomic write
+  iptr = self%new                                       ! new right-most slot
+  !$omp atomic update
   self%istep = self%istep + 1
   !$omp atomic write
   self%time = time
@@ -162,9 +173,7 @@ SUBROUTINE rotate (self)
   if (io%verbose>3) &
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
   !!omp end critical (time_cr)
-  !$omp flush
-  call self%time_lock%unset
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE rotate
 
 !> =============================================================================
@@ -201,7 +210,6 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   nbtime = self%time
   !$omp atomic read
   nbdtime = self%dtime
-  !$omp flush
   is_ahead_of = nbtime + nbdtime*task%grace >= task%time
   if (task%id==io%id_debug.or.io_unit%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &

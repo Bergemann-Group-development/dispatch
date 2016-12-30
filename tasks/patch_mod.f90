@@ -434,7 +434,7 @@ SUBROUTINE rotate (self)
   real(8):: time
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin ('patch_mod::rotate',itimer=itimer)
+  call trace_begin ('patch_t%rotate')
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
@@ -458,7 +458,7 @@ SUBROUTINE rotate (self)
   ! Task time slot rotation
   !-----------------------------------------------------------------------------
   call self%task_t%rotate
-  call trace_end (itimer)
+  call trace_end
 END SUBROUTINE rotate
 
 !> =============================================================================
@@ -948,19 +948,17 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, save:: itimer=0
   integer, parameter:: max_lines=25
   integer, save:: n_lines=0
-  integer:: counts(7)
+  integer, save:: counts(7)=0
   !-----------------------------------------------------------------------------
   1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,3i5,8i4,l3,l1,o12)
-  counts(:) = 0
   if (io%verbose>=0) then
     if (self%time>=self%print_next) then
-      call trace%begin ('patch_t%info', itimer=itimer)
       if (self%print_time > 0) &
         self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
-      if (io%verbose<0 .and. self%id/=1) return
+      call trace%begin ('patch_t%info', itimer=itimer)
       nv = 1
       if (io%verbose>2) nv = self%nv
-      if (io%verbose>0) then
+      if (io%verbose>1) then
         do iv=1,nv
           write (io_unit%log,1) &
             'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
@@ -990,36 +988,44 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             !$omp end critical (info_cr)
           end if
         end do
-        if (io%verbose>0 .or. self%id==1) then
-          if (io%master) then
-            !$omp critical (info_cr2)
-            if (n_lines<=0) then
-              print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
-                         //'6....+....7....+....8....+....9....+....0....+....ntsk   nq ' &
-                         //' chk rdy upd snt prb unp dly snq rcq  BV'
-              n_lines = max_lines
-            end if
-            n_lines = n_lines-1
-            !$omp end critical (info_cr2)
-          end if
+      end if
+      !-------------------------------------------------------------------------
+      ! Print a one-liner if verbose==1 and id==1, or verbose>1, while 
+      ! accumulating counters also when not printing
+      !-------------------------------------------------------------------------
+      if (io%verbose>0 .or. self%id==1) then
+        if (io%master) &
           counts = counts + &
             [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
              mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
              mpi_mesg%n_delay]
-          if (io%master .or. self%id==1) then
-            do iv=1,nv
-              print 1, &
-              'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, self%dtime, self%u_max, &
-              self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-              self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-              self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-              self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-              real(n_update), ntask, nq, counts, &
-              mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, &
-              self%is_set(bits%boundary), self%is_set(bits%virtual)
-            end do
+        if (io%master .or. self%id==1) then
+          if (n_lines<=0) then
+            !$omp critical (info_cr2)
+            print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
+                         //'6....+....7....+....8....+....9....+....0....+....ntsk   nq ' &
+                       //' chk rdy upd snt prb unp dly snq rcq  BV'
+            n_lines = max_lines
+            !$omp end critical (info_cr2)
           end if
+          !$omp atomic
+          n_lines = n_lines-1
+          do iv=1,nv
+            print 1, &
+            'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, self%dtime, self%u_max, &
+            self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+            self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+            self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+            self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+            real(n_update), ntask, nq, counts, &
+            mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, &
+            self%is_set(bits%boundary), self%is_set(bits%virtual)
+          end do
+          counts(:) = 0
         end if
+        !-----------------------------------------------------------------------
+        ! Reset the message counters after every timestep, if relevant
+        !-----------------------------------------------------------------------
         mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0
         mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
         mpi_mesg%n_delay=0
@@ -1341,13 +1347,10 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   ! In case of e.g. an error in initial conditions, choose a valid default
   !-----------------------------------------------------------------------------
   !!omp critical (time_cr)
-  call source%time_lock%set
-  !$omp flush
   iit = source%iit
   t   = source%t
   dt  = source%dt
   id  = source%id
-  call source%time_lock%unset
   !!omp end critical (time_cr)
   jt = iit(1:2)
   !-----------------------------------------------------------------------------
