@@ -1,9 +1,11 @@
 MODULE rt_internal_mod
-  USE io_mod
   USE bits_mod
+  USE eos_mod
+  USE io_mod
   USE link_mod
   USE mesh_mod
   USE microphysics_mod
+  USE opacity_mod
   USE rt_mod
   USE rt_data_mod
   USE rt_boundary_mod
@@ -21,6 +23,7 @@ MODULE rt_internal_mod
   type,extends(rt_t), public :: rt_internal_t
     type (link_t), pointer :: upstream => null()                        ! quick access for intensities. list, if there is more than one
     type (rt_data_t),  pointer :: my_rt_data => null()                  ! self explanatory            >>  upstream (e.g. in case of AMR)
+    type (microphysics_t), pointer :: mp => null()
     class(internal_data_t), dimension(:), pointer :: packet_data => null() ! incoming intensities
     real, dimension(:,:), pointer :: I_in, I_out
     integer :: solver
@@ -115,8 +118,8 @@ SUBROUTINE init_rt_internal (self)
   ! Allocate memory slots.
   !---------------------------------------------------------------------
   allocate(self%packet_data(self%bundle%n_packets))
-  allocate(self%I_in(self%bundle%n_rays, microphysics%n_wl_bins))
-  allocate(self%I_out(self%bundle%n_rays, microphysics%n_wl_bins))
+  allocate(self%I_in(self%bundle%n_rays, opacity%nwb))
+  allocate(self%I_out(self%bundle%n_rays, opacity%nwb))
   self%I_in = 0; self%I_out = 0
   packet => self%bundle%rays
   self%ray_ds = packet%ds * self%cell_ds(self%bundle%axis)
@@ -243,7 +246,7 @@ SUBROUTINE get_static_legacy (self)
   integer :: ray, nb_cell(3), nb_ray, nb_pt, try
   integer :: fw_c(3), pck, nb_pck
   logical, dimension(:), allocatable :: updated, all_upd
-  real, dimension(microphysics%n_wl_bins) :: mean, Iin
+  real, dimension(opacity%nwb) :: mean, Iin
   real :: n_mean
   real(8) :: my_c_pos(3)
   !---------------------------------------------------------------------
@@ -404,7 +407,7 @@ FUNCTION I_retrv(self, nbor, c) result (I_out)
   class(rt_internal_t), pointer :: nbor
   class(ray_t), pointer :: packet
   integer :: c(3),  my_ray, nb_ray, rid
-  real, dimension(microphysics%n_wl_bins) :: I_out
+  real, dimension(opacity%nwb) :: I_out
   logical :: fnd
   integer, save :: itimer=0
   !---------------------------------------------------------------------
@@ -503,7 +506,7 @@ SUBROUTINE solve_internal_integral_1st (self)
   !---------------------------------------------------------------------
   if (.not.detailed_timer) &
   call trace_begin('rt_internal_t%integral_1st', itimer=itimer(1))
-  nwb = microphysics%n_wl_bins
+  nwb = opacity%nwb
   packet => self%bundle%rays
   do pck = 1, self%bundle%n_packets
     if (detailed_timer) &
@@ -599,7 +602,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
 
   dir_wgt = self%dir_weight
 
-  nwb = microphysics%n_wl_bins
+  nwb = opacity%nwb
   packet => self%bundle%rays
   rtd    => self%my_rt_data
   
@@ -700,7 +703,7 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
 
   dir_wgt = self%dir_weight
 
-  nwb = microphysics%n_wl_bins
+  nwb = opacity%nwb
   packet => self%bundle%rays
   rtd    => self%my_rt_data
   
@@ -776,7 +779,7 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
     case default
       error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"     
     end select
-    call self%my_rt_data%store_mean_I(Ifw,packet,self%dir_weight)
+    call self%mp%store_mean_I(Ifw,packet,self%dir_weight)
     call self%update_q (packet, q, opac)
     deallocate(dtau, ex0, ds1, d1s, d2s, s, q, opac, ctau, I_in, Ifw)
     packet => packet%next
@@ -854,7 +857,7 @@ SUBROUTINE update_q (self, rays, q, op)
   !---------------------------------------------------------------------
   call trace_begin ('rt_internal_t_%update_q', 4, itimer=itimer)
   dirw = self%dir_weight
-  qq => self%my_rt_data%q
+  qq => self%mp%q
   cell => rays%coords
   do ray = 1, size(q,1)
     do pt = 1, size(q,3)

@@ -9,6 +9,13 @@
  min_nq=10
  delay_ms=0.1
 /
+&microphysics_params
+ do_rt = f
+ !source  = 'eos_lookup'
+ !source  = 'Stefan'
+ !n_wl_bins  = 1
+ !cr_heating = 0!3.746e-24
+/
 &timer_params
  sec_per_report=5
 /

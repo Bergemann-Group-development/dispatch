@@ -104,6 +104,10 @@ SUBROUTINE update_mp(self)
   if (associated(self%rt_data)) then
     deallocate(self%rt_data%opacity,self%rt_data%source)                ! free some space
   end if
+  
+  if (self%rt) then   
+    call self%apply_heating_rates ! FIXME: should be interpolation in time
+  end if
 END SUBROUTINE update_mp
 
 !> =============================================================================
@@ -128,6 +132,10 @@ END SUBROUTINE add_cr_heating
 !> =====================================================================
 SUBROUTINE apply_heating_rates(self)
   class(microphysics_t) :: self
+  
+  ! apply directly to E or S as well as to dEdt or dSdt of previous time step
+  ! and MUST BE INTHE MHD_MOD
+  
 END SUBROUTINE apply_heating_rates
 
 !> =====================================================================

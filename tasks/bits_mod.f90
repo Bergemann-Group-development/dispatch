@@ -23,6 +23,7 @@ MODULE bits_mod
   integer, parameter::        trace_bit=2**29
   integer, parameter::       frozen_bit=2**28
   integer, parameter::         busy_bit=2**27
+  integer, parameter::      counter_bit=2**20
   type bits_t
     integer:: remove       = remove_bit
     integer:: retry        = retry_bit
@@ -43,6 +44,7 @@ MODULE bits_mod
     integer:: has_BC       = has_BC_bit
     integer:: trace        = trace_bit
     integer:: busy         = busy_bit
+    integer:: has_counter  = counter_bit
   end type
   type(bits_t):: bits
 END MODULE bits_mod

@@ -25,7 +25,7 @@ MODULE radiative_transfer_mod
   USE units_mod
   implicit none
   private
-  PUBLIC rt_setup
+  PUBLIC rt_setup, connect_nbors
 CONTAINS
 
 !> =============================================================================
@@ -315,5 +315,51 @@ SUBROUTINE add_internal_nbors (self)
   !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE add_internal_nbors
+
+!> =====================================================================
+!> My separate nbor connectors. The original one in link_mod does not do
+!> the job right for rt. Second one is for connecting rt_internal and
+!> corresponding corrections. Both checks are deactivated by default. If
+!> task becomes a BC one, it activates itself's link.
+!> =====================================================================
+SUBROUTINE connect_nbors(self, nbor)
+  class(link_t), pointer :: self
+  class(link_t), pointer :: nbor, link1, link2
+! -------------------------------------------------------------------
+  allocate(link1, link2)
+  link1%task   => self%task
+  link1%link   => self
+  link1%parent => self%parent
+  link1%check = .false.
+  call nbor%add_nbor_by_rank(link1)
+  link2%task   => nbor%task
+  link2%link   => nbor
+  link2%parent => nbor%parent
+  call self%add_nbor_by_rank(link2)
+END SUBROUTINE connect_nbors
+
+!> =====================================================================
+!> My separate nbor connectors. This version deactivates both links and
+!> saves the link of the correction task for it to be altered upon need
+!> =====================================================================
+SUBROUTINE connect_corr_nbors(self, nbor, nb_l)
+  class(link_t), pointer           :: self
+  class(link_t), pointer           :: nbor, link1, link2
+  class(link_t), pointer, optional :: nb_l
+! -------------------------------------------------------------------
+  allocate(link1, link2)
+  link1%task   => self%task
+  link1%link   => self
+  link1%parent => self%parent
+  link1%check = .false.
+  call nbor%add_nbor_by_rank(link1)
+  link2%task   => nbor%task
+  link2%link   => nbor
+  link2%parent => nbor%parent
+  link2%check =.false.
+  call self%add_nbor_by_rank(link2)
+  if (present(nb_l)) nb_l => link2
+
+END SUBROUTINE connect_corr_nbors
 
 END MODULE radiative_transfer_mod

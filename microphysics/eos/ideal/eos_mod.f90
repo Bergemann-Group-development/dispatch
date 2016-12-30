@@ -9,6 +9,7 @@ MODULE eos_mod
   private
   type, public:: eos_t
     real:: gamma
+    integer :: eos_type = 0                                             ! 0 - ideal, x - any other
   contains
     procedure:: init
     procedure:: pressure
@@ -73,11 +74,23 @@ SUBROUTINE lookup (self, dim, d, e, pg, tt, rk, src, gamma)
   if (present(gamma)) then
     self%gamma = gamma
   end if
-  if (present(d).and.present(e)) then
-    pg = (self%gamma-1.0)*d*e
-  else
-    call mpi%abort ('eos_t: missing d or e in call')
+  
+  if (present(pg)) then
+    if (present(d).and.present(e)) then
+      pg = (self%gamma-1.0)*d*e
+    else
+      call mpi%abort ('eos_t: missing d or e in call for pg')
+    end if
   end if
+  
+  if (present(tt)) then
+    if present(e) then
+      tt = (self%gamma-1.0)*e
+    else
+      call mpi%abort('eos_t: missing e in call for t')
+    end if
+  end if
+  
   if (present(rk)) then
     rk = d
   end if

@@ -9,7 +9,6 @@ MODULE rt_mod
   USE mesh_mod
   USE mhd_mod
   USE rt_boundary_mod
-  USE microphysics_mod
   implicit none
   private
 !-----------------------------------------------------------------------

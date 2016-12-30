@@ -28,12 +28,19 @@
  n=32,32,32
 /
 
+&eos_params
+/
+
+
+! ------- Radiative transfer ---------
 &rt_params
  RT_solver  = 'integral'
  store_rt = t
 /
 
-&eos_params
+&ray_geometry_params
+ n_dirs=1
+ thetas = 0
 /
 
 &cartesian_ray_geometry_params
@@ -45,18 +52,6 @@ ny = 2 yti = 0.,45. dy = 1
 nz = 2 zti = 0.,45. dz = 1
 ! use space_diagonals?
 space_diagonals=t
-/
-
-&ray_geometry_params
- n_dirs=1
- thetas = 0
-/
-
-&microphysics_params
- !source  = 'eos_lookup'
- source  = 'Stefan'
- n_wl_bins  = 1
- cr_heating = 0!3.746e-24
 /
 
 ! Treatment of boundary conditions for RT solver. obc - outer boundaries, outside the simulation box.
@@ -75,6 +70,28 @@ ibc_treatment = 'ignore'     ! do nothing, continue as if there was no IB
 cool_temp = 10   ! in kelvins
 hot_temp  = 20000
 /
+
+! ------------------------------
+
+
+! ------- Microphysics ---------
+! EOS is set up in the makefile. 
+! kappa:
+! lookup - self-contained lookup table, eos_lookup - data is together in EOS tables, calculated -
+! data is calculated on-the-spot (polynomial or constant)
+! source:
+! lookup - self-contained lookup table, eos_lookup - data is together in EOS tables, op_lookup - data
+! is together with opacities in their tables, Stefan - simple blackbody
+
+&microphysics_params
+ do_rt = t                  !do rt or not, default = f. If rt not done, the rest of variables can be whatever
+ !source  = 'eos_lookup'
+ source  = 'Stefan'         ! Stefan / eos_lookup / op_lookup, default = Stefan
+ kappa = 'lookup'           ! lookup / eos_lookup / calculated, default = calculated
+ n_wl_bins  = 1             ! default = 1
+ cr_heating = 0!3.746e-24   ! default = 0
+/
+! -----------------------------
 
 &mhd_params
  nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0

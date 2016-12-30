@@ -1,11 +1,12 @@
 MODULE radiative_transfer_mod
   USE bits_mod
+  USE eos_mod
   USE io_mod
   USE list_mod
-  USE mesh_mod
-  USE mhd_rt_mod
+  USE mhd_mod
   USE microphysics_mod
   USE omp_mod
+  USE opacity_mod
   USE patch_mod
   USE ray_geometry_v3_mod
   USE rt_mod
@@ -16,168 +17,112 @@ MODULE radiative_transfer_mod
   USE task_mod
   USE task_list_mod
   USE trace_mod
-  USE units_mod
   implicit none
   private
-
-  PUBLIC rt_setup
+  PUBLIC rt_setup, connect_nbors, add_upstream_nbors
 CONTAINS
 
-SUBROUTINE rt_setup (self)
-  class(list_t)                :: self
-  class(task_list_t),  pointer :: task_list                  ! local task list
+SUBROUTINE rt_setup (mhd_link, mp_link, rt_task_list, &
+                             solver, rt_freq, store_rt)
+  class(link_t),       pointer :: mhd_link
+  class(task_list_t),  pointer :: rt_task_list                          ! rt task list
   class(list_t),       pointer :: list
-  class(link_t),       pointer :: t_list, link, rt_data_l, internal_l
-  class(mesh_t),       pointer :: mesh
-  class(mhd_rt_t),     pointer :: mhd_patch
+  class(link_t),       pointer :: mp_link, link, rt_data_l, internal_l
+  class(mhd_t),        pointer :: mhd_patch
+  class(microphysics_t), pointer :: mp
   class(rt_data_t),    pointer :: rt_data
   class(rt_internal_t),pointer :: internal
   class(ray_dirs_t),   pointer :: ray_dir
-  class(ray_bndl_t),   pointer :: ray_bundle
-  logical, save                :: first_time=.true.
-  character(len=16)            :: RT_solver ='integral'      ! choice of RT solver
-  integer :: n_rt
-  real,    save :: cr_heating=4.4e-27
-  integer, save :: solver, rt_type, a, b
-  integer, save :: rt_freq=1
-  logical, save :: store_rt = .false.
-  namelist /rt_params/ RT_solver, cr_heating, rt_freq, store_rt
+  class(ray_bndl_t),   pointer :: ray_bundle 
+  integer :: n_rt, rt_type, a, b, solver, rt_freq
+  logical :: store_rt
+
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer::rt_setup')
 
-  associate (mhd => self%head%task)
+  !---------------------------------------------------------------------
+  ! Get the right type of the task (mhd_t)
+  !---------------------------------------------------------------------
+  associate (mhd => mhd_link%task)
   SELECT TYPE(mhd)
-    class is (mhd_rt_t)
+  class is (mhd_t)
     mhd_patch => mhd
+    n_rt = 0
+    !-------------------------------------------------------------------
+    ! Construct the RT task for the RT data storage and update and add
+    ! it to the task list, giving it a nbor list consisting of only
+    ! the MHD task.
+    !-------------------------------------------------------------------
+    allocate (rt_data, link)                                            ! the internal RT task and its link
+    rt_data%mhd_patch => mhd_patch                                      ! Pointer to mhd_patch
+    rt_data%mhd_link  => mhd_link                                       ! Pointer to mhd_patch's link
+    link%task         => rt_data                                        ! connect to RT task
+    rt_data_l => link                                                   ! save the link
+    rt_data%link => link                                                ! link to oneself link in the task list
+    rt_data%rt_type = 0                                                 ! set the rt type
+    if (store_rt) rt_data%do_output = .true.
+    rt_data%n_ray_dirs = ray_geometry%n_ray_dirs                        ! self explanatory
+    rt_data%rt_freq    =  rt_freq                                       ! execution frequency, relative to MHD task
+    call rt_data%init                                                   ! initialise
+    n_rt = n_rt+1
+    call connect_nbors(mhd_link,link)                                   ! connect rt_data and mhd task
+    call rt_task_list%append_link(link)                                 ! insert rt_data into the task list
+    !-----------------------------------------------------------------
+    ! Loop over the ray bundles to construct the solutions
+    !-----------------------------------------------------------------
+    ray_dir    => ray_geometry%head%ray_list
+    associate (mph => mp_link%task)
+    select type (mph)
+    class is (microphysics_t)
+      mp => mph
+    end select
+    end associate
+    do while (associated(ray_dir))                                      ! loop over all directions
+      ray_bundle => ray_dir%bundle
+      do while (associated(ray_bundle))                                 ! loop over all bundles in this direction
+        ! ------------------------------------------------------------
+        ! Loop over forward and/or reverse directions
+        ! ------------------------------------------------------------
+        select case(ray_dir%directionality(ray_bundle%axis))
+        case(1)
+        a = 2; b = 3
+        case(2)
+        a = 2; b = 2
+        case(3)
+        a = 3; b = 3
+        end select
+        do rt_type = a,b
+          allocate (internal, link)                                     ! the RT task and its link
+          internal%bundle_ID  =  ray_bundle%ID                          ! ray bundle ID
+          internal%dir_ID     =  ray_dir%ID                             ! ray direction ID
+          internal%my_rt_data => rt_data                                ! Pointer to rt_data task
+          internal%mhd_patch  => mhd_patch                              ! Pointer to mhd_patch
+          internal%rt_type    =  rt_type                                ! set the rt type
+          if (store_rt) internal%do_output = .true.
+          internal%n_ray_dirs =  ray_geometry%head%n_ray_dirs
+          internal%solver     =  solver                                 ! set the rt solver type
+          internal%rt_freq    =  rt_freq                                ! integer frequency, relative to MHD task
+          internal%mhd_link   => mhd_link                               ! Pointer to mhd_patch's link
+          internal%link       => link                                   ! convenience
+          link%task => internal                                         ! connect to RT task
+          internal%nt = mhd_patch%nt
+          internal%mp => mp
+          call internal%init                                            ! initialize in ray direction
+          n_rt = n_rt+1
+          call connect_nbors(link,mp_link)                              ! correction checks if forge is ready, forge does not do that
+          call connect_corr_nbors(rt_data_l,link, &
+                                  internal%my_nb_link)                  ! internal checks if correction is ready, corr does not do that
+          call internal%print
+          call rt_task_list%append_link(link)                            ! insert into the task list
+        end do
+        ! -------------------------------
+       ray_bundle => ray_bundle%next                                    ! take the next ray bundle
+      end do
+      ray_dir => ray_dir%next                                           ! go to the next ray direction
+    end do
   end SELECT
   end associate
 
-  if (first_time) then
-    first_time = .false.
-    rewind (io%input); read (io%input, rt_params)
-    if (io%master) write (*, rt_params)
-    SELECT case(RT_solver)
-    case('feautrier')
-      solver = 0
-    case('integral')
-      solver = 1
-    end SELECT
-  end if
-
-  mesh => mhd_patch%mesh(1) 
-  select type(mesh)
-    type is(Cartesian_mesh)
-      call ray_geometry%init(1, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
-    type is(spherical_mesh)
-      call ray_geometry%init(2, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
-    type is(cylindrical_mesh)
-      call ray_geometry%init(3, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
-  end select
-  nullify(mesh)
-
-  write (io_unit%log,*) 'Ray geometry: n_ray_dirs:', &
-  ray_geometry%head%n_ray_dirs
-
-  call microphysics%init
-  call rt_boundary%init
-
-  rt_boundary%ubox = mhd_patch%box                                    ! FIXME : add bndry patches
-  rt_boundary%lbox = 0.0
-
-  allocate(task_list)
-  call task_list%list_t%init ('rt task list')
-  t_list => self%head
-  do while (associated(t_list))
-
-    !-------------------------------------------------------------------
-    ! Get the right type of the task (mhd_t)
-    !-------------------------------------------------------------------
-    associate (mhd => t_list%task)
-    SELECT TYPE(mhd)
-    class is (mhd_rt_t)
-      mhd_patch => mhd
-      n_rt = 0
-      !-----------------------------------------------------------------
-      ! Construct the RT task for the RT data storage and update and add
-      ! it to the task list, giving it a nbor list consisting of only
-      ! the MHD task.
-      !-----------------------------------------------------------------
-      allocate (rt_data, link)                                          ! the internal RT task and its link
-      rt_data%mhd_patch => mhd_patch                                    ! Pointer to mhd_patch
-      rt_data%mhd_link  => t_list                                       ! Pointer to mhd_patch's link
-      link%task         => rt_data                                      ! connect to RT task
-      rt_data_l => link                                                 ! save the link
-      rt_data%link => link                                              ! link to oneself link in the task list
-      rt_data%rt_type = 0                                               ! set the rt type
-      if (store_rt) rt_data%do_output = .true.
-      rt_data%n_ray_dirs = ray_geometry%n_ray_dirs                      ! self explanatory
-      rt_data%rt_freq    =  rt_freq                                     ! execution frequency, relative to MHD task
-      call rt_data%init                                                 ! initialise
-      mhd_patch%rt_data => rt_data                                      ! link rt_data to mhd_patch
-      n_rt = n_rt+1
-      call connect_nbors(t_list,link)                                   ! connect rt_data and mhd task
-      call task_list%append_link(link)                                  ! insert rt_data into the task list
-      !-----------------------------------------------------------------
-      ! Loop over the ray bundles to construct the solutions
-      !-----------------------------------------------------------------
-      ray_dir    => ray_geometry%head%ray_list
-      do while (associated(ray_dir))                                    ! loop over all directions
-        ray_bundle => ray_dir%bundle
-        do while (associated(ray_bundle))                               ! loop over all bundles in this direction
-          ! ------------------------------------------------------------
-          ! Loop over forward and/or reverse directions
-          ! ------------------------------------------------------------
-          select case(ray_dir%directionality(ray_bundle%axis))
-          case(1)
-          a = 2; b = 3
-          case(2)
-          a = 2; b = 2
-          case(3)
-          a = 3; b = 3
-          end select
-          do rt_type = a,b
-            allocate (internal, link)                                   ! the RT task and its link
-            internal%bundle_ID  =  ray_bundle%ID                        ! ray bundle ID
-            internal%dir_ID     =  ray_dir%ID                           ! ray direction ID
-            internal%my_rt_data => rt_data                              ! Pointer to rt_data task
-            internal%mhd_patch  => mhd_patch                            ! Pointer to mhd_patch
-            internal%rt_type    =  rt_type                              ! set the rt type
-            if (store_rt) internal%do_output = .true.
-            internal%n_ray_dirs =  ray_geometry%head%n_ray_dirs
-            internal%solver     =  solver                               ! set the rt solver type
-            internal%rt_freq    =  rt_freq                              ! integer frequency, relative to MHD task
-            internal%mhd_link   => t_list                               ! Pointer to mhd_patch's link
-            internal%link       => link                                 ! convenience
-            link%task => internal                                       ! connect to RT task
-            internal%nt = mhd_patch%nt
-            call internal%init                                          ! initialize in ray direction
-            n_rt = n_rt+1
-            call connect_nbors(link,t_list)                             ! correction checks if MHD is ready, MHD does not do that
-            call connect_corr_nbors(rt_data_l,link, &
-                                    internal%my_nb_link)                ! internal checks if correction is ready, corr does not do that
-            call internal%print
-            call task_list%append_link(link)                            ! insert into the task list
-          end do
-          ! -------------------------------
-
-          ray_bundle => ray_bundle%next                                 ! take the next ray bundle
-        end do
-        ray_dir => ray_dir%next                                         ! go to the next ray direction
-      end do
-    end SELECT
-    end associate
-    print *,'mhd_rt_t%id, n_nbors:', mhd_patch%id, mhd_patch%n_nbors, n_rt
-    t_list => t_list%next                                               ! go to the next mhd task
-  end do
-  call add_upstream_nbors(task_list)                                    ! connect the corrections
-  !call add_internal_nbors(task_list)
-  call task_list%print
-  list => task_list
-  call self%append_list(list)                                           ! add rt task list to the main task list
-  call trace_end
-  print *, '=================================='
-  print *, 'INIT RT DONE'
-  print *, '=================================='
 END SUBROUTINE rt_setup
 
 !> =====================================================================

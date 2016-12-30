@@ -16,12 +16,12 @@ MODULE experiment_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
-  USE mhd_rt_mod
+  USE mhd_mod
   USE initial_mod
   USE timestep_mod
   implicit none
   private
-  type, public, extends(mhd_rt_t):: experiment_t
+  type, public, extends(mhd_t):: experiment_t
     type(initial_t):: initial
   contains
     procedure init
@@ -42,7 +42,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   self%nv = 8
   self%mhd = .false.
-  call self%mhd_rt_t%init()
+  call self%mhd_t%init()
   call self%set(bits%static)
   !self%BC_direction = 1
   if (self%position(1) - self%size(1) < 0.0) then
@@ -74,7 +74,7 @@ SUBROUTINE update (self)
   type(timestep_t):: timestep
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-  call self%mhd_rt_t%update
+  call self%mhd_t%update
   call self%courant_condition
    if (io%verbose>2) &
     call self%check_density('before timestep')

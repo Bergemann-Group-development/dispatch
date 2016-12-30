@@ -95,8 +95,9 @@ SUBROUTINE initial_conditions (self, patch)
         end if
 
         ! the clump is initially in pressure equilibrium with the ambient medium
-        f(ix,iy,iz,2) = (log(p0) - log(f(ix,iy,iz,1)) * patch%gamma) &
-                      * f(ix,iy,iz,1) / (patch%gamma - 1.0)
+        f(ix,iy,iz,2) = 1.0/(patch%gamma - 1.0) * p0/f(ix,iy,iz,1)
+        !f(ix,iy,iz,2) = (log(p0) - log(f(ix,iy,iz,1)) * patch%gamma) &
+        !              * f(ix,iy,iz,1) / (patch%gamma - 1.0)
 
         ! momentum components
         f(ix,iy,iz,3) = 0.0

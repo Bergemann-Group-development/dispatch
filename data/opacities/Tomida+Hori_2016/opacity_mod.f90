@@ -13,7 +13,7 @@ MODULE opacity_mod
   implicit none
   private
   type, public:: opacity_t
-    integer:: nT=450, nd=450, nv=2
+    integer:: nT=450, nd=450, nv=2, nwb =1
     real, dimension(:), pointer:: log_T => null()
     real, dimension(:), pointer:: log_d => null()
   contains
