@@ -244,32 +244,16 @@ SUBROUTINE check_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
   class(link_t), pointer:: nbor
-  class(task_t), pointer:: task, nbtask
-  integer:: n_check, n_ready, n_blocked, n_cleared, n_remain
-  logical:: is_clear
+  class(task_t), pointer:: task
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
   !$omp critical (time_cr)
   task => link%task                                   ! main task
-  n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
   nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
-    nbtask => nbor%task                               ! neighbor task
-    n_check = n_check+1
-    is_clear = nbtask%is_clear(bits%ready)
-    if (is_clear .and. nbor%check) then               ! needs checking?
-      n_blocked = n_blocked+1
-      call timer%end (itimer)
+    if (nbor%check) then                              ! needs checking?
       call self%check_ready (nbor%link)               ! pointer back
-      call timer%begin (itimer=itimer)
-      if (nbtask%is_set(bits%ready)) then
-        n_cleared = n_cleared+1
-      else
-        n_remain = n_remain+1
-      end if
-      if (nbtask%id==io%id_debug) &
-        write (io_unit%log,*) io%id_debug, 'mk checked by:', task%id, nbtask%is_set(bits%ready)
     end if
     nbor => nbor%next                                 ! next nbor
   end do
@@ -279,15 +263,7 @@ SUBROUTINE check_nbors (self, link)
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%virtual+bits%external)) then
     call task%clear(bits%ready)                       ! needs new check
-    call timer%end (itimer)
     call self%check_ready (link)                      ! finally check link task
-    call timer%begin (itimer=itimer)
-    self%n_nbor = self%n_nbor + 1
-    if (io%verbose>2) write (io_unit%log,'(a,i9,l3,12(2x,a,i4))') &
-      'task:',task%id, task%is_set(bits%ready), 'level:',task%level, &
-      'neighbors:',n_check, 'blocked:',n_blocked, 'ready:', n_ready, &
-      'cleared:',n_cleared, 'remain:', n_remain
-    if (io%verbose>3) call self%print
   end if
   !$omp end critical (time_cr)
   call trace_end (itimer)
@@ -396,48 +372,27 @@ END SUBROUTINE check_oldest
 SUBROUTINE check_ready (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
-  class(task_t), pointer:: task, nbtask
+  class(task_t), pointer:: task
   class(link_t), pointer:: nbor
   logical:: ahead
-  integer, save:: itimer=0
-  !.............................................................................
-  if (link%task%is_set (bits%virtual+bits%external)) return
-  call trace%begin('list_mod::check_ready ', itimer=itimer)
-  !$omp atomic
-  mpi_mesg%n_check = mpi_mesg%n_check+1
-  !xomp critical (queue_cr)
-  !call self%qconsistency(1)
-  task => link%task                                     ! already checked?
-  if (task%is_clear(bits%ready)) then
-    nbor => link%nbor                                   ! start on nbor list
-    do while (associated (nbor))                        ! keep going until end
-      !call nbor%update_behind (link)
-      nbtask => nbor%task
-      ahead = nbtask%is_ahead_of(task)
-      if (ahead .or. nbtask%is_set(bits%external)) then
-        nbor => nbor%next                               ! next nbor
-      else
-        if (task%id==io%id_debug.or.io%verbose>1) &
-          write (io_unit%log,1) task%id, 'fails at', &
-          task%time, ' on', nbtask%id, nbtask%time-task%time, &
-          nbtask%is_set(bits%virtual), &
-          nbtask%is_set(bits%boundary), &
-          nbtask%is_set(bits%external)
-          1 format(i9,2x,a,1p,e16.8,2x,a,i9,e16.8,3l4)
-        goto 9
-      end if
-    end do
-    if (task%id==io%id_debug.or.io%verbose>1) &
-      write (io_unit%log,1) task%id, '   ok at', task%time
-    !$omp critical (queue_cr)
-    call self%qconsistency(2)
-    call self%queue_by_time (link)                      ! add task to queue
-    call self%qconsistency(3)
-    !$omp end critical (queue_cr)
-  end if
-9 continue
-  !xomp end critical (queue_cr)
-  call trace%end (itimer)
+  !-----------------------------------------------------------------------------
+  ! Since we may be called upon to check nbors of a patch that should not itself
+  ! be checked, we first check if any bits are set indicating this to be the case
+  !-----------------------------------------------------------------------------
+  task => link%task
+  if (task%is_set (bits%ready+bits%virtual+bits%external)) return
+  call trace%begin('list_mod::check_ready')
+  nbor => link%nbor                                     ! start on nbor list
+  do while (associated (nbor))                          ! keep going until end
+    if (nbor%task%is_ahead_of(task)) then               ! if nbor is OK ..
+      nbor => nbor%next                                 ! next nbor
+    else                                                ! if not
+      call trace%end                                    ! task is not ready
+      return
+    end if
+  end do
+  call self%queue_by_time (link)                        ! add task to queue
+  call trace%end
 END SUBROUTINE check_ready
 
 !> =============================================================================
@@ -941,9 +896,11 @@ SUBROUTINE queue_by_time (self, this)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
-  ! Lock the queue while inserting the task
+  ! Lock the queue while inserting the task, and mark the task as being in the
+  ! ready queue (or executing -- the bit is cleared only after updating)
   !-----------------------------------------------------------------------------
-  call this%task%set(bits%ready)                       ! mark as checked
+  !$omp critical (queue_cr)
+  call this%task%set(bits%ready)
   if (io%verbose>2) &
     write (io_unit%log,'(1x,a,i9,a,f10.5)') 'list_mod::queue_by_time: adding task', &
       this%task%id, ' at time', this%task%time
@@ -991,6 +948,7 @@ SUBROUTINE queue_by_time (self, this)
   end if
   nullify (this%next_time)
 9 continue
+  !$omp end critical (queue_cr)
   call trace_end
 END SUBROUTINE queue_by_time
 
