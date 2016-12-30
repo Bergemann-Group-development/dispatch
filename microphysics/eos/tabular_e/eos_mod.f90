@@ -12,17 +12,16 @@ MODULE eos_mod
   implicit none
   private
   type, public:: eos_t
-    integer :: nd, ne
-    integer :: nv      = 2
-    integer :: i_pg    = 1
-    integer :: i_tt    = 2
-    integer :: i_kappa = 3
-    integer :: i_src   = 4
-    integer :: eos_type = 1                                             ! 0 - ideal, x - any other
+    integer:: nd, ne
+    integer:: nv      = 2
+    integer:: i_pg    = 1
+    integer:: i_tt    = 2
+    integer:: i_kappa = 3
+    integer:: i_src   = 4
     real:: lnd_min, lnd_max, lnd_stp
     real:: lne_min, lne_max, lne_stp
     real, dimension(:), pointer:: lnd, lne
-    real, dimension(:,:,:), pointer:: table => null()
+    real, dimension(:,:,:), pointer:: table
   contains
     procedure:: init
     procedure:: pressure
@@ -106,23 +105,24 @@ SUBROUTINE init (self,nv)
   !-----------------------------------------------------------------------------
   ! Rescaling table to code units
   !-----------------------------------------------------------------------------
-  if (io%verbose > 0 .and. io%master)  print 1, 'Emin, Emax [cgs]  =', 10.**log_Emin, 10.**log_Emax
+  if (io%verbose > 0 .and. io%master) then
+    print 1, 'Emin, Emax [cgs]  =', 10.**log_Emin, 10.**log_Emax
     1 format(1x,a,1p,2e15.6)
     log_Emin = log_Emin - log10(scaling%u**2)
     log_Emax = log_Emax - log10(scaling%u**2)
-  if (io%verbose > 0 .and. io%master)  print 1, 'Emin, Emax [code] =', 10.**log_Emin, 10.**log_Emax
+    print 1, 'Emin, Emax [code] =', 10.**log_Emin, 10.**log_Emax
     Pmin = minval(self%table(:,:,1))
     Pmax = maxval(self%table(:,:,1))
-  if (io%verbose > 0 .and. io%master)  print 1, 'Pmin, Pmax [cgs]  =', Pmin, Pmax
+    print 1, 'Pmin, Pmax [cgs]  =', Pmin, Pmax
     Pmin = Pmin/(scaling%d*scaling%u**2)
     Pmax = Pmax/(scaling%d*scaling%u**2)
-  if (io%verbose > 0 .and. io%master)  print 1, 'Pmin, Pmax [code] =', Pmin, Pmax
-  if (io%verbose > 0 .and. io%master)  print 1, 'Tmin, Tmax [K]    =', minval(self%table(:,:,2)), &
+    print 1, 'Pmin, Pmax [code] =', Pmin, Pmax
+    print 1, 'Tmin, Tmax [K]    =', minval(self%table(:,:,2)), &
                                     maxval(self%table(:,:,2))
+  end if
   self%lnd = self%lnd - log(scaling%d)
   self%lne = self%lne - log(scaling%u**2)
   self%table(:,:,1) = self%table(:,:,1)/(scaling%d*scaling%u**2)
-  self%table(:,:,2) = self%table(:,:,2)/scaling%temp
   !-----------------------------------------------------------------------------
   ! Deallocate the reader table, which we don't need anymore
   !-----------------------------------------------------------------------------
@@ -160,8 +160,8 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, dimension(:,:,:), intent(in), pointer, optional :: lnd, lne
-  real, dimension(:,:,:),   optional :: d, e, pg, tt, ne, rk
-  real, dimension(:,:,:,:), optional :: src
+  real, dimension(:,:,:),   optional :: d, e, pg, tt, ne
+  real, dimension(:,:,:,:), optional :: src, rk
   real, optional:: gamma
   !.............................................................................
   real, dimension(:,:,:), pointer:: lnd_loc, lne_loc
@@ -188,7 +188,7 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
     lnd_loc => lnd
   else if (present(d)) then
     allocate (lnd_loc(dim(1),dim(2),dim(3)))
-    lnd = log(d)
+    lnd_loc = log(d)
   else
     call mpi%abort ('eos_t: missing density')
   end if
@@ -196,7 +196,7 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
     lne_loc => lne
   else if (present(e)) then
     allocate (lne_loc(dim(1),dim(2),dim(3)))
-    lne = log(e)
+    lne_loc = log(e)
   else
     call mpi%abort ('eos_t: missing internal energy')
   end if
@@ -256,11 +256,13 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
     end if
     !---------------------------------------------------------------------------
     if (present(rk)) then
-      rk(:,iy,iz) = &
-         f(:,1,self%i_kappa)*g(:,1) &
-       + f(:,2,self%i_kappa)*g(:,2) &
-       + f(:,3,self%i_kappa)*g(:,3) &
-       + f(:,4,self%i_kappa)*g(:,4)
+      do iv=0,size(rk,4)-1
+        rk(:,iy,iz, iv+1) = &
+           f(:,1,self%i_kappa+iv)*g(:,1) &
+         + f(:,2,self%i_kappa+iv)*g(:,2) &
+         + f(:,3,self%i_kappa+iv)*g(:,3) &
+         + f(:,4,self%i_kappa+iv)*g(:,4)
+      end do
     end if
     !---------------------------------------------------------------------------
     if (present(ne)) then
@@ -273,7 +275,7 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
     !---------------------------------------------------------------------------
     if (present(src)) then
      do iv=0,size(src,4)-1
-      src(:,iy,iz,iv) = &
+      src(:,iy,iz,iv+1) = &
          f(:,1,self%i_src+iv)*g(:,1) &
        + f(:,2,self%i_src+iv)*g(:,2) &
        + f(:,3,self%i_src+iv)*g(:,3) &
