@@ -150,7 +150,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in a very brief critical region
   !-----------------------------------------------------------------------------
-  !$omp critical (list_cr)
+  !$omp critical (queue_cr)
   head => self%queue                                    ! queue start
   if (associated(head)) then
     !---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ SUBROUTINE update (self)
     already_busy = task%is_set (bits%busy)
     if (.not.already_busy) call head%task%set (bits%busy)
   end if
-  !$omp end critical (list_cr)
+  !$omp end critical (queue_cr)
   if (associated(head)) then
     if (io%verbose > 1) then
       write (io_unit%log,'(a,i4,a,i5,2x,a,2x,i4)') &

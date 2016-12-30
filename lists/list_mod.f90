@@ -250,14 +250,22 @@ SUBROUTINE check_nbors (self, link)
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
   !$omp critical (time_cr)
-  call link%task%clear (bits%ready)                     ! clear for queueing
-  call link%count_behind                                ! need a full count
-  nbor => link%nbor                                     ! first nbor
-  do while (associated (nbor))                          ! for all nbors
-    if (nbor%task%is_clear (bits%ready)) then           ! cleard for counting?
-      call link%update_behind (nbor)                    ! update counters
-      if (nbor%task%n_behind==0) then                   ! if ready
-        call self%queue_by_time (nbor%link)             ! add to ready queue
+  task => link%task                                   ! main task
+  n_check=0; n_ready=0; n_blocked=0; n_cleared=0; n_remain=0
+  nbor => link%nbor                                   ! first nbor
+  do while (associated (nbor))                        ! keep going until end
+    nbtask => nbor%task                               ! neighbor task
+    n_check = n_check+1
+    is_clear = nbtask%is_clear(bits%ready)
+    if (is_clear .and. nbor%check) then               ! needs checking?
+      n_blocked = n_blocked+1
+      call timer%end (itimer)
+      call self%check_ready (nbor%link)               ! pointer back
+      call timer%begin (itimer=itimer)
+      if (nbtask%is_set(bits%ready)) then
+        n_cleared = n_cleared+1
+      else
+        n_remain = n_remain+1
       end if
     end if
     nbor => nbor%next                                   ! next nbor
@@ -269,7 +277,7 @@ SUBROUTINE check_nbors (self, link)
   if (link%task%n_behind==0) then
     call self%queue_by_time (link)
   end if
-  if (io%verbose>3) call self%print
+  !$omp end critical (time_cr)
   call trace_end (itimer)
 END SUBROUTINE check_nbors
 
@@ -389,6 +397,56 @@ SUBROUTINE check_oldest (self)
   flush (io_unit%log)
   call trace_end
 END SUBROUTINE check_oldest
+
+!> =============================================================================
+!> Check if the link task is ready, and if so, add it to self (the ready_queue)
+!> =============================================================================
+SUBROUTINE check_ready (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task, nbtask
+  class(link_t), pointer:: nbor
+  logical:: ahead
+  integer, save:: itimer=0
+  !.............................................................................
+  if (link%task%is_set (bits%virtual+bits%external)) return
+  call trace%begin('list_mod::check_ready ', itimer=itimer)
+  !$omp atomic
+  mpi_mesg%n_check = mpi_mesg%n_check+1
+  !xomp critical (queue_cr)
+  !call self%qconsistency(1)
+  task => link%task                                     ! already checked?
+  if (task%is_clear(bits%ready)) then
+    nbor => link%nbor                                   ! start on nbor list
+    do while (associated (nbor))                        ! keep going until end
+      !call nbor%update_behind (link)
+      nbtask => nbor%task
+      ahead = nbtask%is_ahead_of(task)
+      if (ahead .or. nbtask%is_set(bits%external)) then
+        nbor => nbor%next                               ! next nbor
+      else
+        if (task%id==io%id_debug.or.io%verbose>1) &
+          write (io_unit%log,1) task%id, 'fails at', &
+          task%time, ' on', nbtask%id, nbtask%time-task%time, &
+          nbtask%is_set(bits%virtual), &
+          nbtask%is_set(bits%boundary), &
+          nbtask%is_set(bits%external)
+          1 format(i9,2x,a,1p,e16.8,2x,a,i9,e16.8,3l4)
+        goto 9
+      end if
+    end do
+    if (task%id==io%id_debug.or.io%verbose>1) &
+      write (io_unit%log,1) task%id, '   ok at', task%time
+    !$omp critical (queue_cr)
+    call self%qconsistency(2)
+    call self%queue_by_time (link)                      ! add task to queue
+    call self%qconsistency(3)
+    !$omp end critical (queue_cr)
+  end if
+9 continue
+  !xomp end critical (queue_cr)
+  call trace%end (itimer)
+END SUBROUTINE check_ready
 
 !> =============================================================================
 !> Check if the number of nbor tasks is consistent
@@ -911,20 +969,10 @@ SUBROUTINE queue_by_time (self, this)
   next => self%queue
   n = 0
   do while (associated(next))
-    n = n+1
-    if (n > self%na+100) then
-      print *,'ERROR: stuck in queue_by_time', n
-      next => self%queue
-      do i=1,n
-        print *, next%task%id, next%task%time
-        next => next%next_time
-      end do
-      stop
-    end if
-    if (associated(next%task, task)) then
-      write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, ' is already on ready queue'
+    if (associated(next%task, this%task)) then
+      write (io_unit%log,*) omp_mythread, ' WARNING: task', this%task%id, ' is already on ready queue'
       go to 9
-    else if (next%task%time > task%time) then
+    else if (next%task%time > this%task%time) then
       this%next_time => next
       if (associated(prev)) then
         if (io%verbose > 1) then
@@ -962,7 +1010,6 @@ SUBROUTINE queue_by_time (self, this)
   end if
   nullify (this%next_time)
 9 continue
-  !!omp end critical (queue_cr)
   call trace_end
 END SUBROUTINE queue_by_time
 
