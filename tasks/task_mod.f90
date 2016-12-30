@@ -121,7 +121,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE rotate (self)
   class(task_t):: self
-  integer:: iv, nv, new
+  integer:: iv, nv, new, i
   real(8):: time
   integer, save:: itimer=0
   !.............................................................................
@@ -136,20 +136,28 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Time slot rotation.  Note that self%time should be the LAST of these
   ! updates, since we do not want to enforce a critical region, and the
-  ! new self%time is what a task is judged on!
+  ! new self%time is what a task is judged on!  Also, note that the only time
+  ! slot information accessed from other tasks is self%it, self%time, self%iit,
+  ! self%t(iit(1:nt-1)), and self%dt(iit(1:nt-1)).  The iit((nt) entries are
+  ! not accessed.
   !-----------------------------------------------------------------------------
-  !$omp critical (time_cr)
+  !!omp critical (time_cr)
   time = self%time + self%dtime
+  !$omp atomic write
   self%dt(self%it) = self%dtime                         ! just updated
   self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = time                               ! initial time
-  self%iit(self%nt) = self%new                          ! right-most slot
   new = self%new
   !$omp atomic write
   self%it = new                                         ! update time slot, new
   self%new = mod(self%new,self%nt)+1                    ! increment / rotate
-  self%iit(1:self%nt-1) = self%iit(2:self%nt)           ! rotate left
+  do i=1,self%nt-1
+    !$omp atomic write
+    self%iit(i) = self%iit(i+1)
+  end do
+  !$omp atomic write
   self%iit(self%nt) = self%new                          ! new right-most slot
+  !$omp atomic update
   self%istep = self%istep + 1
   !$omp atomic write
   self%time = time
@@ -159,7 +167,7 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task iit:', self%iit
   if (io%verbose>3) &
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
-  !$omp end critical (time_cr)
+  !!omp end critical (time_cr)
   call trace_end (itimer)
 END SUBROUTINE rotate
 
