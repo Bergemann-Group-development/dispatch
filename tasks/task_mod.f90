@@ -205,7 +205,6 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   nbtime = self%time
   !$omp atomic read
   nbdtime = self%dtime
-  !$omp flush
   is_ahead_of = nbtime + nbdtime*task%grace >= task%time
   if (task%id==io%id_debug.or.io_unit%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &

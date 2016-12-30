@@ -239,6 +239,9 @@ END SUBROUTINE remove_head
 !> Among a task and its neighbor tasks, move local tasks to ready_queue if they
 !> are ready.  If the ready bit is already set it means the patch has already
 !> been put in the ready queue, and should not be checked again.
+!>
+!> The link pointer and everything it points to are private to this task, and
+!> are not at this point in time accessible from the ready queue.
 !> =============================================================================
 SUBROUTINE check_nbors (self, link)
   class(list_t):: self
@@ -248,7 +251,7 @@ SUBROUTINE check_nbors (self, link)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
-  !$omp critical (time_cr)
+  !!omp critical (time_cr)
   task => link%task                                   ! main task
   nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
@@ -265,7 +268,7 @@ SUBROUTINE check_nbors (self, link)
     call task%clear(bits%ready)                       ! needs new check
     call self%check_ready (link)                      ! finally check link task
   end if
-  !$omp end critical (time_cr)
+  !!omp end critical (time_cr)
   call trace_end (itimer)
 END SUBROUTINE check_nbors
 
@@ -374,25 +377,22 @@ SUBROUTINE check_ready (self, link)
   class(link_t), pointer:: link
   class(task_t), pointer:: task
   class(link_t), pointer:: nbor
-  logical:: ahead
   !-----------------------------------------------------------------------------
   ! Since we may be called upon to check nbors of a patch that should not itself
   ! be checked, we first check if any bits are set indicating this to be the case
   !-----------------------------------------------------------------------------
   task => link%task
   if (task%is_set (bits%ready+bits%virtual+bits%external)) return
-  call trace%begin('list_mod::check_ready')
   nbor => link%nbor                                     ! start on nbor list
   do while (associated (nbor))                          ! keep going until end
     if (nbor%task%is_ahead_of(task)) then               ! if nbor is OK ..
       nbor => nbor%next                                 ! next nbor
     else                                                ! if not
-      call trace%end                                    ! task is not ready
+      !call trace%end                                    ! task is not ready
       return
     end if
   end do
   call self%queue_by_time (link)                        ! add task to queue
-  call trace%end
 END SUBROUTINE check_ready
 
 !> =============================================================================
@@ -888,68 +888,73 @@ SUBROUTINE queue_by_time (self, this)
   class(link_t), pointer:: this
   class(link_t), pointer:: next, prev
   class(task_t), pointer:: task
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Refuse to queue virtual tasks and finished tasks
   !-----------------------------------------------------------------------------
-  if (this%task%is_set(bits%virtual) .or. this%task%has_finished()) return
-  call trace_begin ('list_mod::queue_by_time ')
+  task => this%task
+  if (task%is_set(bits%virtual) .or. task%has_finished()) return
+  call trace_begin ('list_mod::queue_by_time ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
   ! Lock the queue while inserting the task, and mark the task as being in the
-  ! ready queue (or executing -- the bit is cleared only after updating)
+  ! ready queue (or executing -- the bit is cleared only after updating).  
+  ! Double check that no other thread has set the ready bit on this task.
   !-----------------------------------------------------------------------------
   !$omp critical (queue_cr)
-  call this%task%set(bits%ready)
-  if (io%verbose>2) &
-    write (io_unit%log,'(1x,a,i9,a,f10.5)') 'list_mod::queue_by_time: adding task', &
-      this%task%id, ' at time', this%task%time
-  nullify (prev)
-  next => self%queue
-  do while (associated(next))
-    if (associated(next%task, this%task)) then
-      write (io_unit%log,*) omp_mythread, ' WARNING: task', this%task%id, ' is already on ready queue'
-      go to 9
-    else if (next%task%time > this%task%time) then
-      this%next_time => next
-      if (associated(prev)) then
-        if (io%verbose > 1) then
-          write (io_unit%log,*) 'task',this%task%id,' in ready queue after',prev%task%id,self%nq
-          flush (io_unit%log)
+  if (task%is_clear (bits%ready)) then
+    call task%set(bits%ready)
+    if (io%verbose>2) &
+      write (io_unit%log,'(1x,a,i9,a,f10.5)') 'list_mod::queue_by_time: adding task', &
+        task%id, ' at time', task%time
+    nullify (prev)
+    next => self%queue
+    do while (associated(next))
+      if (associated(next%task, task)) then
+        write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, ' is already on ready queue'
+        go to 9
+      else if (next%task%time > task%time) then
+        this%next_time => next
+        if (associated(prev)) then
+          if (io%verbose > 1) then
+            write (io_unit%log,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
+            flush (io_unit%log)
+          end if
+          prev%next_time => this
+        else
+          self%queue => this
+          if (io%verbose > 1) then
+            write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
+            flush (io_unit%log)
+          end if
         end if
-        prev%next_time => this
-      else
-        self%queue => this
-        if (io%verbose > 1) then
-          write (io_unit%log,*) 'task',this%task%id,' at ready queue head',self%nq
-          flush (io_unit%log)
-        end if
+        !$omp atomic
+        self%nq = self%nq+1
+        go to 9
       end if
-      !$omp atomic
-      self%nq = self%nq+1
-      go to 9
+      prev => next
+      next => next%next_time
+    end do
+    self%nq = self%nq+1
+    if (associated(prev)) then
+      if (io%verbose > 1) then
+        write (io_unit%log,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
+        flush (io_unit%log)
+      end if
+      prev%next_time => this
+    else
+      if (io%verbose > 1) then
+        write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
+        flush (io_unit%log)
+      end if
+      self%queue => this
     end if
-    prev => next
-    next => next%next_time
-  end do
-  self%nq = self%nq+1
-  if (associated(prev)) then
-    if (io%verbose > 1) then
-      write (io_unit%log,*) 'task',this%task%id,' in ready queue after',prev%task%id,self%nq
-      flush (io_unit%log)
-    end if
-    prev%next_time => this
-  else
-    if (io%verbose > 1) then
-      write (io_unit%log,*) 'task',this%task%id,' at ready queue head',self%nq
-      flush (io_unit%log)
-    end if
-    self%queue => this
+    nullify (this%next_time)
+  9 continue
   end if
-  nullify (this%next_time)
-9 continue
   !$omp end critical (queue_cr)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE queue_by_time
 
 !> =============================================================================
