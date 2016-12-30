@@ -125,7 +125,7 @@ SUBROUTINE rotate (self)
   real(8):: time
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin ('task_mod::rotate')
+  call trace_begin ('task_mod::rotate',itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Call timestep update procedure to fill the next time slot with values
   !-----------------------------------------------------------------------------
@@ -138,8 +138,6 @@ SUBROUTINE rotate (self)
   ! updates, since we do not want to enforce a critical region, and the
   ! new self%time is what a task is judged on!
   !-----------------------------------------------------------------------------
-  !call self%lock%set ('rotate')
-  !!$omp flush
   !$omp critical (time_cr)
   time = self%time + self%dtime
   self%dt(self%it) = self%dtime                         ! just updated
@@ -161,10 +159,8 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task iit:', self%iit
   if (io%verbose>3) &
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
-  !!$omp flush
-  !call self%lock%unset ('rotate')
   !$omp end critical (time_cr)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE rotate
 
 !> =============================================================================
