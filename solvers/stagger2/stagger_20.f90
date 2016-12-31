@@ -7,8 +7,8 @@ MODULE stagger_20
 CONTAINS
 
 !*******************************************************************************
-FUNCTION ddxdn_20 (ds, a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE ddxdn_20 (ds, a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   real    :: ds(3), c
   integer :: ix, iy, iz
@@ -22,11 +22,11 @@ FUNCTION ddxdn_20 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddxdn_20
+END SUBROUTINE ddxdn_20
 
 !*******************************************************************************
-FUNCTION ddydn_20 (ds, a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE ddydn_20 (ds, a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -40,11 +40,11 @@ FUNCTION ddydn_20 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddydn_20
+END SUBROUTINE ddydn_20
 
 !*******************************************************************************
-FUNCTION ddzdn_20 (ds, a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE ddzdn_20 (ds, a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   real    :: ds(3), c
   integer :: ix, iy, iz
@@ -58,11 +58,11 @@ FUNCTION ddzdn_20 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddzdn_20
+END SUBROUTINE ddzdn_20
 
 !*******************************************************************************
-FUNCTION ddxup_20 (ds, a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE ddxup_20 (ds, a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -76,11 +76,11 @@ FUNCTION ddxup_20 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddxup_20
+END SUBROUTINE ddxup_20
 
 !*******************************************************************************
-FUNCTION ddyup_20 (ds, a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE ddyup_20 (ds, a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -94,11 +94,11 @@ FUNCTION ddyup_20 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddyup_20
+END SUBROUTINE ddyup_20
 
 !*******************************************************************************
-FUNCTION ddzup_20 (ds, a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE ddzup_20 (ds, a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -112,11 +112,11 @@ FUNCTION ddzup_20 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddzup_20
+END SUBROUTINE ddzup_20
 
 !*******************************************************************************
-FUNCTION xdn_20 (a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE xdn_20 (a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   real    :: c
   integer :: ix, iy, iz
@@ -130,11 +130,11 @@ FUNCTION xdn_20 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION xdn_20
+END SUBROUTINE xdn_20
 
 !*******************************************************************************
-FUNCTION ydn_20 (a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE ydn_20 (a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   real    :: c
   integer :: ix, iy, iz
@@ -148,11 +148,11 @@ FUNCTION ydn_20 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ydn_20
+END SUBROUTINE ydn_20
 
 !*******************************************************************************
-FUNCTION zdn_20 (a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE zdn_20 (a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   real    :: c
   integer :: ix, iy, iz
@@ -166,11 +166,11 @@ FUNCTION zdn_20 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION zdn_20
+END SUBROUTINE zdn_20
 
 !*******************************************************************************
-FUNCTION xup_20 (a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE xup_20 (a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   real    :: c
   integer :: ix, iy, iz
@@ -184,11 +184,11 @@ FUNCTION xup_20 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 !*******************************************************************************
-FUNCTION yup_20 (a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE yup_20 (a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   real    :: c
   integer :: ix, iy, iz
@@ -202,11 +202,11 @@ FUNCTION yup_20 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 !*******************************************************************************
-FUNCTION zup_20 (a) RESULT (b)
-  real, dimension(20,20,20):: a
+SUBROUTINE zup_20 (a, b)
+  real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   real    :: c
   integer :: ix, iy, iz
@@ -220,6 +220,6 @@ FUNCTION zup_20 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 END MODULE

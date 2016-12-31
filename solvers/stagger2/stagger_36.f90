@@ -7,26 +7,26 @@ MODULE stagger_36
 CONTAINS
 
 !*******************************************************************************
-FUNCTION ddxdn_36 (ds, a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE ddxdn_36 (ds, a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   real    :: ds(3), c
   integer :: ix, iy, iz
 !...............................................................................
-  b(1,:,:) = 0.0
   c = 1./ds(1)
   do iz=1,36
   do iy=1,36
-  do ix=2,36
-    b(ix,iy,iz) = c*(a(ix  ,iy,iz) - a(ix-1,iy,iz))
+    do ix=2,36
+      b(ix,iy,iz) = c*(a(ix  ,iy,iz) - a(ix-1,iy,iz))
+    end do
+    b(1,iy,iz) = 0.0
   end do
   end do
-  end do
-END FUNCTION ddxdn_36
+END SUBROUTINE ddxdn_36
 
 !*******************************************************************************
-FUNCTION ddydn_36 (ds, a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE ddydn_36 (ds, a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -40,11 +40,11 @@ FUNCTION ddydn_36 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddydn_36
+END SUBROUTINE ddydn_36
 
 !*******************************************************************************
-FUNCTION ddzdn_36 (ds, a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE ddzdn_36 (ds, a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   real    :: ds(3), c
   integer :: ix, iy, iz
@@ -58,29 +58,29 @@ FUNCTION ddzdn_36 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddzdn_36
+END SUBROUTINE ddzdn_36
 
 !*******************************************************************************
-FUNCTION ddxup_36 (ds, a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE ddxup_36 (ds, a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
 !...............................................................................
-  b(36,:,:) = 0.0
   c = 1./ds(1)
   do iz=1,36
   do iy=1,36
-  do ix=1,36-1
-    b(ix,iy,iz) = c*(a(ix+1,iy,iz) - a(ix  ,iy,iz))
+    do ix=1,36-1
+      b(ix,iy,iz) = c*(a(ix+1,iy,iz) - a(ix  ,iy,iz))
+    end do
+    b(36,iy,iz) = 0.0
   end do
   end do
-  end do
-END FUNCTION ddxup_36
+END SUBROUTINE ddxup_36
 
 !*******************************************************************************
-FUNCTION ddyup_36 (ds, a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE ddyup_36 (ds, a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -94,11 +94,11 @@ FUNCTION ddyup_36 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddyup_36
+END SUBROUTINE ddyup_36
 
 !*******************************************************************************
-FUNCTION ddzup_36 (ds, a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE ddzup_36 (ds, a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -112,11 +112,11 @@ FUNCTION ddzup_36 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddzup_36
+END SUBROUTINE ddzup_36
 
 !*******************************************************************************
-FUNCTION xdn_36 (a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE xdn_36 (a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   real    :: c
   integer :: ix, iy, iz
@@ -130,11 +130,11 @@ FUNCTION xdn_36 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION xdn_36
+END SUBROUTINE xdn_36
 
 !*******************************************************************************
-FUNCTION ydn_36 (a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE ydn_36 (a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   real    :: c
   integer :: ix, iy, iz
@@ -148,11 +148,11 @@ FUNCTION ydn_36 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ydn_36
+END SUBROUTINE ydn_36
 
 !*******************************************************************************
-FUNCTION zdn_36 (a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE zdn_36 (a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   real    :: c
   integer :: ix, iy, iz
@@ -166,11 +166,11 @@ FUNCTION zdn_36 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION zdn_36
+END SUBROUTINE zdn_36
 
 !*******************************************************************************
-FUNCTION xup_36 (a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE xup_36 (a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   real    :: c
   integer :: ix, iy, iz
@@ -184,11 +184,11 @@ FUNCTION xup_36 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 !*******************************************************************************
-FUNCTION yup_36 (a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE yup_36 (a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   real    :: c
   integer :: ix, iy, iz
@@ -202,11 +202,11 @@ FUNCTION yup_36 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 !*******************************************************************************
-FUNCTION zup_36 (a) RESULT (b)
-  real, dimension(36,36,36):: a
+SUBROUTINE zup_36 (a, b)
+  real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   real    :: c
   integer :: ix, iy, iz
@@ -220,6 +220,6 @@ FUNCTION zup_36 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 END MODULE

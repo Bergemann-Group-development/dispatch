@@ -7,8 +7,8 @@ MODULE stagger_16
 CONTAINS
 
 !*******************************************************************************
-FUNCTION ddxdn_16 (ds, a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE ddxdn_16 (ds, a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   real    :: ds(3), c
   integer :: ix, iy, iz
@@ -22,11 +22,11 @@ FUNCTION ddxdn_16 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddxdn_16
+END SUBROUTINE ddxdn_16
 
 !*******************************************************************************
-FUNCTION ddydn_16 (ds, a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE ddydn_16 (ds, a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -40,11 +40,11 @@ FUNCTION ddydn_16 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddydn_16
+END SUBROUTINE ddydn_16
 
 !*******************************************************************************
-FUNCTION ddzdn_16 (ds, a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE ddzdn_16 (ds, a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   real    :: ds(3), c
   integer :: ix, iy, iz
@@ -58,11 +58,11 @@ FUNCTION ddzdn_16 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddzdn_16
+END SUBROUTINE ddzdn_16
 
 !*******************************************************************************
-FUNCTION ddxup_16 (ds, a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE ddxup_16 (ds, a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -76,11 +76,11 @@ FUNCTION ddxup_16 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddxup_16
+END SUBROUTINE ddxup_16
 
 !*******************************************************************************
-FUNCTION ddyup_16 (ds, a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE ddyup_16 (ds, a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -94,11 +94,11 @@ FUNCTION ddyup_16 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddyup_16
+END SUBROUTINE ddyup_16
 
 !*******************************************************************************
-FUNCTION ddzup_16 (ds, a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE ddzup_16 (ds, a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -112,11 +112,11 @@ FUNCTION ddzup_16 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddzup_16
+END SUBROUTINE ddzup_16
 
 !*******************************************************************************
-FUNCTION xdn_16 (a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE xdn_16 (a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   real    :: c
   integer :: ix, iy, iz
@@ -130,11 +130,11 @@ FUNCTION xdn_16 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION xdn_16
+END SUBROUTINE xdn_16
 
 !*******************************************************************************
-FUNCTION ydn_16 (a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE ydn_16 (a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   real    :: c
   integer :: ix, iy, iz
@@ -148,11 +148,11 @@ FUNCTION ydn_16 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ydn_16
+END SUBROUTINE ydn_16
 
 !*******************************************************************************
-FUNCTION zdn_16 (a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE zdn_16 (a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   real    :: c
   integer :: ix, iy, iz
@@ -166,11 +166,11 @@ FUNCTION zdn_16 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION zdn_16
+END SUBROUTINE zdn_16
 
 !*******************************************************************************
-FUNCTION xup_16 (a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE xup_16 (a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   real    :: c
   integer :: ix, iy, iz
@@ -184,11 +184,11 @@ FUNCTION xup_16 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 !*******************************************************************************
-FUNCTION yup_16 (a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE yup_16 (a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   real    :: c
   integer :: ix, iy, iz
@@ -202,11 +202,11 @@ FUNCTION yup_16 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 !*******************************************************************************
-FUNCTION zup_16 (a) RESULT (b)
-  real, dimension(16,16,16):: a
+SUBROUTINE zup_16 (a, b)
+  real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   real    :: c
   integer :: ix, iy, iz
@@ -220,6 +220,6 @@ FUNCTION zup_16 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 END MODULE

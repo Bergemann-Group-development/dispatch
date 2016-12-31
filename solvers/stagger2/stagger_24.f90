@@ -7,8 +7,8 @@ MODULE stagger_24
 CONTAINS
 
 !*******************************************************************************
-FUNCTION ddxdn_24 (ds, a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE ddxdn_24 (ds, a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   real    :: ds(3), c
   integer :: ix, iy, iz
@@ -22,11 +22,11 @@ FUNCTION ddxdn_24 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddxdn_24
+END SUBROUTINE ddxdn_24
 
 !*******************************************************************************
-FUNCTION ddydn_24 (ds, a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE ddydn_24 (ds, a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -40,11 +40,11 @@ FUNCTION ddydn_24 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddydn_24
+END SUBROUTINE ddydn_24
 
 !*******************************************************************************
-FUNCTION ddzdn_24 (ds, a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE ddzdn_24 (ds, a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   real    :: ds(3), c
   integer :: ix, iy, iz
@@ -58,11 +58,11 @@ FUNCTION ddzdn_24 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddzdn_24
+END SUBROUTINE ddzdn_24
 
 !*******************************************************************************
-FUNCTION ddxup_24 (ds, a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE ddxup_24 (ds, a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -76,11 +76,11 @@ FUNCTION ddxup_24 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddxup_24
+END SUBROUTINE ddxup_24
 
 !*******************************************************************************
-FUNCTION ddyup_24 (ds, a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE ddyup_24 (ds, a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -94,11 +94,11 @@ FUNCTION ddyup_24 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddyup_24
+END SUBROUTINE ddyup_24
 
 !*******************************************************************************
-FUNCTION ddzup_24 (ds, a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE ddzup_24 (ds, a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -112,11 +112,11 @@ FUNCTION ddzup_24 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddzup_24
+END SUBROUTINE ddzup_24
 
 !*******************************************************************************
-FUNCTION xdn_24 (a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE xdn_24 (a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   real    :: c
   integer :: ix, iy, iz
@@ -130,11 +130,11 @@ FUNCTION xdn_24 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION xdn_24
+END SUBROUTINE xdn_24
 
 !*******************************************************************************
-FUNCTION ydn_24 (a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE ydn_24 (a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   real    :: c
   integer :: ix, iy, iz
@@ -148,11 +148,11 @@ FUNCTION ydn_24 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ydn_24
+END SUBROUTINE ydn_24
 
 !*******************************************************************************
-FUNCTION zdn_24 (a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE zdn_24 (a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   real    :: c
   integer :: ix, iy, iz
@@ -166,11 +166,11 @@ FUNCTION zdn_24 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION zdn_24
+END SUBROUTINE zdn_24
 
 !*******************************************************************************
-FUNCTION xup_24 (a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE xup_24 (a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   real    :: c
   integer :: ix, iy, iz
@@ -184,11 +184,11 @@ FUNCTION xup_24 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 !*******************************************************************************
-FUNCTION yup_24 (a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE yup_24 (a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   real    :: c
   integer :: ix, iy, iz
@@ -202,11 +202,11 @@ FUNCTION yup_24 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 !*******************************************************************************
-FUNCTION zup_24 (a) RESULT (b)
-  real, dimension(24,24,24):: a
+SUBROUTINE zup_24 (a, b)
+  real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   real    :: c
   integer :: ix, iy, iz
@@ -220,6 +220,6 @@ FUNCTION zup_24 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 END MODULE

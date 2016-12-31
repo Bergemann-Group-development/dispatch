@@ -7,8 +7,8 @@ MODULE stagger_32
 CONTAINS
 
 !*******************************************************************************
-FUNCTION ddxdn_32 (ds, a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE ddxdn_32 (ds, a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   real    :: ds(3), c
   integer :: ix, iy, iz
@@ -22,11 +22,11 @@ FUNCTION ddxdn_32 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddxdn_32
+END SUBROUTINE ddxdn_32
 
 !*******************************************************************************
-FUNCTION ddydn_32 (ds, a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE ddydn_32 (ds, a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -40,11 +40,11 @@ FUNCTION ddydn_32 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddydn_32
+END SUBROUTINE ddydn_32
 
 !*******************************************************************************
-FUNCTION ddzdn_32 (ds, a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE ddzdn_32 (ds, a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   real    :: ds(3), c
   integer :: ix, iy, iz
@@ -58,11 +58,11 @@ FUNCTION ddzdn_32 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddzdn_32
+END SUBROUTINE ddzdn_32
 
 !*******************************************************************************
-FUNCTION ddxup_32 (ds, a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE ddxup_32 (ds, a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -76,11 +76,11 @@ FUNCTION ddxup_32 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddxup_32
+END SUBROUTINE ddxup_32
 
 !*******************************************************************************
-FUNCTION ddyup_32 (ds, a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE ddyup_32 (ds, a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -94,11 +94,11 @@ FUNCTION ddyup_32 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddyup_32
+END SUBROUTINE ddyup_32
 
 !*******************************************************************************
-FUNCTION ddzup_32 (ds, a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE ddzup_32 (ds, a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   integer :: ix, iy, iz
   real    :: ds(3), c
@@ -112,11 +112,11 @@ FUNCTION ddzup_32 (ds, a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ddzup_32
+END SUBROUTINE ddzup_32
 
 !*******************************************************************************
-FUNCTION xdn_32 (a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE xdn_32 (a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   real    :: c
   integer :: ix, iy, iz
@@ -130,11 +130,11 @@ FUNCTION xdn_32 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION xdn_32
+END SUBROUTINE xdn_32
 
 !*******************************************************************************
-FUNCTION ydn_32 (a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE ydn_32 (a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   real    :: c
   integer :: ix, iy, iz
@@ -148,11 +148,11 @@ FUNCTION ydn_32 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION ydn_32
+END SUBROUTINE ydn_32
 
 !*******************************************************************************
-FUNCTION zdn_32 (a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE zdn_32 (a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   real    :: c
   integer :: ix, iy, iz
@@ -166,11 +166,11 @@ FUNCTION zdn_32 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION zdn_32
+END SUBROUTINE zdn_32
 
 !*******************************************************************************
-FUNCTION xup_32 (a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE xup_32 (a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   real    :: c
   integer :: ix, iy, iz
@@ -184,11 +184,11 @@ FUNCTION xup_32 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 !*******************************************************************************
-FUNCTION yup_32 (a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE yup_32 (a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   real    :: c
   integer :: ix, iy, iz
@@ -202,11 +202,11 @@ FUNCTION yup_32 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 !*******************************************************************************
-FUNCTION zup_32 (a) RESULT (b)
-  real, dimension(32,32,32):: a
+SUBROUTINE zup_32 (a, b)
+  real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   real    :: c
   integer :: ix, iy, iz
@@ -220,6 +220,6 @@ FUNCTION zup_32 (a) RESULT (b)
   end do
   end do
   end do
-END FUNCTION
+END SUBROUTINE
 
 END MODULE
