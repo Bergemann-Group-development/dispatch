@@ -41,7 +41,7 @@ SUBROUTINE init (self)
   !$omp critical (eos_cr)
   if (first_time) then
     do_eos = .true.
-    tablefile = '../../../data/eos/table.dat'
+    tablefile = '../../data/eos/stagger/table.dat'
     rewind (io%input); read (io%input,eos_params)
     if (io%master) write (*,eos_params)
     !-----------------------------------------------------------------------------
