@@ -86,7 +86,7 @@ END SUBROUTINE cleanup
 SUBROUTINE single_solenoidal (self, m, ff)
   class(initial_t)      :: self
   class(mesh_t), allocatable, dimension(:):: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
@@ -123,8 +123,8 @@ END SUBROUTINE single_solenoidal
 !> =============================================================================
 SUBROUTINE single_compressive (self, m, ff)
   class(initial_t)        :: self
-  class(mesh_t), allocatable, dimension(:):: m(3)
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  class(mesh_t), allocatable, dimension(:):: m
+  real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
@@ -162,7 +162,7 @@ END SUBROUTINE single_compressive
 SUBROUTINE single_advection (self, m, ff)
   class(initial_t)        :: self
   class(mesh_t), allocatable, dimension(:):: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
@@ -201,7 +201,7 @@ SUBROUTINE exa256 (self, m, ff)
   USE io_unit_mod
   class(initial_t)      :: self
   class(mesh_t), allocatable, dimension(:):: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
+  real, dimension(:,:,:,:) :: ff
   real, dimension(:), allocatable:: u, d
   !.............................................................................
   integer               :: ix, iy, iz, jy, jz, rec
@@ -251,7 +251,7 @@ SUBROUTINE raw (self, m, ff)
   USE io_unit_mod
   class(initial_t):: self
   class(mesh_t), allocatable, dimension(:):: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8):: ff
+  real, dimension(:,:,:,:):: ff
   !.............................................................................
   integer:: n(3), i(3), iv, iw
   integer, save:: mv=4
