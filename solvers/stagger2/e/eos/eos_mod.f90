@@ -34,15 +34,14 @@ CONTAINS
 !> =============================================================================
 !> Initialize EOS module (only once)
 !> =============================================================================
-SUBROUTINE init (self, mx ,my ,mz)
+SUBROUTINE init (self)
   class (eos_t):: self
-  integer:: mx,my,mz
   namelist /eos_params/ do_eos, tablefile
   !-----------------------------------------------------------------------------
   !$omp critical (eos_cr)
   if (first_time) then
     do_eos = .true.
-    tablefile = '../../data/eos/table.dat'
+    tablefile = '../../../data/eos/table.dat'
     rewind (io%input); read (io%input,eos_params)
     if (io%master) write (*,eos_params)
     !-----------------------------------------------------------------------------
