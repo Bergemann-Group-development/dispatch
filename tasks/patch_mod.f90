@@ -1339,9 +1339,8 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   integer:: jt(2)
   integer:: i, id, it, iit(self%nt), verbose
   real(8):: pt(2), dt1, t(self%nt), dt(self%nt)
-  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin ('task_t::time_interpolate',3,itimer=itimer)
+  call trace_begin ('task_t::time_interpolate',3)
   verbose = io_unit%verbose
   !-----------------------------------------------------------------------------
   ! In case of e.g. an error in initial conditions, choose a valid default
@@ -1414,7 +1413,7 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
       pt(1)=1d0; pt(2)=0d0
     end if
   end if
-  call trace_end (itimer)
+  call trace_end
 END SUBROUTINE time_interpolate
 
 !> =============================================================================

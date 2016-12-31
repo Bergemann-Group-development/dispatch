@@ -58,7 +58,8 @@ SUBROUTINE init (self)
   real, save:: gamma_AD=75., rho_ions=1.
   integer:: i
   logical, save:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
-  namelist /mhd_params/ nu, gamma, csound, cdtd, mhd_AD, mhd_Ohm, gamma_AD, rho_ions
+  namelist /mhd_params/ nu, gamma, csound, cdtd, mhd_AD, mhd_Ohm, gamma_AD, &
+    rho_ions, hardwire
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
@@ -124,8 +125,8 @@ SUBROUTINE update (self)
   real:: ds(3), dx
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%update',itimer=itimer)
   call self%dnload
+  call trace%begin('mhd_t%update',itimer=itimer)
   call self%output
 
   self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
