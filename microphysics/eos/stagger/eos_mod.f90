@@ -10,7 +10,7 @@ MODULE eos_mod
   !-----------------------------------------------------------------------------
   ! Table related parameters
   !-----------------------------------------------------------------------------
-  integer iupdte,nvar,mrho,mtable,njon
+  integer iupdte,nvar,md,mtable,njon
   real(kind=4):: eosxmin,ur,ul,ut,eps,tff,grv,abnd,dbox
   real(kind=4), allocatable, dimension(:):: tmean,tamp,rhm,xcorr,thmin,thmax, &
     dth,eemin,eemax,deetab,tab
@@ -40,6 +40,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   !$omp critical (eos_cr)
   if (first_time) then
+    first_time = .false.
     do_eos = .true.
     tablefile = '../../data/eos/stagger/table.dat'
     rewind (io%input); read (io%input,eos_params)
@@ -48,17 +49,26 @@ SUBROUTINE init (self)
     ! Read the table file
     !-----------------------------------------------------------------------------
     open (io_unit%data, file=tablefile, form='unformatted', status='old', action='read')
-    read (io_unit%data) mrho,iupdte,nvar,mbox,eosxmin,dbox,ul,ut,ur,eps,tff,grv,abnd
+    read (io_unit%data) md,iupdte,nvar,mbox,eosxmin,dbox,ul,ut,ur,eps,tff,grv,abnd
     njon = nvar-mbox
-    allocate (tmean(mrho),tamp(mrho),rhm(mrho),xcorr(mrho),thmin(mrho),thmax(mrho))
-    allocate (dth(mrho),eemin(mrho),eemax(mrho),deetab(mrho),itab(mrho),mtab(mrho))
-    if (io%do_trace.and.io%master) print *,mpi%rank, 'reading 12 times', mrho, ' values'
+    allocate (tmean(md),tamp(md),rhm(md),xcorr(md),thmin(md),thmax(md))
+    allocate (dth(md),eemin(md),eemax(md),deetab(md),itab(md),mtab(md))
+    if (io%do_trace.and.io%master) print *,mpi%rank, 'reading 12 times', md, ' values'
     read (io_unit%data) tmean,tamp,rhm,xcorr,thmin,thmax,dth,eemin,eemax,deetab,itab,mtab
     read (io_unit%data) mtable
     allocate (tab(mtable))
     read (io_unit%data) tab
     close (io_unit%data)
-    first_time = .false.
+    if (mpi%master) then
+      print *, trim(tablefile)//': md, mtable =', md, mtable
+      block
+        real, dimension(1,1,1):: d, ee, pg
+        d = 1.0
+        ee  = 5.0
+        call self%lookup (d, ee, pg)
+        print *,'d, ee, pg =', d, ee, pg
+      end block
+    end if
   end if
   self%on = do_eos
   !$omp end critical (eos_cr)
@@ -68,15 +78,15 @@ END SUBROUTINE init
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, rho, ee, pg, tt, ne, rk, src)
+SUBROUTINE lookup (self, lnd, ee, pg, tt, ne, rk, src)
   class (eos_t):: self
-  real, dimension(:,:,:)             :: rho,ee
+  real, dimension(:,:,:)             :: lnd,ee
   real, dimension(:,:,:)  , optional :: pg,tt,ne,rk
   real, dimension(:,:,:,:), optional :: src
   !.............................................................................
-  real(kind=4), dimension(size(rho,1)):: px,py,f00,f01,f10,f11, &
+  real(kind=4), dimension(size(lnd,1)):: px,py,f00,f01,f10,f11, &
     fx00,fx01,fx10,fx11,fy00,fy01,fy10,fy11
-  integer, dimension(size(rho,1)):: np,np1,ik,ntab,ik1,ntab1
+  integer, dimension(size(lnd,1)):: np,np1,ik,ntab,ik1,ntab1
   real:: rhm1,rhm2,drhm,algrk,eek,eek1,py1
   real:: qx,qy,pxqx,pxpx,qxqx,pypy,pyqy,qyqy,pxpy,qxqy,pxqy,qxpy
   logical:: newtable
@@ -85,14 +95,14 @@ SUBROUTINE lookup (self, rho, ee, pg, tt, ne, rk, src)
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays
   !-----------------------------------------------------------------------------
-  mx=size(rho,1)
-  my=size(rho,2)
-  mz=size(rho,3)
+  mx=size(lnd,1)
+  my=size(lnd,2)
+  mz=size(lnd,3)
   newtable = .false.
   !
   rhm1=log(rhm(1))
-  rhm2=log(rhm(mrho))
-  drhm=(rhm2-rhm1)/(mrho-1)
+  rhm2=log(rhm(md))
+  drhm=(rhm2-rhm1)/(md-1)
   !-----------------------------------------------------------------------------
   ! Loop over points
   !-----------------------------------------------------------------------------
@@ -102,8 +112,8 @@ SUBROUTINE lookup (self, rho, ee, pg, tt, ne, rk, src)
       !-------------------------------------------------------------------------
       ! Density index (6 lops)
       !-------------------------------------------------------------------------
-      algrk=1.+(log(rho(ix,iy,iz))-rhm1)/drhm
-      np(ix)=max0(1,min0(mrho-1,int(algrk)))
+      algrk=1.+(lnd(ix,iy,iz)-rhm1)/drhm
+      np(ix)=max0(1,min0(md-1,int(algrk)))
       px(ix)=algrk-np(ix)
       !-------------------------------------------------------------------------
       ! Internal energy index -- this loop has indirect referencing (9 flops)

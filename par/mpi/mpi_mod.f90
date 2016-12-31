@@ -189,10 +189,15 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE abort_mpi (self, reason)
   class(mpi_t):: self
-  character(len=*):: reason
+  character(len=*), optional:: reason
 !...............................................................................
-  print*, mpi_rank, 'mpi_abort: '//trim(reason)
-  write(io_unit%log,'(3(a,i6,2x))') 'mpi_abort: thread =',omp%thread,trim(reason)
+  if (present(reason)) then
+    print*, mpi_rank, 'mpi_abort: '//trim(reason)
+    write(io_unit%log,'(3(a,i6,2x))') 'mpi_abort: thread =',omp%thread,trim(reason)
+  else
+    print*, mpi_rank, 'mpi_abort: generic'
+    write(io_unit%log,'(3(a,i6,2x))') 'mpi_abort: thread =',omp%thread
+  end if
   flush (io_unit%log)
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
   call exit

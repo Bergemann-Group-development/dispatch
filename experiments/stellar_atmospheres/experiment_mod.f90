@@ -44,11 +44,7 @@ SUBROUTINE init (self)
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
   call self%initial%init
-  if (self%initial%mhd) then
-    self%nv = 8
-  else
-    self%nv = 5
-  end if
+  self%nv  = self%initial%nv
   self%mhd = self%initial%mhd
   call self%mhd_t%init
   call self%set(bits%static)

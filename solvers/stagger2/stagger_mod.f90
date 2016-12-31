@@ -639,10 +639,9 @@ FUNCTION vector_scalar_grad (ds, in) RESULT (out)
 END FUNCTION vector_scalar_grad
 
 !> =============================================================================
-FUNCTION vector_norm2_scalar (ds, in) RESULT (out)
+FUNCTION vector_norm2_scalar (in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
-  real:: ds(3)
   !-----------------------------------------------------------------------------
   out = in(:,:,:,1)**2 + in(:,:,:,2)**2 + in(:,:,:,3)
 END FUNCTION vector_norm2_scalar
@@ -658,7 +657,6 @@ END FUNCTION vector_norm_scalar
 FUNCTION scalar_edge_vector (in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
-  real:: ds(3)
   !-----------------------------------------------------------------------------
   out(:,:,:,1) = ydn(zdn(in))
   out(:,:,:,2) = zdn(xdn(in))
@@ -668,7 +666,6 @@ END FUNCTION scalar_edge_vector
 FUNCTION scalar_down_vector (in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
-  real:: ds(3)
   !-----------------------------------------------------------------------------
   out(:,:,:,1) = xdn (in)
   out(:,:,:,2) = ydn (in)
@@ -678,7 +675,6 @@ END FUNCTION scalar_down_vector
 FUNCTION vector_up_vector (in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
-  real:: ds(3)
   !-----------------------------------------------------------------------------
   out(:,:,:,1) = xup (in(:,:,:,1))
   out(:,:,:,2) = yup (in(:,:,:,2))

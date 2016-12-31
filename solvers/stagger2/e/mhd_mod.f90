@@ -13,6 +13,7 @@ MODULE mhd_mod
   USE patch_mod
   USE force_mod
   USE download_mod
+  USE eos_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
@@ -22,7 +23,7 @@ MODULE mhd_mod
     real:: cdtd
     logical:: mhd=.true.
     type(force_t):: force
-    integer:: i_e=2, i_px=3, i_py=4, i_pz=5, i_bx=6, i_by=7, i_bz=8
+    integer:: i_px=2, i_py=3, i_pz=4, i_e=5, i_bx=7, i_by=8, i_bz=9, i_tt=6
   contains
     procedure:: init
     procedure:: update
@@ -49,7 +50,7 @@ SUBROUTINE init (self)
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   integer:: i
   logical, save:: first_time=.true.
-  namelist /mhd_params/ nu, gamma, csound, cdtd
+  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
@@ -106,16 +107,20 @@ SUBROUTINE update (self)
   call self%dnload
   call self%output
 
-  self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
-  self%e => self%mem(:,:,:,  2,self%it,1); self%dedt => self%mem(:,:,:,  2,self%it,2)
-  self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
+  self%d    => self%mem(:,:,:,self%i_d,self%it,1)
+  self%dddt => self%mem(:,:,:,self%i_d,self%it,2)
+  self%e    => self%mem(:,:,:,self%i_e,self%it,1)
+  self%dedt => self%mem(:,:,:,self%i_e,self%it,2)
+  self%p    => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
+  self%dpdt => self%mem(:,:,:,self%i_px:self%i_pz,self%it,2)
   d=>self%d; dddt=>self%dddt
   e=>self%e; dedt=>self%dedt
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
-    self%B => self%mem(:,:,:,6:8,self%it,1); self%dBdt => self%mem(:,:,:,6:8,self%it,2)
+    self%B    => self%mem(:,:,:,self%i_bx:self%i_bz,self%it,1)
+    self%dBdt => self%mem(:,:,:,self%i_bx:self%i_bz,self%it,2)
     B=>self%B; dBdt=>self%dBdt
     Bx   =>   B(:,:,:,1); By   =>   B(:,:,:,2); Bz   =>   B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
@@ -150,7 +155,8 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Gas pressure
   !-----------------------------------------------------------------------------
-  pg = self%gas_pressure()
+  ee = e/d
+  call eos%lookup (lnd, ee, pg)
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure
   !-----------------------------------------------------------------------------
@@ -368,8 +374,8 @@ FUNCTION cell_gas_pressure(self, c) RESULT (pg)
   integer :: c(3)
   real :: pg
   !---------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3), 1,self%it,1), &
-             e => self%mem(c(1),c(2),c(3), 2,self%it,1))
+  associate (d => self%mem(c(1),c(2),c(3),self%i_d,self%it,1), &
+             e => self%mem(c(1),c(2),c(3),self%i_e,self%it,1))
   if (self%gamma==1.0) then
     pg = self%d(c(1),c(2),c(3))*self%csound**2
   else
@@ -386,7 +392,7 @@ FUNCTION gas_temperature (self) RESULT (tmp)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
   !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:,  1,self%it,1))
+  associate (d => self%mem(:,:,:,self%i_d,self%it,1))
   tmp = gas_pressure(self)/d
   end associate
 END FUNCTION gas_temperature
@@ -398,7 +404,7 @@ FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
   integer :: c(3)
   real :: tmp(c(1),c(2),c(3))
   !-----------------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3),  1,self%it,1))
+  associate (d => self%mem(c(1),c(2),c(3),self%i_d,self%it,1))
   tmp = cell_gas_pressure(self,c)/self%d(c(1),c(2),c(3))
   end associate
 END FUNCTION cell_gas_temperature
