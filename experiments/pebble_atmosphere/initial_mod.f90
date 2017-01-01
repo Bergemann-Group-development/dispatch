@@ -60,7 +60,7 @@ END SUBROUTINE init
 SUBROUTINE planet_atmosphere (self, mem, m, omega)
   class(initial_t)             :: self
   real, dimension(:,:,:,:,:,:) :: mem
-  class(mesh_t), allocatable, dimension(:):: m
+  class(mesh_t), pointer, dimension(:):: m
   real:: omega(3), gamma
   !.............................................................................
   integer :: ix, iy, iz, nr

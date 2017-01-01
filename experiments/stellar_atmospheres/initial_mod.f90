@@ -84,7 +84,7 @@ END SUBROUTINE cleanup
 !> =============================================================================
 SUBROUTINE snapshot (self, m, ff)
   class(initial_t):: self
-  class(mesh_t), allocatable, dimension(:):: m
+  class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
   logical, save:: first_time=.true.
   !.............................................................................
@@ -111,7 +111,7 @@ END SUBROUTINE snapshot
 !> =============================================================================
 SUBROUTINE stagger (self, m, ff)
   class(initial_t):: self
-  class(mesh_t), allocatable, dimension(:):: m
+  class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
   integer:: n(3), i(3), iv, recl
   logical, save:: first_time=.true.
@@ -203,7 +203,7 @@ END SUBROUTINE stagger
 !> =============================================================================
 SUBROUTINE raw (self, m, ff)
   class(initial_t):: self
-  class(mesh_t), allocatable, dimension(:):: m
+  class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
   integer:: n(3), i(3), iv, recl
   logical, save:: first_time=.true.
@@ -259,7 +259,7 @@ END SUBROUTINE raw
 !> =============================================================================
 SUBROUTINE single_solenoidal (self, m, ff)
   class(initial_t)      :: self
-  class(mesh_t), allocatable, dimension(:):: m
+  class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t) :: random

@@ -25,7 +25,7 @@ MODULE patch_mod
     real, dimension(:,:,:,:,:),   pointer:: vgas     => null()
     real, dimension(:,:,:,:),     pointer:: density  => null()
     real, dimension(:,:,:,:),     pointer:: pressure => null()
-    class(mesh_t), dimension(:), allocatable:: mesh
+    class(mesh_t), dimension(:), pointer:: mesh
     real:: courant                      ! courant number
     real:: gamma=1.0                    ! gas gamma
     real:: dt_fixed, u_fixed, u_max     ! for fixed time step Courant condition
@@ -1504,14 +1504,14 @@ FUNCTION beyond_patch_edge (self, idir, position) result (outside)
       edge = self%gsize(idir) + self%origin(idir)
       outside = abs(curvpos(idir)) > edge .or. abs(curvpos(idir)) < self%origin(idir)
     case (2)
-      if (allocated(self%mesh)) then
+      if (associated(self%mesh)) then
         edge = self%gsize(idir) + self%mesh(2)%xi
       else
         edge = self%gsize(idir)
       end if
       outside = abs(curvpos(idir)) > edge
     case (3)
-      if (allocated(self%mesh)) then
+      if (associated(self%mesh)) then
         edge = self%gsize(idir) + self%mesh(3)%zeta
       else
         edge = self%gsize(idir)
@@ -1530,7 +1530,7 @@ FUNCTION beyond_patch_edge (self, idir, position) result (outside)
       edge = self%gsize(idir) + self%origin(idir)
       outside = abs(curvpos(idir)) > edge .or. abs(curvpos(idir)) < self%origin(idir)
     case (3)
-      if (allocated(self%mesh)) then
+      if (associated(self%mesh)) then
         edge = self%gsize(idir) + self%mesh(3)%zeta
       else
         edge = self%gsize(idir)

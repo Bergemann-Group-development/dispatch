@@ -38,7 +38,7 @@ END SUBROUTINE
 FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
-  class(mesh_t), allocatable, dimension(:):: m
+  class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
   real, dimension(:,:,:):: Ux, Uy, Uz
   !.............................................................................
@@ -72,7 +72,7 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
         ff(ix,iy,iz,3) = planet%mass*scaling%grav*zs/rp1**3
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
-        ! The force in the radial direction increases with increasing y, 
+        ! The force in the radial direction increases with increasing y,
         ! giving an equilbrium velocity in the x-direction that is positive
         ! (faster rotation) for a positive y-displacement
         !-----------------------------------------------------------------------
@@ -86,7 +86,7 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
   ! assuming (as above) that the motion is in the x-y plane.  A positive omega(3)
   ! is motion in the negative x-direction, if y points in the radial direction.
   ! Hence, a positive velocity in the x-direction reduces the centripetal force,
-  ! and leads to acceleration in the negative y-direction -- vice versa for 
+  ! and leads to acceleration in the negative y-direction -- vice versa for
   ! motion in the y-direction
   !-----------------------------------------------------------------------------
   ff(:,:,:,1) = ff(:,:,:,1) + 2.*self%omega(3)*xdn(yup(Uy))

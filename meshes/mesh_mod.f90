@@ -56,12 +56,14 @@ MODULE mesh_mod
     real(8) :: origin = 0.0 ! position of the patch's lower left corner in relative,
                             ! native coords.; always = 0 in Cartesian coords.
     real(4) :: centre        ! volume centroid of the current mesh in its own coord. system
-    real(8), dimension(:), allocatable :: r  ! coordinate relative to patch centre
-    real(8), dimension(:), allocatable :: h  ! offset for staggered variables;
+    real(8), dimension(:), pointer :: r  ! coordinate relative to patch centre
+    real(8), dimension(:), pointer :: h  ! offset for staggered variables;
                                              ! should be initialised in `mhd_t%init`
+    real(8), dimension(:), pointer :: ddn  ! borrow for now (FIXME)
+    real(8), dimension(:), pointer :: dup  ! borrow for now (FIXME)
     character(len=16):: type = ''
-    real(8), allocatable :: zeta  ! position angle of the phi = 0 axis relative to the x-axis (cyl. and sph. coords.).
-    real(8), allocatable :: xi    ! position angle of the theta = 0 relative to the neg. z-axis (sph. coords.).
+    real(8), pointer :: zeta  ! position angle of the phi = 0 axis relative to the x-axis (cyl. and sph. coords.).
+    real(8), pointer :: xi    ! position angle of the theta = 0 relative to the neg. z-axis (sph. coords.).
 
     procedure (), pointer, nopass :: CurrentToCartesian => null()
     ! geometric factors as procedure pointers
@@ -189,7 +191,7 @@ CONTAINS
 !> It is possible for up to 2 of the meshes to have extent one.
 !> =============================================================================
 SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, origin)
-  class(mesh_t), dimension(:), allocatable :: collection
+  class(mesh_t), dimension(:), pointer :: collection
   integer, intent(in) :: meshtype
   integer, dimension(3), optional :: ng
   integer, dimension(3) :: ngi
@@ -232,7 +234,7 @@ SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, origin)
   end if
 
 
-  if (allocated(collection)) call MeshRecycler(collection)
+  if (associated(collection)) call MeshRecycler(collection)
   ! Allocate based on the desired mesh type.
   ! The grid is always assumed to be 3-D, even if one of the directions is
   ! collapsed/a symmetry direction (in which case, n = 1).
@@ -264,7 +266,7 @@ END SUBROUTINE MeshFactory
 !> A means to entirely deallocate a collection of meshes
 !> =============================================================================
 SUBROUTINE MeshRecycler (collection)
-  class(mesh_t), dimension(:), allocatable :: collection
+  class(mesh_t), dimension(:), pointer :: collection
   integer :: i
   !.............................................................................
   deallocate(collection)
@@ -341,7 +343,7 @@ END SUBROUTINE
 SUBROUTINE deallocate_coord (self)
   class(mesh_t) :: self
   !.............................................................................
-  if (allocated(self%r)) deallocate (self%r)
+  if (associated(self%r)) deallocate (self%r)
 END SUBROUTINE deallocate_coord
 
 !> =============================================================================
@@ -371,8 +373,8 @@ SUBROUTINE print_mesh (self)
     print'(i4,f14.8)',i,self%r(i)
   end do
 
-  if (allocated(self%zeta)) print*,"phi axis offset: ", self%zeta
-  if (allocated(self%xi)) print*,"theta axis offset: ", self%xi
+  if (associated(self%zeta)) print*,"phi axis offset: ", self%zeta
+  if (associated(self%xi)) print*,"theta axis offset: ", self%xi
 
   print*,'----------'
 END SUBROUTINE print_mesh

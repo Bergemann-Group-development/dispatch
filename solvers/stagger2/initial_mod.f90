@@ -85,7 +85,7 @@ END SUBROUTINE cleanup
 !> =============================================================================
 SUBROUTINE single_solenoidal (self, m, ff)
   class(initial_t)      :: self
-  class(mesh_t), allocatable, dimension(:):: m
+  class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -123,7 +123,7 @@ END SUBROUTINE single_solenoidal
 !> =============================================================================
 SUBROUTINE single_compressive (self, m, ff)
   class(initial_t)        :: self
-  class(mesh_t), allocatable, dimension(:):: m
+  class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -161,7 +161,7 @@ END SUBROUTINE single_compressive
 !> =============================================================================
 SUBROUTINE single_advection (self, m, ff)
   class(initial_t)        :: self
-  class(mesh_t), allocatable, dimension(:):: m
+  class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
   type(random_t)        :: random
@@ -200,7 +200,7 @@ END SUBROUTINE single_advection
 SUBROUTINE exa256 (self, m, ff)
   USE io_unit_mod
   class(initial_t)      :: self
-  class(mesh_t), allocatable, dimension(:):: m
+  class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:) :: ff
   real, dimension(:), allocatable:: u, d
   !.............................................................................
@@ -249,7 +249,7 @@ END SUBROUTINE exa256
 SUBROUTINE raw (self, m, ff)
   USE io_unit_mod
   class(initial_t):: self
-  class(mesh_t), allocatable, dimension(:):: m
+  class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
   !.............................................................................
   integer:: n(3), i(3), iv, iw, iostat

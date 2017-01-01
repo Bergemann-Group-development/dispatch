@@ -21,7 +21,7 @@ CONTAINS
 SUBROUTINE condition (self, mem, m, h)
   class(boundary_t)      :: self
   real, dimension(:,:,:) :: mem
-  class(mesh_t), allocatable, dimension(:) :: m
+  class(mesh_t), pointer, dimension(:) :: m
   real(8)                :: h(3)
   !.............................................................................
   integer      :: ix, iy, iz, iv
