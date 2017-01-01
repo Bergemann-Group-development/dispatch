@@ -28,6 +28,7 @@ MODULE experiment_mod
   contains
     procedure init
     procedure update
+    procedure boundary_conditions
   end type
   logical, save:: first_time=.true.
 CONTAINS
@@ -54,7 +55,6 @@ SUBROUTINE init (self)
   call self%initial%selected(self%mesh, self%mem(:,:,:,:,1,1))
   self%time = self%initial%time
   self%t(self%it) = self%initial%time
-  !call self%periodic_grid
   call trace_end (itimer=itimer)
 END SUBROUTINE init
 
@@ -78,13 +78,25 @@ SUBROUTINE update (self)
     first_time = .false.
     call self%initial%cleanup
   end if
+  call self%output
   call self%mhd_t%update
+  call self%boundary_conditions
   call self%courant_condition
+  call self%output
   if (io%verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
   call trace_end
 END SUBROUTINE update
+
+SUBROUTINE boundary_conditions (self)
+  class(experiment_t):: self
+  !----------------------------------------------------------------------------
+  call trace_begin('experiment_t%boundary_conditions')
+  self%mem(:,01:05,:,:,:,2) = 0.0
+  self%mem(:,59:63,:,:,:,2) = 0.0
+  call trace_end
+END SUBROUTINE boundary_conditions
 
 END MODULE

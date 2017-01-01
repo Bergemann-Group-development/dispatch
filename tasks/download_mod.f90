@@ -110,6 +110,15 @@ SUBROUTINE same_static (self)
           write (io_unit%log,'(a,3(3i4,3x),i6)') 'target ranges: l1, u1, o, n =', l1, u1, o, ntot
         end if
         dmin = 1e30
+        !-----------------------------------------------------------------------
+        ! Ensure guard zones are filled in physical boundary regions
+        !-----------------------------------------------------------------------
+        where (target%mesh%lower_boundary)
+          l1 = target%mesh%lb
+        end where
+        where (target%mesh%upper_boundary)
+          u1 = target%mesh%ub
+        end where
         do iz=l1(3),u1(3)
         do iy=l1(2),u1(2)
         do ix=l1(1),u1(1)

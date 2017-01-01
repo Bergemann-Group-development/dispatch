@@ -115,6 +115,10 @@ SUBROUTINE stagger (self, m, ff)
   real, dimension(:,:,:,:):: ff
   integer:: n(3), i(3), iv, recl
   logical, save:: first_time=.true.
+  integer:: mx, my, mz
+  real, save, dimension(:), pointer:: dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
+  real, save, dimension(:), pointer:: dym, dymdn, ym, ymdn, dyidyup, dyidydn
+  real, save, dimension(:), pointer:: dzm, dzmdn, zm, zmdn, dzidzup, dzidzdn
   !.............................................................................
   integer, save:: dims(3)=63
   character(len=64):: file='snapshot'
@@ -128,6 +132,7 @@ SUBROUTINE stagger (self, m, ff)
     rewind (io%input); read (io%input, stagger_params)
     if (io%master) write (*, stagger_params)
     n = nint(m%b/m%d)
+    n(2) = n(2)+4
     if (.not.all(n==dims)) then
       if (io%master) print *, 'ERROR: file  dims =', dims
       if (io%master) print *, 'ERROR: setup dims =', n
@@ -151,11 +156,6 @@ SUBROUTINE stagger (self, m, ff)
     !---------------------------------------------------------------------------
     open (io_unit%data, file=trim(file)//'.msh', form='unformatted')
     ! read dimensions
-    block
-      integer:: mx, my, mz
-      real, dimension(:), allocatable:: dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
-      real, dimension(:), allocatable:: dym, dymdn, ym, ymdn, dyidyup, dyidydn
-      real, dimension(:), allocatable:: dzm, dzmdn, zm, zmdn, dzidzup, dzidzdn
       read(io_unit%data) mx, my, mz
       if (.not. all(dims==[mx,my,mz])) then
         if (io%master) print *, 'ERROR: file dims =', dims
@@ -171,7 +171,6 @@ SUBROUTINE stagger (self, m, ff)
       read(io_unit%data) dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
       read(io_unit%data) dym, dymdn, ym, ymdn, dyidyup, dyidydn
       read(io_unit%data) dzm, dzmdn, zm, zmdn, dzidzup, dzidzdn
-    end block
     close (io_unit%data)
   end if
   !$omp end critical (init_cr)
@@ -183,18 +182,30 @@ SUBROUTINE stagger (self, m, ff)
   ff = 0.0
   do iv=1,self%nv
     ff(m(1)%li:m(1)%ui, &
-       m(2)%li:m(2)%ui, &
-       m(3)%li:m(3)%ui,iv) = buffer(i(1):i(1)+m(1)%n-1, &
-                                    i(2):i(2)+m(2)%n-1, &
-                                    i(3):i(3)+m(3)%n-1,iv)
+       m(2)%lb:m(2)%ub, &
+       m(3)%li:m(3)%ui,iv) = buffer(i(1):i(1)+m(1)%n -1, &
+                                    i(2):i(2)+m(2)%gn-1, &
+                                    i(3):i(3)+m(3)%n -1,iv)
   end do
+  !-----------------------------------------------------------------------------
+  ! Mesh coefficient
+  !-----------------------------------------------------------------------------
+  allocate (m(2)%ddn(m(2)%gn))
+  allocate (m(2)%dup(m(2)%gn))
+  m(2)%ddn = dyidydn(i(2):i(2)+m(2)%gn-1)
+  m(2)%dup = dyidyup(i(2):i(2)+m(2)%gn-1)
   !-----------------------------------------------------------------------------
   ! Diagnostic output
   !-----------------------------------------------------------------------------
-  if (io%verbose > 2) &
-    write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
-      minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
-      maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
+  if (io%verbose > 0) then
+    do iv=1,self%nv
+      write (io_unit%log,'(a,3i4,i5,1p,2g12.3)') 'ix,iy,iz,fmin,fmax =', i, iv, &
+        minval(ff(m(1)%li:m(1)%ui,m(2)%lb:m(2)%ub,m(3)%li:m(3)%ui,iv)), &
+        maxval(ff(m(1)%li:m(1)%ui,m(2)%lb:m(2)%ub,m(3)%li:m(3)%ui,iv))
+    end do
+  end if
+  m(2)%lower_boundary = .true.
+  m(2)%upper_boundary = .true.
   call trace_end
 END SUBROUTINE stagger
 

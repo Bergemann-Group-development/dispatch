@@ -14,7 +14,7 @@ MODULE stagger_mod
   implicit none
   public
   integer, private:: verbose=0
-  logical, save:: hardwire=.true.
+  logical, save:: hardwire=.false.
   type, public:: stagger_t
     real:: ds(3)
     class(mesh_t), dimension(:), pointer:: m
@@ -47,6 +47,7 @@ MODULE stagger_mod
     procedure:: curl_dn => vector_curl_dn_vector
     procedure:: curl_up => vector_curl_up_vector
     procedure:: grad    => vector_grad_scalar
+    procedure:: ddown   => scalar_ddown_vector
   end type
   interface norm
     module procedure vector_norm_scalar
@@ -62,9 +63,6 @@ MODULE stagger_mod
   end interface
   interface up
     module procedure vector_up_vector
-  end interface
-  interface ddown
-    module procedure scalar_ddown_vector
   end interface
   interface dup
     module procedure vector_dup_vector
@@ -227,11 +225,10 @@ FUNCTION ddydn (self, a) RESULT (b)
     end if
   else if (n(2) > 1) then
     b(:,1,:) = 0.0
-    c = 1./self%m(2)%d
     do iz=1,n(3)
     do iy=2,n(2)
     do ix=1,n(1)
-      b(ix,iy,iz) = c*(a(ix,iy  ,iz) - a(ix,iy-1,iz))*self%m(2)%ddn(iy)
+      b(ix,iy,iz) = (a(ix,iy  ,iz) - a(ix,iy-1,iz))*self%m(2)%ddn(iy)
     end do
     end do
     end do
@@ -348,11 +345,10 @@ FUNCTION ddyup (self, a) RESULT (b)
     end if
   else if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,n(2),:) = 0.0
-    c = 1./self%m(2)%d
     do iz=1,n(3)
     do iy=1,n(2)-1
     do ix=1,n(1)
-      b(ix,iy,iz) = c*(a(ix,iy+1,iz) - a(ix,iy  ,iz))*self%m(2)%dup(iy)
+      b(ix,iy,iz) = (a(ix,iy+1,iz) - a(ix,iy  ,iz))*self%m(2)%dup(iy)
     end do
     end do
     end do
@@ -690,9 +686,9 @@ FUNCTION scalar_ddown_vector (self, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
   !-----------------------------------------------------------------------------
-  out(:,:,:,1) = ddxdn (self, in)
+  out(:,:,:,1) = self%ddxdn (in)
   out(:,:,:,2) = self%ddydn (in)
-  out(:,:,:,3) = ddzdn (self, in)
+  out(:,:,:,3) = self%ddzdn (in)
 END FUNCTION scalar_ddown_vector
 !> =============================================================================
 FUNCTION vector_dup_vector (self, in) RESULT (out)

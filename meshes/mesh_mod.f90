@@ -51,19 +51,24 @@ MODULE mesh_mod
     real(4) :: lf = 0.0, uf = 0.0  ! interpolation boundary indices (must be floating point)
     ! the variables `llc` and `origin` describe the same location, but in
     ! different reference frames.
-    real(8) :: llc = 0.0  ! position of the patch's lower left corner in absolute (i.e.
-                          ! the root grid's) coords; replacement for `p`.
+    real(8) :: llc = 0.0    ! position of the patch's lower left corner in absolute (i.e.
+                            ! the root grid's) coords; replacement for `p`.
     real(8) :: origin = 0.0 ! position of the patch's lower left corner in relative,
                             ! native coords.; always = 0 in Cartesian coords.
     real(4) :: centre        ! volume centroid of the current mesh in its own coord. system
-    real(8), dimension(:), pointer :: r  ! coordinate relative to patch centre
-    real(8), dimension(:), pointer :: h  ! offset for staggered variables;
-                                             ! should be initialised in `mhd_t%init`
+    real(8), dimension(:), pointer :: r    ! coordinate relative to patch centre
+    real(8), dimension(:), pointer :: h    ! offset for staggered variables;
+                                           ! should be initialised in `mhd_t%init`
     real(8), dimension(:), pointer :: ddn  ! borrow for now (FIXME)
     real(8), dimension(:), pointer :: dup  ! borrow for now (FIXME)
     character(len=16):: type = ''
     real(8), pointer :: zeta  ! position angle of the phi = 0 axis relative to the x-axis (cyl. and sph. coords.).
     real(8), pointer :: xi    ! position angle of the theta = 0 relative to the neg. z-axis (sph. coords.).
+    !---------------------------------------------------------------------------
+    ! Physical boundary condition info; indices beyond which BCs rule
+    !---------------------------------------------------------------------------
+    logical:: lower_boundary = .false.
+    logical:: upper_boundary = .false.
 
     procedure (), pointer, nopass :: CurrentToCartesian => null()
     ! geometric factors as procedure pointers
