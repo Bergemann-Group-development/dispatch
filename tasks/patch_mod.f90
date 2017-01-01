@@ -44,7 +44,7 @@ MODULE patch_mod
     ! HACK below:  FIXME
     !---------------------------------------------------------------------------
     real:: grav                         ! gravitational consant (code units)
-    integer:: i_d                       ! density inddex
+    integer:: i_d=1                     ! density inddex
     real(8):: ds(3)                     ! convenience
     integer:: n(3)=16, ng(3)=2          ! convenient defaults
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
