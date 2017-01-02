@@ -2,3 +2,4 @@ validate
 data
 slurm*
 *.optrpt
+*.nml

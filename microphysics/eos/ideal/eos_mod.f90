@@ -64,15 +64,14 @@ END FUNCTION
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, ee, lnd, d, pg, tt, rk, src, gamma)
+SUBROUTINE lookup (self, dim, ee, lnd, d, pg, tt, rk, src, gamma)
   class (eos_t):: self
+  integer:: dim(3)
   real, optional:: gamma
-  real, dimension(:,:,:)            , pointer :: ee
-  real, dimension(:,:,:),   optional, pointer :: lnd, d, pg, tt, rk
+  real, dimension(:,:,:),   optional, pointer :: ee, lnd, d, pg, tt, rk
   real, dimension(:,:,:,:), optional, pointer :: src
-  integer:: dim(3), i
+  integer:: i
   !-----------------------------------------------------------------------------
-  dim = shape(ee)
   if (present(gamma)) then
     self%gamma = gamma
   end if

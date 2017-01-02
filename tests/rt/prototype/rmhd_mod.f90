@@ -18,7 +18,8 @@ MODULE rmhd_mod
     procedure :: init
     procedure :: update
     procedure :: solve
-    procedure :: interpolate
+    procedure :: log_interpolate
+    procedure :: time_interval
   end type
 ! ----------------------------------------------------------------------
 CONTAINS
@@ -31,7 +32,7 @@ CONTAINS
 !> =====================================================================
 SUBROUTINE init (self)
   class (rmhd_t) :: self
-  integer :: nt = 5
+  
   ! --------------------------------------------------------------------
   call trace%begin ('rmhd_t_%init')
   allocate (self%lnd (self%mesh(1)%ng, self%mesh(2)%ng, self%mesh(3)%ng), &
@@ -64,8 +65,9 @@ SUBROUTINE solve (self)
   class (rmhd_t) :: self
   ! --------------------------------------------------------------------
   call trace%begin ('rmhd_t%solve')
-  call self%interpolate (self%rt%time, self%i_d, self%lnd)              ! interpolate in time and space
-  call self%interpolate (self%rt%time, self%i_e, self%lne)            ! interpolate in time and space
+  self%rt%time = self%rt%time + self%rt%dtime                           ! increment RT solver time
+  call self%log_interpolate (self%rt%time, self%i_d, self%lnd)          ! interpolate in time and space
+  call self%log_interpolate (self%rt%time, self%i_e, self%lne)          ! interpolate in time and space
   self%lne = self%lne - self%lnd                                        ! internal energy per unit mass
   call eos%lookup (shape(self%lne), lne=self%lne, lnd=self%lnd, &       ! call the table lookup, ...
                    rk=self%rt%rk, src=self%rt%src)                      ! ... results go into rt_t
@@ -74,15 +76,56 @@ SUBROUTINE solve (self)
 END SUBROUTINE solve
 
 !> =====================================================================
+!> Interpolate -- only in time for now -- from the MHD time slots save in
+!> this module to the time requested from the solve procedure
 !> =====================================================================
-SUBROUTINE interpolate (self, time, i, a)
+SUBROUTINE log_interpolate (self, time, i, a)
   class (rmhd_t)                  :: self
   real(8)                         :: time
   integer                         :: i
   real, dimension(:,:,:), pointer :: a
+  !.....................................................................
+  integer                         :: jt(2)
+  real                            :: pt(2)
   ! --------------------------------------------------------------------
-  call trace%begin ('rmhd_t%interpolate')
+  call trace%begin ('rmhd_t%log_interpolate')
+  call self%time_interval (time, jt, pt)
+  a = log(self%mem(:,:,:,i,jt(1),1))*pt(1) &
+    + log(self%mem(:,:,:,i,jt(2),1))*pt(2)
   call trace%end
-END SUBROUTINE interpolate
+END SUBROUTINE log_interpolate
+
+!> =====================================================================
+!> Search for a time interval to interpolate in, and return the time
+!> slot indices and weight factors
+!> =====================================================================
+SUBROUTINE time_interval (self, time, jt, pt)
+  class (rmhd_t)                  :: self
+  real(8)                         :: time
+  integer                         :: jt(2)
+  real                            :: pt(2)
+  !.....................................................................
+  integer                         :: i, j
+  real(8)                         :: t(self%nt), dt
+  ! --------------------------------------------------------------------
+  call trace%begin ('rmhd_t%time_interval')
+  t = self%t(self%iit)
+  j = 1
+  do i=1,self%nt-2
+    if (t(i) < time) j=i
+  end do
+  jt = self%iit(j:j+1)
+  dt = t(j+1)-t(j)
+  if (dt==0.0) then
+    pt(2) = 1.0
+  else
+    pt(2) = (time-t(j))/dt
+  end if
+  pt(1) = 1.-pt(2)
+  print *, 'time_interval: times  =', t(j), time, t(j+1)
+  print *, 'time_interval: times  =', self%t(jt(1)), time, self%t(jt(2))
+  print *, 'time_interval: jt, pt =', jt, pt
+  call trace%end
+END SUBROUTINE time_interval
 
 END MODULE rmhd_mod

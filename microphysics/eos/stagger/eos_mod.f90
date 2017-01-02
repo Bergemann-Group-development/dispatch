@@ -36,7 +36,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class (eos_t):: self
-  real, dimension(1,1,1):: d, ee, pg
+  real, dimension(:,:,:), pointer:: d, ee, pg
   namelist /eos_params/ do_eos, tablefile
   !-----------------------------------------------------------------------------
   !$omp critical (eos_cr)
@@ -62,10 +62,12 @@ SUBROUTINE init (self)
     close (io_unit%data)
     if (mpi%master) then
       print *, trim(tablefile)//': md, mtable =', md, mtable
+      allocate (d(1,1,1), ee(1,1,1), pg(1,1,1))
       d = 1.0
       ee  = 5.0
-      call self%lookup (ee, d=d, pg=pg)
+      call self%lookup (shape(ee), ee=ee, d=d, pg=pg)
       print *,'d, ee, pg =', d, ee, pg
+      deallocate (d, ee, pg)
     end if
   end if
   self%on = do_eos
@@ -76,27 +78,44 @@ END SUBROUTINE init
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, ee, lnd, d, pg, tt, ne, rk, src)
+SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src)
   class (eos_t):: self
-  real, dimension(:,:,:)             :: ee
-  real, dimension(:,:,:)  , optional :: lnd,d,pg,tt,ne,rk
-  real, dimension(:,:,:,:), optional :: src
+  integer:: dim(3)
+  real, dimension(:,:,:)  , pointer, optional :: ee,d,lne,lnd,pg,tt,ne,rk
+  real, dimension(:,:,:,:), pointer, optional :: src
   !.............................................................................
-  real(kind=4), dimension(size(ee,1)):: px,py,f00,f01,f10,f11, &
-    fx00,fx01,fx10,fx11,fy00,fy01,fy10,fy11
-  integer, dimension(size(ee,1)):: np,np1,ik,ntab,ik1,ntab1
-  real:: rhm1,rhm2,drhm,algrk,eek,eek1,py1
-  real:: qx,qy,pxqx,pxpx,qxqx,pypy,pyqy,qyqy,pxpy,qxqy,pxqy,qxpy
-  logical:: newtable
-  integer:: ix,iy,iz,kee,kee1,j
-  integer:: mx,my,mz,mbox
+  real, dimension(:,:,:),   pointer  :: lnd_loc, ee_loc
+  integer,         dimension(dim(1)) :: np,np1,ik,ntab,ik1,ntab1
+  real(kind=4),    dimension(dim(1)) :: px,py,f00,f01,f10,f11, &
+                                        fx00,fx01,fx10,fx11,fy00,fy01,fy10,fy11
+  real    :: rhm1,rhm2,drhm,algrk,eek,eek1,py1
+  real    :: qx,qy,pxqx,pxpx,qxqx,pypy,pyqy,qyqy,pxpy,qxqy,pxqy,qxpy
+  logical :: newtable
+  integer :: ix,iy,iz,kee,kee1,j
+  integer :: mx,my,mz,mbox
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays
   !-----------------------------------------------------------------------------
-  mx=size(ee,1)
-  my=size(ee,2)
-  mz=size(ee,3)
+  mx=dim(1)
+  my=dim(2)
+  mz=dim(3)
   newtable = .false.
+  if (present(lnd)) then
+    lnd_loc => lnd
+  else if (present(d)) then
+    allocate (lnd_loc(dim(1),dim(2),dim(3)))
+    lnd_loc = log(d)
+  else
+    call mpi%abort ('eos_t: missing density')
+  end if
+  if (present(ee)) then
+    ee_loc => ee
+  else if (present(lne)) then
+    allocate (ee_loc(dim(1),dim(2),dim(3)))
+    ee_loc = exp(ee)
+  else
+    call mpi%abort ('eos_t: missing internal energy')
+  end if
   !
   rhm1=log(rhm(1))
   rhm2=log(rhm(md))
@@ -109,27 +128,17 @@ SUBROUTINE lookup (self, ee, lnd, d, pg, tt, ne, rk, src)
     !---------------------------------------------------------------------------
     ! Density index (6 lops)
     !---------------------------------------------------------------------------
-    if (present(lnd)) then
-      do ix=1,mx
-        algrk=1.+(lnd(ix,iy,iz)-rhm1)/drhm
-        np(ix)=max0(1,min0(md-1,int(algrk)))
-        px(ix)=algrk-np(ix)
-      end do
-    else if (present(d)) then
-      do ix=1,mx
-        algrk=1.+(log(d(ix,iy,iz))-rhm1)/drhm
-        np(ix)=max0(1,min0(md-1,int(algrk)))
-        px(ix)=algrk-np(ix)
-      end do
-    else
-      call mpi%abort('missing d or lnd in eos_t%lookup')
-    end if
+    do ix=1,mx
+      algrk=1.+(lnd_loc(ix,iy,iz)-rhm1)/drhm
+      np(ix)=max0(1,min0(md-1,int(algrk)))
+      px(ix)=algrk-np(ix)
+    end do
     do ix=1,mx
       !-------------------------------------------------------------------------
       ! Internal energy index -- this loop has indirect referencing (9 flops)
       !-------------------------------------------------------------------------
       ntab(ix)   = mtab(np(ix))
-      eek       = 1.+(ee(ix,iy,iz)-eemin(np(ix)))/deetab(np(ix))
+      eek       = 1.+(ee_loc(ix,iy,iz)-eemin(np(ix)))/deetab(np(ix))
       nbelow    = nbelow + merge(1,0,eek<1.0)           ! FIXME
       eek       = max(eek,1.0)                          ! FIXME
       kee       = min(ntab(ix)-1,max(1,int(eek)))
@@ -144,7 +153,7 @@ SUBROUTINE lookup (self, ee, lnd, d, pg, tt, ne, rk, src)
       ! The three first lines below may be commented out when we are satisfied
       ! it never panics
       !-------------------------------------------------------------------------
-      eek1      = 1.+(ee(ix,iy,iz)-eemin(np(ix)+1))/deetab(np(ix)+1)
+      eek1      = 1.+(ee_loc(ix,iy,iz)-eemin(np(ix)+1))/deetab(np(ix)+1)
       nbelow    = nbelow + merge(1,0,eek1<kee1)         ! FIXME
       eek1      = max(eek1,real(kee1))                  ! FIXME
       py1       = eek1-kee1
@@ -286,6 +295,8 @@ SUBROUTINE lookup (self, ee, lnd, d, pg, tt, ne, rk, src)
     end if
   end do
   end do
+  if (present(d))   deallocate (lnd_loc)
+  if (present(lne)) deallocate (ee_loc)
 END SUBROUTINE lookup
 
 END MODULE eos_mod

@@ -1,20 +1,20 @@
 
 # Option groups
 #OPTS = debug
-OPTS = full_debug
-#OPTS = optimized
+#OPTS = full_debug
+OPTS = optimized
 
 # Default target and methods
 EXEC            = dispatch.x
 SOLVER          = ramses/hydro
 TOP             = ../..
 # Ideal or tabular EOS
-#EOS             = ideal
-#OPACITY         = stub
+EOS             = ideal
+OPACITY         = stub
 # Tomida & Hori, with opacity
-EOS             = tabular_e
-OPACITY         = Tomida+Hori_2016
-EOS_DATA        = Tomida+Hori_2016
+#EOS             = tabular_e
+#OPACITY         = Tomida+Hori_2016
+#EOS_DATA        = Tomida+Hori_2016
 
 sinclude $(TOP)/config/Makefile
 

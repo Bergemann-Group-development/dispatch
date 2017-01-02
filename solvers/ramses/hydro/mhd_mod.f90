@@ -264,7 +264,7 @@ subroutine ctoprim (self)
   d => q(:,:,:,1)
   e => s
   pg => q(:,:,:,5)
-  call eos%lookup (self%gn, d=d, e=e, pg=pg, gamma=self%gamma)
+  call eos%lookup (shape(e), ee=e, d=d, pg=pg, gamma=self%gamma)
   !
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
   self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &

@@ -156,11 +156,11 @@ END FUNCTION pressure
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
+SUBROUTINE lookup (self, dim, lnd, lne, d, ee, pg, tt, ne, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, dimension(:,:,:), intent(in), pointer, optional :: lnd, lne
-  real, dimension(:,:,:),   optional :: d, e, pg, tt, ne
+  real, dimension(:,:,:),   optional :: d, ee, pg, tt, ne
   real, dimension(:,:,:,:), optional :: src, rk
   real, optional:: gamma
   !.............................................................................
@@ -194,9 +194,9 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
   end if
   if (present(lne)) then
     lne_loc => lne
-  else if (present(e)) then
+  else if (present(ee)) then
     allocate (lne_loc(dim(1),dim(2),dim(3)))
-    lne_loc = log(e)
+    lne_loc = log(ee)
   else
     call mpi%abort ('eos_t: missing internal energy')
   end if
@@ -284,8 +284,8 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, e, pg, tt, ne, rk, src, gamma)
     end if
   end do
   end do
-  if (present(d)) deallocate (lnd_loc)
-  if (present(e)) deallocate (lne_loc)
+  if (present(d))  deallocate (lnd_loc)
+  if (present(ee)) deallocate (lne_loc)
 END SUBROUTINE lookup
 
 END MODULE eos_mod
