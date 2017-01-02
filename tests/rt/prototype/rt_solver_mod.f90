@@ -1,4 +1,5 @@
 !> =============================================================================
+!> Module with RT solvers -- for now just an integral solver
 !> =============================================================================
 MODULE rt_solver_mod
   USE io_mod
@@ -7,6 +8,8 @@ MODULE rt_solver_mod
   private
   type, public:: rt_solver_t
     procedure(integral), pointer:: transfer => null()
+    procedure(integral), pointer:: forward  => null()
+    procedure(integral), pointer:: reverse  => null()
   contains
     procedure:: init
     procedure:: integral
@@ -14,17 +17,23 @@ MODULE rt_solver_mod
   type (rt_solver_t), public:: rt_solver
 CONTAINS
 
+!> =============================================================================
+!> Choose RT solver method
+!> =============================================================================
 SUBROUTINE init (self)
   class (rt_solver_t):: self
   self%transfer => integral
+  self%forward  => integral
+  self%reverse  => integral
 END SUBROUTINE init
 
 !> =============================================================================
+!> Integral solution method
 !> =============================================================================
-SUBROUTINE integral (self, dtau, S, Ifw0, Irv1, Q, Irv0, Ifw1)
+SUBROUTINE integral (self, dtau, S, qfw0, Q, qfw1)
   class (rt_solver_t):: self
   real, dimension(:,:) :: dtau, S, Q
-  real, dimension(:)   :: Ifw0, Ifw1, Irv0, Irv1
+  real, dimension(:)   :: qfw0, qfw1
 !-----------------------------------------------------------------------
 !
 !  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
@@ -68,7 +77,7 @@ SUBROUTINE integral (self, dtau, S, Ifw0, Irv1, Q, Irv0, Ifw1)
   d1s(:,1) = d1s(:,2) - dtau(:,2)*d2s(:,2)                              ! extrapolate to 1
   d2s(:,n) = d2s(:,n-1)                                                 ! assume constant d2S/dtau2
   d1s(:,n) = d1s(:,n-1) + dtau(:,n)*d2s(:,n)                            ! extrapolate to n
-  qfw(:,1) = Ifw0(:) - s(:,1)                                           ! initial forward Q
+  qfw(:,1) = qfw0(:)                                                    ! initial forward Q
 !
 !  Forward rays (2a+3m)
 !
@@ -82,19 +91,7 @@ SUBROUTINE integral (self, dtau, S, Ifw0, Irv1, Q, Irv0, Ifw1)
     !       + d2s(j,i)*(ex1 - ex0(j,i)*dtau(j,i))       !    3m 2a      ! formal solution forward
    !end do
   end do
-    Ifw1(:) = qfw(:,n) + s(:,n)                                         ! forward boundary intensity
-    qre(:,n) = Irv1(:) - s(:,n)                                         ! initial reverse Q
-    q(:,n) = 0.5*(qre(:,n)+qfw(:,n))                                    ! mean Q
-!
-!  Reverse rays (2a+3m)
-!
-  do i=n-1,1,-1
-    qre(:,i) = qre(:,i+1)*ex0(:,i+1) &
-           + d1s(:,i)*(1.-ex0(:,i)) &
-           + d2s(:,i)*(1.-ex0(:,i)*(1.+dtau(:,i)))      !    3m 2a      ! formal solution backwards
-    q(:,i) = 0.5*(qre(:,i)+qfw(:,i))                    !    1m 1a      ! mean Q
-  end do
-  Irv0(:) = qre(:,1) + s(:,1)                                           ! reverse boundary intensity
+  qfw1(:) = qfw(:,n)                                                    ! forward boundary intensity
 END SUBROUTINE integral                                 ! 2d 13m 11a 1e ! 26f + 1e
 
 END MODULE rt_solver_mod

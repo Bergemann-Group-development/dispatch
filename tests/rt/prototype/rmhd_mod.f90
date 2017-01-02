@@ -22,8 +22,10 @@ MODULE rmhd_mod
   private
   ! --------------------------------------------------------------------
   type, public, extends(mhd_t):: rmhd_t
-    type(rt_t)                      :: rt
-    real, dimension(:,:,:), pointer :: lnd, lne
+    type(rt_t)                        :: rt
+    real, dimension(:,:,:),   pointer :: lnd, lne
+    real, dimension(:,:,:),   pointer :: rk
+    real, dimension(:,:,:,:), pointer :: src
   contains
     procedure :: init
     procedure :: update
@@ -31,6 +33,7 @@ MODULE rmhd_mod
     procedure :: log_interpolate
     procedure :: time_interval
   end type
+  real, parameter:: pi4 = 16.*atan(1.)
 ! ----------------------------------------------------------------------
 CONTAINS
 
@@ -42,17 +45,35 @@ CONTAINS
 !> =====================================================================
 SUBROUTINE init (self)
   class (rmhd_t) :: self
-  
-  ! --------------------------------------------------------------------
+  !---------------------------------------------------------------------
   call trace%begin ('rmhd_t_%init')
-  allocate (self%lnd (self%mesh(1)%ng, self%mesh(2)%ng, self%mesh(3)%ng), &
-            self%lne (self%mesh(1)%ng, self%mesh(2)%ng, self%mesh(3)%ng))
-  call self%rt%init                                                     ! setup the nbor connections
+  !---------------------------------------------------------------------
+  ! Initialize the MHD data type, and allocate arrays for RT
+  !---------------------------------------------------------------------
   call self%mhd_t%init
+  associate (mx=>self%mesh(1)%gn, my=>self%mesh(2)%gn, mz=>self%mesh(3)%gn)
+  allocate (self%lnd (mx,my,mz), &                                      ! log density
+            self%lne (mx,my,mz), &                                      ! log internal energy
+            self%rk  (mx,my,mz), &                                      ! opacity
+            self%src (mx,my,mz,eos%n_lambda))                           ! source function
+  end associate
+  !---------------------------------------------------------------------
+  ! Initialize the rt_mod object (one could create more than one)
+  !---------------------------------------------------------------------
+  self%rt%dim      = self%mesh%gn                                       ! RT dimensions
+  self%rt%n_lambda = eos%n_lambda                                       ! number of wavelengths
+  self%rt%n_bundle = 1                          ! FIXME                 ! one direction
+  self%rt%ds       => self%mesh(2)%dsup                                 ! mesh spacing
+  call self%rt%init                                                     ! allocate weights
+  self%rt%w_lambda = 1.0/self%rt%n_lambda       ! FIXME                 ! wavelength weights
+  self%rt%w_bundle = pi4/2./self%rt%n_bundle    ! FIXME                 ! space angle weights
+  !
   call trace%end
 END SUBROUTINE init
 
 !> =====================================================================
+!> Update the PDE time derivatives, by calling the MHD module, and
+!> adjusting by time-interpolation of the RT memory values
 !> =====================================================================
 SUBROUTINE update (self)
   class (rmhd_t) :: self
@@ -63,13 +84,16 @@ SUBROUTINE update (self)
     call self%solve                                                     ! solve the RT for a new slot
   end if
   call self%rt%interpolate (self%time)                                  ! interpolate in time and space
-  associate (dedt => self%mem(:,:,:,self%i_e,self%it,2))
-  dedt = dedt + self%rt%dedt                                            ! add the RT contribution to de/dt
-  end associate
+  print *, shape(self%rt%dedt)
+  self%dedt = self%dedt + self%rt%dedt                                  ! add the RT contribution to de/dt
   call trace%end
 END SUBROUTINE update
 
 !> =====================================================================
+!> Solve the RT problem, by first obtaining the thermodynamics at the
+!> designated RT time, and using them to compute the opacity and source
+!> function values.  Then solve for the net heating rate, storing it in
+!> a slot that rotates with time.
 !> =====================================================================
 SUBROUTINE solve (self)
   class (rmhd_t) :: self
@@ -82,6 +106,7 @@ SUBROUTINE solve (self)
   call eos%lookup (shape(self%lne), lne=self%lne, lnd=self%lnd, &       ! call the table lookup, ...
                    rk=self%rt%rk, src=self%rt%src)                      ! ... results go into rt_t
   call self%rt%solve                                                    ! all the RT solver to get Q
+  call self%rotate                                                      ! rotate the time slots
   call trace%end
 END SUBROUTINE solve
 

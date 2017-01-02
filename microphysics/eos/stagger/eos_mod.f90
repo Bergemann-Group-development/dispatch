@@ -16,14 +16,15 @@ MODULE eos_mod
     dth,eemin,eemax,deetab,tab
   integer, allocatable, dimension(:):: itab,mtab
   integer, save:: nbelow=0, ncall=0, mbox
-  character(len=64):: tablefile
+  character(len=64):: top, tablefile, file
   logical, save:: do_eos
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   ! Public part
   !-----------------------------------------------------------------------------
   type, public:: eos_t
-    logical:: on = .false.
+    integer :: n_lambda = 4
+    logical :: on = .false.
   contains
     procedure:: init
     procedure:: lookup
@@ -37,19 +38,21 @@ CONTAINS
 SUBROUTINE init (self)
   class (eos_t):: self
   real, dimension(:,:,:), pointer:: d, ee, pg
-  namelist /eos_params/ do_eos, tablefile
+  namelist /eos_params/ do_eos, top, tablefile
   !-----------------------------------------------------------------------------
   !$omp critical (eos_cr)
   if (first_time) then
     first_time = .false.
     do_eos = .true.
-    tablefile = '../../data/eos/stagger/table.dat'
+    top       = '../../'
+    tablefile = 'data/eos/stagger/table.dat'
     rewind (io%input); read (io%input,eos_params)
     if (io%master) write (*,eos_params)
     !-----------------------------------------------------------------------------
     ! Read the table file
     !-----------------------------------------------------------------------------
-    open (io_unit%data, file=tablefile, form='unformatted', status='old', action='read')
+    file = trim(top)//'/'//trim(tablefile)
+    open (io_unit%data, file=trim(file), form='unformatted', status='old', action='read')
     read (io_unit%data) md,iupdte,nvar,mbox,eosxmin,dbox,ul,ut,ur,eps,tff,grv,abnd
     njon = nvar-mbox
     allocate (tmean(md),tamp(md),rhm(md),xcorr(md),thmin(md),thmax(md))

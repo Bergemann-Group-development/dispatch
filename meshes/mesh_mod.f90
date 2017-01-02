@@ -61,6 +61,8 @@ MODULE mesh_mod
                                                      ! should be initialised in `mhd_t%init`
     real(8), dimension(:), pointer :: ddn => null()  ! borrow for now (FIXME)
     real(8), dimension(:), pointer :: dup => null()  ! borrow for now (FIXME)
+    real(4), dimension(:), pointer :: dsup=> null()  ! borrow for now (FIXME)
+    real(4), dimension(:), pointer :: dsdn=> null()  ! borrow for now (FIXME)
     character(len=16):: type = ''
     real(8), allocatable :: zeta  ! position angle of the phi = 0 axis relative to the x-axis (cyl. and sph. coords.).
     real(8), allocatable :: xi    ! position angle of the theta = 0 relative to the neg. z-axis (sph. coords.).
