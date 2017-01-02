@@ -36,6 +36,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class (eos_t):: self
+  real, dimension(1,1,1):: d, ee, pg
   namelist /eos_params/ do_eos, tablefile
   !-----------------------------------------------------------------------------
   !$omp critical (eos_cr)
@@ -61,13 +62,10 @@ SUBROUTINE init (self)
     close (io_unit%data)
     if (mpi%master) then
       print *, trim(tablefile)//': md, mtable =', md, mtable
-      block
-        real, dimension(1,1,1):: d, ee, pg
-        d = 1.0
-        ee  = 5.0
-        call self%lookup (d, ee, pg)
-        print *,'d, ee, pg =', d, ee, pg
-      end block
+      d = 1.0
+      ee  = 5.0
+      call self%lookup (ee, d=d, pg=pg)
+      print *,'d, ee, pg =', d, ee, pg
     end if
   end if
   self%on = do_eos
