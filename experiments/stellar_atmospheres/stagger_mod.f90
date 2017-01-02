@@ -164,24 +164,24 @@ FUNCTION ddxdn (self, a) RESULT (b)
   class(stagger_t):: self
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real    :: c, d
+  real    :: c, ds
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddxdn', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    d = self%m(1)%d
+    ds = self%m(1)%d
     if (all(n==[16,16,16])) then
-      call ddxdn_16 (d,a,b)
+      call ddxdn_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
-      call ddxdn_20 (d,a,b)
+      call ddxdn_20 (ds,a,b)
     else if (all(n==[24,24,24])) then
-      call ddxdn_24 (d,a,b)
+      call ddxdn_24 (ds,a,b)
     else if (all(n==[32,32,32])) then
-      call ddxdn_32 (d,a,b)
+      call ddxdn_32 (ds,a,b)
     else if (all(n==[36,36,36])) then
-      call ddxdn_36 (d,a,b)
+      call ddxdn_36 (ds,a,b)
     end if
   else if (n(1) > 1) then
     b(1,:,:) = 0.0
@@ -205,23 +205,23 @@ FUNCTION ddydn (self, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, d
+  real    :: c, ds
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddydn', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    d = self%m(2)%d
+    ds = self%m(2)%d
     if (all(n==[16,16,16])) then
-      call ddydn_16 (d,a,b)
+      call ddydn_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
-      call ddydn_20 (d,a,b)
+      call ddydn_20 (ds,a,b)
     else if (all(n==[24,24,24])) then
-      call ddydn_24 (d,a,b)
+      call ddydn_24 (ds,a,b)
     else if (all(n==[32,32,32])) then
-      call ddydn_32 (d,a,b)
+      call ddydn_32 (ds,a,b)
     else if (all(n==[36,36,36])) then
-      call ddydn_36 (d,a,b)
+      call ddydn_36 (ds,a,b)
     end if
   else if (n(2) > 1) then
     b(:,1,:) = 0.0
@@ -243,24 +243,24 @@ FUNCTION ddzdn (self, a) RESULT (b)
   class(stagger_t):: self
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real    :: c, d
+  real    :: c, ds
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddzdn', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    d = self%m(3)%d
+    ds = self%m(3)%d
     if (all(n==[16,16,16])) then
-      call ddzdn_16 (d,a,b)
+      call ddzdn_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
-      call ddzdn_20 (d,a,b)
+      call ddzdn_20 (ds,a,b)
     else if (all(n==[24,24,24])) then
-      call ddzdn_24 (d,a,b)
+      call ddzdn_24 (ds,a,b)
     else if (all(n==[32,32,32])) then
-      call ddzdn_32 (d,a,b)
+      call ddzdn_32 (ds,a,b)
     else if (all(n==[36,36,36])) then
-      call ddzdn_36 (d,a,b)
+      call ddzdn_36 (ds,a,b)
     end if
   else if (n(3) > 1) then
     b(:,:,1) = 0.0
@@ -284,23 +284,23 @@ FUNCTION ddxup (self, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, d
+  real    :: c, ds
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddxup', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    d = self%m(1)%d
+    ds = self%m(1)%d
     if (all(n==[16,16,16])) then
-      call ddxup_16 (d,a,b)
+      call ddxup_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
-      call ddxup_20 (d,a,b)
+      call ddxup_20 (ds,a,b)
     else if (all(n==[24,24,24])) then
-      call ddxup_24 (d,a,b)
+      call ddxup_24 (ds,a,b)
     else if (all(n==[32,32,32])) then
-      call ddxup_32 (d,a,b)
+      call ddxup_32 (ds,a,b)
     else if (all(n==[36,36,36])) then
-      call ddxup_36 (d,a,b)
+      call ddxup_36 (ds,a,b)
     end if
   else if (n(1) > 1) then
     b(n(1),:,:) = 0.0
@@ -325,23 +325,23 @@ FUNCTION ddyup (self, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, d
+  real    :: c, ds
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddyup', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    d = self%m(2)%d
+    ds = self%m(2)%d
     if (all(n==[16,16,16])) then
-      call ddyup_16 (d,a,b)
+      call ddyup_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
-      call ddyup_20 (d,a,b)
+      call ddyup_20 (ds,a,b)
     else if (all(n==[24,24,24])) then
-      call ddyup_24 (d,a,b)
+      call ddyup_24 (ds,a,b)
     else if (all(n==[32,32,32])) then
-      call ddyup_32 (d,a,b)
+      call ddyup_32 (ds,a,b)
     else if (all(n==[36,36,36])) then
-      call ddyup_36 (d,a,b)
+      call ddyup_36 (ds,a,b)
     end if
   else if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,n(2),:) = 0.0
@@ -364,23 +364,23 @@ FUNCTION ddzup (self, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, d
+  real    :: c, ds
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddzup', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    d = self%m(3)%d
+    ds = self%m(3)%d
     if (all(n==[16,16,16])) then
-      call ddzup_16 (d,a,b)
+      call ddzup_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
-      call ddzup_20 (d,a,b)
+      call ddzup_20 (ds,a,b)
     else if (all(n==[24,24,24])) then
-      call ddzup_24 (d,a,b)
+      call ddzup_24 (ds,a,b)
     else if (all(n==[32,32,32])) then
-      call ddzup_32 (d,a,b)
+      call ddzup_32 (ds,a,b)
     else if (all(n==[36,36,36])) then
-      call ddzup_36 (d,a,b)
+      call ddzup_36 (ds,a,b)
     end if
   else if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,:,n(3)) = 0.0
@@ -402,7 +402,7 @@ END FUNCTION ddzup
 FUNCTION xdn (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real    :: c, d
+  real    :: c
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
@@ -440,7 +440,7 @@ END FUNCTION xdn
 FUNCTION ydn (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real    :: c, d
+  real    :: c
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
@@ -478,7 +478,7 @@ END FUNCTION ydn
 FUNCTION zdn (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real    :: c, d
+  real    :: c
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
