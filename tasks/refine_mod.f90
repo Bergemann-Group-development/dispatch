@@ -155,7 +155,7 @@ FUNCTION check_potential (self, patch) RESULT(out)
     print*, 'check_pot', patch%mesh%li, patch%mesh%ui
   end if
   allocate (v(1:patch%n(1),1:patch%n(2),1:patch%n(3)))
-  call patch%grav_potential (v)
+  !call patch%grav_potential (v)
   out = check_max_diff (self, patch, v)
   deallocate (v)
   call trace_end
