@@ -78,15 +78,15 @@ END SUBROUTINE init
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, lnd, ee, pg, tt, ne, rk, src)
+SUBROUTINE lookup (self, ee, lnd, d, pg, tt, ne, rk, src)
   class (eos_t):: self
-  real, dimension(:,:,:)             :: lnd,ee
-  real, dimension(:,:,:)  , optional :: pg,tt,ne,rk
+  real, dimension(:,:,:)             :: ee
+  real, dimension(:,:,:)  , optional :: lnd,d,pg,tt,ne,rk
   real, dimension(:,:,:,:), optional :: src
   !.............................................................................
-  real(kind=4), dimension(size(lnd,1)):: px,py,f00,f01,f10,f11, &
+  real(kind=4), dimension(size(ee,1)):: px,py,f00,f01,f10,f11, &
     fx00,fx01,fx10,fx11,fy00,fy01,fy10,fy11
-  integer, dimension(size(lnd,1)):: np,np1,ik,ntab,ik1,ntab1
+  integer, dimension(size(ee,1)):: np,np1,ik,ntab,ik1,ntab1
   real:: rhm1,rhm2,drhm,algrk,eek,eek1,py1
   real:: qx,qy,pxqx,pxpx,qxqx,pypy,pyqy,qyqy,pxpy,qxqy,pxqy,qxpy
   logical:: newtable
@@ -95,9 +95,9 @@ SUBROUTINE lookup (self, lnd, ee, pg, tt, ne, rk, src)
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays
   !-----------------------------------------------------------------------------
-  mx=size(lnd,1)
-  my=size(lnd,2)
-  mz=size(lnd,3)
+  mx=size(ee,1)
+  my=size(ee,2)
+  mz=size(ee,3)
   newtable = .false.
   !
   rhm1=log(rhm(1))
@@ -108,13 +108,25 @@ SUBROUTINE lookup (self, lnd, ee, pg, tt, ne, rk, src)
   !-----------------------------------------------------------------------------
   do iz=1,mz
   do iy=1,my
+    !---------------------------------------------------------------------------
+    ! Density index (6 lops)
+    !---------------------------------------------------------------------------
+    if (present(lnd)) then
+      do ix=1,mx
+        algrk=1.+(lnd(ix,iy,iz)-rhm1)/drhm
+        np(ix)=max0(1,min0(md-1,int(algrk)))
+        px(ix)=algrk-np(ix)
+      end do
+    else if (present(d)) then
+      do ix=1,mx
+        algrk=1.+(log(d(ix,iy,iz))-rhm1)/drhm
+        np(ix)=max0(1,min0(md-1,int(algrk)))
+        px(ix)=algrk-np(ix)
+      end do
+    else
+      call mpi%abort('missing d or lnd in eos_t%lookup')
+    end if
     do ix=1,mx
-      !-------------------------------------------------------------------------
-      ! Density index (6 lops)
-      !-------------------------------------------------------------------------
-      algrk=1.+(lnd(ix,iy,iz)-rhm1)/drhm
-      np(ix)=max0(1,min0(md-1,int(algrk)))
-      px(ix)=algrk-np(ix)
       !-------------------------------------------------------------------------
       ! Internal energy index -- this loop has indirect referencing (9 flops)
       !-------------------------------------------------------------------------

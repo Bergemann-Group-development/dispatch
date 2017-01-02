@@ -68,8 +68,8 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-!> Adams-Bashforth linear multi-step update.  We consider it to be linear 
-!> multi-step in time index space, which may be just as good -- or better -- 
+!> Adams-Bashforth linear multi-step update.  We consider it to be linear
+!> multi-step in time index space, which may be just as good -- or better --
 !> than attempting to map into linear time space.  The time slot derivative
 !> values have already been multiplied with the individual time steps dt.
 !> =============================================================================
@@ -87,6 +87,12 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
   nt = size(iit)                                ! number of time slots
   l = mesh%li
   u = mesh%ui
+  where (mesh%lower_boundary)
+    l = mesh%lb
+  end where
+  where (mesh%upper_boundary)
+    u = mesh%ub
+  end where
   select case (self%time_order)
   case (0)
   case (1)

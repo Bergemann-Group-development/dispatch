@@ -48,6 +48,10 @@ SUBROUTINE init (self)
   self%nv  = self%initial%nv
   self%mhd = self%initial%mhd
   call self%mhd_t%init
+  self%i_bx=7
+  self%i_by=8
+  self%i_bz=9
+  self%i_tt=6
   call self%set(bits%static)
   !----------------------------------------------------------------------------
   ! Initial conditions
