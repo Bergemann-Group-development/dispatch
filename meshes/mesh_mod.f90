@@ -56,14 +56,14 @@ MODULE mesh_mod
     real(8) :: origin = 0.0 ! position of the patch's lower left corner in relative,
                             ! native coords.; always = 0 in Cartesian coords.
     real(4) :: centre        ! volume centroid of the current mesh in its own coord. system
-    real(8), dimension(:), pointer :: r    ! coordinate relative to patch centre
-    real(8), dimension(:), pointer :: h    ! offset for staggered variables;
-                                           ! should be initialised in `mhd_t%init`
-    real(8), dimension(:), pointer :: ddn  ! borrow for now (FIXME)
-    real(8), dimension(:), pointer :: dup  ! borrow for now (FIXME)
+    real(8), dimension(:), pointer :: r => null()    ! coordinate relative to patch centre
+    real(8), dimension(:), pointer :: h => null()    ! offset for staggered variables;
+                                                     ! should be initialised in `mhd_t%init`
+    real(8), dimension(:), pointer :: ddn => null()  ! borrow for now (FIXME)
+    real(8), dimension(:), pointer :: dup => null()  ! borrow for now (FIXME)
     character(len=16):: type = ''
-    real(8), pointer :: zeta  ! position angle of the phi = 0 axis relative to the x-axis (cyl. and sph. coords.).
-    real(8), pointer :: xi    ! position angle of the theta = 0 relative to the neg. z-axis (sph. coords.).
+    real(8), allocatable :: zeta  ! position angle of the phi = 0 axis relative to the x-axis (cyl. and sph. coords.).
+    real(8), allocatable :: xi    ! position angle of the theta = 0 relative to the neg. z-axis (sph. coords.).
     !---------------------------------------------------------------------------
     ! Physical boundary condition info; indices beyond which BCs rule
     !---------------------------------------------------------------------------
@@ -378,8 +378,8 @@ SUBROUTINE print_mesh (self)
     print'(i4,f14.8)',i,self%r(i)
   end do
 
-  if (associated(self%zeta)) print*,"phi axis offset: ", self%zeta
-  if (associated(self%xi)) print*,"theta axis offset: ", self%xi
+  if (allocated(self%zeta)) print*,"phi axis offset: ", self%zeta
+  if (allocated(self%xi)) print*,"theta axis offset: ", self%xi
 
   print*,'----------'
 END SUBROUTINE print_mesh

@@ -25,7 +25,7 @@ MODULE patch_mod
     real, dimension(:,:,:,:,:),   pointer:: vgas     => null()
     real, dimension(:,:,:,:),     pointer:: density  => null()
     real, dimension(:,:,:,:),     pointer:: pressure => null()
-    class(mesh_t), dimension(:), pointer:: mesh
+    class(mesh_t), dimension(:), pointer:: mesh => null()
     real:: courant                      ! courant number
     real:: gamma=1.0                    ! gas gamma
     real:: dt_fixed, u_fixed, u_max     ! for fixed time step Courant condition

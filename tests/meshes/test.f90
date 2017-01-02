@@ -7,12 +7,12 @@ PROGRAM test
   USE patch_mod
   implicit none
 
-  class(mesh_t), pointer:: meshSingle
-  class(mesh_t), pointer, dimension(:), target:: meshCart, meshSph, meshCyl
-  type(Cartesian_mesh), pointer, dimension(:), target:: meshCart2
+  class(mesh_t), pointer:: meshSingle => null()
+  class(mesh_t), pointer, dimension(:):: meshCart => null(), meshSph => null(), meshCyl => null()
+  type(Cartesian_mesh), pointer, dimension(:):: meshCart2 => null()
   type(Cartesian_mesh), dimension(3), target:: meshCart3
-  class(patch_t), pointer :: patch
-  class(mesh_t), pointer, dimension(:) :: m
+  class(patch_t), pointer :: patch => null()
+  class(mesh_t), pointer, dimension(:) :: m => null()
 
   integer :: nTheta, i, l(3), u(3)
   real :: ds(3)
@@ -52,7 +52,7 @@ PROGRAM test
   call meshSingle%print()
   print*,associated(meshSingle%dvol3f)," (should be F)"
   if (associated(meshSingle%dvol3f)) print*,meshSingle%dvol3f(1)
-  print'(a,1pg13.6E2,a)',"h32f(3) = ",meshSingle%h32f(3)," (should be 2.761675e-8)"
+  print'(a,1pg13.6E2,a)',"h32f(3) = ",meshSingle%h32f(3)," (should be 0.0)"
   deallocate (meshSingle)
   print*,''
 
@@ -158,7 +158,7 @@ PROGRAM test
   type is (spherical_mesh)
     associate (cmesh2 => meshSph(2))
     print'(a,1pg12.6,a)','xi: ',cmesh2%xi," (should be 0 and equal to the value immediately above)"
-    print*,'zeta: ',associated(cmesh2%zeta)," (should be F)"
+    print*,'zeta: ',allocated(cmesh2%zeta)," (should be F)"
     print*,'h2c:  ',associated(cmesh2%h2c)," (should be F)"
     print*,"Column 2 should be the absolute value of column 3:"
     do i=1,nTheta
@@ -171,7 +171,7 @@ PROGRAM test
   type is (spherical_mesh)
     associate(cmesh3 => meshSph(3))
     print'(a,1pg12.6,a)','zeta: ',cmesh3%zeta," (should be 0)"
-    print*,'xi: ',associated(cmesh3%xi)," (should be F)"
+    print*,'xi: ',allocated(cmesh3%xi)," (should be F)"
     end associate
   end select
 
@@ -379,5 +379,6 @@ PROGRAM test
   end block
   deallocate(patch)
   print*,repeat("-",20)
+  print*,"Finished."
 
 END PROGRAM
