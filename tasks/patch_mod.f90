@@ -610,21 +610,25 @@ SUBROUTINE output (self, experiment_name)
   if (.not.io%do_output) return
   !$omp critical (out_cr)
   call trace_begin('patch_mod::output', itimer=itimer)
-  do while (self%time > self%out_next .and. self%out_next <= self%end_time)
+  if (self%out_time==0.0) then
+    call output1
+  else
+    do while (self%time >= self%out_next .and. self%out_next <= self%end_time)
+      call output1
+      self%out_next = (int(self%out_next/self%out_time)+1)*self%out_time
+    end do
+  end if
+  call trace_end (itimer)
+  !$omp end critical (out_cr)
+  contains
+  subroutine output1
     if (io%do_legacy) then
       call self%output_legacy
     else
       call self%output_new
     end if
-    if (self%out_time > 0.0) then
-      self%out_next = (int(self%out_next/self%out_time)+1)*self%out_time
-    else
-      self%out_next = self%time
-    end if
     self%iout = self%iout+1
-  end do
-  call trace_end (itimer)
-  !$omp end critical (out_cr)
+  end subroutine output1
 END SUBROUTINE output
 
 !> =============================================================================
@@ -876,8 +880,17 @@ SUBROUTINE output_legacy (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
-  if (io%master .and. io%verbose>=0) &
-    print'(a,3x,"time:",f9.5)', 'patch_mod::output: file= '//trim(filename), self%out_next
+  if (io%master .and. io%verbose>=0) then
+    block
+    real(8):: time
+    if (self%out_time==0.0) then
+      time = self%time
+    else
+      time = self%out_next
+    end if
+    print'(a,3x,"time:",f9.5)', 'patch_mod::output: file= '//trim(filename), time
+    end block
+  end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   write (io%data_unit,'(1p,e18.10,6(2x,3e18.10),1x,i3.1)') self%time, self%position, self%ds, &
         self%velocity, self%origin, self%llc, self%mesh%centre, self%level
@@ -901,15 +914,17 @@ SUBROUTINE output_legacy (self, experiment_name)
       ! and time derivatives, which we have at iit(nt-2).
       !-------------------------------------------------------------------------
       it1 = self%iit(self%nt-2)
-      if (self%time_derivs) then
-        it = it1
-        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
-        call check_error(self, buf, "output 1")
+      if (self%out_time == 0.0) then
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
       !-------------------------------------------------------------------------
       ! Normally, we write out only variable values, which can then be interpolated
       ! to the exact output time, self%out_next, the update of which must come
       ! after this point
       !-------------------------------------------------------------------------
+      else if (self%time_derivs) then
+        it = it1
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
+        call check_error(self, buf, "output 1")
       else
         it2 = self%iit(self%nt-1)
         it = it2
@@ -918,8 +933,8 @@ SUBROUTINE output_legacy (self, experiment_name)
         qt = 1.0-pt
         buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
             + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
-        call check_error(self, buf, "output 2")
       end if
+      call check_error(self, buf, "output 2")
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
           trim(filename),iv,it,jo,minval(buf),maxval(buf),pt
@@ -990,7 +1005,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         end do
       end if
       !-------------------------------------------------------------------------
-      ! Print a one-liner if verbose==1 and id==1, or verbose>1, while 
+      ! Print a one-liner if verbose==1 and id==1, or verbose>1, while
       ! accumulating counters also when not printing
       !-------------------------------------------------------------------------
       if (io%verbose>0 .or. self%id==1) then
