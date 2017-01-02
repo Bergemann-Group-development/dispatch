@@ -35,6 +35,8 @@ experiment_mod.o        : io_mod.o trace_mod.o timestep_mod.o initial_mod.o rmhd
 initial_mod.o           : io_mod.o trace_mod.o io_unit_mod.o mesh_mod.o
 stagger_mod.o           : io_mod.o trace_mod.o scalar_mod.o vector_mod.o \
                           stagger_16.o stagger_20.o stagger_24.o stagger_32.o stagger_36.o
-rt_mod.o                : io_mod.o trace_mod.o task_mod.o
+rt_solver__mod.o        : io_mod.o trace_mod.o
+rt_bundle_mod.o         : io_mod.o trace_mod.o rt_solver_mod.o
+rt_mod.o                : io_mod.o trace_mod.o task_mod.o rt_bundle_mod.o
 rmhd_mod.o              : io_mod.o trace_mod.o mhd_mod.o rt_mod.o
 

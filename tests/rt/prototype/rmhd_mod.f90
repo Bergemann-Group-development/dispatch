@@ -1,6 +1,16 @@
 !> =====================================================================
 !> This module combines the MHD and RT solver solutions, to produce
 !> time derivatives that include the net radiative cooling
+!>
+!> Radiative transfer module structure:
+!>
+!> experiment_mod                       ! generic time advance modul
+!>   rmhd_mod                           ! wrapper for MHD and RT
+!>     mhd_mod                          ! MHD solver
+!>     eos_mod                          ! equation-of-state module
+!>     rt_mod                           ! RT organizer
+!>       rt_bundle_mod                  ! handles bundles of rays
+!>         rt_solver_mod                ! solver the RT equation
 !> =====================================================================
 MODULE rmhd_mod
   USE io_mod

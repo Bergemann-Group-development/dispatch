@@ -4,12 +4,12 @@ MODULE rt_mod
   USE io_mod
   USE trace_mod
   USE task_mod
-  !USE rt_bundle_mod
+  USE rt_bundle_mod
   implicit none
   private
   ! --------------------------------------------------------------------
   type, public, extends(task_t):: rt_t
-    !type(rt_bundle_t)               :: bundle
+    type(rt_bundle_t)                 :: bundle
     real, dimension(:,:,:),   pointer :: rk
     real, dimension(:,:,:,:), pointer :: src
     real, dimension(:,:,:),   pointer :: dedt
