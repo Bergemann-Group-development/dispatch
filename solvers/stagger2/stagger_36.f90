@@ -10,10 +10,10 @@ CONTAINS
 SUBROUTINE ddxdn_36 (ds, a, b)
   real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
-  real    :: ds(3), c
+  real    :: ds, c
   integer :: ix, iy, iz
 !...............................................................................
-  c = 1./ds(1)
+  c = 1./ds
   do iz=1,36
   do iy=1,36
     do ix=2,36
@@ -29,10 +29,10 @@ SUBROUTINE ddydn_36 (ds, a, b)
   real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,1,:) = 0.0
-  c = 1./ds(2)
+  c = 1./ds
   do iz=1,36
   do iy=2,36
   do ix=1,36
@@ -46,11 +46,11 @@ END SUBROUTINE ddydn_36
 SUBROUTINE ddzdn_36 (ds, a, b)
   real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
-  real    :: ds(3), c
+  real    :: ds, c
   integer :: ix, iy, iz
 !...............................................................................
   b(:,:,1) = 0.0
-  c = 1./ds(3)
+  c = 1./ds
   do iz=2,36
   do iy=1,36
   do ix=1,36
@@ -65,9 +65,9 @@ SUBROUTINE ddxup_36 (ds, a, b)
   real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
-  c = 1./ds(1)
+  c = 1./ds
   do iz=1,36
   do iy=1,36
     do ix=1,36-1
@@ -83,10 +83,10 @@ SUBROUTINE ddyup_36 (ds, a, b)
   real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,36,:) = 0.0
-  c = 1./ds(2)
+  c = 1./ds
   do iz=1,36
   do iy=1,36-1
   do ix=1,36
@@ -101,10 +101,10 @@ SUBROUTINE ddzup_36 (ds, a, b)
   real, dimension(36,36,36), intent(in):: a
   real, dimension(36,36,36):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,:,36) = 0.0
-  c = 1./ds(3)
+  c = 1./ds
   do iz=1,36-1
   do iy=1,36
   do ix=1,36

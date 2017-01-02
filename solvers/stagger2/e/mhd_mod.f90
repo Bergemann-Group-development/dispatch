@@ -23,7 +23,7 @@ MODULE mhd_mod
     real:: cdtd
     logical:: mhd=.true.
     type(force_t):: force
-    integer:: i_px=2, i_py=3, i_pz=4, i_e=5, i_bx=7, i_by=8, i_bz=9, i_tt=6
+    integer:: i_px=2, i_py=3, i_pz=4, i_e=5, i_bx=6, i_by=7, i_bz=8, i_tt=9
   contains
     procedure:: init
     procedure:: update
@@ -102,11 +102,11 @@ SUBROUTINE update (self)
   !.............................................................................
   real:: ds(3), dx
   integer, save:: itimer=0
+  type(stagger_t):: st
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%update',itimer=itimer)
   call self%dnload
-  call self%output
-
+  call trace%begin('mhd_t%update',itimer=itimer)
+  st%m => self%mesh
   self%d    => self%mem(:,:,:,self%i_d,self%it,1)
   self%dddt => self%mem(:,:,:,self%i_d,self%it,2)
   self%e    => self%mem(:,:,:,self%i_e,self%it,1)
@@ -162,7 +162,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ds = self%mesh%d
   dx = minval(ds)                                       ! smallest {dx,dy,dz}
-  du = div(ds,U)                                        ! save div(U) for now
+  du = st%div(U)                                        ! save div(U) for now
   if (self%gamma /= 1.0) then                           ! unless isothermal
     dedt = -pg*du                                       ! -Pg*div(U) term
   else
@@ -200,10 +200,10 @@ SUBROUTINE update (self)
     pp = pg + pa + pb
     ! Total diagonal stress
     du = dx*self%nu(1)*cs
-    fxx = pp + d*(fxx - du*ddxup(ds,Ux)) - Ex
-    fyy = pp + d*(fyy - du*ddyup(ds,Uy)) - Ey
-    fzz = pp + d*(fzz - du*ddzup(ds,Uz)) - Ex
-    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz)**2)
+    fxx = pp + d*(fxx - du*st%ddxup(Ux)) - Ex
+    fyy = pp + d*(fyy - du*st%ddyup(Uy)) - Ey
+    fzz = pp + d*(fzz - du*st%ddzup(Uz)) - Ex
+    Q = d*du*(st%ddxup(Ux)**2+st%ddyup(Uy)**2+st%ddzup(Uz)**2)
   else
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -225,17 +225,17 @@ SUBROUTINE update (self)
     pp = pg + pa
     ! Total diagondal stress, with density factor
     du = dx*self%nu(1)*cs
-    fxx = pp + d*(fxx - du*ddxup(ds,Ux))
-    fyy = pp + d*(fyy - du*ddyup(ds,Uy))
-    fzz = pp + d*(fzz - du*ddzup(ds,Uz))
-    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
+    fxx = pp + d*(fxx - du*st%ddxup(Ux))
+    fyy = pp + d*(fyy - du*st%ddyup(Uy))
+    fzz = pp + d*(fzz - du*st%ddzup(Uz))
+    Q = d*du*(st%ddxup(Ux)**2+st%ddyup(Uy)**2+st%ddzup(Uz))
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
-  fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux
+  fd = -(self%nu(4)*dd*down(du))*st%ddown(lnd)          ! diffusive mass flux
   fm = p+fd                                             ! mass flux
-  dddt = -div(ds,fm)                                    ! density derivative
+  dddt = -st%div(fm)                                    ! density derivative
   self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))
   if (io%verbose>2) print*,'u_max',self%u_max
   !-----------------------------------------------------------------------------
@@ -245,56 +245,56 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   if (self%gamma /= 1.0) then
     ee = e/d
-    fm = fm*down(ee) - (self%nu(5)*dd*down(du))*ddown(ds,ee)
-    dedt = dedt - div(ds,fm) + Q
+    fm = fm*down(ee) - (self%nu(5)*dd*down(du))*st%ddown(ee)
+    dedt = dedt - st%div(fm) + Q
   end if
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
   !---------------------------------------------------------------------------
   fxy = ydn(Ux)*xdn(Uy)
-  fxz = zdn(Ux)*xdn(Uz)
   fyz = zdn(Uy)*ydn(Uz)
+  fzx = xdn(Uz)*zdn(Ux)
   !---------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !---------------------------------------------------------------------------
-  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
-  fxz = fxz - self%nu(3)*0.5*ydn1(zdn1(du))*(ddxdn(ds,Uz)+ddzdn(ds,Ux))
-  fyz = fyz - self%nu(3)*0.5*zdn1(xdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
+  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(st%ddxdn(Uy)+st%ddydn(Ux))
+  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*(st%ddydn(Uz)+st%ddzdn(Uy))
+  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
   fxy = exp(ydn(ldx))*fxy
-  fxz = exp(zdn(ldx))*fxz
   fyz = exp(zdn(ldy))*fyz
+  fzx = exp(xdn(ldz))*fzx
   !---------------------------------------------------------------------------
   ! Off-diagonal Maxwell stress
   !---------------------------------------------------------------------------
   if (self%mhd) then
     fxy = fxy - ydn(Bx)*xdn(By)
-    fxz = fxz - zdn(Bx)*xdn(Bz)
     fyz = fyz - zdn(By)*ydn(Bz)
+    fzx = fzx - xdn(Bz)*zdn(Bx)
   end if
   !-----------------------------------------------------------------------------
-  ! Consistent addition of mass flux related momentum flux, symmetrized. The
+  ! Consistent ast%ddition of mass flux related momentum flux, symmetrized. The
   ! diagonal part is analogous, a centered version of \nu \rho U_i \grad\ln\rho,
   ! while the off-diagonal part needs to be properly symmetrized.
   !-----------------------------------------------------------------------------
   if (self%nu(4) > 0.0) then
     pa = d*du*self%nu(4)
-    fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)
-    fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)
-    fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)
+    fxx = fxx - pa*st%ddxup(ldx)*xup(Ux)
+    fyy = fyy - pa*st%ddyup(ldy)*yup(Uy)
+    fzz = fzz - pa*st%ddzup(ldz)*zup(Uz)
     fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
-    fxz = fxz + (xdn1(fdz)*zdn(Ux)+zdn1(fdx)*xdn(Uz))
-    fyz = fyz + (zdn1(fdy)*ydn(Uz)+ydn1(fdz)*zdn(Uy))
+    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
+    fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
   end if
   !-----------------------------------------------------------------------------
   ! Momentum equations
   !-----------------------------------------------------------------------------
-  dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fxz)
-  dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)
-  dpdtz = - ddxup1(ds,fxz) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
+  dpdtx = - st%ddxdn1(fxx) - st%ddyup1(fxy) - st%ddzup1(fzx)
+  dpdty = - st%ddxup1(fxy) - st%ddydn1(fyy) - st%ddzup1(fyz)
+  dpdtz = - st%ddxup1(fzx) - st%ddyup1(fyz) - st%ddzdn1(fzz)
   !-----------------------------------------------------------------------------
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
@@ -307,8 +307,9 @@ SUBROUTINE update (self)
   if (self%mhd) then
     !---------------------------------------------------------------------------
     ! Electric current, resistive electric field and magnetic dissipation
+    ! emf = {Ex,Ey,Ez} is the vector with components Ex, Ey, Ez
     !---------------------------------------------------------------------------
-    J = curl_dn(ds,B)
+    J = st%curl_dn(B)
     emf = self%nu(6)*edge(du)*J
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
     if (self%gamma /= 1.0) &
@@ -319,7 +320,7 @@ SUBROUTINE update (self)
     Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
-    dBdt = -curl_up(ds,emf)
+    dBdt = -st%curl_up(emf)
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)

@@ -10,11 +10,11 @@ CONTAINS
 SUBROUTINE ddxdn_28 (ds, a, b)
   real, dimension(28,28,28), intent(in):: a
   real, dimension(28,28,28):: b
-  real    :: ds(3), c
+  real    :: ds, c
   integer :: ix, iy, iz
 !...............................................................................
   b(1,:,:) = 0.0
-  c = 1./ds(1)
+  c = 1./ds
   do iz=1,28
   do iy=1,28
   do ix=2,28
@@ -29,10 +29,10 @@ SUBROUTINE ddydn_28 (ds, a, b)
   real, dimension(28,28,28), intent(in):: a
   real, dimension(28,28,28):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,1,:) = 0.0
-  c = 1./ds(2)
+  c = 1./ds
   do iz=1,28
   do iy=2,28
   do ix=1,28
@@ -46,11 +46,11 @@ END SUBROUTINE ddydn_28
 SUBROUTINE ddzdn_28 (ds, a, b)
   real, dimension(28,28,28), intent(in):: a
   real, dimension(28,28,28):: b
-  real    :: ds(3), c
+  real    :: ds, c
   integer :: ix, iy, iz
 !...............................................................................
   b(:,:,1) = 0.0
-  c = 1./ds(3)
+  c = 1./ds
   do iz=2,28
   do iy=1,28
   do ix=1,28
@@ -65,10 +65,10 @@ SUBROUTINE ddxup_28 (ds, a, b)
   real, dimension(28,28,28), intent(in):: a
   real, dimension(28,28,28):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(28,:,:) = 0.0
-  c = 1./ds(1)
+  c = 1./ds
   do iz=1,28
   do iy=1,28
   do ix=1,28-1
@@ -83,10 +83,10 @@ SUBROUTINE ddyup_28 (ds, a, b)
   real, dimension(28,28,28), intent(in):: a
   real, dimension(28,28,28):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,28,:) = 0.0
-  c = 1./ds(2)
+  c = 1./ds
   do iz=1,28
   do iy=1,28-1
   do ix=1,28
@@ -101,10 +101,10 @@ SUBROUTINE ddzup_28 (ds, a, b)
   real, dimension(28,28,28), intent(in):: a
   real, dimension(28,28,28):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,:,28) = 0.0
-  c = 1./ds(3)
+  c = 1./ds
   do iz=1,28-1
   do iy=1,28
   do ix=1,28

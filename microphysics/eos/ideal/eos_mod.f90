@@ -64,37 +64,41 @@ END FUNCTION
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, dim, d, e, pg, tt, rk, src, gamma)
+SUBROUTINE lookup (self, ee, lnd, d, pg, tt, rk, src, gamma)
   class (eos_t):: self
-  integer:: dim(3), i
   real, optional:: gamma
-  real, dimension(:,:,:),   optional, pointer :: d, e, pg, tt, rk
+  real, dimension(:,:,:)            , pointer :: ee
+  real, dimension(:,:,:),   optional, pointer :: lnd, d, pg, tt, rk
   real, dimension(:,:,:,:), optional, pointer :: src
+  integer:: dim(3), i
   !-----------------------------------------------------------------------------
+  dim = shape(ee)
   if (present(gamma)) then
     self%gamma = gamma
   end if
-  if (present(pg)) then
-    if (present(d).and.present(e)) then
-      pg = (self%gamma-1.0)*d*e
-    else
-      call mpi%abort ('eos_t: missing d or e in call for pg')
-    end if
-  end if
   if (present(tt)) then
-    if (present(e)) then
-      tt = (self%gamma-1.0)*e
-    else
-      call mpi%abort('eos_t: missing e in call for t')
-    end if
-  end if
-  if (present(rk)) then
-    rk = d
-  end if
-  if (present(src)) then
+    tt = (self%gamma-1.0)*ee
+  else if (present(src)) then
     do i=1,size(src,4)
-      src(:,:,:,i) = self%temperature(d,e)**4
+      src(:,:,:,i) = self%temperature(lnd,ee)**4
+      src(:,:,:,i) = ((self%gamma-1.0)*ee)**4
     end do
+  else if (present(d)) then
+    if (present(pg)) then
+      pg = (self%gamma-1.0)*d*ee
+    end if
+    if (present(rk)) then
+      rk = d
+    end if
+  else if (present (lnd)) then
+    if (present(pg)) then
+      pg = (self%gamma-1.0)*exp(lnd)*ee
+    end if
+    if (present(rk)) then
+      rk = exp(lnd)
+    end if
+  else
+    call mpi%abort ('missing d or lnd in eos_mod::lookup')
   end if
 END SUBROUTINE lookup
 

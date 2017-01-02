@@ -10,11 +10,11 @@ CONTAINS
 SUBROUTINE ddxdn_32 (ds, a, b)
   real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
-  real    :: ds(3), c
+  real    :: ds, c
   integer :: ix, iy, iz
 !...............................................................................
   b(1,:,:) = 0.0
-  c = 1./ds(1)
+  c = 1./ds
   do iz=1,32
   do iy=1,32
   do ix=2,32
@@ -29,10 +29,10 @@ SUBROUTINE ddydn_32 (ds, a, b)
   real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,1,:) = 0.0
-  c = 1./ds(2)
+  c = 1./ds
   do iz=1,32
   do iy=2,32
   do ix=1,32
@@ -46,11 +46,11 @@ END SUBROUTINE ddydn_32
 SUBROUTINE ddzdn_32 (ds, a, b)
   real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
-  real    :: ds(3), c
+  real    :: ds, c
   integer :: ix, iy, iz
 !...............................................................................
   b(:,:,1) = 0.0
-  c = 1./ds(3)
+  c = 1./ds
   do iz=2,32
   do iy=1,32
   do ix=1,32
@@ -65,10 +65,10 @@ SUBROUTINE ddxup_32 (ds, a, b)
   real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(32,:,:) = 0.0
-  c = 1./ds(1)
+  c = 1./ds
   do iz=1,32
   do iy=1,32
   do ix=1,32-1
@@ -83,10 +83,10 @@ SUBROUTINE ddyup_32 (ds, a, b)
   real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,32,:) = 0.0
-  c = 1./ds(2)
+  c = 1./ds
   do iz=1,32
   do iy=1,32-1
   do ix=1,32
@@ -101,10 +101,10 @@ SUBROUTINE ddzup_32 (ds, a, b)
   real, dimension(32,32,32), intent(in):: a
   real, dimension(32,32,32):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,:,32) = 0.0
-  c = 1./ds(3)
+  c = 1./ds
   do iz=1,32-1
   do iy=1,32
   do ix=1,32

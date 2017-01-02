@@ -10,11 +10,11 @@ CONTAINS
 SUBROUTINE ddxdn_16 (ds, a, b)
   real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
-  real    :: ds(3), c
+  real    :: ds, c
   integer :: ix, iy, iz
 !...............................................................................
   b(1,:,:) = 0.0
-  c = 1./ds(1)
+  c = 1./ds
   do iz=1,16
   do iy=1,16
   do ix=2,16
@@ -29,10 +29,10 @@ SUBROUTINE ddydn_16 (ds, a, b)
   real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,1,:) = 0.0
-  c = 1./ds(2)
+  c = 1./ds
   do iz=1,16
   do iy=2,16
   do ix=1,16
@@ -46,11 +46,11 @@ END SUBROUTINE ddydn_16
 SUBROUTINE ddzdn_16 (ds, a, b)
   real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
-  real    :: ds(3), c
+  real    :: ds, c
   integer :: ix, iy, iz
 !...............................................................................
   b(:,:,1) = 0.0
-  c = 1./ds(3)
+  c = 1./ds
   do iz=2,16
   do iy=1,16
   do ix=1,16
@@ -65,10 +65,10 @@ SUBROUTINE ddxup_16 (ds, a, b)
   real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(16,:,:) = 0.0
-  c = 1./ds(1)
+  c = 1./ds
   do iz=1,16
   do iy=1,16
   do ix=1,16-1
@@ -83,10 +83,10 @@ SUBROUTINE ddyup_16 (ds, a, b)
   real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,16,:) = 0.0
-  c = 1./ds(2)
+  c = 1./ds
   do iz=1,16
   do iy=1,16-1
   do ix=1,16
@@ -101,10 +101,10 @@ SUBROUTINE ddzup_16 (ds, a, b)
   real, dimension(16,16,16), intent(in):: a
   real, dimension(16,16,16):: b
   integer :: ix, iy, iz
-  real    :: ds(3), c
+  real    :: ds, c
 !...............................................................................
   b(:,:,16) = 0.0
-  c = 1./ds(3)
+  c = 1./ds
   do iz=1,16-1
   do iy=1,16
   do ix=1,16
