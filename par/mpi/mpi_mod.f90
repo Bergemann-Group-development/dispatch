@@ -29,7 +29,9 @@ MODULE mpi_mod
   USE omp_timer_mod
   USE io_unit_mod
   implicit none
+#ifdef MPI
   include 'mpif.h'              ! some systems require this instead of 'use mpi'
+#endif
   integer:: mpi_err             ! MPI error status
   logical:: mpi_master          ! true on MPI master (rank 0)
   logical:: mpi_trace=.false.   ! debug trace option
@@ -76,12 +78,21 @@ SUBROUTINE init (self, mpi_dims, dims)
     call init_mpi (self)
     call omp%init
     if (mpi_rank==0) call detect_cores
+#ifdef MPI
     call MPI_Bcast (omp%ncores, 1, MPI_INTEGER, 0, mpi_comm_world, mpi_err)
+#endif
   end if
+#ifdef MPI
   mpi%size   = mpi_size
   mpi%rank   = mpi_rank
   mpi%comm   = mpi_comm_world
   mpi%master = mpi_rank==0
+#else
+  mpi%size   = 1
+  mpi%rank   = 0
+  mpi%comm   = 0
+  mpi%master = (mpi_rank==0)
+#endif
   mpi%ok     = .true.
   if (mpi%master) then
     print'(a,i4)', ' n_socket =', omp%nsockets
@@ -139,6 +150,7 @@ SUBROUTINE init_mpi (self)
 !-------------------------------------------------------------------------------
 !  Start up MPI and get number of nodes and our node rank
 !-------------------------------------------------------------------------------
+#ifdef MPI
   call MPI_INIT_THREAD (MPI_THREAD_MULTIPLE, mpi_provided, mpi_err)
   self%mode = mpi_provided
   mpi_comm = mpi_comm_world
@@ -169,6 +181,12 @@ SUBROUTINE init_mpi (self)
     write (filename,'(a,i4.4,a)') 'rank_', mpi_rank, '.dat'
     open (output, file=filename, form='formatted', status='unknown')
   end if
+#else
+  mpi_rank = 0
+  mpi_master = (mpi_rank == 0)
+  master = mpi_master
+  print*,'MPI is not enabled!'
+#endif
 END SUBROUTINE init_mpi
 
 !> =============================================================================
@@ -182,7 +200,9 @@ SUBROUTINE end_mpi (self, label)
       print*,'MPI finalized with message: "'//trim(label)//'"'
     end if
   end if
+#ifdef MPI
   call MPI_Finalize (mpi_err)
+#endif
   call exit        ! avoid "stop" which may produce one output line per process
 END SUBROUTINE
 
@@ -199,14 +219,18 @@ SUBROUTINE abort_mpi (self, reason)
     write(io_unit%log,'(3(a,i6,2x))') 'mpi_abort: thread =',omp%thread
   end if
   flush (io_unit%log)
+#ifdef MPI
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
+#endif
   call exit
 END SUBROUTINE abort_mpi
 
 !> =============================================================================
 SUBROUTINE clean_stop
 !...............................................................................
+#ifdef MPI
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
+#endif
   call exit
 END SUBROUTINE clean_stop
 
@@ -220,7 +244,9 @@ SUBROUTINE barrier_mpi (self, label)
     write (output,*) mpi_rank, 'barrier_mpi: '//label
     flush (output)
   end if
+#ifdef MPI
   call MPI_Barrier (mpi_comm_world, mpi_err)
+#endif
 END SUBROUTINE barrier_mpi
 
 !> =============================================================================

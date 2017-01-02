@@ -11,7 +11,9 @@ MODULE mpi_mesg_mod
   USE timer_mod
   implicit none
   private
+#ifdef MPI
   include "mpif.h"
+#endif
   !
   type, public:: mesg_t
     class(mesg_t), pointer:: next => null()
@@ -94,6 +96,7 @@ SUBROUTINE send (self, rank)
     'mpi_mesg::send id, nbuf, to =', self%id, self%nbuf, rank
     flush (io_unit%log)
   end if
+#ifdef MPI
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
@@ -107,6 +110,12 @@ SUBROUTINE send (self, rank)
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
   end if
+#else
+  !$omp critical (mpi_cr)
+  self%nreq = self%nreq+1                                 ! count reqs
+  self%reqs(self%nreq) = req                              ! collect reqs
+  !$omp end critical (mpi_cr)
+#endif
   !$omp atomic
   mpi_mesg%n_send = mpi_mesg%n_send+1
   call trace%end
@@ -212,6 +221,7 @@ SUBROUTINE test_all (self, flag)
     return
   end if
   call trace%begin ('mesg_t%test_all', itimer=itimer)
+#ifdef MPI
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
@@ -219,6 +229,7 @@ SUBROUTINE test_all (self, flag)
   else
     call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
   end if
+#endif MPI
   if (io%verbose>2) then
     write (io_unit%log,*) wallclock(), self%id, ' test_all flag =', flag
     flush (io_unit%log)
@@ -237,6 +248,7 @@ SUBROUTINE wait_all (self)
   !.............................................................................
   call trace%begin ('mesg_t%wait_all', itimer=itimer)
   if (io%verbose >= 0) wc = wallclock()
+#ifdef MPI
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call MPI_WAITALL (self%nreq, self%reqs, MPI_STATUSES_IGNORE, ierr)
@@ -244,6 +256,7 @@ SUBROUTINE wait_all (self)
   else
     call MPI_WAITALL (self%nreq, self%reqs, MPI_STATUSES_IGNORE, ierr)
   end if
+#endif MPI
   if (io%verbose >= 0) then
     wc = wallclock()-wc
     !$omp atomic
@@ -450,7 +463,9 @@ SUBROUTINE get (self, mesg)
   class(mesg_t), pointer:: mesg
   !.............................................................................
   logical:: flag
+#ifdef MPI
   integer:: stat(MPI_STATUS_SIZE)
+#endif
   integer:: msg ,ierr, nbuf, req
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -460,6 +475,7 @@ SUBROUTINE get (self, mesg)
   !-----------------------------------------------------------------------------
   ! Probe for incoming messages
   !-----------------------------------------------------------------------------
+#ifdef MPI
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call probe_for
@@ -467,6 +483,7 @@ SUBROUTINE get (self, mesg)
   else
     call probe_for
   end if
+#endif
   call trace%end (itimer)
   return
 contains
@@ -475,6 +492,7 @@ contains
   !-----------------------------------------------------------------------------
   subroutine probe_for
     logical:: complete
+#ifdef MPI
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
     if (flag) then
       allocate (mesg)
@@ -488,6 +506,7 @@ contains
       !$omp atomic
       mpi_mesg%n_recv = mpi_mesg%n_recv+1
     end if
+#endif
   end subroutine probe_for
 END SUBROUTINE get
 
@@ -506,6 +525,7 @@ FUNCTION is_complete (self)
   !-----------------------------------------------------------------------------
   ! Check for completion
   !-----------------------------------------------------------------------------
+#ifdef MPI
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (complete_cr)
     call check_recv
@@ -513,6 +533,7 @@ FUNCTION is_complete (self)
   else
     call check_recv
   end if
+#endif
   call trace%end (itimer)
   return
 contains
@@ -521,7 +542,9 @@ contains
   !-----------------------------------------------------------------------------
   subroutine check_recv
     integer:: ierr
+#ifdef MPI
     integer:: stat(MPI_STATUS_SIZE)
+#endif
     real(8):: wc
     !---------------------------------------------------------------------------
     if (mpi_mesg%recv_list%n > max_recv .or. mpi_mesg%wait) then
@@ -531,6 +554,7 @@ contains
           'is_complete waiting for id', self%id, mpi_mesg%recv_list%n, mpi_mesg%wait
         flush (io_unit%log)
       end if
+#ifdef MPI
       if (mpi%mode == MPI_THREAD_SERIALIZED) then
         !$omp critical (mpi_cr)
         call MPI_WAIT (self%req, stat, ierr)
@@ -538,12 +562,14 @@ contains
       else
         call MPI_WAIT (self%req, stat, ierr)
       end if
+#endif
       if (io%verbose>1) then
         wc = wallclock()-wc
         write (io_unit%log,*) wallclock(), &
           'is_complete:', self%id, wc, mpi_mesg%recv_list%n, mpi_mesg%wait
       end if
       is_complete = .true.
+#ifdef MPI
     else
       if (mpi%mode == MPI_THREAD_SERIALIZED) then
         !$omp critical (mpi_cr)
@@ -552,6 +578,7 @@ contains
       else
         call MPI_TEST (self%req, is_complete, stat, ierr)
       end if
+#endif
     end if
   end subroutine check_recv
 END FUNCTION is_complete
@@ -562,14 +589,17 @@ END FUNCTION is_complete
 SUBROUTINE wait_for_completion (self)
   class(mesg_t):: self
   !.............................................................................
-  integer:: stat(MPI_STATUS_SIZE)
   integer:: ierr
   integer, save:: itimer=0
   real(8):: wc
+#ifdef MPI
+  integer:: stat(MPI_STATUS_SIZE)
+#endif
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
   call trace%begin ('mesg_t%wait_for_completion', itimer=itimer)
   if (io%verbose>=0) wc=wallclock()
+#ifdef MPI
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call MPI_WAIT (self%req, stat, ierr)
@@ -577,6 +607,7 @@ SUBROUTINE wait_for_completion (self)
   else
     call MPI_WAIT (self%req, stat, ierr)
   end if
+#endif
   if (io%verbose >= 0) then
     wc = wallclock()-wc
     !$omp atomic

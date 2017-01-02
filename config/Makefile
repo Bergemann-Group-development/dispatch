@@ -10,6 +10,7 @@ OMP  = yes
 MPI  = mpi
 MOD  = mod
 AUTO = yes
+DEFS =
 
 #############################################################################
 # Check for options
@@ -34,10 +35,9 @@ default: $(EXEC)
 # Sources directories are searched in this exact order (VPATH inside Makefile)
 VPATH = $(TOP)
 sinclude $(TOP)/par/omp/Makefile
+sinclude $(TOP)/par/mpi/Makefile
 ifeq ($(MPI),mpi)
-  sinclude $(TOP)/par/mpi/Makefile
-else
-  sinclude $(TOP)/par/nompi/Makefile
+  DEFS += -DMPI
 endif
 sinclude $(TOP)/io/Makefile
 #sinclude $(TOP)/operators/Makefile
@@ -88,12 +88,12 @@ SRC = $(subst .d,.w,$(notdir $(wildcard $(DEPDIR)/*.d)))
 # Pattern rules to get .o files from .f90 files
 %.o: %.f90 $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
-	$(E)$(F90) $(FFLAGS) $(DEPFLAGS) -c $< -o $@
+	$(E)$(F90) $(FFLAGS) $(DEFS) $(DEPFLAGS) -c $< -o $@
 	$(E)$(POSTCOMPILE)
 	$(eval OBJS+=$@)
 %.o: %.f $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
-	$(E)$(F90) $(FFLAGS) $(DEPFLAGS) -c $< -o $@
+	$(E)$(F90) $(FFLAGS) $(DEFS) $(DEPFLAGS) -c $< -o $@
 	$(E)$(POSTCOMPILE)
 	$(eval OBJS+=$@)
 %.x: %.f90
@@ -127,10 +127,10 @@ else
 	$(E)$(LD) $(LDFLAGS) $(OBJ) $< *.o -o $@ $(LIBS)
 .f90.o:
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
-	$(E)$(F90) $(FFLAGS) -c $< -o $@
+	$(E)$(F90) $(FFLAGS) $(DEFS) -c $< -o $@
 .f.o:
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
-	$(E)$(F90) $(FFLAGS) -c $< -o $@
+	$(E)$(F90) $(FFLAGS) $(DEFS) -c $< -o $@
 .f90.w:
 	@echo $<
 .f.w:
@@ -139,7 +139,7 @@ $(EXEC): $(OBJ)
 endif
 
 showopt:
-	@echo "FC = $(F90) $(FFLAGS)"
+	@echo "FC = $(F90) $(FFLAGS) $(DEFS)"
 	@echo "LD = $(LD) $(LDFLAGS)"
 
 #############################################################################
@@ -195,6 +195,7 @@ info:
 	@echo "$B  LD          $N= $(LD)"
 	@echo "$B  FFLAGS      $N= $(FFLAGS)"
 	@echo "$B  LDFLAGS     $N= $(LDFLAGS)"
+	@echo "$B  DEFS        $N= $(DEFS)"
 	@echo "$B  LIBS        $N= $(LIBS)"
 	@echo "$B  EXEC        $N= $(EXEC)"
 compiler:

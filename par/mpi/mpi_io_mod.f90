@@ -17,7 +17,6 @@ MODULE mpi_io_mod
   USE io_mod
   USE mpi
   implicit none
-  !include 'mpif.h'
   private
   type, public:: mpi_io_t
     integer:: n
@@ -29,7 +28,11 @@ MODULE mpi_io_mod
     integer:: req
     integer:: count
     integer:: err
+#ifdef MPI
     integer:: status(MPI_STATUS_SIZE)
+#else
+    integer:: status
+#endif
     character(len=64):: filename
   contains
     procedure:: init
@@ -78,6 +81,7 @@ SUBROUTINE open (self, filename, mode)
   integer:: n
   !-----------------------------------------------------------------------------
   self%filename = filename
+#ifdef MPI
   CALL MPI_FILE_OPEN (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, &
                       self%err)
   if (io%verbose>0 .and. io%master) then
@@ -103,10 +107,11 @@ SUBROUTINE open (self, filename, mode)
   if (io%verbose > 0 .and. io%master) then
     print'(1x,a,2i8)','mpi_io_mod::open: '//trim(filename), mp%rank, self%err
   end if
+#endif
 END SUBROUTINE open
 
 !> =============================================================================
-!> Open a file for writing, releaving the user from having to remember (and
+!> Open a file for writing, relieving the user from having to remember (and
 !> having access to) the appropriate mode integers
 !> =============================================================================
 SUBROUTINE openw (self, filename)
@@ -114,7 +119,9 @@ SUBROUTINE openw (self, filename)
   character(len=*) filename
   integer mode
   !-----------------------------------------------------------------------------
+#ifdef MPI
   call self%open (filename, MPI_MODE_CREATE + MPI_MODE_RDWR)
+#endif
 END SUBROUTINE openw
 
 !> =============================================================================
@@ -126,7 +133,9 @@ SUBROUTINE openr (self, filename)
   character(len=*) filename
   integer mode
   !-----------------------------------------------------------------------------
+#ifdef MPI
   call self%open (filename, MPI_MODE_RDONLY)
+#endif
 END SUBROUTINE openr
 
 !> =============================================================================
@@ -135,10 +144,12 @@ END SUBROUTINE openr
 SUBROUTINE close (self)
   class(mpi_io_t):: self
   !-----------------------------------------------------------------------------
+#ifdef MPI
   CALL MPI_FILE_CLOSE(self%handle, self%err)
   if (io%verbose > 0 .and. io%master) then
     print'(1x,a,2i8)','mpi_io_mod::close: '//trim(self%filename)
   end if
+#endif MPI
 END SUBROUTINE close
 
 !> =============================================================================
@@ -148,6 +159,7 @@ SUBROUTINE write3 (self, f, rec)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:):: f
   integer:: rec
+#ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
   !-----------------------------------------------------------------------------
   pos = 4*(rec-1)*product(self%gsize)
@@ -165,6 +177,7 @@ SUBROUTINE write3 (self, f, rec)
     print fmt,'mpi_io_mod::read: '//trim(self%filename), &
       mp%rank, omp%thread, rec, pos, f(3:5,3,3)
   end if
+#endif
 END SUBROUTINE write3
 
 !> =============================================================================
@@ -174,6 +187,7 @@ SUBROUTINE write1 (self, f, rec)
   class(mpi_io_t):: self
   real(kind=4), dimension(:):: f
   integer:: rec
+#ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
   !-----------------------------------------------------------------------------
   pos = 4*(rec-1)*self%gsize(1)
@@ -191,6 +205,7 @@ SUBROUTINE write1 (self, f, rec)
     print fmt,'mpi_io_mod::read: '//trim(self%filename), &
       mp%rank, omp%thread, rec, pos, f(3:5)
   end if
+#endif MPI
 END SUBROUTINE write1
 
 !> =============================================================================
@@ -200,6 +215,7 @@ SUBROUTINE read3 (self, f, rec)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:):: f
   integer rec
+#ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
   !-----------------------------------------------------------------------------
   pos = 4*(rec-1)*product(self%gsize)
@@ -217,6 +233,7 @@ SUBROUTINE read3 (self, f, rec)
     print fmt,'mpi_io_mod::read: '//trim(self%filename), &
       mp%rank, omp%thread, rec, pos, f(3:5,3,3)
   end if
+#endif
 END SUBROUTINE read3
 
 !> =============================================================================
@@ -226,6 +243,7 @@ SUBROUTINE read1 (self, f, rec)
   class(mpi_io_t):: self
   real(kind=4), dimension(:):: f
   integer rec
+#ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
   !-----------------------------------------------------------------------------
   pos = 4*(rec-1)*self%gsize(1)
@@ -243,6 +261,7 @@ SUBROUTINE read1 (self, f, rec)
     print fmt,'mpi_io_mod::read: '//trim(self%filename), &
       mp%rank, omp%thread, rec, pos, f(3:5)
   end if
+#endif
 END SUBROUTINE read1
 
 !> =============================================================================
@@ -252,8 +271,10 @@ FUNCTION test (self) RESULT (flag)
   class(mpi_io_t):: self
   logical:: flag
   !-----------------------------------------------------------------------------
+#ifdef MPI
   call MPI_TEST (self%req, flag, self%status, self%err)
   call self%assert ('mpi_io_mod::read MPI_TEST')
+#endif
 END FUNCTION test
 
 !> =============================================================================
@@ -261,8 +282,11 @@ END FUNCTION test
 !> =============================================================================
 SUBROUTINE wait (self)
   class(mpi_io_t):: self
+  !-----------------------------------------------------------------------------
+#ifdef MPI
   call MPI_WAIT (self%req, self%status, self%err)
   call self%assert ('mpi_io_mod::read MPI_WAIT')
+#endif
 END SUBROUTINE wait
 
 !> =============================================================================

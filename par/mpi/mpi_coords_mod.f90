@@ -33,7 +33,9 @@ MODULE mpi_coords_mod
   USE timer_mod
   implicit none
   private
+#ifdef MPI
   include 'mpif.h'
+#endif MPI
   logical:: cart_created=.false.! Set to true if cartesian mpi coordinates are set up
   logical:: mpi_reorder         ! Reordering of ranks allowed, or not
   logical:: mpi_periodic(3)     ! Periodic MPI dimensions, or not
@@ -71,12 +73,16 @@ FUNCTION rank_to_coords (self, rank) result (coords)
   class(mpi_coords_t):: self
   integer:: rank, coords(3)
   !.............................................................................
+#ifdef MPI
   if (self%size == 1) then
     coords = 0
   else
     call MPI_CART_COORDS (self%cart_comm, rank, 3, coords, mpi_err)
     call mpi%assert ('MPI_CART_COORDS', mpi_err)
   end if
+#else
+  coords = 0
+#endif
 END FUNCTION rank_to_coords
 
 !> =============================================================================
@@ -86,12 +92,16 @@ FUNCTION coords_to_rank (self, coords) result (rank)
   class(mpi_coords_t):: self
   integer:: coords(3), rank
   !.............................................................................
+#ifdef MPI
   if (mpi%size==1) then
     rank=0
   else
     call MPI_CART_RANK (self%cart_comm, coords, rank, mpi_err)
   end if
   call mpi%assert ('MPI_CART_RANK', mpi_err)
+#else
+  rank = 0
+#endif
 END FUNCTION coords_to_rank
 
 !> =============================================================================
@@ -172,6 +182,9 @@ SUBROUTINE cart_create_mpi (self, mpi_dims, dims)
     'mpi_coords.f90 $Id$'
   integer, save:: itimer=0
 !-------------------------------------------------------------------------------
+#ifndef MPI
+  mpi_err = 0
+#endif
   mpi_reorder = .true.
   mpi_periodic = .true.
   !-----------------------------------------------------------------------------
@@ -218,27 +231,35 @@ SUBROUTINE cart_create_mpi (self, mpi_dims, dims)
       product(mpi_dim3))
   end if
   if (.not. ok) return
+#ifdef MPI
   call MPI_Cart_create (mpi_comm_world, 3, mpi_dim3, mpi_periodic, mpi_reorder, &
                         mpi_comm_cart, mpi_err)
+#endif
   self%cart_comm = mpi_comm_cart
   if (self%rank==0) print '(13x,a,3i5)', ' Using mpi_dims =', mpi_dim3
   call mpi%assert ('cart_creat_mpi: cart', mpi_err)
   !-----------------------------------------------------------------------------
   ! Compute mpi_cord3; our coordinates in Cartesian MPI space
   !-----------------------------------------------------------------------------
+#ifdef MPI
   call MPI_Cart_coords (mpi_comm_cart, self%rank, 3, mpi_cord3, mpi_err)        ! mpi_cord3(i) = mpi_[xyz]
+#endif
   call mpi%assert ('cart_creat_mpi: mpi_cord3', mpi_err)
   do i=1,3
     !---------------------------------------------------------------------------
     ! Compute mpi_up and mpi_dn; the ranks of nearest neighbors
     !---------------------------------------------------------------------------
+#ifdef MPI
     call MPI_Cart_shift (mpi_comm_cart, i-1, 1, mpi_dn(i), mpi_up(i), mpi_err)  ! mpi_{up,dn} ranks
+#endif
     call mpi%assert ('cart_creat_mpi: mpi_dn/up', mpi_err)
     !---------------------------------------------------------------------------
     ! Compute mpi_plane; the communicators for planes in MPI-space
     !---------------------------------------------------------------------------
+#ifdef MPI
     call MPI_Comm_split (mpi_comm_world, mpi_cord3(i), self%rank, mpi_plane(i),&! mpi_plane(
                          mpi_err)
+#endif
     call mpi%assert ('cart_creat_mpi: mpi_plane', mpi_err)
     !---------------------------------------------------------------------------
     ! Compute mpi_beam; the communicators along MPI coordinat axes
@@ -246,7 +267,9 @@ SUBROUTINE cart_create_mpi (self, mpi_dims, dims)
     color = merge(0,mpi_cord3(1),i==1) &
           + merge(0,mpi_cord3(2),i==2)*mpi_dim3(1) &
           + merge(0,mpi_cord3(3),i==3)*mpi_dim3(1)*mpi_dim3(2)
+#ifdef MPI
     call MPI_Comm_split (mpi_comm_world, color, mpi_cord3(i), mpi_beam(i), mpi_err)
+#endif MPI
     call mpi%assert ('cart_creat_mpi: mpi_beam', mpi_err)
   end do
   cart_created = .true.
@@ -276,7 +299,8 @@ SUBROUTINE finalize (self)
   implicit none
   class(mpi_coords_t):: self
   integer:: mpi_err, i
-  !
+!-------------------------------------------------------------------------------
+#ifdef MPI
   if (self%ok) then
     call MPI_Comm_Free(mpi_comm_cart,mpi_err)
     do i=1,3
@@ -286,5 +310,6 @@ SUBROUTINE finalize (self)
       call mpi%assert ('finalize_cart: mpi_beam',mpi_err)
     enddo
   endif
+#endif
 END SUBROUTINE finalize
 END MODULE mpi_coords_mod
