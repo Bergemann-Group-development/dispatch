@@ -1,4 +1,4 @@
-F90 = mpiifort -cpp -assume byterecl -DPREC=$(PREC)
+F90 = mpiifort -cpp -assume byterecl
 LD  = mpiifort -cpp
 
 HW = -axAVX -xSSE4.1

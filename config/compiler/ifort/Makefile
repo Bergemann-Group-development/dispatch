@@ -3,14 +3,13 @@ OPT = -O1
 DEBUG = -g -traceback -fpe:0
 #HW = -axAVX -xSSE4.1
 HW =
-PREC = 4
 
 # Depending on MPI use mpif90 or not
 ifeq ($(strip $(MPI)),mpi)
-  F90 = mpiifort -cpp -assume byterecl -diag-disable remark -DPREC=$(PREC)
+  F90 = mpiifort -cpp -assume byterecl -diag-disable remark
   LD  = mpiifort
 else
-  F90 = ifort -cpp -assume byterecl -diag-disable remark -DPREC=$(PREC)
+  F90 = ifort -cpp -assume byterecl -diag-disable remark
   LD  = ifort
 endif
 

@@ -4,19 +4,17 @@
 # Default for gfortran
 OPT = -O2
 HW =
-PREC = 4
 W = -Wline-truncation -Wno-surprising -w
-D = -DPREC=$(PREC)
 DEBUG = -g -fbacktrace 
 
 # Depending on MPI use mpif90 or not
 ifeq ($(strip $(MPI)),mpi)
-F90 = mpifort -x f95-cpp-input -ffree-line-length-0 $(W) $(D)
-FC  = mpifort -x f95-cpp-input -ffree-line-length-0 $(W) $(D)
+F90 = mpifort -x f95-cpp-input -ffree-line-length-0 $(W)
+FC  = mpifort -x f95-cpp-input -ffree-line-length-0 $(W)
 LD  = mpifort
 else
-F90 = gfortran -x f95-cpp-input -ffree-line-length-0 $(W) $(D)
-FC  = gfortran -x f95-cpp-input -ffree-line-length-0 $(W) $(D)
+F90 = gfortran -x f95-cpp-input -ffree-line-length-0 $(W)
+FC  = gfortran -x f95-cpp-input -ffree-line-length-0 $(W)
 LD  = gfortran
 endif
 

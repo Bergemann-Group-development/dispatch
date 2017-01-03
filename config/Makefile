@@ -10,7 +10,8 @@ OMP  = yes
 MPI  = mpi
 MOD  = mod
 AUTO = yes
-DEFS =
+PREC ?= SINGLE
+DEFS = -D$(PREC)
 
 #############################################################################
 # Check for options
