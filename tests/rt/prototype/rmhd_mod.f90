@@ -61,7 +61,6 @@ SUBROUTINE init (self)
   self%rt%n_lambda = eos%n_lambda                                       ! number of wavelengths
   self%rt%n_bundle = 1                          ! FIXME                 ! one direction
   call self%rt%init                                                     ! allocate weights
-  self%rt%mesh(2)%dsup => self%mesh(2)%dsup                             ! mesh spacing
   self%rt%w_lambda = 1.0/self%rt%n_lambda       ! FIXME                 ! wavelength weights
   self%rt%w_bundle = pi4/2./self%rt%n_bundle    ! FIXME                 ! space angle weights
   !
@@ -80,7 +79,7 @@ END SUBROUTINE init
 SUBROUTINE update_both (self)
   class (rmhd_t) :: self
   !---------------------------------------------------------------------
-  call trace%begin ('rmhd_t%update')
+  call trace%begin ('rmhd_t%update_both')
   call self%mhd_t%update                                                ! get df/dt from MHD
   !if (.not.self%rt%is_ahead_of (self)) then                             ! if RT is not up-to-date
   !  call self%solve                                                     ! solve the RT for a new slot
@@ -99,12 +98,13 @@ END SUBROUTINE update_both
 !> =====================================================================
 SUBROUTINE update (self)
   class (rmhd_t) :: self
+  integer, save :: itimer=0
   !---------------------------------------------------------------------
-  call trace%begin ('rmhd_t%update')
+  call trace%begin ('rmhd_t%update', itimer=itimer)
   call self%mhd_t%update                                                ! get df/dt from MHD
   call self%rt%interpolate (self%time)                                  ! interpolate in time and space
   self%dedt = self%dedt + self%rt%dedt                                  ! add the RT contribution to de/dt
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE update
 
 END MODULE rmhd_mod

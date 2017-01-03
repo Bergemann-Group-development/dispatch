@@ -68,11 +68,15 @@ SUBROUTINE init (self)
   ! --------------------------------------------------------------------
   call trace_begin ('rt_t%init')
   self%nv = 1
+  self%nw = 1
   call self%patch_t%init
+  self%i_e = 1
+  self%dedt => self%mem(:,:,:,self%i_e,self%it,1)
   rt_bundle%dim = self%dim
   allocate (self%w_lambda(self%n_lambda))
   allocate (self%w_bundle(self%n_bundle))
-  allocate (self%dedt (self%dim(1), self%dim(2), self%dim(3)))
+  allocate (self%rk (self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
+  allocate (self%src(self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
   self%grace = 1.0                                                      ! use values for one dtime
   self%dtime = 0.001                            ! FIXME
   call rt_bundle%init
@@ -90,11 +94,18 @@ SUBROUTINE update (self)
   real, dimension(:,:,:), pointer:: lnd, lne
   class(task_t),  pointer:: task
   class(patch_t), pointer:: mhd
+  integer, save:: itimer=0
   !---------------------------------------------------------------------
-  call trace%begin ('rmhd_t%solve')
+  call trace%begin ('rmhd_t%update', itimer=itimer)
+  if (self%time < 0d0) then
+    self%dtime = 0.01                                                   ! 1 second
+    self%time = self%dtime
+    self%grace = 0.0                                                    ! no grace
+  end if
   task => self%link%nbor%task                                           ! assumes the only nbor is RMHD
   select type (task)
   class is (patch_t)
+  mhd => task
   allocate (lnd (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log density scratch
   allocate (lne (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log internal energy scratch
   call mhd%log_interpolate (self%time, mhd%i_d, lnd)                    ! interpolate in time and space
@@ -104,6 +115,7 @@ SUBROUTINE update (self)
   call eos%lookup (shape(lne), lne=lne, lnd=lnd, &                      ! call the table lookup, ...
                    rk=self%rk, src=self%src)                            ! ... results go into rt_t
   deallocate (lnd, lne)                                                 ! deallocate scratch
+  call trace%end (itimer)
   call self%solve                                                       ! call the RT solver to get Q
   !-----------------------------------------------------------------------------
   ! Update the RT time.  When first starting, the RT time is negative, to force
@@ -112,14 +124,6 @@ SUBROUTINE update (self)
   ! next RT solution is triggered when the MHD time exceeds the RT time, and
   ! after the RT is done the RT time is advanced with the RT time step dtime.
   !-----------------------------------------------------------------------------
-  if (self%time < 0d0) then
-    self%time = self%dtime
-    self%grace = 0.0
-  else
-    self%time = self%time + self%dtime
-  end if
-  call self%rotate                                                      ! rotate the time slots
-  call trace%end
 END SUBROUTINE update
 
 !> =====================================================================
@@ -150,8 +154,9 @@ SUBROUTINE solve (self)
   real, dimension(:,:),   pointer :: qfw0, qfw1, qrv0, qrv1
   real, dimension(:,:,:), pointer :: s, rk, dtau, exp0, q
   class (patch_t),        pointer :: task
+  integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
-  call trace_begin ('rt_t%solve')
+  call trace_begin ('rt_t%solve', itimer=itimer)
   self%dedt = 0.0                                                       ! reset net cooling
   do ib=1,self%n_bundle                                                 ! loop over bundles
     !$omp single
@@ -165,7 +170,7 @@ SUBROUTINE solve (self)
       allocate (qfw0(self%dim(1), self%dim(3)))                         ! temporary array
       allocate (qfw1(self%dim(1), self%dim(3)))                         ! temporary array
       allocate (qrv0(self%dim(1), self%dim(3)))                         ! temporary array
-      allocate (qrv0(self%dim(1), self%dim(3)))                         ! temporary array
+      allocate (qrv1(self%dim(1), self%dim(3)))                         ! temporary array
       ds => self%mesh(2)%dsup                                           ! along this direction
       call self%optical_depth (ds, rk, dtau)                            ! compute dtau
       !
@@ -194,7 +199,7 @@ SUBROUTINE solve (self)
     !$omp end single
     !$omp taskwait
   end do
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE solve
 
 !> =====================================================================

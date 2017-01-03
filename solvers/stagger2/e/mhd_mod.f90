@@ -53,11 +53,11 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
-  self%i_d =2
-  self%i_e =2
-  self%i_px=3
-  self%i_py=4
-  self%i_pz=5
+  self%i_d =1
+  self%i_px=2
+  self%i_py=3
+  self%i_pz=4
+  self%i_e =5
   self%i_bx=6
   self%i_by=7
   self%i_bz=8

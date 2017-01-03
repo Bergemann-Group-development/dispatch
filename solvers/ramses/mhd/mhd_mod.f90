@@ -89,7 +89,6 @@ SUBROUTINE update (self)
   integer, save:: itimer(4)
   !-----------------------------------------------------------------------------
   call trace_begin ('mhd_mod::update')
-  print*,'mk2',dp
   nv3 = self%nv-3
   dtdx = self%dtime/self%ds(1)
   dtdy = self%dtime/self%ds(2)
@@ -142,7 +141,6 @@ SUBROUTINE update (self)
   call cmp_mag_flx(self,2,3,4,6,7,8,dtdz,em(:,:,:,3),self%gn(3),self%nv)
   call cmp_mag_flx(self,4,2,3,8,6,7,dtdy,em(:,:,:,2),self%gn(2),self%nv)
   call cmp_mag_flx(self,3,4,2,7,8,6,dtdx,em(:,:,:,1),self%gn(1),self%nv)
-  print*,'mk3',minval(em),maxval(em)
   !-----------------------------------------------------------------------------
   ! Flux divergence update
   !-----------------------------------------------------------------------------

@@ -24,6 +24,7 @@ SUBROUTINE rt_setup (task_list)
     task => mhd_link%task
     select type (task)
     class is (rmhd_t)
+      call task%dnload
       rt_task => task%rt
       !-------------------------------------------------------------------------
       ! Create a task list element for the RT task, and append to rt_task_list
@@ -80,7 +81,6 @@ SUBROUTINE rt_setup (task_list)
   do while (associated(rt_link))
     task => rt_link%task
     next => rt_link%next
-    print *,task%id
     !---------------------------------------------------------------------------
     ! Append the new task list link to the task_list and queue it
     !---------------------------------------------------------------------------
@@ -88,7 +88,6 @@ SUBROUTINE rt_setup (task_list)
     class is (rt_t)
       call task_list%append_link (rt_link)
       rt_link%task%time = -999d0
-      print *, 'added RT task', task%id
     end select
     rt_link => next
   end do

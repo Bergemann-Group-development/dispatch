@@ -1569,12 +1569,13 @@ SUBROUTINE log_interpolate (self, time, i, a)
   !.....................................................................
   integer                         :: jt(2)
   real                            :: pt(2)
+  integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
-  call trace%begin ('rmhd_t%log_interpolate')
+  call trace%begin ('rmhd_t%log_interpolate', itimer=itimer)
   call self%time_interval (time, jt, pt)
   a = log(self%mem(:,:,:,i,jt(1),1))*pt(1) &
     + log(self%mem(:,:,:,i,jt(2),1))*pt(2)
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE log_interpolate
 
 !> =====================================================================
@@ -1604,9 +1605,11 @@ SUBROUTINE time_interval (self, time, jt, pt)
     pt(2) = (time-t(j))/dt
   end if
   pt(1) = 1.-pt(2)
-  print *, 'time_interval: times  =', t(j), time, t(j+1)
-  print *, 'time_interval: times  =', self%t(jt(1)), time, self%t(jt(2))
-  print *, 'time_interval: jt, pt =', jt, pt
+  if (io%verbose>1) then
+    print *, 'time_interval: times  =', t(j), time, t(j+1)
+    print *, 'time_interval: times  =', self%t(jt(1)), time, self%t(jt(2))
+    print *, 'time_interval: jt, pt =', jt, pt
+  end if
   call trace%end
 END SUBROUTINE time_interval
 

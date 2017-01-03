@@ -43,7 +43,7 @@ SUBROUTINE integral_forward (self, dtau, exp0, S, qfw0, qfw, qfw1)
 ! The input is the source functions and opacities at all points, the net
 ! forward intensity (I-S) at the 1st point and the net reverse intensity
 ! at the last point.  As a result, we get the net bi-directional intensity
-! everywhere, and also the outgoing forward and reverse intensities at 
+! everywhere, and also the outgoing forward and reverse intensities at
 ! points number 1 and np.
 !
 ! The equations solved are Q' = Q - dS/dtau in the forward direction and
@@ -105,7 +105,7 @@ SUBROUTINE integral_reverse (self, dtau, exp0, S, qrv1, qrv, qrv0)
 ! The input is the source functions and opacities at all points, the net
 ! forward intensity (I-S) at the 1st point and the net reverse intensity
 ! at the last point.  As a result, we get the net bi-directional intensity
-! everywhere, and also the outgoing forward and reverse intensities at 
+! everywhere, and also the outgoing forward and reverse intensities at
 ! points number 1 and np.
 !
 ! The equations solved are Q' = Q - dS/dtau in the forward direction and
@@ -142,13 +142,13 @@ SUBROUTINE integral_reverse (self, dtau, exp0, S, qrv1, qrv, qrv0)
 !
 !  Forward rays (2a+3m)
 !
-  qrv(:,n) = qrv1(:)                                                    ! initial forward Q
+  qrv(:,n) = qrv1(:)                                                    ! initial reverse Q
   do i=n,2,-1
     qrv(:,i-1) = qrv(:,i)*ex0(:,i) &
            - d1s(:,i)*(1.-ex0(:,i)) &
-           + d2s(:,i)*(1.-ex0(:,i)*(1.+dtau(:,i)))      !    3m 2a      ! formal solution forward
+           + d2s(:,i)*(1.-ex0(:,i)*(1.+dtau(:,i)))      !    3m 2a      ! formal reverse solution
   end do
-  qrv0(:) = qrv(:,1)                                                    ! forward boundary intensity
+  qrv0(:) = qrv(:,1)                                                    ! reverse boundary intensity
 END SUBROUTINE integral_reverse                         ! 2d 13m 11a 1e ! 26f + 1e
 
 END MODULE rt_solver_mod

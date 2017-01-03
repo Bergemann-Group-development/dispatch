@@ -38,15 +38,21 @@ SUBROUTINE init (self)
   self%nv  = self%initial%nv
   self%mhd = self%initial%mhd
   call self%rmhd_t%init
+  self%i_d =1
+  self%i_px=2
+  self%i_py=3
+  self%i_pz=4
+  self%i_e =5
+  self%i_tt=6
   self%i_bx=7
   self%i_by=8
   self%i_bz=9
-  self%i_tt=6
   call self%set (bits%static)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
   call self%initial%condition (self%mesh, self%mem(:,:,:,:,1,1))
+  self%rt%mesh(2)%dsup => self%mesh(2)%dsup                             ! mesh spacing
   self%time = self%initial%time
   self%t(self%it) = self%initial%time
   call trace%end (itimer=itimer)
@@ -59,6 +65,7 @@ SUBROUTINE update (self)
   class(experiment_t):: self
   type(timestep_t):: timestep
   class(task_t), pointer:: task
+  logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
   if (first_time) then
@@ -69,7 +76,7 @@ SUBROUTINE update (self)
   task => self%link%task
   select type (task)
   class is (rmhd_t)
-    call self%update
+    call self%rmhd_t%update
 !    call self%boundary_conditions
     call self%courant_condition
     call self%output

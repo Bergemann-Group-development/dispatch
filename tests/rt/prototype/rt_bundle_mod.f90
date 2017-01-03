@@ -2,7 +2,7 @@
 !> The inputs to this module are the opacities and source functions at
 !> the points belonging to the bundle, and the net radiative intensity
 !> self%qin at the upstream face of the bundle.
-!> 
+!>
 !> The module task is to compute the corresponding net cooling
 !> self%q throughout the volume, and also to compute the net radiative
 !> intensity on the downstream bundle face.
@@ -81,8 +81,8 @@ SUBROUTINE reverse (dtau, exp0, s, qin, q, qout)
   real, dimension(:,:,:), pointer :: dtau, exp0, s, q
   real, dimension(:,:),   pointer :: qin, qout
   !.....................................................................
-  real, dimension(:),   pointer   :: qrv0, qrv1
-  real, dimension(:,:), pointer   :: q1, s1, dtau1, ex0
+  real, dimension(:),     pointer :: qrv0, qrv1
+  real, dimension(:,:),   pointer :: q1, s1, dtau1, ex0
   integer :: iz
   ! --------------------------------------------------------------------
   call trace%begin ('rt_bundle_t%reverse')

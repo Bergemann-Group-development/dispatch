@@ -122,7 +122,6 @@ SUBROUTINE initial_conditions (self, m, gamma, ff)
         end do
       end do
     end do
-    print*,'mk1', m(1:2)%p, minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
   end if
 
   ! ---- x2-x3 plane ----

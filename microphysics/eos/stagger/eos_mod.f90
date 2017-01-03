@@ -4,6 +4,7 @@
 MODULE eos_mod
   USE io_mod
   USE io_unit_mod
+  USE trace_mod
   USE mpi_mod
   implicit none
   private
@@ -97,9 +98,11 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   logical :: newtable
   integer :: ix,iy,iz,kee,kee1,j
   integer :: mx,my,mz,mbox
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays
   !-----------------------------------------------------------------------------
+  call trace%begin ('eos_t%lookup', itimer=itimer)
   mx=dim(1)
   my=dim(2)
   mz=dim(3)
@@ -116,7 +119,7 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
     ee_loc => ee
   else if (present(lne)) then
     allocate (ee_loc(dim(1),dim(2),dim(3)))
-    ee_loc = exp(ee)
+    ee_loc = exp(lne)
   else
     call mpi%abort ('eos_t: missing internal energy')
   end if
@@ -306,6 +309,7 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   end do
   if (present(d))   deallocate (lnd_loc)
   if (present(lne)) deallocate (ee_loc)
+  call trace%end (itimer)
 END SUBROUTINE lookup
 
 END MODULE eos_mod

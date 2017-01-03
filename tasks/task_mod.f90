@@ -105,7 +105,6 @@ SUBROUTINE init (self)
     self%id = id
   end if
   id = self%id
-  print *, id
   scene%n_patch = self%id
   !$omp end critical
   if (io%verbose>-1) &
