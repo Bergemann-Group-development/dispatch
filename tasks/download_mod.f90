@@ -49,11 +49,12 @@ SUBROUTINE download_link (link, all_cells)
     if (patch%is_clear(bits%static)) static = .false.
     nbor => link%nbor
     do while (associated(nbor))
-      if (io%master.and.io%verbose>4) &
-        write (io_unit%log,*) patch%id,nbor%task%id,nbor%task%is_clear(bits%static),nbor%task%level
-      if (nbor%task%is_clear(bits%static)) static = .false.
-      if (nbor%task%level /= patch%level) same = .false.
-      if (io%do_debug) write (io_unit%log,*) patch%id,patch%level,nbor%task%id,nbor%task%level,same
+      if (nbor%task%is_clear(bits%no_download)) then
+        if (io%master.and.io%verbose>4) &
+          write (io_unit%log,*) patch%id,nbor%task%id,nbor%task%is_clear(bits%static),nbor%task%level
+        if (nbor%task%is_clear(bits%static)) static = .false.
+        if (nbor%needed .and. nbor%task%level /= patch%level) same = .false.
+      end if
       nbor => nbor%next
     end do
     if (static) then
@@ -96,108 +97,110 @@ SUBROUTINE same_static (self)
   n = 0
   nbor => self%nbor
   do while (associated (nbor))
-    n = n+1
-    associate (this => nbor%task)
-    select type (this)
-    class is (patch_t)
-    source => this
-      it = target%it
-      call target%time_interpolate (source, jt, pt)
-      do iv=1,source%nv
-        call target%dnload_range (source, l1, u1, o)
-        ntot = product(u1-l1+1)
-        if (io%master .and. iv==1 .and. io%verbose>3) then
-          write (io_unit%log,'(a,3(3i4,3x),i6)') 'target ranges: l1, u1, o, n =', l1, u1, o, ntot
-        end if
-        dmin = 1e30
-        !-----------------------------------------------------------------------
-        ! Ensure guard zones are filled in physical boundary regions
-        !-----------------------------------------------------------------------
-        where (target%mesh%lower_boundary)
-          l1 = target%mesh%lb
-        end where
-        where (target%mesh%upper_boundary)
-          u1 = target%mesh%ub
-        end where
-        do iz=l1(3),u1(3)
-        do iy=l1(2),u1(2)
-        do ix=l1(1),u1(1)
-          target%mem(ix,iy,iz,iv,it,1) = source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)*pt(1) &
-                                       + source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)*pt(2)
-          dmin = min(dmin,target%mem(ix,iy,iz,iv,it,1))
-        end do
-        end do
-        end do
-        if (iv==1) then
-          if (io%verbose==3.or.dmin<0.0) write (io_unit%log,1) &
-          'patch', target%id, ' level', target%level, ' picked up', ntot, &
-          ' points from patch', source%id, ' at level', source%level, &
-          'position', (source%position-target%position)/target%size, pt, dmin
-        1 format(5(1x,a,i7,1x),1x,a,5f6.2,1p,e12.3)
-          !-----------------------------------------------------------------------
-          ! Detailed analysis of rare negative density cases, ending with a patch-up 
-          ! that interpolates in the log to replace the negative values.  The cases
-          ! looked at generally are caused by time extrapolation, and even if they
-          ! are extremely rare they need to be handled, lest the solver chokes on
-          ! the unphysical values that result.
-          !-----------------------------------------------------------------------
-          if (dmin < 0.0) then
-            write (io_unit%log,'(a,i9,3x,a,i9,3x,a,2i4,3x,a,2f7.3)') &
-              'download_mod::same_static: ERROR, negative density contribution to', &
-              target%id, 'from', source%id,'jt:',jt,'pt:',pt
-            verbose = io_unit%verbose
-            io_unit%verbose = 5
-            ahead = source%is_ahead_of (target)
-            call target%time_interpolate (source, jt, pt)
-            io_unit%verbose = verbose
-            write (io_unit%log,'(a,l2,4(i9,2f12.6),f10.3)') &
-              'same_static: target,source id,time,dtime,jt1,t1,jt2,t2 =', &
-              ahead, &
-              target%id, target%time, target%dtime, &
-              source%id, source%time, source%dtime, &
-              jt(1), source%t(jt(1)), source%dt(jt(1)), &
-              jt(2), source%t(jt(2)), source%dt(jt(1)), &
-              (target%time-source%time)/source%dtime
-            !---------------------------------------------------------------------
-            ! If there were negative values produced, redo this guard zone, with
-            ! debug printout and log-interpolation
-            !---------------------------------------------------------------------
-            do iz=l1(3),u1(3)
-            do iy=l1(2),u1(2)
-            do ix=l1(1),u1(1)
-              target%mem(ix,iy,iz,iv,it,1) = source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)*pt(1) &
-                                           + source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)*pt(2)
-              if (target%mem(ix,iy,iz,iv,it,1) < 0.0) then
-                write (io_unit%log,'(a,1p,7g16.6)') 'same_static: source t =', &
-                  (source%t(source%iit(i)), i=1,source%nt-1)
-                write (io_unit%log,'(a,1p,7g16.6)') 'same_static: source d =', &
-                  (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,source%iit(i),1), i=1,source%nt-1)
-                !-----------------------------------------------------------------
-                ! Extrapolate in the log, to ensure positive results
-                !-----------------------------------------------------------------
-                target%mem(ix,iy,iz,iv,it,1) = exp( &
-                  alog(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1))*pt(1) + &
-                  alog(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))*pt(2))
-                write (io_unit%log,'(a,2(3i4,1x),1p,3g16.6)') 'same_static: ix,iy,iz,src1,src2,trg =', &
-                  ix     , iy     , iz     , &
-                  ix+o(1), iy+o(2), iz+o(3), &
-                  source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1), &
-                  source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
-                  target%mem(ix,iy,iz,iv,it,1)
-              end if
-            end do
-            end do
-            end do
+    if (nbor%task%is_clear(bits%no_download)) then
+      n = n+1
+      associate (this => nbor%task)
+      select type (this)
+      class is (patch_t)
+        source => this
+        it = target%it
+        call target%time_interpolate (source, jt, pt)
+        do iv=1,source%nv
+          call target%dnload_range (source, l1, u1, o)
+          ntot = product(u1-l1+1)
+          if (io%master .and. iv==1 .and. io%verbose>3) then
+            write (io_unit%log,'(a,3(3i4,3x),i6)') 'target ranges: l1, u1, o, n =', l1, u1, o, ntot
           end if
-        end if
-        if (io_unit%verbose>3) write (io_unit%log,2) &
-          'patch', target%id, ' level', target%level, 'var', iv, ' picked up', &
-          ntot, ' points from patch', source%id, ' at level', source%level, &
-          'position', (source%position-target%position)/target%size, pt, dmin
-        2 format(6(1x,a,i7,1x),1x,a,5f6.2,1p,e12.3)
-      end do
-    end select
-    end associate
+          dmin = 1e30
+          !-----------------------------------------------------------------------
+          ! Ensure guard zones are filled in physical boundary regions
+          !-----------------------------------------------------------------------
+          where (target%mesh%lower_boundary)
+            l1 = target%mesh%lb
+          end where
+          where (target%mesh%upper_boundary)
+            u1 = target%mesh%ub
+          end where
+          do iz=l1(3),u1(3)
+          do iy=l1(2),u1(2)
+          do ix=l1(1),u1(1)
+            target%mem(ix,iy,iz,iv,it,1) = source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)*pt(1) &
+                                         + source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)*pt(2)
+            dmin = min(dmin,target%mem(ix,iy,iz,iv,it,1))
+          end do
+          end do
+          end do
+          if (iv==1) then
+            if (io%verbose==3 .or. dmin<0.0 .or. target%id==io%id_debug) write (io_unit%log,1) &
+            'patch', target%id, ' level', target%level, ' picked up', ntot, &
+            ' points from patch', source%id, ' at level', source%level, &
+            'position', (source%position-target%position)/target%size, pt, dmin
+          1 format(5(1x,a,i7,1x),1x,a,5f6.2,1p,e12.3)
+            !-----------------------------------------------------------------------
+            ! Detailed analysis of rare negative density cases, ending with a patch-up
+            ! that interpolates in the log to replace the negative values.  The cases
+            ! looked at generally are caused by time extrapolation, and even if they
+            ! are extremely rare they need to be handled, lest the solver chokes on
+            ! the unphysical values that result.
+            !-----------------------------------------------------------------------
+            if (dmin < 0.0) then
+              write (io_unit%log,'(a,i9,3x,a,i9,3x,a,2i4,3x,a,2f7.3)') &
+                'download_mod::same_static: ERROR, negative density contribution to', &
+                target%id, 'from', source%id,'jt:',jt,'pt:',pt
+              verbose = io_unit%verbose
+              io_unit%verbose = 5
+              ahead = source%is_ahead_of (target)
+              call target%time_interpolate (source, jt, pt)
+              io_unit%verbose = verbose
+              write (io_unit%log,'(a,l2,4(i9,2f12.6),f10.3)') &
+                'same_static: target,source id,time,dtime,jt1,t1,jt2,t2 =', &
+                ahead, &
+                target%id, target%time, target%dtime, &
+                source%id, source%time, source%dtime, &
+                jt(1), source%t(jt(1)), source%dt(jt(1)), &
+                jt(2), source%t(jt(2)), source%dt(jt(1)), &
+                (target%time-source%time)/source%dtime
+              !---------------------------------------------------------------------
+              ! If there were negative values produced, redo this guard zone, with
+              ! debug printout and log-interpolation
+              !---------------------------------------------------------------------
+              do iz=l1(3),u1(3)
+              do iy=l1(2),u1(2)
+              do ix=l1(1),u1(1)
+                target%mem(ix,iy,iz,iv,it,1) = source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)*pt(1) &
+                                             + source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)*pt(2)
+                if (target%mem(ix,iy,iz,iv,it,1) < 0.0) then
+                  write (io_unit%log,'(a,1p,7g16.6)') 'same_static: source t =', &
+                    (source%t(source%iit(i)), i=1,source%nt-1)
+                  write (io_unit%log,'(a,1p,7g16.6)') 'same_static: source d =', &
+                    (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,source%iit(i),1), i=1,source%nt-1)
+                  !-----------------------------------------------------------------
+                  ! Extrapolate in the log, to ensure positive results
+                  !-----------------------------------------------------------------
+                  target%mem(ix,iy,iz,iv,it,1) = exp( &
+                    alog(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1))*pt(1) + &
+                    alog(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))*pt(2))
+                  write (io_unit%log,'(a,2(3i4,1x),1p,3g16.6)') 'same_static: ix,iy,iz,src1,src2,trg =', &
+                    ix     , iy     , iz     , &
+                    ix+o(1), iy+o(2), iz+o(3), &
+                    source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1), &
+                    source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
+                    target%mem(ix,iy,iz,iv,it,1)
+                end if
+              end do
+              end do
+              end do
+            end if
+          end if
+          if (io_unit%verbose>3) write (io_unit%log,2) &
+            'patch', target%id, ' level', target%level, 'var', iv, ' picked up', &
+            ntot, ' points from patch', source%id, ' at level', source%level, &
+            'position', (source%position-target%position)/target%size, pt, dmin
+          2 format(6(1x,a,i7,1x),1x,a,5f6.2,1p,e12.3)
+        end do
+      end select
+      end associate
+    end if
     nbor => nbor%next
   end do
   if (io%verbose > 2 .and. n /= 26) then
@@ -475,7 +478,7 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
   nbor => link%nbor
   do while (associated(nbor))
     !---------------------------------------------------------------------------
-    ! SkÃ­p patches more than one level up/down, and the parent patch
+    ! Skíp patches more than one level up/down, and the parent patch
     !---------------------------------------------------------------------------
     other => task2patch(nbor%task)
     if (abs(target%level-other%level)<2) then

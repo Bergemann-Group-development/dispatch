@@ -49,7 +49,10 @@ SUBROUTINE init (self)
   ! Initialize the rt_mod object (one could create more than one)
   !---------------------------------------------------------------------
   self%rt%dim      = self%mesh%gn                                       ! RT dimensions
+  self%rt%position = self%position
   call self%rt%init                                                     ! allocate weights
+  self%rt%position = self%position
+  self%mesh%p      = self%position
   call trace%end
 END SUBROUTINE init
 

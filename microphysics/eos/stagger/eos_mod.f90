@@ -225,7 +225,7 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
     !---------------------------------------------------------------------------
     if (present(rk)) then
       do ix=1,mx
-       rk(ix,iy,iz,1) = ( &
+       rk(ix,iy,iz,1) = exp( &
           f00(ix) * tab(ik (ix))+  f01(ix) * tab(ik (ix) + 1) &
        +  f10(ix) * tab(ik1(ix))+  f11(ix) * tab(ik1(ix) + 1) &
        + fx00(ix) * tab(ik (ix) + 2 * ntab (ix)    ) &

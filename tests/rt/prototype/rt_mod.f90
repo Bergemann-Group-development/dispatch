@@ -27,6 +27,7 @@ MODULE rt_mod
   USE link_mod
   USE rt_bundle_mod
   USE eos_mod
+  USE bits_mod
   implicit none
   private
   ! --------------------------------------------------------------------
@@ -65,25 +66,35 @@ CONTAINS
 !> =====================================================================
 SUBROUTINE init (self)
   class (rt_t) :: self
+  integer:: ignore
+  logical, save:: first_time=.true.
+  real(8), save:: dtime=0.01_8, grace=0.0_8
+  namelist /rt_params/ dtime, grace
   ! --------------------------------------------------------------------
   call trace_begin ('rt_t%init')
-  self%nv = 1
-  self%nw = 1
-  call self%patch_t%init
-  self%i_e = 1
-  self%n_lambda = eos%n_lambda                                       ! number of wavelengths
-  self%n_bundle = 1                          ! FIXME                 ! one direction
-  self%dedt => self%mem(:,:,:,self%i_e,self%it,1)
-  rt_bundle%dim = self%dim
+  !$omp critical (init_cr)
+  if (first_time) then
+    rewind (io%input); read (io%input, rt_params, iostat=ignore)
+    if (io%master) write (*, rt_params)
+  end if
+  !$omp end critical (init_cr)
+  self%nv = 1                                                           ! time slots for dedt
+  self%nw = 1                                                           ! no time deriv
+  call self%patch_t%init                                                ! initialize patch
+  call self%set (bits%static+bits%no_download)                          ! special bits
+  self%i_e = 1                                                          ! dedt slot
+  self%n_lambda = eos%n_lambda                                          ! number of wavelengths
+  self%n_bundle = 1                          ! FIXME                    ! one direction
+  self%dedt => self%mem(:,:,:,self%i_e,self%it,1)                       ! map dedt to mem
+  rt_bundle%dim = self%dim                                              ! pass on dims
   allocate (self%w_lambda(self%n_lambda))
   allocate (self%w_bundle(self%n_bundle))
-  allocate (self%dtau(self%dim(1), self%dim(2), self%dim(3)))
   allocate (self%rk  (self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
   allocate (self%src (self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
-  self%w_lambda = 1.0/self%n_lambda          ! FIXME                 ! wavelength weights
-  self%w_bundle = pi4/2./self%n_bundle       ! FIXME                 ! space angle weights
-  self%grace = 1.0                                                   ! use values for one dtime
-  self%dtime = 0.001                         ! FIXME
+  self%w_lambda = 1.0/self%n_lambda             ! FIXME                 ! wavelength weights
+  self%w_bundle = pi4/2./self%n_bundle          ! FIXME                 ! space angle weights
+  self%dtime = dtime                                                    ! 0.1 second default
+  self%grace = grace                                                    ! grace off by default
   call rt_bundle%init
   call trace_end
 END SUBROUTINE init
@@ -102,22 +113,24 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !---------------------------------------------------------------------
   call trace%begin ('rmhd_t%update', itimer=itimer)
+  if (io%verbose > 0) print *, 'RADIATIVE TRANSFER TIME', self%time
   if (self%time < 0d0) then
-    self%dtime = 0.01                                                   ! 1 second
-    self%time = self%dtime
-    self%grace = 0.0                                                    ! no grace
+    self%time  = 0.0                                                    ! set current time
   end if
   task => self%link%nbor%task                                           ! assumes the only nbor is RMHD
   select type (task)
   class is (patch_t)
-  mhd => task
+    mhd => task
+  end select
   allocate (lnd (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log density scratch
   allocate (lne (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log internal energy scratch
   call mhd%log_interpolate (self%time, mhd%i_d, lnd)                    ! interpolate in time and space
   call mhd%log_interpolate (self%time, mhd%i_e, lne)                    ! interpolate in time and space
-  end select
+  if (io%verbose > 1) then
+    print *, self%id, 'lnd', minval(lnd), maxval(lnd)
+    print *, self%id, 'lne', minval(lne), maxval(lne)
+  end if
   lne = lne - lnd                                                       ! internal energy per unit mass
-  print *, 'MK', associated(self%rk), associated(self%src)
   call eos%lookup (shape(lne), lne=lne, lnd=lnd, &                      ! call the table lookup, ...
                    rk=self%rk, src=self%src)                            ! ... results go into rt_t
   deallocate (lnd, lne)                                                 ! deallocate scratch
@@ -155,7 +168,7 @@ END SUBROUTINE update
 SUBROUTINE solve (self)
   class (rt_t) :: self
   !.....................................................................
-  integer:: ib, iw
+  integer                         :: ib, iw, iy
   real, dimension(:),     pointer :: ds
   real, dimension(:,:),   pointer :: qfw0, qfw1, qrv0, qrv1
   real, dimension(:,:,:), pointer :: s, rk, dtau, exp0, q
@@ -164,33 +177,35 @@ SUBROUTINE solve (self)
   ! --------------------------------------------------------------------
   call trace_begin ('rt_t%solve', itimer=itimer)
   self%dedt = 0.0                                                       ! reset net cooling
+  associate (mx=>self%dim(1), my=>self%dim(2), mz=>self%dim(3))
   do ib=1,self%n_bundle                                                 ! loop over bundles
     !$omp single
     do iw=1,self%n_lambda                                               ! loop over wavelength
-      !$omp task private(iw,s,rk,dtau,exp0)                             ! spawn forward task
-      s  => self%src(:,:,:,iw)                                          ! pick source function
-      rk => self%rk (:,:,:,iw)                                          ! pick opacity
-      allocate (dtau(self%dim(1), self%dim(2), self%dim(3)))            ! temporary array
-      allocate (exp0(self%dim(1), self%dim(2), self%dim(3)))            ! temporary array
-      allocate (q   (self%dim(1), self%dim(2), self%dim(3)))            ! temporary array
-      allocate (qfw0(self%dim(1), self%dim(3)))                         ! temporary array
-      allocate (qfw1(self%dim(1), self%dim(3)))                         ! temporary array
-      allocate (qrv0(self%dim(1), self%dim(3)))                         ! temporary array
-      allocate (qrv1(self%dim(1), self%dim(3)))                         ! temporary array
-      ds => self%mesh(2)%dsup                                           ! along this direction
+      !$omp task private(s,rk,dtau,exp0)                                ! spawn forward task
+      s  => self%src(:,6:my-4,:,iw)                                     ! pick source function
+      rk => self%rk (:,6:my-4,:,iw)                                     ! pick opacity
+      allocate (dtau(mx,1:my-9,mz))                                     ! temporary array
+      allocate (exp0(mx,1:my-9,mz))                                     ! temporary array
+      allocate (q   (mx,1:my-9,mz))                                     ! temporary array
+      allocate (qfw0(mx,mz))                                            ! temporary array
+      allocate (qfw1(mx,mz))                                            ! temporary array
+      allocate (qrv0(mx,mz))                                            ! temporary array
+      allocate (qrv1(mx,mz))                                            ! temporary array
+      ds => self%mesh(2)%dsup(6:my-4)                                   ! along this direction
       call self%optical_depth (ds, rk, dtau)                            ! compute dtau
+      if (io%verbose>1) &
+        print *,'dtau',iw,self%id, minval(dtau), maxval(dtau)
       !
       exp0 = exp(-dtau)                                                 ! expopential factors
-!      print *, associated(qfw0), associated(s)
-!      print *, shape(qfw0), shape(s)
-      qfw0 = -s(:,5,:)                                                  ! input net intensity
+      qfw0 = -s(:,6,:)                                                  ! input net intensity
       call rt_bundle%forward (dtau, exp0, s, qfw0, q, qfw1)             ! solve forward
       !task => self%dnstream%task
       !select type (task)
       !class is (rt_t)
       !  task%qfw0 = qfw1                                                ! output net intensity
       !end select
-      self%dedt = self%dedt + q*self%w_lambda(iw)*self%w_bundle(ib)     ! add net heat contrib
+      self%dedt(:,6:my-4,:) = &
+      self%dedt(:,6:my-4,:) + q*self%w_lambda(iw)*self%w_bundle(ib)     ! add net heat contrib
       !
       qrv1 = 0.0                                                        ! input net intensity
       call rt_bundle%reverse (dtau, exp0, s, qrv1, q, qrv0)             ! solve reverse
@@ -199,7 +214,13 @@ SUBROUTINE solve (self)
       !class is (rt_t)
       !  task%qrv1 = qrv0                                                ! output net intensity
       !end select
-      self%dedt = self%dedt + q*self%w_lambda(iw)*self%w_bundle(ib)     ! add net heat contrib
+      self%dedt(:,6:my-4,:) = &
+      self%dedt(:,6:my-4,:) + q*self%w_lambda(iw)*self%w_bundle(ib)     ! add net heat contrib
+      if (io%verbose>3) then
+        do iy=1,my-9
+          print *,iy,sum(dtau(:,iy,:))/(mx*mz),sum(self%dedt(:,5+iy,:))/(mx*mz)
+        end do
+      end if
       !
       deallocate (dtau, exp0, q, qfw0, qfw1, qrv0, qrv1)                ! deallocate temporaries
       !$omp end task
@@ -207,6 +228,7 @@ SUBROUTINE solve (self)
     !$omp end single
     !$omp taskwait
   end do
+  end associate
   call trace_end (itimer)
 END SUBROUTINE solve
 

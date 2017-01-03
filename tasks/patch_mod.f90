@@ -447,7 +447,7 @@ SUBROUTINE rotate (self)
   if (self%root_grid.or.self%is_set(bits%root_grid)) then
     call self%periodic_grid                     ! periodic root grid
   else
-    !call self%extrapolate_guards                ! time-extrapolate guard cells
+    call self%extrapolate_guards                ! time-extrapolate guard cells
   end if
   !-----------------------------------------------------------------------------
   ! One line summary
@@ -586,8 +586,9 @@ END SUBROUTINE periodic_grid
 SUBROUTINE extrapolate_guards (self)
   class(patch_t):: self
   integer:: ix, iy, iz, i(3), it0, it1, it2, nt, iit(self%nt)
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin ('patches_mod:extrapolate_guards', 3)
+  call trace_begin ('patches_mod:extrapolate_guards', 3, itimer=itimer)
   nt = self%nt
   iit = self%local_iit()
   it0 = iit(nt)                                         ! current time slot
@@ -605,7 +606,7 @@ SUBROUTINE extrapolate_guards (self)
   end do
   end do
   !print*,'min,max:',minval(self%mem(:,:,:,1,self%new,1)),maxval(self%mem(:,:,:,1,self%new,1))
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE extrapolate_guards
 
 !> =============================================================================
@@ -1554,7 +1555,7 @@ SUBROUTINE log_interpolate (self, time, i, a)
   class (patch_t)                 :: self
   real(8)                         :: time
   integer                         :: i
-  real, dimension(:,:,:), pointer :: a
+  real, dimension(:,:,:), pointer :: a, b
   !.....................................................................
   integer                         :: jt(2)
   real                            :: pt(2)
@@ -1562,6 +1563,12 @@ SUBROUTINE log_interpolate (self, time, i, a)
   ! --------------------------------------------------------------------
   call trace%begin ('rmhd_t%log_interpolate', itimer=itimer)
   call self%time_interval (time, jt, pt)
+  if (io%verbose > 1) then
+    b => self%mem(:,:,:,i,jt(1),1)
+    print *, self%id, 'log_interp(1)', jt(1), minval(b), maxval(b)
+    b => self%mem(:,:,:,i,jt(2),1)
+    print *, self%id, 'log_interp(2)', jt(2), minval(b), maxval(b)
+  end if
   a = log(self%mem(:,:,:,i,jt(1),1))*pt(1) &
     + log(self%mem(:,:,:,i,jt(2),1))*pt(2)
   call trace%end (itimer)

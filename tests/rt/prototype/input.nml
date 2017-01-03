@@ -6,6 +6,7 @@
  do_debug=f
  do_output=f
  omp_trace=f
+ id_debug=2
 /
 &box_params
  size=6,2,6
@@ -25,6 +26,9 @@
  print_time=0.0
  guard_zones=t
  time_derivs=t
+/
+&rt_params
+ dtime=0.02
 /
 &mhd_params
  !     cs    pa  ofd  mas  kap  eta

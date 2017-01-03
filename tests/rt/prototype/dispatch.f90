@@ -52,7 +52,8 @@ SUBROUTINE rt_setup (task_list)
       allocate (nbor_link)
       nbor_link%task      => rt_task
       nbor_link%link      => rt_link
-      call mhd_link%nbor%add_nbor_by_rank (nbor_link)
+      call mhd_link%add_nbor_by_rank (nbor_link)
+      print *, rt_task%id, ' added to nbor list of ', task%id
       nbor_link%needed   = .true.
       nbor_link%needs_me = .true.
       !-------------------------------------------------------------------------

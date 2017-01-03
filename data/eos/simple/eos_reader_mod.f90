@@ -18,7 +18,7 @@ MODULE eos_reader_mod
 CONTAINS
 
 !> =============================================================================
-!> Read in the data from a specific table file, which we might as well 
+!> Read in the data from a specific table file, which we might as well
 !> hardwire, since it is specific
 !> =============================================================================
 SUBROUTINE init (self)
@@ -55,7 +55,6 @@ SUBROUTINE init (self)
   end do
   !-----------------------------------------------------------------------------
   read (u,*) nv
-  print*,'MK', self%d(nd), self%T(nt), nv
   allocate (self%table(nT,nd,nv))
   do id=1,nd
     do iT=1,nT

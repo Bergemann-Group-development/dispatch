@@ -87,6 +87,7 @@ SUBROUTINE integral_forward (self, dtau, exp0, S, qfw0, qfw, qfw1)
            + d2s(:,i)*(1.-ex0(:,i)*(1.+dtau(:,i)))      !    3m 2a      ! formal solution forward
   end do
   qfw1(:) = qfw(:,n)                                                    ! forward boundary intensity
+  qfw = qfw*dtau
 END SUBROUTINE integral_forward                         ! 2d 13m 11a 1e ! 26f + 1e
 
 !> =============================================================================
@@ -149,6 +150,8 @@ SUBROUTINE integral_reverse (self, dtau, exp0, S, qrv1, qrv, qrv0)
            + d2s(:,i)*(1.-ex0(:,i)*(1.+dtau(:,i)))      !    3m 2a      ! formal reverse solution
   end do
   qrv0(:) = qrv(:,1)                                                    ! reverse boundary intensity
+  qrv = qrv*dtau
 END SUBROUTINE integral_reverse                         ! 2d 13m 11a 1e ! 26f + 1e
+
 
 END MODULE rt_solver_mod

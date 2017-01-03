@@ -255,6 +255,8 @@ SUBROUTINE check_nbors (self, link)
   task => link%task                                   ! main task
   nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
+    if (nbor%task%id==io%id_debug) print *, &
+      'task', task%id,' needs task ', nbor%task%id, nbor%needs_me
     if (nbor%needs_me) then                           ! needs checking?
       call self%check_ready (nbor%link)               ! pointer back
     end if
