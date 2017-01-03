@@ -1,9 +1,9 @@
 !> =====================================================================
-!> The input to this module are the opacities and source functions at
+!> The inputs to this module are the opacities and source functions at
 !> the points belonging to the bundle, and the net radiative intensity
 !> self%qin at the upstream face of the bundle.
 !> 
-!> The module task (solve) is to compute the corresponding net cooling
+!> The module task is to compute the corresponding net cooling
 !> self%q throughout the volume, and also to compute the net radiative
 !> intensity on the downstream bundle face.
 !>
@@ -29,9 +29,8 @@ MODULE rt_bundle_mod
     real, dimension(:,:),   pointer :: qout
   contains
     procedure :: init
-    procedure :: solve
-    procedure :: forward
-    procedure :: reverse
+    procedure, nopass :: forward
+    procedure, nopass :: reverse
   end type
   type(rt_bundle_t), public:: rt_bundle
 ! ----------------------------------------------------------------------
@@ -41,6 +40,7 @@ CONTAINS
 !> Initialize the solver, which chooses the solver type
 !> =====================================================================
 SUBROUTINE init (self)
+  implicit none
   class (rt_bundle_t) :: self
   ! --------------------------------------------------------------------
   call trace%begin ('rt_bundle_t%init')
@@ -51,41 +51,24 @@ END SUBROUTINE init
 !> =====================================================================
 !> Solve the radiative transfer equation with rt_solver%transfer
 !> =====================================================================
-SUBROUTINE solve (self)
-  class (rt_bundle_t) :: self
-  real, dimension(:),   pointer :: qfw0, qfw1
-  real, dimension(:,:), pointer :: q, s, dtau
-  integer :: iz
-  ! --------------------------------------------------------------------
-  call trace%begin ('rt_bundle_t%update')
-  do iz=1,size(self%s,3)
-    qfw0 => self%qin (:,iz)             ! input surface values
-    s    => self%s   (:,:,iz)           ! source function
-    dtau => self%dtau(:,:,iz)           ! optical depth increments
-    qfw1 => self%qout(:,iz)             ! net volume cooling
-    q    => self%q   (:,:,iz)           ! output surface values
-    call rt_solver%transfer (dtau, S, qfw0, Q, qfw1)
-  end do
-  call trace%end
-END SUBROUTINE solve
-
-!> =====================================================================
-!> Solve the radiative transfer equation with rt_solver%transfer
-!> =====================================================================
-SUBROUTINE forward (self)
-  class (rt_bundle_t) :: self
-  real, dimension(:),   pointer :: qfw0, qfw1
-  real, dimension(:,:), pointer :: q, s, dtau
+SUBROUTINE forward (dtau, exp0, s, qin, q, qout)
+  implicit none
+  real, dimension(:,:,:), pointer :: dtau, exp0, s, q
+  real, dimension(:,:),   pointer :: qin, qout
+  !.....................................................................
+  real, dimension(:),   pointer   :: qfw0, qfw1
+  real, dimension(:,:), pointer   :: q1, s1, dtau1, ex0
   integer :: iz
   ! --------------------------------------------------------------------
   call trace%begin ('rt_bundle_t%forward')
-  do iz=1,size(self%s,3)
-    qfw0 => self%qin (:,iz)             ! input surface values
-    s    => self%s   (:,:,iz)           ! source function
-    dtau => self%dtau(:,:,iz)           ! optical depth increments
-    qfw1 => self%qout(:,iz)             ! net volume cooling
-    q    => self%q   (:,:,iz)           ! output surface values
-    call rt_solver%forward (dtau, S, qfw0, Q, qfw1)
+  do iz=1,size(s,3)
+    qfw0  => qin (:,iz)                 ! input surface values
+    s1    => s   (:,:,iz)               ! source function
+    dtau1 => dtau(:,:,iz)               ! optical depth increments
+    ex0   => exp0(:,:,iz)               ! exp(-dtau)
+    qfw1  => qout(:,iz)                 ! net volume cooling
+    q1    => q   (:,:,iz)               ! output surface values
+    call rt_solver%forward (dtau1, ex0, s1, qfw0, q1, qfw1)
   end do
   call trace%end
 END SUBROUTINE forward
@@ -93,20 +76,24 @@ END SUBROUTINE forward
 !> =====================================================================
 !> Solve the radiative transfer equation with rt_solver%transfer
 !> =====================================================================
-SUBROUTINE reverse (self)
-  class (rt_bundle_t) :: self
-  real, dimension(:),   pointer :: qfw0, qfw1
-  real, dimension(:,:), pointer :: q, s, dtau
+SUBROUTINE reverse (dtau, exp0, s, qin, q, qout)
+  implicit none
+  real, dimension(:,:,:), pointer :: dtau, exp0, s, q
+  real, dimension(:,:),   pointer :: qin, qout
+  !.....................................................................
+  real, dimension(:),   pointer   :: qrv0, qrv1
+  real, dimension(:,:), pointer   :: q1, s1, dtau1, ex0
   integer :: iz
   ! --------------------------------------------------------------------
   call trace%begin ('rt_bundle_t%reverse')
-  do iz=1,size(self%s,3)
-    qfw0 => self%qin (:,iz)             ! input surface values
-    s    => self%s   (:,:,iz)           ! source function
-    dtau => self%dtau(:,:,iz)           ! optical depth increments
-    qfw1 => self%qout(:,iz)             ! net volume cooling
-    q    => self%q   (:,:,iz)           ! output surface values
-    call rt_solver%reverse (dtau, S, qfw0, Q, qfw1)
+  do iz=1,size(s,3)
+    qrv1  => qin (:,iz)                 ! input surface values
+    s1    => s   (:,:,iz)               ! source function
+    dtau1 => dtau(:,:,iz)               ! optical depth increments
+    ex0   => exp0(:,:,iz)               ! exp(-dtau)
+    qrv0  => qout(:,iz)                 ! net volume cooling
+    q1    => q   (:,:,iz)               ! output surface values
+    call rt_solver%reverse (dtau1, ex0, s1, qrv1, q1, qrv0)
   end do
   call trace%end
 END SUBROUTINE reverse

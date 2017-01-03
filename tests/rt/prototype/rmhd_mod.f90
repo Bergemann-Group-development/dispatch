@@ -24,8 +24,7 @@ MODULE rmhd_mod
   type, public, extends(mhd_t):: rmhd_t
     type(rt_t)                        :: rt
     real, dimension(:,:,:),   pointer :: lnd, lne
-    real, dimension(:,:,:),   pointer :: rk
-    real, dimension(:,:,:,:), pointer :: src
+    real, dimension(:,:,:,:), pointer :: rk, src
   contains
     procedure :: init
     procedure :: update
@@ -54,7 +53,7 @@ SUBROUTINE init (self)
   associate (mx=>self%mesh(1)%gn, my=>self%mesh(2)%gn, mz=>self%mesh(3)%gn)
   allocate (self%lnd (mx,my,mz), &                                      ! log density
             self%lne (mx,my,mz), &                                      ! log internal energy
-            self%rk  (mx,my,mz), &                                      ! opacity
+            self%rk  (mx,my,mz,eos%n_lambda), &                         ! opacity
             self%src (mx,my,mz,eos%n_lambda))                           ! source function
   end associate
   !---------------------------------------------------------------------

@@ -235,11 +235,11 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
       + fy11(ix) * tab(ik1(ix) +     ntab1(ix) + 1) &
         )
      end do
-       if (size(rk,4)>1) then
-         do j=2,size(rk,4)
-           rk(:,:,:,j) = rk(:,:,:,j-1)*10
-         end do
-       end if
+     if (size(rk,4)>1) then
+       do j=2,size(rk,4)
+         rk(:,:,:,j) = rk(:,:,:,j-1)*10
+       end do
+     end if
     end if
     ik  = ik  + 3*ntab
     ik1 = ik1 + 3*ntab1
