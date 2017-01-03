@@ -26,7 +26,6 @@ MODULE mhd_mod
     real(8):: dt_Ohm, dt_AD, nonideal_MHD_courant
     logical:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
     type(force_t):: force
-    integer:: i_e=2, i_px=3, i_py=4, i_pz=5, i_bx=6, i_by=7, i_bz=8
   contains
     procedure:: init
     procedure:: update
@@ -63,6 +62,14 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
+  self%i_d =2
+  self%i_e =2
+  self%i_px=3
+  self%i_py=4
+  self%i_pz=5
+  self%i_bx=6
+  self%i_by=7
+  self%i_bz=8
   self%type = 'mhd_t'
   !$omp critical (input_cr)
   if (first_time) then

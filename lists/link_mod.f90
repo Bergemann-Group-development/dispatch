@@ -21,6 +21,14 @@ MODULE link_mod
     class(link_t), pointer :: parent => null()       ! parent task link
     class(link_t), pointer :: next_time => null()    ! next link in time order
     logical:: check = .true.
+    !---------------------------------------------------------------------------
+    ! Flags making it possible to distinguish between nbors needed for link%task,
+    ! and nbors that need link%task.  These flags are only used in nbor lists,
+    ! so when parsing the list starting with link%nbor, one uses nbor%needed
+    ! in check_ready(), and nbor%needs_me in check_nbors().
+    !---------------------------------------------------------------------------
+    logical:: needed   = .true.                      ! marks nbors that are needed by link%task
+    logical:: needs_me  = .true.                     ! marks nbors that need link%task
   contains
     procedure:: add_nbor_by_quality
     procedure:: add_nbor_by_rank

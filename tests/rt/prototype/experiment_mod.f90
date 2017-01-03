@@ -9,6 +9,9 @@ MODULE experiment_mod
   USE rmhd_mod
   USE initial_mod
   USE timestep_mod
+  USE task_mod
+  USE rt_mod
+  USE rmhd_mod
   implicit none
   private
   type, public, extends(rmhd_t):: experiment_t
@@ -55,6 +58,7 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(experiment_t):: self
   type(timestep_t):: timestep
+  class(task_t), pointer:: task
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
   if (first_time) then
@@ -62,11 +66,17 @@ SUBROUTINE update (self)
     call self%initial%cleanup
   end if
   call self%output
-  call self%rmhd_t%update
-  call self%boundary_conditions
-  call self%courant_condition
-  call self%output
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  task => self%link%task
+  select type (task)
+  class is (rmhd_t)
+    call self%update
+!    call self%boundary_conditions
+    call self%courant_condition
+    call self%output
+    call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  class is (rt_t)
+    call self%update
+  end select
   call trace%end
 END SUBROUTINE update
 

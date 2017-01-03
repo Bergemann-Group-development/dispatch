@@ -37,6 +37,6 @@ stagger_mod.o           : io_mod.o trace_mod.o scalar_mod.o vector_mod.o \
                           stagger_16.o stagger_20.o stagger_24.o stagger_32.o stagger_36.o
 rt_solver_mod.o         : io_mod.o trace_mod.o
 rt_bundle_mod.o         : io_mod.o trace_mod.o rt_solver_mod.o
-rt_mod.o                : io_mod.o trace_mod.o task_mod.o rt_bundle_mod.o
+rt_mod.o                : io_mod.o trace_mod.o patch_mod.o rt_bundle_mod.o
 rmhd_mod.o              : io_mod.o trace_mod.o mhd_mod.o rt_mod.o
 

@@ -41,10 +41,10 @@ MODULE patch_mod
     logical:: staggered=.true.
     class(link_t), pointer:: link       ! this could be useful
     !---------------------------------------------------------------------------
-    ! HACK below:  FIXME
+    ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
+    integer:: i_d=1, i_e=2, i_px=3, i_py=4, i_pz=5, i_bx=6, i_by=7, i_bz=8, i_tt=9, i_phi=10
     real:: grav                         ! gravitational consant (code units)
-    integer:: i_d=1                     ! density inddex
     real(8):: ds(3)                     ! convenience
     integer:: n(3)=16, ng(3)=2          ! convenient defaults
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
@@ -95,6 +95,8 @@ MODULE patch_mod
     procedure:: MapVectors
     procedure:: beyond_patch_edge
     procedure:: myfloatindex_scalar
+    procedure:: log_interpolate
+    procedure:: time_interval
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1553,7 +1555,59 @@ FUNCTION beyond_patch_edge (self, idir, position) result (outside)
       outside = abs(curvpos(idir)) > edge
     end select
   end select
-
 END FUNCTION beyond_patch_edge
+
+!> =====================================================================
+!> Interpolate -- only in time for now -- from the MHD time slots save in
+!> this module to the time requested from the solve procedure
+!> =====================================================================
+SUBROUTINE log_interpolate (self, time, i, a)
+  class (patch_t)                 :: self
+  real(8)                         :: time
+  integer                         :: i
+  real, dimension(:,:,:), pointer :: a
+  !.....................................................................
+  integer                         :: jt(2)
+  real                            :: pt(2)
+  ! --------------------------------------------------------------------
+  call trace%begin ('rmhd_t%log_interpolate')
+  call self%time_interval (time, jt, pt)
+  a = log(self%mem(:,:,:,i,jt(1),1))*pt(1) &
+    + log(self%mem(:,:,:,i,jt(2),1))*pt(2)
+  call trace%end
+END SUBROUTINE log_interpolate
+
+!> =====================================================================
+!> Search for a time interval to interpolate in, and return the time
+!> slot indices and weight factors
+!> =====================================================================
+SUBROUTINE time_interval (self, time, jt, pt)
+  class (patch_t)                 :: self
+  real(8)                         :: time
+  integer                         :: jt(2)
+  real                            :: pt(2)
+  !.....................................................................
+  integer                         :: i, j
+  real(8)                         :: t(self%nt), dt
+  ! --------------------------------------------------------------------
+  call trace%begin ('rmhd_t%time_interval')
+  t = self%t(self%iit)
+  j = 1
+  do i=1,self%nt-2
+    if (t(i) < time) j=i
+  end do
+  jt = self%iit(j:j+1)
+  dt = t(j+1)-t(j)
+  if (dt==0.0) then
+    pt(2) = 1.0
+  else
+    pt(2) = (time-t(j))/dt
+  end if
+  pt(1) = 1.-pt(2)
+  print *, 'time_interval: times  =', t(j), time, t(j+1)
+  print *, 'time_interval: times  =', self%t(jt(1)), time, self%t(jt(2))
+  print *, 'time_interval: jt, pt =', jt, pt
+  call trace%end
+END SUBROUTINE time_interval
 
 END MODULE

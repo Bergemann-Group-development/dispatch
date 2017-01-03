@@ -697,6 +697,7 @@ SUBROUTINE print_tasklist (self, label)
   character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
   !.............................................................................
+  call trace%begin ('task_list_t%print_tasklist')
   if (io%master) write (io_unit%log,*) label
   link => self%head
   do while (associated(link))
@@ -704,6 +705,7 @@ SUBROUTINE print_tasklist (self, label)
     link => link%next
   end do
   call self%print_queue
+  call trace%end
 END SUBROUTINE print_tasklist
 
 !> =============================================================================

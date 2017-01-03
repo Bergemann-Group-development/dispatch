@@ -23,7 +23,6 @@ MODULE mhd_mod
     real:: cdtd
     logical:: mhd=.true.
     type(force_t):: force
-    integer:: i_px=2, i_py=3, i_pz=4, i_e=5, i_bx=6, i_by=7, i_bz=8, i_tt=9
   contains
     procedure:: init
     procedure:: update
@@ -54,6 +53,14 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
+  self%i_d =2
+  self%i_e =2
+  self%i_px=3
+  self%i_py=4
+  self%i_pz=5
+  self%i_bx=6
+  self%i_by=7
+  self%i_bz=8
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.

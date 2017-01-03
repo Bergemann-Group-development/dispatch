@@ -255,7 +255,7 @@ SUBROUTINE check_nbors (self, link)
   task => link%task                                   ! main task
   nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
-    if (nbor%check) then                              ! needs checking?
+    if (nbor%needs_me) then                           ! needs checking?
       call self%check_ready (nbor%link)               ! pointer back
     end if
     nbor => nbor%next                                 ! next nbor
@@ -385,11 +385,14 @@ SUBROUTINE check_ready (self, link)
   if (task%is_set (bits%ready+bits%virtual+bits%external)) return
   nbor => link%nbor                                     ! start on nbor list
   do while (associated (nbor))                          ! keep going until end
-    if (nbor%task%is_ahead_of(task)) then               ! if nbor is OK ..
-      nbor => nbor%next                                 ! next nbor
-    else                                                ! if not
-      !call trace%end                                    ! task is not ready
-      return
+    if (nbor%needed) then
+      if (nbor%task%is_ahead_of(task)) then             ! and is ahead in time
+        nbor => nbor%next                               ! next nbor
+      else                                              ! not ahead in time
+        return
+      end if
+    else                                                ! nbor not needed
+      nbor => nbor%next                                 ! skip to the next
     end if
   end do
   call self%queue_by_time (link)                        ! add task to queue
@@ -632,7 +635,6 @@ SUBROUTINE reset_status (self)
         nbor => nbor%next
       end do
     end if
-    write (io_unit%log,'(a,i5,z10)') 'mk1', link%task%rank, link%task%status
     n_internal = n_internal + merge(1,0,link%task%is_set(bits%internal))
     n_boundary = n_boundary + merge(1,0,link%task%is_set(bits%boundary))
     n_virtual  = n_virtual  + merge(1,0,link%task%is_set(bits%virtual ))
@@ -899,7 +901,7 @@ SUBROUTINE queue_by_time (self, this)
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
   ! Lock the queue while inserting the task, and mark the task as being in the
-  ! ready queue (or executing -- the bit is cleared only after updating).  
+  ! ready queue (or executing -- the bit is cleared only after updating).
   ! Double check that no other thread has set the ready bit on this task.
   !-----------------------------------------------------------------------------
   !$omp critical (queue_cr)

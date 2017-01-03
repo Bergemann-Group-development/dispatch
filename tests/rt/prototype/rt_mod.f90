@@ -23,14 +23,15 @@ MODULE rt_mod
   USE io_mod
   USE trace_mod
   USE task_mod
+  USE patch_mod
   USE link_mod
   USE rt_bundle_mod
+  USE eos_mod
   implicit none
   private
   ! --------------------------------------------------------------------
-  type, public, extends(task_t):: rt_t
+  type, public, extends(patch_t):: rt_t
     integer                           :: dim(3)                         ! patch dimensions
-    real, dimension(:),       pointer :: ds                             ! step size along rays
     integer                           :: n_lambda                       ! number of wavelengths
     integer                           :: n_bundle                       ! number of bundles
     real, dimension(:), pointer       :: w_lambda                       ! wavelength weights
@@ -46,6 +47,7 @@ MODULE rt_mod
     type (link_t),            pointer :: dnstream
   contains
     procedure :: init
+    procedure :: update
     procedure :: solve
     procedure :: optical_depth
     procedure :: interpolate
@@ -65,7 +67,8 @@ SUBROUTINE init (self)
   class (rt_t) :: self
   ! --------------------------------------------------------------------
   call trace_begin ('rt_t%init')
-  call self%task_t%init
+  self%nv = 1
+  call self%patch_t%init
   rt_bundle%dim = self%dim
   allocate (self%w_lambda(self%n_lambda))
   allocate (self%w_bundle(self%n_bundle))
@@ -75,6 +78,49 @@ SUBROUTINE init (self)
   call rt_bundle%init
   call trace_end
 END SUBROUTINE init
+
+!> =====================================================================
+!> Solve the RT problem, by first obtaining the thermodynamics at the
+!> designated RT time, and using them to compute the opacity and source
+!> function values.  Then solve for the net heating rate, storing it in
+!> a slot that rotates with time.
+!> =====================================================================
+SUBROUTINE update (self)
+  class (rt_t) :: self
+  real, dimension(:,:,:), pointer:: lnd, lne
+  class(task_t),  pointer:: task
+  class(patch_t), pointer:: mhd
+  !---------------------------------------------------------------------
+  call trace%begin ('rmhd_t%solve')
+  task => self%link%nbor%task                                           ! assumes the only nbor is RMHD
+  select type (task)
+  class is (patch_t)
+  allocate (lnd (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log density scratch
+  allocate (lne (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log internal energy scratch
+  call mhd%log_interpolate (self%time, mhd%i_d, lnd)                    ! interpolate in time and space
+  call mhd%log_interpolate (self%time, mhd%i_e, lne)                    ! interpolate in time and space
+  end select
+  lne = lne - lnd                                                       ! internal energy per unit mass
+  call eos%lookup (shape(lne), lne=lne, lnd=lnd, &                      ! call the table lookup, ...
+                   rk=self%rk, src=self%src)                            ! ... results go into rt_t
+  deallocate (lnd, lne)                                                 ! deallocate scratch
+  call self%solve                                                       ! call the RT solver to get Q
+  !-----------------------------------------------------------------------------
+  ! Update the RT time.  When first starting, the RT time is negative, to force
+  ! a first RT solution, which is then assigned time=dtime, which is the time
+  ! interval over which the RT solution is deemed valid (with grace=0.0). The
+  ! next RT solution is triggered when the MHD time exceeds the RT time, and
+  ! after the RT is done the RT time is advanced with the RT time step dtime.
+  !-----------------------------------------------------------------------------
+  if (self%time < 0d0) then
+    self%time = self%dtime
+    self%grace = 0.0
+  else
+    self%time = self%time + self%dtime
+  end if
+  call self%rotate                                                      ! rotate the time slots
+  call trace%end
+END SUBROUTINE update
 
 !> =====================================================================
 !> This procedure should loop over all bundle directions, spawning two
@@ -103,7 +149,7 @@ SUBROUTINE solve (self)
   real, dimension(:),     pointer :: ds
   real, dimension(:,:),   pointer :: qfw0, qfw1, qrv0, qrv1
   real, dimension(:,:,:), pointer :: s, rk, dtau, exp0, q
-  class (task_t),         pointer :: task
+  class (patch_t),        pointer :: task
   ! --------------------------------------------------------------------
   call trace_begin ('rt_t%solve')
   self%dedt = 0.0                                                       ! reset net cooling
@@ -120,26 +166,26 @@ SUBROUTINE solve (self)
       allocate (qfw1(self%dim(1), self%dim(3)))                         ! temporary array
       allocate (qrv0(self%dim(1), self%dim(3)))                         ! temporary array
       allocate (qrv0(self%dim(1), self%dim(3)))                         ! temporary array
-      ds => self%ds                                                     ! along this direction
-      call self%optical_depth (ds,rk,dtau)                              ! compute dtau
+      ds => self%mesh(2)%dsup                                           ! along this direction
+      call self%optical_depth (ds, rk, dtau)                            ! compute dtau
       !
       exp0 = exp(-dtau)                                                 ! expopential factors
       qfw0 = -s(:,5,:)                                                  ! input net intensity
       call rt_bundle%forward (dtau, exp0, s, qfw0, q, qfw1)             ! solve forward
-      task => self%dnstream%task
-      select type (task)
-      class is (rt_t)
-        task%qfw0 = qfw1                                                ! output net intensity
-      end select
+      !task => self%dnstream%task
+      !select type (task)
+      !class is (rt_t)
+      !  task%qfw0 = qfw1                                                ! output net intensity
+      !end select
       self%dedt = self%dedt + q*self%w_lambda(iw)*self%w_bundle(ib)     ! add net heat contrib
       !
       qrv1 = 0.0                                                        ! input net intensity
       call rt_bundle%reverse (dtau, exp0, s, qrv1, q, qrv0)             ! solve reverse
-      task => self%upstream%task
-      select type (task)
-      class is (rt_t)
-        task%qrv1 = qrv0                                                ! output net intensity
-      end select
+      !task => self%upstream%task
+      !select type (task)
+      !class is (rt_t)
+      !  task%qrv1 = qrv0                                                ! output net intensity
+      !end select
       self%dedt = self%dedt + q*self%w_lambda(iw)*self%w_bundle(ib)     ! add net heat contrib
       !
       deallocate (dtau, exp0, q)                                        ! deallocate temporaries

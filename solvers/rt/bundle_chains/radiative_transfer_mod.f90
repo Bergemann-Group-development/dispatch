@@ -72,8 +72,8 @@ SUBROUTINE rt_setup (self)
       solver = 1
     end SELECT
   end if
-  
-  mesh => mhd_patch%mesh(1) 
+
+  mesh => mhd_patch%mesh(1)
   select type(mesh)
     type is(Cartesian_mesh)
       call ray_geometry%init(1, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
@@ -83,7 +83,7 @@ SUBROUTINE rt_setup (self)
       call ray_geometry%init(3, mhd_patch%li,mhd_patch%ui)    ! FIXME: send cell wall sizes and dimensions as well
   end select
   nullify(mesh)
-  
+
   write (io_unit%log,*) 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
   call microphysics%init
   call rt_boundary%init
