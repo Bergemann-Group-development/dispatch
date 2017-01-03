@@ -112,7 +112,7 @@ PROGRAM test
   ! -------- cylindrical; the 1-direction is collapsed in this example --------
   call MeshFactory(mesh_types%cylindrical, meshCyl, n=[1,10,8], &
                       s=[1.0d0,0.5d0,2.0d0*pi], p=[0.0d0,0.0d0,0.0d0], &
-                      origin=[0.0d0,0.1d0,0.5d0*pi],ng=[0,3,3])
+                      llc_native=[0.0d0,0.1d0,0.5d0*pi],ng=[0,3,3])
   call meshCyl(1)%print()
   call meshCyl(2)%print()
   call meshCyl(3)%print()
@@ -124,7 +124,7 @@ PROGRAM test
     associate(cmesh => meshCyl(2))
     if (associated(cmesh%h32c)) then
       do i=cmesh%lo,cmesh%uo
-        print'(i3.1,1x,3(1pg14.6E2))',i,cmesh%r(i)-cmesh%d*0.5+cmesh%centre,cmesh%h32f(i),cmesh%dvol2c(i)
+        print'(i3.1,1x,3(1pg14.6E2))',i,cmesh%r(i)-cmesh%d*0.5+cmesh%centre_nat,cmesh%h32f(i),cmesh%dvol2c(i)
       end do
     endif
     end associate
@@ -149,7 +149,7 @@ PROGRAM test
   ! ---- spherical ----
   nTheta = 10
   call MeshFactory(mesh_types%spherical, meshSph, n=[5,nTheta,8], &
-                      s=[1.0d0,pi,2.0d0*pi], p=[0.0d0,0.0d0,0.0d0], origin=[1.0d0,0.0d0,0.0d0])
+                      s=[1.0d0,pi,2.0d0*pi], p=[0.0d0,0.0d0,0.0d0], llc_native=[1.0d0,0.0d0,0.0d0])
   call meshSph(1)%print()
   call meshSph(2)%print()
   call meshSph(3)%print()
@@ -162,7 +162,7 @@ PROGRAM test
     print*,'h2c:  ',associated(cmesh2%h2c)," (should be F)"
     print*,"Column 2 should be the absolute value of column 3:"
     do i=1,nTheta
-      print'(i4.1,1x,2(1pe14.6E2))',i,cmesh2%h32f(i),sin(cmesh2%centre + cmesh2%r(i) - 0.5*cmesh2%d)
+      print'(i4.1,1x,2(1pe14.6E2))',i,cmesh2%h32f(i),sin(cmesh2%centre_nat + cmesh2%r(i) - 0.5*cmesh2%d)
     end do
     end associate
   end select

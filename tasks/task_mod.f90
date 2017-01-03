@@ -39,18 +39,19 @@ MODULE task_mod
     real(8):: dtime = 0d0
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0
-    real(8):: velocity(3) = 0d0
+    real(8):: velocity(3) = 0d0  ! the velocity of the task in Cartesian coords.
     real(8):: size(3) = 0.9999d0
     real(8):: gsize(3)                  ! convenience
     real(8):: box(3)=1d0                ! the periodic wrapping size
     real(8):: wallclock
+    real(4):: quality = 0.0
     integer, dimension(:), pointer:: iit
     real(8), dimension(:), pointer:: t
     real(8), dimension(:), pointer:: dt
-    character(len=32), pointer:: name
+    character(len=64), pointer:: name
     class(task_t), pointer:: parent
     type(lock_t):: lock                 ! OMP lock
-    character(len=4):: kind='task'
+    character(len=64):: kind='task'
     character(len=12):: type='task_t'
     real:: latency=0.0                  ! MPI message latency
   contains

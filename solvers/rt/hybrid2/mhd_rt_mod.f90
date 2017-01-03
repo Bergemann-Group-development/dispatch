@@ -126,7 +126,7 @@ SUBROUTINE rt_output_legacy (self, experiment_name)
     print'(a,3x,"time:",f9.5)', 'mhd_rt_mod::output: file= '//trim(filename), self%out_next
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   write (io%data_unit,'(1p,e18.10,6(2x,3e18.10),1x,i3.1)') self%time, self%position, self%ds, &
-        self%velocity, self%origin, self%llc, self%mesh%centre, self%level
+        self%velocity, self%llc_nat, self%llc_cart, self%mesh%centre_nat, self%level
   write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1)') int(self%box/self%ds+0.5), u-l+1, &
         li, ui, self%n, self%gn, self%ng, self%nv+1 ! +1 for mean intensity
   write (io%data_unit,'(3(1i8.1,1x),i2.1,1x,a)') self%id, self%iout, self%istep, &

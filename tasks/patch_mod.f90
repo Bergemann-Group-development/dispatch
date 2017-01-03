@@ -13,6 +13,7 @@ MODULE patch_mod
   USE bits_mod
   USE trace_mod
   USE mpi_mod
+  USE kinds_mod
   USE task_mod
   USE link_mod
   USE mesh_mod
@@ -21,7 +22,7 @@ MODULE patch_mod
   private
   integer, parameter:: ndim = 3
   type, extends(task_t), public:: patch_t
-    real, dimension(:,:,:,:,:,:), pointer:: mem      => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:,:,:), pointer:: mem      => null()
     real, dimension(:,:,:,:,:),   pointer:: vgas     => null()
     real, dimension(:,:,:,:),     pointer:: density  => null()
     real, dimension(:,:,:,:),     pointer:: pressure => null()
@@ -46,12 +47,14 @@ MODULE patch_mod
     integer:: i_d=1, i_e=2, i_px=3, i_py=4, i_pz=5, i_bx=6, i_by=7, i_bz=8, i_tt=9, i_phi=10
     real:: grav                         ! gravitational consant (code units)
     real(8):: ds(3)                     ! convenience
-    integer:: n(3)=16, ng(3)=2          ! convenient defaults
+    integer:: n(3)=0, ng(3)=2          ! convenient defaults
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
     integer:: ipos(3)                   ! integer position
     real(8):: offset(3)                 ! this is used to compute indices, locations
-    real(8):: llc(3)=0d0                ! the lower left corner of the patch in *root grid* coords.
-    real(8):: origin(3)=0d0             ! the lower left corner of the patch in its *own* coords.
+    real(8):: llc_cart(3)=0d0           ! the lower left corner of the patch in *Cartesian* coords.
+    real(8):: llc_nat(3)=0d0            ! the lower left corner of the patch in its *own* coords.
+    real(8):: centre_cart(3)=0d0        ! the geometric centre of the patch in *Cartesian* coords.
+    real(8):: centre_nat(3)=0d0         ! the geometric centre of the patch in its *own* coords.
     integer :: mesh_type = 1            ! default: Cartesian mesh; FIXME (there must be a better way)
     real(8):: grid_vel(3) = 0d0         ! velocity of the patch in its native coords. and
                                         ! units (e.g. rad/s for the phi coord.); for
@@ -66,9 +69,7 @@ MODULE patch_mod
     procedure:: pack                    ! pack patch into buffer
     procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
-    procedure:: point_distance          ! distance btw two points
     procedure:: point_distances         ! distances btw two points
-    procedure:: overlaps_point          ! return true if they overlap (incl. ghost zones)
     procedure:: upload_range            ! returns the index ranges btw two points
     procedure:: dnload_range            ! returns the index ranges btw two points
     procedure:: index                   ! compute the index for a single point
@@ -284,7 +285,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
-  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=100
+  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false.
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
@@ -319,7 +320,7 @@ SUBROUTINE init (self)
   !print *, 'MK', omp_mythread, self%id, self%nt, nt
   !$omp end critical (input_cr)
   ! reasonable values of self%n should take precedence over a saved value of `n`.
-  self%n           = n                          ! patch dimensions
+  if (any(self%n == 0)) self%n = n              ! patch dimensions
   self%ng          = ng                         ! number of guard zones
   self%nv          = nv                         ! number of variables
   self%nw          = nw                         ! number of work indices
@@ -352,10 +353,10 @@ SUBROUTINE init (self)
     self%box = 1                                ! make sure it is non-zero
     self%ds = minval(self%ds)                   ! then set to reasonable val
     self%size = self%ds                         ! one cell thick
-    self%llc = self%position
+    self%llc_cart = self%position
   end where
   if (self%mesh_type == mesh_types%Cartesian) then
-    self%origin = self%llc
+    self%llc_nat = self%llc_cart
   end if
   !-----------------------------------------------------------------------------
   ! Initialize and allocate the meshes, afterwards imposing the external values
@@ -363,7 +364,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call omp%set_stacksize (self%nv)
   call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
-                   p=self%position, origin=self%origin)
+                   p=self%position, llc_native=self%llc_nat)
   ! intialise staggering indices; it is the responsibility of the *solver* to
   ! assign non-zero values to this variable (if any).
   do i=1,3
@@ -373,7 +374,10 @@ SUBROUTINE init (self)
     !!!if (self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
   end do
   self%mesh%b = self%box
-  self%mesh%llc = self%llc
+  self%mesh%llc_cart = self%llc_cart
+  self%centre_nat = [self%mesh(1)%centre_nat,self%mesh(2)%centre_nat,self%mesh(3)%centre_nat]
+  self%centre_cart = CurrentToCartesian(self%mesh_type, &
+                       self%centre_nat(1), self%centre_nat(2), self%centre_nat(3))
   !-----------------------------------------------------------------------------
   ! Hack for backwards compatibility
   !-----------------------------------------------------------------------------
@@ -473,7 +477,7 @@ FUNCTION myposition (self, ii) RESULT(out)
   real(8):: out(3), cellpos(3)
   !.............................................................................
   cellpos = (real(ii-self%li,kind=8) + merge(0.5,0.0,self%n>1)) * self%ds &
-          + self%origin ! in patch coords.
+          + self%llc_nat ! in patch coords.
   ! convert to Cartesian coords.
   if (self%mesh_type == mesh_types%cylindrical) then
     cellpos = CylindricalToCartesian(cellpos(1), cellpos(2), cellpos(3))
@@ -491,7 +495,7 @@ FUNCTION myposition_staggered (self, ii, idir, h) RESULT(out)
   class(patch_t):: self
   integer, intent(in):: ii(3), idir
   real(8):: out, cellpos(3)
-  real(4), optional :: h
+  real(8), optional :: h
   real(4) :: hlocal
   !.............................................................................
   if (present(h)) then
@@ -501,7 +505,7 @@ FUNCTION myposition_staggered (self, ii, idir, h) RESULT(out)
   end if
 
   cellpos = (real(ii-self%li,kind=8) + merge(0.5 + hlocal,0.0,self%n(idir)>1)) &
-          * self%ds + self%origin ! in patch coords.
+          * self%ds + self%llc_nat ! in patch coords.
   ! convert to Cartesian coords.
   if (self%mesh_type == mesh_types%cylindrical) then
     cellpos = CylindricalToCartesian(cellpos(1), cellpos(2), cellpos(3))
@@ -517,7 +521,7 @@ FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
   class(patch_t) :: self
   real(8), intent(in) :: cpos(3)
   integer, intent(in) :: idir
-  real(4), intent(in) :: h
+  real(8), intent(in) :: h
   real(8) :: pp(3), ppCart(3), out, intermezzo
   !.............................................................................
   ! convert to native patch coords.
@@ -532,11 +536,22 @@ FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
     pp = CartesianToCylindrical(ppCart(1), ppCart(2), ppCart(3))
   end if
 
-  intermezzo = (pp(idir) - self%origin(idir)) / self%ds(idir) + self%li(idir) &
-             - merge(0.5 + h,0.0,self%n(idir)>1)
+  intermezzo = (pp(idir) - self%llc_nat(idir)) / self%ds(idir) + self%li(idir) &
+             - merge(0.5d0 + h,0.0d0,self%n(idir)>1)
   out = intermezzo
 
 END FUNCTION myfloatindex_scalar
+
+!> =============================================================================
+!> Max absolute distance between two points in a periodic box
+!> Assumes input is Cartesian.
+!> =============================================================================
+FUNCTION point_distances (self, p1, p2) RESULT (out)
+  class(patch_t):: self
+  real(8):: p1(3), p2(3), out(3)
+  !.............................................................................
+  out = abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box)
+END FUNCTION point_distances
 
 !> =============================================================================
 !> Periodic mapping of a grid -- typically the root grid
@@ -874,8 +889,8 @@ SUBROUTINE output_legacy (self, experiment_name)
       ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/ds(i) - 1.0
     end if
   end do
-  write (io%data_unit,'(1p,e14.6,3(2x,3e14.6),1x,i3.1)') self%time, self%position, self%ds, &
-        self%velocity, self%level
+  write (io%data_unit,'(1p,e14.6,3(2x,3e14.6),1x,i3.1,1x,e10.3)') self%time, self%position, self%ds, &
+        self%velocity, self%level, self%quality
   write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
   close (io%data_unit)
 
@@ -894,8 +909,8 @@ SUBROUTINE output_legacy (self, experiment_name)
     end block
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  write (io%data_unit,'(1p,e18.10,6(2x,3e18.10),1x,i3.1)') self%time, self%position, self%ds, &
-        self%velocity, self%origin, self%llc, self%mesh%centre, self%level
+  write (io%data_unit,'(1p,e18.10,6(2x,3e18.10)1x,i3.1,1x,e10.3)') self%time, self%position, self%ds, &
+        self%velocity, self%llc_nat, self%llc_cart, self%mesh%centre_nat, self%level, self%quality
   write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1)') int(self%box/self%ds+0.5), u-l+1, &
         li, ui, self%n, self%gn, self%ng, self%nv
   write (io%data_unit,'(3(1i8.1,1x),i2.1,1x,a)') self%id, self%iout, self%istep, &
@@ -1210,36 +1225,6 @@ SUBROUTINE courant_condition (self, detailed_timer)
 END SUBROUTINE courant_condition
 
 !> =============================================================================
-!> Max absolute distance between two points in the periodic box
-!> =============================================================================
-FUNCTION point_distance (self, p1, p2) RESULT (out)
-  class(patch_t):: self
-  real(8):: p1(3), p2(3), out
-  !.............................................................................
-  out = maxval(abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box))
-END FUNCTION point_distance
-
-!> =============================================================================
-!> Max absolute distance between two points in the periodic box
-!> =============================================================================
-FUNCTION point_distances (self, p1, p2) RESULT (out)
-  class(patch_t):: self
-  real(8):: p1(3), p2(3), out(3)
-  !.............................................................................
-  out = abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box)
-END FUNCTION point_distances
-
-!> =============================================================================
-FUNCTION overlaps_point (self, idir, point)
-  class(patch_t):: self
-  integer:: idir, adir
-  real(8):: point(3)
-  logical:: overlaps_point
-  !.............................................................................
-  overlaps_point = all(abs(point-self%position) < 0.5*(self%gn-1)*self%ds)
-END FUNCTION overlaps_point
-
-!> =============================================================================
 FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
   real:: fmaxval
   class(patch_t):: self
@@ -1283,12 +1268,16 @@ END FUNCTION fminval8
 SUBROUTINE check_density (self, label)
   class(patch_t):: self
   character(len=*), optional:: label
-  real:: mind, posd, tiny = 1.0e-32
-  integer:: ix, iy, iz, ii(3), ntot, nins
+  real(kind=KindScalarVar):: mind, posd
+  real:: tiny = 1.0e-32
+  integer:: ix, iy, iz, ii(3), ntot, nins, l(3), u(3)
   logical:: inside
   !-----------------------------------------------------------------------------
   if (io%verbose < 1) return
-  mind = minval(self%mem(:,:,:,1,self%it,1))
+  if (.not. associated(self%mem)) return
+  l = self%mesh%lb
+  u = self%mesh%ub
+  mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1))
   if (present(label) .and. io%verbose>1) write (io_unit%log,*) label, self%id, mind
   if (mind <= 0.0) then
     !---------------------------------------------------------------------------
@@ -1302,10 +1291,10 @@ SUBROUTINE check_density (self, label)
     do iy=1,self%gn(2)
     do ix=1,self%gn(1)
       ii = [ix,iy,iz]
-      inside = all([ix,iy,iz]>self%mesh%lo.and.ii<self%mesh%lo)
+      inside = all([ix,iy,iz]>self%mesh%lo.and.ii<self%mesh%uo)
       posd = merge (posd, max(posd,self%mem(ix,iy,iz,1,self%it,1)), inside)
       ntot = ntot + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0)
-      nins = nins + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0.and.inside)
+      nins = nins + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0 .and. inside)
       !-------------------------------------------------------------------------
       ! Pick the sampled positive value if a negative one is found in the
       ! guard zone
@@ -1315,15 +1304,15 @@ SUBROUTINE check_density (self, label)
     end do
     end do
     end do
+    1 format(a,i8,3x,a,i8,a,i8,a)
     if (present(label)) then
       if (io%verbose>1 .or. nins>0) &
-        write (io_unit%log,1) self%id, &
+        write (io_unit%log,1) 'ID ',self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
          trim(label)
-      1 format(i8,3x,a,i8,a,i8,a)
     else
       if (io%verbose>1 .or. nins>0) &
-        write (io_unit%log,1) self%id, &
+        write (io_unit%log,1) 'ID ',self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside'
     end if
   end if
@@ -1460,7 +1449,7 @@ SUBROUTINE stats (self, label)
   end do
 contains
   subroutine scalar_stats (f, l, u, s)
-    real, dimension(:,:,:):: f
+    real(kind=KindScalarVar), dimension(:,:,:):: f
     integer:: l(3), u(3)
     real(8):: s(4)
     integer:: ix, iy, iz
@@ -1487,8 +1476,8 @@ END SUBROUTINE
 FUNCTION MapVectors (self, in, target, ii, jj) result (out)
   class(patch_t) :: self
   class(patch_t), pointer :: target
-  real, dimension(:), intent(in):: in
-  real:: out(size(in))
+  real(kind=KindScalarVar), dimension(:), intent(in):: in
+  real(kind=KindScalarVar):: out(size(in))
   integer, intent(in) :: ii(3), jj(3)
   !.............................................................................
   out = in
@@ -1514,12 +1503,12 @@ FUNCTION beyond_patch_edge (self, idir, position) result (outside)
     edge = 0.5 * self%gsize(idir)
     outside = abs(position(idir)-self%position(idir)) > edge
   case (2) ! spherical
-    curvpos = position - self%position
+    curvpos = position - self%centre_cart
     curvpos = CartesianToSpherical(curvpos(1), curvpos(2), curvpos(3))
     select case (idir)
     case (1)
-      edge = self%gsize(idir) + self%origin(idir)
-      outside = abs(curvpos(idir)) > edge .or. abs(curvpos(idir)) < self%origin(idir)
+      edge = self%gsize(idir) + self%llc_nat(idir)
+      outside = abs(curvpos(idir)) > edge .or. abs(curvpos(idir)) < self%llc_nat(idir)
     case (2)
       if (associated(self%mesh)) then
         edge = self%gsize(idir) + self%mesh(2)%xi
@@ -1537,15 +1526,15 @@ FUNCTION beyond_patch_edge (self, idir, position) result (outside)
     end select
     outside = abs(curvpos(idir)) > edge
   case (3) ! cylindrical
-    curvpos = position - self%position
+    curvpos = position - self%centre_cart
     curvpos = CartesianToCylindrical(curvpos(1), curvpos(2), curvpos(3))
     select case (idir)
     case (1)
       edge = 0.5 * self%gsize(idir)
       outside = abs(curvpos(idir)) > edge
     case (2)
-      edge = self%gsize(idir) + self%origin(idir)
-      outside = abs(curvpos(idir)) > edge .or. abs(curvpos(idir)) < self%origin(idir)
+      edge = self%gsize(idir) + self%llc_nat(idir)
+      outside = abs(curvpos(idir)) > edge .or. abs(curvpos(idir)) < self%llc_nat(idir)
     case (3)
       if (associated(self%mesh)) then
         edge = self%gsize(idir) + self%mesh(3)%zeta

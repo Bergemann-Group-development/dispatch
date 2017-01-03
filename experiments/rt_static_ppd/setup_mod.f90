@@ -68,8 +68,8 @@ SUBROUTINE init_setup (self)
         patch%size = [zextent, rextent, phiextent]
         patch%position = patch%size * 0.5 ! FIXME: This is a hack because the STAGGER solver does not currently support cylindrical coords.
         patch%n = n_per_patch
-        !patch%origin = 0.0  ! FIXME: introduced in curvilinear_coords branch
-        !patch%llc = 0.0  ! FIXME: introduced in curvilinear_coords branch
+        !patch%llc_nat = 0.0  ! FIXME: introduced in curvilinear_coords branch
+        !patch%llc_cart = 0.0  ! FIXME: introduced in curvilinear_coords branch
         !patch%staggered = .true.  ! FIXME: introduced in curvilinear_coords branch
         !patch%mesh_type = mesh_types%Cartesian  ! FIXME: introduced in curvilinear_coords branch
         patch%box = [(z_max - z_min), (r_max - r_min), phiextent]

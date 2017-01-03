@@ -105,8 +105,8 @@ SUBROUTINE init (self, label)
     patch%box = self%size
     patch%size = self%size / self%dims
     patch%position = ([i,j,k]+0.5d0)*patch%size + origin
-    patch%llc = patch%position - 0.5 * patch%size
-    patch%origin = patch%llc
+    patch%llc_cart = patch%position - 0.5 * patch%size
+    patch%llc_nat = patch%llc_cart
     call patch%set(bits%static)
     if (all(self%dims==1)) call task%set(bits%root_grid)
     rank = patch%rank

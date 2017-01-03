@@ -51,11 +51,11 @@ MODULE mesh_mod
     real(4) :: lf = 0.0, uf = 0.0  ! interpolation boundary indices (must be floating point)
     ! the variables `llc` and `origin` describe the same location, but in
     ! different reference frames.
-    real(8) :: llc = 0.0    ! position of the patch's lower left corner in absolute (i.e.
-                            ! the root grid's) coords; replacement for `p`.
-    real(8) :: origin = 0.0 ! position of the patch's lower left corner in relative,
-                            ! native coords.; always = 0 in Cartesian coords.
-    real(4) :: centre        ! volume centroid of the current mesh in its own coord. system
+    real(8) :: llc_cart = 0.0  ! position of the patch's lower left corner in Cartesian
+                               ! coords.; replacement for `p`.
+    real(8) :: llc_nat = 0.0 ! position of the patch's lower left corner in relative,
+                             ! native coords.; always = 0 in Cartesian coords.
+    real(8) :: centre_nat    ! volume centroid of the mesh in its *own* coords.
     real(8), dimension(:), pointer :: r => null()    ! coordinate relative to patch centre
     real(8), dimension(:), pointer :: h => null()    ! offset for staggered variables;
                                                      ! should be initialised in `mhd_t%init`
@@ -197,7 +197,7 @@ CONTAINS
 !> This method creates three orthogonal meshes to form an 3-dimensional grid.
 !> It is possible for up to 2 of the meshes to have extent one.
 !> =============================================================================
-SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, origin)
+SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, llc_native)
   class(mesh_t), dimension(:), pointer :: collection
   integer, intent(in) :: meshtype
   integer, dimension(3), optional :: ng
@@ -210,8 +210,8 @@ SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, origin)
   ! expected form of `origin` for Cartesian coords.: [0,0,0] (unused)
   !                           for cylindrical coords.: [rmin, 0, zeta]
   !                           for spherical coords.: [rmin, xi, zeta]
-  real(8), dimension(3), optional :: origin
-  real(8), dimension(3) :: origini
+  real(8), dimension(3), optional :: llc_native
+  real(8), dimension(3) :: llc_native_i
   !.............................................................................
   ! set reasonable defaults
   if (present(n)) then
@@ -229,10 +229,10 @@ SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, origin)
   else
     pi(:) = 0.0
   end if
-  if (present(origin)) then
-    origini = origin
+  if (present(llc_native)) then
+    llc_native_i = llc_native
   else
-    origini(:) = 0.0
+    llc_native_i(:) = 0.0
   end if
   if (present(ng)) then
     ngi = ng
@@ -261,10 +261,10 @@ SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, origin)
   do i=1,3
     ! initialise the mesh
     collection(i)%idir = i
-    call collection(i)%init(ni(i),ngi(i),si(i),pi(i),origini(i))
+    call collection(i)%init(ni(i),ngi(i),si(i),pi(i),llc_native_i(i))
 
     ! initialise geometric scale factors (if applicable).
-    call collection(i)%init_geometry(i,origini(i))
+    call collection(i)%init_geometry(i,llc_native_i(i))
   end do
 
 END SUBROUTINE MeshFactory
@@ -285,12 +285,12 @@ END SUBROUTINE MeshRecycler
 !> number of guard cells `ng`.  The real mesh is then fully specified by giving
 !> the size `s`. The center of the mesh, `p` can also be supplied.
 !> =============================================================================
-SUBROUTINE init_mesh (self, n, ng, s, p, origin)
+SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   class(mesh_t) :: self
   integer :: i
   integer, optional :: n, ng
   real(8), optional :: s, p
-  real(8), optional :: origin
+  real(8), optional :: llc_native
   !.............................................................................
   call trace_begin ('mesh%init')
 
@@ -306,8 +306,8 @@ SUBROUTINE init_mesh (self, n, ng, s, p, origin)
   if (present(p)) then
     self%p = p
   endif
-  if (present(origin)) then
-    self%origin = origin  ! the lower left corner in the current patch coords.
+  if (present(llc_native)) then
+    self%llc_nat = llc_native  ! the lower left corner in the current patch coords.
   endif
 
   ! initialise mesh indices
@@ -330,19 +330,19 @@ SUBROUTINE init_mesh (self, n, ng, s, p, origin)
   self%o = (self%li+self%ui)*0.5
 
   ! calculate the volume centroid of the current mesh
-  self%centre = VolumeCentroid(self)
+  self%centre_nat = VolumeCentroid(self)
   ! cell-centred coordinate relative to the patch *centre*; the absolute position
-  ! of a cell can be recovered using `self%centre + self%r(i)` in the coord. system
-  ! of the patch, and `self%p + self%centre + self%r(i)`.
-  ! in Cartesian coords., self%centre = self%p
+  ! of a cell can be recovered using `self%centre_nat + self%r(i)` in the coord. system
+  ! of the patch, and `self%p + self%centre_nat + self%r(i)`.
+  ! in Cartesian coords., self%centre_nat = self%p
   do i=1,self%gn
-    self%r(i) = (real(i - self%ng,kind=8) - 0.5d0) * self%d + self%origin - self%centre
+    self%r(i) = (real(i - self%ng,kind=8) - 0.5d0) * self%d + self%llc_nat - self%centre_nat
   end do
   self%lf = self%r(self%li) - self%d*0.5
   self%uf = self%r(self%ui) + self%d*0.5
 
   call trace_end
-END SUBROUTINE
+END SUBROUTINE init_mesh
 
 !> =============================================================================
 !> deallocates the position coordinate of a mesh
@@ -375,7 +375,7 @@ SUBROUTINE print_mesh (self)
   print'(a,6i8)', "lb, lo, li, ub, uo, ui: ", self%lb, self%lo, self%li, self%ub, self%uo, self%ui
   print'(a,3x,3g16.8)', "lf, uf, p: ",self%lf, self%uf, self%p
   print'(a,3x,3g16.8)', "s, d, b: ", self%s, self%d, self%b
-  print'(a,3x,4g16.8)', "origin, centre, llc, o: ",self%origin, self%centre, self%llc, self%o
+  print'(a,3x,4g16.8)', "llc_nat, centre_nat, llc_cart, o: ",self%llc_nat, self%centre_nat, self%llc_cart, self%o
   do i=1,self%gn
     print'(i4,f14.8)',i,self%r(i)
   end do
@@ -546,7 +546,7 @@ FUNCTION func_position_c (self, i) RESULT(r)
   integer, intent(in) :: i
   real(8) :: r
   !.............................................................................
-  r = self%centre + self%r(i)
+  r = self%centre_nat + self%r(i)
 
 END FUNCTION func_position_c
 
@@ -555,7 +555,7 @@ FUNCTION func_position_f (self, i) RESULT(r)
   integer, intent(in) :: i
   real(8) :: r
   !.............................................................................
-  r = self%centre + self%r(i) - 0.5 * self%d
+  r = self%centre_nat + self%r(i) - 0.5 * self%d
 
 END FUNCTION func_position_f
   
@@ -637,8 +637,8 @@ FUNCTION func_dr3_f (self, i) RESULT(dvol1f)
   integer, intent(in) :: i
   real(8) :: dvol1f
   !.............................................................................
-  dvol1f = self%h2c(i  ) * self%h31f(i  ) * func_position_f(self,i  ) / 3.0d0 &
-         - self%h2c(i-1) * self%h31f(i-1) * func_position_f(self,i-1) / 3.0d0
+  dvol1f = self%h2c(i  ) * self%h31c(i  ) * func_position_c(self,i  ) / 3.0d0 &
+         - self%h2c(i-1) * self%h31c(i-1) * func_position_c(self,i-1) / 3.0d0
 
 END FUNCTION func_dr3_f
 
@@ -737,135 +737,189 @@ END FUNCTION func_dar32_f
 
 !> =============================================================================
 !> Mapping/transformation procedures.
+!> `OCart` is the origin of the *target* coord. system in *Cartesian* coords.
 !> =============================================================================
-FUNCTION CartesianToCylindrical4 (x, y, z) result (vec)
+FUNCTION CartesianToCylindrical4 (x, y, z, OCart) result (vec)
   real(4), intent(in) :: x, y, z
-  real(4), dimension(3) :: vec
+  real(4), dimension(3), optional:: OCart
+  real(4), dimension(3) :: vec, lOCart
   !.............................................................................
-  vec(1) = z                           ! z
-  vec(2) = sqrt(x**2 + y**2)           ! R
-  vec(3) = atan2(y, x) !- meshz%zeta  ! Phi
+  lOCart = 0.0
+  if (present(OCart)) lOCart = OCart
+
+  vec(1) = z - lOCart(3)                              ! Z
+  vec(2) = sqrt((x-lOCart(1))**2 + (y-lOCart(2))**2)  ! R
+  if (lOCart(1) == 0.0 .and. lOCart(2) == 0.0) then
+    vec(3) = atan2(y, x)                              ! Phi
+  else
+    vec(3) = atan2(y-lOCart(2), x-lOCart(1))          ! Phi
+  end if
   if (vec(3) .lt. 0.0) vec(3) = vec(3) + 2.0 * real(pi,kind=4)
 
 END FUNCTION CartesianToCylindrical4
 
-FUNCTION CartesianToCylindrical8 (x, y, z) result (vec)
+FUNCTION CartesianToCylindrical8 (x, y, z, OCart) result (vec)
   real(8), intent(in) :: x, y, z
-  real(8), dimension(3) :: vec
+  real(8), dimension(3), optional:: OCart
+  real(8), dimension(3) :: vec, lOCart
   !.............................................................................
-  vec(1) = z                           ! z
-  vec(2) = sqrt(x**2 + y**2)           ! R
-  vec(3) = atan2(y, x) !- meshz%zeta  ! Phi
+  lOCart = 0.0d0
+  if (present(OCart)) lOCart = OCart
+
+  vec(1) = z - lOCart(3)                              ! Z
+  vec(2) = sqrt((x-lOCart(1))**2 + (y-lOCart(2))**2)  ! R
+  if (lOCart(1) == 0.0 .and. lOCart(2) == 0.0) then
+    vec(3) = atan2(y, x)                              ! Phi
+  else
+    vec(3) = atan2(y-lOCart(2), x-lOCart(1))          ! Phi
+  end if
   if (vec(3) .lt. 0.0d0) vec(3) = vec(3) + 2.0d0 * pi
 
 END FUNCTION CartesianToCylindrical8
 
-FUNCTION CartesianToSpherical4 (x, y, z) result (vec)
+FUNCTION CartesianToSpherical4 (x, y, z, OCart) result (vec)
   real(4), intent(in) :: x, y, z
-  real(4), dimension(3) :: vec
+  real(4), dimension(3), optional:: OCart
+  real(4), dimension(3) :: vec, lOCart
   !.............................................................................
-  vec(1) = sqrt(x**2 + y**2 + z**2)                    ! r
-  vec(2) = acos(z / vec(1)) !- meshSph(2)%m%xi               ! theta
-  vec(3) = atan2(y, x) !- meshSph(3)%m%zeta  ! phi
+  lOCart = 0.0
+  if (present(OCart)) lOCart = OCart
+
+  vec(1) = sqrt((x-lOCart(1))**2 + (y-lOCart(2))**2 + (z-lOCart(3))**2)  ! r
+  vec(2) = pi - acos((z-lOCart(3)) / vec(1))                             ! theta
+  if (lOCart(1) == 0.0 .and. lOCart(2) == 0.0) then
+    vec(3) = -atan2(y, x)                                                ! phi
+  else
+    vec(3) = -atan2((y-lOCart(2)), (x-lOCart(1)))                        ! phi
+  end if
+  if (vec(3) .lt. 0.0) vec(3) = vec(3) + 2.0 * real(pi,kind=4)
 
 END FUNCTION CartesianToSpherical4
 
-FUNCTION CartesianToSpherical8 (x, y, z) result (vec)
+FUNCTION CartesianToSpherical8 (x, y, z, OCart) result (vec)
   real(8), intent(in) :: x, y, z
-  real(8), dimension(3) :: vec
+  real(8), dimension(3), optional:: OCart
+  real(8), dimension(3) :: vec, lOCart
   !.............................................................................
-  vec(1) = sqrt(x**2 + y**2 + z**2)                    ! r
-  vec(2) = acos(z / vec(1)) !- meshSph(2)%m%xi               ! theta
-  vec(3) = atan2(y, x) !- meshSph(3)%m%zeta  ! phi
+  lOCart = 0.0
+  if (present(OCart)) lOCart = OCart
+
+  vec(1) = sqrt((x-lOCart(1))**2 + (y-lOCart(2))**2 + (z-lOCart(3))**2)  ! r
+  vec(2) = pi - acos((z-lOCart(3)) / vec(1))                             ! theta
+  if (lOCart(1) == 0.0 .and. lOCart(2) == 0.0) then
+    vec(3) = -atan2(y, x)                                                ! phi
+  else
+    vec(3) = -atan2((y-lOCart(2)), (x-lOCart(1)))                        ! phi
+  end if
+  if (vec(3) .lt. 0.0d0) vec(3) = vec(3) + 2.0d0 * pi
 
 END FUNCTION CartesianToSpherical8
 
-FUNCTION CylindricalToCartesian4 (z, r, phi) result (vec)
-  real(4), intent(in) :: z, r, phi
-  real(4), dimension(3) :: vec
+FUNCTION CylindricalToCartesian4 (Z, R, Phi, OCart) result (vec)
+  real(4), intent(in) :: Z, R, Phi
+  real(4), dimension(3), optional :: OCart
+  real(4), dimension(3) :: vec, lOCart
   !.............................................................................
-  vec(1) = r * cos(phi) !+ meshphi%zeta)  ! x
-  vec(2) = r * sin(phi) !+ meshphi%zeta)  ! y
-  vec(3) = z                          ! z
+  lOCart = 0.0
+  if (present(OCart)) lOCart = OCart
+
+  vec(1) = R * cos(Phi) - lOCart(1)  ! x
+  vec(2) = R * sin(Phi) - lOCart(2)  ! y
+  vec(3) = Z - lOCart(3)             ! z
 
 END FUNCTION CylindricalToCartesian4
 
-FUNCTION CylindricalToCartesian8 (z, r, phi) result (vec)
-  real(8), intent(in) :: z, r, phi
-  real(8), dimension(3) :: vec
+FUNCTION CylindricalToCartesian8 (Z, R, Phi, OCart) result (vec)
+  real(8), intent(in) :: Z, R, Phi
+  real(8), dimension(3), optional :: OCart
+  real(8), dimension(3) :: vec, lOCart
   !.............................................................................
-  vec(1) = r * cos(phi) !+ meshphi%zeta)  ! x
-  vec(2) = r * sin(phi) !+ meshphi%zeta)  ! y
-  vec(3) = z                          ! z
+  lOCart = 0.0d0
+  if (present(OCart)) lOCart = OCart
+
+  vec(1) = R * cos(Phi) - lOCart(1)  ! x
+  vec(2) = R * sin(Phi) - lOCart(2)  ! y
+  vec(3) = Z - lOCart(3)             ! z
 
 END FUNCTION CylindricalToCartesian8
 
-FUNCTION CylindricalToSpherical4 (z, r, phi) result (vec)
-  real(4), intent(in) :: z, r, phi
-  real(4), dimension(3) :: vec
-  !.............................................................................
-  vec(1) = sqrt(r**2 + z**2)                  ! r
-  vec(2) = atan2(r, z) !- meshSph(2)%m%xi           ! theta
-  vec(3) = -phi !+ meshphi%zeta !- meshSph(3)%m%zeta  ! phi
-
-END FUNCTION CylindricalToSpherical4
-
-FUNCTION CylindricalToSpherical8 (z, r, phi) result (vec)
-  real(8), intent(in) :: z, r, phi
-  real(8), dimension(3) :: vec
-  !.............................................................................
-  vec(1) = sqrt(r**2 + z**2)                  ! r
-  vec(2) = atan2(r, z) !- meshSph(2)%m%xi           ! theta
-  vec(3) = -phi !+ meshphi%zeta !- meshSph(3)%m%zeta  ! phi
-
-END FUNCTION CylindricalToSpherical8
-
-FUNCTION SphericalToCartesian4 (r, theta, phi) result (vec)
+FUNCTION SphericalToCartesian4 (r, theta, phi, OCart) result (vec)
   real(4), intent(in) :: r, theta, phi
-  real(4), dimension(3) :: vec
+  real(4), dimension(3), optional :: OCart
+  real(4), dimension(3) :: vec, lOCart
   !.............................................................................
-  !!vec(1) = r * sin(theta + xi) * cos(phi + zeta)  ! x
-  !!vec(2) = r * sin(theta + xi) * sin(phi + zeta)  ! y
-  !!vec(3) = r * cos(theta + xi)                            ! z
-  vec(1) =  r * sin(theta) * cos(phi)  ! x
-  vec(2) = -r * sin(theta) * sin(phi)  ! y
-  vec(3) = -r * cos(theta)                            ! z
+  lOCart = 0.0
+  if (present(OCart)) lOCart = OCart
+
+  vec(1) =  r * sin(theta) * cos(phi) - lOCart(1)  ! x
+  vec(2) = -r * sin(theta) * sin(phi) - lOCart(2)  ! y
+  vec(3) = -r * cos(theta) - lOCart(3)             ! z
 
 END FUNCTION SphericalToCartesian4
 
-FUNCTION SphericalToCartesian8 (r, theta, phi) result (vec)
+FUNCTION SphericalToCartesian8 (r, theta, phi, OCart) result (vec)
   real(8), intent(in) :: r, theta, phi
-  real(8), dimension(3) :: vec
+  real(8), dimension(3), optional :: OCart
+  real(8), dimension(3) :: vec, lOCart
   !.............................................................................
-  !!vec(1) = r * sin(theta + xi) * cos(phi + zeta)  ! x
-  !!vec(2) = r * sin(theta + xi) * sin(phi + zeta)  ! y
-  !!vec(3) = r * cos(theta + xi)                            ! z
-  vec(1) =  r * sin(theta) * cos(phi)  ! x
-  vec(2) = -r * sin(theta) * sin(phi)  ! y
-  vec(3) = -r * cos(theta)                            ! z
+  lOCart = 0.0d0
+  if (present(OCart)) lOCart = OCart
+
+  vec(1) =  r * sin(theta) * cos(phi) - lOCart(1)  ! x
+  vec(2) = -r * sin(theta) * sin(phi) - lOCart(2)  ! y
+  vec(3) = -r * cos(theta) - lOCart(3)             ! z
 
 END FUNCTION SphericalToCartesian8
 
-FUNCTION SphericalToCylindrical4 (r, theta, phi) result (vec)
+FUNCTION SphericalToCylindrical4 (r, theta, phi, OCart) result (vec)
   real(4), intent(in) :: r, theta, phi
-  real(4), dimension(3) :: vec
+  real(4), dimension(3), optional :: OCart
+  real(4), dimension(3) :: vec, pCart
   !.............................................................................
-  vec(1) = -r * cos(theta) ! + meshtheta%xi)        ! z
-  vec(2) =  r * abs(sin(theta)) ! + meshtheta%xi)        ! R
-  vec(3) = -phi !+ meshphi%zeta - meshCyl(3)%m%zeta  ! Phi
+
+  ! the most reliable way (that I've found so far) to convert between coord.
+  ! systems that are *not guaranteed to have the same origins* is via Cartesian coords.
+  pCart = SphericalToCartesian4(r, theta, phi, OCart)
+  vec   = CartesianToCylindrical4(pCart(1), pCart(2), pCart(3), OCart)
 
 END FUNCTION SphericalToCylindrical4
 
-FUNCTION SphericalToCylindrical8 (r, theta, phi) result (vec)
+FUNCTION SphericalToCylindrical8 (r, theta, phi, OCart) result (vec)
   real(8), intent(in) :: r, theta, phi
-  real(8), dimension(3) :: vec
+  real(8), dimension(3), optional :: OCart
+  real(8), dimension(3) :: vec, pCart
   !.............................................................................
-  vec(1) = -r * cos(theta) ! + meshtheta%xi)        ! z
-  vec(2) =  r * abs(sin(theta)) ! + meshtheta%xi)        ! R
-  vec(3) = -phi !+ meshphi%zeta - meshCyl(3)%m%zeta  ! Phi
+
+  ! the most reliable way (that I've found so far) to convert between coord.
+  ! systems that are *not guaranteed to have the same origins* is via Cartesian coords.
+  pCart = SphericalToCartesian8(r, theta, phi, OCart)
+  vec   = CartesianToCylindrical8(pCart(1), pCart(2), pCart(3), OCart)
 
 END FUNCTION SphericalToCylindrical8
 
+FUNCTION CylindricalToSpherical4 (Z, R, Phi, OCart) result (vec)
+  real(4), intent(in) :: Z, R, Phi
+  real(4), dimension(3), optional :: OCart
+  real(4), dimension(3) :: vec, pCart
+  !.............................................................................
+
+  pCart = CylindricalToCartesian4(Z, R, Phi, OCart)
+  vec   = CartesianToSpherical4(pCart(1), pCart(2), pCart(3), OCart)
+
+END FUNCTION CylindricalToSpherical4
+
+FUNCTION CylindricalToSpherical8 (Z, R, Phi, OCart) result (vec)
+  real(8), intent(in) :: Z, R, Phi
+  real(8), dimension(3), optional :: OCart
+  real(8), dimension(3) :: vec, pCart
+  !.............................................................................
+
+  pCart = CylindricalToCartesian8(Z, R, Phi, OCart)
+  vec   = CartesianToSpherical8(pCart(1), pCart(2), pCart(3), OCart)
+
+END FUNCTION CylindricalToSpherical8
+
+!> =============================================================================
 FUNCTION CurrentToCartesian4 (mtype, x1, x2, x3) result (vec)
   integer, intent(in) :: mtype
   real(4), intent(in) :: x1, x2, x3
@@ -948,15 +1002,15 @@ FUNCTION VolumeCentroid (mesh) result (centre)
   !.............................................................................
   call trace_begin('VolumeCentroid')
 
-  associate(s => mesh%s, xmn => mesh%origin)
+  associate(s => mesh%s, xmn => mesh%llc_nat)
   select type (mesh)
   type is (Cartesian_mesh)
     ! In Cartesian coords., this is simply half the size of the patch.
-    centre = mesh%origin + 0.5 * s
+    centre = xmn + 0.5 * s
   type is (cylindrical_mesh)
     select case (mesh%idir)
     case (1,3)
-      centre = mesh%origin + 0.5 * s
+      centre = xmn + 0.5 * s
     case (2)
       ! radial coord.
       ! = (2/3) delta(R**3) / delta(R**2)
@@ -976,7 +1030,7 @@ FUNCTION VolumeCentroid (mesh) result (centre)
       centre = (sin(xmn + s) - (xmn + s) * cos(xmn + s) - sin(xmn) + xmn * cos(xmn)) &
                   / (cos(xmn) - cos(xmn + s))
     case (3)
-      centre = mesh%origin + 0.5 * s
+      centre = mesh%llc_nat + 0.5 * s
     end select
   end select
   end associate
