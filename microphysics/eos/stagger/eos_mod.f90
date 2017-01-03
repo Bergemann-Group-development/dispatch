@@ -224,25 +224,25 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
     ik1 = ik1 + 3*ntab1
     !---------------------------------------------------------------------------
     if (present(rk)) then
-     do ix=1,mx
-      rk(ix,iy,iz,1) = ( &
-         f00(ix) * tab(ik (ix))+  f01(ix) * tab(ik (ix) + 1) &
-      +  f10(ix) * tab(ik1(ix))+  f11(ix) * tab(ik1(ix) + 1) &
-      + fx00(ix) * tab(ik (ix) + 2 * ntab (ix)    ) &
-      + fx01(ix) * tab(ik (ix) + 2 * ntab (ix) + 1) &
-      + fx10(ix) * tab(ik1(ix) + 2 * ntab1(ix)    ) &
-      + fx11(ix) * tab(ik1(ix) + 2 * ntab1(ix) + 1) &
-      + fy00(ix) * tab(ik (ix) +     ntab (ix)    ) &
-      + fy01(ix) * tab(ik (ix) +     ntab (ix) + 1) &
-      + fy10(ix) * tab(ik1(ix) +     ntab1(ix)    ) &
-      + fy11(ix) * tab(ik1(ix) +     ntab1(ix) + 1) &
-        )
-     end do
-     if (size(rk,4)>1) then
-       do j=2,size(rk,4)
-         rk(:,:,:,j) = rk(:,:,:,j-1)*10
-       end do
-     end if
+      do ix=1,mx
+       rk(ix,iy,iz,1) = ( &
+          f00(ix) * tab(ik (ix))+  f01(ix) * tab(ik (ix) + 1) &
+       +  f10(ix) * tab(ik1(ix))+  f11(ix) * tab(ik1(ix) + 1) &
+       + fx00(ix) * tab(ik (ix) + 2 * ntab (ix)    ) &
+       + fx01(ix) * tab(ik (ix) + 2 * ntab (ix) + 1) &
+       + fx10(ix) * tab(ik1(ix) + 2 * ntab1(ix)    ) &
+       + fx11(ix) * tab(ik1(ix) + 2 * ntab1(ix) + 1) &
+       + fy00(ix) * tab(ik (ix) +     ntab (ix)    ) &
+       + fy01(ix) * tab(ik (ix) +     ntab (ix) + 1) &
+       + fy10(ix) * tab(ik1(ix) +     ntab1(ix)    ) &
+       + fy11(ix) * tab(ik1(ix) +     ntab1(ix) + 1) &
+         )
+      end do
+      if (size(rk,4)>1) then
+        do j=2,size(rk,4)
+          rk(:,iy,iz,j) = rk(:,iy,iz,j-1)*10
+        end do
+      end if
     end if
     ik  = ik  + 3*ntab
     ik1 = ik1 + 3*ntab1
@@ -267,8 +267,8 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
     ik1 = ik1 + 3*ntab1
     !---------------------------------------------------------------------------
     if (present(ne)) then
-     do ix=1,mx
-      ne(ix,iy,iz) = exp( &
+      do ix=1,mx
+        ne(ix,iy,iz) = exp( &
          f00(ix) * tab(ik (ix))+  f01(ix) * tab(ik (ix) + 1) &
       +  f10(ix) * tab(ik1(ix))+  f11(ix) * tab(ik1(ix) + 1) &
       + fx00(ix) * tab(ik (ix) + 2 * ntab (ix)    ) &
@@ -280,14 +280,14 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
       + fy10(ix) * tab(ik1(ix) +     ntab1(ix)    ) &
       + fy11(ix) * tab(ik1(ix) +     ntab1(ix) + 1) &
         )
-     end do
+      end do
     end if
     ik  = ik  + 3*ntab
     ik1 = ik1 + 3*ntab1
     !---------------------------------------------------------------------------
     if (present(src)) then
-     do j=1,size(src,4)
-     do ix=1,mx
+      do j=1,size(src,4)
+      do ix=1,mx
       ik (ix) = ik (ix) + 3*ntab (ix)
       ik1(ix) = ik1(ix) + 3*ntab1(ix)
       src(ix,iy,iz,j) = ( &
@@ -302,8 +302,8 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
       + fy10(ix) * tab(ik1(ix) +     ntab1(ix)    ) &
       + fy11(ix) * tab(ik1(ix) +     ntab1(ix) + 1) &
         )
-     end do
-     end do
+      end do
+      end do
     end if
   end do
   end do

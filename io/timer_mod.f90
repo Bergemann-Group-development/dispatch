@@ -96,6 +96,10 @@ SUBROUTINE begin (self, name, itimer)
       names(itimer) = name
     end if
     !$omp end critical (timer_cr)
+    !---------------------------------------------------------------------------
+    ! If the name already exists in names then itimer remains =0
+    !---------------------------------------------------------------------------
+    if (itimer <= 0) return
   end if
   timers(thread)%start(itimer) = wallclock()
 END SUBROUTINE begin

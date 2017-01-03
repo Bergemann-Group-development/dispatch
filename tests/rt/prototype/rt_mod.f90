@@ -37,12 +37,12 @@ MODULE rt_mod
     real, dimension(:), pointer       :: w_lambda                       ! wavelength weights
     real, dimension(:), pointer       :: w_bundle                       ! space angle weights
     type(rt_bundle_t)                 :: bundle
-    real, dimension(:,:,:),   pointer :: dtau
-    real, dimension(:,:,:,:), pointer :: rk
-    real, dimension(:,:,:,:), pointer :: src
-    real, dimension(:,:,:),   pointer :: dedt
-    real, dimension(:,:),     pointer :: qfw0
-    real, dimension(:,:),     pointer :: qrv1
+    real, dimension(:,:,:),   pointer :: dtau => null()
+    real, dimension(:,:,:,:), pointer :: rk   => null()
+    real, dimension(:,:,:,:), pointer :: src  => null()
+    real, dimension(:,:,:),   pointer :: dedt => null()
+    real, dimension(:,:),     pointer :: qfw0 => null()
+    real, dimension(:,:),     pointer :: qrv1 => null()
     type (link_t),            pointer :: upstream
     type (link_t),            pointer :: dnstream
   contains
@@ -193,7 +193,7 @@ SUBROUTINE solve (self)
       !end select
       self%dedt = self%dedt + q*self%w_lambda(iw)*self%w_bundle(ib)     ! add net heat contrib
       !
-      deallocate (dtau, exp0, q)                                        ! deallocate temporaries
+      deallocate (dtau, exp0, q, qfw0, qfw1, qrv0, qrv1)                ! deallocate temporaries
       !$omp end task
     end do
     !$omp end single
