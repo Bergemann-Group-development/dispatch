@@ -83,6 +83,7 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   integer:: dim(3)
   real, dimension(:,:,:)  , pointer, optional :: ee,d,lne,lnd,pg,tt,ne
   real, dimension(:,:,:,:), pointer, optional :: src,rk
+  real, optional:: gamma
   !.............................................................................
   real, dimension(:,:,:),   pointer  :: lnd_loc, ee_loc
   integer,         dimension(dim(1)) :: np,np1,ik,ntab,ik1,ntab1
