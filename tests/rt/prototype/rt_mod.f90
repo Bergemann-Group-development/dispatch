@@ -52,7 +52,7 @@ MODULE rt_mod
     procedure :: optical_depth
     procedure :: interpolate
   end type
-! ----------------------------------------------------------------------
+  real, parameter:: pi4 = 16.*atan(1.)
 CONTAINS
 
 !> =====================================================================
@@ -71,14 +71,19 @@ SUBROUTINE init (self)
   self%nw = 1
   call self%patch_t%init
   self%i_e = 1
+  self%n_lambda = eos%n_lambda                                       ! number of wavelengths
+  self%n_bundle = 1                          ! FIXME                 ! one direction
   self%dedt => self%mem(:,:,:,self%i_e,self%it,1)
   rt_bundle%dim = self%dim
   allocate (self%w_lambda(self%n_lambda))
   allocate (self%w_bundle(self%n_bundle))
-  allocate (self%rk (self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
-  allocate (self%src(self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
-  self%grace = 1.0                                                      ! use values for one dtime
-  self%dtime = 0.001                            ! FIXME
+  allocate (self%dtau(self%dim(1), self%dim(2), self%dim(3)))
+  allocate (self%rk  (self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
+  allocate (self%src (self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
+  self%w_lambda = 1.0/self%n_lambda          ! FIXME                 ! wavelength weights
+  self%w_bundle = pi4/2./self%n_bundle       ! FIXME                 ! space angle weights
+  self%grace = 1.0                                                   ! use values for one dtime
+  self%dtime = 0.001                         ! FIXME
   call rt_bundle%init
   call trace_end
 END SUBROUTINE init
@@ -112,6 +117,7 @@ SUBROUTINE update (self)
   call mhd%log_interpolate (self%time, mhd%i_e, lne)                    ! interpolate in time and space
   end select
   lne = lne - lnd                                                       ! internal energy per unit mass
+  print *, 'MK', associated(self%rk), associated(self%src)
   call eos%lookup (shape(lne), lne=lne, lnd=lnd, &                      ! call the table lookup, ...
                    rk=self%rk, src=self%src)                            ! ... results go into rt_t
   deallocate (lnd, lne)                                                 ! deallocate scratch
@@ -175,6 +181,8 @@ SUBROUTINE solve (self)
       call self%optical_depth (ds, rk, dtau)                            ! compute dtau
       !
       exp0 = exp(-dtau)                                                 ! expopential factors
+!      print *, associated(qfw0), associated(s)
+!      print *, shape(qfw0), shape(s)
       qfw0 = -s(:,5,:)                                                  ! input net intensity
       call rt_bundle%forward (dtau, exp0, s, qfw0, q, qfw1)             ! solve forward
       !task => self%dnstream%task

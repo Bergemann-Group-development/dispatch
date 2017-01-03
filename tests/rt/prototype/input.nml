@@ -4,7 +4,7 @@
  do_validate=f
  do_trace=f
  do_debug=f
- do_output=t
+ do_output=f
  omp_trace=f
 /
 &box_params
@@ -31,7 +31,7 @@
  nu=  0.03, 1.0, 1.0, 0.1, 1.0, 1.0
  gamma=1.4
 /
-&timer_params       sec_per_report=5       /
+&timer_params       sec_per_report=2       /
 &initial_params     type='stagger'         /
 &force_params                              /
 &solenoidal_params                         /
