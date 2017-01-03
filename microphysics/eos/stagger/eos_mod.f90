@@ -78,11 +78,11 @@ END SUBROUTINE init
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src)
+SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
-  real, dimension(:,:,:)  , pointer, optional :: ee,d,lne,lnd,pg,tt,ne,rk
-  real, dimension(:,:,:,:), pointer, optional :: src
+  real, dimension(:,:,:)  , pointer, optional :: ee,d,lne,lnd,pg,tt,ne
+  real, dimension(:,:,:,:), pointer, optional :: src,rk
   !.............................................................................
   real, dimension(:,:,:),   pointer  :: lnd_loc, ee_loc
   integer,         dimension(dim(1)) :: np,np1,ik,ntab,ik1,ntab1
@@ -218,7 +218,7 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src)
     !---------------------------------------------------------------------------
     if (present(rk)) then
      do ix=1,mx
-      rk(ix,iy,iz) = ( &
+      rk(ix,iy,iz,1) = ( &
          f00(ix) * tab(ik (ix))+  f01(ix) * tab(ik (ix) + 1) &
       +  f10(ix) * tab(ik1(ix))+  f11(ix) * tab(ik1(ix) + 1) &
       + fx00(ix) * tab(ik (ix) + 2 * ntab (ix)    ) &
@@ -231,6 +231,11 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src)
       + fy11(ix) * tab(ik1(ix) +     ntab1(ix) + 1) &
         )
      end do
+       if (size(rk,4)>1) then
+         do j=2,size(rk,4)
+           rk(:,:,:,j) = rk(:,:,:,j-1)*10
+         end do
+       end if
     end if
     ik  = ik  + 3*ntab
     ik1 = ik1 + 3*ntab1

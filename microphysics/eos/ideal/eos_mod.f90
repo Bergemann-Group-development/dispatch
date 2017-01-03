@@ -68,8 +68,8 @@ SUBROUTINE lookup (self, dim, ee, lnd, d, pg, tt, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
-  real, dimension(:,:,:),   optional, pointer :: ee, lnd, d, pg, tt, rk
-  real, dimension(:,:,:,:), optional, pointer :: src
+  real, dimension(:,:,:),   optional, pointer :: ee, lnd, d, pg, tt
+  real, dimension(:,:,:,:), optional, pointer :: src, rk
   integer:: i
   !-----------------------------------------------------------------------------
   if (present(gamma)) then
@@ -87,14 +87,18 @@ SUBROUTINE lookup (self, dim, ee, lnd, d, pg, tt, rk, src, gamma)
       pg = (self%gamma-1.0)*d*ee
     end if
     if (present(rk)) then
-      rk = d
+      do i=1,size(rk,4)
+        rk(:,:,:,i) = d
+      end do
     end if
   else if (present (lnd)) then
     if (present(pg)) then
       pg = (self%gamma-1.0)*exp(lnd)*ee
     end if
     if (present(rk)) then
-      rk = exp(lnd)
+      do i=1,size(rk,4)
+        rk(:,:,:,i) = exp(lnd)
+      end do
     end if
   else
     call mpi%abort ('missing d or lnd in eos_mod::lookup')
