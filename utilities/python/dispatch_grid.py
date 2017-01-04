@@ -246,9 +246,9 @@ def plotting_grid(root, p, x_i, slicedir, sliceloc, sliceeps=1.0e-2, truecoords=
         x, y, z = rtp_to_xyz(x_i[0], x_i[1], x_i[2], phi_rotate=phi_rotate, theta_rotate=theta_rotate)
 
     # adjust coords. using the patch position (which is in Cartesian coords.).
-    x += p.pos[0]
-    y += p.pos[1]
-    z += p.pos[2]
+    #x += p.pos[0]
+    #y += p.pos[1]
+    #z += p.pos[2]
 
     # assign coords. actually needed for plotting; cyclical.
     if slicedir == 1:

@@ -27,8 +27,8 @@ if __name__ == "__main__":
     gamma = 1.0001
     datadir = './data/'
     prefix = ''
-    ptimes = [0.007, 0.01, 0.015]
-    t_eps = 0.03
+    ptimes = [0.0,1e-2,2e-2]
+    t_eps = 0.045
     pxsize = [-0.5,0.5]
     pysize = [-0.5,0.5]
     pltvar = ['d ']
@@ -152,7 +152,7 @@ if __name__ == "__main__":
             conf = cax.contourf(xp[iindex,jindex,kindex].squeeze(),yp[iindex,jindex,kindex].squeeze(),
                                 var.squeeze(),levels,cmap=ColMap,extend='both',zorder=-min(p.dx))
 
-            if (showgrids or pltvar[0] == 'gs') and p.id != 1:
+            if (showgrids or pltvar[0] == 'gs'):
                 edges = patch_grid_edges(p)
                 cax.add_patch(edges)
                 #for c in conf.collections:
