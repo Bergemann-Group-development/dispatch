@@ -192,7 +192,16 @@ SUBROUTINE solve (self)
       if (io%verbose>1) &
         print *,'dtau',iw,self%id, minval(dtau), maxval(dtau)
       !
-      exp0 = exp(-dtau)                                                 ! expopential factors
+      
+#if defined __INTEL_COMPILER
+        exp0 = 2**(-dtau*1.44269504) 
+#else
+        exp0 = exp(-dtau)                                               ! expopential factors
+#endif
+      
+      
+      
+      
       qfw0 = -s(:,6,:)                                                  ! input net intensity
       call rt_bundle%forward (dtau, exp0, s, qfw0, q, qfw1)             ! solve forward
       !task => self%dnstream%task
