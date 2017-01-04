@@ -425,6 +425,12 @@ SUBROUTINE init (self)
     error stop 'n_header is incorrect'
   end if
   end block
+  if (all(self%size == self%box)) then
+    call self%set (bits%root_grid)
+    if (io%verbose > 1) print *, 'set bits%root_grid id =', self%id
+  else
+    if (io%verbose > 1) print *, 'set bits%root_grid id =', self%size - self%box
+  end if
   call trace_end
 END SUBROUTINE init
 
@@ -565,16 +571,37 @@ SUBROUTINE periodic_grid (self)
   ub = self%mesh%ub
   li = self%mesh%li
   ui = self%mesh%ui
+  where (self%mesh%lower_boundary)
+    li = self%mesh%lb
+  end where
+  where (self%mesh%upper_boundary)
+    ui = self%mesh%ub
+  end where
   do iz=lb(3),ub(3)
   do iy=lb(2),ub(2)
   do ix=lb(1),ub(1)
     i = [ix,iy,iz]
     if (all(i >= li .and. i <= ui)) cycle
     j = modulo(i-li,self%n)+li
-    self%mem(ix,iy,iz,:,self%it,1) = self%mem(j(1),j(2),j(3),:,self%it,1)
+    !---------------------------------------------------------------------------
+    ! Make sure horizontal periodic wrapping continues over the whole vertical
+    ! range when physical boundary conditions are present.  Note the use of
+    ! mesh%ui and mesh%li below; this is because the physical boundaries are
+    ! inside the normal patch boundaries.
+    !---------------------------------------------------------------------------
+    where (self%mesh%lower_boundary .and. i < self%mesh%li+4)
+      j = i
+    end where
+    where (self%mesh%upper_boundary .and. i > self%mesh%ui-4)
+      j = i
+    end where
+    self%mem(ix,iy,iz,:,self%it ,1) = self%mem(j(1),j(2),j(3),:,self%it ,1)
+    self%mem(ix,iy,iz,:,self%new,1) = self%mem(j(1),j(2),j(3),:,self%new,1)
   end do
   end do
   end do
+  if (io%verbose > 1) print *, &
+    'periodic_grid: id, it, new =', self%id, self%it, self%new
   call trace_end
 END SUBROUTINE periodic_grid
 
@@ -586,26 +613,36 @@ END SUBROUTINE periodic_grid
 SUBROUTINE extrapolate_guards (self)
   class(patch_t):: self
   integer:: ix, iy, iz, i(3), it0, it1, it2, nt, iit(self%nt)
+  integer:: li(3), ui(3)
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin ('patches_mod:extrapolate_guards', 3, itimer=itimer)
+  call trace_begin ('patch_t%extrapolate_guards', 3, itimer=itimer)
   nt = self%nt
   iit = self%local_iit()
   it0 = iit(nt)                                         ! current time slot
   it1 = iit(nt-1)                                       ! previous time slot
   it2 = iit(nt-2)                                       ! the one before that
+  li = self%mesh%li
+  ui = self%mesh%ui
+  where (self%mesh%lower_boundary)
+    li = self%mesh%lb
+  end where
+  where (self%mesh%upper_boundary)
+    ui = self%mesh%ub
+  end where
   do iz=self%mesh(3)%lb,self%mesh(3)%ub                 ! loop over all cells
   do iy=self%mesh(2)%lb,self%mesh(2)%ub
   do ix=self%mesh(1)%lb,self%mesh(1)%ub
     i = [ix,iy,iz]
-    if (all(i >= self%mesh%li .and. i <= self%mesh%ui)) cycle     ! skip interior
+    if (all(i >= li .and. i <= ui)) cycle               ! skip interior
     self%mem(ix,iy,iz,:,it0,1)     = &
     self%mem(ix,iy,iz,:,it1,1)*2.0 - &
     self%mem(ix,iy,iz,:,it2,1)
   end do
   end do
   end do
-  !print*,'min,max:',minval(self%mem(:,:,:,1,self%new,1)),maxval(self%mem(:,:,:,1,self%new,1))
+  if (io%verbose>1) print *, &
+    'extrapolate_guards: id, it =', self%id, it0, self%time
   call trace_end (itimer)
 END SUBROUTINE extrapolate_guards
 
@@ -641,6 +678,7 @@ SUBROUTINE output (self, experiment_name)
   contains
   subroutine output1
     if (io%do_legacy) then
+      if (io%verbose>1) print *, self%id, ' LEGACY OUTPUT'
       call self%output_legacy
     else
       call self%output_new
@@ -865,7 +903,7 @@ SUBROUTINE output_legacy (self, experiment_name)
     u = self%mesh%ui
   end if
   if (self%time_derivs) then
-    no = 2
+    no = min(2,self%nw)
   else
     no = 1
   end if
@@ -1600,6 +1638,7 @@ SUBROUTINE time_interval (self, time, jt, pt)
   else
     pt(2) = (time-t(j))/dt
   end if
+  pt(2) = 1.0 ! FIXME
   pt(1) = 1.-pt(2)
   if (io%verbose>1) then
     print *, 'time_interval: times  =', t(j), time, t(j+1)

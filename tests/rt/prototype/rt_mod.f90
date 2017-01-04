@@ -52,6 +52,7 @@ MODULE rt_mod
     procedure :: solve
     procedure :: optical_depth
     procedure :: interpolate
+    procedure :: boundary_conditions
   end type
   real, parameter:: pi4 = 16.*atan(1.)
 CONTAINS
@@ -91,7 +92,7 @@ SUBROUTINE init (self)
   allocate (self%w_bundle(self%n_bundle))
   allocate (self%rk  (self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
   allocate (self%src (self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
-  self%w_lambda = 1.0/self%n_lambda             ! FIXME                 ! wavelength weights
+  self%w_lambda = eos%w_lambda
   self%w_bundle = pi4/2./self%n_bundle          ! FIXME                 ! space angle weights
   self%dtime = dtime                                                    ! 0.1 second default
   self%grace = grace                                                    ! grace off by default
@@ -113,7 +114,7 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !---------------------------------------------------------------------
   call trace%begin ('rmhd_t%update', itimer=itimer)
-  if (io%verbose > 0) print *, 'RADIATIVE TRANSFER TIME', self%time
+  if (io%verbose > 1) print *, 'RADIATIVE TRANSFER TIME', self%time
   if (self%time < 0d0) then
     self%time  = 0.0                                                    ! set current time
   end if
@@ -136,13 +137,8 @@ SUBROUTINE update (self)
   deallocate (lnd, lne)                                                 ! deallocate scratch
   call trace%end (itimer)
   call self%solve                                                       ! call the RT solver to get Q
-  !-----------------------------------------------------------------------------
-  ! Update the RT time.  When first starting, the RT time is negative, to force
-  ! a first RT solution, which is then assigned time=dtime, which is the time
-  ! interval over which the RT solution is deemed valid (with grace=0.0). The
-  ! next RT solution is triggered when the MHD time exceeds the RT time, and
-  ! after the RT is done the RT time is advanced with the RT time step dtime.
-  !-----------------------------------------------------------------------------
+  call self%boundary_conditions
+  call self%output
 END SUBROUTINE update
 
 !> =====================================================================
@@ -216,7 +212,7 @@ SUBROUTINE solve (self)
       !end select
       self%dedt(:,6:my-4,:) = &
       self%dedt(:,6:my-4,:) + q*self%w_lambda(iw)*self%w_bundle(ib)     ! add net heat contrib
-      if (io%verbose>3) then
+      if ((io%verbose>1 .and. iw==self%n_lambda) .or. io%verbose>2) then
         do iy=1,my-9
           print *,iy,sum(dtau(:,iy,:))/(mx*mz),sum(self%dedt(:,5+iy,:))/(mx*mz)
         end do
@@ -259,5 +255,19 @@ SUBROUTINE interpolate (self, time)
   !.....................................................................
   !---------------------------------------------------------------------
 END SUBROUTINE interpolate
+
+!> =============================================================================
+!> Apply boundary conditions
+!> =============================================================================
+SUBROUTINE boundary_conditions (self)
+  class(rt_t):: self
+  !----------------------------------------------------------------------------
+  call trace%begin('experiment_t%boundary_conditions')
+  associate (my => self%mesh(2)%gn)
+  self%mem(:,  01:06,:,:,:,2) = 0.0
+  self%mem(:,my-4:my,:,:,:,2) = 0.0
+  end associate
+  call trace%end
+END SUBROUTINE boundary_conditions
 
 END MODULE rt_mod

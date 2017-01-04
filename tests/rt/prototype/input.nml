@@ -1,16 +1,17 @@
 
 &io_params
- verbose=1
+ verbose=0
  do_validate=f
  do_trace=f
  do_debug=f
- do_output=f
+ do_output=t
  omp_trace=f
- id_debug=2
+ id_debug=0
 /
 &box_params
  size=6,2,6
- dims=3,1,3
+!dims=3,1,3
+ dims=1,1,1
  origin=0,0,0
 /
 &patch_params
@@ -18,17 +19,18 @@
  nw=2
  courant=0.2
  grace=0.3
- n=21,59,21
+!n=21,59,21
+ n=63,59,63
 /
 &out_params
- end_time=0.1
- out_time=0.05
+ end_time=0.02
+ out_time=0.0
  print_time=0.0
  guard_zones=t
- time_derivs=t
+ time_derivs=f
 /
 &rt_params
- dtime=0.02
+ dtime=0.001
 /
 &mhd_params
  !     cs    pa  ofd  mas  kap  eta

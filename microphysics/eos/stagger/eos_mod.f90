@@ -23,8 +23,10 @@ MODULE eos_mod
   !-----------------------------------------------------------------------------
   ! Public part
   !-----------------------------------------------------------------------------
+  integer, parameter:: n_lambda=4
   type, public:: eos_t
-    integer :: n_lambda = 4
+    integer :: n_lambda = n_lambda
+    real    :: w_lambda(n_lambda) = 1.0
     logical :: on = .false.
   contains
     procedure:: init

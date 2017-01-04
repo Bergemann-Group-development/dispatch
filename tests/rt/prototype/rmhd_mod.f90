@@ -46,8 +46,11 @@ SUBROUTINE init (self)
   !---------------------------------------------------------------------
   call self%mhd_t%init
   !---------------------------------------------------------------------
-  ! Initialize the rt_mod object (one could create more than one)
+  ! Initialize the rt_mod object (one could create more than one).
+  ! Copy parameters that may be different for various reasons
   !---------------------------------------------------------------------
+  self%rt%box      = self%box
+  self%rt%size     = self%size
   self%rt%dim      = self%mesh%gn                                       ! RT dimensions
   self%rt%position = self%position
   call self%rt%init                                                     ! allocate weights

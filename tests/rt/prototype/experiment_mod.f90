@@ -52,6 +52,11 @@ SUBROUTINE init (self)
   ! Initial conditions
   !----------------------------------------------------------------------------
   call self%initial%condition (self%mesh, self%mem(:,:,:,:,1,1))
+  if (self%root_grid.or.self%is_set(bits%root_grid)) then
+    call self%periodic_grid                     ! periodic root grid
+  else
+    call self%extrapolate_guards                ! time-extrapolate guard cells
+  end if
   self%rt%mesh(2)%dsup => self%mesh(2)%dsup                             ! mesh spacing
   self%time = self%initial%time
   self%t(self%it) = self%initial%time
@@ -59,12 +64,12 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-!> Compute time derivatives, and take a time step
+!> Compute time derivatives, and take a time step.  Note that this procedure is
+!> only called if/when the task addet to the task list was an experiment_t task
 !> =============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
   type(timestep_t):: timestep
-  class(task_t), pointer:: task
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
@@ -72,18 +77,11 @@ SUBROUTINE update (self)
     first_time = .false.
     call self%initial%cleanup
   end if
+  call self%rmhd_t%update
+  call self%boundary_conditions
+  call self%courant_condition
   call self%output
-  task => self%link%task
-  select type (task)
-  class is (rmhd_t)
-    call self%rmhd_t%update
-!    call self%boundary_conditions
-    call self%courant_condition
-    call self%output
-    call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  class is (rt_t)
-    call self%update
-  end select
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call trace%end
 END SUBROUTINE update
 
@@ -95,7 +93,7 @@ SUBROUTINE boundary_conditions (self)
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%boundary_conditions')
   associate (my => self%mesh(2)%gn)
-  self%mem(:,  01:05,:,:,:,2) = 0.0
+  self%mem(:,  01:06,:,:,:,2) = 0.0
   self%mem(:,my-4:my,:,:,:,2) = 0.0
   end associate
   call trace%end
