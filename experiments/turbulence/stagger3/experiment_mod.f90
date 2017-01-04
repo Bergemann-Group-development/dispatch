@@ -39,12 +39,13 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer, save:: itimer=0
+  real, dimension(:,:,:,:), pointer:: mem
   !----------------------------------------------------------------------------
   call trace_begin('experiment_mod::init', itimer=itimer)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
-  !call self%initial%init
+  call self%initial%init
   if (self%initial%mhd) then
     self%nv = 8
   else
@@ -52,14 +53,15 @@ SUBROUTINE init (self)
   end if
   self%mhd = self%initial%mhd
   call self%pde_t%init
-  call self%set(bits%static)
+  call self%set (bits%static)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  !call self%initial%selected(self%mesh, self%mem(:,:,:,:,1,1))
-  self%time = self%initial%time
+  mem => self%mem(:,:,:,:,1,1)
+  call self%initial%conditions (self%mesh, mem)
+  self%time       = self%initial%time
   self%t(self%it) = self%initial%time
-  !call self%periodic_grid
+  call self%periodic_grid
   call trace_end (itimer=itimer)
 END SUBROUTINE init
 
@@ -80,9 +82,14 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   if (first_time) then
-    first_time = .false.
-    call self%initial%cleanup
+    !$omp critical (init_cr)
+    if (first_time) then
+      first_time = .false.
+      call self%initial%cleanup
+    end if
+    !$omp end critical (init_cr)
   end if
+  call self%dnload
   call self%pde_t%update
   call self%courant_condition
   if (io%verbose>2) &

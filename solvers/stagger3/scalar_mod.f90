@@ -160,7 +160,7 @@ SUBROUTINE stats (self, s, label)
   character(len=20):: l
   real:: mins, aver, maxs
   !.............................................................................
-  if (io%verbose<1) return
+  if (io%verbose<2) return
   mins = self%minval(s)
   maxs = self%maxval(s)
   aver = self%aver(s)
