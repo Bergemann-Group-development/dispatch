@@ -1,6 +1,7 @@
 # Append to VPATH
 VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)
 
+# **Don't forget to update the LD_LIBRARY_PATH environment variable when you run the code!**
 LIBS+=-L/home/jramsey/repos/ZEUScore -lzeuscore
 PREC=DOUBLE
 
