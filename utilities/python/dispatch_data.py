@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
 
-'''
-   Support routines for reading DISPATCH2 data from a data/ directory
-'''
+"""
+   Support functions for reading DISPATCH2 data.
+"""
 
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import ticker
-from matplotlib.patches import Rectangle
 from abc import abstractproperty, abstractmethod, ABCMeta
 import os
 import fnmatch
+from warnings import warn
 
 class Task(object):
     """An abstract class to describe tasks."""
@@ -33,7 +31,6 @@ class Patch(Task):
 
     def __init__(self, filename, verbose=False):
         self.filename = filename
-        self.id = int(filename.split('_')[1])
         self.__data = None
 
         fp = open(filename+'.txt','r')
@@ -47,15 +44,19 @@ class Patch(Task):
 
         """
 
-        # line 1: time, pos(1:3), ds(1:3), vel(1:3), level
+        # line 1: time, pos(1:3), ds(1:3), vel(1:3), origin(1:3), llc(1:3), cent(1:3)
         line = fp.readline().split()
         self.time = float(line[0])
         self.pos  = (float(line[1]),float(line[2]),float(line[3]))
         self.dx = (float(line[4]),float(line[5]),float(line[6]))
         self.vel = (float(line[7]),float(line[8]),float(line[9]))
-        self.level = int(line[10])
+        self.origin = (float(line[10]),float(line[11]),float(line[12]))
+        self.llc = (float(line[13]),float(line[14]),float(line[15]))
+        self.centre = (float(line[16]),float(line[17]),float(line[18]))
+        self.level = int(line[19])
+        self.quality = float(line[20])
 
-        # line 2: m(1:3), nwrite(1:3), li(1:3), ui(1:3), n(1:3), gn(1:3), nghost(1:3), nvar
+        # line 2: m(1:3), n(1:3), li(1:3), ui(1:3), gn(1:3), nghost(1:3), nvar
         line = fp.readline().split()
         self.m  = (int(line[0]),int(line[1]),int(line[2]))
         self.nwrite = (int(line[3]),int(line[4]),int(line[5]))
@@ -66,15 +67,17 @@ class Patch(Task):
         self.nghost = (int(line[18]),int(line[19]),int(line[20]))
         self.nvar = int(line[21])
 
-        # line 3: id, iout, istep, task_type
+        # line 3: id, iout, istep, mesh_type
         line = fp.readline().split()
         self.id = int(line[0])
         self.iout = int(line[1])
         self.istep = int(line[2])
+        self.mesh_type = get_mesh_type(int(line[3]))
         self.task_type = line[4].strip()
         if (verbose):
             print "        patch id:", self.id
             print "    no. of steps:", self.istep
+            print "         coords.:", self.mesh_type
             print "      full patch:", self.m
             print "   unigrid patch:", self.n
             print "     total cells:", self.gn
@@ -86,7 +89,11 @@ class Patch(Task):
             print "        position:", self.pos
             print "         delta x:", self.dx
             print "        velocity:", self.vel
+            print "          origin:", self.origin
+            print "          l.l.c.:", self.llc
+            print "     vol. centre:", self.centre
             print "           level:", self.level
+            print "         quality:", self.quality
             print "       task type:", self.task_type
 
         self.corners = self._determine_corners()
@@ -128,13 +135,13 @@ class Patch(Task):
         c_hi = []
 
         if not active_only:
-            for p,n,d in zip(self.pos, self.n, self.dx):
-                c_lo.append(p - 0.5 * n * d)
-                c_hi.append(p + 0.5 * n * d)
+            for o,n,d,ng in zip(self.origin, self.n, self.dx, self.nghost):
+                c_lo.append(o - ng * d)
+                c_hi.append(o + (n + ng) * d)
         else:
-            for p,n,d,ng in zip(self.pos, self.n, self.dx, self.nghost):
-                c_lo.append(p - 0.5 * n * d + ng * d)
-                c_hi.append(p + 0.5 * n * d - ng * d)
+            for o,n,d in zip(self.origin, self.n, self.dx):
+                c_lo.append(o)
+                c_hi.append(o + n * d)
 
         # we want the data to be immutable
         c_lo = tuple(c_lo)
@@ -229,21 +236,3 @@ def get_mesh_type(current_mesh_type):
         raise Exception("Unrecognised mesh type!")
 
     return mesh_string
-
-def dispatch_grid(p):
-    """
-    Given grid information for a patch, calculate the three *cell-centred*
-    coordinate arrays in the coord. system of the patch.
-
-    """
-
-    if p.n != p.nwrite:
-        x1 = p.corners[0][0] + np.arange(p.nwrite[0]) * p.dx[0] + 0.5 * p.dx[0]
-        x2 = p.corners[0][1] + np.arange(p.nwrite[1]) * p.dx[1] + 0.5 * p.dx[1]
-        x3 = p.corners[0][2] + np.arange(p.nwrite[2]) * p.dx[2] + 0.5 * p.dx[2]
-    else:
-        x1 = p.active_corners[0][0] + np.arange(p.nwrite[0]) * p.dx[0] + 0.5 * p.dx[0]
-        x2 = p.active_corners[0][1] + np.arange(p.nwrite[1]) * p.dx[1] + 0.5 * p.dx[1]
-        x3 = p.active_corners[0][2] + np.arange(p.nwrite[2]) * p.dx[2] + 0.5 * p.dx[2]
-
-    return (x1, x2, x3)
