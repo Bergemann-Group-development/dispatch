@@ -370,8 +370,8 @@ SUBROUTINE init (self)
   do i=1,3
     allocate(self%mesh(i)%h(self%nv))
     self%mesh(i)%h = 0.0
-    !!! this is for ZEUS only
-    !!!if (self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
+    if (self%kind == 'zeus_mhd_patch' .and. &
+        self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
   end do
   self%mesh%b = self%box
   self%mesh%llc_cart = self%llc_cart
@@ -1593,7 +1593,7 @@ SUBROUTINE log_interpolate (self, time, i, a)
   class (patch_t)                 :: self
   real(8)                         :: time
   integer                         :: i
-  real, dimension(:,:,:), pointer :: a, b
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: a, b
   !.....................................................................
   integer                         :: jt(2)
   real                            :: pt(2)

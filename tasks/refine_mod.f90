@@ -8,6 +8,7 @@ MODULE refine_mod
   USE io_mod
   USE trace_mod
   USE bits_mod
+  USE kinds_mod
   USE task_mod
   USE patch_mod
   USE mesh_mod
@@ -109,7 +110,6 @@ END FUNCTION
 FUNCTION check_jeans (self, patch) RESULT(out)
   class(refine_t):: self
   class(experiment_t), pointer:: patch
-  real, dimension(:,:,:), pointer:: v, d
   logical:: out
   real:: c_sound, jeans_length, ratio
   !.............................................................................
@@ -126,7 +126,7 @@ END FUNCTION
 FUNCTION check_log_density (self, patch) RESULT(out)
   class(refine_t):: self
   class(experiment_t), pointer:: patch
-  real, dimension(:,:,:), pointer:: v, d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
   call trace_begin ('refine_t%check_log_densisty', 2)
@@ -146,7 +146,7 @@ END FUNCTION
 FUNCTION check_potential (self, patch) RESULT(out)
   class(refine_t):: self
   class(experiment_t), pointer:: patch
-  real, dimension(:,:,:), pointer:: v, d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
   call trace_begin ('refine_t%potential', 2)
@@ -165,7 +165,7 @@ FUNCTION check_log_pressure (self, patch) RESULT(out)
   class(refine_t):: self
   class(experiment_t), pointer:: patch
   class(mesh_t), pointer:: mx, my, mz
-  real, dimension(:,:,:), pointer:: p, v
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
   mx => patch%mesh(1)
@@ -182,7 +182,7 @@ FUNCTION check_velocity (self, patch) RESULT(out)
   class(refine_t):: self
   class(experiment_t), pointer:: patch
   class(mesh_t), pointer:: mx, my, mz
-  real, dimension(:,:,:), pointer:: v
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
   mx => patch%mesh(1)
@@ -199,7 +199,7 @@ FUNCTION check_magnetic_field (self, patch) RESULT(out)
   class(refine_t):: self
   class(experiment_t), pointer:: patch
   class(mesh_t), pointer:: mx, my, mz
-  real, dimension(:,:,:), pointer:: v
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   logical:: out
   !.............................................................................
   mx => patch%mesh(1)
@@ -215,7 +215,7 @@ END FUNCTION
 FUNCTION check_max_diff (self, patch,v ) RESULT(out)
   class(refine_t):: self
   class(experiment_t), pointer:: patch
-  real, dimension(:,:,:), pointer:: v
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   !real:: v(patch%mesh%li(1):patch%mesh%ui(1),patch%mesh%li(2):patch%mesh%ui(2),patch%mesh%li(3):patch%mesh%ui(3))
   integer:: n(3), i1, i2, i3, m(3)=1
   real:: max_diff, diff
