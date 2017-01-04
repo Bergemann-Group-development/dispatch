@@ -8,7 +8,7 @@ OPTS = optimized
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER         = stagger
-SOLVER          = stagger2
+SOLVER          = stagger2/e
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile

@@ -63,7 +63,7 @@ SUBROUTINE init (self)
   self%orbit_radius = orbit_au*cgs%au/scaling%l
   self%external%density = density_cgs/scaling%d
   self%external%temperature = temperature_K/scaling%temp
-  self%external%pressure = density_cgs*cgs%k_B*temperature_K/(cgs%mu*cgs%m_u) &
+  self%external%pressure = density_cgs*cgs%k_B*temperature_K/(scaling%mu*cgs%m_u) &
     /scaling%p
   self%hill_radius = self%orbit_radius*(planet%mass*scaling%m/(3d0*cgs%m_sun))**(1d0/3d0)
   planet%hill_radius = self%hill_radius

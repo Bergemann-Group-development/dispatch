@@ -45,6 +45,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
+  real, dimension(:,:,:,:), pointer:: ff
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
@@ -58,7 +59,8 @@ SUBROUTINE init (self)
   call self%pebble_patch_t%init               ! reads omega
   call self%set (bits%static)
   call self%initial%init
-  call self%initial%selected (self%mem, self%mesh, self%omega)
+  ff => self%mem(:,:,:,:,1,1)
+  call self%initial%selected (self%mesh, ff)
   call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
   call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
   call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,0d0,-0.5d0])

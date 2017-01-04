@@ -9,7 +9,6 @@ MODULE force_mod
   USE mesh_mod
   USE planet_mod
   USE star_mod
-  USE stagger_mod
   implicit none
   private
   type, public:: force_t
@@ -89,8 +88,8 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
   ! and leads to acceleration in the negative y-direction -- vice versa for
   ! motion in the y-direction
   !-----------------------------------------------------------------------------
-  ff(:,:,:,1) = ff(:,:,:,1) + 2.*self%omega(3)*xdn(yup(Uy))
-  ff(:,:,:,2) = ff(:,:,:,2) - 2.*self%omega(3)*ydn(xup(Ux))
+  ff(:,:,:,1) = ff(:,:,:,1) + 2.*self%omega(3)*Uy
+  ff(:,:,:,2) = ff(:,:,:,2) - 2.*self%omega(3)*Ux
   call trace_end
 END FUNCTION star_and_planet
 

@@ -7,8 +7,9 @@ OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
-#SOLVER         = stagger
-SOLVER          = stagger2
+SOLVER          = ramses/hydro
+#SOLVER          = stagger
+#SOLVER          = stagger2/e
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile
@@ -19,12 +20,10 @@ $(EXEC): setup_mod.o
 # Dependencies
 setup_mod.o             : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o atmosphere_mod.o rubiks_mod.o planet_mod.o omp_mod.o scene_mod.o list_mod.o
 atmosphere_mod.o        : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o particle_mod.o planet_mod.o
-experiment_mod.o        : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o pebble_patch_mod.o scalar_mod.o vector_mod.o \
+experiment_mod.o        : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o pebble_patch_mod.o \
                           timestep_mod.o initial_mod.o atmosphere_mod.o boundary_mod.o force_mod.o
-initial_mod.o           : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o lagrange_mod.o atmosphere_mod.o planet_mod.o
 scaling_mod.o           : io_mod.o trace_mod.o cgs_mod.o
 cgs_mod.o               : io_mod.o
-force_mod.o             : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o planet_mod.o star_mod.o stagger_mod.o
 star_mod.o              : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o
 planet_mod.o            : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o
 boundary_mod.o          : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o atmosphere_mod.o

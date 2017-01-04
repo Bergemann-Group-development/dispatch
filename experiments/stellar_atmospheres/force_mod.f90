@@ -1,0 +1,138 @@
+!> =============================================================================
+!> This is a start on a module that could become a general turbulence forcing
+!> module, where the standard forcing we have been using in RAMSES is implemented
+!> =============================================================================
+MODULE force_mod
+  USE io_mod
+  USE trace_mod
+  USE vector_mod
+  USE mesh_mod
+  USE random_mod
+  implicit none
+  private
+  real(8), parameter:: pi2=8.0*atan(1.0)
+  type, public:: force_t
+    integer:: seed=-11
+    real(8):: a(3), phi(3)
+    real(8):: t_turn, t_save=0.0
+    real(8):: a0(3), k(3)
+    procedure(single_solenoidal), pointer:: selected=>null()
+  contains
+    procedure init
+  end type
+ logical, save:: first_time=.true.
+CONTAINS
+
+!> =============================================================================
+!> Setup a uniform initial state, with density=d0 and B=B0
+!> =============================================================================
+SUBROUTINE init (self)
+   class(force_t):: self
+   integer,save:: seed=-11, iostat
+   character(len=32), save:: type='stellar'
+   namelist /force_params/ type
+   !----------------------------------------------------------------------------
+   call trace_begin('force_t%init')
+   !$omp critical (input_cr)
+   if (first_time) then
+     first_time = .false.
+     rewind (io%input)
+     read (io%input, force_params, iostat=iostat)
+     if (io%master) write (*, force_params)
+   end if
+   !$omp end critical (input_cr)
+   select case (type)
+   case ('stellar')
+     self%selected => stellar
+   case ('single_solenoidal')
+     self%selected => single_solenoidal
+   case ('zero')
+     nullify(self%selected)
+   case default
+     print*,'UNKNOWN FORCING TYPE'
+   end select
+   call trace_end
+END SUBROUTINE init
+
+!> =============================================================================
+!> Stellar atmoshpere with gravity pointing in the positive y-direction
+!> =============================================================================
+FUNCTION stellar (self, time, Ux, Uy, Uz, m) RESULT (ff)
+  class(force_t)        :: self
+  real(8)               :: time
+  real, dimension(:,:,:):: Ux, Uy, Uz
+  class(mesh_t), pointer, dimension(:) :: m
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
+  integer:: iostat
+  logical, save:: first_time
+  !.............................................................................
+  real, save:: grav=2.75
+  namelist /stellar_params/ grav
+  !-----------------------------------------------------------------------------
+  call trace_begin('force_t:stellar')
+  if (first_time) then
+    !$omp critical (init_cr)
+    if (first_time) then
+      first_time = .false.
+      rewind (io%input); read (io%input, stellar_params, iostat=iostat)
+      if (io%master) write (*, stellar_params)
+    end if
+    !$omp end critical (init_cr)
+  end if
+  ff(:,:,:,1) = 0.0
+  ff(:,:,:,2) = grav
+  ff(:,:,:,3) = 0.0
+  call trace_end
+END FUNCTION stellar
+
+!> =============================================================================
+!> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
+!> =============================================================================
+FUNCTION single_solenoidal (self, time, Ux, Uy, Uz, m) RESULT (ff)
+  class(force_t)        :: self
+  real(8)               :: time
+  class(mesh_t), pointer, dimension(:) :: m
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
+  real, dimension(:,:,:):: Ux, Uy, Uz
+  type(random_t)        :: random
+  integer               :: ix, iy, iz
+  real(8)               :: kx, ky, kz
+  integer               :: iostat
+  !.............................................................................
+  real, save:: t_turn=0.3, a0(3)=0.1, k(3)=1.0
+  namelist /solenoidal_params/ k, a0, t_turn
+  !-----------------------------------------------------------------------------
+  call trace_begin('force_t:single_solenoidal')
+  if (first_time) then
+    !$omp critical (init_cr)
+    if (first_time) then
+      first_time = .false.
+      rewind (io%input); read (io%input, solenoidal_params, iostat=iostat)
+      if (io%master) write (*, solenoidal_params)
+    end if
+    !$omp end critical (init_cr)
+  end if
+  if (time >= self%t_save) then
+    self%a = self%a0*random%ran3()
+    self%phi = pi2*random%ran3()
+    self%t_save = self%t_save + self%t_turn
+!     if (io%verbose>3) print *,'forcing', self%a, self%phi
+  end if
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    kz = pi2*self%k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + self%phi(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky = pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx = pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
+        ff(ix,iy,iz,1) = self%a(1)*(sin(ky)+sin(kz))
+        ff(ix,iy,iz,2) = self%a(2)*(sin(kz)+sin(kx))
+        ff(ix,iy,iz,3) = self%a(3)*(sin(kx)+sin(ky))
+      end do
+    end do
+  end do
+  end associate
+  call trace_end
+END FUNCTION single_solenoidal
+
+END MODULE
