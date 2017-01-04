@@ -668,7 +668,7 @@ SUBROUTINE output (self, experiment_name)
   if (self%out_time==0.0) then
     call output1
   else
-    do while (self%time >= self%out_next .and. self%out_next <= self%end_time)
+    do while (self%time >= self%out_next)
       call output1
       self%out_next = (int(self%out_next/self%out_time)+1)*self%out_time
     end do
