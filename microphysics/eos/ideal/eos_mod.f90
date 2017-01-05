@@ -8,8 +8,8 @@ MODULE eos_mod
   implicit none
   private
   type, public:: eos_t
-    real:: gamma
-    integer :: eos_type = 0                                             ! 0 - ideal, x - any other
+    real:: gamma = 1.4                  ! in case eos%init is never called
+    integer :: eos_type = 0             ! 0 - ideal, x - any other
   contains
     procedure:: init
     procedure:: pressure
@@ -27,16 +27,20 @@ CONTAINS
 SUBROUTINE init (self)
   class (eos_t):: self
   integer:: iostat
-  real, save:: gamma=5./3.
+  logical, save:: first_time=.true.
+  real, save:: gamma=1.4
   namelist /eos_params/ gamma
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
   if (io%master) print *, &
  '------------------------ ideal equation-of-state -----------------------------'
-  rewind (io%input); read (io%input, eos_params, iostat=iostat)
-  if (iostat == 0) then
+  !$omp critical (init_cr)
+  if (first_time) then
+    gamma = self%gamma
+    rewind (io%input); read (io%input, eos_params, iostat=iostat)
     if (io%master) write (io%output, eos_params)
   end if
+  !$omp end critical (init_cr)
   self%gamma = gamma
   call trace%end
 END SUBROUTINE init
@@ -64,45 +68,55 @@ END FUNCTION
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, dim, ee, lnd, d, pg, tt, rk, src, gamma)
+SUBROUTINE lookup (self, dim, ee, lnd, lne, d, pg, tt, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
-  real, dimension(:,:,:),   optional, pointer :: ee, lnd, d, pg, tt
+  real, dimension(:,:,:),   optional, pointer :: ee, lnd, d, lne, pg, tt
   real, dimension(:,:,:,:), optional, pointer :: src, rk
+  real, dimension(:,:,:),             pointer :: ee_loc, d_loc
   integer:: i
   !-----------------------------------------------------------------------------
   if (present(gamma)) then
     self%gamma = gamma
   end if
-  if (present(tt)) then
-    tt = (self%gamma-1.0)*ee
-  else if (present(src)) then
-    do i=1,size(src,4)
-      src(:,:,:,i) = self%temperature(lnd,ee)**4
-      src(:,:,:,i) = ((self%gamma-1.0)*ee)**4
-    end do
-  else if (present(d)) then
-    if (present(pg)) then
-      pg = (self%gamma-1.0)*d*ee
-    end if
-    if (present(rk)) then
-      do i=1,size(rk,4)
-        rk(:,:,:,i) = d
-      end do
-    end if
-  else if (present (lnd)) then
-    if (present(pg)) then
-      pg = (self%gamma-1.0)*exp(lnd)*ee
-    end if
-    if (present(rk)) then
-      do i=1,size(rk,4)
-        rk(:,:,:,i) = exp(lnd)
-      end do
-    end if
+  !-----------------------------------------------------------------------------
+  if (present(d)) then
+    d_loc => d
+  else if (present(lnd)) then
+    allocate (d_loc(dim(1),dim(2),dim(3)))
+    d_loc = exp(lnd)
   else
-    call mpi%abort ('missing d or lnd in eos_mod::lookup')
+    call mpi%abort ('eos_t: missing density')
   end if
+  !-----------------------------------------------------------------------------
+  if (present(ee)) then
+    ee_loc => ee
+  else if (present(lne)) then
+    allocate (ee_loc(dim(1),dim(2),dim(3)))
+    ee_loc = exp(lne)
+  else
+    call mpi%abort ('eos_t: missing internal energy')
+  end if
+  !-----------------------------------------------------------------------------
+  if (present(tt)) then
+    tt = (self%gamma-1.0)*ee_loc
+  end if
+  if (present(src)) then
+    do i=1,size(src,4)
+      src(:,:,:,i) = ((self%gamma-1.0)*ee_loc)**4
+    end do
+  end if
+  if (present(pg)) then
+    pg = (self%gamma-1.0)*d_loc*ee_loc
+  end if
+  if (present(rk)) then
+    do i=1,size(rk,4)
+      rk(:,:,:,i) = d_loc
+    end do
+  end if
+  if (present(lne)) deallocate(ee_loc)
+  if (present(lnd)) deallocate( d_loc)
 END SUBROUTINE lookup
 
 END MODULE eos_mod
