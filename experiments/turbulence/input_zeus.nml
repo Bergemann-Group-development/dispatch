@@ -1,0 +1,70 @@
+! $Id$
+
+&timer_params
+ sec_per_report=10.0
+/
+&mpi_mesg_params
+ max_recv=20
+ !max_probe=2
+ min_nq=20
+ every_send=2
+/
+&io_params
+ verbose=1
+ do_validate=f
+ do_trace=f
+ do_debug=f
+ do_output=f
+ omp_trace=f
+/
+&box_params
+ size=2,1,1 dims=16,08,08 mpi_dims=2,1,1
+ origin=0,0,0
+/
+&experiment_params
+/
+&load_balance_params
+ on=f
+/
+&patch_params
+ nt=5
+ nw=1
+ courant=0.5
+ grace=0.3
+ n=32,32,32
+!dt_fixed=0.001
+/
+&out_params
+ end_time=0.05
+ out_time=0.04
+ print_time=0
+ guard_zones=f
+ time_derivs=f
+/
+&mhd_params
+  gamma=1.001
+  trnvrsn=0
+  dtinit=1.0e-3
+  itote=0
+  qlin=0.1
+  qcon=1.0
+  iord=2
+  iords=2
+  istp=0
+/
+&timestep_params
+ time_order=0
+/
+&force_params
+ k=1,1,2
+ a0=1e-2,1e-2,1e-2
+ t_turn=10.
+ type='single_solenoidal'
+/
+&initial_params
+ k=3,3,3
+ a0=0.0,0.0,0.0
+ u0=0,0,0
+ b0=0,0,0
+ type='single_solenoidal'
+/

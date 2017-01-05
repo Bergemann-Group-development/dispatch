@@ -77,6 +77,7 @@ MODULE task_mod
     procedure:: pack
     procedure:: unpack
   end type
+
   integer, save:: id=0
 CONTAINS
 
@@ -109,7 +110,7 @@ SUBROUTINE init (self)
   scene%n_patch = self%id
   !$omp end critical
   if (io%verbose>-1) &
-    write (io%log_unit,*) 'patch id', self%id
+    write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)
   call trace_end
 END SUBROUTINE
@@ -149,7 +150,11 @@ SUBROUTINE rotate (self)
   rptr => self%dt(self%it)
   !$omp atomic write
   rptr = self%dtime                                     ! just updated
-  self%dt(self%new)= self%dtime                         ! next estimate
+  ! ZEUS determines a new time step at the end of its update; this is to
+  ! prevent the clobbering of the updated time step; FIXME!
+  if (trim(self%kind) /= 'zeus_mhd_patch') then
+    self%dt(self%new)= self%dtime                         ! next estimate
+  end if
   self%t(self%new) = time                               ! initial time
   new = self%new
   !$omp atomic write
@@ -174,6 +179,7 @@ SUBROUTINE rotate (self)
   if (io%verbose>3) &
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
   !!omp end critical (time_cr)
+  nullify (rptr, iptr)
   call trace_end (itimer)
 END SUBROUTINE rotate
 
@@ -212,6 +218,9 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   !$omp atomic read
   nbdtime = self%dtime
   is_ahead_of = nbtime + nbdtime*task%grace >= task%time
+  ! if a task is frozen (in time), then we assume it is forever ahead of other tasks
+  if (self%is_set(bits%frozen)) is_ahead_of = .true.
+
   if (task%id==io%id_debug.or.io_unit%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &
     task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of

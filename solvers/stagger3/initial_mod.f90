@@ -5,6 +5,7 @@
 !> and momentum fluxes are centered on cell edges.
 !> =============================================================================
 MODULE initial_mod
+  USE mpi_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
@@ -25,11 +26,6 @@ MODULE initial_mod
   end type
   !-----------------------------------------------------------------------------
   type(initial_t), public:: initial
-  real, save:: velocity(2) = [0.2,0.1]
-  real, save:: w_gauss=3.0, p_gauss=4.0, &
-               amplitude_s=3.0, amplitude_d=3., gamma=5./3.
-  logical, save:: first_time=.true.
-  character(len=16), save:: type='sedov'
   real, dimension(:,:,:,:), pointer, save:: p
   real, dimension(:,:,:),   pointer, save:: d, s
 CONTAINS
@@ -59,26 +55,34 @@ SUBROUTINE conditions (self, mesh, mem)
   real, dimension(:,:,:,:), pointer:: mem
   !.............................................................................
   integer:: ix, iostat
-  namelist /initial_params/ type, velocity, w_gauss, p_gauss, amplitude_s, &
-    amplitude_d, gamma
+  logical, save:: first_time=.true.
+  !.............................................................................
+  character(len=16), save:: type='sedov'
+  namelist /initial_params/ type
   !-----------------------------------------------------------------------------
   ! Read and print the namelist only once
   !-----------------------------------------------------------------------------
   call trace%begin ('initial_t%conditions')
+  !$omp critical (init_cr)
   if (first_time) then
     first_time=.false.
     rewind (io%input)
     read (io%input, initial_params,iostat=iostat)
     if (io%master) write (*,initial_params)
   end if
+  !$omp end critical (init_cr)
   d => mem(:,:,:,i_d)
   s => mem(:,:,:,i_s)
   p => mem(:,:,:,i_px:i_pz)
-  if (trim(type)=='sedov') then
+  select case (type)
+  case ('sedov')
     call self%sedov (mesh, mem)
-  else if (trim(type)=='advection') then
+   case ('advection')
     call self%advection (mesh, mem)
-  end if
+  case default
+    print *, 'UNKNOWN INITIAL CONDITION TYPE'
+    call mpi%abort ('initial_mod')
+  end select
 END SUBROUTINE conditions
 
 !> =============================================================================
@@ -89,16 +93,32 @@ SUBROUTINE sedov (self, mesh, mem)
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
   !.............................................................................
-  integer:: ix, iy, iz
+  integer:: ix, iy, iz, iostat
   real:: x, y, z, f
+  logical, save:: first_time=.true.
+  !.............................................................................
+  real, save:: w_gauss=3.0, p_gauss=4.0, amplitude_s=3.0, amplitude_d=3., gamma=5./3.
+  namelist /sedov_params/ w_gauss, p_gauss, amplitude_s, amplitude_d, gamma
+  !-----------------------------------------------------------------------------
+  ! Read and print the namelist only once
+  !-----------------------------------------------------------------------------
+  call trace%begin ('initial_t%conditions')
+  !$omp critical (init_cr)
+  if (first_time) then
+    first_time=.false.
+    rewind (io%input)
+    read (io%input, sedov_params,iostat=iostat)
+    if (io%master) write (*,sedov_params)
+  end if
+  !$omp end critical (init_cr)
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Gaussian top hat in entropy if at time=0
   !-----------------------------------------------------------------------------
-  do iz=1,mesh(3)%ub
+  do iz=1,size(mem,3)
     z = mesh(3)%p + mesh(3)%r(iz)
-    do iy=1,mesh(2)%ub
+    do iy=1,size(mem,2)
       y = mesh(2)%p + mesh(2)%r(iy)
-      do ix=1,mesh(1)%ub
+      do ix=1,size(mem,1)
         !   patch position + mesh offset        - gaussian position
         x = mesh(1)%p + mesh(1)%r(ix)
         if (mesh(3)%ub > 1) then
@@ -127,14 +147,31 @@ SUBROUTINE advection (self, mesh, mem)
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
   !.............................................................................
-  integer:: ix, iy, iz
+  integer:: ix, iy, iz, iostat
   real:: x, y, z, f
+  logical, save:: first_time=.true.
+  !-----------------------------------------------------------------------------
+  real, save:: velocity(2) = [0.2,0.1]
+  real, save:: w_gauss=3.0, p_gauss=4.0, amplitude_s=1.0, amplitude_d=1., gamma=5./3.
+  namelist /advection_params/velocity, w_gauss, p_gauss,  amplitude_s, &
+                                       amplitude_d, gamma
+  ! Read and print the namelist only once
+  !-----------------------------------------------------------------------------
+  call trace%begin ('initial_t%conditions')
+  !$omp critical (init_cr)
+  if (first_time) then
+    first_time=.false.
+    rewind (io%input)
+    read (io%input, advection_params,iostat=iostat)
+    if (io%master) write (*,advection_params)
+  end if
+  !$omp end critical (init_cr)
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Constant advection speed
   !-----------------------------------------------------------------------------
-  do iz=1,mesh(3)%ub
-  do iy=1,mesh(2)%ub
-  do ix=1,mesh(1)%ub
+  do iz=1,size(mem,3)
+  do iy=1,size(mem,2)
+  do ix=1,size(mem,1)
     !   patch position + mesh offset - gaussian offset
     x = mesh(1)%p + mesh(1)%r(ix)
     y = mesh(2)%p + mesh(2)%r(iy)

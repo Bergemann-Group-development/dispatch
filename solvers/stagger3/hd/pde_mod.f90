@@ -14,10 +14,9 @@ MODULE pde_mod
   USE patch_mod
   USE mesh_mod
   USE initial_mod
+  USE download_mod
   implicit none
   private
-  integer, parameter:: i_d=1, i_s=2, i_px=3, i_py=4, i_pz=5                     ! memory slots
-  integer, parameter::               i_bx=6, i_by=7, i_bz=8                     ! memory slots
   !-----------------------------------------------------------------------------
   type, public:: gauss_t                                                        ! Gaussian
     real:: w                                                                    ! width
@@ -26,8 +25,6 @@ MODULE pde_mod
   end type
   !-----------------------------------------------------------------------------
   type, public, extends(patch_t):: pde_t
-    integer:: i_s=i_s, i_px=i_px, i_py=i_py, i_pz=i_pz                          ! slot indices
-    integer:: i_tt,    i_bx=i_px, i_by=i_by, i_bz=i_bz                          ! slot indices
     real, dimension(:,:,:),   pointer:: d, dd_dt                                ! density
     real, dimension(:,:,:),   pointer:: s, ds_dt                                ! entropy
     real, dimension(:,:,:,:), pointer:: p, dp_dt                                ! momenta
@@ -45,6 +42,7 @@ MODULE pde_mod
     type(tensor_t):: tensor
   contains
     procedure:: init                                                            ! initialize
+    procedure:: dnload                                                          ! update
     procedure:: update                                                          ! update
     procedure:: deallocate                                                      ! deallocate scratch
     procedure:: log_density                                                     ! for refinement
@@ -87,12 +85,21 @@ SUBROUTINE init(self)
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Sedov blast or advection
   !-----------------------------------------------------------------------------
-  self%d => self%mem(:,:,:,i_d ,self%it,1)
-  self%s => self%mem(:,:,:,i_s ,self%it,1)
-  self%p => self%mem(:,:,:,i_px:i_pz,self%it,1)
+  self%d => self%mem(:,:,:,self%i_d ,self%it,1)
+  self%s => self%mem(:,:,:,self%i_s ,self%it,1)
+  self%p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
   !-----------------------------------------------------------------------------
   call trace%end
 END SUBROUTINE init
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE dnload (self)
+  class(pde_t):: self
+  call trace%begin ('experiment_mod::dnload')
+  call download%download_link (self%link, all_cells=.false.)
+  call trace%end
+END SUBROUTINE
 
 !> =============================================================================
 !> Evaluates the time derivatives of the hydrodynamic variables
@@ -139,12 +146,12 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Memory mapping (changes with time steps)
   !-----------------------------------------------------------------------------
-  self%d             => self%mem(:,:,:,i_d ,self%it,1)
-  self%s             => self%mem(:,:,:,i_s ,self%it,1)
-  self%dd_dt         => self%mem(:,:,:,i_d ,self%it,2)
-  self%ds_dt         => self%mem(:,:,:,i_s ,self%it,2)
-  self%p             => self%mem(:,:,:,i_px:i_pz,self%it,1)
-  self%dp_dt         => self%mem(:,:,:,i_px:i_pz,self%it,2)
+  self%d             => self%mem(:,:,:,self%i_d ,self%it,1)
+  self%s             => self%mem(:,:,:,self%i_s ,self%it,1)
+  self%dd_dt         => self%mem(:,:,:,self%i_d ,self%it,2)
+  self%ds_dt         => self%mem(:,:,:,self%i_s ,self%it,2)
+  self%p             => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
+  self%dp_dt         => self%mem(:,:,:,self%i_px:self%i_pz,self%it,2)
   !-----------------------------------------------------------------------------
   ! Mesh pointers in operators
   !-----------------------------------------------------------------------------

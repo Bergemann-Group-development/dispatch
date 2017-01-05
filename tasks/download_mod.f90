@@ -178,8 +178,8 @@ SUBROUTINE same_static (self)
                   ! Extrapolate in the log, to ensure positive results
                   !-----------------------------------------------------------------
                   target%mem(ix,iy,iz,iv,it,1) = exp( &
-                    alog(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1))*pt(1) + &
-                    alog(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))*pt(2))
+                    log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1))*pt(1) + &
+                    log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))*pt(2))
                   write (io_unit%log,'(a,2(3i4,1x),1p,3g16.6)') 'same_static: ix,iy,iz,src1,src2,trg =', &
                     ix     , iy     , iz     , &
                     ix+o(1), iy+o(2), iz+o(3), &

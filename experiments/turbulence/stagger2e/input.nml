@@ -15,12 +15,12 @@
  verbose=0
  do_validate=f
  do_trace=f
- do_debug=f
  do_output=f
 /
 &box_params
  size=1,1,1
- dims=4,4,4
+ dims=3*8
+!dims=3*4
  origin=0,0,0
 /
 &experiment_params
@@ -30,12 +30,13 @@
  nw=2
  courant=0.2
  grace=0.3
- n=20,20,20
+ n=3*32
+!n=3*20
 !dt_fixed=0.001
 /
 &out_params
  end_time=0.1
- out_time=0.05
+ out_time=0.0
  print_time=0.0
  guard_zones=f
  time_derivs=f
@@ -59,17 +60,6 @@
  k=3,3,3
  a0=0.0,0.0,0.0
  u0=0,0,0
- b0=0,0,0.3
+ b0=0,0,0.0
  type='single_compressive'
-/
-&ramses_params
- courant_factor=0.8
- !courant_factor=0.266667
- gamma=1.00001
- slope_type=2
- !slope_type=-1
- smallr=1e-4
- smallc=5e-1
- riemann='hllc'
- do_isothermal=t
 /

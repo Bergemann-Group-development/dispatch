@@ -14,6 +14,7 @@
 MODULE timestep_mod
   USE io_mod
   USE trace_mod
+  USE kinds_mod
   USE mesh_mod
   implicit none
   private
@@ -79,7 +80,7 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
   integer:: id, nt
   integer, dimension(:):: iit
   real(8), dimension(:):: dt
-  real, dimension(:,:,:,:,:,:):: mem            ! memory buffer
+  real(kind=KindScalarVar), dimension(:,:,:,:,:,:):: mem            ! memory buffer
   integer:: l(3), u(3)
   !......................................................................
   call trace_begin ('timestep_t%update')

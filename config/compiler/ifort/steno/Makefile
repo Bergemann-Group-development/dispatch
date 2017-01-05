@@ -1,0 +1,1 @@
+HW = -axAVX -xSSE4.1
