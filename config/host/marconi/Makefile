@@ -1,0 +1,2 @@
+HOST = knl
+COMPILER = ifort

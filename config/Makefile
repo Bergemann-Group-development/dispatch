@@ -19,10 +19,9 @@ CONFIG = $(TOP)/config
 sinclude options.mkf
 sinclude $(CONFIG)/host/$(HOST)/Makefile
 sinclude $(CONFIG)/compiler/$(COMPILER)/Makefile
-sinclude $(CONFIG)/compiler/$(COMPILER)/$(HOST).mkf
-sinclude $(CONFIG)/compiler/$(HOST)/$(OPTS).mkf
 sinclude $(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf
-sinclude $(CONFIG)/compiler/$(COMPILER)/$(OPTS)_$(HOST).mkf
+sinclude $(CONFIG)/compiler/$(COMPILER)/$(HOST)/Makefile
+sinclude $(CONFIG)/compiler/$(COMPILER)/$(HOST)/$(OPTS).mkf
 
 #############################################################################
 # Executable

@@ -1,4 +1,1 @@
-F90 = mpiifort -cpp
-LD  = mpiifort
-
 LIBS = -L/usr/lib64/libslurm.so -lpmi
