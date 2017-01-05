@@ -71,12 +71,14 @@ SUBROUTINE init(self)
   !-----------------------------------------------------------------------------
   ! Read and print the namelist only once
   !-----------------------------------------------------------------------------
+  !$omp critical (init_cr)
   if (first_time) then
     first_time=.false.
     rewind (io%input)
     read (io%input, hd_params)
     if (io%master) write (*,hd_params)
   end if
+  !$omp end critical (init_cr)
   !-----------------------------------------------------------------------------
   ! Copy parameter values to private values for all patches (note ", save" above)
   !-----------------------------------------------------------------------------
@@ -114,8 +116,9 @@ SUBROUTINE update (self)
     delta_u, d_flux, s_flux
   real, dimension(:,:,:,:,:), pointer:: &
     strain_tensor, viscous_stress, p_flux
+  integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('pde_t%update')
+  call trace%begin ('pde_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Allocate scratch scalars (7 scalar chunks)
   !-----------------------------------------------------------------------------
@@ -240,7 +243,7 @@ SUBROUTINE update (self)
   deallocate (c_sound, entropy_per_mass, diffusion, p_artificial, dissipation, &
               d_flux, s_flux, strain_tensor, viscous_stress, p_flux)
   !-----------------------------------------------------------------------------
-  call trace%end
+  call trace%end (itimer)
   end associate
 END SUBROUTINE update
 

@@ -83,6 +83,7 @@ SUBROUTINE conditions (self, mesh, mem)
     print *, 'UNKNOWN INITIAL CONDITION TYPE'
     call mpi%abort ('initial_mod')
   end select
+  call trace%end
 END SUBROUTINE conditions
 
 !> =============================================================================
@@ -93,6 +94,7 @@ SUBROUTINE sedov (self, mesh, mem)
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
   !.............................................................................
+  real(8), dimension(:), pointer:: rx, ry, rz
   integer:: ix, iy, iz, iostat
   real:: x, y, z, f
   logical, save:: first_time=.true.
@@ -114,13 +116,16 @@ SUBROUTINE sedov (self, mesh, mem)
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Gaussian top hat in entropy if at time=0
   !-----------------------------------------------------------------------------
+  rx => mesh(1)%r
+  ry => mesh(2)%r
+  rz => mesh(3)%r
   do iz=1,size(mem,3)
-    z = mesh(3)%p + mesh(3)%r(iz)
+    z = mesh(3)%p + rz(iz)
     do iy=1,size(mem,2)
-      y = mesh(2)%p + mesh(2)%r(iy)
+      y = mesh(2)%p + ry(iy)
       do ix=1,size(mem,1)
         !   patch position + mesh offset        - gaussian position
-        x = mesh(1)%p + mesh(1)%r(ix)
+        x = mesh(1)%p + rx(ix)
         if (mesh(3)%ub > 1) then
           f = exp(-((x**2+y**2+z**2)/w_gauss**2)**(p_gauss/2.0))
         else
@@ -147,6 +152,7 @@ SUBROUTINE advection (self, mesh, mem)
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
   !.............................................................................
+  real(8), dimension(:), pointer:: rx, ry, rz
   integer:: ix, iy, iz, iostat
   real:: x, y, z, f
   logical, save:: first_time=.true.
@@ -169,26 +175,29 @@ SUBROUTINE advection (self, mesh, mem)
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Constant advection speed
   !-----------------------------------------------------------------------------
+  rx => mesh(1)%r
+  ry => mesh(2)%r
+  rz => mesh(3)%r
   do iz=1,size(mem,3)
-  do iy=1,size(mem,2)
-  do ix=1,size(mem,1)
-    !   patch position + mesh offset - gaussian offset
-    x = mesh(1)%p + mesh(1)%r(ix)
-    y = mesh(2)%p + mesh(2)%r(iy)
-    z = mesh(3)%p + mesh(3)%r(iz)
-    if (mesh(3)%ub > 1) then
-      f = exp(-((x**2+y**2+z**2)/w_gauss**2)**(p_gauss/2.0))
-    else
-      f = exp(-((x**2+y**2     )/w_gauss**2)**(p_gauss/2.0))
-    end if
-    ! ln = gaussian
-    d(ix,iy,iz) = exp(amplitude_d*f)
-    s(ix,iy,iz) = log(1./d(ix,iy,iz)**gamma)/(gamma-1.0)
-    p(ix,iy,iz,1) = velocity(1)
-    p(ix,iy,iz,2) = velocity(2)
-    p(ix,iy,iz,3) = 0.0
-  end do
-  end do
+    z = mesh(3)%p + rz(iz)
+    do iy=1,size(mem,2)
+      y = mesh(2)%p + ry(iy)
+      do ix=1,size(mem,1)
+        !   patch position + mesh offset - gaussian offset
+        x = mesh(1)%p + rx(ix)
+        if (mesh(3)%ub > 1) then
+          f = exp(-((x**2+y**2+z**2)/w_gauss**2)**(p_gauss/2.0))
+        else
+          f = exp(-((x**2+y**2     )/w_gauss**2)**(p_gauss/2.0))
+        end if
+        ! ln = gaussian
+        d(ix,iy,iz) = exp(amplitude_d*f)
+        s(ix,iy,iz) = log(1./d(ix,iy,iz)**gamma)/(gamma-1.0)
+        p(ix,iy,iz,1) = velocity(1)
+        p(ix,iy,iz,2) = velocity(2)
+        p(ix,iy,iz,3) = 0.0
+      end do
+    end do
   end do
   call trace%end
 END SUBROUTINE advection
