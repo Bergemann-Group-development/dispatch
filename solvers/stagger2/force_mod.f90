@@ -123,16 +123,17 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   call trace_begin('force_t:single_solenoidal')
   ds2 = 0.5*m%d
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    z = m(3)%p + m(3)%r(iz)
+    z = m(3)%p + r3(iz)
     zp = planet%position(3) - z
     zs = zp + ds2(3)
     do iy=m(2)%lb,m(2)%ub
-      y = m(2)%p + m(2)%r(iy)
+      y = m(2)%p + r2(iy)
       yp = planet%position(2) - y
       ys = yp + ds2(2)
       do ix=m(1)%lb,m(1)%ub
-        x = m(1)%p + m(1)%r(ix)
+        x = m(1)%p + r1(ix)
         xp = planet%position(1) - x
         xs = xp + ds2(1)
         !-----------------------------------------------------------------------
@@ -156,6 +157,7 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
       end do
     end do
   end do
+  end associate
   !-----------------------------------------------------------------------------
   ! Add the classical Coriolis force terms, correctly centered (not important),
   ! assuming (as above) that the motion is in the x-y plane.  A positive omega(3)

@@ -32,6 +32,7 @@ SUBROUTINE init (self)
   self%e = self%m*self%u**2                             ! energy
   self%temp = cgs%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e)  ! temperature for given mu
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
+  self%mu = 2.0
   !code%r_earth = cgs%r_earth/self%l
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'

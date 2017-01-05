@@ -75,7 +75,7 @@ SUBROUTINE init (self)
   self%cdtd = cdtd
   do i=1,3
     self%mesh(i)%h(2+i) = -0.5
-    self%mesh(i)%h(5+i) = -0.5
+    if (self%nv > 5) self%mesh(i)%h(5+i) = -0.5
   end do
   call self%force%init
   call trace%end
@@ -86,7 +86,7 @@ END SUBROUTINE init
 SUBROUTINE dnload (self)
   class(mhd_t):: self
   call trace%begin ('experiment_mod::dnload')
-  call download%download_link (self%link, all_cells=.false.)
+  call download%download_link (self%link)
   call trace%end
 END SUBROUTINE
 
@@ -163,7 +163,7 @@ SUBROUTINE update (self)
   ! Gas pressure
   !-----------------------------------------------------------------------------
   ee = e/d
-  call eos%lookup (shape(ee), ee, lnd=lnd, pg=pg)
+  call eos%lookup (shape(ee), ee=ee, lnd=lnd, pg=pg)
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure
   !-----------------------------------------------------------------------------

@@ -428,8 +428,6 @@ SUBROUTINE init (self)
   if (all(self%size == self%box)) then
     call self%set (bits%root_grid)
     if (io%verbose > 1) print *, 'set bits%root_grid id =', self%id
-  else
-    if (io%verbose > 1) print *, 'set bits%root_grid id =', self%size - self%box
   end if
   call trace_end
 END SUBROUTINE init
@@ -944,7 +942,7 @@ SUBROUTINE output_legacy (self, experiment_name)
     else
       time = self%out_next
     end if
-    print'(a,3x,"time:",f9.5)', 'patch_mod::output: file= '//trim(filename), time
+    print'(a,3x,"time:",2f10.6)', 'patch_mod::output: file= '//trim(filename), time, self%time
     end block
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
@@ -1634,16 +1632,13 @@ SUBROUTINE time_interval (self, time, jt, pt)
   jt = self%iit(j:j+1)
   dt = t(j+1)-t(j)
   if (dt==0.0) then
-    pt(2) = 1.0
+    pt(2) = 0.0
   else
     pt(2) = (time-t(j))/dt
   end if
-  pt(2) = 1.0 ! FIXME
   pt(1) = 1.-pt(2)
-  if (io%verbose>1) then
-    print *, 'time_interval: times  =', t(j), time, t(j+1)
-    print *, 'time_interval: times  =', self%t(jt(1)), time, self%t(jt(2))
-    print *, 'time_interval: jt, pt =', jt, pt
+  if (io%verbose>1 .and. pt(2)>0.0) then
+    print '(a,1p,3e12.4,2i5,0p,2f8.4)', 'time_interval: times  =', t(j), time, t(j+1), jt, pt
   end if
   call trace%end
 END SUBROUTINE time_interval

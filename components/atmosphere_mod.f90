@@ -123,7 +123,7 @@ SUBROUTINE hydrostatic (self)
         dlnT = dlnpg*(gamma-1.0)/gamma
         self%pg  (i) = self%pg  (i+1)*exp(dlnpg)
         self%temp(i) = self%temp(i+1)*exp(dlnT)
-        if (io%verbose>1) print*, i, iter, self%rr(i), self%pg(i), self%rho(i), self%temp(i)
+        if (io%verbose>2) print*, i, iter, self%rr(i), self%pg(i), self%rho(i), self%temp(i)
       end do
       if (self%gamma(2)==1.0) then
         s = 1.0

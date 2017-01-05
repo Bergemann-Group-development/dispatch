@@ -1,18 +1,22 @@
-VPATH := .:$(VPATH)
 
 # Option groups
-#OPTS = debug
+OPTS = debug
 #OPTS = full_debug
-OPTS = optimized
+#OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
-SOLVER          = ramses/hydro
-#SOLVER          = stagger
-#SOLVER          = stagger2/e
+#SOLVER          = ramses/hydro
+SOLVER          = stagger2/e
 EXEC            = dispatch.x
+EOS             = ideal
+OPACITY         = stub
 TOP             = ../..
+
+# include config
 sinclude $(TOP)/config/Makefile
+VPATH := $(SOLVER):.:$(VPATH)
+sinclude $(SOLVER)/Makefile
 
 # List the .o files the main program depends on after the colon:
 $(EXEC): setup_mod.o

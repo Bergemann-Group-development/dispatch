@@ -71,6 +71,7 @@ SUBROUTINE init (self, id)
   class(pebbles_t):: self
   integer:: id
   !.............................................................................
+  call trace%begin ('pebbles_t%init')
   call self%lock%init ('pebb')
   if (debug) print*,'dbg: lock%id', id, self%lock%id
   self%id = id
@@ -78,10 +79,11 @@ SUBROUTINE init (self, id)
     print *,  self%id, 'ERROR: second init attempted'
     stop
   else
-    if (io%verbose>0) &
-      print*,'pebble_patch::init', self%id
+    if (io%verbose>1) &
+      print*,'pebbles_t%init', self%id
   end if
   self%initialized = .true.
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================

@@ -28,12 +28,13 @@ SUBROUTINE condition (self, mem, m, h)
   real(8)      :: x, y, z, r
   !-----------------------------------------------------------------------------
   call trace_begin('boundary_t%condition')
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    z = m(3)%p + m(3)%r(iz) + h(3)*m(3)%d - planet%position(3)
+    z = m(3)%p + r3(iz) + h(3)*m(3)%d - planet%position(3)
     do iy=m(2)%lb,m(2)%ub
-      y = m(2)%p + m(2)%r(iy) + h(2)*m(2)%d - planet%position(2)
+      y = m(2)%p + r2(iy) + h(2)*m(2)%d - planet%position(2)
       do ix=m(1)%lb,m(1)%ub
-        x = m(1)%p + m(1)%r(ix) + h(1)*m(1)%d - planet%position(1)
+        x = m(1)%p + r1(ix) + h(1)*m(1)%d - planet%position(1)
         r = sqrt(x**2+y**2+z**2)
         if (r < planet%radius+m(1)%d*0.1) then
           mem(ix,iy,iz) = 0.0
@@ -41,6 +42,7 @@ SUBROUTINE condition (self, mem, m, h)
       end do
     end do
   end do
+  end associate
   call trace_end
 END SUBROUTINE condition
 

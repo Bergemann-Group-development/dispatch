@@ -52,18 +52,26 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Allocate memory and set IC values
   !----------------------------------------------------------------------------
-  self%nv = 8
+  self%nv = 5
   self%msplit = 3
   call scaling%init
-  call self%mhd_t%init                        ! reads gamma
-  call self%pebble_patch_t%init               ! reads omega
+  call self%mhd_t%init
+  self%mhd = .false.
+  self%nv = 5
+  call self%pebble_patch_t%init
+  self%nv = 5
+  self%i_d  = 1
+  self%i_e  = 2
+  self%i_px = 3
+  self%i_py = 4
+  self%i_pz = 5
   call self%set (bits%static)
   call self%initial%init
   ff => self%mem(:,:,:,:,1,1)
   call self%initial%selected (self%mesh, ff)
-  call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
-  call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
-  call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,0d0,-0.5d0])
+  call boundary%condition (self%mem(:,:,:,self%i_px,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
+  call boundary%condition (self%mem(:,:,:,self%i_py,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
+  call boundary%condition (self%mem(:,:,:,self%i_pz,self%it,1), self%mesh, [0d0,0d0,-0.5d0])
   call self%output
   call trace_end
 END SUBROUTINE init
@@ -107,6 +115,7 @@ SUBROUTINE update (self)
     end if
   end if
   call self%courant_condition
+  call self%output
   call self%pebble_patch_t%update_pebbles
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density ('after timestep')
