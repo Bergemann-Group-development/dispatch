@@ -44,12 +44,15 @@ MODULE rt_mod
     real, dimension(:,:,:),   pointer :: dedt => null()
     real, dimension(:,:),     pointer :: qfw0 => null()
     real, dimension(:,:),     pointer :: qrv1 => null()
+    character(len=16)                 :: solver ='integral'             ! choice of solver
     type (link_t),            pointer :: upstream
     type (link_t),            pointer :: dnstream
+    procedure(solve_integral), pointer:: solve => null()
   contains
     procedure :: init
     procedure :: update
-    procedure :: solve
+    procedure :: solve_integral
+    procedure :: solve_feautrier
     procedure :: optical_depth
     procedure :: interpolate
     procedure :: boundary_conditions
@@ -70,7 +73,8 @@ SUBROUTINE init (self)
   integer:: ignore
   logical, save:: first_time=.true.
   real(8), save:: dtime=0.01_8, grace=0.0_8
-  namelist /rt_params/ dtime, grace
+  character(len=16) :: solver = 'integral'
+  namelist /rt_params/ dtime, grace, solver
   ! --------------------------------------------------------------------
   call trace_begin ('rt_t%init')
   !$omp critical (init_cr)
@@ -97,6 +101,16 @@ SUBROUTINE init (self)
   self%dtime = dtime                                                    ! 0.1 second default
   self%grace = grace                                                    ! grace off by default
   call rt_bundle%init
+  self%solver = solver
+  select case(self%solver)
+  case('integral')
+    self%solve => solve_integral
+  case('feautrier')
+    self%solve => solve_feautrier
+  case default
+    print *, 'WARNING: rt solver not recognised. Using integral solver.'
+    self%solve => solve_integral
+  end select
   call trace_end
 END SUBROUTINE init
 
@@ -161,7 +175,7 @@ END SUBROUTINE update
 !> and try again later.  However, in the current special case we always
 !> have both boundart values, so there are no waits.
 !> =====================================================================
-SUBROUTINE solve (self)
+SUBROUTINE solve_integral (self)
   class (rt_t) :: self
   !.....................................................................
   integer                         :: ib, iw, iy
@@ -194,14 +208,11 @@ SUBROUTINE solve (self)
       !
       
 #if defined __INTEL_COMPILER
-        exp0 = 2**(-dtau*1.44269504) 
+      exp0 = 2**(-dtau*1.44269504) 
 #else
-        exp0 = exp(-dtau)                                               ! expopential factors
+      exp0 = exp(-dtau)                                                 ! expopential factors
 #endif
-      
-      
-      
-      
+    
       qfw0 = -s(:,6,:)                                                  ! input net intensity
       call rt_bundle%forward (dtau, exp0, s, qfw0, q, qfw1)             ! solve forward
       !task => self%dnstream%task
@@ -235,7 +246,74 @@ SUBROUTINE solve (self)
   end do
   end associate
   call trace_end (itimer)
-END SUBROUTINE solve
+END SUBROUTINE solve_integral
+
+SUBROUTINE solve_feautrier (self)
+  class (rt_t) :: self
+  !.....................................................................
+  integer                         :: ib, iw, iy
+  real, dimension(:),     pointer :: ds
+  real, dimension(:,:),   pointer :: qfw0, qfw1, qrv0, qrv1
+  real, dimension(:,:,:), pointer :: s, rk, dtau, exp0, q
+  class (patch_t),        pointer :: task
+  integer, save                   :: itimer=0
+  ! --------------------------------------------------------------------
+  call trace_begin ('rt_t%solve', itimer=itimer)
+  self%dedt = 0.0                                                       ! reset net cooling
+  associate (mx=>self%dim(1), my=>self%dim(2), mz=>self%dim(3))
+  do ib=1,self%n_bundle                                                 ! loop over bundles
+    !$omp single
+    do iw=1,self%n_lambda                                               ! loop over wavelength
+      !$omp task private(s,rk,dtau,exp0)                                ! spawn forward task
+      s  => self%src(:,6:my-4,:,iw)                                     ! pick source function
+      rk => self%rk (:,6:my-4,:,iw)                                     ! pick opacity
+      allocate (dtau(mx,1:my-9,mz))                                     ! temporary array
+      allocate (q   (mx,1:my-9,mz))                                     ! temporary array
+      allocate (qfw0(mx,mz))                                            ! temporary array
+      allocate (qfw1(mx,mz))                                            ! temporary array
+      allocate (qrv0(mx,mz))                                            ! temporary array
+      allocate (qrv1(mx,mz))                                            ! temporary array
+      ds => self%mesh(2)%dsup(6:my-4)                                   ! along this direction
+      call self%optical_depth (ds, rk, dtau)                            ! compute dtau
+      if (io%verbose>1) &
+        print *,'dtau',iw,self%id, minval(dtau), maxval(dtau)
+          
+      qfw0 = -s(:,6,:)                                                  ! input net intensity
+      qrv1 = 0.0
+      
+      call rt_bundle%transfer (dtau, s, qfw0, qfw1, q, qrv1, qrv0)      ! solve bi-directional
+      !
+      !task => self%dnstream%task
+      !select type (task)
+      !class is (rt_t)
+      !  task%qfw0 = qfw1                                                ! output net intensity
+      !end select
+      
+      !task => self%upstream%task
+      !select type (task)
+      !class is (rt_t)
+      !  task%qrv1 = qrv0                                                ! output net intensity
+      !end select
+      
+      
+      self%dedt(:,6:my-4,:) = &
+      self%dedt(:,6:my-4,:) + q*self%w_lambda(iw)*self%w_bundle(ib)     ! add net heat contrib
+      !
+      if ((io%verbose>1 .and. iw==self%n_lambda) .or. io%verbose>2) then
+        do iy=1,my-9
+          print *,iy,sum(dtau(:,iy,:))/(mx*mz),sum(self%dedt(:,5+iy,:))/(mx*mz)
+        end do
+      end if
+      !
+      deallocate (dtau, exp0, q, qfw0, qfw1, qrv0, qrv1)                ! deallocate temporaries
+      !$omp end task
+    end do
+    !$omp end single
+    !$omp taskwait
+  end do
+  end associate
+  call trace_end (itimer)
+END SUBROUTINE solve_feautrier
 
 !> =====================================================================
 !> Compute the optical depth along rays

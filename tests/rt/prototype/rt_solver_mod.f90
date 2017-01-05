@@ -7,13 +7,14 @@ MODULE rt_solver_mod
   implicit none
   private
   type, public:: rt_solver_t
-    procedure(integral_forward), pointer:: transfer => null()
+    procedure(feautrier), pointer:: transfer => null()
     procedure(integral_forward), pointer:: forward  => null()
     procedure(integral_forward), pointer:: reverse  => null()
   contains
     procedure:: init
     procedure:: integral_forward
     procedure:: integral_reverse
+    procedure:: feautrier
   end type
   type (rt_solver_t), public:: rt_solver
 CONTAINS
@@ -25,6 +26,7 @@ SUBROUTINE init (self)
   class (rt_solver_t):: self
   self%forward  => integral_forward
   self%reverse  => integral_reverse
+  self%transfer => feautrier
 END SUBROUTINE init
 
 !> =============================================================================
@@ -153,5 +155,75 @@ SUBROUTINE integral_reverse (self, dtau, exp0, S, qrv1, qrv, qrv0)
   qrv = qrv*dtau
 END SUBROUTINE integral_reverse                         ! 2d 13m 11a 1e ! 26f + 1e
 
+SUBROUTINE feautrier (self, dtau, S, qfw0, qrv1, Q, qfw1, qrv0)
+  implicit none
+  class (rt_solver_t):: self
+  real, dimension(:,:) :: dtau, S, q
+  real, dimension(:)   :: qfw0, qfw1, qrv0, qrv1
+
+  real, dimension(size(s,1),size(s,2)) :: a1, a2, a3, d
+  real, dimension(size(s,1))    :: a, dsdtau_1, dsdtau_2, d2sdtau2
+  integer :: k, m, n
+  
+!
+!  Boundary condition at k=1; infalling intensity = Ifw1
+!
+  m = size(s,1)
+  n = size(s,2)
+  a2(:,1) = +1. + dtau(:,2) + 0.5*dtau(:,2)**2
+  a3(:,1) = -1.
+  dsdtau_1 = (s(:,2)-s(:,1))/dtau(:,2)
+  dsdtau_2 = (s(:,3)-s(:,2))/dtau(:,3)
+  d2sdtau2 = (dsdtau_2-dsdtau_1)*2./(dtau(:,2)+dtau(:,3))
+  q(:,1)  = - dtau(:,2)*(s(:,1) - dsdtau_1 - qfw0) + 0.5*dtau(:,2)**2*d2sdtau2  ! 
+  a2(:,1) = + dtau(:,2) + 0.5*dtau(:,2)**2                                    ! store row sum
+  
+!
+!  Compute matrix elements in the interior
+!
+  d(:,2) = -1./dtau(:,2)
+  do k=2,n-1
+    a       = 2./(dtau(:,k+1)+dtau(:,k))                                    ! 1d    1a
+    d(:,k+1)  = -1./dtau(:,k+1)                                             ! 1d
+    a3(:,k)   = a*d(:,k+1)                                                  !    1m
+    a1(:,k)   = a*d(:,k)                                                    !    1m
+    a2(:,k)   = 1.
+    q(:,k)    = a1(:,k)*(s(:,k)-s(:,k-1)) + a3(:,k)*(s(:,k)-s(:,k+1))                 !    2m 3a
+  end do
+!
+!  Boundary condition at k=n; infalling intensity = IrvN
+!
+  a2(:,n) = +1. + dtau(:,n) + 0.5*dtau(:,n)**2
+  a1(:,n) = -1.
+  dsdtau_1 = (s(:,n  )-s(:,n-1))/dtau(:,n  )
+  dsdtau_2 = (s(:,n-1)-s(:,n-2))/dtau(:,n-1)
+  d2sdtau2 = (dsdtau_1-dsdtau_2)*2./(dtau(:,n)+dtau(:,n-1))
+  q(:,n)  = - dtau(:,n)*(s(:,n) + dsdtau_1 - qrv1) - 0.5*dtau(:,n)**2*d2sdtau2
+  a2(:,n) = + dtau(:,n) + 0.5*dtau(:,n)**2
+!
+!  Eliminate subdiagonal
+!
+  do k=2,n
+    a         = 1./(a2(:,k-1)-a3(:,k-1))                                ! 1d    1a
+    a1(:,k)   = a1(:,k)*a                                               !    1m
+    q(:,k)    = q(:,k) - a1(:,k)*q(:,k-1)                               !    1m 1a
+    a2(:,k)   = a2(:,k) - a1(:,k)*a2(:,k-1)                             !    1m 1a
+    a2(:,k-1) = a
+  end do
+!
+!  Backsubstitute
+!
+  q(:,n) = q(:,n)/a2(:,n)                                               ! solution at n
+  do k=n-1,1,-1
+    q(:,k) = (q(:,k)-a3(:,k)*q(:,k+1))*a2(:,k)                          !    2m 1a
+  end do
+!                                                                       ! 3d 9m 8a = 20f
+!  Surface intensities
+!
+  qrv0 = 2.*(q(:,1) + s(:,1))-qfw0                                      ! reverse surface intensity
+  qfw1 = 2.*(q(:,n) + s(:,n))-qrv1                                      ! forward surface intensity
+
+
+END SUBROUTINE feautrier
 
 END MODULE rt_solver_mod

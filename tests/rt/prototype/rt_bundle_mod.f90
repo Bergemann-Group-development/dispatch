@@ -31,6 +31,7 @@ MODULE rt_bundle_mod
     procedure :: init
     procedure, nopass :: forward
     procedure, nopass :: reverse
+    procedure, nopass :: transfer
   end type
   type(rt_bundle_t), public:: rt_bundle
 ! ----------------------------------------------------------------------
@@ -97,5 +98,32 @@ SUBROUTINE reverse (dtau, exp0, s, qin, q, qout)
   end do
   call trace%end
 END SUBROUTINE reverse
+
+!> =====================================================================
+!> Solve the radiative transfer equation with rt_solver%transfer
+!> =====================================================================
+SUBROUTINE transfer (dtau, s, qfw0, qfw1, q, qrv1, qrv0)
+  implicit none
+  real, dimension(:,:,:), pointer :: dtau, s, q
+  real, dimension(:,:),   pointer :: qfw0, qfw1, qrv1, qrv0
+  !.....................................................................
+  real, dimension(:),     pointer :: qf0, qf1, qr0, qr1
+  real, dimension(:,:),   pointer :: q1, s1, dtau1, ex0
+  integer :: iz
+  ! --------------------------------------------------------------------
+  call trace%begin ('rt_bundle_t%reverse')
+  do iz=1,size(s,3)
+    qf0  => qfw0(:,iz)
+    qf1  => qfw1(:,iz)
+    qr1  => qrv1(:,iz)                  ! input surface values
+    qr0  => qrv0(:,iz)                  ! output surface values
+    s1    => s   (:,:,iz)               ! source function
+    dtau1 => dtau(:,:,iz)               ! optical depth increments
+    q1    => q   (:,:,iz)               ! output surface values
+    call rt_solver%transfer (dtau=dtau1, s=s1, qfw0=qf0, qrv1=qr1, &
+                             q=q1, qfw1=qf1, qrv0=qr0)
+  end do
+  call trace%end
+END SUBROUTINE transfer
 
 END MODULE rt_bundle_mod

@@ -31,6 +31,7 @@
 /
 &rt_params
  dtime=0.001
+ solver='integral'
 /
 &mhd_params
  !     cs    pa  ofd  mas  kap  eta
