@@ -88,7 +88,7 @@ SUBROUTINE init (self)
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
   call trace_begin ('pebble_patch_mod::init')
-  call self%patch_t%init
+  call self%mhd_t%init
   allocate (self%pebbles,self%not_done)
   call self%pebbles%init (self%id)
   call self%not_done%init (self%id)

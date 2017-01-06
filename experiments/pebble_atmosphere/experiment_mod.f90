@@ -55,10 +55,9 @@ SUBROUTINE init (self)
   self%nv = 5
   self%msplit = 3
   call scaling%init
-  call self%mhd_t%init
-  self%mhd = .false.
   self%nv = 5
   call self%pebble_patch_t%init
+  self%mhd = .false.
   self%nv = 5
   self%i_d  = 1
   self%i_e  = 2
@@ -72,7 +71,6 @@ SUBROUTINE init (self)
   call boundary%condition (self%mem(:,:,:,self%i_px,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
   call boundary%condition (self%mem(:,:,:,self%i_py,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
   call boundary%condition (self%mem(:,:,:,self%i_pz,self%it,1), self%mesh, [0d0,0d0,-0.5d0])
-  call self%output
   call trace_end
 END SUBROUTINE init
 
