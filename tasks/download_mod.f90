@@ -358,8 +358,6 @@ SUBROUTINE different_static (link)
 contains
   subroutine reset
     if (associated(source)) then
-      !$omp flush
-      call source%lock%unset ('different_static')
       nullify (source)
     end if
     old_score = -1.
@@ -378,7 +376,7 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
   real(8):: pp(3), cellpos(3)
   real:: p(4), q(4)
   !-----------------------------------------------------------------------------
-  ! Find the best nbor patch.  If found, the patch will already be locked
+  ! Find the best nbor patch.
   !-----------------------------------------------------------------------------
   cellpos = target%myposition (ii)
   call find_best_nbor  (link, target, cellpos, source, jt, pt, idir, old_score)
@@ -398,9 +396,13 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
       pp(i) = (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)    ! float index in source
       jj(i) = pp(i)                                                                                 ! integer part
       jj(i) = max(1,min(source%mesh(i)%gn-1,jj(i)))
-      ! do not try to interpolate from ghost cells!
-      ! FIXME: what happens if a ghost cell isn't filled?
-      !if ((jj(i) .lt. target%mesh(i)%li) .or. (jj(i) .gt. target%mesh(i)%ui)) return
+      !---------------------------------------------------------------------------------------------
+      ! Note that interpolating in the ghost zones is safe, since they are constantly maintained
+      ! and up-to-date; first via extrapolation in time immediately after update, and then via the
+      ! next download.  This is the best way to handle transitions in resolution when time slot
+      ! history is available-- cf. the way it is done in RAMSES, where one insteads goes one level
+      ! down in resolution
+      !---------------------------------------------------------------------------------------------
       pp(i) = pp(i) - jj(i)                                                                         ! fractions
       if (pp(i)<-0.35d0 .or. pp(i)>1.35d0) then
         pp(i) = (cellpos(i)-source%position(i))/source%ds(i) + source%offset(i) - source%mesh(i)%h(iv)  ! float index in source
@@ -422,6 +424,8 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
     end do
     p(1:3)=pp; p(4)=pt(2)
     q = 1.-p
+    if (target%id==io%id_debug) &
+      write(io_unit%log,'(2(2i5,2x),2(3i4,2x),3f6.2)') target%id, idir, source%id, source%level, ii, jj, pp
     target%mem(ii(1),ii(2),ii(3),iv,it,1) = &
       q(4)*(q(3)*(q(2)*(q(1)*source%mem(jj(1)  ,jj(2)  ,jj(3)  ,iv,jt(1),1)    + &
                         p(1)*source%mem(jj(1)+1,jj(2)  ,jj(3)  ,iv,jt(1),1))   + &
@@ -460,19 +464,19 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
   integer:: i, it, iv, adir, best_id
   !-----------------------------------------------------------------------------
   ! Check if the new point is fully inside the previous best patch.  If not,
-  ! unlock the previous one, and try finding a new one
+  ! try finding a new one
   !-----------------------------------------------------------------------------
+  adir = abs(idir)
   if (associated(best)) then
-    !if (all(best%point_distances (position, best%position)  < best%size*0.5d0)) then
-      !return
-    !else
-    !$omp flush
-    call best%lock%unset ('current_score')
-    nullify (best)
-    !end if
+    if (fscore(best) == old_score) then
+      if (target%id == io%id_debug) &
+      print *,target%id,'keeping best nbor:', best%id, ' level:', best%level, ' direction:', idir
+      return
+    else
+      nullify (best)
+    end if
   end if
   call trace_begin('download_mod::find_best_nbor',2)
-  adir = abs(idir)
   best_id = 0
   best_score = 0.0
   nbor => link%nbor
@@ -482,39 +486,51 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
     !---------------------------------------------------------------------------
     other => task2patch(nbor%task)
     if (abs(target%level-other%level)<2) then
-      pp = (position-other%position)
       !-----------------------------------------------------------------------
       ! Design a score that is negative if any coordinate is outside the guard
       ! zone, and which counts +3 for an inside primary coordinate, and +1 for
       ! an inside secondary coordinate.  Levels count less, but enough to favor
       ! the higher level against a lower level
       !-----------------------------------------------------------------------
-      score = other%level*2.5
-      do i=1,3
-        score = score + merge(3.0,1.0,i==adir)* &
-          merge(1.0,-9.0,abs(pp(i)) < other%size(i)*0.5d0)
-      end do
+      score = fscore(other)
       if (score > best_score) then
           best => other
           best_score = score
           best_id = best%id
       end if
     end if
-    !if (target%id==121.and.idir==1) write (io_unit%log,'(a,i6,2i4,3f8.2,4(3x,3f8.2))') &
-      !'search best_nbor for 121', other%id, target%level, other%level, &
-      !score, best_score, old_score, abs(pp)/other%size, abs(pp)/other%gsize, pp
+    if (target%id==io%id_debug.and.adir==3) write (*,'(i4,a,i6,2i4,3f8.2,5(3x,3f8.2))') &
+      target%id,' search best_nbor', other%id, target%level, other%level, &
+      score, best_score, old_score, abs(pp)/other%size, abs(pp)/other%gsize, pp, &
+      (other%position-target%position)/target%size
     nbor => nbor%next
   end do
   !-----------------------------------------------------------------------------
-  ! Find the right time interval in the other patch, lock patch, and save score
+  ! Find the right time interval in the other patch, and save score
   !-----------------------------------------------------------------------------
   if (associated(best)) then
-    call best%lock%set ('find_best_nbor')
-    !$omp flush
-    call find_time (best, target%time, jt, pt)
+    call best%time_interval (target%time, jt, pt)
     old_score = best_score
+      if (target%id == io%id_debug) &
+      print *,target%id,'picking best nbor:', best%id, ' level:', best%level, ' direction:', idir
+  else
+      if (target%id == io%id_debug) &
+      print *,target%id,'failed'
   end if
   call trace_end
+contains
+  function fscore(test) result(score)
+    class(patch_t):: test
+    real:: score
+    adir = abs(idir)
+    pp = (position-test%position)
+    !pp = target%point_distances (position, test%position)
+    score = test%level*2.5
+    do i=1,3
+      score = score + merge(3.0,1.0,i==adir)* &
+        merge(1.0,-9.0,abs(pp(i)) < test%size(i)*0.5d0)
+    end do
+  end function
 END SUBROUTINE find_best_nbor
 
 END MODULE
