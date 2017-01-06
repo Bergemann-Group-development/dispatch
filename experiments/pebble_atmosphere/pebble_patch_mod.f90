@@ -100,7 +100,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read parameters, but only from one thread
   !-----------------------------------------------------------------------------
-  !$omp critical (init_cr)
+  !$omp critical (pebble_init_cr)
   if (first_time) then
     call random%init
     random%seed = 11
@@ -114,7 +114,7 @@ SUBROUTINE init (self)
     if (io%master) write(*, pebble_params)
     call pebble_trace%init (trace_every)
   end if
-  !$omp end critical (init_cr)
+  !$omp end critical (pebble_init_cr)
   self%omega = omega_yr*2.*cgs%pi*scaling%t/cgs%yr
   planet%omega = self%omega
   self%do_pebbles = do_pebbles

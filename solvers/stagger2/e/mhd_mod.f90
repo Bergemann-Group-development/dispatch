@@ -61,14 +61,14 @@ SUBROUTINE init (self)
   self%i_bx=6
   self%i_by=7
   self%i_bz=8
-  !$omp critical (input_cr)
+  !$omp critical (mhd_input_cr)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, mhd_params)
     if (io%master) write (*, mhd_params)
   end if
-  !$omp end critical (input_cr)
+  !$omp end critical (mhd_input_cr)
   self%nu = nu
   self%gamma = gamma
   self%csound = csound

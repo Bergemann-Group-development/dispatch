@@ -95,7 +95,7 @@ SUBROUTINE init (self)
   logical:: first_time=.true.
   !.............................................................................
   call trace_begin ('task_t%init')
-  !$omp critical
+  !$omp critical (task_init_cr)
   if (first_time) then
     first_time = .false.
     if (self%id==0) then
@@ -108,7 +108,7 @@ SUBROUTINE init (self)
   end if
   id = self%id
   scene%n_patch = self%id
-  !$omp end critical
+  !$omp end critical (task_init_cr)
   if (io%verbose>-1) &
     write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)

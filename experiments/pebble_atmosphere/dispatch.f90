@@ -8,8 +8,8 @@ PROGRAM dispatch
   USE eos_mod
   USE setup_mod
   !.............................................................................
-  call io%init ('pebble_atmosphere')
   call mpi%init
+  call io%init ('pebble_atmosphere')
   call eos%init
   call setup%init                       ! initialize the patch list and patches
   call setup%task_list%execute          ! execute the list = update member patches

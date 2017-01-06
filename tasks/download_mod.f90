@@ -286,10 +286,11 @@ SUBROUTINE different_static (link)
   integer:: ix, iy, iz, jx(2), jy(2), jz(2), ii(3), jt(2)
   real:: pt(2), old_score
   class(mesh_t), pointer:: m(:)
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! XY-planes in the two Z guard zones
   !-----------------------------------------------------------------------------
-  call trace_begin('download::different_static')
+  call trace_begin('download::different_static', itimer=itimer)
   target => task2patch (link%task)
   m => target%mesh
   nullify(source)
@@ -354,7 +355,7 @@ SUBROUTINE different_static (link)
     end do
   end do
   call reset
-  call trace_end
+  call trace_end (itimer)
 contains
   subroutine reset
     if (associated(source)) then

@@ -44,8 +44,8 @@
 &patch_params
  n=3*32
  nt=5
- grace=0.1
- courant=0.1
+ grace=0.2
+ courant=0.2
 /
 &out_params
  ! L_unit = R_E, u_unit = km/s, t_unit = 6300 sec ~ 2h

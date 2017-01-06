@@ -301,7 +301,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
+  !$omp critical (patch_input_cr)
   if (first_time) then
     size = self%size
     n    = self%n
@@ -318,7 +318,7 @@ SUBROUTINE init (self)
     if (io%master) write (*, out_params)
   end if
   !print *, 'MK', omp_mythread, self%id, self%nt, nt
-  !$omp end critical (input_cr)
+  !$omp end critical (patch_input_cr)
   ! reasonable values of self%n should take precedence over a saved value of `n`.
   if (any(self%n == 0)) self%n = n              ! patch dimensions
   self%ng          = ng                         ! number of guard zones

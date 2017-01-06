@@ -52,7 +52,7 @@ SUBROUTINE init_hierarchy (self, label)
   ! an empty namelist input here. If present, take the initial values from
   ! existing data type values
   !-----------------------------------------------------------------------------
-  call trace_begin ('rubiks_revenge_t%init')
+  call trace_begin ('rubiks_t%init')
   size = self%size
   position = self%position
   n_levels = self%n_levels
