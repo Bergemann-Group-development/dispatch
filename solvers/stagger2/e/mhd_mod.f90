@@ -163,7 +163,8 @@ SUBROUTINE update (self)
   ! Gas pressure
   !-----------------------------------------------------------------------------
   ee = e/d
-  call eos%lookup (shape(ee), ee=ee, lnd=lnd, pg=pg)
+!  call eos%lookup (shape(ee), ee=ee, lnd=lnd, pg=pg)
+  pg = e*(self%gamma-1.0)
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure
   !-----------------------------------------------------------------------------

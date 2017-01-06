@@ -2,11 +2,11 @@
  sec_per_report=5
 /
 &io_params
- verbose=2
+ verbose=0
  do_output=t
  do_trace=f
  omp_trace=f
- id_debug=230
+ !id_debug=230
 /
 &rubiks_params
  n_levels=7
@@ -15,14 +15,29 @@
  n_repeat=5
 /
 &pebble_params
- omega_yr=0.0,0.0,1.0
+!omega_yr=0.0,0.0,1.0
+ omega_yr=0.0,0.0,0.0   ! TEST only
  do_pebbles=f
  vz_pebble_cgs=1.5e6
  pebble_rate_cgs=1
  cell_probability=0.1
  ppc=1
 /
+&force_params
+ !type='none'
+/
 &planet_params
+ mass_m_earth=0.9
+/
+&atmosphere_params
+ densitY_cgs=3e-12
+ temperature_K=200.
+ mass_m_earth=0.9
+ orbit_au=1.0
+/
+&planet_atm_params
+ v_head_cgs=0.0
+ v_accrete_cgs=0.0
 /
 &initial_params
 /
@@ -33,8 +48,9 @@
  courant=0.1
 /
 &out_params
- end_time=0.01          ! outer scale = 1500 R_E => 1500 time units at 1 km/s
- out_time=0             ! pebble speed 30 => 1.5 l.u. per snapshot
+ ! L_unit = R_E, u_unit = km/s, t_unit = 6300 sec ~ 2h
+ end_time=5.00          ! outer scale = 1500 R_E => 1500 time units at 1 km/s
+ out_time=0.10          ! pebble speed 30 => 1.5 l.u. per snapshot
  print_time=0.0
  guard_zones=t
  time_derivs=f
@@ -47,10 +63,4 @@
 /
 &timestep_params
  time_order=2
-/
-&atmosphere_params
- densitY_cgs=3e-12
- temperature_K=200.
- mass_m_earth=0.9
- orbit_au=1.0
 /

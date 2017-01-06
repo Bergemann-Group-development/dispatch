@@ -116,6 +116,7 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (init_cr)
   self%omega = omega_yr*2.*cgs%pi*scaling%t/cgs%yr
+  planet%omega = self%omega
   self%do_pebbles = do_pebbles
   self%only_pebbles = only_pebbles
   self%pebble_rate = pebble_rate_cgs*scaling%t
