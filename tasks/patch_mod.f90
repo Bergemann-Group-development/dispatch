@@ -480,8 +480,13 @@ FUNCTION myposition (self, ii) RESULT(out)
   integer, intent(in):: ii(3)
   real(8):: out(3), cellpos(3)
   !.............................................................................
-  cellpos = (real(ii-self%li,kind=8) + merge(0.5,0.0,self%n>1)) * self%ds &
-          + self%llc_nat ! in patch coords.
+  !cellpos = (real(ii-self%li,kind=8) + merge(0.5,0.0,self%n>1)) * self%ds &
+  !        + self%llc_nat ! in patch coords.
+  !if (self%id == io%id_debug) &
+  !  print *,'A', real(cellpos/self%size), real(self%llc_nat)
+  cellpos = self%position + (real(ii)-self%offset)*self%ds
+  !if (self%id == io%id_debug) &
+  !  print *,'B',real(cellpos/self%size)
   ! convert to Cartesian coords.
   if (self%mesh_type == mesh_types%cylindrical) then
     cellpos = CylindricalToCartesian(cellpos(1), cellpos(2), cellpos(3))
