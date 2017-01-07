@@ -55,6 +55,7 @@ SUBROUTINE init (self, label)
   planet%position = 0.0
   self%position = planet%position
   call self%rubiks_t%init_hierarchy (label)
+  call self%task_list%remove_parents
   print*, 'n_initial, n_add =', scene%n_initial, scene%n_add
   link => self%task_list%head
   do while (associated(link))

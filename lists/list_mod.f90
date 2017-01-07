@@ -684,8 +684,9 @@ SUBROUTINE remove_parents (self)
       end if
       scan => scan%next                                 ! continue search
       if (associated(parent)) then
-        write (io_unit%log,'(2(1x,a,i9,5x))') &
-          'remove parent task', parent%task%id, 'level', parent%task%level
+        write (*,'(2(1x,a,i9,5x))') &
+          'removing parent task', parent%task%id, 'level', parent%task%level
+        call parent%remove_from_nbors (parent)
         call self%remove_link (parent)
       end if
     end do

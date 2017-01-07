@@ -320,7 +320,7 @@ END FUNCTION remove_nbor
 
 !> =============================================================================
 !> =============================================================================
-FUNCTION remove_from_nbors (self, this) RESULT (nbor)
+SUBROUTINE remove_from_nbors (self, this)
   class(link_t):: self
   class(link_t), pointer:: this
   class(link_t), pointer:: nbor, prev
@@ -330,9 +330,10 @@ FUNCTION remove_from_nbors (self, this) RESULT (nbor)
   do while (associated(nbor))
     prev => nbor%link%remove_nbor (this)
     nbor => nbor%next
+    deallocate (prev)
   end do
   call trace_end
-END FUNCTION remove_from_nbors
+END SUBROUTINE remove_from_nbors
 
 !> =============================================================================
 !> Update the nbor list of self, adding self to the each nbor's nbor list
