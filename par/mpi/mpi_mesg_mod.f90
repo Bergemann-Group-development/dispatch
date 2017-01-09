@@ -80,7 +80,6 @@ MODULE mpi_mesg_mod
   integer, save:: every_send=5                  ! how often to check send_list
   integer, save:: every_recv=1                  ! how often to check recv_list
   logical, save:: wait=.false.                  ! if true, always use MPI_Wait
-  logical, save:: debug=.false.
 CONTAINS
 
 !> =============================================================================
@@ -648,7 +647,6 @@ SUBROUTINE diagnostics (self, flag)
   integer:: flag
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  debug = flag>0
   if (flag==9) then
     !$omp critical (abort_cr)
     call trace%begin ('mpi_mesg%diagnostics', itimer=itimer)

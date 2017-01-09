@@ -414,6 +414,7 @@ SUBROUTINE CopyToZeus (self)
   class(mhd_t) :: self
   real(KindReal) :: x1low, x2low, x3low, dx1, dx2, dx3
   logical, save :: first_time=.true.
+  !$omp threadprivate (first_time)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
   !-----------------------------------------------------------------------------
   call trace_begin ('zeus_mhd_mod%CopyToZeus')
