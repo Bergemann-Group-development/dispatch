@@ -775,8 +775,12 @@ SUBROUTINE append_list (self, task_list)
   integer:: n
   !-----------------------------------------------------------------------------
   call trace_begin ('list_mod::append_list')
-  self%tail%next => task_list%head
-  self%tail      => task_list%tail
+  if (associated(self%tail)) then
+    self%tail%next => task_list%head
+  else
+    self%head => task_list%head
+  end if
+  self%tail => task_list%tail
   self%n = self%n + task_list%n
   link => self%head
   n = 0
