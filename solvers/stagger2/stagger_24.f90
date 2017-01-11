@@ -10,11 +10,11 @@ CONTAINS
 SUBROUTINE ddxdn_24 (ds, a, b)
   real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
-  real    :: ds, c
+  real    :: ds(3), c
   integer :: ix, iy, iz
 !...............................................................................
   b(1,:,:) = 0.0
-  c = 1./ds
+  c = 1./ds(1)
   do iz=1,24
   do iy=1,24
   do ix=2,24
@@ -29,10 +29,10 @@ SUBROUTINE ddydn_24 (ds, a, b)
   real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   integer :: ix, iy, iz
-  real    :: ds, c
+  real    :: ds(3), c
 !...............................................................................
   b(:,1,:) = 0.0
-  c = 1./ds
+  c = 1./ds(2)
   do iz=1,24
   do iy=2,24
   do ix=1,24
@@ -46,11 +46,11 @@ END SUBROUTINE ddydn_24
 SUBROUTINE ddzdn_24 (ds, a, b)
   real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
-  real    :: ds, c
+  real    :: ds(3), c
   integer :: ix, iy, iz
 !...............................................................................
   b(:,:,1) = 0.0
-  c = 1./ds
+  c = 1./ds(3)
   do iz=2,24
   do iy=1,24
   do ix=1,24
@@ -65,10 +65,10 @@ SUBROUTINE ddxup_24 (ds, a, b)
   real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   integer :: ix, iy, iz
-  real    :: ds, c
+  real    :: ds(3), c
 !...............................................................................
   b(24,:,:) = 0.0
-  c = 1./ds
+  c = 1./ds(1)
   do iz=1,24
   do iy=1,24
   do ix=1,24-1
@@ -83,10 +83,10 @@ SUBROUTINE ddyup_24 (ds, a, b)
   real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   integer :: ix, iy, iz
-  real    :: ds, c
+  real    :: ds(3), c
 !...............................................................................
   b(:,24,:) = 0.0
-  c = 1./ds
+  c = 1./ds(2)
   do iz=1,24
   do iy=1,24-1
   do ix=1,24
@@ -101,10 +101,10 @@ SUBROUTINE ddzup_24 (ds, a, b)
   real, dimension(24,24,24), intent(in):: a
   real, dimension(24,24,24):: b
   integer :: ix, iy, iz
-  real    :: ds, c
+  real    :: ds(3), c
 !...............................................................................
   b(:,:,24) = 0.0
-  c = 1./ds
+  c = 1./ds(3)
   do iz=1,24-1
   do iy=1,24
   do ix=1,24

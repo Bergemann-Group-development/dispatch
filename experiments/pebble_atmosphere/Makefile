@@ -8,6 +8,7 @@ OPTS = optimized
 UPD             = adams_bashforth
 #SOLVER          = ramses/hydro
 SOLVER          = stagger2/e
+#SOLVER          = stagger3/hd
 EXEC            = dispatch.x
 EOS             = ideal
 OPACITY         = stub
@@ -19,7 +20,7 @@ VPATH := $(SOLVER):.:$(VPATH)
 sinclude $(SOLVER)/Makefile
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): setup_mod.o
+$(EXEC): setup_mod.o eos_mod.o
 
 # Dependencies
 setup_mod.o             : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o atmosphere_mod.o rubiks_mod.o planet_mod.o omp_mod.o scene_mod.o list_mod.o

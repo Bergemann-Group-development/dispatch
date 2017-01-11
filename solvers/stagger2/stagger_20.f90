@@ -10,11 +10,11 @@ CONTAINS
 SUBROUTINE ddxdn_20 (ds, a, b)
   real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
-  real    :: ds, c
+  real    :: ds(3), c
   integer :: ix, iy, iz
 !...............................................................................
   b(1,:,:) = 0.0
-  c = 1./ds
+  c = 1./ds(1)
   do iz=1,20
   do iy=1,20
   do ix=2,20
@@ -29,10 +29,10 @@ SUBROUTINE ddydn_20 (ds, a, b)
   real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   integer :: ix, iy, iz
-  real    :: ds, c
+  real    :: ds(3), c
 !...............................................................................
   b(:,1,:) = 0.0
-  c = 1./ds
+  c = 1./ds(2)
   do iz=1,20
   do iy=2,20
   do ix=1,20
@@ -46,11 +46,11 @@ END SUBROUTINE ddydn_20
 SUBROUTINE ddzdn_20 (ds, a, b)
   real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
-  real    :: ds, c
+  real    :: ds(3), c
   integer :: ix, iy, iz
 !...............................................................................
   b(:,:,1) = 0.0
-  c = 1./ds
+  c = 1./ds(3)
   do iz=2,20
   do iy=1,20
   do ix=1,20
@@ -65,10 +65,10 @@ SUBROUTINE ddxup_20 (ds, a, b)
   real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   integer :: ix, iy, iz
-  real    :: ds, c
+  real    :: ds(3), c
 !...............................................................................
   b(20,:,:) = 0.0
-  c = 1./ds
+  c = 1./ds(1)
   do iz=1,20
   do iy=1,20
   do ix=1,20-1
@@ -83,10 +83,10 @@ SUBROUTINE ddyup_20 (ds, a, b)
   real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   integer :: ix, iy, iz
-  real    :: ds, c
+  real    :: ds(3), c
 !...............................................................................
   b(:,20,:) = 0.0
-  c = 1./ds
+  c = 1./ds(2)
   do iz=1,20
   do iy=1,20-1
   do ix=1,20
@@ -101,10 +101,10 @@ SUBROUTINE ddzup_20 (ds, a, b)
   real, dimension(20,20,20), intent(in):: a
   real, dimension(20,20,20):: b
   integer :: ix, iy, iz
-  real    :: ds, c
+  real    :: ds(3), c
 !...............................................................................
   b(:,:,20) = 0.0
-  c = 1./ds
+  c = 1./ds(3)
   do iz=1,20-1
   do iy=1,20
   do ix=1,20

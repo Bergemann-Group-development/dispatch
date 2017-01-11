@@ -10,44 +10,37 @@ MODULE stagger_mod
   USE stagger_24
   USE stagger_32
   USE stagger_36
-  USE mesh_mod
   implicit none
   public
   integer, private:: verbose=0
-  logical, save:: hardwire=.false.
+  logical, save:: hardwire=.true.
   type, public:: stagger_t
     real:: ds(3)
-    class(mesh_t), dimension(:), pointer:: m
   contains
-    procedure:: ddxdn1
-    procedure:: ddydn1
-    procedure:: ddzdn1
-    procedure:: ddxup1
-    procedure:: ddyup1
-    procedure:: ddzup1
+    procedure, nopass:: ddxdn1
+    procedure, nopass:: ddydn1
+    procedure, nopass:: ddzdn1
+    procedure, nopass:: ddxup1
+    procedure, nopass:: ddyup1
+    procedure, nopass:: ddzup1
     procedure, nopass:: xdn1
     procedure, nopass:: ydn1
     procedure, nopass:: zdn1
     procedure, nopass:: xup1
     procedure, nopass:: yup1
     procedure, nopass:: zup1
-    procedure:: ddxdn
-    procedure:: ddydn
-    procedure:: ddzdn
-    procedure:: ddxup
-    procedure:: ddyup
-    procedure:: ddzup
+    procedure, nopass:: ddxdn
+    procedure, nopass:: ddydn
+    procedure, nopass:: ddzdn
+    procedure, nopass:: ddxup
+    procedure, nopass:: ddyup
+    procedure, nopass:: ddzup
     procedure, nopass:: xdn
     procedure, nopass:: ydn
     procedure, nopass:: zdn
     procedure, nopass:: xup
     procedure, nopass:: yup
     procedure, nopass:: zup
-    procedure:: div     => scalar_div_vector
-    procedure:: curl_dn => vector_curl_dn_vector
-    procedure:: curl_up => vector_curl_up_vector
-    procedure:: grad    => vector_grad_scalar
-    procedure:: ddown   => scalar_ddown_vector
   end type
   interface norm
     module procedure vector_norm_scalar
@@ -64,114 +57,130 @@ MODULE stagger_mod
   interface up
     module procedure vector_up_vector
   end interface
+  interface ddown
+    module procedure scalar_ddown_vector
+  end interface
   interface dup
     module procedure vector_dup_vector
+  end interface
+  interface grad
+    module procedure vector_grad_scalar
+  end interface
+  interface div
+    module procedure scalar_div_vector
+  end interface
+  interface minusdiv
+    module procedure scalar_minusdiv_vector
+  end interface
+  interface curl_dn
+    module procedure vector_curl_dn_vector
+  end interface
+  interface curl_up
+    module procedure vector_curl_up_vector
   end interface
 CONTAINS
 
 !> =============================================================================
-FUNCTION ddxdn1 (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddxdn1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = ddxdn (self, a)
+  real:: ds(3)
+    b = ddxdn (ds, a)
 END FUNCTION ddxdn1
 
 !*******************************************************************************
-FUNCTION ddydn1 (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddydn1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = ddydn (self, a)
+  real:: ds(3)
+    b = ddydn (ds, a)
 END FUNCTION ddydn1
 
 !*******************************************************************************
-FUNCTION ddzdn1 (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddzdn1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = ddzdn (self, a)
+  real:: ds(3)
+    b = ddzdn (ds, a)
 END FUNCTION ddzdn1
 
 !*******************************************************************************
-FUNCTION ddxup1 (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddxup1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = ddxup (self, a)
+  real:: ds(3)
+    b = ddxup (ds, a)
 END FUNCTION ddxup1
 
 !*******************************************************************************
-FUNCTION ddyup1 (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddyup1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = ddyup (self, a)
+  real:: ds(3)
+    b = ddyup (ds, a)
 END FUNCTION ddyup1
 
 !*******************************************************************************
-FUNCTION ddzup1 (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddzup1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = ddzup (self, a)
+  real:: ds(3)
+    b = ddzup (ds, a)
 END FUNCTION ddzup1
 
 !*******************************************************************************
 FUNCTION xdn1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = xdn (a)
+    b = xdn (a)
 END FUNCTION xdn1
 
 !*******************************************************************************
 FUNCTION ydn1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = ydn (a)
+    b = ydn (a)
 END FUNCTION ydn1
 
 !*******************************************************************************
 FUNCTION zdn1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = zdn (a)
+    b = zdn (a)
 END FUNCTION zdn1
 
 !*******************************************************************************
 FUNCTION xup1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = xup (a)
+    b = xup (a)
 END FUNCTION xup1
 
 !*******************************************************************************
 FUNCTION yup1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = yup (a)
+    b = yup (a)
 END FUNCTION yup1
 
 !*******************************************************************************
 FUNCTION zup1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = zup (a)
+    b = zup (a)
 END FUNCTION zup1
 
 !*******************************************************************************
-FUNCTION ddxdn (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddxdn (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real    :: c, ds
+  real    :: ds(3), c
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddxdn', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    ds = self%m(1)%d
     if (all(n==[16,16,16])) then
       call ddxdn_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
@@ -185,7 +194,7 @@ FUNCTION ddxdn (self, a) RESULT (b)
     end if
   else if (n(1) > 1) then
     b(1,:,:) = 0.0
-    c = 1./self%m(1)%d
+    c = 1./ds(1)
     do iz=1,n(3)
     do iy=1,n(2)
     do ix=2,n(1)
@@ -200,18 +209,16 @@ FUNCTION ddxdn (self, a) RESULT (b)
 END FUNCTION ddxdn
 
 !*******************************************************************************
-FUNCTION ddydn (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddydn (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, ds
+  real    :: ds(3), c
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddydn', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    ds = self%m(2)%d
     if (all(n==[16,16,16])) then
       call ddydn_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
@@ -225,7 +232,7 @@ FUNCTION ddydn (self, a) RESULT (b)
     end if
   else if (n(2) > 1) then
     b(:,1,:) = 0.0
-    c = 1./self%m(2)%d
+    c = 1./ds(2)
     do iz=1,n(3)
     do iy=2,n(2)
     do ix=1,n(1)
@@ -240,18 +247,16 @@ FUNCTION ddydn (self, a) RESULT (b)
 END FUNCTION ddydn
 
 !*******************************************************************************
-FUNCTION ddzdn (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddzdn (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real    :: c, ds
+  real    :: ds(3), c
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddzdn', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    ds = self%m(3)%d
     if (all(n==[16,16,16])) then
       call ddzdn_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
@@ -265,7 +270,7 @@ FUNCTION ddzdn (self, a) RESULT (b)
     end if
   else if (n(3) > 1) then
     b(:,:,1) = 0.0
-    c = 1./self%m(3)%d
+    c = 1./ds(3)
     do iz=2,n(3)
     do iy=1,n(2)
     do ix=1,n(1)
@@ -280,18 +285,16 @@ FUNCTION ddzdn (self, a) RESULT (b)
 END FUNCTION ddzdn
 
 !*******************************************************************************
-FUNCTION ddxup (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddxup (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, ds
+  real    :: ds(3), c
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddxup', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    ds = self%m(1)%d
     if (all(n==[16,16,16])) then
       call ddxup_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
@@ -305,7 +308,7 @@ FUNCTION ddxup (self, a) RESULT (b)
     end if
   else if (n(1) > 1) then
     b(n(1),:,:) = 0.0
-    c = 1./self%m(1)%d
+    c = 1./ds(1)
     !print*,'mk'
     do iz=1,n(3)
     do iy=1,n(2)
@@ -321,18 +324,16 @@ FUNCTION ddxup (self, a) RESULT (b)
 END FUNCTION ddxup
 
 !*******************************************************************************
-FUNCTION ddyup (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddyup (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, ds
+  real    :: ds(3), c
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddyup', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    ds = self%m(2)%d
     if (all(n==[16,16,16])) then
       call ddyup_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
@@ -346,7 +347,7 @@ FUNCTION ddyup (self, a) RESULT (b)
     end if
   else if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,n(2),:) = 0.0
-    c = 1./self%m(2)%d
+    c = 1./ds(2)
     do iz=1,n(3)
     do iy=1,n(2)-1
     do ix=1,n(1)
@@ -361,18 +362,16 @@ FUNCTION ddyup (self, a) RESULT (b)
 END FUNCTION ddyup
 
 !*******************************************************************************
-FUNCTION ddzup (self, a) RESULT (b)
-  class(stagger_t):: self
+FUNCTION ddzup (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, ds
+  real    :: ds(3), c
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddzup', itimer=itimer)
   n = shape(a)
   if (hardwire) then
-    ds = self%m(3)%d
     if (all(n==[16,16,16])) then
       call ddzup_16 (ds,a,b)
     else if (all(n==[20,20,20])) then
@@ -386,7 +385,7 @@ FUNCTION ddzup (self, a) RESULT (b)
     end if
   else if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,:,n(3)) = 0.0
-    c = 1./self%m(3)%d
+    c = 1./ds(3)
     do iz=1,n(3)-1
     do iy=1,n(2)
     do ix=1,n(1)
@@ -629,14 +628,14 @@ FUNCTION zup (a) RESULT (b)
 END FUNCTION
 
 !> =============================================================================
-FUNCTION vector_scalar_grad (self, in) RESULT (out)
-  class(stagger_t):: self
+FUNCTION vector_scalar_grad (ds, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real:: ds(3)
   !-----------------------------------------------------------------------------
-  out(:,:,:,1) = ddxdn (self, in)
-  out(:,:,:,2) = self%ddydn (in)
-  out(:,:,:,3) = ddzdn (self, in)
+  out(:,:,:,1) = ddxdn (ds, in)
+  out(:,:,:,2) = ddydn (ds, in)
+  out(:,:,:,3) = ddzdn (ds, in)
 END FUNCTION vector_scalar_grad
 
 !> =============================================================================
@@ -683,71 +682,71 @@ FUNCTION vector_up_vector (in) RESULT (out)
 END FUNCTION vector_up_vector
 
 !> =============================================================================
-FUNCTION scalar_ddown_vector (self, in) RESULT (out)
-  class(stagger_t):: self
+FUNCTION scalar_ddown_vector (ds, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real:: ds(3)
   !-----------------------------------------------------------------------------
-  out(:,:,:,1) = self%ddxdn (in)
-  out(:,:,:,2) = self%ddydn (in)
-  out(:,:,:,3) = self%ddzdn (in)
+  out(:,:,:,1) = ddxdn (ds, in)
+  out(:,:,:,2) = ddydn (ds, in)
+  out(:,:,:,3) = ddzdn (ds, in)
 END FUNCTION scalar_ddown_vector
 !> =============================================================================
-FUNCTION vector_dup_vector (self, in) RESULT (out)
+FUNCTION vector_dup_vector (ds, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
-  class(stagger_t):: self
+  real:: ds(3)
   !-----------------------------------------------------------------------------
-  out(:,:,:,1) = ddxup (self, in(:,:,:,1))
-  out(:,:,:,2) = ddyup (self, in(:,:,:,2))
-  out(:,:,:,3) = ddzup (self, in(:,:,:,3))
+  out(:,:,:,1) = ddxup (ds, in(:,:,:,1))
+  out(:,:,:,2) = ddyup (ds, in(:,:,:,2))
+  out(:,:,:,3) = ddzup (ds, in(:,:,:,3))
 END FUNCTION vector_dup_vector
 
 !> =============================================================================
-FUNCTION vector_grad_scalar (self, in) RESULT(out)
-  class(stagger_t):: self
+FUNCTION vector_grad_scalar (ds, in) RESULT(out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real:: ds(3)
   !-----------------------------------------------------------------------------
-  out(:,:,:,1) = ddxdn (self, in)
-  out(:,:,:,2) = ddydn (self, in)
-  out(:,:,:,3) = ddzdn (self, in)
+  out(:,:,:,1) = ddxdn (ds, in)
+  out(:,:,:,2) = ddydn (ds, in)
+  out(:,:,:,3) = ddzdn (ds, in)
 END FUNCTION
 !> =============================================================================
-FUNCTION scalar_div_vector (self, in) RESULT (out)
-  class(stagger_t):: self
+FUNCTION scalar_div_vector (ds, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
+  real:: ds(3)
   !-----------------------------------------------------------------------------
-  out = ddxup(self, in(:,:,:,1)) + ddyup(self, in(:,:,:,2)) + ddzup(self, in(:,:,:,3))
+  out = ddxup(ds, in(:,:,:,1)) + ddyup(ds, in(:,:,:,2)) + ddzup(ds, in(:,:,:,3))
 END FUNCTION
 !> =============================================================================
-FUNCTION scalar_minusdiv_vector (self, in) RESULT (out)
-  class(stagger_t):: self
+FUNCTION scalar_minusdiv_vector (ds, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
+  real:: ds(3)
   !-----------------------------------------------------------------------------
-  out = - ddxup(self, in(:,:,:,1)) - ddyup(self, in(:,:,:,2)) - ddzup(self, in(:,:,:,3))
+  out = - ddxup(ds, in(:,:,:,1)) - ddyup(ds, in(:,:,:,2)) - ddzup(ds, in(:,:,:,3))
 END FUNCTION
 !> =============================================================================
-FUNCTION vector_curl_dn_vector (self, in) RESULT (out)
-  class(stagger_t):: self
+FUNCTION vector_curl_dn_vector (ds, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real:: ds(3)
   !-----------------------------------------------------------------------------
-  out(:,:,:,1) = ddydn(self, in(:,:,:,3)) - ddzdn(self, in(:,:,:,2))
-  out(:,:,:,2) = ddzdn(self, in(:,:,:,1)) - ddxdn(self, in(:,:,:,3))
-  out(:,:,:,3) = ddxdn(self, in(:,:,:,2)) - ddydn(self, in(:,:,:,1))
+  out(:,:,:,1) = ddydn(ds, in(:,:,:,3)) - ddzdn(ds, in(:,:,:,2))
+  out(:,:,:,2) = ddzdn(ds, in(:,:,:,1)) - ddxdn(ds, in(:,:,:,3))
+  out(:,:,:,3) = ddxdn(ds, in(:,:,:,2)) - ddydn(ds, in(:,:,:,1))
 END FUNCTION
 !> =============================================================================
-FUNCTION vector_curl_up_vector (self, in) RESULT (out)
-  class(stagger_t):: self
+FUNCTION vector_curl_up_vector (ds, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  real:: ds(3)
   !-----------------------------------------------------------------------------
-  out(:,:,:,1) = ddyup(self, in(:,:,:,3)) - ddzup(self, in(:,:,:,2))
-  out(:,:,:,2) = ddzup(self, in(:,:,:,1)) - ddxup(self, in(:,:,:,3))
-  out(:,:,:,3) = ddxup(self, in(:,:,:,2)) - ddyup(self, in(:,:,:,1))
+  out(:,:,:,1) = ddyup(ds, in(:,:,:,3)) - ddzup(ds, in(:,:,:,2))
+  out(:,:,:,2) = ddzup(ds, in(:,:,:,1)) - ddxup(ds, in(:,:,:,3))
+  out(:,:,:,3) = ddxup(ds, in(:,:,:,2)) - ddyup(ds, in(:,:,:,1))
 END FUNCTION
 !*******************************************************************************
 END MODULE
