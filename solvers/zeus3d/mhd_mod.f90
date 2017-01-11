@@ -395,14 +395,14 @@ SUBROUTINE update_zeus (self)
   class(mhd_t) :: self
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('zeus_mhd_mod%update_zeus', itimer=itimer)
+  call trace_begin('zeus_mhd_mod%update_zeus')
   call self%dnload
   call self%output
 
   call CopyToZeus (self)
-  call trace_begin ('zeus3d (external)')
+  call trace_begin ('zeus3d (external)', itimer=itimer)
   call zeus3d (self%istep)  ! run ZEUS
-  call trace_end
+  call trace_end(itimer)
   call CopyFromZeus (self)
 
   call trace_end(itimer)
@@ -416,8 +416,9 @@ SUBROUTINE CopyToZeus (self)
   logical, save :: first_time=.true.
   !$omp threadprivate (first_time)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('zeus_mhd_mod%CopyToZeus')
+  call trace_begin ('zeus_mhd_mod%CopyToZeus', itimer=itimer)
 
   ! Remember: ZEUS has one extra zone in each direction to handle staggered variables
   ! (in ZEUS-speak this is "*ep3"); this is one more zone than STAGGER.
@@ -476,15 +477,16 @@ SUBROUTINE CopyToZeus (self)
   prtime = self%time
 
   nullify (qz)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE CopyToZeus
 
 !> =============================================================================
 SUBROUTINE CopyFromZeus (self)
   class(mhd_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('zeus_mhd_mod%CopyFromZeus')
+  call trace_begin ('zeus_mhd_mod%CopyFromZeus', itimer=itimer)
 
   qz => self%mem(:,:,:,:,self%new,1)
   call copyztoa (qz, self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, self%nv)
@@ -494,7 +496,7 @@ SUBROUTINE CopyFromZeus (self)
   self%dtime = dtold
 
   nullify (qz)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE CopyFromZeus
 
 !> =============================================================================
