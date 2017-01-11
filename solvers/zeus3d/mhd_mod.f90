@@ -114,12 +114,12 @@ MODULE mhd_mod
                   , iord    , iords   , istp    , istpcd  , cadvs   &
                   , cadvc   , cadvt   , uordq   , avordw  , trnvrsn &
                   , voutbc
-  common / zcompubr / &
-                    b1floor , b2floor , b3floor , dfloor  , e1floor &
-                  , e2floor , v1floor , v2floor , v3floor , dtmax   &
+! thread-shared common block
+  common / zcompubr /&
+                    b1floor , b2floor , b3floor , dfloor  , e1floor&
+                  , e2floor , v1floor , v2floor , v3floor , dtmax&
                   , qcon    , qlin    , diffc1  , diffc2  , nuscalar&
-                  , courno  , glblnmax, gamma_z , adbmin  , adbmax  &
-                  , dtinit
+                  , glblnmax, gamma_z , adbmin  , adbmax  , dtinit
   common / zcomprvc / &
                     zcoordsys
   common / zcomprvi / &
@@ -128,7 +128,7 @@ MODULE mhd_mod
   common / zcomprvr / &
                     dt      , dtold   , dtnew   , prtime  , framerot&
                   , dtcs    , dtal    , dtqq    , dtv1    , dtv2    &
-                  , dtv3    , dtdf    , dtss    , zgridvel
+                  , dtv3    , dtdf    , dtss    , zgridvel, courno
 !$omp threadprivate (/zcomprvc/, /zcomprvi/, /zcomprvr/)
 
 PUBLIC CopyToZeus, CopyFromZeus, zeus_staggering, didx, e1idx, Sidx, &
