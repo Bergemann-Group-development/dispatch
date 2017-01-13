@@ -65,7 +65,7 @@ SUBROUTINE init_annulus (self, params)
   self%n_per_patch = n_per_patch
 
   allocate(self%task_list)
-  call self%task_list%list_t%init ('annulus task list')
+  call self%task_list%init ('annulus task list')
 
   zextent   = extent(1) / n_patch(1)
   rextent   = extent(2) / n_patch(2)
@@ -82,7 +82,7 @@ SUBROUTINE init_annulus (self, params)
       do ix=1,self%n_patch(1)
         allocate(experiment_t :: patch)
         select type (patch)
-        type is (mhd_t)
+        class is (mhd_t)
           patch%size = [zextent, rextent, phiextent]
           patch%position = 0.0 ! still in Cartesian coords.; absolute pos.
           patch%name => self%task_list%name
