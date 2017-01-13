@@ -105,22 +105,22 @@ SUBROUTINE same_static (self)
         source => this
         it = target%it
         call target%time_interpolate (source, jt, pt)
+        call target%dnload_range (source, l1, u1, o)
+        !-----------------------------------------------------------------------
+        ! Ensure guard zones are filled in physical boundary regions
+        !-----------------------------------------------------------------------
+        where (target%mesh%lower_boundary)
+          l1 = target%mesh%lb
+        end where
+        where (target%mesh%upper_boundary)
+          u1 = target%mesh%ub
+        end where
+        ntot = product(u1-l1+1)
+        if (io%master .and. io%verbose>3) then
+          write (io_unit%log,'(a,3(3i4,3x),i6)') 'target ranges: l1, u1, o, n =', l1, u1, o, ntot
+        end if
         do iv=1,source%nv
-          call target%dnload_range (source, l1, u1, o)
-          ntot = product(u1-l1+1)
-          if (io%master .and. iv==1 .and. io%verbose>3) then
-            write (io_unit%log,'(a,3(3i4,3x),i6)') 'target ranges: l1, u1, o, n =', l1, u1, o, ntot
-          end if
           dmin = 1e30
-          !-----------------------------------------------------------------------
-          ! Ensure guard zones are filled in physical boundary regions
-          !-----------------------------------------------------------------------
-          where (target%mesh%lower_boundary)
-            l1 = target%mesh%lb
-          end where
-          where (target%mesh%upper_boundary)
-            u1 = target%mesh%ub
-          end where
           do iz=l1(3),u1(3)
           do iy=l1(2),u1(2)
           do ix=l1(1),u1(1)
