@@ -22,6 +22,13 @@ test_transfer2.x: $(TEST_TRANSFER2)
 test_transfer: test_transfer.x
 	@echo ""
 	./test_transfer.x
-TEST_TRANSFER = test_transfer.o transfer_integral_if3.o
+TEST_TRANSFER = test_transfer.o transfer_feautrier_fast.o
 test_transfer.x: $(TEST_TRANSFER)
 	$(FC) $(TEST_TRANSFER) -o test_transfer.x
+
+test_transfer_stag: test_transfer_stag.x
+	@echo ""
+	./test_transfer_stag.x
+TEST_TRANSFER_STAG = test_transfer_stag.o transfer_feautrier_stag.o
+test_transfer_stag.x: $(TEST_TRANSFER_STAG)
+	$(FC) $(TEST_TRANSFER_STAG) -o test_transfer_stag.x
