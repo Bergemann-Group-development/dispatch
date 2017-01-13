@@ -740,7 +740,7 @@ SUBROUTINE pack (self, mesg)
   class(mesg_t), pointer:: mesg
   !.............................................................................
   type(header_t):: header
-  integer:: n_var, ibuf, iv, it
+  integer:: n_buf, ibuf, iv, it
   real, dimension(:,:,:), pointer:: var
   real:: pt
   integer, save:: itimer=0
@@ -749,10 +749,14 @@ SUBROUTINE pack (self, mesg)
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::pack', itimer=itimer)
   allocate (mesg)
-  n_var = product(self%gn)
-  mesg%nbuf = n_header + self%nv*n_var
+#ifdef SINGLE
+  n_buf = product(self%gn)     ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
+#else
+  n_buf = product(self%gn) * 2 ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
+#endif SINGLE
+  mesg%nbuf = n_header + self%nv*n_buf
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
-    mesg%nbuf = mesg%nbuf+ self%nv*n_var
+    mesg%nbuf = mesg%nbuf+ self%nv*n_buf
   end if
   allocate (mesg%buffer(mesg%nbuf))
   allocate (mesg%reqs(self%n_nbors))
@@ -781,8 +785,8 @@ SUBROUTINE pack (self, mesg)
   ! copy as a minimum also the previous time slot
   !-----------------------------------------------------------------------------
   do iv=1,self%nv
-    call anonymous_copy (n_var, self%mem(:,:,:,iv,self%it,1), mesg%buffer(ibuf))
-    ibuf = ibuf + n_var
+    call anonymous_copy (n_buf, self%mem(:,:,:,iv,self%it,1), mesg%buffer(ibuf))
+    ibuf = ibuf + n_buf
   end do
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
     it = mod(self%it-1+self%nt-1,self%nt)+1
@@ -791,8 +795,8 @@ SUBROUTINE pack (self, mesg)
       flush (io_unit%log)
     end if
     do iv=1,self%nv
-      call anonymous_copy (n_var, self%mem(:,:,:,iv,it,1), mesg%buffer(ibuf))
-      ibuf = ibuf + n_var
+      call anonymous_copy (n_buf, self%mem(:,:,:,iv,it,1), mesg%buffer(ibuf))
+      ibuf = ibuf + n_buf
     end do
   end if
   if (io%verbose > 2) &
@@ -817,7 +821,11 @@ SUBROUTINE unpack (self, buffer)
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::unpack', itimer=itimer)
   !write (io_unit%log,*) 'unpack patch id', self%id
-  n_buf = product(self%gn)
+#ifdef SINGLE
+  n_buf = product(self%gn)     ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
+#else
+  n_buf = product(self%gn) * 2 ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
+#endif SINGLE
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info from sequenced header
   !-----------------------------------------------------------------------------
