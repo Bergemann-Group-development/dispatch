@@ -749,11 +749,9 @@ SUBROUTINE pack (self, mesg)
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::pack', itimer=itimer)
   allocate (mesg)
-#ifdef SINGLE
-  n_buf = product(self%gn)     ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
-#else
-  n_buf = product(self%gn) * 2 ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
-#endif SINGLE
+  n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
+  if (kind(var)==8) &
+    n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
   mesg%nbuf = n_header + self%nv*n_buf
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
     mesg%nbuf = mesg%nbuf+ self%nv*n_buf
@@ -814,18 +812,14 @@ SUBROUTINE unpack (self, buffer)
   integer:: n_buf, ibuf, iv, it
   integer, dimension(:), pointer:: buffer
   real, dimension(:,:,:), pointer:: var
-  real:: pt
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Compute size of buffer
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::unpack', itimer=itimer)
-  !write (io_unit%log,*) 'unpack patch id', self%id
-#ifdef SINGLE
-  n_buf = product(self%gn)     ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
-#else
-  n_buf = product(self%gn) * 2 ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
-#endif SINGLE
+  n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
+  if (kind(var)==8) &
+    n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info from sequenced header
   !-----------------------------------------------------------------------------
