@@ -127,7 +127,7 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-!> Intercept the call from patch_list_mod::update to pde_t%download, which
+!> Intercept the call from patch_list_mod::update to mhd_t%download, which
 !> normally falls through to patch_t%update.  Instrument an extra flag, which
 !> forces a download from lower levels to higher levels (only) for that mem
 !> slot

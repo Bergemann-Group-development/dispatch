@@ -8,9 +8,7 @@ OPTS = optimized
 EXEC            = dispatch.x
 SOLVER          = ramses/hydro
 TOP             = ../..
-# Ideal or tabular EOS
-EOS             = ideal
-OPACITY         = stub
+
 # Tomida & Hori, with opacity
 #EOS             = tabular_e
 #OPACITY         = Tomida+Hori_2016
@@ -21,6 +19,5 @@ sinclude $(TOP)/config/Makefile
 #VPATH := $(VPATH):$(TOP)/microphysics/opacities/stub
 
 # List the .o files the main program depends on after the colon:
-$(EXEC)                 : io_mod.o mpi_mod.o cartesian_mod.o scaling_mod.o opacity_mod.o
-experiment_mod.o        : mhd_mod.o trace_mod.o io_mod.o initial_mod.o download_mod.o link_mod.o eos_mod.o opacity_mod.o
-
+$(EXEC)                 : setup_mod.o cartesian_mod.o
+experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.o mhd_mod.o initial_mod.o timer_mod.o link_mod.o

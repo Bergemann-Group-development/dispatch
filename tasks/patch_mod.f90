@@ -633,7 +633,7 @@ SUBROUTINE extrapolate_guards (self)
   where (self%mesh%upper_boundary)
     ui = self%mesh%ub
   end where
-  if (self%id==io%id_debug.or.abs(self%id-io%id_debug)==27) then
+  if (io%id_debug>0.and.(self%id==io%id_debug.or.abs(self%id-io%id_debug)==27)) then
     print '(i5,2x,a,6i7)',self%id,'MK extrapolating guard zone values', it2, it1, it0, self%it, self%new
   end if
   do iz=self%mesh(3)%lb,self%mesh(3)%ub                 ! loop over all cells

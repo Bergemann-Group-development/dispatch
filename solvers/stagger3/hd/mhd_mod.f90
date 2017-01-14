@@ -4,7 +4,7 @@
 !> are centered at cell-centers, linear momenta are centered on cell faces (walls),
 !> and momentum fluxes are centered on cell edges.
 !> =============================================================================
-MODULE pde_mod
+MODULE mhd_mod
   USE io_mod
   USE mpi_mod
   USE trace_mod
@@ -24,7 +24,7 @@ MODULE pde_mod
     real:: o(3)                                                                 ! offset
   end type
   !-----------------------------------------------------------------------------
-  type, public, extends(patch_t):: pde_t
+  type, public, extends(patch_t):: mhd_t
     real, dimension(:,:,:),   pointer:: d, dd_dt                                ! density
     real, dimension(:,:,:),   pointer:: s, ds_dt                                ! entropy
     real, dimension(:,:,:,:), pointer:: p, dp_dt                                ! momenta
@@ -55,10 +55,10 @@ CONTAINS
 
 !> =============================================================================
 !> Map variables to the current memory slot and initialize the deriv operators.
-!> pde_t%init is called from timestep_t%init, again called from task_list_t%init.
+!> mhd_t%init is called from timestep_t%init, again called from task_list_t%init.
 !> =============================================================================
 SUBROUTINE init(self)
-  class(pde_t):: self
+  class(mhd_t):: self
   real, dimension(:,:,:,:), pointer:: mem
   integer:: ix, iy, iz
   real:: x, y, z, f
@@ -97,7 +97,7 @@ END SUBROUTINE init
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE dnload (self)
-  class(pde_t):: self
+  class(mhd_t):: self
   call trace%begin ('experiment_mod::dnload')
   call download%download_link (self%link, all_cells=.false.)
   call trace%end
@@ -107,7 +107,7 @@ END SUBROUTINE
 !> Evaluates the time derivatives of the hydrodynamic variables
 !> =============================================================================
 SUBROUTINE update (self)
-  class(pde_t):: self
+  class(mhd_t):: self
   real:: ds, void
   real, dimension(:,:,:), pointer:: &
     c_sound, log_d, viscosity, p_artificial, &
@@ -118,7 +118,7 @@ SUBROUTINE update (self)
     strain_tensor, viscous_stress, p_flux
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('pde_t%update', itimer=itimer)
+  call trace%begin ('mhd_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Allocate scratch scalars (7 scalar chunks)
   !-----------------------------------------------------------------------------
@@ -251,7 +251,7 @@ END SUBROUTINE update
 !> Deallocate scratch held in object, after use in refine procedure
 !> =============================================================================
 SUBROUTINE deallocate (self)
-  class(pde_t):: self
+  class(mhd_t):: self
  !-----------------------------------------------------------------------------
   !deallocate (self%p_gas, &
   !            self%log_d, &
@@ -262,33 +262,33 @@ END SUBROUTINE deallocate
 !> Compute the log density and other similar things -- for use in refinement
 !> =============================================================================
 SUBROUTINE log_density (self, out)
-  class(pde_t):: self
+  class(mhd_t):: self
   real, dimension(:,:,:):: out
   !...............................................................................
-  call trace%begin ('pde_mod:pde_t%log_density')
+  call trace%begin ('mhd_t%log_density')
   out = log(self%d)
   call trace%end
 END SUBROUTINE log_density
 !> =============================================================================
 SUBROUTINE log_pressure (self, out)
-  class(pde_t):: self
+  class(mhd_t):: self
   real, dimension(:,:,:):: out
   !...............................................................................
   out = log(self%p_gas)
 END SUBROUTINE log_pressure
 !> =============================================================================
 SUBROUTINE velocity_magnitude (self, out)
-  class(pde_t):: self
+  class(mhd_t):: self
   real, dimension(:,:,:):: out
   !...............................................................................
   out = self%scalar%magnitude(self%vel)
 END SUBROUTINE velocity_magnitude
 !> =============================================================================
 SUBROUTINE magnetic_field_magnitude (self, out)
-  class(pde_t):: self
+  class(mhd_t):: self
   real, dimension(:,:,:):: out
   !...............................................................................
   out = 0.0
 END SUBROUTINE magnetic_field_magnitude
 !> =============================================================================
-END MODULE pde_mod
+END MODULE mhd_mod

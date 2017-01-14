@@ -101,7 +101,7 @@ FUNCTION interpolate (x0, n, x, y) RESULT(f)
   else if (x0 > x(n)) then
     f = y(n)
   else
-    f = interp%lagrange_sequence (x0, x, y, n)
+    f = interp%sequence (x0, x, y, n)
   end if
 END FUNCTION
 

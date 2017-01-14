@@ -1,6 +1,6 @@
 !> =============================================================================
 !> This module contains all experiment specific information.  The experiment_t
-!> object extends the generic MHD object pde_t, which is again an extension of
+!> object extends the generic MHD object mhd_t, which is again an extension of
 !> the basic patch_t object for tasks (object task_t) with meshes.
 !>
 !> The MHD object is chosen with the SOLVER macro in the Makefile in the curren
@@ -16,14 +16,14 @@ MODULE experiment_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
-  USE pde_mod
+  USE mhd_mod
   USE initial_mod
   USE timestep_mod
   USE timer_mod
   USE link_mod
   implicit none
   private
-  type, public, extends(pde_t):: experiment_t
+  type, public, extends(mhd_t):: experiment_t
     logical:: mhd
     type(initial_t):: initial
   contains
@@ -52,7 +52,7 @@ SUBROUTINE init (self)
     self%nv = 5
   end if
   self%mhd = self%initial%mhd
-  call self%pde_t%init
+  call self%mhd_t%init
   call self%set (bits%static)
   !----------------------------------------------------------------------------
   ! Initial conditions
@@ -67,9 +67,9 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> The update procedure calls a (generic name) MHD update procedure, whose
-!> actual implementation is in $(TOP)/solvers/$(SOLVER)/pde_mod.f90.  It then
+!> actual implementation is in $(TOP)/solvers/$(SOLVER)/mhd_mod.f90.  It then
 !> calls a courant_condition procedure, which if not overloaded is the one in
-!> the patch_t object (but one can replace it at the pde_t or experiment_t
+!> the patch_t object (but one can replace it at the mhd_t or experiment_t
 !> level, by simply adding a courant_condition procedure there).  The next step
 !> is to call a timestep%udpate, whose actual implementation is in a file
 !> $(TOP)/timestep/$(UPD)/timestep_mod.f90 -- currently an Adams-Bashforth
@@ -90,7 +90,7 @@ SUBROUTINE update (self)
     !$omp end critical (init_cr)
   end if
   call self%dnload
-  call self%pde_t%update
+  call self%mhd_t%update
   call self%courant_condition
   if (io%verbose>2) &
     call self%check_density('before timestep')

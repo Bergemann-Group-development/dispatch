@@ -1,19 +1,14 @@
+!> =============================================================================
+!> Generic DISPATCH main program for Cartesian meshes
+!> =============================================================================
 PROGRAM dispatch
-  USE experiment_mod
-  USE mpi_mod
-  USE io_mod
-  implicit none
-  class(experiment_t), pointer:: experiment
+  USE setup_mod
+  USE cartesian_mod
+  type (cartesian_t):: cartesian
   !.............................................................................
-  call mpi%init
-  call io%init
-  allocate (experiment)
-  call experiment%init
-  call experiment%task_list%init
-  do while (experiment%task_list%n > 0)
-    call experiment%task_list%update
-  end do
-  call experiment%task_list%statistics
-  call experiment%end
-  call mpi%end
-END PROGRAM
+  call setup%init                       ! Standard setup (MPI, I/O, scaling, ...)
+  call cartesian%init                   ! Initialize the patch list and patches
+  call cartesian%task_list%execute      ! Update task list = update all tasks
+  call setup%end
+!> =============================================================================
+END PROGRAM dispatch

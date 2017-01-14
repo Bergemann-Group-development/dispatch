@@ -3,6 +3,7 @@
 MODULE opacity_mod
   USE io_mod
   implicit none
+  private
   type, public:: opacity_t
   contains
     procedure:: init

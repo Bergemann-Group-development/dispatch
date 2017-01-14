@@ -145,7 +145,7 @@ END SUBROUTINE sedov
 
 !> =============================================================================
 !> Map variables to the current memory slot and initialize the deriv operators.
-!> pde_t%init is called from timestep_t%init, again called from task_list_t%init.
+!> mhd_t%init is called from timestep_t%init, again called from task_list_t%init.
 !> =============================================================================
 SUBROUTINE advection (self, mesh, mem)
   class(initial_t):: self

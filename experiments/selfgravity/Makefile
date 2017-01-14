@@ -6,7 +6,7 @@ OPTS = debug
 
 # Default target and methods
 UPD             = adams_bashforth
-SOLVERS         = compastro
+SOLVER          = stagger2
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile
@@ -16,7 +16,7 @@ sinclude $(TOP)/config/Makefile
 sinclude $(PPCODE)/Experiments/DISPATCH/Makefile
 
 # Dependencies
-experiment_mod.o        : io_mod.o trace_mod.o patch_mod.o scalar_mod.o ghd_solver_mod.o boundary_mod.o
+experiment_mod.o        : io_mod.o trace_mod.o patch_mod.o scalar_mod.o gmhd_mod.o boundary_mod.o
 boundary_mod.o          : trace_mod.o patch_mod.o
 dispatch.o              : task_list_mod.o
 

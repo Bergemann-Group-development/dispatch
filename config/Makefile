@@ -10,6 +10,8 @@ OMP  = yes
 MPI  = mpi
 MOD  = mod
 AUTO = yes
+EOS  = ideal
+OPACITY = stub
 
 #############################################################################
 # Check for options

@@ -76,7 +76,6 @@ MODULE gmhd_mod
     real(kind=8):: G                                                                    ! Strength of gravity
     real(kind=8):: tolerance
     integer:: min_iter, max_iter, iter
-    integer:: i_phi=9
     type(laplace_t)  :: laplace
   contains
     procedure:: init
@@ -136,7 +135,7 @@ SUBROUTINE dnload (self)
 END SUBROUTINE
 
 !> =============================================================================
-!> Intercept the call from patch_list_mod::update to pde_t%download, which
+!> Intercept the call from patch_list_mod::update to mhd_t%download, which
 !> normally falls through to patch_t%update.  Instrument an extra flag, which
 !> forces a download from lower levels to higher levels (only) for that mem
 !> slot
