@@ -9,9 +9,9 @@ MODULE initial_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
+  USE index_mod
   implicit none
   private
-  integer, parameter:: i_d=1, i_s=2, i_px=3, i_py=4, i_pz=5                     ! memory slots
   !-----------------------------------------------------------------------------
   type, public:: initial_t
     !procedure, pointer:: conditions => advection
@@ -28,6 +28,7 @@ MODULE initial_mod
   type(initial_t), public:: initial
   real, dimension(:,:,:,:), pointer, save:: p
   real, dimension(:,:,:),   pointer, save:: d, s
+  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
@@ -71,9 +72,9 @@ SUBROUTINE conditions (self, mesh, mem)
     if (io%master) write (*,initial_params)
   end if
   !$omp end critical (init_cr)
-  d => mem(:,:,:,i_d)
-  s => mem(:,:,:,i_s)
-  p => mem(:,:,:,i_px:i_pz)
+  d => mem(:,:,:,idx%d)
+  s => mem(:,:,:,idx%s)
+  p => mem(:,:,:,idx%px:idx%pz)
   select case (type)
   case ('sedov')
     call self%sedov (mesh, mem)

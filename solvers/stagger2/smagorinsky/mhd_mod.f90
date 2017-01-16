@@ -13,6 +13,7 @@ MODULE mhd_mod
   USE patch_mod
   USE force_mod
   USE download_mod
+  USE index_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
@@ -37,6 +38,7 @@ MODULE mhd_mod
     procedure:: grav_potential => void
   end type
   real, save:: smag_s=0.2, smag_d=0.1
+  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
@@ -91,6 +93,7 @@ SUBROUTINE update (self)
   !.............................................................................
   real:: ds(3), dx
   integer, save:: itimer=0
+  type(index_t):: i
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%update',itimer=itimer)
   call self%dnload
@@ -99,11 +102,11 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Pointer assignment and scratch allocation
   !-----------------------------------------------------------------------------
-  self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
-  self%e => self%mem(:,:,:,  2,self%it,1); self%dedt => self%mem(:,:,:,  2,self%it,2)
-  self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
+  self%d => self%mem(:,:,:,i%d,      self%it,1); self%dddt => self%mem(:,:,:,i%d,      self%it,2)
+  self%e => self%mem(:,:,:,i%e,      self%it,1); self%dedt => self%mem(:,:,:,i%e,      self%it,2)
+  self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
   if (self%mhd) then
-    self%B => self%mem(:,:,:,6:8,self%it,1); self%dBdt => self%mem(:,:,:,6:8,self%it,2)
+    self%B => self%mem(:,:,:,i%bx:i%bz,self%it,1); self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
   end if
   call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pa, du, ee, cs, pp, pb, Q)
@@ -111,7 +114,7 @@ SUBROUTINE update (self)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
-    self%density => self%mem(:,:,:,1,:,1)
+    self%density => self%mem(:,:,:,i%d,:,1)
   else
     call allocate_scalars (self%gn, pg)
     call allocate_vectors (self%gn, U)

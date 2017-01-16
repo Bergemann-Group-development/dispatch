@@ -68,6 +68,7 @@ MODULE gmhd_mod
   USE mhd_mod
   USE boundary_mod
   USE download_mod
+  USE index_mod
   !USE operators_mod
   implicit none
   private
@@ -83,6 +84,7 @@ MODULE gmhd_mod
     procedure:: dnload
     procedure:: solve
   end type
+  type(index_t):: idx
   !type(operator_t):: o
 CONTAINS
 
@@ -113,6 +115,15 @@ SUBROUTINE init (self)
   self%min_iter  = min_iter
   self%max_iter  = max_iter
   self%nv        = 6
+  self%i_d  = idx%d
+  self%i_px = idx%px
+  self%i_py = idx%py
+  self%i_pz = idx%pz
+  self%i_e  = idx%e
+  self%i_bx = idx%bz
+  self%i_by = idx%by
+  self%i_bz = idx%bz
+  self%i_phi= idx%phi
   !-----------------------------------------------------------------------------
   ! Set up the right dimensions from current patch, etc for laplace iteration method
   !-----------------------------------------------------------------------------
@@ -162,7 +173,7 @@ SUBROUTINE solve (self)
   real, pointer, dimension(:,:,:) :: phi_old, phi_new, phi_swap
   real(8), parameter :: FourPi = 4.0 * 3.14159265358979323846
   real               :: error
-  integer         :: it
+  integer            :: it
   !.............................................................................
   call trace_begin ('gmhd_mod::update', 2)
   associate(gn=>self%gn)

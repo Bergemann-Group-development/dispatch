@@ -13,6 +13,7 @@ MODULE mhd_mod
   USE patch_mod
   USE force_mod
   USE download_mod
+  USE index_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
@@ -53,23 +54,25 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
+  type(index_t):: idx
+  integer:: i
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   real, save:: gamma_AD=75., rho_ions=1.
-  integer:: i
   logical, save:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
   namelist /mhd_params/ nu, gamma, csound, cdtd, mhd_AD, mhd_Ohm, gamma_AD, &
     rho_ions, hardwire
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
-  self%i_d =2
-  self%i_e =2
-  self%i_px=3
-  self%i_py=4
-  self%i_pz=5
-  self%i_bx=6
-  self%i_by=7
-  self%i_bz=8
+  self%i_d  = idx%d
+  self%i_e  = idx%e
+  self%i_s  = idx%s
+  self%i_px = idx%px
+  self%i_py = idx%py
+  self%i_pz = idx%pz
+  self%i_bx = idx%bx
+  self%i_by = idx%by
+  self%i_bz = idx%bz
   self%type = 'mhd_t'
   !$omp critical (input_cr)
   if (first_time) then
@@ -131,20 +134,21 @@ SUBROUTINE update (self)
   !.............................................................................
   real:: ds(3), dx
   integer, save:: itimer=0
+  type(index_t):: i
   !-----------------------------------------------------------------------------
   call self%dnload
   call trace%begin('mhd_t%update',itimer=itimer)
   call self%output
 
-  self%d => self%mem(:,:,:,  1,self%it,1); self%dddt => self%mem(:,:,:,  1,self%it,2)
-  self%s => self%mem(:,:,:,  2,self%it,1); self%dsdt => self%mem(:,:,:,  2,self%it,2)
-  self%p => self%mem(:,:,:,3:5,self%it,1); self%dpdt => self%mem(:,:,:,3:5,self%it,2)
+  self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
+  self%s => self%mem(:,:,:,i%s      ,self%it,1); self%dsdt => self%mem(:,:,:,i%s      ,self%it,2)
+  self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
   d=>self%d; dddt=>self%dddt; s=>self%s; dsdt=>self%dsdt;
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
-    self%B => self%mem(:,:,:,6:8,self%it,1); self%dBdt => self%mem(:,:,:,6:8,self%it,2)
+    self%B => self%mem(:,:,:,i%bx:i%bz,self%it,1); self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
     B=>self%B; dBdt=>self%dBdt
     Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);

@@ -15,6 +15,7 @@ MODULE mhd_mod
   USE mesh_mod
   USE initial_mod
   USE download_mod
+  USE index_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -31,6 +32,7 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: log_d => null()                         ! scratch (permanent)
     real, dimension(:,:,:),   pointer:: p_gas => null()                         ! scratch (permanent)
     real, dimension(:,:,:,:), pointer:: vel => null()                           ! scratch (permanent)
+    logical:: mhd=.false.
     real:: nu(2)                                                                ! diffusion coeffs
     !real:: gamma                                                                ! gas gamma
     !real:: u_max                                                                ! max velocity
@@ -50,6 +52,7 @@ MODULE mhd_mod
     procedure:: velocity_magnitude                                              ! for refinement
     procedure:: magnetic_field_magnitude                                        ! for refinement
   end type
+  type(index_t):: idx
   !-----------------------------------------------------------------------------
 CONTAINS
 
@@ -84,6 +87,14 @@ SUBROUTINE init(self)
   !-----------------------------------------------------------------------------
   self%gamma = gamma
   self%nu = nu
+  self%i_d  = idx%d
+  self%i_px = idx%px
+  self%i_py = idx%py
+  self%i_pz = idx%pz
+  self%i_e  = idx%e
+  self%i_bx = idx%bz
+  self%i_by = idx%by
+  self%i_bz = idx%bz
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Sedov blast or advection
   !-----------------------------------------------------------------------------

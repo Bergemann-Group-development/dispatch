@@ -11,6 +11,7 @@ MODULE initial_mod
   USE lagrange_mod
   USE units_mod
   USE scaling_mod
+  USE index_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -57,6 +58,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   !.............................................................................
   integer :: ix, iy, iz, nr
   real(8) :: x, y, z, r, d, d0, p, csound2
+  type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
   real, save:: omega(3)=0.0
@@ -95,9 +97,9 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         d = d + &
           atmosphere%external%density*(exp(-(omega(3)**2/csound2*0.5*z**2))-1d0)
         p = p*(d/d0)
-        mem(ix,iy,iz,1) = d
+        mem(ix,iy,iz,i%d) = d
         !  mem(ix,iy,iz,2) = d*(log(p)-gamma*log(d))/(gamma-1.0)
-        mem(ix,iy,iz,2) = p/(gamma-1.0)
+        mem(ix,iy,iz,i%e) = p/(gamma-1.0)
         !-----------------------------------------------------------------------
         ! A rotation profile, where the rotation center is at y=+1 AU, and
         ! the direction of rotation is +x, so the head wind is in the -x
@@ -108,9 +110,9 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         ! the Hill sphere, so we will probably only be seeing effects of the
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
-        mem(ix,iy,iz,3) = d*(0.5*omega(3)*y + self%v_head)  ! azimuthal speed
-        mem(ix,iy,iz,4) = d*self%v_accrete                  ! accretion speed
-        mem(ix,iy,iz,5) = 0.0                               ! vertical speed
+        mem(ix,iy,iz,i%px) = d*(0.5*omega(3)*y + self%v_head)  ! azimuthal speed
+        mem(ix,iy,iz,i%py) = d*self%v_accrete                  ! accretion speed
+        mem(ix,iy,iz,i%pz) = 0.0                               ! vertical speed
         !mem(ix,iy,iz,6) = b0(1)
         !mem(ix,iy,iz,7) = b0(2)
         !mem(ix,iy,iz,8) = b0(3)

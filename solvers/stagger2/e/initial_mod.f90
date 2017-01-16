@@ -9,6 +9,7 @@ MODULE initial_mod
   USE mesh_mod
   USE random_mod
   USE stagger_mod
+  USE index_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -25,6 +26,7 @@ MODULE initial_mod
   end type
   logical, save:: first_time=.true.
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
+  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
@@ -101,15 +103,15 @@ SUBROUTINE single_solenoidal (self, m, ff)
       ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,1) = self%d0
-        ff(ix,iy,iz,2) = self%e0
-        ff(ix,iy,iz,3) = self%a0(1)*(sin(ky)+sin(kz))
-        ff(ix,iy,iz,4) = self%a0(2)*(sin(kz)+sin(kx))
-        ff(ix,iy,iz,5) = self%a0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,idx%d ) = self%d0
+        ff(ix,iy,iz,idx%e ) = self%e0
+        ff(ix,iy,iz,idx%px) = self%a0(1)*(sin(ky)+sin(kz))
+        ff(ix,iy,iz,idx%py) = self%a0(2)*(sin(kz)+sin(kx))
+        ff(ix,iy,iz,idx%pz) = self%a0(3)*(sin(kx)+sin(ky))
         if (self%mhd) then
-          ff(ix,iy,iz,6) = self%b0(1)*(sin(kx)+sin(ky))
-          ff(ix,iy,iz,7) = self%b0(2)*(sin(kx)+sin(ky))
-          ff(ix,iy,iz,8) = self%b0(3)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,idx%bx) = self%b0(1)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,idx%by) = self%b0(2)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,idx%bz) = self%b0(3)*(sin(kx)+sin(ky))
         end if
       end do
     end do
@@ -139,15 +141,15 @@ SUBROUTINE single_compressive (self, m, ff)
       ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,1) = self%d0
-        ff(ix,iy,iz,2) = self%e0
-        ff(ix,iy,iz,3) = self%u0(1)*sin(kx)
-        ff(ix,iy,iz,4) = self%u0(2)*sin(ky)
-        ff(ix,iy,iz,5) = self%u0(3)*sin(kz)
+        ff(ix,iy,iz,idx%d ) = self%d0
+        ff(ix,iy,iz,idx%e ) = self%e0
+        ff(ix,iy,iz,idx%px) = self%u0(1)*sin(kx)
+        ff(ix,iy,iz,idx%py) = self%u0(2)*sin(ky)
+        ff(ix,iy,iz,idx%pz) = self%u0(3)*sin(kz)
         if (self%mhd) then
-          ff(ix,iy,iz,6) = self%b0(1)
-          ff(ix,iy,iz,7) = self%b0(2)
-          ff(ix,iy,iz,8) = self%b0(3)
+          ff(ix,iy,iz,idx%bx) = self%b0(1)
+          ff(ix,iy,iz,idx%by) = self%b0(2)
+          ff(ix,iy,iz,idx%bz) = self%b0(3)
         end if
       end do
     end do
@@ -177,15 +179,15 @@ SUBROUTINE single_advection (self, m, ff)
       ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,1) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
-        ff(ix,iy,iz,2) = self%e0
-        ff(ix,iy,iz,3) = self%d0*self%u0(1)
-        ff(ix,iy,iz,4) = self%d0*self%u0(2)
-        ff(ix,iy,iz,5) = self%d0*self%u0(3)
+        ff(ix,iy,iz,idx%d ) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
+        ff(ix,iy,iz,idx%e ) = self%e0
+        ff(ix,iy,iz,idx%px) = self%d0*self%u0(1)
+        ff(ix,iy,iz,idx%py) = self%d0*self%u0(2)
+        ff(ix,iy,iz,idx%pz) = self%d0*self%u0(3)
         if (self%mhd) then
-          ff(ix,iy,iz,6) = self%b0(3)*sin(kz)
-          ff(ix,iy,iz,7) = self%b0(1)*sin(kx)
-          ff(ix,iy,iz,8) = self%b0(2)*sin(ky)
+          ff(ix,iy,iz,idx%bx) = self%b0(3)*sin(kz)
+          ff(ix,iy,iz,idx%by) = self%b0(1)*sin(kx)
+          ff(ix,iy,iz,idx%bz) = self%b0(2)*sin(ky)
         end if
       end do
     end do
@@ -227,14 +229,14 @@ SUBROUTINE exa256 (self, m, ff)
     rec = rec + (iy+jy-m(2)%li)*nx   /m(1)%n
     rec = rec + (iz+jz-m(3)%li)*nx*ny/m(1)%n
     !print*,ix,iy,iz,rec
-    read (io_unit%data,rec=rec) d; ff(m(1)%li:m(1)%ui,jy,jz,1) = d
-                                   ff(m(1)%li:m(1)%ui,jy,jz,2) = d
+    read (io_unit%data,rec=rec) d; ff(m(1)%li:m(1)%ui,jy,jz,idx%d) = d
+                                   ff(m(1)%li:m(1)%ui,jy,jz,idx%e) = d
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,3) = u
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,idx%px) = u
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,4) = u
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,idx%py) = u
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,5) = u
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,idx%pz) = u
   end do
   end do
   if (io%verbose > 0) &
@@ -288,6 +290,11 @@ SUBROUTINE raw (self, m, ff)
                                     i(3):i(3)+m(3)%n-1,iw)
   end do
   ff(:,:,:,2) = ff(:,:,:,1)
+  idx%d  = 1
+  idx%e  = 2
+  idx%px = 3
+  idx%py = 4
+  idx%pz = 5
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &

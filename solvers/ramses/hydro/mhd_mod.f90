@@ -23,6 +23,7 @@ MODULE mhd_mod
   USE omp_mod
   USE download_mod
   USE eos_mod
+  USE index_mod
   implicit none
   PRIVATE
   type, public, extends(patch_t):: mhd_t
@@ -55,8 +56,10 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hllc'
+  integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
     smallc, do_isothermal, csound, detailed_timer
+  type(index_t):: idx
 !...............................................................................
   call trace_begin('mhd_mod::init')
 
@@ -65,7 +68,13 @@ SUBROUTINE init (self)
     call mpi%abort('This is the RAMSES hydro solver. But MHD is turned on!')
   end if
 
+  self%nw = 1
   call self%patch_t%init
+  self%i_d  = idx%d
+  self%i_e  = idx%e
+  self%i_px = idx%px
+  self%i_py = idx%py
+  self%i_pz = idx%pz
   !$omp critical (pde)
   if (first_time) then
     first_time = .false.
@@ -184,28 +193,28 @@ subroutine check_small (self, uu)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   do i=lo(1),uo(1)
-    if (uu(i,j,k,1) < smallr) then
+    if (uu(i,j,k,self%i_d) < smallr) then
       if (nprint>0) then
         nprint = nprint-1
-        write (io_unit%log,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,1),smallr
+        write (io_unit%log,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,self%i_d),smallr
       end if
       n_smalld = n_smalld+1
-      uu(i,j,k,1) = smallr
+      uu(i,j,k,self%i_d) = smallr
     end if
-    d =  uu(i,j,k,1)
+    d =  uu(i,j,k,self%i_d)
     c = 1./d
-    u =  uu(i,j,k,2)*c
-    v =  uu(i,j,k,3)*c
-    w =  uu(i,j,k,4)*c
+    u =  uu(i,j,k,self%i_px)*c
+    v =  uu(i,j,k,self%i_py)*c
+    w =  uu(i,j,k,self%i_pz)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
     if (do_isothermal) then
       p = d*csound**2
-      uu(i,j,k,5) = p/(gamma-one)+ekin
+      uu(i,j,k,self%i_e) = p/(gamma-one)+ekin
     else
-      p = (uu(i,j,k,5)-ekin)*(gamma-one)
+      p = (uu(i,j,k,self%i_e)-ekin)*(gamma-one)
       if (p < smallr*smallc**2) then
         p = smallr*smallc**2
-        uu(i,j,k,5) = p/(gamma-one)+ekin
+        uu(i,j,k,self%i_e) = p/(gamma-one)+ekin
         n_smallp = n_smallp+1
       end if
     end if
@@ -236,7 +245,8 @@ subroutine unsplit(self)
 end subroutine unsplit
 
 !> =============================================================================
-!> Conservative to primitive variables
+!> Conservative (uin) to primitive (q) variables, stored in the order
+!> 1:d, 2:u, 3:v, 4:w, 5:p
 !> =============================================================================
 subroutine ctoprim (self)
   class(mhd_t):: self
@@ -251,20 +261,21 @@ subroutine ctoprim (self)
     call trace_begin ('mhd_mod::ctoprim')
   end if
   smallp = smallr*smallc**2/gamma
-  q(:,:,:,1) = max(uin(:,:,:,1),smallr)
+  q(:,:,:,1) = max(uin(:,:,:,self%i_d),smallr)
   s = 1.d0/q(:,:,:,1)
-  q(:,:,:,2) = uin(:,:,:,2)*s
-  q(:,:,:,3) = uin(:,:,:,3)*s
-  q(:,:,:,4) = uin(:,:,:,4)*s
+  q(:,:,:,2) = uin(:,:,:,self%i_px)*s
+  q(:,:,:,3) = uin(:,:,:,self%i_py)*s
+  q(:,:,:,4) = uin(:,:,:,self%i_pz)*s
   s = q(:,:,:,2)**2+q(:,:,:,3)**2+q(:,:,:,4)**2
   !-----------------------------------------------------------------------------
   ! Equation-of-state: s is the internal energy, and pg is the gas pressure
   !-----------------------------------------------------------------------------
-  s=max((uin(:,:,:,5)-half*q(:,:,:,1)*s(:,:,:)),smallp)
+  s = max((uin(:,:,:,self%i_e)-half*q(:,:,:,1)*s(:,:,:)),smallp)
   d => q(:,:,:,1)
   e => s
   pg => q(:,:,:,5)
-  call eos%lookup (shape(e), ee=e, d=d, pg=pg, gamma=self%gamma)
+  pg = e*(self%gamma-1.0)
+  !call eos%lookup (shape(e), ee=e, d=d, pg=pg, gamma=self%gamma)
   !
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
   self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
@@ -591,11 +602,11 @@ subroutine cmpflxm(self)
       if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
       if (error) call error_handler('x', j, k, lb(1), ub(1))
       do i = lb(1),ub(1)
-        fl(i,j,k,1,1) = fgdnv(i,1)*dtds(1)
-        fl(i,j,k,2,1) = fgdnv(i,2)*dtds(1)
-        fl(i,j,k,5,1) = fgdnv(i,3)*dtds(1)
-        fl(i,j,k,3,1) = fgdnv(i,4)*dtds(1)
-        fl(i,j,k,4,1) = fgdnv(i,5)*dtds(1)
+        fl(i,j,k,self%i_d ,1) = fgdnv(i,1)*dtds(1)
+        fl(i,j,k,self%i_px,1) = fgdnv(i,2)*dtds(1)
+        fl(i,j,k,self%i_e ,1) = fgdnv(i,3)*dtds(1)
+        fl(i,j,k,self%i_py,1) = fgdnv(i,4)*dtds(1)
+        fl(i,j,k,self%i_pz,1) = fgdnv(i,5)*dtds(1)
       end do
     end do
   end do
@@ -617,11 +628,11 @@ subroutine cmpflxm(self)
         if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
         if (error) call error_handler('y', i, k, lb(2), ub(2))
         do j = lb(2),ub(2)
-          fl(i,j,k,1,2) = fgdnv(j,1)*dtds(2)
-          fl(i,j,k,3,2) = fgdnv(j,2)*dtds(2)
-          fl(i,j,k,5,2) = fgdnv(j,3)*dtds(2)
-          fl(i,j,k,2,2) = fgdnv(j,4)*dtds(2)
-          fl(i,j,k,4,2) = fgdnv(j,5)*dtds(2)
+          fl(i,j,k,self%i_d ,2) = fgdnv(j,1)*dtds(2)
+          fl(i,j,k,self%i_py,2) = fgdnv(j,2)*dtds(2)
+          fl(i,j,k,self%i_e ,2) = fgdnv(j,3)*dtds(2)
+          fl(i,j,k,self%i_px,2) = fgdnv(j,4)*dtds(2)
+          fl(i,j,k,self%i_pz,2) = fgdnv(j,5)*dtds(2)
         end do
       end do
     end do
@@ -639,11 +650,11 @@ subroutine cmpflxm(self)
         if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
         if (error) call error_handler('z', i, j, lb(3), ub(3))
         do k = lb(3),ub(3)
-          fl(i,j,k,1,3) = fgdnv(k,1)*dtds(3)
-          fl(i,j,k,4,3) = fgdnv(k,2)*dtds(3)
-          fl(i,j,k,5,3) = fgdnv(k,3)*dtds(3)
-          fl(i,j,k,2,3) = fgdnv(k,4)*dtds(3)
-          fl(i,j,k,3,3) = fgdnv(k,5)*dtds(3)
+          fl(i,j,k,self%i_d ,3) = fgdnv(k,1)*dtds(3)
+          fl(i,j,k,self%i_pz,3) = fgdnv(k,2)*dtds(3)
+          fl(i,j,k,self%i_e ,3) = fgdnv(k,3)*dtds(3)
+          fl(i,j,k,self%i_px,3) = fgdnv(k,4)*dtds(3)
+          fl(i,j,k,self%i_py,3) = fgdnv(k,5)*dtds(3)
         end do
       end do
     end do
@@ -670,11 +681,11 @@ contains
       call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('y', i, k, lb(2), ub(2))
       if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
-      fl(i,:,k,1,2) = fgdnv(:,1)*dtds(2)
-      fl(i,:,k,3,2) = fgdnv(:,2)*dtds(2)
-      fl(i,:,k,5,2) = fgdnv(:,3)*dtds(2)
-      fl(i,:,k,2,2) = fgdnv(:,4)*dtds(2)
-      fl(i,:,k,4,2) = fgdnv(:,5)*dtds(2)
+      fl(i,:,k,self%i_d ,2) = fgdnv(:,1)*dtds(2)
+      fl(i,:,k,self%i_py,2) = fgdnv(:,2)*dtds(2)
+      fl(i,:,k,self%i_e ,2) = fgdnv(:,3)*dtds(2)
+      fl(i,:,k,self%i_px,2) = fgdnv(:,4)*dtds(2)
+      fl(i,:,k,self%i_pz,2) = fgdnv(:,5)*dtds(2)
     end do
   end do
   end associate
@@ -700,11 +711,11 @@ contains
       call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('z', i, j, lb(3), ub(3))
       if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
-      fl(i,j,:,1,3) = fgdnv(:,1)*dtds(3)
-      fl(i,j,:,4,3) = fgdnv(:,2)*dtds(3)
-      fl(i,j,:,5,3) = fgdnv(:,3)*dtds(3)
-      fl(i,j,:,2,3) = fgdnv(:,4)*dtds(3)
-      fl(i,j,:,3,3) = fgdnv(:,5)*dtds(3)
+      fl(i,j,:,self%i_d ,3) = fgdnv(:,1)*dtds(3)
+      fl(i,j,:,self%i_pz,3) = fgdnv(:,2)*dtds(3)
+      fl(i,j,:,self%i_e ,3) = fgdnv(:,3)*dtds(3)
+      fl(i,j,:,self%i_px,3) = fgdnv(:,4)*dtds(3)
+      fl(i,j,:,self%i_py,3) = fgdnv(:,5)*dtds(3)
     end do
   end do
   end associate

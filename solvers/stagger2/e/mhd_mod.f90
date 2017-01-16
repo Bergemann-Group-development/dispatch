@@ -14,6 +14,7 @@ MODULE mhd_mod
   USE force_mod
   USE download_mod
   USE eos_mod
+  USE index_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
@@ -38,6 +39,7 @@ MODULE mhd_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
   end type
+  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
@@ -53,14 +55,14 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
-  self%i_d =1
-  self%i_px=2
-  self%i_py=3
-  self%i_pz=4
-  self%i_e =5
-  self%i_bx=6
-  self%i_by=7
-  self%i_bz=8
+  self%i_d  = idx%d
+  self%i_px = idx%px
+  self%i_py = idx%py
+  self%i_pz = idx%pz
+  self%i_e  = idx%e
+  self%i_bx = idx%bz
+  self%i_by = idx%by
+  self%i_bz = idx%bz
   !$omp critical (mhd_input_cr)
   if (first_time) then
     first_time = .false.
