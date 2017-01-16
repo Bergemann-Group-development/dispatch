@@ -82,11 +82,9 @@ SUBROUTINE update (self)
     first_time = .false.
     call self%initial%cleanup
   end if
-  call self%output
   call self%mhd_t%update
   call self%boundary_conditions
   call self%courant_condition
-  call self%output
   if (io%verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)

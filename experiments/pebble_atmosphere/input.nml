@@ -8,7 +8,7 @@
  omp_trace=f
  !id_debug=230
  !id_debug=148
- id_debug=202
+ !id_debug=202
 /
 &rubiks_params
  n_levels=7
@@ -29,12 +29,12 @@
  !type='none'
 /
 &planet_params
- mass_m_earth=0.9
+ mass_m_earth=1.0
 /
 &atmosphere_params
  densitY_cgs=3e-12
  temperature_K=200.
- mass_m_earth=0.9
+ mass_m_earth=1.0
  orbit_au=1.0
 /
 &planet_atm_params
@@ -44,17 +44,19 @@
 &initial_params
 /
 &patch_params
- n=3*32
- nt=5
- grace=0.2
+ n=3*20
+ nv=5
+ nt=7
+ nw=1
+ grace=0.0
  courant=0.2
 /
 &out_params
  ! L_unit = R_E, u_unit = km/s, t_unit = 6300 sec ~ 2h
- end_time=0.05          ! outer scale = 1500 R_E => 1500 time units at 1 km/s
- !out_time=0.02          ! pebble speed 30 => 1.5 l.u. per snapshot
- out_time=0.0           ! pebble speed 30 => 1.5 l.u. per snapshot
- print_time=0.0
+ end_time=5.00          ! outer scale = 1500 R_E => 1500 time units at 1 km/s
+ out_time=0.20          ! pebble speed 30 => 1.5 l.u. per snapshot
+!out_time=0.0           ! pebble speed 30 => 1.5 l.u. per snapshot
+ print_time=0
  guard_zones=t
  time_derivs=f
  max_files=9000
