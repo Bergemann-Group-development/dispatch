@@ -1,0 +1,83 @@
+&io_params
+ verbose=2
+ do_trace=f
+ do_debug=f
+ do_output=t
+ do_legacy=t
+ omp_trace=t
+/
+
+&out_params
+ end_time=630.0
+ out_time=5e-4
+ guard_zones=t
+ print_time=1e-4
+/
+
+&initial_params
+  nplanets=1
+/
+
+&annulus_params
+  rotating=t
+  n_patch=1,1,1
+  n_per_patch=1,32,384
+  roffset=0.5
+  extent=1.0,2.0,2.0 ! the phi-component is given in units of pi.
+/
+
+&mhd_params
+  gamma = 1.0001
+  trnvrsn = 0
+  dtinit = 1.0e-5
+  itote = 0
+  qlin=0.1
+  qcon=2.0
+  iord=2
+  iords=2
+  istp=0
+  nuscalar=0.0
+/
+
+&timestep_params
+  time_order=0
+/
+
+&patch_params
+  courant=0.5
+  nt=5
+/
+
+&ring_params
+ n_repeat=0
+ repeat_dir=3
+ n_levels=1
+ position=0,0,0.0
+ n_patch=0,0,0
+! n_patch=1,4,150
+ size=1,0.04,0.04188792
+ m_zoom=2
+ n_per_patch=1,32,32
+ planet_cylpos=0,1.0,0.33510336
+/
+
+&rubiks_params
+ n_repeat=1
+ n_levels=3
+ position=0,0,0
+ n_patch=1,4,4
+ size=1,0.0025,0.002617995
+ m_zoom=2
+ n_per_patch=1,32,32
+ planet_cylpos=0,1.0,0
+/
+
+&planetesimal_params
+  mass_final=0.00095
+  radius=0.00046696
+  ramp_mass=f
+  rplanet=1.0
+/
+
+&refine_params
+/
