@@ -10,6 +10,8 @@ OMP  = yes
 MPI  = mpi
 MOD  = mod
 AUTO = yes
+PREC ?= SINGLE
+DEFS = -D$(PREC)
 EOS  ?= ideal
 OPACITY ?= stub
 

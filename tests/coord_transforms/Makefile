@@ -4,7 +4,6 @@ OPTS = full_debug
 #OPTS = optimized
 
 # Common configuration
-PREC=DOUBLE
 SOLVER=zeus3d
 EXEC = test.x
 TOP = ../..
