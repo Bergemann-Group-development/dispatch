@@ -46,6 +46,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   real, dimension(:,:,:,:), pointer:: ff
+  integer:: iv
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
@@ -56,21 +57,17 @@ SUBROUTINE init (self)
   self%msplit = 3
   call scaling%init
   self%nv = 5
+  self%mhd = .false.
   call self%pebble_patch_t%init
   self%mhd = .false.
   self%nv = 5
-  self%i_d  = 1
-  self%i_e  = 2
-  self%i_px = 3
-  self%i_py = 4
-  self%i_pz = 5
   call self%set (bits%static)
   call self%initial%init
   ff => self%mem(:,:,:,:,1,1)
   call self%initial%selected (self%mesh, ff)
-  call boundary%condition (self%mem(:,:,:,self%i_px,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
-  call boundary%condition (self%mem(:,:,:,self%i_py,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
-  call boundary%condition (self%mem(:,:,:,self%i_pz,self%it,1), self%mesh, [0d0,0d0,-0.5d0])
+  do iv=self%i_px,self%i_pz
+    call boundary%fixed (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
+  end do
   call trace_end
 END SUBROUTINE init
 
@@ -81,6 +78,10 @@ SUBROUTINE update (self)
   class(experiment_t):: self
   !.............................................................................
   type(timestep_t):: timestep
+  real, dimension(:,:,:,:), pointer:: mem
+  real, dimension(:,:,:), pointer:: d, e
+  real(8), dimension(3):: h
+  integer:: it, iv
   !-----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%check_density ('before update')
@@ -94,28 +95,45 @@ SUBROUTINE update (self)
       call self%mhd_t%update
     end if
     if (self%is_set (bits%has_BC)) then
-      call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
-      call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
-      call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,0d0,-0.5d0])
+      do iv=self%i_px,self%i_pz
+        call boundary%fixed (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
+      end do
     end if
     self%mem(:,:,:,:,self%it,2) = 0.0
   else
+    if (self%is_set (bits%has_BC)) then
+      allocate (mem(size(self%mem,1),size(self%mem,2),size(self%mem,3),2))
+      mem(:,:,:,1) = self%mem(:,:,:,self%i_d,self%it,1)
+      mem(:,:,:,2) = self%mem(:,:,:,self%i_e,self%it,1)
+      !print *,self%id,' fixed BC 1', mem(12,12,12,:), self%it, self%nw
+    end if
     call self%mhd_t%update
     if (self%is_set (bits%has_BC)) then
-      call boundary%condition (self%mem(:,:,:,1,self%it,2), self%mesh, [0d0,0d0,0d0])
-      call boundary%condition (self%mem(:,:,:,2,self%it,2), self%mesh, [0d0,0d0,0d0])
-      call boundary%condition (self%mem(:,:,:,3,self%it,2), self%mesh, [-0.5d0,0d0,0d0])
-      call boundary%condition (self%mem(:,:,:,4,self%it,2), self%mesh, [0d0,-0.5d0,0d0])
-      call boundary%condition (self%mem(:,:,:,5,self%it,2), self%mesh, [0d0,0d0,-0.5d0])
-      call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [-0.5d0,0d0,0d0])
-      call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,0d0])
-      call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,0d0,-0.5d0])
+      if (self%nw > 1) then
+        it = self%it
+        do iv=1,self%nv
+          call boundary%fixed (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
+        end do
+      else
+        it = self%new
+      end if
+      d => mem(:,:,:,1)
+      e => mem(:,:,:,2)
+      call boundary%fixed (self%mem(:,:,:,self%i_d,it,1), d, self%mesh, self%i_d)
+      call boundary%fixed (self%mem(:,:,:,self%i_e,it,1), e, self%mesh, self%i_e)
+      do iv=self%i_px,self%i_pz
+        call boundary%fixed (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
+      end do
+      deallocate (mem)
     end if
   end if
   call self%courant_condition
-  call self%output
   call self%pebble_patch_t%update_pebbles
+  !if (self%is_set (bits%has_BC)) &
+    !print *,self%id,' fixed BC 2', self%mem(12,12,12,1:2,it,1), it
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  !if (self%is_set (bits%has_BC)) &
+    !print *,self%id,' fixed BC 3', self%mem(12,12,12,1:2,it,1), it
   call self%check_density ('after timestep')
   call trace_end
 END SUBROUTINE update
