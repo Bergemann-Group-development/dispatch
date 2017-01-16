@@ -744,7 +744,6 @@ SUBROUTINE pack (self, mesg)
   !.............................................................................
   type(header_t):: header
   integer:: n_buf, ibuf, iv, it
-  real, dimension(:,:,:), pointer:: var
   real:: pt
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -753,7 +752,7 @@ SUBROUTINE pack (self, mesg)
   call trace_begin ('patch_mod::pack', itimer=itimer)
   allocate (mesg)
   n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
-  if (kind(var)==8) &
+  if (kind(self%mem)==8) &
     n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
   mesg%nbuf = n_header + self%nv*n_buf
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
@@ -814,14 +813,13 @@ SUBROUTINE unpack (self, buffer)
   type(header_t):: header
   integer:: n_buf, ibuf, iv, it
   integer, dimension(:), pointer:: buffer
-  real, dimension(:,:,:), pointer:: var
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Compute size of buffer
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::unpack', itimer=itimer)
   n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
-  if (kind(var)==8) &
+  if (kind(self%mem)==8) &
     n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info from sequenced header
