@@ -7,11 +7,7 @@ MODULE initial_mod
   USE trace_mod
   USE mesh_mod
   USE random_mod
-  USE atmosphere_mod
   USE hydro_parameters
-  USE planet_mod
-  USE star_mod
-  USE lagrange_mod
   USE omp_mod
   implicit none
   private
@@ -29,7 +25,6 @@ MODULE initial_mod
     procedure, nopass:: cleanup
   end type
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
-  type(lagrange_t):: interp
 CONTAINS
 
 !> =============================================================================
@@ -64,8 +59,6 @@ SUBROUTINE init (self)
    self%mhd    = mhd
    self%time   = 0d0
    select case (type)
-   case ('planet_atmosphere')
-     self%selected => planet_atmosphere
    case ('single_solenoidal')
      self%selected => single_solenoidal
    case ('single_compressive')
@@ -330,93 +323,5 @@ SUBROUTINE raw (self, m, ff)
   !$omp end critical (raw_cr)
   call trace_end
 END SUBROUTINE raw
-
-!> =============================================================================
-!> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
-!> =============================================================================
-SUBROUTINE planet_atmosphere (self, m, ff)
-  class(initial_t)             :: self
-  real, dimension(:,:,:,:) :: ff
-  class(mesh_t), pointer, dimension(:):: m
-  real, save:: omega(3), gamma
-  !.............................................................................
-  integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, d0, p, csound2
-  logical, save:: first_time=.true.
-  namelist /planet_params/ omega, gamma
-  !-----------------------------------------------------------------------------
-  call trace_begin('initial_t%planet_atmosphere')
-  call self%init
-  !----------------------------------------------------------------------------
-  call trace_begin('initial_t%init')
-  !$omp critical (input_cr)
-  if (first_time) then
-    first_time = .false.
-    rewind (io%input)
-    read (io%input, planet_params)
-    if (io%master) write (*, planet_params)
-  end if
-  !$omp end critical (input_cr)
-  csound2 = self%gamma*atmosphere%pg(1)/atmosphere%rho(1)
-  nr = atmosphere%nr
-  do iz=m(3)%lb,m(3)%ub
-    z = m(3)%p + m(3)%r(iz) - planet%position(3)
-    do iy=m(2)%lb,m(2)%ub
-      y = m(2)%p + m(2)%r(iy) - planet%position(2)
-      do ix=m(1)%lb,m(1)%ub
-        x = m(1)%p + m(1)%r(ix) - planet%position(1)
-        r = sqrt(x**2+y**2+z**2)
-        d = interpolate (r, nr ,atmosphere%rr, atmosphere%rho)
-        p = interpolate (r, nr, atmosphere%rr, atmosphere%pg)
-        csound2 = self%gamma*p/d
-        !-----------------------------------------------------------------------
-        ! Vertical stratification is added by adding Gaussian profile and
-        ! subtracting off the otherwise constant external density
-        !-----------------------------------------------------------------------
-        d0 = d
-        d = d + &
-          atmosphere%external%density*(exp(-(omega(3)**2/csound2*0.5*z**2))-1d0)
-        p = p*(d/d0)
-        ff(ix,iy,iz,1) = d
-        ff(ix,iy,iz,2) = d*(log(p)-self%gamma*log(d))/(self%gamma-1.0)
-        !-----------------------------------------------------------------------
-        ! A rotation profile, where the rotation center is at y=+1 AU, and
-        ! the direction of rotation is +x, so the head wind is in the -x
-        ! direction.  The slower rotation at larger radii means that Ux is
-        ! proportional to +y.  This gives a speed difference of only 130 cm/s
-        ! across the Earth, and plus/minus 0.15 km/s across two Hill radii.
-        ! The effect is not enough to significantly flatten the outer part of
-        ! the Hill sphere, so we will probably only be seeing effects of the
-        ! Coriolis force beyond the Hill radius.
-        !-----------------------------------------------------------------------
-        ff(ix,iy,iz,3) = d*(0.5*omega(3)*y + self%v_head)  ! azimuthal speed
-        ff(ix,iy,iz,4) = d*self%v_accrete                  ! accretion speed
-        ff(ix,iy,iz,5) = 0.0                               ! vertical speed
-        ff(ix,iy,iz,6) = self%b0(1)
-        ff(ix,iy,iz,7) = self%b0(2)
-        ff(ix,iy,iz,8) = self%b0(3)
-      end do
-    end do
-  end do
-  call trace_end
-END SUBROUTINE planet_atmosphere
-
-!> =============================================================================
-!> Use default Lagrange interpolation
-!> =============================================================================
-FUNCTION interpolate (x0, n, x, y) RESULT(f)
-  implicit none
-  integer:: n
-  real(kind=8):: x0, x(n), y(n), f
-  !.............................................................................
-  interp%verbose = max(io%verbose-4,0)
-  if (x0 < x(1)) then
-    f = y(1)
-  else if (x0 > x(n)) then
-    f = y(n)
-  else
-    f = interp%sequence (x0, x, y)
-  end if
-END FUNCTION
 
 END MODULE

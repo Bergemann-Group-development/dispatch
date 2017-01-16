@@ -23,11 +23,12 @@ MODULE mhd_mod
   USE omp_mod
   USE download_mod
   USE eos_mod
+  USE force_mod
   USE index_mod
   implicit none
   PRIVATE
   type, public, extends(patch_t):: mhd_t
-    logical:: mhd=.true.
+    logical:: mhd=.false.
     integer:: idim=3
     character(len=10):: riemann='hllc'
     real, pointer, dimension(:,:,:,:):: uin       ! conserved
@@ -37,6 +38,7 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:,:):: dq      ! slopes
     real, pointer, dimension(:,:,:,:,:):: fl      ! 3D fluxes
     real, pointer, dimension(:,:,:):: c, s        ! scratch
+    type(force_t):: force
   contains
     procedure:: init
     procedure:: update
@@ -87,7 +89,10 @@ SUBROUTINE init (self)
   self%courant = courant_factor
   self%gamma = gamma
   self%staggered = .false.
-
+  do i=1,3
+    self%mesh(i)%h = 0d0
+  end do
+  call self%force%init
   call trace_end
 END SUBROUTINE init
 
@@ -97,7 +102,8 @@ SUBROUTINE update (self)
   class(mhd_t):: self
   integer:: n(3)
   integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
+  real, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:), pointer:: d
   !----------------------------------------------------------------------------
   ! Fill guard zones and checks whether to do output
   !----------------------------------------------------------------------------
@@ -118,8 +124,26 @@ SUBROUTINE update (self)
   allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
   if (detailed_timer) call trace_end (itimer)
+  !if (self%id==229.or.self%id==231) then
+    !print *,self%id, 'mk1:px', self%mem(11:15,13,13,self%i_px,self%it,1), self%i_px
+    !print *,self%id, 'mk1: d', self%mem(11:15,13,13,self%i_d ,self%it,1)
+    !print *,self%id, 'mk1: e', self%mem(11:15,13,13,self%i_e ,self%it,1), self%i_e
+  !end if
   call godunov (self)
   if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
+  d => self%mem(:,:,:,          self%i_d ,self%new,1)
+  p => self%mem(:,:,:,self%i_px:self%i_pz,self%new,1)
+  !if (self%id==229.or.self%id==231) then
+    !print *,self%id, 'mk2:px', self%mem(11:15,13,13,self%i_px,self%new,1), self%i_px
+    !print *,self%id, 'mk2: d', self%mem(11:15,13,13,self%i_d ,self%new,1)
+    !print *,self%id, 'mk2: e', self%mem(11:15,13,13,self%i_e ,self%new,1), self%i_e
+  !end if
+  if (associated(self%force%selected)) then
+    p = p + self%dtime*self%force%selected (self%time, d, p, self%mesh)
+  end if
+  !if (self%id==229.or.self%id==231) then
+    !print *,self%id, 'mk3:px', self%mem(11:15,13,13,self%i_px,self%new,1), self%i_px
+  !end if
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
@@ -463,6 +487,8 @@ subroutine trace3d(self)
   real(dp)::drz, duz, dvz, dwz, dpz, daz
   real(dp)::sr0, su0, sv0, sw0, sp0, sa0
   integer,save:: itimer=0
+  real, dimension(:,:,:), pointer:: d
+  real, dimension(:,:,:,:), pointer:: ff, pp
   associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
@@ -473,6 +499,14 @@ subroutine trace3d(self)
   dtdx = self%dtime/self%mesh(1)%d
   dtdy = self%dtime/self%mesh(2)%d
   dtdz = self%dtime/self%mesh(3)%d
+  d    => self%mem(:,:,:,self%i_d           ,self%it,1)
+  pp   => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
+  allocate (ff(size(d,1),size(d,2),size(d,3),3))
+  if (associated(self%force%selected)) then
+    ff = self%force%selected (self%time, d, pp, self%mesh)
+  else
+    ff = 0.0
+  end if
   !-----------------------------------------------------------------------------
   lb = self%mesh%lo
   ub = self%mesh%uo
@@ -508,9 +542,9 @@ subroutine trace3d(self)
         ! Source terms (including transverse derivatives)
         sr0 = -u*drx-v*dry-w*drz - (dux+dvy+dwz)*r
         sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p
-        su0 = -u*dux-v*duy-w*duz - (dpx        )/r
-        sv0 = -u*dvx-v*dvy-w*dvz - (dpy        )/r
-        sw0 = -u*dwx-v*dwy-w*dwz - (dpz        )/r
+        su0 = -u*dux-v*duy-w*duz - (dpx - ff(i,j,k,1))/r
+        sv0 = -u*dvx-v*dvy-w*dvz - (dpy - ff(i,j,k,2))/r
+        sw0 = -u*dwx-v*dwy-w*dwz - (dpz - ff(i,j,k,3))/r
 
         ! Right state at left interface
         qp(i,j,k,ir,1) = r - half*drx + sr0*dtdx*half
@@ -562,6 +596,7 @@ subroutine trace3d(self)
       end do
     end do
   end do
+  deallocate (ff)
   call trace_end (itimer)
   end associate
 end subroutine trace3d
