@@ -171,6 +171,8 @@ SUBROUTINE update (self)
   end if
   !$omp end critical (queue_cr)
   if (associated(head)) then
+    select type (task)
+    class is (experiment_t)
     if (io%verbose > 1) then
       write (io_unit%log,'(a,i4,a,i5,2x,a,2x,i4)') &
         'thread', omp%thread,' takes', task%id, trim(task%type), self%nq
@@ -211,12 +213,9 @@ SUBROUTINE update (self)
       'thread', omp_mythread, 'task', task%id, trim(task%type), &
       'step', task%istep, 'dt, time:', task%dtime, task%time, &
       'n, nq', self%n, self%nq, associated(head%nbor)
-    select type (task)
-    class is (patch_t)
     call task%rotate
     !$omp atomic
     n_update = n_update + product(task%n)
-    end select
     call task%info (self%nq, self%na)                   ! print info on stdout
     !-----------------------------------------------------------------------------
     ! Tasks that have finished are subtracted from the task list count but are
@@ -225,7 +224,6 @@ SUBROUTINE update (self)
     !-----------------------------------------------------------------------------
     if (task%has_finished()) then  ! finished:
       call load_balance%active (.false.)                ! turn off load balancing
-      call task%output (self%name)                      ! check output
       !$omp atomic
       self%na = self%na-1
     end if
@@ -253,10 +251,16 @@ SUBROUTINE update (self)
     ! bit will prevent it being checked, but its nbors still need to be checked
     !-----------------------------------------------------------------------------
     call self%check_nbors (head)                        ! any nbors ready?
+    !-----------------------------------------------------------------------------
+    ! Since output of a task may be time consuming, wait with this until the task
+    ! has been used for all other purposes
+    !-----------------------------------------------------------------------------
+    call task%output (self%name)                        ! check output
     call task%clear (bits%busy)                         ! clear busy bit
     !$omp atomic write
     stalled = 0
     !call mpi_mesg%diagnostics (0)
+    end select
   else
     !$omp critical (stalled_cr)
     stalled = stalled+1
