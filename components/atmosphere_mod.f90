@@ -19,6 +19,7 @@ MODULE atmosphere_mod
   type, public, extends(particle_t):: atmosphere_t
     integer:: nr, niter
     real:: gamma(2), temp_gamma
+    real:: mass
     real(kind=8), dimension(:), pointer:: rho, pg, temp, rr
     real(8):: dlnr, hill_radius, orbit_radius
     type(conditions_t):: external, surface
@@ -47,6 +48,7 @@ SUBROUTINE init (self)
   call scaling%init
   !$omp critical (atm_cr)
   if (first_time) then
+    mass_m_earth = self%mass*scaling%m/cgs%m_earth
     first_time = .false.
     rewind (io%input); read (io%input, atmosphere_params)
     if (io%master) write (*, atmosphere_params)
@@ -56,6 +58,7 @@ SUBROUTINE init (self)
   self%niter = niter
   self%gamma = gamma
   self%temp_gamma = temp_gamma
+  self%mass = mass_m_earth*cgs%m_earth/scaling%m
   allocate (self%rr(self%nr))
   allocate (self%rho(self%nr))
   allocate (self%pg(self%nr))
@@ -71,7 +74,7 @@ SUBROUTINE init (self)
   ! Make sure the pressure force is contiuous at the surface, by continuing the
   ! integration to half the planet radius
   !-----------------------------------------------------------------------------
-  planet%radius = cgs%r_earth/scaling%l*(planet%mass*scaling%m/cgs%m_earth)**(1d0/3d0)
+  !planet%radius = cgs%r_earth/scaling%l*(planet%mass*scaling%m/cgs%m_earth)**(1d0/3d0)
   inner_radius = planet%radius*0.5
   self%dlnr = log(self%hill_radius/inner_radius)/(self%nr-1.0)
   if (io%verbose>0) print*, 'dlnr:', planet%radius, self%hill_radius/planet%radius, self%dlnr
@@ -111,7 +114,7 @@ SUBROUTINE hydrostatic (self)
       do iter=1,self%niter
         self%rho(i) = self%pg(i)/self%temp(i)
         dr = self%rr(i+1) - self%rr(i)
-        dlnpg = dr*scaling%grav*planet%mass* &
+        dlnpg = dr*scaling%grav*self%mass* &
           0.5*(self%rho(i+1)/self%pg(i+1)/self%rr(i+1)**2 + &
                self%rho(i  )/self%pg(i  )/self%rr(i  )**2)
         temp_K = self%temp(i)*scaling%temp
@@ -132,7 +135,7 @@ SUBROUTINE hydrostatic (self)
       end if
       if (io%verbose>0) print'("hydrostatic",i5,1p,9e11.3)', &
         i,self%rr(i)*scaling%l/cgs%r_earth, self%pg(i)*scaling%p, self%temp(i)*scaling%temp, &
-        self%rho(i)*scaling%d, s, dlnpg, planet%mass*scaling%grav/self%rr(i)**2
+        self%rho(i)*scaling%d, s, dlnpg, self%mass*scaling%grav/self%rr(i)**2
     end do
     if (io%verbose>0) print*, &
       '              i         rr         pg       temp        rho      dlnpg       dlnT       grav'

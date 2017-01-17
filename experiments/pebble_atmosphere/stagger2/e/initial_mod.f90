@@ -69,11 +69,13 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
+    omega = planet%omega*cgs%yr/(2.*cgs%pi*scaling%t)
     rewind (io%input)
     read (io%input, planet_atm_params)
     if (io%master) write (*, planet_atm_params)
   end if
   !$omp end critical (input_cr)
+  omega = omega*2.*cgs%pi*scaling%t/cgs%yr
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
   csound2 = gamma*atmosphere%pg(1)/atmosphere%rho(1)
@@ -95,7 +97,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         !-----------------------------------------------------------------------
         d0 = d
         d = d + &
-          atmosphere%external%density*(exp(-(omega(3)**2/csound2*0.5*z**2))-1d0)
+          atmosphere%external%density*(exp(-(planet%omega(3)**2/csound2*0.5*z**2))-1d0)
         p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
         !  mem(ix,iy,iz,2) = d*(log(p)-gamma*log(d))/(gamma-1.0)
@@ -110,7 +112,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         ! the Hill sphere, so we will probably only be seeing effects of the
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
-        mem(ix,iy,iz,i%px) = d*(0.5*omega(3)*y + self%v_head)  ! azimuthal speed
+        mem(ix,iy,iz,i%px) = d*(0.5*planet%omega(3)*y + self%v_head)  ! azimuthal speed
         mem(ix,iy,iz,i%py) = d*self%v_accrete                  ! accretion speed
         mem(ix,iy,iz,i%pz) = 0.0                               ! vertical speed
         !mem(ix,iy,iz,6) = b0(1)

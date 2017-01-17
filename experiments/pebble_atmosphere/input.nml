@@ -10,6 +10,16 @@
  !id_debug=148
  !id_debug=202
 /
+&out_params
+ ! L_unit = R_E, u_unit = km/s, t_unit = 6300 sec ~ 2h
+ end_time=2.00          ! outer scale = 1500 R_E => 1500 time units at 1 km/s
+ out_time=0.10          ! pebble speed 30 => 1.5 l.u. per snapshot
+!out_time=0.0           ! pebble speed 30 => 1.5 l.u. per snapshot
+ print_time=0
+ guard_zones=t
+ time_derivs=f
+ max_files=9000
+/
 &rubiks_params
  n_levels=7
  n_patch=3
@@ -44,32 +54,33 @@
 &initial_params
 /
 &patch_params
- n=3*20
+ n=3*32
  nv=5
  nt=7
  nw=1
  grace=0.0
  courant=0.2
 /
-&out_params
- ! L_unit = R_E, u_unit = km/s, t_unit = 6300 sec ~ 2h
- end_time=5.00          ! outer scale = 1500 R_E => 1500 time units at 1 km/s
- out_time=0.20          ! pebble speed 30 => 1.5 l.u. per snapshot
-!out_time=0.0           ! pebble speed 30 => 1.5 l.u. per snapshot
- print_time=0
- guard_zones=t
- time_derivs=f
- max_files=9000
-/
-&hd_params
+&hd_params              ! Used (only) when SOLVER=stagger3/hd
  gamma=1.4
  nu=  0.03, 1.0
 /
-&mhd_params
+&mhd_params             ! Used when SOLVER=stagger2*
  gamma=1.4
- nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
+ nu=  0.05, 1.0, 1.0, 0.1, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta
 /
 &timestep_params
- time_order=2
+ time_order=2           ! For SOLVER=stagger*
+!time_order=0           ! For SOLVER=ramses/hydro/
+/
+&ramses_params          ! Used only when SOLVER=ramses/hydro
+ gamma=1.4
+ slope_type=2
+ courant_factor=0.2
+ smallr=1e-20
+ smallc=1e-3
+ do_isothermal=f
+ csound=0.2
+ detailed_timer=f
 /

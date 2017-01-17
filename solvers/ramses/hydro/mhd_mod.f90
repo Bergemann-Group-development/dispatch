@@ -100,7 +100,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
-  integer:: n(3)
+  integer:: n(3), m
   integer, save:: itimer=0
   real, dimension(:,:,:,:), pointer:: p
   real, dimension(:,:,:), pointer:: d
@@ -116,6 +116,7 @@ SUBROUTINE update (self)
   self%uin => self%mem(:,:,:,:,self%it,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
   n = self%mesh%gn
+  m = n(1)
   allocate (self%q (n(1),n(2),n(3),self%nv))
   allocate (self%qp(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%qm(n(1),n(2),n(3),self%nv,ndim))
@@ -124,26 +125,39 @@ SUBROUTINE update (self)
   allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
   if (detailed_timer) call trace_end (itimer)
-  !if (self%id==229.or.self%id==231) then
-    !print *,self%id, 'mk1:px', self%mem(11:15,13,13,self%i_px,self%it,1), self%i_px
-    !print *,self%id, 'mk1: d', self%mem(11:15,13,13,self%i_d ,self%it,1)
-    !print *,self%id, 'mk1: e', self%mem(11:15,13,13,self%i_e ,self%it,1), self%i_e
-  !end if
+  if (self%id==229.or.self%id==231) then
+    print *,self%id, 'mk1:px', self%mem(19-2:19+2,19,19,self%i_px,self%it,1), self%i_px
+    print *,self%id, 'mk1: d', self%mem(19-2:19+2,19,19,self%i_d ,self%it,1)
+    print *,self%id, 'mk1: e', self%mem(19-2:19+2,19,19,self%i_e ,self%it,1), self%i_e
+  end if
+  if (self%id==230) then
+    print *,self%id, 'mk1:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%it,1), self%i_px
+    print *,self%id, 'mk1: d', self%mem( m-7:m-3 ,19,19,self%i_d ,self%it,1)
+    print *,self%id, 'mk1: e', self%mem( m-7:m-3 ,19,19,self%i_e ,self%it,1), self%i_e
+  end if
   call godunov (self)
   if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
   d => self%mem(:,:,:,          self%i_d ,self%new,1)
   p => self%mem(:,:,:,self%i_px:self%i_pz,self%new,1)
-  !if (self%id==229.or.self%id==231) then
-    !print *,self%id, 'mk2:px', self%mem(11:15,13,13,self%i_px,self%new,1), self%i_px
-    !print *,self%id, 'mk2: d', self%mem(11:15,13,13,self%i_d ,self%new,1)
-    !print *,self%id, 'mk2: e', self%mem(11:15,13,13,self%i_e ,self%new,1), self%i_e
-  !end if
+  if (self%id==229.or.self%id==231) then
+    print *,self%id, 'mk2:px', self%mem(19-2:19+2,19,19,self%i_px,self%new,1), self%i_px
+    print *,self%id, 'mk2: d', self%mem(19-2:19+2,19,19,self%i_d ,self%new,1)
+    print *,self%id, 'mk2: e', self%mem(19-2:19+2,19,19,self%i_e ,self%new,1), self%i_e
+  end if
+  if (self%id==230) then
+    print *,self%id, 'mk2:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%new,1), self%i_px
+    print *,self%id, 'mk2: d', self%mem( m-7:m-3 ,19,19,self%i_d ,self%new,1)
+    print *,self%id, 'mk2: e', self%mem( m-7:m-3 ,19,19,self%i_e ,self%new,1), self%i_e
+  end if
   if (associated(self%force%selected)) then
     p = p + self%dtime*self%force%selected (self%time, d, p, self%mesh)
   end if
-  !if (self%id==229.or.self%id==231) then
-    !print *,self%id, 'mk3:px', self%mem(11:15,13,13,self%i_px,self%new,1), self%i_px
-  !end if
+  if (self%id==229.or.self%id==231) then
+    print *,self%id, 'mk3:px', self%mem(19-2:19+2,19,19,self%i_px,self%new,1), self%i_px
+  end if
+  if (self%id==230) then
+    print *,self%id, 'mk3:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%new,1), self%i_px
+  end if
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------

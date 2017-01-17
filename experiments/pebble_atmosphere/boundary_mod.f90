@@ -61,7 +61,7 @@ SUBROUTINE fixed0 (self, mem, v, m, iv)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix) + h(1)*m(1)%d - planet%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < planet%radius+m(1)%d*0.1) then
+        if (r < planet%radius-m(1)%d*0.1) then
           mem(ix,iy,iz) = v
         end if
       end do
@@ -93,7 +93,7 @@ SUBROUTINE fixed3 (self, mem, v, m, iv)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix) + h(1)*m(1)%d - planet%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < planet%radius+m(1)%d*0.1) then
+        if (r < planet%radius-m(1)%d*0.1) then
           mem(ix,iy,iz) = v(ix,iy,iz)
         end if
       end do
