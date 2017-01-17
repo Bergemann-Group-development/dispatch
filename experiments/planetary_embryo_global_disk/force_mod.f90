@@ -4,6 +4,7 @@
 MODULE force_mod
   USE io_mod
   USE trace_mod
+  USE kinds_mod
   USE scaling_mod
   USE mesh_mod
   USE mhd_mod
@@ -43,7 +44,7 @@ END SUBROUTINE
 !> =============================================================================
 FUNCTION star_only (self, m, time, dt) RESULT (gp)
   class(force_t):: self
-  class(mesh_t), dimension(:), allocatable, target :: m
+  class(mesh_t), dimension(:), pointer :: m
   class(mesh_t), pointer :: m1, m2, m3
   real(8), intent(in) :: time, dt
   real(8), dimension(m(1)%gn,m(2)%gn,m(3)%gn):: gp
@@ -83,11 +84,11 @@ END FUNCTION star_only
 !> =============================================================================
 FUNCTION star_and_planet (self, m, time, dt) RESULT (gp)
   class(force_t):: self
-  class(mesh_t), dimension(:), allocatable, target :: m
+  class(mesh_t), dimension(:), pointer :: m
   class(mesh_t), pointer :: m1, m2, m3
   real(8), intent(in) :: time, dt
   real(8), dimension(3) :: planet_pos
-  real(8), dimension(m(1)%gn,m(2)%gn,m(3)%gn):: gp, gp2, rvec_p, gp3, gp4
+  real(kind=KindScalarVar), dimension(m(1)%gn,m(2)%gn,m(3)%gn):: gp, gp2, rvec_p, gp3, gp4
   !.............................................................................
   integer:: i1, i2, i3
   real(8):: z, r, phi, z_s, r_s, gm_s, gm_p, rvec_s
@@ -99,8 +100,8 @@ FUNCTION star_and_planet (self, m, time, dt) RESULT (gp)
   m3 => m(3)
 
   gm_s = scaling%grav * experiment_params%mstar
-  gm_p = scaling%grav * experiment_params%planet%mass
-  planet_pos = experiment_params%planet%cyl_pos
+  gm_p = scaling%grav * experiment_params%planetesimal%mass
+  planet_pos = experiment_params%planetesimal%cyl_pos
   do i3=m3%lb,m3%ub
     phi = m3%centre_nat + m3%r(i3)
     do i2=m2%lb,m2%ub

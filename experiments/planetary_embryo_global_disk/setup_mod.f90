@@ -45,14 +45,10 @@ SUBROUTINE init_setup (self)
   class(setup_t) :: self
   class(experiment_t), pointer :: task
   class(list_t), pointer :: task_list
-  class(task_t), pointer :: dummy_task
   type(annulus_t), pointer :: annulus
-  type(planetesimal_t), pointer :: planetesimal, planet
-  type(rubiks_t), pointer :: nested_grids, ring_grids
-  real(4) :: kill_rmin, kill_rmax, aspect_rat, mstar
+  type(planetesimal_t), pointer :: planetesimal
+  type(rubiks_t), pointer :: nested_grids
   logical, save :: first_time = .true.
-  integer :: nplanets = 1
-  namelist / initial_params / kill_rmin, kill_rmax, aspect_rat, mstar, nplanets
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
 
@@ -62,34 +58,22 @@ SUBROUTINE init_setup (self)
   ! read input params
   if (first_time) then
     first_time = .false.
-    ! default values
-    mstar  = experiment_params%mstar
-    kill_rmin  = experiment_params%kill_rmin
-    kill_rmax  = experiment_params%kill_rmax
-    aspect_rat = experiment_params%aspect_rat
-    rewind (io%input); read (io%input, initial_params)
-    experiment_params%mstar = mstar
-    experiment_params%kill_rmin = kill_rmin
-    experiment_params%kill_rmax = kill_rmax
-    experiment_params%aspect_rat = aspect_rat
+    call experiment_params%init()
   end if
 
   ! Create an empty task list.
   allocate(self%task_list)
-  call self%task_list%init(trim(self%experiment_name)//' task list')
   
   !-----------------------------------------------------------------------------
-  ! Start with the patch representing the planetesimal; only one patch and
-  ! therefore only one task.
+  ! Start with the the planetesimal; for the moment, it is a global data structure
+  ! rather than a task.
   !-----------------------------------------------------------------------------
-  allocate (planet)
-  planet%mstar = mstar
-  call planet%init_planet()
-  dummy_task => planet
-  call self%task_list%append (dummy_task)
+  allocate (planetesimal)
+  planetesimal%mstar = experiment_params%mstar
+  call planetesimal%init()
   ! point to the planetesimal task so that its parameters are globally accessible
   ! FIXME: This should be a list for multiple planets...
-  experiment_params%planet => planet
+  experiment_params%planetesimal => planetesimal
 
   !-----------------------------------------------------------------------------
   ! Next, a cylindrical annulus for the computational domain, possibly made of
@@ -103,23 +87,12 @@ SUBROUTINE init_setup (self)
   end if
 
   !-----------------------------------------------------------------------------
-  ! Set-up a ring of patches with centres at the planetesimal's orbital radius
-  !-----------------------------------------------------------------------------
-!  allocate (ring_grids)
-!  ring_grids%rotating = annulus%rotating
-!  call ring_grids%init_ring()
-!  if (associated(ring_grids%task_list)) then
-!    task_list => ring_grids%task_list
-!    call self%task_list%append_list(task_list)
-!  end if
-
-  !-----------------------------------------------------------------------------
   ! Set-up a series of "Rubik's cube"-like wedges centred on the planetesimal
   ! position
   !-----------------------------------------------------------------------------
   allocate (nested_grids)
   nested_grids%rotating = annulus%rotating
-  call nested_grids%init_hierarchy(nplanets)
+  call nested_grids%init_hierarchy(1)
   if (associated(nested_grids%task_list)) then
     task_list => nested_grids%task_list
     call self%task_list%append_list(task_list)
@@ -128,7 +101,7 @@ SUBROUTINE init_setup (self)
   !-----------------------------------------------------------------------------
   ! Done. Perform final list initialisations.
   !-----------------------------------------------------------------------------
-  call self%task_list%init_all_nbors
+  call self%task_list%init(trim(self%experiment_name)//' task list')
   call trace_end
 END SUBROUTINE init_setup
 

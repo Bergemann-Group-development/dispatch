@@ -21,7 +21,7 @@ MODULE planetesimal_mod
     real(8) :: velocity(3)
     logical :: ramp_mass
   contains
-    procedure :: init => init_planetsimal
+    procedure :: init => init_planetesimal
     procedure :: grow => grow_planetesimal
     procedure :: move => move_planetesimal
     procedure :: update => update_planetesimal
@@ -71,7 +71,6 @@ SUBROUTINE init_planetesimal (self)
   self%vol_density = self%mass * 0.75 / pi / self%radius**3
   self%period = 2.0 * pi * sqrt(rplanet**3 &
               / (scaling%grav * self%mstar))
-  !!self%grid_vel = [0.0d0, 0.0d0, 2.0d0 * pi / self%period] ! in 
   self%velocity = [0.0d0, 0.0d0, sqrt(scaling%grav * self%mstar / rplanet**3)]
   self%massratio = mass_final + (self%mstar + mass_final)
 
@@ -120,18 +119,18 @@ END SUBROUTINE move_planetesimal
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE update_planetesimal (self)
-  class(planetesimal_t) :: self
+SUBROUTINE update_planetesimal (self, time, dt)
+  class(planetesimal_t):: self
+  real(8), intent(in):: time, dt
   !-----------------------------------------------------------------------------
-  call trace_begin('spherical_planetesimal_t%update')
-
-  self%dtime = self%dt(self%it)
+  call trace_begin('planetesimal_t%update')
 
   ! update the planet mass
-  call self%grow(self%time)
+  call self%grow(time)
   ! update the planet position
-  call self%move(self%dtime, self%grid_vel(3))
+  call self%move(dt, self%velocity(3))
 
+  call trace_end
 END SUBROUTINE update_planetesimal
 
 END MODULE planetesimal_mod

@@ -1,5 +1,7 @@
 !> =============================================================================
 MODULE parameters_mod
+  USE io_mod
+  USE trace_mod
   USE units_mod
   USE scaling_mod
   USE planetesimal_mod
@@ -11,13 +13,37 @@ MODULE parameters_mod
     real(4) :: kill_rmin = 0.5   ! inner and outer radii where one starts to
     real(4) :: kill_rmax = 2.1   ! apply the "wave killing" boundary conditions
     real(8) :: aspect_rat = 0.05 ! disk aspect ratio (= H/R)
-    type(spherical_planetesimal_t), pointer :: planet => null() ! pointer to the planetesimal
-    type(spherical_planetesimal_t), pointer :: planetesimal => null() ! pointer to the planetesimal
+    type(planetesimal_t), pointer :: planetesimal => null() ! pointer to the planetesimal
+  contains
+    procedure:: init
   end type
   type(experiment_parameters_t),  public :: experiment_params
 
 PUBLIC Keplerian_speed, MMSN_surface_density, MMSN_temperature
 CONTAINS
+
+! default values
+SUBROUTINE init (self)
+  class(experiment_parameters_t):: self
+  real(4) :: kill_rmin, kill_rmax, aspect_rat, mstar
+  namelist / initial_params / kill_rmin, kill_rmax, aspect_rat, mstar
+  !----------------------------------------------------------------------------
+  call trace_begin ('experiment_parameters_t%init')
+
+  ! default values
+  mstar  = experiment_params%mstar
+  kill_rmin  = experiment_params%kill_rmin
+  kill_rmax  = experiment_params%kill_rmax
+  aspect_rat = experiment_params%aspect_rat
+  ! read namelist
+  rewind (io%input); read (io%input, initial_params)
+  experiment_params%mstar = mstar
+  experiment_params%kill_rmin = kill_rmin
+  experiment_params%kill_rmax = kill_rmax
+  experiment_params%aspect_rat = aspect_rat
+
+  call trace_end
+END SUBROUTINE init
 
 !> =============================================================================
 !> Calculate the Keplerian velocity for a given cylindrical radius.

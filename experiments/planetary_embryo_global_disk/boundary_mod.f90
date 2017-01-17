@@ -51,7 +51,7 @@ SUBROUTINE conditions (self, patch)
 
   rmin = m2%centre_nat + m2%r(m2%li)
   rmax = m2%centre_nat + m2%r(m2%ui)
-  mtotal = experiment_params%mstar + experiment_params%planet%mass
+  mtotal = experiment_params%mstar + experiment_params%planetesimal%mass
   tau_in  = 2.0 * pi * sqrt(rmin**3/(scaling%grav * mtotal))
   tau_out = 2.0 * pi * sqrt(rmax**3/(scaling%grav * mtotal))
   dt = patch%dtime

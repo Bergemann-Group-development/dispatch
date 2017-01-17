@@ -123,7 +123,6 @@ SUBROUTINE init_annulus (self)
         end select
         patch%level = 1 ! FIXME!
         call patch%set(bits%static) ! for the time being (should be okay)
-        call patch%clear(bits%periodic)
         call self%task_list%append(patch)
         ! update offset for next patch
         if (n_per_patch(1) > 1) zoffset = zoffset + zextent
