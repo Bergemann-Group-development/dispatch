@@ -1,9 +1,10 @@
 ! $Id$
 
 &timer_params
- sec_per_report=10.0
+ sec_per_report=5.0
 /
 &mpi_mesg_params
+ max_sent=200
  max_recv=20
  !max_probe=2
  min_nq=20
@@ -15,10 +16,12 @@
  do_trace=f
  do_debug=f
  do_output=f
- omp_trace=f
+ omp_trace=t
 /
 &box_params
- size=2,1,1 dims=16,08,08 mpi_dims=2,1,1
+ size=1,1,1 dims=04,04,04 mpi_dims=1,1,1
+ size=2,1,1 dims=08,04,04 mpi_dims=2,1,1
+ !size=2,2,2 dims=08,08,08 mpi_dims=2,2,2
  origin=0,0,0
 /
 &experiment_params
@@ -31,18 +34,18 @@
  nw=1
  courant=0.5
  grace=0.3
- n=32,32,32
+ n=64,64,64
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.05
- out_time=0.04
- print_time=0
+ end_time=0.010
+ out_time=1
+ print_time=0.0025
  guard_zones=f
  time_derivs=f
 /
 &mhd_params
-  gamma=1.001
+  gamma=1.00001
   trnvrsn=0
   dtinit=1.0e-3
   itote=0
@@ -51,6 +54,16 @@
   iord=2
   iords=2
   istp=0
+/
+&ramses_params
+ courant_factor=0.8
+ gamma=1.00001
+ slope_type=2
+ !slope_type=-1
+ smallr=1e-4
+ smallc=5e-1
+ riemann='hllc'
+ do_isothermal=t
 /
 &timestep_params
  time_order=0
