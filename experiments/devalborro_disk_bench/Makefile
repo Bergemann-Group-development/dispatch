@@ -7,7 +7,6 @@ OPTS = full_debug
 # Path to ZEUScore shared library.
 # Don't forget to update the LD_LIBRARY_PATH environment variable.
 LIBS+=-L/home/jramsey/repos/ZEUScore -lzeuscore
-PREC = DOUBLE
 
 # Targets and methods
 UPD = adams_bashforth

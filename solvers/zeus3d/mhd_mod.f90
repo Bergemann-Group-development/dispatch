@@ -263,11 +263,11 @@ SUBROUTINE init_zeus (self)
   integer :: i
   logical, save :: first_time=.true.
 
-  namelist / mhd_params /  gamma   , qcon    , qlin    , nghst   &
-                         , iord    , iords   , istp    , itote   , iscydf  &
-                         , iscyqq  , ix1x2x3 , nuscalar, isetemf , trnvrsn &
-                         , cadvs   , cadvc   , cadvt   , uordq   , avordw  &
-                         , voutbc  , diffc1  , diffc2  , dtinit
+  namelist / zeus_params /  gamma   , qcon    , qlin    , nghst   &
+                          , iord    , iords   , istp    , itote   , iscydf  &
+                          , iscyqq  , ix1x2x3 , nuscalar, isetemf , trnvrsn &
+                          , cadvs   , cadvc   , cadvt   , uordq   , avordw  &
+                          , voutbc  , diffc1  , diffc2  , dtinit
   !-----------------------------------------------------------------------------
   if (first_time) then
     call trace_begin ('zeus_mhd_mod%init_zeus')
@@ -299,7 +299,7 @@ SUBROUTINE init_zeus (self)
     diffc1  = 1.0d0
     diffc2  = 0.0d0
     dtinit  = huge
-    rewind (io%input); read (io%input, mhd_params)
+    rewind (io%input); read (io%input, zeus_params)
 
     ! ---- Fool-proofing ----
     if (itote .ne. 0) itote = 1

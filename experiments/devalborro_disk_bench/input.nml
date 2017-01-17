@@ -20,7 +20,7 @@
   rotating=t
 /
 
-&mhd_params
+&zeus_params
   gamma = 1.0001
   trnvrsn = 0
   dtinit = 1.0e-5
