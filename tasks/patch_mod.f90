@@ -890,6 +890,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   integer:: it1, it2, n(3)
   real:: pt, qt
   real, dimension(:,:,:), pointer:: buf
+  real(8):: time
   !-----------------------------------------------------------------------------
   call trace_begin('patch_mod::output_legacy')
   self%max_files = self%max_files-1
@@ -913,6 +914,13 @@ SUBROUTINE output_legacy (self, experiment_name)
   else
     no = 1
   end if
+  if (self%out_time==0.0) then
+    time = self%time
+  else if (self%time_derivs) then
+    time = self%t(self%nt-2)
+  else
+    time = self%out_next
+  end if
 
   !-----------------------------------------------------------------------------
   ! Write a log file, with files written by this rank
@@ -934,7 +942,7 @@ SUBROUTINE output_legacy (self, experiment_name)
       ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/ds(i) - 1.0
     end if
   end do
-  write (io%data_unit,'(1p,e14.6,3(2x,3e14.6),1x,i3.1,1x,e10.3)') self%time, self%position, self%ds, &
+  write (io%data_unit,'(1p,e14.6,3(2x,3e14.6),1x,i3.1,1x,e10.3)') time, self%position, self%ds, &
         self%velocity, self%level, self%quality
   write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
   close (io%data_unit)
@@ -942,19 +950,11 @@ SUBROUTINE output_legacy (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
-  if (io%master .and. io%verbose>=0) then
-    block
-    real(8):: time
-    if (self%out_time==0.0) then
-      time = self%time
-    else
-      time = self%out_next
-    end if
+  if (io%master .and. io%verbose>=-1) then
     print'(a,3x,"time:",2f10.6)', 'patch_mod::output: file= '//trim(filename), time, self%time
-    end block
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  write (io%data_unit,'(1p,e18.10,6(2x,3e18.10)1x,i3.1,1x,e10.3)') self%time, self%position, self%ds, &
+  write (io%data_unit,'(1p,e18.10,6(2x,3e18.10)1x,i3.1,1x,e10.3)') time, self%position, self%ds, &
         self%velocity, self%llc_nat, self%llc_cart, self%mesh%centre_nat, self%level, self%quality
   write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1)') int(self%box/self%ds+0.5), u-l+1, &
         li, ui, self%n, self%gn, self%ng, self%nv
