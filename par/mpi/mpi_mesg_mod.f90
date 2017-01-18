@@ -634,7 +634,7 @@ SUBROUTINE diagnostics (self, flag)
     write (io_unit%mpi,1) 'average wait_all time:', t_wait_all/max(n_wait_all,1_8), &
       ', with', real(n_wait_all), ' waits'
     1 format(a,1p,2(e10.2,a))
-    if (io%master) then
+    if (io%master.and..not.io_unit%do_validate) then
       write (io_unit%output,1) 'average wait_for time:', t_wait_for/max(n_wait_for,1_8), &
         ', with', real(n_wait_for), ' waits'
       write (io_unit%output,1) 'average wait_all time:', t_wait_all/max(n_wait_all,1_8), &
