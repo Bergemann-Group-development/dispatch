@@ -647,7 +647,7 @@ SUBROUTINE extrapolate_guards (self)
   end do
   end do
   end do
-  if (io%verbose>1) print *, &
+  if (io%verbose>2) print *, &
     'extrapolate_guards: id, it =', self%id, it0, self%time
   call trace_end (itimer)
 END SUBROUTINE extrapolate_guards
