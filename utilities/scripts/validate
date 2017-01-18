@@ -98,10 +98,8 @@ foreach d ( $dirs )
   endif
 
   # make a Makefile, if it isn't already there
-  if (! -e Makefile) then
-    echo "Creating default $d/validation/Makefile from $d/Makefile"
-    sed -e '/TOP/s:\.\./:../../:' < ../Makefile > Makefile
-  endif
+  echo "Creating default $d/validation/Makefile from $d/Makefile"
+  sed -e '/TOP/s:\.\./:../../:' < ../Makefile > Makefile
 
   # reset status counter
   @ s = 0
