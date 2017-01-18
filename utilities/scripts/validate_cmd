@@ -30,12 +30,17 @@ if (! -e $label.val ) then
   #csh -c "$cmd"
 endif
 
+# Compare the new log file to the existing validation file.
+# If they differ, make noise.  If it is decided that differences
+# are OK, and a "reset" (-r) option is used, then nevertheless
+# document the difference, by saving the .log and .val files,
+# for reproducibility.
 diff -ibw $label.val $label.log
 if ($status) then
   echo "                                                                    ==> NOT the same"
-  cp -p $label{,_$date}.log
-  cp -p $label{,_$date}.val
   if ($?reset) then
+    cp -p $label{,_$date}.log
+    cp -p $label{,_$date}.val
     echo "WARNING: resetting $label.val"
     cp -p $label.{log,val}
     exit(0)
