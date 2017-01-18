@@ -51,6 +51,7 @@ SUBROUTINE init (self)
   end if
   call self%mhd_t%init
   call self%set(bits%static)
+  call timestep%init
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
@@ -75,7 +76,6 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
-  type(timestep_t):: timestep
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   if (first_time) then

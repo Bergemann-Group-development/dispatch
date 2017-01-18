@@ -58,6 +58,7 @@ SUBROUTINE init (self)
     smallc, do_isothermal, csound
 !...............................................................................
   call trace_begin('mhd_mod::init')
+  self%nw = 1
   call self%patch_t%init
   !$omp critical (pde)
   if (first_time) then
