@@ -9,12 +9,13 @@ MODULE initial_mod
   USE random_mod
   USE hydro_parameters
   USE omp_mod
+  USE index_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     integer:: seed
-    real:: omega(3), gamma, v_head, v_accrete
+    real:: gamma
     logical:: mhd
     real(8):: a(3), b(3), phi(3), d0, s0
     real(8):: a0(3), k(3), b0(3), u0(3)
@@ -25,6 +26,7 @@ MODULE initial_mod
     procedure, nopass:: cleanup
   end type
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
+  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
@@ -37,7 +39,7 @@ SUBROUTINE init (self)
    real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0
    character(len=32), save:: type='single_solenoidal'
    logical, save:: first_time=.true.
-   namelist /initial_params/ seed, k, a0, u0, b0, d0, s0, mhd, type
+   namelist /initial_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, type
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    !$omp critical (input_cr)
@@ -58,6 +60,7 @@ SUBROUTINE init (self)
    self%s0     = s0
    self%mhd    = mhd
    self%time   = 0d0
+   self%gamma  = gamma
    select case (type)
    case ('single_solenoidal')
      self%selected => single_solenoidal
@@ -103,16 +106,16 @@ SUBROUTINE single_solenoidal (self, m, ff)
       ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,1) = self%d0
-        ff(ix,iy,iz,2) = self%a0(1)*(sin(ky)+sin(kz))
-        ff(ix,iy,iz,3) = self%a0(2)*(sin(kz)+sin(kx))
-        ff(ix,iy,iz,4) = self%a0(3)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,5) = self%d0*csound**2/(gamma*(gamma-1)) + &
+        ff(ix,iy,iz,idx%d ) = self%d0
+        ff(ix,iy,iz,idx%px) = self%a0(1)*(sin(ky)+sin(kz))
+        ff(ix,iy,iz,idx%py) = self%a0(2)*(sin(kz)+sin(kx))
+        ff(ix,iy,iz,idx%pz) = self%a0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,idx%e ) = self%d0*csound**2/(gamma*(gamma-1)) + &
           half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         if (self%mhd) then
-          ff(ix,iy,iz,6) = self%b0(1)*(sin(kx)+sin(ky))
-          ff(ix,iy,iz,7) = self%b0(2)*(sin(kx)+sin(ky))
-          ff(ix,iy,iz,8) = self%b0(3)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,idx%bx) = self%b0(1)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,idx%by) = self%b0(2)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,idx%bz) = self%b0(3)*(sin(kx)+sin(ky))
         end if
       end do
     end do
@@ -143,16 +146,16 @@ SUBROUTINE single_compressive (self, m, ff)
       ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,1) = self%d0
-        ff(ix,iy,iz,2) = self%u0(1)*sin(kx)
-        ff(ix,iy,iz,3) = self%u0(2)*sin(ky)
-        ff(ix,iy,iz,4) = self%u0(3)*sin(kz)
-        ff(ix,iy,iz,5) = self%d0*csound**2/(gamma*(gamma-1)) + &
+        ff(ix,iy,iz,idx%d ) = self%d0
+        ff(ix,iy,iz,idx%px) = self%u0(1)*sin(kx)
+        ff(ix,iy,iz,idx%py) = self%u0(2)*sin(ky)
+        ff(ix,iy,iz,idx%pz) = self%u0(3)*sin(kz)
+        ff(ix,iy,iz,idx%e ) = self%d0*csound**2/(gamma*(gamma-1)) + &
           half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         if (self%mhd) then
-          ff(ix,iy,iz,6) = self%b0(1)
-          ff(ix,iy,iz,7) = self%b0(2)
-          ff(ix,iy,iz,8) = self%b0(3)
+          ff(ix,iy,iz,idx%bx) = self%b0(1)
+          ff(ix,iy,iz,idx%by) = self%b0(2)
+          ff(ix,iy,iz,idx%bz) = self%b0(3)
         end if
       end do
     end do
@@ -183,16 +186,16 @@ SUBROUTINE single_advection (self, m, ff)
       ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,1) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
-        ff(ix,iy,iz,2) = self%d0*self%u0(1)
-        ff(ix,iy,iz,3) = self%d0*self%u0(2)
-        ff(ix,iy,iz,4) = self%d0*self%u0(3)
-        ff(ix,iy,iz,5) = self%d0*csound**2/(gamma*(gamma-1)) + &
+        ff(ix,iy,iz,idx%d ) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
+        ff(ix,iy,iz,idx%px) = self%d0*self%u0(1)
+        ff(ix,iy,iz,idx%py) = self%d0*self%u0(2)
+        ff(ix,iy,iz,idx%pz) = self%d0*self%u0(3)
+        ff(ix,iy,iz,idx%e ) = self%d0*csound**2/(gamma*(gamma-1)) + &
           half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         if (self%mhd) then
-          ff(ix,iy,iz,6) = self%b0(3)*sin(kz)
-          ff(ix,iy,iz,7) = self%b0(1)*sin(kx)
-          ff(ix,iy,iz,8) = self%b0(2)*sin(ky)
+          ff(ix,iy,iz,idx%bx) = self%b0(3)*sin(kz)
+          ff(ix,iy,iz,idx%by) = self%b0(1)*sin(kx)
+          ff(ix,iy,iz,idx%bz) = self%b0(2)*sin(ky)
         end if
       end do
     end do
@@ -211,7 +214,7 @@ SUBROUTINE exa256 (self, m, ff)
   real, dimension(:,:,:,:):: ff
   real, dimension(:), allocatable:: u, d
   !.............................................................................
-  integer:: ix, iy, iz, jy, jz, rec, i, li(3), ui(3)
+  integer:: ix, iy, iz, jy, jz, rec, iv, li(3), ui(3)
   integer(8):: nx, ny, nz
   real(dp):: umax, dt
   logical, save:: first_time=.true.
@@ -242,24 +245,24 @@ SUBROUTINE exa256 (self, m, ff)
     rec = 1   + (ix           )      /m(1)%n
     rec = rec + (iy+jy-m(2)%li)*nx   /m(1)%n
     rec = rec + (iz+jz-m(3)%li)*nx*ny/m(1)%n
-    read (io_unit%data,rec=rec) d; ff(m(1)%li:m(1)%ui,jy,jz,1) = d
+    read (io_unit%data,rec=rec) d; ff(m(1)%li:m(1)%ui,jy,jz,idx%d ) = d
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,2) = u
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,idx%px) = u
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,3) = u
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,idx%py) = u
     rec = rec + nx*ny*nz/m(1)%n
-    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,4) = u
-    umax=max(umax,3.+maxval(abs(ff(li(1):ui(1),jy,jz,2)) &
-                           +abs(ff(li(1):ui(1),jy,jz,3)) &
-                           +abs(ff(li(1):ui(1),jy,jz,4))))
+    read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,idx%pz) = u
+    umax=max(umax,3.+maxval(abs(ff(li(1):ui(1),jy,jz,idx%px)) &
+                           +abs(ff(li(1):ui(1),jy,jz,idx%py)) &
+                           +abs(ff(li(1):ui(1),jy,jz,idx%pz))))
   end do
   end do
-  ff(:,:,:,5) = 0.5*ff(:,:,:,1)*(ff(:,:,:,2)**2+ &
-                                 ff(:,:,:,3)**2+ &
-                                 ff(:,:,:,4)**2) &
-              + ff(:,:,:,1)/(gamma-one)
-  do i=2,4
-    ff(:,:,:,i) = ff(:,:,:,1)*ff(:,:,:,i)
+  ff(:,:,:,5) = 0.5*ff(:,:,:,idx%d)*(ff(:,:,:,idx%px)**2+ &
+                                     ff(:,:,:,idx%py)**2+ &
+                                     ff(:,:,:,idx%pz)**2) &
+              + ff(:,:,:,idx%d)/(gamma-one)
+  do iv=idx%px,idx%pz
+    ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
   dt = courant_factor*m(1)%d/umax
   if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,courant_factor,gamma,umax
@@ -271,7 +274,8 @@ SUBROUTINE exa256 (self, m, ff)
 END SUBROUTINE exa256
 
 !> =============================================================================
-!> Initialize from a raw data file
+!> Initialize from a raw data file, assumed to contain isothermal data, in the
+!> order rho, Ux, Uy, Uz
 !> =============================================================================
 SUBROUTINE raw (self, m, ff)
   USE io_unit_mod
@@ -279,8 +283,8 @@ SUBROUTINE raw (self, m, ff)
   class(mesh_t):: m(3)
   real, dimension(:,:,:,:):: ff
   !.............................................................................
-  integer:: n(3), i(3), iv
-  integer, save:: mv=4
+  integer, parameter:: mv=4
+  integer:: n(3), i(3), iv, jv(mv)
   logical, save:: first_time=.true.
   integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
@@ -304,17 +308,21 @@ SUBROUTINE raw (self, m, ff)
     end do
     close (io_unit%data)
   end if
-  i = 1 + nint(m%p/m%d) - m%n/2                          ! index offsets
+  i = 1 + nint(m%p/m%d) - m%n/2                         ! index offsets
+  jv(1) = idx%d                                           ! variable index translation
+  jv(2) = idx%px
+  jv(3) = idx%py
+  jv(4) = idx%pz
   ff = 0.0
   do iv=1,mv
     ff(m(1)%li:m(1)%ui, &
        m(2)%li:m(2)%ui, &
-       m(3)%li:m(3)%ui,iv) = buffer(i(1):i(1)+m(1)%n-1, &
-                                    i(2):i(2)+m(2)%n-1, &
-                                    i(3):i(3)+m(3)%n-1,iv)
+       m(3)%li:m(3)%ui,jv(iv)) = buffer(i(1):i(1)+m(1)%n-1, &
+                                        i(2):i(2)+m(2)%n-1, &
+                                        i(3):i(3)+m(3)%n-1,iv)
   end do
-  do iv=2,4
-    ff(:,:,:,iv) = ff(:,:,:,1)*ff(:,:,:,iv)
+  do iv=idx%px,idx%pz
+    ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
