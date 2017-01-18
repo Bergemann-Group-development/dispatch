@@ -65,6 +65,7 @@ SUBROUTINE init (self)
     call mpi%abort('This is the RAMSES hydro solver. But MHD is turned on!')
   end if
 
+  self%nw = 1
   call self%patch_t%init
   !$omp critical (pde)
   if (first_time) then

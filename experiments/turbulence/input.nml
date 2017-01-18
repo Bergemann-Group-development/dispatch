@@ -65,12 +65,9 @@
 &initial_params
  k=3,3,3
  a0=0.0,0.0,0.0
- u0=0,0,0
+ u0=0.1,0.2,0.3
  b0=0,0,0.0
- !type='single_compressive'
- !type='single_solenoidal'
- type='single_advection'
- !type='raw'
+ type='single_compressive'
 /
 &ramses_params
  courant_factor=0.8
