@@ -18,34 +18,34 @@ MODULE force_mod
     procedure init
     procedure single_solenoidal
   end type
- logical, save:: first_time=.true.
 CONTAINS
 
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
 SUBROUTINE init (self)
-   class(force_t):: self
-   integer:: iostat
-   character(len=32), save:: type='star_and_planet'
-   namelist /force_params/ type
-   !----------------------------------------------------------------------------
-   call trace_begin('force_t%init')
-   !$omp critical (input_cr)
-   if (first_time) then
-     first_time = .false.
-     rewind (io%input)
-     read (io%input, force_params, iostat=iostat)
-     if (io%master) write (*, force_params)
-   end if
-   !$omp end critical (input_cr)
-   select case (type)
-   case ('single_solenoidal')
-     self%selected => single_solenoidal
-   case default
-     nullify(self%selected)
-   end select
-   call trace_end
+  class(force_t):: self
+  integer:: iostat
+  character(len=32), save:: type='star_and_planet'
+  logical, save:: first_time=.true.
+  namelist /force_params/ type
+  !----------------------------------------------------------------------------
+  call trace_begin('force_t%init')
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, force_params, iostat=iostat)
+    if (io%master) write (*, force_params)
+  end if
+  !$omp end critical (input_cr)
+  select case (type)
+  case ('single_solenoidal')
+    self%selected => single_solenoidal
+  case default
+    nullify(self%selected)
+  end select
+  call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -63,24 +63,26 @@ FUNCTION single_solenoidal (self, time, d, p, m) RESULT (ff)
   integer               :: ix, iy, iz, iostat
   real(8)               :: kx, ky, kz
   !.............................................................................
+  logical, save:: first_time=.true.
   integer, save:: seed=-11
   real, save:: a(3)=0.0
   real, save:: t_turn=0.3, t_save=0.0, a0(3)=0.1, k(3)=1.0, phi(3)=0.0
   namelist /solenoidal_params/ k, a0, t_turn
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%single_solenoidal')
-  !$omp critical (input_cr)
   if (first_time) then
-    first_time = .false.
-    rewind (io%input)
-    read (io%input, solenoidal_params, iostat=iostat)
-    if (io%master) write (*, solenoidal_params)
+    !$omp critical (input_cr)
+    if (first_time) then
+      first_time = .false.
+      rewind (io%input)
+      read (io%input, solenoidal_params, iostat=iostat)
+      if (io%master) write (*, solenoidal_params)
+    end if
+    !$omp end critical (input_cr)
   end if
-  !$omp end critical (input_cr)
   if (time >= t_save) then
     a = a0*random%ran3()
     t_save = t_save + t_turn
-!     if (io%verbose>3) print *,'forcing', a, phi
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
