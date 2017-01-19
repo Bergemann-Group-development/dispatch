@@ -1052,14 +1052,14 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       self%fminval(self%mem(:,:,:,iv,self%it,1)), &
       self%fmaxval(self%mem(:,:,:,iv,self%it,1)), &
       real(n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual)
-    2 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e12.4,1x,2e12.4,2x,e10.2,2i5,l3,l1,o12)
+    2 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e12.4,1x,2e12.4,2x,e10.2,2i5,l3,l1,o12)
     end do
     if (self%nw==1) then
       deallocate (df)
     end if
     return
   end if
-  1 format(a,i8,2i4,i3,f10.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,3i5,8i4,l3,l1,o12)
+  1 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,3i5,8i4,l3,l1,o12)
   if (io%verbose>=0) then
     if (self%time>=self%print_next) then
       if (self%print_time > 0) &
