@@ -283,7 +283,7 @@ def plotting_grid(root, p, x_i, slicedir, sliceloc, sliceeps=1.0e-2, truecoords=
 
     return xpcut, ypcut, m.mask
 
-def patch_grid_edges(p, truecoords=False):
+def patch_grid_edges(p, slicedir, truecoords=False):
     """
     Using the corners of the patch, create a matplotlib patch that draws
     the grid edges.
@@ -294,11 +294,18 @@ def patch_grid_edges(p, truecoords=False):
 
     assert isinstance(p, Patch), "Input must be an instance of a DISPATCH `Patch`!"
 
-    width = p.active_corners[1][0] - p.active_corners[0][0]
-    height = p.active_corners[1][1] - p.active_corners[0][1]
+    if slicedir == 1:
+        llx, urx = p.active_corners[0][1], p.active_corners[1][1]
+        lly, ury = p.active_corners[0][2], p.active_corners[1][2]
+    elif slicedir == 2:
+        llx, urx = p.active_corners[0][0], p.active_corners[1][0]
+        lly, ury = p.active_corners[0][2], p.active_corners[1][2]
+    elif slicedir == 3:
+        llx, urx = p.active_corners[0][0], p.active_corners[1][0]
+        lly, ury = p.active_corners[0][1], p.active_corners[1][1]
 
     if p.mesh_type == mesh_types[1] or truecoords: # Cartesian
-        edges = Rectangle(p.active_corners[0][0:2],width,height,fc='none',lw=1.0,
+        edges = Rectangle((llx,lly),width=(urx-llx),height=(ury-lly),fc='none',lw=1.0,
                           ec='k',linestyle='dashed',zorder=0.01/min(p.dx)+0.1)
     elif p.mesh_type == mesh_types[2]: # spherical
         thetamin = round(p.active_corners[0][2]*180.0/np.pi,3)
