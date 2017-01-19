@@ -78,6 +78,7 @@ reading /proc/cpuinfo:   0.0 sec
  D0=  1.00000000    ,
  S0=  0.00000000    ,
  MHD=F,
+ GAMMA=  1.00999999    ,
  TYPE="single_compressive              ",
  /
 &PATCH_PARAMS
