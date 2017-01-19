@@ -20,15 +20,14 @@ MODULE timestep_mod
   private
   integer, parameter:: nslice = 4
   type, public:: timestep_t
-    integer:: id                                        ! task id
     integer:: verbose=0                                 ! verbosity
     integer:: time_order=-1                             ! time order of integration
-    integer, dimension(:), pointer:: iit                ! time slot order
     real:: wt(nslice)                                   ! time slot weights
   contains
     procedure:: init
     procedure:: update
   end type
+  type(timestep_t), public:: timestep
 CONTAINS
 
 !> =============================================================================
@@ -84,7 +83,7 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
   integer:: l(3), u(3)
   !......................................................................
   call trace_begin ('timestep_t%update')
-  call self%init                                ! auto-initialize
+  if (self%time_order==-1) error stop 'timestep_mod not initialized!'
   nt = size(iit)                                ! number of time slots
   l = mesh%li
   u = mesh%ui
@@ -94,6 +93,10 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
   where (mesh%upper_boundary)
     u = mesh%ub
   end where
+  if (size(mem,6)==1.and.self%time_order>0) then
+    if (io%master) print *,id,'WARNING: setting time_order=0 in timestep%update'
+    self%time_order=0
+  end if
   select case (self%time_order)
   case (0)
   case (1)
