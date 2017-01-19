@@ -41,15 +41,16 @@ CONTAINS
 !> =============================================================================
 !> Distribute patches in a Rubik's cube arrangement around a box
 !> =============================================================================
-SUBROUTINE init_hierarchy (self, num, label)
+SUBROUTINE init_hierarchy (self, num, rootlvl, label)
   class(rubiks_t):: self
   character(len=*), optional:: label
+  integer, intent(in):: num
+  integer, optional:: rootlvl
   !.............................................................................
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  integer, intent(in) :: num
   integer, save:: n_patch(3)=3, m_zoom=3
-  integer :: n_levels(num)
+  integer :: n_levels(num), rootlevel
   integer, save:: n_repeat=1
   integer:: iostat
   integer :: n_per_patch(3) = 32, np
@@ -62,7 +63,10 @@ SUBROUTINE init_hierarchy (self, num, label)
   ! an empty namelist input here. If present, take the initial values from
   ! existing data type values.
   !-----------------------------------------------------------------------------
-  call trace_begin ('rubiks_t%init')
+  call trace_begin ('rubiks_t%init_hierarchy')
+
+  rootlevel = 0
+  if (present(rootlvl)) rootlevel = rootlvl
 
   n_levels = 5
 
@@ -87,15 +91,8 @@ SUBROUTINE init_hierarchy (self, num, label)
   do np=1,num ! loop over sets of hierarchies
     do ir=0,n_repeat-1
       position(1,np) = ((ir-n_repeat/2)*self%task_list%size(1))/n_repeat
-      if (ir==n_repeat/2) then
-        levels = n_levels(np)
-        if (io%verbose>1) &
-          print'(a,3i3.1,a,3es12.4)','generating a hiearchy of ',n_patch,' patches at position', position(:,np)
-      else
-        levels = 1
-        if (io%verbose>1) &
-          print'(a,3i3.1,a,3es12.4)','generating a cube of ',n_patch,' patches at position', position(:,np)
-      end if
+      levels = n_levels(np)
+
       if (io%verbose>0) &
         print'("repeated Rubiks Cubes: ir, levels, position =",i4,i3,1p,3es12.4)', &
         ir, levels, position(:,np)
@@ -106,8 +103,8 @@ SUBROUTINE init_hierarchy (self, num, label)
         print*,"No Rubik's cubes will be created (and the task list will be empty!)."
       end if
 
-      do level=1,levels
-        call self%init_level (level, n_levels(np), position(:,np), size(:,np), planet_cylpos(:,np))
+      do level=rootlevel+1,rootlevel+levels
+        call self%init_level (level, n_levels(np)+rootlevel, position(:,np), size(:,np), planet_cylpos(:,np))
       end do
     end do
   end do
@@ -118,11 +115,9 @@ END SUBROUTINE init_hierarchy
 !> =============================================================================
 !> Distribute patches in a Rubik's cube arrangement around a box
 !> =============================================================================
-SUBROUTINE init_level (self, level, n_levels, position, size, planet_cylpos, n_repeat)
+SUBROUTINE init_level (self, level, n_levels, position, size, planet_cylpos)
   class(rubiks_t):: self
   integer, intent(in) :: level, n_levels
-  integer, optional :: n_repeat
-  integer:: ln_repeat
   real(8):: position(3), offset(3), size(3), planet_cylpos(3)
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
@@ -134,8 +129,6 @@ SUBROUTINE init_level (self, level, n_levels, position, size, planet_cylpos, n_r
   ! existing data type values
   !-----------------------------------------------------------------------------
   call trace_begin ('rubiks_t%init_level')
-  ln_repeat = 0
-  if (present(n_repeat)) ln_repeat = n_repeat
 
   do k=1,self%n_patch(3)
     do j=1,self%n_patch(2)
@@ -201,18 +194,19 @@ SUBROUTINE init_level (self, level, n_levels, position, size, planet_cylpos, n_r
   call trace_end
 END SUBROUTINE init_level
 
-SUBROUTINE init_ring (self, label)
+SUBROUTINE init_ring (self, rootlvl, label)
   class(rubiks_t):: self
   character(len=*), optional:: label
+  integer, optional:: rootlvl
   !.............................................................................
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
   integer, save:: n_patch(3)=3, m_zoom=3
-  integer :: n_levels
+  integer :: n_levels=0, rootlevel
   integer, save:: n_repeat=1, repeat_dir=0
   integer:: iostat
   integer :: n_per_patch(3) = 32
-  real(8) :: position(3), size(3), planet_cylpos(3)
+  real(8) :: position(3)=0.0, size(3)=0.0, planet_cylpos(3)=0.0
   integer:: i, j, k, ir, level, levels
   namelist /ring_params/ size, position, n_levels, n_patch, m_zoom, n_repeat, &
                            n_per_patch, planet_cylpos, repeat_dir
@@ -221,9 +215,10 @@ SUBROUTINE init_ring (self, label)
   ! an empty namelist input here. If present, take the initial values from
   ! existing data type values.
   !-----------------------------------------------------------------------------
-  call trace_begin ('rubiks_t%init')
+  call trace_begin ('rubiks_t%init_ring')
 
-  n_levels = 5
+  rootlevel = 0
+  if (present(rootlvl)) rootlevel = rootlvl
 
   rewind (io%input); read (io%input, ring_params, iostat=iostat)
   if (io%master) write (*, ring_params)
@@ -249,15 +244,8 @@ SUBROUTINE init_ring (self, label)
 
     do ir=0,n_repeat-1
       position(1) = ((ir-n_repeat/2)*self%task_list%size(1))/n_repeat
-      if (ir==n_repeat/2) then
-        levels = n_levels
-        if (io%verbose>1) &
-          print'(a,3i3.1,a,3es12.4)','generating a hiearchy of ',n_patch,' patches at position', position(:)
-      else
-        levels = 1
-        if (io%verbose>1) &
-          print'(a,3i3.1,a,3es12.4)','generating a cube of ',n_patch,' patches at position', position(:)
-      end if
+      levels = n_levels
+
       if (io%verbose>0) &
         print'("repeated Rubiks Cubes: ir, levels, position =",i4,i3,1p,3es12.4)', &
         ir, levels, position(:)
@@ -268,8 +256,8 @@ SUBROUTINE init_ring (self, label)
         print*,"No Rubik's cubes will be created (and the task list will be empty!)."
       end if
 
-      do level=1,levels
-        call self%init_level (level, n_levels, position(:), size(:), planet_cylpos(:), n_repeat=n_repeat)
+      do level=rootlevel+1,rootlevel+levels
+        call self%init_level (level, n_levels+rootlevel, position(:), size(:), planet_cylpos(:))
       end do
     end do
 

@@ -14,8 +14,8 @@ MODULE planetesimal_mod
 
   ! an immersed boundary that acts like a solid sphere (our planetesimal)
   type, public :: planetesimal_t
-    real(4) :: radius, mass, vol_density, period, massratio, mass_final
-    real(4) :: mstar ! alias for the same variable in `experiment_params`
+    real(8) :: radius, mass, vol_density, period, massratio, mass_final
+    real(8) :: mstar ! alias for the same variable in `experiment_params`
     real(8) :: cyl_pos(3) ! position of the planet in cylindrical coords.
     real(8) :: position(3) ! position in Cartesian coords.
     real(8) :: velocity(3)
@@ -39,16 +39,16 @@ SUBROUTINE init_planetesimal (self)
   !-----------------------------------------------------------------------------
   ! Namelist parameters for the component
   !-----------------------------------------------------------------------------
-  real(8) :: radius, rplanet, phiplanet, zplanet, mass, mass_final
+  real(8) :: radius, aplanet, phiplanet, zplanet, mass, mass_final
   logical :: ramp_mass = .true.
-  namelist / planetesimal_params / radius, mass, mass_final, ramp_mass, rplanet, &
+  namelist / planetesimal_params / radius, mass, mass_final, ramp_mass, aplanet, &
                                    phiplanet, zplanet
   !-----------------------------------------------------------------------------
   call trace_begin ('solid_sphere_t%init')
 
   ! default values
   radius = cgs%r_earth / cgs%AU ! radius in AU
-  rplanet = 1.0 ! semi-major axis in units of Jupiter's semi-major axis
+  aplanet = 1.0 ! semi-major axis in units of Jupiter's semi-major axis
   phiplanet = 0.0
   zplanet = 0.0
   mass = 0.0 ! initial mass in Solar mass units
@@ -58,9 +58,9 @@ SUBROUTINE init_planetesimal (self)
   if (io%master) write (*, planetesimal_params)
 
   self%cyl_pos(1) = zplanet
-  self%cyl_pos(2) = rplanet
+  self%cyl_pos(2) = aplanet
   self%cyl_pos(3) = phiplanet
-  self%position = CylindricalToCartesian(zplanet, rplanet, phiplanet)
+  self%position = CylindricalToCartesian(zplanet, aplanet, phiplanet)
   self%radius = radius
   self%mass_final = mass_final
   if (.not. ramp_mass) then
@@ -69,9 +69,9 @@ SUBROUTINE init_planetesimal (self)
     self%mass = mass
   end if
   self%vol_density = self%mass * 0.75 / pi / self%radius**3
-  self%period = 2.0 * pi * sqrt(rplanet**3 &
+  self%period = 2.0 * pi * sqrt(aplanet**3 &
               / (scaling%grav * self%mstar))
-  self%velocity = [0.0d0, 0.0d0, sqrt(scaling%grav * self%mstar / rplanet**3)]
+  self%velocity = [0.0d0, 0.0d0, sqrt(scaling%grav * self%mstar / aplanet**3)]
   self%massratio = mass_final + (self%mstar + mass_final)
 
   call trace_end

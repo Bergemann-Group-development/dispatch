@@ -44,10 +44,11 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init_setup (self)
   class(setup_t) :: self
+  class(task_t), pointer :: rootpatch
   class(list_t), pointer :: task_list
   type(annulus_t), pointer :: annulus
   type(planetesimal_t), pointer :: planetesimal
-  type(rubiks_t), pointer :: nested_grids
+  type(rubiks_t), pointer :: nested_grids, ring_grids
   logical, save :: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
@@ -88,12 +89,25 @@ SUBROUTINE init_setup (self)
   end if
 
   !-----------------------------------------------------------------------------
+  ! Set-up a ring of patches with centred on the planetesimal's orbital radius
+  !-----------------------------------------------------------------------------
+  rootpatch => annulus%task_list%head%task
+  allocate (ring_grids)
+  ring_grids%rotating = annulus%rotating
+  call ring_grids%init_ring(rootpatch%level)
+  if (associated(ring_grids%task_list)) then
+    task_list => ring_grids%task_list
+    call self%task_list%append_list(task_list)
+  end if
+
+  !-----------------------------------------------------------------------------
   ! Set-up a series of "Rubik's cube"-like wedges centred on the planetesimal
   ! position
   !-----------------------------------------------------------------------------
+  rootpatch => ring_grids%task_list%head%task
   allocate (nested_grids)
   nested_grids%rotating = annulus%rotating
-  call nested_grids%init_hierarchy(1)
+  call nested_grids%init_hierarchy(1,rootlvl=rootpatch%level)
   if (associated(nested_grids%task_list)) then
     task_list => nested_grids%task_list
     call self%task_list%append_list(task_list)
