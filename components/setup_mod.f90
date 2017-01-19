@@ -6,6 +6,7 @@ MODULE setup_mod
   USE eos_mod
   USE opacity_mod
   USE scaling_mod
+  USE timestep_mod
   implicit none
   private
   type, public:: setup_t
@@ -23,6 +24,7 @@ SUBROUTINE init (self)
   !.............................................................................
   call mpi%init                         ! MPI startup
   call io%init                          ! I/O system
+  call timestep%init                    ! time-stepping module
   call scaling%init                     ! Scaling to code units
   call eos%init                         ! Equation-of-state
   call opacity%init                     ! Opacity

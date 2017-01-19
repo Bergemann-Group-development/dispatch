@@ -36,5 +36,4 @@
 
 &timestep_params
  time_order=3
- courant_number=0.333
 /

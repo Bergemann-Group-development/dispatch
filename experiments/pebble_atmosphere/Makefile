@@ -23,7 +23,7 @@ sinclude $(SOLVER)/Makefile
 $(EXEC): setup_mod.o eos_mod.o
 
 # Dependencies
-setup_mod.o             : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o atmosphere_mod.o rubiks_mod.o planet_mod.o omp_mod.o scene_mod.o list_mod.o
+setup_mod.o             : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o atmosphere_mod.o rubiks_mod.o planet_mod.o omp_mod.o scene_mod.o list_mod.o timestep_mod.o
 atmosphere_mod.o        : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o particle_mod.o planet_mod.o
 experiment_mod.o        : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o pebble_patch_mod.o \
                           timestep_mod.o initial_mod.o atmosphere_mod.o boundary_mod.o force_mod.o

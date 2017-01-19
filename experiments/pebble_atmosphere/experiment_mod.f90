@@ -77,7 +77,6 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(experiment_t):: self
   !.............................................................................
-  type(timestep_t):: timestep
   real, dimension(:,:,:,:), pointer:: mem
   real, dimension(:,:,:), pointer:: d, e
   real(8), dimension(3):: h

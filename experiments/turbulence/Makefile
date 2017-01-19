@@ -6,6 +6,7 @@ OPTS = optimized
 
 # Default target and methods
 EXEC            = dispatch.x
+UPD             = adams_bashforth
 SOLVER          = ramses/hydro
 TOP             = ../..
 
@@ -20,4 +21,4 @@ sinclude $(TOP)/config/Makefile
 
 # List the .o files the main program depends on after the colon:
 $(EXEC)                 : setup_mod.o cartesian_mod.o
-experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.o mhd_mod.o initial_mod.o timer_mod.o link_mod.o
+experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.o mhd_mod.o initial_mod.o timer_mod.o link_mod.o timestep_mod.o

@@ -42,7 +42,6 @@ END SUBROUTINE init_experiment
 !> =============================================================================
 SUBROUTINE update_experiment (self)
   class(experiment_t):: self
-  type(timestep_t):: timestep
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
 

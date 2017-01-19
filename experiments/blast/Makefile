@@ -13,7 +13,7 @@ TOP             = ../..
 sinclude $(TOP)/config/Makefile
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): cartesian_mod.o
+$(EXEC): cartesian_mod.o setup_mod.o
 
 # Dependencies
 experiment_mod.o	: trace_mod.o io_mod.o timestep_mod.o mhd_mod.o initial_mod.o boundary_mod.o

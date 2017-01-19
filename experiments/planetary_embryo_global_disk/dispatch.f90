@@ -12,7 +12,6 @@ PROGRAM dispatch
   implicit none
   !.............................................................................
   call mpi%init
-  call io%init ('planetesimal_annulus')
   call setup%init
   call setup%task_list%execute
   call mpi%end

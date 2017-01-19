@@ -20,6 +20,7 @@ MODULE setup_mod
   USE planetesimal_mod
   USE parameters_mod
   USE rubiks_mod
+  USE timestep_mod
   implicit none
   private
 
@@ -43,7 +44,6 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init_setup (self)
   class(setup_t) :: self
-  class(experiment_t), pointer :: task
   class(list_t), pointer :: task_list
   type(annulus_t), pointer :: annulus
   type(planetesimal_t), pointer :: planetesimal
@@ -53,6 +53,7 @@ SUBROUTINE init_setup (self)
   call trace_begin ('setup_t%init')
 
   call io%init (self%experiment_name)
+  call timestep%init()
   call scaling%init()
 
   ! read input params

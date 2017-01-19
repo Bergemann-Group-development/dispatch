@@ -20,6 +20,7 @@ MODULE ramses_mod
   USE list_mod
   USE task_list_mod
   USE experiment_mod
+  USE timestep_mod
   implicit none
   private
 
@@ -91,7 +92,10 @@ SUBROUTINE init (self, name)
                            nmerged_max, minlvl, maxlvl, rank_load, path, &
                            centre_on_sink, merge_octs
   !.............................................................................
-  call trace_begin('experiment_t%init')
+  call trace_begin('ramses_t%init')
+  call io%init ('ramses snapshot reader')
+  call timestep%init
+
   !-----------------------------------------------------------------------------
   ! The first thread reads the namelist parameters and save them
   !-----------------------------------------------------------------------------
