@@ -25,10 +25,11 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     gamma = 1.0001
-    datadir = './data/'
+    datadir = './data/input_fid/'
     prefix = ''
-    ptimes = [0.0]
-    t_eps = 0.01
+    ptimes = [0.0, 0.0628, 0.1256]
+    #ptimes = 0.629*np.arange(0,2)
+    t_eps = 0.05
     #pxsize = [-2.6, 2.6]
     #pysize = [-2.6, 2.6]
     pxsize = [0.39,2.6]
@@ -52,6 +53,11 @@ if __name__ == "__main__":
 
     m1 = 0 # counter 1
     root = None
+    if len(ptimes) > 30 and not output_png:
+        print "Do you really want to open {0} windows?".format(len(ptimes))
+        print "Try setting `output_png` to True."
+        from sys import exit
+        exit(1)
     for pt in ptimes:
 
         cfig = plt.figure("t = {0:.3e}".format(pt),facecolor='w',figsize=(7.0,6.0))
@@ -106,37 +112,38 @@ if __name__ == "__main__":
                 pass
             if (root is None) or (root.id > p.id):
                 root = p
-                if truecoords:
-                    if root.mesh_type == 'cylindrical':
-                        if slicedir == 1:
-                            cax.set_xlabel(r'$r$')
-                            cax.set_ylabel(r'$\phi$')
-                        elif slicedir == 2:
-                            cax.set_xlabel(r'$z$')
-                            cax.set_ylabel(r'$\phi$')
-                        elif slicedir == 3:
-                            cax.set_xlabel(r'$r$')
-                            cax.set_ylabel(r'$z$')
-                    elif root.mesh_type == 'spherical':
-                        if slicedir == 1:
-                            cax.set_xlabel(r'$\theta$')
-                            cax.set_ylabel(r'$\phi$')
-                        elif slicedir == 2:
-                            cax.set_xlabel(r'$r$')
-                            cax.set_ylabel(r'$\phi$')
-                        elif slicedir == 3:
-                            cax.set_xlabel(r'$r$')
-                            cax.set_ylabel(r'$\theta$')
-                else:
+            if truecoords:
+                if root.mesh_type == 'cylindrical':
                     if slicedir == 1:
-                        cax.set_xlabel(r'$y$')
-                        cax.set_ylabel(r'$z$')
+                        cax.set_xlabel(r'$r$')
+                        cax.set_ylabel(r'$\phi$')
                     elif slicedir == 2:
-                        cax.set_xlabel(r'$x$')
-                        cax.set_ylabel(r'$z$')
+                        cax.set_xlabel(r'$z$')
+                        cax.set_ylabel(r'$\phi$')
                     elif slicedir == 3:
-                        cax.set_xlabel(r'$x$')
-                        cax.set_ylabel(r'$y$')
+                        cax.set_xlabel(r'$r$')
+                        cax.set_ylabel(r'$z$')
+                elif root.mesh_type == 'spherical':
+                    if slicedir == 1:
+                        cax.set_xlabel(r'$\theta$')
+                        cax.set_ylabel(r'$\phi$')
+                    elif slicedir == 2:
+                        cax.set_xlabel(r'$r$')
+                        cax.set_ylabel(r'$\phi$')
+                    elif slicedir == 3:
+                        cax.set_xlabel(r'$r$')
+                        cax.set_ylabel(r'$\theta$')
+            else:
+                if slicedir == 1:
+                    cax.set_xlabel(r'$y$')
+                    cax.set_ylabel(r'$z$')
+                elif slicedir == 2:
+                    cax.set_xlabel(r'$x$')
+                    cax.set_ylabel(r'$z$')
+                elif slicedir == 3:
+                    cax.set_xlabel(r'$x$')
+                    cax.set_ylabel(r'$y$')
+
             print "Data:", p.filename, p.time, pt
             times.append(p.time)
 

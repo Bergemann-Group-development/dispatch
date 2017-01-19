@@ -104,7 +104,9 @@ SUBROUTINE init_setup (self)
   ! Set-up a series of "Rubik's cube"-like wedges centred on the planetesimal
   ! position
   !-----------------------------------------------------------------------------
-  rootpatch => ring_grids%task_list%head%task
+  if (associated(ring_grids%task_list)) then
+    rootpatch => ring_grids%task_list%head%task
+  end if
   allocate (nested_grids)
   nested_grids%rotating = annulus%rotating
   call nested_grids%init_hierarchy(1,rootlvl=rootpatch%level)
