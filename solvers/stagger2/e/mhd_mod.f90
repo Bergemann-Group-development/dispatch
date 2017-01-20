@@ -248,16 +248,6 @@ SUBROUTINE update (self)
   dddt = -st%div(fm)                                    ! density derivative
   self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))
   if (io%verbose>2) print*,'u_max',self%u_max
-  !-----------------------------------------------------------------------------
-  ! Conservation of entropy.  The formulation that works best so far is to make
-  ! the diffusive entropy flux directly proportional to the diffusive mass flux,
-  ! plus a contribution proportional to the gradient of specific entropy ss.
-  !-----------------------------------------------------------------------------
-  if (self%gamma /= 1.0) then
-    ee = e/d
-    fm = fm*down(ee) - (self%nu(5)*dd*down(du))*st%ddown(ee)
-    dedt = dedt - st%div(fm) + Q
-  end if
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -286,7 +276,7 @@ SUBROUTINE update (self)
     fzx = fzx - xdn(Bz)*zdn(Bx)
   end if
   !-----------------------------------------------------------------------------
-  ! Consistent ast%ddition of mass flux related momentum flux, symmetrized. The
+  ! Consistent addition of mass flux related momentum flux, symmetrized. The
   ! diagonal part is analogous, a centered version of \nu \rho U_i \grad\ln\rho,
   ! while the off-diagonal part needs to be properly symmetrized.
   !-----------------------------------------------------------------------------
@@ -298,6 +288,12 @@ SUBROUTINE update (self)
     fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
     fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
     fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
+    !fxx = fxx + xup1(fdx)*xup(Ux)
+    !fyy = fyy + yup1(fdy)*yup(Uy)
+    !fzz = fzz + zup1(fdz)*zup(Uz)
+    !fxy = fxy + 0.5*(xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
+    !fyz = fyz + 0.5*(ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
+    !fzx = fzx + 0.5*(zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
   end if
   !-----------------------------------------------------------------------------
   ! Momentum equations
@@ -312,6 +308,16 @@ SUBROUTINE update (self)
   if (associated(self%force%selected)) &
     dpdt = dpdt + dd*self%force%selected (self%time, Ux, Uy, Uz, self%mesh)
   !-----------------------------------------------------------------------------
+  ! Conservation of energy.  The formulation that works best so far is to make
+  ! the diffusive energy flux directly proportional to the diffusive mass flux,
+  ! plus a contribution proportional to the gradient of specific energy ee.
+  !-----------------------------------------------------------------------------
+  if (self%gamma /= 1.0) then
+    ee = e/d
+    fm = fm*down(ee) - (self%nu(5)*dd*down(du))*st%ddown(ee)
+    dedt = dedt - st%div(fm) + Q
+  end if
+  !-----------------------------------------------------------------------------
   ! Induction equation
   !-----------------------------------------------------------------------------
   if (self%mhd) then
@@ -321,9 +327,10 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     J = st%curl_dn(B)
     emf = self%nu(6)*edge(du)*J
-    Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
-    if (self%gamma /= 1.0) &
+    if (self%gamma /= 1.0) then
+      Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
       dedt = dedt + Q
+    end if
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
     !---------------------------------------------------------------------------
