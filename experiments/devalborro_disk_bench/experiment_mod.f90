@@ -8,7 +8,7 @@ MODULE experiment_mod
   USE mhd_mod
   USE boundary_mod
   USE initial_mod
-  USE force_mod
+  USE potential_mod
   implicit none
   private
 
@@ -31,7 +31,7 @@ SUBROUTINE init_experiment (self)
 
   call self%mhd_t%init()
   call initial_conditions(self)
-  call force%init(self)
+  call potential%init()
   call boundary%conditions(self)
 
   call trace_end
@@ -47,7 +47,8 @@ SUBROUTINE update_experiment (self)
 
   call boundary%conditions(self)
   ! update the potential (for a growing or moving planet)
-  self%gp%q = force%selected(self%mesh, self%time, self%dtime)
+  potential%omega = self%grid_vel(3)
+  self%gp%q = potential%selected(self%mesh, self%time, self%dtime)
   call self%mhd_t%update()
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call boundary%conditions(self)
