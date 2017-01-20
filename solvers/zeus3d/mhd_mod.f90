@@ -96,6 +96,7 @@ MODULE mhd_mod
   ! Other
   real(KindReal) :: glblnmax, adbmin  , adbmax
   real(KindReal), parameter :: huge = 1.0d+99
+  logical:: do_mhd
 
   ! Common blocks
   common / nodali / &
@@ -124,7 +125,7 @@ MODULE mhd_mod
                     zcoordsys
   common / zcomprvi / &
                     ix1x2x3 , zniib   , znoib   , znijb   , znojb   &
-                  , znikb   , znokb
+                  , znikb   , znokb   , do_mhd
   common / zcomprvr / &
                     dt      , dtold   , dtnew   , prtime  , framerot&
                   , dtcs    , dtal    , dtqq    , dtv1    , dtv2    &
@@ -395,7 +396,7 @@ SUBROUTINE update_zeus (self)
   class(mhd_t) :: self
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('zeus_mhd_mod%update_zeus')
+!  call trace_begin('zeus_mhd_mod%update_zeus')
   call self%dnload
   call self%output
 
@@ -405,7 +406,7 @@ SUBROUTINE update_zeus (self)
   call trace_end(itimer)
   call CopyFromZeus (self)
 
-  call trace_end(itimer)
+!  call trace_end(itimer)
 END SUBROUTINE update_zeus
 
 !> =============================================================================

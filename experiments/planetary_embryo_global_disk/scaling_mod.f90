@@ -28,7 +28,7 @@ SUBROUTINE init (self)
   self%pi = asin(1.0) * 2.0
   self%mu = 2.3                         ! mean molecular weight
   self%l = cgs%au                       ! length
-  self%m = cgs%m_earth                  ! mass
+  self%m = cgs%m_sun                    ! mass
   self%t = cgs%yr                       ! time
   self%d = self%m/self%l**2             ! mass density
   self%u = self%l / self%t              ! speed

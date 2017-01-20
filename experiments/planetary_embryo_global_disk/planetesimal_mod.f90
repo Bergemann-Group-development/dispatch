@@ -46,12 +46,12 @@ SUBROUTINE init_planetesimal (self)
   call trace_begin ('solid_sphere_t%init')
 
   ! default values
-  radius = cgs%r_earth / cgs%AU ! radius in AU
-  aplanet = 1.0 ! semi-major axis in units of Jupiter's semi-major axis
+  radius = 11.209 * cgs%r_earth / cgs%AU ! radius in AU (Jupiter's equatorial radius)
+  aplanet = 1.0 ! semi-major axis in units of AU
   phiplanet = 0.0
   zplanet = 0.0
   mass = 0.0 ! initial mass in Solar mass units
-  mass_final = 3.0e-6 ! (final) Earth mass in Solar mass units
+  mass_final = 1.0e-3 ! final mass in Solar mass units (Jupiter)
 
   rewind (io%input); read (io%input, planetesimal_params)
   if (io%master) write (*, planetesimal_params)

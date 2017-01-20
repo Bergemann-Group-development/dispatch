@@ -5,6 +5,7 @@ MODULE potential_mod
   USE io_mod
   USE trace_mod
   USE kinds_mod
+  USE units_mod
   USE scaling_mod
   USE mesh_mod
   USE parameters_mod
@@ -94,8 +95,8 @@ FUNCTION star_and_planet (self, m, time, dt) RESULT (gp)
   m2 => m(2)
   m3 => m(3)
 
-  gm_s = scaling%grav * experiment_params%mstar
-  gm_p = scaling%grav * experiment_params%planetesimal%mass
+  gm_s = experiment_params%mstar * cgs%m_sun / scaling%m * scaling%grav
+  gm_p = experiment_params%planetesimal%mass * cgs%m_sun / scaling%m * scaling%grav
   planet_pos = experiment_params%planetesimal%cyl_pos
   do i3=m3%lb,m3%ub
     phi = m3%centre_nat + m3%r(i3)

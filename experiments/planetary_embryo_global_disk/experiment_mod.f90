@@ -69,7 +69,7 @@ SUBROUTINE initial_conditions (patch)
   class(mhd_t), target :: patch
   class(mesh_t), pointer :: m1, m2, m3
   integer :: i1, i2, i3
-  real(8) :: x1, x2, x3, cylr, cosphi, vr, vphi, vkep, tgas0
+  real(8) :: x1, x2, x3, cylr, cosphi, vphi, vkep, tgas0
   real(8) :: pos_cyl(3)
   !----------------------------------------------------------------------------
   call trace_begin('initial_mod::initial_conditions')
@@ -99,6 +99,7 @@ SUBROUTINE initial_conditions (patch)
         patch%d%q (i1,i2,i3)  = MMSN_surface_density(cylr)
         ! the ideal gas constant, k / mu / m_p, is assumed incorporated into `scaling%temp`.
         tgas0 = MMSN_temperature(cylr)
+        ! courtesy of the scaling, tgas0 is equivalent to square of the isothermal sound speed.
         patch%e1%q(i1,i2,i3)  = tgas0 * patch%d%q(i1,i2,i3) &
                               / (patch%gamma - 1.0)
 
@@ -107,18 +108,19 @@ SUBROUTINE initial_conditions (patch)
         ! same cylindrical coord. system as used to obtain the physical variables (rather
         ! than the current patch coord. system).
         vkep = Keplerian_speed(cylr)
+        ! adjust the gas velocities for the pressure gradient (i.e., make them sub-Keplerian).
+        ! the coeffcient of 2.0 below is valid for MMSN profiles ONLY.
+        vphi = sqrt(vkep**2 - 2.0 * tgas0)
 
         select type (m1)
         type is (cylindrical_mesh)
           patch%s%x%q(i1,i2,i3) = 0.0
           patch%s%y%q(i1,i2,i3) = 0.0
-          patch%s%z%q(i1,i2,i3) = vkep * patch%d%q(i1,i2,i3) * m1%h31c(i1) * m2%h32c(i2)
-        type is (spherical_mesh)
-          vr   = -vkep * sin(x3)
-          vphi = -vkep * cos(x3)
-          patch%s%x%q(i1,i2,i3) = vr * patch%d%q(i1,i2,i3)
-          patch%s%y%q(i1,i2,i3) = 0.0d0
           patch%s%z%q(i1,i2,i3) = vphi * patch%d%q(i1,i2,i3) * m1%h31c(i1) * m2%h32c(i2)
+        type is (spherical_mesh)
+          patch%s%x%q(i1,i2,i3) = -vphi * sin(x3) * patch%d%q(i1,i2,i3)
+          patch%s%y%q(i1,i2,i3) = 0.0d0
+          patch%s%z%q(i1,i2,i3) = -vphi * cos(x3) * patch%d%q(i1,i2,i3) * m1%h31c(i1) * m2%h32c(i2)
         end select
 
         ! no magnetic fields in this set up
