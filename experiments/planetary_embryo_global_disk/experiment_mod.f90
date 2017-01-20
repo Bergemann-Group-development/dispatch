@@ -8,7 +8,7 @@ MODULE experiment_mod
   USE mesh_mod
   USE timestep_mod
   USE mhd_mod
-  USE force_mod
+  USE potential_mod
   USE boundary_mod
   USE parameters_mod
   implicit none
@@ -39,7 +39,7 @@ SUBROUTINE init_experiment (self)
   call self%mhd_t%init()
   call initial_conditions(self)
   call boundary%conditions(self)
-  call force%init(self)
+  call potential%init()
 
   call trace_end
 END SUBROUTINE init_experiment
@@ -53,7 +53,7 @@ SUBROUTINE update_experiment (self)
   call trace_begin('experiment_t%update')
 
   call boundary%conditions(self)
-  self%gp%q = force%selected(self%mesh, self%time, self%dtime)
+  self%gp%q = potential%selected(self%mesh, self%time, self%dtime)
   call self%mhd_t%update()
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call boundary%conditions(self)
@@ -125,7 +125,7 @@ SUBROUTINE initial_conditions (patch)
         patch%b%x%q(i1,i2,i3) = 0.0
         patch%b%y%q(i1,i2,i3) = 0.0
         patch%b%z%q(i1,i2,i3) = 0.0
-        ! the gravitational potential is assigned in `force_mod`.
+        ! the gravitational potential is assigned in `potential_mod`.
       end do
     end do
   end do

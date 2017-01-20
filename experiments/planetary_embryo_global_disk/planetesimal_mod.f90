@@ -5,7 +5,6 @@ MODULE planetesimal_mod
   USE trace_mod
   USE bits_mod
   USE patch_mod
-  USE mhd_mod
   USE mesh_mod
   USE units_mod
   USE scaling_mod
