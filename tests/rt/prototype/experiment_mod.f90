@@ -69,7 +69,6 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
-  type(timestep_t):: timestep
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')

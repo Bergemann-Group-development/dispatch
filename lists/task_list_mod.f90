@@ -171,8 +171,6 @@ SUBROUTINE update (self)
   end if
   !$omp end critical (queue_cr)
   if (associated(head)) then
-    select type (task)
-    class is (experiment_t)
     if (io%verbose > 1) then
       write (io_unit%log,'(a,i4,a,i5,2x,a,2x,i4)') &
         'thread', omp%thread,' takes', task%id, trim(task%type), self%nq
@@ -220,8 +218,11 @@ SUBROUTINE update (self)
     ! previous time steps are saved.
     !----------------------------------------------------------------------------
     call task%rotate
-    !$omp atomic
-    n_update = n_update + product(task%n)
+    select type (task)
+    class is (patch_t)
+      !$omp atomic
+      n_update = n_update + product(task%n)
+    end select
     call task%info (self%nq, self%na)                   ! print info on stdout
     !-----------------------------------------------------------------------------
     ! Tasks that have finished are subtracted from the task list count but are
@@ -266,7 +267,6 @@ SUBROUTINE update (self)
     !$omp atomic write
     stalled = 0
     !call mpi_mesg%diagnostics (0)
-    end select
   else
     !$omp critical (stalled_cr)
     stalled = stalled+1

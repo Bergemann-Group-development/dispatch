@@ -26,6 +26,7 @@ MODULE mhd_mod
     type(force_t):: force
   contains
     procedure:: init
+    procedure:: pde
     procedure:: update
     procedure:: output
     procedure:: log_density => void
@@ -84,8 +85,7 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-SUBROUTINE update (self)
-  USE scalar_mod
+SUBROUTINE pde (self)
   class(mhd_t):: self
   !.............................................................................
   real, dimension(:,:,:,:), pointer:: U, emf, J, p, B, dpdt, dBdt
@@ -340,12 +340,21 @@ SUBROUTINE update (self)
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
+  call trace%end (itimer)
+END SUBROUTINE pde
+
+!> =============================================================================
+!> Take a complete update step.  This can be overloaded in higher level ud
+!> =============================================================================
+SUBROUTINE update (self)
+  class(mhd_t):: self
+  !.............................................................................
+  call self%pde
   call self%courant_condition
   if (io%verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
-  call trace%end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================

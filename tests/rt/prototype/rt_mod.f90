@@ -50,6 +50,7 @@ MODULE rt_mod
     procedure(solve_integral), pointer:: solve => null()
   contains
     procedure :: init
+    procedure :: dnload
     procedure :: update
     procedure :: solve_integral
     procedure :: solve_feautrier
@@ -113,6 +114,12 @@ SUBROUTINE init (self)
   end select
   call trace_end
 END SUBROUTINE init
+
+!> =====================================================================
+!> =====================================================================
+SUBROUTINE dnload (self)
+  class (rt_t) :: self
+END SUBROUTINE dnload
 
 !> =====================================================================
 !> Solve the RT problem, by first obtaining the thermodynamics at the
