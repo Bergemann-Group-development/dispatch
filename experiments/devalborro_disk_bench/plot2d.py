@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import cm, ticker
+from matplotlib import cm, ticker, patches as mplpatches
 from dispatch_data import *
 from dispatch_grid import *
 from derived_variables import *
@@ -27,13 +27,15 @@ if __name__ == "__main__":
     gamma = 1.0001
     datadir = './data/'
     prefix = ''
-    #ptimes = [0.63,314.15,627.06]
-    ptimes = 0.629*np.arange(0,998)
-    t_eps = 0.01
+    ptimes = [0.0, 0.0628, 0.628]
+    #ptimes = 0.629*np.arange(0,2)
+    t_eps = 0.05
     #pxsize = [-2.6, 2.6]
     #pysize = [-2.6, 2.6]
-    pxsize = [0.39,2.51]
+    pxsize = [0.39,2.6]
     pysize = [-3.2,3.2]
+    #pxsize = [0.90,1.10]
+    #pysize = [-0.10,0.10]
     pltvar = ['d ']
     cmin   = [1e-5]
     cmax   = [8e-3]
@@ -42,7 +44,7 @@ if __name__ == "__main__":
     sliceloc = 0.0 # coord. of slice to be taken
     showgrids = True
     showgridno = True
-    output_png = True
+    output_png = False
     truecoords = True
     ThisPatch = ZeusMHDPatch
     ColMap = cm.RdBu_r
@@ -51,6 +53,11 @@ if __name__ == "__main__":
 
     m1 = 0 # counter 1
     root = None
+    if len(ptimes) > 30 and not output_png:
+        print "Do you really want to open {0} windows?".format(len(ptimes))
+        print "Try setting `output_png` to True."
+        from sys import exit
+        exit(1)
     for pt in ptimes:
 
         cfig = plt.figure("t = {0:.3e}".format(pt),facecolor='w',figsize=(7.0,6.0))
@@ -58,8 +65,6 @@ if __name__ == "__main__":
         cax = cfig.add_subplot(1,1,1)
         cax.axis(xmin=pxsize[0],xmax=pxsize[1],ymin=pysize[0],ymax=pysize[1])
         #cax.axes.set_aspect('equal')
-        cax.set_xlabel(r'$x$')
-        cax.set_ylabel(r'$y$')
         cax.yaxis.set_minor_locator(ticker.AutoMinorLocator())
         cax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
         # ensure the axes remain visible by putting them at the "top"
@@ -95,6 +100,8 @@ if __name__ == "__main__":
         m2 = 0 # counter 2
         for p in patches:
             if p.task_type == 'immersed_boundary_t':
+                circle = mplpatches.Circle((p.pos[0],p.pos[1]),radius=pradius,color='k')
+                cax.add_patch(circle)
                 print "Skipping ",p.id," (immersed boundary)"
                 continue
             try:
@@ -105,6 +112,37 @@ if __name__ == "__main__":
                 pass
             if (root is None) or (root.id > p.id):
                 root = p
+            if truecoords:
+                if root.mesh_type == 'cylindrical':
+                    if slicedir == 1:
+                        cax.set_xlabel(r'$r$')
+                        cax.set_ylabel(r'$\phi$')
+                    elif slicedir == 2:
+                        cax.set_xlabel(r'$z$')
+                        cax.set_ylabel(r'$\phi$')
+                    elif slicedir == 3:
+                        cax.set_xlabel(r'$r$')
+                        cax.set_ylabel(r'$z$')
+                elif root.mesh_type == 'spherical':
+                    if slicedir == 1:
+                        cax.set_xlabel(r'$\theta$')
+                        cax.set_ylabel(r'$\phi$')
+                    elif slicedir == 2:
+                        cax.set_xlabel(r'$r$')
+                        cax.set_ylabel(r'$\phi$')
+                    elif slicedir == 3:
+                        cax.set_xlabel(r'$r$')
+                        cax.set_ylabel(r'$\theta$')
+            else:
+                if slicedir == 1:
+                    cax.set_xlabel(r'$y$')
+                    cax.set_ylabel(r'$z$')
+                elif slicedir == 2:
+                    cax.set_xlabel(r'$x$')
+                    cax.set_ylabel(r'$z$')
+                elif slicedir == 3:
+                    cax.set_xlabel(r'$x$')
+                    cax.set_ylabel(r'$y$')
 
             print "Data:", p.filename, p.time, pt
             times.append(p.time)
@@ -133,16 +171,13 @@ if __name__ == "__main__":
             elif pltvar[0] == 'v2':
                 var = p.data[iindex,jindex,kindex,p.varidx['s2']]
                 var = var / p.data[iindex,jindex,kindex,p.varidx['d ']]
+                var = var / gf['h2c'][iindex,np.newaxis,np.newaxis]
                 if p.mesh_type == 'spherical':
                     var = var / x_i[0][iindex,np.newaxis,np.newaxis]
             elif pltvar[0] == 'v3':
                 var = p.data[iindex,jindex,kindex,p.varidx['s3']]
                 var = var / p.data[iindex,jindex,kindex,p.varidx['d ']]
-                if p.mesh_type == 'cylindrical':
-                    var = var / x_i[1][np.newaxis,jindex,np.newaxis]
-                if p.mesh_type == 'spherical':
-                    var = ( var / x_i[0][iindex,np.newaxis,np.newaxis]
-                          / np.sin(x_i[1][np.newaxis,jindex,np.newaxis]) )
+                var = ( var / gf['h31c'][iindex,np.newaxis,np.newaxis] / gf['h32c'][np.newaxis,jindex,np.newaxis] )
             elif pltvar[0] == 'divb':
                 var, sumd, normmax = divergence(p, (p.varidx['b1'],p.varidx['b2'],p.varidx['b3']), gf)
                 var = var[iindex,jindex,kindex]
@@ -169,7 +204,7 @@ if __name__ == "__main__":
                                 var.squeeze(),levels,cmap=ColMap,extend='both',zorder=-min(p.dx))
 
             if (showgrids or pltvar[0] == 'gs'):
-                edges = patch_grid_edges(p,truecoords=truecoords)
+                edges = patch_grid_edges(p,slicedir,truecoords=truecoords)
                 cax.add_patch(edges)
                 #for c in conf.collections:
                 #    c.set_clip_path(edges)

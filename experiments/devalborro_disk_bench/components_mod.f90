@@ -108,13 +108,16 @@ SUBROUTINE init_annulus (self, params)
             if (phiextent .ge. 2.0*pi) then
               patch%btypes%ikb = 5 ! periodic
               patch%btypes%okb = 5
-              patch%btypes%ijb = 2 ! self-computing (but see `boundary%conditions`)
-              patch%btypes%ojb = 2
+            else
+              patch%btypes%ikb = 6 ! self-computing (but see `boundary%conditions`)
+              patch%btypes%okb = 6
             end if
+            patch%btypes%ijb = 2
+            patch%btypes%ojb = 2
           end if
         end select
         call patch%set(bits%static) ! for the time being (should be okay)
-        !!!call patch%clear(bits%periodic)
+        call patch%clear(bits%root_grid)
         call self%task_list%append(patch)
       end do
     end do
