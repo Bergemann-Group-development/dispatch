@@ -34,8 +34,6 @@ MODULE mhd_mod
     real, dimension(:,:,:,:), pointer:: vel => null()                           ! scratch (permanent)
     logical:: mhd=.false.
     real:: nu(2)                                                                ! diffusion coeffs
-    !real:: gamma                                                                ! gas gamma
-    !real:: u_max                                                                ! max velocity
     real:: amplitude_d                                                          ! density amplitude
     real:: amplitude_s                                                          ! entropy amplitude
     type(gauss_t):: gauss                                                       ! Gaussian
@@ -44,6 +42,7 @@ MODULE mhd_mod
     type(tensor_t):: tensor
   contains
     procedure:: init                                                            ! initialize
+    procedure:: pde                                                             ! time derivs
     procedure:: update                                                          ! update
     procedure:: deallocate                                                      ! deallocate scratch
     procedure:: log_density                                                     ! for refinement
@@ -108,7 +107,7 @@ END SUBROUTINE init
 !> =============================================================================
 !> Evaluates the time derivatives of the hydrodynamic variables
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE pde (self)
   class(mhd_t):: self
   real:: ds, void
   real, dimension(:,:,:), pointer:: &
@@ -120,7 +119,7 @@ SUBROUTINE update (self)
     strain_tensor, viscous_stress, p_flux
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('mhd_t%update', itimer=itimer)
+  call trace%begin ('mhd_t%pde', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Allocate scratch scalars (7 scalar chunks)
   !-----------------------------------------------------------------------------
@@ -246,12 +245,20 @@ SUBROUTINE update (self)
               d_flux, s_flux, strain_tensor, viscous_stress, p_flux)
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
+  end associate
+END SUBROUTINE pde
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE update (self)
+  class(mhd_t):: self
+  !-----------------------------------------------------------------------------
+  call self%pde
   call self%courant_condition
   if (io%verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
-  end associate
 END SUBROUTINE update
 
 !> =============================================================================

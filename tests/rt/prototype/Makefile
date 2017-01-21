@@ -28,13 +28,11 @@ sinclude $(TOP)/config/Makefile
 #sinclude $(PPCODE)/Experiments/DISPATCH/Makefile
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): cartesian_mod.o eos_mod.o opacity_mod.o $(PICOBJ)
+$(EXEC): cartesian_mod.o eos_mod.o opacity_mod.o scaling_mod.o $(PICOBJ)
 
 # Dependencies
 experiment_mod.o        : io_mod.o trace_mod.o timestep_mod.o initial_mod.o rmhd_mod.o
 initial_mod.o           : io_mod.o trace_mod.o io_unit_mod.o mesh_mod.o
-stagger_mod.o           : io_mod.o trace_mod.o scalar_mod.o vector_mod.o \
-                          stagger_16.o stagger_20.o stagger_24.o stagger_32.o stagger_36.o
 rt_solver_mod.o         : io_mod.o trace_mod.o
 rt_bundle_mod.o         : io_mod.o trace_mod.o rt_solver_mod.o
 rt_mod.o                : io_mod.o trace_mod.o patch_mod.o rt_bundle_mod.o eos_mod.o
