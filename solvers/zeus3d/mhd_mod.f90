@@ -68,9 +68,7 @@ MODULE mhd_mod
 
   ! Logical variables for boundaries (internal and physical)
   ! TODO: Are all these really necessary?
-  logical:: x1ipb   , x1opb   , x2ipb   , x2opb   , x3ipb &
-          , x3opb   , x1iabut , x1oabut , x2iabut , x2oabut &
-          , x3iabut , x3oabut , x1perdom, x2perdom, x3perdom
+  logical:: x1perdom, x2perdom, x3perdom
 
   ! Domain description variables
   real(KindReal):: x1upper , x2upper , x3upper , x1lower , x2lower , x3lower
@@ -102,9 +100,7 @@ MODULE mhd_mod
   common / nodali / &
                     nblx1   , nblx2   , nblx3
   common / nodall / &
-                    x1ipb   , x1opb   , x2ipb   , x2opb   , x3ipb   &
-                  , x3opb   , x1iabut , x1oabut , x2iabut , x2oabut &
-                  , x3iabut , x3oabut , x1perdom, x2perdom, x3perdom
+                    x1perdom, x2perdom, x3perdom
   common / nodalr / &
                     x1upper , x2upper , x3upper , x1lower , x2lower &
                   , x3lower , ax1low  , ax2low  , ax3low  , adx1    &
@@ -468,7 +464,7 @@ SUBROUTINE CopyToZeus (self)
 
   call copyatoz (qz, self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, &
                  self%nv, x1low, x2low, x3low, dx1, dx2, dx3, self%id, first_time)
-  call abndyall (x1low, x2low, x3low, dx1, dx2, dx3)
+  call abndyall
   call bndyflgs
   call bndyall
   if (first_time) first_time = .false.
