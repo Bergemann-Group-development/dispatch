@@ -26,7 +26,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(force_t):: self
   integer:: iostat
-  character(len=32), save:: type='star_and_planet'
+  character(len=32), save:: type='none'
   logical, save:: first_time=.true.
   namelist /force_params/ type
   !----------------------------------------------------------------------------
@@ -35,7 +35,7 @@ SUBROUTINE init (self)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, force_params, iostat=iostat)
+    read (io%input, force_params)
     if (io%master) write (*, force_params)
   end if
   !$omp end critical (input_cr)

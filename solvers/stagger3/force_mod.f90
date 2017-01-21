@@ -38,7 +38,7 @@ SUBROUTINE init (self)
    if (first_time) then
      first_time = .false.
      rewind (io%input)
-     read (io%input, force_params, iostat=iostat)
+     read (io%input, force_params)
      if (io%master) write (*, force_params)
    end if
    !$omp end critical (input_cr)
