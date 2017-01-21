@@ -1043,16 +1043,16 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         fmin = self%fminval(df)
         fmax = self%fmaxval(df)
       else
-        fmin = self%fminval(self%mem(:,:,:,iv,self%it,self%nw))
-        fmax = self%fmaxval(self%mem(:,:,:,iv,self%it,self%nw))
+        fmin = self%fminval(self%mem(:,:,:,iv,it0,self%nw))
+        fmax = self%fmaxval(self%mem(:,:,:,iv,it0,self%nw))
       end if
       print 2, &
-      'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
+      'upd',self%id, self%level, iv, self%istep, self%time-self%dtime, &
       self%dtime, self%u_max, fmin, fmax, &
-      self%fminval(self%mem(:,:,:,iv,self%it,1)), &
-      self%fmaxval(self%mem(:,:,:,iv,self%it,1)), &
+      self%fminval(self%mem(:,:,:,iv,it0,1)), &
+      self%fmaxval(self%mem(:,:,:,iv,it0,1)), &
       real(n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual)
-    2 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e12.4,1x,2e12.4,2x,e10.2,2i5,l3,l1,o12)
+    2 format(a,i8,2i4,i3,1p,e14.5,e12.4,0p,f7.2,2x,1p,2e12.4,1x,2e12.4,2x,e10.2,2i5,l3,l1,o12)
     end do
     if (self%nw==1) then
       deallocate (df)
