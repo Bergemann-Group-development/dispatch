@@ -469,7 +469,7 @@ SUBROUTINE print_nbors (self, label)
   character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
   !.............................................................................
-  if (io%verbose < 2) return
+  if (io%verbose < 1) return
   if (present(label)) then
     if (trim(label) /= '') write (io_unit%log,'(a)') label
   end if

@@ -1099,7 +1099,7 @@ SUBROUTINE print_queue (self)
   class (list_t):: self
   class(link_t) , pointer:: link, nbor
   !.............................................................................
-  if (io%verbose < 2) return
+  if (io%verbose < 1) return
   !$omp critical (list_cr)
   link => self%queue
   write (io_unit%log,'(a,2i4,":",$)') 'ready_queue', self%nq, self%n

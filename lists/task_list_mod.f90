@@ -42,7 +42,7 @@ MODULE task_list_mod
     procedure:: split
     procedure:: output
     procedure:: check_flags
-    procedure:: print => print_tasklist
+    procedure:: print
     procedure:: print_tasks
   end type
   real, save:: check_ms=10.
@@ -702,13 +702,13 @@ END SUBROUTINE print_tasks
 !> =============================================================================
 !> Print a table with task id and all neighbors
 !> =============================================================================
-SUBROUTINE print_tasklist (self, label)
+SUBROUTINE print (self, label)
   class (task_list_t):: self
   character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
   !.............................................................................
   call trace%begin ('task_list_t%print_tasklist')
-  if (io%master) write (io_unit%log,*) label
+  if (io%master.and.present(label)) write (io_unit%log,*) label
   link => self%head
   do while (associated(link))
     call link%print_nbors ('')
@@ -716,7 +716,7 @@ SUBROUTINE print_tasklist (self, label)
   end do
   call self%print_queue
   call trace%end
-END SUBROUTINE print_tasklist
+END SUBROUTINE print
 
 !> =============================================================================
 !> Check debug flag files
