@@ -22,7 +22,6 @@ MODULE experiment_mod
   USE initial_mod
   USE timer_mod
   USE link_mod
-  USE timestep_mod
   implicit none
   private
   type, public, extends(mhd_t):: experiment_t
@@ -81,9 +80,6 @@ SUBROUTINE update (self)
     call self%initial%cleanup
   end if
   call self%mhd_t%update
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  if (io%verbose>2) &
-    call self%check_density('after timestep')
   call trace_end
 END SUBROUTINE update
 

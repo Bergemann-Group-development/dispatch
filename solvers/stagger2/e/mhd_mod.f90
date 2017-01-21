@@ -10,14 +10,14 @@ MODULE mhd_mod
   USE scalar_mod
   USE vector_mod
   USE stagger_mod
-  USE patch_mod
+  USE gpatch_mod
   USE force_mod
-  USE download_mod
   USE eos_mod
   USE index_mod
+  USE timestep_mod
   implicit none
   private
-  type, extends(patch_t), public:: mhd_t
+  type, extends(gpatch_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real:: nu(6), csound
@@ -27,7 +27,6 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: dnload
     procedure:: output
     procedure:: log_density => void
     procedure:: log_pressure => void
@@ -60,7 +59,7 @@ SUBROUTINE init (self)
   self%i_py = idx%py
   self%i_pz = idx%pz
   self%i_e  = idx%e
-  self%i_bx = idx%bz
+  self%i_bx = idx%bx
   self%i_by = idx%by
   self%i_bz = idx%bz
   !$omp critical (mhd_input_cr)
@@ -69,6 +68,7 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, mhd_params)
     if (io%master) write (*, mhd_params)
+    call timestep%init
   end if
   !$omp end critical (mhd_input_cr)
   self%nu = nu
@@ -82,15 +82,6 @@ SUBROUTINE init (self)
   call self%force%init
   call trace%end
 END SUBROUTINE init
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE dnload (self)
-  class(mhd_t):: self
-  call trace%begin ('experiment_mod::dnload')
-  call download%download_link (self%link)
-  call trace%end
-END SUBROUTINE
 
 !> =============================================================================
 SUBROUTINE update (self)
@@ -113,7 +104,6 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   type(stagger_t):: st
   !-----------------------------------------------------------------------------
-  call self%dnload
   call trace%begin('mhd_t%update',itimer=itimer)
   st%m => self%mesh
   self%d    => self%mem(:,:,:,self%i_d,self%it,1)
@@ -166,7 +156,11 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ee = e/d
 !  call eos%lookup (shape(ee), ee=ee, lnd=lnd, pg=pg)
-  pg = e*(self%gamma-1.0)
+  if (self%gamma==1.0) then
+    pg = d*self%csound**2
+  else
+    pg = e*(self%gamma-1.0)
+  end if
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure
   !-----------------------------------------------------------------------------
@@ -346,6 +340,11 @@ SUBROUTINE update (self)
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
+  call self%courant_condition
+  if (io%verbose>2) &
+    call self%check_density('before timestep')
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density(' after timestep')
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -359,7 +358,7 @@ SUBROUTINE output (self, experiment_name)
   logical:: exists
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
-  call self%patch_t%output (experiment_name)
+  call self%gpatch_t%output (experiment_name)
   !$omp critical (output_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout-1

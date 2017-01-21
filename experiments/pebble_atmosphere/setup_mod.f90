@@ -18,7 +18,6 @@ MODULE setup_mod
   USE rubiks_mod
   USE scene_mod
   USE list_mod
-  USE timestep_mod
   implicit none
   private
   type, public, extends(rubiks_t):: setup_t
@@ -49,7 +48,6 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
   call io%init (label)
-  call timestep%init
   call scaling%init
   call planet%init
   call atmosphere%init

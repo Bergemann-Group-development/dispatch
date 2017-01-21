@@ -33,6 +33,7 @@
  time_derivs=f
 /
 &hd_params
+ gamma=1.4
  nu=  0.10, 1.0
  !     cs    pa
 /

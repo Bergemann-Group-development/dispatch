@@ -22,10 +22,11 @@ rm -f *.o *.mod *.stackdump
  [ FC ] buffered_output_mod.o
  [ FC ] link_mod.o
  [ FC ] patch_mod.o
+ [ FC ] download_mod.o
+ [ FC ] gpatch_mod.o
  [ FC ] amr_parameters.o
  [ FC ] hydro_parameters.o
  [ FC ] riemann_mod.o
- [ FC ] download_mod.o
  [ FC ] random_mod.o
  [ FC ] force_mod.o
  [ FC ] index_mod.o

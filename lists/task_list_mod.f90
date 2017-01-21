@@ -195,6 +195,12 @@ SUBROUTINE update (self)
       return
     end if
     !----------------------------------------------------------------------------
+    ! Download nbor info -- this may be an experiment_t procedure, but if not,
+    ! the call should be answered by a solver-specific procedure (which may or
+    ! may not choose to call the generic patch guard zone handler in tasks/)
+    !----------------------------------------------------------------------------
+    call task%dnload                                    ! download nbor info
+    !----------------------------------------------------------------------------
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
     wc = wallclock()
@@ -203,16 +209,16 @@ SUBROUTINE update (self)
     mpi_mesg%delay_ms = 1d3*(wallclock()-wc)
     !$omp atomic
     mpi_mesg%n_update = mpi_mesg%n_update+1
-    !----------------------------------------------------------------------------
-    ! The rotate procedure in the generic patch_t module is responsible for
-    ! updating the time, and rotating the memory slots where information about
-    ! previous time steps are saved.
-    !----------------------------------------------------------------------------
     if (io%verbose>1) &
       write (io_unit%log,'(a,i4,2x,a,i7,2x,a,2x,a,i7,2x,a,1p,2g14.6,2x,a,2i5,l3)') &
       'thread', omp_mythread, 'task', task%id, trim(task%type), &
       'step', task%istep, 'dt, time:', task%dtime, task%time, &
       'n, nq', self%n, self%nq, associated(head%nbor)
+    !----------------------------------------------------------------------------
+    ! The rotate procedure in the generic patch_t module is responsible for
+    ! updating the time, and rotating the memory slots where information about
+    ! previous time steps are saved.
+    !----------------------------------------------------------------------------
     call task%rotate
     !$omp atomic
     n_update = n_update + product(task%n)

@@ -10,13 +10,13 @@ MODULE mhd_mod
   USE scalar_mod
   USE vector_mod
   USE stagger_mod
-  USE patch_mod
+  USE gpatch_mod
   USE force_mod
-  USE download_mod
   USE index_mod
+  USE timestep_mod
   implicit none
   private
-  type, extends(patch_t), public:: mhd_t
+  type, extends(gpatch_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real:: nu(6), csound
@@ -25,7 +25,6 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: dnload
     procedure:: output
     procedure:: log_density => void
     procedure:: log_pressure => void
@@ -53,13 +52,14 @@ SUBROUTINE init (self)
   namelist /mhd_params/ nu, gamma, csound, smag_s, smag_d
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
-  call self%patch_t%init
+  call self%gpatch_t%init
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, mhd_params)
     if (io%master) write (*, mhd_params)
+    call timestep%init
   end if
   !$omp end critical (input_cr)
   self%nu = nu
@@ -72,15 +72,6 @@ SUBROUTINE init (self)
   call self%force%init
   call trace%end
 END SUBROUTINE init
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE dnload (self)
-  class(mhd_t):: self
-  call trace_begin ('experiment_mod::dnload')
-  call download%download_link (self%link, all_cells=.false.)
-  call trace_end
-END SUBROUTINE
 
 !> =============================================================================
 SUBROUTINE update (self)
@@ -96,7 +87,6 @@ SUBROUTINE update (self)
   type(index_t):: i
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%update',itimer=itimer)
-  call self%dnload
   call self%output
 
   !-----------------------------------------------------------------------------
@@ -311,6 +301,11 @@ associate (d=>self%d, dddt=>self%dddt, &
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
+  call self%courant_condition
+  if (io%verbose>2) &
+    call self%check_density('before timestep')
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density(' after timestep')
   call trace_end (itimer)
 end associate
 END SUBROUTINE update
@@ -325,7 +320,7 @@ SUBROUTINE output (self, experiment_name)
   logical:: exists
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
-  call self%patch_t%output (experiment_name)
+  call self%gpatch_t%output (experiment_name)
   !$omp critical (output_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout-1

@@ -27,7 +27,7 @@ MODULE timestep_mod
     procedure:: init
     procedure:: update
   end type
-  type(timestep_t), public:: timestep
+  type(timestep_t), save, public:: timestep
 CONTAINS
 
 !> =============================================================================
@@ -46,6 +46,7 @@ SUBROUTINE init (self)
     read (io%input,timestep_params)
     if (io%master) write (*,timestep_params)
   end if
+  !$omp end critical (timestep_cr)
   self%verbose = verbose
   self%time_order = time_order
   !---------------------------------------------------------------------------
@@ -63,7 +64,6 @@ SUBROUTINE init (self)
     if (io%master) print*,'ERROR: illegal timestep time_order =', time_order
     stop
   end select
-  !$omp end critical (timestep_cr)
   call trace_end
 END SUBROUTINE init
 

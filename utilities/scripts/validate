@@ -1,11 +1,11 @@
 #!/bin/csh
 
-# validate [ -d -m -r -q -x -h ] [ dir1 dir2 .. ]
+# validate [ -d -m -r -v -x -h ] [ dir1 dir2 .. ]
 #
 # -d       : dryrun
 # -m       : skip make
 # -r       : reset (create .val files even if fails)
-# -q       : quiet output
+# -v       : verbose output
 # -x       : skip execution
 # -h       : help
 # --help   : help
@@ -18,7 +18,6 @@
 set dirs = ( )
 set opt = ( )
 set patches = ( )
-setenv tee 1
 
 # parse argument list
 while ($#argv > 0)
@@ -47,9 +46,12 @@ while ($#argv > 0)
       setenv RESET
       breaksw
     # tee the output
-    case -q:
-      unsetenv tee
+    case -v:
+      setenv tee
       breaksw
+    case -q:
+      echo "The -q option is now obsolete; use -v for verbose output"
+      exit
     # list of directories
     default:
       set dirs = ( $dirs $1 )

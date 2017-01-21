@@ -24,7 +24,8 @@ class opac_t(object):
         self.ts = np.zeros(450)
         self.rs = np.zeros(450)
         self.d  = np.zeros((450,450,2))
-        self.files = ['kr.dat','kp.dat']
+        dir = '../../opacities/Tomida+Hori_2016/'
+        self.files = [dir+'kr.dat',dir+'kp.dat']
     
     def read_opac(self):
         for i in range(2):
