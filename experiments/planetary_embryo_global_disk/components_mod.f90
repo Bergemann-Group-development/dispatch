@@ -109,20 +109,25 @@ SUBROUTINE init_annulus (self)
           else
             patch%grid_vel = [0.0d0, 0.0d0, 0.0d0]
           end if
-          ! FIXME: when using more than one patch in the phi-direction, are the periodic
-          ! edges for certain patches detected properly? probably not!
+
           if (patch%kind == 'zeus_mhd_patch') then
             patch%staggered = .true.
             if (phiextent .ge. 2.0*pi) then
               patch%btypes%ikb = 5 ! periodic
               patch%btypes%okb = 5
-              patch%btypes%ijb = 2 ! self-computing (but see `boundary%conditions`)
-              patch%btypes%ojb = 2
+            else
+              patch%btypes%ikb = 6
+              patch%btypes%okb = 6
             end if
+            patch%btypes%ijb = 6 ! self-computing (but see `boundary%conditions`)
+            patch%btypes%ojb = 6
           end if
         end select
         patch%level = 1 ! FIXME!
         call patch%set(bits%static) ! for the time being (should be okay)
+        ! setting the root grid bit is equivalent to being periodic (which is not true in
+        ! the radial direction in this case).
+        call patch%clear(bits%root_grid)
         call self%task_list%append(patch)
         ! update offset for next patch
         if (n_per_patch(1) > 1) zoffset = zoffset + zextent

@@ -423,10 +423,10 @@ SUBROUTINE init (self)
     error stop 'n_header is incorrect'
   end if
   end block
-  if (all(self%size == self%box)) then
-    call self%set (bits%root_grid)
-    if (io%verbose > 1) print *, 'set bits%root_grid id =', self%id
-  end if
+!  if (all(self%size == self%box)) then
+!    call self%set (bits%root_grid)
+!    if (io%verbose > 1) print *, 'set bits%root_grid id =', self%id
+!  end if
   call trace_end
 END SUBROUTINE init
 

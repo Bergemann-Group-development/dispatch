@@ -44,8 +44,10 @@ SUBROUTINE conditions (self, patch)
   ! need to be fixed.
   select type (m1)
   type is (Cartesian_mesh)
+    print*, "WARNING: Boundary conditions have not been implemented for Cartesian meshes!"
     return
   type is (spherical_mesh)
+    print*, "WARNING: Boundary conditions have not been implemented for spherical meshes!"
     return
   end select
 
