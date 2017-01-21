@@ -18,7 +18,6 @@ MODULE experiment_mod
   USE trace_mod
   USE mhd_mod
   USE initial_mod
-  USE timestep_mod
   USE timer_mod
   USE link_mod
   implicit none
@@ -67,15 +66,11 @@ END SUBROUTINE init
 !> actual implementation is in $(TOP)/solvers/$(SOLVER)/mhd_mod.f90.  It then
 !> calls a courant_condition procedure, which if not overloaded is the one in
 !> the patch_t object (but one can replace it at the mhd_t or experiment_t
-!> level, by simply adding a courant_condition procedure there).  The next step
-!> is to call a timestep%udpate, whose actual implementation is in a file
-!> $(TOP)/timestep/$(UPD)/timestep_mod.f90 -- currently an Adams-Bashforth
-!> method.
+!> level, by simply adding a courant_condition procedure there).
 !> =============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
-  type(timestep_t):: timestep
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   if (first_time) then
@@ -83,11 +78,6 @@ SUBROUTINE update (self)
     call self%initial%cleanup
   end if
   call self%mhd_t%update
-  call self%courant_condition
-  if (io%verbose>2) &
-    call self%check_density('before timestep')
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  call self%check_density(' after timestep')
   call trace_end
 END SUBROUTINE update
 

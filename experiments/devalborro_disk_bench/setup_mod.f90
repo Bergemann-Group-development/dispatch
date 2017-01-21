@@ -13,7 +13,6 @@ MODULE setup_mod
   USE components_mod
   USE parameters_mod
   USE scaling_mod
-  USE timestep_mod
   implicit none
   private
 
@@ -50,7 +49,6 @@ SUBROUTINE init_setup (self)
   call trace_begin ('setup_t%init')
 
   call io%init (self%experiment_name)
-  call timestep%init()
   call scaling%init()
 
   ! read input params

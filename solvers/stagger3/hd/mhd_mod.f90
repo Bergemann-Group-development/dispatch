@@ -16,6 +16,7 @@ MODULE mhd_mod
   USE initial_mod
   USE download_mod
   USE index_mod
+  USE timestep_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -80,6 +81,7 @@ SUBROUTINE init(self)
     rewind (io%input)
     read (io%input, hd_params)
     if (io%master) write (*,hd_params)
+    call timestep%init
   end if
   !$omp end critical (init_cr)
   !-----------------------------------------------------------------------------
@@ -255,6 +257,11 @@ SUBROUTINE update (self)
               d_flux, s_flux, strain_tensor, viscous_stress, p_flux)
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
+  call self%courant_condition
+  if (io%verbose>2) &
+    call self%check_density('before timestep')
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density(' after timestep')
   end associate
 END SUBROUTINE update
 

@@ -15,6 +15,7 @@ MODULE mhd_mod
   USE download_mod
   USE eos_mod
   USE index_mod
+  USE timestep_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
@@ -69,6 +70,7 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, mhd_params)
     if (io%master) write (*, mhd_params)
+    call timestep%init
   end if
   !$omp end critical (mhd_input_cr)
   self%nu = nu
@@ -346,6 +348,11 @@ SUBROUTINE update (self)
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
+  call self%courant_condition
+  if (io%verbose>2) &
+    call self%check_density('before timestep')
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density(' after timestep')
   call trace%end (itimer)
 END SUBROUTINE update
 
