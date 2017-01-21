@@ -75,6 +75,7 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
   write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
   if (io%verbose>=verbose) then
     wc = wallclock()
+    if (io_unit%do_validate) wc = 0d0
     if (io%omp_trace) then
       write(io_unit%log,fmt) omp_mythread, wc, trim(id)//' begin'
       flush(io_unit%log)
@@ -137,6 +138,7 @@ SUBROUTINE trace_end (itimer)
   if (io%verbose>=verbose) then
     write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
     wc = wallclock()
+    if (io_unit%do_validate) wc = 0d0
     if (io%omp_trace) then
       write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' end'
       flush(io_unit%log)
