@@ -36,7 +36,6 @@ MODULE patch_mod
     integer:: msplit=2                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
     logical:: guard_zones, time_derivs  ! switches for I/O
-    logical:: root_grid=.false.
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
@@ -342,7 +341,6 @@ SUBROUTINE init (self)
   self%ds = real(self%size,kind=8) / self%n     ! ds in patch
   if (all(self%size==self%box)) then
     write (io_unit%log,*) mpi%rank, 'task', self%id, ' is root grid'
-    self%root_grid = .true.
     call self%set(bits%root_grid)
   end if
   !-----------------------------------------------------------------------------
@@ -448,7 +446,7 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
-  if (self%root_grid.or.self%is_set(bits%root_grid)) then
+  if (self%is_set(bits%root_grid)) then
     call self%periodic_grid                     ! periodic root grid
   else
     call self%extrapolate_guards                ! time-extrapolate guard cells
