@@ -320,6 +320,10 @@ subroutine ctoprim (self)
   pg = e*(self%gamma-1.0)
   !call eos%lookup (shape(e), ee=e, d=d, pg=pg, gamma=self%gamma)
   !
+  if (self%do_pebbles) then
+    self%vgas(:,:,:,1:3,self%it) = q(:,:,:,2:4)
+    self%pressure(:,:,:,  self%it) = pg
+  end if
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
   self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
                           + c + abs(q(:,:,:,3)) &
