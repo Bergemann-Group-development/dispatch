@@ -16,17 +16,16 @@ MODULE mhd_mod
   !.............................................................................
   USE io_mod
   USE io_unit_mod
-  USE patch_mod
+  USE gpatch_mod
   USE link_mod
   USE riemann_mod
   use hydro_parameters
   USE trace_mod
   USE mpi_mod
   USE omp_mod
-  USE download_mod
   implicit none
   PRIVATE
-  type, public, extends(patch_t):: mhd_t
+  type, public, extends(gpatch_t):: mhd_t
     logical:: mhd=.true.
     integer:: idim=3
     character(len=10):: riemann='hlld'
@@ -61,7 +60,7 @@ SUBROUTINE init (self)
     smallc, do_isothermal, csound
 !...............................................................................
   call trace_begin('mhd_mod::init')
-  call self%patch_t%init
+  call self%gpatch_t%init
   !$omp critical (pde)
   if (first_time) then
     first_time = .false.
@@ -96,7 +95,6 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   ! Fill guard zones and checks whether to do output
   !----------------------------------------------------------------------------
-  call download%download_link (self%link, all_cells=.true.)
   call self%output
   !-----------------------------------------------------------------------------
   ! Memory mapping and allocations.  All alloc and dealloc should be done here,

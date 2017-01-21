@@ -8,12 +8,11 @@
 MODULE mhd_mod
   USE io_mod
   USE trace_mod
-  USE patch_mod
+  USE gpatch_mod
   USE kinds_mod
   USE variable_mod
   USE mesh_mod
   USE mpi_mod
-  USE download_mod
   implicit none
   private
 
@@ -32,7 +31,7 @@ MODULE mhd_mod
   contains
   end type
 
-  type, extends(patch_t), public:: mhd_t
+  type, extends(gpatch_t), public:: mhd_t
     type(scalar_t):: d, e1, et, gp
     type(vector_t):: s, B
     logical:: mhd = .true.
@@ -40,7 +39,6 @@ MODULE mhd_mod
   contains
     procedure:: init => init_zeus
     procedure:: update => update_zeus
-    procedure:: dnload
     procedure:: gas_pressure
     procedure:: log_density
     procedure:: log_pressure
@@ -358,7 +356,7 @@ SUBROUTINE init_zeus (self)
   ! don't store the time derivatives, only the MHD quantities;
   ! this also implies that `time_order` in `timestep_params` should be set to 0.
   self%nw = 1  
-  call self%patch_t%init()
+  call self%gpatch_t%init()
   do i=1,3
     self%mesh(i)%h(4+i) = -0.5 ! momentum/velocity components
     self%mesh(i)%h(7+i) = -0.5 ! mag. field components
@@ -383,22 +381,11 @@ END SUBROUTINE init_zeus
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE dnload (self)
-  class(mhd_t):: self
-  call trace_begin ('experiment_mod::dnload')
-  call download%download_link (self%link, all_cells=.false.)
-  call trace_end
-END SUBROUTINE
-
-!> =============================================================================
-!> =============================================================================
 SUBROUTINE update_zeus (self)
   class(mhd_t) :: self
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
 !  call trace_begin('zeus_mhd_mod%update_zeus')
-  call self%dnload
-  call self%output
 
   call CopyToZeus (self)
   call trace_begin ('zeus3d (external)', itimer=itimer)
@@ -511,7 +498,7 @@ END SUBROUTINE CopyFromZeus
 !> =============================================================================
 FUNCTION MapVectors (self, in, target, ii, jj) result (out)
   class(mhd_t):: self
-  class(patch_t), pointer:: target
+  class(gpatch_t), pointer:: target
   real(kind=KindScalarVar), dimension(:), intent(in):: in
   integer, intent(in):: ii(3), jj(3)
   real(kind=KindScalarVar):: out(size(in))

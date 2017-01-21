@@ -14,20 +14,19 @@
 MODULE mhd_mod
   !.............................................................................
   USE io_unit_mod
-  USE patch_mod
+  USE gpatch_mod
   USE link_mod
   USE riemann_mod
   use hydro_parameters
   USE trace_mod
   USE mpi_mod
   USE omp_mod
-  USE download_mod
   USE eos_mod
   USE force_mod
   USE index_mod
   implicit none
   PRIVATE
-  type, public, extends(patch_t):: mhd_t
+  type, public, extends(gpatch_t):: mhd_t
     logical:: mhd=.false.
     integer:: idim=3
     character(len=10):: riemann='hllc'
@@ -52,6 +51,7 @@ MODULE mhd_mod
   logical:: detailed_timer=.false.
   character(len=16):: eqn='mhd'
   real(kind=8):: courant_number=0.2
+  logical, save:: debug=.false.
 CONTAINS
 
 !> =============================================================================
@@ -60,7 +60,7 @@ SUBROUTINE init (self)
   character(len=10):: riemann='hllc'
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, do_isothermal, csound, detailed_timer
+    smallc, do_isothermal, csound, detailed_timer, debug
   type(index_t):: idx
 !...............................................................................
   call trace_begin('mhd_mod::init')
@@ -71,7 +71,7 @@ SUBROUTINE init (self)
   end if
 
   self%nw = 1
-  call self%patch_t%init
+  call self%gpatch_t%init
   self%i_d  = idx%d
   self%i_e  = idx%e
   self%i_px = idx%px
@@ -107,7 +107,6 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   ! Fill guard zones and checks whether to do output
   !----------------------------------------------------------------------------
-  call download%download_link (self%link, all_cells=.true.)
   call trace_begin ('mhd_t%update', itimer=itimer)
   call self%output
   !-----------------------------------------------------------------------------
@@ -125,38 +124,44 @@ SUBROUTINE update (self)
   allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
   if (detailed_timer) call trace_end (itimer)
-  if (self%id==229.or.self%id==231) then
-    print *,self%id, 'mk1:px', self%mem(19-2:19+2,19,19,self%i_px,self%it,1), self%i_px
-    print *,self%id, 'mk1: d', self%mem(19-2:19+2,19,19,self%i_d ,self%it,1)
-    print *,self%id, 'mk1: e', self%mem(19-2:19+2,19,19,self%i_e ,self%it,1), self%i_e
-  end if
-  if (self%id==230) then
-    print *,self%id, 'mk1:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%it,1), self%i_px
-    print *,self%id, 'mk1: d', self%mem( m-7:m-3 ,19,19,self%i_d ,self%it,1)
-    print *,self%id, 'mk1: e', self%mem( m-7:m-3 ,19,19,self%i_e ,self%it,1), self%i_e
+  if (debug) then
+    if (self%id==229.or.self%id==231) then
+      print *,self%id, 'mk1:px', self%mem(19-2:19+2,19,19,self%i_px,self%it,1), self%i_px
+      print *,self%id, 'mk1: d', self%mem(19-2:19+2,19,19,self%i_d ,self%it,1)
+      print *,self%id, 'mk1: e', self%mem(19-2:19+2,19,19,self%i_e ,self%it,1), self%i_e
+    end if
+    if (self%id==230) then
+      print *,self%id, 'mk1:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%it,1), self%i_px
+      print *,self%id, 'mk1: d', self%mem( m-7:m-3 ,19,19,self%i_d ,self%it,1)
+      print *,self%id, 'mk1: e', self%mem( m-7:m-3 ,19,19,self%i_e ,self%it,1), self%i_e
+    end if
   end if
   call godunov (self)
   if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
   d => self%mem(:,:,:,          self%i_d ,self%new,1)
   p => self%mem(:,:,:,self%i_px:self%i_pz,self%new,1)
-  if (self%id==229.or.self%id==231) then
-    print *,self%id, 'mk2:px', self%mem(19-2:19+2,19,19,self%i_px,self%new,1), self%i_px
-    print *,self%id, 'mk2: d', self%mem(19-2:19+2,19,19,self%i_d ,self%new,1)
-    print *,self%id, 'mk2: e', self%mem(19-2:19+2,19,19,self%i_e ,self%new,1), self%i_e
-  end if
-  if (self%id==230) then
-    print *,self%id, 'mk2:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%new,1), self%i_px
-    print *,self%id, 'mk2: d', self%mem( m-7:m-3 ,19,19,self%i_d ,self%new,1)
-    print *,self%id, 'mk2: e', self%mem( m-7:m-3 ,19,19,self%i_e ,self%new,1), self%i_e
+  if (debug) then
+    if (self%id==229.or.self%id==231) then
+      print *,self%id, 'mk2:px', self%mem(19-2:19+2,19,19,self%i_px,self%new,1), self%i_px
+      print *,self%id, 'mk2: d', self%mem(19-2:19+2,19,19,self%i_d ,self%new,1)
+      print *,self%id, 'mk2: e', self%mem(19-2:19+2,19,19,self%i_e ,self%new,1), self%i_e
+    end if
+    if (self%id==230) then
+      print *,self%id, 'mk2:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%new,1), self%i_px
+      print *,self%id, 'mk2: d', self%mem( m-7:m-3 ,19,19,self%i_d ,self%new,1)
+      print *,self%id, 'mk2: e', self%mem( m-7:m-3 ,19,19,self%i_e ,self%new,1), self%i_e
+    end if
   end if
   if (associated(self%force%selected)) then
     p = p + self%dtime*self%force%selected (self%time, d, p, self%mesh)
   end if
-  if (self%id==229.or.self%id==231) then
-    print *,self%id, 'mk3:px', self%mem(19-2:19+2,19,19,self%i_px,self%new,1), self%i_px
-  end if
-  if (self%id==230) then
-    print *,self%id, 'mk3:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%new,1), self%i_px
+  if (debug) then
+    if (self%id==229.or.self%id==231) then
+      print *,self%id, 'mk3:px', self%mem(19-2:19+2,19,19,self%i_px,self%new,1), self%i_px
+    end if
+    if (self%id==230) then
+      print *,self%id, 'mk3:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%new,1), self%i_px
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Deallocate

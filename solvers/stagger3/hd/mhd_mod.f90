@@ -11,10 +11,9 @@ MODULE mhd_mod
   USE scalar_mod
   USE vector_mod
   USE tensor_mod
-  USE patch_mod
+  USE gpatch_mod
   USE mesh_mod
   USE initial_mod
-  USE download_mod
   USE index_mod
   USE timestep_mod
   implicit none
@@ -26,7 +25,7 @@ MODULE mhd_mod
     real:: o(3)                                                                 ! offset
   end type
   !-----------------------------------------------------------------------------
-  type, public, extends(patch_t):: mhd_t
+  type, public, extends(gpatch_t):: mhd_t
     real, dimension(:,:,:),   pointer:: d, dd_dt                                ! density
     real, dimension(:,:,:),   pointer:: s, ds_dt                                ! entropy
     real, dimension(:,:,:,:), pointer:: p, dp_dt                                ! momenta
@@ -45,7 +44,6 @@ MODULE mhd_mod
     type(tensor_t):: tensor
   contains
     procedure:: init                                                            ! initialize
-    procedure:: dnload                                                          ! update
     procedure:: update                                                          ! update
     procedure:: deallocate                                                      ! deallocate scratch
     procedure:: log_density                                                     ! for refinement
@@ -71,7 +69,7 @@ SUBROUTINE init(self)
   namelist /hd_params/ nu, gamma
   !.............................................................................
   call trace%begin ('hd_t%init')
-  call self%patch_t%init
+  call self%gpatch_t%init
   !-----------------------------------------------------------------------------
   ! Read and print the namelist only once
   !-----------------------------------------------------------------------------
@@ -106,15 +104,6 @@ SUBROUTINE init(self)
   !-----------------------------------------------------------------------------
   call trace%end
 END SUBROUTINE init
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE dnload (self)
-  class(mhd_t):: self
-  call trace%begin ('experiment_mod::dnload')
-  call download%download_link (self%link, all_cells=.false.)
-  call trace%end
-END SUBROUTINE
 
 !> =============================================================================
 !> Evaluates the time derivatives of the hydrodynamic variables

@@ -10,14 +10,13 @@ MODULE mhd_mod
   USE scalar_mod
   USE vector_mod
   USE stagger_mod
-  USE patch_mod
+  USE gpatch_mod
   USE force_mod
-  USE download_mod
   USE index_mod
   USE timestep_mod
   implicit none
   private
-  type, extends(patch_t), public:: mhd_t
+  type, extends(gpatch_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real:: nu(6)
@@ -32,7 +31,6 @@ MODULE mhd_mod
     procedure:: init
     procedure:: update
     procedure:: nonideal_MHD_courant_condition
-    procedure:: dnload
     procedure:: output
     procedure:: log_density => void
     procedure:: log_pressure => void
@@ -64,7 +62,7 @@ SUBROUTINE init (self)
     rho_ions, hardwire
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
-  call self%patch_t%init
+  call self%gpatch_t%init
   self%i_d  = idx%d
   self%i_e  = idx%e
   self%i_s  = idx%s
@@ -105,15 +103,6 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-!> =============================================================================
-SUBROUTINE dnload (self)
-  class(mhd_t):: self
-  call trace%begin ('experiment_mod::dnload')
-  call download%download_link (self%link, all_cells=.false.)
-  call trace%end
-END SUBROUTINE
-
-!> =============================================================================
 SUBROUTINE update (self)
   USE scalar_mod
   class(mhd_t):: self
@@ -138,10 +127,7 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   type(index_t):: i
   !-----------------------------------------------------------------------------
-  call self%dnload
   call trace%begin('mhd_t%update',itimer=itimer)
-  call self%output
-
   self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
   self%s => self%mem(:,:,:,i%s      ,self%it,1); self%dsdt => self%mem(:,:,:,i%s      ,self%it,2)
   self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
@@ -477,7 +463,7 @@ SUBROUTINE output (self, experiment_name)
   logical:: exists
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
-  call self%patch_t%output (experiment_name)
+  call self%gpatch_t%output (experiment_name)
   !$omp critical (output_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout

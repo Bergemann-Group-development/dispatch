@@ -23,7 +23,6 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(mhd_t):: experiment_t
-    logical:: mhd
     type(initial_t):: initial
   contains
     procedure init
@@ -84,7 +83,6 @@ SUBROUTINE update (self)
     end if
     !$omp end critical (init_cr)
   end if
-  call self%dnload
   call self%mhd_t%update
   call trace_end
 END SUBROUTINE update

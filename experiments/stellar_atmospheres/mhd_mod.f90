@@ -10,13 +10,12 @@ MODULE mhd_mod
   USE scalar_mod
   USE vector_mod
   USE stagger_mod
-  USE patch_mod
+  USE gpatch_mod
   USE force_mod
-  USE download_mod
   USE eos_mod
   implicit none
   private
-  type, extends(patch_t), public:: mhd_t
+  type, extends(gpatch_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real:: nu(6), csound
@@ -26,7 +25,6 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: dnload
     procedure:: output
     procedure:: log_density => void
     procedure:: log_pressure => void
@@ -52,7 +50,7 @@ SUBROUTINE init (self)
   namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
-  call self%patch_t%init
+  call self%gpatch_t%init
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -72,15 +70,6 @@ SUBROUTINE init (self)
   call self%force%init
   call trace%end
 END SUBROUTINE init
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE dnload (self)
-  class(mhd_t):: self
-  call trace%begin ('experiment_mod::dnload')
-  call download%download_link (self%link, all_cells=.false.)
-  call trace%end
-END SUBROUTINE
 
 !> =============================================================================
 SUBROUTINE update (self)
@@ -103,7 +92,6 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   type(stagger_t):: st
   !-----------------------------------------------------------------------------
-  call self%dnload
   call trace%begin('mhd_t%update',itimer=itimer)
   st%m => self%mesh
   self%d    => self%mem(:,:,:,self%i_d,self%it,1)
@@ -341,7 +329,7 @@ SUBROUTINE output (self, experiment_name)
   logical:: exists
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
-  call self%patch_t%output (experiment_name)
+  call self%gpatch_t%output (experiment_name)
   !$omp critical (output_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout-1

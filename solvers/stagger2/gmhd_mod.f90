@@ -67,9 +67,7 @@ MODULE gmhd_mod
   USE laplace_mod
   USE mhd_mod
   USE boundary_mod
-  USE download_mod
   USE index_mod
-  !USE operators_mod
   implicit none
   private
   type, public, extends(mhd_t):: gmhd_t
@@ -81,7 +79,6 @@ MODULE gmhd_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: dnload
     procedure:: solve
   end type
   type(index_t):: idx
@@ -137,14 +134,6 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-!> =============================================================================
-SUBROUTINE dnload (self)
-  class(gmhd_t):: self
-  call trace%begin ('gmhd_mod::dnload')
-  call download%download_link (self%link, all_cells=.false.)
-  call trace%end
-END SUBROUTINE
-
 !> =============================================================================
 !> Intercept the call from patch_list_mod::update to mhd_t%download, which
 !> normally falls through to patch_t%update.  Instrument an extra flag, which
