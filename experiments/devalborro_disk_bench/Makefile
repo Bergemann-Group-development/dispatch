@@ -19,7 +19,7 @@ sinclude $(TOP)/config/Makefile
 $(EXEC) : setup_mod.o
 setup_mod.o:		list_mod.o task_list_mod.o task_mod.o io_mod.o trace_mod.o experiment_mod.o components_mod.o scaling_mod.o parameters_mod.o
 boundary_mod.o: 	io_mod.o trace_mod.o scaling_mod.o mesh_mod.o mhd_mod.o parameters_mod.o
-experiment_mod.o:	io_mod.o trace_mod.o timestep_mod.o mhd_mod.o initial_mod.o boundary_mod.o potential_mod.o
+experiment_mod.o:	io_mod.o trace_mod.o mhd_mod.o initial_mod.o boundary_mod.o potential_mod.o
 initial_mod.o:		io_mod.o trace_mod.o scaling_mod.o mesh_mod.o mhd_mod.o parameters_mod.o
 potential_mod.o:	io_mod.o trace_mod.o scaling_mod.o mesh_mod.o parameters_mod.o mhd_mod.o
 scaling_mod.o:		io_mod.o trace_mod.o

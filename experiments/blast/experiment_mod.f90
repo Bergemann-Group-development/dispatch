@@ -4,7 +4,6 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
-  USE timestep_mod
   USE mhd_mod
   USE initial_mod
   USE boundary_mod
@@ -49,7 +48,6 @@ SUBROUTINE update_experiment (self)
 
   call boundary%conditions(self, self%it)
   call self%mhd_t%update()
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call boundary%conditions(self, self%new)
 
   call trace_end

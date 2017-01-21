@@ -8,11 +8,12 @@
 MODULE mhd_mod
   USE io_mod
   USE trace_mod
+  USE mpi_mod
   USE gpatch_mod
   USE kinds_mod
   USE variable_mod
   USE mesh_mod
-  USE mpi_mod
+  USE timestep_mod
   implicit none
   private
 
@@ -341,6 +342,8 @@ SUBROUTINE init_zeus (self)
     ! Initialise boundary zone arrays.
     call inibndys()
 
+    ! Initialise DISPATCH time-stepping.
+    call timestep%init
   endif
 
   self%nv = nvar_zeus
@@ -386,6 +389,7 @@ SUBROUTINE update_zeus (self)
   call CopyToZeus (self)
   call trace_begin ('zeus3d (external)', itimer=itimer)
   call zeus3d (self%istep)  ! run ZEUS
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call trace_end(itimer)
   call CopyFromZeus (self)
 
@@ -493,8 +497,9 @@ END SUBROUTINE CopyFromZeus
 !> source/self -> use `jj`
 !> =============================================================================
 FUNCTION MapVectors (self, in, target, ii, jj) result (out)
+  USE patch_mod, only: patch_t
   class(mhd_t):: self
-  class(gpatch_t), pointer:: target
+  class(patch_t), pointer:: target
   real(kind=KindScalarVar), dimension(:), intent(in):: in
   integer, intent(in):: ii(3), jj(3)
   real(kind=KindScalarVar):: out(size(in))
