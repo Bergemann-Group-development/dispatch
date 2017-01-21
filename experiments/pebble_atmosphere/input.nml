@@ -27,9 +27,9 @@
  n_repeat=5
 /
 &pebble_params
-!omega_yr=0.0,0.0,1.0
+ omega_yr=0.0,0.0,1.0
  omega_yr=0.0,0.0,0.0   ! TEST only
- do_pebbles=f
+ do_pebbles=t
  vz_pebble_cgs=1.5e6
  pebble_rate_cgs=1
  cell_probability=0.1

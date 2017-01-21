@@ -7,7 +7,7 @@ MODULE experiment_mod
   USE trace_mod
   USE pebble_patch_mod
   USE initial_mod
-  USE timestep_mod
+  !USE timestep_mod
   USE atmosphere_mod
   USE units_mod
   USE scaling_mod
@@ -130,7 +130,7 @@ SUBROUTINE update (self)
   call self%pebble_patch_t%update_pebbles
   !if (self%is_set (bits%has_BC)) &
     !print *,self%id,' fixed BC 2', self%mem(12,12,12,1:2,it,1), it
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  !call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   !if (self%is_set (bits%has_BC)) &
     !print *,self%id,' fixed BC 3', self%mem(12,12,12,1:2,it,1), it
   call self%check_density ('after timestep')

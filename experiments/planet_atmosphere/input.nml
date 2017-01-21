@@ -4,7 +4,7 @@
 /
 &io_params
  do_trace=f
- verbose=1
+ verbose=2
  do_debug=f
  do_output=f
 /
