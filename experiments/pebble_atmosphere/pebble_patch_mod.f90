@@ -84,10 +84,11 @@ SUBROUTINE init (self)
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
     solid_density_cgs, size, it_max, pebble_rate_cgs, vz_pebble_cgs, id_dbg, &
     only_pebbles, ppc, cell_probability, power, omega_yr, trace_every
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
-  call trace_begin ('pebble_patch_mod::init')
+  call trace_begin ('pebble_patch_mod::init', itimer=itimer)
   call self%mhd_t%init
   allocate (self%pebbles,self%not_done)
   call self%pebbles%init (self%id)
@@ -143,7 +144,7 @@ SUBROUTINE init (self)
   case ('kdk_drag')
     self%move => kdk_drag
   end select
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -159,13 +160,14 @@ SUBROUTINE initial_add (self, n)
   integer:: ix, iy, iz, ippc, iter, warn, l(3), u(3)
   real:: w(3), sign, ppc, average_density
   integer, save:: nprint=10
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles .or. self%is_set(bits%not_leaf)) return
-  call trace_begin ('pebbles_t%add', 3)
+  call trace_begin ('pebbles_t%add', 3, itimer=itimer)
   pebbles => self%pebbles
   if (io%verbose>1 .or. (io%verbose>0.and.nprint>0)) then
     nprint = nprint-1
-    print *, ' ADDING PEBBLES TO PATCH', self%id
+    print *, ' ADDING RANDOM PEBBLES TO PATCH', self%id
     print 1, '     patch position:', self%position - planet%position
     print 1, '         patch size:', self%size
     print 1, '   pebble size (cm):', self%pebbles%size*scaling%l
@@ -226,12 +228,12 @@ SUBROUTINE initial_add (self, n)
   end do
   end do
   if (io%verbose>0) &
-    print '(a,i7,i3,2i6,2f10.2)', 'initial_trace: id, level, n_initial, n_add =', &
+    print '(a,i7,i3,2i6,1p,2e14.6)', 'initial_trace: id, level, n_initial, n_add =', &
       self%id, self%level, scene%n_initial, scene%n_add, xmin, xmax
   if (io%verbose>1) &
     print *, 'initial_add:', self%id, self%position(3), self%pebbles%n
   call self%pebbles%check_list ('after initial_add')
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE initial_add
 
 !> =============================================================================
@@ -250,10 +252,11 @@ SUBROUTINE add (self, n)
   integer:: i, j, k, ii(3), n_local
   real:: w(3), sign, x0
   integer, save:: nprint=10
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles) return
   if (self%is_clear(bits%top_bottom)) return
-  call trace_begin ('pebbles_t%add', 3)
+  call trace_begin ('pebbles_t%add', 3, itimer=itimer)
   pebbles => self%pebbles
   if (present(n)) then
     n_local = n
@@ -262,7 +265,7 @@ SUBROUTINE add (self, n)
   end if
   if (io%verbose>1 .or. (io%verbose>0.and.nprint>0)) then
     nprint = nprint-1
-    print *, ' ADDING PEBBLES TO PATCH', self%id
+    print *, ' ADDING TOP/BOTTOM PEBBLES TO PATCH', self%id
     print 1, '     patch position:', self%position - planet%position
     print 1, '         patch size:', self%size
     print 1, '   pebble size (cm):', self%pebbles%size*scaling%l
@@ -315,7 +318,7 @@ SUBROUTINE add (self, n)
     call self%pebbles%append (pebble)
   end do
   call self%pebbles%check_list ('after add')
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE add
 
 !> =============================================================================
@@ -982,11 +985,11 @@ SUBROUTINE output (self, experiment_name)
   class(pebble_t), pointer:: p
   !-----------------------------------------------------------------------------
   if (.not.io%do_output .or. self%time < self%out_next) return
-  !$omp critical (output_cr)
   !
   call self%patch_t%output (experiment_name)
   !
   if (self%do_pebbles) then
+    !$omp critical (out_cr)
     write (filename,'(a,i4.4,"_",i4.4,".peb")') &
         trim(io%outputname)//'/', self%id, self%iout
     open  (io%data_unit, file=filename, form='unformatted', status='unknown')
@@ -1015,9 +1018,9 @@ SUBROUTINE output (self, experiment_name)
     !
     close (io%data_unit)
     deallocate (buffer,idbuf)
+    !$omp end critical (out_cr)
   end if
   !
-  !$omp end critical (output_cr)
 END SUBROUTINE output
 
 END MODULE pebble_patch_mod

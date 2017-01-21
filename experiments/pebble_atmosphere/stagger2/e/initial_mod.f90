@@ -64,8 +64,9 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   real, save:: omega(3)=0.0
   real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0
   namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('initial_t%planet_atmosphere')
+  call trace%begin('initial_t%planet_atmosphere', itimer=itimer)
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -122,7 +123,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
     end do
   end do
   end associate
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE planet_atmosphere
 
 !> =============================================================================
