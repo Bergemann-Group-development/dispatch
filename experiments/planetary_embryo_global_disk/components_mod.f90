@@ -41,7 +41,8 @@ SUBROUTINE init_annulus (self)
   integer :: ix, iy, iz
   integer, dimension(3) :: n_patch, n_per_patch
   real(8), dimension(3) :: extent, llc, urc
-  real(8) :: zextent, rextent, phiextent, phioffset, zoffset, roffset
+  real(8) :: zextent, rextent, phiextent, phioffset, zoffset, roffset, &
+             curr_zoff, curr_roff, curr_phioff
   logical, save :: first_time = .true., rotating
 
   namelist /annulus_params/ n_per_patch, n_patch, extent, roffset, rotating
@@ -84,22 +85,25 @@ SUBROUTINE init_annulus (self)
     zoffset = -0.5 * zextent
   end if
 
+  curr_phioff = phioffset
   do iz=1,self%n_patch(3)
+    curr_roff = roffset
     do iy=1,self%n_patch(2)
+      curr_zoff = zoffset
       do ix=1,self%n_patch(1)
         allocate(experiment_t :: patch)
         select type (patch)
         class is (mhd_t)
-          print*, 'also yes'
           patch%size = [zextent, rextent, phiextent]
           patch%position = 0.0 ! still in Cartesian coords.; absolute pos.
           patch%name => self%task_list%name
           patch%n = n_per_patch
           ! because absolute positions are sometimes required in curvilinear
           ! coords., set the cylindrical offset (lower left corner).
-          patch%llc_nat = [zoffset, roffset, phioffset]
+          patch%llc_nat = [curr_zoff, curr_roff, curr_phioff]
+          patch%llc_cart = patch%position &
+                         + CurrentToCartesian(patch%mesh_type, curr_zoff, curr_roff, curr_phioff)
           patch%mesh_type = mesh_types%cylindrical
-          patch%llc_cart = patch%position + CurrentToCartesian(patch%mesh_type, zoffset, roffset, phioffset)
           patch%box = extent
           call patch%init()
           ! set angular (phi) velocity of the annulus (in rad/s), if desired.
@@ -130,11 +134,11 @@ SUBROUTINE init_annulus (self)
         call patch%clear(bits%root_grid)
         call self%task_list%append(patch)
         ! update offset for next patch
-        if (n_per_patch(1) > 1) zoffset = zoffset + zextent
+        if (n_patch(1) > 1) curr_zoff = curr_zoff + zextent
       end do
-      if (n_per_patch(2) > 1) roffset = roffset + rextent
+      if (n_patch(2) > 1) curr_roff = curr_roff + rextent
     end do
-    if (n_per_patch(3) > 1) phioffset = phioffset + phiextent
+    if (n_patch(3) > 1) curr_phioff = curr_phioff + phiextent
   end do
 
   call trace_end

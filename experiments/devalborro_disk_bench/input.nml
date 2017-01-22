@@ -9,6 +9,7 @@
 &out_params
  end_time=630.0
  out_time=0.628319
+ guard_zones=t
 /
 
 &initial_params
@@ -18,6 +19,8 @@
 
 &annulus_params
   rotating=t
+  n_patch=1,2,7
+  n_per_patch=1,32,55
 /
 
 &zeus_params

@@ -19,12 +19,12 @@ MODULE components_mod
   type, public :: annulus_t
     integer, dimension(3) :: n_per_patch, n_patch
     real(8), dimension(3) :: extent
-    type(task_list_t), pointer :: task_list
+    type(task_list_t), pointer :: task_list => null()
   contains
     procedure :: init => init_annulus
   end type
 
-  real(8), parameter :: pi = 3.14159265358979323846d0
+  real(8), parameter :: pi = asin(1.0) * 2.0
 
 CONTAINS
 
@@ -38,7 +38,8 @@ SUBROUTINE init_annulus (self, params)
   integer :: ix, iy, iz
   integer, dimension(3) :: n_patch, n_per_patch
   real(8), dimension(3) :: extent, llc, urc
-  real(8) :: zextent, rextent, phiextent, phioffset, zoffset, roffset
+  real(8) :: zextent, rextent, phiextent, phioffset, zoffset, roffset, &
+             curr_zoff, curr_roff, curr_phioff
   logical, save :: first_time = .true., rotating
 
   namelist /annulus_params/ n_per_patch, n_patch, extent, roffset, rotating
@@ -56,6 +57,7 @@ SUBROUTINE init_annulus (self, params)
     n_patch = [1, 1, 1]
     rotating = .true.
     rewind (io%input); read (io%input, annulus_params)
+    if (io%master) write (*, annulus_params)
     ! the phi extent is given in units of pi
     extent(3) = extent(3) * pi
   end if
@@ -77,8 +79,11 @@ SUBROUTINE init_annulus (self, params)
     zoffset = -0.5 * zextent
   end if
 
+  curr_phioff = phioffset
   do iz=1,self%n_patch(3)
+    curr_roff = roffset
     do iy=1,self%n_patch(2)
+      curr_zoff = zoffset
       do ix=1,self%n_patch(1)
         allocate(experiment_t :: patch)
         select type (patch)
@@ -89,8 +94,9 @@ SUBROUTINE init_annulus (self, params)
           patch%n = n_per_patch
           ! because absolute positions are sometimes required in curvilinear
           ! coords., set the cylindrical offset (lower left corner).
-          patch%llc_nat = [zoffset, roffset, phioffset]
-          patch%llc_cart = patch%position + CylindricalToCartesian(zoffset, roffset, phioffset)
+          patch%llc_nat = [curr_zoff, curr_roff, curr_phioff]
+          patch%llc_cart = patch%position &
+                         + CurrentToCartesian(patch%mesh_type, curr_zoff, curr_roff, curr_phioff)
           patch%mhd = .false.
           patch%mesh_type = mesh_types%cylindrical
           patch%box = extent
@@ -119,12 +125,12 @@ SUBROUTINE init_annulus (self, params)
         call patch%set(bits%static) ! for the time being (should be okay)
         call patch%clear(bits%root_grid)
         call self%task_list%append(patch)
+        ! update offset for next patch
+        if (n_patch(1) > 1) curr_zoff = curr_zoff + zextent
       end do
+      if (n_patch(2) > 1) curr_roff = curr_roff + rextent
     end do
-    ! update offsets for next patch
-    zoffset   = zoffset + zextent
-    roffset   = roffset + rextent
-    phioffset = phioffset + phiextent
+    if (n_patch(3) > 1) curr_phioff = curr_phioff + phiextent
   end do
 
   call trace_end
