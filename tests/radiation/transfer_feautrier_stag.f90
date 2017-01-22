@@ -151,8 +151,7 @@ SUBROUTINE transfer (n,dtau,s,q,xi,doxi)
   ! Surface intensity.
   !---------------------------------------------------------------------
   if (doxi) then
-      xi=2.*(1.-ex)*(q(1)+s(1))+s(1)*ex**2 !??? what?
-  end if
+      xi=2.*(1.-ex)*(q(1)+s(1))+s(1)*ex**2 
   
 
 END SUBROUTINE transfer

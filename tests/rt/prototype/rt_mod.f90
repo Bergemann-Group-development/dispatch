@@ -44,6 +44,7 @@ MODULE rt_mod
     real, dimension(:,:,:),   pointer :: dedt => null()
     real, dimension(:,:),     pointer :: qfw0 => null()
     real, dimension(:,:),     pointer :: qrv1 => null()
+    real, dimension(:,:,:), pointer   :: lnds => null()                 ! scratch pointer to lnd
     character(len=16)                 :: solver ='integral'             ! choice of solver
     type (link_t),            pointer :: upstream
     type (link_t),            pointer :: dnstream
@@ -54,7 +55,8 @@ MODULE rt_mod
     procedure :: update
     procedure :: solve_integral
     procedure :: solve_feautrier
-    procedure :: optical_depth
+    procedure :: optical_depth_centered
+    procedure :: optical_depth_staggered
     procedure :: interpolate
     procedure :: boundary_conditions
   end type
@@ -146,6 +148,7 @@ SUBROUTINE update (self)
   end select
   allocate (lnd (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log density scratch
   allocate (lne (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log internal energy scratch
+  self%lnds => lnd
   call mhd%log_interpolate (self%time, mhd%i_d, lnd)                    ! interpolate in time and space
   call mhd%log_interpolate (self%time, mhd%i_e, lne)                    ! interpolate in time and space
   if (io%verbose > 1) then
@@ -155,11 +158,14 @@ SUBROUTINE update (self)
   lne = lne - lnd                                                       ! internal energy per unit mass
   call eos%lookup (shape(lne), lne=lne, lnd=lnd, &                      ! call the table lookup, ...
                    rk=self%rk, src=self%src)                            ! ... results go into rt_t
-  deallocate (lnd, lne)                                                 ! deallocate scratch
+  if (any(self%src < 0)) then
+   error stop "src < 0"
+   end if
   call trace%end (itimer)
   call self%solve                                                       ! call the RT solver to get Q
   call self%boundary_conditions
   call self%output
+  deallocate (lnd, lne)                                                 ! deallocate scratch
 END SUBROUTINE update
 
 !> =====================================================================
@@ -209,7 +215,7 @@ SUBROUTINE solve_integral (self)
       allocate (qrv0(mx,mz))                                            ! temporary array
       allocate (qrv1(mx,mz))                                            ! temporary array
       ds => self%mesh(2)%dsup(6:my-4)                                   ! along this direction
-      call self%optical_depth (ds, rk, dtau)                            ! compute dtau
+      call self%optical_depth_centered (ds, rk, dtau)                   ! compute dtau
       if (io%verbose>1) &
         print *,'dtau',iw,self%id, minval(dtau), maxval(dtau)
       !
@@ -260,7 +266,7 @@ SUBROUTINE solve_feautrier (self)
   !.....................................................................
   integer                         :: ib, iw, iy
   real, dimension(:),     pointer :: ds
-  real, dimension(:,:),   pointer :: qfw0, qfw1, qrv0, qrv1
+  real, dimension(:,:),   pointer :: Ifw0, Ifw1, Irv0, Irv1
   real, dimension(:,:,:), pointer :: s, rk, dtau, exp0, q
   class (patch_t),        pointer :: task
   integer, save                   :: itimer=0
@@ -276,19 +282,19 @@ SUBROUTINE solve_feautrier (self)
       rk => self%rk (:,6:my-4,:,iw)                                     ! pick opacity
       allocate (dtau(mx,1:my-9,mz))                                     ! temporary array
       allocate (q   (mx,1:my-9,mz))                                     ! temporary array
-      allocate (qfw0(mx,mz))                                            ! temporary array
-      allocate (qfw1(mx,mz))                                            ! temporary array
-      allocate (qrv0(mx,mz))                                            ! temporary array
-      allocate (qrv1(mx,mz))                                            ! temporary array
+      allocate (Ifw0(mx,mz))                                            ! temporary array
+      allocate (Ifw1(mx,mz))                                            ! temporary array
+      allocate (Irv0(mx,mz))                                            ! temporary array
+      allocate (Irv1(mx,mz))                                            ! temporary array
       ds => self%mesh(2)%dsup(6:my-4)                                   ! along this direction
-      call self%optical_depth (ds, rk, dtau)                            ! compute dtau
+      call self%optical_depth_staggered (ds, rk, dtau)                  ! compute dtau
       if (io%verbose>1) &
         print *,'dtau',iw,self%id, minval(dtau), maxval(dtau)
           
-      qfw0 = -s(:,6,:)                                                  ! input net intensity
-      qrv1 = 0.0
+      Ifw0 = -s(:,6,:)                                                  ! input net intensity
+      Irv1 = 0.0
       
-      call rt_bundle%transfer (dtau, s, qfw0, qfw1, q, qrv1, qrv0)      ! solve bi-directional
+      call rt_bundle%transfer (dtau, s, Ifw0, Ifw1, q, Irv1, Irv0)      ! solve bi-directional
       !
       !task => self%dnstream%task
       !select type (task)
@@ -304,15 +310,16 @@ SUBROUTINE solve_feautrier (self)
       
       
       self%dedt(:,6:my-4,:) = &
-      self%dedt(:,6:my-4,:) + q*self%w_lambda(iw)*self%w_bundle(ib)     ! add net heat contrib
+      self%dedt(:,6:my-4,:) + q*self%w_lambda(iw)*self%w_bundle(ib) * 2.0 ! add net heat contrib
       !
       if ((io%verbose>1 .and. iw==self%n_lambda) .or. io%verbose>2) then
+      print *, 'lnd, rk, dtau, s, q'
         do iy=1,my-9
-          print *,iy,sum(dtau(:,iy,:))/(mx*mz),sum(self%dedt(:,5+iy,:))/(mx*mz)
+          print *,iy,sum(self%lnds(:,iy,:))/(mx*mz),sum(rk(:,iy,:))/(mx*mz),sum(dtau(:,iy,:))/(mx*mz),sum(s(:,iy,:))/(mx*mz),sum(q(:,5+iy,:)*2)/(mx*mz)
         end do
       end if
       !
-      deallocate (dtau, exp0, q, qfw0, qfw1, qrv0, qrv1)                ! deallocate temporaries
+      deallocate (dtau, q, Ifw0, Ifw1, Irv0, Irv1)                ! deallocate temporaries
       !$omp end task
     end do
     !$omp end single
@@ -325,7 +332,7 @@ END SUBROUTINE solve_feautrier
 !> =====================================================================
 !> Compute the optical depth along rays
 !> =====================================================================
-SUBROUTINE optical_depth (self, ds, rk, dtau)
+SUBROUTINE optical_depth_centered (self, ds, rk, dtau)
   class (rt_t) :: self
   real, dimension(:),     pointer :: ds
   real, dimension(:,:,:), pointer :: rk
@@ -338,8 +345,32 @@ SUBROUTINE optical_depth (self, ds, rk, dtau)
     dtau(:,iy,iz) = ds(iy)*rk(:,iy,iz)
   end do
   end do
-END SUBROUTINE optical_depth
+END SUBROUTINE optical_depth_centered
 
+!> =====================================================================
+!> Compute the optical depth along rays. Dtau is staggered, therefore it
+!> has only a half value on the lower edge of the patch.
+!> =====================================================================
+SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
+  class (rt_t) :: self
+  real, dimension(:),     pointer :: ds
+  real, dimension(:,:,:), pointer :: rk
+  real, dimension(:,:,:), pointer :: dtau,dt
+  !.....................................................................
+  integer                         :: iy, iz
+  !---------------------------------------------------------------------
+  allocate (dt(size(dtau,1),size(dtau,2),size(dtau,3)))
+  do iz=1,size(rk,3)
+    do iy=1,size(rk,2)
+      dtau(:,iy,iz) = rk(:,iy,iz)* ds(iy)
+    end do
+    dt=dtau
+    do iy=2,size(rk,2)-1
+      dtau(:,iy,iz) = (dtau(:,iy,iz) + dt(:,iy-1,iz)) * .5
+    end do
+  end do
+  deallocate(dt)
+END SUBROUTINE optical_depth_staggered
 !> =====================================================================
 !> Compute the optical depth along rays
 !> =====================================================================
