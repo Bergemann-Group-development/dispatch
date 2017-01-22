@@ -242,7 +242,7 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
       end do
       if (size(rk,4)>1) then
         do j=2,size(rk,4)
-          rk(:,iy,iz,j) = rk(:,iy,iz,j-1)*10
+          rk(:,iy,iz,j) = rk(:,iy,iz,j-1)*10.0
         end do
       end if
     end if
@@ -292,7 +292,7 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
       do ix=1,mx
       ik (ix) = ik (ix) + 3*ntab (ix)
       ik1(ix) = ik1(ix) + 3*ntab1(ix)
-      src(ix,iy,iz,j) = ( &
+      src(ix,iy,iz,j) = exp( &
          f00(ix) * tab(ik (ix))+  f01(ix) * tab(ik (ix) + 1) &
       +  f10(ix) * tab(ik1(ix))+  f11(ix) * tab(ik1(ix) + 1) &
       + fx00(ix) * tab(ik (ix) + 2 * ntab (ix)    ) &
