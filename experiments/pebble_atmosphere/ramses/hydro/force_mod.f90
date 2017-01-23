@@ -75,28 +75,35 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz)
-    zp = planet%position(3) - z
+    zp = z - planet%position(3)
     do iy=m(2)%lb,m(2)%ub
       y = m(2)%p + r2(iy)
-      yp = planet%position(2) - y
+      yp = y - planet%position(2)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix)
-        xp = planet%position(1) - x
+        xp = x - planet%position(1)
         !-----------------------------------------------------------------------
-        ! The force from the planet is included explicitly.
+        ! The force from the planet is included explicitly, and is oriented
+        ! away from the planet, which is at the center of the local coordinates.
+        ! The L1 and L2 Lagrange points are the result of net centrifugal
+        ! forces that point in the opposite direction to the force of gravity,
+        ! cancelling at a distance where $\Omega^2 r$ is equal to $GM/r^2$
         !-----------------------------------------------------------------------
         rp1 = sqrt(xp**2+yp**2+zp**2)
-        ff(ix,iy,iz,1) = planet%mass*scaling%grav*xp/rp1**3
-        ff(ix,iy,iz,2) = planet%mass*scaling%grav*yp/rp1**3
-        ff(ix,iy,iz,3) = planet%mass*scaling%grav*zp/rp1**3
+        ff(ix,iy,iz,1) = -planet%mass*scaling%grav*xp/rp1**3
+        ff(ix,iy,iz,2) = -planet%mass*scaling%grav*yp/rp1**3
+        ff(ix,iy,iz,3) = -planet%mass*scaling%grav*zp/rp1**3
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
         ! The force in the radial direction increases with increasing y,
         ! giving an equilbrium velocity in the x-direction that is positive
-        ! (faster rotation) for a positive y-displacement
+        ! (faster rotation) for a positive y-displacement.  Vertically, there
+        ! is a net force that comes from the projection of the force of
+        ! gravity onto the z-axis, and has the same scaling constant as the
+        ! radial force, but the opposite sign.
         !-----------------------------------------------------------------------
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - planet%omega(3)**2*zp
         ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + planet%omega(3)**2*yp
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - planet%omega(3)**2*zp
         ff(ix,iy,iz,:) = ff(ix,iy,iz,:)*d(ix,iy,iz)
       end do
     end do
@@ -108,10 +115,11 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   ! Add the classical Coriolis force terms, correctly centered (not important),
   ! assuming (as above) that the motion is in the x-y plane.  A positive omega(3)
-  ! is motion in the negative x-direction, if y points in the radial direction.
-  ! Hence, a positive velocity in the x-direction reduces the centripetal force,
+  ! is motion in the positive x-direction, if y points towards the system center.
+  ! Hence, a positive velocity in the x-direction increases the centripetal force,
   ! and leads to acceleration in the negative y-direction -- vice versa for
-  ! motion in the y-direction
+  ! motion in the y-direction; a motion inwards (+y) leads to acceleration in
+  ! the forward (+x) direction
   !-----------------------------------------------------------------------------
   ff(:,:,:,1) = ff(:,:,:,1) + 2.*self%omega(3)*p(:,:,:,2)/d
   ff(:,:,:,2) = ff(:,:,:,2) - 2.*self%omega(3)*p(:,:,:,1)/d
