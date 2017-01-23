@@ -212,9 +212,8 @@ SUBROUTINE initial_add (self, n)
         pebble%w = average_density*product(self%ds)
         if (pebble_trace%every > 0) then
           if (mod(pebble%id,pebble_trace%every)==0 .and. &
-            pebble%p(1) >   - planet%hill_radius .and. &
-            pebble%p(1) < 2.0*planet%hill_radius .and. &
-        abs(pebble%p(2)) <    planet%hill_radius) then
+        abs(pebble%p(1)) < 2.0*planet%hill_radius .and. &
+        abs(pebble%p(2)) < 2.0*planet%hill_radius) then
             pebble%status = ior(pebble%status,bits%trace)               ! trace some
             !$omp atomic
             scene%n_initial = scene%n_initial+1
@@ -402,7 +401,7 @@ SUBROUTINE kdk_drag (self, p)
   !ar = 1./sqrt(sum(rp**2))
   !p%ag = p%ag + scaling%grav*star%mass*rp*ar**3
   p%dt = sqrt(sum(p%p**2)/sqrt(sum(p%ag**2)))*self%pebbles%courant
-  p%dt = min(p%dt,self%out_time,minval(self%ds/max(1e-20,abs(p%v))))
+  p%dt = min(p%dt,0.1*self%out_time,minval(self%ds/max(1e-20,abs(p%v))))
   !
   if (p%id==self%pebbles%id_dbg) then
     print'("kdkd1",1p,5(3e10.2,2x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t
@@ -818,7 +817,7 @@ SUBROUTINE update_pebbles (self)
     else if (n > 9980) then
       verbose = 1
     end if
-    if (debug) & 
+    if (debug) &
       print *,self%id,'gather loop, n =', self%not_done%n, associated(self%not_done%head), &
       self%not_done%n_remove, self%not_done%n_export
   end do

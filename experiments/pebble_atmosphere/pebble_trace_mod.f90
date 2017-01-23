@@ -20,7 +20,7 @@ MODULE pebble_trace_mod
     type(lock_t):: lock
     type(trace_buffer_t), dimension(:), pointer:: buffer
     integer:: npebble=10
-    integer:: nbuffer=10000
+    integer:: nbuffer=10000                     ! max number of traces
     integer:: every=1000                        ! save frequency
   contains
     procedure init
@@ -89,9 +89,12 @@ SUBROUTINE trace_pebble (self, pebble, ip, level)
     self%buffer(i)%v(13,n)  = pebble%s
     self%buffer(i)%v(14,n)  = pebble%w
     self%buffer(i)%n = n
+    if (io%verbose > 0) print *,'MK', pebble%id, i, n, pebble%t, pebble%dt
     if (n >= self%npebble) then
       call self%trace_output (i)
     end if
+  else
+    if (io%verbose > 0) print *,'MK', pebble%id, i
   end if
   call trace_end
 END SUBROUTINE trace_pebble
