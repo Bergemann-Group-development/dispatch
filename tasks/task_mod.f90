@@ -361,6 +361,7 @@ FUNCTION distance (self, task) RESULT (out)
   real(8):: out(3)
   !.............................................................................
   out = self%position-task%position
+  ! account for periodic wrapping
   out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
 END FUNCTION distance
 

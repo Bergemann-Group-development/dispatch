@@ -97,6 +97,7 @@ MODULE patch_mod
     procedure:: myfloatindex_scalar
     procedure:: log_interpolate
     procedure:: time_interval
+    procedure:: distance => distance_curvilinear
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -1193,6 +1194,29 @@ SUBROUTINE dnload_range (target, source, l, u, o)
     stop
   end if
 END SUBROUTINE dnload_range
+
+!> =============================================================================
+!> Signed distance between the centers of two tasks in the periodic box
+!> This version is adjusted to account for curvilinear coords. (the position of
+!> a curvilinear patch is set to the coordinate *origin) and requires components
+!> defined in `patch_t`.
+!> =============================================================================
+FUNCTION distance_curvilinear (self, task) RESULT (out)
+  class(patch_t):: self
+  class(task_t):: task
+  real(8):: out(3)
+  !.............................................................................
+  select type (task)
+  class is (patch_t)
+    out = self%centre_nat-task%centre_nat
+  class default
+    out = self%position-task%position
+  end select
+  ! account for periodic wrapping
+  out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
+
+END FUNCTION distance_curvilinear
+
 !> =============================================================================
 !> The nearest smaller index position in the self patch coordinate system.  The
 !> point with index self%mesh%lb is half a cell inside the patch guard size, so the
