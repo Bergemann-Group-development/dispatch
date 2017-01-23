@@ -8,8 +8,12 @@
 
 &out_params
  end_time=630.0
- out_time=0.628319
+ out_time=0.0628319
  guard_zones=t
+/
+
+&load_balance_params
+  on=f
 /
 
 &initial_params

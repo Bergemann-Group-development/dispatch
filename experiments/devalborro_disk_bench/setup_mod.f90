@@ -97,6 +97,7 @@ SUBROUTINE init_setup (self)
   ! Done. Perform final list initialisations.
   !-----------------------------------------------------------------------------
   call self%task_list%init(trim(self%experiment_name)//' task list')
+  call self%task_list%init_all_nbors
   call trace_end
 END SUBROUTINE init_setup
 

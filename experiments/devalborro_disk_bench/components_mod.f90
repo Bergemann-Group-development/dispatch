@@ -118,8 +118,10 @@ SUBROUTINE init_annulus (self, params)
               patch%btypes%ikb = 6 ! self-computing (but see `boundary%conditions`)
               patch%btypes%okb = 6
             end if
-            patch%btypes%ijb = 2
-            patch%btypes%ojb = 2
+            patch%btypes%ijb = 6
+            if (curr_roff .le. roffset) patch%btypes%ijb = 2
+            patch%btypes%ojb = 6
+            if (curr_roff+rextent .ge. extent(2)) patch%btypes%ojb = 2
           end if
         end select
         call patch%set(bits%static) ! for the time being (should be okay)
