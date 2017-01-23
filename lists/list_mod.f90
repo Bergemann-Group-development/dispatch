@@ -740,12 +740,12 @@ FUNCTION overlaps (self, task1, task2, label)
     overlaps = sum(self%distance(task1,task2)/(task1%size+task2%size)) &
              < 0.50000001_8
   else
-    overlaps = all(self%distance(task1,task2) < 0.50000001_8*(task1%size+task2%size))
+    overlaps = all(self%distance(task1,task2) < 0.50000001_8*(task1%gsize+task2%gsize))
   end if
   if (task2%id==io%id_debug .or. present(label)) then
     block
     real(8):: limit(3)
-    limit = 0.50000001_8*(task1%size+task2%size)
+    limit = 0.50000001_8*(task1%gsize+task2%gsize)
     !write (io_unit%log,'(a,2i4,2(3f8.2,3x),l3)') 'overlap:', task1%id, task2%id, &
     ! (task1%position-task2%position)/limit, dist/limit, overlaps
     write (io_unit%log,'(a,2i4,2(3f8.3,3x),l3)') 'overlap:', task1%id, task2%id, &
