@@ -17,6 +17,7 @@ MODULE parameters_mod
     real(8) :: aspect_rat = 0.05 ! disk aspect ratio (= H/R)
     logical :: ramp_mass = .true. ! increase the mass of the planet from zero to mplanet slowly
     real(8) :: phiplanet = 0.0   ! initial phi position of the planet
+    real(8) :: roffset = 0.4     ! offset of the inner edge of the domain from the (cylindrical) origin
   end type
   type(experiment_parameters_t),  public :: experiment_params
 
