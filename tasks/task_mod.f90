@@ -372,9 +372,9 @@ SUBROUTINE pack (self, mesg)
   call mpi%abort ('task_t%pack called')
 END SUBROUTINE
 
-SUBROUTINE unpack (self, buffer)
+SUBROUTINE unpack (self, mesg)
   class(task_t):: self
-  integer, dimension(:), pointer:: buffer
+  class(mesg_t), pointer:: mesg
   call mpi%abort ('task_t%unpack called')
 END SUBROUTINE
 

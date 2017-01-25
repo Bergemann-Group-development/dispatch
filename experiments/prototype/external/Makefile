@@ -22,4 +22,4 @@ VPATH := $(VPATH):./:./code/
 # List the .o files the main program depends on after the colon:
 $(EXEC)                 : io_mod.o mpi_mod.o experiment_mod.o cartesian_mod.o
 interface_mod.o         :
-experiment_mod.o        : io_mod.o trace_mod.o interface_mod.o patch_mod.o mpi_mesg_mod.o code.o io_unit_mod.o
+experiment_mod.o        : io_mod.o trace_mod.o interface_mod.o patch_mod.o mpi_mesg_mod.o dispatch_mod.o io_unit_mod.o

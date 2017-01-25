@@ -1,5 +1,7 @@
 !> =============================================================================
-!> Generic DISPATCH main program for Cartesian meshes using external code
+!> Generic DISPATCH main program for Cartesian meshes.  Note that this level
+!> of the code is NOT code specific; it would / could be the same for any 
+!> DISPATCH experiment.  Calls to the external code are ONLY made in experiment_t.
 !>
 !> The call hierarchy is
 !>

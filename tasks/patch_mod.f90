@@ -806,8 +806,9 @@ END SUBROUTINE pack
 !> =============================================================================
 !> Pack patch info into a buffer, for MPI communication
 !> =============================================================================
-SUBROUTINE unpack (self, buffer)
+SUBROUTINE unpack (self, mesg)
   class(patch_t):: self
+  class(mesg_t), pointer:: mesg
   !.............................................................................
   type(header_t):: header
   integer:: n_buf, ibuf, iv, it
@@ -817,6 +818,7 @@ SUBROUTINE unpack (self, buffer)
   ! Compute size of buffer
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::unpack', itimer=itimer)
+  buffer => mesg%buffer
   n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
     n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!

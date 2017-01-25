@@ -1,16 +1,13 @@
 !> =============================================================================
 !> A generic interface to an external code, which needs to supply the procedures
+!> exemplified in code/dispatch_mod.f90 -- which is the ONLY new file needed in
+!> the external code. The data to be exchanged is defined in interface_mod.f90
 !>
-!> external%begin       : startup the external code
-!> external%init        : initialize a patch with parameters and values
-!> external%update      : update a patch state one timestep
-!> external%output      : get a chance to do I/O
-!> external%info        : print information lines
-!> external%pack        : pack an MPI buffer
-!> external%unpack      : unpack an MPI_buffer
-!> external%end         : shutdown the external code
+!> There are two cases / possible choices:
 !>
-!> The data to be exchanged is defined in the interface_mod.f90 file
+!> 1) The external code handles the entire update itself.  In this case it is 
+!>    also responsible for choosing the time step (must have an internal Courant
+!>    condition)
 !> =============================================================================
 MODULE experiment_mod
   USE io_mod
@@ -20,7 +17,7 @@ MODULE experiment_mod
   USE interface_mod
   USE mpi_mesg_mod
   USE patch_mod
-  USE code
+  USE dispatch_mod
   implicit none
   private
   type, public, extends(patch_t):: experiment_t
@@ -61,13 +58,22 @@ SUBROUTINE init (self)
   call trace%begin ('experiment_t%init')
   self%nv = 8                                   ! set number of variables
   self%nt = 7                                   ! set number of time slots
+  self%ng = 4                                   ! set number of guard zones
+  self%nw = 1                                   ! no time derivatives allocated
   call self%patch_t%init                        ! allocate memory and set size
-  call code_init
+  call code_init                                ! ICs, from scratch or snapshot
   call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
-!> Setup connection to the patch values via interface pointers
+!> Setup connection to the patch values via interface pointers, and copy any
+!> dynamic scalar variables to the interface module, where pointers point to
+!> targets in the external code.
+!>
+!> Note that the external code never needs to know about the multiple time slots
+!> used in DISPATCH.  It gets pointers to the variables, and is responsible 
+!> either for updating them, or for producing time derivatices, allowing in that
+!> case DISPATCH to handle the updating.
 !> =============================================================================
 SUBROUTINE connect (self)
   class(experiment_t):: self
@@ -84,7 +90,7 @@ SUBROUTINE connect (self)
 END SUBROUTINE connect
 
 !> =============================================================================
-!> Setup connection to the patch values via interface pointers
+!> Copy back those dynamic variables that have changed
 !> =============================================================================
 SUBROUTINE disconnect (self)
   class(experiment_t):: self
@@ -97,7 +103,9 @@ SUBROUTINE disconnect (self)
 END SUBROUTINE disconnect
 
 !> =============================================================================
-!> Update the external code with one time step
+!> Update the external code with one time step.  Note that this requires the
+!> code_update to set the interface_t%u_max value, which is used by the Courant
+!> condition (patch_t%courant_condition); cf. code/dispatch_mod.f90
 !> =============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
@@ -112,14 +120,16 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !> =============================================================================
-!> Give the external code a chance to do I/O
+!> Give the external code a chance to do I/O.  Note that this may not be 
+!> necessary, if calling self%patch_t%output is enough.
 !> =============================================================================
 SUBROUTINE output (self, experiment_name)
   class(experiment_t):: self
   character(len=*), optional:: experiment_name
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%output')
-  call code_output
+  call code_output (self%out_time)
+  call self%patch_t%output
   call trace%end
 END SUBROUTINE output
 
@@ -146,7 +156,7 @@ SUBROUTINE pack (self, mesg)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%pack')
   call self%patch_t%pack (mesg)
-  call code_pack 
+  call code_pack (mesg%buffer, mesg%nbuf, mesg%ibuf)
   call trace%end
 END SUBROUTINE pack
 
@@ -155,13 +165,13 @@ END SUBROUTINE pack
 !> and unpacking the patch related header, after which remains only to unpack
 !> whatever else we appended
 !> =============================================================================
-SUBROUTINE unpack  (self, buffer)
+SUBROUTINE unpack (self, mesg)
   class(experiment_t):: self
-  integer, dimension(:), pointer:: buffer
+  class(mesg_t), pointer:: mesg
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%unpack')
-  call self%patch_t%unpack (buffer)
-  call code_unpack
+  call self%patch_t%unpack (mesg)
+  call code_unpack (mesg%buffer, mesg%nbuf, mesg%ibuf)
   call trace%end
 END SUBROUTINE unpack
 

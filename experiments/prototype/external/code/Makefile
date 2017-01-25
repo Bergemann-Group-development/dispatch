@@ -1,1 +1,1 @@
-code.o: interface_mod.o
+dispatch_mod.o: interface_mod.o

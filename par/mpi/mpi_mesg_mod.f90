@@ -20,7 +20,7 @@ MODULE mpi_mesg_mod
     class(mesg_t), pointer:: prev => null()
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:) => null()
-    integer:: nbuf, nreq, req, sender, id, ntry=0
+    integer:: nbuf, ibuf, nreq, req, sender, id, ntry=0
   contains
     procedure:: send
     procedure:: test_all
