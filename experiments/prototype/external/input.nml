@@ -1,13 +1,87 @@
+! $Id$
+!
+! This default input file runs turbulence at 50x50x50 resolution in 2x2x2 patches.
+! It should take only a few minutes on a laptop, and produces 10 snapshots in time.
+!
+! Do not modify the input.nml file to make experiments with other parameters.
+! Instead, copy input.nml to othername.nml, and run ./dispatch.x other.nml, which
+! produces data files named data/other_ppp_tttt.dat, where ppp is the patch number
+! and tttt is the snapshot number.
+
+&load_balance_params
+/
+&mpi_mesg_params
+ max_sent=500
+ max_recv=100
+ min_nq=10
+/
+&timer_params
+ sec_per_report=3
+/
 &io_params
- verbose=0
+ verbose=2
+ do_validate=f
  do_trace=f
  do_debug=f
+ do_output=f
+ omp_trace=f
+/
+&box_params
+ size=1,1,1 dims=4,4,4 mpi_dims=1,1,1                !  1 proces
+ origin=0,0,0
 /
 &experiment_params
- dims=64,64,64
- end_time=1.0
- grace=0.0
 /
-&task_list_params
- debug=0
+&patch_params
+ nt=5
+ courant=0.2
+ grace=0.3
+ n=3*48
+ !n=3*32
+ !n=3*28
+ !n=3*24
+ !n=3*21
+ !n=3*16
+!dt_fixed=0.001
+/
+&out_params
+ end_time=0.040
+ out_time=0.05
+ print_time=0.0
+ guard_zones=f
+ time_derivs=f
+/
+&mhd_params
+ nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
+ !     cs    pa  ofd  mas  kap  eta
+/
+&timestep_params
+ time_order=2
+/
+&force_params
+ k=1,1,2
+ a0=3,3.2,3.1
+ t_turn=0.30
+ type='single_solenoidal'
+/
+&initial_params
+ k=3,3,3
+ a0=0.0,0.0,0.0
+ u0=0.1,0.2,0.3
+ b0=0,0,0.0
+ type='single_compressive'
+/
+&ramses_params
+ detailed_timer=f
+ courant_factor=0.8
+ !courant_factor=0.266667
+ gamma=1.00001
+ slope_type=2
+ !slope_type=-1
+ smallr=1e-4
+ smallc=5e-1
+ riemann='hllc'
+ do_isothermal=t
+/
+&code_params
 /

@@ -804,7 +804,7 @@ SUBROUTINE pack (self, mesg)
 END SUBROUTINE pack
 
 !> =============================================================================
-!> Pack patch info into a buffer, for MPI communication
+!> Unpack patch info from a buffer, for MPI communication
 !> =============================================================================
 SUBROUTINE unpack (self, mesg)
   class(patch_t):: self
