@@ -73,6 +73,7 @@ SUBROUTINE init (self, name)
     if (io%master) write (*,task_list_params)
   end if
   call load_balance%init
+  call download%init
   call trace_end
 END SUBROUTINE init
 
