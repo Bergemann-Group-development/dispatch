@@ -19,6 +19,7 @@ MODULE components_mod
   type, public :: annulus_t
     integer, dimension(3) :: n_per_patch, n_patch
     real(8), dimension(3) :: extent
+    logical:: rotating = .true.
     type(task_list_t), pointer :: task_list => null()
   contains
     procedure :: init => init_annulus
