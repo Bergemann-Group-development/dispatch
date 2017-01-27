@@ -77,11 +77,8 @@ SUBROUTINE init (self)
   self%ng = 4                                   ! set number of guard zones
   self%nw = 2                                   ! time derivatives allocated
   call self%patch_t%init                        ! allocate memory and set size
-  print *,'mk2',shape(self%mem)
   interface%mem => self%mem(:,:,:,:,self%it,:)
   call self%connect
-  print *,'mk3',shape(interface%mem)
-  print *,'mk1',io%input
   call code_init                                ! ICs, from scratch or snapshot
   call timestep%init
   call trace%end
