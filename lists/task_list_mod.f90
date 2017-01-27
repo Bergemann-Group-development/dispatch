@@ -73,6 +73,7 @@ SUBROUTINE init (self, name)
     if (io%master) write (*,task_list_params)
   end if
   call load_balance%init
+  call download%init
   call trace_end
 END SUBROUTINE init
 
@@ -382,7 +383,7 @@ SUBROUTINE unpack (self, mesg)
   ! by check_nbors, it must be protected by a critical region (or an OMP
   ! lock) while it is being updated here
   !---------------------------------------------------------------------------
-  call task%unpack (mesg%buffer)
+  call task%unpack (mesg)
   !$omp atomic
   mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
   !---------------------------------------------------------------------------

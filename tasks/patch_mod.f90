@@ -806,8 +806,9 @@ END SUBROUTINE pack
 !> =============================================================================
 !> Pack patch info into a buffer, for MPI communication
 !> =============================================================================
-SUBROUTINE unpack (self, buffer)
+SUBROUTINE unpack (self, mesg)
   class(patch_t):: self
+  class(mesg_t), pointer:: mesg
   !.............................................................................
   type(header_t):: header
   integer:: n_buf, ibuf, iv, it
@@ -817,6 +818,7 @@ SUBROUTINE unpack (self, buffer)
   ! Compute size of buffer
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_mod::unpack', itimer=itimer)
+  buffer => mesg%buffer
   n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
     n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
@@ -957,7 +959,7 @@ SUBROUTINE output_legacy (self, experiment_name)
         self%velocity, self%llc_nat, self%llc_cart, self%mesh%centre_nat, self%level, self%quality
   write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1)') int(self%box/self%ds+0.5), u-l+1, &
         li, ui, self%n, self%gn, self%ng, self%nv
-  write (io%data_unit,'(3(1i8.1,1x),i2.1,1x,a)') self%id, self%iout, self%istep, &
+  write (io%data_unit,'(3(1i8.1,1x),e10.3,i2.1,1x,a)') self%id, self%iout, self%istep, self%dtime, &
         self%mesh_type, trim(self%kind)
   close (io%data_unit)
 

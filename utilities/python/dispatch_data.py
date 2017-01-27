@@ -72,8 +72,9 @@ class Patch(Task):
         self.id = int(line[0])
         self.iout = int(line[1])
         self.istep = int(line[2])
-        self.mesh_type = get_mesh_type(int(line[3]))
-        self.task_type = line[4].strip()
+        self.dt = float(line[3])
+        self.mesh_type = get_mesh_type(int(line[4]))
+        self.task_type = line[5].strip()
         if (verbose):
             print "        patch id:", self.id
             print "    no. of steps:", self.istep

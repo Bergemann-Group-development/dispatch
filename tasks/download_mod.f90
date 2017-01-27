@@ -9,20 +9,49 @@ MODULE download_mod
   USE io_mod
   USE omp_mod
   USE bits_mod
+  USE kinds_mod
   USE mesh_mod
   USE trace_mod
   USE task_mod
   USE patch_mod
   USE link_mod
+  use interpolate_mod
   implicit none
   private
   type, public:: download_t
     integer(8):: n_same=0, n_differ=0
+    procedure(interpolator_interface), pointer, nopass:: interpolate => null()
   contains
     procedure, nopass:: download_link
+    procedure:: init
   end type
   type(download_t), public:: download
 CONTAINS
+
+!> =============================================================================
+!> Initialise downloading and interpolating options.
+!> At the moment, this is limited to the order of the interpolator used.
+!> =============================================================================
+SUBROUTINE init (self)
+  class(download_t):: self
+  integer:: order_interpolator
+  logical:: first_time=.true.
+  namelist /download_params/ order_interpolator
+  !-----------------------------------------------------------------------------
+  call trace_begin ('download_mod%init')
+
+  if (first_time) then
+    order_interpolator = -1
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, download_params)
+    if (io%master) write (*, download_params)
+
+    self%interpolate => SelectInterpolator(order_interpolator)
+  end if
+
+  call trace_end
+END SUBROUTINE
 
 !> =============================================================================
 !> Select the best method for each case.  So far, this only supports static
@@ -33,7 +62,7 @@ SUBROUTINE download_link (link, all_cells)
   logical, optional:: all_cells
   class(link_t), pointer:: nbor
   class(patch_t), pointer:: patch
-  logical:: static, same
+  logical:: static
   integer:: nt, nv
   !-----------------------------------------------------------------------------
   call trace_begin('download_t%download')
@@ -45,7 +74,7 @@ SUBROUTINE download_link (link, all_cells)
   else
     nt = patch%nt
     nv = patch%nv
-    static = .true.; same = .true.
+    static = .true.
     if (patch%is_clear(bits%static)) static = .false.
     nbor => link%nbor
     do while (associated(nbor))
@@ -53,21 +82,13 @@ SUBROUTINE download_link (link, all_cells)
         if (io%master.and.io%verbose>4) &
           write (io_unit%log,*) patch%id,nbor%task%id,nbor%task%is_clear(bits%static),nbor%task%level
         if (nbor%task%is_clear(bits%static)) static = .false.
-        if (nbor%needed .and. nbor%task%level /= patch%level) same = .false.
       end if
       nbor => nbor%next
     end do
+
     if (static) then
-      if (same) then
-        call same_static (link)               ! FIXME
-        !call different_static (link)
-        !$omp atomic
-        download%n_same = download%n_same+1
-      else
-        call different_static (link)
-        !$omp atomic
-        download%n_differ = download%n_differ+1
-      end if
+      call same_static (link)
+      call different_static (link)
     else
       write (io_unit%log,*) 'ERROR: moving patches found'
     end if
@@ -97,8 +118,12 @@ SUBROUTINE same_static (self)
   n = 0
   nbor => self%nbor
   do while (associated (nbor))
+    if (nbor%needed .and. nbor%task%level /= self%task%level) then
+      nbor => nbor%next
+      cycle
+    end if
     if (nbor%task%is_clear(bits%no_download)) then
-      n = n+1
+      n = n + 1
       associate (this => nbor%task)
       select type (this)
       class is (patch_t)
@@ -207,6 +232,11 @@ SUBROUTINE same_static (self)
     write (io_unit%log,'(a,i4,a,i9)') &
       'download_mod::same_static: WARNING,',n,' nbors contributed to', target%id
   end if
+  if (n > 0) then
+    !$omp atomic
+    download%n_same = download%n_same+1
+  end if
+
   call trace_end(itimer)
 END SUBROUTINE same_static
 
@@ -283,7 +313,7 @@ SUBROUTINE different_static (link)
   class(link_t), pointer:: link
   !.............................................................................
   class(patch_t), pointer:: target, source
-  integer:: ix, iy, iz, jx(2), jy(2), jz(2), ii(3), jt(2)
+  integer:: ix, iy, iz, jx(2), jy(2), jz(2), ii(3), jt(2), n_interp
   real:: pt(2), old_score
   class(mesh_t), pointer:: m(:)
   integer, save:: itimer=0
@@ -292,6 +322,7 @@ SUBROUTINE different_static (link)
   !-----------------------------------------------------------------------------
   call trace_begin('download::different_static', itimer=itimer)
   target => task2patch (link%task)
+  n_interp = 0
   m => target%mesh
   nullify(source)
   old_score = -1.
@@ -299,7 +330,7 @@ SUBROUTINE different_static (link)
     do iy=m(2)%lb,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
         ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, -3, old_score)
+        call interpolate_to (link, target, ii, source, jt, pt, -3, old_score, n_interp)
       end do
     end do
   end do
@@ -308,7 +339,7 @@ SUBROUTINE different_static (link)
     do iy=m(2)%lb,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
         ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, +3, old_score)
+        call interpolate_to (link, target, ii, source, jt, pt, +3, old_score, n_interp)
       end do
     end do
   end do
@@ -320,7 +351,7 @@ SUBROUTINE different_static (link)
     do iy=m(2)%lb,m(2)%lo
       do ix=m(1)%lb,m(1)%ub
         ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, -2, old_score)
+        call interpolate_to (link, target, ii, source, jt, pt, -2, old_score, n_interp)
       end do
     end do
   end do
@@ -329,7 +360,7 @@ SUBROUTINE different_static (link)
     do iy=m(2)%uo,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
         ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, +2, old_score)
+        call interpolate_to (link, target, ii, source, jt, pt, +2, old_score, n_interp)
       end do
     end do
   end do
@@ -341,7 +372,7 @@ SUBROUTINE different_static (link)
     do ix=m(1)%lb,m(1)%lo
       do iy=m(2)%li,m(2)%ui
         ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, -1, old_score)
+        call interpolate_to (link, target, ii, source, jt, pt, -1, old_score, n_interp)
       end do
     end do
   end do
@@ -350,11 +381,17 @@ SUBROUTINE different_static (link)
     do ix=m(1)%uo,m(1)%ub
       do iy=m(2)%li,m(2)%ui
         ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, +1, old_score)
+        call interpolate_to (link, target, ii, source, jt, pt, +1, old_score, n_interp)
       end do
     end do
   end do
   call reset
+
+  if (n_interp > 0) then
+    !$omp atomic
+    download%n_differ = download%n_differ+1
+  end if
+
   call trace_end (itimer)
 contains
   subroutine reset
@@ -367,15 +404,14 @@ END SUBROUTINE different_static
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
+SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score, n_interp)
   class(link_t), pointer:: link
   class(patch_t), pointer:: target, source
-  integer:: ii(3), jt(2), idir
+  integer:: ii(3), jt(2), idir, n_interp
   real:: pt(2), old_score
-  !.............................................................................
   integer:: jj(3), iv, i, it, j
   real(8):: pp(3), cellpos(3)
-  real:: p(4), q(4)
+  real(kind=KindScalarVar):: p(4), q(4), qint1, qint2, result(target%nv)
   !-----------------------------------------------------------------------------
   ! Find the best nbor patch.
   !-----------------------------------------------------------------------------
@@ -387,6 +423,10 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
   else
     !if (target%id==121) write (io_unit%log,*) 'best_nbor for 121', source%id, ii, idir, old_score
   end if
+  
+  ! if the two patches are at the same level, then we should be using `same_static`.
+  if (source%level == target%level) return
+
   !call trace_begin ('download_mod::interpolate_to',2)
   if (io%do_debug) write (io_unit%log,*) 'interpolate_to',target%it,ii,source%id,jt,pt
   it = target%it
@@ -427,24 +467,19 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
     q = 1.-p
     if (target%id==io%id_debug) &
       write(io_unit%log,'(2(2i5,2x),2(3i4,2x),3f6.2)') target%id, idir, source%id, source%level, ii, jj, pp
-    target%mem(ii(1),ii(2),ii(3),iv,it,1) = &
-      q(4)*(q(3)*(q(2)*(q(1)*source%mem(jj(1)  ,jj(2)  ,jj(3)  ,iv,jt(1),1)    + &
-                        p(1)*source%mem(jj(1)+1,jj(2)  ,jj(3)  ,iv,jt(1),1))   + &
-                  p(2)*(q(1)*source%mem(jj(1)  ,jj(2)+1,jj(3)  ,iv,jt(1),1)    + &
-                        p(1)*source%mem(jj(1)+1,jj(2)+1,jj(3)  ,iv,jt(1),1)))  + &
-            p(3)*(q(2)*(q(1)*source%mem(jj(1)  ,jj(2)  ,jj(3)+1,iv,jt(1),1)    + &
-                        p(1)*source%mem(jj(1)+1,jj(2)  ,jj(3)+1,iv,jt(1),1))   + &
-                  p(2)*(q(1)*source%mem(jj(1)  ,jj(2)+1,jj(3)+1,iv,jt(1),1)    + &
-                        p(1)*source%mem(jj(1)+1,jj(2)+1,jj(3)+1,iv,jt(1),1)))) + &
-      p(4)*(q(3)*(q(2)*(q(1)*source%mem(jj(1)  ,jj(2)  ,jj(3)  ,iv,jt(2),1)    + &
-                        p(1)*source%mem(jj(1)+1,jj(2)  ,jj(3)  ,iv,jt(2),1))   + &
-                  p(2)*(q(1)*source%mem(jj(1)  ,jj(2)+1,jj(3)  ,iv,jt(2),1)    + &
-                        p(1)*source%mem(jj(1)+1,jj(2)+1,jj(3)  ,iv,jt(2),1)))  + &
-            p(3)*(q(2)*(q(1)*source%mem(jj(1)  ,jj(2)  ,jj(3)+1,iv,jt(2),1)    + &
-                        p(1)*source%mem(jj(1)+1,jj(2)  ,jj(3)+1,iv,jt(2),1))   + &
-                  p(2)*(q(1)*source%mem(jj(1)  ,jj(2)+1,jj(3)+1,iv,jt(2),1)    + &
-                        p(1)*source%mem(jj(1)+1,jj(2)+1,jj(3)+1,iv,jt(2),1))))
+
+    associate (qt1 => source%mem(:,:,:,:,jt(1),1), qt2 => source%mem(:,:,:,:,jt(2),1))
+      qint1 = download%interpolate(qt1,jj(1),jj(2),jj(3),iv,p(1),p(2),p(3))
+      qint2 = download%interpolate(qt2,jj(1),jj(2),jj(3),iv,p(1),p(2),p(3))
+      result(iv) = q(4) * qint1 + p(4) * qint2
+    end associate
   end do
+
+  ! we now need to account for `target` and `source` potentially having different
+  ! coord. systems, and therefore not a one-to-one mapping between vector components.
+  target%mem(ii(1),ii(2),ii(3),1:source%nv,it,1) = source%MapVectors(result, target, ii, jj)
+  n_interp = n_interp + 1
+
   !call trace_end
 END SUBROUTINE interpolate_to
 

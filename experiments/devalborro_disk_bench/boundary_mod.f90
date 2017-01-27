@@ -4,6 +4,7 @@
 MODULE boundary_mod
   USE io_mod
   USE trace_mod
+  USE kinds_mod
   USE scaling_mod
   USE mesh_mod
   USE mhd_mod
@@ -25,20 +26,23 @@ CONTAINS
 !> Impose boundary conditions, taking staggering into account.
 !> Only for use with Cartesian patches.
 !> =============================================================================
-SUBROUTINE conditions (self, patch)
+SUBROUTINE conditions (self, patch, cit)
   class(boundary_t) :: self
   class(mhd_t), target :: patch
   class(mesh_t), pointer :: m1, m2, m3
   integer :: i1, i2, i3, jay3, jay2
+  integer, intent(in):: cit
   real(4) :: r
   real(8) :: sigma0, p0, vkep, rmin, rmax, tau_in, tau_out, rbnd, rkill, tau, &
              dt, skep
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: q
   !-----------------------------------------------------------------------------
   call trace_begin('boundary_t%conditions')
 
   m1 => patch%mesh(1)
   m2 => patch%mesh(2)
   m3 => patch%mesh(3)
+  q  => patch%mem(:,:,:,:,cit,1)
 
   sigma0 = 2.0e-3 * experiment_params%mstar / pi / experiment_params%aplanet**2
   rmin = m2%centre_nat + m2%r(m2%li)
@@ -72,54 +76,58 @@ SUBROUTINE conditions (self, patch)
           else
             cycle
           end if
-          patch%d%q  (i1,i2,i3) = patch%d%q(i1,i2,i3) &
-                                + dt * wave_kill(patch%d%q(i1,i2,i3), sigma0, tau, rkill, rbnd, r)
-          patch%e1%q (i1,i2,i3) = patch%e1%q(i1,i2,i3) &
-                                + dt * wave_kill(patch%e1%q(i1,i2,i3), p0, tau, rkill, rbnd, r)
-          patch%s%x%q(i1,i2,i3) = patch%s%x%q(i1,i2,i3) &
-                                + dt * wave_kill(patch%s%x%q(i1,i2,i3), 0.0d0, tau, rkill, rbnd, r)
-          patch%s%y%q(i1,i2,i3) = patch%s%y%q(i1,i2,i3) &
-                                + dt * wave_kill(patch%s%y%q(i1,i2,i3), 0.0d0, tau, rkill, rbnd, r) 
-          patch%s%z%q(i1,i2,i3) = patch%s%z%q(i1,i2,i3) &
-                                + dt * wave_kill(patch%s%z%q(i1,i2,i3), skep, tau, rkill, rbnd, r)
+          q(i1,i2,i3,didx)     = q(i1,i2,i3,didx) &
+                               + dt * wave_kill(q(i1,i2,i3,didx), sigma0, tau, rkill, rbnd, r)
+          q(i1,i2,i3,e1idx)    = q(i1,i2,i3,e1idx) &
+                               + dt * wave_kill(q(i1,i2,i3,e1idx), p0, tau, rkill, rbnd, r)
+          q(i1,i2,i3,sidxs(1)) = q(i1,i2,i3,sidxs(1)) &
+                               + dt * wave_kill(q(i1,i2,i3,sidxs(1)), 0.0d0, tau, rkill, rbnd, r)
+          q(i1,i2,i3,sidxs(2)) = q(i1,i2,i3,sidxs(2)) &
+                               + dt * wave_kill(q(i1,i2,i3,sidxs(2)), 0.0d0, tau, rkill, rbnd, r) 
+          q(i1,i2,i3,sidxs(3)) = q(i1,i2,i3,sidxs(3)) &
+                               + dt * wave_kill(q(i1,i2,i3,sidxs(3)), skep, tau, rkill, rbnd, r)
         end do
-        ! reset ghost zones to initial values, except for s2, which is anti-symmetric.
-        do i2=m2%lb,m2%lo
-          r = m2%centre_nat + patch%mesh(2)%r(i2)
-          vkep = sqrt(experiment_params%mstar * scaling%grav / r)
-          skep = sigma0 * vkep * m1%h31c(i1) * m2%h32c(i2)
-          p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0 / (patch%gamma - 1.0)
-          patch%d%q  (i1,i2,i3) = sigma0
-          patch%e1%q (i1,i2,i3) = p0
-          patch%s%x%q(i1,i2,i3) = 0.0d0
-          jay2 = 2*m2%lo + 1 - i2
-          patch%s%y%q(i1,i2,i3) = -patch%s%y%q(i1,jay2,i3)
-          patch%s%z%q(i1,i2,i3) = skep
-        end do
-        do i2=m2%uo,m2%ub
-          r = m2%centre_nat + patch%mesh(2)%r(i2)
-          vkep = sqrt(experiment_params%mstar * scaling%grav / r)
-          skep = sigma0 * vkep * m1%h31c(i1) * m2%h32c(i2)
-          p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0 / (patch%gamma - 1.0)
-          patch%d%q  (i1,i2,i3) = sigma0
-          patch%e1%q (i1,i2,i3) = p0
-          patch%s%x%q(i1,i2,i3) = 0.0d0
-          jay2 = 2*m2%uo - 1 - i2
-          patch%s%y%q(i1,i2,i3) = -patch%s%y%q(i1,jay2,i3)
-          patch%s%z%q(i1,i2,i3) = skep
-        end do
+        if (m2%llc_nat < experiment_params%roffset ) then 
+          ! reset ghost zones to initial values, except for s2, which is anti-symmetric.
+          do i2=m2%lb,m2%lo
+            r = m2%centre_nat + patch%mesh(2)%r(i2)
+            vkep = sqrt(experiment_params%mstar * scaling%grav / r)
+            skep = sigma0 * vkep * m1%h31c(i1) * m2%h32c(i2)
+            p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0 / (patch%gamma - 1.0)
+            q(i1,i2,i3,didx)     = sigma0
+            q(i1,i2,i3,e1idx)    = p0
+            q(i1,i2,i3,sidxs(1)) = 0.0d0
+            jay2 = 2*m2%lo + 1 - i2
+            q(i1,i2,i3,sidxs(2)) = -q(i1,jay2,i3,sidxs(2))
+            q(i1,i2,i3,sidxs(3)) = skep
+          end do
+        end if
+        if ((m2%llc_nat + m2%s) >= (experiment_params%roffset + patch%box(2))) then
+          do i2=m2%uo,m2%ub
+            r = m2%centre_nat + patch%mesh(2)%r(i2)
+            vkep = sqrt(experiment_params%mstar * scaling%grav / r)
+            skep = sigma0 * vkep * m1%h31c(i1) * m2%h32c(i2)
+            p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0 / (patch%gamma - 1.0)
+            q  (i1,i2,i3,didx)   = sigma0
+            q (i1,i2,i3,e1idx)   = p0
+            q(i1,i2,i3,sidxs(1)) = 0.0d0
+            jay2 = 2*m2%uo - 1 - i2
+            q(i1,i2,i3,sidxs(2)) = -q(i1,jay2,i3,sidxs(2))
+            q(i1,i2,i3,sidxs(3)) = skep
+          end do
+        end if
       end do
     end do
   end if
 
   ! periodic in phi (is this necessary? yes!)
-  if (patch%n(3) > 1) then
+  if (patch%n(3) > 1 .and. patch%size(3) >= patch%box(3)) then
     ! inner phi boundary
     do i3=m3%lb,m3%lo
       jay3 = modulo(i3 - m3%li, m3%n) + m3%li
       do i2=m2%lb,m2%ub
         do i1=m1%lb,m1%ub
-          patch%mem(i1,i2,i3,:,patch%it,1) = patch%mem(i1,i2,jay3,:,patch%it,1)
+          q(i1,i2,i3,:) = q(i1,i2,jay3,:)
         end do
       end do
     end do
@@ -128,13 +136,13 @@ SUBROUTINE conditions (self, patch)
       jay3 = modulo(i3 - m3%li, m3%n) + m3%li
       do i2=m2%lb,m2%ub
         do i1=m1%lb,m1%ub
-          patch%mem(i1,i2,i3,:,patch%it,1) = patch%mem(i1,i2,jay3,:,patch%it,1)
+          q(i1,i2,i3,:) = q(i1,i2,jay3,:)
         end do
       end do
     end do
   end if
 
-  nullify (m1, m2, m3)
+  nullify (m1, m2, m3, q)
   call trace_end
 END SUBROUTINE conditions
 

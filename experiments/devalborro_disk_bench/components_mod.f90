@@ -19,6 +19,7 @@ MODULE components_mod
   type, public :: annulus_t
     integer, dimension(3) :: n_per_patch, n_patch
     real(8), dimension(3) :: extent
+    logical:: rotating = .true.
     type(task_list_t), pointer :: task_list => null()
   contains
     procedure :: init => init_annulus
@@ -65,6 +66,7 @@ SUBROUTINE init_annulus (self, params)
   self%n_patch = n_patch
   self%extent = extent
   self%n_per_patch = n_per_patch
+  experiment_params%roffset = roffset
 
   allocate(self%task_list)
   call self%task_list%init ('annulus task list')
@@ -119,9 +121,13 @@ SUBROUTINE init_annulus (self, params)
               patch%btypes%okb = 6
             end if
             patch%btypes%ijb = 6
-            if (curr_roff .le. roffset) patch%btypes%ijb = 2
+            if (curr_roff .le. roffset) then
+              patch%btypes%ijb = 2
+            end if
             patch%btypes%ojb = 6
-            if (curr_roff+rextent .ge. extent(2)) patch%btypes%ojb = 2
+            if (curr_roff+rextent .ge. extent(2)) then
+              patch%btypes%ojb = 2
+            end if
           end if
         end select
         call patch%set(bits%static) ! for the time being (should be okay)
