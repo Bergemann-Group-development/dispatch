@@ -959,7 +959,7 @@ SUBROUTINE output_legacy (self, experiment_name)
         self%velocity, self%llc_nat, self%llc_cart, self%mesh%centre_nat, self%level, self%quality
   write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1)') int(self%box/self%ds+0.5), u-l+1, &
         li, ui, self%n, self%gn, self%ng, self%nv
-  write (io%data_unit,'(3(1i8.1,1x),i2.1,1x,a)') self%id, self%iout, self%istep, &
+  write (io%data_unit,'(3(1i8.1,1x),e10.3,i2.1,1x,a)') self%id, self%iout, self%istep, self%dtime, &
         self%mesh_type, trim(self%kind)
   close (io%data_unit)
 
