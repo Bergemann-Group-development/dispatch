@@ -131,36 +131,36 @@ SUBROUTINE transfer (dtau, s, Ifw0, Ifw1, q, Irv1, Irv0)
     s1    => s   (:,:,iz)               ! source function
     dtau1 => dtau(:,:,iz)               ! optical depth increments
     q1    => q   (:,:,iz)               ! output surface values
-    call rt_solver%transfer (a, b, dtau=dtau1, s=s1, Ifw1=qf0, IrvN=qr1, &
-                             q=q1, IfwN=qf1, Irv1=qr0)
+ !   call rt_solver%transfer (a, b, dtau=dtau1, s=s1, Ifw1=qf0, IrvN=qr1, &
+                           !  q=q1, IfwN=qf1, Irv1=qr0)
     q12 => q2 (:,:,iz)                    
-    call rt_solver%feautrier_stag(dtau=dtau1, s=s1,q=q12, xi=xi, doxi=.false.)
+    call rt_solver%feautrier_stag(dtau=dtau1, s=s1,q=q1, xi=xi, doxi=.false.)
            
   end do
-   print *, 'different solvers..'
    
 
-      exp0 = exp(-dtau)                                                 ! expopential factors
+!      exp0 = exp(-dtau)                                                 ! expopential factors
 
    
-  do iz = 1, size(s,3)
-   qfw0 = sum(s(:,1,iz))/b
-   qrv1 = 0.
-   s1   => s(:,:,iz)
-   dtau1=> dtau(:,:,iz)
-   ex0  =>exp0(:,:,iz)
-    q13    => q3   (:,:,iz)               ! output surface values
-    q14    => q4   (:,:,iz)               ! output surface values
+!  do iz = 1, size(s,3)
+!   qfw0 = sum(s(:,1,iz))/b
+!   qrv1 = 0.
+!   s1   => s(:,:,iz)
+!   dtau1=> dtau(:,:,iz)
+!   ex0  =>exp0(:,:,iz)
+!    q13    => q3   (:,:,iz)               ! output surface values
+!    q14    => q4   (:,:,iz)               ! output surface values
   
-  call rt_solver%forward (dtau1, ex0, s1, qfw0, q13, qfw1)
-  call rt_solver%reverse (dtau1, ex0, s1, qrv1, q14, qrv0)
-   end do
-   q3=q3+q4
- 
- print *, 'dtau, feautrier, feautrier-stagger, integral'
-  do iz=1,size(s,2)
-    print *,iz,sum(dtau(:,iz,:))/(a*b),sum(q(:,iz,:))/(a*b),sum(q2(:,iz,:))/(a*b),sum(q3(:,iz,:))/(a*b)
-  end do
+!  call rt_solver%forward (dtau1, ex0, s1, qfw0, q13, qfw1)
+!  call rt_solver%reverse (dtau1, ex0, s1, qrv1, q14, qrv0)
+!   end do
+!   q3=q3+q4
+! b=size(s,3)
+ !print *, 'dtau, feautrier, feautrier-stagger, integral'
+ ! do iz=1,size(s,2)
+ !   print *,iz,sum(dtau(:,iz,:))/(a*b),sum(q(:,iz,:))/(a*b),sum(q2(:,iz,:))/(a*b),sum(q3(:,iz,:))/(a*b)
+ ! end do
+  q = q2
   deallocate(q2, exp0)
   call trace%end
 END SUBROUTINE transfer

@@ -45,6 +45,8 @@ MODULE rt_mod
     real, dimension(:,:),     pointer :: qfw0 => null()
     real, dimension(:,:),     pointer :: qrv1 => null()
     real, dimension(:,:,:), pointer   :: lnds => null()                 ! scratch pointer to lnd
+    real, dimension(:,:,:), pointer   :: lnes => null()                 ! scratch pointer to lne
+
     character(len=16)                 :: solver ='integral'             ! choice of solver
     type (link_t),            pointer :: upstream
     type (link_t),            pointer :: dnstream
@@ -57,6 +59,7 @@ MODULE rt_mod
     procedure :: solve_feautrier
     procedure :: optical_depth_centered
     procedure :: optical_depth_staggered
+    procedure :: density_weight_factor
     procedure :: interpolate
     procedure :: boundary_conditions
   end type
@@ -131,10 +134,11 @@ END SUBROUTINE dnload
 !> =====================================================================
 SUBROUTINE update (self)
   class (rt_t) :: self
-  real, dimension(:,:,:), pointer:: lnd, lne
+  real, dimension(:,:,:), pointer:: lnd, lne, ne, tt, pg
   class(task_t),  pointer:: task
   class(patch_t), pointer:: mhd
   integer, save:: itimer=0
+  integer :: ii
   !---------------------------------------------------------------------
   call trace%begin ('rmhd_t%update', itimer=itimer)
   if (io%verbose > 1) print *, 'RADIATIVE TRANSFER TIME', self%time
@@ -147,8 +151,12 @@ SUBROUTINE update (self)
     mhd => task
   end select
   allocate (lnd (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log density scratch
+  allocate(ne(mhd%gn(1), mhd%gn(2), mhd%gn(3)))
+  allocate(tt(mhd%gn(1), mhd%gn(2), mhd%gn(3)))
+  allocate(pg(mhd%gn(1), mhd%gn(2), mhd%gn(3)))
   allocate (lne (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log internal energy scratch
   self%lnds => lnd
+  self%lnes => lne
   call mhd%log_interpolate (self%time, mhd%i_d, lnd)                    ! interpolate in time and space
   call mhd%log_interpolate (self%time, mhd%i_e, lne)                    ! interpolate in time and space
   if (io%verbose > 1) then
@@ -156,8 +164,9 @@ SUBROUTINE update (self)
     print *, self%id, 'lne', minval(lne), maxval(lne)
   end if
   lne = lne - lnd                                                       ! internal energy per unit mass
+
   call eos%lookup (shape(lne), lne=lne, lnd=lnd, &                      ! call the table lookup, ...
-                   rk=self%rk, src=self%src)                            ! ... results go into rt_t
+                   rk=self%rk, src=self%src, ne=ne, pg=pg, tt=tt)                            ! ... results go into rt_t      
   if (any(self%src < 0)) then
    error stop "src < 0"
    end if
@@ -267,7 +276,7 @@ SUBROUTINE solve_feautrier (self)
   integer                         :: ib, iw, iy
   real, dimension(:),     pointer :: ds
   real, dimension(:,:),   pointer :: Ifw0, Ifw1, Irv0, Irv1
-  real, dimension(:,:,:), pointer :: s, rk, dtau, exp0, q
+  real, dimension(:,:,:), pointer :: s, rk, dtau, exp0, q, dwf
   class (patch_t),        pointer :: task
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
@@ -286,8 +295,10 @@ SUBROUTINE solve_feautrier (self)
       allocate (Ifw1(mx,mz))                                            ! temporary array
       allocate (Irv0(mx,mz))                                            ! temporary array
       allocate (Irv1(mx,mz))                                            ! temporary array
+      allocate (dwf (mx,1:my-9,mz))                                     ! temporary array
       ds => self%mesh(2)%dsup(6:my-4)                                   ! along this direction
       call self%optical_depth_staggered (ds, rk, dtau)                  ! compute dtau
+      call self%density_weight_factor(ds,dwf)
       if (io%verbose>1) &
         print *,'dtau',iw,self%id, minval(dtau), maxval(dtau)
           
@@ -310,16 +321,18 @@ SUBROUTINE solve_feautrier (self)
       
       
       self%dedt(:,6:my-4,:) = &
-      self%dedt(:,6:my-4,:) + q*self%w_lambda(iw)*self%w_bundle(ib) * 2.0 ! add net heat contrib
+      self%dedt(:,6:my-4,:) + q*self%w_lambda(iw)*self%w_bundle(ib) * dwf ! add net heat contrib
       !
       if ((io%verbose>1 .and. iw==self%n_lambda) .or. io%verbose>2) then
-      print *, 'lnd, rk, dtau, s, q'
-        do iy=1,my-9
-          print *,iy,sum(self%lnds(:,iy,:))/(mx*mz),sum(rk(:,iy,:))/(mx*mz),sum(dtau(:,iy,:))/(mx*mz),sum(s(:,iy,:))/(mx*mz),sum(q(:,5+iy,:)*2)/(mx*mz)
+      print *, 'lnd, ee,rk, dtau, s, q, l22'
+        do iy=1,my-4
+       !   print *,iy,sum(self%lnds(:,iy,:))/(mx*mz),sum(rk(:,iy-5,:))/(mx*mz),sum(dtau(:,iy-5,:))/(mx*mz),sum(s(:,iy-5,:))/(mx*mz),sum(q(:,iy-5,:))/(mx*mz)
+          print *,iy,self%lnds(22,iy+5,22),exp(self%lnes(22,iy+5,22)),rk(22,iy,22),dtau(22,iy,22),s(22,iy,22),q(22,iy,22)
+          
         end do
       end if
       !
-      deallocate (dtau, q, Ifw0, Ifw1, Irv0, Irv1)                ! deallocate temporaries
+      deallocate (dtau, q, Ifw0, Ifw1, Irv0, Irv1, dwf)                ! deallocate temporaries
       !$omp end task
     end do
     !$omp end single
@@ -346,6 +359,24 @@ SUBROUTINE optical_depth_centered (self, ds, rk, dtau)
   end do
   end do
 END SUBROUTINE optical_depth_centered
+
+!> =====================================================================
+!> Compute the optical depth along rays. Dtau is staggered, therefore it
+!> has only a half value on the lower edge of the patch.
+!> =====================================================================
+SUBROUTINE density_weight_factor (self, ds, dwf)
+  class (rt_t) :: self
+  real, dimension(:),     pointer :: ds
+  real, dimension(:,:,:), pointer :: dwf
+  !.....................................................................
+  integer                         :: iy, iz
+  !---------------------------------------------------------------------
+  do iz=1,size(dwf,3)
+    do iy=1,size(dwf,2)
+      dwf(:,iy,iz) = self%lnds(:,iy,iz) * ds(iy)
+    end do
+  end do
+END SUBROUTINE density_weight_factor
 
 !> =====================================================================
 !> Compute the optical depth along rays. Dtau is staggered, therefore it
