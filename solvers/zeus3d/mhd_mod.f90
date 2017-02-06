@@ -496,13 +496,13 @@ END SUBROUTINE CopyFromZeus
 !> target -> use `ii`
 !> source/self -> use `jj`
 !> =============================================================================
-FUNCTION MapVectors (self, in, target, ii, jj) result (out)
+SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   USE patch_mod, only: patch_t
   class(mhd_t):: self
   class(patch_t), pointer:: target
   real(kind=KindScalarVar), dimension(:), intent(in):: in
   integer, intent(in):: ii(3), jj(3)
-  real(kind=KindScalarVar):: out(size(in))
+  real(kind=KindScalarVar),intent(out):: out(size(in))
   real(kind=KindReal):: tphi, ttheta, tr, sr, stheta, sphi, sx, sy, sz, dvx, dvy, dvz, Bx, By, Bz
   real(kind=KindScalarVar), dimension(3):: BCart, dvCart
   real(kind=KindReal), dimension(3):: txi
@@ -659,7 +659,7 @@ CONTAINS
            + input(2) * sin(theta)
   END FUNCTION AnyVectorSphToCart
 
-END FUNCTION MapVectors
+END SUBROUTINE MapVectors
 
 !> =============================================================================
 !> Update pointers for the field variable aliases so that they point to the

@@ -111,7 +111,7 @@ PROGRAM test
   ii = [5,9,60]
   print*, "v_Z,v_R,v_Phi:", vp(sidxs(1):sidxs(3))
   print*, "B_Z,B_R,B_Phi:", vp(Bidxs(1):Bidxs(3))
-  vCyl = source%MapVectors(vp, target, ii, ii)
+  call source%MapVectors(vp, target, ii, ii, vCyl)
   print*, "v_Z,v_R,v_Phi:", vCyl(sidxs(1):sidxs(3))
   print*, "B_Z,B_R,B_Phi:", vCyl(Bidxs(1):Bidxs(3))
 
@@ -134,7 +134,7 @@ PROGRAM test
   ii = [10,45,20]
   print*, "v_r,v_theta,v_phi:", vp(sidxs(1):sidxs(3))
   print*, "B_r,B_theta,B_phi:", vp(Bidxs(1):Bidxs(3))
-  vSph = source%MapVectors(vp, target, ii, ii)
+  call source%MapVectors(vp, target, ii, ii, vSph)
   print*, "v_r,v_theta,v_phi:", vSph(sidxs(1):sidxs(3))
   print*, "B_r,B_theta,B_phi:", vSph(Bidxs(1):Bidxs(3))
 

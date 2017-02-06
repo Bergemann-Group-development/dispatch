@@ -4,6 +4,7 @@ OPTS = full_debug
 #OPTS = optimized
 
 # Common configuration
+UPD=adams_bashforth
 SOLVER=zeus3d
 EXEC = test.x
 TOP = ../..

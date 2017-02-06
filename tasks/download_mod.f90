@@ -477,7 +477,7 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score, n_
 
   ! we now need to account for `target` and `source` potentially having different
   ! coord. systems, and therefore not a one-to-one mapping between vector components.
-  target%mem(ii(1),ii(2),ii(3),1:source%nv,it,1) = source%MapVectors(result, target, ii, jj)
+  call source%MapVectors(result, target, ii, jj, target%mem(ii(1),ii(2),ii(3),1:source%nv,it,1))
   n_interp = n_interp + 1
 
   !call trace_end

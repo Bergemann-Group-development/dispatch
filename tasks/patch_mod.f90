@@ -1577,11 +1577,11 @@ END SUBROUTINE
 !> default version; only supports Cartesian coords.
 !> see the `solvers/zeus3d` version for curvilinear coord. suppport.
 !> =============================================================================
-FUNCTION MapVectors (self, in, target, ii, jj) result (out)
+SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   class(patch_t) :: self
   class(patch_t), pointer :: target
   real(kind=KindScalarVar), dimension(:), intent(in):: in
-  real(kind=KindScalarVar):: out(size(in))
+  real(kind=KindScalarVar), intent(out):: out(size(in))
   integer, intent(in) :: ii(3), jj(3)
   !.............................................................................
   call trace_begin('patch_t%MapVectors')
@@ -1599,7 +1599,7 @@ FUNCTION MapVectors (self, in, target, ii, jj) result (out)
   end select
 
   call trace_end
-END FUNCTION MapVectors
+END SUBROUTINE MapVectors
 
 !> =============================================================================
 FUNCTION beyond_patch_edge (self, idir, position) result (outside)
