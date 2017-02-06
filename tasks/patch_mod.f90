@@ -1574,6 +1574,9 @@ contains
 END SUBROUTINE
 
 !> =============================================================================
+!> default version; only supports Cartesian coords.
+!> see the `solvers/zeus3d` version for curvilinear coord. suppport.
+!> =============================================================================
 FUNCTION MapVectors (self, in, target, ii, jj) result (out)
   class(patch_t) :: self
   class(patch_t), pointer :: target
@@ -1581,8 +1584,21 @@ FUNCTION MapVectors (self, in, target, ii, jj) result (out)
   real(kind=KindScalarVar):: out(size(in))
   integer, intent(in) :: ii(3), jj(3)
   !.............................................................................
-  out = in
-  error stop 'Not implemented error! patch_t%MapVectors'
+  call trace_begin('patch_t%MapVectors')
+
+  select case (self%mesh_type)
+  case (1) ! Cartesian
+    if (target%mesh_type == mesh_types%Cartesian) then
+      ! no conversion necessary
+      out = in
+    else
+      error stop 'Not implemented error! patch_t%MapVectors'
+    end if
+  case default ! other; not implemented
+    error stop 'Not implemented error! patch_t%MapVectors'
+  end select
+
+  call trace_end
 END FUNCTION MapVectors
 
 !> =============================================================================
