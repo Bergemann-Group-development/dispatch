@@ -138,7 +138,7 @@ SUBROUTINE update (self)
   class(task_t),  pointer:: task
   class(patch_t), pointer:: mhd
   integer, save:: itimer=0
-  integer :: ii
+  integer :: ii, iy
   !---------------------------------------------------------------------
   call trace%begin ('rmhd_t%update', itimer=itimer)
   if (io%verbose > 1) print *, 'RADIATIVE TRANSFER TIME', self%time
@@ -151,9 +151,9 @@ SUBROUTINE update (self)
     mhd => task
   end select
   allocate (lnd (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log density scratch
-  allocate(ne(mhd%gn(1), mhd%gn(2), mhd%gn(3)))
-  allocate(tt(mhd%gn(1), mhd%gn(2), mhd%gn(3)))
-  allocate(pg(mhd%gn(1), mhd%gn(2), mhd%gn(3)))
+ ! allocate(ne(mhd%gn(1), mhd%gn(2), mhd%gn(3)))
+ ! allocate(tt(mhd%gn(1), mhd%gn(2), mhd%gn(3)))
+ ! allocate(pg(mhd%gn(1), mhd%gn(2), mhd%gn(3)))
   allocate (lne (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log internal energy scratch
   self%lnds => lnd
   self%lnes => lne
@@ -164,12 +164,9 @@ SUBROUTINE update (self)
     print *, self%id, 'lne', minval(lne), maxval(lne)
   end if
   lne = lne - lnd                                                       ! internal energy per unit mass
-
+  
   call eos%lookup (shape(lne), lne=lne, lnd=lnd, &                      ! call the table lookup, ...
-                   rk=self%rk, src=self%src, ne=ne, pg=pg, tt=tt)                            ! ... results go into rt_t      
-  if (any(self%src < 0)) then
-   error stop "src < 0"
-   end if
+                   rk=self%rk, src=self%src)                            ! ... results go into rt_t      
   call trace%end (itimer)
   call self%solve                                                       ! call the RT solver to get Q
   call self%boundary_conditions
@@ -286,7 +283,6 @@ SUBROUTINE solve_feautrier (self)
   do ib=1,self%n_bundle                                                 ! loop over bundles
     !$omp single
     do iw=1,self%n_lambda                                               ! loop over wavelength
-      !$omp task private(s,rk,dtau,exp0)                                ! spawn forward task
       s  => self%src(:,6:my-4,:,iw)                                     ! pick source function
       rk => self%rk (:,6:my-4,:,iw)                                     ! pick opacity
       allocate (dtau(mx,1:my-9,mz))                                     ! temporary array
@@ -306,37 +302,13 @@ SUBROUTINE solve_feautrier (self)
       Irv1 = 0.0
       
       call rt_bundle%transfer (dtau, s, Ifw0, Ifw1, q, Irv1, Irv0)      ! solve bi-directional
-      !
-      !task => self%dnstream%task
-      !select type (task)
-      !class is (rt_t)
-      !  task%qfw0 = qfw1                                                ! output net intensity
-      !end select
-      
-      !task => self%upstream%task
-      !select type (task)
-      !class is (rt_t)
-      !  task%qrv1 = qrv0                                                ! output net intensity
-      !end select
-      
-      
+
       self%dedt(:,6:my-4,:) = &
       self%dedt(:,6:my-4,:) + q*self%w_lambda(iw)*self%w_bundle(ib) * dwf ! add net heat contrib
-      !
-      if ((io%verbose>1 .and. iw==self%n_lambda) .or. io%verbose>2) then
-      print *, 'lnd, ee,rk, dtau, s, q, l22'
-        do iy=1,my-4
-       !   print *,iy,sum(self%lnds(:,iy,:))/(mx*mz),sum(rk(:,iy-5,:))/(mx*mz),sum(dtau(:,iy-5,:))/(mx*mz),sum(s(:,iy-5,:))/(mx*mz),sum(q(:,iy-5,:))/(mx*mz)
-          print *,iy,self%lnds(22,iy+5,22),exp(self%lnes(22,iy+5,22)),rk(22,iy,22),dtau(22,iy,22),s(22,iy,22),q(22,iy,22)
-          
-        end do
-      end if
-      !
+
       deallocate (dtau, q, Ifw0, Ifw1, Irv0, Irv1, dwf)                ! deallocate temporaries
-      !$omp end task
     end do
     !$omp end single
-    !$omp taskwait
   end do
   end associate
   call trace_end (itimer)
