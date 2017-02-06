@@ -34,7 +34,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(download_t):: self
-  integer:: order_interpolator
+  integer:: order_interpolator, iostat
   logical:: first_time=.true.
   namelist /download_params/ order_interpolator
   !-----------------------------------------------------------------------------
@@ -44,7 +44,7 @@ SUBROUTINE init (self)
     order_interpolator = -1
     first_time = .false.
     rewind (io%input)
-    read (io%input, download_params)
+    read (io%input, download_params, iostat=iostat)
     if (io%master) write (*, download_params)
 
     self%interpolate => SelectInterpolator(order_interpolator)

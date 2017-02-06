@@ -3,29 +3,45 @@
 !> exemplified in code/dispatch_mod.f90 -- which is the ONLY new file needed in
 !> the external code. The data to be exchanged is defined in interface_mod.f90
 !>
-!> There are two cases / possible choices:
+!> There are two cases / possible modes of operation:
 !>
 !> 1) The external code handles the entire update itself.  In this case it is 
 !>    also responsible for choosing the time step (must have an internal Courant
-!>    condition)
+!>    condition). This is the simplest alternative.
+!>
+!> 2) The external code computes time derivatives, while DISPATCH takes care of
+!>    updating. This is the preferred mode, since DISPATCH in any case needs the
+!>    time slice information. This mode therefore needs less memory, but if one
+!>    of the memory conserving RK schemes is used then mode 1) might have
+!>    essentially the same low memory requirement.
+!>
+!> In both modes DISPATCH needs much less memory than the original code, since
+!> scratch arrays (which should be allocated and deallocaed in each time step)
+!> are only needed for active threads.  The number of patches per thread should
+!> normally be of the order 50, and effectively speaking the scratch memory need
+!> is thus reduced by this factor.
 !> =============================================================================
 MODULE experiment_mod
   USE io_mod
   USE io_unit_mod
+  USE mpi_mod
   USE trace_mod
-  USE patch_mod
+  USE gpatch_mod
   USE interface_mod
   USE mpi_mesg_mod
   USE patch_mod
+  USE timestep_mod
   USE dispatch_mod
+  USE download_mod
   implicit none
   private
-  type, public, extends(patch_t):: experiment_t
+  type, public, extends(gpatch_t):: experiment_t
   contains
     procedure:: begin
     procedure:: init
     procedure:: connect
     procedure:: disconnect
+    procedure:: dnload
     procedure:: update
     procedure:: output
     procedure:: info
@@ -59,9 +75,12 @@ SUBROUTINE init (self)
   self%nv = 8                                   ! set number of variables
   self%nt = 7                                   ! set number of time slots
   self%ng = 4                                   ! set number of guard zones
-  self%nw = 1                                   ! no time derivatives allocated
+  self%nw = 2                                   ! time derivatives allocated
   call self%patch_t%init                        ! allocate memory and set size
+  interface%mem => self%mem(:,:,:,:,self%it,:)
+  call self%connect
   call code_init                                ! ICs, from scratch or snapshot
+  call timestep%init
   call trace%end
 END SUBROUTINE init
 
@@ -74,18 +93,25 @@ END SUBROUTINE init
 !> used in DISPATCH.  It gets pointers to the variables, and is responsible 
 !> either for updating them, or for producing time derivatices, allowing in that
 !> case DISPATCH to handle the updating.
+!>
+!> The required order of execution is that dispatch_mod::connect_code must first
+!> set up the pointer connection from the interface to the code values, before
+!> the conndect procedure below can copy values from DISPATCH to the code.
 !> =============================================================================
 SUBROUTINE connect (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%connect')
-  interface%mem      => self%mem(:,:,:,:,self%it,1)
-  interface%position =  self%position
-  interface%size     =  self%size
-  interface%time     =  self%time
-  interface%dtime    =  self%dtime
-  interface%id       =  self%id
-  interface%log_unit =  io_unit%log
+  interface%mem => self%mem(:,:,:,:,self%it,:)
+  call code_connect
+  interface%position   =  self%position
+!  interface%size       =  self%size
+  interface%time       =  self%time
+  interface%dtime      =  self%dtime
+  interface%id         =  self%id
+  interface%mpi_rank   =  mpi%rank
+  interface%log_unit   =  io_unit%log
+  interface%input_unit =  io%input
   call trace%end
 END SUBROUTINE connect
 
@@ -95,12 +121,23 @@ END SUBROUTINE connect
 SUBROUTINE disconnect (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
-  call trace%begin ('experiment_t%connect')
+  call trace%begin ('experiment_t%disconnect')
   self%time     = interface%time
   self%dtime    = interface%dtime
   self%u_max    = interface%u_max
   call trace%end
 END SUBROUTINE disconnect
+
+!> =============================================================================
+!> Download guard zone values
+!> =============================================================================
+SUBROUTINE dnload (self)
+  class(experiment_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%dnload')
+  call download%download_link (self%link)
+  call trace%end
+END SUBROUTINE dnload
 
 !> =============================================================================
 !> Update the external code with one time step.  Note that this requires the
@@ -115,7 +152,8 @@ SUBROUTINE update (self)
   call self%connect
   call code_update
   call self%disconnect
-  call self%patch_t%update
+  call self%patch_t%courant_condition
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call trace%end
 END SUBROUTINE update
 
