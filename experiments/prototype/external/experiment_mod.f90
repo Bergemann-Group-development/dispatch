@@ -163,7 +163,7 @@ END SUBROUTINE update
 !> =============================================================================
 SUBROUTINE output (self, experiment_name)
   class(experiment_t):: self
-  character(len=*), optional:: experiment_name
+  character(len=64), optional:: experiment_name
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%output')
   call code_output (self%out_time)
@@ -177,7 +177,7 @@ END SUBROUTINE output
 SUBROUTINE info (self, nq, ntask, experiment_name)
   class(experiment_t):: self
   integer, optional:: nq, ntask
-  character(len=*), optional:: experiment_name
+  character(len=64), optional:: experiment_name
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%info')
   call code_info
