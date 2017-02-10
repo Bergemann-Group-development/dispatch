@@ -6,8 +6,8 @@ HW =
 
 # Depending on MPI use mpif90 or not
 ifeq ($(strip $(MPI)),mpi)
-  F90 = mpifort -cpp -assume byterecl -diag-disable remark
-  LD  = mpifort
+  F90 = mpiifort -cpp -assume byterecl -diag-disable remark
+  LD  = mpiifort
 else
   F90 = ifort -cpp -assume byterecl -diag-disable remark
   LD  = ifort
