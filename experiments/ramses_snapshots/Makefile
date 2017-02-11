@@ -1,13 +1,13 @@
 
 # Option groups
-OPTS = debug
-#OPTS = full_debug
+#OPTS = debug
+OPTS = full_debug
 #OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER         = stagger
-SOLVER          = stagger2
+SOLVER          = ramses/hydro
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile

@@ -6,10 +6,10 @@
 /
 
 &init_params
- nout=1500
+ nout=540
  minlvl=13
  maxlvl=14
- path='run17'
+ path='find190/f'
  rank_load=5e-3
  size=0.001
  centre_on_sink=t
@@ -28,12 +28,22 @@
  max_files=4000
 /
 
-&mhd_params
+&ramses_params
+ detailed_timer=f
+ courant_factor=0.8
+ !courant_factor=0.266667
  gamma=1.6666667
- nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
- !     cs   pa   ofd  mas  kap  eta
+ slope_type=2
+ !slope_type=-1
+ smallr=1e-4
+ smallc=5e-1
+ riemann='hllc'
+ do_isothermal=f
 /
 
 &timestep_params
- time_order=3
+ time_order=0
+/
+
+&force_params
 /

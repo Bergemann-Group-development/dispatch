@@ -20,7 +20,6 @@ MODULE ramses_mod
   USE list_mod
   USE task_list_mod
   USE experiment_mod
-  USE timestep_mod
   implicit none
   private
 
@@ -94,7 +93,6 @@ SUBROUTINE init (self, name)
   !.............................................................................
   call trace_begin('ramses_t%init')
   call io%init ('ramses snapshot reader')
-  call timestep%init
 
   !-----------------------------------------------------------------------------
   ! The first thread reads the namelist parameters and save them
@@ -780,6 +778,7 @@ SUBROUTINE read_snapshot (self)
               patch%position(:) = xg(l,:)
               patch%n = 2
               patch%size = 2.0 * dx
+              patch%llc_cart = patch%position - 0.5 * patch%size
               call patch%init()
               ! if the patch is at the very boundary, freeze it!
               xg_plus = xg(l,:) + 2d0 * dx
@@ -1167,6 +1166,12 @@ SUBROUTINE merge_ramses_octs (self, n_max)
         ! don't permit merges of patches with different sizes (except along
         ! the direction of the proposed merge, that's okay).
         if (diff_count > 0) then
+          nbor => nbor%next
+          cycle
+        end if
+        
+        ! double check that the two patches actually abut (!)
+        if (.not. self%task_list%overlaps(link%task, nbor%task)) then
           nbor => nbor%next
           cycle
         end if

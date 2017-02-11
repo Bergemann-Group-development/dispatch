@@ -7,7 +7,6 @@ MODULE experiment_mod
   USE patch_mod
   USE mhd_mod
   USE scaling_mod
-  USE timestep_mod
   implicit none
   private
   type, public, extends(mhd_t):: experiment_t
