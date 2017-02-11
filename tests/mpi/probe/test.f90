@@ -23,7 +23,6 @@ MODULE mpi_mod
     real(8), dimension(:), pointer:: buffer => null()
   end type
   integer, save:: nbuf=8*8**3
-  type (mesg_t), dimension(:), pointer:: recv => null()
   real(8), dimension(:), pointer, save:: buffer => null()
   integer, save:: nrecv=0
   real(8):: total=0d0
@@ -47,14 +46,11 @@ SUBROUTINE init
   mp%wait = wait
   mp%del = delay
   call MPI_INIT_THREAD (MPI_THREAD_MULTIPLE, mp%provided, ierr)
+  mp%comm = mpi_comm_world
   call MPI_COMM_SIZE (MPI_COMM_WORLD, mp%size, ierr)
   call MPI_COMM_RANK (MPI_COMM_WORLD, mp%rank, ierr)
   nbuf = 8*mp%n**3
   allocate (buffer(nbuf))
-  allocate (recv(0:mp%size-1))
-  do rank=0,mp%size-1
-    allocate (recv(rank)%buffer(nbuf))
-  end do
   print*,'init', mp%rank, nbuf/1024.
 END SUBROUTINE
 
@@ -75,10 +71,10 @@ SUBROUTINE end
   integer:: ierr
   !-----------------------------------------------------------------------------
   call mp%check
-  print*,'average latency', total/max(1,nrecv)
+  print*,'average latency', total/max(1,nrecv), nrecv
   flush (5)
-  call sleep(3)
-  call MPI_ABORT (mp%comm, 0, ierr)
+  !call sleep(3)
+  !call MPI_ABORT (mp%comm, 0, ierr)
   call MPI_FINALIZE (ierr)
 END SUBROUTINE
 
@@ -92,21 +88,23 @@ SUBROUTINE send
   !-----------------------------------------------------------------------------
   rank = mp%rank
   do while (rank==mp%rank)
-    r = rand()
+    r = ran(seed)
     rank = floor((mp%size-1e-7)*r)
     if (rank==mp%rank) cycle
   end do
+  !$omp critical (snd_cr)
   buffer(1) = omp_get_wtime()
   !print*,'send to', rank, buffer(1)
   call MPI_ISEND (buffer, nbuf, MPI_REAL8, rank, mp%rank, mp%comm, req, ierr)
   call MPI_REQUEST_FREE (req, ierr)
+  !$omp end critical (snd_cr)
 END SUBROUTINE
 
 SUBROUTINE test_wait (mesg)
   type(mesg_t):: mesg
   integer:: req
   integer:: stat(MPI_STATUS_SIZE)
-  integer:: ierr, from
+  integer:: ierr, from, nr
   logical:: flag
   real:: latency
   !-----------------------------------------------------------------------------
@@ -114,8 +112,13 @@ SUBROUTINE test_wait (mesg)
     call MPI_WAIT (mesg%req, stat, ierr)
     flag = .true.
   else
-    call MPI_TEST (mesg%req, flag, stat, ierr)
-    !print*, 'test',mesg%req, flag
+    flag = .false.
+    nr = 0
+    do while (.not.flag)
+      call MPI_TEST (mesg%req, flag, stat, ierr)
+      nr = nr+1
+    end do
+    !print*, 'test',mesg%req, nr
   end if
   if (flag) then
     latency = omp_get_wtime()-mesg%buffer(1)
@@ -133,12 +136,14 @@ SUBROUTINE check
   logical:: flag
   integer:: msg, ierr, rank, req, from
   integer:: stat(MPI_STATUS_SIZE)
-  integer:: nbuf
   real, dimension(:), pointer:: buffer => null()
+  type (mesg_t), dimension(:), pointer:: recv => null()
   real(8):: wc
   !-----------------------------------------------------------------------------
-  if (.not.associated(recv)) then
-  end if
+  allocate (recv(0:mp%size-1))
+  do rank=0,mp%size-1
+    allocate (recv(rank)%buffer(nbuf))
+  end do
   call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mp%comm, flag, msg, stat, ierr)
   !print*,'check:',flag
   do while (flag)
@@ -155,6 +160,10 @@ SUBROUTINE check
     if (recv(from)%msg < 0) cycle
     call test_wait (recv(from))
   end do
+  do rank=0,mp%size-1
+    deallocate (recv(rank)%buffer)
+  end do
+  deallocate (recv)
 END SUBROUTINE
 END MODULE
 
@@ -167,7 +176,7 @@ PROGRAM test_probe
   !-----------------------------------------------------------------------------
   call mp%init
   wc = omp_get_wtime()
-  !$omp parallel
+  !$omp parallel shared(wc)
   do while (omp_get_wtime()-wc < 10.)
     call mp%check
     call mp%delay (mp%del)
