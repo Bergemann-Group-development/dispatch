@@ -808,7 +808,7 @@ SUBROUTINE read_snapshot (self)
               tmp_load = tmp_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
               tot_load = tot_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
               if (patch%rank==mpi%rank) then
-                call patch%init()
+                !!!call patch%init()
                 if (mod(self%npatch,1000)==0) &
                   print'(a,2i7,3x,a,1p,2e10.2)','npatch:',self%npatch,n_active,'load:',tot_load,tmp_load
                 !!!patch%offset = patch%position ! why did I put this here? it causes issues later...
@@ -1091,7 +1091,7 @@ SUBROUTINE merge_ramses_octs (self, n_max)
   class(patch_t), pointer :: merged_patch
   class(link_t), pointer :: link, nbor, old_link, new_link
   integer :: n_now(3), n_nbor(3), n_updated(3), iterations, adir, n_merges=1, &
-             merge_count, patch_count, diff_count
+             merge_count, patch_count, diff_count, tid
   real :: dpos(3)
   logical :: merged
   !.............................................................................
@@ -1107,6 +1107,7 @@ SUBROUTINE merge_ramses_octs (self, n_max)
     do while (associated(link))
       merged = .false.
       task => link%task
+      tid = task%id
 
       ! all tasks should have their ready status reset to ensure the list and
       ! queue can be properly reconstructed at the end of the merger process.
@@ -1129,6 +1130,7 @@ SUBROUTINE merge_ramses_octs (self, n_max)
     
       ! only proceed if no. of patch cells is less than `n_max`.
       if (any(n_now >= n_max)) then
+        if (io%verbose > 1) print*,'Skipping link ID = ',task%id
         link => link%next
         cycle
       end if
@@ -1144,6 +1146,7 @@ SUBROUTINE merge_ramses_octs (self, n_max)
     
         ! skip if neighbour is not at the same level
         if (task%level /= nbor%task%level) then
+          if (io%verbose > 1) print*,'Skipping nbor ID = ',nbor_task%id
           nbor => nbor%next
           cycle
         end if
@@ -1151,6 +1154,7 @@ SUBROUTINE merge_ramses_octs (self, n_max)
         ! only allow merges between octs that share a face.
         dpos = task%position - nbor%task%position
         if (count(abs(dpos) > 0.0) > 1) then
+          if (io%verbose > 1) print*,'Skipping nbor ID = ',nbor_task%id
           nbor => nbor%next
           cycle
         end if
@@ -1166,12 +1170,14 @@ SUBROUTINE merge_ramses_octs (self, n_max)
         ! don't permit merges of patches with different sizes (except along
         ! the direction of the proposed merge, that's okay).
         if (diff_count > 0) then
+          if (io%verbose > 1) print*,'Skipping nbor ID = ',nbor_task%id
           nbor => nbor%next
           cycle
         end if
         
         ! double check that the two patches actually abut (!)
         if (.not. self%task_list%overlaps(link%task, nbor%task)) then
+          if (io%verbose > 1) print*,'Skipping nbor ID = ',nbor_task%id
           nbor => nbor%next
           cycle
         end if
@@ -1254,11 +1260,12 @@ FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
   ! create new patch
   allocate (merger, source=patch)
   merger%mem_allocated = .false.
-  nullify (merger%mem)
+  nullify (merger%mem, merger%mesh)
   ! the merged patch only grows in the `idir`-direction
   merger%size = patch%size
   merger%size(adir) = patch%size(adir) + nbor_patch%size(adir)
   merger%position = (patch%position + nbor_patch%position) / 2
+  merger%llc_cart = merger%position - 0.5 * merger%size
   merger%n = patch%n
   merger%n(adir) = patch%n(adir) + nbor_patch%n(adir)
   merger%id = 0 ! will result in the assignment of an ID
