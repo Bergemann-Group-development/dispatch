@@ -14,13 +14,11 @@ MODULE mhd_mod
   USE variable_mod
   USE mesh_mod
   USE timestep_mod
+  USE index_mod
   implicit none
   private
 
-  integer, parameter:: didx = 1, e1idx = 2, etidx = 3, gpidx = 4
-  integer, parameter:: Sidx = -1 ! in order to play nice with the Stagger solver
-  integer, dimension(3), parameter:: sidxs = [5,6,7], Bidxs = [8,9,10]
-  integer, parameter:: nvar_zeus = Bidxs(3)
+  integer, parameter:: nvar_zeus = 10
   ! this variable is used to set the staggering of vector components
   real, dimension(3):: zeus_staggering = [-0.5, -0.5, -0.5]
   integer, parameter:: KindReal = 8
@@ -37,6 +35,7 @@ MODULE mhd_mod
     type(vector_t):: s, B
     logical:: mhd = .true.
     type(zeus_boundaries_t):: btypes
+    integer:: i_et=0
   contains
     procedure:: init => init_zeus
     procedure:: update => update_zeus
@@ -47,7 +46,6 @@ MODULE mhd_mod
     procedure:: magnetic_field_magnitude
     procedure:: grav_potential
     procedure:: MapVectors
-    procedure:: RotateVars
     procedure:: gas_velocity
     procedure:: courant_condition => do_nothing ! this is handled internally by the ZEUS solver
   end type
@@ -127,8 +125,7 @@ MODULE mhd_mod
                   , dtv3    , dtdf    , dtss    , zgridvel, courno
 !$omp threadprivate (/zcomprvc/, /zcomprvi/, /zcomprvr/)
 
-PUBLIC CopyToZeus, CopyFromZeus, zeus_staggering, didx, e1idx, Sidx, &
-       etidx, gpidx, sidxs, Bidxs
+PUBLIC CopyToZeus, CopyFromZeus, zeus_staggering
 CONTAINS
 
 !> =============================================================================
@@ -255,8 +252,9 @@ CONTAINS
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !> =============================================================================
 SUBROUTINE init_zeus (self)
-  class(mhd_t) :: self
-  integer :: i
+  class(mhd_t):: self
+  integer:: i
+  type(index_t):: idx
   logical, save :: first_time=.true.
 
   namelist / zeus_params /  gamma   , qcon    , qlin    , nghst   &
@@ -360,13 +358,23 @@ SUBROUTINE init_zeus (self)
     self%mesh(i)%h(4+i) = -0.5 ! momentum/velocity components
     self%mesh(i)%h(7+i) = -0.5 ! mag. field components
   end do
+  self%i_d   = idx%d
+  self%i_e   = idx%e1
+  self%i_et  = idx%et
+  self%i_phi = idx%phi
+  self%i_px  = idx%px
+  self%i_py  = idx%py
+  self%i_pz  = idx%pz
+  self%i_bx  = idx%bx
+  self%i_by  = idx%by
+  self%i_bz  = idx%bz
   ! initialise variable storage
-  call self%d%init(self%mem, didx, self%it)
-  call self%e1%init(self%mem, e1idx, self%it)
-  call self%et%init(self%mem, etidx, self%it)
-  call self%gp%init(self%mem, gpidx, self%it)
-  call self%s%init(self%mem, sidxs, self%it, zeus_staggering)
-  call self%B%init(self%mem, Bidxs, self%it, zeus_staggering)
+  call self%d%init(self%mem, idx%d, self%it)
+  call self%e1%init(self%mem, idx%e1, self%it)
+  call self%et%init(self%mem, idx%et, self%it)
+  call self%gp%init(self%mem, idx%phi, self%it)
+  call self%s%init(self%mem, [idx%px,idx%py,idx%pz], self%it, zeus_staggering)
+  call self%B%init(self%mem, [idx%bx,idx%by,idx%bz], self%it, zeus_staggering)
   self%d%name = 'mass density'
   self%e1%name = 'int. energy density'
   self%s%name = 'momentum density'
@@ -502,6 +510,7 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   class(patch_t), pointer:: target
   real(kind=KindScalarVar), dimension(:), intent(in):: in
   integer, intent(in):: ii(3), jj(3)
+  integer:: sidxs(3), Bidxs(3)
   real(kind=KindScalarVar),intent(out):: out(size(in))
   real(kind=KindReal):: tphi, ttheta, tr, sr, stheta, sphi, sx, sy, sz, dvx, dvy, dvz, Bx, By, Bz
   real(kind=KindScalarVar), dimension(3):: BCart, dvCart
@@ -509,6 +518,8 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   !.............................................................................
   call trace_begin('mhd_t%MapVectors')
 
+  sidxs = [self%i_px, self%i_py, self%i_pz]
+  Bidxs = [self%i_bx, self%i_by, self%i_bz]
   select case (self%mesh_type)
   case (1) ! source: Cartesian
     sx = self%mesh(1)%r(jj(1)) + self%mesh(1)%centre_nat
@@ -665,19 +676,19 @@ END SUBROUTINE MapVectors
 !> Update pointers for the field variable aliases so that they point to the
 !> current time step.
 !> =============================================================================
-SUBROUTINE RotateVars (self, itnew)
-  class(mhd_t) :: self
-  integer, intent(in):: itnew
-  !-----------------------------------------------------------------------------
+!SUBROUTINE RotateVars (self, itnew)
+!  class(mhd_t) :: self
+!  integer, intent(in):: itnew
+!  !-----------------------------------------------------------------------------
 
-  call self%d%init(self%mem, didx, self%it)
-  call self%e1%init(self%mem, e1idx, self%it)
-  call self%et%init(self%mem, etidx, self%it)
-  call self%gp%init(self%mem, gpidx, self%it)
-  call self%s%init(self%mem, sidxs, self%it, zeus_staggering)
-  call self%B%init(self%mem, Bidxs, self%it, zeus_staggering)
+!  call self%d%init(self%mem, self%i_d, self%it)
+!  call self%e1%init(self%mem, e1idx, self%it)
+!  call self%et%init(self%mem, etidx, self%it)
+!  call self%gp%init(self%mem, gpidx, self%it)
+!  call self%s%init(self%mem, sidxs, self%it, zeus_staggering)
+!  call self%B%init(self%mem, Bidxs, self%it, zeus_staggering)
 
-END SUBROUTINE RotateVars
+!END SUBROUTINE RotateVars
 
 !> =============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)

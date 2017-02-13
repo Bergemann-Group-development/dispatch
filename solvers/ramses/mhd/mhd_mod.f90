@@ -23,6 +23,7 @@ MODULE mhd_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod
+  USE index_mod
   implicit none
   PRIVATE
   type, public, extends(gpatch_t):: mhd_t
@@ -56,11 +57,21 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hlld'
+  type(index_t):: idx
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
     smallc, do_isothermal, csound
 !...............................................................................
   call trace_begin('mhd_mod::init')
   call self%gpatch_t%init
+  self%i_d  = idx%d
+  self%i_e  = idx%e
+  self%i_px = idx%px
+  self%i_py = idx%py
+  self%i_pz = idx%pz
+  self%i_bx = idx%bx
+  self%i_by = idx%by
+  self%i_bz = idx%bz
+
   !$omp critical (pde)
   if (first_time) then
     first_time = .false.

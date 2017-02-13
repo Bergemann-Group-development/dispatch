@@ -7,7 +7,7 @@ MODULE initial_mod
   USE trace_mod
   USE mesh_mod
   USE random_mod
-  USE stagger_mod
+  !!!USE stagger_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
