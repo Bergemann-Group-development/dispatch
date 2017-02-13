@@ -9,7 +9,8 @@ PROGRAM dispatch
   !.............................................................................
   call mpi%init
   call ramses%init('ramses_read')       ! initialize the patch list and patches
-  call ramses%task_list%execute         ! update the list = update member patches
+  call ramses%evaluate
+ !call ramses%task_list%execute         ! update the list = update member patches
   call mpi%end
 !> =============================================================================
 END PROGRAM dispatch

@@ -47,6 +47,7 @@ MODULE ramses_mod
     procedure :: entropy
     procedure :: read_sink
     procedure :: merge_ramses_octs
+    procedure :: evaluate
   end type
 
   type :: sink_t                        ! star data type
@@ -1343,5 +1344,88 @@ SUBROUTINE tidy_up (task_list)
 
   call trace_end
 END SUBROUTINE tidy_up
+
+!> =============================================================================
+!> Evaluate update cost for all patches
+!> =============================================================================
+SUBROUTINE evaluate (self)
+  class (ramses_t):: self
+  type (link_t), pointer:: link
+  class (task_t), pointer:: task
+  real, dimension(:,:,:,:), pointer:: mem
+  integer:: l(3), u(3), i, ix, iy, iz, nskip, level
+  real:: ds, d, pg, ux, uy, uz, umax, bx, by, bz, p(3), cs, cf, ua, ub, ctmax, dsmin, ct
+  real(8):: cost1, cost2, cost3
+  !.............................................................................
+  link => self%task_list%head
+  cost1 = 0d0
+  cost2 = 0d0
+  cost3 = 0d0
+  ctmax = 0d0
+  dsmin = 0.5d0**self%maxlvl
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (experiment_t)
+      print *,'PATCH:', task%id, task%level, task%mesh%n, task%mem(3,3,3,1,task%it,1), task%it
+      mem => task%mem(:,:,:,:,task%it,1)
+      l = task%mesh%li
+      u = task%mesh%ui
+      ds = task%mesh(1)%d
+      d = sum(mem(l(1):u(1),l(2):u(2),l(3):u(3),1))
+      if (d <= 0.0) then
+        print *, 'SKIPPING', task%id
+        cycle
+      end if
+      do i=1,3
+        p(i) = sum(mem(l(1):u(1),l(2):u(2),l(3):u(3),i+2))/d
+      end do
+      nskip = 0
+      do iz=l(3),u(3)
+      do iy=l(2),u(2)
+      do ix=l(1),u(1)
+        d =  mem(ix,iy,iz,1)
+        if (d <= 0.0) then
+          nskip = nskip+1
+          cycle
+        end if
+        pg = mem(ix,iy,iz,2)/d*(self%gamma-1.0)+log(d)*self%gamma
+        pg = exp(pg)
+        ux = mem(ix,iy,iz,3)/d
+        uy = mem(ix,iy,iz,4)/d
+        uz = mem(ix,iy,iz,5)/d
+        bx = mem(ix,iy,iz,6)
+        by = mem(ix,iy,iz,7)
+        bz = mem(ix,iy,iz,8)
+        cs = sqrt(self%gamma*pg/d)
+        cf = sqrt((bx**2+by*2+bz**2+self%gamma*pg)/d)
+        ua = sqrt(ux**2+uy**2+uz**2)
+        ux = ux-p(1)
+        uy = uy-p(2)
+        uz = uz-p(3)
+        ub = sqrt(ux**2+uy**2+uz**2)
+        ct = (ua+cf)/dsmin
+        cost1 = cost1 + (ua+cf)/ds
+        cost2 = cost2 + (ub+cf)/ds
+        cost3 = cost3 + 1d0/ds
+        if (ct > ctmax) then
+          ctmax = ct
+          umax = ua+cf
+          level = task%level
+        end if
+      end do
+      end do
+      end do
+      if (nskip > 0) then
+        print *,'SKIPPING POINTS', task%id, nskip, product(u-l+1)
+      end if
+    end select
+    link => link%next
+  end do
+  cost3 = cost3*umax
+  print '(a,i4,1p,3e12.4)', 'level, umax:', level, umax
+  print '(a,1p,3e12.4)', 'costs:', cost1, cost2, cost3
+  print '(a,1p,3e12.4)', 'costs:', cost3/cost1, cost3/cost2
+END SUBROUTINE evaluate
 
 END MODULE ramses_mod
