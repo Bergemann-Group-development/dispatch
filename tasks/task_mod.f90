@@ -42,6 +42,7 @@ MODULE task_mod
     real(8):: velocity(3) = 0d0  ! the velocity of the task in Cartesian coords.
     real(8):: size(3) = 0.9999d0
     real(8):: gsize(3)                  ! convenience
+    real(8):: ds(3)                     ! convenience
     real(8):: box(3)=1d0                ! the periodic wrapping size
     real(8):: wallclock
     real(4):: quality = 0.0

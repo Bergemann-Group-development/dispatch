@@ -45,7 +45,6 @@ MODULE patch_mod
     !---------------------------------------------------------------------------
     integer:: i_d=1, i_s=2, i_e=2, i_px=3, i_py=4, i_pz=5, i_bx=6, i_by=7, i_bz=8, i_tt=9, i_phi=10
     real:: grav                         ! gravitational consant (code units)
-    real(8):: ds(3)                     ! convenience
     integer:: n(3)=0, ng(3)=2          ! convenient defaults
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
     integer:: ipos(3)                   ! integer position
