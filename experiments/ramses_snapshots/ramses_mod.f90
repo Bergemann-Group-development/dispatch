@@ -809,7 +809,6 @@ SUBROUTINE read_snapshot (self)
               tmp_load = tmp_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
               tot_load = tot_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
               if (patch%rank==mpi%rank) then
-                !!!call patch%init()
                 if (mod(self%npatch,1000)==0) &
                   print'(a,2i7,3x,a,1p,2e10.2)','npatch:',self%npatch,n_active,'load:',tot_load,tmp_load
                 !!!patch%offset = patch%position ! why did I put this here? it causes issues later...
@@ -1250,7 +1249,7 @@ FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
   class(patch_t), pointer :: patch, nbor_patch, merger
   class(mesh_t), pointer :: pm, nm, mm
   real, intent(in) :: dpos(3)
-  integer :: it, ix, iy, iz, iv, idir, adir, dum(1), o(3)
+  integer :: it, ix, iy, iz, iv, idir, adir, dum(1), o(3), mid
   !.............................................................................
   patch => task2patch(link%task)
   nbor_patch => task2patch(nbor%task)
@@ -1263,15 +1262,14 @@ FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
   merger%mem_allocated = .false.
   nullify (merger%mem, merger%mesh)
   ! the merged patch only grows in the `idir`-direction
-  merger%size = patch%size
   merger%size(adir) = patch%size(adir) + nbor_patch%size(adir)
-  merger%position = (patch%position + nbor_patch%position) / 2
-  merger%llc_cart = merger%position - 0.5 * merger%size
-  merger%n = patch%n
+  merger%llc_cart = min(patch%llc_cart, nbor_patch%llc_cart)
+  merger%position = merger%llc_cart + 0.5d0 * merger%size
   merger%n(adir) = patch%n(adir) + nbor_patch%n(adir)
-  merger%id = 0 ! will result in the assignment of an ID
+  merger%id = 0 ! will force the assignment of an ID
   call merger%clear(bits%ready) ! clear ready bit so that checks are made by `task_list%check_all`.
   call merger%init()
+  mid = merger%id
 
   ! fill variable array
   it = merger%it
@@ -1357,6 +1355,8 @@ SUBROUTINE evaluate (self)
   real:: ds, d, pg, ux, uy, uz, umax, bx, by, bz, p(3), cs, cf, ua, ub, ctmax, dsmin, ct
   real(8):: cost1, cost2, cost3
   !.............................................................................
+  call trace_begin('ramses_t%evaluate')
+
   link => self%task_list%head
   cost1 = 0d0
   cost2 = 0d0
@@ -1382,39 +1382,39 @@ SUBROUTINE evaluate (self)
       end do
       nskip = 0
       do iz=l(3),u(3)
-      do iy=l(2),u(2)
-      do ix=l(1),u(1)
-        d =  mem(ix,iy,iz,1)
-        if (d <= 0.0) then
-          nskip = nskip+1
-          cycle
-        end if
-        pg = mem(ix,iy,iz,2)/d*(self%gamma-1.0)+log(d)*self%gamma
-        pg = exp(pg)
-        ux = mem(ix,iy,iz,3)/d
-        uy = mem(ix,iy,iz,4)/d
-        uz = mem(ix,iy,iz,5)/d
-        bx = mem(ix,iy,iz,6)
-        by = mem(ix,iy,iz,7)
-        bz = mem(ix,iy,iz,8)
-        cs = sqrt(self%gamma*pg/d)
-        cf = sqrt((bx**2+by*2+bz**2+self%gamma*pg)/d)
-        ua = sqrt(ux**2+uy**2+uz**2)
-        ux = ux-p(1)
-        uy = uy-p(2)
-        uz = uz-p(3)
-        ub = sqrt(ux**2+uy**2+uz**2)
-        ct = (ua+cf)/dsmin
-        cost1 = cost1 + (ua+cf)/ds
-        cost2 = cost2 + (ub+cf)/ds
-        cost3 = cost3 + 1d0/ds
-        if (ct > ctmax) then
-          ctmax = ct
-          umax = ua+cf
-          level = task%level
-        end if
-      end do
-      end do
+        do iy=l(2),u(2)
+          do ix=l(1),u(1)
+            d =  mem(ix,iy,iz,1)
+            if (d <= 0.0) then
+              nskip = nskip+1
+              cycle
+            end if
+            pg = mem(ix,iy,iz,2)/d*(self%gamma-1.0)+log(d)*self%gamma
+            pg = exp(pg)
+            ux = mem(ix,iy,iz,3)/d
+            uy = mem(ix,iy,iz,4)/d
+            uz = mem(ix,iy,iz,5)/d
+            bx = mem(ix,iy,iz,6)
+            by = mem(ix,iy,iz,7)
+            bz = mem(ix,iy,iz,8)
+            cs = sqrt(self%gamma*pg/d)
+            cf = sqrt((bx**2+by*2+bz**2+self%gamma*pg)/d)
+            ua = sqrt(ux**2+uy**2+uz**2)
+            ux = ux-p(1)
+            uy = uy-p(2)
+            uz = uz-p(3)
+            ub = sqrt(ux**2+uy**2+uz**2)
+            ct = (ua+cf)/dsmin
+            cost1 = cost1 + (ua+cf)/ds
+            cost2 = cost2 + (ub+cf)/ds
+            cost3 = cost3 + 1d0/ds
+            if (ct > ctmax) then
+              ctmax = ct
+              umax = ua+cf
+              level = task%level
+            end if
+          end do
+        end do
       end do
       if (nskip > 0) then
         print *,'SKIPPING POINTS', task%id, nskip, product(u-l+1)
@@ -1426,6 +1426,8 @@ SUBROUTINE evaluate (self)
   print '(a,i4,1p,3e12.4)', 'level, umax:', level, umax
   print '(a,1p,3e12.4)', 'costs:', cost1, cost2, cost3
   print '(a,1p,3e12.4)', 'costs:', cost3/cost1, cost3/cost2
+
+  call trace_end
 END SUBROUTINE evaluate
 
 END MODULE ramses_mod
