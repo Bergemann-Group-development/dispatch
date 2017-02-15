@@ -285,7 +285,7 @@ SUBROUTINE toc_r (label, n, time)
   real:: n
   real(8), optional:: time
   real(8):: omp_get_wtime, dtime
-  integer:: n_cores
+  integer:: n_cores, n_threads
   !.............................................................................
   if (io_unit%do_validate) return
   if (present(time)) then
@@ -293,19 +293,39 @@ SUBROUTINE toc_r (label, n, time)
   else
     dtime = (omp_get_wtime() - wt)
   end if
-  n_cores = max(min(omp%nthreads,omp%ncores),1)
-  write (io_unit%log,1) label, trim(time_str(dtime)), &
-    trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
-    mpi%size, merge('processes,','process,  ',mpi%size>1), &
-    n_cores, merge('cores/process','core/process ',n_cores>1)
+  n_cores = max(omp%ncores,1)
+  n_threads = max(omp%nthreads,1)
+  if (n_cores > n_threads) n_cores = min(n_cores,n_threads)
+
   1 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a, 3(i4, 1x, a))
+  2 format (1x, a, ':  ', a, ',  ', a, a, 1p, e10.2, 1x, a, 4(i4, 1x, a))
+  if (n_cores == n_threads) then
+    write (io_unit%log,1) label, trim(time_str(dtime)), &
+      trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
+      mpi%size, merge('processes,','process,  ',mpi%size>1), &
+      n_cores, merge('cores/process','core/process ',n_cores>1)
+  else
+    write (io_unit%log,1) label, trim(time_str(dtime)), &
+      trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
+      mpi%size, merge('processes,','process,  ',mpi%size>1), &
+      n_cores, merge('cores/process','core/process ',n_cores>1), &
+      n_threads, merge('threads/process','thread/process ',n_threads>1)
+  end if
   flush (io_unit%log)
   if (mpi%rank==0.and.omp%thread==0) then
     if (n>1.0) then
-      print 1, label, trim(time_str(dtime)), &
-        trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
-        mpi%size, merge('processes,','process,  ',mpi%size>1), &
-        n_cores, merge('cores/process','core/process ',n_cores>1)
+      if (n_cores == n_threads) then
+        print 1, label, trim(time_str(dtime)), &
+          trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
+          mpi%size, merge('processes,','process,  ',mpi%size>1), &
+          n_cores, merge('cores/process','core/process ',n_cores>1)
+      else
+        print 1, label, trim(time_str(dtime)), &
+          trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
+          mpi%size, merge('processes,','process,  ',mpi%size>1), &
+          n_cores, merge('cores/process','core/process ',n_cores>1), &
+          n_threads, merge('threads/process','thread/process ',n_threads>1)
+      end if
     else
       print 1, label, trim(time_str(dtime))
     end if
