@@ -14,7 +14,7 @@ MODULE rt_boundary_mod
   type, public:: rt_boundary_t
     !-------------- Default Parameters -----------------------------------
     integer :: ibc, obc, n_wl_bins=1
-    real    :: lbox(3), ubox(3)
+    real(8)    :: lbox(3), ubox(3)
     real    :: ibnd(3), ubnd(3)
     !-------------- Custom Parameters ------------------------------------
     real    :: hot_temp, cool_temp
@@ -28,13 +28,14 @@ CONTAINS
 !> =============================================================================
 !> Read namelist
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, lbox, ubox)
   class(rt_boundary_t):: self
   character(len=16), save :: obc_treatment ='custom'
   character(len=16), save :: ibc_treatment ='ignore'
   real, save :: hot_temp = 1000, cool_temp = 10
   logical, save:: first_time=.true.
   integer, save:: obc, ibc
+  real(kind=8):: lbox(3), ubox(3)
   namelist /rt_bc_params/ obc_treatment, ibc_treatment
   namelist /custom_bc_params/ hot_temp, cool_temp
   !----------------------------------------------------------------------------

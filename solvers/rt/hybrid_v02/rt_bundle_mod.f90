@@ -52,10 +52,11 @@ END SUBROUTINE init
 !> =====================================================================
 !> Solve the radiative transfer equation with rt_solver%transfer
 !> =====================================================================
+ rt_bundle%forward (dtau, exp0, s, I_in, q, I_out) (nrays, nwb, npt+2))
 SUBROUTINE forward (dtau, exp0, s, qin, q, qout)
   implicit none
   real, dimension(:,:,:), pointer :: dtau, exp0, s, q
-  real, dimension(:,:),   pointer :: qin, qout
+  real, dimension(:,:),   pointer :: I_in, I_out
   !.....................................................................
   real, dimension(:),   pointer   :: qfw0, qfw1
   real, dimension(:,:), pointer   :: q1, s1, dtau1, ex0
@@ -70,6 +71,7 @@ SUBROUTINE forward (dtau, exp0, s, qin, q, qout)
     qfw1  => qout(:,iz)                 ! net volume cooling
     q1    => q   (:,:,iz)               ! output surface values
     call rt_solver%forward (dtau1, ex0, s1, qfw0, q1, qfw1)
+    print *,'done forward'
   end do
   call trace%end
 END SUBROUTINE forward

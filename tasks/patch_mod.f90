@@ -343,6 +343,7 @@ SUBROUTINE init (self)
     write (io_unit%log,*) mpi%rank, 'task', self%id, ' is root grid'
     call self%set(bits%root_grid)
   end if
+  self%llc_cart = self%position
   !-----------------------------------------------------------------------------
   ! Special handling of collapsed dimensions
   !-----------------------------------------------------------------------------

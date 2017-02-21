@@ -7,7 +7,7 @@ MODULE rt_solver_mod
   implicit none
   private
   type, public:: rt_solver_t
-    procedure(transfer2), pointer:: transfer => null()
+    procedure(feautrier), pointer:: transfer => null()
     procedure(integral_forward), pointer:: forward  => null()
     procedure(integral_forward), pointer:: reverse  => null()
   contains
@@ -26,19 +26,20 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class (rt_solver_t):: self
-  self%forward  => integral_forward
-  self%reverse  => integral_reverse
-  self%transfer => transfer2
+  self%forward   => integral_forward
+  self%reverse   => integral_reverse
+  self%transfer  => feautrier
 END SUBROUTINE init
 
 !> =============================================================================
 !> Integral solution method
 !> =============================================================================
-SUBROUTINE integral_forward (self, dtau, exp0, S, qfw0, qfw, qfw1)
+SUBROUTINE integral_forward (self, dtau, ex0, S, I_in, q, I_out, one_p)
   implicit none
   class (rt_solver_t):: self
-  real, dimension(:,:) :: dtau, exp0, S, qfw
-  real, dimension(:)   :: qfw0, qfw1
+  real, dimension(:,:,:), pointer :: dtau, ex0, S, q
+  real, dimension(:,:)   :: I_in, I_out
+  logical :: one_p
 !-----------------------------------------------------------------------
 !
 !  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
@@ -57,51 +58,53 @@ SUBROUTINE integral_forward (self, dtau, exp0, S, qfw0, qfw, qfw1)
 ! and linear source functions.
 !
 !-----------------------------------------------------------------------
-  real, dimension(size(s,1),size(s,2)) :: ex0, ds1, d1s, d2s
-  real, dimension(size(s,1))           :: ctau
-  integer i, m, n
+  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
+  real(kind=8), dimension(size(s,1),size(s,2))           :: ctau
+  integer i, n
 !-----------------------------------------------------------------------
 !
-  m = size(s,1)
-  n = size(s,2)
+
+  n = size(s,3)
   do i=2,n
-    ex0(:,i) = exp0(:,i)                                !          1e
-    ds1(:,i) = (s(:,i)-s(:,i-1))/dtau(:,i)              ! 1d    1a      ! half-point centered dS/dtau
-  end do
+    ex1(:,:,i) = 1.-ex0(:,:,i)
+    ex2(:,:,i) = ex1(:,:,i) - dtau(:,:,i)*ex0(:,:,i)
+    ds1(:,:,i) = (s(:,:,i) - s(:,:,i-1)) / dtau(:,:,i)                  ! half-point centered dS/dtau
+  end do 
+  
 !
 !  dS/dtau and d2S/dtau2 (3a+5m+1d)
 !
   do i=2,n-1
-    ctau = 1./(dtau(:,i+1)+dtau(:,i))                   ! 1d    1a
-    d1s(:,i) = &
-      (ds1(:,i+1)*dtau(:,i)+ds1(:,i)*dtau(:,i+1))*ctau  !    3m 1a      ! dS/dtau, 2nd. order accurate
-    d2s(:,i) = (ds1(:,i+1)-ds1(:,i))*2.*ctau            !    2m 1a      ! d2S/dtau2, 2nd. order accurate
+    ctau = 1. / (dtau(:,:,i+1) + dtau(:,:,i))
+    d1s(:,:,i) =(ds1(:,:,i+1) * dtau(:,:,i) &
+               + ds1(:,:,i  ) * dtau(:,:,i+1)) * ctau                   ! dS/dtau, 2nd. order accurate
+    d2s(:,:,i)= (ds1(:,:,i+1) - ds1 (:,:,i  )) * 2. * ctau              ! d2S/dtau2, 2nd. order accurate
   end do
-  d2s(:,1) = d2s(:,2)                                                   ! assume constant d2S/dtau2
-  d1s(:,1) = d1s(:,2) - dtau(:,2)*d2s(:,2)                              ! extrapolate to 1
-  d2s(:,n) = d2s(:,n-1)                                                 ! assume constant d2S/dtau2
-  d1s(:,n) = d1s(:,n-1) + dtau(:,n)*d2s(:,n)                            ! extrapolate to n
-!
-!  Forward rays (2a+3m)
-!
-  qfw(:,1) = qfw0(:)                                                    ! initial forward Q
+  d2s(:,:,1) = d2s(:,:,2)                                               ! assume constant d2S/dtau2
+  d1s(:,:,1) = d1s(:,:,2) - dtau(:,:,2)*d2s(:,:,2)                      ! extrapolate to 1
+  d2s(:,:,n) = d2s(:,:,n-1)
+  d1s(:,:,n) = d1s(:,:,n-1) - dtau(:,:,n)*d2s(:,:,n)
+
+  q(:,:,1) = I_in - s(:,:,1)                                            ! initial forward Q
   do i=2,n
-    qfw(:,i) = qfw(:,i-1)*ex0(:,i) &
-           - d1s(:,i)*(1.-ex0(:,i)) &
-           + d2s(:,i)*(1.-ex0(:,i)*(1.+dtau(:,i)))      !    3m 2a      ! formal solution forward
+    q(:,:,i) = q(:,:,i-1) *ex0(:,:,i) &
+             - d1s(:,:,i) *ex1(:,:,i) &
+             + d2s(:,:,i) *ex2(:,:,i)                                   ! formal solution forward
   end do
-  qfw1(:) = qfw(:,n)                                                    ! forward boundary intensity
-  qfw = qfw*dtau
+  if (one_p) then
+    I_out = q(:,:,n-1) + s(:,:,n-1)                                     ! forward boundary intensity if a single/two point ray is formulated
+  else
+    I_out = q(:,:,n) + s(:,:,n)                                         ! forward boundary intensity
+  end if
+
 END SUBROUTINE integral_forward                         ! 2d 13m 11a 1e ! 26f + 1e
 
-!> =============================================================================
-!> Integral solution method
-!> =============================================================================
-SUBROUTINE integral_reverse (self, dtau, exp0, S, qrv1, qrv, qrv0)
+SUBROUTINE integral_reverse (self, dtau, ex0, S, I_in, q, I_out, one_p)
   implicit none
   class (rt_solver_t):: self
-  real, dimension(:,:) :: dtau, exp0, S, qrv
-  real, dimension(:)   :: qrv0, qrv1
+  real, dimension(:,:,:), pointer :: dtau, ex0, S, q
+  real, dimension(:,:)   :: I_in, I_out
+  logical :: one_p
 !-----------------------------------------------------------------------
 !
 !  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
@@ -120,66 +123,76 @@ SUBROUTINE integral_reverse (self, dtau, exp0, S, qrv1, qrv, qrv0)
 ! and linear source functions.
 !
 !-----------------------------------------------------------------------
-  real, dimension(size(s,1),size(s,2)) :: ex0, ds1, d1s, d2s
-  real, dimension(size(s,1))           :: ctau
-  integer i, m, n
+  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s, st
+  real(kind=8), dimension(size(s,1),size(s,2))           :: ctau
+  integer i, n
 !-----------------------------------------------------------------------
 !
-  m = size(s,1)
-  n = size(s,2)
+
+  n = size(s,3)
   do i=2,n
-    ex0(:,i) = exp0(:,i)                                !          1e
-    ds1(:,i) = (s(:,i)-s(:,i-1))/dtau(:,i)              ! 1d    1a      ! half-point centered dS/dtau
-  end do
+    ex1(:,:,i) = 1.-ex0(:,:,i)
+    ex2(:,:,i) = ex1(:,:,i) - dtau(:,:,i)*ex0(:,:,i)
+    ds1(:,:,i) = (s(:,:,i) - s(:,:,i-1)) / dtau(:,:,i)                  ! half-point centered dS/dtau
+    st(:,:,i) = s(:,:,i) - s(:,:,i-1)
+  end do 
+  
 !
 !  dS/dtau and d2S/dtau2 (3a+5m+1d)
 !
   do i=2,n-1
-    ctau = 1./(dtau(:,i+1)+dtau(:,i))                   ! 1d    1a
-    d1s(:,i) = &
-      (ds1(:,i+1)*dtau(:,i)+ds1(:,i)*dtau(:,i+1))*ctau  !    3m 1a      ! dS/dtau, 2nd. order accurate
-    d2s(:,i) = (ds1(:,i+1)-ds1(:,i))*2.*ctau            !    2m 1a      ! d2S/dtau2, 2nd. order accurate
+    ctau = 1. / (dtau(:,:,i+1) + dtau(:,:,i))
+    d1s(:,:,i) =(ds1(:,:,i+1) * dtau(:,:,i) &
+               + ds1(:,:,i  ) * dtau(:,:,i+1)) * ctau                   ! dS/dtau, 2nd. order accurate
+    d2s(:,:,i)= (ds1(:,:,i+1) - ds1 (:,:,i  )) * 2. * ctau              ! d2S/dtau2, 2nd. order accurate
   end do
-  d2s(:,1) = d2s(:,2)                                                   ! assume constant d2S/dtau2
-  d1s(:,1) = d1s(:,2) - dtau(:,2)*d2s(:,2)                              ! extrapolate to 1
-  d2s(:,n) = d2s(:,n-1)                                                 ! assume constant d2S/dtau2
-  d1s(:,n) = d1s(:,n-1) + dtau(:,n)*d2s(:,n)                            ! extrapolate to n
-!
-!  Forward rays (2a+3m)
-!
-  qrv(:,n) = qrv1(:)                                                    ! initial reverse Q
-  do i=n,2,-1
-    qrv(:,i-1) = qrv(:,i)*ex0(:,i) &
-           - d1s(:,i)*(1.-ex0(:,i)) &
-           + d2s(:,i)*(1.-ex0(:,i)*(1.+dtau(:,i)))      !    3m 2a      ! formal reverse solution
+  d2s(:,:,1) = d2s(:,:,2)                                               ! assume constant d2S/dtau2
+  d1s(:,:,1) = d1s(:,:,2) - dtau(:,:,2)*d2s(:,:,2)                      ! extrapolate to 1
+  d2s(:,:,n) = d2s(:,:,n-1)
+  d1s(:,:,n) = d1s(:,:,n-1) - dtau(:,:,n)*d2s(:,:,n)
+  
+  
+  
+
+  q(:,:,1) = I_in - s(:,:,n)                                            ! initial reverse Q
+  
+  do i=n-1,1,-1
+    q(:,:,i) = q(:,:,i+1) *ex0(:,:,i+1) &
+             + d1s(:,:,i) *ex1(:,:,i+1) &
+             + d2s(:,:,i) *ex2(:,:,i+1)                                  ! formal solution reverse
   end do
-  qrv0(:) = qrv(:,1)                                                    ! reverse boundary intensity
-  qrv = qrv*dtau
+    
+  if (one_p) then
+    I_out = q(:,:,2) + s(:,:,2)                                         ! reverse boundary intensity if a single/two point ray is formulated
+  else
+    I_out = q(:,:,1) + s(:,:,1)                                         ! reverse boundary intensity
+  end if
+
 END SUBROUTINE integral_reverse                         ! 2d 13m 11a 1e ! 26f + 1e
 
-SUBROUTINE feautrier (self, dtau, S, qfw0, qrv1, Q, qfw1, qrv0)
+SUBROUTINE feautrier (self, dtau, S, I_in1, I_in2, Q, I_out1, I_out2)
   implicit none
   class (rt_solver_t):: self
-  real, dimension(:,:) :: dtau, S, q
-  real, dimension(:)   :: qfw0, qfw1, qrv0, qrv1
+  real, dimension(:,:,:), pointer :: dtau, S, q
+  real, dimension(:,:) :: I_in1, I_in2, I_out1, I_out2
 
-  real, dimension(size(s,1),size(s,2)) :: a1, a2, a3, d
-  real :: a, dsdtau_1, dsdtau_2, d2sdtau2
+  real, dimension(size(s,1),size(s,2),size(s,3)) :: a1, a2, a3, d
+  real, dimension(size(s,2)) :: a, dsdtau_1, dsdtau_2, d2sdtau2
   integer :: k, m, n, j
   
 !
   m = size(s,1)
-  n = size(s,2)
+  n = size(s,3)
   
   do j=1,m
-    a2(j,1)  = +1. + dtau(j,2) + 0.5*dtau(j,2)**2
-    a3(j,1)  = -1.
-    dsdtau_1 = (s(j,2)-s(j,1))/dtau(j,2)
-    dsdtau_2 = (s(j,3)-s(j,2))/dtau(j,3)
-    d2sdtau2 = (dsdtau_2-dsdtau_1)*2./(dtau(j,2)+dtau(j,3))
-    q(j,1)   = qfw0(j)
-    a2(j,1)  = + dtau(j,2) + 0.5*dtau(j,2)**2
-    d(j,2)   = -1./dtau(j,2)
+    a2(j,:,1)  = +1. + dtau(j,:,2) + 0.5*dtau(j,:,2)**2
+    a3(j,:,1)  = -1.
+    dsdtau_1 = (s(j,:,2)-s(j,:,1))/dtau(j,:,2)
+    dsdtau_2 = (s(j,:,3)-s(j,:,2))/dtau(j,:,3)
+    d2sdtau2 = (dsdtau_2-dsdtau_1)*2./(dtau(j,:,2)+dtau(j,:,3))
+    q(j,:,1)   = I_in1(j,:)
+    a2(j,:,1)  = + dtau(j,:,2) + 0.5*dtau(j,:,2)**2
+    d(j,:,2)   = -1./dtau(j,:,2)
   end do
 !
   !
@@ -187,17 +200,17 @@ SUBROUTINE feautrier (self, dtau, S, qfw0, qrv1, Q, qfw1, qrv0)
 !
   do k=2,n-1
   do j=1,m
-    a        = 2./(dtau(j,k+1)+dtau(j,k))                               ! 1d    1a
-    d(j,k+1) = -1./dtau(j,k+1)                                          ! 1d
-    a3(j,k)  = a*d(j,k+1)                                               !    1m
-    a1(j,k)  = a*d(j,k)                                                 !    1m
-    a2(j,k)  = 1.
-    q(j,k)   = a1(j,k)*(s(j,k)-s(j,k-1)) + a3(j,k)*(s(j,k)-s(j,k+1))    !    2m 3a
-    a        = 1./(a2(j,k-1)-a3(j,k-1))                                 ! 1d    1a
-    a1(j,k)  = a1(j,k)*a                                                !    1m
-    q(j,k)   = q(j,k) - a1(j,k)*q(j,k-1)                                !    1m 1a
-    a2(j,k)  = a2(j,k) - a1(j,k)*a2(j,k-1)                              !    1m 1a
-    a2(j,k-1) = a
+    a(:)        = 2./(dtau(j,:,k+1)+dtau(j,:,k))                               ! 1d    1a
+    d(j,:,k+1) = -1./dtau(j,:,k+1)                                          ! 1d
+    a3(j,:,k)  = a*d(j,:,k+1)                                               !    1m
+    a1(j,:,k)  = a*d(j,:,k)                                                 !    1m
+    a2(j,:,k)  = 1.
+    q(j,:,k)   = a1(j,:,k)*(s(j,:,k)-s(j,:,k-1)) + a3(j,:,k)*(s(j,:,k)-s(j,:,k+1))    !    2m 3a
+    a        = 1./(a2(j,:,k-1)-a3(j,:,k-1))                                 ! 1d    1a
+    a1(j,:,k)  = a1(j,:,k)*a                                                !    1m
+    q(j,:,k)   = q(j,:,k) - a1(j,:,k)*q(j,:,k-1)                                !    1m 1a
+    a2(j,:,k)  = a2(j,:,k) - a1(j,:,k)*a2(j,:,k-1)                              !    1m 1a
+    a2(j,:,k-1) = a
   end do
   end do
   
@@ -205,34 +218,34 @@ SUBROUTINE feautrier (self, dtau, S, qfw0, qrv1, Q, qfw1, qrv0)
 !  Boundary condition at k=n; infalling reverse intensity = IrvN
 !
   do j=1,m
-   a2(j,n) = +1. + dtau(j,n) + 0.5*dtau(j,n)**2
-   a1(j,n) = -1.
-   dsdtau_1 = (s(j,n  )-s(j,n-1))/dtau(j,n  )
-   dsdtau_2 = (s(j,n-1)-s(j,n-2))/dtau(j,n-1)
-   d2sdtau2 = (dsdtau_1-dsdtau_2)*2./(dtau(j,n)+dtau(j,n-1))
-   q(j,n)  = qrv1(j) - 0.5*dtau(j,n)**2*d2sdtau2
-   a2(j,n) = + dtau(j,n) + 0.5*dtau(j,n)**2
+   a2(j,:,n) = +1. + dtau(j,:,n) + 0.5*dtau(j,:,n)**2
+   a1(j,:,n) = -1.
+   dsdtau_1 = (s(j,:,n  )-s(j,:,n-1))/dtau(j,:,n  )
+   dsdtau_2 = (s(j,:,n-1)-s(j,:,n-2))/dtau(j,:,n-1)
+   d2sdtau2 = (dsdtau_1-dsdtau_2)*2./(dtau(j,:,n)+dtau(j,:,n-1))
+   q(j,:,n)  = I_In2(j,:) - 0.5*dtau(j,:,n)**2*d2sdtau2
+   a2(j,:,n) = + dtau(j,:,n) + 0.5*dtau(j,:,n)**2
 !
-   a       = 1./(a2(j,n-1)-a3(j,n-1))                                   ! 1d    1a
-   a1(j,n) = a1(j,n)*a                                                  !    1m
-   q(j,n)    = q(j,n) - a1(j,n)*q(j,n-1)                                !    1m 1a
-   a2(j,n)   = a2(j,n) - a1(j,n)*a2(j,n-1)                              !    1m 1a
-   a2(j,n-1) = a
-   q(j,n) = q(j,n)/a2(j,n)                                              ! solution at n
+   a       = 1./(a2(j,:,n-1)-a3(j,:,n-1))                                   ! 1d    1a
+   a1(j,:,n) = a1(j,:,n)*a                                                  !    1m
+   q(j,:,n)    = q(j,:,n) - a1(j,:,n)*q(j,:,n-1)                                !    1m 1a
+   a2(j,:,n)   = a2(j,:,n) - a1(j,:,n)*a2(j,:,n-1)                              !    1m 1a
+   a2(j,:,n-1) = a
+   q(j,:,n) = q(j,:,n)/a2(j,:,n)                                              ! solution at n
   end do
 !
 !  Backsubstitute
 !
   do k=n-1,1,-1
   do j=1,m
-    q(j,k) = (q(j,k)-a3(j,k)*q(j,k+1))*a2(j,k)                          !    2m 1a
+    q(j,:,k) = (q(j,:,k)-a3(j,:,k)*q(j,:,k+1))*a2(j,:,k)                          !    2m 1a
   end do
   end do
 !                                                                       ! 3d 9m 8a = 20f
 !  Surface intensities
 !
-  qrv0 = 2.*q(:,1)                                                      ! reverse surface intensity
-  qfw1 = 2.*q(:,n)                                                      ! forward surface intensity
+  I_out2 = 2.*q(:,:,1) + s(:,:,1)                                           ! reverse surface intensity
+  I_out1 = 2.*q(:,:,n) + s(:,:,n)                                           ! forward surface intensity
   
 
 

@@ -1,14 +1,14 @@
 &io_params
- verbose=1
- do_trace=f
- do_debug=f
- do_output=t
+ verbose=2
+ do_trace=t
+ do_debug=t
+ do_output=f
  do_legacy=t
 /
 
 &out_params
- end_time=0.002
- out_time=0.001
+ end_time=0.008
+ out_time=0.002
  print_time=0.0
  guard_zones=t
  time_derivs=f
@@ -16,7 +16,7 @@
 
 &box_params
  size=1,1,1
- dims=3,3,3
+ dims=2,2,2
  origin=0.0,0.0,0.0
  !origin=-0.5,-0.5,-0.5
 /
@@ -25,7 +25,7 @@
  nt=5
  courant=0.2
  grace=0.1
- n=32,32,32
+ n=8,8,8
 /
 
 &eos_params
@@ -34,22 +34,21 @@
 
 ! ------- Radiative transfer ---------
 &rt_params
- RT_solver  = 'integral'
- store_rt = t
-/
-
-&ray_geometry_params
- n_dirs=1
- thetas = 0
+ solver= 'integral'
+ store_rt = f
+ dtime = 0.01
+ cr_heating = 0.0
+ init_time = -999d0
 /
 
 &cartesian_ray_geometry_params
+do_chains = .true.
 ! along x axis
-nx = 2 xti = 0.,45. dx = 1
+nx = 2 xti = 0.,45.
 ! along y axis
-ny = 2 yti = 0.,45. dy = 1
+ny = 2 yti = 0.,45.
 ! along z axis
-nz = 2 zti = 0.,45. dz = 1
+nz = 2 zti = 0.,45.
 ! use space_diagonals?
 space_diagonals=t
 /
@@ -112,3 +111,4 @@ hot_temp  = 20000
  clump_a=0.1
  clump_b=0.06
 /
+&force_params   /

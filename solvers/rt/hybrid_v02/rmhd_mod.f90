@@ -23,7 +23,7 @@ MODULE rmhd_mod
   private
   ! --------------------------------------------------------------------
   type, public, extends(mhd_t):: rmhd_t
-    type(rt_t)                :: rt
+    class(rt_t), pointer      :: rt
   contains
     procedure :: init
     procedure :: update
@@ -67,6 +67,7 @@ SUBROUTINE update (self)
   call self%mhd_t%update                                                 ! get df/dt from MHD
   call self%rt%interpolate (self%time)                                  ! interpolate in time and space
   self%dedt = self%dedt + self%rt%dedt                                  ! add the RT contribution to de/dt
+  call self%courant_condition
   call trace%end (itimer)
 END SUBROUTINE update
 

@@ -8,7 +8,7 @@ MODULE initial_mod
   USE units_mod
   USE scaling_mod
   USE mesh_mod
-  USE mhd_mod
+  USE rmhd_mod
   implicit none
   private
 
@@ -58,7 +58,7 @@ SUBROUTINE initial_conditions (self, patch)
 !> Set the initial conditions
 !> =============================================================================
   class(initial_t) :: self
-  class(mhd_t), target :: patch
+  class(rmhd_t), target :: patch
   class(mesh_t), pointer :: mx, my, mz
   real, dimension(:,:,:,:), pointer :: f
   integer :: ix, iy, iz
@@ -88,15 +88,14 @@ SUBROUTINE initial_conditions (self, patch)
 
         ! the if-then-else is to prevent overflow when (x,y,z) is very from zero.
         if (q > 88.0) then
-          f(ix,iy,iz,1) = self%d0
+          f(ix,iy,iz,patch%i_d) = self%d0
         else
-          f(ix,iy,iz,1) = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
+          f(ix,iy,iz,patch%i_d) = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
                                   / (1.0 + exp(q))
         end if
 
         ! the clump is initially in pressure equilibrium with the ambient medium
-        f(ix,iy,iz,2) = (log(p0) - log(f(ix,iy,iz,1)) * patch%gamma) &
-                      * f(ix,iy,iz,1) / (patch%gamma - 1.0)
+        f(ix,iy,iz,patch%i_e) = p0 / (patch%gamma - 1.0)
 
         ! momentum components
         f(ix,iy,iz,3) = 0.0

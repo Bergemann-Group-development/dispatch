@@ -8,7 +8,7 @@ MODULE radiative_transfer_mod
   USE io_mod
   USE list_mod
   USE mesh_mod
-  USE mhd_mod
+  USE rmhd_mod
   USE omp_mod
   USE patch_mod
   USE ray_geometry_v3_mod
@@ -31,58 +31,37 @@ SUBROUTINE rt_setup (self)
   class(task_list_t)          :: self
   class(task_list_t), pointer :: rt_task_list                           ! local task list
   class(list_t),      pointer :: list
-  class(link_t),      pointer :: t_list, link, next, rt_link
+  class(link_t),      pointer :: t_list, link, rt_link
   class(task_t),      pointer :: task
   class(mesh_t),      pointer :: mesh
-  class(mhd_t),       pointer :: mhd_patch
+  class(rmhd_t),      pointer :: mhd_patch
   class(rt_t),        pointer :: rt_task
-  logical, save               :: first_time=.true.
-  character(len=16)           :: RT_solver ='integral'      ! choice of RT solver
-  integer :: n_rt
-  real,    save :: cr_heating=4.4e-27
-  integer, save :: solver
-  integer, save :: rt_freq=1
-  logical, save :: store_rt = .false.
-  logical, save :: do_chains = .true.
-  namelist /rt_params/ RT_solver, cr_heating, rt_freq, store_rt, do_chains
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer::rt_setup')
   associate (mhd => self%head%task)
   SELECT TYPE(mhd)
-  class is (mhd_t)
+  class is (rmhd_t)
     mhd_patch => mhd
   class default
     error stop '(1) in rt_setup'
   end SELECT
   end associate
-  if (first_time) then
-    first_time = .false.
-    rewind (io%input); read (io%input, rt_params)
-    if (io%master) write (*, rt_params)
-    SELECT case(RT_solver)
-    case('feautrier')
-      solver = 0
-    case('integral')
-      solver = 1
-    end SELECT
-  end if
 
   mesh => mhd_patch%mesh(1)
   select type(mesh)
     type is(Cartesian_mesh)
-      call ray_geometry%init(geometry=1, li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, do_chains=do_chains)  
+      call ray_geometry%init(geometry=1, li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds)  
     type is(spherical_mesh)
-      call ray_geometry%init(geometry=2, li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, do_chains=do_chains) 
+      call ray_geometry%init(geometry=2, li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds) 
     type is(cylindrical_mesh)
-      call ray_geometry%init(geometry=3, li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, do_chains=do_chains)   
+      call ray_geometry%init(geometry=3, li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds)   
   end select
   nullify(mesh)
 
   write (io_unit%log,*) 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
-  !call microphysics%init
-  call rt_boundary%init
-  rt_boundary%ubox = mhd_patch%box                                      ! FIXME : add bndry patches
-  rt_boundary%lbox = 0.0
+
+  call rt_boundary%init(lbox=mhd_patch%box-self%size,ubox=mhd_patch%box)   !!!!!!! FIXME !!!!!!
+
   allocate(rt_task_list)
   call rt_task_list%list_t%init ('rt task list')
   t_list => self%head
@@ -92,10 +71,9 @@ SUBROUTINE rt_setup (self)
     !-------------------------------------------------------------------
     associate (mhd => t_list%task)
     SELECT TYPE(mhd)
-    class is (mhd_t)
+    class is (rmhd_t)
       allocate (rt_task, link)                                          ! the internal RT task and its link
       mhd_patch => mhd
-      n_rt = 0
       !-----------------------------------------------------------------
       ! Construct the RT task and add it to the task list, 
       ! giving it a nbor list consisting of only the MHD task.
@@ -103,37 +81,30 @@ SUBROUTINE rt_setup (self)
       link%task         => rt_task                                      ! connect to RT task
       rt_task%link => link
       call connect_nbors(link,t_list)
-      if (store_rt) rt_task%do_output = .true.
-      rt_task%rt_freq    =  rt_freq                                     ! integer frequency, relative to MHD task
+      mhd%rt => rt_task
+      rt_task%mhd_link => t_list
       rt_task%position = mhd_patch%position
-      rt_task%box      = mhd_patch%box
-      rt_task%size     = mhd_patch%size
       rt_task%dim      = mhd_patch%mesh%gn                              ! RT dimensions 
-      rt_task%level    = mhd_patch%level 
+      rt_task%n        = mhd_patch%n
+      rt_task%gn       = mhd_patch%gn
+      rt_task%size     = mhd_patch%size
       call rt_task%init                                                 ! initialise
-      rt_task%size = mhd_patch%size
-      rt_task%ds   = mhd_patch%ds
-      n_rt = n_rt+1
+      rt_task%box      = mhd_patch%box
+      rt_task%level    = mhd_patch%level                                                
+      rt_task%ds       = mhd_patch%ds
+      rt_task%li       = mhd_patch%li
+      rt_task%ui       = mhd_patch%ui
       call rt_task_list%append_link(link)                               ! insert rt_task into the rt task list
     end SELECT
     end associate
     t_list => t_list%next                                               ! go to the next mhd task
   end do
-  
-  call make_chains (rt_task_list)                                       ! inter-connect all the chains
+  call find_rt_nbors(rt_task_list)
+  if (ray_geometry%head%do_chains) call make_chains (rt_task_list)      ! inter-connect all the chains
   link => rt_task_list%head
   do while (associated(link))
-    task => link%task
-    next => link%next
-    !---------------------------------------------------------------------------
-    ! Append the new task list link to the task_list and queue it
-    !---------------------------------------------------------------------------
-    select type (task)
-    class is (rt_t)
-      call self%append_link (link)
-      link%task%time = -999d0
-    end select
-    link => next
+    call self%append_link (link)
+    link => link%next
   end do
   call self%print
   call trace_end
@@ -151,7 +122,7 @@ END SUBROUTINE rt_setup
 !> INPUT: rt_task_list
 !> OUTPUT: none
 !> RESULT: rt chains are connected to each other. Master chains are
-!> identified and all chain inter-connections are done.
+!>   identified and all chain inter-connections are done.
 !> SUBROUTINES, CALLED FROM WITHIN: 
 !>   rt_mod::rt_chain_t%finish_chain
 !>   rt_mod::rt_chain_t%connect_to_upstream_diff_level
@@ -198,11 +169,17 @@ SUBROUTINE make_chains (self)
   logical :: connects = .false.
   logical :: is_upstream = .false.
   logical :: connected = .false.
-  integer:: ibnd, irn
+  logical :: is_bndry
+  integer:: ibnd, irn, n_rings, n_masters, n_slaves, n_conn,n_bn
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer_mod%add_correction_nbors ')
   !$omp critical (list_cr)
   allocate(master)                                                      ! temporary master chain list
+  n_rings=0
+  n_masters=0
+  n_slaves=0
+  n_conn=0
+  n_bn=0
   origin => master
   rt_list => self%head
   do while (associated(rt_list))                                        ! loop through rt_task_list
@@ -212,13 +189,15 @@ SUBROUTINE make_chains (self)
       ithis => this
     end SELECT
     do ibnd = 1, ithis%n_bundle                                         ! loop over chain rings
+      is_bndry=.false.
+      n_rings=n_rings+1
       connected = .false.                                               ! no connections have been made
       ithis%my_rings(ibnd)%master = .true.                              ! flag the ring as being the master
+      
       if (ithis%has_OB(ithis%my_rings(ibnd))) then                      ! if this ring is at the outer boundary
         ithis%my_rings(ibnd)%BC(1) = .true.                             ! then flag it to have an outer boundary condition
-        master%prev => ithis%my_rings(ibnd)
-        master => master%prev                                           ! move to this ring
-        goto 9                                                          ! since it is a boundary ring, it can't have upstreams or other masters
+        is_bndry=.true.                                                 ! since it is a boundary ring, it can't have upstreams or other masters 
+        n_bn=n_bn+1                                        
       end if
         ! TODO: inner boundaries.
         !if (ithis%has_IB(ithis%my_rings(ibnd))) then                    ! if this ring is at the inner boundary
@@ -228,68 +207,74 @@ SUBROUTINE make_chains (self)
         !  goto 9                                                        ! since it is a boundary ring, it can't have upstreams or other masters
         !end if
 
+      if(.not.is_bndry) then                                            ! if it is not a boundary, found a master on an upstream
+        try => rt_list%nbor
+      tryloop: do while (associated(try))                               ! loop through rt_task_list (4)
+          that => try%task
+          SELECT TYPE (that)
+          class is (rt_t)
+            ithat => that
+          end SELECT
         
-      try => self%head
-      do while (associated(try))                                        ! loop through rt_task_list (4)
-        that => try%task
-        SELECT TYPE (that)
-        class is (rt_t)
-          ithat => that
-        end SELECT
-        
-        if (ithis%id /= ithat%id) then                                  ! not the same patch
-          if (ithis%overlaps(ithat)) then                               ! patches overlap
-            ! loop over ithat rings
-            do irn=1, ithat%n_bundle                                    ! loop over nbor rings
-              connects = .false.                                        ! can rings connect?
-              is_upstream = .false.                                     ! nbor is different lvl upstreamer?
-              call ithis%my_rings(ibnd)%ring_connects_to(ithat%my_rings(irn),connects, is_upstream)
-              if (connects) then                                        ! the rings connect
-                ithis%my_rings(ibnd)%master = .false.                   ! i am no longer the master
-                ithis%my_rings(ibnd)%prev => ithat%my_rings(irn)        ! this is my superior
-                ithat%my_rings(irn)%next => ithis%my_rings(ibnd)        ! this is my inferior
-                
-                if(.not.associated(ithis%my_rings(ibnd)%tail)) then
-                  ithat%my_rings(irn)%tail => ithis%my_rings(ibnd)      ! connect the tails
-                else
-                  ithat%my_rings(irn)%tail => ithis%my_rings(ibnd)%tail 
+          if (ithis%id /= ithat%id) then                                  ! not the same patch
+            if (ithis%overlaps(ithat)) then                               ! patches overlap
+            
+              ! loop over ithat rings
+              nbring_loop: do irn=1, ithat%n_bundle                       ! loop over nbor rings
+                connects = .false.                                        ! can rings connect?
+                is_upstream = .false.                                     ! nbor is different lvl upstreamer?
+                call ithis%ring_connects_to(ithat,ithis%my_rings(ibnd),ithat%my_rings(irn),connects, is_upstream)
+                !..................
+                if (connects) then                                        ! the rings connect
+                  ithis%my_rings(ibnd)%master = .false.                   ! i am no longer the master
+                  ithis%my_rings(ibnd)%prev => ithat%my_rings(irn)        ! this is my superior
+                  ithat%my_rings(irn)%next => ithis%my_rings(ibnd)        ! this is my inferior
+                  if(.not.associated(ithis%my_rings(ibnd)%tail)) then
+                    ithat%my_rings(irn)%tail => ithis%my_rings(ibnd)      ! connect the tails
+                  else
+                    ithat%my_rings(irn)%tail => ithis%my_rings(ibnd)%tail 
+                  end if
+                  temp => ithis%my_rings(ibnd)                            ! inform the rest of the chain, that the new master has arrived
+                  do while(associated(temp))
+                    temp%head => ithat%my_rings(irn)
+                    temp => temp%next
+                  end do
+                  connected = .true.
+                  n_conn=n_conn+1
+                  exit tryloop
                 end if
-                
-                temp => ithis%my_rings(ibnd)                            ! inform the rest of the chain, that the new master has arrived
-                do while(associated(temp))
-                  temp%head => ithat%my_rings(irn)
-                  temp => temp%next
-                end do
-                connected = .true.
-                go to 9
-              end if
-              if (is_upstream) call &
-              ithis%my_rings(ibnd)%connect_to_upstream_diff_level(ithat%my_rings(irn))
-            end do
+                !...................
+                if (is_upstream) call &
+                  ithis%my_rings(ibnd)%connect_to_upstream_diff_level(ithat%my_rings(irn))
+              end do nbring_loop
+            end if
           end if
-        end if
-        try => try%next
-      end do
+          try => try%next
+        end do tryloop
+      end if
       if (.not.connected) then
+        n_masters = n_masters+1
         master%prev => ithis%my_rings(ibnd)
         master => master%prev  
+      else
+        n_slaves = n_slaves+1
       end if
-9     CONTINUE
     end do
     rt_list => rt_list%next                                             ! move to next rt task
   end do
-  call origin%finish_chain
-  deallocate(master)
-  nullify(origin, temp, this, that, ithis, ithat)
+  if (io%verbose>1) print *, 'n_rings',n_rings,'n_masters',n_masters, &
+        'n_slaves',n_slaves,'n_connected',n_conn,'n_boundary',n_bn
+
+  call origin%finish_chain                                              ! finalize the chain by giving them right upstream positions
+  deallocate(origin)
+  nullify(temp, this, that, ithis, ithat)
   !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE make_chains
 
 !> =====================================================================
 !> My separate nbor connectors. The original one in link_mod does not do
-!> the job right for rt. Second one is for connecting rt_internal and
-!> corresponding corrections. Both checks are deactivated by default. If
-!> task becomes a BC one, it activates itself's link.
+!> the job right for rt.
 !> =====================================================================
 SUBROUTINE connect_nbors(self, nbor)
   class(link_t), pointer :: self
@@ -309,5 +294,28 @@ SUBROUTINE connect_nbors(self, nbor)
   link2%needs_me = .true.
   call self%add_nbor_by_rank(link2)
 END SUBROUTINE connect_nbors
+
+SUBROUTINE find_rt_nbors (self)
+  class(list_t):: self
+  class(link_t), pointer:: link1, link2
+  class(link_t), pointer:: nbor
+  class(patch_t), pointer:: p1, p2
+  link1 => self%head                                                    ! start on the self list
+  do while (associated(link1))
+    link2 => link1                                                  ! start searching throuch the chain
+    do while (associated(link2))
+      if (.not.associated(link1%task,link2%task)) then
+        p1 => task2patch(link1%task)
+        p2 => task2patch(link2%task)
+        if (p1%overlaps(p2)) then
+          call connect_nbors(link1,link2)
+        end if
+      end if
+      link2 => link2%next                                               ! advance in the inner chain
+    end do
+    link1 => link1%next                                                 ! advance in the outer chain
+  end do
+  call trace_end
+END SUBROUTINE find_rt_nbors
 
 END MODULE radiative_transfer_mod

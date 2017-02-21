@@ -18,6 +18,8 @@ MODULE eos_mod
     integer:: i_tt    = 2
     integer:: i_kappa = 3
     integer:: i_src   = 4
+    integer:: n_lambda = 1
+    integer:: w_lambda = 1
     real:: lnd_min, lnd_max, lnd_stp
     real:: lne_min, lne_max, lne_stp
     real, dimension(:), pointer:: lnd, lne

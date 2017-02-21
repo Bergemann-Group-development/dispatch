@@ -21,8 +21,8 @@ SUBROUTINE transfer (N, dtau, S, Ifw0, Irv1, Q, Irv0, Ifw1)
 ! be written as a linear combination of the formal solution for constant
 ! and linear source functions.
 !
-  real, dimension(n) :: ex0, ex1, ex2, ds1dtau, dsdtau, d2sdtau2, dq
-  real ctau
+  real(kind=8), dimension(n) :: ex0, ex1, ex2, ds1dtau, dsdtau, d2sdtau2, dq
+  real(kind=8) ctau
   integer i
 !-----------------------------------------------------------------------
 !

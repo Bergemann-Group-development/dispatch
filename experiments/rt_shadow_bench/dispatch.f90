@@ -13,7 +13,7 @@ PROGRAM dispatch
   !.............................................................................
   call mpi%init
   call io%init('shadow benchmark')
-  call eos%init('stagger2')
+  call eos%init()
   call cartesian%init                   ! Initialize the patch list and patches
   task_list => cartesian%task_list
   call rt_setup (task_list)             ! add RT tasks to the task list
