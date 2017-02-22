@@ -41,7 +41,6 @@ MODULE ray_geometry_v3_mod
     integer :: ID                                                       ! packet ID
     integer :: n_rays                                                   ! number of rays in this packet
     integer :: n_points                                                 ! ray lengths in this packet
-    integer :: bnd_loc =0                                               ! where the ray starts in 1d bundle array
     real    :: ds                                                       ! distance between the points
     integer, dimension(:)    , pointer   :: p_id_fw => null()           ! packet ID for ray connection in forward direction
     integer, dimension(:)    , pointer   :: p_id_rev => null()          ! packet ID for ray connection in reverse direction
@@ -416,6 +415,10 @@ SUBROUTINE add_axis(self, dir)
   class(packet_t),   pointer :: ray
   integer :: dir, ia, ib, ic, ray_n, a, b, c, rp, p(3), pmax(3), dstep(3), nr
   real    :: ds
+  
+  class(ray_bndl_t), pointer :: bnd1, bnd2
+  class(packet_t)  , pointer :: packet1, packet2
+  integer :: ibn, jbn, jpck, ray1, ray2
 ! ......................................................................
   call trace_begin('ray_geometry_t%add_axis', 4)
   pmax = (self%ui - self%li) + 1                                        ! Total number of points
@@ -481,14 +484,15 @@ SUBROUTINE add_axis(self, dir)
   ndir%bundle(1)%b_id_rev = 1                                           ! same for bundle ID for ray connection in forward direction
   allocate(ndir%bundle(1)%packet(1)%p_id_fw(nr))                        ! packet  ID for ray connection in forward direction
   ndir%bundle(1)%packet(1)%p_id_rev => &
-  ndir%bundle(1)%packet(1)%p_id_fw                                      ! same for packet ID for ray connection in reverse direction
+  ndir%bundle(1)%packet(1)%p_id_fw(:)                                      ! same for packet ID for ray connection in reverse direction
   allocate(ndir%bundle(1)%packet(1)%r_id_fw(nr))                        ! ray ID for ray connection in forward direction
-  ndir%bundle(1)%packet(1)%r_id_fw = 1
-  ndir%bundle(1)%packet(1)%p_id_fw = 1
+  ndir%bundle(1)%packet(1)%r_id_fw(:) = 1
+  ndir%bundle(1)%packet(1)%p_id_fw(:) = 1
   ndir%bundle(1)%packet(1)%r_id_rev => &
-  ndir%bundle(1)%packet(1)%r_id_fw                                      ! same for ray ID for ray connection in reverse direction
-  ndir%bundle(1)%rays_fw => ndir%bundle(1)%packet(1)%r_id_fw
-  ndir%bundle(1)%rays_rev => ndir%bundle(1)%packet(1)%r_id_fw  
+  ndir%bundle(1)%packet(1)%r_id_fw(:)                                   ! same for ray ID for ray connection in reverse direction
+  ndir%bundle(1)%rays_fw => ndir%bundle(1)%packet(1)%r_id_fw(:)
+  ndir%bundle(1)%rays_rev => ndir%bundle(1)%packet(1)%r_id_fw(:)
+  ndir%bundle(1)%packet(1)%b_id =>  ndir%bundle(1)%rays_rev(:)
   ray_n = 1                                                             ! ray number
   do ia = self%li(a), self%ui(a)                                        ! iterate over cells in first axis
     do ib = self%li(b), self%ui(b)                                      ! iterate over cells in second axis
@@ -505,10 +509,54 @@ SUBROUTINE add_axis(self, dir)
       ndir%bundle(1)%packet(1)%fwd_coords(a,ray_n) = p(a)               ! downstream position in terms of first axis
       ndir%bundle(1)%packet(1)%fwd_coords(b,ray_n) = p(b)               ! downstream position in terms of second axis
       ndir%bundle(1)%packet(1)%fwd_coords(c,ray_n) = self%ui(c) + 1     ! downstream position in terms of ray direction
-      ndir%bundle(1)%packet(1)%r_id_fw = ray_n
+      ndir%bundle(1)%packet(1)%r_id_fw(ray_n) = ray_n
       ray_n = ray_n + 1                                                 ! move to next ray
     end do
   end do
+  
+  if (io%verbose>3) then
+  print *,'========== Direction',ndir%id,'==============='
+  print *, 'n_bundles:', ndir%n_bundles
+  do jbn =1, ndir%n_bundles
+    bnd2 => ndir%bundle(jbn)
+    print *,jbn,'BUNDLE', bnd2%id
+    print *,'dir ID', bnd2%dir_ID
+    print *,'axis, theta, phi',bnd2%axis, bnd2%theta, bnd2%phi
+    print *,'b_id_fw', bnd2%b_id_fw
+    print *,'b_id_rev', bnd2%b_id_rev
+    print *,'n_packets',bnd2%n_packets
+    print *,'n_rays', bnd2%n_rays
+    print *,'lwall',bnd2%lwall
+    print *,'uwall',bnd2%uwall
+    print *, 'dstep', bnd2%dstep
+    print *, 'bnd_rays_fw', bnd2%rays_fw
+    print *, 'bnd_rays_rev', bnd2%rays_rev
+    print *,'---------------------------------'
+    do jpck =1, bnd2%n_packets
+      packet2 => bnd2%packet(jpck)
+      print *, jpck, 'packet ID', packet2%id
+      print *, 'n_rays', packet2%n_rays
+      print *, 'n_points',packet2%n_points
+      print *, 'ds', packet2%ds
+      do ray1 = 1, packet2%n_rays
+        print *,'-- ray',ray1,'--'
+        print *,'b_id', packet2%b_id(ray1)
+        print *,'p_id_fw',packet2%p_id_fw(ray1)
+        print *,'p_id_rev',packet2%p_id_rev(ray1)
+        print *,'r_id_fw',packet2%r_id_fw(ray1)
+        print *,'r_id_rev',packet2%r_id_rev(ray1)
+        print *,'points'
+        print *,'rev_coords', packet2%rev_coords(:,ray1)
+        do ray2 = 1, packet2%n_points
+          print *,ray2,packet2%coords(:,ray2,ray1)
+        end do
+        print *,'fwd_coords', packet2%fwd_coords(:,ray1)
+      end do
+    end do
+  end do
+  end if
+  
+  
   call trace_end
 END SUBROUTINE add_axis
 
@@ -1307,7 +1355,6 @@ SUBROUTINE finish_direction(self, dir)
       print *, 'n_rays', packet2%n_rays
       print *, 'n_points',packet2%n_points
       print *, 'ds', packet2%ds
-      print *, 'bnd_loc', packet2%bnd_loc
       do ray1 = 1, packet2%n_rays
         print *,'-- ray',ray1,'--'
         print *,'b_id', packet2%b_id(ray1)
