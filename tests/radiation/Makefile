@@ -15,14 +15,14 @@ default: test_transfer
 test_transfer2: test_transfer2.x
 	@echo ""
 	./test_transfer2.x
-TEST_TRANSFER2 = test_transfer_sin.o transfer_integral_split.o
+TEST_TRANSFER2 = test_transfer_sin.o integral_hybrid_v02.o
 test_transfer2.x: $(TEST_TRANSFER2)
 	$(FC) $(TEST_TRANSFER2) -o test_transfer2.x
 
 test_transfer: test_transfer.x
 	@echo ""
 	./test_transfer.x
-TEST_TRANSFER = test_transfer.o transfer_integral_split.o
+TEST_TRANSFER = test_transfer.o integral_hybrid_v02.o
 test_transfer.x: $(TEST_TRANSFER)
 	$(FC) $(TEST_TRANSFER) -o test_transfer.x
 

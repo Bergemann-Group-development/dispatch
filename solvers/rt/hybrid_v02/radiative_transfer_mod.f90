@@ -59,9 +59,9 @@ SUBROUTINE rt_setup (self)
   nullify(mesh)
 
   write (io_unit%log,*) 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
-
+  
   call rt_boundary%init(lbox=mhd_patch%box-self%size,ubox=mhd_patch%box)   !!!!!!! FIXME !!!!!!
-
+  rt_boundary%lbox = 0.0; rt_boundary%ubox = 1.0
   allocate(rt_task_list)
   call rt_task_list%list_t%init ('rt task list')
   t_list => self%head
@@ -253,9 +253,9 @@ SUBROUTINE make_chains (self)
         end do tryloop
       end if
       if (.not.connected) then
-        n_masters = n_masters+1
-        master%prev => ithis%my_rings(ibnd)
-        master => master%prev  
+          n_masters = n_masters+1
+          master%prev => ithis%my_rings(ibnd)
+          master => master%prev 
       else
         n_slaves = n_slaves+1
       end if

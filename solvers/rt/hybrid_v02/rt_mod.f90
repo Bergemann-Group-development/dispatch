@@ -42,7 +42,7 @@ MODULE rt_mod
     integer :: a_id                                                     ! location id in the ring array of a particular patch
     logical :: master = .false.                                         ! Am I the ring to rule them all?
     logical :: BC(3) = .false.                                          ! outer/inner/virtual or level
-    integer :: l_chain = 1                                              ! length of this chain, points to one number, set on the head of the chain
+    integer :: l_chain = 0                                              ! length of this chain, points to one number, set on the head of the chain
     integer :: n_ready                                                  ! number of ready patches in this chain. When n_ready == l_chain, the chain can be executed.
     integer :: chain_nm                                                 ! ring number in the chain
   contains
@@ -69,6 +69,7 @@ MODULE rt_mod
     integer                           :: dim(3)                         ! patch dimensions
     integer                           :: n_lambda                       ! number of wavelengths
     integer                           :: n_bundle                       ! number of bundles
+    integer                           :: i_q                            ! if q is stored for printing
     real, dimension(:), pointer       :: w_lambda                       ! wavelength weights
     real, dimension(:), pointer       :: w_bundle                       ! space angle weights
     real                              :: cr_heating
@@ -77,6 +78,7 @@ MODULE rt_mod
     real, dimension(:,:,:,:), pointer :: rk   => null()
     real, dimension(:,:,:,:), pointer :: src  => null()
     real, dimension(:,:,:),   pointer :: dedt => null()
+    real, dimension(:,:,:),   pointer :: q    => null()
     character(len=16)                 :: solver ='integral'             ! choice of solver
     procedure(solve_integral), pointer:: solve => null()
     logical :: do_output  = .false.
@@ -127,7 +129,7 @@ SUBROUTINE init_rt (self)
   class (chain_ring_t), pointer :: ring
   logical, save :: first_time= .true.
   logical, save :: store_rt  = .false.
-  real(8), save :: dtime=0.01_8, grace=0.01_8, init_time=-999d0
+  real(8), save :: dtime=0.01_8, grace=0.01_8, init_time=0d0
   real,    save :: cr_heating=0.0
   character(len=16) :: solver = 'integral'
   integer :: a_id, dd, n_out
@@ -145,8 +147,9 @@ SUBROUTINE init_rt (self)
   end if
   !$omp end critical (init_cr)
   
-  self%do_output = store_rt
+  self%do_output = .true.!store_rt
   self%nv = 1                                                           ! time slots for dedt
+  if (self%do_output) self%nv=2
   self%nt = 1                                                           ! only one time slot FIXME 
   self%nw = 1                                                           ! no time deriv
   
@@ -156,6 +159,10 @@ SUBROUTINE init_rt (self)
   self%i_e = 1                                                          ! dedt slot
   self%dedt => self%mem(:,:,:,self%i_e,self%it,1)                       ! map dedt to mem
   
+  if (self%do_output) then
+  self%i_q = 2
+  self%q => self%mem(:,:,:,self%i_q,self%it,1)
+  end if
   self%n_lambda = eos%n_lambda                                          ! number of wavelengths
   self%n_bundle = ray_geometry%head%total_n_bundles * 2                 ! double n_bundles since there are 2 directions
   self%cr_heating = cr_heating                                          ! store cr heating, if it is present
@@ -166,7 +173,7 @@ SUBROUTINE init_rt (self)
   allocate (self%w_bundle(self%n_bundle))                               ! space angle weights
   self%w_lambda = eos%w_lambda
   self%w_bundle = pi4/2./self%n_bundle                                  ! space angle weights FIXME: could be different weights for different directions
-  
+  self%kind = 'rt_patch'
   self%dtime = dtime                                                    ! 0.1 second default
   self%time = init_time                                                 ! -999.0 default
   self%dt_fixed = dtime
@@ -193,6 +200,8 @@ SUBROUTINE init_rt (self)
     n_out = 1
   else if (ray_geometry%head%n_ray_dirs == 13) then
     n_out = 9
+  else if (ray_geometry%head%n_ray_dirs == 10) then
+    n_out = 8
   else
     error stop "init_rt (1) making Intensity shell problem: ray_geometry should give n_out"
   end if
@@ -341,9 +350,10 @@ SUBROUTINE update_rt (self)
   call trace%begin ('rmhd_t%update', itimer=itimer)
   if (io%verbose > 1) print *, 'RADIATIVE TRANSFER TIME', self%time
   if (self%time < 0d0) then
-    self%time  = 0d0                                                    ! set current time, if it was negative (to do the first RT run before MHD updates)
+    self%time  = 0d0 + self%dtime                                                   ! set current time, if it was negative (to do the first RT run before MHD updates)
   end if
   self%dedt = 0.0                                                       ! reset net cooling
+  if (self%do_output) self%q =0.0
   task => self%mhd_link%task                                            ! pick the rmhd task
   select type (task)
   class is (patch_t)
@@ -357,6 +367,7 @@ SUBROUTINE update_rt (self)
   
   call mhd%log_interpolate (self%time, mhd%i_d, self%lnd)               ! interpolate in time and space to get densoties
   call mhd%log_interpolate (self%time, mhd%i_e, self%lne)               ! interpolate in time and space to get internal energies
+  
   if (io%verbose > 1) then
     print *, self%id, 'lnd', minval(self%lnd), maxval(self%lnd)
     print *, self%id, 'lne', minval(self%lne), maxval(self%lne)
@@ -386,7 +397,7 @@ SUBROUTINE nudge (self)
   do r_id = 1, self%n_bundle
     ring => self%my_rings(r_id)
     !$omp critical (chain_cr)
-    if (io%verbose > 1) then
+    if (io%verbose > 4) then
       print *, 'ring no.',r_id
       print *, 'before nudge, n_ready',ring%head%n_ready, ring%head%l_chain
       print *,'nudged by master', ring%master,'rt time',self%time
@@ -398,10 +409,10 @@ SUBROUTINE nudge (self)
     tmp => ring%head%link%task
     select type(tmp)
     class is (rt_t)
-    if (io%verbose > 1) print *, 'nudging task ID:', tmp%id,'ring id', ring%head%a_id, &
+    if (io%verbose > 4) print *, 'nudging task ID:', tmp%id,'ring id', ring%head%a_id, &
     'nudged allocated:',associated(ring%head%nudged),'size'
-    if (io%verbose > 1) print *, size(ring%head%nudged),'its content:',ring%head%nudged, 'head assoc', associated(ring%head)
-    if (io%verbose > 1) print *, 'l_chain',ring%head%l_chain
+    if (io%verbose > 4) print *, size(ring%head%nudged),'its content:',ring%head%nudged, 'head assoc', associated(ring%head)
+    if (io%verbose > 4) print *, 'l_chain',ring%head%l_chain
     end select
     
     ring%head%n_ready = ring%head%n_ready+1
@@ -554,9 +565,9 @@ SUBROUTINE ring_connects_to (self, nbor, mine, other, connects, is_upstream)
   
   select case(mine%direction)
   case(1)
-    if (mine%bundle%b_id_fw  /= other%bundle%ID) return                 ! wrong bundle to make a chain
+    if (mine%bundle%b_id_rev  /= other%bundle%ID) return                 ! wrong bundle to make a chain
   case(2)
-    if (mine%bundle%b_id_rev /= other%bundle%ID) return                 ! wrong bundle to make a chain
+    if (mine%bundle%b_id_fw /= other%bundle%ID) return                 ! wrong bundle to make a chain
   end select
   
   if (self%level /= nbor%level) then
@@ -626,50 +637,43 @@ SUBROUTINE finish_chain(self)
   class(task_t), pointer :: task
   class(rt_t), pointer :: rt_patch
   class(I_data_t), dimension(:,:,:), pointer:: wall
-  integer :: ray, cn
+  integer :: ray, cn, ip, ir
   integer, dimension(:), pointer :: nb_ray_pos
   !---------------------------------------------------------------------
   this => self%prev                                                     ! first item is not needed
   do while(associated(this))                                            ! loop over master rings
     prev => this%prev                                                   ! this temporary chain is organised in reverse
-    this%head => this                                                   ! link the master chain to itself (needed for later)
-    this%chain_nm = 1                                                   ! i am first in the chain
-   ! nullify(this%prev)                                                  ! nullify unnecessary pointer to %prev
-    ring => this%next                                                   ! pick the first slave ring in this chain
-    pring => this                                                       ! the %prev for that first slave ring
-    cn = 2                                                              ! incremental chain number
-    do while(associated(ring))                                          ! go through all the slave rings
-      this%l_chain = this%l_chain + 1                                   ! increment the chain length for the master to know
+    nullify(this%prev)
+    ring => this
+    cn=1
+    do while(associated(ring))
+      ring%head => this
+      this%l_chain = this%l_chain + 1
       ring%chain_nm = cn
       cn = cn+1
-      error stop "modify finish chain"
- !     select case(ring%direction)                                       ! select the right direction of this ring
-  !    case(1)
- !       nb_ray_pos => ring%bundle%ray_chain_rev                         ! forward = upstream is in my reverse
-   !   case(2)
-  !      nb_ray_pos => ring%bundle%ray_chain_fw                          ! reverse = upstream is in front of me
-  !    end select
-   
-  !    select case(ring%bundle%l_chain)                                  ! figure out the chain packet periodicity
-  !    case(:1)                                                          ! if it is 0 or 1
-  !      do ray=1, ring%bundle%n_rays                                      
-  !        ring%packet_data(ray)%in => pring%packet_data(ray)%out        ! rays are in the same position (no alteration in periodicity)
-  !      end do
-  !    case default
-  !      do ray=1, ring%bundle%n_rays
-  !        ring%packet_data(ray)%in => pring%packet_data(nb_ray_pos(ray))%out
-  !      end do
-  !    end select
-     
+      if(.not.ring%BC(1)) then
+      select case(ring%direction)                                       ! select the right direction of this ring
+      case(1)                                                           ! forward = upstream is behind me
+        do ir = 1, ring%bundle%n_rays
+          ip=ring%bundle%rays_rev(ir)
+          ring%packet_data(ir)%in => pring%packet_data(ip)%out
+        end do                       
+      case(2)                                                           ! reverse = upstream is in front of me
+        do ir = 1, ring%bundle%n_rays                               
+          ip=ring%bundle%rays_fw(ir)
+          ring%packet_data(ir)%in => pring%packet_data(ip)%out
+        end do
+      end select
+      end if
       pring => ring
       ring => ring%next
     end do
-    if (this%l_chain <1) error stop "WTF?"
+
     allocate(this%nudged(this%l_chain))
-    this%nudged = .false.
+    this%nudged(:) = .false.
     this => prev                                                        ! point to next master ring
   end do
-  if (io%verbose>1) call self%check_masters
+  !if (io%verbose>1) call self%check_masters
 END SUBROUTINE finish_chain
 
 !> =====================================================================
@@ -689,7 +693,7 @@ SUBROUTINE check_masters(self)
   
   ring => ring%prev
   end do
-  error stop "end"
+
 END SUBROUTINE check_masters
 
 !> =====================================================================
@@ -785,7 +789,12 @@ SUBROUTINE finish(self)
   self%updated=.false.
   self%data_ready = .false.
   call self%boundary_conditions
+ ! print *,'================= dedt ======================'
+ !   print *, self%dedt
+ !! print *,'================= q ======================'
+  !  print *, self%q
   call self%output
+
  ! print *, 'Finished rt patch'
   deallocate (self%lnd, self%lne, self%rk, self%src)                                       ! deallocate scratch
  ! print *, 'new time, dtime',self%time, self%dtime
@@ -820,7 +829,7 @@ SUBROUTINE solve_integral (self, ring, i_in, i_in2)
   class(packet_t),        pointer :: packet
   real, dimension(:,:,:), pointer :: s, rk, dtau, exp0, q
   real, dimension(:,:),   pointer :: I_out, dwf, I_in0
-  integer                         :: nrays, npt, nwb, ipck
+  integer                         :: nrays, npt, nwb, ipck, ir
   real                            :: ds
   logical :: one_p
   integer, save                   :: itimer=0
@@ -849,33 +858,16 @@ SUBROUTINE solve_integral (self, ring, i_in, i_in2)
     allocate(dwf (nrays,      npt))
     allocate(I_out(nrays, nwb))
     allocate(I_in0(nrays, nwb))
-   ! print *,'ring is master',ring%master, self%nt
-   ! print *,'in solve integral, data ready, my id', self%data_ready, self%id
-   ! if (associated(ring%prev)) then
-   ! tmp=> ring%prev%link%task
-   ! select type(tmp)
-   ! class is (rt_t)
-   ! print *, 'nudged by prev',tmp%time,tmp%updated, tmp%dtime, self%dtime, tmp%id
-   ! end select
-   ! end if
-   ! if (associated(ring%next)) then
-   ! tmp=> ring%next%link%task
-   ! select type(tmp)
-   ! class is (rt_t)
-   ! print *, 'nudged by next',tmp%time,tmp%updated, tmp%dtime, self%dtime, tmp%id
-   ! end select
-   ! end if
-   ! print *, 'time, updated, ring id',self%time, self%updated, ring%a_id
-    I_in0 = I_in(packet%bnd_loc:packet%bnd_loc+packet%n_rays-1,:)
-   ! print *,'self dims',self%dim(1), self%dim(2), self%dim(3)
-   ! print *,'getting s'
+
+   do ir=1, packet%n_rays
+   I_in0(ir,:) = I_in(packet%b_id(ir),:)
+   end do
     call self%ray_vol_map4(packet, self%src, s)                         ! map source function to rays
-   ! print *,'getting rk'
     call self%ray_vol_map4(packet, self%rk, rk)                         ! map opacities to rays
     call self%optical_depth_centered(ds, rk, dtau)                      ! optical depth is centered for integral formulation
     call self%ray_vol_map3(packet, self%lnd, dwf)                       ! density weight factor
     dwf = dwf * ds  
-    if (io%verbose>1) &
+    if (io%verbose>2) &
         print *,'dtau',self%id, minval(dtau), maxval(dtau)
 
 #if defined __INTEL_COMPILER
@@ -893,7 +885,6 @@ SUBROUTINE solve_integral (self, ring, i_in, i_in2)
       call rt_solver%reverse (dtau, exp0, s, I_in0, q, I_out, one_p)   ! solve reverse
     end if
     
-   ! print *,'updating q'
     call self%update_q(packet, q, dwf, ring%a_id, one_p)
     call ring%store_I_out(packet, I_out)
     
@@ -906,16 +897,11 @@ SUBROUTINE store_I_out(self, packet, I_out)
   class(chain_ring_t) :: self
   class(packet_t), pointer :: packet
   real, dimension(:,:), pointer :: I_out
-  integer :: ray, i
+  integer :: i
   !.....................................................................
   
-  !--------------------------------------------------------------------
-  i=1
-  !print *, associated(self%packet_data), size(self%packet_data)
-  !print *, packet%bnd_loc, packet%bnd_loc+packet%n_rays-1
-  do ray=packet%bnd_loc, packet%bnd_loc+packet%n_rays-1
-    self%packet_data(ray)%out = I_out(i,:)
-    i=i+1
+  do i= 1, packet%n_rays
+    self%packet_data(packet%b_id(i))%out = I_out(i,:)
   end do
 
 END SUBROUTINE store_I_out
@@ -1045,18 +1031,18 @@ SUBROUTINE ray_vol_map3 (self, packet, in, out)
         packet%rev_coords(2,ray), packet%rev_coords(3,ray))             ! Get the last point
     end do
     
-  if (io%verbose > 1) then
-   ! if (any(in==0)) then
-   !   print *, in
-   !   error stop "ray vol map3 in=0"
-   ! end if
-   ! if (any(out==0)) then
-   !   do pt = 1, size(out,2)
-   !   print *,"pt",pt, out(:,pt)
-   !   end do
-   !   error stop "ray vol map3 out=0"
-   ! end if
-  end if
+  !if (io%verbose > 1) then
+  !  if (any(in==0)) then
+  !    print *, in
+  !    error stop "ray vol map3 in=0"
+  !  end if
+  !  if (any(out==0)) then
+  !    do pt = 1, size(out,2)
+  !    print *,"pt",pt, out(:,pt)
+  !    end do
+  !    error stop "ray vol map3 out=0"
+  !  end if
+  !end if
   
 END SUBROUTINE ray_vol_map3
 
@@ -1084,7 +1070,11 @@ SUBROUTINE update_q (self, packet, q, dwf, ib, one_p)
         do wl =1, size(q,2)
           qq(p(1),p(2),p(3)) = &
           qq(p(1),p(2),p(3)) + q(ray,wl,pt+1)* self%w_lambda(wl) * &
-           self%w_bundle(ib) * dwf(ray,pt)
+           self%w_bundle(ib) * exp(dwf(ray,pt))
+           if(self%do_output) then
+             self%q(p(1),p(2),p(3)) = self%q(p(1),p(2),p(3)) + &
+             q(ray,wl,pt+1) * self%w_lambda(wl) * self%w_bundle(ib)
+           end if
         end do
       end do
     end do
@@ -1095,7 +1085,11 @@ SUBROUTINE update_q (self, packet, q, dwf, ib, one_p)
         do wl =1, size(q,2)
           qq(p(1),p(2),p(3)) = &
           qq(p(1),p(2),p(3)) + q(ray,wl,pt)* self%w_lambda(wl) * &
-           self%w_bundle(ib) * dwf(ray,pt)
+           self%w_bundle(ib) * exp(dwf(ray,pt))
+           if(self%do_output) then
+             self%q(p(1),p(2),p(3)) = self%q(p(1),p(2),p(3)) + &
+             q(ray,wl,pt) * self%w_lambda(wl) * self%w_bundle(ib)
+           end if
         end do
       end do
     end do
