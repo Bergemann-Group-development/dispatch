@@ -44,11 +44,11 @@
 &cartesian_ray_geometry_params
 do_chains = .true.
 ! along x axis
-nx = 2 xti = 0.,45.
+nx = 1 xti = 0.!,45.
 ! along y axis
-ny = 2 yti = 0.,45.
+ny = 1 yti = 0.!,45.
 ! along z axis
-nz = 2 zti = 0.,45.
+nz = 1 zti = 0.!,45.
 ! use space_diagonals?
 space_diagonals=t
 /

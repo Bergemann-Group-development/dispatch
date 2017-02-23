@@ -100,13 +100,11 @@ MODULE rt_mod
     procedure :: nudge
     procedure :: optical_depth_centered
     procedure :: optical_depth_staggered
-    procedure :: optical_depth_test
     procedure :: pos2cell
     procedure :: ray_vol_map3
     procedure :: ray_vol_map4
     procedure :: ring_connects_to
     procedure :: solve_integral
-    procedure :: solve_integral_test
     procedure :: solve_feautrier
     procedure :: update => update_rt
     procedure :: update_q  
