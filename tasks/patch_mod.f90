@@ -977,25 +977,29 @@ SUBROUTINE output_legacy (self, experiment_name)
       ! and time derivatives, which we have at iit(nt-2).
       !-------------------------------------------------------------------------
       it1 = self%iit(self%nt-2)
-      if (self%out_time == 0.0) then
-        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
-      !-------------------------------------------------------------------------
-      ! Normally, we write out only variable values, which can then be interpolated
-      ! to the exact output time, self%out_next, the update of which must come
-      ! after this point
-      !-------------------------------------------------------------------------
-      else if (self%time_derivs) then
-        it = it1
-        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
-        call check_error(self, buf, "output 1")
+      if(self%kind /= 'rt_patch') then
+        if (self%out_time == 0.0) then
+          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
+        !-------------------------------------------------------------------------
+        ! Normally, we write out only variable values, which can then be interpolated
+        ! to the exact output time, self%out_next, the update of which must come
+        ! after this point
+        !-------------------------------------------------------------------------
+        else if (self%time_derivs) then
+          it = it1
+          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
+          call check_error(self, buf, "output 1")
+        else
+          it2 = self%iit(self%nt-1)
+          it = it2
+          pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1d-30)
+          if (self%t(it2)==self%t(it1)) pt=0.0
+          qt = 1.0-pt
+          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
+              + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
+        end if
       else
-        it2 = self%iit(self%nt-1)
-        it = it2
-        pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1d-30)
-        if (self%t(it2)==self%t(it1)) pt=0.0
-        qt = 1.0-pt
-        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
-            + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_e,self%it,1)
       end if
       call check_error(self, buf, "output 2")
       if (io%verbose>1) &
