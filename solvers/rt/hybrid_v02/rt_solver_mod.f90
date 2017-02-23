@@ -59,42 +59,96 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, I_in, q, I_out, one_p)
 !
 !-----------------------------------------------------------------------
   real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
-  real(kind=8), dimension(size(s,1),size(s,2))           :: ctau
-  integer i, n
+  real(kind=8) :: ctau
+  integer i, n, m, w, j, k
 !-----------------------------------------------------------------------
 !
-
+  m = size(s,1)
+  w = size(s,2)
   n = size(s,3)
   do i=2,n
-    ex1(:,:,i) = 1.-ex0(:,:,i)
-    ex2(:,:,i) = ex1(:,:,i) - dtau(:,:,i)*ex0(:,:,i)
-    ds1(:,:,i) = (s(:,:,i) - s(:,:,i-1)) / dtau(:,:,i)                  ! half-point centered dS/dtau
+    do j = 1, w
+      do k = 1, m
+    ex1(k,j,i) = 1.-ex0(k,j,i)
+    ex2(k,j,i) = ex1(k,j,i) - dtau(k,j,i)*ex0(k,j,i)
+    ds1(k,j,i) = (s(k,j,i) - s(k,j,i-1)) / dtau(k,j,i)                  ! half-point centered dS/dtau
+      end do
+    end do
   end do 
+  
   
 !
 !  dS/dtau and d2S/dtau2 (3a+5m+1d)
 !
   do i=2,n-1
-    ctau = 1. / (dtau(:,:,i+1) + dtau(:,:,i))
-    d1s(:,:,i) =(ds1(:,:,i+1) * dtau(:,:,i) &
-               + ds1(:,:,i  ) * dtau(:,:,i+1)) * ctau                   ! dS/dtau, 2nd. order accurate
-    d2s(:,:,i)= (ds1(:,:,i+1) - ds1 (:,:,i  )) * 2. * ctau              ! d2S/dtau2, 2nd. order accurate
+    do j=1,w
+      do k=1,m
+        ctau = 1. / (dtau(k,j,i+1) + dtau(k,j,i))
+        d1s(k,j,i) =(ds1(k,j,i+1) * dtau(k,j,i) &
+                   + ds1(k,j,i  ) * dtau(k,j,i+1)) * ctau               ! dS/dtau, 2nd. order accurate
+        d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2. * ctau          ! d2S/dtau2, 2nd. order accurate
+      end do
+    end do  
   end do
-  d2s(:,:,1) = d2s(:,:,2)                                               ! assume constant d2S/dtau2
-  d1s(:,:,1) = d1s(:,:,2) - dtau(:,:,2)*d2s(:,:,2)                      ! extrapolate to 1
-  d2s(:,:,n) = d2s(:,:,n-1)
-  d1s(:,:,n) = d1s(:,:,n-1) - dtau(:,:,n)*d2s(:,:,n)
-
-  q(:,:,1) = I_in - s(:,:,1)                                            ! initial forward Q
-  do i=2,n
-    q(:,:,i) = q(:,:,i-1) *ex0(:,:,i) &
-             - d1s(:,:,i) *ex1(:,:,i) &
-             + d2s(:,:,i) *ex2(:,:,i)                                   ! formal solution forward
+  
+  do j = 1, w
+   do k = 1, m
+     d2s(k,j,1) = d2s(k,j,2)                                            ! assume constant d2S/dtau2
+     d1s(k,j,1) = d1s(k,j,2) - dtau(k,j,2)*d2s(k,j,2)                   ! extrapolate to 1
+     d2s(k,j,n) = d2s(k,j,n-1)
+     d1s(k,j,n) = d1s(k,j,n-1) - dtau(k,j,n)*d2s(k,j,n)
+    end do
   end do
+  
   if (one_p) then
-    I_out = q(:,:,n-1) + s(:,:,n-1)                                     ! forward boundary intensity if a single/two point ray is formulated
+    do j = 1, w
+     do k = 1, m
+       q(k,j,2) = I_in(k,j) - s(k,j,2)                                    ! initial forward Q
+      end do
+    end do
   else
-    I_out = q(:,:,n) + s(:,:,n)                                         ! forward boundary intensity
+    do j = 1, w
+     do k = 1, m
+       q(k,j,1) = I_in(k,j) - s(k,j,1)                                    ! initial forward Q
+      end do
+    end do
+  end if
+  
+  if (one_p) then
+    do i=3,n
+      do j = 1, w
+        do k = 1, m
+          q(k,j,i) = q(k,j,i-1) *ex0(k,j,i) &
+                   - d1s(k,j,i) *ex1(k,j,i) &
+                   + d2s(k,j,i) *ex2(k,j,i)                               ! formal solution forward
+        end do
+      end do  
+    end do
+  else
+    do i=2,n
+      do j = 1, w
+        do k = 1, m
+          q(k,j,i) = q(k,j,i-1) *ex0(k,j,i) &
+                   - d1s(k,j,i) *ex1(k,j,i) &
+                   + d2s(k,j,i) *ex2(k,j,i)                               ! formal solution forward
+        end do
+      end do  
+    end do
+  end if
+  
+  if (one_p) then
+    do j = 1, w
+      do k = 1, m
+        I_out(k,j) = q(k,j,n-1) + s(k,j,n-1)                            ! forward boundary intensity if a single/two point ray is formulated
+      end do
+    end do  
+  else
+    do j = 1, w
+      do k = 1, m
+        I_out(k,j) = q(k,j,n) + s(k,j,n)                                ! forward boundary intensity
+      end do
+    end do  
+    
   end if
 
 END SUBROUTINE integral_forward                         ! 2d 13m 11a 1e ! 26f + 1e
@@ -124,48 +178,96 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, I_in, q, I_out, one_p)
 !
 !-----------------------------------------------------------------------
   real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s, st
-  real(kind=8), dimension(size(s,1),size(s,2))           :: ctau
-  integer i, n
+  real(kind=8) :: ctau
+  integer i, n, m, w, j, k
 !-----------------------------------------------------------------------
 !
-
+  m = size(s,1)
+  w = size(s,2)
   n = size(s,3)
   do i=2,n
-    ex1(:,:,i) = 1.-ex0(:,:,i)
-    ex2(:,:,i) = ex1(:,:,i) - dtau(:,:,i)*ex0(:,:,i)
-    ds1(:,:,i) = (s(:,:,i) - s(:,:,i-1)) / dtau(:,:,i)                  ! half-point centered dS/dtau
-    st(:,:,i) = s(:,:,i) - s(:,:,i-1)
+    do j = 1, w
+      do k = 1, m
+    ex1(k,j,i) = 1.-ex0(k,j,i)
+    ex2(k,j,i) = ex1(k,j,i) - dtau(k,j,i)*ex0(k,j,i)
+    ds1(k,j,i) = (s(k,j,i) - s(k,j,i-1)) / dtau(k,j,i)                  ! half-point centered dS/dtau
+      end do
+    end do
   end do 
+  
   
 !
 !  dS/dtau and d2S/dtau2 (3a+5m+1d)
 !
   do i=2,n-1
-    ctau = 1. / (dtau(:,:,i+1) + dtau(:,:,i))
-    d1s(:,:,i) =(ds1(:,:,i+1) * dtau(:,:,i) &
-               + ds1(:,:,i  ) * dtau(:,:,i+1)) * ctau                   ! dS/dtau, 2nd. order accurate
-    d2s(:,:,i)= (ds1(:,:,i+1) - ds1 (:,:,i  )) * 2. * ctau              ! d2S/dtau2, 2nd. order accurate
+    do j=1,w
+      do k=1,m
+        ctau = 1. / (dtau(k,j,i+1) + dtau(k,j,i))
+        d1s(k,j,i) =(ds1(k,j,i+1) * dtau(k,j,i) &
+                   + ds1(k,j,i  ) * dtau(k,j,i+1)) * ctau               ! dS/dtau, 2nd. order accurate
+        d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2. * ctau          ! d2S/dtau2, 2nd. order accurate
+      end do
+    end do  
   end do
-  d2s(:,:,1) = d2s(:,:,2)                                               ! assume constant d2S/dtau2
-  d1s(:,:,1) = d1s(:,:,2) - dtau(:,:,2)*d2s(:,:,2)                      ! extrapolate to 1
-  d2s(:,:,n) = d2s(:,:,n-1)
-  d1s(:,:,n) = d1s(:,:,n-1) - dtau(:,:,n)*d2s(:,:,n)
   
-  
-  
-
-  q(:,:,1) = I_in - s(:,:,n)                                            ! initial reverse Q
-  
-  do i=n-1,1,-1
-    q(:,:,i) = q(:,:,i+1) *ex0(:,:,i+1) &
-             + d1s(:,:,i) *ex1(:,:,i+1) &
-             + d2s(:,:,i) *ex2(:,:,i+1)                                  ! formal solution reverse
+  do j = 1, w
+   do k = 1, m
+     d2s(k,j,1) = d2s(k,j,2)                                            ! assume constant d2S/dtau2
+     d1s(k,j,1) = d1s(k,j,2) - dtau(k,j,2)*d2s(k,j,2)                   ! extrapolate to 1
+     d2s(k,j,n) = d2s(k,j,n-1)
+     d1s(k,j,n) = d1s(k,j,n-1) - dtau(k,j,n)*d2s(k,j,n)
+    end do
   end do
+  
+  if (one_p) then
+    do j = 1, w    
+      do k = 1, m
+        q(k,j,n-1) = I_in(k,j) - s(k,j,n-1)                             ! initial forward Q
+      end do
+    end do  
+  else
+    do j = 1, w
+      do k = 1, m
+        q(k,j,n) = I_in(k,j) - s(k,j,n)                                 ! initial forward Q
+      end do
+    end do
+  end if
+  
+  if (one_p) then
+    do i=n-2,1,-1
+      do j = 1, w
+        do k = 1, m
+          q(k,j,i) = q(k,j,i+1) *ex0(k,j,i+1) &
+                   + d1s(k,j,i) *ex1(k,j,i+1) &
+                   + d2s(k,j,i) *ex2(k,j,i+1)                             ! formal solution reverse
+        end do
+      end do  
+    end do
+  else
+    do i=n-1,1,-1
+      do j = 1, w
+        do k = 1, m
+          q(k,j,i) = q(k,j,i+1) *ex0(k,j,i+1) &
+                   + d1s(k,j,i) *ex1(k,j,i+1) &
+                   + d2s(k,j,i) *ex2(k,j,i+1)                             ! formal solution reverse
+        end do
+      end do  
+    end do
+  end if
     
   if (one_p) then
-    I_out = q(:,:,2) + s(:,:,2)                                         ! reverse boundary intensity if a single/two point ray is formulated
+    do j = 1, w
+      do k = 1, m
+        I_out(k,j) = q(k,j,2) + s(k,j,2)                                ! forward boundary intensity if a single/two point ray is formulated
+      end do
+    end do  
   else
-    I_out = q(:,:,1) + s(:,:,1)                                         ! reverse boundary intensity
+    do j = 1, w
+      do k = 1, m
+        I_out(k,j) = q(k,j,1) + s(k,j,1)                                ! forward boundary intensity
+      end do
+    end do  
+    
   end if
 
 END SUBROUTINE integral_reverse                         ! 2d 13m 11a 1e ! 26f + 1e

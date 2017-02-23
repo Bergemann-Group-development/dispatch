@@ -15,7 +15,8 @@ MODULE rt_boundary_mod
     !-------------- Default Parameters -----------------------------------
     integer :: ibc, obc, n_wl_bins=1
     real(8)    :: lbox(3), ubox(3)
-    real    :: ibnd(3), ubnd(3)
+    real(8)    :: ibnd(3), ubnd(3)
+    real(8)    :: c
     !-------------- Custom Parameters ------------------------------------
     real    :: hot_temp, cool_temp
   contains
@@ -55,8 +56,9 @@ SUBROUTINE init (self, lbox, ubox)
         obc = 0
         rewind (io%input)
         read (io%input, custom_bc_params)
-        hot_temp = hot_temp/scaling%temp
-        cool_temp = cool_temp/scaling%temp
+     self%c = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
+      self%hot_temp = self%c*(hot_temp/scaling%temp)**4
+    self%cool_temp = self%c*(cool_temp/scaling%temp)**4
 !> =====================================================================
       case('reflective')
         obc = 1
@@ -79,11 +81,9 @@ SUBROUTINE init (self, lbox, ubox)
   !$omp end critical (input_cr)
   self%ibc = ibc
   self%obc = obc
-  if (obc==0) then
-    self%hot_temp = hot_temp
-    self%cool_temp = cool_temp
-  end if
-
+  
+print *, 'cool', self%cool_temp
+print *, 'hot', self%hot_temp
   call trace_end
 END SUBROUTINE init
 
@@ -97,29 +97,31 @@ END SUBROUTINE set_ibc
 
 SUBROUTINE set_obc (self, ppos, i_in)
   class (rt_boundary_t) :: self
-  real(kind=8) :: ppos(3), c
-  real(kind=4), dimension(self%n_wl_bins) :: i_in
+  real(kind=8) :: ppos(3)
+  real, dimension(:) :: i_in
 !> =====================================================================
 !> Should be modified only from here on
 !> =====================================================================
-  c = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
-  if (ppos(1) <= self%lbox(1)) then
-    i_in(:) = c*self%hot_temp**4
-  else if (ppos(1) >= self%ubox(1)) then
-    i_in(:) = c*self%cool_temp**4
-  end if
 
   if (ppos(2) <= self%lbox(2)) then
-    i_in(:) = c*self%cool_temp**4
+    i_in = self%cool_temp
   else if (ppos(2) >= self%ubox(2)) then
-    i_in(:) = c*self%cool_temp**4
+    i_in = self%cool_temp
   end if
 
   if (ppos(3) <= self%lbox(3)) then
-    i_in(:) = c*self%cool_temp**4
+    i_in = self%cool_temp
   else if (ppos(3) >= self%ubox(3)) then
-    i_in(:) = c*self%cool_temp**4
+    i_in = self%cool_temp
   end if
+  
+    if (ppos(1) <= self%lbox(1)) then
+    i_in = self%hot_temp
+  else if (ppos(1) >= self%ubox(1)) then
+    i_in = self%cool_temp
+  end if
+ 
+
 END SUBROUTINE set_obc
 
 END MODULE

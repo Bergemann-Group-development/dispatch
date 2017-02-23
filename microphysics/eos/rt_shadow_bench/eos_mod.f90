@@ -127,9 +127,8 @@ SUBROUTINE lookup (self, dim, ee, lnd, lne, d, pg, tt, rk, src, gamma)
   end if
   if (present(rk)) then
     do i=1,size(rk,4)
-      rk(:,:,:,i) = (((self%gamma-1.0)*ee_loc*self%t0)**(-3.5) * &
-       (d_loc*self%rho0)**2)*scaling%m/scaling%l**2
-      
+      rk(:,:,:,i) = (((self%gamma-1.0)*ee_loc*self%t0*scaling%temp)**(-3.5) * &
+       (d_loc*self%rho0*scaling%d)**2)* scaling%m/scaling%l**2   
     end do
   end if
   if (present(lne)) deallocate(ee_loc)

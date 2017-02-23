@@ -7,7 +7,7 @@
 /
 
 &out_params
- end_time=0.018
+ end_time=0.01
  out_time=0.002
  print_time=0.0
  guard_zones=t
@@ -35,20 +35,20 @@
 ! ------- Radiative transfer ---------
 &rt_params
  solver= 'integral'
- store_rt = f
+ do_output = t
  dtime = 0.001
  cr_heating = 0.0
- init_time = 0d0!-999d0
+ init_time = -9d0
 /
 
 &cartesian_ray_geometry_params
 do_chains = .true.
 ! along x axis
-nx = 1 xti = 0.!,45.
+nx = 2 xti = 0.,45.
 ! along y axis
-ny = 1 yti = 0.!,45.
+ny = 2 yti = 0.,45.
 ! along z axis
-nz = 1 zti = 0.!,45.
+nz = 2 zti = 0.,45.
 ! use space_diagonals?
 space_diagonals=t
 /
