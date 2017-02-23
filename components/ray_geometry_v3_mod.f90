@@ -98,6 +98,7 @@ MODULE ray_geometry_v3_mod
     integer :: li(3), ui(3)
     real(kind=8) :: cell_dims(3)
     integer :: geometry = 1 !cartesian = 1, spherical = 2, cylindrical = 3
+    integer :: wall_n_dirs(3) = 0                                       ! number of directions entering/leaving a particular wall
     logical :: init_done = .false.
     logical :: space_diagonals = .true.
     logical :: do_chains = .true.
@@ -452,6 +453,7 @@ SUBROUTINE add_axis(self, dir)
   self%total_n_bundles = self%total_n_bundles + 1                       ! increment total number of bundles by 1
   ndir%directionality = self%dr                                         ! one/two directional
   ndir%ID = self%n_ray_dirs                                             ! get the dir_id
+  self%wall_n_dirs(c) = self%wall_n_dirs(c)+1
   ! --- Fill in bundle info ---
   allocate(ndir%bundle(1)%packet(1))                                    ! packet for this bundle
   ndir%bundle(1)%axis      = c                                          ! direction axis of this bundle
@@ -1268,7 +1270,10 @@ SUBROUTINE finish_direction(self, dir)
   class(packet_t)  , pointer :: packet1, packet2
   integer :: ibn, jbn, ipck, jpck, ray1, ray2, coords(3), i
   integer :: neq_fw, neq_rv, diff_fw,diff_rv, d_bn
+  logical :: wallupd(3)
   !---------------------------------------------------------------------
+  wallupd(:) = .false.
+  
   
   do ibn = 1, dir%n_bundles                                             ! loop over bundles
     bnd1 => dir%bundle(ibn)
@@ -1292,8 +1297,16 @@ SUBROUTINE finish_direction(self, dir)
         do i=1,3
           if (bnd1%uwall(i) > 0) then
             coords(i) = self%li(i)
+            if (.not.wallupd(i)) then                                   ! update the leaving wall, if needed
+              self%wall_n_dirs(i) = self%wall_n_dirs(i)+1
+              wallupd(i) = .true.
+            end if           
           else if (bnd1%uwall(i)<0) then
             coords(i) = self%ui(i)
+            if (.not.wallupd(i)) then                                   ! update the leaving wall, if needed
+              self%wall_n_dirs(i) = self%wall_n_dirs(i)+1
+              wallupd(i) = .true.
+            end if
           end if
         end do
         do jbn = 1, dir%n_bundles
