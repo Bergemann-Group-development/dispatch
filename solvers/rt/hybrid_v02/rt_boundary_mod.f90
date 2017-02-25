@@ -7,6 +7,7 @@ MODULE rt_boundary_mod
   USE trace_mod
   USE units_mod
   USE scaling_mod
+  USE eos_mod
   implicit none
   private
   real(8), parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
@@ -17,8 +18,9 @@ MODULE rt_boundary_mod
     real(8)    :: lbox(3), ubox(3)
     real(8)    :: ibnd(3), ubnd(3)
     real(8)    :: c
+    real:: gamma = 1.4                  ! in case eos%init is never called
     !-------------- Custom Parameters ------------------------------------
-    real    :: hot_temp, cool_temp
+    real, dimension(:), pointer    :: hot_temp, cool_temp
   contains
     procedure :: init
     procedure :: set_ibc
@@ -37,6 +39,8 @@ SUBROUTINE init (self, lbox, ubox)
   logical, save:: first_time=.true.
   integer, save:: obc, ibc
   real(kind=8):: lbox(3), ubox(3)
+  real, dimension(:,:,:), pointer :: lnd, ee
+  real, dimension(:,:,:,:), pointer :: src
   namelist /rt_bc_params/ obc_treatment, ibc_treatment
   namelist /custom_bc_params/ hot_temp, cool_temp
   !----------------------------------------------------------------------------
@@ -56,9 +60,12 @@ SUBROUTINE init (self, lbox, ubox)
         obc = 0
         rewind (io%input)
         read (io%input, custom_bc_params)
+        allocate(self%hot_temp(eos%n_lambda))
+        allocate(self%cool_temp(eos%n_lambda))
      self%c = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
       self%hot_temp = self%c*(hot_temp/scaling%temp)**4
     self%cool_temp = self%c*(cool_temp/scaling%temp)**4
+    self%cool_temp = 2.31530362E-06
 !> =====================================================================
       case('reflective')
         obc = 1
@@ -77,10 +84,24 @@ SUBROUTINE init (self, lbox, ubox)
       case default ! ignore is the default one.
         ibc = 3
     end SELECT
+  !allocate(lnd(1,1,2))
+  !allocate(ee(1,1,2))
+  !allocate(src(1,1,2, eos%n_lambda))
+  !lnd = 0.
+  print *, 'before',self%cool_temp, self%hot_temp
+  !ee(:,:,1) = self%cool_temp(1)/(self%gamma - 1.)
+  !ee(:,:,2) = self%hot_temp(1)/(self%gamma - 1.)
+  
+  !call eos%lookup (shape(ee), ee=ee, lnd=lnd, &       ! call the table lookup, ...
+  !                  src=src)  
+  !self%cool_temp = self%cool_temp*src(1,1,1,:)
+  !self%hot_temp  = self%hot_temp*src(1,1,2,:)
+  !deallocate(lnd,ee,src)
   end if
   !$omp end critical (input_cr)
   self%ibc = ibc
   self%obc = obc
+
   
 print *, 'cool', self%cool_temp
 print *, 'hot', self%hot_temp
@@ -103,6 +124,13 @@ SUBROUTINE set_obc (self, ppos, i_in)
 !> Should be modified only from here on
 !> =====================================================================
 
+     if (ppos(1) <= self%lbox(1)) then
+    i_in = self%hot_temp
+  else if (ppos(1) >= self%ubox(1)) then
+    i_in = self%cool_temp
+  end if
+ 
+ 
   if (ppos(2) <= self%lbox(2)) then
     i_in = self%cool_temp
   else if (ppos(2) >= self%ubox(2)) then
@@ -114,12 +142,7 @@ SUBROUTINE set_obc (self, ppos, i_in)
   else if (ppos(3) >= self%ubox(3)) then
     i_in = self%cool_temp
   end if
-  
-    if (ppos(1) <= self%lbox(1)) then
-    i_in = self%hot_temp
-  else if (ppos(1) >= self%ubox(1)) then
-    i_in = self%cool_temp
-  end if
+ 
  
 
 END SUBROUTINE set_obc

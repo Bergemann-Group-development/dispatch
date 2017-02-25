@@ -1,8 +1,8 @@
 
 # Option groups
 #OPTS = debug
-#OPTS = full_debug
-OPTS = optimized
+OPTS = full_debug
+#OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
@@ -17,6 +17,7 @@ EXEC            = dispatch.x
 #EOS             = ideal
 #OPACITY         = stagger
 # Tomida & Hori, with opacity
+#EOS              = tabular_e
 EOS             = rt_shadow_bench
 OPACITY         = stub
 #OPACITY         = Tomida+Hori_2016

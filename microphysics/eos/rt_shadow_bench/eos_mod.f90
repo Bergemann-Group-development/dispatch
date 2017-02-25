@@ -51,12 +51,12 @@ SUBROUTINE init (self)
     gamma = self%gamma
     rewind (io%input); read (io%input, eos_params, iostat=iostat)
     if (io%master) write (io%output, eos_params)
+    self%gamma = gamma
+    self%t0   = 1./(290./scaling%temp)
+    self%rho0 = 1./(1.  /scaling%d)
+    self%sc_stf = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
   end if
   !$omp end critical (init_cr)
-  self%gamma = gamma
-  self%t0   = 1./(290./scaling%temp)
-  self%rho0 = 1./(1.  /scaling%d)
-  self%sc_stf = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
   call trace%end
 END SUBROUTINE init
 
@@ -128,7 +128,7 @@ SUBROUTINE lookup (self, dim, ee, lnd, lne, d, pg, tt, rk, src, gamma)
   if (present(rk)) then
     do i=1,size(rk,4)
       rk(:,:,:,i) = (((self%gamma-1.0)*ee_loc*self%t0*scaling%temp)**(-3.5) * &
-       (d_loc*self%rho0*scaling%d)**2)* scaling%m/scaling%l**2   
+       (d_loc*self%rho0*scaling%d)**2)* scaling%m/scaling%l**2  
     end do
   end if
   if (present(lne)) deallocate(ee_loc)

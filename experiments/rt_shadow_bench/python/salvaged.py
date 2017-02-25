@@ -38,13 +38,14 @@ def get_data(time,t_eps,datadir,prefix='',verbose=False):
     files = fnmatch.filter(os.listdir(datadir),prefix+"*.txt")
     patches=[]
     times=[]
-    for f in files:
-        ptemp = ThisPatch(datadir+f.strip('.txt'),verbose=verbose)
-        if(abs(ptemp.time-time)/(time+1.0e-99) <= t_eps):
-            patches.append(ptemp)
-        for p in patches:
-            times.append(p.time)
-    print len(patches),"patches collected for time", time
+    for t in time:
+        for f in files:
+            ptemp = ThisPatch(datadir+f.strip('.txt'),verbose=verbose)
+            if(abs(ptemp.time-t)/(t+1.0e-99) <= t_eps):
+                patches.append(ptemp)
+            for p in patches:
+                times.append(p.time)
+    print len(patches),"patches collected for times", time
     return patches
 
 def velocities(patches):
@@ -86,7 +87,7 @@ def make_yt_dict_rt(patches):
             level = p.level,
             dimensions=p.n,
             number_of_particles=0,
-            q = p.data[:,:,:,0]+1e-5))
+            q = p.data[:,:,:,0]+1e-8))
 
     return gd    
     

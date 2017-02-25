@@ -41,7 +41,6 @@ MODULE ray_geometry_v3_mod
     integer :: ID                                                       ! packet ID
     integer :: n_rays                                                   ! number of rays in this packet
     integer :: n_points                                                 ! ray lengths in this packet
-    real    :: ds                                                       ! distance between the points
     integer, dimension(:)    , pointer   :: p_id_fw => null()           ! packet ID for ray connection in forward direction
     integer, dimension(:)    , pointer   :: p_id_rev => null()          ! packet ID for ray connection in reverse direction
     integer, dimension(:)    , pointer   :: r_id_fw => null()           ! ray    ID for ray connection in forward direction
@@ -475,7 +474,6 @@ SUBROUTINE add_axis(self, dir)
   ndir%bundle(1)%packet(1)%id = 1                                       ! it's packet ID
   ndir%bundle(1)%packet(1)%n_rays   = nr                                ! number of rays in this direction
   ndir%bundle(1)%packet(1)%n_points = pmax(c)                           ! number of points per ray corresponds to n_cells in that direction
-  ndir%bundle(1)%packet(1)%ds       = self%cell_dims(c)                 ! distance the ray travels between points
                      
 
   allocate (ndir%bundle(1)%packet(1)%coords(3,pmax(c),nr))              ! create ray table, containing x|y|z loc, for all n_cells and n_rays
@@ -539,7 +537,6 @@ SUBROUTINE add_axis(self, dir)
       print *, jpck, 'packet ID', packet2%id
       print *, 'n_rays', packet2%n_rays
       print *, 'n_points',packet2%n_points
-      print *, 'ds', packet2%ds
       do ray1 = 1, packet2%n_rays
         print *,'-- ray',ray1,'--'
         print *,'b_id', packet2%b_id(ray1)
@@ -929,7 +926,6 @@ SUBROUTINE fill_single_ray_data(self, ray)
   allocate(self%coords(3, ray%n_points))                                ! create a stiff array for this ray with cell cords
   self%fwd_coords = ray%fwd                                             ! save upstream cell coords
   self%rev_coords = ray%rev                                             ! save downstream cell coords
-  self%ds = ray%ds
   pt=1
   do while (associated(ray))                                            ! loop over ray points
     self%coords(:,pt)  = ray%coords                                     ! save ray point coords
@@ -1049,7 +1045,6 @@ SUBROUTINE fill_ray_list_data(self, sray, rid)
   allocate (self%b_id(self%n_rays))
   sray => sray%head
   iray = 0
-  self%ds = sray%ds
   do while (associated(sray))                                           ! loop over all rays in the tree
     iray = iray + 1
     self%coords    (:,:,iray)    = sray%coords                          ! save cell cords
@@ -1367,7 +1362,6 @@ SUBROUTINE finish_direction(self, dir)
       print *, jpck, 'packet ID', packet2%id
       print *, 'n_rays', packet2%n_rays
       print *, 'n_points',packet2%n_points
-      print *, 'ds', packet2%ds
       do ray1 = 1, packet2%n_rays
         print *,'-- ray',ray1,'--'
         print *,'b_id', packet2%b_id(ray1)
