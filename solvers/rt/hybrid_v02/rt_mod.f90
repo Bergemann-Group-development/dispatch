@@ -249,7 +249,6 @@ SUBROUTINE init_rt (self)
   !$omp end critical (init_cr)
   
   self%nv = 1                                                           ! time slots for dedt
-  !self%nt = 1                                                           ! only one time slot FIXME 
   self%nw = 1                                                           ! no time deriv  
   self%ng = 0
   call self%patch_t%init                                                ! initialize patch
