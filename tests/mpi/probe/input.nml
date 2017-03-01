@@ -1,1 +1,1 @@
-&input wait=t n=32 /
+&input wait=t n=32 delay=5e-4 /
