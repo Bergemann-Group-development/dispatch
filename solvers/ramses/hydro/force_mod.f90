@@ -21,7 +21,7 @@ MODULE force_mod
 CONTAINS
 
 !> =============================================================================
-!> Setup a uniform initial state, with density=d0 and B=B0
+!> Choose type of initial condition
 !> =============================================================================
 SUBROUTINE init (self)
   class(force_t):: self

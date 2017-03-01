@@ -17,8 +17,6 @@ MODULE initial_mod
     integer:: seed
     real:: gamma
     logical:: mhd
-    real(8):: a(3), b(3), phi(3), d0, s0
-    real(8):: a0(3), k(3), b0(3), u0(3)
     real(8):: time
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
@@ -33,50 +31,36 @@ CONTAINS
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
 SUBROUTINE init (self)
-   class(initial_t):: self
-   integer, save:: seed=-33
-   logical, save:: mhd=.false.
-   real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0
-   character(len=32), save:: type='single_solenoidal'
-   logical, save:: first_time=.true.
-   namelist /initial_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, type
-   !----------------------------------------------------------------------------
-   call trace_begin('initial_t%init')
-   !$omp critical (input_cr)
-   if (first_time) then
-     first_time = .false.
-     rewind (io%input)
-     read (io%input, initial_params)
-     mhd = mhd .and. any(b0 /= 0.0)
-     if (io%master) write (*, initial_params)
-   end if
-   !$omp end critical (input_cr)
-   self%seed   = seed
-   self%k      = k
-   self%a0     = a0
-   self%b0     = b0
-   self%u0     = u0
-   self%d0     = d0
-   self%s0     = s0
-   self%mhd    = mhd
-   self%time   = 0d0
-   self%gamma  = gamma
-   select case (type)
-   case ('single_solenoidal')
-     self%selected => single_solenoidal
-   case ('single_compressive')
-     self%selected => single_compressive
-   case ('single_advection')
-     self%selected => single_advection
-   case ('exa256')
-     self%selected => exa256
-   case ('raw')
-     self%selected => raw
-   case default
-     print*,'UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':'
-     stop
-   end select
-   call trace_end
+  class(initial_t):: self
+  character(len=32), save:: type='single_solenoidal'
+  logical, save:: first_time=.true.
+  namelist /initial_params/ type
+  !----------------------------------------------------------------------------
+  call trace_begin('initial_t%init')
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, initial_params)
+    if (io%master) write (*, initial_params)
+  end if
+  !$omp end critical (input_cr)
+  select case (type)
+  case ('single_solenoidal')
+    self%selected => single_solenoidal
+  case ('single_compressive')
+    self%selected => single_compressive
+  case ('single_advection')
+    self%selected => single_advection
+  case ('exa256')
+    self%selected => exa256
+  case ('raw')
+    self%selected => raw
+  case default
+    print*,'UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':'
+    stop
+  end select
+  call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -88,34 +72,50 @@ END SUBROUTINE cleanup
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
 SUBROUTINE single_solenoidal (self, m, ff)
-  class(initial_t)      :: self
-  class(mesh_t)          :: m(3)
+  class(initial_t) :: self
+  class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
-  type(random_t)        :: random
-  integer               :: ix, iy, iz
-  real(8)               :: kx, ky, kz
-  integer, save         :: itimer=0
+  type(random_t) :: random
+  integer        :: ix, iy, iz
+  real(8)        :: kx, ky, kz
+  integer, save  :: seed=-33
+  logical, save  :: mhd=.false.
+  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
+  real(8), save  :: t_turn=0.1
+  logical, save  :: first_time=.true.
+  namelist /solenoidal_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
-  self%phi = 0.0
+  if (first_time) then
+    !$omp critical (input_cr)
+    if (first_time) then
+      first_time = .false.
+      rewind (io%input)
+      read (io%input, solenoidal_params)
+      mhd = mhd .and. any(b0 /= 0.0)
+      if (io%master) write (*, solenoidal_params)
+    end if
+    !$omp end critical (input_cr)
+  end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*self%k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + self%phi(3)
+    kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
+      ky   =  pi2*k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,idx%d ) = self%d0
-        ff(ix,iy,iz,idx%px) = self%a0(1)*(sin(ky)+sin(kz))
-        ff(ix,iy,iz,idx%py) = self%a0(2)*(sin(kz)+sin(kx))
-        ff(ix,iy,iz,idx%pz) = self%a0(3)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,idx%e ) = self%d0*csound**2/(gamma*(gamma-1)) + &
+        kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
+        ff(ix,iy,iz,idx%d ) = d0
+        ff(ix,iy,iz,idx%px) = a0(1)*(sin(ky)+sin(kz))
+        ff(ix,iy,iz,idx%py) = a0(2)*(sin(kz)+sin(kx))
+        ff(ix,iy,iz,idx%pz) = a0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
           half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         if (self%mhd) then
-          ff(ix,iy,iz,idx%bx) = self%b0(1)*(sin(kx)+sin(ky))
-          ff(ix,iy,iz,idx%by) = self%b0(2)*(sin(kx)+sin(ky))
-          ff(ix,iy,iz,idx%bz) = self%b0(3)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,idx%bx) = b0(1)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,idx%by) = b0(2)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,idx%bz) = b0(3)*(sin(kx)+sin(ky))
         end if
       end do
     end do
@@ -128,34 +128,50 @@ END SUBROUTINE single_solenoidal
 !> Initialize a single 3-D wavenumber, with non-random amplitude and zero phase
 !> =============================================================================
 SUBROUTINE single_compressive (self, m, ff)
-  class(initial_t)      :: self
-  class(mesh_t)          :: m(3)
+  class(initial_t) :: self
+  class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
-  type(random_t)        :: random
-  integer               :: ix, iy, iz
-  real(8)               :: kx, ky, kz
-  integer, save         :: itimer=0
+  type(random_t) :: random
+  integer        :: ix, iy, iz
+  real(8)        :: kx, ky, kz
+  integer, save  :: seed=-33
+  logical, save  :: mhd=.false.
+  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
+  real(8), save  :: t_turn=0.1
+  logical, save  :: first_time=.true.
+  namelist /compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
-  self%phi = 0.0
+  if (first_time) then
+    !$omp critical (input_cr)
+    if (first_time) then
+      first_time = .false.
+      rewind (io%input)
+      read (io%input, compressive_params)
+      mhd = mhd .and. any(b0 /= 0.0)
+      if (io%master) write (*, compressive_params)
+    end if
+    !$omp end critical (input_cr)
+  end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*self%k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + self%phi(3)
+    kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
+      ky   =  pi2*k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,idx%d ) = self%d0
-        ff(ix,iy,iz,idx%px) = self%u0(1)*sin(kx)
-        ff(ix,iy,iz,idx%py) = self%u0(2)*sin(ky)
-        ff(ix,iy,iz,idx%pz) = self%u0(3)*sin(kz)
-        ff(ix,iy,iz,idx%e ) = self%d0*csound**2/(gamma*(gamma-1)) + &
+        kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
+        ff(ix,iy,iz,idx%d ) = d0
+        ff(ix,iy,iz,idx%px) = u0(1)*sin(kx)
+        ff(ix,iy,iz,idx%py) = u0(2)*sin(ky)
+        ff(ix,iy,iz,idx%pz) = u0(3)*sin(kz)
+        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
           half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         if (self%mhd) then
-          ff(ix,iy,iz,idx%bx) = self%b0(1)
-          ff(ix,iy,iz,idx%by) = self%b0(2)
-          ff(ix,iy,iz,idx%bz) = self%b0(3)
+          ff(ix,iy,iz,idx%bx) = b0(1)
+          ff(ix,iy,iz,idx%by) = b0(2)
+          ff(ix,iy,iz,idx%bz) = b0(3)
         end if
       end do
     end do
@@ -168,34 +184,49 @@ END SUBROUTINE single_compressive
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
 SUBROUTINE single_advection (self, m, ff)
-  class(initial_t)        :: self
-  class(mesh_t)          :: m(3)
+  class(initial_t) :: self
+  class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
-  type(random_t)        :: random
-  integer               :: ix, iy, iz
-  real(8)               :: kx, ky, kz
-  integer, save         :: itimer=0
+  type(random_t) :: random
+  integer        :: ix, iy, iz
+  real(8)        :: kx, ky, kz
+  integer, save  :: seed=-33
+  logical, save  :: mhd=.false.
+  logical, save  :: first_time=.true.
+  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
+  namelist /advection_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma
+  integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t:single_compressive', itimer=itimer)
-  self%phi = 0.0
+  call trace_begin('initial_t:single_advection', itimer=itimer)
+  if (first_time) then
+    !$omp critical (input_cr)
+    if (first_time) then
+      first_time = .false.
+      rewind (io%input)
+      read (io%input, advection_params)
+      mhd = mhd .and. any(b0 /= 0.0)
+      if (io%master) write (*, advection_params)
+    end if
+    !$omp end critical (input_cr)
+  end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*self%k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + self%phi(3)
+    kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
+      ky   =  pi2*k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,idx%d ) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
-        ff(ix,iy,iz,idx%px) = self%d0*self%u0(1)
-        ff(ix,iy,iz,idx%py) = self%d0*self%u0(2)
-        ff(ix,iy,iz,idx%pz) = self%d0*self%u0(3)
-        ff(ix,iy,iz,idx%e ) = self%d0*csound**2/(gamma*(gamma-1)) + &
+        kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
+        ff(ix,iy,iz,idx%d ) = d0*(1.+a0(1)*sin(kx)+a0(2)*sin(ky)+a0(3)*sin(kz))
+        ff(ix,iy,iz,idx%px) = d0*u0(1)
+        ff(ix,iy,iz,idx%py) = d0*u0(2)
+        ff(ix,iy,iz,idx%pz) = d0*u0(3)
+        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
           half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         if (self%mhd) then
-          ff(ix,iy,iz,idx%bx) = self%b0(3)*sin(kz)
-          ff(ix,iy,iz,idx%by) = self%b0(1)*sin(kx)
-          ff(ix,iy,iz,idx%bz) = self%b0(2)*sin(ky)
+          ff(ix,iy,iz,idx%bx) = b0(3)*sin(kz)
+          ff(ix,iy,iz,idx%by) = b0(1)*sin(kx)
+          ff(ix,iy,iz,idx%bz) = b0(2)*sin(ky)
         end if
       end do
     end do

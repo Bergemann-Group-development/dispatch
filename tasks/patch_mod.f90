@@ -1117,7 +1117,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           if (n_lines<=0) then
             !$omp critical (info_cr2)
             print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
-                         //'6....+....7....+....8....+....9....+....0....+....ntsk   nq ' &
+                       //'6....+....7....+....8....+....9....+....0....+....1 ntsk   nq ' &
                        //' chk rdy upd snt prb unp dly snq rcq  BV'
             n_lines = max_lines
             !$omp end critical (info_cr2)
