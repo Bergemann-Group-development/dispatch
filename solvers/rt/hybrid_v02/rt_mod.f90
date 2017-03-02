@@ -92,10 +92,8 @@ MODULE rt_mod
     procedure :: density_weight_factor
     procedure :: dnload
     procedure :: get_boundary
-    procedure :: get_boundary_test
     procedure :: execute_chain
     procedure :: finish
-    procedure :: finish_rotate
     procedure :: has_OB
     procedure :: has_IB
     procedure :: init => init_rt
@@ -108,7 +106,6 @@ MODULE rt_mod
     procedure :: ray_vol_map3
     procedure :: ray_vol_map4
     procedure :: ring_connects_to
-    procedure :: rotate => rotate_rt
     procedure :: solve_integral
     procedure :: solve_feautrier
     procedure :: update => update_rt
@@ -250,6 +247,7 @@ SUBROUTINE init_rt (self)
   end if
   !$omp end critical (init_cr)
   
+  self%do_output = do_output
   self%nv = 1                                                           ! time slots for dedt
   self%nw = 1                                                           ! no time deriv  
   self%ng = 0
@@ -498,8 +496,11 @@ SUBROUTINE update_rt (self)
                    rk=self%rk, src=self%src)  
   
   self%data_ready =.true.                                               ! flag, that internal data is ready
-  print *, self%id, 'rk', minval(self%rk), maxval(self%rk)
-  print *, self%id, 'src', minval(self%src), maxval(self%src)
+  
+  if(io%verbose >1) then
+    print *, self%id, 'rk', minval(self%rk), maxval(self%rk)
+    print *, self%id, 'src', minval(self%src), maxval(self%src)
+  end if
   call trace%end (itimer)
   call self%nudge                                                       ! nudge the chain heads
 END SUBROUTINE update_rt 
@@ -539,6 +540,8 @@ SUBROUTINE nudge (self)
     if (io%verbose > 4) print *, 'l_chain',ring%head%l_chain
     
     ring%head%n_ready = ring%head%n_ready+1                             ! nudge the master ring
+    if (ring%head%nudged(ring%chain_nm)) print *,'this already was nudged..'
+    if (ring%head%n_ready > ring%head%l_chain) print *,'double nudging?'
     ring%head%nudged(ring%chain_nm) = .true.                            ! mark myself as done in the ready array
         
     if (all(ring%head%nudged)) call self%execute_chain(ring%head)       ! execute the chain, when all rings are ready
@@ -570,11 +573,13 @@ SUBROUTINE execute_chain (self, head)
   i_in = 0
   i_out=0
   do while (associated(ring))
+  
     task => ring%link%task                                              ! get the patch of this chain ring
     select type (task)
     class is (rt_t)
     rt_patch => task
     end select
+    
     if(associated(prev)) then                                           ! if there was a ring before me, take the intensities from it
       do ray=1, ring%bundle%n_rays
         I_in(ray,:) = ring%packet_data(ray)%in
@@ -614,19 +619,21 @@ SUBROUTINE get_boundary (self, ring, I_in)
   real, dimension(:,:), pointer :: I_in
   !.....................................................................
   class(packet_t), pointer :: packet
-  integer :: pck, ray
+  integer :: pck, ray, ir
   real(kind=8) :: ppos(3)
   !---------------------------------------------------------------------
   !> -------------------------------------------------------------------
   !> If the ring is adjacent to the outer boundary
   !> -------------------------------------------------------------------
   if (ring%BC(1)) then
+    ir =1
     do pck =1, ring%bundle%n_packets                                    ! loop over all packets in this bundle
       packet => ring%bundle%packet(pck)                                 ! pick a packet
       do ray = 1, packet%n_rays                                         ! loop over all rays in this packet
         ppos = self%absolute_point_position &                           ! for each ray index in the packet, find a point position
         (ring, packet, ray, 1, ring%direction)
-        call rt_boundary%set_obc (ppos, I_in(ray,:))                    ! get the boundary value
+        call rt_boundary%set_obc (ppos, I_in(ir,:))                     ! get the boundary value
+        ir = ir+1
       end do
     end do
   end if
@@ -656,31 +663,6 @@ SUBROUTINE get_boundary (self, ring, I_in)
   
 END SUBROUTINE get_boundary
 
-SUBROUTINE get_boundary_test (self, ring, I_in)
-  class(rt_t) :: self
-  class(chain_ring_t), pointer :: ring, upstream
-  real, dimension(:,:), pointer :: I_in
-  !---------------------------------------------------------------------
-  class(packet_t), pointer :: packet
-  integer :: pck, ray
-  real(kind=8) :: ppos(3)
-  !---------------------------------------------------------------------
-  if (ring%BC(1)) then
-    do pck =1, ring%bundle%n_packets
-      packet => ring%bundle%packet(pck)
-      do ray = 1, packet%n_rays
-        if (ring%direction==1) then
-        I_In(ray,:) = ray*ring%bundle%axis/10.
-        else
-        I_In(ray,:) = -ray*ring%bundle%axis/10.
-        end if
-      end do
-    end do
-  end if
-  
-  ! inner boundary should modify the ray lengths!!
-
-END SUBROUTINE get_boundary_test
 !> =====================================================================
 !> Check if the rays in self match up in the downstream with the rays in other
 !> INPUT: self and nbor are rt_patches. mine is my ring i am testing
@@ -867,10 +849,6 @@ SUBROUTINE finish(self)
   self%data_ready = .false.
   call self%boundary_conditions
   if (self%do_output) call self%output
-  print *, self%id, 'minmax dedt',minval(self%dedt), maxval(self%dedt) 
-  call self%courant_condition
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  call self%finish_rotate
   deallocate (self%lnd, self%lne, self%rk, self%src)                                       ! deallocate scratch
 END SUBROUTINE finish
 
@@ -904,7 +882,6 @@ SUBROUTINE solve_integral (self, ring, q_in, q_out, q_in2, q_out2)
   real, dimension(:,:,:), pointer :: s, rk, dtau, exp0, q
   real, dimension(:,:),   pointer :: dwf, q_in0, q_out0
   integer                         :: nrays, npt, nwb, ipck, ir
-  logical :: one_p
   integer, save                   :: itimer=0
   class(task_t), pointer :: tmp
   ! --------------------------------------------------------------------
@@ -914,16 +891,13 @@ SUBROUTINE solve_integral (self, ring, q_in, q_out, q_in2, q_out2)
   do ipck = 1, ring%bundle%n_packets                                    ! loop over packets
     packet => ring%bundle%packet(ipck)                                  ! pick a packet
     nrays =  packet%n_rays                                              ! number of rays in this packet
-    
     !> -----------------------------------------------------------------
     !> RT solvers need at least 3 points to work with, as they use
     !> derivatives. Rays, shorter, than 3 points, have to be extended
     !> to patch boundaries to have accurate solutions.
     !> TODO: inner boundaries modify npt
     !> -----------------------------------------------------------------
-
-      one_p = .true.
-      npt = packet%n_points + 2
+    npt = packet%n_points + 2
 
  
     !> -----------------------------------------------------------------
@@ -945,13 +919,11 @@ SUBROUTINE solve_integral (self, ring, q_in, q_out, q_in2, q_out2)
     !> -----------------------------------------------------------------
     !> map the quantities onto rays
     !> -----------------------------------------------------------------
-    call self%ray_vol_map4(packet, self%src, s, one_p)                  ! map source function to rays
-    call self%ray_vol_map4(packet, self%rk, rk, one_p)                  ! map opacities to rays
+    call self%ray_vol_map4(packet, self%src, s)                         ! map source function to rays
+    call self%ray_vol_map4(packet, self%rk, rk)                         ! map opacities to rays
     call self%optical_depth_centered(ring%ds, rk, dtau)                 ! optical depth is centered for integral formulation
-    call self%ray_vol_map3(packet, self%lnd, dwf, one_p)                ! density weight factor
-    dwf = exp(dwf) * ring%ds  
-    if (io%verbose>2) &
-        print *,'dtau',self%id, minval(dtau), maxval(dtau)
+    call self%ray_vol_map3(packet, self%lnd, dwf)                       ! density weight factor
+    dwf = exp(dwf) * ring%ds
 
 #if defined __INTEL_COMPILER
       exp0 = 2**(-dtau*1.44269504) 
@@ -960,19 +932,20 @@ SUBROUTINE solve_integral (self, ring, q_in, q_out, q_in2, q_out2)
 #endif        
     
     if (ring%direction ==1) then
-      call rt_solver%forward (dtau, exp0, s, q_in0, q, q_out0, one_p)   ! solve forward
+      call rt_solver%forward (dtau, exp0, s, q_in0, q, q_out0)          ! solve forward
     else
-      call rt_solver%reverse (dtau, exp0, s, q_in0, q, q_out0, one_p)   ! solve reverse
+      call rt_solver%reverse (dtau, exp0, s, q_in0, q, q_out0)          ! solve reverse
     end if
     
     do ir=1, packet%n_rays
       q_out(packet%b_id(ir),:) = q_out0(ir,:)                           ! store the leaving intensities to their right spots
     end do
-    
-    call self%update_q(packet, q, dwf, ring%id, one_p)                  ! update the heating rates
+
+    call self%update_q(packet, q, dwf, ring%id)                         ! update the heating rates
        
     deallocate (s, rk, dtau, exp0, q, dwf, q_out0, q_in0)   
   end do
+
   call trace_end (itimer)
 END SUBROUTINE solve_integral
 
@@ -990,7 +963,6 @@ SUBROUTINE solve_feautrier (self, ring, i_in, i_out1, i_in2, i_out2)
   real, dimension(:,:), pointer :: dwf
   real, dimension(:,:,:), pointer :: s, rk, dtau, exp0, q
   integer, save                   :: itimer=0
-  logical :: one_p
   ! --------------------------------------------------------------------
   call trace_begin ('rt_t%solve_feautrier', itimer=itimer)
   
@@ -1006,16 +978,16 @@ SUBROUTINE solve_feautrier (self, ring, i_in, i_out1, i_in2, i_out2)
     allocate(exp0(nrays, nwb, npt+2))
     allocate(q   (nrays, nwb, npt+2))
     allocate(dwf (nrays,      npt+2))
-    call self%ray_vol_map4(packet, self%src, s, one_p)                  ! map source function to rays
-    call self%ray_vol_map4(packet, self%rk, rk, one_p)                  ! map opacities to rays
+    call self%ray_vol_map4(packet, self%src, s)                         ! map source function to rays
+    call self%ray_vol_map4(packet, self%rk, rk)                         ! map opacities to rays
     call self%optical_depth_staggered(ring%ds, rk, dtau)                ! optical depth is staggered for Feautrier formulation
-    call self%ray_vol_map3(packet, self%lnd, dwf, one_p)                ! density weight factor
+    call self%ray_vol_map3(packet, self%lnd, dwf)                       ! density weight factor
     dwf = dwf * ring%ds  
     if (io%verbose>1) &
         print *,'dtau',self%id, minval(dtau), maxval(dtau)
     
     call rt_solver%transfer (dtau, s, I_in, I_in2, q, I_out1, I_out2)        ! solve bi-directional
-    call self%update_q(packet, q, dwf, ring%id, one_p)
+    call self%update_q(packet, q, dwf, ring%id)
     
     deallocate (s, rk, dtau, exp0, q, dwf)
   end do
@@ -1026,12 +998,11 @@ END SUBROUTINE solve_feautrier
 !> =====================================================================
 !> Map cell data onto rays
 !> =====================================================================
-SUBROUTINE ray_vol_map4 (self, packet, in, out, one_p)
+SUBROUTINE ray_vol_map4 (self, packet, in, out)
   class(rt_t) :: self
   class(packet_t), pointer :: packet
   real, dimension(:,:,:)   , pointer, intent(out) :: out
   real, dimension(:,:,:,:) , pointer, intent(in)  :: in
-  logical :: one_p
   !.....................................................................
   integer, dimension(:,:,:), pointer :: cell
   integer :: p(3), p2(3), ray, pt, nwb, wl, lp
@@ -1040,7 +1011,7 @@ SUBROUTINE ray_vol_map4 (self, packet, in, out, one_p)
   nwb = size(out,2)
   lp  = size(out,3)
   !> -------------------------------------------------------------------
-  !> for short rays, we need to consider the first and last points separately,
+  !> we need to consider the first and last points separately,
   !> as they do not belong to these rays implicitly.
   !> -------------------------------------------------------------------
 
@@ -1082,12 +1053,11 @@ END SUBROUTINE ray_vol_map4
 !> =====================================================================
 !> Map cell data onto rays. In this case, it is wavelenght independent.
 !> =====================================================================
-SUBROUTINE ray_vol_map3 (self, packet, in, out, one_p)
+SUBROUTINE ray_vol_map3 (self, packet, in, out)
   class(rt_t) :: self
   class(packet_t), pointer :: packet
   real, dimension(:,:)   , pointer, intent(out) :: out
   real, dimension(:,:,:) , pointer, intent(in)  :: in
-  logical :: one_p
   !.....................................................................
   integer, dimension(:,:,:), pointer :: cell
   integer :: p(3), ray, pt, lp
@@ -1109,7 +1079,7 @@ SUBROUTINE ray_vol_map3 (self, packet, in, out, one_p)
 END SUBROUTINE ray_vol_map3
 
 
-SUBROUTINE update_q (self, packet, q, dwf, ib, one_p)
+SUBROUTINE update_q (self, packet, q, dwf, ib)
   class(rt_t) :: self
   class(packet_t), pointer :: packet
   real, dimension(:,:,:), pointer :: q
@@ -1118,7 +1088,6 @@ SUBROUTINE update_q (self, packet, q, dwf, ib, one_p)
   integer, dimension(:,:,:), pointer :: cell
   integer :: p(3), wl, ray, pt, ib
   integer, save:: itimer=0
-  logical :: one_p
   !---------------------------------------------------------------------
   call trace_begin ('rt_t%update_q', 4, itimer=itimer)
   
@@ -1131,7 +1100,7 @@ SUBROUTINE update_q (self, packet, q, dwf, ib, one_p)
       do wl =1, size(q,2)
         qq(p(1),p(2),p(3)) = &
         qq(p(1),p(2),p(3)) + q(ray,wl,pt+1)* self%w_lambda(wl) * &
-        self%w_bundle(ib) * dwf(ray,pt+1)
+        self%w_bundle(ib)  * dwf(ray,pt+1)
       end do
     end do
   end do
@@ -1246,83 +1215,6 @@ SUBROUTINE boundary_conditions (self)
   !end associate
   !call trace%end
 END SUBROUTINE boundary_conditions
-
-SUBROUTINE rotate_rt (self)
-  class(rt_t):: self
-  integer:: iv, nv, new, i
-  real(8):: time
-  integer, save:: itimer=0
-  !.............................................................................
-  call trace_begin ('task_mod::rotate',itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Call timestep update procedure to fill the next time slot with values
-  !-----------------------------------------------------------------------------
-
-  time = self%time + self%dtime
-  !$omp atomic write
-  self%time = time
-  call trace_end (itimer)
-END SUBROUTINE rotate_rt
-
-SUBROUTINE finish_rotate (self)
-  class(rt_t):: self
-  integer:: iv, nv, new, i
-  real(8):: time
-  integer, save:: itimer=0
-  real(8), pointer:: rptr
-  integer, pointer:: iptr
-  !.............................................................................
-  call trace_begin ('task_mod::rotate',itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Call timestep update procedure to fill the next time slot with values
-  !-----------------------------------------------------------------------------
-  if (io%verbose > 1) then
-    write (io_unit%log,'(a,7i10)')   'task_mod::rotate iit =', self%iit
-    write (io_unit%log,'(a,7f10.6)') 'task_mod::rotate   t =', self%t(self%iit)
-  end if
-  !-----------------------------------------------------------------------------
-  ! Time slot rotation.  Note that self%time should be the LAST of these
-  ! updates, since we do not want to enforce a critical region, and the
-  ! new self%time is what a task is judged on!  Also, note that the only time
-  ! slot information accessed from other tasks is self%it, self%time, self%iit,
-  ! self%t(iit(1:nt-1)), and self%dt(iit(1:nt-1)).  The iit((nt) entries are
-  ! not accessed.
-  !-----------------------------------------------------------------------------
-  !!omp critical (time_cr)
-  time = self%time
-  rptr => self%dt(self%it)
-  !$omp atomic write
-  rptr = self%dtime                                     ! just updated
-  ! ZEUS determines a new time step at the end of its update; this is to
-  ! prevent the clobbering of the updated time step; FIXME!
-  if (trim(self%kind) /= 'zeus_mhd_patch') then
-    self%dt(self%new)= self%dtime                         ! next estimate
-  end if
-  self%t(self%new) = time                               ! initial time
-  new = self%new
-  !$omp atomic write
-  self%it = new                                         ! update time slot, new
-  self%new = mod(self%new,self%nt)+1                    ! increment / rotate
-  do i=1,self%nt-1
-    iptr => self%iit(i)
-    !$omp atomic write
-    iptr = self%iit(i+1)
-  end do
-  iptr => self%iit(self%nt)
-  !$omp atomic write
-  iptr = self%new                                       ! new right-most slot
-    !$omp atomic update
-  self%istep = self%istep + 1
-  if (io%verbose>2) &
-   write (io_unit%log,*) 'task id:',self%id,'  it:',self%it,'  new:',self%new
-  if (io%verbose>3) &
-   write (io_unit%log,*) 'task iit:', self%iit
-  if (io%verbose>3) &
-   write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
-  !!omp end critical (time_cr)
-  nullify (rptr, iptr)
-  call trace_end (itimer)
-END SUBROUTINE finish_rotate
 
 
 END MODULE rt_mod

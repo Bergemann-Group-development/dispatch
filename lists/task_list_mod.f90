@@ -263,7 +263,8 @@ SUBROUTINE update (self)
     ! Since output of a task may be time consuming, wait with this until the task
     ! has been used for all other purposes
     !-----------------------------------------------------------------------------
-    call task%output (self%name)                        ! check output
+    
+    if (task%kind/='rt_patch') call task%output (self%name)             ! check output
     call task%clear (bits%busy)                         ! clear busy bit
     !$omp atomic write
     stalled = 0

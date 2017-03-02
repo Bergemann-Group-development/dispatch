@@ -31,132 +31,11 @@ SUBROUTINE init (self)
   self%transfer  => feautrier
 END SUBROUTINE init
 
-!> =============================================================================
-!> Integral solution method
-!> =============================================================================
-SUBROUTINE integral_forward2 (self, dtau, ex0, S, I_in, q, I_out, one_p)
-  implicit none
-  class (rt_solver_t):: self
-  real, dimension(:,:,:), pointer :: dtau, ex0, S, q
-  real, dimension(:,:)   :: I_in, I_out
-  logical :: one_p
-!-----------------------------------------------------------------------
-!
-!  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
-! Output: Q(1:n-1), qfw(n-1)
-!
-! The input is the source functions and opacities at all points, the net
-! forward intensity (I-S) at the 1st point and the net reverse intensity
-! at the last point.  As a result, we get the net bi-directional intensity
-! everywhere, and also the outgoing forward and reverse intensities at
-! points number 1 and np.
-!
-! The equations solved are Q' = Q - dS/dtau in the forward direction and
-! Q' = -Q + dS/dtau in the reverse direction.  S is assumed to be quadratic,
-! so dS/dtau is assumed to be linear in tau.  The analytic solution may
-! be written as a linear combination of the formal solution for constant
-! and linear source functions.
-!
-!-----------------------------------------------------------------------
-  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
-  real(kind=8) :: ctau
-  integer i, n, m, w, j, k
-!-----------------------------------------------------------------------
-!
-  m = size(s,1)
-  w = size(s,2)
-  n = size(s,3)
-  do i=2,n
-    do j = 1, w
-      do k = 1, m
-    ex1(k,j,i) = 1.-ex0(k,j,i)
-    ex2(k,j,i) = ex1(k,j,i) - dtau(k,j,i)*ex0(k,j,i)
-    ds1(k,j,i) = (s(k,j,i) - s(k,j,i-1)) / dtau(k,j,i)                  ! half-point centered dS/dtau
-      end do
-    end do
-  end do 
-  
-  
-!
-!  dS/dtau and d2S/dtau2 (3a+5m+1d)
-!
-  do i=2,n-1
-    do j=1,w
-      do k=1,m
-        ctau = 1. / (dtau(k,j,i+1) + dtau(k,j,i))
-        d1s(k,j,i) =(ds1(k,j,i+1) * dtau(k,j,i) &
-                   + ds1(k,j,i  ) * dtau(k,j,i+1)) * ctau               ! dS/dtau, 2nd. order accurate
-        d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2. * ctau          ! d2S/dtau2, 2nd. order accurate
-      end do
-    end do  
-  end do
-  
-  do j = 1, w
-   do k = 1, m
-     d2s(k,j,1) = d2s(k,j,2)                                            ! assume constant d2S/dtau2
-     d1s(k,j,1) = d1s(k,j,2) - dtau(k,j,2)*d2s(k,j,2)                   ! extrapolate to 1
-     d2s(k,j,n) = d2s(k,j,n-1)
-     d1s(k,j,n) = d1s(k,j,n-1) - dtau(k,j,n)*d2s(k,j,n)
-    end do
-  end do
-  
-  if (one_p) then
-    do j = 1, w
-     do k = 1, m
-       q(k,j,2) = I_in(k,j) - s(k,j,2)                                    ! initial forward Q
-      end do
-    end do
-  else
-    do j = 1, w
-     do k = 1, m
-       q(k,j,1) = I_in(k,j) - s(k,j,1)                                    ! initial forward Q
-      end do
-    end do
-  end if
-  
-  if (one_p) then
-    do i=3,n
-      do j = 1, w
-        do k = 1, m
-          q(k,j,i) = q(k,j,i-1) *ex0(k,j,i) &
-                   - d1s(k,j,i) *ex1(k,j,i) &
-                   + d2s(k,j,i) *ex2(k,j,i)                               ! formal solution forward
-        end do
-      end do  
-    end do
-  else
-    do i=2,n
-      do j = 1, w
-        do k = 1, m
-          q(k,j,i) = q(k,j,i-1) *ex0(k,j,i) &
-                   - d1s(k,j,i) *ex1(k,j,i) &
-                   + d2s(k,j,i) *ex2(k,j,i)                               ! formal solution forward
-        end do
-      end do  
-    end do
-  end if
-  
-  if (one_p) then
-    do j = 1, w
-      do k = 1, m
-        I_out(k,j) = q(k,j,n-1) + s(k,j,n-1)                            ! forward boundary intensity if a single/two point ray is formulated
-      end do
-    end do  
-  else
-    do j = 1, w
-      do k = 1, m
-        I_out(k,j) = q(k,j,n) + s(k,j,n)                                ! forward boundary intensity
-      end do
-    end do  
-    
-  end if
-
-END SUBROUTINE integral_forward2                         ! 2d 13m 11a 1e ! 26f + 1e
 
 !> =============================================================================
 !> Integral solution method
 !> =============================================================================
-SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q, q_out, one_p)
+SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q, q_out)
   implicit none
   class (rt_solver_t):: self
   real, dimension(:,:,:), pointer :: dtau, ex0, S, q
@@ -224,12 +103,12 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q, q_out, one_p)
   
   do j = 1, w
    do k = 1, m
-     q(k,j,1) = q_in(k,j)                                               ! initial forward Q
+     q(k,j,2) = q_in(k,j)                                               ! initial forward Q
     end do
   end do
 
   
-  do i=2,n-1
+  do i=3,n-1
     do j = 1, w
       do k = 1, m
         q(k,j,i) = q(k,j,i-1) *ex0(k,j,i) &
@@ -249,12 +128,11 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q, q_out, one_p)
 
 END SUBROUTINE integral_forward                         ! 2d 13m 11a 1e ! 26f + 1e
 
-SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out, one_p)
+SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out)
   implicit none
   class (rt_solver_t):: self
   real, dimension(:,:,:), pointer :: dtau, ex0, S, q
   real, dimension(:,:)   :: q_in, q_out
-  logical :: one_p
 !-----------------------------------------------------------------------
 !
 !  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
@@ -317,11 +195,11 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out, one_p)
   
   do j = 1, w
     do k = 1, m
-      q(k,j,n) = q_in(k,j)                                              ! initial forward Q
+      q(k,j,n-1) = q_in(k,j)                                              ! initial forward Q
     end do
   end do
 
-  do i=n-1,2,-1
+  do i=n-2,2,-1
     do j = 1, w
       do k = 1, m
         q(k,j,i) = q(k,j,i+1) *ex0(k,j,i+1) &
@@ -340,125 +218,6 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out, one_p)
     
 
 END SUBROUTINE integral_reverse                         ! 2d 13m 11a 1e ! 26f + 1e
-
-SUBROUTINE integral_reverse2 (self, dtau, ex0, S, I_in, q, I_out, one_p)
-  implicit none
-  class (rt_solver_t):: self
-  real, dimension(:,:,:), pointer :: dtau, ex0, S, q
-  real, dimension(:,:)   :: I_in, I_out
-  logical :: one_p
-!-----------------------------------------------------------------------
-!
-!  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
-! Output: Q(1:n-1), qfw(n-1)
-!
-! The input is the source functions and opacities at all points, the net
-! forward intensity (I-S) at the 1st point and the net reverse intensity
-! at the last point.  As a result, we get the net bi-directional intensity
-! everywhere, and also the outgoing forward and reverse intensities at
-! points number 1 and np.
-!
-! The equations solved are Q' = Q - dS/dtau in the forward direction and
-! Q' = -Q + dS/dtau in the reverse direction.  S is assumed to be quadratic,
-! so dS/dtau is assumed to be linear in tau.  The analytic solution may
-! be written as a linear combination of the formal solution for constant
-! and linear source functions.
-!
-!-----------------------------------------------------------------------
-  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s, st
-  real(kind=8) :: ctau
-  integer i, n, m, w, j, k
-!-----------------------------------------------------------------------
-!
-  m = size(s,1)
-  w = size(s,2)
-  n = size(s,3)
-  do i=2,n
-    do j = 1, w
-      do k = 1, m
-    ex1(k,j,i) = 1.-ex0(k,j,i)
-    ex2(k,j,i) = ex1(k,j,i) - dtau(k,j,i)*ex0(k,j,i)
-    ds1(k,j,i) = (s(k,j,i) - s(k,j,i-1)) / dtau(k,j,i)                  ! half-point centered dS/dtau
-      end do
-    end do
-  end do 
-  
-  
-!
-!  dS/dtau and d2S/dtau2 (3a+5m+1d)
-!
-  do i=2,n-1
-    do j=1,w
-      do k=1,m
-        ctau = 1. / (dtau(k,j,i+1) + dtau(k,j,i))
-        d1s(k,j,i) =(ds1(k,j,i+1) * dtau(k,j,i) &
-                   + ds1(k,j,i  ) * dtau(k,j,i+1)) * ctau               ! dS/dtau, 2nd. order accurate
-        d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2. * ctau          ! d2S/dtau2, 2nd. order accurate
-      end do
-    end do  
-  end do
-  
-  do j = 1, w
-   do k = 1, m
-     d2s(k,j,1) = d2s(k,j,2)                                            ! assume constant d2S/dtau2
-     d1s(k,j,1) = d1s(k,j,2) - dtau(k,j,2)*d2s(k,j,2)                   ! extrapolate to 1
-     d2s(k,j,n) = d2s(k,j,n-1)
-     d1s(k,j,n) = d1s(k,j,n-1) - dtau(k,j,n)*d2s(k,j,n)
-    end do
-  end do
-  
-  if (one_p) then
-    do j = 1, w    
-      do k = 1, m
-        q(k,j,n-1) = I_in(k,j) - s(k,j,n-1)                             ! initial forward Q
-      end do
-    end do  
-  else
-    do j = 1, w
-      do k = 1, m
-        q(k,j,n) = I_in(k,j) - s(k,j,n)                                 ! initial forward Q
-      end do
-    end do
-  end if
-  
-  if (one_p) then
-    do i=n-2,1,-1
-      do j = 1, w
-        do k = 1, m
-          q(k,j,i) = q(k,j,i+1) *ex0(k,j,i+1) &
-                   + d1s(k,j,i) *ex1(k,j,i+1) &
-                   + d2s(k,j,i) *ex2(k,j,i+1)                             ! formal solution reverse
-        end do
-      end do  
-    end do
-  else
-    do i=n-1,1,-1
-      do j = 1, w
-        do k = 1, m
-          q(k,j,i) = q(k,j,i+1) *ex0(k,j,i+1) &
-                   + d1s(k,j,i) *ex1(k,j,i+1) &
-                   + d2s(k,j,i) *ex2(k,j,i+1)                             ! formal solution reverse
-        end do
-      end do  
-    end do
-  end if
-    
-  if (one_p) then
-    do j = 1, w
-      do k = 1, m
-        I_out(k,j) = q(k,j,2) + s(k,j,2)                                ! forward boundary intensity if a single/two point ray is formulated
-      end do
-    end do  
-  else
-    do j = 1, w
-      do k = 1, m
-        I_out(k,j) = q(k,j,1) + s(k,j,1)                                ! forward boundary intensity
-      end do
-    end do  
-    
-  end if
-
-END SUBROUTINE integral_reverse2                         ! 2d 13m 11a 1e ! 26f + 1e
 
 SUBROUTINE feautrier (self, dtau, S, I_in1, I_in2, Q, I_out1, I_out2)
   implicit none
