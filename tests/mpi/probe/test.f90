@@ -23,7 +23,7 @@ MODULE mpi_mod
     real(4), dimension(:), pointer:: buffer => null()
   end type
   integer, save:: nbuf=8*8**3
-  integer, save:: nrecv=0
+  integer, save:: nrecv=0, nsent=0
   real(8):: total=0d0
   real(8):: wc
   !-----------------------------------------------------------------------------
@@ -62,10 +62,12 @@ SUBROUTINE init
     select case (mp%provided)
       case (MPI_THREAD_MULTIPLE)
         print *, ' MPI implementation provides support for simultaneous MPI calls by different threads'
+      case(MPI_THREAD_SERIALIZED)
+        print *, ' MPI implementation provides only support for serial MPI calls by any thread'
       case (MPI_THREAD_SINGLE)
         print *, ' MPI implementation provides only support for MPI calls outside openmp regions'
       case default
-        print *, mp%provided, MPI_THREAD_MULTIPLE, MPI_THREAD_SINGLE
+        print *, mp%provided, MPI_THREAD_MULTIPLE, MPI_THREAD_SERIALIZED
     end select
     print *, 'buffer size:', nbuf*sizeof(buffer(1))/1024., ' kb'
   end if
@@ -76,7 +78,7 @@ SUBROUTINE init
     allocate (recv(rank)%buffer(nbuf))
   end do
   !$omp end parallel
-END SUBROUTINE
+END SUBROUTINE init
 
 !> =============================================================================
 !> Delay for a certain time, emulating the patch update time
@@ -88,16 +90,20 @@ SUBROUTINE delay (s)
   wc = omp_get_wtime()
   do while (omp_get_wtime()-wc < s)
   end do
-END SUBROUTINE
+END SUBROUTINE delay
 
 !> =============================================================================
 !> Wrap up MPI, finalizing first all pending MPI receives
 !> =============================================================================
 SUBROUTINE end
-  integer:: rank, ierr
+  integer:: rank, ierr, i
   !-----------------------------------------------------------------------------
-  call mp%check
-  print*,'average latency', total/max(1,nrecv), nrecv
+  mp%max_probe=1000
+  do i=1,10
+    call mp%check
+    call mp%delay (mp%del)
+  end do
+  print*,'average latency', total/max(1,nrecv), nsent, nrecv
   do rank=0,mp%size-1
     deallocate (recv(rank)%buffer)
   end do
@@ -116,11 +122,12 @@ SUBROUTINE send
   real(8):: r
   !-----------------------------------------------------------------------------
   rank = mp%rank
-  do while (rank==mp%rank)
-    r = ran()
-    rank = floor((mp%size-1e-7)*r)
-    if (rank==mp%rank) cycle
-  end do
+  !do while (rank==mp%rank)
+    !r = ran()
+    !rank = floor((mp%size-1e-7)*r)
+    !if (rank==mp%rank) cycle
+  !end do
+  rank = mod(mp%rank+1,mp%size)
   buffer(1) = omp_get_wtime()-wc
   if (mp%provided==MPI_THREAD_MULTIPLE) then
     call doit
@@ -131,8 +138,11 @@ SUBROUTINE send
   end if
 contains
   subroutine doit
+    !print *, 'sending to', rank
     call MPI_ISEND (buffer, nbuf, MPI_REAL, rank, mp%rank, mp%comm, req, ierr)
     call MPI_REQUEST_FREE (req, ierr)
+    !$omp atomic
+    nsent = nsent+1
   end subroutine doit
 END SUBROUTINE send
 
@@ -148,20 +158,16 @@ SUBROUTINE test_wait (from)
   real:: latency
   type(mesg_t), pointer:: mesg
   !-----------------------------------------------------------------------------
-  !print *, 'test_wait begin'
   mesg => recv(from)
-  if (mp%provided==MPI_THREAD_MULTIPLE) then
-    call doit
-  else
-    !$omp critical (mpi_cr)
-    call doit
-    !$omp end critical (mpi_cr)
-  end if
+  !print *, 'test_wait begin', from, mesg%req
+  call doit
   if (flag) then
     latency = omp_get_wtime()-wc-recv(from)%buffer(1)
     !print*, mp%rank, 'recv from', from, ' latency', latency, mesg%buffer(1)
-    flush (6)
+    !flush (6)
+    !$omp atomic
     total = total + latency
+    !$omp atomic
     nrecv = nrecv + 1
     mesg%msg = -1
   end if
@@ -204,6 +210,7 @@ contains
   subroutine doit
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mp%comm, flag, msg, stat, ierr)
     n = 0
+    !print *, 'flag', flag
     do while (flag)
       n = n+1
       call MPI_GET_COUNT (stat, MPI_REAL, nbuf, ierr)
@@ -211,9 +218,11 @@ contains
       recv(from)%msg = msg
       call MPI_IMRECV (recv(from)%buffer, nbuf, MPI_REAL, msg, req, ierr)
       recv(from)%req = req
+      !print *, 'from', from, req
       call test_wait (from)
       if (n > mp%max_probe) exit
       call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mp%comm, flag, msg, stat, ierr)
+      !print *, 'flag', flag
     end do
   end subroutine doit
 END SUBROUTINE check
@@ -236,13 +245,14 @@ PROGRAM test_probe
   call mp%init
   call MPI_Barrier (mp%comm, ierr)
   wc = omp_get_wtime()
+  print *, mp%rank, wc
   !$omp parallel shared(wc)
   do while (omp_get_wtime()-wc < 10.)
-    print *, omp_get_thread_num(), 'check'
+    !print *, omp_get_thread_num(), 'check'
     call mp%check
-    print *, omp_get_thread_num(), 'delay'
+    !print *, omp_get_thread_num(), 'delay'
     call mp%delay (mp%del)
-    print *, omp_get_thread_num(), 'send'
+    !print *, omp_get_thread_num(), 'send'
     call mp%send
   end do
   !$omp end parallel
