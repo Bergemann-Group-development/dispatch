@@ -977,7 +977,6 @@ SUBROUTINE output_legacy (self, experiment_name)
       ! and time derivatives, which we have at iit(nt-2).
       !-------------------------------------------------------------------------
       it1 = self%iit(self%nt-2)
-      if(self%kind /= 'rt_patch') then
         if (self%out_time == 0.0) then
           buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
         !-------------------------------------------------------------------------
@@ -998,9 +997,7 @@ SUBROUTINE output_legacy (self, experiment_name)
           buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
               + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
         end if
-      else
-        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_e,self%it,1)
-      end if
+
       call check_error(self, buf, "output 2")
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
