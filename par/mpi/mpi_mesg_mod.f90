@@ -36,6 +36,7 @@ MODULE mpi_mesg_mod
     class(mesg_t), pointer:: tail => null()
     character(len=16):: name='mesg_list'
     integer:: n=0
+    integer:: id=0
   contains
     procedure:: add
     procedure:: remove
@@ -70,8 +71,8 @@ MODULE mpi_mesg_mod
     procedure:: test
   end type
   type(mpi_mesg_t), public:: mpi_mesg
-  type(mesg_list_t), public:: unpk_list
-  !$threadprivate (unpk_list)
+  type(mesg_list_t), save, public:: unpk_list, sent_list
+  !$omp threadprivate (unpk_list,sent_list)
   real, save:: delay_ms=3.0
   integer, save:: min_nq=10                     ! min ready q size for MPI_Test
   integer, save:: max_sent=5                    ! max outstanding patch sends
@@ -80,6 +81,10 @@ MODULE mpi_mesg_mod
   integer, save:: every_send=5                  ! how often to check send_list
   integer, save:: every_recv=1                  ! how often to check recv_list
   logical, save:: wait=.false.                  ! if true, always use MPI_Wait
+  logical, save:: send_wait=.false.             ! if true, wait in OMP task
+  logical, save:: send_priv=.true.              ! if true, sent_list is private
+  logical, save:: debug=.false.
+  integer, save:: id=0
 CONTAINS
 
 !> =============================================================================
@@ -135,6 +140,10 @@ SUBROUTINE check_sent (self, nq)
   integer:: n, m
   !$omp threadprivate (every)
   !-----------------------------------------------------------------------------
+  if (send_priv) then
+    call check_priv
+    return
+  end if
   if (mpi%size <= 1 .or. .not.associated(self%head)) return
   call trace%begin ('mpi_mesg_t%check_sent', itimer=itimer)
   !-----------------------------------------------------------------------------
@@ -189,22 +198,54 @@ SUBROUTINE check_sent (self, nq)
   ! be manipulated by other threads.  Apart from the testing itself, this is a
   ! fast traversal, since the only action is deallocation / message deletion.
   !-----------------------------------------------------------------------------
+  if (associated(self%head)) then
   !$omp critical (sent_cr)
-  mesg => self%head                                             ! top of list
-  do while (associated(mesg))
-    next => mesg%next                                           ! in case removed
-    call timer%end (itimer=itimer)
-    call mesg%test_all (flag)                                   ! done with?
-    call timer%begin (itimer=itimer)
-    if (flag) then
-      call self%remove (mesg)                                   ! yes, remove
-      call self%delete (mesg)                                   ! deallocate
-    end if
-    mesg => next                                                ! true next
-  end do
-  !$omp end critical (sent_cr)
+    mesg => self%head                                           ! top of list
+    do while (associated(mesg))
+      next => mesg%next                                         ! in case removed
+      call timer%end (itimer=itimer)
+      call mesg%test_all (flag)                                 ! done with?
+      call timer%begin (itimer=itimer)
+      if (flag) then
+        call self%remove (mesg)                                 ! yes, remove
+        call self%delete (mesg)                                 ! deallocate
+      end if
+      mesg => next                                              ! true next
+    end do
+    !$omp end critical (sent_cr)
+  end if
   call trace%end (itimer)
 END SUBROUTINE check_sent
+
+!> =============================================================================
+!> Check messages on a sent_list for completeness
+!> =============================================================================
+SUBROUTINE check_priv
+  class(mesg_t), pointer:: mesg, next
+  logical:: flag
+  integer:: ierr
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (mpi%size <= 1 .or. .not.associated(sent_list%head)) return
+  call trace%begin ('mpi_mesg_t%check_priv', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  mesg => sent_list%head                                      ! top of list
+  do while (associated(mesg))
+    next => mesg%next                                         ! in case removed
+    call timer%end (itimer=itimer)
+    call mesg%test_all (flag)                                 ! done with?
+    !call MPI_TESTALL (mesg%nreq, mesg%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+    !write (io_unit%log, *) 'check_priv:', omp_get_thread_num(), sent_list%id, mesg%id, flag, sent_list%n
+    !flush (io_unit%log)
+    call timer%begin (itimer=itimer)
+    if (flag) then
+      call sent_list%remove (mesg)                            ! yes, remove
+      call sent_list%delete (mesg)                            ! deallocate
+    end if
+    mesg => next                                              ! true next
+  end do
+  call trace%end (itimer)
+END SUBROUTINE check_priv
 
 !> =============================================================================
 !> Test if all requests (sending to several ranks) are complete for this mesg
@@ -387,7 +428,7 @@ END SUBROUTINE count
 SUBROUTINE init (self)
   class(mpi_mesg_t):: self
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
-                             every_send, delay_ms, wait
+                             every_send, delay_ms, wait, send_wait, send_priv
   integer:: iostat
   !.............................................................................
   if (self%initialized) return
@@ -396,7 +437,11 @@ SUBROUTINE init (self)
   if (io%verbose>0) write (io_unit%log,*) 'mpi_mesg_mod::init'
   self%sent_list%name = 'sent_list'
   self%recv_list%name = 'recv_list'
+  !$omp parallel
+  sent_list%name = 'sent_list'
   unpk_list%name = 'unpk_list'
+  sent_list%id = omp_get_thread_num()
+  !$omp end parallel
   self%initialized = .true.
   self%min_nq = min_nq
   self%max_recv = max_recv
@@ -438,15 +483,31 @@ SUBROUTINE test (self)
 END SUBROUTINE test
 
 !> =============================================================================
-!> Add a message to the sent_list, in a critical region
+!> Add a message to the sent_list, in a critical region, or wait for all sends
+!> in a background task
 !> =============================================================================
 SUBROUTINE sent (self, mesg)
   class(mpi_mesg_t):: self
   class(mesg_t), pointer:: mesg
   !-----------------------------------------------------------------------------
-  !$omp critical (sent_cr)
-  call self%sent_list%add (mesg)
-  !$omp end critical (sent_cr)
+  if (send_priv) then
+    call sent_list%add (mesg)
+    !$omp atomic
+    id = id+1
+    mesg%id = id
+    !write (io_unit%log,*) 'sent:', omp_get_thread_num(), sent_list%id, mesg%id, sent_list%n
+    !flush (io_unit%log)
+  else if (send_wait) then
+    !$omp task firstprivate(mesg)
+    call mesg%wait_all
+    deallocate (mesg%buffer)
+    deallocate (mesg)
+    !$omp end task
+  else
+    !$omp critical (sent_cr)
+    call self%sent_list%add (mesg)
+    !$omp end critical (sent_cr)
+  end if
 END SUBROUTINE sent
 
 !> =============================================================================
