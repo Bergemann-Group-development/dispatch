@@ -20,7 +20,7 @@ MODULE mpi_mesg_mod
     class(mesg_t), pointer:: prev => null()
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:) => null()
-    integer:: nbuf, ibuf, nreq, req, sender, id, ntry=0
+    integer:: nbuf, nreq, req, sender, id, ntry=0
   contains
     procedure:: send
     procedure:: test_all
@@ -57,11 +57,14 @@ MODULE mpi_mesg_mod
     integer:: n_recv=0
     integer:: n_delay=0
     integer:: n_unpk=0
+    integer:: nq_send=0
+    integer:: nq_recv=0
     real:: delay_ms=0.0
     integer:: max_recv
     integer:: max_probe
     integer:: min_nq
     logical:: wait=.false.
+    logical:: recv_priv=.true.
   contains
     procedure:: init
     procedure:: get
@@ -71,8 +74,8 @@ MODULE mpi_mesg_mod
     procedure:: test
   end type
   type(mpi_mesg_t), public:: mpi_mesg
-  type(mesg_list_t), save, public:: unpk_list, sent_list
-  !$omp threadprivate (unpk_list,sent_list)
+  type(mesg_list_t), save, public:: unpk_list, sent_list, recv_list
+  !$omp threadprivate (unpk_list,sent_list,recv_list)
   real, save:: delay_ms=3.0
   integer, save:: min_nq=10                     ! min ready q size for MPI_Test
   integer, save:: max_sent=5                    ! max outstanding patch sends
@@ -83,6 +86,7 @@ MODULE mpi_mesg_mod
   logical, save:: wait=.false.                  ! if true, always use MPI_Wait
   logical, save:: send_wait=.false.             ! if true, wait in OMP task
   logical, save:: send_priv=.true.              ! if true, sent_list is private
+  logical, save:: recv_priv=.true.              ! if true, recv_list is private
   logical, save:: debug=.false.
   integer, save:: id=0
 CONTAINS
@@ -177,7 +181,7 @@ SUBROUTINE check_sent (self, nq)
       call mesg%wait_all
       call timer%begin (itimer=itimer)
       call sent_tmp%remove (mesg)
-      call sent_tmp%delete (mesg)
+      call sent_tmp%delete (mesg, .true.)
       mesg => next
     end do
   end if
@@ -208,7 +212,7 @@ SUBROUTINE check_sent (self, nq)
       call timer%begin (itimer=itimer)
       if (flag) then
         call self%remove (mesg)                                 ! yes, remove
-        call self%delete (mesg)                                 ! deallocate
+        call self%delete (mesg, .true.)                                 ! deallocate
       end if
       mesg => next                                              ! true next
     end do
@@ -232,15 +236,11 @@ SUBROUTINE check_priv
   mesg => sent_list%head                                      ! top of list
   do while (associated(mesg))
     next => mesg%next                                         ! in case removed
-    call timer%end (itimer=itimer)
-    call mesg%test_all (flag)                                 ! done with?
     !call MPI_TESTALL (mesg%nreq, mesg%reqs, flag, MPI_STATUSES_IGNORE, ierr)
-    !write (io_unit%log, *) 'check_priv:', omp_get_thread_num(), sent_list%id, mesg%id, flag, sent_list%n
-    !flush (io_unit%log)
-    call timer%begin (itimer=itimer)
+    call mesg%test_all (flag)
     if (flag) then
       call sent_list%remove (mesg)                            ! yes, remove
-      call sent_list%delete (mesg)                            ! deallocate
+      call sent_list%delete (mesg, .true.)                    ! deallocate
     end if
     mesg => next                                              ! true next
   end do
@@ -269,6 +269,8 @@ SUBROUTINE test_all (self, flag)
   else
     call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
   end if
+#else
+  flag = .true.
 #endif MPI
   if (io%verbose>2) then
     write (io_unit%log,*) wallclock(), self%id, ' test_all flag =', flag
@@ -364,13 +366,23 @@ END SUBROUTINE remove
 !> =============================================================================
 !> Deallocate the message buffer and request array, and then the message itself
 !> =============================================================================
-SUBROUTINE delete (self, mesg)
+SUBROUTINE delete (self, mesg, send)
   class(mesg_list_t):: self
   class(mesg_t), pointer:: mesg
+  logical:: send
   !.............................................................................
   if (associated(mesg%buffer)) deallocate (mesg%buffer)
   if (associated(mesg%reqs)) deallocate (mesg%reqs)
   deallocate (mesg)
+  if (send) then
+    timer%nq_send_max = max(timer%nq_send_max,mpi_mesg%nq_send)
+    !$omp atomic
+    mpi_mesg%nq_send = mpi_mesg%nq_send-1
+  else
+    timer%nq_recv_max = max(timer%nq_recv_max,mpi_mesg%nq_recv)
+    !$omp atomic
+    mpi_mesg%nq_recv = mpi_mesg%nq_recv-1
+  end if
 END SUBROUTINE delete
 
 !> =============================================================================
@@ -428,7 +440,8 @@ END SUBROUTINE count
 SUBROUTINE init (self)
   class(mpi_mesg_t):: self
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
-                             every_send, delay_ms, wait, send_wait, send_priv
+                             every_send, delay_ms, wait, send_wait, send_priv, &
+                             recv_priv
   integer:: iostat
   !.............................................................................
   if (self%initialized) return
@@ -438,6 +451,7 @@ SUBROUTINE init (self)
   self%sent_list%name = 'sent_list'
   self%recv_list%name = 'recv_list'
   !$omp parallel
+  recv_list%name = 'recv_list'
   sent_list%name = 'sent_list'
   unpk_list%name = 'unpk_list'
   sent_list%id = omp_get_thread_num()
@@ -446,8 +460,9 @@ SUBROUTINE init (self)
   self%min_nq = min_nq
   self%max_recv = max_recv
   self%max_probe = max_probe
+  self%recv_priv = recv_priv
   self%wait = wait
-  call self%test
+  !call self%test
 END SUBROUTINE init
 
 !> =============================================================================
@@ -470,13 +485,13 @@ SUBROUTINE test (self)
   do i=1,n-1
     next => mesg%next
     call test_list%remove (mesg)
-    call test_list%delete (mesg)
+    call test_list%delete (mesg, .true.)
     mesg => next
   end do
   call test_list%print ('test2')
   mesg => test_list%head
   call test_list%remove (mesg)
-  call test_list%delete (mesg)
+  call test_list%delete (mesg, .true.)
   if (io%master) write (io_unit%log,*) &
     associated(test_list%head), associated(test_list%tail)
   call test_list%print ('test3')
@@ -484,29 +499,36 @@ END SUBROUTINE test
 
 !> =============================================================================
 !> Add a message to the sent_list, in a critical region, or wait for all sends
-!> in a background task
+!> in a background task, or use a threadprivate list
 !> =============================================================================
 SUBROUTINE sent (self, mesg)
   class(mpi_mesg_t):: self
   class(mesg_t), pointer:: mesg
   !-----------------------------------------------------------------------------
+  !$omp atomic
+  mpi_mesg%nq_send = mpi_mesg%nq_send+1
   if (send_priv) then
     call sent_list%add (mesg)
-    !$omp atomic
-    id = id+1
-    mesg%id = id
-    !write (io_unit%log,*) 'sent:', omp_get_thread_num(), sent_list%id, mesg%id, sent_list%n
-    !flush (io_unit%log)
+    if (io%verbose>0) then
+      write (io_unit%log,*) 'sent:', omp_get_thread_num(), mesg%id, sent_list%n
+      flush (io_unit%log)
+    end if
   else if (send_wait) then
     !$omp task firstprivate(mesg)
     call mesg%wait_all
     deallocate (mesg%buffer)
     deallocate (mesg)
+    !$omp atomic
+    mpi_mesg%nq_send = mpi_mesg%nq_send-1
     !$omp end task
   else
     !$omp critical (sent_cr)
     call self%sent_list%add (mesg)
     !$omp end critical (sent_cr)
+    if (io%verbose>0) then
+      write (io_unit%log,*) 'sent:', omp_get_thread_num(), mesg%id, self%sent_list%n
+      flush (io_unit%log)
+    end if
   end if
 END SUBROUTINE sent
 
@@ -558,6 +580,8 @@ contains
       allocate (mesg)
       call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
       allocate (mesg%buffer(nbuf))
+      !$omp atomic
+      mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
       call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
       mesg%req = req
       mesg%id = stat(MPI_TAG)
@@ -565,6 +589,10 @@ contains
       mesg%nbuf = nbuf
       !$omp atomic
       mpi_mesg%n_recv = mpi_mesg%n_recv+1
+      !$omp atomic
+      timer%bytes_recv = timer%bytes_recv + 4.0_8*nbuf
+      !$omp atomic
+      timer%n_recv = timer%n_recv + 1_8
     end if
 #endif
   end subroutine probe_for
