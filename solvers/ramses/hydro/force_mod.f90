@@ -67,7 +67,7 @@ FUNCTION single_solenoidal (self, time, d, p, m) RESULT (ff)
   integer, save:: seed=-11
   real, save:: a(3)=0.0
   real, save:: t_turn=0.3, t_save=0.0, a0(3)=0.1, k(3)=1.0, phi(3)=0.0
-  namelist /solenoidal_params/ k, a0, t_turn
+  namelist /force_solenoidal_params/ k, a0, t_turn
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%single_solenoidal')
   if (first_time) then
@@ -75,8 +75,8 @@ FUNCTION single_solenoidal (self, time, d, p, m) RESULT (ff)
     if (first_time) then
       first_time = .false.
       rewind (io%input)
-      read (io%input, solenoidal_params, iostat=iostat)
-      if (io%master) write (*, solenoidal_params)
+      read (io%input, force_solenoidal_params, iostat=iostat)
+      if (io%master) write (*, force_solenoidal_params)
     end if
     !$omp end critical (input_cr)
   end if

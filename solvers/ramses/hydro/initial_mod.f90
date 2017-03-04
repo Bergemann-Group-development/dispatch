@@ -84,7 +84,7 @@ SUBROUTINE single_solenoidal (self, m, ff)
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /solenoidal_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /initial_solenoidal_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
@@ -93,9 +93,9 @@ SUBROUTINE single_solenoidal (self, m, ff)
     if (first_time) then
       first_time = .false.
       rewind (io%input)
-      read (io%input, solenoidal_params)
+      read (io%input, initial_solenoidal_params)
       mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, solenoidal_params)
+      if (io%master) write (*, initial_solenoidal_params)
     end if
     !$omp end critical (input_cr)
   end if
@@ -140,7 +140,7 @@ SUBROUTINE single_compressive (self, m, ff)
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /initial_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
@@ -149,9 +149,9 @@ SUBROUTINE single_compressive (self, m, ff)
     if (first_time) then
       first_time = .false.
       rewind (io%input)
-      read (io%input, compressive_params)
+      read (io%input, initial_compressive_params)
       mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, compressive_params)
+      if (io%master) write (*, initial_compressive_params)
     end if
     !$omp end critical (input_cr)
   end if
@@ -195,7 +195,7 @@ SUBROUTINE single_advection (self, m, ff)
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
-  namelist /advection_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma
+  namelist /initial_advection_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)
@@ -204,9 +204,9 @@ SUBROUTINE single_advection (self, m, ff)
     if (first_time) then
       first_time = .false.
       rewind (io%input)
-      read (io%input, advection_params)
+      read (io%input, initial_advection_params)
       mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, advection_params)
+      if (io%master) write (*, initial_advection_params)
     end if
     !$omp end critical (input_cr)
   end if
