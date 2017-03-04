@@ -88,7 +88,7 @@ SUBROUTINE download_link (link, all_cells)
 
     if (static) then
       call same_static (link)
-      call different_static (link)
+      !call different_static (link)
     else
       write (io_unit%log,*) 'ERROR: moving patches found'
     end if
