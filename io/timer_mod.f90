@@ -13,6 +13,10 @@ MODULE timer_mod
   type:: timer_t
     integer(8):: calls(maxproc)=0
     real(8), dimension(maxproc):: start=0d0, total=0d0
+    real(8):: bytes_recv=0.0_8
+    integer(8):: n_recv=0_8
+    integer:: nq_send_max=0
+    integer:: nq_recv_max=0
   contains
     procedure:: init
     procedure:: begin
@@ -171,10 +175,22 @@ SUBROUTINE print ()
   ! `musppt` is defined to be the number of microseconds per update per thread.
   !-----------------------------------------------------------------------------
   musppt = sec*1d6*min(omp%nthreads,omp%ncores)/updates
-  if (io_unit%master) &
+  timer%n_recv = max(timer%n_recv,1)
+  if (io_unit%master) then
     print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
       sec, 'wall sec'
     2 format(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))
+    print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/timer%n_recv, &
+      timer%nq_send_max, timer%nq_recv_max
+    3 format(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8," nq_recv_max")
+  end if
+  if (io_unit%verbose>0) &
+    write (io_unit%log,3) timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/timer%n_recv, &
+      timer%nq_send_max, timer%nq_recv_max
+  timer%bytes_recv = 0.0_8
+  timer%n_recv = 0_8
+  timer%nq_send_max = 0
+  timer%nq_recv_max = 0
   if (io_unit%verbose>1) &
     write (io_unit%log,'(a,1p,e9.2,3x,a,g10.3)') 'timer_mod::print, updates =', &
       updates,'mus/p =', musppt

@@ -1061,7 +1061,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     end if
     return
   end if
-  1 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,3i5,8i4,l3,l1,o12)
+  1 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,5i5,6i4,l3,l1,o12)
   if (io%verbose>=0) then
     if (self%time>=self%print_next) then
       if (self%print_time > 0) &
@@ -1080,9 +1080,9 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             real(n_update), ntask, nq, &
             mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
             mpi_mesg%n_send, mpi_mesg%n_recv, mpi_mesg%n_unpk, mpi_mesg%n_delay, &
-            mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, &
+            mpi_mesg%nq_send, mpi_mesg%nq_recv, &
             self%is_set(bits%boundary), self%is_set(bits%virtual)
-          if (io%verbose>0 .and. io_unit%mpi/=io_unit%log) then
+          if (io_unit%mpi/=io_unit%log) then
             !$omp critical (info_cr)
             write (io_unit%mpi,1) &
               'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
@@ -1093,7 +1093,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
               real(n_update), ntask, nq, &
               mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
               mpi_mesg%n_send, mpi_mesg%n_recv, mpi_mesg%n_unpk, mpi_mesg%n_delay, &
-              mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, &
+              mpi_mesg%nq_send, mpi_mesg%nq_recv, &
               self%is_set(bits%boundary), self%is_set(bits%virtual)
             flush (io_unit%mpi)
             !$omp end critical (info_cr)
@@ -1115,7 +1115,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             !$omp critical (info_cr2)
             print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
                        //'6....+....7....+....8....+....9....+....0....+....1 ntsk   nq ' &
-                       //' chk rdy upd snt prb unp dly snq rcq  BV'
+                       //'  chk  rdy  upd snt prb unp dly snq rcq  BV'
             n_lines = max_lines
             !$omp end critical (info_cr2)
           end if
@@ -1129,7 +1129,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
             real(n_update), ntask, nq, counts, &
-            mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, &
+            mpi_mesg%nq_send, mpi_mesg%nq_recv, &
             self%is_set(bits%boundary), self%is_set(bits%virtual)
           end do
           counts(:) = 0
