@@ -527,9 +527,9 @@ SUBROUTINE send_to_vnbors (self)
       if (.not.flag) then                                       ! if not already packed
         task => self%task                                       ! convert to task
         call task%pack (mesg)                                   ! pack into mesg
+        flag = .true.                                           ! mesg has been packed
       end if
       call mesg%send (rank)                                     ! send it
-      flag = .true.
       if (io%verbose>1) then
         write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6,2x,a,i5,2x,5l1)') &
           wallclock(), 'sent', mesg%id, self%task%time, 'to', rank, &

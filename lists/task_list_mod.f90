@@ -64,7 +64,7 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
-  call trace_begin('task_list_t%init ')
+  call trace%begin('task_list_t%init')
   call self%list_t%init (name)
   call mpi_mesg%init
   rewind (io%input); read(io%input, task_list_params, iostat=iostat)
@@ -141,7 +141,7 @@ SUBROUTINE update (self)
   logical:: already_busy
   real(8):: wc
   !.............................................................................
-  call trace_begin('task_list_t%update')
+  call trace%begin('task_list_t%update')
   !call self%check_flags
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
@@ -298,7 +298,7 @@ FUNCTION find_task (self, id) RESULT (link)
   class(patch_t), pointer:: patch
   class(experiment_t), pointer:: task
   !.............................................................................
-  call trace_begin ('task_list_mod::find_task')
+  call trace%begin ('task_list_t%find_task')
   link => self%head
   do while (associated(link))
 !write (io_unit%log,*) mpi%rank,' find task: id, link%id, virtual =', id, link%task%id, link%task%is_set(bits%virtual)
@@ -307,7 +307,7 @@ FUNCTION find_task (self, id) RESULT (link)
       if (io%verbose>1) &
         write (io_unit%log,*) mpi%rank,' find task: match', id, associated(patch%mem)
       flush(io_unit%log)
-      call trace_end
+      call trace%end
       return
     end if
     link => link%next
@@ -330,7 +330,7 @@ FUNCTION find_task (self, id) RESULT (link)
   !-----------------------------------------------------------------------------
   call task%set (bits%virtual)
   call self%append_link (link)
-  call trace_end
+  call trace%end
 END FUNCTION find_task
 
 !> =============================================================================
@@ -447,15 +447,17 @@ SUBROUTINE check_mpi (self)
   unpk_tmp%name = 'unpk_tmp'
   recv_tmp%name = 'recv_tmp'
   wc(0) = wallclock()
-  call trace_begin ('task_list_mod::check_mpi', 1, itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Step 1: Prune the send list -- critical regions are handled inside
   !-----------------------------------------------------------------------------
   !$omp atomic read
   nq = self%nq
-  call timer%end (itimer=itimer)
   call mpi_mesg%sent_list%check_sent (nq)
-  call timer%begin (itimer=itimer)
+  if (mpi_mesg%recv_priv) then
+    call check_priv (self)
+    return
+  end if
+  call trace%begin ('task_list_t%check_mpi', 1, itimer=itimer)
   i=1; wc(i) = wallclock()-wc(0)
   if (wc(i) > check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
@@ -505,7 +507,7 @@ SUBROUTINE check_mpi (self)
     call self%unpack (mesg)
     call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
-    call unpk_tmp%delete (mesg)
+    call unpk_tmp%delete (mesg, .false.)
     mesg => next
   end do
   i=i+1; wc(i) = wallclock()-wc(0)
@@ -541,7 +543,7 @@ SUBROUTINE check_mpi (self)
     call self%unpack (mesg)
     call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
-    call unpk_tmp%delete (mesg)
+    call unpk_tmp%delete (mesg, .false.)
     mesg => next
   end do
   i=i+1; wc(i) = wallclock()-wc(0)
@@ -570,13 +572,66 @@ SUBROUTINE check_mpi (self)
     call self%unpack (mesg)
     call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
-    call unpk_tmp%delete (mesg)
+    call unpk_tmp%delete (mesg, .false.)
     mesg => next
   end do
   i=i+1; wc(i) = wallclock()-wc(0)
 9 write (io_unit%log, '(a,6f10.4)') 'check_mpi times:', wc(1:i)-wc(0:i-1)
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE check_mpi
+
+!> =============================================================================
+!> Check for and unpack MPI messages, using threadprivate recv_list and
+!> unpk_list
+!> =============================================================================
+SUBROUTINE check_priv (self)
+  class(task_list_t):: self
+  class(mesg_t), pointer:: mesg, next
+  integer, save:: itimer=0
+  integer:: n
+  !.............................................................................
+  if (mpi%size <= 1) return
+  call trace%begin ('task_list_t%check_priv', 1, itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Step 1: Add incoming messages to either recv_list or unpk_list
+  !-----------------------------------------------------------------------------
+  call mpi_mesg%get (mesg)
+  n = 0
+  do while (associated(mesg))
+    if (mesg%is_complete()) then
+      call unpk_list%add (mesg)
+    else
+      call recv_list%add (mesg)
+    end if
+    n = n+1
+    if (n > mpi_mesg%max_probe) exit
+    call mpi_mesg%get (mesg)
+  end do
+  !-----------------------------------------------------------------------------
+  ! Step 2: check the recv_list for completed messages
+  !-----------------------------------------------------------------------------
+  mesg => recv_list%head
+  do while (associated(mesg))
+    next => mesg%next
+    if (mesg%is_complete()) then
+      call recv_list%remove (mesg)
+      call unpk_list%add (mesg)
+    end if
+    mesg => next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Step 3: unpack messags in unpk_list
+  !-----------------------------------------------------------------------------
+  mesg => unpk_list%head
+  do while (associated(mesg))
+    next => mesg%next
+    call self%unpack (mesg)
+    call unpk_list%remove (mesg)
+    call unpk_list%delete (mesg, .false.)
+    mesg => next
+  end do
+  call trace%end (itimer)
+END SUBROUTINE check_priv
 
 !> =============================================================================
 !> Split a patch into two (parameter) in each direction, merging the new patches
@@ -594,7 +649,7 @@ SUBROUTINE split (self, this)
   real:: pos(3)
   !.............................................................................
   if (this%task%is_set(bits%not_leaf)) return
-  call trace_begin('task_list_t%split', 1)
+  call trace%begin('task_list_t%split', 1)
   nsplit = msplit
   task => this%task
   select type (task)
@@ -656,7 +711,7 @@ SUBROUTINE split (self, this)
   end do
   call self%check_queue
   call this_patch%set(bits%not_leaf)
-  call trace_end
+  call trace%end
 END SUBROUTINE split
 
 !> =============================================================================
@@ -666,13 +721,13 @@ SUBROUTINE output (self)
   class (task_list_t):: self
   class(link_t) , pointer:: link, nbor
   !.............................................................................
-  call trace_begin('task_list%output')
+  call trace%begin('task_list%output')
   link => self%head
   do while (associated(link))
     call link%task%output(self%name)
     link => link%next
   end do
-  call trace_end
+  call trace%end
 END SUBROUTINE output
 
 !> =============================================================================
@@ -728,11 +783,11 @@ SUBROUTINE check_flags (self)
   logical:: changed
   !.............................................................................
   if (io%verbose > 0 .and. io%do_flags) then             ! avoid speed impact
-    call trace_begin ('task_list_mod::check_flags')
+    call trace%begin ('task_list_t%check_flags')
     call icheck ('id_debug.flag', io%id_debug, changed)
     call icheck ('verbose.flag' , io%verbose , changed)
     call lcheck ('do_trace.flag', io%do_trace, changed)
-    call trace_end
+    call trace%end
   end if
 contains
   !=============================================================================
