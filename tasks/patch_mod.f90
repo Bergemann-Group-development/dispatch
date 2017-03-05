@@ -197,6 +197,21 @@ SUBROUTINE header_to_patch (self, head)
   type(header_t):: head
   integer:: nt
   !-----------------------------------------------------------------------------
+  ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
+  ! ready bit, which is an indicator of a patch being in the ready queue, which
+  ! an incoming patch is not.  By doing this here, we avoid having to do it in
+  ! a critical region, otherwise needed to protect an operation on the patch
+  !-----------------------------------------------------------------------------
+  if (iand(head%status, bits%boundary) /= 0) then
+    head%status = ior(head%status, bits%virtual)
+    head%status = iand(head%status, not(bits%boundary))
+    write (io_unit%mpi, *) head%id, 'swapping to virtual'
+  else if (iand(head%status, bits%virtual) /= 0) then
+    head%status = ior(head%status, bits%boundary)
+    head%status = iand(head%status, not(bits%virtual))
+    write (io_unit%mpi, *) head%id, 'swapping to boundary'
+  end if
+  head%status = iand(head%status, not(bits%ready))
   self%id         = head%id
   self%status     = head%status
   self%rank       = head%rank
@@ -222,10 +237,12 @@ SUBROUTINE header_to_patch (self, head)
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
   if (io%verbose > 1) &
-    write (io_unit%log,'(f12.6,3x,a,i7,i4,l3,2i4,f8.4)') &
-      wallclock(), 'header_to_patch: id, nq =', self%id, &
-      self%nq, self%is_set(bits%swap_request), &
-      mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency
+    write (io_unit%log,'(f12.6,3x,a,i7,i4,2x,3l1,2i4,f8.4,f11.6)') &
+      wallclock(), 'header_to_patch: id, nq, BVS, nsnd, nrcv, latency, time =', self%id, self%nq, &
+      self%is_set(bits%boundary), &
+      self%is_set(bits%virtual), &
+      self%is_set(bits%swap_request), &
+      mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency, self%time
 END SUBROUTINE header_to_patch
 
 !> =============================================================================
@@ -828,30 +845,17 @@ SUBROUTINE unpack (self, mesg)
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
-  if (io%verbose > 2) write (io_unit%log,1) 'patch_mod::unpk id, nq, time before:', &
-    self%id, self%nq, self%time
   call self%header_to_patch (header)
+  self%wc_last = wallclock()
   if (io%verbose > 1) write (io_unit%log,1) 'patch_mod::unpk id, nq, time  after:', &
     self%id, self%nq, self%time, &
     self%is_set (bits%internal), &
     self%is_set (bits%boundary), &
     self%is_set (bits%virtual), &
     self%is_set (bits%external), &
-    self%is_set (bits%swap_request)
-    1 format(a,2i9,f12.6,2x,5l1)
-  !-----------------------------------------------------------------------------
-  ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
-  ! ready bit, which is an indicator of a patch being in the ready queue, which
-  ! an incoming patch is not.
-  !-----------------------------------------------------------------------------
-  if (self%is_set(bits%boundary)) then
-    call self%set   (bits%virtual)
-    call self%clear (bits%boundary)
-  else if (self%is_set(bits%virtual)) then
-    call self%set   (bits%boundary)
-    call self%clear (bits%virtual)
-  end if
-  call self%clear (bits%ready)
+    self%is_set (bits%swap_request), &
+    self%wc_last
+    1 format(a,2i9,f12.6,2x,5l1,f12.1)
   !-----------------------------------------------------------------------------
   ! Copy the variables from the output buffer.  If this is swap of patch roles
   ! expect at least one more time slot.
@@ -1115,7 +1119,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             !$omp critical (info_cr2)
             print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
                        //'6....+....7....+....8....+....9....+....0....+....1 ntsk   nq ' &
-                       //'  chk  rdy  upd snt prb unp dly snq rcq  BV'
+                       //' chk  rdy  upd snt prb unp dly snq rcq  BV'
+            !$omp atomic write
             n_lines = max_lines
             !$omp end critical (info_cr2)
           end if
