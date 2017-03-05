@@ -46,6 +46,7 @@ MODULE list_mod
     procedure:: check_nbors
     procedure:: check_ready
     procedure:: check_all
+    procedure:: resend_bdry
     procedure:: check_oldest
     procedure:: check_queue
     procedure:: init_nbors
@@ -312,6 +313,22 @@ SUBROUTINE check_all (self)
 END SUBROUTINE check_all
 
 !> =============================================================================
+!> Resend all boundary patches
+!> =============================================================================
+SUBROUTINE resend_bdry (self)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  !.............................................................................
+  link => self%head
+  do while (associated(link))
+    if (link%task%is_set (bits%boundary)) then
+      call link%send_to_vnbors
+    end if
+  end do
+END SUBROUTINE resend_bdry
+
+!> =============================================================================
+!> Find the oldest local and virtual patches
 !> =============================================================================
 SUBROUTINE check_oldest (self)
   class(list_t):: self
@@ -326,20 +343,22 @@ SUBROUTINE check_oldest (self)
   !$omp critical (list_cr)
   link => self%head
   do while (associated (link))                        ! keep going until end
-    if (link%task%time < told) then
-      told = link%task%time
-      oldest => link
-    end if
     if (link%task%is_set(bits%virtual)) then
       if (link%task%time < toldv) then
         toldv = link%task%time
         oldestv => link
       end if
+    else
+      if (link%task%time < told) then
+        told = link%task%time
+        oldest => link
+      end if
     end if
     link => link%next
   end do
   link => oldest
-  write (io_unit%log,*) 'the oldest task is ', oldest%task%id, oldest%task%time
+  write (io_unit%log,*) 'the oldest active  task is ', oldest%task%id, oldest%task%time
+  write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, oldestv%task%time
   write (io_unit%log,*) 'check_oldest: phase 2'
   if (oldest%task%is_clear (bits%virtual+bits%external)) then
     if (oldest%task%is_set (bits%ready)) then
@@ -353,10 +372,24 @@ SUBROUTINE check_oldest (self)
   end if
   !$omp end critical (list_cr)
   !
-  write (io_unit%log,*) 'check_oldest: phase 3', associated(oldestv)
+  write (io_unit%log,*) 'check_oldest: phase 3', associated(oldest)
+  if (associated(oldest)) then
+    write (io_unit%log,1) 'the oldest local task is', oldest%task%id, &
+      'rank', oldest%task%rank, oldest%task%time, &
+      oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
+    link => oldest%nbor
+    do while (associated(link))
+      write (io_unit%log,1) &
+        'nbor', link%task%id, 'rank', link%task%rank, link%task%time, &
+        link%task%is_set(bits%boundary), link%task%is_set (bits%virtual)
+      1 format (a,i9,3x,a,i6,1p,e16.6,2l3)
+      link => link%next
+    end do
+  end if
+  write (io_unit%log,*) 'check_oldest: phase 4', associated(oldestv)
   if (associated(oldestv)) then
     write (io_unit%log,1) 'the oldest virtual task is', oldestv%task%id, &
-      'rank', oldest%task%rank, oldestv%task%time, &
+      'rank', oldestv%task%rank, oldestv%task%time, &
       oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
     link => oldestv%nbor
     do while (associated(link))
@@ -364,7 +397,6 @@ SUBROUTINE check_oldest (self)
         'nbor', link%task%id, 'rank', link%task%rank, link%task%time, &
         link%task%is_set(bits%boundary), link%task%is_set (bits%virtual)
       link => link%next
-      1 format (a,i9,3x,a,i6,1p,e16.6,2l3)
     end do
   end if
   flush (io_unit%log)
