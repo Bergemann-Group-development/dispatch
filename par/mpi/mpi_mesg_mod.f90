@@ -717,6 +717,7 @@ SUBROUTINE delay (self, n)
   real(8):: wc
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  if (mpi_mesg%delay_ms==0.0) return
   call trace%begin ('mpi_mesg_t%delay', itimer=itimer)
   wc = wallclock()
   write (io_unit%log,*) wc,'delay:',n

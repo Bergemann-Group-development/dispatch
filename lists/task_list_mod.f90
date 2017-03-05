@@ -48,6 +48,8 @@ MODULE task_list_mod
   real, save:: check_ms=10.
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
   integer, save:: min_nq=2**30
+  logical, save:: do_delay=.false.
+  real(8), save:: wc_start=0d0
 CONTAINS
 
 !> =============================================================================
@@ -60,7 +62,7 @@ SUBROUTINE init (self, name)
   class(link_t), pointer:: link
   integer:: iostat
   integer:: debug=0
-  namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms
+  namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, do_delay
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -96,6 +98,7 @@ SUBROUTINE execute (self)
   link => self%head
   do while (associated(link))
     call link%task%clear(bits%ready)
+    if (link%task%is_set(bits%virtual)) link%task%wc_last = wallclock()
     call self%check_ready (link)
     link => link%next
   end do
@@ -103,6 +106,7 @@ SUBROUTINE execute (self)
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
   call mpi%barrier ('task_list_mod::execute')
+  wc_start = wallclock()
   call tic (time=sec)
   call timer%print
   self%n_tasks = self%na
@@ -269,19 +273,25 @@ SUBROUTINE update (self)
     !$omp atomic write
     stalled = 0
     !call mpi_mesg%diagnostics (0)
-  else
-    !$omp critical (stalled_cr)
+  else if (do_delay) then
+    !$omp atomic
     stalled = stalled+1
     if (stalled == retry_stalled) then
-       call self%check_all
-    else if (stalled == retry_stalled+1) then
+       print *, mpi%rank, 'STALLED check_oldest + check_all + resend_bdry'
        call self%check_oldest
+       call self%check_all
+       call self%resend_bdry
     else
       call mpi_mesg%delay (stalled)
     end if
-    if (stalled == max_stalled/2) call mpi_mesg%diagnostics (1)
-    if (stalled > max_stalled) call mpi%abort ('exceeded max_stalled')
-    !$omp end critical (stalled_cr)
+    if (stalled == max_stalled/2) then
+      print *, mpi%rank, 'STALLED diagnostics'
+      call mpi_mesg%diagnostics (1)
+    end if
+    if (stalled > max_stalled) then
+      print *, mpi%rank, 'STALLED bailing out'
+      call mpi%abort ('exceeded max_stalled')
+    end if
   end if
   call trace_end
 END SUBROUTINE update
@@ -344,26 +354,30 @@ SUBROUTINE unpack (self, mesg)
   class(mesg_t), pointer:: mesg
   class(link_t), pointer:: link
   class(task_t), pointer:: task
-  logical:: found
+  logical:: found, failed
   !-----------------------------------------------------------------------------
   if (mesg%nbuf < 40) then
     call load_balance%unpack (mesg%buffer)
     return
   end if
-  !$omp critical (list_cr)
+  !$omp critical (unpack_cr)
   link => self%find_task (mesg%id)
   task => link%task
-  !$omp end critical (list_cr)
+  failed = .false.
   !-----------------------------------------------------------------------------
   ! Guard against lingering extra messages to a swapped patch
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%boundary)) then
-    write (io_unit%log,'(f12.6,2x,a,i9)') wallclock(), &
-      'task_list_mod::unpack ERROR, received mpi_mesg for boundary task:', task%id
-    go to 9
+    write (io_unit%log,'(f12.6,2x,a,i9,3x,5l1)') wallclock(), &
+      'task_list_mod::unpack ERROR, received mpi_mesg for boundary task:', task%id, &
+      task%is_set(bits%internal), &
+      task%is_set(bits%boundary), &
+      task%is_set(bits%virtual), &
+      task%is_set(bits%external), &
+      task%is_set(bits%swap_request)
+    failed = .true.
   end if
   if (task%is_set (bits%ready)) then
-    !$omp critical (list_cr)
     found = .false.
     link => self%queue
     do while (associated(link))
@@ -373,10 +387,14 @@ SUBROUTINE unpack (self, mesg)
       end if
       link => link%next_time
     end do
-    !$omp end critical (list_cr)
-    write (io_unit%log,'(f12.6,2x,a,i9,l3)') wallclock(), &
-      'task_list_mod::unpack ERROR, received mpi_mesg for task with ready bit:', task%id, found
-    go to 9
+    write (io_unit%log,'(f12.6,2x,a,i9,l3,3x,5l1)') wallclock(), &
+      'task_list_mod::unpack ERROR, received mpi_mesg for task with ready bit:', task%id, found, &
+      task%is_set(bits%internal), &
+      task%is_set(bits%boundary), &
+      task%is_set(bits%virtual), &
+      task%is_set(bits%external), &
+      task%is_set(bits%swap_request)
+    failed = .true.
   end if
   !---------------------------------------------------------------------------
   ! Unpack a patch message (which includes swapping the roles of boundary bits).
@@ -385,6 +403,7 @@ SUBROUTINE unpack (self, mesg)
   ! lock) while it is being updated here
   !---------------------------------------------------------------------------
   call task%unpack (mesg)
+  if (failed) return
   !$omp atomic
   mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
   !---------------------------------------------------------------------------
@@ -421,14 +440,14 @@ SUBROUTINE unpack (self, mesg)
     call link%update_nbor_status (link)
     call self%count_status
   end if
-9 continue
+  !$omp end critical (unpack_cr)
   !-----------------------------------------------------------------------------
   ! As the task has now been updated, we need to check if any of the neighbors
   ! have become ready to update. If the task has just been swapped into being
   ! a boundary patch, it could possibly also be ready to update.
   !-----------------------------------------------------------------------------
-  if (io%verbose>1) &
-    call link%test_nbor_status
+  !if (io%verbose>1) &
+  !  call link%test_nbor_status
   call self%check_nbors (link)
 END SUBROUTINE unpack
 
