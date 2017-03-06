@@ -1464,13 +1464,19 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
   dt  = source%dt
   id  = source%id
   !!omp end critical (time_cr)
-  jt = iit(1:2)
+  !-----------------------------------------------------------------------------
+  ! The (nt) slot is intended for the new values, but at this point they
+  ! actually contain the oldest values, which may be used in the interpolation,
+  ! if we circularly shift the iit indices one step (sign tested).
+  !-----------------------------------------------------------------------------
+  iit = cshift(iit,-1)
   !-----------------------------------------------------------------------------
   ! As long as the first source time is earlier than, or equal to the target
   ! time, renew the interval.  Initially, when all times are zero, we are left
   ! with the interval nt-2:nt-1 and dt=0d0, which means slot nt-1 is used.
   !-----------------------------------------------------------------------------
-  do i=2,self%nt-2
+  jt = iit(1:2)
+  do i=2,self%nt-1
     if (t(iit(i)) <= self%time) then
       jt = iit(i:i+1)
     end if
@@ -1488,28 +1494,30 @@ SUBROUTINE time_interpolate (self, source, jt, pt)
     pt(2) = (self%time - t(jt(1)))/dt1
     if (pt(2) < -self%grace) then
       write (io_unit%log,1) &
-        'patch_mod::time_interpolate WARNING: backward extrapolation, trg,src,pt:', &
-        self%id, id, pt(2)
-      1 format(a,2i9,f7.2,1p,3g16.7)
+        'patch_mod::time_interpolate WARNING: backward extrapolation, trg,src,pt,jt =', &
+        self%id, id, pt(2), jt
       pt(2) = -self%grace
       verbose = 3
     else if (pt(2) > 1.001+self%grace) then
       write (io_unit%log,1) &
-        'patch_mod::time_interpolate WARNING: forward extrapolation, trg,src,pt:', &
-        self%id, id, pt(2), dt1, dt(jt(1)), dt(jt(2))
+        'patch_mod::time_interpolate WARNING: forward extrapolation, trg,src,pt,jt =', &
+        self%id, id, pt(2), jt, dt1, dt(jt(1)), dt(jt(2)), &
+        'patch_mod::time_interpolate WARNING: time:', self%time, t(iit), source%time
+      1 format(a,2i9,f7.2,3x,2i3,3x,"dt:",0p,3f11.6/a,f11.6,5x,"t:",9f11.6)
       pt(2) = 1.0+self%grace
       verbose = 3
     end if
   end if
   pt(1) = 1d0-pt(2)
+  !print '(a,2i6,3f11.6,2i4,2f8.3)', 'TIME INTERPOLATE:', source%id, self%id, t(jt(1)), self%time, t(jt(2)), jt, pt
   if (verbose > 2) then
     write (io_unit%log,'(a,2i5,2f7.3,1p,g16.6)') &
       'patch_mod::time_interpolation jt, pt, target', &
       jt, pt, self%time
     do i=1,self%nt
-      write (io_unit%log,'(a,3i4,1p,2g16.6)') &
-        'patch_mod::time_interpolation i,iit,src%iit,src%t,src%dt:', &
-        i, iit(i), iit(i), t(i), dt(i)
+      write (io_unit%log,'(a,2i4,1p,2g16.6)') &
+        'patch_mod::time_interpolation i,src%iit,src%t,src%dt:', &
+        i, iit(i), t(iit(i)), dt(iit(i))
     end do
     flush (io_unit%log)
   end if

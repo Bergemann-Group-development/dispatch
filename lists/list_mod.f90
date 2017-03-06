@@ -382,7 +382,7 @@ SUBROUTINE check_oldest (self)
       write (io_unit%log,1) &
         'nbor', link%task%id, 'rank', link%task%rank, link%task%time, &
         link%task%is_set(bits%boundary), link%task%is_set (bits%virtual)
-      1 format (a,i9,3x,a,i6,1p,e16.6,2l3)
+      1 format (1x,a,i9,3x,a,i6,1p,e16.6,2l3)
       link => link%next
     end do
   end if
