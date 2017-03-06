@@ -757,6 +757,7 @@ SUBROUTINE allocate_mesg (self)
     self%mesg%nbuf = self%mesg%nbuf * 2  ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
   self%mesg%nbuf = n_header + self%nv*self%mesg%nbuf
   allocate (self%mesg%buffer(self%mesg%nbuf))
+  print *, 'allocate_mesg:', self%mesg%nbuf, self%mesg%req
 END SUBROUTINE allocate_mesg
 
 !> =============================================================================

@@ -676,13 +676,13 @@ END FUNCTION is_complete
 !> =============================================================================
 !> Issue a message recieve request from a specific rank
 !> =============================================================================
-SUBROUTINE irecv (self, rank)
+SUBROUTINE irecv (self, rank, tag)
   class(mesg_t):: self
-  integer:: rank, ierr
+  integer:: rank, tag, ierr
   !.............................................................................
   self%sender = rank
 #ifdef MPI
-  call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, rank, MPI_ANY_TAG, mpi%comm, self%req, ierr)
+  call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, rank, tag, mpi%comm, self%req, ierr)
 #endif
 END SUBROUTINE irecv
 
@@ -702,6 +702,9 @@ FUNCTION test_recv (self) RESULT (flag)
     !$omp end critical (mpi_cr)
   else
     call MPI_TEST (self%req, flag, stat, ierr)
+  end if
+  if (flag) then
+    self%id = stat(MPI_TAG)
   end if
 #else
   flag = .true.

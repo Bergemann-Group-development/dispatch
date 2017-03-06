@@ -358,6 +358,7 @@ SUBROUTINE unpack (self, mesg, link)
   class(link_t), pointer:: link1, link2
   class(task_t), pointer:: task
   logical:: found, failed
+  integer:: id
   !-----------------------------------------------------------------------------
   if (mesg%nbuf < 40) then
     call load_balance%unpack (mesg%buffer)
@@ -409,7 +410,10 @@ SUBROUTINE unpack (self, mesg, link)
   ! by check_nbors, it must be protected by a critical region (or an OMP
   ! lock) while it is being updated here
   !---------------------------------------------------------------------------
+  id = task%id
   call task%unpack (mesg)
+  write (io_unit%log,*) wallclock(), 'unpack: id, time =', task%id, task%time
+  if (id /= mesg%id) print *,'unpack ERROR: wrong mesg%id', id, task%id, mesg%id
   if (failed) return
   !$omp atomic
   mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
@@ -673,6 +677,7 @@ SUBROUTINE check_active (self)
   class(link_t), pointer:: link
   class(task_t), pointer:: task
   integer:: nvirt, nunpk
+  real(8):: wc
   !.............................................................................
   nvirt = 0
   nunpk = 0
@@ -685,20 +690,25 @@ SUBROUTINE check_active (self)
       class is (patch_t)
       if (.not.associated(task%mesg)) then
         call task%allocate_mesg
+        task%wc_last = wallclock()
       end if
       if (task%mesg%req == 0) then
-        call task%mesg%irecv  (task%rank)
+        call task%mesg%irecv  (task%rank, task%id)
       end if
       if (task%mesg%test_recv()) then
         call self%unpack (task%mesg, link=link)
+        wc = wallclock() 
+        if (wc-task%wc_last > 10.) print &
+          '("WARNING: virtual patch not updated in",f5.1," sec")', wc
+        task%wc_last = wc
+        call task%mesg%irecv (task%rank, task%id)
         nunpk = nunpk+1
-        call task%mesg%irecv (task%rank)
       end if
       end select
     end if
     link => link%next
   end do
-  print *, 'check_active:', mpi%rank, nvirt, nunpk
+  !print *, 'check_active:', mpi%rank, nvirt, nunpk
 END SUBROUTINE check_active
 
 !> =============================================================================
