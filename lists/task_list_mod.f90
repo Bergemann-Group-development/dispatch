@@ -42,7 +42,7 @@ MODULE task_list_mod
     procedure:: split
     procedure:: output
     procedure:: check_flags
-    procedure:: print
+    procedure:: print => print_table
     procedure:: print_tasks
   end type
   real, save:: check_ms=10.
@@ -414,42 +414,43 @@ SUBROUTINE unpack (self, mesg, link)
   call task%unpack (mesg)
   write (io_unit%log,*) wallclock(), 'unpack: id, time =', task%id, task%time
   if (id /= mesg%id) print *,'unpack ERROR: wrong mesg%id', id, task%id, mesg%id
-  if (failed) return
-  !$omp atomic
-  mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
-  !---------------------------------------------------------------------------
-  ! If the boundary+swap bits are set, this is a task that has just changed
-  ! rank, and it needs to have its nbor relations re-initialized. This includes
-  ! resorting (removing + re-adding) the nbor's nbor lists in rank order.
-  ! FIXME: The load balancing steps should be checked for threadsafe operation
-  !---------------------------------------------------------------------------
-  if (task%is_set(bits%swap_request) .and. task%is_set(bits%boundary)) then
-    self%na = self%na+1; self%nb = self%nb+1; self%nv = self%nv-1
-    call self%init_nbors (link1)
-    call task%clear (bits%swap_request+bits%ready)
-    call link1%update_nbor_status (link1)
-    call self%count_status
-    if (io%verbose>1) &
-      print '(f12.6,2x,a,i6,a,i9,a,i6)', &
-      wallclock(),'LB: rank',mpi%rank,' given patch',task%id,' by',mesg%sender
-    if (io%verbose>0) &
-      write (io_unit%log,*) 'swapped virtual to boundary:', task%id
-  !---------------------------------------------------------------------------
-  ! If the link has no nbors it is a newly created virtual task. Does it need
-  ! an nbor list?  At least we can use the nbor list to check that the link is
-  ! in its nbors nbor lists.  A new virtual task (where no task existed) means
-  ! that some nbor of it has changed from internal to boundary, which will be
-  ! checked by the test_nbor_status call below, but only if an nbor list exists.
-  !---------------------------------------------------------------------------
-  !else if (.not.associated(link%nbor)) then
-  else if (task%is_set(bits%swap_request) .and. task%is_set(bits%virtual)) then
-    if (io%verbose>0) &
-      write (io_unit%log,*) 'new virtal patch:', task%id
-    self%nv = self%nv+1
-    call self%init_nbors (link1)
-    call task%clear (bits%swap_request+bits%ready)
-    call link1%update_nbor_status (link1)
-    call self%count_status
+  if (.not. failed) then
+    !$omp atomic
+    mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
+    !---------------------------------------------------------------------------
+    ! If the boundary+swap bits are set, this is a task that has just changed
+    ! rank, and it needs to have its nbor relations re-initialized. This includes
+    ! resorting (removing + re-adding) the nbor's nbor lists in rank order.
+    ! FIXME: The load balancing steps should be checked for threadsafe operation
+    !---------------------------------------------------------------------------
+    if (task%is_set(bits%swap_request) .and. task%is_set(bits%boundary)) then
+      self%na = self%na+1; self%nb = self%nb+1; self%nv = self%nv-1
+      call self%init_nbors (link1)
+      call task%clear (bits%swap_request+bits%ready)
+      call link1%update_nbor_status (link1)
+      call self%count_status
+      if (io%verbose>1) &
+        print '(f12.6,2x,a,i6,a,i9,a,i6)', &
+        wallclock(),'LB: rank',mpi%rank,' given patch',task%id,' by',mesg%sender
+      if (io%verbose>0) &
+        write (io_unit%log,*) 'swapped virtual to boundary:', task%id
+    !---------------------------------------------------------------------------
+    ! If the link has no nbors it is a newly created virtual task. Does it need
+    ! an nbor list?  At least we can use the nbor list to check that the link is
+    ! in its nbors nbor lists.  A new virtual task (where no task existed) means
+    ! that some nbor of it has changed from internal to boundary, which will be
+    ! checked by the test_nbor_status call below, but only if an nbor list exists.
+    !---------------------------------------------------------------------------
+    !else if (.not.associated(link%nbor)) then
+    else if (task%is_set(bits%swap_request) .and. task%is_set(bits%virtual)) then
+      if (io%verbose>0) &
+        write (io_unit%log,*) 'new virtal patch:', task%id
+      self%nv = self%nv+1
+      call self%init_nbors (link1)
+      call task%clear (bits%swap_request+bits%ready)
+      call link1%update_nbor_status (link1)
+      call self%count_status
+    end if
   end if
   !$omp end critical (unpack_cr)
   !-----------------------------------------------------------------------------
@@ -842,7 +843,7 @@ END SUBROUTINE print_tasks
 !> =============================================================================
 !> Print a table with task id and all neighbors
 !> =============================================================================
-SUBROUTINE print (self, label)
+SUBROUTINE print_table (self, label)
   class (task_list_t):: self
   character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
@@ -856,7 +857,7 @@ SUBROUTINE print (self, label)
   end do
   call self%print_queue
   call trace%end
-END SUBROUTINE print
+END SUBROUTINE print_table
 
 !> =============================================================================
 !> Check debug flag files
