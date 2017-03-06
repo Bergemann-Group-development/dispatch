@@ -2,6 +2,7 @@
 /
 &task_list_params
  do_delay=t
+ recv_active=t
  max_stalled=5000
  retry_stalled=100
 /
@@ -11,6 +12,7 @@
  recv_priv=f
  max_sent=900
  max_recv=200
+ max_probe=2
  min_nq=400
 /
 &timer_params

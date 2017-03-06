@@ -56,6 +56,7 @@ MODULE task_mod
     character(len=12):: type='task_t'
     real:: latency=0.0                  ! MPI message latency
     real(8):: wc_last=0.0_8
+    class(mesg_t), pointer:: mesg=>null()
   contains
     procedure:: init
     procedure:: dnload => void

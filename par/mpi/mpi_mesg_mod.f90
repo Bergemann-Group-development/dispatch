@@ -20,13 +20,15 @@ MODULE mpi_mesg_mod
     class(mesg_t), pointer:: prev => null()
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:) => null()
-    integer:: nbuf, nreq, req, sender, id, ntry=0
+    integer:: nbuf, nreq, req=0, sender, id, ntry=0
   contains
     procedure:: send
     procedure:: test_all
     procedure:: wait_all
     procedure:: wait_for_completion
     procedure:: is_complete
+    procedure:: irecv
+    procedure:: test_recv
   end type
   integer(8) :: n_wait_all=0  , n_wait_for=0
   real(8)    :: t_wait_all=0d0, t_wait_for=0d0
@@ -670,6 +672,41 @@ contains
     end if
   end subroutine check_recv
 END FUNCTION is_complete
+
+!> =============================================================================
+!> Issue a message recieve request from a specific rank
+!> =============================================================================
+SUBROUTINE irecv (self, rank)
+  class(mesg_t):: self
+  integer:: rank, ierr
+  !.............................................................................
+  self%sender = rank
+#ifdef MPI
+  call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, rank, MPI_ANY_TAG, mpi%comm, self%req, ierr)
+#endif
+END SUBROUTINE irecv
+
+!> =============================================================================
+!> Issue a message recieve request from a specific rank
+!> =============================================================================
+FUNCTION test_recv (self) RESULT (flag)
+  class(mesg_t):: self
+  integer:: ierr
+  logical:: flag
+#ifdef MPI
+  integer:: stat(MPI_STATUS_SIZE)
+  !.............................................................................
+  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+    !$omp critical (mpi_cr)
+    call MPI_TEST (self%req, flag, stat, ierr)
+    !$omp end critical (mpi_cr)
+  else
+    call MPI_TEST (self%req, flag, stat, ierr)
+  end if
+#else
+  flag = .true.
+#endif
+END FUNCTION test_recv
 
 !> =============================================================================
 !> Return true or false, depending on if the mesg is complete or not.

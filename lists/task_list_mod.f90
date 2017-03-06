@@ -49,6 +49,7 @@ MODULE task_list_mod
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
   integer, save:: min_nq=2**30
   logical, save:: do_delay=.false.
+  logical, save:: recv_active=.false.
   real(8), save:: wc_start=0d0
 CONTAINS
 
@@ -62,7 +63,8 @@ SUBROUTINE init (self, name)
   class(link_t), pointer:: link
   integer:: iostat
   integer:: debug=0
-  namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, do_delay
+  namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, &
+    do_delay, recv_active
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -280,7 +282,7 @@ SUBROUTINE update (self)
        print *, mpi%rank, 'STALLED check_oldest + check_all + resend_bdry'
        call self%check_oldest
        call self%check_all
-       call self%resend_bdry
+       !call self%resend_bdry
     else
       call mpi_mesg%delay (stalled)
     end if
@@ -349,10 +351,11 @@ END FUNCTION find_task
 !> This entire operation should be threadsafe, since no other thread should be
 !> working on the same message and the same patch.
 !> =============================================================================
-SUBROUTINE unpack (self, mesg)
+SUBROUTINE unpack (self, mesg, link)
   class(task_list_t):: self
   class(mesg_t), pointer:: mesg
-  class(link_t), pointer:: link
+  class(link_t), pointer, optional:: link
+  class(link_t), pointer:: link1, link2
   class(task_t), pointer:: task
   logical:: found, failed
   !-----------------------------------------------------------------------------
@@ -361,8 +364,12 @@ SUBROUTINE unpack (self, mesg)
     return
   end if
   !$omp critical (unpack_cr)
-  link => self%find_task (mesg%id)
-  task => link%task
+  if (present(link)) then
+    link1 => link
+  else
+    link1 => self%find_task (mesg%id)
+  end if
+  task => link1%task
   failed = .false.
   !-----------------------------------------------------------------------------
   ! Guard against lingering extra messages to a swapped patch
@@ -379,13 +386,13 @@ SUBROUTINE unpack (self, mesg)
   end if
   if (task%is_set (bits%ready)) then
     found = .false.
-    link => self%queue
-    do while (associated(link))
-      if (link%task%id == task%id) then
+    link2 => self%queue
+    do while (associated(link2))
+      if (link2%task%id == task%id) then
         found = .true.
         exit
       end if
-      link => link%next_time
+      link2 => link2%next_time
     end do
     write (io_unit%log,'(f12.6,2x,a,i9,l3,3x,5l1)') wallclock(), &
       'task_list_mod::unpack ERROR, received mpi_mesg for task with ready bit:', task%id, found, &
@@ -414,9 +421,9 @@ SUBROUTINE unpack (self, mesg)
   !---------------------------------------------------------------------------
   if (task%is_set(bits%swap_request) .and. task%is_set(bits%boundary)) then
     self%na = self%na+1; self%nb = self%nb+1; self%nv = self%nv-1
-    call self%init_nbors (link)
+    call self%init_nbors (link1)
     call task%clear (bits%swap_request+bits%ready)
-    call link%update_nbor_status (link)
+    call link1%update_nbor_status (link1)
     call self%count_status
     if (io%verbose>1) &
       print '(f12.6,2x,a,i6,a,i9,a,i6)', &
@@ -435,9 +442,9 @@ SUBROUTINE unpack (self, mesg)
     if (io%verbose>0) &
       write (io_unit%log,*) 'new virtal patch:', task%id
     self%nv = self%nv+1
-    call self%init_nbors (link)
+    call self%init_nbors (link1)
     call task%clear (bits%swap_request+bits%ready)
-    call link%update_nbor_status (link)
+    call link1%update_nbor_status (link1)
     call self%count_status
   end if
   !$omp end critical (unpack_cr)
@@ -447,8 +454,8 @@ SUBROUTINE unpack (self, mesg)
   ! a boundary patch, it could possibly also be ready to update.
   !-----------------------------------------------------------------------------
   !if (io%verbose>1) &
-  !  call link%test_nbor_status
-  call self%check_nbors (link)
+  !  call link1%test_nbor_status
+  call self%check_nbors (link1)
 END SUBROUTINE unpack
 
 !> =============================================================================
@@ -474,6 +481,10 @@ SUBROUTINE check_mpi (self)
   call mpi_mesg%sent_list%check_sent (nq)
   if (mpi_mesg%recv_priv) then
     call check_priv (self)
+    return
+  end if
+  if (recv_active) then
+    call check_active (self)
     return
   end if
   call trace%begin ('task_list_t%check_mpi', 1, itimer=itimer)
@@ -651,6 +662,44 @@ SUBROUTINE check_priv (self)
   end do
   call trace%end (itimer)
 END SUBROUTINE check_priv
+
+!> =============================================================================
+!> Run through all virtual patches, and allocate message data types if not
+!> allocated.  If an old request exists, test if it has completed.  If yes,
+!> unpack and issue a new request.  If no request exists, issue a request.
+!> =============================================================================
+SUBROUTINE check_active (self)
+  class(task_list_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  integer:: nvirt, nunpk
+  !.............................................................................
+  nvirt = 0
+  nunpk = 0
+  link => self%head
+  do while (associated(link))
+    task => link%task
+    if (task%is_set (bits%virtual)) then
+      nvirt = nvirt+1
+      select type (task)
+      class is (patch_t)
+      if (.not.associated(task%mesg)) then
+        call task%allocate_mesg
+      end if
+      if (task%mesg%req == 0) then
+        call task%mesg%irecv  (task%rank)
+      end if
+      if (task%mesg%test_recv()) then
+        call self%unpack (task%mesg, link=link)
+        nunpk = nunpk+1
+        call task%mesg%irecv (task%rank)
+      end if
+      end select
+    end if
+    link => link%next
+  end do
+  print *, 'check_active:', mpi%rank, nvirt, nunpk
+END SUBROUTINE check_active
 
 !> =============================================================================
 !> Split a patch into two (parameter) in each direction, merging the new patches

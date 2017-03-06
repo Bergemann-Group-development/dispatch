@@ -64,6 +64,7 @@ MODULE patch_mod
     procedure:: output                  ! legacy output
     procedure:: output_new              ! new output
     procedure:: output_legacy           ! legacy output
+    procedure:: allocate_mesg           ! allocate a mesg buffer
     procedure:: pack                    ! pack patch into buffer
     procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
@@ -236,13 +237,6 @@ SUBROUTINE header_to_patch (self, head)
   self%iit        = head%iit(1:nt)
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
-  if (io%verbose > 1) &
-    write (io_unit%log,'(f12.6,3x,a,i7,i4,2x,3l1,2i4,f8.4,f11.6)') &
-      wallclock(), 'header_to_patch: id, nq, BVS, nsnd, nrcv, latency, time =', self%id, self%nq, &
-      self%is_set(bits%boundary), &
-      self%is_set(bits%virtual), &
-      self%is_set(bits%swap_request), &
-      mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency, self%time
 END SUBROUTINE header_to_patch
 
 !> =============================================================================
@@ -754,6 +748,20 @@ END SUBROUTINE output_new
 !> =============================================================================
 !> Pack patch info into a buffer, for MPI communication
 !> =============================================================================
+SUBROUTINE allocate_mesg (self)
+  class(patch_t):: self
+  !-----------------------------------------------------------------------------
+  allocate (self%mesg)
+  self%mesg%nbuf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
+  if (kind(self%mem)==8) &
+    self%mesg%nbuf = self%mesg%nbuf * 2  ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
+  self%mesg%nbuf = n_header + self%nv*self%mesg%nbuf
+  allocate (self%mesg%buffer(self%mesg%nbuf))
+END SUBROUTINE allocate_mesg
+
+!> =============================================================================
+!> Pack patch info into a buffer, for MPI communication
+!> =============================================================================
 SUBROUTINE pack (self, mesg)
   class(patch_t):: self
   class(mesg_t), pointer:: mesg
@@ -846,6 +854,14 @@ SUBROUTINE unpack (self, mesg)
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
   call self%header_to_patch (header)
+  if (io%verbose > 1) &
+    write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
+      wallclock(), 'header_to_patch: id, nq, BVS, nsnd, nrcv, latency, time =', &
+      self%id, mesg%sender, self%nq, &
+      self%is_set(bits%boundary), &
+      self%is_set(bits%virtual), &
+      self%is_set(bits%swap_request), &
+      mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency, self%time
   self%wc_last = wallclock()
   if (io%verbose > 1) write (io_unit%log,1) 'patch_mod::unpk id, nq, time  after:', &
     self%id, self%nq, self%time, &
