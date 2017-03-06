@@ -8,15 +8,11 @@
 /
 &mpi_mesg_params
  delay_ms=1.0
- send_priv=f
+ send_priv=t
  recv_priv=f
- max_sent=900
- max_recv=200
- max_probe=2
- min_nq=400
 /
 &timer_params
- sec_per_report=2
+ sec_per_report=5
 /
 &io_params
  verbose=2

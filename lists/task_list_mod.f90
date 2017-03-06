@@ -49,7 +49,7 @@ MODULE task_list_mod
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
   integer, save:: min_nq=2**30
   logical, save:: do_delay=.false.
-  logical, save:: recv_active=.false.
+  logical, save:: recv_active=.true.
   real(8), save:: wc_start=0d0
 CONTAINS
 
@@ -678,7 +678,10 @@ SUBROUTINE check_active (self)
   class(task_t), pointer:: task
   integer:: nvirt, nunpk
   real(8):: wc
+  integer, save:: itimer=0
   !.............................................................................
+  call trace%begin ('task_list_t%check_active', itimer=itimer)
+  !$omp critical (active_cr)
   nvirt = 0
   nunpk = 0
   link => self%head
@@ -708,6 +711,8 @@ SUBROUTINE check_active (self)
     end if
     link => link%next
   end do
+  !$omp end critical (active_cr)
+  call trace%end
   !print *, 'check_active:', mpi%rank, nvirt, nunpk
 END SUBROUTINE check_active
 

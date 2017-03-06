@@ -88,7 +88,7 @@ MODULE mpi_mesg_mod
   logical, save:: wait=.false.                  ! if true, always use MPI_Wait
   logical, save:: send_wait=.false.             ! if true, wait in OMP task
   logical, save:: send_priv=.true.              ! if true, sent_list is private
-  logical, save:: recv_priv=.true.              ! if true, recv_list is private
+  logical, save:: recv_priv=.false.             ! if true, recv_list is private
   logical, save:: debug=.false.
   integer, save:: id=0
 CONTAINS
