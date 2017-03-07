@@ -359,20 +359,9 @@ SUBROUTINE check_oldest (self)
   link => oldest
   write (io_unit%log,*) 'the oldest active  task is ', oldest%task%id, oldest%task%time
   write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, oldestv%task%time
-  write (io_unit%log,*) 'check_oldest: phase 2'
-  if (oldest%task%is_clear (bits%virtual+bits%external)) then
-    if (oldest%task%is_set (bits%ready)) then
-      write (io_unit%log,*) 'clearing ready bit on', oldest%task%id
-      call oldest%task%clear (bits%ready)
-      call self%check_ready (oldest)                    ! oldest ready?
-    end if
-  else
-    write (io_unit%log,*) 'the oldest task is not active: v, e =', &
-      oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
-  end if
   !$omp end critical (list_cr)
   !
-  write (io_unit%log,*) 'check_oldest: phase 3', associated(oldest)
+  write (io_unit%log,*) 'check_oldest: phase 2', associated(oldest)
   if (associated(oldest)) then
     write (io_unit%log,1) 'the oldest local task is', oldest%task%id, &
       'rank', oldest%task%rank, oldest%task%time, &
@@ -386,7 +375,7 @@ SUBROUTINE check_oldest (self)
       link => link%next
     end do
   end if
-  write (io_unit%log,*) 'check_oldest: phase 4', associated(oldestv)
+  write (io_unit%log,*) 'check_oldest: phase 3', associated(oldestv)
   if (associated(oldestv)) then
     write (io_unit%log,1) 'the oldest virtual task is', oldestv%task%id, &
       'rank', oldestv%task%rank, oldestv%task%time, &
