@@ -681,7 +681,7 @@ END SUBROUTINE check_priv
 !> =============================================================================
 SUBROUTINE init_virtual (self)
   class(task_list_t):: self
-  class(link_t), pointer:: link, head
+  class(link_t), pointer:: link
   class(task_t), pointer:: task
   integer:: nvirt, i, i1, i2
   integer, save:: itimer=0
@@ -700,20 +700,14 @@ SUBROUTINE init_virtual (self)
     end if
     link => link%next
   end do
+  nvirt = nvirt/omp%nthreads + 1
   !---------------------------------------------------------------------------
   ! Each thread copies its share of virtual patches to its private list, and
-  ! initializes its private virtual task list.
+  ! initializes its private virtual task list.  Using this with succesive
+  ! passage of each thread through a critical region worked OK with gfortran,
+  ! but gives serious compiler related problems with ifort (17.0.1).  Below
+  ! it has been rewriten to work with computed intervals for each thread.
   !---------------------------------------------------------------------------
-  link => self%head
-  if (mpi%rank==0) then
-    do while (associated(link))
-      !print *,'mk1',link%task%id
-      link => link%next
-    end do
-  end if
-  nvirt = nvirt/omp%nthreads + 1
-
-  !if (mpi%rank==0) print *,'mk2',omp_get_thread_num()
   !$omp parallel shared(nvirt,mpi,bits,self) private(link,i,i1,i2,task) default(none)
   allocate (virtual_list)
   i1 = omp_get_thread_num()*nvirt
@@ -732,11 +726,9 @@ SUBROUTINE init_virtual (self)
       end if
       i = i+1
     end if
-    !if (mpi%rank==0) print *,link%task%id
     link => link%next
   end do
   !$omp end parallel
-  !if (mpi%rank==0) print *,'mk3',omp_get_thread_num()
   call trace%end
 END SUBROUTINE init_virtual
 
@@ -754,7 +746,6 @@ SUBROUTINE check_virtual (self)
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('task_list_t%check_virtual', itimer=itimer)
-  !print *, 'mk5', mpi%rank, omp_get_thread_num()
   !-----------------------------------------------------------------------------
   ! Each thread runs through its list of virtual tasks, unpacks completed
   ! messages, and issues a new request
@@ -784,7 +775,6 @@ SUBROUTINE check_virtual (self)
     link => link%next
   end do
   call trace%end
-  !print *, 'check_active:', mpi%rank, nvirt, nunpk
 END SUBROUTINE check_virtual
 
 !> =============================================================================
