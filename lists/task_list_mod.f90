@@ -51,6 +51,8 @@ MODULE task_list_mod
   logical, save:: do_delay=.false.
   logical, save:: recv_active=.true.
   real(8), save:: wc_start=0d0
+  type(task_list_t), save, pointer:: virtual_list=>null()
+  !$omp threadprivate (virtual_list)
 CONTAINS
 
 !> =============================================================================
@@ -104,6 +106,7 @@ SUBROUTINE execute (self)
     call self%check_ready (link)
     link => link%next
   end do
+  call init_virtual(self)
   !-----------------------------------------------------------------------------
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
@@ -269,7 +272,7 @@ SUBROUTINE update (self)
     ! Since output of a task may be time consuming, wait with this until the task
     ! has been used for all other purposes
     !-----------------------------------------------------------------------------
-    
+
     if (task%kind/='rt_patch') call task%output (self%name)             ! check output
     call task%clear (bits%busy)                         ! clear busy bit
     !$omp atomic write
@@ -489,7 +492,7 @@ SUBROUTINE check_mpi (self)
     return
   end if
   if (recv_active) then
-    call check_active (self)
+    call check_virtual(self)
     return
   end if
   call trace%begin ('task_list_t%check_mpi', 1, itimer=itimer)
@@ -669,53 +672,108 @@ SUBROUTINE check_priv (self)
 END SUBROUTINE check_priv
 
 !> =============================================================================
-!> Run through all virtual patches, and allocate message data types if not
-!> allocated.  If an old request exists, test if it has completed.  If yes,
-!> unpack and issue a new request.  If no request exists, issue a request.
+!> Run through all virtual patches, count them, and create separate threadprivate
+!> lists that together include all of them.
 !> =============================================================================
-SUBROUTINE check_active (self)
+SUBROUTINE init_virtual (self)
   class(task_list_t):: self
   class(link_t), pointer:: link
   class(task_t), pointer:: task
-  integer:: nvirt, nunpk
-  real(8):: wc
+  integer:: nvirt, i
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('task_list_t%check_active', itimer=itimer)
-  !$omp critical (active_cr)
+  call trace%begin ('task_list_t%init_virtual', itimer=itimer)
+  !---------------------------------------------------------------------------
+  ! Count the number of virtual tasks, and assign a number per thread
+  !---------------------------------------------------------------------------
   nvirt = 0
-  nunpk = 0
   link => self%head
   do while (associated(link))
     task => link%task
     if (task%is_set (bits%virtual)) then
       nvirt = nvirt+1
-      select type (task)
-      class is (patch_t)
-      if (.not.associated(task%mesg)) then
-        call task%allocate_mesg
-        task%wc_last = wallclock()
-      end if
-      if (task%mesg%req == 0) then
-        call task%mesg%irecv  (task%rank, task%id)
-      end if
-      if (task%mesg%test_recv()) then
-        call self%unpack (task%mesg, link=link)
-        wc = wallclock() 
-        if (wc-task%wc_last > 10.) print &
-          '("WARNING: virtual patch not updated in",f5.1," sec")', wc
-        task%wc_last = wc
-        call task%mesg%irecv (task%rank, task%id)
-        nunpk = nunpk+1
-      end if
-      end select
     end if
     link => link%next
   end do
-  !$omp end critical (active_cr)
+  !---------------------------------------------------------------------------
+  ! Each thread copies its share of virtual patches to its private list, and
+  ! initializes its private virtual task list.
+  !---------------------------------------------------------------------------
+  !$omp parallel shared(nvirt,link)
+  !$omp single
+  nvirt = nvirt/omp%nthreads + 1
+  link => self%head
+  !$omp end single
+  !$omp critical (virtual_cr)
+  allocate (virtual_list)
+  call virtual_list%init ('virtual')
+  i = 1
+  do while (associated(link))
+    task => link%task
+    if (task%is_set (bits%virtual)) then
+      call virtual_list%append (task)
+      select type (task)
+      class is (patch_t)
+      call task%allocate_mesg
+      end select
+      task%wc_last = wallclock()
+      call task%mesg%irecv  (task%rank, task%id)
+      !print *,mpi&rank,'MK',omp_get_thread_num(),i,task%id,'irec'
+      i = i+1
+    end if
+    link => link%next
+    if (i > nvirt) exit
+  end do
+  !$omp end critical (virtual_cr)
+  !$omp end parallel
+  call trace%end
+END SUBROUTINE init_virtual
+
+!> =============================================================================
+!> Run through all virtual patches, unpack completed receives, and issue new
+!> receive requests.  The virtual_list is threadprivate, so no critical region
+!> is needed.
+!> =============================================================================
+SUBROUTINE check_virtual (self)
+  class(task_list_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  integer:: nunpk
+  real(8):: wc
+  integer, save:: itimer=0
+  !.............................................................................
+  call trace%begin ('task_list_t%check_virtual', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Each thread runs through its list of virtual tasks, unpacks completed
+  ! messages, and issues a new request
+  !-----------------------------------------------------------------------------
+  nunpk = 0
+  link => virtual_list%head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (patch_t)
+    if (task%mesg%test_recv()) then
+      call self%unpack (task%mesg, link=link)
+      !$omp atomic
+      mpi_mesg%n_recv = mpi_mesg%n_recv+1
+      !$omp atomic
+      timer%bytes_recv = timer%bytes_recv + 4.0_8*task%mesg%nbuf
+      !$omp atomic
+      timer%n_recv = timer%n_recv + 1_8
+      wc = wallclock()
+      if (wc-task%wc_last > 10.) print &
+        '("WARNING: virtual patch not updated in",f5.1," sec")', wc
+      task%wc_last = wc
+      call task%mesg%irecv (task%rank, task%id)
+      nunpk = nunpk+1
+    end if
+    end select
+    link => link%next
+  end do
   call trace%end
   !print *, 'check_active:', mpi%rank, nvirt, nunpk
-END SUBROUTINE check_active
+END SUBROUTINE check_virtual
 
 !> =============================================================================
 !> Split a patch into two (parameter) in each direction, merging the new patches

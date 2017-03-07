@@ -757,7 +757,6 @@ SUBROUTINE allocate_mesg (self)
     self%mesg%nbuf = self%mesg%nbuf * 2  ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
   self%mesg%nbuf = n_header + self%nv*self%mesg%nbuf
   allocate (self%mesg%buffer(self%mesg%nbuf))
-  print *, 'allocate_mesg:', self%mesg%nbuf, self%mesg%req
 END SUBROUTINE allocate_mesg
 
 !> =============================================================================
@@ -1716,7 +1715,7 @@ SUBROUTINE log_interpolate (self, time, i, a)
     b => self%mem(:,:,:,i,jt(2),1)
     print *, self%id, 'log_interp(2)', jt(2), minval(b), maxval(b)
   end if
-  
+
   a = log(self%mem(:,:,:,i,jt(1),1))*pt(1) &
     + log(self%mem(:,:,:,i,jt(2),1))*pt(2)
   call trace%end (itimer)
