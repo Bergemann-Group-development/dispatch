@@ -11,6 +11,7 @@
 &load_balance_params
 /
 &task_list_params
+ check_active=f
 /
 &mpi_mesg_params
 /
@@ -48,7 +49,7 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.020
+ end_time=0.100
  out_time=0.05
  print_time=0.0
  guard_zones=f

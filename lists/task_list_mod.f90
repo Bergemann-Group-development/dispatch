@@ -39,6 +39,8 @@ MODULE task_list_mod
     procedure:: find_task
     procedure:: unpack
     procedure:: check_mpi
+    procedure:: init_virtual
+    procedure:: check_virtual
     procedure:: split
     procedure:: output
     procedure:: check_flags
@@ -106,11 +108,12 @@ SUBROUTINE execute (self)
     call self%check_ready (link)
     link => link%next
   end do
-  call init_virtual(self)
+  if (recv_active) &
+    call self%init_virtual
   !-----------------------------------------------------------------------------
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
-  call mpi%barrier ('task_list_mod::execute')
+  !call mpi%barrier ('task_list_mod::execute')
   wc_start = wallclock()
   call tic (time=sec)
   call timer%print
@@ -492,7 +495,7 @@ SUBROUTINE check_mpi (self)
     return
   end if
   if (recv_active) then
-    call check_virtual(self)
+    call self%check_virtual
     return
   end if
   call trace%begin ('task_list_t%check_mpi', 1, itimer=itimer)
@@ -677,11 +680,12 @@ END SUBROUTINE check_priv
 !> =============================================================================
 SUBROUTINE init_virtual (self)
   class(task_list_t):: self
-  class(link_t), pointer:: link
+  class(link_t), pointer:: link, head
   class(task_t), pointer:: task
-  integer:: nvirt, i
+  integer:: nvirt, i, i1, i2
   integer, save:: itimer=0
   !.............................................................................
+  if (mpi%size==1) return
   call trace%begin ('task_list_t%init_virtual', itimer=itimer)
   !---------------------------------------------------------------------------
   ! Count the number of virtual tasks, and assign a number per thread
@@ -699,33 +703,39 @@ SUBROUTINE init_virtual (self)
   ! Each thread copies its share of virtual patches to its private list, and
   ! initializes its private virtual task list.
   !---------------------------------------------------------------------------
-  !$omp parallel shared(nvirt,link)
-  !$omp single
-  nvirt = nvirt/omp%nthreads + 1
   link => self%head
-  !$omp end single
-  !$omp critical (virtual_cr)
+  if (mpi%rank==0) then
+    do while (associated(link))
+      !print *,'mk1',link%task%id
+      link => link%next
+    end do
+  end if
+  nvirt = nvirt/omp%nthreads + 1
+
+  !if (mpi%rank==0) print *,'mk2',omp_get_thread_num()
+  !$omp parallel shared(nvirt,mpi,bits,self) private(link,i,i1,i2,task) default(none)
   allocate (virtual_list)
-  call virtual_list%init ('virtual')
+  i1 = omp_get_thread_num()*nvirt
+  i2 = i1 + nvirt
   i = 1
+  link => self%head
   do while (associated(link))
     task => link%task
     if (task%is_set (bits%virtual)) then
-      call virtual_list%append (task)
-      select type (task)
-      class is (patch_t)
-      call task%allocate_mesg
-      end select
-      task%wc_last = wallclock()
-      call task%mesg%irecv  (task%rank, task%id)
-      !print *,mpi&rank,'MK',omp_get_thread_num(),i,task%id,'irec'
+      if (i >= i1 .and. i < i2) then
+        call virtual_list%append (task)
+        call task%allocate_mesg
+        task%wc_last = wallclock()
+        call task%mesg%irecv  (task%rank, task%id)
+        !if (mpi%rank==0) print *,mpi%rank,'MK',omp_get_thread_num(),i,task%id,'irec'
+      end if
       i = i+1
     end if
+    !if (mpi%rank==0) print *,link%task%id
     link => link%next
-    if (i > nvirt) exit
   end do
-  !$omp end critical (virtual_cr)
   !$omp end parallel
+  !if (mpi%rank==0) print *,'mk3',omp_get_thread_num()
   call trace%end
 END SUBROUTINE init_virtual
 
@@ -743,6 +753,7 @@ SUBROUTINE check_virtual (self)
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('task_list_t%check_virtual', itimer=itimer)
+  !print *, 'mk5', mpi%rank, omp_get_thread_num()
   !-----------------------------------------------------------------------------
   ! Each thread runs through its list of virtual tasks, unpacks completed
   ! messages, and issues a new request
