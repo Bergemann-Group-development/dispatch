@@ -282,8 +282,9 @@ END SUBROUTINE check_nbors
 SUBROUTINE check_all (self)
   class(list_t):: self
   class(link_t), pointer:: link
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_mod::check_all '//self%name)
+  call trace_begin('list_mod::check_all', itimer=itimer)
   write (io_unit%log,*) 'check_all: phase 1'
   !$omp critical (list_cr)
   link => self%head
@@ -299,8 +300,8 @@ SUBROUTINE check_all (self)
         if (link%task%is_set (bits%ready)) then
           write (io_unit%log,*) 'clearing ready bit on', link%task%id
           call link%task%clear (bits%ready)
-          call self%check_ready (link)                  ! link ready?
         end if
+        call self%check_ready (link)                  ! link ready?
       end if
       link => link%next
     end do

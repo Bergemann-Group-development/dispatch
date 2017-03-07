@@ -284,8 +284,9 @@ SUBROUTINE update (self)
   else if (do_delay) then
     !$omp atomic
     stalled = stalled+1
+    call self%check_all
     if (stalled == retry_stalled) then
-       print *, mpi%rank, 'STALLED check_oldest + check_all + resend_bdry'
+       print *, mpi%rank, 'STALLED check_oldest + check_all'
        call self%check_oldest
        call self%check_all
        !call self%resend_bdry
