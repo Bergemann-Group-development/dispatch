@@ -7,7 +7,7 @@
  retry_stalled=100
 /
 &mpi_mesg_params
- delay_ms=1.0
+ delay_ms=300.0
  send_priv=t
  recv_priv=f
 /
@@ -36,7 +36,7 @@
 &patch_params
  nt=7
  courant=0.2
- grace=0.3
+ grace=0.1
  !              ! steno/Ivy
 !n=3*64         ! 0.55 mus/pt
 !n=3*48         ! 0.53 mus/pt
