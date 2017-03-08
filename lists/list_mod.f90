@@ -252,6 +252,8 @@ SUBROUTINE check_nbors (self, link)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
+  if (io%verbose > 1) &
+    write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
   !!omp critical (time_cr)
   task => link%task                                   ! main task
   nbor => link%nbor                                   ! first nbor
@@ -259,7 +261,12 @@ SUBROUTINE check_nbors (self, link)
     if (nbor%task%id==io%id_debug) print *, &
       'task', task%id,' needs task ', nbor%task%id, nbor%needs_me
     if (nbor%needs_me) then                           ! needs checking?
+      if (io%verbose > 1) &
+        write (io_unit%log,*) 'check nbor', nbor%task%id
       call self%check_ready (nbor%link)               ! pointer back
+    else
+      if (io%verbose > 1) &
+        write (io_unit%log,*) 'no need to', nbor%task%id
     end if
     nbor => nbor%next                                 ! next nbor
   end do
@@ -413,6 +420,8 @@ SUBROUTINE check_ready (self, link)
       if (nbor%task%is_ahead_of(task)) then             ! and is ahead in time
         nbor => nbor%next                               ! next nbor
       else                                              ! not ahead in time
+        if (io%verbose > 1) &
+          write (io_unit%log,*) task%id,' failed on',nbor%task%id,nbor%task%time
         return
       end if
     else                                                ! nbor not needed

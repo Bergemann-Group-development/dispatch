@@ -150,7 +150,9 @@ SUBROUTINE init (self, label)
   end do
   end do
   !-----------------------------------------------------------------------------
-  ! Add an nbor list to each patch
+  ! Add an nbor list to each patch.  The modulo below assumes a period mesh in
+  ! all directions.  If this is not the case on one or more directions, the
+  ! nbor lists must be adjusted accordingly
   !-----------------------------------------------------------------------------
   link => self%task_list%head
   do while (associated(link))

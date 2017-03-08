@@ -206,11 +206,13 @@ SUBROUTINE header_to_patch (self, head)
   if (iand(head%status, bits%boundary) /= 0) then
     head%status = ior(head%status, bits%virtual)
     head%status = iand(head%status, not(bits%boundary))
-    write (io_unit%mpi, *) head%id, 'swapping to virtual'
+    if (io%verbose>2) &
+      write (io_unit%mpi, *) head%id, 'swapping to virtual'
   else if (iand(head%status, bits%virtual) /= 0) then
     head%status = ior(head%status, bits%boundary)
     head%status = iand(head%status, not(bits%virtual))
-    write (io_unit%mpi, *) head%id, 'swapping to boundary'
+    if (io%verbose>2) &
+      write (io_unit%mpi, *) head%id, 'swapping to boundary'
   end if
   head%status = iand(head%status, not(bits%ready))
   self%id         = head%id

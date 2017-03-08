@@ -101,7 +101,7 @@ SUBROUTINE send (self, rank)
   integer:: rank, req, ierr
   !.............................................................................
   call trace%begin ('mesg_t%send')
-  if (io%verbose>1) then
+  if (io%verbose>2) then
     write (io_unit%log,*) &
     'mpi_mesg::send id, nbuf, to =', self%id, self%nbuf, rank
     flush (io_unit%log)

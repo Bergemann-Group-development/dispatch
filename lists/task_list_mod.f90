@@ -757,6 +757,8 @@ SUBROUTINE check_virtual (self)
     select type (task)
     class is (patch_t)
     if (task%mesg%test_recv()) then
+      if (io%verbose > 0) &
+        write (io_unit%log,*) wallclock(),' check_virtual hit ', task%id
       call self%unpack (task%mesg, link=link)
       !$omp atomic
       mpi_mesg%n_recv = mpi_mesg%n_recv+1
@@ -770,10 +772,13 @@ SUBROUTINE check_virtual (self)
       task%wc_last = wc
       call task%mesg%irecv (task%rank, task%id)
       nunpk = nunpk+1
+    else if (io%verbose > 2) then
+      write (io_unit%log,*) wallclock(),' check_virtual miss', task%id
     end if
     end select
     link => link%next
   end do
+  if (io%verbose>1) write (io_unit%log,*) 'check_virtual', nunpk
   call trace%end
 END SUBROUTINE check_virtual
 

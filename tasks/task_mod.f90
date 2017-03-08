@@ -113,7 +113,7 @@ SUBROUTINE init (self)
   id = self%id
   scene%n_patch = self%id
   !$omp end critical (task_init_cr)
-  if (io%verbose>-1) &
+  if (io%verbose>2) &
     write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)
   call trace_end
@@ -139,7 +139,8 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   if (io%verbose > 1) then
     write (io_unit%log,'(a,7i10)')   'task_mod::rotate iit =', self%iit
-    write (io_unit%log,'(a,7f10.6)') 'task_mod::rotate   t =', self%t(self%iit)
+    flush (io_unit%log)
+    write (io_unit%log,'(a,7f10.6)') 'task_mod::rotate   t =', self%t(max(1,min(self%nt,self%iit)))
   end if
   !-----------------------------------------------------------------------------
   ! Time slot rotation.  Note that self%time should be the LAST of these
