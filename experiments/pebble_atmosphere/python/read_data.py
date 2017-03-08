@@ -6,7 +6,7 @@ import read_file as rf
 reload(rf)
 from read_file import read_file
 
-def read_data (ip=1,it=0,level=0,ix=0,iy=0,iz=0,ng=0,st=0,nodata=0,run='',dir='data'):
+def read_data (ip=1,it=0,level=0,ix=0,iy=0,iz=0,ng=0,st=0,nodata=0,run='',dir='../data'):
     if level>0:
         ip=14+ix+3*iy+9*iz+27*(level-1)
     name=dir+'/'+run+'/{:04d}_{:04d}'.format(ip,it)

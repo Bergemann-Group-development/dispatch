@@ -4,7 +4,7 @@
 '''
 import numpy as np
 
-def read_file (fileroot, verbose=False,derivs=False,nodata=0):
+def read_file (fileroot, verbose=False,derivs=True,nodata=0):
     if (verbose): 
         print '          files:', fileroot+'{.txt,.dat}'
     class patch:
