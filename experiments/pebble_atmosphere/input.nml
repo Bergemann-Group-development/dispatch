@@ -1,13 +1,14 @@
 &io_params
  verbose=1
  do_output=t
- do_trace=t
+ do_trace=f
  omp_trace=f
 /
 &out_params
  ! L_unit = R_E, u_unit = km/s, t_unit = 6300 sec ~ 2h
  end_time=2.00          ! outer scale = 1500 R_E => 1500 time units at 1 km/s
- out_time=0.10          ! pebble speed 30 => 1.5 l.u. per snapshot
+ !out_time=0.40          ! pebble speed 30 => 1.5 l.u. per snapshot
+ out_time=0.1
  print_time=0
  guard_zones=t
  time_derivs=f
