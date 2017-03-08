@@ -282,13 +282,13 @@ SUBROUTINE update (self)
     stalled = 0
     !call mpi_mesg%diagnostics (0)
   else if (do_delay) then
-    !$omp atomic
+    !$omp critical (delay_cr)
     stalled = stalled+1
     call self%check_all
     if (stalled == retry_stalled) then
        print *, mpi%rank, 'STALLED check_oldest + check_all'
+       !call self%check_all
        call self%check_oldest
-       call self%check_all
        !call self%resend_bdry
     else
       call mpi_mesg%delay (stalled)
@@ -301,6 +301,7 @@ SUBROUTINE update (self)
       print *, mpi%rank, 'STALLED bailing out'
       call mpi%abort ('exceeded max_stalled')
     end if
+    !$omp end critical (delay_cr)
   end if
   call trace_end
 END SUBROUTINE update
@@ -681,7 +682,7 @@ END SUBROUTINE check_priv
 !> =============================================================================
 SUBROUTINE init_virtual (self)
   class(task_list_t):: self
-  class(link_t), pointer:: link
+  class(link_t), pointer:: link, new
   class(task_t), pointer:: task
   integer:: nvirt, i, i1, i2
   integer, save:: itimer=0
@@ -708,7 +709,7 @@ SUBROUTINE init_virtual (self)
   ! but gives serious compiler related problems with ifort (17.0.1).  Below
   ! it has been rewriten to work with computed intervals for each thread.
   !---------------------------------------------------------------------------
-  !$omp parallel shared(nvirt,mpi,bits,self) private(link,i,i1,i2,task) default(none)
+  !$omp parallel shared(nvirt,mpi,bits,self,io) private(link,i,i1,i2,task,new) default(none)
   allocate (virtual_list)
   i1 = omp_get_thread_num()*nvirt
   i2 = i1 + nvirt
@@ -718,10 +719,17 @@ SUBROUTINE init_virtual (self)
     task => link%task
     if (task%is_set (bits%virtual)) then
       if (i >= i1 .and. i < i2) then
-        call virtual_list%append (task)
+        allocate (new)
+        new%task => task
+        new%nbor => link%nbor
+        new%needed = link%needed
+        new%needs_me = link%needs_me
+        call virtual_list%append_link (new)
         call task%allocate_mesg
         task%wc_last = wallclock()
         call task%mesg%irecv  (task%rank, task%id)
+        if (io%verbose>0) &
+          write (io_unit%log,*) 'init_virtual:', omp_get_thread_num(), task%id
         !if (mpi%rank==0) print *,mpi%rank,'MK',omp_get_thread_num(),i,task%id,'irec'
       end if
       i = i+1
