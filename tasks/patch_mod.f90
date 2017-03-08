@@ -18,6 +18,7 @@ MODULE patch_mod
   USE link_mod
   USE mesh_mod
   USE buffered_output_mod
+  USE boundary_mod
   implicit none
   private
   integer, parameter:: ndim = 3
@@ -40,6 +41,7 @@ MODULE patch_mod
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
     class(link_t), pointer:: link       ! this could be useful
+    type(boundary_t):: boundary
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------

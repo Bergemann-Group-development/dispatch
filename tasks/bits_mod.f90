@@ -53,6 +53,7 @@ MODULE bits_mod
     integer:: zdir         = 2**3
     integer:: upper        = 2**4
     integer:: lower        = 2**5
+    integer:: spherical    = 2**6
     integer:: symmetric    = 2**7
     integer:: antisymmetric= 2**8
     integer:: extrapolate  = 2**9

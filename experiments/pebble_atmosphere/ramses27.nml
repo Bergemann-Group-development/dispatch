@@ -6,8 +6,10 @@
 /
 &out_params
  ! L_unit = R_E, u_unit = km/s, t_unit = 6300 sec ~ 2h, 1d ~ 12 t.u., 1 yr ~ 4000 t.u.
- end_time=4000.         ! outer scale = 1500 R_E => 1500 time units at 1 km/s
- out_time=40.           ! pebble speed 30 => 1.5 l.u. per snapshot
+ end_time=2000.         ! outer scale = 1500 R_E => 1500 time units at 1 km/s
+ !end_time=40.           ! outer scale = 1500 R_E => 1500 time units at 1 km/s
+ out_time=10.           ! pebble speed 30 => 1.5 l.u. per snapshot
+ !out_time=0.1
  print_time=0
  guard_zones=t
  time_derivs=f
@@ -29,18 +31,18 @@
  ppc=1
 /
 &planet_params
- mass_m_earth=0.9
+ mass_m_earth=0.90
  radius_r_earth=27.
 /
 &atmosphere_params
  densitY_cgs=1e-9
  temperature_K=200.
- mass_m_earth=0.9
+ mass_m_earth=0.95
  orbit_au=1.0
 /
 &planet_atm_params
  v_head_cgs=0.0
- v_accrete_cgs=50e2
+ v_accrete_cgs=0e2
 /
 &patch_params
  !n=3*20
@@ -54,7 +56,7 @@
 &ramses_params
  gamma=1.4
  slope_type=2
- courant_factor=0.8
+ courant_factor=0.6
  smallr=1e-20
  smallc=1e-3
  do_isothermal=f

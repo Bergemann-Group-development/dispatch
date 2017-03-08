@@ -1,7 +1,7 @@
 &io_params
  verbose=1
  do_output=t
- do_trace=f
+ do_trace=t
  omp_trace=f
 /
 &out_params

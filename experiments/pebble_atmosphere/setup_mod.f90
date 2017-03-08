@@ -60,7 +60,10 @@ SUBROUTINE init (self, label)
   link => self%task_list%head
   do while (associated(link))
     patch => task2patch (link%task)
-    if (all(abs(patch%position) < patch%ds)) call patch%set (bits%has_BC)
+    if (all(abs(patch%position) < patch%ds)) then
+      call patch%set (bits%has_BC)
+      call patch%boundary%set (bits%spherical)
+    end if
     link => link%next
   end do
   call trace_end

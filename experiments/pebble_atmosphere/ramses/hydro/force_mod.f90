@@ -68,7 +68,7 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   !.............................................................................
   integer:: ix, iy, iz, iv
   real(8):: kx, ky, kz, rs(3), rp(3), rs1, rp1
-  real(8):: x, y, z, xp, yp, zp, ds2(3)
+  real(8):: x, y, z, xp, yp, zp, ds2(3), R_Hill
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%star_and_planet')
   ds2 = 0.5*m%d
@@ -102,27 +102,58 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
         ! gravity onto the z-axis, and has the same scaling constant as the
         ! radial force, but the opposite sign.
         !-----------------------------------------------------------------------
-        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + planet%omega(3)**2*yp
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - planet%omega(3)**2*zp
-        ff(ix,iy,iz,:) = ff(ix,iy,iz,:)*d(ix,iy,iz)
+        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + 3.0*planet%omega(3)**2*yp
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp
       end do
     end do
   end do
-  !print *,'planet_force: mass, grav =', planet%mass, scaling%grav
-  !print *,'planet_force: omega      =', planet%omega
-  !print *,'planet_force: position   =', planet%position
+  !-----------------------------------------------------------------------------
+  ! Radial Hill distance = L2
+  !-----------------------------------------------------------------------------
+  R_Hill = (planet%mass*scaling%grav/(3.*planet%omega(3)**2))**0.33333333
+  if (io%verbose > 1) then
+    if (abs(m(1)%p)          < 0.5*m(1)%d .and. &
+        abs(m(2)%p - R_Hill) < 0.5*m(2)%s .and. &
+        abs(m(3)%p)          < 0.5*m(3)%d) then
+      ix = m(1)%o
+      iz = m(3)%o
+      iy = m(2)%o + (R_Hill-m(2)%p)/m(2)%d
+      x = m(1)%p + r1(ix) - planet%position(1)
+      y = m(2)%p + r2(iy) - planet%position(2)
+      z = m(3)%p + r3(iz) - planet%position(3)
+      rp1 = sqrt(x**2+y**2+z**2)
+      print *, 'radial   R_Hill, force:', ix,iy,iz, R_Hill, rp1, ff(ix,iy,iz,2)
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! Vertical Hill distance
+  !-----------------------------------------------------------------------------
+  if (io%verbose > 1) then
+    if (abs(m(1)%p)          < 0.5*m(1)%d .and. &
+        abs(m(2)%p)          < 0.5*m(2)%d .and. &
+        abs(m(3)%p - R_Hill) < 0.5*m(3)%s) then
+      ix = m(1)%o
+      iy = m(2)%o
+      iz = m(3)%o + (R_Hill-m(3)%p)/m(3)%d
+      x = m(1)%p + r1(ix) - planet%position(1)
+      y = m(2)%p + r2(iy) - planet%position(2)
+      z = m(3)%p + r3(iz) - planet%position(3)
+      rp1 = sqrt(x**2+y**2+z**2)
+      print *, 'vertical R_Hill, force:', ix,iy,iz, R_Hill, rp1, ff(ix,iy,iz,3)
+    end if
+  end if
   end associate
   !-----------------------------------------------------------------------------
-  ! Add the classical Coriolis force terms, correctly centered (not important),
-  ! assuming (as above) that the motion is in the x-y plane.  A positive omega(3)
+  ! Add the classical Coriolis force term: -2*(\Omega x U). A positive omega(3)
   ! is motion in the positive x-direction, if y points towards the system center.
   ! Hence, a positive velocity in the x-direction increases the centripetal force,
   ! and leads to acceleration in the negative y-direction -- vice versa for
   ! motion in the y-direction; a motion inwards (+y) leads to acceleration in
   ! the forward (+x) direction
   !-----------------------------------------------------------------------------
-  ff(:,:,:,1) = ff(:,:,:,1) + 2.*self%omega(3)*p(:,:,:,2)/d
-  ff(:,:,:,2) = ff(:,:,:,2) - 2.*self%omega(3)*p(:,:,:,1)/d
+  ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
+  ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
+  ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
   call trace_end
 END FUNCTION star_and_planet
 
