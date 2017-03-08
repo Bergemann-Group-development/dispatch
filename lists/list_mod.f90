@@ -299,20 +299,20 @@ SUBROUTINE check_all (self)
     call self%check_ready (link)                        ! link ready?
     link => link%next
   end do
-  if (.not.associated(self%queue)) then
-    write (io_unit%log,*) 'check_all: phase 2'
-    link => self%head
-    do while (associated (link))                        ! keep going until end
-      if (link%task%is_clear (bits%virtual+bits%external)) then
-        if (link%task%is_set (bits%ready)) then
-          write (io_unit%log,*) 'clearing ready bit on', link%task%id
-          call link%task%clear (bits%ready)
-        end if
-        call self%check_ready (link)                  ! link ready?
-      end if
-      link => link%next
-    end do
-  end if
+  !if (.not.associated(self%queue)) then
+  !  write (io_unit%log,*) 'check_all: phase 2'
+  !  link => self%head
+  !  do while (associated (link))                        ! keep going until end
+  !    if (link%task%is_clear (bits%virtual+bits%external)) then
+  !      !if (link%task%is_set (bits%ready)) then
+  !      !  write (io_unit%log,*) 'clearing ready bit on', link%task%id
+  !      !  call link%task%clear (bits%ready)
+  !      !end if
+  !      call self%check_ready (link)                  ! link ready?
+  !    end if
+  !    link => link%next
+  !  end do
+  !end if
   !$omp end critical (list_cr)
   if (.not.associated(self%queue)) then
     call self%check_oldest
