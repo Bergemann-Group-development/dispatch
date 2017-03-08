@@ -124,14 +124,19 @@ END SUBROUTINE reset
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE append (self, task)
+SUBROUTINE append (self, task, nbor, needed, needs_me)
   class(list_t):: self
+  class(link_t), pointer, optional:: nbor
+  logical, optional:: needed, needs_me
   class(task_t), pointer:: task
   class(link_t), pointer:: link
   !.............................................................................
   call trace_begin ('list_mod::append '//self%name)
   allocate (link)
   link%task => task
+  if (present(nbor))     link%nbor     => nbor
+  if (present(needed))   link%needed   = needed
+  if (present(needs_me)) link%needs_me = needs_me
   call self%append_link (link)
   call trace_end
 END SUBROUTINE append

@@ -53,7 +53,7 @@ MODULE task_list_mod
   logical, save:: do_delay=.false.
   logical, save:: recv_active=.true.
   real(8), save:: wc_start=0d0
-  type(task_list_t), save, pointer:: virtual_list=>null()
+  type(task_list_t), save:: virtual_list
   !$omp threadprivate (virtual_list)
 CONTAINS
 
@@ -62,6 +62,7 @@ CONTAINS
 !> neighbor lists, and finally checking if they are ready to execute
 !> =============================================================================
 SUBROUTINE init (self, name)
+  USE link_mod
   class(task_list_t):: self
   character(len=*), optional:: name
   class(link_t), pointer:: link
@@ -682,7 +683,7 @@ END SUBROUTINE check_priv
 !> =============================================================================
 SUBROUTINE init_virtual (self)
   class(task_list_t):: self
-  class(link_t), pointer:: link, new
+  class(link_t), pointer:: link
   class(task_t), pointer:: task
   integer:: nvirt, i, i1, i2
   integer, save:: itimer=0
@@ -709,8 +710,7 @@ SUBROUTINE init_virtual (self)
   ! but gives serious compiler related problems with ifort (17.0.1).  Below
   ! it has been rewriten to work with computed intervals for each thread.
   !---------------------------------------------------------------------------
-  !$omp parallel shared(nvirt,mpi,bits,self,io) private(link,i,i1,i2,task,new) default(none)
-  allocate (virtual_list)
+  !$omp parallel shared(nvirt,mpi,bits,self,io) private(link,i,i1,i2,task) default(none)
   i1 = omp_get_thread_num()*nvirt
   i2 = i1 + nvirt
   i = 1
@@ -719,12 +719,7 @@ SUBROUTINE init_virtual (self)
     task => link%task
     if (task%is_set (bits%virtual)) then
       if (i >= i1 .and. i < i2) then
-        allocate (new)
-        new%task => task
-        new%nbor => link%nbor
-        new%needed = link%needed
-        new%needs_me = link%needs_me
-        call virtual_list%append_link (new)
+        call virtual_list%append (task, nbor=link%nbor, needed=link%needed, needs_me=link%needs_me)
         call task%allocate_mesg
         task%wc_last = wallclock()
         call task%mesg%irecv  (task%rank, task%id)
