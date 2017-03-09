@@ -175,28 +175,32 @@ SUBROUTINE update (self)
     ! single thread and task to check and change the ready bit status, at any
     ! one time.
     !---------------------------------------------------------------------------
-    self%queue => head%next_time
     task => head%task                                   ! head task
-    task%nq = self%nq                                   ! for info print
-    !$omp atomic
-    self%nq = self%nq-1                                 ! decrement queue count
     already_busy = task%is_set (bits%busy)
-    if (.not.already_busy) call head%task%set (bits%busy)
+    if (.not.already_busy) then
+      call task%set (bits%busy)                         ! mark task busy
+      self%queue => head%next_time                      ! chop head off
+      !$omp atomic
+      self%nq = self%nq-1                               ! decrement queue count
+      task%nq = self%nq                                 ! for info print
+    end if
   end if
   !$omp end critical (queue_cr)
   if (associated(head)) then
+    if (already_busy) then
+      print *,mpi%rank,' WARNING: thread',omp%thread,' tried to updata busy task'
+      call trace_end
+      return
+    end if
     if (io%verbose > 1) then
       write (io_unit%log,'(a,i4,a,i5,2x,a,2x,i4)') &
         'thread', omp%thread,' takes', task%id, trim(task%type), self%nq
       flush (io_unit%log)
     end if
     !---------------------------------------------------------------------------
-    ! If the task is busy or frozen (e.g. because it has finished), return
+    ! If the task is frozen (e.g. because it has finished), return
     !---------------------------------------------------------------------------
-    if (already_busy) then
-      call trace_end
-      return
-    else if (task%is_set (bits%frozen+bits%virtual)) then
+    if (task%is_set (bits%frozen+bits%virtual)) then
       if (task%iout == 0) call task%output(self%name)
       ! if a frozen task is set to ready, make it not ready
       if (task%is_set(bits%ready)) then
@@ -271,14 +275,14 @@ SUBROUTINE update (self)
     ! If the task was turned into a virtual task by the load balance, its virtual
     ! bit will prevent it being checked, but its nbors still need to be checked
     !-----------------------------------------------------------------------------
+    call task%clear (bits%busy)                         ! clear busy bit
+    call task%clear (bits%ready)                        ! needs new check
     call self%check_nbors (head)                        ! any nbors ready?
     !-----------------------------------------------------------------------------
     ! Since output of a task may be time consuming, wait with this until the task
     ! has been used for all other purposes
     !-----------------------------------------------------------------------------
-
     if (task%kind/='rt_patch') call task%output (self%name)             ! check output
-    call task%clear (bits%busy)                         ! clear busy bit
     !$omp atomic write
     stalled = 0
     !call mpi_mesg%diagnostics (0)
