@@ -18,6 +18,7 @@ MODULE experiment_mod
   private
   type, public, extends(pebble_patch_t):: experiment_t
     type(initial_t):: initial
+    type(boundary_t):: boundary
   contains
     procedure init
     procedure update
@@ -134,8 +135,8 @@ SUBROUTINE update (self)
         else
           it = self%new
         end if
-        d => mem(:,:,:,1)
-        e => mem(:,:,:,2)
+        d => mem(:,:,:,self%i_d)
+        e => mem(:,:,:,self%i_e)
         call self%boundary%init (radius=planet%radius-2.*self%ds(1))
         call self%boundary%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), d, self%mesh, self%i_d)
         call self%boundary%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), e, self%mesh, self%i_e)

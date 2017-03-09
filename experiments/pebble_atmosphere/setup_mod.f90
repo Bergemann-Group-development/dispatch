@@ -12,12 +12,12 @@ MODULE setup_mod
   USE scaling_mod
   USE planet_mod
   USE atmosphere_mod
-  USE patch_mod
-  USE pebble_patch_mod
+  USE experiment_mod
   USE pebble_trace_mod
   USE rubiks_mod
   USE scene_mod
   USE list_mod
+  USE task_mod
   implicit none
   private
   type, public, extends(rubiks_t):: setup_t
@@ -44,7 +44,8 @@ SUBROUTINE init (self, label)
   character(len=*), optional:: label
   !.............................................................................
   class(link_t), pointer:: link
-  class(patch_t), pointer:: patch
+  class(task_t), pointer :: task
+  class(experiment_t), pointer:: patch
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
   call io%init (label)
@@ -59,11 +60,16 @@ SUBROUTINE init (self, label)
   print*, 'n_initial, n_add =', scene%n_initial, scene%n_add
   link => self%task_list%head
   do while (associated(link))
-    patch => task2patch (link%task)
-    if (all(abs(patch%position) < patch%ds)) then
-      call patch%set (bits%has_BC)
-      call patch%boundary%set (bits%spherical)
-    end if
+    task => link%task
+    select type(task)
+      class is (experiment_t)
+        patch => task
+    
+      if (all(abs(patch%position) < patch%ds)) then
+        call patch%set (bits%has_BC)
+        call patch%boundary%set (bits%spherical)
+      end if
+    end select
     link => link%next
   end do
   call trace_end
