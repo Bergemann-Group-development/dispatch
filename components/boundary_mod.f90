@@ -61,6 +61,6 @@ END FUNCTION is_set
 SUBROUTINE condition(self)
   class(boundary_t):: self
   
-END SUBROUTINE apply
+END SUBROUTINE condition
 
 END MODULE boundary_mod
