@@ -1,7 +1,7 @@
 !> =============================================================================
 !> Boundary conditions for a 2-D box
 !> =============================================================================
-MODULE boundary_mod
+MODULE pboundary_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
@@ -9,11 +9,11 @@ MODULE boundary_mod
   implicit none
   private
 
-  type, public:: boundary_t
+  type, public:: pboundary_t
   contains
     procedure:: conditions
   end type
-  type(boundary_t), public:: boundary
+  type(pboundary_t), public:: pboundaries
 
 CONTAINS
 
@@ -22,7 +22,7 @@ CONTAINS
 !> All conditions are assumed "outflow" (i.e., zero gradient).
 !> =============================================================================
 SUBROUTINE conditions (self, patch, it)
-  class(boundary_t) :: self
+  class(pboundary_t) :: self
   class(patch_t), target :: patch
   class(mesh_t), pointer :: mx, my, mz
   integer :: ix, iy, iz, it
@@ -81,4 +81,4 @@ SUBROUTINE conditions (self, patch, it)
   call trace_end
 END SUBROUTINE conditions
 
-END MODULE boundary_mod
+END MODULE pboundary_mod

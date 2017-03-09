@@ -4,14 +4,16 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
+  USE boundary_mod
   USE mhd_mod
   USE initial_mod
-  USE boundary_mod
+  USE pboundary_mod
   implicit none
   private
 
   type, public, extends(mhd_t):: experiment_t
     type(initial_t) :: initial
+    type(boundary_t):: boundary
   contains
     procedure :: init => init_experiment
     procedure :: update => update_experiment
@@ -31,7 +33,7 @@ SUBROUTINE init_experiment (self)
   self%nv = 8
   call self%mhd_t%init()
   call self%initial%init(self)
-  call boundary%conditions(self, self%it)
+  call pboundaries%conditions(self, self%it)
 
   call self%output
 
@@ -46,9 +48,9 @@ SUBROUTINE update_experiment (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
 
-  call boundary%conditions(self, self%it)
+  call pboundaries%conditions(self, self%it)
   call self%mhd_t%update()
-  call boundary%conditions(self, self%new)
+  call pboundaries%conditions(self, self%new)
 
   call trace_end
 END SUBROUTINE update_experiment

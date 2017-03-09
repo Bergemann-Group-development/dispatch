@@ -4,14 +4,16 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
-  USE mhd_mod
   USE boundary_mod
+  USE mhd_mod
+  USE pboundary_mod
   USE initial_mod
   USE potential_mod
   implicit none
   private
 
   type, public, extends(mhd_t):: experiment_t
+    type(boundary_t):: boundary
   contains
     procedure :: init => init_experiment
     procedure :: update => update_experiment
@@ -31,7 +33,7 @@ SUBROUTINE init_experiment (self)
   call self%mhd_t%init()
   call initial_conditions(self)
   call potential%init()
-  call boundary%conditions(self, self%it)
+  call pboundaries%conditions(self, self%it)
 
   call trace_end
 END SUBROUTINE init_experiment
@@ -44,12 +46,12 @@ SUBROUTINE update_experiment (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
 
-  call boundary%conditions(self, self%it)
+  call pboundaries%conditions(self, self%it)
   ! update the potential (for a growing or moving planet)
   potential%omega = self%grid_vel(3)
   self%mem(:,:,:,self%i_phi,self%it,1) = potential%selected(self%mesh, self%time, self%dtime)
   call self%mhd_t%update()
-  call boundary%conditions(self, self%new)
+  call pboundaries%conditions(self, self%new)
 
   call trace_end
 END SUBROUTINE update_experiment

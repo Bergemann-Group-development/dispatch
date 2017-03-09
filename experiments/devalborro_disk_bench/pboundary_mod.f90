@@ -1,7 +1,7 @@
 !> =============================================================================
 !> Boundary conditions for a 2-D box
 !> =============================================================================
-MODULE boundary_mod
+MODULE pboundary_mod
   USE io_mod
   USE trace_mod
   USE kinds_mod
@@ -12,11 +12,11 @@ MODULE boundary_mod
   implicit none
   private
 
-  type, public:: boundary_t
+  type, public:: pboundary_t
   contains
     procedure conditions
   end type
-  type(boundary_t), public:: boundary
+  type(pboundary_t), public:: pboundaries
 
   real(8), parameter :: pi = 3.14159265358979323846d0
 
@@ -27,7 +27,7 @@ CONTAINS
 !> Only for use with Cartesian patches.
 !> =============================================================================
 SUBROUTINE conditions (self, patch, cit)
-  class(boundary_t) :: self
+  class(pboundary_t) :: self
   class(mhd_t), target :: patch
   class(mesh_t), pointer :: m1, m2, m3
   integer :: i1, i2, i3, jay3, jay2
@@ -157,4 +157,4 @@ FUNCTION wave_kill (x, x0, tau, rkill, rbnd, r) RESULT (rate)
 
 END FUNCTION wave_kill
 
-END MODULE boundary_mod
+END MODULE pboundary_mod
