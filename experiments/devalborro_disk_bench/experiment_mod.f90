@@ -47,7 +47,7 @@ SUBROUTINE update_experiment (self)
   call boundary%conditions(self, self%it)
   ! update the potential (for a growing or moving planet)
   potential%omega = self%grid_vel(3)
-  self%mem(:,:,:,gpidx,self%it,1) = potential%selected(self%mesh, self%time, self%dtime)
+  self%mem(:,:,:,self%i_phi,self%it,1) = potential%selected(self%mesh, self%time, self%dtime)
   call self%mhd_t%update()
   call boundary%conditions(self, self%new)
 
