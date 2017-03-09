@@ -18,10 +18,12 @@ MODULE experiment_mod
   USE trace_mod
   USE rmhd_mod
   USE initial_mod
+  USE boundary_mod
   implicit none
   private
   type, public, extends(rmhd_t):: experiment_t
     type(initial_t):: initial
+    type(boundary_t) :: boundary
   contains
     procedure init
     procedure update
@@ -53,6 +55,7 @@ SUBROUTINE init (self)
   ! Initial conditions
   !----------------------------------------------------------------------------
   call self%initial%init()
+  call self%boundary%init()
   call self%initial%initial_conditions(self)
   call self%stats ('initial')
   call trace_end

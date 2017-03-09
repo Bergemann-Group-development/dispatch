@@ -12,10 +12,12 @@ MODULE experiment_mod
   USE timestep_mod
   USE mhd_mod
   USE initial_mod
+  USE boundary_mod
   implicit none
   private
   type, public, extends(mhd_t):: experiment_t
     type(initial_t):: initial
+    type(boundary_t) :: boundary
     real:: cs, gamma_exp, M, M_A, rho_l, vx_l, vy_l, vz_l, Bx_l, By_l, Bz_l, P_l
     real:: rho_r, vx_r, vy_r, vz_r, Bx_r, By_r, Bz_r, P_r
   contains
