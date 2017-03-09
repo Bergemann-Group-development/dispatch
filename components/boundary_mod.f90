@@ -6,16 +6,17 @@ MODULE boundary_mod
   USE trace_mod
   USE mpi_mod
   USE bits_mod
+  USE mesh_mod
   implicit none
   private
   type, public:: boundary_t
     integer:: status = 0
     logical:: unset = .true.
-    real(8):: cool_temp, hot_temp
+    class(mesh_t), pointer:: m(:)
   contains
     procedure:: init
     procedure:: set
-    procedure:: apply
+    procedure:: condition
   end type
 CONTAINS
 
@@ -24,6 +25,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self, mesh, position, radius)
   class(boundary_t):: self
+  class(mesh_t), pointer, optional:: mesh(:)
   real(8), optional:: position(3), radius
   !-----------------------------------------------------------------------------
   call trace%begin ('boundary_t%init')
@@ -56,7 +58,7 @@ END FUNCTION is_set
 !> =====================================================================
 !> Set the boundary condition, whatever it means
 !> =====================================================================
-SUBROUTINE apply(self)
+SUBROUTINE condition(self)
   class(boundary_t):: self
   
 END SUBROUTINE apply
