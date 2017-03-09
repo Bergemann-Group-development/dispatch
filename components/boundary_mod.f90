@@ -24,7 +24,6 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self, mesh, position, radius)
   class(boundary_t):: self
-  class(mesh_t), pointer, optional:: mesh(:)
   real(8), optional:: position(3), radius
   !-----------------------------------------------------------------------------
   call trace%begin ('boundary_t%init')
