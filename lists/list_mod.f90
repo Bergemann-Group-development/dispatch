@@ -281,7 +281,6 @@ SUBROUTINE check_nbors (self, link)
   ! be checked, we check if any bits are set indicating this to be the case
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%virtual+bits%external)) then
-    call task%clear(bits%ready)                       ! needs new check
     call self%check_ready (link)                      ! finally check link task
   end if
   !!omp end critical (time_cr)
