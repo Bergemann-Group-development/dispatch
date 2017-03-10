@@ -52,6 +52,8 @@ MODULE mhd_mod
   character(len=16):: eqn='mhd'
   real(kind=8):: courant_number=0.2
   logical, save:: debug=.false.
+  real, save:: friction=0.0
+  real, dimension(:,:,:,:), pointer:: fric
 CONTAINS
 
 !> =============================================================================
@@ -60,7 +62,7 @@ SUBROUTINE init (self)
   character(len=10):: riemann='hllc'
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, do_isothermal, csound, detailed_timer, debug
+    friction, smallc, do_isothermal, csound, detailed_timer, debug
   type(index_t):: idx
 !...............................................................................
   call trace_begin('mhd_mod::init')
@@ -100,10 +102,11 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
-  integer:: n(3), m
+  integer:: n(3), m, i
   integer, save:: itimer=0
   real, dimension(:,:,:,:), pointer:: p
-  real, dimension(:,:,:), pointer:: d
+  real, dimension(:,:,:), pointer:: d, e
+  real, dimension(:,:,:), pointer:: tmp
   !----------------------------------------------------------------------------
   ! Fill guard zones and checks whether to do output
   !----------------------------------------------------------------------------
@@ -136,10 +139,26 @@ SUBROUTINE update (self)
       print *,self%id, 'mk1: e', self%mem( m-7:m-3 ,19,19,self%i_e ,self%it,1), self%i_e
     end if
   end if
+  d => self%mem(:,:,:,          self%i_d ,self%new,1)
+  e => self%mem(:,:,:,          self%i_e ,self%new,1)
+  p => self%mem(:,:,:,self%i_px:self%i_pz,self%new,1)
+  if (friction > 0.0) then
+    if (.not.associated(fric)) then
+       allocate (fric(size(p,1),size(p,2),size(p,3),3))
+    end if
+    allocate (tmp(size(p,1),size(p,2),size(p,3)))
+    tmp = self%dtime*friction*self%size(1)/ &
+         sqrt(self%gamma*(self%gamma-1.0)*d/e)
+    !---------------------------------------------------------------------------
+    ! Friction per unit mass for trace3d
+    !---------------------------------------------------------------------------
+    do i=1,3
+      fric(:,:,:,i) = p(:,:,:,i)*tmp/d
+    end do
+    deallocate (tmp)
+  end if
   call godunov (self)
   if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
-  d => self%mem(:,:,:,          self%i_d ,self%new,1)
-  p => self%mem(:,:,:,self%i_px:self%i_pz,self%new,1)
   if (debug) then
     if (self%id==229.or.self%id==231) then
       print *,self%id, 'mk2:px', self%mem(19-2:19+2,19,19,self%i_px,self%new,1), self%i_px
@@ -154,6 +173,14 @@ SUBROUTINE update (self)
   end if
   if (associated(self%force%selected)) then
     p = p + self%dtime*self%force%selected (self%time, d, p, self%mesh)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Subtract friction from momentum
+  !-----------------------------------------------------------------------------
+  if (friction > 0.0) then
+    do i=1,3
+      p(:,:,:,i) = p(:,:,:,i) - fric(:,:,:,i)*d
+    end do
   end if
   if (debug) then
     if (self%id==229.or.self%id==231) then
@@ -529,6 +556,9 @@ subroutine trace3d(self)
     ff = self%force%selected (self%time, d, pp, self%mesh)
   else
     ff = 0.0
+  end if
+  if (friction > 0.0) then
+    ff = ff - fric
   end if
   !-----------------------------------------------------------------------------
   lb = self%mesh%lo
