@@ -4,7 +4,7 @@ VPATH := $(VPATH):$(TOP)/tasks
 # Dependencies
 item_mod.o:             bits_mod.o trace_mod.o
 task_mod.o:             io_mod.o mesh_mod.o bits_mod.o mpi_mod.o omp_lock_mod.o scene_mod.o mpi_mesg_mod.o
-patch_mod.o:            task_mod.o mesh_mod.o buffered_output_mod.o mpi_mesg_mod.o link_mod.o omp_timer_mod.o timer_mod.o
+patch_mod.o:            task_mod.o mesh_mod.o buffered_output_mod.o mpi_mesg_mod.o link_mod.o omp_timer_mod.o timer_mod.o boundary_mod.o
 gpatch_mod.o:           io_mod.o trace_mod.o patch_mod.o download_mod.o
 hd_mod.o:               patch_mod.o trace_mod.o
 unigrid_mod.o:          patch_mod.o mpi_coords_mod.o
