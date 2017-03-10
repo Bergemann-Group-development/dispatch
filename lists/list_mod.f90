@@ -5,6 +5,7 @@ MODULE list_mod
   USE io_mod
   USE omp_mod
   USE omp_lock_mod
+  USE omp_timer_mod
   USE mpi_mod
   USE mpi_mesg_mod
   USE trace_mod
@@ -297,13 +298,14 @@ SUBROUTINE check_all (self)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_mod::check_all', itimer=itimer)
-  write (io_unit%log,*) 'check_all: phase 1'
+  write (io_unit%log,*) 'check_all: phase 1', self%nq, associated(self%queue)
   !$omp critical (list_cr)
   link => self%head
   do while (associated (link))                          ! keep going until end
     call self%check_ready (link)                        ! link ready?
     link => link%next
   end do
+  write (io_unit%log,*) 'check_all: don    ', self%nq, associated(self%queue)
   !if (.not.associated(self%queue)) then
   !  write (io_unit%log,*) 'check_all: phase 2'
   !  link => self%head
@@ -371,11 +373,11 @@ SUBROUTINE check_oldest (self)
   end do
   link => oldest
   write (io_unit%log,*) 'the oldest active  task is ', oldest%task%id, oldest%task%time
-  write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, oldestv%task%time
+  flush (io_unit%log)
   !$omp end critical (list_cr)
   !
-  write (io_unit%log,*) 'check_oldest: phase 2', associated(oldest)
   if (associated(oldest)) then
+    write (io_unit%log,*) 'check_oldest: phase 2', associated(oldest)
     write (io_unit%log,1) 'the oldest local task is', oldest%task%id, &
       'rank', oldest%task%rank, oldest%task%time, &
       oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
@@ -388,8 +390,10 @@ SUBROUTINE check_oldest (self)
       link => link%next
     end do
   end if
-  write (io_unit%log,*) 'check_oldest: phase 3', associated(oldestv)
+  flush (io_unit%log)
   if (associated(oldestv)) then
+    write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, oldestv%task%time
+    write (io_unit%log,*) 'check_oldest: phase 3', associated(oldestv)
     write (io_unit%log,1) 'the oldest virtual task is', oldestv%task%id, &
       'rank', oldestv%task%rank, oldestv%task%time, &
       oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
@@ -950,28 +954,26 @@ SUBROUTINE queue_by_time (self, this)
   !$omp critical (queue_cr)
   if (task%is_clear (bits%ready)) then
     call task%set(bits%ready)
-    if (io%verbose>2) &
-      write (io_unit%log,'(1x,a,i9,a,f10.5)') 'list_mod::queue_by_time: adding task', &
-        task%id, ' at time', task%time
+    if (io%verbose>1) &
+      write (io_unit%log,'(1x,i4,2x,a,i9,a,f10.5)') omp%thread, &
+        'list_mod::queue_by_time: adding task', task%id, ' at time', task%time
     nullify (prev)
     next => self%queue
     do while (associated(next))
       if (associated(next%task, task)) then
-        write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, ' is already on ready queue'
+        write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, ' is already in ready queue'
         go to 9
       else if (next%task%time > task%time) then
         this%next_time => next
         if (associated(prev)) then
           if (io%verbose > 1) then
             write (io_unit%log,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
-            flush (io_unit%log)
           end if
           prev%next_time => this
         else
           self%queue => this
           if (io%verbose > 1) then
             write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
-            flush (io_unit%log)
           end if
         end if
         !$omp atomic
@@ -985,18 +987,28 @@ SUBROUTINE queue_by_time (self, this)
     if (associated(prev)) then
       if (io%verbose > 1) then
         write (io_unit%log,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
-        flush (io_unit%log)
       end if
       prev%next_time => this
     else
       if (io%verbose > 1) then
         write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
-        flush (io_unit%log)
       end if
       self%queue => this
     end if
     nullify (this%next_time)
   9 continue
+  !-----------------------------------------------------------------------------
+  ! Since we clear the ready bit in task_list%update, outside of any critical
+  ! region, it is perfectly normal that several threads compete about putting
+  ! a given task onto the queue, so there is no reason to print a warning here
+  !-----------------------------------------------------------------------------
+  else if (io%verbose > 1) then
+    if (io%verbose > 2) &
+      print *,mpi%rank,' INFO: thread',omp%thread, &
+      ' found ready bit in queue_by_time for task', task%id, task%time
+    write (io_unit%log,*) wallclock(),' INFO: thread',omp%thread, &
+      ' found ready bit in queue_by_time for task', task%id, task%time
+    flush (io_unit%log)
   end if
   !$omp end critical (queue_cr)
   call trace_end (itimer)
