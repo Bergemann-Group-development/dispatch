@@ -66,7 +66,7 @@ MODULE gmhd_mod
   USE stagger_mod
   USE laplace_mod
   USE mhd_mod
-  USE boundary_mod
+  USE boundaries_mod
   USE index_mod
   implicit none
   private
@@ -188,7 +188,7 @@ SUBROUTINE solve (self)
   do while((it<self%min_iter) .or. &
            (error >= self%tolerance .and. it<self%max_iter))
     call self%laplace%solver (self, phi_old, phi_new, FourPiGrho, error)
-    call boundary%sphere (self, phi_new, 0.0, 0.0)
+    call boundaries%sphere (self, phi_new, 0.0, 0.0)
     if (io%verbose>3) write(*,'(a,i4,2(a,e10.3))'), 'Poisson: Iter=', it, &
       ' Tolerance=', self%tolerance, ' Error=', error
     phi_swap => phi_new; phi_new=>phi_old; phi_old=>phi_swap

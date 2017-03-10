@@ -158,13 +158,13 @@ SUBROUTINE init_level (self, level, position)
     ! If at edge, set boundary bits
     !---------------------------------------------------------------------------
     if (level==1) then
-      if (i==1)            call patch%boundary%set (bits%xdir + bits%lower)
-      if (j==1)            call patch%boundary%set (bits%ydir + bits%lower)
-      if (k==1)            call patch%boundary%set (bits%zdir + bits%lower)
-      if (i==self%n_patch) call patch%boundary%set (bits%xdir + bits%upper)
-      if (j==self%n_patch) call patch%boundary%set (bits%ydir + bits%upper)
-      if (k==self%n_patch) call patch%boundary%set (bits%zdir + bits%upper)
-      if (patch%boundary%status /= 0) print *, patch%id, 'EDGE', patch%boundary%status
+      if (i==1)            call patch%boundaries%set (bits%xdir + bits%lower)
+      if (j==1)            call patch%boundaries%set (bits%ydir + bits%lower)
+      if (k==1)            call patch%boundaries%set (bits%zdir + bits%lower)
+      if (i==self%n_patch) call patch%boundaries%set (bits%xdir + bits%upper)
+      if (j==self%n_patch) call patch%boundaries%set (bits%ydir + bits%upper)
+      if (k==self%n_patch) call patch%boundaries%set (bits%zdir + bits%upper)
+      if (patch%boundaries%status /= 0) print *, patch%id, 'EDGE', patch%boundaries%status
     end if
   end do
   end do

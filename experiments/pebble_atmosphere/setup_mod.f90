@@ -67,7 +67,7 @@ SUBROUTINE init (self, label)
     
       if (all(abs(patch%position) < patch%ds)) then
         call patch%set (bits%has_BC)
-        call patch%boundary%set (bits%spherical)
+        call patch%boundaries%set (bits%spherical)
       end if
     end select
     link => link%next

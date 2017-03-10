@@ -13,7 +13,7 @@ MODULE experiment_mod
   USE scaling_mod
   USE planet_mod
   USE mesh_mod
-  USE boundary_mod
+  USE boundaries_mod
   implicit none
   private
   type, public, extends(pebble_patch_t):: experiment_t
@@ -43,7 +43,7 @@ CONTAINS
 !>         pebbles_mod::init                    ! reads omega
 !>         initial_mod::init                    ! selects ICs
 !>         initial_mod::selected                ! computes ICs
-!>         boundary_mod::condition              ! apply BCs to ICs
+!>         boundaries_mod::condition            ! apply BCs to ICs
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
@@ -67,9 +67,9 @@ SUBROUTINE init (self)
   call self%initial%init
   ff => self%mem(:,:,:,:,1,1)
   call self%initial%selected (self%mesh, ff)
-  call self%boundary%init (self%mesh, position=planet%position, radius=planet%radius)
+  call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   do iv=self%i_px,self%i_pz
-    call self%boundary%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
+    call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
   end do
   call trace_end
 END SUBROUTINE init
@@ -92,14 +92,14 @@ SUBROUTINE update (self)
   ! sure to wrap around in the time buffer before freezing, so the value needed
   ! by the pebbles have been computed and stored everywhere.
   !-----------------------------------------------------------------------------
-  !call self%boundary%init (self%mesh, position=planet%position, radius=planet%radius)
+  !call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   if (self%only_pebbles .or. self%is_set(bits%not_leaf)) then
     if (self%istep<self%nt+1) then
       call self%mhd_t%update
     end if
     if (self%is_set (bits%spherical)) then
       do iv=self%i_px,self%i_pz
-        call self%boundary%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
+        call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
       end do
     end if
     self%mem(:,:,:,:,self%it,2) = 0.0
@@ -110,7 +110,7 @@ SUBROUTINE update (self)
     !------------------------------------------------------------------------
     ! If spherical inner BCs, save the incoming values
     !------------------------------------------------------------------------
-    if (self%boundary%is_set (bits%spherical)) then
+    if (self%boundaries%is_set (bits%spherical)) then
       allocate (mem(size(self%mem,1),size(self%mem,2),size(self%mem,3),2))
       mem(:,:,:,1) = self%mem(:,:,:,self%i_d,self%it,1)
       mem(:,:,:,2) = self%mem(:,:,:,self%i_e,self%it,1)
@@ -119,40 +119,40 @@ SUBROUTINE update (self)
     ! Update the MHD state
     !--------------------------------------------------------------------------
     call self%mhd_t%update
-    if (self%boundary%status /= 0) then
-      print *, self%id, 'BOUNDARY CONDITION BITS:', self%boundary%status
+    if (self%boundaries%status /= 0) then
+      print *, self%id, 'BOUNDARY CONDITION BITS:', self%boundaries%status
       !------------------------------------------------------------------------
       ! If spherical inner BCs, save the incoming values
       !------------------------------------------------------------------------
-      if (self%boundary%is_set (bits%spherical)) then
+      if (self%boundaries%is_set (bits%spherical)) then
         print *, self%id, 'BOUNDARY CONDITION: spherical'
         if (self%nw > 1) then
           it = self%it
           do iv=1,self%nv
-            call self%boundary%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
+            call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
           end do
         else
           it = self%new
         end if
         d => mem(:,:,:,self%i_d)
         e => mem(:,:,:,self%i_e)
-        call self%boundary%init (radius=planet%radius-2.*self%ds(1))
-        call self%boundary%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), d, self%mesh, self%i_d)
-        call self%boundary%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), e, self%mesh, self%i_e)
-        call self%boundary%init (radius=planet%radius)
+        call self%boundaries%init (radius=planet%radius-2.*self%ds(1))
+        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), d, self%mesh, self%i_d)
+        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), e, self%mesh, self%i_e)
+        call self%boundaries%init (radius=planet%radius)
         do iv=self%i_px,self%i_pz
-          call self%boundary%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
+          call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
         end do
         deallocate (mem)
       end if
       !------------------------------------------------------------------------
       ! Edge boundary conditions
       !------------------------------------------------------------------------
-      if (self%boundary%is_set (bits%xdir + bits%ydir + bits%zdir)) then
+      if (self%boundaries%is_set (bits%xdir + bits%ydir + bits%zdir)) then
         nb = 0
-        if (self%boundary%is_set (bits%xdir)) nb = nb+1
-        if (self%boundary%is_set (bits%ydir)) nb = nb+1
-        if (self%boundary%is_set (bits%zdir)) nb = nb+1
+        if (self%boundaries%is_set (bits%xdir)) nb = nb+1
+        if (self%boundaries%is_set (bits%ydir)) nb = nb+1
+        if (self%boundaries%is_set (bits%zdir)) nb = nb+1
         if (nb == 1) print *, self%id, 'BOUNDARY CONDITION: face'
         if (nb == 2) print *, self%id, 'BOUNDARY CONDITION: edge'
         if (nb == 3) print *, self%id, 'BOUNDARY CONDITION: corner'
@@ -196,14 +196,14 @@ SUBROUTINE edge_boundary_conditions (self)
   d => self%mem(:,:,:,self%i_d,self%it,1)
   e => self%mem(:,:,:,self%i_e,self%it,1)
   allocate (u(size(d,1),size(d,2),size(d,3)))
-  call self%boundary%extrapolate (d)
+  call self%boundaries%extrapolate (d)
   u = e/d
-  call self%boundary%symmetric (u)
+  call self%boundaries%symmetric (u)
   e = u*d
   do iv=self%i_px,self%i_pz
     p => self%mem(:,:,:,iv,self%it,1)
     u = p/d
-    call self%boundary%symmetric (u)
+    call self%boundaries%symmetric (u)
     p = u*d
   end do
   deallocate (u)
