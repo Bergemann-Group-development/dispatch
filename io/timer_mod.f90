@@ -141,10 +141,12 @@ SUBROUTINE print ()
   real(8):: updates, musppt, calls
   real(8), save:: n_previous=0
   real(8):: wc
-  integer:: i
+  integer:: i, n_recv
   !.............................................................................
-  !if (.not. io_unit%master) return
   if (io_unit%do_validate) return
+  !-----------------------------------------------------------------------------
+  ! Prevent several treads from printing at the same time
+  !-----------------------------------------------------------------------------
   wc = wallclock()
   sec = wc - prev2
   if (sec < 0.01d0) return
@@ -157,11 +159,15 @@ SUBROUTINE print ()
     calls = calls + ncalls(i)
   end do
   if (io_unit%master) then
-    print '(23x,a,7x,a,10x,a,7x,a,5x,a)', &
-      'procedure', 'calls', 'time', 'percent', 'time/call'
+    print 4, 'procedure', 'calls', 'time', 'percent', 'time/call'
+    if (omp%master .and. io_unit%verbose > 0) &
+    write (io_unit%mpi,4) 'procedure', 'calls', 'time', 'percent', 'time/call'
+    4 format(23x,a,7x,a,10x,a,7x,a,5x,a)
     do i=1,ntimer
       if (proc(i)/total > 1e-4) then
         print 1, trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
+        if (omp%master .and. io_unit%verbose > 0) &
+        write (io_unit%mpi,1) trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
         1 format(a32,1p,2g15.3,2g12.3)
       end if
     end do
@@ -175,25 +181,30 @@ SUBROUTINE print ()
   ! `musppt` is defined to be the number of microseconds per update per thread.
   !-----------------------------------------------------------------------------
   musppt = sec*1d6*min(omp%nthreads,omp%ncores)/updates
-  timer%n_recv = max(timer%n_recv,1)
+  n_recv = max(timer%n_recv,1)
   if (io_unit%master) then
     print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
       sec, 'wall sec'
     2 format(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))
-    print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/timer%n_recv, &
+    print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
       timer%nq_send_max, timer%nq_recv_max
     3 format(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8," nq_recv_max")
   end if
-  if (io_unit%verbose>0) &
-    write (io_unit%log,3) timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/timer%n_recv, &
+  if (omp%master .and. io_unit%verbose>0) then
+    write (io_unit%mpi,2) "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
+      sec, 'wall sec'
+    write (io_unit%mpi,3) timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
       timer%nq_send_max, timer%nq_recv_max
+  end if
   timer%bytes_recv = 0.0_8
   timer%n_recv = 0_8
   timer%nq_send_max = 0
   timer%nq_recv_max = 0
-  if (io_unit%verbose>1) &
-    write (io_unit%log,'(a,1p,e9.2,3x,a,g10.3)') 'timer_mod::print, updates =', &
+  if (omp%master .and. io_unit%verbose>0) then
+    write (io_unit%mpi,'(a,1p,e9.2,3x,a,g10.3)') 'timer_mod::print, updates =', &
       updates,'mus/p =', musppt
+    flush (io_unit%mpi)
+  end if
   n_previous = n_update
   prev1 = wc
   prev2 = wc

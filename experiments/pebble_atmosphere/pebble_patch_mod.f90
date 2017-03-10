@@ -846,7 +846,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         if (self%nw > 1) then
           do iv=1,nv
             print '(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2(2e10.2,2x),2e14.6,z10,2i6)', &
-              'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%courant, &
+              'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
+              self%dtime, self%courant, &
               minval(self%mem(:,:,:,iv,self%it ,2)), &
               maxval(self%mem(:,:,:,iv,self%it ,2)), &
               minval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -858,7 +859,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         else
           do iv=1,nv
             print '(a,i8,2i4,i3,f10.5,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e14.6,z10,2i6)', &
-              'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%courant, &
+              'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
+              self%dtime, self%courant, &
               minval(self%mem(:,:,:,iv,self%it ,1)), &
               maxval(self%mem(:,:,:,iv,self%it ,1)), &
               minval(self%mem(:,:,:,iv,self%new,1)), &

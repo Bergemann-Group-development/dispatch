@@ -129,12 +129,11 @@ SUBROUTINE execute (self)
   end do
   call timer%print
   call mpi_mesg%diagnostics(1)
+  write (io_unit%log,*) 'thread',omp%thread,' arrived'
+  flush (io_unit%log)
   !$omp end parallel
   call toc ('wall time', n_update, time=sec)
   if (io%master) write (*,*) "task list finished, min_nq =", min_nq
-  write (io_unit%log,*) 'thread',omp%thread,' arrived'
-  flush (io_unit%log)
-
   !if (io%master) &
   !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
   !    max(1,(download%n_differ+download%n_same))
@@ -194,7 +193,7 @@ SUBROUTINE update (self)
     end if
     if (io%verbose > 1) then
       write (io_unit%log,'(a,i4,a,i5,2x,a,2x,i4)') &
-        'thread', omp%thread,' takes', task%id, trim(task%type), self%nq
+        'thread', omp%thread,' takes', task%id, trim(task%type), task%nq
       flush (io_unit%log)
     end if
     !---------------------------------------------------------------------------

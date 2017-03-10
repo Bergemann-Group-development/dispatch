@@ -1095,7 +1095,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       if (io%verbose>1) then
         do iv=1,nv
           write (io_unit%log,1) &
-            'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
+            'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
+            self%dtime, self%u_max, &
             self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -1108,7 +1109,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           if (io_unit%mpi/=io_unit%log) then
             !$omp critical (info_cr)
             write (io_unit%mpi,1) &
-              'upd',self%id, self%level, iv, omp_mythread, self%time, self%dtime, self%u_max, &
+              'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
+              self%dtime, self%u_max, &
               self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
               self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
               self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -1147,7 +1149,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           n_lines = n_lines-1
           do iv=1,nv
             print 1, &
-            'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, self%dtime, self%u_max, &
+            'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
+            self%dtime, self%u_max, &
             self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
