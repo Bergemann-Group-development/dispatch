@@ -53,7 +53,7 @@ MODULE mhd_mod
   real(kind=8):: courant_number=0.2
   logical, save:: debug=.false.
   real, save:: friction=0.0
-  real, dimension(:,:,:,:), pointer:: fric
+  real, dimension(:,:,:,:), pointer:: fric => null()
 CONTAINS
 
 !> =============================================================================
