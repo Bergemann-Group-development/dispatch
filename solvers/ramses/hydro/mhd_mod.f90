@@ -147,13 +147,12 @@ SUBROUTINE update (self)
        allocate (fric(size(p,1),size(p,2),size(p,3),3))
     end if
     allocate (tmp(size(p,1),size(p,2),size(p,3)))
-    tmp = self%dtime*friction*self%size(1)/ &
-         sqrt(self%gamma*(self%gamma-1.0)*d/e)
+    tmp = self%dtime*friction*sqrt(self%gamma*(self%gamma-1.0)*d/e)/self%size(1)
     !---------------------------------------------------------------------------
     ! Friction per unit mass for trace3d
     !---------------------------------------------------------------------------
     do i=1,3
-      fric(:,:,:,i) = p(:,:,:,i)*tmp/d
+      fric(:,:,:,i) = tmp*p(:,:,:,i)/d
     end do
     deallocate (tmp)
   end if
