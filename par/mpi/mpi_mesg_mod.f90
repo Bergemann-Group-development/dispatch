@@ -214,7 +214,7 @@ SUBROUTINE check_sent (self, nq)
       call timer%begin (itimer=itimer)
       if (flag) then
         call self%remove (mesg)                                 ! yes, remove
-        call self%delete (mesg, .true.)                                 ! deallocate
+        call self%delete (mesg, .true.)                         ! deallocate
       end if
       mesg => next                                              ! true next
     end do
@@ -374,6 +374,7 @@ SUBROUTINE delete (self, mesg, send)
   logical:: send
   !.............................................................................
   if (associated(mesg%buffer)) deallocate (mesg%buffer)
+  timer%gb = timer%gb - storage_size(mesg%buffer)*mesg%nbuf/(8.*1024**3)
   if (associated(mesg%reqs)) deallocate (mesg%reqs)
   deallocate (mesg)
   if (send) then

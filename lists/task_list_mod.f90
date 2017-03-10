@@ -114,6 +114,7 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
+  print '(a,f8.3,a)', ' memory per process:', timer%gb, ' GB'
   !call mpi%barrier ('task_list_mod::execute')
   wc_start = wallclock()
   call tic (time=sec)

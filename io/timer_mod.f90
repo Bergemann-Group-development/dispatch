@@ -17,6 +17,7 @@ MODULE timer_mod
     integer(8):: n_recv=0_8
     integer:: nq_send_max=0
     integer:: nq_recv_max=0
+    real:: gb=0.0
   contains
     procedure:: init
     procedure:: begin
