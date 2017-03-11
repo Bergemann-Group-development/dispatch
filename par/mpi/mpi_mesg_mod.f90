@@ -21,12 +21,16 @@ MODULE mpi_mesg_mod
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:) => null()
     integer:: nbuf, nreq, req=0, sender, id, ntry=0
+    integer:: tag=2**30
   contains
     procedure:: send
+    procedure:: recv
     procedure:: test_all
     procedure:: wait_all
     procedure:: wait_for_completion
     procedure:: is_complete
+    procedure:: completed
+    procedure:: all_completed
     procedure:: irecv
     procedure:: test_recv
   end type
@@ -41,6 +45,7 @@ MODULE mpi_mesg_mod
     integer:: id=0
   contains
     procedure:: add
+    procedure:: remove_completed
     procedure:: remove
     procedure:: delete
     procedure:: reset
@@ -96,11 +101,17 @@ CONTAINS
 !> =============================================================================
 !> Send a buffer, already prepared with size and id tag, returning a request id
 !> =============================================================================
-SUBROUTINE send (self, rank)
+SUBROUTINE send (self, rank, tag)
   class(mesg_t):: self
-  integer:: rank, req, ierr
+  integer, optional:: tag
+  integer:: rank, req, ierr,ltag
   !.............................................................................
   call trace%begin ('mesg_t%send')
+  if (present(tag)) then
+    ltag = tag
+  else
+    ltag = self%id
+  end if
   if (io%verbose>2) then
     write (io_unit%log,*) &
     'mpi_mesg::send id, nbuf, to =', self%id, self%nbuf, rank
@@ -109,13 +120,13 @@ SUBROUTINE send (self, rank)
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
-    call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
+    call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
       mpi%comm, req, ierr)
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
     !$omp end critical (mpi_cr)
   else
-    call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, self%id, &
+    call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
       mpi%comm, req, ierr)
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
@@ -130,6 +141,60 @@ SUBROUTINE send (self, rank)
   mpi_mesg%n_send = mpi_mesg%n_send+1
   call trace%end
 END SUBROUTINE send
+
+!> =============================================================================
+!> Recv a buffer, already prepared with size and id tag, returning a request id
+!> =============================================================================
+SUBROUTINE recv (self, rank, tag)
+  class(mesg_t):: self
+  integer, optional:: tag
+  integer:: rank, req, ierr,ltag
+  !.............................................................................
+  call trace%begin ('mesg_t%recv')
+  if (present(tag)) then
+    ltag = tag
+  else
+    ltag = self%id
+  end if
+  if (io%verbose>2) then
+    write (io_unit%log,*) &
+    'mpi_mesg%recv id, nbuf, to =', self%id, self%nbuf, rank
+    flush (io_unit%log)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Start a new receive
+  !-----------------------------------------------------------------------------
+#ifdef MPI
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_IRECV (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
+      mpi%comm, self%req, ierr)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_IRECV (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
+      mpi%comm, self%req, ierr)
+    !$omp end critical (mpi_cr)
+  end if
+#endif
+  call trace%end
+END SUBROUTINE recv
+
+!> =============================================================================
+!> Remove and delete completed messages in a message list
+!> =============================================================================
+SUBROUTINE remove_completed (self)
+  class(mesg_list_t):: self
+  class(mesg_t), pointer:: mesg
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mesg_list%remove_completed')
+  mesg => self%head
+  do while (associated(mesg))
+    if (mesg%all_completed()) then
+      call self%remove (mesg)
+      call self%delete (mesg)
+    end if
+  end do
+  call trace%end
+END SUBROUTINE remove_completed
 
 !> =============================================================================
 !> Check messages on a sent_list for completeness
@@ -371,20 +436,22 @@ END SUBROUTINE remove
 SUBROUTINE delete (self, mesg, send)
   class(mesg_list_t):: self
   class(mesg_t), pointer:: mesg
-  logical:: send
+  logical, optional:: send
   !.............................................................................
   if (associated(mesg%buffer)) deallocate (mesg%buffer)
   timer%gb = timer%gb - storage_size(mesg%buffer)*mesg%nbuf/(8.*1024**3)
   if (associated(mesg%reqs)) deallocate (mesg%reqs)
   deallocate (mesg)
-  if (send) then
-    timer%nq_send_max = max(timer%nq_send_max,mpi_mesg%nq_send)
-    !$omp atomic
-    mpi_mesg%nq_send = mpi_mesg%nq_send-1
-  else
-    timer%nq_recv_max = max(timer%nq_recv_max,mpi_mesg%nq_recv)
-    !$omp atomic
-    mpi_mesg%nq_recv = mpi_mesg%nq_recv-1
+  if (present(send)) then
+    if (send) then
+      timer%nq_send_max = max(timer%nq_send_max,mpi_mesg%nq_send)
+      !$omp atomic
+      mpi_mesg%nq_send = mpi_mesg%nq_send-1
+    else
+      timer%nq_recv_max = max(timer%nq_recv_max,mpi_mesg%nq_recv)
+      !$omp atomic
+      mpi_mesg%nq_recv = mpi_mesg%nq_recv-1
+    end if
   end if
 END SUBROUTINE delete
 
@@ -600,6 +667,58 @@ contains
 #endif
   end subroutine probe_for
 END SUBROUTINE get
+
+!> =============================================================================
+!> Return true or false, depending on if the mesg request is complete or not
+!> =============================================================================
+FUNCTION completed (self) RESULT(flag)
+  class(mesg_t):: self
+  logical:: flag, ierr
+  integer, save:: itimer=0
+#ifdef MPI
+  integer:: stat(MPI_STATUS_SIZE)
+#endif
+  !-----------------------------------------------------------------------------
+  flag = .false.
+  if (mpi%size <= 1) return
+  call trace%begin ('mesg_t%completed', itimer=itimer)
+#ifdef MPI
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_TEST (self%req, flag, stat, ierr)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_TEST (self%req, flag, stat, ierr)
+    !$omp end critical (mpi_cr)
+  end if
+#endif
+  call trace%end (itimer)
+END FUNCTION completed
+
+!> =============================================================================
+!> Return true or false, depending on if the mesg request is complete or not
+!> =============================================================================
+FUNCTION all_completed (self) RESULT(flag)
+  class(mesg_t):: self
+  logical:: flag, ierr
+  integer, save:: itimer=0
+#ifdef MPI
+  integer:: stat(MPI_STATUS_SIZE)
+#endif
+  !-----------------------------------------------------------------------------
+  flag = .false.
+  if (mpi%size <= 1) return
+  call trace%begin ('mesg_t%all_completed', itimer=itimer)
+#ifdef MPI
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+    !$omp end critical (mpi_cr)
+  end if
+#endif
+  call trace%end (itimer)
+END FUNCTION all_completed
 
 !> =============================================================================
 !> Return true or false, depending on if the mesg is complete or not.

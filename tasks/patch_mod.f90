@@ -216,7 +216,7 @@ SUBROUTINE header_to_patch (self, head)
     if (io%verbose>2) &
       write (io_unit%mpi, *) head%id, 'swapping to boundary'
   end if
-  head%status = iand(head%status, not(bits%ready))
+  head%status = iand(head%status, not(bits%ready+bits%busy))
   self%id         = head%id
   self%status     = head%status
   self%rank       = head%rank
