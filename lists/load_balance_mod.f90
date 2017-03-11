@@ -634,7 +634,7 @@ FUNCTION check_load (self, head) RESULT (sell)
           ! A swap can cause a fair number of patch transfers, since new virtual
           ! patches on the remote need at least two time slices.
           !---------------------------------------------------------------------
-          randomu = rand()
+          randomu = random%ran1()
           if (io%verbose>0) &
             write (io_unit%log,'("LB:",2i4,2x,2l1,2f6.2,l4)') &
               mpi%rank,nbor%task%rank,rank_info%ok,nbor_info%ok,imbalance, &
