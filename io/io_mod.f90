@@ -106,6 +106,8 @@ SUBROUTINE init (self, name)
     else
       io_unit%log = io_unit%mpi
     end if
+    write (filename,'(a,i4.4,".nq")') trim(self%outputname), mpi%rank
+    open (io_unit%queue, file=filename, form='formatted', status='unknown')
     write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
     open (io_unit%mpi, file=filename, form='formatted', status='unknown')
     log_unit = io_unit%log

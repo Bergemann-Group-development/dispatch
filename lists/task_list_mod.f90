@@ -114,8 +114,9 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
-  print '(a,f8.3,a)', ' memory per process:', timer%gb, ' GB'
-  !call mpi%barrier ('task_list_mod::execute')
+  if (mpi%master) &
+    print '(a,f8.3,a)', ' Memory per process:', timer%gb, ' GB'
+  call mpi%barrier ('task_list%execute')
   wc_start = wallclock()
   call tic (time=sec)
   call timer%print
@@ -188,7 +189,8 @@ SUBROUTINE update (self)
   !$omp end critical (queue_cr)
   if (associated(head)) then
     if (already_busy) then
-      print *,mpi%rank,' WARNING: thread',omp%thread,' tried to updata busy task'
+      write (io_unit%log,*) mpi%rank,' WARNING: thread',omp%thread, &
+        ' tried to update busy task', task%id
       call trace_end
       return
     end if
@@ -259,13 +261,17 @@ SUBROUTINE update (self)
     ! of its nbors that became new boundary patches over to relevant ranks,
     ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
     !-----------------------------------------------------------------------------
+    write (io_unit%queue,*) wallclock(), self%nq
     if (task%is_set(bits%boundary)) then                ! boundary patch?
       head%task%nq = self%nq                            ! make sure to pass on
       if (load_balance%check_load (head)) then          ! sell?
+        !$omp atomic
          self%na = self%na-1
+        !$omp atomic
          self%nb = self%nb-1
+        !$omp atomic
          self%nv = self%nv-1
-         call self%count_status
+         call self%count_status                         ! redundant? (FIXME)
       end if
       call head%send_to_vnbors                          ! send to virtual nbors
     end if

@@ -414,6 +414,7 @@ FUNCTION find (self, rank, debug) RESULT (nbor_info)
   logical, optional:: debug
   class(rank_info_t), pointer:: nbor_info
   !.............................................................................
+  call trace%begin('rank_info_list%find')
   nbor_info => self%head
   if (present(debug)) then
     write (io_unit%log,*) 'debug: associated =', associated(nbor_info)
@@ -433,6 +434,7 @@ FUNCTION find (self, rank, debug) RESULT (nbor_info)
       nbor_info => nbor_info%next
     end do
   end if
+  call trace%end
 END FUNCTION find
 
 !> =============================================================================
@@ -488,12 +490,14 @@ FUNCTION check_load (self, head) RESULT (sell)
   real(8):: wc
   real:: load_diff, cost, imbalance
   logical, save:: make_estimate=.true.
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Only one thread should do load balancing, and that thread should make sure
   ! to use omp critical (list_cr) whenever it needs to access the task list.
   !-----------------------------------------------------------------------------
   sell = .false.
   if (.not.self%on) return
+  call trace%begin ('load_balance%check_load', itimer=itimer)
   !$omp critical (loadb_cr)
   wc = wallclock()
   patch => task2patch(head%task)

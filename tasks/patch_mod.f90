@@ -236,9 +236,14 @@ SUBROUTINE header_to_patch (self, head)
   self%it         = head%it
   self%nt         = head%nt
   nt              = head%nt
-  self%t          = head%t(1:nt)
-  self%dt         = head%dt(1:nt)
-  self%iit        = head%iit(1:nt)
+  if (nt > 0) then
+    self%t          = head%t(1:nt)
+    self%dt         = head%dt(1:nt)
+    self%iit        = head%iit(1:nt)
+  else
+    write (io_unit%log,*) omp%thread,'header_to_patch WARNING: nt non-positive', nt
+    flush (io_unit%log)
+  end if
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
 END SUBROUTINE header_to_patch
