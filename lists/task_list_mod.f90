@@ -96,8 +96,9 @@ SUBROUTINE execute (self)
   class(link_t), pointer:: link, rem
   real(8):: sec
   !-----------------------------------------------------------------------------
-  ! Set virtual and boundary bits
+  ! Initialize nbor lists, and set virtual and boundary bits
   !-----------------------------------------------------------------------------
+  call self%init_all_nbors
   call self%reset_status
   !-----------------------------------------------------------------------------
   ! Check the ready status of all tasks

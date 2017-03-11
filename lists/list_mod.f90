@@ -574,13 +574,13 @@ SUBROUTINE init_nbors (self, link)
   logical:: overlaps
   !.............................................................................
   call trace_begin('list_mod::init_nbors ')
-  !$omp critical (list_cr)
   nullify (link%nbor)                                 ! initially no nbor
   n_add = 0
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
-    if (scan%task%rank /= mpi%rank .and. load_balance%on) &
+    if (scan%task%rank /= mpi%rank .and. load_balance%on) then
       call load_balance%add (scan%task%rank)
+    end if
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       overlaps = self%overlaps (scan%task, link%task)
       if (overlaps) then  ! if its task overlaps
@@ -605,23 +605,25 @@ SUBROUTINE init_nbors (self, link)
   if (io%verbose>1) write (io%log_unit,*) &
     'added ', n_add, ' neighbors to', link%task%id, &
     link%task%is_set(bits%boundary), link%task%is_set(bits%virtual)
-  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE init_nbors
 
 !> =============================================================================
 !> The very first initialization of the neighbor lists.  After this, it can be
-!> maintained without a global search.
+!> maintained without a global search.  Distribute the work over available
+!> threads.
 !> =============================================================================
 SUBROUTINE init_all_nbors (self)
   class(list_t):: self
   class(link_t), pointer:: link
+  integer:: i
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_mod::init_all_nbors', itimer=itimer)
   call init_nonleaf (self)                              ! set non_leaf bit
   link => self%head                                     ! start checking links
-  do while (associated(link))
+  !$omp parallel do firstprivate(link)
+  do i=1,self%n
     call self%init_nbors (link)
     link => link%next                                   ! continue list
   end do
