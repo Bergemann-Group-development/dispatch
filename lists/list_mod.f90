@@ -601,13 +601,20 @@ SUBROUTINE init_nbors (self, link)
           link%task%id, link%task%position, link%task%size, &
           0, self%distance (scan%task, link%task), self%size, &
           overlaps
-        allocate (nbor)
-        nbor%task => scan%task
-        nbor%link => scan
-        call link%add_nbor_by_rank (nbor)
-        n_add = n_add+1
-        if (nbor%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk is nbor:', link%task%id
-        if (link%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk has nbor:', nbor%task%id
+        !-----------------------------------------------------------------------
+        ! The ifs select to add nbors to a patch if either the patch is not a
+        ! virtual patch, or the nbor is not a virtual patch, thus excluding
+        ! adding virtual patches as nbors to virtual patches
+        !-----------------------------------------------------------------------
+        if (scan%task%is_clear(bits%virtual).or.link%task%is_clear(bits%virtual)) then
+          allocate (nbor)
+          nbor%task => scan%task
+          nbor%link => scan
+          call link%add_nbor_by_rank (nbor)
+          n_add = n_add+1
+          if (nbor%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk is nbor:', link%task%id
+          if (link%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk has nbor:', nbor%task%id
+        end if
       end if
     end if
     scan => scan%next                                 ! continue search
