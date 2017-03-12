@@ -262,7 +262,8 @@ SUBROUTINE update (self)
     ! of its nbors that became new boundary patches over to relevant ranks,
     ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
     !-----------------------------------------------------------------------------
-    write (io_unit%queue,*) wallclock(), self%nq
+    if (io%verbose>0) &
+      write (io_unit%queue,*) wallclock(), task%istep, task%time, self%nq
     if (task%is_set(bits%boundary)) then                ! boundary patch?
       head%task%nq = self%nq                            ! make sure to pass on
       if (load_balance%check_load (head)) then          ! sell?

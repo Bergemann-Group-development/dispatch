@@ -171,6 +171,7 @@ SUBROUTINE unpack (self, buffer)
   class(rank_info_t), pointer:: nbor_info
   type(io_rank_info_t):: io_rank_info
   integer:: n
+  real(8):: wc
   !.............................................................................
   call trace%begin ('rank_info%unpack')
   n = n_io_rank_info
@@ -212,9 +213,10 @@ SUBROUTINE unpack (self, buffer)
   nbor_info%dtime = io_rank_info%dtime
   nbor_info%wall  = io_rank_info%wall
   nbor_info%owall = io_rank_info%owall
+  wc = wallclock()-io_rank_info%wall
   if (io%verbose>1) then
-    write (io_unit%log,'(a,i6,1p,g12.3,i6,g16.6)') 'rank_info_mod::unpack, rank,load,nq,n =', &
-      io_rank_info%rank, io_rank_info%cost, io_rank_info%nq, io_rank_info%time
+    write (io_unit%log,'(a,i6,1p,g12.3,i6,2g16.6)') 'rank_info%unpack: rank,load,nq,time,latency =', &
+      io_rank_info%rank, io_rank_info%cost, io_rank_info%nq, io_rank_info%time, wc
   end if
   call trace%end
 END SUBROUTINE unpack

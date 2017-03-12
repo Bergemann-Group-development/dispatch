@@ -429,7 +429,9 @@ SUBROUTINE check_ready (self, link)
         nbor => nbor%next                               ! next nbor
       else                                              ! not ahead in time
         if (io%verbose > 1) &
-          write (io_unit%log,*) task%id,' failed on',nbor%task%id,nbor%task%time
+          write (io_unit%log,'(i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+            task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, nbor%task%dtime, &
+            nbor%task%grace, nbor%task%is_set(bits%virtual)
         return
       end if
     else                                                ! nbor not needed
@@ -570,19 +572,28 @@ SUBROUTINE init_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link, scan
   class(link_t), pointer:: nbor
-  integer:: n_add
+  integer:: n_add, n_nbor=0
   logical:: overlaps
   !.............................................................................
   call trace_begin('list_mod::init_nbors ')
   nullify (link%nbor)                                 ! initially no nbor
   n_add = 0
+  n_nbor = 0
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
+    !---------------------------------------------------------------------------
+    ! Add ranks that differ from the process rank to the list of load balance
+    ! neighbors (each rank is only added once)
+    !---------------------------------------------------------------------------
     if (scan%task%rank /= mpi%rank .and. load_balance%on) then
       call load_balance%add (scan%task%rank)
+      n_nbor = n_nbor+1
     end if
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       overlaps = self%overlaps (scan%task, link%task)
+      !-------------------------------------------------------------------------
+      ! Potential nbors are other patches that overlap
+      !-------------------------------------------------------------------------
       if (overlaps) then  ! if its task overlaps
         if (io%verbose>2) &
           write (io%log_unit, '(3(i9,2(3f7.3,1x)),l4)') &
