@@ -627,17 +627,33 @@ END SUBROUTINE init_nbors
 SUBROUTINE init_all_nbors (self)
   class(list_t):: self
   class(link_t), pointer:: link
-  integer:: i
+  integer:: i, i0, i1, i2, n=0, nv=0, nb=0
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_mod::init_all_nbors', itimer=itimer)
   call init_nonleaf (self)                              ! set non_leaf bit
+  i2 = self%n/omp%nthreads + 1                          ! tasks per thread
+  !$omp parallel private(i,i0,i1,link) shared(self,i2) default(none)
+  i0 = omp%thread*i2
+  i1 = i0 + i2
   link => self%head                                     ! start checking links
-  !$omp parallel do firstprivate(link)
-  do i=1,self%n
-    call self%init_nbors (link)
+  i = 0                                                 ! task counter
+  do while (associated(link))
+    if (i >= i0 .and. i<i1) then                        ! thread interval
+      call self%init_nbors (link)
+    end if
+    i = i+1                                             ! increment counter
     link => link%next                                   ! continue list
   end do
+  !$omp end parallel
+  link => self%head                                     ! start checking links
+  do while (associated(link))
+    n = n+1
+    if (link%task%is_set(bits%boundary)) nb = nb+1
+    if (link%task%is_set(bits%virtual)) nv = nv+1
+    link => link%next                                   ! continue list
+  end do
+  write (io_unit%mpi,*) 'tasks: n, nb, nv =', n, nb, nv
   call trace_end (itimer)
 END SUBROUTINE init_all_nbors
 
