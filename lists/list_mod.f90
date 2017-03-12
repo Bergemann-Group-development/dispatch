@@ -572,13 +572,12 @@ SUBROUTINE init_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link, scan
   class(link_t), pointer:: nbor
-  integer:: n_add, n_nbor=0
+  integer:: n_add
   logical:: overlaps
   !.............................................................................
   call trace_begin('list_mod::init_nbors ')
   nullify (link%nbor)                                 ! initially no nbor
   n_add = 0
-  n_nbor = 0
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
     !---------------------------------------------------------------------------
@@ -587,7 +586,6 @@ SUBROUTINE init_nbors (self, link)
     !---------------------------------------------------------------------------
     if (scan%task%rank /= mpi%rank .and. load_balance%on) then
       call load_balance%add (scan%task%rank)
-      n_nbor = n_nbor+1
     end if
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       overlaps = self%overlaps (scan%task, link%task)

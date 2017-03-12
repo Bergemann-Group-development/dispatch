@@ -32,6 +32,8 @@ MODULE task_list_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
+    logical:: syncing=.false.
+    real(8):: sync_time=-1.0, sync_next=-1.0
   contains
     procedure:: init
     procedure:: execute
@@ -53,6 +55,7 @@ MODULE task_list_mod
   logical, save:: do_delay=.false.
   logical, save:: recv_active=.true.
   real(8), save:: wc_start=0d0
+  real(8), save:: sync_time=0.0
   type(task_list_t), save:: virtual_list
   !$omp threadprivate (virtual_list)
 CONTAINS
@@ -69,7 +72,7 @@ SUBROUTINE init (self, name)
   integer:: iostat
   integer:: debug=0
   namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, &
-    do_delay, recv_active
+    do_delay, recv_active, sync_time
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -81,6 +84,10 @@ SUBROUTINE init (self, name)
     self%debug = debug
     if (io%master) write (*,task_list_params)
   end if
+  if (sync_time > 0.0) &
+    self%sync_next = sync_time
+  self%sync_time = sync_time
+  write (io_unit%mpi,*) 'task_list%init: next_sync =', self%sync_next, self%sync_time
   call load_balance%init
   call download%init
   call trace_end
@@ -157,7 +164,7 @@ SUBROUTINE update (self)
   real(8):: wc
   !.............................................................................
   call trace%begin('task_list_t%update')
-  !call self%check_flags
+  call self%check_flags
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
@@ -167,7 +174,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   !$omp critical (queue_cr)
   head => self%queue                                    ! queue start
-  if (associated(head)) then
+  if (associated(head) .and. .not.self%syncing) then
     !---------------------------------------------------------------------------
     ! Set the head of the queue to the next task in time.  The ready bit needs
     ! to remain on for now, to prevent other threads from checking this task
@@ -186,8 +193,25 @@ SUBROUTINE update (self)
       self%nq = self%nq-1                               ! decrement queue count
       task%nq = self%nq                                 ! for info print
     end if
+    !---------------------------------------------------------------------------
+    ! The first time a task is at the head of the ready queue with time =
+    ! sync_time we can be sure that all other tasks are also being upated
+    ! (by other threads) to arrive at this time.  We can then temporarily
+    ! halt updating, and wait for this task to finish its update, at a barrier
+    ! where all other ranks are doing the same.
+    !---------------------------------------------------------------------------
+    if (task%time == self%sync_next) then
+      self%syncing = .true.
+      write (io_unit%mpi,*) task%id,omp%thread, &
+        ' is triggering a sync at t =', self%sync_next
+    end if
   end if
   !$omp end critical (queue_cr)
+  !-----------------------------------------------------------------------------
+  ! As long as we are syncing, skip the update and come back.  The on thread
+  ! that hit the sync time last of all threads has set this flag, and will clear
+  ! it as soon as all other ranks have arrived at the same time.
+  !-----------------------------------------------------------------------------
   if (associated(head)) then
     if (already_busy) then
       write (io_unit%log,*) mpi%rank,' WARNING: thread',omp%thread, &
@@ -220,12 +244,33 @@ SUBROUTINE update (self)
     !----------------------------------------------------------------------------
     call task%dnload                                    ! download nbor info
     !----------------------------------------------------------------------------
+    ! Periodic task syncronization:  The first time a task%time is exactly equal
+    ! to load_balance%sync_next, we wait for all ranks to arrive at the same
+    ! time. All tasks within a rank are then also at this time, since as long as
+    ! one has not arrived there yet, the head%ask%time is smaller.
+    !----------------------------------------------------------------------------
+    if (self%syncing) then
+      write (io_unit%mpi,*) task%id,omp%thread, &
+        ' is waiting on a sync at t =', self%sync_next
+      call mpi%barrier ('sync')
+      write (io_unit%mpi,*) task%id,omp%thread, &
+        ' finished wating on a sync at t =', self%sync_next
+      self%sync_next = self%sync_next + self%sync_time
+      self%syncing = .false.
+    end if
+    task%sync_time = self%sync_next
+    !----------------------------------------------------------------------------
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
     wc = wallclock()
     call task%update                                    ! update the task
-    !$omp atomic write
-    mpi_mesg%delay_ms = 1d3*(wallclock()-wc)
+    !----------------------------------------------------------------------------
+    ! Default delay time = first update time
+    !----------------------------------------------------------------------------
+    if (mpi_mesg%delay_ms==0.0) then
+      !$omp atomic write
+      mpi_mesg%delay_ms = 1d3*(wallclock()-wc)
+    end if
     !$omp atomic
     mpi_mesg%n_update = mpi_mesg%n_update+1
     if (io%verbose>1) &
@@ -315,6 +360,11 @@ SUBROUTINE update (self)
       call mpi%abort ('exceeded max_stalled')
     end if
     !$omp end critical (delay_cr)
+  end if
+  if (self%syncing) then
+    call mpi_mesg%delay (0)
+    call trace%end
+    return
   end if
   call trace_end
 END SUBROUTINE update

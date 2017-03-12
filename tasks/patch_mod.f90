@@ -1352,6 +1352,16 @@ SUBROUTINE courant_condition (self, detailed_timer)
   !$omp atomic write
   self%dtime = dtime
   !-----------------------------------------------------------------------------
+  ! Force the time step to give exactly sync_time if within reach
+  !-----------------------------------------------------------------------------
+  if (self%time < self%sync_time .and. self%time+self%dtime > self%sync_time) then
+    self%dtime = self%sync_time - self%time
+    self%syncing = .true.
+    if (io%verbose>0) &
+      write (io_unit%mpi,*) 'patch_t%courant_condition: syncing turned on for', &
+        self%id, self%time
+  end if
+  !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
   if (self%out_time > 0.0) &
