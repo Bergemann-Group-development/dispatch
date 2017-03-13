@@ -9,7 +9,6 @@ COMPILER = gfortran
 OMP  = yes
 MPI  = mpi
 MOD  = mod
-AUTO = yes
 PREC ?= SINGLE
 DEFS = -D$(PREC)
 EOS  ?= ideal
@@ -68,7 +67,6 @@ sinclude $(CONFIG)/Makefile.dep
 # Macro to hide compiler output
 E = @
 
-ifeq ($(AUTO),yes)
 #############################################################################
 # Infrastructure to automatically determine dependencies
 DEPDIR := .d
@@ -114,31 +112,7 @@ $(DEPDIR)/%.d: ;
 
 # Prevent deletion of dependency files after successful compilation
 .PRECIOUS: $(DEPDIR)/%.d
-
 .PHONY: showopt clean cleanlog cleandata clean-deps cleaner cleanest info
-else
-#############################################################################
-# Rule to get .o files from .f90 files
-.SUFFIXES:
-.SUFFIXES: .x.mic .x .o .f90 .f .w
-.f90.x.mic: $(OBJ)
-	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
-	$(E)$(LD) $(LDFLAGS) $(OBJ) $< *.o -o $@ $(LIBS)
-.f90.x: $(OBJ)
-	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
-	$(E)$(LD) $(LDFLAGS) $(OBJ) $< *.o -o $@ $(LIBS)
-.f90.o:
-	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
-	$(E)$(F90) $(FFLAGS) $(DEFS) -c $< -o $@
-.f.o:
-	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
-	$(E)$(F90) $(FFLAGS) $(DEFS) -c $< -o $@
-.f90.w:
-	@echo $<
-.f.w:
-	@echo $<
-$(EXEC): $(OBJ)
-endif
 
 showopt:
 	@echo "FC = $(F90) $(FFLAGS) $(DEFS)"
