@@ -22,6 +22,7 @@ MODULE list_mod
     class(link_t), pointer:: head => null()
     class(link_t), pointer:: tail => null()
     class(link_t), pointer:: queue => null()
+    class(link_t), pointer:: active => null()
     integer::  n=0                      ! total
     integer:: nq=0                      ! ready
     integer:: nv=0                      ! virtual
@@ -29,6 +30,7 @@ MODULE list_mod
     integer:: ni=0                      ! internal
     integer:: ne=0                      ! external
     integer:: na=0                      ! active = internal+boundary
+    integer:: nac=0                     ! active tasks
     real(8):: size(3) = 1.0_8
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0
     integer:: debug=0
@@ -64,6 +66,8 @@ MODULE list_mod
     procedure:: reset_status
     procedure:: add_by_quality
     procedure:: queue_by_time
+    procedure:: queue_active
+    procedure:: remove_from_active
     procedure:: count_status
     procedure:: print_queue
     procedure:: print_queue_until
@@ -1046,6 +1050,95 @@ SUBROUTINE queue_by_time (self, this)
   !$omp end critical (queue_cr)
   call trace_end (itimer)
 END SUBROUTINE queue_by_time
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE queue_active (self, this)
+  class(list_t):: self
+  class(link_t), pointer:: this
+  class(link_t), pointer:: next, prev
+  class(task_t), pointer:: task
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace_begin ('list_mod::queue_active ', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  task => this%task
+  if (io%verbose>1) &
+    write (io_unit%log,'(1x,i4,2x,a,i9,a,f10.5)') omp%thread, &
+      'list_mod::queue_active: adding task', task%id, ' at time', task%time
+  self%nac = self%nac+1
+  nullify (prev)
+  next => self%active
+  do while (associated(next))
+    if (associated(next%task, task)) then
+      write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, ' is already in active queue'
+      go to 9
+    else if (next%task%time > task%time) then
+      this%next_active => next
+      if (associated(prev)) then
+        if (io%verbose > 1) then
+          write (io_unit%log,*) 'task',task%id,' in ready active after',prev%task%id,self%na
+        end if
+        prev%next_active => this
+      else
+        self%active => this
+        if (io%verbose > 1) then
+          write (io_unit%log,*) 'task',task%id,' at ready active head',self%na
+        end if
+      end if
+      go to 9
+    end if
+    prev => next
+    next => next%next_active
+  end do
+  !if (.not.associated(next)) then
+    if (associated(prev)) then
+      if (io%verbose > 1) then
+        write (io_unit%log,*) 'task',task%id,' at active queue tail',prev%task%id,self%na
+    end if
+      prev%next_active => this
+    else
+      if (io%verbose > 1) then
+        write (io_unit%log,*) 'task',task%id,' at active queue head',self%na
+      end if
+      self%active => this
+    end if
+  !end if
+  nullify (this%next_active)
+9 continue
+  call trace_end (itimer)
+END SUBROUTINE queue_active
+
+!> =============================================================================
+!> Remove a task link from the active queue
+!> =============================================================================
+SUBROUTINE remove_from_active (self, this)
+  class(list_t):: self
+  class(link_t), pointer:: this
+  class(link_t), pointer:: next, prev
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%remove_from_active')
+  !$omp critical (active)
+  nullify (prev)
+  next => self%active
+  do while (associated(next))
+    if (associated(next%task, this%task)) then
+      if (associated(prev)) then
+        prev%next_active => next%next_active
+      else
+        self%active => next%next_active
+      end if
+      self%nac = self%nac-1
+      if (io%verbose > 1) &
+        write (io_unit%mpi,*) 'remove_from_active: na =', self%na
+      exit
+    end if
+    prev => next
+    next => next%next_active
+  end do
+  !$omp end critical (active)
+  call trace%end
+END SUBROUTINE remove_from_active
 
 !> =============================================================================
 !> Add a link node into the task list, in increasing quality order

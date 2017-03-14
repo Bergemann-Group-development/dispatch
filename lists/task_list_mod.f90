@@ -158,7 +158,7 @@ SUBROUTINE update (self)
   class(task_list_t):: self
   !.............................................................................
   class(link_t), pointer:: head
-  class(task_t), pointer:: task
+  class(task_t), pointer:: task, otask
   class(mesg_t), pointer:: mesg
   logical:: already_busy
   real(8):: wc
@@ -175,6 +175,22 @@ SUBROUTINE update (self)
   !$omp critical (queue_cr)
   head => self%queue                                    ! queue start
   if (associated(head) .and. .not.self%syncing) then
+    task => head%task                                   ! head task
+    if (io%verbose > 1) then
+      write (io_unit%log,'(a,i4,a,i5,2x,a,2x,i4)') &
+        'thread', omp%thread,' takes', task%id, trim(task%type), task%nq
+      flush (io_unit%log)
+    end if
+    if (io%verbose>0) then 
+      if (associated(self%active)) then
+        otask => self%active%task
+      else
+        otask => task
+      end if
+      if (task%time < otask%time) print *,'INFO XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+      write (io_unit%queue,'(f12.6,i6,2f12.6,2i5)') &
+        wallclock(), task%istep, task%time, otask%time, task%nq, self%nac
+    end if
     !---------------------------------------------------------------------------
     ! Set the head of the queue to the next task in time.  The ready bit needs
     ! to remain on for now, to prevent other threads from checking this task
@@ -184,11 +200,11 @@ SUBROUTINE update (self)
     ! single thread and task to check and change the ready bit status, at any
     ! one time.
     !---------------------------------------------------------------------------
-    task => head%task                                   ! head task
     already_busy = task%is_set (bits%busy)
     if (.not.already_busy) then
       call task%set (bits%busy)                         ! mark task busy
       self%queue => head%next_time                      ! chop head off
+      call self%queue_active (head)
       !$omp atomic
       self%nq = self%nq-1                               ! decrement queue count
       task%nq = self%nq                                 ! for info print
@@ -218,11 +234,6 @@ SUBROUTINE update (self)
         ' tried to update busy task', task%id
       call trace_end
       return
-    end if
-    if (io%verbose > 1) then
-      write (io_unit%log,'(a,i4,a,i5,2x,a,2x,i4)') &
-        'thread', omp%thread,' takes', task%id, trim(task%type), task%nq
-      flush (io_unit%log)
     end if
     !---------------------------------------------------------------------------
     ! If the task is frozen (e.g. because it has finished), return
@@ -264,6 +275,7 @@ SUBROUTINE update (self)
     !----------------------------------------------------------------------------
     wc = wallclock()
     call task%update                                    ! update the task
+    call self%remove_from_active (head)                 ! remove from active_queue
     !----------------------------------------------------------------------------
     ! Default delay time = first update time
     !----------------------------------------------------------------------------
@@ -307,8 +319,6 @@ SUBROUTINE update (self)
     ! of its nbors that became new boundary patches over to relevant ranks,
     ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
     !-----------------------------------------------------------------------------
-    if (io%verbose>0) &
-      write (io_unit%queue,*) wallclock(), task%istep, task%time, self%nq
     if (task%is_set(bits%boundary)) then                ! boundary patch?
       head%task%nq = self%nq                            ! make sure to pass on
       if (load_balance%check_load (head)) then          ! sell?

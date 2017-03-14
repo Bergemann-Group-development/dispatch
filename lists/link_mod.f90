@@ -1,5 +1,9 @@
 !> *****************************************************************************
-!> Module with list handling for generic class task_t objects
+!> Module with list handling for generic class task_t objects.
+!>
+!> NOTE: The advantages of using the same links to organize a ready queue and
+!> an active queue is that the process is faster and simpler when no new links
+!> have to be created
 !> *****************************************************************************
 MODULE link_mod
   USE io_mod
@@ -20,6 +24,7 @@ MODULE link_mod
     class(link_t), pointer :: prev => null()         ! previous link in task list
     class(link_t), pointer :: parent => null()       ! parent task link
     class(link_t), pointer :: next_time => null()    ! next link in time order
+    class(link_t), pointer :: next_active => null()  ! next link to an active process, in time order
     logical:: check = .true.
     !---------------------------------------------------------------------------
     ! Flags making it possible to distinguish between nbors needed for link%task,
