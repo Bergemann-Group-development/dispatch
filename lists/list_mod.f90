@@ -1072,7 +1072,7 @@ SUBROUTINE queue_active (self, this)
   do while (associated(next))
     if (associated(next%task, task)) then
       write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, ' is already in active queue'
-      go to 9
+      exit
     else if (next%task%time > task%time) then
       this%next_active => next
       if (associated(prev)) then
@@ -1086,12 +1086,12 @@ SUBROUTINE queue_active (self, this)
           write (io_unit%log,*) 'task',task%id,' at ready active head',self%na
         end if
       end if
-      go to 9
+      exit
     end if
     prev => next
     next => next%next_active
   end do
-  !if (.not.associated(next)) then
+  if (.not.associated(next)) then
     if (associated(prev)) then
       if (io%verbose > 1) then
         write (io_unit%log,*) 'task',task%id,' at active queue tail',prev%task%id,self%na
@@ -1103,9 +1103,8 @@ SUBROUTINE queue_active (self, this)
       end if
       self%active => this
     end if
-  !end if
+  end if
   nullify (this%next_active)
-9 continue
   call trace_end (itimer)
 END SUBROUTINE queue_active
 
