@@ -6,7 +6,7 @@
  do_legacy=t
 /
 &rubiks_params
- n_levels=5                         ! # of refinement levels in for the rubiks cube
+ n_levels=6                         ! # of refinement levels in for the rubiks cube
  n_patch=3                          ! # of patches per direction
  m_zoom=3                           ! zoom-in level per direction
  n_repeat=3                         ! how many times rubiks cube is repeated along the orbit
@@ -30,7 +30,7 @@ gamma=1.4
 
 
 &planet_params
- radius_r_earth=9.0 
+ radius_r_earth=3.0 
  mass_m_earth=1.0
  orbit_radius_au=1.0
  position_orbit_radii=0.0, 1.0, 0.0 ! planet position in orbit radii      
@@ -55,6 +55,7 @@ gamma=1.4
 
 &initial_params
 initial_condition='snapshot'
+secondary_ic='planet_atmosphere'
 /
 
 &snapshot_params

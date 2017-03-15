@@ -17,7 +17,8 @@ MODULE initial_mod
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
-    character(len=20) :: initial_condition = 'planet_atmosphere'    
+    character(len=20) :: initial_condition = 'planet_atmosphere'
+    character(len=20) :: secondary_ic      = 'planet_atmosphere'    
     real:: b0(3)
     real:: gamma
     real:: v_head, v_accrete
@@ -25,6 +26,7 @@ MODULE initial_mod
     real(8):: size(3)
     logical:: mhd
     procedure(planet_atmosphere), pointer:: selected => null()
+    procedure(planet_atmosphere), pointer:: second_selected => null()
   contains
     procedure init
   end type
@@ -39,7 +41,8 @@ SUBROUTINE init (self)
    class(initial_t):: self
    logical, save:: first_time=.true.
    character(len=20), save:: initial_condition = 'planet_atmosphere'
-   namelist /initial_params/ initial_condition
+   character(len=20), save:: secondary_ic = 'planet_atmosphere'
+   namelist /initial_params/ initial_condition, secondary_ic
    integer :: iostat
    !----------------------------------------------------------------------------
    call trace%begin('initial_t%init')
@@ -51,12 +54,22 @@ SUBROUTINE init (self)
      if (io%master) write (*, initial_params)
    end if
    self%initial_condition = initial_condition
+   self%secondary_ic = secondary_ic
    select case(trim(self%initial_condition))
      case('planet_atmosphere')
        self%selected => planet_atmosphere
      case('snapshot')
        call dp_reader%init
        self%selected => snapshot
+     end select
+   select case(trim(self%secondary_ic))
+     case('planet_atmosphere')
+       self%second_selected => planet_atmosphere
+     case('snapshot')
+       call dp_reader%init
+       self%second_selected => snapshot
+     case default
+       error stop "secondary IC not understood"
      end select
    call trace%end
 END SUBROUTINE init
@@ -145,8 +158,13 @@ SUBROUTINE snapshot (self, m, mem, level)
   real, dimension(:,:,:,:), pointer  :: mem
   class(mesh_t), pointer, dimension(:) :: m
   integer, optional :: level
+  logical :: used = .false.
   ! --------------------------------------------------------------------
-  call dp_reader%snapshot(m, mem, level)  
+  call dp_reader%snapshot(m, mem, level,used)  
+  if (.not.used) then
+    call self%second_selected(m,mem,level)
+    print *, 'using secondary IC...'
+  end if
 END SUBROUTINE snapshot
 
 !> =============================================================================

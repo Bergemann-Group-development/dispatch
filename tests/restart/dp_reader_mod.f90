@@ -136,7 +136,7 @@ END SUBROUTINE read_patches
 !> =====================================================================
 !> Pickup the data from loaded initial data sets
 !> =====================================================================
-SUBROUTINE snapshot (self, mesh, mem, level)
+SUBROUTINE snapshot (self, mesh, mem, level, used)
   class(dp_reader_t) :: self
   class(mesh_t), pointer, dimension(:) :: mesh
   real, dimension(:,:,:,:), pointer  :: mem
@@ -145,7 +145,7 @@ SUBROUTINE snapshot (self, mesh, mem, level)
   type(index_t):: idx
   class(task_t), pointer :: task
   class(patch_list_t), pointer :: dpatch, bpatch                                
-  logical :: same_found
+  logical :: same_found, used
   integer :: i
   !---------------------------------------------------------------------
   
@@ -161,12 +161,14 @@ SUBROUTINE snapshot (self, mesh, mem, level)
       dpatch => dpatch%next
     end if
   end do
-  if (.not.same_found) print *, 'same not found...'
+  if (.not.same_found) then
+    print *, 'same not found...'
+    used = .false.
+  end if
   
   if (same_found) then
     mem = dpatch%mem(:,:,:,:,1,1)
-  print *, 'px in patch min, max', minval(dpatch%mem(:,:,:,idx%px,1,1)) ,maxval(dpatch%mem(:,:,:,idx%px,1,1))
-  print *, 'px min, max',minval(mem(:,:,:,idx%px)) ,maxval(mem(:,:,:,idx%px))
+    used = .true.
   end if
 
 
