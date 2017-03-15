@@ -13,12 +13,11 @@ MODULE initial_mod
   USE scaling_mod
   USE index_mod
   USE dp_reader_mod
-  USE link_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
-    character(len=20) :: initial_condition = 'planet_atmosphere'
+    character(len=20) :: initial_condition = 'planet_atmosphere'    
     real:: b0(3)
     real:: gamma
     real:: v_head, v_accrete
@@ -65,11 +64,11 @@ END SUBROUTINE init
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-SUBROUTINE planet_atmosphere (self, m, mem, link)
+SUBROUTINE planet_atmosphere (self, m, mem, level)
   class(initial_t) :: self
   real, dimension(:,:,:,:), pointer  :: mem
   class(mesh_t), pointer, dimension(:) :: m
-  class(link_t), pointer, optional :: link
+  integer, optional :: level
   !.............................................................................
   integer :: ix, iy, iz, nr
   real(8) :: x, y, z, r, d, d0, p, csound2
@@ -141,13 +140,13 @@ SUBROUTINE planet_atmosphere (self, m, mem, link)
   call trace%end (itimer)
 END SUBROUTINE planet_atmosphere
 
-SUBROUTINE snapshot (self, m, mem, link)
+SUBROUTINE snapshot (self, m, mem, level)
   class(initial_t) :: self
   real, dimension(:,:,:,:), pointer  :: mem
   class(mesh_t), pointer, dimension(:) :: m
-  class(link_t), pointer, optional :: link
+  integer, optional :: level
   ! --------------------------------------------------------------------
-  call dp_reader%pick_data(link, mem)  
+  call dp_reader%snapshot(m, mem, level)  
 END SUBROUTINE snapshot
 
 !> =============================================================================
