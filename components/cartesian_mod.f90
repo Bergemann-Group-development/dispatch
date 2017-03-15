@@ -21,7 +21,6 @@ MODULE cartesian_mod
     procedure init
     procedure, nopass:: diagnostics
   end type
-  real, save:: gb=0.0                   ! GB per process
   integer, save:: np=0                  ! patches per process
   public task_list_t                    ! export, to avoid excessive USE
 CONTAINS
@@ -197,7 +196,7 @@ SUBROUTINE init (self, label)
   !$omp parallel
   !$omp master
   do while (associated(link))
-    !xomp task firstprivate(link) private(task,patch) shared(gb,np)
+    !xomp task firstprivate(link) private(task,patch) shared(np)
     task => link%task
     select type (task)
     class is (experiment_t)
@@ -205,8 +204,6 @@ SUBROUTINE init (self, label)
       call timer%end (itimer=itimer)
       call patch%init
       call timer%begin (itimer=itimer)
-      !$omp atomic
-      gb = gb + storage_size(patch%mem)*product(shape(patch%mem))/(8*1024.**3)
       !$omp atomic
       np = np + 1
       if (io%verbose>0) then
@@ -244,8 +241,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE diagnostics
   if (mpi%master) then
-    print '(a,i8)',     'Patches per process:', np
-    print '(a,f8.3,a)', ' Memory per process:', gb, ' GB'
+    print '(a,i8)',     ' Patches per process:', np
   end if
 END SUBROUTINE
 

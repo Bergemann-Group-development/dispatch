@@ -31,6 +31,7 @@ MODULE task_mod
     integer:: nq=999
     integer:: n_behind=0
     real(8):: time = 0d0
+    real(8):: atime = 0d0               ! for active queue
     real(8):: end_time = 1d0
     real(8):: out_next = 0d0
     real(8):: out_time = 1d0
@@ -57,6 +58,8 @@ MODULE task_mod
     real:: latency=0.0                  ! MPI message latency
     real(8):: wc_last=0.0_8
     class(mesg_t), pointer:: mesg=>null()
+    real(8):: sync_time=0d0
+    logical:: syncing=.false.
   contains
     procedure:: init
     procedure:: dnload => void
@@ -117,7 +120,7 @@ SUBROUTINE init (self)
     write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)
   call trace_end
-END SUBROUTINE
+END SUBROUTINE init
 
 !> =============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time
@@ -142,6 +145,20 @@ SUBROUTINE rotate (self)
     flush (io_unit%log)
     write (io_unit%log,'(a,7f10.6)') 'task_mod::rotate   t =', self%t(max(1,min(self%nt,self%iit)))
   end if
+  !!omp critical (time_cr)
+  !-----------------------------------------------------------------------------
+  ! If this task has self%syncing set, then the time step has been set so as to
+  ! arrive exactly ast sync_time.  To precent problems with round-off we set the
+  ! time exactly.
+  !-----------------------------------------------------------------------------
+  if (self%syncing) then
+    time = self%sync_time
+    self%syncing = .false.
+    if (io%verbose>2) &
+      write (io_unit%mpi,*) 'task_t%rotate:: turning off syncing for now', self%id
+  else
+    time = self%time + self%dtime
+  end if
   !-----------------------------------------------------------------------------
   ! Time slot rotation.  Note that self%time should be the LAST of these
   ! updates, since we do not want to enforce a critical region, and the
@@ -150,8 +167,6 @@ SUBROUTINE rotate (self)
   ! self%t(iit(1:nt-1)), and self%dt(iit(1:nt-1)).  The iit((nt) entries are
   ! not accessed.
   !-----------------------------------------------------------------------------
-  !!omp critical (time_cr)
-  time = self%time + self%dtime
   rptr => self%dt(self%it)
   !$omp atomic write
   rptr = self%dtime                                     ! just updated

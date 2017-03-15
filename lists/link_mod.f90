@@ -1,5 +1,9 @@
 !> *****************************************************************************
-!> Module with list handling for generic class task_t objects
+!> Module with list handling for generic class task_t objects.
+!>
+!> NOTE: The advantages of using the same links to organize a ready queue and
+!> an active queue is that the process is faster and simpler when no new links
+!> have to be created
 !> *****************************************************************************
 MODULE link_mod
   USE io_mod
@@ -20,6 +24,7 @@ MODULE link_mod
     class(link_t), pointer :: prev => null()         ! previous link in task list
     class(link_t), pointer :: parent => null()       ! parent task link
     class(link_t), pointer :: next_time => null()    ! next link in time order
+    class(link_t), pointer :: next_active => null()  ! next link to an active process, in time order
     logical:: check = .true.
     !---------------------------------------------------------------------------
     ! Flags making it possible to distinguish between nbors needed for link%task,
@@ -342,7 +347,7 @@ SUBROUTINE update_nbors (self)
   class(link_t):: self
   class(link_t), pointer:: nbor, new
   !.............................................................................
-  call trace_begin('link_mod::init_all_nbors')
+  call trace_begin('link_t%update_nbors')
   nbor => self%nbor                                     ! start checking nbors
   do while (associated(nbor))                           ! loop over nbor list
     allocate (new)                                      ! new link for nbor's nbor list
@@ -505,7 +510,7 @@ SUBROUTINE send_to_vnbors (self)
   class(task_t), pointer:: task
   class(mesg_t), pointer:: mesg
   logical:: flag
-  integer:: ierr, rank
+  integer:: ierr, rank, nsend
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('link_mod::send_to_vnbors', itimer=itimer)
@@ -517,6 +522,7 @@ SUBROUTINE send_to_vnbors (self)
   rank = -1                                                     ! previous rank
   nbor => self%nbor                                             ! first nbor
   flag = .false.
+  nsend = 0
   do while (associated(nbor))                                   ! until end
     task => nbor%task
     if (io%verbose>2) &
@@ -530,6 +536,7 @@ SUBROUTINE send_to_vnbors (self)
         flag = .true.                                           ! mesg has been packed
       end if
       call mesg%send (rank)                                     ! send it
+      nsend = nsend+1
       if (io%verbose>1) then
         write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6,2x,a,i5,2x,5l1)') &
           wallclock(), 'sent', mesg%id, self%task%time, 'to', rank, &
@@ -543,6 +550,8 @@ SUBROUTINE send_to_vnbors (self)
     end if
     nbor => nbor%next                                           ! next nbor
   end do
+  if (io%verbose>1) &
+    write (io_unit%mpi,*) 'sent patch',task%id,' to',nsend,' other ranks'
   !-----------------------------------------------------------------------------
   ! Add the message to mesg%sent_list, if it was sent, and clear the swap bit
   !-----------------------------------------------------------------------------

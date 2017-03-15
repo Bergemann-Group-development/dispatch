@@ -4,7 +4,7 @@
 # Default for gfortran
 OPT = -O2
 HW =
-W = -Wline-truncation -Wno-surprising -w
+W = -Wline-truncation -Wno-surprising -w -fno-range-check
 DEBUG = -g -fbacktrace 
 
 # Depending on MPI use mpif90 or not

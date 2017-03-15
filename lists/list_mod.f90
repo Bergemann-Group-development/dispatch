@@ -22,6 +22,7 @@ MODULE list_mod
     class(link_t), pointer:: head => null()
     class(link_t), pointer:: tail => null()
     class(link_t), pointer:: queue => null()
+    class(link_t), pointer:: active => null()
     integer::  n=0                      ! total
     integer:: nq=0                      ! ready
     integer:: nv=0                      ! virtual
@@ -29,6 +30,7 @@ MODULE list_mod
     integer:: ni=0                      ! internal
     integer:: ne=0                      ! external
     integer:: na=0                      ! active = internal+boundary
+    integer:: nac=0                     ! active tasks
     real(8):: size(3) = 1.0_8
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0
     integer:: debug=0
@@ -58,12 +60,15 @@ MODULE list_mod
     procedure:: intpos
     procedure:: consistency
     procedure:: qconsistency
+    procedure:: aconsistency
     procedure:: statistics
     procedure:: append_list
     procedure:: remove_task
     procedure:: reset_status
     procedure:: add_by_quality
     procedure:: queue_by_time
+    procedure:: queue_active
+    procedure:: remove_active
     procedure:: count_status
     procedure:: print_queue
     procedure:: print_queue_until
@@ -260,7 +265,7 @@ SUBROUTINE check_nbors (self, link)
   call trace_begin('list_t%check_nbors', itimer=itimer)
   if (io%verbose > 1) &
     write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
-  !!omp critical (time_cr)
+  !$omp critical (queue_cr)
   task => link%task                                   ! main task
   nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
@@ -283,7 +288,7 @@ SUBROUTINE check_nbors (self, link)
   if (task%is_clear (bits%virtual+bits%external)) then
     call self%check_ready (link)                      ! finally check link task
   end if
-  !!omp end critical (time_cr)
+  !$omp end critical (queue_cr)
   call trace_end (itimer)
 END SUBROUTINE check_nbors
 
@@ -429,7 +434,9 @@ SUBROUTINE check_ready (self, link)
         nbor => nbor%next                               ! next nbor
       else                                              ! not ahead in time
         if (io%verbose > 1) &
-          write (io_unit%log,*) task%id,' failed on',nbor%task%id,nbor%task%time
+          write (io_unit%log,'(i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+            task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, nbor%task%dtime, &
+            nbor%task%grace, nbor%task%is_set(bits%virtual)
         return
       end if
     else                                                ! nbor not needed
@@ -499,7 +506,7 @@ SUBROUTINE qconsistency (self, ident)
     if (n > self%nq) exit
     if (task%time < time) then
       write (io_unit%log,'(a,i4,2(i9,1p,g15.6,3x))') &
-        'ERROR: queue out of order', ident, prev%id, time, task%id, task%time
+        'ERROR: queue out of order ident, prev%id, time, task%id', ident, prev%id, time, task%id, task%time
     end if
     time = task%time
     prev => task
@@ -520,6 +527,64 @@ SUBROUTINE qconsistency (self, ident)
   end if
   call trace_end
 END SUBROUTINE qconsistency
+
+!> =============================================================================
+!> Check if the number of queued tasks is consistent; i.e., of the number of
+!> tasks linked at self%queue is the same as nq
+!> =============================================================================
+SUBROUTINE aconsistency (self, ident)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task, prev
+  class(link_t), pointer:: nbor
+  integer:: n, id1=0, id2=0, ident
+  real(8):: time
+  !.............................................................................
+  !if (self%debug < 1) return
+  call trace_begin ('list_mod::aconsistency',4)
+  n = 0
+  link => self%active
+  if (associated(link)) then
+    time = link%task%atime
+    prev => link%task
+    link => link%next_active
+    n = n+1
+  end if
+  do while (associated(link))
+    task => link%task
+    n = n+1
+    if (n > self%nac) exit
+    if (task%atime < time) then
+      write (io_unit%log,'(a,i4,2(i9,1p,g15.6,3x),i5)') &
+        'ERROR: active queue out of order ident, prev%id, time, task%id, task%atime =', &
+        ident, prev%id, time, task%id, task%atime, self%nac
+      n = 0
+      link => self%active
+      do while (associated(link))
+        n = n+1
+        write (io_unit%log,*) n, link%task%id, link%task%atime
+        link => link%next_active
+      end do
+      exit
+    end if
+    time = task%atime
+    prev => task
+    link => link%next_active
+  end do
+  if (n /= self%nac) then
+    write (io_unit%log,*) &
+      'ERROR: aconsistency ident, n, nac =', ident, n, self%nac
+    n = 0
+    link => self%active
+    do while (associated(link))
+      n = n+1
+      write (io_unit%log,*) n, link%task%id, link%task%atime
+      link => link%next_active
+      if (n > self%nac+2) exit
+    end do
+  end if
+  call trace_end
+END SUBROUTINE aconsistency
 
 !> =============================================================================
 !> Set non_leaf flag on non-leaf patches
@@ -574,15 +639,22 @@ SUBROUTINE init_nbors (self, link)
   logical:: overlaps
   !.............................................................................
   call trace_begin('list_mod::init_nbors ')
-  !$omp critical (list_cr)
   nullify (link%nbor)                                 ! initially no nbor
   n_add = 0
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
-    if (scan%task%rank /= mpi%rank .and. load_balance%on) &
+    !---------------------------------------------------------------------------
+    ! Add ranks that differ from the process rank to the list of load balance
+    ! neighbors (each rank is only added once)
+    !---------------------------------------------------------------------------
+    if (scan%task%rank /= mpi%rank .and. load_balance%on) then
       call load_balance%add (scan%task%rank)
+    end if
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       overlaps = self%overlaps (scan%task, link%task)
+      !-------------------------------------------------------------------------
+      ! Potential nbors are other patches that overlap
+      !-------------------------------------------------------------------------
       if (overlaps) then  ! if its task overlaps
         if (io%verbose>2) &
           write (io%log_unit, '(3(i9,2(3f7.3,1x)),l4)') &
@@ -590,41 +662,66 @@ SUBROUTINE init_nbors (self, link)
           link%task%id, link%task%position, link%task%size, &
           0, self%distance (scan%task, link%task), self%size, &
           overlaps
-        allocate (nbor)
-        nbor%task => scan%task
-        nbor%link => scan
-        call link%add_nbor_by_rank (nbor)
-        n_add = n_add+1
-        if (nbor%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk is nbor:', link%task%id
-        if (link%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk has nbor:', nbor%task%id
+        !-----------------------------------------------------------------------
+        ! The ifs select to add nbors to a patch if either the patch is not a
+        ! virtual patch, or the nbor is not a virtual patch, thus excluding
+        ! adding virtual patches as nbors to virtual patches
+        !-----------------------------------------------------------------------
+        if (scan%task%is_clear(bits%virtual).or.link%task%is_clear(bits%virtual)) then
+          allocate (nbor)
+          nbor%task => scan%task
+          nbor%link => scan
+          call link%add_nbor_by_rank (nbor)
+          n_add = n_add+1
+          if (nbor%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk is nbor:', link%task%id
+          if (link%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk has nbor:', nbor%task%id
+        end if
       end if
     end if
     scan => scan%next                                 ! continue search
   end do
   link%task%n_nbors = n_add                           ! remember n_nbors
-  if (io%verbose>1) write (io%log_unit,*) &
+  if (io%verbose>1) write (io_unit%log,*) &
     'added ', n_add, ' neighbors to', link%task%id, &
     link%task%is_set(bits%boundary), link%task%is_set(bits%virtual)
-  !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE init_nbors
 
 !> =============================================================================
 !> The very first initialization of the neighbor lists.  After this, it can be
-!> maintained without a global search.
+!> maintained without a global search.  Distribute the work over available
+!> threads.
 !> =============================================================================
 SUBROUTINE init_all_nbors (self)
   class(list_t):: self
   class(link_t), pointer:: link
+  integer:: i, i0, i1, i2, n=0, nv=0, nb=0
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_mod::init_all_nbors', itimer=itimer)
   call init_nonleaf (self)                              ! set non_leaf bit
+  i2 = self%n/omp%nthreads + 1                          ! tasks per thread
+  !$omp parallel private(i,i0,i1,link) shared(self,i2) default(none)
+  i0 = omp%thread*i2
+  i1 = i0 + i2
   link => self%head                                     ! start checking links
+  i = 0                                                 ! task counter
   do while (associated(link))
-    call self%init_nbors (link)
+    if (i >= i0 .and. i<i1) then                        ! thread interval
+      call self%init_nbors (link)
+    end if
+    i = i+1                                             ! increment counter
     link => link%next                                   ! continue list
   end do
+  !$omp end parallel
+  link => self%head                                     ! start checking links
+  do while (associated(link))
+    n = n+1
+    if (link%task%is_set(bits%boundary)) nb = nb+1
+    if (link%task%is_set(bits%virtual)) nv = nv+1
+    link => link%next                                   ! continue list
+  end do
+  write (io_unit%mpi,*) 'tasks: n, nb, nv =', n, nb, nv
   call trace_end (itimer)
 END SUBROUTINE init_all_nbors
 
@@ -950,12 +1047,13 @@ SUBROUTINE queue_by_time (self, this)
   ! ready queue (or executing -- the bit is cleared only after updating).
   ! Double check that no other thread has set the ready bit on this task.
   !-----------------------------------------------------------------------------
-  !$omp critical (queue_cr)
+  !.omp critical (queue_cr)
   if (task%is_clear (bits%ready)) then
     call task%set(bits%ready)
     if (io%verbose>1) &
-      write (io_unit%log,'(1x,i4,2x,a,i9,a,f10.5)') omp%thread, &
-        'list_mod::queue_by_time: adding task', task%id, ' at time', task%time
+      write (io_unit%log,'(f12.6,i5,2x,a,i9,a,f12.6,2x,a,i5)') wallclock(), omp%thread, &
+        'list_mod::queue_by_time: adding task', task%id, ' at time', task%time, &
+        'nq', self%nq
     nullify (prev)
     next => self%queue
     do while (associated(next))
@@ -966,7 +1064,9 @@ SUBROUTINE queue_by_time (self, this)
         this%next_time => next
         if (associated(prev)) then
           if (io%verbose > 1) then
-            write (io_unit%log,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
+            write (io_unit%log,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
+              omp%thread, 'task',task%id,' in ready queue between',prev%task%id,next%task%id, &
+              prev%task%time, this%task%time, next%task%time
           end if
           prev%next_time => this
         else
@@ -996,6 +1096,7 @@ SUBROUTINE queue_by_time (self, this)
     end if
     nullify (this%next_time)
   9 continue
+    call self%remove_active (this)                      ! remove from active_queue
   !-----------------------------------------------------------------------------
   ! Since we clear the ready bit in task_list%update, outside of any critical
   ! region, it is perfectly normal that several threads compete about putting
@@ -1009,9 +1110,102 @@ SUBROUTINE queue_by_time (self, this)
       ' found ready bit in queue_by_time for task', task%id, task%time
     flush (io_unit%log)
   end if
-  !$omp end critical (queue_cr)
+  !.omp end critical (queue_cr)
   call trace_end (itimer)
 END SUBROUTINE queue_by_time
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE queue_active (self, this)
+  class(list_t):: self
+  class(link_t), pointer:: this
+  class(link_t), pointer:: next, prev
+  class(task_t), pointer:: task
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace_begin ('list_mod::queue_active ', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  task => this%task
+  task%atime = task%time
+  if (io%verbose>1) &
+    write (io_unit%log,'(1x,i4,2x,a,i9,a,f10.5,i5,l4)') omp%thread, &
+      'list_mod::queue_active: adding task', task%id, ' at time', task%atime, &
+      self%nac, associated(self%active)
+  nullify (prev)
+  !$omp critical (active_cr)
+  self%nac = self%nac+1
+  next => self%active
+  do while (associated(next))
+    if (associated(next%task, task)) then
+      write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, ' is already in active queue'
+      exit
+    else if (next%task%atime > task%atime) then
+      this%next_active => next
+      if (associated(prev)) then
+        if (io%verbose > 1) then
+          write (io_unit%log,*) 'task',task%id,' in active queue after',prev%task%id,self%nac
+        end if
+        prev%next_active => this
+      else
+        self%active => this
+        if (io%verbose > 1) then
+          write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nac
+        end if
+      end if
+      exit
+    end if
+    prev => next
+    next => next%next_active
+  end do
+  if (.not.associated(next)) then
+    if (associated(prev)) then
+      if (io%verbose > 1) then
+        write (io_unit%log,*) 'task',task%id,' at active queue tail',prev%task%id,self%nac
+      end if
+      prev%next_active => this
+    else
+      if (io%verbose > 1) then
+        write (io_unit%log,*) 'task',task%id,' at active queue head',self%nac
+      end if
+      self%active => this
+    end if
+    nullify (this%next_active)
+  end if
+  call self%aconsistency (1)
+  !$omp end critical (active_cr)
+  call trace_end (itimer)
+END SUBROUTINE queue_active
+
+!> =============================================================================
+!> Remove a task link from the active queue
+!> =============================================================================
+SUBROUTINE remove_active (self, this)
+  class(list_t):: self
+  class(link_t), pointer:: this
+  class(link_t), pointer:: next, prev
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%remove_active')
+  !$omp critical (active_cr)
+  nullify (prev)
+  next => self%active
+  do while (associated(next))
+    if (associated(next%task, this%task)) then
+      if (associated(prev)) then
+        prev%next_active => next%next_active
+      else
+        self%active => next%next_active
+      end if
+      self%nac = self%nac-1
+      if (io%verbose > 1) &
+        write (io_unit%mpi,*) 'remove_active: id, nac =', this%task%id, self%nac
+      exit
+    end if
+    prev => next
+    next => next%next_active
+  end do
+  !$omp end critical (active_cr)
+  call trace%end
+END SUBROUTINE remove_active
 
 !> =============================================================================
 !> Add a link node into the task list, in increasing quality order

@@ -216,7 +216,7 @@ SUBROUTINE header_to_patch (self, head)
     if (io%verbose>2) &
       write (io_unit%mpi, *) head%id, 'swapping to boundary'
   end if
-  head%status = iand(head%status, not(bits%ready))
+  head%status = iand(head%status, not(bits%ready+bits%busy))
   self%id         = head%id
   self%status     = head%status
   self%rank       = head%rank
@@ -236,9 +236,14 @@ SUBROUTINE header_to_patch (self, head)
   self%it         = head%it
   self%nt         = head%nt
   nt              = head%nt
-  self%t          = head%t(1:nt)
-  self%dt         = head%dt(1:nt)
-  self%iit        = head%iit(1:nt)
+  if (nt > 0) then
+    self%t          = head%t(1:nt)
+    self%dt         = head%dt(1:nt)
+    self%iit        = head%iit(1:nt)
+  else
+    write (io_unit%log,*) omp%thread,'header_to_patch WARNING: nt non-positive', nt
+    flush (io_unit%log)
+  end if
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
 END SUBROUTINE header_to_patch
@@ -1346,6 +1351,16 @@ SUBROUTINE courant_condition (self, detailed_timer)
   endif
   !$omp atomic write
   self%dtime = dtime
+  !-----------------------------------------------------------------------------
+  ! Force the time step to give exactly sync_time if within reach
+  !-----------------------------------------------------------------------------
+  if (self%time < self%sync_time .and. self%time+self%dtime > self%sync_time) then
+    self%dtime = self%sync_time - self%time
+    self%syncing = .true.
+    if (io%verbose>2) &
+      write (io_unit%mpi,*) 'patch_t%courant_condition: syncing turned on for', &
+        self%id, self%time
+  end if
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
