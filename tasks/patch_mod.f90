@@ -1357,7 +1357,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (self%time < self%sync_time .and. self%time+self%dtime > self%sync_time) then
     self%dtime = self%sync_time - self%time
     self%syncing = .true.
-    if (io%verbose>0) &
+    if (io%verbose>2) &
       write (io_unit%mpi,*) 'patch_t%courant_condition: syncing turned on for', &
         self%id, self%time
   end if

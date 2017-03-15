@@ -153,7 +153,7 @@ SUBROUTINE rotate (self)
   if (self%syncing) then
     time = self%sync_time
     self%syncing = .false.
-    if (io%verbose>0) &
+    if (io%verbose>2) &
       write (io_unit%mpi,*) 'task_t%rotate:: turning off syncing for now', self%id
   else
     time = self%time + self%dtime
