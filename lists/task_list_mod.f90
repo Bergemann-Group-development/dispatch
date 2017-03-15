@@ -143,6 +143,7 @@ SUBROUTINE execute (self)
   flush (io_unit%log)
   !$omp end parallel
   call toc ('wall time', n_update, time=sec)
+  call mpi%barrier ('end')
   if (io%master) write (*,*) "task list finished, min_nq =", min_nq
   !if (io%master) &
   !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
@@ -162,6 +163,7 @@ SUBROUTINE update (self)
   class(mesg_t), pointer:: mesg
   logical:: already_busy
   real(8):: wc
+  integer, save:: itimer=0
   !.............................................................................
   call trace%begin('task_list_t%update')
   call self%check_flags
@@ -263,7 +265,9 @@ SUBROUTINE update (self)
     if (self%syncing) then
       write (io_unit%mpi,*) task%id,omp%thread, &
         ' is waiting on a sync at t =', self%sync_next
+      call trace%end; call trace%begin ('mpi%barrier', itimer=itimer)
       call mpi%barrier ('sync')
+      call trace%end (itimer); call trace%begin('task_list_t%update')
       write (io_unit%mpi,*) task%id,omp%thread, &
         ' finished wating on a sync at t =', self%sync_next
       self%sync_next = self%sync_next + self%sync_time
