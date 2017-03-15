@@ -12,10 +12,13 @@ MODULE initial_mod
   USE units_mod
   USE scaling_mod
   USE index_mod
+  USE dp_reader_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
+    character(len=20) :: initial_condition = 'planet_atmosphere'
+    character(len=20) :: secondary_ic      = 'planet_atmosphere'    
     real:: b0(3)
     real:: gamma
     real:: v_head, v_accrete
@@ -23,6 +26,7 @@ MODULE initial_mod
     real(8):: size(3)
     logical:: mhd
     procedure(planet_atmosphere), pointer:: selected => null()
+    procedure(planet_atmosphere), pointer:: second_selected => null()
   contains
     procedure init
   end type
@@ -36,25 +40,48 @@ CONTAINS
 SUBROUTINE init (self)
    class(initial_t):: self
    logical, save:: first_time=.true.
+   character(len=20), save:: initial_condition = 'planet_atmosphere'
+   character(len=20), save:: secondary_ic = 'planet_atmosphere'
+   namelist /initial_params/ initial_condition, secondary_ic
+   integer :: iostat
    !----------------------------------------------------------------------------
    call trace%begin('initial_t%init')
    call scaling%init
-  ! if (first_time) then
-  !   first_time = .false.
-  !   rewind (io%input); read (io%input, initial_params)
-  !   if (io%master) write (*, initial_params)
-  ! end if
-   self%selected => planet_atmosphere
+   if (first_time) then
+     initial_condition = self%initial_condition
+     first_time = .false.
+     rewind (io%input); read (io%input, initial_params, iostat=iostat)
+     if (io%master) write (*, initial_params)
+   end if
+   self%initial_condition = initial_condition
+   self%secondary_ic = secondary_ic
+   select case(trim(self%initial_condition))
+     case('planet_atmosphere')
+       self%selected => planet_atmosphere
+     case('snapshot')
+       call dp_reader%init
+       self%selected => snapshot
+     end select
+   select case(trim(self%secondary_ic))
+     case('planet_atmosphere')
+       self%second_selected => planet_atmosphere
+     case('snapshot')
+       call dp_reader%init
+       self%second_selected => snapshot
+     case default
+       error stop "secondary IC not understood"
+     end select
    call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-SUBROUTINE planet_atmosphere (self, m, mem)
+SUBROUTINE planet_atmosphere (self, m, mem, level)
   class(initial_t) :: self
   real, dimension(:,:,:,:), pointer  :: mem
   class(mesh_t), pointer, dimension(:) :: m
+  integer, optional :: level
   !.............................................................................
   integer :: ix, iy, iz, nr
   real(8) :: x, y, z, r, d, d0, p, csound2
@@ -125,6 +152,20 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   end associate
   call trace%end (itimer)
 END SUBROUTINE planet_atmosphere
+
+SUBROUTINE snapshot (self, m, mem, level)
+  class(initial_t) :: self
+  real, dimension(:,:,:,:), pointer  :: mem
+  class(mesh_t), pointer, dimension(:) :: m
+  integer, optional :: level
+  logical :: used = .false.
+  ! --------------------------------------------------------------------
+  call dp_reader%snapshot(m, mem, level,used)  
+  if (.not.used) then
+    call self%second_selected(m,mem,level)
+    print *, 'using secondary IC...'
+  end if
+END SUBROUTINE snapshot
 
 !> =============================================================================
 !> Use default Lagrange interpolation
