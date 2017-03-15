@@ -16,9 +16,12 @@ MODULE force_mod
   real(8), parameter:: pi2=8.0*atan(1.0)
   type, public:: force_t
     real:: omega(3)
+    real:: frc = 1.0
     procedure(star_and_planet), pointer:: selected=>null()
   contains
-    procedure init
+    procedure :: init
+    procedure :: friction
+    procedure :: friction2
   end type
  logical, save:: first_time=.true.
 CONTAINS
@@ -29,6 +32,7 @@ CONTAINS
 SUBROUTINE init (self)
    class(force_t):: self
    integer:: iostat
+   real   :: artificial_friction_time
    character(len=32), save:: type='star_and_planet'
    namelist /force_params/ type
    !----------------------------------------------------------------------------
@@ -52,6 +56,29 @@ SUBROUTINE init (self)
    call trace_end
 END SUBROUTINE init
 
+!> =====================================================================
+SUBROUTINE friction(self, time, m, ff)
+  class(force_t) :: self
+  real(8) :: time
+  class(mesh_t), pointer, dimension(:):: m
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
+  ! --------------------------------------------------------------------
+  if (time < planet%frc_time*2.) then
+    ff = ff - ff*(exp(-(time/planet%frc_time)**2))
+  end if
+END SUBROUTINE friction
+
+SUBROUTINE friction2(self, time)
+  class(force_t) :: self
+  real(8) :: time
+  ! --------------------------------------------------------------------
+  if (time < (planet%frc_time * 2)) then
+    self%frc = 1.-(exp(-(time/planet%frc_time)**2))
+  else
+    self%frc = 1.0
+  end if
+END SUBROUTINE friction2
+
 !> =============================================================================
 !> Force of gravity from a star and a planet.  To interprete the local forces,
 !> we choose a position such that the star is in the positive y-direction, and
@@ -71,6 +98,7 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   real(8):: x, y, z, xp, yp, zp, ds2(3), R_Hill
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%star_and_planet')
+  call self%friction2(time)
   ds2 = 0.5*m%d
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -91,7 +119,7 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
         !-----------------------------------------------------------------------
         rp1 = sqrt(xp**2+yp**2+zp**2)
         ff(ix,iy,iz,1) = -planet%mass*scaling%grav*xp/rp1**3
-        ff(ix,iy,iz,2) = -planet%mass*scaling%grav*yp/rp1**3
+        ff(ix,iy,iz,2) = -planet%mass*scaling%grav*yp/rp1**3 
         ff(ix,iy,iz,3) = -planet%mass*scaling%grav*zp/rp1**3
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
@@ -102,16 +130,16 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
         ! gravity onto the z-axis, and has the same scaling constant as the
         ! radial force, but the opposite sign.
         !-----------------------------------------------------------------------
-        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + 3.0*planet%omega(3)**2*yp
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp
+        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + 3.0*planet%omega(3)**2*yp  *self%frc
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp  *self%frc
       end do
     end do
   end do
   !-----------------------------------------------------------------------------
   ! Radial Hill distance = L2
   !-----------------------------------------------------------------------------
-  R_Hill = (planet%mass*scaling%grav/(3.*planet%omega(3)**2))**0.33333333
   if (io%verbose > 1) then
+    R_Hill = (planet%mass*scaling%grav/(3.*planet%omega(3)**2))**0.33333333
     if (abs(m(1)%p)          < 0.5*m(1)%d .and. &
         abs(m(2)%p - R_Hill) < 0.5*m(2)%s .and. &
         abs(m(3)%p)          < 0.5*m(3)%d) then
@@ -151,11 +179,13 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   ! motion in the y-direction; a motion inwards (+y) leads to acceleration in
   ! the forward (+x) direction
   !-----------------------------------------------------------------------------
-  ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
-  ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
-  ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
+  ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2)) *self%frc
+  ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3)) *self%frc
+  ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1)) *self%frc
+ ! call self%friction(time, m, ff)
   call trace_end
 END FUNCTION star_and_planet
+
 
 !> =============================================================================
 !> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
