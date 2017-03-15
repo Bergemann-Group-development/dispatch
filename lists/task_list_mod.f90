@@ -179,8 +179,9 @@ SUBROUTINE update (self)
   if (associated(head) .and. .not.self%syncing) then
     task => head%task                                   ! head task
     if (io%verbose > 1) then
-      write (io_unit%log,'(a,i4,a,i5,2x,a,2x,i4)') &
-        'thread', omp%thread,' takes', task%id, trim(task%type), task%nq
+      write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
+        wallclock(), 'thread', omp%thread,'takes', task%id, &
+        'time', task%time, 'nq', task%nq
       flush (io_unit%log)
     end if
     if (io%verbose>0) then 

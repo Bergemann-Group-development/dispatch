@@ -992,8 +992,9 @@ SUBROUTINE queue_by_time (self, this)
   if (task%is_clear (bits%ready)) then
     call task%set(bits%ready)
     if (io%verbose>1) &
-      write (io_unit%log,'(1x,i4,2x,a,i9,a,f10.5)') omp%thread, &
-        'list_mod::queue_by_time: adding task', task%id, ' at time', task%time
+      write (io_unit%log,'(f12.6,i5,2x,a,i9,a,f12.6,2x,a,i5)') wallclock(), omp%thread, &
+        'list_mod::queue_by_time: adding task', task%id, ' at time', task%time, &
+        'nq', task%nq
     nullify (prev)
     next => self%queue
     do while (associated(next))
@@ -1004,7 +1005,9 @@ SUBROUTINE queue_by_time (self, this)
         this%next_time => next
         if (associated(prev)) then
           if (io%verbose > 1) then
-            write (io_unit%log,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
+            write (io_unit%log,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
+              omp%thread, 'task',task%id,' in ready queue between',prev%task%id,next%task%id, &
+              prev%task%time, this%task%time, next%task%time
           end if
           prev%next_time => this
         else
