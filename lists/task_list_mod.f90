@@ -163,6 +163,8 @@ SUBROUTINE update (self)
   class(mesg_t), pointer:: mesg
   logical:: already_busy
   real(8):: wc
+  real(8), save:: time, otime=0d0
+  integer, save:: oid=0
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin('task_list_t%update')
@@ -178,21 +180,12 @@ SUBROUTINE update (self)
   head => self%queue                                    ! queue start
   if (associated(head) .and. .not.self%syncing) then
     task => head%task                                   ! head task
+    task%atime = task%time
     if (io%verbose > 1) then
       write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
         wallclock(), 'thread', omp%thread,'takes', task%id, &
         'time', task%time, 'nq', task%nq
       flush (io_unit%log)
-    end if
-    if (io%verbose>0) then 
-      if (associated(self%active)) then
-        otask => self%active%task
-      else
-        otask => task
-      end if
-      if (task%time < otask%time) print *,'INFO XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-      write (io_unit%queue,'(f12.6,i6,2f12.6,2i5)') &
-        wallclock(), task%istep, task%time, otask%time, task%nq, self%nac
     end if
     !---------------------------------------------------------------------------
     ! Set the head of the queue to the next task in time.  The ready bit needs
@@ -211,6 +204,18 @@ SUBROUTINE update (self)
       !$omp atomic
       self%nq = self%nq-1                               ! decrement queue count
       task%nq = self%nq                                 ! for info print
+      if (io%verbose>=0) then 
+        otask => self%active%task
+        time = otask%atime
+        if (time < otime) &
+          write (*,'(a,2(f12.6,i6))') 'ERROR: otime, oid, time, id =', otime, oid, time, otask%id
+        !$omp atomic write
+        otime = time
+        !$omp atomic write
+        oid = otask%id
+        write (io_unit%queue,'(f12.6,i6,2f12.6,2i5)') &
+          wallclock(), task%istep, task%time, otask%atime, self%nq, self%nac
+      end if
     end if
     !---------------------------------------------------------------------------
     ! The first time a task is at the head of the ready queue with time =
@@ -280,7 +285,6 @@ SUBROUTINE update (self)
     !----------------------------------------------------------------------------
     wc = wallclock()
     call task%update                                    ! update the task
-    call self%remove_from_active (head)                 ! remove from active_queue
     !----------------------------------------------------------------------------
     ! Default delay time = first update time
     !----------------------------------------------------------------------------

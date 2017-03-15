@@ -31,6 +31,7 @@ MODULE task_mod
     integer:: nq=999
     integer:: n_behind=0
     real(8):: time = 0d0
+    real(8):: atime = 0d0               ! for active queue
     real(8):: end_time = 1d0
     real(8):: out_next = 0d0
     real(8):: out_time = 1d0
