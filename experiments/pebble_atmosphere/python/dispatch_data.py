@@ -220,8 +220,8 @@ def variable_indices(solver_type, read_derivs=False):
             indices.update(indicesd)
     if solver_type.lower() == 'ramses':
         indices = {'d':  0,
-                   'e':  1,
-                   'p1': 2, 'p2': 3, 'p3': 4,
+                   'e':  4,
+                   'p1': 1, 'p2': 2, 'p3': 3,
                    'b1': 5, 'b2': 6, 'b3': 7,
                    'v1': 8, 'v2': 9, 'v3':10}
         if read_derivs:
