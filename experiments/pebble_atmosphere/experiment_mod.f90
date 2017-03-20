@@ -160,8 +160,10 @@ SUBROUTINE update (self)
       end if
     end if
   end if
+ ! print *, 'EXPERIMENT: max min e_int',maxval(self%mem(:,:,:,self%i_e,self%new,1)*(self%gamma-1)/self%mem(:,:,:,self%i_d,self%new,1))*scaling%temp, minval(self%mem(:,:,:,self%i_e,self%new,1)*(self%gamma-1)/self%mem(:,:,:,self%i_d,self%new,1))*scaling%temp
   call self%courant_condition
   call self%pebble_patch_t%update_pebbles
+  
   call self%check_density ('after timestep')
   call trace_end
 END SUBROUTINE update

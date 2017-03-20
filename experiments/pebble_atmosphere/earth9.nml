@@ -35,7 +35,8 @@ gamma=1.4
  orbit_radius_au=1.0
  position_orbit_radii=0.0, 1.0, 0.0 ! planet position in orbit radii      
  temperature_k=800.                ! surface temperature in K as an initial guess
- artificial_friction_time = 500.
+ artificial_friction_time = 0.
+ artificial_friction_strength = 0.0
 /
 &atmosphere_params
  densitY_cgs=3e-12                  ! outer density of the atmosphere at 1 Hill radius (i.e. surrounding local disk density)
@@ -60,8 +61,8 @@ secondary_ic='planet_atmosphere'
 
 &snapshot_params
  folder='data/earth27/'
- snap_number=12
- ids=1,189
+ snap_number=43
+ ids=1,159
  time_derivs = f
 /
 
@@ -73,7 +74,7 @@ secondary_ic='planet_atmosphere'
 !dt_fixed=0.001
 /
 &out_params
- end_time=1200.
+ end_time=2000.
  out_time=20.
  print_time=1.
  guard_zones=t

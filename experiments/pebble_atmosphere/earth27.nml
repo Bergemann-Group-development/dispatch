@@ -35,7 +35,8 @@ gamma=1.4
  orbit_radius_au=1.0
  position_orbit_radii=0.0, 1.0, 0.0 ! planet position in orbit radii      
  temperature_k=200.                ! surface temperature in K as an initial guess
- artificial_friction_time = 500.
+ artificial_friction_time = 0.
+ artificial_friction_strength = 0.0
 /
 &atmosphere_params
  densitY_cgs=3e-12                  ! outer density of the atmosphere at 1 Hill radius (i.e. surrounding local disk density)
@@ -57,8 +58,17 @@ gamma=1.4
 initial_condition='planet_atmosphere'
 secondary_ic='planet_atmosphere'
 /
+
+&snapshot_params
+ folder='data/earth27-4/'
+ snap_number=7
+ ids=1,159
+ time_derivs = f
+/
+
+
 &patch_params
- n=30,30,30
+ n=24,24,24
  nt=5
  grace=0.0
  courant=0.2
@@ -66,7 +76,7 @@ secondary_ic='planet_atmosphere'
 /
 &out_params
  end_time=1500.
- out_time=100.
+ out_time=50.
  print_time=0.01
  guard_zones=t
  time_derivs=f

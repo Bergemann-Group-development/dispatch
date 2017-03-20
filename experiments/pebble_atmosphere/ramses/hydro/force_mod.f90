@@ -72,8 +72,8 @@ SUBROUTINE friction2(self, time)
   class(force_t) :: self
   real(8) :: time
   ! --------------------------------------------------------------------
-  if (time < (planet%frc_time * 2)) then
-    self%frc = 1.-(exp(-(time/planet%frc_time)**2))
+  if (time < (planet%frc_time * 2.)) then
+    self%frc = 1.-(exp(-(time/planet%frc_time)**2)*planet%friction)
   else
     self%frc = 1.0
   end if
@@ -118,9 +118,9 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
         ! cancelling at a distance where $\Omega^2 r$ is equal to $GM/r^2$
         !-----------------------------------------------------------------------
         rp1 = sqrt(xp**2+yp**2+zp**2)
-        ff(ix,iy,iz,1) = -planet%mass*scaling%grav*xp/rp1**3
-        ff(ix,iy,iz,2) = -planet%mass*scaling%grav*yp/rp1**3 
-        ff(ix,iy,iz,3) = -planet%mass*scaling%grav*zp/rp1**3
+        ff(ix,iy,iz,1) = -planet%mass*scaling%grav*xp/rp1**3 
+        ff(ix,iy,iz,2) = -planet%mass*scaling%grav*yp/rp1**3  
+        ff(ix,iy,iz,3) = -planet%mass*scaling%grav*zp/rp1**3 
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
         ! The force in the radial direction increases with increasing y,
@@ -130,8 +130,8 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
         ! gravity onto the z-axis, and has the same scaling constant as the
         ! radial force, but the opposite sign.
         !-----------------------------------------------------------------------
-        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + 3.0*planet%omega(3)**2*yp  *self%frc
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp  *self%frc
+        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + 1.5*planet%omega(3)**2*yp
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp 
       end do
     end do
   end do
@@ -179,9 +179,10 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   ! motion in the y-direction; a motion inwards (+y) leads to acceleration in
   ! the forward (+x) direction
   !-----------------------------------------------------------------------------
-  ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2)) *self%frc
-  ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3)) *self%frc
-  ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1)) *self%frc
+  ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
+  ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
+  ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
+  ff = ff * self%frc
  ! call self%friction(time, m, ff)
   call trace_end
 END FUNCTION star_and_planet
