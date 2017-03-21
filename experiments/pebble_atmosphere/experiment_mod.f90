@@ -163,7 +163,7 @@ SUBROUTINE update (self)
  ! print *, 'EXPERIMENT: max min e_int',maxval(self%mem(:,:,:,self%i_e,self%new,1)*(self%gamma-1)/self%mem(:,:,:,self%i_d,self%new,1))*scaling%temp, minval(self%mem(:,:,:,self%i_e,self%new,1)*(self%gamma-1)/self%mem(:,:,:,self%i_d,self%new,1))*scaling%temp
   call self%courant_condition
   call self%pebble_patch_t%update_pebbles
-  
+
   call self%check_density ('after timestep')
   call trace_end
 END SUBROUTINE update
@@ -199,9 +199,9 @@ SUBROUTINE edge_boundary_conditions (self)
   e => self%mem(:,:,:,self%i_e,self%it,1)
   allocate (u(size(d,1),size(d,2),size(d,3)))
   call self%boundaries%extrapolate (d)
-  u = e/d
+  u = e/d**self%gamma
   call self%boundaries%symmetric (u)
-  e = u*d
+  e = u*d**self%gamma
   do iv=self%i_px,self%i_pz
     p => self%mem(:,:,:,iv,self%it,1)
     u = p/d
