@@ -110,41 +110,41 @@ SUBROUTINE update (self)
     !------------------------------------------------------------------------
     ! If spherical inner BCs, save the incoming values
     !------------------------------------------------------------------------
-    if (self%boundaries%is_set (bits%spherical)) then
-      allocate (mem(size(self%mem,1),size(self%mem,2),size(self%mem,3),2))
-      mem(:,:,:,1) = self%mem(:,:,:,self%i_d,self%it,1)
-      mem(:,:,:,2) = self%mem(:,:,:,self%i_e,self%it,1)
-    end if
+    !if (self%boundaries%is_set (bits%spherical)) then
+    !  allocate (mem(size(self%mem,1),size(self%mem,2),size(self%mem,3),2))
+    !  mem(:,:,:,1) = self%mem(:,:,:,self%i_d,self%it,1)
+    !  mem(:,:,:,2) = self%mem(:,:,:,self%i_e,self%it,1)
+    !end if
     !--------------------------------------------------------------------------
     ! Update the MHD state
     !--------------------------------------------------------------------------
     call self%mhd_t%update
     if (self%boundaries%status /= 0) then
-      print *, self%id, 'BOUNDARY CONDITION BITS:', self%boundaries%status
+    !  !print *, self%id, 'BOUNDARY CONDITION BITS:', self%boundaries%status
       !------------------------------------------------------------------------
       ! If spherical inner BCs, save the incoming values
       !------------------------------------------------------------------------
-      if (self%boundaries%is_set (bits%spherical)) then
-        print *, self%id, 'BOUNDARY CONDITION: spherical'
-        if (self%nw > 1) then
-          it = self%it
-          do iv=1,self%nv
-            call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
-          end do
-        else
-          it = self%new
-        end if
-        d => mem(:,:,:,self%i_d)
-        e => mem(:,:,:,self%i_e)
-        call self%boundaries%init (radius=planet%radius-2.*self%ds(1))
-        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), d, self%mesh, self%i_d)
-        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), e, self%mesh, self%i_e)
-        call self%boundaries%init (radius=planet%radius)
-        do iv=self%i_px,self%i_pz
-          call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
-        end do
-        deallocate (mem)
-      end if
+    !  if (self%boundaries%is_set (bits%spherical)) then
+    !    print *, self%id, 'BOUNDARY CONDITION: spherical'
+    !    if (self%nw > 1) then
+    !      it = self%it
+    !      do iv=1,self%nv
+    !        call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
+    !      end do
+    !    else
+    !      it = self%new
+    !    end if
+    !    d => mem(:,:,:,1)
+    !    e => mem(:,:,:,2)
+    !    call self%boundaries%init (radius=planet%radius-2.*self%ds(1))
+    !    call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), d, self%mesh, self%i_d)
+    !    call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), e, self%mesh, self%i_e)
+    !    call self%boundaries%init (radius=planet%radius)
+    !    do iv=self%i_px,self%i_pz
+    !      call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
+    !    end do
+    !    deallocate (mem)
+    !  end if
       !------------------------------------------------------------------------
       ! Edge boundary conditions
       !------------------------------------------------------------------------

@@ -1036,6 +1036,7 @@ SUBROUTINE output_legacy (self, experiment_name)
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
           trim(filename),iv,it,jo,minval(buf),maxval(buf),pt
       write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
+      if (iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
     end do
   end do
@@ -1441,9 +1442,9 @@ SUBROUTINE check_density (self, label)
     do ix=1,self%gn(1)
       ii = [ix,iy,iz]
       inside = all([ix,iy,iz]>self%mesh%lo.and.ii<self%mesh%uo)
-      posd = merge (posd, max(posd,self%mem(ix,iy,iz,1,self%it,1)), inside)
-      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0)
-      nins = nins + merge(1,0,self%mem(ix,iy,iz,1,self%it,1)<=0.0 .and. inside)
+      posd = merge (posd, max(posd,self%mem(ix,iy,iz,self%i_d,self%it,1)), inside)
+      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,self%i_d,self%it,1)<=0.0)
+      nins = nins + merge(1,0,self%mem(ix,iy,iz,self%i_d,self%it,1)<=0.0 .and. inside)
       !-------------------------------------------------------------------------
       ! Pick the sampled positive value if a negative one is found in the
       ! guard zone

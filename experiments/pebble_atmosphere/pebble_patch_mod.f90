@@ -208,7 +208,7 @@ SUBROUTINE initial_add (self, n)
         call interpolate_vg (self, pebble, warn)
         pebble%v = pebble%vg
         pebble%v = self%vgas(ix,iy,iz,:,self%it)
-        pebble%d = self%mem(ix,iy,iz,1,self%it,1)
+        pebble%d = self%mem(ix,iy,iz,self%i_d,self%it,1)
         pebble%w = average_density*product(self%ds)
         if (pebble_trace%every > 0) then
           if (mod(pebble%id,pebble_trace%every)==0 .and. &

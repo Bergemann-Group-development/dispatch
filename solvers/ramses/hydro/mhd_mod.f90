@@ -105,7 +105,7 @@ SUBROUTINE update (self)
   integer:: n(3), m, i
   integer, save:: itimer=0
   real, dimension(:,:,:,:), pointer:: p
-  real, dimension(:,:,:), pointer:: d, e
+  real, dimension(:,:,:), pointer:: d, e, cs
   real, dimension(:,:,:), pointer:: tmp
   !----------------------------------------------------------------------------
   ! Fill guard zones and checks whether to do output
@@ -171,7 +171,10 @@ SUBROUTINE update (self)
     end if
   end if
   if (associated(self%force%selected)) then
-    p = p + self%dtime*self%force%selected (self%time, d, p, self%mesh)
+    allocate (cs(size(d,1), size(d,2), size(d,3)))
+    cs = self%gamma*(self%gamma - 1.0) * e/d
+    p = p + self%dtime*self%force%selected (self%time, d, p, cs, self%mesh)
+    deallocate(cs)
   end if
   !-----------------------------------------------------------------------------
   ! Subtract friction from momentum
@@ -536,7 +539,7 @@ subroutine trace3d(self)
   real(dp)::drz, duz, dvz, dwz, dpz, daz
   real(dp)::sr0, su0, sv0, sw0, sp0, sa0
   integer,save:: itimer=0
-  real, dimension(:,:,:), pointer:: d
+  real, dimension(:,:,:), pointer:: d, cs, ee
   real, dimension(:,:,:,:), pointer:: ff, pp
   associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
@@ -549,10 +552,14 @@ subroutine trace3d(self)
   dtdy = self%dtime/self%mesh(2)%d
   dtdz = self%dtime/self%mesh(3)%d
   d    => self%mem(:,:,:,self%i_d           ,self%it,1)
+  ee   => self%mem(:,:,:,self%i_e           ,self%it,1)
   pp   => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
   allocate (ff(size(d,1),size(d,2),size(d,3),3))
   if (associated(self%force%selected)) then
-    ff = self%force%selected (self%time, d, pp, self%mesh)
+    allocate (cs(size(d,1), size(d,2), size(d,3)))
+    cs = self%gamma*(self%gamma - 1.0) * ee/d
+    ff = self%force%selected (self%time, d, pp, cs, self%mesh)
+    deallocate(cs)
   else
     ff = 0.0
   end if

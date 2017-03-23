@@ -88,7 +88,7 @@ SUBROUTINE condition (self, f, operator)
     m1 => self%m(1)
     m2 => self%m(2)
     do i=m(3)%lb,m(3)%ub
-      call operator (self, f(:,:,i),m1,m2,transpose=.true.)
+      call operator (self, f(:,:,i),m1,m2,transpose=.false.)
     end do
   end if
   if (self%is_set(bits%ydir)) then
@@ -96,7 +96,7 @@ SUBROUTINE condition (self, f, operator)
     m1 => self%m(1)
     m2 => self%m(2)
     do i=m(3)%lb,m(3)%ub
-      call operator (self, f(:,:,i),m1,m2,transpose=.false.)
+      call operator (self, f(:,:,i),m1,m2,transpose=.true.)
     end do
   end if
   if (self%is_set(bits%zdir)) then
