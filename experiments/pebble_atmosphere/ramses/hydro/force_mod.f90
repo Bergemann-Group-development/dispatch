@@ -191,7 +191,7 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
   print *, 'general vel y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))
   print *, 'general vel z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
   ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
-  ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(2)*p(:,:,:,3))
+  ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
   ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
   
   print *, 'general p X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
