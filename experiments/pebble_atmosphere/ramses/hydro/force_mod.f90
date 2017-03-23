@@ -85,13 +85,14 @@ END SUBROUTINE friction2
 !> hence a positive Omega_z corresponds to positive rotation speed in the x-
 !> direction
 !> =============================================================================
-FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
+FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
-  real, dimension(:,:,:), pointer:: d
+  real, dimension(:,:,:), pointer:: d, cs
   real, dimension(:,:,:,:), pointer:: p
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
+  !real, dimension(m(1)%gn,m(2)%gn,m(3)%gn):: f1
   !.............................................................................
   integer:: ix, iy, iz, iv
   real(8):: kx, ky, kz, rs(3), rp(3), rs1, rp1
@@ -100,6 +101,7 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   call trace_begin('force_t%star_and_planet')
   call self%friction2(time)
   ds2 = 0.5*m%d
+  ff = 0.0
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz)
@@ -118,9 +120,11 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
         ! cancelling at a distance where $\Omega^2 r$ is equal to $GM/r^2$
         !-----------------------------------------------------------------------
         rp1 = sqrt(xp**2+yp**2+zp**2)
-        ff(ix,iy,iz,1) = -planet%mass*scaling%grav*xp/rp1**3 
-        ff(ix,iy,iz,2) = -planet%mass*scaling%grav*yp/rp1**3  
-        ff(ix,iy,iz,3) = -planet%mass*scaling%grav*zp/rp1**3 
+        if (rp1 > planet%radius) then
+          ff(ix,iy,iz,1) = -planet%mass*scaling%grav*xp/rp1**3 
+          ff(ix,iy,iz,2) = -planet%mass*scaling%grav*yp/rp1**3  
+          ff(ix,iy,iz,3) = -planet%mass*scaling%grav*zp/rp1**3 
+        end if
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
         ! The force in the radial direction increases with increasing y,
@@ -130,7 +134,11 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
         ! gravity onto the z-axis, and has the same scaling constant as the
         ! radial force, but the opposite sign.
         !-----------------------------------------------------------------------
-        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + 1.5*planet%omega(3)**2*yp
+      !  ff(ix,iy,iz,2) = ff(ix,iy,iz,2) - 1.5 * planet%omega(3)   *xp  ! background shear flow
+        ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 2.0 * planet%omega(3) * 0.05 * cs(ix,iy,iz) ! centrifugal support due to the large scale radial pressure gradient
+      !  ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -       planet%omega(3)**2*zp    ! linearized stellar vertical gravity
+      !  f1(ix,iy,iz) = 2.0 * planet%omega(3) * 0.05 * cs(ix,iy,iz)
+        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) - 3.0*planet%omega(3)**2*xp
         ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp 
       end do
     end do
@@ -138,7 +146,7 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   ! Radial Hill distance = L2
   !-----------------------------------------------------------------------------
-  if (io%verbose > 1) then
+  !if (io%verbose > 1) then
     R_Hill = (planet%mass*scaling%grav/(3.*planet%omega(3)**2))**0.33333333
     if (abs(m(1)%p)          < 0.5*m(1)%d .and. &
         abs(m(2)%p - R_Hill) < 0.5*m(2)%s .and. &
@@ -150,13 +158,13 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
       y = m(2)%p + r2(iy) - planet%position(2)
       z = m(3)%p + r3(iz) - planet%position(3)
       rp1 = sqrt(x**2+y**2+z**2)
-      print *, 'radial   R_Hill, force:', ix,iy,iz, R_Hill, rp1, ff(ix,iy,iz,2)
+      print *, '=== R   R_Hill, force:', ix,iy,iz, R_Hill, rp1, ff(ix,iy,iz,1)
     end if
-  end if
+  !end if
   !-----------------------------------------------------------------------------
   ! Vertical Hill distance
   !-----------------------------------------------------------------------------
-  if (io%verbose > 1) then
+  !if (io%verbose > 1) then
     if (abs(m(1)%p)          < 0.5*m(1)%d .and. &
         abs(m(2)%p)          < 0.5*m(2)%d .and. &
         abs(m(3)%p - R_Hill) < 0.5*m(3)%s) then
@@ -169,7 +177,7 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
       rp1 = sqrt(x**2+y**2+z**2)
       print *, 'vertical R_Hill, force:', ix,iy,iz, R_Hill, rp1, ff(ix,iy,iz,3)
     end if
-  end if
+  !end if
   end associate
   !-----------------------------------------------------------------------------
   ! Add the classical Coriolis force term: -2*(\Omega x U). A positive omega(3)
@@ -179,9 +187,23 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   ! motion in the y-direction; a motion inwards (+y) leads to acceleration in
   ! the forward (+x) direction
   !-----------------------------------------------------------------------------
+  print *, 'general vel X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
+  print *, 'general vel y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))
+  print *, 'general vel z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
   ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
-  ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
+  ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(2)*p(:,:,:,3))
   ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
+  
+  print *, 'general p X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
+  print *, 'general p y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))
+  print *, 'general p z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
+  
+ ! ff(:,:,:,1) = d*ff(:,:,:,1) + 2.  * planet%omega(3)*p(:,:,:,2)
+ ! ff(:,:,:,2) = d*ff(:,:,:,2) - 0.5 * planet%omega(3)*p(:,:,:,1)
+ ! ff(:,:,:,3) = d*ff(:,:,:,3)
+ ! f1 = f1* d
+ ! print *, 'centrifugal minmax', minval(f1), maxval(f1)
+
   ff = ff * self%frc
  ! call self%friction(time, m, ff)
   call trace_end
@@ -191,10 +213,10 @@ END FUNCTION star_and_planet
 !> =============================================================================
 !> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
 !> =============================================================================
-FUNCTION single_solenoidal (self, time, d, p, m) RESULT (ff)
+FUNCTION single_solenoidal (self, time, d, p, cs, m) RESULT (ff)
   class(force_t)        :: self
   real(8)               :: time
-  real, dimension(:,:,:), pointer:: d
+  real, dimension(:,:,:), pointer:: d, cs
   real, dimension(:,:,:,:), pointer:: p
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
