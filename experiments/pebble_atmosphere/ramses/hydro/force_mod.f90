@@ -127,18 +127,17 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
         end if
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
-        ! The force in the radial direction increases with increasing y,
-        ! giving an equilbrium velocity in the x-direction that is positive
-        ! (faster rotation) for a positive y-displacement.  Vertically, there
+        ! The net force in the radial direction increases with increasing x,
+        ! giving that x now points in the radial direction.  It has two 
+        ! contributions:  The centripetal force \Omega^2 x, and the reduction
+        ! of the force of gravity from the central star, which contributs a 
+        ! factor of 2 more, for a total factor of 3.  Vertically, there
         ! is a net force that comes from the projection of the force of
         ! gravity onto the z-axis, and has the same scaling constant as the
         ! radial force, but the opposite sign.
         !-----------------------------------------------------------------------
-      !  ff(ix,iy,iz,2) = ff(ix,iy,iz,2) - 1.5 * planet%omega(3)   *xp  ! background shear flow
-        ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 2.0 * planet%omega(3) * 0.05 * cs(ix,iy,iz) ! centrifugal support due to the large scale radial pressure gradient
-      !  ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -       planet%omega(3)**2*zp    ! linearized stellar vertical gravity
-      !  f1(ix,iy,iz) = 2.0 * planet%omega(3) * 0.05 * cs(ix,iy,iz)
-        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) - 3.0*planet%omega(3)**2*xp
+        !ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 2.0 * planet%omega(3) * 0.05 * cs(ix,iy,iz) ! centrifugal support due to the large scale radial pressure gradient
+        ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xp
         ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp 
       end do
     end do
