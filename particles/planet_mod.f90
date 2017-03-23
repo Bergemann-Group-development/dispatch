@@ -16,6 +16,7 @@ MODULE planet_mod
     real:: orbit_radius, hill_radius
     real:: omega(3)=0.0
     real:: frc_time
+    real:: friction = 0.0
     contains
     procedure:: init
     procedure:: inside
@@ -33,9 +34,10 @@ SUBROUTINE init (self)
   real:: temperature_k=5500.
   real:: orbit_radius_au=1.0
   real:: artificial_friction_time = 0.0
+  real:: artificial_friction_strength = 0.0
   real(8):: t_inj = 0.5
   namelist /planet_params/ orbit_radius_au, position_orbit_radii, radius_r_earth, &
-    mass_m_earth, temperature_k, artificial_friction_time
+    mass_m_earth, temperature_k, artificial_friction_time, artificial_friction_strength
   !-----------------------------------------------------------------------------
   rewind (io%input); read (io%input, planet_params); write (*,planet_params)
   self%radius = radius_r_earth*cgs%r_earth/scaling%l
@@ -44,6 +46,8 @@ SUBROUTINE init (self)
   self%position = position_orbit_radii*self%orbit_radius
   self%temperature = temperature_k/scaling%temp
   self%frc_time = artificial_friction_time
+  self%friction = artificial_friction_strength
+  print *, "============= PLANET INIT POSITION ===========", self%position
 END SUBROUTINE init
 
 
