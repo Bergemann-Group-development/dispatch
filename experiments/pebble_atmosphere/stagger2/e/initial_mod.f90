@@ -61,6 +61,10 @@ SUBROUTINE init (self)
      case('snapshot')
        call dp_reader%init
        self%selected => snapshot
+     case('disk')
+       self%selected => disk
+     case default
+       error stop "initial condition not understood"
      end select
    select case(trim(self%secondary_ic))
      case('planet_atmosphere')
@@ -68,6 +72,8 @@ SUBROUTINE init (self)
      case('snapshot')
        call dp_reader%init
        self%second_selected => snapshot
+     case('disk')
+       self%second_selected => disk
      case default
        error stop "secondary IC not understood"
      end select
@@ -84,7 +90,7 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
   integer, optional :: level
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, d0, p, csound2
+  real(8) :: x, y, z, r, d, d0, p, csound2,  ux, uy, uz
   type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
@@ -140,9 +146,13 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
         ! the Hill sphere, so we will probably only be seeing effects of the
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
-        mem(ix,iy,iz,i%px) = d*(0.5*planet%omega(3)*y + self%v_head)  ! azimuthal speed
-        mem(ix,iy,iz,i%py) = d*self%v_accrete                  ! accretion speed
-        mem(ix,iy,iz,i%pz) = 0.0                               ! vertical speed
+        ux = -self%v_accrete
+        uy = -3.0*planet%omega(3)**2*x + self%v_head
+        uz = 0.0
+        
+        mem(ix,iy,iz,i%px) = d*(ux - 2.*(planet%omega(3)*uy-planet%omega(2)*uz)) ! radial speed
+        mem(ix,iy,iz,i%py) = d*(uy - 2.*(planet%omega(3)*ux-planet%omega(1)*uz)) ! azimuthal speed
+        mem(ix,iy,iz,i%pz) = d*(uz - 2.*(planet%omega(2)*ux-planet%omega(1)*uy)) ! vertical speed
         !mem(ix,iy,iz,6) = b0(1)
         !mem(ix,iy,iz,7) = b0(2)
         !mem(ix,iy,iz,8) = b0(3)
@@ -152,6 +162,89 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
   end associate
   call trace%end (itimer)
 END SUBROUTINE planet_atmosphere
+
+!> =============================================================================
+!> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
+!> =============================================================================
+SUBROUTINE disk (self, m, mem, level)
+  class(initial_t) :: self
+  real, dimension(:,:,:,:), pointer  :: mem
+  class(mesh_t), pointer, dimension(:) :: m
+  integer, optional :: level
+  !.............................................................................
+  integer :: ix, iy, iz, nr
+  real(8) :: x, y, z, r, d, d0, p, csound2, ux, uy, uz
+  type(index_t):: i
+  !-----------------------------------------------------------------------------
+  logical, save:: first_time=.true.
+  real, save:: omega(3)=0.0
+  real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0
+  namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('initial_t%planet_atmosphere', itimer=itimer)
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    omega = planet%omega*cgs%yr/(2.*cgs%pi*scaling%t)
+    rewind (io%input)
+    read (io%input, planet_atm_params)
+    if (io%master) write (*, planet_atm_params)
+  end if
+  !$omp end critical (input_cr)
+  omega = omega*2.*cgs%pi*scaling%t/cgs%yr
+  self%v_head    =    v_head_cgs/scaling%u
+  self%v_accrete = v_accrete_cgs/scaling%u
+  csound2 = gamma*atmosphere%pg(1)/atmosphere%rho(1)
+  nr = atmosphere%nr
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz) - planet%position(3)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy) - planet%position(2)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix) - planet%position(1)
+        r = sqrt(x**2+y**2+z**2)
+        d = atmosphere%external%density
+        p = atmosphere%external%pressure
+        csound2 = gamma*p/d
+        !-----------------------------------------------------------------------
+        ! Vertical stratification is added by adding Gaussian profile and
+        ! subtracting off the otherwise constant external density
+        !-----------------------------------------------------------------------
+        d0 = d
+        d = d !+ &
+          !atmosphere%external%density*(exp(-(planet%omega(3)**2/csound2*0.5*z**2))-1d0)
+        p = p*(d/d0)
+        mem(ix,iy,iz,i%d) = d
+        !  mem(ix,iy,iz,2) = d*(log(p)-gamma*log(d))/(gamma-1.0)
+        mem(ix,iy,iz,i%e) = p/(gamma-1.0)
+        !-----------------------------------------------------------------------
+        ! A rotation profile, where the rotation center is at y=+1 AU, and
+        ! the direction of rotation is +x, so the head wind is in the -x
+        ! direction.  The slower rotation at larger radii means that Ux is
+        ! proportional to +y.  This gives a speed difference of only 130 cm/s
+        ! across the Earth, and plus/minus 0.15 km/s across two Hill radii.
+        ! The effect is not enough to significantly flatten the outer part of
+        ! the Hill sphere, so we will probably only be seeing effects of the
+        ! Coriolis force beyond the Hill radius.
+        !-----------------------------------------------------------------------
+        ux = -self%v_accrete
+        uy = -3.0*planet%omega(3)**2*x + self%v_head
+        uz = 0.0
+        
+        mem(ix,iy,iz,i%px) = d*(ux - 2.*(planet%omega(3)*uy-planet%omega(2)*uz)) ! radial speed
+        mem(ix,iy,iz,i%py) = d*(uy - 2.*(planet%omega(3)*ux-planet%omega(1)*uz)) ! azimuthal speed
+        mem(ix,iy,iz,i%pz) = d*(uy - 2.*(planet%omega(2)*ux-planet%omega(1)*uy)) ! vertical speed
+        !mem(ix,iy,iz,6) = b0(1)
+        !mem(ix,iy,iz,7) = b0(2)
+        !mem(ix,iy,iz,8) = b0(3)
+      end do
+    end do
+  end do
+  end associate
+  call trace%end (itimer)
+END SUBROUTINE disk
 
 SUBROUTINE snapshot (self, m, mem, level)
   class(initial_t) :: self
