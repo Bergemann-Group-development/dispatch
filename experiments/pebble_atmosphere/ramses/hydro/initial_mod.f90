@@ -147,7 +147,7 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
         ux = -self%v_accrete
-        uy = -0.5*planet%omega(3)*x - self%v_head
+        uy = -1.5*planet%omega(3)*x - self%v_head
         uz = 0.0
         !mem(ix,iy,iz,6) = b0(1)
         !mem(ix,iy,iz,7) = b0(2)
