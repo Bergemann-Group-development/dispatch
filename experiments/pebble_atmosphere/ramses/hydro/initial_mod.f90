@@ -149,9 +149,14 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
         ux = -self%v_accrete
         uy = -1.5*planet%omega(3)*x - self%v_head
         uz = 0.0
-        !mem(ix,iy,iz,6) = b0(1)
-        !mem(ix,iy,iz,7) = b0(2)
-        !mem(ix,iy,iz,8) = b0(3)
+        mem(ix,iy,iz,i%px) = d*ux
+        mem(ix,iy,iz,i%py) = d*uy
+        mem(ix,iy,iz,i%pz) = d*uz
+        if (self%mhd) then
+          mem(ix,iy,iz,i%bx) = b0(1)
+          mem(ix,iy,iz,i%by) = b0(2)
+          mem(ix,iy,iz,i%bz) = b0(3)
+        end if
       end do
     end do
   end do
