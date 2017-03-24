@@ -31,7 +31,10 @@ MODULE list_mod
     integer:: ne=0                      ! external
     integer:: na=0                      ! active = internal+boundary
     integer:: nac=0                     ! active tasks
-    real(8):: size(3) = 1.0_8
+    real(8):: lc(3) = +huge(0d0)        ! lower corner
+    real(8):: uc(3) = -huge(0d0)        ! upper corner
+    real(8):: position(3) = 0.0_8       ! center offset
+    real(8):: size(3) = 1.0_8           ! full extent = uc-lc
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0
     integer:: debug=0
     integer:: n_tasks=1

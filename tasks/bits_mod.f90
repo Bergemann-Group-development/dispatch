@@ -48,15 +48,16 @@ MODULE bits_mod
     integer:: no_download  = no_download_bit
     integer:: has_counter  = counter_bit
     !-------- BOUNDARY CONDITION BITS ------------------------------------------
-    integer:: xdir         = 2**1
-    integer:: ydir         = 2**2
-    integer:: zdir         = 2**3
-    integer:: upper        = 2**4
-    integer:: lower        = 2**5
-    integer:: spherical    = 2**6
-    integer:: symmetric    = 2**7
-    integer:: antisymmetric= 2**8
-    integer:: extrapolate  = 2**9
+    integer:: xl           = 2**1
+    integer:: xu           = 2**2
+    integer:: yl           = 2**3
+    integer:: yu           = 2**4
+    integer:: zl           = 2**5
+    integer:: zu           = 2**6
+    integer:: spherical    = 2**7
+    integer:: symmetric    = 2**8
+    integer:: antisymmetric= 2**9
+    integer:: extrapolate  = 2**10
   end type
   type(bits_t):: bits
 END MODULE bits_mod

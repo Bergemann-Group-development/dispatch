@@ -83,28 +83,28 @@ SUBROUTINE condition (self, f, operator)
     call mpi%abort ('boundaries_t%init has not been called')
   end if
   m => self%m
-  if      (self%is_set(bits%xdir)) then
+  if (self%is_set(bits%xl+bits%xu)) then
     print *, 'BOUNDARY CONDITION: x-direction'
     m1 => self%m(1)
     m2 => self%m(2)
     do i=m(3)%lb,m(3)%ub
-      call operator (self, f(:,:,i),m1,m2,transpose=.false.)
+      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%xl),upper=self%is_set(bits%xu),transpose=.false.)
     end do
   end if
-  if (self%is_set(bits%ydir)) then
+  if (self%is_set(bits%yl+bits%yu)) then
     print *, 'BOUNDARY CONDITION: y-direction'
     m1 => self%m(1)
     m2 => self%m(2)
     do i=m(3)%lb,m(3)%ub
-      call operator (self, f(:,:,i),m1,m2,transpose=.true.)
+      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%yl),upper=self%is_set(bits%yu),transpose=.true.)
     end do
   end if
-  if (self%is_set(bits%zdir)) then
+  if (self%is_set(bits%zl+bits%zu)) then
     print *, 'BOUNDARY CONDITION: z-direction'
     m1 => self%m(1)
     m2 => self%m(3)
     do i=m(2)%lb,m(2)%ub
-      call operator (self, f(:,i,:),m1,m2,transpose=.false.)
+      call operator (self, f(:,i,:),m1,m2,lower=self%is_set(bits%zl),upper=self%is_set(bits%zu),transpose=.false.)
     end do
   end if
   call trace%end
@@ -146,14 +146,14 @@ END SUBROUTINE extrapolate
 !> =============================================================================
 !> Apply symmtric boundary condition to the 2nd index, looping over the 1st
 !> =============================================================================
-SUBROUTINE make_symmetric (self, f, m1, m2, transpose)
+SUBROUTINE make_symmetric (self, f, m1, m2, lower, upper, transpose)
   class(boundaries_t):: self
   real, dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
-  logical:: transpose
+  logical:: lower, upper, transpose
   integer:: i, j
   !-----------------------------------------------------------------------------
-  if (self%is_set (bits%lower)) then
+  if (lower) then
     !print *, 'lower boundary'
     if (transpose) then
       do j=1,m2%lo
@@ -169,7 +169,7 @@ SUBROUTINE make_symmetric (self, f, m1, m2, transpose)
       end do
     end if
   end if
-  if (self%is_set (bits%upper)) then
+  if (upper) then
     !print *, 'upper boundary'
     if (transpose) then
       do j=m2%uo,m2%ub
@@ -190,14 +190,14 @@ END SUBROUTINE make_symmetric
 !> =============================================================================
 !> Make the solution antisymmetric across the boundary
 !> =============================================================================
-SUBROUTINE make_antisymmetric (self, f, m1, m2, transpose)
+SUBROUTINE make_antisymmetric (self, f, m1, m2, lower, upper, transpose)
   class(boundaries_t):: self
   real, dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
-  logical:: transpose
+  logical:: lower, upper, transpose
   integer:: i, j
   !-----------------------------------------------------------------------------
-  if (self%is_set (bits%lower)) then
+  if (lower) then
     !print *, 'lower boundary'
     if (transpose) then
       do j=1,m2%lo
@@ -213,7 +213,7 @@ SUBROUTINE make_antisymmetric (self, f, m1, m2, transpose)
       end do
     end if
   end if
-  if (self%is_set (bits%upper)) then
+  if (upper) then
     !print *, 'upper boundary'
     if (transpose) then
       do j=m2%uo,m2%ub
@@ -235,14 +235,14 @@ END SUBROUTINE make_antisymmetric
 !> Make an extrapolated boundary condition, possibly transposing for vector
 !> speedup
 !> =============================================================================
-SUBROUTINE make_extrapolated (self, f, m1, m2, transpose)
+SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose)
   class(boundaries_t):: self
   real, dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
-  logical:: transpose
+  logical:: lower, upper, transpose
   integer:: i, j
   !-----------------------------------------------------------------------------
-  if (self%is_set (bits%lower)) then
+  if (lower) then
     !print *, 'lower boundary'
     if (transpose) then
       do j=1,m2%lo
@@ -258,7 +258,7 @@ SUBROUTINE make_extrapolated (self, f, m1, m2, transpose)
       end do
     end if
   end if
-  if (self%is_set (bits%upper)) then
+  if (upper) then
     !print *, 'upper boundary'
     if (transpose) then
       do j=m2%uo,m2%ub

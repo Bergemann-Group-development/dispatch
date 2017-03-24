@@ -148,11 +148,11 @@ SUBROUTINE update (self)
       !------------------------------------------------------------------------
       ! Edge boundary conditions
       !------------------------------------------------------------------------
-      if (self%boundaries%is_set (bits%xdir + bits%ydir + bits%zdir)) then
+      if (self%boundaries%status /= 0) then
         nb = 0
-        if (self%boundaries%is_set (bits%xdir)) nb = nb+1
-        if (self%boundaries%is_set (bits%ydir)) nb = nb+1
-        if (self%boundaries%is_set (bits%zdir)) nb = nb+1
+        if (self%boundaries%is_set (bits%xl+bits%xu)) nb = nb+1
+        if (self%boundaries%is_set (bits%yl+bits%yu)) nb = nb+1
+        if (self%boundaries%is_set (bits%zl+bits%zu)) nb = nb+1
         if (nb == 1) print *, self%id, 'BOUNDARY CONDITION: face'
         if (nb == 2) print *, self%id, 'BOUNDARY CONDITION: edge'
         if (nb == 3) print *, self%id, 'BOUNDARY CONDITION: corner'
@@ -185,7 +185,7 @@ END SUBROUTINE
 !> Boundary conditions at the edges of the outermost rubiks cubes; extrapolate
 !> the density and pressure, and enforce vanishing derivative on the perpendicular
 !> velocities. To what extend the boundary conditions are applied in the x,y,z
-!> directions depends on the self%boundary%status bits {xdir,ydir,zdir}.
+!> directions depends on the self%boundary%status bits
 !> =============================================================================
 SUBROUTINE edge_boundary_conditions (self)
   class(experiment_t):: self
