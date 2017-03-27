@@ -147,12 +147,12 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
         ux = -self%v_accrete
-        uy = -3.0*planet%omega(3)**2*x + self%v_head
+        uy = -1.5*planet%omega(3)*x - self%v_head
         uz = 0.0
-        
-        mem(ix,iy,iz,i%px) = d*(ux - 2.*(planet%omega(3)*uy-planet%omega(2)*uz)) ! radial speed
-        mem(ix,iy,iz,i%py) = d*(uy - 2.*(planet%omega(3)*ux-planet%omega(1)*uz)) ! azimuthal speed
-        mem(ix,iy,iz,i%pz) = d*(uz - 2.*(planet%omega(2)*ux-planet%omega(1)*uy)) ! vertical speed
+        mem(ix,iy,iz,i%px) = d*ux                                       ! radial speed
+        mem(ix,iy,iz,i%py) = d*uy                                       ! azimuthal speed
+        mem(ix,iy,iz,i%pz) = d*uz                                       ! vertical speed
+
         !mem(ix,iy,iz,6) = b0(1)
         !mem(ix,iy,iz,7) = b0(2)
         !mem(ix,iy,iz,8) = b0(3)

@@ -7,27 +7,7 @@ import itertools
 import yt as yt
 import scaling as sc
 
-ptimes=[0.2]
-gamma = 1.4
-t_eps=0.01
-ThisPatch = RamsesMHDPatch
-verbose=False
-skipped=[]
-orbit_radius_au = 1.0
-omega = [0.0,0.0,1.0]
-pl_pos= [0.0,1.0,0.0]
-v_headwind = 0.0   # the headwind the planet feels
-v_accretion = 0.0  # accretion rate
-density_cgs=3e-12  # external density
-pl_rad=sc.scaling().l
-for i in range(0,2):
-    omega[i]=omega[i]*2.*np.pi*sc.scaling().t/sc.yr
-    pl_pos[i] = pl_pos[i]*orbit_radius_au*sc.au/sc.scaling().l
-v_headwind=v_headwind/sc.scaling().u
-v_accretion=v_accretion/sc.scaling().u
-rho_gas = density_cgs/sc.scaling().d
-
-def get_data(time,t_eps,datadir,prefix='',verbose=False):
+def get_data(time,t_eps,datadir,prefix='',verbose=False, ThisPatch='', gamma=1.4):
     files = fnmatch.filter(os.listdir(datadir),prefix+"*.txt")
     patches=[]
     times=[]
@@ -91,9 +71,12 @@ def make_yt_dict(patches):
                 density=p.data[:,:,:,p.varidx['d']],
                 e_int = p.data[:,:,:,p.varidx['e']],
                 e_int_d = [a/b for a,b in zip(p.data[:,:,:,p.varidx['e']],p.data[:,:,:,p.varidx['d']])],
-                velocity_x=p.velx,
-                velocity_y=p.vely,
-                velocity_z=p.velz,
+                #velocity_x=p.velx,
+                #velocity_y=p.vely,
+                #velocity_z=p.velz,
+                velocity_x=p.data[:,:,:,p.varidx['v1']],
+                velocity_y=p.data[:,:,:,p.varidx['v2']],
+                velocity_z=p.data[:,:,:,p.varidx['v3']],
                 dx=p.dx,
                 temperature=p.temp))
 
@@ -102,7 +85,7 @@ def make_yt_dict(patches):
     
     
 def load_yt(dc,nx,sz=100,refine_by=3,geometry="cartesian",mass_unit=sc.scaling().m,length_unit=sc.scaling().l,
-            time_unit=sc.scaling().t,velocity_unit=sc.scaling().v,periodicity=(False,False,False)):
+            time_unit=sc.scaling().t,velocity_unit=sc.scaling().v,periodicity=(False,False,False),time=0):
     ds=yt.load_amr_grids(dc,nx,
                        bbox=np.array([[-sz,sz],[-sz,sz],[-sz,sz]]),
                        refine_by=3,
@@ -111,5 +94,6 @@ def load_yt(dc,nx,sz=100,refine_by=3,geometry="cartesian",mass_unit=sc.scaling()
                        length_unit=sc.scaling().l,
                        velocity_unit=sc.scaling().v,
                        time_unit=sc.scaling().t,
+                       sim_time = time,
                        periodicity=(False,False,False))
     return ds

@@ -68,12 +68,13 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
   real, dimension(:,:,:):: Ux, Uy, Uz
   !.............................................................................
   integer:: ix, iy, iz, iv
-  real(8):: kx, ky, kz, rs(3), rp(3), rs1, rp1
+  real(8):: kx, ky, kz, rs(3), rp(3), rs1, rp1, newton
   real(8):: x, y, z, xs, ys, zs, xp, yp, zp, ds2(3)
   !-----------------------------------------------------------------------------
   call trace_begin('force_t:single_solenoidal')
   ds2 = 0.5*m%d
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  newton = planet%mass*scaling%grav
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz)
     zp = planet%position(3) - z
@@ -91,19 +92,19 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
         ! vector is twoards the planet, the staggered mesh adjustment is positive
         !-----------------------------------------------------------------------
         rp1 = sqrt(xs**2+yp**2+zp**2)
-        ff(ix,iy,iz,1) = planet%mass*scaling%grav*xs/rp1**3
+        ff(ix,iy,iz,1) = newton*xs/rp1**3
         rp1 = sqrt(xp**2+ys**2+zp**2)
-        ff(ix,iy,iz,2) = planet%mass*scaling%grav*ys/rp1**3
+        ff(ix,iy,iz,2) = newton*ys/rp1**3
         rp1 = sqrt(xp**2+yp**2+zs**2)
-        ff(ix,iy,iz,3) = planet%mass*scaling%grav*zs/rp1**3
+        ff(ix,iy,iz,3) = newton*zs/rp1**3
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
         ! The force in the radial direction increases with increasing y,
         ! giving an equilbrium velocity in the x-direction that is positive
         ! (faster rotation) for a positive y-displacement
         !-----------------------------------------------------------------------
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - planet%omega(3)**2*zs
-        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + planet%omega(3)**2*ys
+        ff(ix,iy,iz,1) = ff(ix,iy,iz,1) - 3.0* planet%omega(3)**2*xs
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) +      planet%omega(3)**2*zs
       end do
     end do
   end do
@@ -119,8 +120,9 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
   ! and leads to acceleration in the negative y-direction -- vice versa for
   ! motion in the y-direction
   !-----------------------------------------------------------------------------
-  ff(:,:,:,1) = ff(:,:,:,1) + 2.*self%omega(3)*xdn(yup(Uy))
-  ff(:,:,:,2) = ff(:,:,:,2) - 2.*self%omega(3)*ydn(xup(Ux))
+  ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*xdn(zup(Uz)) - planet%omega(3)*xdn(yup(Uy)))
+  ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*ydn(xup(Ux)) - planet%omega(1)*ydn(zup(Uz)))
+  
   call trace_end
 END FUNCTION star_and_planet
 

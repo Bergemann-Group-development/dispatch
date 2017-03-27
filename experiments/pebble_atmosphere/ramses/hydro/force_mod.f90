@@ -95,7 +95,7 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
   !real, dimension(m(1)%gn,m(2)%gn,m(3)%gn):: f1
   !.............................................................................
   integer:: ix, iy, iz, iv
-  real(8):: kx, ky, kz, rs(3), rp(3), rs1, rp1
+  real(8):: kx, ky, kz, rs(3), rp(3), rs1, rp1, newton
   real(8):: x, y, z, xp, yp, zp, ds2(3), R_Hill
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%star_and_planet')
@@ -103,6 +103,7 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
   ds2 = 0.5*m%d
   ff = 0.0
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  newton = planet%mass*scaling%grav
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz)
     zp = z - planet%position(3)
@@ -120,10 +121,10 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
         ! cancelling at a distance where $\Omega^2 r$ is equal to $GM/r^2$
         !-----------------------------------------------------------------------
         rp1 = sqrt(xp**2+yp**2+zp**2)
-        if (rp1 > planet%radius) then
-          ff(ix,iy,iz,1) = -planet%mass*scaling%grav*xp/rp1**3 
-          ff(ix,iy,iz,2) = -planet%mass*scaling%grav*yp/rp1**3  
-          ff(ix,iy,iz,3) = -planet%mass*scaling%grav*zp/rp1**3 
+        if (rp1 >= planet%radius) then
+          ff(ix,iy,iz,1) = -newton*xp/rp1**3 
+          ff(ix,iy,iz,2) = -newton*yp/rp1**3  
+          ff(ix,iy,iz,3) = -newton*zp/rp1**3 
         end if
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
@@ -136,7 +137,7 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
         ! gravity onto the z-axis, and has the same scaling constant as the
         ! radial force, but the opposite sign.
         !-----------------------------------------------------------------------
-        !ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 2.0 * planet%omega(3) * 0.05 * cs(ix,iy,iz) ! centrifugal support due to the large scale radial pressure gradient
+        !ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 2.0 * planet%omega(3) * 0.05 * cs(ix,iy,iz)  ! centrifugal support due to the large scale radial pressure gradient
         ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xp
         ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp 
       end do
@@ -145,8 +146,8 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   ! Radial Hill distance = L2
   !-----------------------------------------------------------------------------
-  !if (io%verbose > 1) then
-    R_Hill = (planet%mass*scaling%grav/(3.*planet%omega(3)**2))**0.33333333
+  if (io%verbose > 1) then
+    R_Hill = (newton/(3.*planet%omega(3)**2))**0.33333333
     if (abs(m(1)%p)          < 0.5*m(1)%d .and. &
         abs(m(2)%p - R_Hill) < 0.5*m(2)%s .and. &
         abs(m(3)%p)          < 0.5*m(3)%d) then
@@ -157,13 +158,13 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
       y = m(2)%p + r2(iy) - planet%position(2)
       z = m(3)%p + r3(iz) - planet%position(3)
       rp1 = sqrt(x**2+y**2+z**2)
-      print *, '=== R   R_Hill, force:', ix,iy,iz, R_Hill, rp1, ff(ix,iy,iz,1)
+      print *, 'Radial   R_Hill, force:', ix,iy,iz, R_Hill, rp1, ff(ix,iy,iz,1)
     end if
-  !end if
+  end if
   !-----------------------------------------------------------------------------
   ! Vertical Hill distance
   !-----------------------------------------------------------------------------
-  !if (io%verbose > 1) then
+  if (io%verbose > 1) then
     if (abs(m(1)%p)          < 0.5*m(1)%d .and. &
         abs(m(2)%p)          < 0.5*m(2)%d .and. &
         abs(m(3)%p - R_Hill) < 0.5*m(3)%s) then
@@ -176,8 +177,7 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
       rp1 = sqrt(x**2+y**2+z**2)
       print *, 'vertical R_Hill, force:', ix,iy,iz, R_Hill, rp1, ff(ix,iy,iz,3)
     end if
-  !end if
-  end associate
+  end if
   !-----------------------------------------------------------------------------
   ! Add the classical Coriolis force term: -2*(\Omega x U). A positive omega(3)
   ! is motion in the positive x-direction, if y points towards the system center.
@@ -186,16 +186,30 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
   ! motion in the y-direction; a motion inwards (+y) leads to acceleration in
   ! the forward (+x) direction
   !-----------------------------------------------------------------------------
-  print *, 'general vel X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
-  print *, 'general vel y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))
-  print *, 'general vel z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
+  !print *, 'general vel X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
+  !print *, 'general vel y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))
+  !print *, 'general vel z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
   ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
   ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
-  ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
+  ff(:,:,:,3) = d*ff(:,:,:,3) !- 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
   
-  print *, 'general p X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
-  print *, 'general p y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))
-  print *, 'general p z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
+!  if (m(3)%p == planet%position(3)) then
+!  if (m(2)%p == planet%position(2)) then
+!    if ((m(1)%p < -1600).or.(m(1)%p > 1600)) then
+!    print *, '=== vertical forces in position ===', m%p
+!      print *, 'iz, pos, p_z, p_x, p_y'
+!    do ix = m(1)%lb, m(3)%ub
+!      print *, ix, r3(ix), ff(14,14,ix,3)*d(14,14,ix), ff(14,14,ix,1)*d(14,14,ix), ff(14,14,ix,2)*d(14,14,ix)
+!    end do
+!    end if
+!    print *, 'position', m%p
+!    print *, 'z min zmax, iz min iz max', m(3)%lb, m(3)%ub, r3(m(3)%lb), r3(m(3)%ub)
+!  end if
+!  end if
+    end associate
+  !print *, 'general p X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
+  !print *, 'general p y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))
+  !print *, 'general p z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
   
  ! ff(:,:,:,1) = d*ff(:,:,:,1) + 2.  * planet%omega(3)*p(:,:,:,2)
  ! ff(:,:,:,2) = d*ff(:,:,:,2) - 0.5 * planet%omega(3)*p(:,:,:,1)

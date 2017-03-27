@@ -170,6 +170,19 @@ class StaggerMHDPatch(MHDPatch):
 
         self.varidx = variable_indices('stagger', read_derivs)
         
+class Stagger2eMHDPatch(MHDPatch):
+    """A concrete derived class for Stagger MHD patches."""
+
+    def __init__ (self, filename, verbose=False, read_derivs=False):
+        super(MHDPatch, self).__init__(filename, verbose)
+
+        # it's possible that the dump also contains the time derivatives.
+        # note that the following only works because the `data` property has
+        # not yet been used.
+        if read_derivs: self.nvar = 2 * self.nvar
+
+        self.varidx = variable_indices('stagger2e', read_derivs)
+        
 class RamsesMHDPatch(MHDPatch):
     """A concrete derived class for Ramses MHD patches."""
 
@@ -218,7 +231,19 @@ def variable_indices(solver_type, read_derivs=False):
                         'dp1': 10, 'dp2': 11, 'dp3': 12,
                         'db1': 13, 'db2': 14, 'db3': 15,}
             indices.update(indicesd)
-    if solver_type.lower() == 'ramses':
+    elif solver_type.lower() == 'stagger2e':
+        indices = {'d':  0,
+                   'e':  1,
+                   'p1': 2, 'p2': 3, 'p3': 4,
+                   'b1': 5, 'b2': 6, 'b3': 7,
+                   'v1': 8, 'v2': 9, 'v3':10}
+        if read_derivs:
+            indicesd = {'dd': 8,
+                        'ds': 9,
+                        'dp1': 10, 'dp2': 11, 'dp3': 12,
+                        'db1': 13, 'db2': 14, 'db3': 15,}
+            indices.update(indicesd)
+    elif solver_type.lower() == 'ramses':
         indices = {'d':  0,
                    'e':  4,
                    'p1': 1, 'p2': 2, 'p3': 3,

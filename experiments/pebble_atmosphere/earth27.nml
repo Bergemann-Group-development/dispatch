@@ -9,7 +9,7 @@
  n_levels=4                         ! # of refinement levels in for the rubiks cube
  n_patch=3                          ! # of patches per direction
  m_zoom=3                           ! zoom-in level per direction
- n_repeat=3                         ! how many times rubiks cube is repeated along the orbit
+ n_repeat=5                         ! how many times rubiks cube is repeated along the orbit
 /
 
 &eos_params                         ! For ideal gas EOS
@@ -55,13 +55,13 @@ gamma=1.4
 /
 
 &initial_params
-initial_condition='planet_atmosphere'
+initial_condition='snapshot'
 secondary_ic='planet_atmosphere'
 /
 
 &snapshot_params
- folder='data/earth27-4/'
- snap_number=7
+ folder='data/earth27/'
+ snap_number=5
  ids=1,159
  time_derivs = f
 /
@@ -76,7 +76,7 @@ secondary_ic='planet_atmosphere'
 /
 &out_params
  end_time=1500.
- out_time=50.
+ out_time=20.
  print_time=0.01
  guard_zones=t
  time_derivs=f

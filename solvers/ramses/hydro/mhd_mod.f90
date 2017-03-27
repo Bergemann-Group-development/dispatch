@@ -173,8 +173,30 @@ SUBROUTINE update (self)
   if (associated(self%force%selected)) then
     allocate (cs(size(d,1), size(d,2), size(d,3)))
     cs = self%gamma*(self%gamma - 1.0) * e/d
+!    if (self%id==42) then
+!   associate (r1=>self%mesh(1)%r, r2=>self%mesh(2)%r, r3=>self%mesh(3)%r)
+ 
+!    print *, '=== BEFORE: vertical forces in position ===', self%mesh%p
+!    print *, 'time, dtime', self%time, self%dtime
+!    print *, 'iz, pos, p_z, p_x, p_y'
+!    do i = self%mesh(3)%lb, self%mesh(3)%ub
+!      print *, i, r3(i), p(14,14,i,3), p(14,14,i,1), p(14,14,i,2)
+!    end do
+!  end associate
+!  end if
     p = p + self%dtime*self%force%selected (self%time, d, p, cs, self%mesh)
     deallocate(cs)
+!   if (self%id==42) then
+!   associate (r1=>self%mesh(1)%r, r2=>self%mesh(2)%r, r3=>self%mesh(3)%r)
+ 
+!    print *, '=== AFTER: vertical forces in position ===', self%mesh%p
+!    print *, 'time, dtime', self%time, self%dtime
+!    print *, 'iz, pos, p_z, p_x, p_y'
+!    do i = self%mesh(3)%lb, self%mesh(3)%ub
+!      print *, i, r3(i), p(14,14,i,3), p(14,14,i,1), p(14,14,i,2)
+!    end do
+!  end associate
+!  end if
   end if
   !-----------------------------------------------------------------------------
   ! Subtract friction from momentum

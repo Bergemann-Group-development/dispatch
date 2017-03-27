@@ -114,13 +114,13 @@ SUBROUTINE init_hierarchy (self, label)
     !---------------------------------------------------------------------------
     ! If at edge, set boundary bits
     !---------------------------------------------------------------------------
-    if (patch%position(1) == self%task_list%lc(1)) call patch%boundaries%set (bits%xl)
-    if (patch%position(2) == self%task_list%lc(2)) call patch%boundaries%set (bits%yl)
-    if (patch%position(3) == self%task_list%lc(3)) call patch%boundaries%set (bits%zl)
-    if (patch%position(1) == self%task_list%uc(1)) call patch%boundaries%set (bits%xu)
-    if (patch%position(2) == self%task_list%uc(2)) call patch%boundaries%set (bits%yu)
-    if (patch%position(3) == self%task_list%uc(3)) call patch%boundaries%set (bits%zu)
-    if (patch%boundaries%status /= 0) print '(i6,2(2x,a6),o9,2(2x,3f10.0))', patch%id, 'BCs: ', &
+    if (patch%position(1) <= self%task_list%lc(1)) call patch%boundaries%set (bits%xl)
+    if (patch%position(2) <= self%task_list%lc(2)) call patch%boundaries%set (bits%yl)
+    if (patch%position(3) <= self%task_list%lc(3)) call patch%boundaries%set (bits%zl)
+    if (patch%position(1) >= self%task_list%uc(1)) call patch%boundaries%set (bits%xu)
+    if (patch%position(2) >= self%task_list%uc(2)) call patch%boundaries%set (bits%yu)
+    if (patch%position(3) >= self%task_list%uc(3)) call patch%boundaries%set (bits%zu)
+    if (patch%boundaries%status /= 0) print '(2i6,2(2x,a6),o9,2(2x,3f10.0))', patch%id, patch%level, 'BCs: ', &
       formatted(patch%boundaries%status), patch%boundaries%status, patch%size, patch%position
     link => link%next
   end do
@@ -134,7 +134,7 @@ contains
   if (patch%boundaries%is_set(bits%xl))  out(1:1) = 'T'
   if (patch%boundaries%is_set(bits%xu))  out(2:2) = 'T'
   if (patch%boundaries%is_set(bits%yl))  out(3:3) = 'T'
-  if (patch%boundaries%is_set(bits%xu))  out(4:4) = 'T'
+  if (patch%boundaries%is_set(bits%yu))  out(4:4) = 'T'
   if (patch%boundaries%is_set(bits%zl))  out(5:5) = 'T'
   if (patch%boundaries%is_set(bits%zu))  out(6:6) = 'T'
   end function formatted
@@ -188,7 +188,7 @@ SUBROUTINE init_level (self, level, position)
     self%task_list%lc = min(self%task_list%lc, patch%position)
     self%task_list%uc = max(self%task_list%uc, patch%position)
     call patch%set (bits%static)
-    if (k==1.or.k==self%n_patch) call patch%set (bits%top_bottom)
+    if (j==1.or.k==self%n_patch) call patch%set (bits%top_bottom)
     if (io%verbose>0) &
       print'(a,i6,i4,2(2x,3g16.6))', 'rubiks_mod%init_level: id, level, size, pos =', &
         patch%id, level, patch%size, patch%position - position
