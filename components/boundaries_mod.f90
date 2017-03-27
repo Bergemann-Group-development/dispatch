@@ -85,10 +85,10 @@ SUBROUTINE condition (self, f, operator)
   m => self%m
   if (self%is_set(bits%xl+bits%xu)) then
     print *, 'BOUNDARY CONDITION: x-direction'
-    m1 => self%m(1)
-    m2 => self%m(2)
+    m1 => self%m(2)
+    m2 => self%m(1)
     do i=m(3)%lb,m(3)%ub
-      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%xl),upper=self%is_set(bits%xu),transpose=.false.)
+      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%xl),upper=self%is_set(bits%xu),transpose=.true.)
     end do
   end if
   if (self%is_set(bits%yl+bits%yu)) then
@@ -96,7 +96,7 @@ SUBROUTINE condition (self, f, operator)
     m1 => self%m(1)
     m2 => self%m(2)
     do i=m(3)%lb,m(3)%ub
-      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%yl),upper=self%is_set(bits%yu),transpose=.true.)
+      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%yl),upper=self%is_set(bits%yu),transpose=.false.)
     end do
   end if
   if (self%is_set(bits%zl+bits%zu)) then
