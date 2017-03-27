@@ -192,10 +192,10 @@ SUBROUTINE output (self, experiment_name)
   class(experiment_t):: self
   character(len=64), optional:: experiment_name
   integer:: iv, it
-  if (self%id==5) then
+  if (self%id==14) then
     it = self%iit(self%nt-2)
     do iv=2,4
-      print *,'OUT', real(self%t(it)), iv, self%mem(18,18,1:4,iv,it,1)/self%mem(18,18,1:4,1,it,1)
+      print *,'OUT', real(self%t(it)), iv, self%mem(18,18,16:19,iv,it,1)/self%mem(18,18,16:19,1,it,1)
     end do
   end if
   call self%patch_t%output
@@ -233,6 +233,11 @@ SUBROUTINE edge_boundary_conditions (self, ii)
   call trace%end
 END SUBROUTINE edge_boundary_conditions
 
+
+
+!> =====================================================================
+!> fixed boundary conditions to test that normal BCs work
+!> =====================================================================
 SUBROUTINE constant_boundary_conditions (self, wl)
   class(experiment_t):: self
   integer, optional :: wl

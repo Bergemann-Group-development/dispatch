@@ -109,7 +109,7 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
     if (io%master) write (*, planet_atm_params)
   end if
   !$omp end critical (input_cr)
-  planet%omega = omega*2.*cgs%pi*scaling%t/cgs%yr
+  planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr
@@ -191,14 +191,13 @@ SUBROUTINE disk (self, m, mem, level)
     if (io%master) write (*, planet_atm_params)
   end if
   !$omp end critical (input_cr)
-  planet%omega = omega*2.*cgs%pi*scaling%t/cgs%yr
+  planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr
+  print*,'INIT',m%p,planet%position
+  print*,'INIT',i%px,i%py,i%pz,self%mhd,planet%omega(3)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
-  print *, 'task level, planet position', level, planet%position
-  print *, 'm%p', m%p
-  print *, 'rp of 444 item', r1(4), r2(4), r3(4)
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz) - planet%position(3)
     do iy=m(2)%lb,m(2)%ub
@@ -209,14 +208,13 @@ SUBROUTINE disk (self, m, mem, level)
         d = atmosphere%external%density
         p = atmosphere%external%pressure
         !-----------------------------------------------------------------------
-        ! Vertical stratification is added by adding Gaussian profile and
-        ! subtracting off the otherwise constant external density
+        ! Vertical stratification is added as a Gaussian profile assuming
+        ! isothermal conditions
         !-----------------------------------------------------------------------
         d0 = d
         d = d0*exp(-(planet%omega(3)**2*d0/p*0.5*z**2))
-        p = p*(d0/d)
+        p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
-        !  mem(ix,iy,iz,2) = d*(log(p)-gamma*log(d))/(gamma-1.0)
         mem(ix,iy,iz,i%e) = p/(gamma-1.0)
         !-----------------------------------------------------------------------
         ! A steady rotations profile in the rotating coordinate frame
@@ -224,10 +222,10 @@ SUBROUTINE disk (self, m, mem, level)
         ux = -self%v_accrete
         uy = -1.5*planet%omega(3)*x - self%v_head
         uz = 0.0
-        
-        mem(ix,iy,iz,i%px) = d*ux                                       ! radial speed
-        mem(ix,iy,iz,i%py) = d*uy                                       ! azimuthal speed
-        mem(ix,iy,iz,i%pz) = d*uz                                       ! vertical speed
+        mem(ix,iy,iz,i%px) = d*ux
+        mem(ix,iy,iz,i%py) = d*uy
+        mem(ix,iy,iz,i%pz) = d*uz
+        if (ix==m(1)%gn/2.and.iy==m(2)%gn/2) print *,iz,x,z,uy,d
         if (self%mhd) then
           mem(ix,iy,iz,i%bx) = b0(1)
           mem(ix,iy,iz,i%by) = b0(2)
