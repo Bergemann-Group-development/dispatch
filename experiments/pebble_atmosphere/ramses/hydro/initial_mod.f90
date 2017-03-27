@@ -90,7 +90,7 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
   integer, optional :: level
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, d0, p, csound2,  ux, uy, uz
+  real(8) :: x, y, z, r, d, d0, p, ux, uy, uz
   type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
@@ -109,10 +109,9 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
     if (io%master) write (*, planet_atm_params)
   end if
   !$omp end critical (input_cr)
-  omega = omega*2.*cgs%pi*scaling%t/cgs%yr
+  planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
-  csound2 = gamma*atmosphere%pg(1)/atmosphere%rho(1)
   nr = atmosphere%nr
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -124,14 +123,13 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
         r = sqrt(x**2+y**2+z**2)
         d = interpolate (r, nr ,atmosphere%rr, atmosphere%rho)
         p = interpolate (r, nr, atmosphere%rr, atmosphere%pg)
-        csound2 = gamma*p/d
         !-----------------------------------------------------------------------
         ! Vertical stratification is added by adding Gaussian profile and
         ! subtracting off the otherwise constant external density
         !-----------------------------------------------------------------------
         d0 = d
         d = d + &
-          atmosphere%external%density*(exp(-(planet%omega(3)**2/csound2*0.5*z**2))-1d0)
+          atmosphere%external%density*(exp(-(planet%omega(3)**2*d0/p*0.5*z**2))-1d0)
         p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
         !  mem(ix,iy,iz,2) = d*(log(p)-gamma*log(d))/(gamma-1.0)
@@ -174,7 +172,7 @@ SUBROUTINE disk (self, m, mem, level)
   integer, optional :: level
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, d0, p, csound2, ux, uy, uz
+  real(8) :: x, y, z, r, d, d0, p, ux, uy, uz
   type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
@@ -193,11 +191,12 @@ SUBROUTINE disk (self, m, mem, level)
     if (io%master) write (*, planet_atm_params)
   end if
   !$omp end critical (input_cr)
-  omega = omega*2.*cgs%pi*scaling%t/cgs%yr
+  planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
-  csound2 = gamma*atmosphere%pg(1)/atmosphere%rho(1)
   nr = atmosphere%nr
+  print*,'INIT',m%p,planet%position
+  print*,'INIT',i%px,i%py,i%pz,self%mhd,planet%omega(3)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz) - planet%position(3)
@@ -208,38 +207,30 @@ SUBROUTINE disk (self, m, mem, level)
         r = sqrt(x**2+y**2+z**2)
         d = atmosphere%external%density
         p = atmosphere%external%pressure
-        csound2 = gamma*p/d
         !-----------------------------------------------------------------------
-        ! Vertical stratification is added by adding Gaussian profile and
-        ! subtracting off the otherwise constant external density
+        ! Vertical stratification is added as a Gaussian profile assuming
+        ! isothermal conditions
         !-----------------------------------------------------------------------
         d0 = d
-        d = d !+ &
-          !atmosphere%external%density*(exp(-(planet%omega(3)**2/csound2*0.5*z**2))-1d0)
+        d = d0*exp(-(planet%omega(3)**2*d0/p*0.5*z**2))
         p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
-        !  mem(ix,iy,iz,2) = d*(log(p)-gamma*log(d))/(gamma-1.0)
         mem(ix,iy,iz,i%e) = p/(gamma-1.0)
         !-----------------------------------------------------------------------
-        ! A rotation profile, where the rotation center is at y=+1 AU, and
-        ! the direction of rotation is +x, so the head wind is in the -x
-        ! direction.  The slower rotation at larger radii means that Ux is
-        ! proportional to +y.  This gives a speed difference of only 130 cm/s
-        ! across the Earth, and plus/minus 0.15 km/s across two Hill radii.
-        ! The effect is not enough to significantly flatten the outer part of
-        ! the Hill sphere, so we will probably only be seeing effects of the
-        ! Coriolis force beyond the Hill radius.
+        ! A steady rotations profile in the rotating coordinate frame
         !-----------------------------------------------------------------------
         ux = -self%v_accrete
-        uy = -3.0*planet%omega(3)**2*x + self%v_head
+        uy = -1.5*planet%omega(3)*x - self%v_head
         uz = 0.0
-        
-        mem(ix,iy,iz,i%px) = d*(ux - 2.*(planet%omega(3)*uy-planet%omega(2)*uz)) ! radial speed
-        mem(ix,iy,iz,i%py) = d*(uy - 2.*(planet%omega(3)*ux-planet%omega(1)*uz)) ! azimuthal speed
-        mem(ix,iy,iz,i%pz) = d*(uy - 2.*(planet%omega(2)*ux-planet%omega(1)*uy)) ! vertical speed
-        !mem(ix,iy,iz,6) = b0(1)
-        !mem(ix,iy,iz,7) = b0(2)
-        !mem(ix,iy,iz,8) = b0(3)
+        mem(ix,iy,iz,i%px) = d*ux
+        mem(ix,iy,iz,i%py) = d*uy
+        mem(ix,iy,iz,i%pz) = d*uz
+        if (ix==m(1)%gn/2.and.iy==m(2)%gn/2) print *,iz,x,z,uy,d
+        if (self%mhd) then
+          mem(ix,iy,iz,i%bx) = b0(1)
+          mem(ix,iy,iz,i%by) = b0(2)
+          mem(ix,iy,iz,i%bz) = b0(3)
+        end if
       end do
     end do
   end do
@@ -247,6 +238,9 @@ SUBROUTINE disk (self, m, mem, level)
   call trace%end (itimer)
 END SUBROUTINE disk
 
+!> =============================================================================
+!> Snapshot reader interface
+!> =============================================================================
 SUBROUTINE snapshot (self, m, mem, level)
   class(initial_t) :: self
   real, dimension(:,:,:,:), pointer  :: mem
