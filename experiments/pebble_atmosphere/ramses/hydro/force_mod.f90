@@ -280,7 +280,6 @@ FUNCTION disk (self, time, d, p, m) RESULT (ff)
   ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
   ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
   ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
-  
 !  if (m(3)%p == planet%position(3)) then
 !  if (m(2)%p == planet%position(2)) then
 !    if ((m(1)%p < -1600).or.(m(1)%p > 1600)) then

@@ -135,7 +135,6 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
         p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
         !  mem(ix,iy,iz,2) = d*(log(p)-gamma*log(d))/(gamma-1.0)
-        mem(ix,iy,iz,i%e) = p/(gamma-1.0)
         !-----------------------------------------------------------------------
         ! A rotation profile, where the rotation center is at x=-1 AU, and
         ! the direction of rotation is +y, so the head wind is in the -y
@@ -149,6 +148,7 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
         ux = -self%v_accrete
         uy = -1.5*planet%omega(3)*x - self%v_head
         uz = 0.0
+        mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
         mem(ix,iy,iz,i%px) = d*ux
         mem(ix,iy,iz,i%py) = d*uy
         mem(ix,iy,iz,i%pz) = d*uz
@@ -218,13 +218,13 @@ SUBROUTINE disk (self, m, mem, level)
         d = d0*exp(-(planet%omega(3)**2*d0/p*0.5*z**2))
         p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
-        mem(ix,iy,iz,i%e) = p/(gamma-1.0)
         !-----------------------------------------------------------------------
         ! A steady rotations profile in the rotating coordinate frame
         !-----------------------------------------------------------------------
         ux = -self%v_accrete
         uy = -1.5*planet%omega(3)*x - self%v_head
         uz = 0.0
+        mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
         mem(ix,iy,iz,i%px) = d*ux
         mem(ix,iy,iz,i%py) = d*uy
         mem(ix,iy,iz,i%pz) = d*uz
