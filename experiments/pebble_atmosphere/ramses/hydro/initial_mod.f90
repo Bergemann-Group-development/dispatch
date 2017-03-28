@@ -13,6 +13,7 @@ MODULE initial_mod
   USE scaling_mod
   USE index_mod
   USE dp_reader_mod
+  USE star_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -110,6 +111,7 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
   end if
   !$omp end critical (input_cr)
   planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
+  planet%omega(3) = sqrt(scaling%grav*star%mass/planet%orbit_radius**3)
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr
@@ -192,6 +194,7 @@ SUBROUTINE disk (self, m, mem, level)
   end if
   !$omp end critical (input_cr)
   planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
+  planet%omega(3) = sqrt(scaling%grav*star%mass/planet%orbit_radius**3)
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr

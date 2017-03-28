@@ -50,6 +50,8 @@ SUBROUTINE init (self)
      self%selected => single_solenoidal
    case ('star_and_planet')
      self%selected => star_and_planet
+   case ('disk')
+     self%selected => disk
    case default
      nullify(self%selected)
    end select
@@ -191,7 +193,7 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
   !print *, 'general vel z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
   ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
   ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
-  ff(:,:,:,3) = d*ff(:,:,:,3) !- 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
+  ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
   
 !  if (m(3)%p == planet%position(3)) then
 !  if (m(2)%p == planet%position(2)) then
@@ -222,6 +224,94 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
   call trace_end
 END FUNCTION star_and_planet
 
+FUNCTION disk (self, time, d, p, cs, m) RESULT (ff)
+  class(force_t):: self
+  real(8):: time
+  real, dimension(:,:,:), pointer:: d, cs
+  real, dimension(:,:,:,:), pointer:: p
+  class(mesh_t), pointer, dimension(:):: m
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
+  !real, dimension(m(1)%gn,m(2)%gn,m(3)%gn):: f1
+  !.............................................................................
+  integer:: ix, iy, iz, iv
+  real(8):: kx, ky, kz, rs(3), rp(3), rs1, rp1, newton
+  real(8):: x, y, z, xp, yp, zp, ds2(3), R_Hill
+  !-----------------------------------------------------------------------------
+  call trace_begin('force_t%star_and_planet')
+  call self%friction2(time)
+  ds2 = 0.5*m%d
+  ff = 0.0
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  newton = planet%mass*scaling%grav
+  do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz)
+    zp = z - planet%position(3)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy)
+      yp = y - planet%position(2)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix)
+        xp = x - planet%position(1)
+        !-----------------------------------------------------------------------
+        ! Add the vertical and radial rotating coordinate frame accelerations.
+        ! The net force in the radial direction increases with increasing x,
+        ! giving that x now points in the radial direction.  It has two 
+        ! contributions:  The centripetal force \Omega^2 x, and the reduction
+        ! of the force of gravity from the central star, which contributs a 
+        ! factor of 2 more, for a total factor of 3.  Vertically, there
+        ! is a net force that comes from the projection of the force of
+        ! gravity onto the z-axis, and has the same scaling constant as the
+        ! radial force, but the opposite sign.
+        !-----------------------------------------------------------------------
+        !ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 2.0 * planet%omega(3) * 0.05 * cs(ix,iy,iz)  ! centrifugal support due to the large scale radial pressure gradient
+        ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xp
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp 
+      end do
+    end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Add the classical Coriolis force term: -2*(\Omega x U). A positive omega(3)
+  ! is motion in the positive x-direction, if y points towards the system center.
+  ! Hence, a positive velocity in the x-direction increases the centripetal force,
+  ! and leads to acceleration in the negative y-direction -- vice versa for
+  ! motion in the y-direction; a motion inwards (+y) leads to acceleration in
+  ! the forward (+x) direction
+  !-----------------------------------------------------------------------------
+  !print *, 'general vel X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
+  !print *, 'general vel y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))
+  !print *, 'general vel z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
+  ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
+  ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
+  ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
+  
+!  if (m(3)%p == planet%position(3)) then
+!  if (m(2)%p == planet%position(2)) then
+!    if ((m(1)%p < -1600).or.(m(1)%p > 1600)) then
+!    print *, '=== vertical forces in position ===', m%p
+!      print *, 'iz, pos, p_z, p_x, p_y'
+!    do ix = m(1)%lb, m(3)%ub
+!      print *, ix, r3(ix), ff(14,14,ix,3)*d(14,14,ix), ff(14,14,ix,1)*d(14,14,ix), ff(14,14,ix,2)*d(14,14,ix)
+!    end do
+!    end if
+!    print *, 'position', m%p
+!    print *, 'z min zmax, iz min iz max', m(3)%lb, m(3)%ub, r3(m(3)%lb), r3(m(3)%ub)
+!  end if
+!  end if
+    end associate
+  !print *, 'general p X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
+  !print *, 'general p y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))
+  !print *, 'general p z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
+  
+ ! ff(:,:,:,1) = d*ff(:,:,:,1) + 2.  * planet%omega(3)*p(:,:,:,2)
+ ! ff(:,:,:,2) = d*ff(:,:,:,2) - 0.5 * planet%omega(3)*p(:,:,:,1)
+ ! ff(:,:,:,3) = d*ff(:,:,:,3)
+ ! f1 = f1* d
+ ! print *, 'centrifugal minmax', minval(f1), maxval(f1)
+
+  ff = ff * self%frc
+ ! call self%friction(time, m, ff)
+  call trace_end
+END FUNCTION disk
 
 !> =============================================================================
 !> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically

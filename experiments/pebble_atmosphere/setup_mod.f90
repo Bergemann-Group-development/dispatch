@@ -12,6 +12,7 @@ MODULE setup_mod
   USE units_mod
   USE scaling_mod
   USE planet_mod
+  USE star_mod
   USE atmosphere_mod
   USE experiment_mod
   USE pebble_trace_mod
@@ -51,6 +52,7 @@ SUBROUTINE init (self, label)
   call trace_begin ('setup_t%init')
   call io%init (label)
   call scaling%init
+  call star%init
   call planet%init
   call atmosphere%init
   self%size = planet%radius*2.2

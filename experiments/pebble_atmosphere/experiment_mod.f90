@@ -127,7 +127,7 @@ SUBROUTINE update (self)
       ! If spherical inner BCs, save the incoming values
       !------------------------------------------------------------------------
       if (self%boundaries%is_set (bits%spherical)) then
-      !  print *, self%id, 'BOUNDARY CONDITION: spherical'
+        print *, self%id, 'BOUNDARY CONDITION: spherical'
         if (self%nw > 1) then
           it = self%it
           do iv=1,self%nv
@@ -144,12 +144,15 @@ SUBROUTINE update (self)
         call self%boundaries%init (radius=planet%radius)
         do iv=self%i_px,self%i_pz
           call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
+          call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
         end do
         deallocate (mem)
       end if
       !------------------------------------------------------------------------
       ! Edge boundary conditions
       !------------------------------------------------------------------------
+      !if (all(self%position == 0)) print *, "CENTRAL patch id", self%id
+      !if ((self%position(1) <-1600).and.(self%position(2)==0).and.(self%position(3)==0)) print *, "print test ID", self%id
       if (self%boundaries%status /= 0) then
         nb = 0
         if (self%boundaries%is_set (bits%xl+bits%xu)) then
@@ -171,7 +174,7 @@ SUBROUTINE update (self)
     end if
   end if
   !call self%courant_condition
-   if (self%id==42) then
+   if (self%id==41) then
    associate (r1=>self%mesh(1)%r, r2=>self%mesh(2)%r, r3=>self%mesh(3)%r)
  
     print *, '=== VERTICAL forces in position ===', self%mesh%p
@@ -181,7 +184,18 @@ SUBROUTINE update (self)
       print *, i, r3(i), self%mem(14,14,i,self%i_px,self%it,1), self%mem(14,14,i,self%i_py,self%it,1), &
       self%mem(14,14,i,self%i_pz,self%it,1),self%mem(14,14,i,self%i_e,self%it,1),self%mem(14,14,i,self%i_d,self%it,1)
     end do
+    print *, 'min T', minval((self%mem(:,:,:,self%i_e,self%it,1)/self%mem(:,:,:,self%i_d,self%it,1)*(self%gamma-1)*scaling%temp))
+   print *, 'max T', maxval((self%mem(:,:,:,self%i_e,self%it,1)/self%mem(:,:,:,self%i_d,self%it,1)*(self%gamma-1)*scaling%temp))
+      print *, 'min max d', minval(self%mem(:,:,:,self%i_d,self%it,1)), maxval (self%mem(:,:,:,self%i_d,self%it,1))
+   print *, 'min max e', minval(self%mem(:,:,:,self%i_e,self%it,1)), maxval (self%mem(:,:,:,self%i_e,self%it,1))
   end associate
+  !if (any((self%mem(:,:,:,self%i_e,self%it,1)/self%mem(:,:,:,self%i_d,self%it,1)*(self%gamma-1)*scaling%temp) > 1200)) then
+  ! print *, 'min T', minval((self%mem(:,:,:,self%i_e,self%it,1)/self%mem(:,:,:,self%i_d,self%it,1)*(self%gamma-1)*scaling%temp))
+  ! print *, 'max T', maxval((self%mem(:,:,:,self%i_e,self%it,1)/self%mem(:,:,:,self%i_d,self%it,1)*(self%gamma-1)*scaling%temp))
+  ! print *, 'min max d', minval(self%mem(:,:,:,self%i_d,self%it,1)), maxval (self%mem(:,:,:,self%i_d,self%it,1))
+  ! print *, 'min max e', minval(self%mem(:,:,:,self%i_e,self%it,1)), maxval (self%mem(:,:,:,self%i_e,self%it,1))
+  ! error stop "temerature too high..."
+  !end if
   end if
   call self%pebble_patch_t%update_pebbles
   call self%check_density ('after timestep')
@@ -221,7 +235,7 @@ SUBROUTINE edge_boundary_conditions (self, ii)
   allocate (u(size(d,1),size(d,2),size(d,3)))
   call self%boundaries%extrapolate (d)
   u = e/d
-  call self%boundaries%symmetric (u)
+  call self%boundaries%symmetric (e)
   e = u*d
   do iv=self%i_px,self%i_pz
     p => self%mem(:,:,:,iv,self%it,1)

@@ -163,7 +163,7 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*xdn(zup(Uz)) - planet%omega(3)*xdn(yup(Uy)))
   ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*ydn(xup(Ux)) - planet%omega(1)*ydn(zup(Uz)))
-  ff(:,:,:,2) = ff(:,:,:,3) - 2.*(planet%omega(1)*zdn(yup(Uy)) - planet%omega(2)*zdn(xup(Ux)))
+  ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*zdn(yup(Uy)) - planet%omega(2)*zdn(xup(Ux)))
   
   call trace_end
 END FUNCTION star_and_planet
@@ -183,7 +183,6 @@ FUNCTION disk (self, time, Ux, Uy, Uz, m) RESULT (ff)
   call trace_begin('force_t:single_solenoidal')
   ds2 = 0.5*m%d
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
-  
   ff = 0.0
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz)
@@ -208,7 +207,9 @@ FUNCTION disk (self, time, Ux, Uy, Uz, m) RESULT (ff)
       end do
     end do
   end do
-
+  print *,'planet_force: mass, grav =', planet%mass, scaling%grav
+  print *,'planet_force: omega      =', planet%omega
+  print *,'planet_force: position   =', planet%position
   end associate
   !-----------------------------------------------------------------------------
   ! Add the classical Coriolis force terms, correctly centered (not important),
@@ -218,9 +219,9 @@ FUNCTION disk (self, time, Ux, Uy, Uz, m) RESULT (ff)
   ! and leads to acceleration in the negative y-direction -- vice versa for
   ! motion in the y-direction
   !-----------------------------------------------------------------------------
-  !ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*xdn(zup(Uz)) - planet%omega(3)*xdn(yup(Uy)))
-  !ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*ydn(xup(Ux)) - planet%omega(1)*ydn(zup(Uz)))
-  !ff(:,:,:,2) = ff(:,:,:,3) - 2.*(planet%omega(1)*zdn(yup(Uy)) - planet%omega(2)*zdn(xup(Ux)))
+  ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*xdn(zup(Uz)) - planet%omega(3)*xdn(yup(Uy)))
+  ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*ydn(xup(Ux)) - planet%omega(1)*ydn(zup(Uz)))
+  ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*zdn(yup(Uy)) - planet%omega(2)*zdn(xup(Ux)))
   
   call trace_end
 END FUNCTION disk

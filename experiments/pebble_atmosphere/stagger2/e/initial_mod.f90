@@ -8,6 +8,7 @@ MODULE initial_mod
   USE mesh_mod
   USE atmosphere_mod
   USE planet_mod
+  USE star_mod
   USE lagrange_mod
   USE units_mod
   USE scaling_mod
@@ -95,7 +96,7 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
   real, save:: omega(3)=0.0
-  real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0
+  real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0, om2
   namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -110,6 +111,9 @@ SUBROUTINE planet_atmosphere (self, m, mem, level)
   end if
   !$omp end critical (input_cr)
   omega = omega*2.*cgs%pi*scaling%t/cgs%yr
+  om2 = sqrt(scaling%grav*(cgs%m_sun/scaling%m)/planet%orbit_radius**3)
+  print *, 'omega',omega,'om2', om2
+  error stop "end"
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr
@@ -171,7 +175,7 @@ SUBROUTINE disk (self, m, mem, level)
   integer, optional :: level
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, d0, p, ux, uy, uz
+  real(8) :: x, y, z, r, d, d0, p, ux, uy, uz, om2, uy2
   type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
@@ -190,7 +194,7 @@ SUBROUTINE disk (self, m, mem, level)
     if (io%master) write (*, planet_atm_params)
   end if
   !$omp end critical (input_cr)
-  omega = omega*2.*cgs%pi*scaling%t/cgs%yr
+  planet%omega(3) = sqrt(scaling%grav*star%mass/planet%orbit_radius**3)
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr
