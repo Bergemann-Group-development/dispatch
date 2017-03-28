@@ -46,6 +46,9 @@ SUBROUTINE init (self)
     print 1,'    gravity: ',self%grav
     print 1,'temperature: ',self%temp
   1 format(1x,a,1p,e11.3)
+    print *, 'omega consistency:', &
+      sqrt(cgs%grav*cgs%m_sun/cgs%au**3)/ &
+      (2.*cgs%pi/cgs%yr) - 1.d0
   end if
 END SUBROUTINE init
 
