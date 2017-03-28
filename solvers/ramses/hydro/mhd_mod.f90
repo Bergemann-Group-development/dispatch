@@ -147,7 +147,6 @@ SUBROUTINE update (self)
   allocate (self%ff(size(d,1),size(d,2),size(d,3),3))
   if (associated(self%force%selected)) then
     self%ff = self%force%selected (self%time, d, p, self%mesh)
-    if (self%id==14) print *,'MK5', self%ff(17,17,4,3)
   else
     self%ff = 0.0
   end if
@@ -166,7 +165,6 @@ SUBROUTINE update (self)
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
-  if (self%id==14) print *,'MK7', self%ff(17,17,4,3)
   if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
   if (debug) then
     if (self%id==229.or.self%id==231) then
@@ -184,15 +182,6 @@ SUBROUTINE update (self)
   ! Add external force as source term
   !-----------------------------------------------------------------------------
   p => self%mem(:,:,:,self%i_px:self%i_pz,self%new,1)
-  if (self%id==14) print *,'MK8', self%ff(17,17,4,3)
-  if (self%id==14) then
-    block
-    integer iz
-    do iz=self%mesh(3)%li,self%mesh(3)%ui
-      print *,'HLLC', p(17,17,iz,3),  self%dtime*self%ff(17,17,iz,3)
-    end do
-    end block
-  end if
   p = p + self%dtime*self%ff
   if (debug) then
     if (self%id==229.or.self%id==231) then
@@ -562,7 +551,6 @@ subroutine trace3d(self)
   !-----------------------------------------------------------------------------
   lb = self%mesh%lo
   ub = self%mesh%uo
-  if (self%id==14) print*,'PG3',q(17,17,4:5,ip)
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       do i = lb(1),ub(1)
