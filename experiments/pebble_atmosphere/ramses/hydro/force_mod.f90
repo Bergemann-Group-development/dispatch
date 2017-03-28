@@ -15,7 +15,6 @@ MODULE force_mod
   private
   real(8), parameter:: pi2=8.0*atan(1.0)
   type, public:: force_t
-    real:: omega(3)
     real:: frc = 1.0
     procedure(star_and_planet), pointer:: selected=>null()
   contains
@@ -45,7 +44,7 @@ SUBROUTINE init (self)
      if (io%master) write (*, force_params)
    end if
    !$omp end critical (input_cr)
-   select case (type)
+   select case (trim(type))
    case ('single_solenoidal')
      self%selected => single_solenoidal
    case ('star_and_planet')
