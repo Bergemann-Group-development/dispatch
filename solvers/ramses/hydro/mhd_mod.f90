@@ -37,6 +37,7 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:,:):: dq      ! slopes
     real, pointer, dimension(:,:,:,:,:):: fl      ! 3D fluxes
     real, pointer, dimension(:,:,:):: c, s        ! scratch
+    real, pointer, dimension(:,:,:,:):: ff        ! external force
     type(force_t):: force
   contains
     procedure:: init
@@ -50,10 +51,8 @@ MODULE mhd_mod
   logical:: first_time=.true.
   logical:: detailed_timer=.false.
   character(len=16):: eqn='mhd'
-  real(kind=8):: courant_number=0.2
   logical, save:: debug=.false.
   real, save:: friction=0.0
-  real, dimension(:,:,:,:), pointer:: fric => null()
 CONTAINS
 
 !> =============================================================================
@@ -105,7 +104,7 @@ SUBROUTINE update (self)
   integer:: n(3), m, i
   integer, save:: itimer=0
   real, dimension(:,:,:,:), pointer:: p
-  real, dimension(:,:,:), pointer:: d, e, cs
+  real, dimension(:,:,:), pointer:: d, e
   real, dimension(:,:,:), pointer:: tmp
   !----------------------------------------------------------------------------
   ! Fill guard zones and checks whether to do output
@@ -139,24 +138,35 @@ SUBROUTINE update (self)
       print *,self%id, 'mk1: e', self%mem( m-7:m-3 ,19,19,self%i_e ,self%it,1), self%i_e
     end if
   end if
-  d => self%mem(:,:,:,          self%i_d ,self%new,1)
-  e => self%mem(:,:,:,          self%i_e ,self%new,1)
-  p => self%mem(:,:,:,self%i_px:self%i_pz,self%new,1)
+  d => self%mem(:,:,:,          self%i_d ,self%it,1)
+  e => self%mem(:,:,:,          self%i_e ,self%it,1)
+  p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
+  !-----------------------------------------------------------------------------
+  ! External force
+  !-----------------------------------------------------------------------------
+  allocate (self%ff(size(d,1),size(d,2),size(d,3),3))
+  if (associated(self%force%selected)) then
+    self%ff = self%force%selected (self%time, d, p, self%mesh)
+    if (self%id==14) print *,'MK5', self%ff(17,17,4,3)
+  else
+    self%ff = 0.0
+  end if
+  !-----------------------------------------------------------------------------
+  ! Optional friction subtracted from external force (per unit volume)
+  !-----------------------------------------------------------------------------
   if (friction > 0.0) then
-    if (.not.associated(fric)) then
-       allocate (fric(size(p,1),size(p,2),size(p,3),3))
-    end if
     allocate (tmp(size(p,1),size(p,2),size(p,3)))
     tmp = self%dtime*friction*sqrt(self%gamma*(self%gamma-1.0)*e/d)/self%size(1)
-    !---------------------------------------------------------------------------
-    ! Friction per unit mass for trace3d
-    !---------------------------------------------------------------------------
     do i=1,3
-      fric(:,:,:,i) = tmp*p(:,:,:,i)/d
+      self%ff(:,:,:,i) = self%ff(:,:,:,i) - tmp*p(:,:,:,i)
     end do
     deallocate (tmp)
   end if
+  !-----------------------------------------------------------------------------
+  ! Godunov solver
+  !-----------------------------------------------------------------------------
   call godunov (self)
+  if (self%id==14) print *,'MK7', self%ff(17,17,4,3)
   if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
   if (debug) then
     if (self%id==229.or.self%id==231) then
@@ -170,42 +180,20 @@ SUBROUTINE update (self)
       print *,self%id, 'mk2: e', self%mem( m-7:m-3 ,19,19,self%i_e ,self%new,1), self%i_e
     end if
   end if
-  if (associated(self%force%selected)) then
-    allocate (cs(size(d,1), size(d,2), size(d,3)))
-    cs = self%gamma*(self%gamma - 1.0) * e/d
-!    if (self%id==42) then
-!   associate (r1=>self%mesh(1)%r, r2=>self%mesh(2)%r, r3=>self%mesh(3)%r)
- 
-!    print *, '=== BEFORE: vertical forces in position ===', self%mesh%p
-!    print *, 'time, dtime', self%time, self%dtime
-!    print *, 'iz, pos, p_z, p_x, p_y'
-!    do i = self%mesh(3)%lb, self%mesh(3)%ub
-!      print *, i, r3(i), p(14,14,i,3), p(14,14,i,1), p(14,14,i,2)
-!    end do
-!  end associate
-!  end if
-    p = p + self%dtime*self%force%selected (self%time, d, p, cs, self%mesh)
-    deallocate(cs)
-!   if (self%id==42) then
-!   associate (r1=>self%mesh(1)%r, r2=>self%mesh(2)%r, r3=>self%mesh(3)%r)
- 
-!    print *, '=== AFTER: vertical forces in position ===', self%mesh%p
-!    print *, 'time, dtime', self%time, self%dtime
-!    print *, 'iz, pos, p_z, p_x, p_y'
-!    do i = self%mesh(3)%lb, self%mesh(3)%ub
-!      print *, i, r3(i), p(14,14,i,3), p(14,14,i,1), p(14,14,i,2)
-!    end do
-!  end associate
-!  end if
-  end if
   !-----------------------------------------------------------------------------
-  ! Subtract friction from momentum
+  ! Add external force as source term
   !-----------------------------------------------------------------------------
-  if (friction > 0.0) then
-    do i=1,3
-      p(:,:,:,i) = p(:,:,:,i) - fric(:,:,:,i)*d
+  p => self%mem(:,:,:,self%i_px:self%i_pz,self%new,1)
+  if (self%id==14) print *,'MK8', self%ff(17,17,4,3)
+  if (self%id==14) then
+    block
+    integer iz
+    do iz=self%mesh(3)%li,self%mesh(3)%ui
+      print *,'HLLC', p(17,17,iz,3),  self%dtime*self%ff(17,17,iz,3)
     end do
+    end block
   end if
+  p = p + self%dtime*self%ff
   if (debug) then
     if (self%id==229.or.self%id==231) then
       print *,self%id, 'mk3:px', self%mem(19-2:19+2,19,19,self%i_px,self%new,1), self%i_px
@@ -217,7 +205,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
-  deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%c,self%s)
+  deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%c,self%s,self%ff)
   call trace_end (itimer)
 END SUBROUTINE update
 
@@ -561,8 +549,6 @@ subroutine trace3d(self)
   real(dp)::drz, duz, dvz, dwz, dpz, daz
   real(dp)::sr0, su0, sv0, sw0, sp0, sa0
   integer,save:: itimer=0
-  real, dimension(:,:,:), pointer:: d, cs, ee
-  real, dimension(:,:,:,:), pointer:: ff, pp
   associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
@@ -573,24 +559,10 @@ subroutine trace3d(self)
   dtdx = self%dtime/self%mesh(1)%d
   dtdy = self%dtime/self%mesh(2)%d
   dtdz = self%dtime/self%mesh(3)%d
-  d    => self%mem(:,:,:,self%i_d           ,self%it,1)
-  ee   => self%mem(:,:,:,self%i_e           ,self%it,1)
-  pp   => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
-  allocate (ff(size(d,1),size(d,2),size(d,3),3))
-  if (associated(self%force%selected)) then
-    allocate (cs(size(d,1), size(d,2), size(d,3)))
-    cs = self%gamma*(self%gamma - 1.0) * ee/d
-    ff = self%force%selected (self%time, d, pp, cs, self%mesh)
-    deallocate(cs)
-  else
-    ff = 0.0
-  end if
-  if (friction > 0.0) then
-    ff = ff - fric
-  end if
   !-----------------------------------------------------------------------------
   lb = self%mesh%lo
   ub = self%mesh%uo
+  if (self%id==14) print*,'PG3',q(17,17,4:5,ip)
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       do i = lb(1),ub(1)
@@ -623,9 +595,9 @@ subroutine trace3d(self)
         ! Source terms (including transverse derivatives)
         sr0 = -u*drx-v*dry-w*drz - (dux+dvy+dwz)*r
         sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p
-        su0 = -u*dux-v*duy-w*duz - (dpx - ff(i,j,k,1)*self%mesh(1)%d)/r
-        sv0 = -u*dvx-v*dvy-w*dvz - (dpy - ff(i,j,k,2)*self%mesh(2)%d)/r
-        sw0 = -u*dwx-v*dwy-w*dwz - (dpz - ff(i,j,k,3)*self%mesh(3)%d)/r
+        su0 = -u*dux-v*duy-w*duz - (dpx - self%ff(i,j,k,1)*self%mesh(1)%d)/r
+        sv0 = -u*dvx-v*dvy-w*dvz - (dpy - self%ff(i,j,k,2)*self%mesh(2)%d)/r
+        sw0 = -u*dwx-v*dwy-w*dwz - (dpz - self%ff(i,j,k,3)*self%mesh(3)%d)/r
 
         ! Right state at left interface
         qp(i,j,k,ir,1) = r - half*drx + sr0*dtdx*half
@@ -677,7 +649,6 @@ subroutine trace3d(self)
       end do
     end do
   end do
-  deallocate (ff)
   call trace_end (itimer)
   end associate
 end subroutine trace3d

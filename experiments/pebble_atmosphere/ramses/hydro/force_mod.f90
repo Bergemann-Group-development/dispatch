@@ -86,10 +86,10 @@ END SUBROUTINE friction2
 !> hence a positive Omega_z corresponds to positive rotation speed in the x-
 !> direction
 !> =============================================================================
-FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
+FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
-  real, dimension(:,:,:), pointer:: d, cs
+  real, dimension(:,:,:), pointer:: d
   real, dimension(:,:,:,:), pointer:: p
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
@@ -138,7 +138,6 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
         ! gravity onto the z-axis, and has the same scaling constant as the
         ! radial force, but the opposite sign.
         !-----------------------------------------------------------------------
-        !ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 2.0 * planet%omega(3) * 0.05 * cs(ix,iy,iz)  ! centrifugal support due to the large scale radial pressure gradient
         ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xp
         ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp 
       end do
@@ -223,10 +222,10 @@ FUNCTION star_and_planet (self, time, d, p, cs, m) RESULT (ff)
   call trace_end
 END FUNCTION star_and_planet
 
-FUNCTION disk (self, time, d, p, cs, m) RESULT (ff)
+FUNCTION disk (self, time, d, p, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
-  real, dimension(:,:,:), pointer:: d, cs
+  real, dimension(:,:,:), pointer:: d
   real, dimension(:,:,:,:), pointer:: p
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
@@ -236,7 +235,7 @@ FUNCTION disk (self, time, d, p, cs, m) RESULT (ff)
   real(8):: kx, ky, kz, rs(3), rp(3), rs1, rp1, newton
   real(8):: x, y, z, xp, yp, zp, ds2(3), R_Hill
   !-----------------------------------------------------------------------------
-  call trace_begin('force_t%star_and_planet')
+  call trace_begin('force_t%disk')
   call self%friction2(time)
   ds2 = 0.5*m%d
   ff = 0.0
@@ -262,7 +261,6 @@ FUNCTION disk (self, time, d, p, cs, m) RESULT (ff)
         ! gravity onto the z-axis, and has the same scaling constant as the
         ! radial force, but the opposite sign.
         !-----------------------------------------------------------------------
-        !ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 2.0 * planet%omega(3) * 0.05 * cs(ix,iy,iz)  ! centrifugal support due to the large scale radial pressure gradient
         ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xp
         ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp 
       end do
@@ -300,13 +298,11 @@ FUNCTION disk (self, time, d, p, cs, m) RESULT (ff)
   !print *, 'general p X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
   !print *, 'general p y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))
   !print *, 'general p z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
-  
  ! ff(:,:,:,1) = d*ff(:,:,:,1) + 2.  * planet%omega(3)*p(:,:,:,2)
  ! ff(:,:,:,2) = d*ff(:,:,:,2) - 0.5 * planet%omega(3)*p(:,:,:,1)
  ! ff(:,:,:,3) = d*ff(:,:,:,3)
  ! f1 = f1* d
  ! print *, 'centrifugal minmax', minval(f1), maxval(f1)
-
   ff = ff * self%frc
  ! call self%friction(time, m, ff)
   call trace_end
@@ -315,10 +311,10 @@ END FUNCTION disk
 !> =============================================================================
 !> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
 !> =============================================================================
-FUNCTION single_solenoidal (self, time, d, p, cs, m) RESULT (ff)
+FUNCTION single_solenoidal (self, time, d, p, m) RESULT (ff)
   class(force_t)        :: self
   real(8)               :: time
-  real, dimension(:,:,:), pointer:: d, cs
+  real, dimension(:,:,:), pointer:: d
   real, dimension(:,:,:,:), pointer:: p
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
