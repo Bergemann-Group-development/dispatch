@@ -51,7 +51,8 @@ SUBROUTINE init (self)
   integer:: iv, iostat
   logical, save:: first_time=.true.
   character(len=32):: type='planet_atmosphere'
-  namelist /experiment_params/ type
+  logical,save :: snapshot = .false.
+  namelist /experiment_params/ type, snapshot
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
@@ -69,7 +70,7 @@ SUBROUTINE init (self)
   self%nv = 5
   self%msplit = 3
   call scaling%init
-  call self%initial%init (type)
+  call self%initial%init (type,snapshot)
   call self%force%init (type)
   self%nv = 5
   self%mhd = .false.

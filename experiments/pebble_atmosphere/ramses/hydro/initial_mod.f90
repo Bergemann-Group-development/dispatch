@@ -38,9 +38,10 @@ CONTAINS
 !> =============================================================================
 !> Setup an initial state, with head wind speed and accretion speed
 !> =============================================================================
-SUBROUTINE init (self, type)
+SUBROUTINE init (self, type, snap)
    class(initial_t):: self
    character(len=*), optional:: type
+   logical, optional :: snap
    logical, save:: first_time=.true.
    character(len=20), save:: initial_condition = 'planet_atmosphere'
    character(len=20), save:: secondary_ic = 'planet_atmosphere'
@@ -51,6 +52,9 @@ SUBROUTINE init (self, type)
    if (present(type)) then
      initial_condition = type
      secondary_ic = type
+   end if
+   if (present(snap)) then
+     if (snap) initial_condition = 'snapshot'
    end if
    call scaling%init
    if (first_time) then
