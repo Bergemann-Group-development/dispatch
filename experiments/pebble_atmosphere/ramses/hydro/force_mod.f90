@@ -28,17 +28,19 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, default)
    class(force_t):: self
+   character(len=*), optional:: default
    integer:: iostat
    real   :: artificial_friction_time
-   character(len=32), save:: type='star_and_planet'
+   character(len=20), save:: type='planet_atmosphere'
    namelist /force_params/ type
    !----------------------------------------------------------------------------
    call trace_begin('force_t%init')
    !$omp critical (input_cr)
    if (first_time) then
      first_time = .false.
+     if (present(default)) type = default
      rewind (io%input)
      read (io%input, force_params, iostat=iostat)
      if (io%master) write (*, force_params)
@@ -47,7 +49,7 @@ SUBROUTINE init (self)
    select case (trim(type))
    case ('single_solenoidal')
      self%selected => single_solenoidal
-   case ('star_and_planet')
+   case ('planet_atmosphere')
      self%selected => star_and_planet
    case ('disk')
      self%selected => disk
@@ -123,23 +125,23 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
         !-----------------------------------------------------------------------
         rp1 = sqrt(xp**2+yp**2+zp**2)
         if (rp1 >= planet%radius) then
-          ff(ix,iy,iz,1) = -newton*xp/rp1**3 
-          ff(ix,iy,iz,2) = -newton*yp/rp1**3  
-          ff(ix,iy,iz,3) = -newton*zp/rp1**3 
+          ff(ix,iy,iz,1) = -newton*xp/rp1**3
+          ff(ix,iy,iz,2) = -newton*yp/rp1**3
+          ff(ix,iy,iz,3) = -newton*zp/rp1**3
         end if
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
         ! The net force in the radial direction increases with increasing x,
-        ! giving that x now points in the radial direction.  It has two 
+        ! giving that x now points in the radial direction.  It has two
         ! contributions:  The centripetal force \Omega^2 x, and the reduction
-        ! of the force of gravity from the central star, which contributs a 
+        ! of the force of gravity from the central star, which contributs a
         ! factor of 2 more, for a total factor of 3.  Vertically, there
         ! is a net force that comes from the projection of the force of
         ! gravity onto the z-axis, and has the same scaling constant as the
         ! radial force, but the opposite sign.
         !-----------------------------------------------------------------------
         ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xp
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp 
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp
       end do
     end do
   end do
@@ -192,7 +194,7 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
   ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
   ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
-  
+
 !  if (m(3)%p == planet%position(3)) then
 !  if (m(2)%p == planet%position(2)) then
 !    if ((m(1)%p < -1600).or.(m(1)%p > 1600)) then
@@ -210,7 +212,7 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   !print *, 'general p X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
   !print *, 'general p y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))
   !print *, 'general p z minmax', minval(ff(:,:,:,3)), maxval(ff(:,:,:,3))
-  
+
  ! ff(:,:,:,1) = d*ff(:,:,:,1) + 2.  * planet%omega(3)*p(:,:,:,2)
  ! ff(:,:,:,2) = d*ff(:,:,:,2) - 0.5 * planet%omega(3)*p(:,:,:,1)
  ! ff(:,:,:,3) = d*ff(:,:,:,3)
@@ -222,6 +224,9 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   call trace_end
 END FUNCTION star_and_planet
 
+!> =============================================================================
+!> Force of gravity from a star, in a rotating disk coordinate system
+!> =============================================================================
 FUNCTION disk (self, time, d, p, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
@@ -253,16 +258,16 @@ FUNCTION disk (self, time, d, p, m) RESULT (ff)
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
         ! The net force in the radial direction increases with increasing x,
-        ! giving that x now points in the radial direction.  It has two 
+        ! giving that x now points in the radial direction.  It has two
         ! contributions:  The centripetal force \Omega^2 x, and the reduction
-        ! of the force of gravity from the central star, which contributs a 
+        ! of the force of gravity from the central star, which contributs a
         ! factor of 2 more, for a total factor of 3.  Vertically, there
         ! is a net force that comes from the projection of the force of
         ! gravity onto the z-axis, and has the same scaling constant as the
         ! radial force, but the opposite sign.
         !-----------------------------------------------------------------------
         ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xp
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp 
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp
       end do
     end do
   end do

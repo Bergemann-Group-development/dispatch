@@ -48,23 +48,35 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   real, dimension(:,:,:,:), pointer:: ff
-  integer:: iv
+  integer:: iv, iostat
+  logical, save:: first_time=.true.
+  character(len=32):: type='planet_atmosphere'
+  namelist /experiment_params/ type
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
+  !$omp critical (io_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input,experiment_params) !, iostat=iostat)
+    if (io%master) write (*,experiment_params)
+  end if
+  !$omp end critical (io_cr)
   !----------------------------------------------------------------------------
   ! Allocate memory and set IC values
   !----------------------------------------------------------------------------
   self%nv = 5
   self%msplit = 3
   call scaling%init
+  call self%initial%init (type)
+  call self%force%init (type)
   self%nv = 5
   self%mhd = .false.
   call self%pebble_patch_t%init
   self%mhd = .false.
   self%nv = 5
   call self%set (bits%static)
-  call self%initial%init
   ff => self%mem(:,:,:,:,1,1)
   call self%initial%selected (self%mesh, ff, self%level)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)

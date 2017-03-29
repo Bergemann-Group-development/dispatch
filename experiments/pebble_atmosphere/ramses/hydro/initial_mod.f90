@@ -18,8 +18,8 @@ MODULE initial_mod
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
-    character(len=20) :: initial_condition = 'planet_atmosphere'
-    character(len=20) :: secondary_ic      = 'planet_atmosphere'    
+    character(len=20) :: initial_condition
+    character(len=20) :: secondary_ic
     real:: b0(3)
     real:: gamma
     real:: v_head, v_accrete
@@ -38,8 +38,9 @@ CONTAINS
 !> =============================================================================
 !> Setup an initial state, with head wind speed and accretion speed
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, type)
    class(initial_t):: self
+   character(len=*), optional:: type
    logical, save:: first_time=.true.
    character(len=20), save:: initial_condition = 'planet_atmosphere'
    character(len=20), save:: secondary_ic = 'planet_atmosphere'
@@ -47,9 +48,12 @@ SUBROUTINE init (self)
    integer :: iostat
    !----------------------------------------------------------------------------
    call trace%begin('initial_t%init')
+   if (present(type)) then
+     initial_condition = type
+     secondary_ic = type
+   end if
    call scaling%init
    if (first_time) then
-     initial_condition = self%initial_condition
      first_time = .false.
      rewind (io%input); read (io%input, initial_params, iostat=iostat)
      if (io%master) write (*, initial_params)
@@ -57,6 +61,8 @@ SUBROUTINE init (self)
    self%initial_condition = initial_condition
    self%secondary_ic = secondary_ic
    select case(trim(self%initial_condition))
+     case('star_and_planet')
+       self%selected => planet_atmosphere
      case('planet_atmosphere')
        self%selected => planet_atmosphere
      case('snapshot')
@@ -68,6 +74,8 @@ SUBROUTINE init (self)
        error stop "initial condition not understood"
      end select
    select case(trim(self%secondary_ic))
+     case('star_and_planet')
+       self%second_selected => planet_atmosphere
      case('planet_atmosphere')
        self%second_selected => planet_atmosphere
      case('snapshot')
