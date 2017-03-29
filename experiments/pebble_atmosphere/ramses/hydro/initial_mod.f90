@@ -205,8 +205,6 @@ SUBROUTINE disk (self, m, mem, level)
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr
-  print*,'INIT',m%p,planet%position
-  print*,'INIT',i%px,i%py,i%pz,self%mhd,planet%omega(3)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz) - planet%position(3)
@@ -235,7 +233,6 @@ SUBROUTINE disk (self, m, mem, level)
         mem(ix,iy,iz,i%px) = d*ux
         mem(ix,iy,iz,i%py) = d*uy
         mem(ix,iy,iz,i%pz) = d*uz
-        if (ix==m(1)%gn/2.and.iy==m(2)%gn/2) print *,iz,x,z,uy,d
         if (self%mhd) then
           mem(ix,iy,iz,i%bx) = b0(1)
           mem(ix,iy,iz,i%by) = b0(2)

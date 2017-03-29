@@ -143,7 +143,7 @@ SUBROUTINE update (self)
       ! If spherical inner BCs, save the incoming values
       !------------------------------------------------------------------------
       if (self%boundaries%is_set (bits%spherical)) then
-        print *, self%id, 'BOUNDARY CONDITION: spherical'
+        if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
         if (self%nw > 1) then
           it = self%it
           do iv=1,self%nv

@@ -3,6 +3,7 @@
 !> in-between mesh points lo and li, or/and in-between mesh points ui and uo.
 !> =============================================================================
 MODULE boundaries_mod
+  USE io_mod
   USE trace_mod
   USE mpi_mod
   USE bits_mod
@@ -84,7 +85,7 @@ SUBROUTINE condition (self, f, operator)
   end if
   m => self%m
   if (self%is_set(bits%xl+bits%xu)) then
-    print *, 'BOUNDARY CONDITION: x-direction'
+    if (io%verbose>1) print *, 'BOUNDARY CONDITION: x-direction'
     m1 => self%m(2)
     m2 => self%m(1)
     do i=m(3)%lb,m(3)%ub
@@ -92,7 +93,7 @@ SUBROUTINE condition (self, f, operator)
     end do
   end if
   if (self%is_set(bits%yl+bits%yu)) then
-    print *, 'BOUNDARY CONDITION: y-direction'
+    if (io%verbose>1) print *, 'BOUNDARY CONDITION: y-direction'
     m1 => self%m(1)
     m2 => self%m(2)
     do i=m(3)%lb,m(3)%ub
@@ -100,7 +101,7 @@ SUBROUTINE condition (self, f, operator)
     end do
   end if
   if (self%is_set(bits%zl+bits%zu)) then
-    print *, 'BOUNDARY CONDITION: z-direction'
+    if (io%verbose>1) print *, 'BOUNDARY CONDITION: z-direction'
     m1 => self%m(1)
     m2 => self%m(3)
     do i=m(2)%lb,m(2)%ub
