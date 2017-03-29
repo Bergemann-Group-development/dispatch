@@ -68,9 +68,13 @@ SUBROUTINE init (self)
   ff => self%mem(:,:,:,:,1,1)
   call self%initial%selected (self%mesh, ff, self%level)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
-  do iv=self%i_px,self%i_pz
-    call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
-  end do
+  if (all(abs(self%position) < self%ds)) then
+    call self%set (bits%has_BC)
+    call self%boundaries%set (bits%spherical)
+    do iv=self%i_px,self%i_pz
+      call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
+    end do
+  end if
   call self%output
   call trace_end
 END SUBROUTINE init

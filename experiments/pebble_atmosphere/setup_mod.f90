@@ -61,20 +61,6 @@ SUBROUTINE init (self, label)
   call self%rubiks_t%init_hierarchy (label)
   call self%task_list%remove_parents
   print*, 'n_initial, n_add =', scene%n_initial, scene%n_add
-  link => self%task_list%head
-  do while (associated(link))
-    task => link%task
-    select type(task)
-      class is (experiment_t)
-        patch => task
-    
-      if (all(abs(patch%position) < patch%ds)) then
-        call patch%set (bits%has_BC)
-        call patch%boundaries%set (bits%spherical)
-      end if
-    end select
-    link => link%next
-  end do
   if (dp_reader%active) call dp_reader%cleanup
   call trace_end
 END SUBROUTINE init
