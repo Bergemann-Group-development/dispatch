@@ -224,7 +224,7 @@ END SUBROUTINE
 SUBROUTINE edge_boundary_conditions (self, ii)
   class(experiment_t):: self
   integer, optional:: ii
-  real, dimension(:,:,:), pointer:: d, e, p, u
+  real, dimension(:,:,:), pointer:: d, e, p, u, k
   integer:: iv
   !-----------------------------------------------------------------------------
   ! Edge boundary conditions
@@ -233,17 +233,21 @@ SUBROUTINE edge_boundary_conditions (self, ii)
   d => self%mem(:,:,:,self%i_d,self%it,1)
   e => self%mem(:,:,:,self%i_e,self%it,1)
   allocate (u(size(d,1),size(d,2),size(d,3)))
+  allocate (k(size(d,1),size(d,2),size(d,3)))
   call self%boundaries%extrapolate (d)
-  u = e/d
-  call self%boundaries%symmetric (e)
-  e = u*d
+  k = 0.0
   do iv=self%i_px,self%i_pz
     p => self%mem(:,:,:,iv,self%it,1)
+    k = k+p**2
     u = p/d
     call self%boundaries%symmetric (u)
     p = u*d
   end do
-  deallocate (u)
+  k = 0.5*k/d
+  u = (e-k)/d
+  call self%boundaries%symmetric (u)
+  e = u*d+k
+  deallocate (u,k)
   call trace%end
 END SUBROUTINE edge_boundary_conditions
 
