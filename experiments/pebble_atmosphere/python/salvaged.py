@@ -33,10 +33,15 @@ def get_data(time,t_eps,datadir,prefix='',verbose=False, ThisPatch='', gamma=1.4
         sg = (gamma-1.)*sc.scaling().temp
         for ii in range(0,p.data.shape[0]):
             for ij in range(0,p.data.shape[1]):
-                p.velx[ii,ij,:] = [a/b for a,b in zip(p.data[ii,ij,:,p.varidx['p1']], p.data[ii,ij,:,p.varidx['d']])]
-                p.vely[ii,ij,:] = [a/b for a,b in zip(p.data[ii,ij,:,p.varidx['p2']], p.data[ii,ij,:,p.varidx['d']])]
-                p.velz[ii,ij,:] = [a/b for a,b in zip(p.data[ii,ij,:,p.varidx['p3']], p.data[ii,ij,:,p.varidx['d']])]
-                p.temp[ii,ij,:] = [a/b*sg for a,b in zip(p.data[ii,ij,:,p.varidx['e']], p.data[ii,ij,:,p.varidx['d']])]                                                          
+                for ik in range(0,p.data.shape[2]):
+                    p.velx[ii,ij,ik] = p.data[ii,ij,ik,p.varidx['p1']]/p.data[ii,ij,ik,p.varidx['d']]
+                    p.vely[ii,ij,ik] = p.data[ii,ij,ik,p.varidx['p2']]/p.data[ii,ij,ik,p.varidx['d']]
+                    p.velz[ii,ij,ik] = p.data[ii,ij,ik,p.varidx['p3']]/p.data[ii,ij,ik,p.varidx['d']]
+                    px = p.data[ii,ij,ik,p.varidx['p1']]
+                    py = p.data[ii,ij,ik,p.varidx['p2']]
+                    pz = p.data[ii,ij,ik,p.varidx['p3']]
+                    k = 0.5*(px**2+py**2+pz**2)/p.data[ii,ij,ik,p.varidx['d']]
+                    p.temp[ii,ij,ik] = (p.data[ii,ij,ik,p.varidx['e']] - k)/p.data[ii,ij,ik,p.varidx['d']] * sg                                                       
     return patches
 
 def make_yt_dict(patches):
@@ -74,9 +79,9 @@ def make_yt_dict(patches):
                 #velocity_x=p.velx,
                 #velocity_y=p.vely,
                 #velocity_z=p.velz,
-                velocity_x=p.data[:,:,:,p.varidx['v1']],
-                velocity_y=p.data[:,:,:,p.varidx['v2']],
-                velocity_z=p.data[:,:,:,p.varidx['v3']],
+                velocity_x=p.velx,
+                velocity_y=p.vely,
+                velocity_z=p.velz,
                 dx=p.dx,
                 temperature=p.temp))
 
