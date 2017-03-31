@@ -102,8 +102,8 @@ FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
         ! giving an equilbrium velocity in the x-direction that is positive
         ! (faster rotation) for a positive y-displacement
         !-----------------------------------------------------------------------
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - planet%omega(3)**2*zs
-        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + planet%omega(3)**2*ys
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zs
+        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) + 3.0*planet%omega(3)**2*ys
       end do
     end do
   end do

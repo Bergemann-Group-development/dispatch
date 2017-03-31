@@ -1,5 +1,4 @@
 !> =============================================================================
-!> =============================================================================
 !> RAMSES Godunov solvers
 !>
 !> godunov_fine
@@ -10,6 +9,10 @@
 !>     trace3d:qm                 +......+---+---+
 !>     cmpflxm                    +......+---+
 !>       riemann%hllc             +......+
+!>
+!> Note that it is NECESSARY to have a call to courant_condition here, after
+!> ctoprim (which calculates an up-to-date self%u_max), and before trace3d,
+!> which needs the new self%dtime
 !> =============================================================================
 MODULE mhd_mod
   !.............................................................................
@@ -101,7 +104,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
-  integer:: n(3), m, i
+  integer:: n(3), m, i, l(3), u(3)
   integer, save:: itimer=0
   real, dimension(:,:,:,:), pointer:: p
   real, dimension(:,:,:), pointer:: d, e
@@ -154,12 +157,13 @@ SUBROUTINE update (self)
   ! Optional friction subtracted from external force (per unit volume)
   !-----------------------------------------------------------------------------
   if (friction > 0.0) then
-    allocate (tmp(size(p,1),size(p,2),size(p,3)))
-    tmp = self%dtime*friction*sqrt(self%gamma*(self%gamma-1.0)*e/d)/self%size(1)
+    l = self%mesh%lb
+    u = self%mesh%ub
     do i=1,3
-      self%ff(:,:,:,i) = self%ff(:,:,:,i) - tmp*p(:,:,:,i)
+      self%ff(l(1):u(1),l(2):u(2),l(3):u(3),i) = &
+      self%ff(l(1):u(1),l(2):u(2),l(3):u(3),i) - friction*&
+            p(l(1):u(1),l(2):u(2),l(3):u(3),i)
     end do
-    deallocate (tmp)
   end if
   !-----------------------------------------------------------------------------
   ! Godunov solver

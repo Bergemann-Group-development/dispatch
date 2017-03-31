@@ -107,12 +107,14 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         ! the Hill sphere, so we will probably only be seeing effects of the
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
-        mem(ix,iy,iz,3) = d*(0.5*omega(3)*y + self%v_head)  ! azimuthal speed
-        mem(ix,iy,iz,4) = d*self%v_accrete                  ! accretion speed
+        mem(ix,iy,iz,3) = d*(1.5*omega(3)*y - self%v_head)  ! azimuthal speed
+        mem(ix,iy,iz,4) = -d*self%v_accrete                 ! accretion speed
         mem(ix,iy,iz,5) = 0.0                               ! vertical speed
-        !mem(ix,iy,iz,6) = b0(1)
-        !mem(ix,iy,iz,7) = b0(2)
-        !mem(ix,iy,iz,8) = b0(3)
+        if (self%mhd) then
+          mem(ix,iy,iz,6) = b0(1)
+          mem(ix,iy,iz,7) = b0(2)
+          mem(ix,iy,iz,8) = b0(3)
+        end if
       end do
     end do
   end do

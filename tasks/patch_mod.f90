@@ -985,7 +985,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   if (io%master .and. io%verbose>=-1) then
-    print'(a,3x,"time:",2f10.6)', 'patch_mod::output: file= '//trim(filename), time, self%time
+    print'(a,3x,"time:",2f13.6)', 'patch_mod::output: file= '//trim(filename), time, self%time
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   write (io%data_unit,'(1p,e18.10,6(2x,3e18.10)1x,i3.1,1x,e10.3)') time, self%position, self%ds, &
