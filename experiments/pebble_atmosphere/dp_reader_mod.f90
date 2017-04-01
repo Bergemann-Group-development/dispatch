@@ -181,22 +181,23 @@ LOGICAL FUNCTION the_same(m, p, level)
   integer :: level
   !.....................................................................
   integer :: i
-  real (kind=8) :: sz, pllc, purc, mllc, murc
+  real (kind=8) :: sz, pllc, purc, mllc, murc, mdif
   !---------------------------------------------------------------------
   the_same = .true.
   do i = 1,3
     if (m(i)%n > 1) then                                                ! ignore collapsed dimensions
+      mdif = p%ds(i)*0.1
       sz = m(i)%s/m(i)%n
       pllc = p%position(i)-0.5_8*(p%n(i)*p%ds(i))
       purc = p%position(i)+0.5_8*(p%n(i)*p%ds(i))
       mllc = m(i)%p-0.5_8*m(i)%s
       murc = m(i)%p+0.5_8*m(i)%s
-    if (abs(m(i)%p - p%position(i)) > 1d-7) the_same = .false.
+    if (abs(m(i)%p - p%position(i)) > mdif) the_same = .false.
      ! if (sz /= p%ds(i))           the_same = .false.
      ! if (p1%level /= p2%level)            the_same = .false.
       if (m(i)%n /= p%n(i))        the_same = .false.
-      if (abs(pllc-mllc)> 1d-7) the_same =.false.
-      if (abs(purc-murc)> 1d-7) the_same =.false.
+      if (abs(pllc-mllc)> mdif) the_same =.false.
+      if (abs(purc-murc)> mdif) the_same =.false.
     end if
   end do
 END FUNCTION the_same
