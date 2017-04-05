@@ -5,7 +5,6 @@
 MODULE force_mod
   USE io_mod
   USE trace_mod
-  USE vector_mod
   USE mesh_mod
   USE random_mod
   implicit none
