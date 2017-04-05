@@ -4,7 +4,6 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
-  USE boundary_mod
   USE mhd_mod
   USE pboundary_mod
   USE initial_mod
@@ -13,7 +12,6 @@ MODULE experiment_mod
   private
 
   type, public, extends(mhd_t):: experiment_t
-    type(boundary_t):: boundary
   contains
     procedure :: init => init_experiment
     procedure :: update => update_experiment

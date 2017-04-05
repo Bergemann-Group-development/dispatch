@@ -24,9 +24,9 @@ MODULE patch_mod
   integer, parameter:: ndim = 3
   type, extends(task_t), public:: patch_t
     real(kind=KindScalarVar), dimension(:,:,:,:,:,:), pointer:: mem      => null()
-    real, dimension(:,:,:,:,:),   pointer:: vgas     => null()
-    real, dimension(:,:,:,:),     pointer:: density  => null()
-    real, dimension(:,:,:,:),     pointer:: pressure => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:,:),   pointer:: vgas     => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer:: density  => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:),     pointer:: pressure => null()
     class(mesh_t), dimension(:), pointer:: mesh => null()
     real:: courant                      ! courant number
     real:: gamma=1.0                    ! gas gamma
