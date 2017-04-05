@@ -415,6 +415,7 @@ SUBROUTINE CopyToZeus (self)
   !$omp threadprivate (first_time)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
   integer, save:: itimer=0
+  type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace_begin ('zeus_mhd_mod%CopyToZeus', itimer=itimer)
 
@@ -469,6 +470,13 @@ SUBROUTINE CopyToZeus (self)
   call bndyflgs
   call bndyall
   if (first_time) first_time = .false.
+
+  if (self%do_pebbles) then
+    associate (v1=>self%vgas(:,:,:,1,self%it),v2=>self%vgas(:,:,:,2,self%it),v3=>self%vgas(:,:,:,3,self%it))
+    call get_vel (v1, v2, v3)
+    end associate
+    self%pressure(:,:,:,self%it) = self%mem(:,:,:,idx%e1,self%it,1) * (self%gamma - 1.0)
+  end if
 
   courno = self%courant
   dt = self%dt(self%it)

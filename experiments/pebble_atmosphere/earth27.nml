@@ -99,6 +99,14 @@ secondary_ic='planet_atmosphere'
  detailed_timer=f
  friction = 0.0
 /
+&zeus_params
+ gamma=1.4
+ trnvrsn=0
+ dtinit=1.0e-3
+ itote=0
+ qlin=0.1
+ qcon=2.0
+/
 
 &refine_params
 msplit=3
@@ -111,3 +119,5 @@ refine_level = 5, 6, 7
  time_order=2
 /
 
+&experiment_params
+/
