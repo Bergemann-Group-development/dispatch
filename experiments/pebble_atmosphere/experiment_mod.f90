@@ -64,7 +64,7 @@ SUBROUTINE init (self)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input,experiment_params) !, iostat=iostat)
+    read (io%input,experiment_params)
     if (io%master) write (*,experiment_params)
   end if
   !$omp end critical (io_cr)
@@ -72,15 +72,17 @@ SUBROUTINE init (self)
   ! Allocate memory and set IC values
   !----------------------------------------------------------------------------
   self%nv = 5
+  self%mhd = .false.
   self%msplit = 3
   call scaling%init
   call self%initial%init (type,snapshot)
   call self%force%init (type)
-  self%nv = 5
-  self%mhd = .false.
+  !self%nv = 5
+  !self%mhd = .false.
   call self%pebble_patch_t%init
-  self%mhd = .false.
-  self%nv = 5
+  ! In the case that we're using ZEUS, `self%nv` should now be 10.
+  !self%mhd = .false.
+  !self%nv = 5
   call self%set (bits%static)
   ff => self%mem(:,:,:,:,1,1)
   call self%initial%selected (self%mesh, ff, self%level)
@@ -268,7 +270,9 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   u = (e-k)/d                                   ! internal energy
   call self%boundaries%symmetric (u)            ! zero gradient
   e = u*d+k                                     ! reconstruct total energy
+
   deallocate (u,k)
+  nullify (d,e,p)
   call trace%end
 END SUBROUTINE edge_boundary_conditions
 
