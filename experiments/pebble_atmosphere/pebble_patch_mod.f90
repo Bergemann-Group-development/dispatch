@@ -16,6 +16,7 @@ MODULE pebble_patch_mod
   USE omp_mod
   USE omp_timer_mod
   USE link_mod
+  USE kinds_mod
   USE task_mod
   USE patch_mod
   USE mhd_mod
@@ -892,7 +893,7 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
   !.............................................................................
   real:: w(3), pos(3), v(3)
   integer:: ii(3), j, k
-  real, dimension(:,:,:,:), pointer:: velocity
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: velocity
   !-----------------------------------------------------------------------------
   ! By using a 4-D pointer we can treat the velocity component as a 3D+time
   ! array, which can be passed to interpolate_r4.
@@ -950,7 +951,7 @@ END FUNCTION
 !> =============================================================================
 FUNCTION interpolate_r4 (self, field, i, w) RESULT (out)
   class(pebble_patch_t):: self
-  real, dimension(:,:,:,:), intent(in):: field
+  real(kind=KindScalarVar), dimension(:,:,:,:), intent(in):: field
   integer:: i(3)
   real, intent(in):: w(3)
   real:: out

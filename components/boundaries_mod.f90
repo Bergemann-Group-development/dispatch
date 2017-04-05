@@ -5,6 +5,7 @@
 MODULE boundaries_mod
   USE io_mod
   USE trace_mod
+  USE kinds_mod
   USE mpi_mod
   USE bits_mod
   USE mesh_mod
@@ -73,7 +74,7 @@ END FUNCTION is_set
 !> =============================================================================
 SUBROUTINE condition (self, f, operator)
   class(boundaries_t):: self
-  real, dimension(:,:,:):: f
+  real(kind=KindScalarVar), dimension(:,:,:):: f
   procedure(make_symmetric), pointer:: operator
   !.............................................................................
   class(mesh_t), pointer:: m(:), m1, m2
@@ -116,7 +117,7 @@ END SUBROUTINE condition
 !> =============================================================================
 SUBROUTINE symmetric (self, mem)
   class(boundaries_t):: self
-  real, dimension(:,:,:), pointer:: mem
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
   procedure(make_symmetric), pointer:: operator => make_symmetric
   !-----------------------------------------------------------------------------
   call self%condition (mem, operator)
@@ -127,7 +128,7 @@ END SUBROUTINE symmetric
 !> =============================================================================
 SUBROUTINE antisymmetric (self, mem)
   class(boundaries_t):: self
-  real, dimension(:,:,:), pointer:: mem
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
   procedure(make_symmetric), pointer:: operator => make_antisymmetric
   !-----------------------------------------------------------------------------
   call self%condition (mem, operator)
@@ -138,7 +139,7 @@ END SUBROUTINE antisymmetric
 !> =============================================================================
 SUBROUTINE extrapolate (self, mem)
   class(boundaries_t):: self
-  real, dimension(:,:,:), pointer:: mem
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
   procedure(make_symmetric), pointer:: operator => make_extrapolated
   !-----------------------------------------------------------------------------
   call self%condition (mem, operator)
@@ -149,7 +150,7 @@ END SUBROUTINE extrapolate
 !> =============================================================================
 SUBROUTINE make_symmetric (self, f, m1, m2, lower, upper, transpose)
   class(boundaries_t):: self
-  real, dimension(:,:):: f
+  real(kind=KindScalarVar), dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
   integer:: i, j
@@ -193,7 +194,7 @@ END SUBROUTINE make_symmetric
 !> =============================================================================
 SUBROUTINE make_antisymmetric (self, f, m1, m2, lower, upper, transpose)
   class(boundaries_t):: self
-  real, dimension(:,:):: f
+  real(kind=KindScalarVar), dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
   integer:: i, j
@@ -238,7 +239,7 @@ END SUBROUTINE make_antisymmetric
 !> =============================================================================
 SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose)
   class(boundaries_t):: self
-  real, dimension(:,:):: f
+  real(kind=KindScalarVar), dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
   integer:: i, j
@@ -301,8 +302,8 @@ END SUBROUTINE set_stagger
 !> =============================================================================
 SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
   class(boundaries_t)      :: self
-  real, dimension(:,:,:) :: mem
-  real                   :: v
+  real(kind=KindScalarVar), dimension(:,:,:) :: mem
+  real :: v
   class(mesh_t), pointer :: m(:)
   integer                :: iv
   logical, optional      :: maxfill
@@ -335,7 +336,7 @@ END SUBROUTINE spherical0
 !> =============================================================================
 SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
   class(boundaries_t)      :: self
-  real, dimension(:,:,:) :: mem, v
+  real(kind=KindScalarVar), dimension(:,:,:) :: mem, v
   class(mesh_t), pointer :: m(:)
   integer                :: iv
   logical, optional      :: maxfill
@@ -387,7 +388,7 @@ END SUBROUTINE spherical3
 !> =============================================================================
 SUBROUTINE spherical_extrapolate (self, mem, v, m, iv)
   class(boundaries_t)      :: self
-  real, dimension(:,:,:) :: mem, v
+  real(kind=KindScalarVar), dimension(:,:,:) :: mem, v
   class(mesh_t), pointer :: m(:)
   integer                :: iv
   !............................................................................

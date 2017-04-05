@@ -3,6 +3,7 @@ MODULE dp_reader_mod
   USE io_mod
   USE io_unit_mod
   USE index_mod
+  USE kinds_mod
   USE interpolate_mod
   USE link_mod
   USE trace_mod
@@ -139,7 +140,7 @@ END SUBROUTINE read_patches
 SUBROUTINE snapshot (self, mesh, mem, level, used)
   class(dp_reader_t) :: self
   class(mesh_t), pointer, dimension(:) :: mesh
-  real, dimension(:,:,:,:), pointer  :: mem
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer  :: mem
   integer :: level
   !.....................................................................
   type(index_t):: idx

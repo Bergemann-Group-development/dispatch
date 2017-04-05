@@ -15,6 +15,7 @@ MODULE mhd_mod
   USE mesh_mod
   USE timestep_mod
   USE index_mod
+  USE force_mod
   implicit none
   private
 
@@ -36,6 +37,7 @@ MODULE mhd_mod
     logical:: mhd = .true.
     type(zeus_boundaries_t):: btypes
     integer:: i_et=0
+    type(force_t):: force
   contains
     procedure:: init => init_zeus
     procedure:: update => update_zeus

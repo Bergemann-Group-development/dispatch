@@ -5,6 +5,7 @@ MODULE experiment_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
+  USE kinds_mod
   USE pebble_patch_mod
   USE initial_mod
   !USE timestep_mod
@@ -50,7 +51,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
-  real, dimension(:,:,:,:), pointer:: ff
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: ff
   integer:: iv, iostat
   logical, save:: first_time=.true.
   character(len=32):: type='planet_atmosphere'
@@ -177,8 +178,8 @@ SUBROUTINE boundary_conditions (self, it)
   class(experiment_t):: self
   integer:: it
   !.............................................................................
-  real, dimension(:,:,:,:), pointer:: mem=>null()
-  real, dimension(:,:,:), pointer:: d, e
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem=>null()
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
   real(8), dimension(3):: h
   integer:: iv, nb,i
   !-----------------------------------------------------------------------------
@@ -240,7 +241,7 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   class(experiment_t):: self
   integer:: it
   integer, optional:: ii
-  real, dimension(:,:,:), pointer:: d, e, p, u, k
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e, p, u, k
   integer:: iv
   !-----------------------------------------------------------------------------
   ! Edge boundary conditions
