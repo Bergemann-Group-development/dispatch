@@ -85,6 +85,7 @@ SUBROUTINE init (self)
   call self%initial%selected (self%mesh, ff, self%level)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   if (trim(type)/='disk' .and. all(abs(self%position) < self%ds)) then
+    print *, 'experiment_t%init: setting spherical BC bits on patch', self%id
     call self%set (bits%has_BC)
     call self%boundaries%set (bits%spherical)
     do iv=self%i_px,self%i_pz
@@ -193,6 +194,7 @@ SUBROUTINE boundary_conditions (self, it)
     !---------------------------------------------------------------------------
     if (self%boundaries%is_set (bits%spherical)) then
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
+      print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
       allocate (mem(size(self%mem,1),size(self%mem,2),size(self%mem,3),2))
       mem(:,:,:,1) = self%mem(:,:,:,self%i_d,it,1)
       mem(:,:,:,2) = self%mem(:,:,:,self%i_e,it,1)

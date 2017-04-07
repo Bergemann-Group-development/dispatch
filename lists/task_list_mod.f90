@@ -19,6 +19,7 @@ MODULE task_list_mod
   USE timer_mod
   USE mpi_mod
   USE mpi_mesg_mod
+  USE link_mod
   USE list_mod
   USE task_mod
   USE patch_mod
@@ -36,6 +37,7 @@ MODULE task_list_mod
     real(8):: sync_time=-1.0, sync_next=-1.0
   contains
     procedure:: init
+    procedure:: init_bdries
     procedure:: execute
     procedure:: update
     procedure:: find_task
@@ -65,7 +67,6 @@ CONTAINS
 !> neighbor lists, and finally checking if they are ready to execute
 !> =============================================================================
 SUBROUTINE init (self, name)
-  USE link_mod
   class(task_list_t):: self
   character(len=*), optional:: name
   class(link_t), pointer:: link
@@ -94,6 +95,59 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !> =============================================================================
+!> Initialize boundary bits, which may (optionally) be used to apply boundary
+!> conditions in experiment_t%update() procedures
+!> =============================================================================
+SUBROUTINE init_bdries (self)
+  class(task_list_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  call trace%begin('task_list_t%init_bdries')
+  print *,'task_list%lc =', self%lc
+  print *,'task_list%uc =', self%uc
+  link => self%head
+  do while (associated(link))
+    self%lc = min(self%lc, link%task%position)
+    self%uc = max(self%uc, link%task%position)
+    link => link%next
+  end do
+  link => self%head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (experiment_t)
+    !---------------------------------------------------------------------------
+    ! If at edge, set boundary bits
+    !---------------------------------------------------------------------------
+    if (task%position(1) <= self%lc(1)) call task%boundaries%set (bits%xl)
+    if (task%position(2) <= self%lc(2)) call task%boundaries%set (bits%yl)
+    if (task%position(3) <= self%lc(3)) call task%boundaries%set (bits%zl)
+    if (task%position(1) >= self%uc(1)) call task%boundaries%set (bits%xu)
+    if (task%position(2) >= self%uc(2)) call task%boundaries%set (bits%yu)
+    if (task%position(3) >= self%uc(3)) call task%boundaries%set (bits%zu)
+    if (task%boundaries%status /= 0) print '(2i6,2(2x,a6),o9,2(2x,3f10.0))', &
+      task%id, task%level, 'BCs: ', formatted(task), task%boundaries%status, &
+      task%size, task%position
+    end select
+    link => link%next
+  end do
+  call trace_end
+contains
+  function formatted (task) result (out)
+  class(experiment_t), pointer:: task
+  character(len=6):: out
+  out = '......'
+  if (task%boundaries%is_set(bits%xl))  out(1:1) = 'T'
+  if (task%boundaries%is_set(bits%xu))  out(2:2) = 'T'
+  if (task%boundaries%is_set(bits%yl))  out(3:3) = 'T'
+  if (task%boundaries%is_set(bits%yu))  out(4:4) = 'T'
+  if (task%boundaries%is_set(bits%zl))  out(5:5) = 'T'
+  if (task%boundaries%is_set(bits%zu))  out(6:6) = 'T'
+  end function formatted
+END SUBROUTINE init_bdries
+
+!> =============================================================================
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,
 !> everything local to self%update is thread private.
 !> =============================================================================
@@ -105,6 +159,7 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists, and set virtual and boundary bits
   !-----------------------------------------------------------------------------
+  call self%init_bdries
   call self%init_all_nbors
   call self%reset_status
   !-----------------------------------------------------------------------------
