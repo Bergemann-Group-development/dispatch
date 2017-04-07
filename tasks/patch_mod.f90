@@ -363,7 +363,6 @@ SUBROUTINE init (self)
     write (io_unit%log,*) mpi%rank, 'task', self%id, ' is root grid'
     call self%set(bits%root_grid)
   end if
-  self%llc_cart = self%position
   !-----------------------------------------------------------------------------
   ! Special handling of collapsed dimensions
   !-----------------------------------------------------------------------------
@@ -372,10 +371,11 @@ SUBROUTINE init (self)
     self%box = 1                                ! make sure it is non-zero
     self%ds = minval(self%ds)                   ! then set to reasonable val
     self%size = self%ds                         ! one cell thick
-    self%llc_cart = self%position
   end where
+  self%llc_cart = self%position - 0.5_8*self%size
   if (self%mesh_type == mesh_types%Cartesian) then
     self%llc_nat = self%llc_cart
+    self%centre_nat = self%position
   end if
   !-----------------------------------------------------------------------------
   ! Initialize and allocate the meshes, afterwards imposing the external values
@@ -1267,7 +1267,11 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
   end select
   ! account for periodic wrapping
   out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
-
+  if (task%id==io%id_debug .or. self%id==io%id_debug) then
+    print 1,'distance: self', self%id, self%position, self%size, self%box
+    print 1,'distance: task', task%id, task%position, task%size, task%box, out
+    1 format(a,i5,4(3x,3f10.2))
+  end if
 END FUNCTION distance_curvilinear
 
 !> =============================================================================
