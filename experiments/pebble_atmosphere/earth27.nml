@@ -1,9 +1,14 @@
+&timer_params
+ sec_per_report=2
+/
+
 &io_params
  do_trace=f
- verbose=1
+ verbose=0
  do_debug=f
  do_output=t
  do_legacy=t
+ !id_debug=154
 /
 &rubiks_params
  n_levels=4                         ! # of refinement levels in for the rubiks cube
@@ -26,8 +31,6 @@ gamma=1.4
  solid_density_cgs=3.               ! density of a pebble
  pebble_size_cm=1.                  ! size of a pebble
 /
-
-
 
 &planet_params
  radius_r_earth=27.0 
@@ -54,9 +57,12 @@ gamma=1.4
  omega = 0.0,0.0,1.0
 /
 
+&experiment_params
+ type='planet_atmosphere'
+/
 &initial_params
-initial_condition='snapshot'
-secondary_ic='planet_atmosphere'
+!initial_condition='snapshot'
+!secondary_ic='planet_atmosphere'
 /
 
 &snapshot_params
@@ -68,14 +74,14 @@ secondary_ic='planet_atmosphere'
 
 
 &patch_params
- n=24,24,24
+ n=3*32
  nt=5
  grace=0.0
  courant=0.2
 !dt_fixed=0.001
 /
 &out_params
- end_time=1500.
+ end_time=400.
  out_time=20.
  print_time=0.01
  guard_zones=t
@@ -91,13 +97,13 @@ secondary_ic='planet_atmosphere'
 &ramses_params
  gamma=1.4
  slope_type=2
- courant_factor=0.2
+ courant_factor=0.8
  smallr=1e-20
  smallc=1e-3
  do_isothermal=f
  csound=0.2
  detailed_timer=f
- friction = 0.0
+ friction=0.0
 /
 
 &refine_params
@@ -108,6 +114,5 @@ refine_level = 5, 6, 7
 /
 
 &timestep_params
- time_order=2
+ time_order=0
 /
-

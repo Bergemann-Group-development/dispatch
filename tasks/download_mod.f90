@@ -62,7 +62,7 @@ SUBROUTINE download_link (link, all_cells)
   logical, optional:: all_cells
   class(link_t), pointer:: nbor
   class(patch_t), pointer:: patch
-  logical:: static
+  logical:: static, same
   integer:: nt, nv
   !-----------------------------------------------------------------------------
   call trace_begin('download_t%download')
@@ -74,7 +74,7 @@ SUBROUTINE download_link (link, all_cells)
   else
     nt = patch%nt
     nv = patch%nv
-    static = .true.
+    static = .true.; same = .true.
     if (patch%is_clear(bits%static)) static = .false.
     nbor => link%nbor
     do while (associated(nbor))
@@ -82,15 +82,21 @@ SUBROUTINE download_link (link, all_cells)
         if (io%master.and.io%verbose>4) &
           write (io_unit%log,*) patch%id,nbor%task%id,nbor%task%is_clear(bits%static),nbor%task%level
         if (nbor%task%is_clear(bits%static)) static = .false.
+        if (nbor%needed .and. nbor%task%level /= patch%level) same = .false.
       end if
       nbor => nbor%next
     end do
-
+    !---------------------------------------------------------------------------
+    ! When not all nbors have the same resolution logics inside same_static()
+    ! and different_static() chooses what to do and not to do for each nbor.
+    !---------------------------------------------------------------------------
     if (static) then
       call same_static (link)
-      !call different_static (link)
+      if (.not.same) then
+        call different_static (link)
+      end if
     else
-      write (io_unit%log,*) 'ERROR: moving patches found'
+      error stop 'ERROR: moving patches found'
     end if
   end if
   call patch%check_density (" after download")
@@ -324,8 +330,7 @@ SUBROUTINE different_static (link)
   target => task2patch (link%task)
   n_interp = 0
   m => target%mesh
-  nullify(source)
-  old_score = -1.
+  call reset
   do iz=m(3)%lb,m(3)%lo
     do iy=m(2)%lb,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
@@ -386,19 +391,17 @@ SUBROUTINE different_static (link)
     end do
   end do
   call reset
-
   if (n_interp > 0) then
     !$omp atomic
     download%n_differ = download%n_differ+1
   end if
-
   call trace_end (itimer)
 contains
   subroutine reset
     if (associated(source)) then
       nullify (source)
     end if
-    old_score = -1.
+    old_score = -99.
   end subroutine
 END SUBROUTINE different_static
 
@@ -418,15 +421,14 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score, n_
   cellpos = target%myposition (ii)
   call find_best_nbor  (link, target, cellpos, source, jt, pt, idir, old_score)
   if (.not.associated(source)) then
-    !if (target%id==121) write (io_unit%log,*) 'WARNING: no best_nbor for 121', ii, idir, old_score
+    if (io%verbose>0) write (*,'(a,i5,2x,4i4,f6.1)') &
+      'WARNING: no best_nbor for id, ii, idir, score =', target%id, ii, idir, old_score
     return
-  else
-    !if (target%id==121) write (io_unit%log,*) 'best_nbor for 121', source%id, ii, idir, old_score
   end if
-  
+  !
   ! if the two patches are at the same level, then we should be using `same_static`.
   if (source%level == target%level) return
-
+  !
   !call trace_begin ('download_mod::interpolate_to',2)
   if (io%do_debug) write (io_unit%log,*) 'interpolate_to',target%it,ii,source%id,jt,pt
   it = target%it
@@ -467,19 +469,18 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score, n_
     q = 1.-p
     if (target%id==io%id_debug) &
       write(io_unit%log,'(2(2i5,2x),2(3i4,2x),3f6.2)') target%id, idir, source%id, source%level, ii, jj, pp
-
+    !
     associate (qt1 => source%mem(:,:,:,:,jt(1),1), qt2 => source%mem(:,:,:,:,jt(2),1))
       qint1 = download%interpolate(qt1,jj(1),jj(2),jj(3),iv,p(1),p(2),p(3))
       qint2 = download%interpolate(qt2,jj(1),jj(2),jj(3),iv,p(1),p(2),p(3))
       result(iv) = q(4) * qint1 + p(4) * qint2
     end associate
   end do
-
   ! we now need to account for `target` and `source` potentially having different
   ! coord. systems, and therefore not a one-to-one mapping between vector components.
   call source%MapVectors(result, target, ii, jj, target%mem(ii(1),ii(2),ii(3),1:source%nv,it,1))
   n_interp = n_interp + 1
-
+  !
   !call trace_end
 END SUBROUTINE interpolate_to
 
@@ -506,7 +507,7 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
   if (associated(best)) then
     if (fscore(best) == old_score) then
       if (target%id == io%id_debug) &
-      print *,target%id,'keeping best nbor:', best%id, ' level:', best%level, ' direction:', idir
+      print '(i5,3(3x,a,i5),f6.1)', target%id,'keeping best nbor:', best%id, ' level:', best%level, ' direction:', idir, old_score
       return
     else
       nullify (best)
@@ -535,7 +536,7 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
           best_id = best%id
       end if
     end if
-    if (target%id==io%id_debug.and.adir==3) write (*,'(i4,a,i6,2i4,3f8.2,5(3x,3f8.2))') &
+    if (target%id==io%id_debug.and.adir==1) write (*,'(i4,a,i6,2i4,3f8.2,5(3x,3f8.2))') &
       target%id,' search best_nbor', other%id, target%level, other%level, &
       score, best_score, old_score, abs(pp)/other%size, abs(pp)/other%gsize, pp, &
       (other%position-target%position)/target%size
@@ -548,7 +549,7 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
     call best%time_interval (target%time, jt, pt)
     old_score = best_score
       if (target%id == io%id_debug) &
-      print *,target%id,'picking best nbor:', best%id, ' level:', best%level, ' direction:', idir
+      print '(i5,3(3x,a,i5))', target%id,'picking best nbor:', best%id, ' level:', best%level, ' direction:', idir
   else
       if (target%id == io%id_debug) &
       print *,target%id,'failed'

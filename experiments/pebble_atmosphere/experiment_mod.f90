@@ -156,15 +156,19 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !> =============================================================================
+!> Interface to patch_t%output, for debug printout
 !> =============================================================================
 SUBROUTINE output (self, experiment_name)
   class(experiment_t):: self
   character(len=64), optional:: experiment_name
-  integer:: iv, it
-  if (self%id==14) then
+  integer:: iv, it, m(3)
+  if (self%id==io%id_debug) then
+    m = self%mesh%gn/2
     it = self%iit(self%nt-2)
     do iv=2,4
-      print *,'OUT', real(self%t(it)), iv, self%mem(18,18,16:19,iv,it,1)/self%mem(18,18,16:19,1,it,1)
+      print *,'OUT: t, iv, u(z) =', real(self%t(it)), iv, &
+        self%mem(m(1),m(2),m(3)-2:m(3)+2,iv,it,1)/ &
+        self%mem(m(1),m(2),m(3)-2:m(3)+2, 1,it,1)
     end do
   end if
   call self%patch_t%output

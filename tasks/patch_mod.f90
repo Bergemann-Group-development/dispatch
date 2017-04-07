@@ -405,8 +405,21 @@ SUBROUTINE init (self)
   self%ui = self%mesh%ui
   self%gsize = (self%size*self%gn/self%n)
   self%offset = (self%mesh%lb+self%mesh%ub)/2.0 ! mid point index offset
+  if (self%id == io%id_debug) then
+    print 1,'patch_t%init: position    =', self%position
+    print 1,'patch_t%init: m%p         =', self%mesh%p
+    print 1,'patch_t%init: offset      =', self%offset
+    print 1,'patch_t%init: m%o         =', self%mesh%o
+    print 1,'patch_t%init: centre_nat  =', self%centre_nat
+    print 1,'patch_t%init: centre_cart =', self%centre_cart
+    print 1,'patch_t%init: llc_nat     =', self%llc_nat
+    print 1,'patch_t%init: m%llc_nat   =', self%mesh%llc_nat
+    print 1,'patch_t%init: llc_cart    =', self%llc_cart
+    print 1,'patch_t%init: m%llc_cart  =', self%mesh%llc_cart
+    1 format(a,1p,3e15.6)
+  end if
   !-----------------------------------------------------------------------------
-  ! Measure levels in terms of the reinement factor
+  ! Measure levels in terms of the refinement factor
   !-----------------------------------------------------------------------------
   self%level = log(maxval(self%box)/minval(self%ds))/log(real(self%msplit)) + 0.1
   if (io%verbose>2) &
@@ -505,8 +518,7 @@ FUNCTION myposition (self, ii) RESULT(out)
   !if (self%id == io%id_debug) &
   !  print *,'A', real(cellpos/self%size), real(self%llc_nat)
   cellpos = self%position + (real(ii)-self%offset)*self%ds
-  !if (self%id == io%id_debug) &
-  !  print *,'B',real(cellpos/self%size)
+  if (self%id == io%id_debug) print '(a,3i4,4(3x,3f10.2))', 'mypos:',ii,self%position,self%offset,self%ds,cellpos
   ! convert to Cartesian coords.
   if (self%mesh_type == mesh_types%cylindrical) then
     cellpos = CylindricalToCartesian(cellpos(1), cellpos(2), cellpos(3))
