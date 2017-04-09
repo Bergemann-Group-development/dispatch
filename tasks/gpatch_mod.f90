@@ -4,15 +4,36 @@
 !> solvers, and eliminates the need for a dnload procedure in each one of them.
 !> =============================================================================
 MODULE gpatch_mod
+  USE io_mod
   USE patch_mod
   USE download_mod
+  USE initial_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
+    type(initial_t):: initial
   contains
+    procedure:: init
     procedure:: dnload
   end type
 CONTAINS
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE init (self)
+  class(gpatch_t):: self
+  real, dimension(:,:,:,:), pointer:: ff
+  logical:: ok
+  !-----------------------------------------------------------------------------
+  call self%patch_t%init
+  ff => self%mem(:,:,:,:,1,1)
+  if (io%restart >= 0) then
+    call self%input (io%restart, ok)
+    if (.not.ok) call self%initial%selected (self%mesh, ff, self%level)
+  else
+    call self%initial%selected (self%mesh, ff, self%level)
+  end if
+END SUBROUTINE
 
 !> =============================================================================
 !> =============================================================================

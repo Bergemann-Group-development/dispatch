@@ -17,7 +17,6 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(pebble_patch_t):: experiment_t
-    type(initial_t):: initial
   contains
     procedure :: init
     procedure :: update
@@ -50,7 +49,6 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
-  real, dimension(:,:,:,:), pointer:: ff
   integer:: iv, iostat
   logical:: ok=.true.
   logical, save:: first_time=.true.
@@ -68,7 +66,8 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (io_cr)
   !----------------------------------------------------------------------------
-  ! Allocate memory and set IC values
+  ! Allocate memory and set IC values.  The initial%init (type) specifies the
+  ! type of IC to be applied when the call to gpatch_t%init is made.
   !----------------------------------------------------------------------------
   self%nv = 5
   self%msplit = 3
@@ -81,13 +80,6 @@ SUBROUTINE init (self)
   self%mhd = .false.
   self%nv = 5
   call self%set (bits%static)
-  ff => self%mem(:,:,:,:,1,1)
-  if (io%restart >= 0) then
-    call self%input (io%restart, ok)
-    if (.not.ok) call self%initial%selected (self%mesh, ff, self%level)
-  else
-    call self%initial%selected (self%mesh, ff, self%level)
-  end if
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   if (trim(type)/='disk' .and. all(abs(self%position) < self%ds)) then
     print *, 'experiment_t%init: setting spherical BC bits on patch', self%id
