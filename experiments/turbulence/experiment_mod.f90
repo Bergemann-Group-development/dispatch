@@ -25,7 +25,6 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(mhd_t):: experiment_t
-    type(initial_t):: initial
   contains
     procedure init
     procedure update
@@ -53,12 +52,10 @@ SUBROUTINE init (self)
   self%mhd = self%initial%mhd
   call self%mhd_t%init
   call self%set(bits%static)
-  !----------------------------------------------------------------------------
-  ! Initial conditions
-  !----------------------------------------------------------------------------
-  call self%initial%selected(self%mesh, self%mem(:,:,:,:,1,1))
-  self%time = self%initial%time
-  self%t(self%it) = self%initial%time
+  if (self%initial%time > 0.0) then
+    self%time = self%initial%time
+    self%t(self%it) = self%initial%time
+  end if
   !call self%periodic_grid
   call trace_end (itimer=itimer)
 END SUBROUTINE init

@@ -70,11 +70,10 @@ END SUBROUTINE init
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-SUBROUTINE planet_atmosphere (self, m, mem, level)
+SUBROUTINE planet_atmosphere (self, m, mem)
   class(initial_t) :: self
   real, dimension(:,:,:,:), pointer  :: mem
   class(mesh_t), pointer, dimension(:) :: m
-  integer, optional :: level
   !.............................................................................
   integer :: ix, iy, iz, nr
   real(8) :: x, y, z, r, d, d0, p, ux, uy, uz
@@ -152,11 +151,10 @@ END SUBROUTINE planet_atmosphere
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-SUBROUTINE disk (self, m, mem, level)
+SUBROUTINE disk (self, m, mem)
   class(initial_t) :: self
   real, dimension(:,:,:,:), pointer  :: mem
   class(mesh_t), pointer, dimension(:) :: m
-  integer, optional :: level
   !.............................................................................
   integer :: ix, iy, iz, nr
   real(8) :: x, y, z, r, d, d0, p, ux, uy, uz
