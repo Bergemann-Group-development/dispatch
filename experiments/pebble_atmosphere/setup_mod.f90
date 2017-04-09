@@ -8,7 +8,6 @@ MODULE setup_mod
   USE bits_mod
   USE omp_mod
   USE trace_mod
-  USE dp_reader_mod
   USE units_mod
   USE scaling_mod
   USE planet_mod
@@ -61,7 +60,6 @@ SUBROUTINE init (self, label)
   call self%rubiks_t%init_hierarchy (label)
   call self%task_list%remove_parents
   print*, 'n_initial, n_add =', scene%n_initial, scene%n_add
-  if (dp_reader%active) call dp_reader%cleanup
   call trace_end
 END SUBROUTINE init
 

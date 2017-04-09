@@ -64,8 +64,10 @@ MODULE patch_mod
     procedure:: init
     procedure:: rotate
     procedure:: output                  ! legacy output
+    procedure:: input                   ! legacy input
     procedure:: output_new              ! new output
     procedure:: output_legacy           ! legacy output
+    procedure:: input_legacy            ! legacy input
     procedure:: allocate_mesg           ! allocate a mesg buffer
     procedure:: pack                    ! pack patch into buffer
     procedure:: unpack                  ! unpack buffer into patch
@@ -726,6 +728,24 @@ SUBROUTINE output (self, experiment_name)
 END SUBROUTINE output
 
 !> =============================================================================
+!> Read snapshot from disk
+!> =============================================================================
+SUBROUTINE input (self, snapshot, ok)
+  class(patch_t):: self
+  integer:: snapshot
+  logical:: ok
+  !-----------------------------------------------------------------------------
+  !$omp critical (out_cr)
+  if (io%do_legacy) then
+    if (io%verbose>1) print *, self%id, ' LEGACY INPUT'
+    call self%input_legacy (snapshot, ok)
+  !else
+    !call self%input_new
+  end if
+  !$omp end critical (out_cr)
+END SUBROUTINE input
+
+!> =============================================================================
 !> Write results to disk, using the buffered I/O in output_mod
 !> =============================================================================
 SUBROUTINE output_new (self)
@@ -967,7 +987,6 @@ SUBROUTINE output_legacy (self, experiment_name)
   else
     time = self%out_next
   end if
-
   !-----------------------------------------------------------------------------
   ! Write a log file, with files written by this rank
   !-----------------------------------------------------------------------------
@@ -992,7 +1011,6 @@ SUBROUTINE output_legacy (self, experiment_name)
         self%velocity, self%level, self%quality
   write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
   close (io%data_unit)
-
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
@@ -1007,7 +1025,6 @@ SUBROUTINE output_legacy (self, experiment_name)
   write (io%data_unit,'(3(1i8.1,1x),e10.3,i2.1,1x,a)') self%id, self%iout, self%istep, self%dtime, &
         self%mesh_type, trim(self%kind)
   close (io%data_unit)
-
   !-----------------------------------------------------------------------------
   ! Write a binary file with the data cube.
   !-----------------------------------------------------------------------------
@@ -1042,7 +1059,6 @@ SUBROUTINE output_legacy (self, experiment_name)
           buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
               + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
         end if
-
       call check_error(self, buf, "output 2")
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
@@ -1053,9 +1069,57 @@ SUBROUTINE output_legacy (self, experiment_name)
     end do
   end do
   close (io%data_unit)
-
   call trace_end
 END SUBROUTINE output_legacy
+
+!> =============================================================================
+!> Read snapshot from disk
+!> =============================================================================
+SUBROUTINE input_legacy (self, snapshot, ok)
+  USE iso_fortran_env, only: real32
+  class(patch_t):: self
+  integer:: snapshot
+  logical:: ok
+  character(len=64) filename
+  integer:: iv, l(3), u(3)
+  real(8):: time
+  !-----------------------------------------------------------------------------
+  call trace_begin('patch_mod::input_legacy')
+  !-----------------------------------------------------------------------------
+  ! Read the patch time from the .txt file
+  !-----------------------------------------------------------------------------
+  write (filename,'(a,"/",i4.4,"_",i4.4)') trim(io%inputdir), self%id, snapshot
+  inquire (file=trim(filename)//'.txt', exist=ok)
+  if (.not.ok) return
+  open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
+  read (io%data_unit,*) time
+  close (io%data_unit)
+  self%time = time
+  self%t(self%it) = time
+  !-----------------------------------------------------------------------------
+  ! If guard_zones is true, include the guard zones.
+  !-----------------------------------------------------------------------------
+  l = merge (self%mesh%lb, self%mesh%li, self%guard_zones)
+  u = merge (self%mesh%ub, self%mesh%ui, self%guard_zones)
+  !-----------------------------------------------------------------------------
+  ! Read the binary file with the data cube.
+  !-----------------------------------------------------------------------------
+  inquire (file=trim(filename)//'.dat', exist=ok)
+  if (.not.ok) return
+  open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', &
+    access='direct', status='unknown', recl=real32*product(u-l+1))
+  do iv=1,self%nv
+    read (io%data_unit,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
+  end do
+  if (io%master .and. io%verbose>=0) print*, 'input_legacy: ', trim(filename), time
+  close (io%data_unit)
+  !-----------------------------------------------------------------------------
+  ! Update the iout and out_next for continued experiment
+  !-----------------------------------------------------------------------------
+  self%iout = snapshot+1
+  self%out_next = (int(self%time/self%out_time)+1)*self%out_time
+  call trace_end
+END SUBROUTINE input_legacy
 
 !> =============================================================================
 !> Print info to stdout.  If

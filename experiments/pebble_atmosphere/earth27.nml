@@ -1,8 +1,11 @@
-&timer_params
- sec_per_report=2
-/
+&experiment_params /
+&initial_params /
+&force_params   /
 
+&timer_params sec_per_report=2 /
 &io_params
+ !restart=10
+ !inputdir='data/earth9'
  do_trace=f
  verbose=0
  do_debug=f
@@ -56,23 +59,6 @@ gamma=1.4
  v_accrete_cgs=0.0                  ! accretion speed
  omega = 0.0,0.0,1.0
 /
-
-&experiment_params
- type='planet_atmosphere'
-/
-&initial_params
-!initial_condition='snapshot'
-!secondary_ic='planet_atmosphere'
-/
-
-&snapshot_params
- folder='data/earth27/'
- snap_number=5
- ids=1,159
- time_derivs = f
-/
-
-
 &patch_params
  n=3*32
  nt=5

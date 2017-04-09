@@ -52,10 +52,10 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   real, dimension(:,:,:,:), pointer:: ff
   integer:: iv, iostat
+  logical:: ok=.true.
   logical, save:: first_time=.true.
   character(len=32):: type='planet_atmosphere'
-  logical,save :: snapshot = .false.
-  namelist /experiment_params/ type, snapshot
+  namelist /experiment_params/ type
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
@@ -73,7 +73,7 @@ SUBROUTINE init (self)
   self%nv = 5
   self%msplit = 3
   call scaling%init
-  call self%initial%init (type,snapshot)
+  call self%initial%init (type)
   call self%force%init (type)
   self%nv = 5
   self%mhd = .false.
@@ -82,7 +82,12 @@ SUBROUTINE init (self)
   self%nv = 5
   call self%set (bits%static)
   ff => self%mem(:,:,:,:,1,1)
-  call self%initial%selected (self%mesh, ff, self%level)
+  if (io%restart >= 0) then
+    call self%input (io%restart, ok)
+    if (.not.ok) call self%initial%selected (self%mesh, ff, self%level)
+  else
+    call self%initial%selected (self%mesh, ff, self%level)
+  end if
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   if (trim(type)/='disk' .and. all(abs(self%position) < self%ds)) then
     print *, 'experiment_t%init: setting spherical BC bits on patch', self%id
