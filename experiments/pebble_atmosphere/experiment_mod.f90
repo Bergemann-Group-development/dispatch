@@ -18,7 +18,6 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(pebble_patch_t):: experiment_t
-    type(initial_t):: initial
   contains
     procedure :: init
     procedure :: update
@@ -51,12 +50,11 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: ff
   integer:: iv, iostat
+  logical:: ok=.true.
   logical, save:: first_time=.true.
   character(len=32):: type='planet_atmosphere'
-  logical,save :: snapshot = .false.
-  namelist /experiment_params/ type, snapshot
+  namelist /experiment_params/ type
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
@@ -69,13 +67,14 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (io_cr)
   !----------------------------------------------------------------------------
-  ! Allocate memory and set IC values
+  ! Allocate memory and set IC values.  The initial%init (type) specifies the
+  ! type of IC to be applied when the call to gpatch_t%init is made.
   !----------------------------------------------------------------------------
   self%nv = 5
   self%mhd = .false.
   self%msplit = 3
   call scaling%init
-  call self%initial%init (type,snapshot)
+  call self%initial%init (type)
   call self%force%init (type)
   !self%nv = 5
   !self%mhd = .false.
@@ -84,10 +83,9 @@ SUBROUTINE init (self)
   !self%mhd = .false.
   !self%nv = 5
   call self%set (bits%static)
-  ff => self%mem(:,:,:,:,1,1)
-  call self%initial%selected (self%mesh, ff, self%level)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   if (trim(type)/='disk' .and. all(abs(self%position) < self%ds)) then
+    print *, 'experiment_t%init: setting spherical BC bits on patch', self%id
     call self%set (bits%has_BC)
     call self%boundaries%set (bits%spherical)
     do iv=self%i_px,self%i_pz
@@ -159,15 +157,19 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !> =============================================================================
+!> Interface to patch_t%output, for debug printout
 !> =============================================================================
 SUBROUTINE output (self, experiment_name)
   class(experiment_t):: self
   character(len=64), optional:: experiment_name
-  integer:: iv, it
-  if (self%id==14) then
+  integer:: iv, it, m(3)
+  if (self%id==io%id_debug) then
+    m = self%mesh%gn/2
     it = self%iit(self%nt-2)
     do iv=2,4
-      print *,'OUT', real(self%t(it)), iv, self%mem(18,18,16:19,iv,it,1)/self%mem(18,18,16:19,1,it,1)
+      print *,'OUT: t, iv, u(z) =', real(self%t(it)), iv, &
+        self%mem(m(1),m(2),m(3)-2:m(3)+2,iv,it,1)/ &
+        self%mem(m(1),m(2),m(3)-2:m(3)+2, 1,it,1)
     end do
   end if
   call self%patch_t%output
@@ -192,6 +194,7 @@ SUBROUTINE boundary_conditions (self, it)
     !---------------------------------------------------------------------------
     if (self%boundaries%is_set (bits%spherical)) then
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
+      print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
       allocate (mem(size(self%mem,1),size(self%mem,2),size(self%mem,3),2))
       mem(:,:,:,1) = self%mem(:,:,:,self%i_d,it,1)
       mem(:,:,:,2) = self%mem(:,:,:,self%i_e,it,1)
@@ -270,7 +273,6 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   u = (e-k)/d                                   ! internal energy
   call self%boundaries%symmetric (u)            ! zero gradient
   e = u*d+k                                     ! reconstruct total energy
-
   deallocate (u,k)
   nullify (d,e,p)
   call trace%end

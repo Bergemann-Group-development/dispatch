@@ -10,7 +10,7 @@ stagger_mod.o           : io_mod.o trace_mod.o scalar_mod.o vector_mod.o \
 mhd_mod.o               : io_mod.o trace_mod.o scalar_mod.o vector_mod.o force_mod.o gpatch_mod.o scaling_mod.o cgs_mod.o download_mod.o \
                           stagger_mod.o eos_mod.o index_mod.o timestep_mod.o
 patches_mod.o           : io_mod.o trace_mod.o timestep_mod.o
-initial_mod.o           : io_mod.o trace_mod.o random_mod.o mesh_mod.o vector_mod.o stagger_mod.o mhd_mod.o index_mod.o
+initial_mod.o           : io_mod.o trace_mod.o random_mod.o mesh_mod.o vector_mod.o stagger_mod.o index_mod.o
 force_mod.o             : io_mod.o trace_mod.o random_mod.o mesh_mod.o vector_mod.o stagger_mod.o scaling_mod.o star_mod.o planet_mod.o
 boundary_mod.o          : io_mod.o trace_mod.o mesh_mod.o
 mhd_rt_mod.o            : mhd_mod.o trace_mod.o microphysics_mod.o

@@ -17,7 +17,7 @@ MODULE initial_mod
     integer:: seed
     real:: gamma
     logical:: mhd
-    real(8):: time
+    real(8):: time=0d0
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure:: init

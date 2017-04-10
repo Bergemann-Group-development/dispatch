@@ -1,14 +1,18 @@
+&experiment_params /
+&initial_params /
+&force_params   /
+
 &io_params
- verbose=1
+ !restart=1
+ !inputdir='data/tmp'
+ verbose=0
  do_output=t
- do_trace=t
+ do_trace=f
  omp_trace=f
 /
 &out_params
- ! L_unit = R_E, u_unit = km/s, t_unit = 6300 sec ~ 2h
- end_time=2.00          ! outer scale = 1500 R_E => 1500 time units at 1 km/s
- !out_time=0.40          ! pebble speed 30 => 1.5 l.u. per snapshot
- out_time=0.1
+ end_time=5.0 out_time=0.50
+ end_time=1.0 out_time=0.1
  print_time=0
  guard_zones=t
  time_derivs=f
@@ -18,7 +22,7 @@
  n_levels=7
  n_patch=3
  m_zoom=3
- n_repeat=5
+ n_repeat=3
 /
 &pebble_params
  do_pebbles=t
@@ -45,8 +49,6 @@
  v_head_cgs=0.0
  v_accrete_cgs=0.0
 /
-&initial_params /
-&force_params   /
 &patch_params
  n=3*32
  nv=5

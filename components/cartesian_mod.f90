@@ -145,15 +145,6 @@ SUBROUTINE init (self, label)
       if (patch%is_set(bits%virtual ))  nvpatch = nvpatch+1
       npatch = npatch+1
     end if
-    !---------------------------------------------------------------------------
-    ! Set the patch boundary status bits
-    !---------------------------------------------------------------------------
-    !if (i==0)              call patch%boundaries%set (bits%xdir + bits%lower)
-    !if (j==0)              call patch%boundaries%set (bits%ydir + bits%lower)
-    !if (k==0)              call patch%boundaries%set (bits%zdir + bits%lower)
-    !if (i==self%dims(1)-1) call patch%boundaries%set (bits%xdir + bits%upper)
-    !if (j==self%dims(2)-1) call patch%boundaries%set (bits%ydir + bits%upper)
-    !if (k==self%dims(3)-1) call patch%boundaries%set (bits%zdir + bits%upper)
   end do
   end do
   end do

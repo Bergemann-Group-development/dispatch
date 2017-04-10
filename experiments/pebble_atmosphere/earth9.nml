@@ -1,4 +1,10 @@
+&experiment_params /
+&initial_params /
+&force_params   /
+
 &io_params
+ !restart=10
+ !inputdir='data/earth3'
  do_trace=f
  verbose=1
  do_debug=f
@@ -27,8 +33,6 @@ gamma=1.4
  pebble_size_cm=1.                  ! size of a pebble
 /
 
-
-
 &planet_params
  radius_r_earth=9.0 
  mass_m_earth=1.0
@@ -52,18 +56,6 @@ gamma=1.4
  v_head_cgs=0.0                     ! headwind speed
  v_accrete_cgs=0.0                  ! accretion speed
  omega = 0.0,0.0,1.0
-/
-
-&initial_params
-initial_condition='snapshot'
-secondary_ic='planet_atmosphere'
-/
-
-&snapshot_params
- folder='data/earth27/'
- snap_number=43
- ids=1,159
- time_derivs = f
 /
 
 &patch_params
