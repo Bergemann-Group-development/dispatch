@@ -65,7 +65,7 @@ FUNCTION is_set (self, bits) RESULT (out)
   integer:: bits
   logical:: out
   !-----------------------------------------------------------------------------
-  out = iand (self%status, bits)
+  out = (iand (self%status, bits) /=0)
 END FUNCTION is_set
 
 !> =============================================================================
