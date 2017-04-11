@@ -845,7 +845,7 @@ FUNCTION distance (self, task1, task2)
   size = self%size
   distance = task1%position - task2%position
   distance = abs(modulo(distance + 0.5d0*size, size) - 0.5d0*size)
-  if (task2%id==io%id_debug) &
+  if (io%verbose>1 .and. task2%id==io%id_debug) &
     write (*,'(a,2i4,4(3f10.3,3x))') 'distance:', task1%id, task2%id, &
       task1%position-task2%position,  size, distance
 END FUNCTION distance

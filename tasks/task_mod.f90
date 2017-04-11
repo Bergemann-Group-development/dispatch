@@ -383,7 +383,7 @@ FUNCTION distance (self, task) RESULT (out)
   out = self%position-task%position
   ! account for periodic wrapping
   out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
-  if (task%id==io%id_debug .or. self%id==io%id_debug) then
+  if (io%verbose>1 .and. (task%id==io%id_debug .or. self%id==io%id_debug)) then
     print *,'distance: self', self%position, self%id
     print *,'distance: task', task%position, task%id
     print *,'distance:  box', self%box

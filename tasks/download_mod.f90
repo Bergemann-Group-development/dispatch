@@ -150,6 +150,9 @@ SUBROUTINE same_static (self)
         if (io%master .and. io%verbose>3) then
           write (io_unit%log,'(a,3(3i4,3x),i6)') 'target ranges: l1, u1, o, n =', l1, u1, o, ntot
         end if
+        if (target%id==io%id_debug .and. ntot>0) &
+          print '(a,2i6,2x,a,2(3i4,2x),i6)', 'target, source', target%id, source%id, &
+            'range:', l1, u1, ntot
         do iv=1,source%nv
           dmin = 1e30
           do iz=l1(3),u1(3)
@@ -419,7 +422,7 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score, n_
   ! Find the best nbor patch.
   !-----------------------------------------------------------------------------
   cellpos = target%myposition (ii)
-  call find_best_nbor  (link, target, cellpos, source, jt, pt, idir, old_score)
+  call find_best_nbor  (link, target, ii, cellpos, source, jt, pt, idir, old_score)
   if (.not.associated(source)) then
     if (io%verbose>0) write (*,'(a,i5,2x,4i4,f6.1)') &
       'WARNING: no best_nbor for id, ii, idir, score =', target%id, ii, idir, old_score
@@ -487,10 +490,10 @@ END SUBROUTINE interpolate_to
 !> =============================================================================
 !> Find the best nbor patch overlapping the point with position in link%patch
 !> =============================================================================
-SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score, debug)
+SUBROUTINE find_best_nbor (link, target, ii, position, best, jt, pt, idir, old_score, debug)
   class(link_t), pointer:: link
   class(patch_t), pointer:: target, best
-  integer:: jt(2), idir
+  integer:: ii(3), jt(2), idir
   real:: pt(2), old_score
   character(len=*), optional:: debug
   !.............................................................................
@@ -506,8 +509,11 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
   adir = abs(idir)
   if (associated(best)) then
     if (fscore(best) == old_score) then
-      if (target%id == io%id_debug) &
-      print '(i5,3(3x,a,i5),f6.1)', target%id,'keeping best nbor:', best%id, ' level:', best%level, ' direction:', idir, old_score
+      if (target%id==io%id_debug .and. best%level/=target%level) &
+        print '(i5,2x,3i4,3(3x,a,i5),f6.1,2x,3f6.1)', &
+          target%id, ii, 'keeping best nbor:', &
+          best%id, ' level:', best%level, ' direction:', idir, old_score, &
+          (best%position-target%position)/target%size
       return
     else
       nullify (best)
@@ -535,11 +541,12 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
           best_score = score
           best_id = best%id
       end if
-    end if
-    if (target%id==io%id_debug.and.adir==1) write (*,'(i4,a,i6,2i4,3f8.2,5(3x,3f8.2))') &
+      if (target%id==io%id_debug .and. io%verbose>1) &
+        write (*,'(i4,a,i6,2i4,3f8.2,5(3x,3f8.2))') &
       target%id,' search best_nbor', other%id, target%level, other%level, &
-      score, best_score, old_score, abs(pp)/other%size, abs(pp)/other%gsize, pp, &
-      (other%position-target%position)/target%size
+        score, best_score, old_score, abs(pp)/other%size, abs(pp)/other%gsize, &
+        pp, (other%position-target%position)/target%size
+    end if
     nbor => nbor%next
   end do
   !-----------------------------------------------------------------------------
@@ -547,9 +554,12 @@ SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score
   !-----------------------------------------------------------------------------
   if (associated(best)) then
     call best%time_interval (target%time, jt, pt)
+    if (target%id==io%id_debug .and. best%level/=target%level) &
+      print '(i5,2x,3i4,3(3x,a,i5),f6.1,2x,3f6.1)', &
+        target%id, ii, 'picking best nbor:', &
+        best%id, ' level:', best%level, ' direction:', idir, old_score, &
+        (best%position-target%position)/target%size
     old_score = best_score
-      if (target%id == io%id_debug) &
-      print '(i5,3(3x,a,i5))', target%id,'picking best nbor:', best%id, ' level:', best%level, ' direction:', idir
   else
       if (target%id == io%id_debug) &
       print *,target%id,'failed'
