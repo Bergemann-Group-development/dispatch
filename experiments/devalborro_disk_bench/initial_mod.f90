@@ -1,6 +1,5 @@
 !> =============================================================================
-!> This is a start on a module that could become a general turbulence forcing
-!> module, where the standard forcing we have been using in RAMSES is implemented
+!> A dummy `initial_mod` to override the default one.
 !> =============================================================================
 MODULE initial_mod
   USE io_mod

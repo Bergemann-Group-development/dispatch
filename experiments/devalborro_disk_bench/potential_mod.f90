@@ -35,7 +35,7 @@ END SUBROUTINE
 
 !> =============================================================================
 !> Returns the combined gravitational potential of a star and planet in
-!  cylindrical coords.
+!> cylindrical coords.
 !> =============================================================================
 FUNCTION star_and_planet (self, m, time, dt) RESULT (gp)
   class(potential_t):: self
@@ -45,7 +45,7 @@ FUNCTION star_and_planet (self, m, time, dt) RESULT (gp)
   real(8), dimension(m(1)%gn,m(2)%gn,m(3)%gn):: gp
   !.............................................................................
   integer:: i1, i2, i3
-  real(8):: z, r, phi, z_s, r_s, gm_s, gm_p, rvec_s, rvec_p, soft
+  real(8):: z, r, phi, z_s, r_s, gm_s, gm_p, rvec_s, rvec_p, soft, radius_p_i, r_dot_rp
   !-----------------------------------------------------------------------------
   call trace_begin('potential_mod::star_and_planet')
 
@@ -61,6 +61,7 @@ FUNCTION star_and_planet (self, m, time, dt) RESULT (gp)
   gm_s = scaling%grav * experiment_params%mstar
   gm_p = scaling%grav * planet%mass
   soft = experiment_params%gpp_soften * experiment_params%aspect_rat * experiment_params%aplanet
+  radius_p_i = 1.0d0 / (planet%position(1)**2 + planet%position(2)**2)
   do i3=m3%lb,m3%ub
     phi = m3%centre_nat + m3%r(i3)
     do i2=m2%lb,m2%ub
@@ -71,9 +72,15 @@ FUNCTION star_and_planet (self, m, time, dt) RESULT (gp)
         z_s = z - 0.0
 
         rvec_s = sqrt(z_s**2 + r_s**2)
+        ! apply the law of cosines to find the distance between the current cell and the planet.
         rvec_p = planet%position(2)**2 + r**2 &
                - 2.0d0 * planet%position(2) * r * cos(abs(phi - planet%position(3)))
-        gp(i1,i2,i3) = -gm_s / rvec_s - gm_p / sqrt(rvec_p + soft**2)
+        ! dot product between current cell position and the planet's position.
+        r_dot_rp = z * planet%position(1) + r * planet%position(2) * cos(phi - planet%position(3))
+        ! 1st: stellar potential; 2nd: planetary point potential;
+        ! 3rd: indirect term due to the centre-of-mass not coinciding exactly with the position of the star.
+        gp(i1,i2,i3) = -gm_s / rvec_s - gm_p / sqrt(rvec_p + soft**2) &
+                     + gm_p * radius_p_i * r_dot_rp
       end do
     end do
   end do
