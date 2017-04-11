@@ -20,6 +20,7 @@ MODULE boundaries_mod
     procedure:: init
     procedure:: set
     procedure:: is_set
+    procedure:: is_clear
     procedure:: condition
     procedure:: symmetric
     procedure:: antisymmetric
@@ -67,6 +68,17 @@ FUNCTION is_set (self, bits) RESULT (out)
   !-----------------------------------------------------------------------------
   out = (iand (self%status, bits) /=0)
 END FUNCTION is_set
+
+!> =============================================================================
+!> Check bits in the status word
+!> =============================================================================
+FUNCTION is_clear (self, bits) RESULT (out)
+  class(boundaries_t):: self
+  integer:: bits
+  logical:: out
+  !-----------------------------------------------------------------------------
+  out = (iand (self%status, bits) ==0)
+END FUNCTION is_clear
 
 !> =============================================================================
 !> Apply a boundary condition, using the procedure pointer "operator"

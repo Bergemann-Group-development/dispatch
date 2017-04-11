@@ -520,7 +520,8 @@ FUNCTION myposition (self, ii) RESULT(out)
   !if (self%id == io%id_debug) &
   !  print *,'A', real(cellpos/self%size), real(self%llc_nat)
   cellpos = self%position + (real(ii)-self%offset)*self%ds
-  if (self%id == io%id_debug) print '(a,3i4,4(3x,3f10.2))', 'mypos:',ii,self%position,self%offset,self%ds,cellpos
+  if (self%id==io%id_debug .and. io%verbose>1) &
+    print '(a,3i4,4(3x,3f10.2))', 'mypos:',ii,self%position,self%offset,self%ds,cellpos
   ! convert to Cartesian coords.
   if (self%mesh_type == mesh_types%cylindrical) then
     cellpos = CylindricalToCartesian(cellpos(1), cellpos(2), cellpos(3))
@@ -1331,7 +1332,7 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
   end select
   ! account for periodic wrapping
   out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
-  if (task%id==io%id_debug .or. self%id==io%id_debug) then
+  if (io%verbose>1 .and. (task%id==io%id_debug .or. self%id==io%id_debug)) then
     print 1,'distance: self', self%id, self%position, self%size, self%box
     print 1,'distance: task', task%id, task%position, task%size, task%box, out
     1 format(a,i5,4(3x,3f10.2))
