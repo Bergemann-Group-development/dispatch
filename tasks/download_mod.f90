@@ -91,10 +91,10 @@ SUBROUTINE download_link (link, all_cells)
     ! and different_static() chooses what to do and not to do for each nbor.
     !---------------------------------------------------------------------------
     if (static) then
-      call same_static (link)
       if (.not.same) then
         call different_static (link)
       end if
+      call same_static (link)
     else
       error stop 'ERROR: moving patches found'
     end if
@@ -154,7 +154,7 @@ SUBROUTINE same_static (self)
           print '(a,2i6,2x,a,2(3i4,2x),i6)', 'target, source', target%id, source%id, &
             'range:', l1, u1, ntot
         if (ntot>0) then
-        do iv=1,source%nv
+         do iv=1,source%nv
           dmin = 1e30
           do iz=l1(3),u1(3)
           do iy=l1(2),u1(2)
@@ -232,7 +232,7 @@ SUBROUTINE same_static (self)
             ntot, ' points from patch', source%id, ' at level', source%level, &
             'position', (source%position-target%position)/target%size, pt, dmin
           2 format(6(1x,a,i7,1x),1x,a,5f6.2,1p,e12.3)
-        end do
+         end do
         end if
       end select
       end associate
@@ -336,76 +336,76 @@ SUBROUTINE different_static (link)
   n_interp = 0
   m => target%mesh
   if (target%boundaries%is_clear (bits%zl)) then
-  call reset
-  do iz=m(3)%lb,m(3)%lo
-    do iy=m(2)%lb,m(2)%ub
-      do ix=m(1)%lb,m(1)%ub
-        ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, -3, old_score, n_interp)
+    call reset
+    do iz=m(3)%lb,m(3)%lo
+      do iy=m(2)%lb,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          ii = [ix,iy,iz]
+          call interpolate_to (link, target, ii, source, jt, pt, -3, old_score, n_interp)
+        end do
       end do
     end do
-  end do
   end if
   if (target%boundaries%is_clear (bits%zu)) then
-  call reset
-  do iz=m(3)%uo,m(3)%ub
-    do iy=m(2)%lb,m(2)%ub
-      do ix=m(1)%lb,m(1)%ub
-        ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, +3, old_score, n_interp)
+    call reset
+    do iz=m(3)%uo,m(3)%ub
+      do iy=m(2)%lb,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          ii = [ix,iy,iz]
+          call interpolate_to (link, target, ii, source, jt, pt, +3, old_score, n_interp)
+        end do
       end do
     end do
-  end do
   end if
   !-----------------------------------------------------------------------------
   ! XZ-planes in the two Y guard zones
   !-----------------------------------------------------------------------------
   if (target%boundaries%is_clear (bits%yl)) then
-  call reset
-  do iz=m(3)%li,m(3)%ui
-    do iy=m(2)%lb,m(2)%lo
-      do ix=m(1)%lb,m(1)%ub
-        ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, -2, old_score, n_interp)
+    call reset
+    do iz=m(3)%li,m(3)%ui
+      do iy=m(2)%lb,m(2)%lo
+        do ix=m(1)%lb,m(1)%ub
+          ii = [ix,iy,iz]
+          call interpolate_to (link, target, ii, source, jt, pt, -2, old_score, n_interp)
+        end do
       end do
     end do
-  end do
   end if
   if (target%boundaries%is_clear (bits%yu)) then
-  call reset
-  do iz=m(3)%li,m(3)%ui
-    do iy=m(2)%uo,m(2)%ub
-      do ix=m(1)%lb,m(1)%ub
-        ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, +2, old_score, n_interp)
+    call reset
+    do iz=m(3)%li,m(3)%ui
+      do iy=m(2)%uo,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          ii = [ix,iy,iz]
+          call interpolate_to (link, target, ii, source, jt, pt, +2, old_score, n_interp)
+        end do
       end do
     end do
-  end do
   end if
   !-----------------------------------------------------------------------------
   ! YZ-planes in the two X guard zones
   !-----------------------------------------------------------------------------
   if (target%boundaries%is_clear (bits%xl)) then
-  call reset
-  do iz=m(3)%li,m(3)%ui
-    do ix=m(1)%lb,m(1)%lo
-      do iy=m(2)%li,m(2)%ui
-        ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, -1, old_score, n_interp)
+    call reset
+    do iz=m(3)%li,m(3)%ui
+      do ix=m(1)%lb,m(1)%lo
+        do iy=m(2)%li,m(2)%ui
+          ii = [ix,iy,iz]
+          call interpolate_to (link, target, ii, source, jt, pt, -1, old_score, n_interp)
+        end do
       end do
     end do
-  end do
   end if
   if (target%boundaries%is_clear (bits%xu)) then
-  call reset
-  do iz=m(3)%li,m(3)%ui
-    do ix=m(1)%uo,m(1)%ub
-      do iy=m(2)%li,m(2)%ui
-        ii = [ix,iy,iz]
-        call interpolate_to (link, target, ii, source, jt, pt, +1, old_score, n_interp)
+    call reset
+    do iz=m(3)%li,m(3)%ui
+      do ix=m(1)%uo,m(1)%ub
+        do iy=m(2)%li,m(2)%ui
+          ii = [ix,iy,iz]
+          call interpolate_to (link, target, ii, source, jt, pt, +1, old_score, n_interp)
+        end do
       end do
     end do
-  end do
   end if
   call reset
   if (n_interp > 0) then
@@ -535,7 +535,7 @@ SUBROUTINE find_best_nbor (link, target, ii, position, best, jt, pt, idir, old_s
   end if
   call trace_begin('download_mod::find_best_nbor',2)
   best_id = 0
-  best_score = 0.0
+  best_score = -99.0
   nbor => link%nbor
   do while (associated(nbor))
     !---------------------------------------------------------------------------
@@ -557,7 +557,7 @@ SUBROUTINE find_best_nbor (link, target, ii, position, best, jt, pt, idir, old_s
       end if
       if (target%id==io%id_debug .and. io%verbose>1) &
         write (*,'(i4,a,i6,2i4,3f8.2,5(3x,3f8.2))') &
-      target%id,' search best_nbor', other%id, target%level, other%level, &
+        target%id,' search best_nbor', other%id, target%level, other%level, &
         score, best_score, old_score, abs(pp)/other%size, abs(pp)/other%gsize, &
         pp, (other%position-target%position)/target%size
     end if
@@ -575,8 +575,8 @@ SUBROUTINE find_best_nbor (link, target, ii, position, best, jt, pt, idir, old_s
         (best%position-target%position)/target%size
     old_score = best_score
   else
-      if (target%id == io%id_debug) &
-      print *,target%id,'failed'
+    if (target%id == io%id_debug) &
+      print *, target%id, 'failed'
   end if
   call trace_end
 contains
