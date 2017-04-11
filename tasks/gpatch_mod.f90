@@ -8,6 +8,7 @@ MODULE gpatch_mod
   USE patch_mod
   USE download_mod
   USE initial_mod
+  USE kinds_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
@@ -22,7 +23,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(gpatch_t):: self
-  real, dimension(:,:,:,:), pointer:: ff
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: ff
   logical:: ok
   !-----------------------------------------------------------------------------
   call self%patch_t%init
