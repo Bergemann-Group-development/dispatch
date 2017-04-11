@@ -7,7 +7,6 @@ MODULE experiment_mod
   USE trace_mod
   USE pebble_patch_mod
   USE initial_mod
-  !USE timestep_mod
   USE atmosphere_mod
   USE units_mod
   USE scaling_mod
@@ -50,7 +49,6 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iv, iostat
-  logical:: ok=.true.
   logical, save:: first_time=.true.
   character(len=32):: type='planet_atmosphere'
   namelist /experiment_params/ type
@@ -118,7 +116,7 @@ SUBROUTINE update (self)
     end if
     if (self%is_set (bits%spherical)) then
       do iv=self%i_px,self%i_pz
-        call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
+        call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,2), 0.0, self%mesh, iv)
       end do
     end if
   !-----------------------------------------------------------------------------
@@ -179,7 +177,7 @@ SUBROUTINE boundary_conditions (self, it)
   class(experiment_t):: self
   integer:: it
   !.............................................................................
-  real, dimension(:,:,:,:), pointer:: mem=>null()
+  real, dimension(:,:,:,:), pointer:: mem
   real, dimension(:,:,:), pointer:: d, e
   real(8), dimension(3):: h
   integer:: iv, nb,i
@@ -203,7 +201,8 @@ SUBROUTINE boundary_conditions (self, it)
       call self%boundaries%init (radius=planet%radius)
       do iv=self%i_px,self%i_pz
         call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
-        call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
+        if (self%nw>1) &
+          call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
       end do
       deallocate (mem)
     end if
