@@ -153,6 +153,7 @@ SUBROUTINE same_static (self)
         if (target%id==io%id_debug .and. ntot>0) &
           print '(a,2i6,2x,a,2(3i4,2x),i6)', 'target, source', target%id, source%id, &
             'range:', l1, u1, ntot
+        if (ntot>0) then
         do iv=1,source%nv
           dmin = 1e30
           do iz=l1(3),u1(3)
@@ -232,6 +233,7 @@ SUBROUTINE same_static (self)
             'position', (source%position-target%position)/target%size, pt, dmin
           2 format(6(1x,a,i7,1x),1x,a,5f6.2,1p,e12.3)
         end do
+        end if
       end select
       end associate
     end if
@@ -333,6 +335,7 @@ SUBROUTINE different_static (link)
   target => task2patch (link%task)
   n_interp = 0
   m => target%mesh
+  if (target%boundaries%is_clear (bits%zl)) then
   call reset
   do iz=m(3)%lb,m(3)%lo
     do iy=m(2)%lb,m(2)%ub
@@ -342,6 +345,8 @@ SUBROUTINE different_static (link)
       end do
     end do
   end do
+  end if
+  if (target%boundaries%is_clear (bits%zu)) then
   call reset
   do iz=m(3)%uo,m(3)%ub
     do iy=m(2)%lb,m(2)%ub
@@ -351,9 +356,11 @@ SUBROUTINE different_static (link)
       end do
     end do
   end do
+  end if
   !-----------------------------------------------------------------------------
   ! XZ-planes in the two Y guard zones
   !-----------------------------------------------------------------------------
+  if (target%boundaries%is_clear (bits%yl)) then
   call reset
   do iz=m(3)%li,m(3)%ui
     do iy=m(2)%lb,m(2)%lo
@@ -363,6 +370,8 @@ SUBROUTINE different_static (link)
       end do
     end do
   end do
+  end if
+  if (target%boundaries%is_clear (bits%yu)) then
   call reset
   do iz=m(3)%li,m(3)%ui
     do iy=m(2)%uo,m(2)%ub
@@ -372,9 +381,11 @@ SUBROUTINE different_static (link)
       end do
     end do
   end do
+  end if
   !-----------------------------------------------------------------------------
   ! YZ-planes in the two X guard zones
   !-----------------------------------------------------------------------------
+  if (target%boundaries%is_clear (bits%xl)) then
   call reset
   do iz=m(3)%li,m(3)%ui
     do ix=m(1)%lb,m(1)%lo
@@ -384,6 +395,8 @@ SUBROUTINE different_static (link)
       end do
     end do
   end do
+  end if
+  if (target%boundaries%is_clear (bits%xu)) then
   call reset
   do iz=m(3)%li,m(3)%ui
     do ix=m(1)%uo,m(1)%ub
@@ -393,6 +406,7 @@ SUBROUTINE different_static (link)
       end do
     end do
   end do
+  end if
   call reset
   if (n_interp > 0) then
     !$omp atomic
