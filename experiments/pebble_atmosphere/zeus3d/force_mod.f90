@@ -123,7 +123,7 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
         ! cancelling at a distance where $\Omega^2 r$ is equal to $GM/r^2$
         !-----------------------------------------------------------------------
         rp1 = sqrt(xp**2+yp**2+zp**2)
-        if (rp1 >= planet%radius) then
+        if (rp1 >= planet%radius*0.1) then
           ff(ix,iy,iz,1) = -newton*xp/rp1**3
           ff(ix,iy,iz,2) = -newton*yp/rp1**3
           ff(ix,iy,iz,3) = -newton*zp/rp1**3
