@@ -253,7 +253,8 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   allocate (u(size(d,1),size(d,2),size(d,3)))
   allocate (k(size(d,1),size(d,2),size(d,3)))
   if (ii==3) then
-    call self%density_boundary_condition (it)   ! density gradient BC
+   !call self%density_boundary_condition (it)   ! density gradient BC
+    call self%boundaries%extrapolate (d)        ! extrapolate log(d)
   else
     call self%boundaries%symmetric (d)          ! zero gradient in x,y
   end if
@@ -403,6 +404,10 @@ SUBROUTINE density_boundary_condition (self, it)
                mem(ix,iy,iz0,4,it,1)**2)/d0)
         d = d0*exp(-(planet%omega(3)**2*d0/p0*0.5*(z**2-z0**2)))
         self%mem(ix,iy,iz,1,it,1) = d
+        if (iself%id==io%id_debug.and.y==uy/2.and.iz==uz) &
+          print '(a,i4,1p,8e14.6)', &
+          'BCd: ix,d0,p0/do,exp =',ix,d0,p0/d0,(z-z0), &
+          exp(-(planet%omega(3)**2*d0/p0*0.5*(z**2-z0**2)))
       end do
     end do
   end do
