@@ -402,7 +402,7 @@ SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < self%radius-m(1)%d*0.1) then
+        if (r < self%radius+m(1)%d*0.5) then
           mem(ix,iy,iz) = v
         end if
       end do
@@ -436,7 +436,7 @@ SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < self%radius-m(1)%d*0.1) then
+        if (r < self%radius+m(1)%d*0.5) then
           mem(ix,iy,iz) = v(ix,iy,iz)
         else if (present(maxfill)) then
           self%vmax = max(self%vmax,mem(ix,iy,iz))
@@ -482,6 +482,9 @@ SUBROUTINE spherical_extrapolate (self, mem, m, iv)
   ds = m(1)%d
   a1 = 0d0; n1 = 0
   a2 = 0d0; n2 = 0
+  !-----------------------------------------------------------------------------
+  ! a1 and a2 sample the values in annuli around R-3*ds and R, respectively
+  !-----------------------------------------------------------------------------
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz) + h(3)*m(3)%d - self%position(3)
     do iy=m(2)%lb,m(2)%ub
@@ -489,10 +492,10 @@ SUBROUTINE spherical_extrapolate (self, mem, m, iv)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (abs(r-(self%radius+4.*ds)) <= ds) then
+        if (abs(r-(self%radius+2.*ds)) <= ds) then
           n1 = n1+1
           a1 = a1 + mem(ix,iy,iz)
-        else if (abs(r-(self%radius+ds)) <= ds) then
+        else if (abs(r-self%radius) <= ds) then
           n2 = n2+1
           a2 = a2 + mem(ix,iy,iz)
         end if
@@ -502,6 +505,10 @@ SUBROUTINE spherical_extrapolate (self, mem, m, iv)
   if (n1>0) a1 = log(a1/n1)
   if (n2>0) a2 = log(a2/n2)
   a2 = max(a2,a1)
+  !-----------------------------------------------------------------------------
+  ! For radii inside R-0.5*ds, set the value to be log-interpolated from a1, a2
+  ! The value at a2 would be chosen for r=R
+  !-----------------------------------------------------------------------------
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz) + h(3)*m(3)%d - self%position(3)
     do iy=m(2)%lb,m(2)%ub
@@ -509,9 +516,9 @@ SUBROUTINE spherical_extrapolate (self, mem, m, iv)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < self%radius-0.1*ds) then
-          p = (self%radius+ds-r)/(3.*ds) + 1.0
+        if (r < self%radius-0.5*ds) then
           if (a1 /= 0d0 .and. a2 /= 0d0) then
+            p = (self%radius-r)/(2.0*ds) + 1.0
             mem(ix,iy,iz) = exp(a1*(1d0-p) + a2*p)
           end if
         end if

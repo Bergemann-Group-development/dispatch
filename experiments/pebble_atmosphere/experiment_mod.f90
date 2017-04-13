@@ -193,8 +193,6 @@ SUBROUTINE boundary_conditions (self, it)
     if (self%boundaries%is_set (bits%spherical)) then
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
       print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
-      call self%boundaries%init (radius=planet%radius-2.*self%ds(1))
-      call self%boundaries%init (radius=planet%radius)
       !call self%boundaries%init (radius=planet%radius-2.*self%ds(1))
       call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), self%mesh, self%i_d)
       call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), self%mesh, self%i_e)
@@ -268,9 +266,9 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   end do
   k = 0.5*k/d                                   ! normalize kinetic energy
   u = (e-k)/d                                   ! internal energy
-    t = atmosphere%external%temperature &       ! external disk "temperature"
-      /(self%gamma-1.0)
-    call self%boundaries%constant (u, t)        ! constant bdry value
+  t = atmosphere%external%temperature &         ! external disk "temperature"
+    /(self%gamma-1.0)
+  call self%boundaries%constant (u, t)          ! constant bdry value
   e = u*d+k                                     ! reconstruct total energy
   deallocate (u,k)
   call trace%end
