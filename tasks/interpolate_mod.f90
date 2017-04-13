@@ -54,7 +54,7 @@ FUNCTION interpolator_donor_cell (q,i,j,k,iv,aa,bb,cc) result(qtilde)
   real(kind=KindScalarVar), intent(in) :: aa, bb, cc
   real(kind=KindScalarVar) :: qtilde
   !-----------------------------------------------------------------------------
-  call trace_begin('interpolate_mod::donor_cell')
+  call trace_begin('interpolate_mod::donor_cell', 2)
   
   qtilde = q(i,j,k,iv)
   
@@ -78,7 +78,7 @@ FUNCTION interpolator_van_Leer_3d (q,i,j,k,iv,aa,bb,cc) result(qtilde)
   logical :: ldim(3), lzc=.false., lfc(3)=.false.
   real(8) :: qijk, dq1, dq2, dq3, qp, qm, dp, dm, aych1, aych2, aych3
   !-----------------------------------------------------------------------------
-  call trace_begin('interpolate_mod::van_Leer')
+  call trace_begin('interpolate_mod::van_Leer', 2)
 
   ! determine what type of variable we are interpolating
 !  select type (p)
@@ -216,7 +216,7 @@ FUNCTION interpolator_trilinear (q,i,j,k,iv,aa,bb,cc) result(qtilde)
   real(kind=KindScalarVar) :: qtilde, p(3), m(3)
   integer :: i1, j1, k1
   !-----------------------------------------------------------------------------
-  call trace_begin('interpolate_mod::trilinear')
+  call trace_begin('interpolate_mod::trilinear', 2)
   i1 = merge(1,0,size(q,1) > 1)
   j1 = merge(1,0,size(q,2) > 1)
   k1 = merge(1,0,size(q,3) > 1)

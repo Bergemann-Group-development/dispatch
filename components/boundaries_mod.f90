@@ -131,7 +131,9 @@ SUBROUTINE symmetric (self, mem)
   real, dimension(:,:,:), pointer:: mem
   procedure(make_symmetric), pointer:: operator => make_symmetric
   !-----------------------------------------------------------------------------
+  call trace%begin ('boundaries_t%symmetric')
   call self%condition (mem, operator)
+  call trace%end
 END SUBROUTINE symmetric
 
 !> =============================================================================
@@ -142,7 +144,9 @@ SUBROUTINE antisymmetric (self, mem)
   real, dimension(:,:,:), pointer:: mem
   procedure(make_symmetric), pointer:: operator => make_antisymmetric
   !-----------------------------------------------------------------------------
+  call trace%begin ('boundaries_t%antisymmetric')
   call self%condition (mem, operator)
+  call trace%end
 END SUBROUTINE antisymmetric
 
 !> =============================================================================
@@ -153,7 +157,9 @@ SUBROUTINE extrapolate (self, mem)
   real, dimension(:,:,:), pointer:: mem
   procedure(make_symmetric), pointer:: operator => make_extrapolated
   !-----------------------------------------------------------------------------
+  call trace%begin ('boundaries_t%extrapolate')
   call self%condition (mem, operator)
+  call trace%end
 END SUBROUTINE extrapolate
 
 !> =============================================================================
@@ -322,7 +328,7 @@ SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
   integer                :: ix, iy, iz
   real(8)                :: x, y, z, r, h(3)
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%fixed0')
+  call trace_begin('boundaries_t%spherical0')
   call set_stagger (m, h, iv)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -355,7 +361,7 @@ SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
   integer                :: ix, iy, iz, n1, n2
   real(8)                :: x, y, z, r, h(3)
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%fixed3')
+  call trace_begin('boundaries_t%spherical3')
   call set_stagger (m, h, iv)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   self%vmax = 0.0
@@ -406,7 +412,7 @@ SUBROUTINE spherical_extrapolate (self, mem, v, m, iv)
   integer                :: ix, iy, iz, n1, n2
   real(8)                :: x, y, z, r, h(3), a1, a2, ds, p
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%fixed3')
+  call trace_begin('boundaries_t%spherical_extrapolate')
   call set_stagger (m, h, iv)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   ds = m(1)%d

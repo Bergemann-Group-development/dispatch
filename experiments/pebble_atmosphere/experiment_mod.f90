@@ -373,9 +373,9 @@ SUBROUTINE density_boundary_condition (self, it)
   integer:: iv, iz, iy, ix, lz, uz, ly, uy, lx, ux, iz0
   real(8) :: z, r, p, d, z0, d0, p0
   !-----------------------------------------------------------------------------
-  ! Edge boundary conditions
+  ! Vertical edge boundary conditions
   !-----------------------------------------------------------------------------
-  call trace%begin ('experiment_t%constant_boundary_conditions')
+  call trace%begin ('experiment_t%density_boundary_conditions')
   m => self%mesh
   associate (r3=>m(3)%r, mem=>self%mem)
   if(self%boundaries%is_set(bits%zl)) then

@@ -1096,7 +1096,12 @@ SUBROUTINE input_legacy (self, ok)
   !-----------------------------------------------------------------------------
   write (filename,'(a,"/",i4.4,"_",i4.4)') trim(inputdir), self%id, self%restart
   inquire (file=trim(filename)//'.txt', exist=ok)
-  if (.not.ok) return
+  if (.not.ok) then
+    if (self%id==io%id_debug) &
+      print *,'MK input_legacy: no .txt file', trim(filename)//'.txt'
+    call trace_end
+    return
+  end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   read (io%data_unit,*) time
   close (io%data_unit)
@@ -1111,7 +1116,12 @@ SUBROUTINE input_legacy (self, ok)
   ! Read the binary file with the data cube.
   !-----------------------------------------------------------------------------
   inquire (file=trim(filename)//'.dat', exist=ok)
-  if (.not.ok) return
+  if (.not.ok) then
+    if (self%id==io%id_debug) &
+      print *,'MK input_legacy: no .dat file', trim(filename)//'.dat'
+    call trace_end
+    return
+  end if
   open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', &
     access='direct', status='unknown', recl=real32*product(u-l+1))
   do iv=1,self%nv
@@ -1729,7 +1739,7 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   real(kind=KindScalarVar), intent(out):: out(size(in))
   integer, intent(in) :: ii(3), jj(3)
   !.............................................................................
-  call trace_begin('patch_t%MapVectors')
+  call trace_begin('patch_t%MapVectors', 2)
 
   select case (self%mesh_type)
   case (1) ! Cartesian
@@ -1822,7 +1832,7 @@ SUBROUTINE log_interpolate (self, time, i, a)
   real                            :: pt(2)
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
-  call trace%begin ('rmhd_t%log_interpolate', itimer=itimer)
+  call trace%begin ('patch_t%log_interpolate', itimer=itimer)
   call self%time_interval (time, jt, pt)
   if (io%verbose > 1) then
     b => self%mem(:,:,:,i,jt(1),1)
@@ -1849,7 +1859,7 @@ SUBROUTINE time_interval (self, time, jt, pt)
   integer                         :: i, j
   real(8)                         :: t(self%nt), dt
   ! --------------------------------------------------------------------
-  call trace%begin ('rmhd_t%time_interval')
+  call trace%begin ('patch_t%time_interval', 2)
   t = self%t(self%iit)
   j = 1
   do i=1,self%nt-2
