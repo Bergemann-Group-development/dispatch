@@ -193,10 +193,8 @@ SUBROUTINE boundary_conditions (self, it)
     if (self%boundaries%is_set (bits%spherical)) then
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
       print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
-      !call self%boundaries%init (radius=planet%radius-2.*self%ds(1))
       call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), self%mesh, self%i_d)
       call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), self%mesh, self%i_e)
-      !call self%boundaries%init (radius=planet%radius)
       do iv=self%i_px,self%i_pz
         call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
         if (self%nw>1) &
@@ -206,8 +204,6 @@ SUBROUTINE boundary_conditions (self, it)
     !------------------------------------------------------------------------
     ! Edge boundary conditions
     !------------------------------------------------------------------------
-    !if (all(self%position == 0)) print *, "CENTRAL patch id", self%id
-    !if ((self%position(1) <-1600).and.(self%position(2)==0).and.(self%position(3)==0)) print *, "print test ID", self%id
     if (self%boundaries%status /= 0) then
       nb = 0
       if (self%boundaries%is_set (bits%xl+bits%xu)) then
@@ -241,7 +237,7 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   integer, optional:: ii
   real, dimension(:,:,:), pointer:: d, e, p, u, k
   integer:: iv
-  real:: t
+  real:: ee
   !-----------------------------------------------------------------------------
   ! Edge boundary conditions
   !-----------------------------------------------------------------------------
@@ -252,7 +248,7 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   allocate (u(size(d,1),size(d,2),size(d,3)))
   allocate (k(size(d,1),size(d,2),size(d,3)))
   if (ii==3) then
-    call self%boundaries%extrapolate (d)        ! extrapolate log(d)
+    call self%density_boundary_condition (it)   ! vertical density BC
   else
     call self%boundaries%symmetric (d)          ! zero gradient in x,y
   end if
@@ -266,9 +262,9 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   end do
   k = 0.5*k/d                                   ! normalize kinetic energy
   u = (e-k)/d                                   ! internal energy
-  t = atmosphere%external%temperature &         ! external disk "temperature"
+  ee = atmosphere%external%temperature &        ! external disk e/d
     /(self%gamma-1.0)
-  call self%boundaries%constant (u, t)          ! constant bdry value
+  call self%boundaries%constant (u, ee)         ! constant bdry value
   e = u*d+k                                     ! reconstruct total energy
   deallocate (u,k)
   call trace%end
@@ -371,7 +367,7 @@ SUBROUTINE density_boundary_condition (self, it)
   integer:: it
   class(mesh_t), pointer, dimension(:) :: m
   integer:: iv, iz, iy, ix, lz, uz, ly, uy, lx, ux, iz0
-  real(8) :: z, r, p, d, z0, d0, p0
+  real(8) :: z, z0, r, d, d0, tt
   !-----------------------------------------------------------------------------
   ! Vertical edge boundary conditions
   !-----------------------------------------------------------------------------
@@ -397,20 +393,17 @@ SUBROUTINE density_boundary_condition (self, it)
     print '(a,2i5,2l4,3(2x,2i3))', 'MK', self%id, it, &
       self%boundaries%is_set(bits%zl), &
       self%boundaries%is_set(bits%zu), lx,ux, ly,uy, lz,uz
+  tt = atmosphere%external%temperature
   do iz=lz,uz
     z = m(3)%p + r3(iz) - planet%position(3)
     do iy=ly,uy
       do ix=lx,ux
         d0 = mem(ix,iy,iz0,1,it,1)
-        p0 = (self%gamma-1.0)*(mem(ix,iy,iz0,5,it,1) - &
-          0.5*(mem(ix,iy,iz0,2,it,1)**2 + &
-               mem(ix,iy,iz0,3,it,1)**2 + &
-               mem(ix,iy,iz0,4,it,1)**2)/d0)
-        d = d0*exp(-(planet%omega(3)**2*d0/p0*0.5*(z**2-z0**2)))
+        d = d0*exp(-(planet%omega(3)**2*0.5*(z**2-z0**2)/tt))
         if (self%id==io%id_debug.and.iy==uy/2.and.iz==uz) &
           print '(a,i4,1p,8e14.6)', &
-          'BCd: ix,d0,p0/do,exp,do,d =',ix, d0, p0/d0, (z-z0), &
-          exp(-(planet%omega(3)**2*d0/p0*0.5*(z**2-z0**2))), &
+          'BCd: ix,d0,p0/do,exp,do,d =',ix, d0, tt, (z-z0), &
+          exp(-(planet%omega(3)**2*0.5*(z**2-z0**2)/tt)), &
           self%mem(ix,iy,iz,1,it,1), d
         self%mem(ix,iy,iz,1,it,1) = d
       end do

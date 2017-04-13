@@ -144,7 +144,7 @@ SUBROUTINE init_level (self, level, position)
     if (j==1.or.k==self%n_patch) call patch%set (bits%top_bottom)
     if (io%verbose>0) &
       print'(a,i6,i4,2(2x,3g16.6))', 'rubiks_mod%init_level: id, level, size, pos =', &
-        patch%id, level, patch%size, patch%position - position
+        patch%id, level, patch%size, patch%position
     !---------------------------------------------------------------------------
     ! Add to a list of links, with pointers from patch to patch
     !---------------------------------------------------------------------------
