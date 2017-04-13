@@ -29,12 +29,8 @@ SUBROUTINE init (self)
   call self%patch_t%init
   call self%initial%init
   ff => self%mem(:,:,:,:,1,1)
-  if (io%restart >= 0) then
-    call self%input (io%restart, ok)
-    if (.not.ok) call self%initial%selected (self%mesh, ff)
-  else
-    call self%initial%selected (self%mesh, ff)
-  end if
+  call self%input (ok)
+  if (.not.ok) call self%initial%selected (self%mesh, ff)
 END SUBROUTINE
 
 !> =============================================================================
