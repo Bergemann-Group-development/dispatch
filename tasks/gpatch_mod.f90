@@ -17,6 +17,7 @@ MODULE gpatch_mod
     procedure:: init
     procedure:: dnload
   end type
+  real(8), save:: restart_time = 0d0
 CONTAINS
 
 !> =============================================================================
@@ -30,7 +31,13 @@ SUBROUTINE init (self)
   call self%initial%init
   ff => self%mem(:,:,:,:,1,1)
   call self%input (ok)
-  if (.not.ok) call self%initial%selected (self%mesh, ff)
+  if (ok) then
+    restart_time = self%time
+  else
+    call self%initial%selected (self%mesh, ff)
+    self%time = restart_time
+    self%t(self%it) = self%time
+  end if
 END SUBROUTINE
 
 !> =============================================================================
