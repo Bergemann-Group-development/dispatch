@@ -254,6 +254,7 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   ! Edge boundary conditions
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%edge_boundary_conditions')
+  self%boundaries%id = self%id
   d => self%mem(:,:,:,self%i_d,it,1)
   e => self%mem(:,:,:,self%i_e,it,1)
   allocate (u(size(d,1),size(d,2),size(d,3)))

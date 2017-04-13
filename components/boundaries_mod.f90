@@ -11,6 +11,7 @@ MODULE boundaries_mod
   implicit none
   private
   type, public:: boundaries_t
+    integer:: id = 0
     integer:: status = 0
     logical:: unset = .true.
     class(mesh_t), pointer:: m(:)
@@ -99,7 +100,8 @@ SUBROUTINE condition (self, f, operator, value)
   end if
   m => self%m
   if (self%is_set(bits%xl+bits%xu)) then
-    if (io%verbose>1) print *, 'BOUNDARY CONDITION: x-direction'
+    if (self%id==io%id_debug) &
+      print *, 'BOUNDARY CONDITION: x-direction', self%status, present(value)
     m1 => self%m(2)
     m2 => self%m(1)
     do i=m(3)%lb,m(3)%ub
@@ -108,7 +110,8 @@ SUBROUTINE condition (self, f, operator, value)
     end do
   end if
   if (self%is_set(bits%yl+bits%yu)) then
-    if (io%verbose>1) print *, 'BOUNDARY CONDITION: y-direction'
+    if (self%id==io%id_debug) &
+      print *, 'BOUNDARY CONDITION: y-direction', self%status, present(value)
     m1 => self%m(1)
     m2 => self%m(2)
     do i=m(3)%lb,m(3)%ub
@@ -117,7 +120,8 @@ SUBROUTINE condition (self, f, operator, value)
     end do
   end if
   if (self%is_set(bits%zl+bits%zu)) then
-    if (io%verbose>1) print *, 'BOUNDARY CONDITION: z-direction'
+    if (self%id==io%id_debug) &
+      print *, 'BOUNDARY CONDITION: z-direction', self%status, present(value)
     m1 => self%m(1)
     m2 => self%m(3)
     do i=m(2)%lb,m(2)%ub
@@ -193,7 +197,6 @@ SUBROUTINE make_symmetric (self, f, m1, m2, lower, upper, transpose, value)
   integer:: i, j
   !-----------------------------------------------------------------------------
   if (lower) then
-    !print *, 'lower boundary'
     if (transpose) then
       do j=1,m2%lo
         do i=m1%lb,m1%ub
@@ -209,7 +212,6 @@ SUBROUTINE make_symmetric (self, f, m1, m2, lower, upper, transpose, value)
     end if
   end if
   if (upper) then
-    !print *, 'upper boundary'
     if (transpose) then
       do j=m2%uo,m2%ub
         do i=m1%lb,m1%ub
@@ -238,7 +240,6 @@ SUBROUTINE make_antisymmetric (self, f, m1, m2, lower, upper, transpose, value)
   integer:: i, j
   !-----------------------------------------------------------------------------
   if (lower) then
-    !print *, 'lower boundary'
     if (transpose) then
       do j=1,m2%lo
         do i=m1%lb,m1%ub
@@ -254,7 +255,6 @@ SUBROUTINE make_antisymmetric (self, f, m1, m2, lower, upper, transpose, value)
     end if
   end if
   if (upper) then
-    !print *, 'upper boundary'
     if (transpose) then
       do j=m2%uo,m2%ub
         do i=m1%lb,m1%ub
@@ -284,7 +284,6 @@ SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose, value)
   integer:: i, j
   !-----------------------------------------------------------------------------
   if (lower) then
-    !print *, 'lower boundary'
     if (transpose) then
       do j=1,m2%lo
         do i=m1%lb,m1%ub
@@ -300,7 +299,6 @@ SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose, value)
     end if
   end if
   if (upper) then
-    !print *, 'upper boundary'
     if (transpose) then
       do j=m2%uo,m2%ub
         do i=m1%lb,m1%ub
@@ -330,7 +328,6 @@ SUBROUTINE make_constant (self, f, m1, m2, lower, upper, transpose, value)
   integer:: i, j
   !-----------------------------------------------------------------------------
   if (lower) then
-    print *, 'lower boundary', value
     if (transpose) then
       do j=1,m2%lo
         do i=m1%lb,m1%ub
@@ -346,7 +343,6 @@ SUBROUTINE make_constant (self, f, m1, m2, lower, upper, transpose, value)
     end if
   end if
   if (upper) then
-    print *, 'upper boundary', value
     if (transpose) then
       do j=m2%uo,m2%ub
         do i=m1%lb,m1%ub
