@@ -467,9 +467,9 @@ END SUBROUTINE spherical3
 !> Extrapolate values across a spherical boundary, sampling values 4 mesh points
 !> from the boundary, and at the boundary, to establish a stable slope
 !> =============================================================================
-SUBROUTINE spherical_extrapolate (self, mem, v, m, iv)
+SUBROUTINE spherical_extrapolate (self, mem, m, iv)
   class(boundaries_t)    :: self
-  real, dimension(:,:,:) :: mem, v
+  real, dimension(:,:,:) :: mem
   class(mesh_t), pointer :: m(:)
   integer                :: iv
   !............................................................................
@@ -513,8 +513,6 @@ SUBROUTINE spherical_extrapolate (self, mem, v, m, iv)
           p = (self%radius+ds-r)/(3.*ds) + 1.0
           if (a1 /= 0d0 .and. a2 /= 0d0) then
             mem(ix,iy,iz) = exp(a1*(1d0-p) + a2*p)
-          else
-            mem(ix,iy,iz) = v(ix,iy,iz)
           end if
         end if
       end do

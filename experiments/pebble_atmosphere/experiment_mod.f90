@@ -182,8 +182,6 @@ SUBROUTINE boundary_conditions (self, it)
   class(experiment_t):: self
   integer:: it
   !.............................................................................
-  real, dimension(:,:,:,:), pointer:: mem
-  real, dimension(:,:,:), pointer:: d, e
   real(8), dimension(3):: h
   integer:: iv, nb,i
   !-----------------------------------------------------------------------------
@@ -195,21 +193,17 @@ SUBROUTINE boundary_conditions (self, it)
     if (self%boundaries%is_set (bits%spherical)) then
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
       print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
-      allocate (mem(size(self%mem,1),size(self%mem,2),size(self%mem,3),2))
-      mem(:,:,:,1) = self%mem(:,:,:,self%i_d,it,1)
-      mem(:,:,:,2) = self%mem(:,:,:,self%i_e,it,1)
-      d => mem(:,:,:,1)
-      e => mem(:,:,:,2)
       call self%boundaries%init (radius=planet%radius-2.*self%ds(1))
-      call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), d, self%mesh, self%i_d)
-      call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), e, self%mesh, self%i_e)
       call self%boundaries%init (radius=planet%radius)
+      !call self%boundaries%init (radius=planet%radius-2.*self%ds(1))
+      call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), self%mesh, self%i_d)
+      call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), self%mesh, self%i_e)
+      !call self%boundaries%init (radius=planet%radius)
       do iv=self%i_px,self%i_pz
         call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
         if (self%nw>1) &
           call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
       end do
-      deallocate (mem)
     end if
     !------------------------------------------------------------------------
     ! Edge boundary conditions
@@ -260,7 +254,6 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   allocate (u(size(d,1),size(d,2),size(d,3)))
   allocate (k(size(d,1),size(d,2),size(d,3)))
   if (ii==3) then
-   !call self%density_boundary_condition (it)   ! density gradient BC
     call self%boundaries%extrapolate (d)        ! extrapolate log(d)
   else
     call self%boundaries%symmetric (d)          ! zero gradient in x,y
@@ -275,15 +268,9 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   end do
   k = 0.5*k/d                                   ! normalize kinetic energy
   u = (e-k)/d                                   ! internal energy
-  if (ii==3) then
     t = atmosphere%external%temperature &       ! external disk "temperature"
       /(self%gamma-1.0)
-    if (self%boundaries%is_set (bits%zl)) &
-      print *, 'MK temp', self%id, t, u(3,3,3)
     call self%boundaries%constant (u, t)        ! constant bdry value
-  else
-    call self%boundaries%symmetric (u)          ! zero gradient velocity
-  end if
   e = u*d+k                                     ! reconstruct total energy
   deallocate (u,k)
   call trace%end
