@@ -75,6 +75,7 @@ SUBROUTINE init_hierarchy (self, label)
   self%task_list%size = self%size*self%n_patch*self%m_zoom**(n_levels-1)*n_repeat
   n_repeat = (n_repeat/2)*2 + 1
   scene%n_repeat = n_repeat
+  level = 1
   do ir=0,n_repeat-1
     position(2) = ((ir-n_repeat/2)*self%task_list%size(2))/n_repeat
     if (io%verbose>1) &
