@@ -25,6 +25,7 @@ MODULE boundaries_mod
     procedure:: symmetric
     procedure:: antisymmetric
     procedure:: extrapolate
+    procedure:: constant
     procedure:: spherical_extrapolate
     procedure:: spherical0
     procedure:: spherical3
@@ -83,9 +84,10 @@ END FUNCTION is_clear
 !> =============================================================================
 !> Apply a boundary condition, using the procedure pointer "operator"
 !> =============================================================================
-SUBROUTINE condition (self, f, operator)
+SUBROUTINE condition (self, f, operator, value)
   class(boundaries_t):: self
   real, dimension(:,:,:):: f
+  real, optional:: value
   procedure(make_symmetric), pointer:: operator
   !.............................................................................
   class(mesh_t), pointer:: m(:), m1, m2
@@ -101,7 +103,8 @@ SUBROUTINE condition (self, f, operator)
     m1 => self%m(2)
     m2 => self%m(1)
     do i=m(3)%lb,m(3)%ub
-      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%xl),upper=self%is_set(bits%xu),transpose=.true.)
+      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%xl), &
+        upper=self%is_set(bits%xu), transpose=.true., value=value)
     end do
   end if
   if (self%is_set(bits%yl+bits%yu)) then
@@ -109,7 +112,8 @@ SUBROUTINE condition (self, f, operator)
     m1 => self%m(1)
     m2 => self%m(2)
     do i=m(3)%lb,m(3)%ub
-      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%yl),upper=self%is_set(bits%yu),transpose=.false.)
+      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%yl), &
+        upper=self%is_set(bits%yu), transpose=.false., value=value)
     end do
   end if
   if (self%is_set(bits%zl+bits%zu)) then
@@ -117,7 +121,8 @@ SUBROUTINE condition (self, f, operator)
     m1 => self%m(1)
     m2 => self%m(3)
     do i=m(2)%lb,m(2)%ub
-      call operator (self, f(:,i,:),m1,m2,lower=self%is_set(bits%zl),upper=self%is_set(bits%zu),transpose=.false.)
+      call operator (self, f(:,i,:),m1,m2,lower=self%is_set(bits%zl), &
+        upper=self%is_set(bits%zu), transpose=.false., value=value)
     end do
   end if
   call trace%end
@@ -163,13 +168,28 @@ SUBROUTINE extrapolate (self, mem)
 END SUBROUTINE extrapolate
 
 !> =============================================================================
+!> Apply constant boundary conditions
+!> =============================================================================
+SUBROUTINE constant (self, mem, value)
+  class(boundaries_t):: self
+  real, dimension(:,:,:), pointer:: mem
+  procedure(make_symmetric), pointer:: operator => make_constant
+  real:: value
+  !-----------------------------------------------------------------------------
+  call trace%begin ('boundaries_t%constant')
+  call self%condition (mem, operator, value=value)
+  call trace%end
+END SUBROUTINE constant
+
+!> =============================================================================
 !> Apply symmtric boundary condition to the 2nd index, looping over the 1st
 !> =============================================================================
-SUBROUTINE make_symmetric (self, f, m1, m2, lower, upper, transpose)
+SUBROUTINE make_symmetric (self, f, m1, m2, lower, upper, transpose, value)
   class(boundaries_t):: self
   real, dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
+  real, optional:: value
   integer:: i, j
   !-----------------------------------------------------------------------------
   if (lower) then
@@ -209,11 +229,12 @@ END SUBROUTINE make_symmetric
 !> =============================================================================
 !> Make the solution antisymmetric across the boundary
 !> =============================================================================
-SUBROUTINE make_antisymmetric (self, f, m1, m2, lower, upper, transpose)
+SUBROUTINE make_antisymmetric (self, f, m1, m2, lower, upper, transpose, value)
   class(boundaries_t):: self
   real, dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
+  real, optional:: value
   integer:: i, j
   !-----------------------------------------------------------------------------
   if (lower) then
@@ -254,11 +275,12 @@ END SUBROUTINE make_antisymmetric
 !> Make an extrapolated boundary condition, possibly transposing for vector
 !> speedup
 !> =============================================================================
-SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose)
+SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose, value)
   class(boundaries_t):: self
   real, dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
+  real, optional:: value
   integer:: i, j
   !-----------------------------------------------------------------------------
   if (lower) then
@@ -296,6 +318,52 @@ SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose)
 END SUBROUTINE make_extrapolated
 
 !> =============================================================================
+!> Make an constant boundary condition, possibly transposing for vector
+!> speedup
+!> =============================================================================
+SUBROUTINE make_constant (self, f, m1, m2, lower, upper, transpose, value)
+  class(boundaries_t):: self
+  real, dimension(:,:):: f
+  class(mesh_t), pointer:: m1, m2
+  logical:: lower, upper, transpose
+  real, optional:: value
+  integer:: i, j
+  !-----------------------------------------------------------------------------
+  if (lower) then
+    print *, 'lower boundary', value
+    if (transpose) then
+      do j=1,m2%lo
+        do i=m1%lb,m1%ub
+          f(j,i) = value
+        end do
+      end do
+    else
+      do j=1,m2%lo
+        do i=m1%lb,m1%ub
+          f(i,j) = value
+        end do
+      end do
+    end if
+  end if
+  if (upper) then
+    print *, 'upper boundary', value
+    if (transpose) then
+      do j=m2%uo,m2%ub
+        do i=m1%lb,m1%ub
+          f(j,i) = value
+        end do
+      end do
+    else
+      do j=m2%uo,m2%ub
+        do i=m1%lb,m1%ub
+          f(i,j) = value
+        end do
+      end do
+    end if
+  end if
+END SUBROUTINE make_constant
+
+!> =============================================================================
 !> Compute stagger offsets, taking care with buggy compilers, which may need
 !> help from specific mesh information.
 !> =============================================================================
@@ -318,7 +386,7 @@ END SUBROUTINE set_stagger
 !> Impose fixed boundary condition; scalar values
 !> =============================================================================
 SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
-  class(boundaries_t)      :: self
+  class(boundaries_t)    :: self
   real, dimension(:,:,:) :: mem
   real                   :: v
   class(mesh_t), pointer :: m(:)
@@ -352,7 +420,7 @@ END SUBROUTINE spherical0
 !> Impose fixed boundary condition; array values
 !> =============================================================================
 SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
-  class(boundaries_t)      :: self
+  class(boundaries_t)    :: self
   real, dimension(:,:,:) :: mem, v
   class(mesh_t), pointer :: m(:)
   integer                :: iv
@@ -404,7 +472,7 @@ END SUBROUTINE spherical3
 !> from the boundary, and at the boundary, to establish a stable slope
 !> =============================================================================
 SUBROUTINE spherical_extrapolate (self, mem, v, m, iv)
-  class(boundaries_t)      :: self
+  class(boundaries_t)    :: self
   real, dimension(:,:,:) :: mem, v
   class(mesh_t), pointer :: m(:)
   integer                :: iv

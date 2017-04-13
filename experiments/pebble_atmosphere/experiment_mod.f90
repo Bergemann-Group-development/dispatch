@@ -25,6 +25,7 @@ MODULE experiment_mod
     procedure :: constant_boundary_conditions
     procedure :: density_boundary_condition
   end type
+  real, save:: temp0=0.0
   logical, save:: first_time=.true.
 CONTAINS
 
@@ -74,6 +75,11 @@ SUBROUTINE init (self)
   call self%force%init (type)
   self%nv = 5
   self%mhd = .false.
+  !----------------------------------------------------------------------------
+  ! Through the hierarchy of class(task_t)%init calls, the call to %init below
+  ! sets the IC values, either from reading in snapshot values, or by calling
+  ! the IC condition procedure self%initial%selected() from gpatch_t%init.
+  !----------------------------------------------------------------------------
   call self%pebble_patch_t%init
   self%mhd = .false.
   self%nv = 5
@@ -87,7 +93,8 @@ SUBROUTINE init (self)
       call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
     end do
   end if
-  call self%output
+  if (self%restart<0) &
+    call self%output
   call trace_end
 END SUBROUTINE init
 
@@ -103,13 +110,11 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%check_density ('before update')
-
   !-----------------------------------------------------------------------------
   ! Option for transporting pebbles with frozen MHD values, in this case, make
   ! sure to wrap around in the time buffer before freezing, so the value needed
   ! by the pebbles have been computed and stored everywhere.
   !-----------------------------------------------------------------------------
-  call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   if (self%only_pebbles .or. self%is_set(bits%not_leaf)) then
     if (self%istep<self%nt+1) then
       call self%mhd_t%update
@@ -120,7 +125,7 @@ SUBROUTINE update (self)
       end do
     end if
   !-----------------------------------------------------------------------------
-  ! Normal time stepping, with boundary conditions
+  ! Normal time stepping, with boundary conditions applied after the update
   !-----------------------------------------------------------------------------
   else
     !--------------------------------------------------------------------------
@@ -128,7 +133,6 @@ SUBROUTINE update (self)
     !--------------------------------------------------------------------------
     call self%boundary_conditions (self%it)
     call self%mhd_t%update
-    call self%boundary_conditions (self%new)
   end if
   !-----------------------------------------------------------------------------
   if (self%id==io%id_debug) then
@@ -167,6 +171,7 @@ SUBROUTINE output (self, experiment_name)
         self%mem(m(1),m(2),m(3)-2:m(3)+2, 1,it,1)
     end do
   end if
+  call self%boundary_conditions (self%it)
   call self%patch_t%output
 END SUBROUTINE
 
@@ -244,6 +249,7 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   integer, optional:: ii
   real, dimension(:,:,:), pointer:: d, e, p, u, k
   integer:: iv
+  real:: t
   !-----------------------------------------------------------------------------
   ! Edge boundary conditions
   !-----------------------------------------------------------------------------
@@ -260,7 +266,7 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   end if
   k = 0.0                                       ! initialize kinetic energy
   do iv=self%i_px,self%i_pz
-    p => self%mem(:,:,:,iv,it,1)           ! momentum
+    p => self%mem(:,:,:,iv,it,1)                ! momentum
     u = p/d                                     ! velocity
     call self%boundaries%symmetric (u)          ! zero gradient velocity
     p = u*d                                     ! recontruct momentum
@@ -268,7 +274,15 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   end do
   k = 0.5*k/d                                   ! normalize kinetic energy
   u = (e-k)/d                                   ! internal energy
-  call self%boundaries%symmetric (u)            ! zero gradient
+  if (ii==3) then
+    t = atmosphere%external%temperature &       ! external disk "temperature"
+      /(self%gamma-1.0)
+    if (self%boundaries%is_set (bits%zl)) &
+      print *, 'MK temp', self%id, t, u(3,3,3)
+    call self%boundaries%constant (u, t)        ! constant bdry value
+  else
+    call self%boundaries%symmetric (u)          ! zero gradient velocity
+  end if
   e = u*d+k                                     ! reconstruct total energy
   deallocate (u,k)
   call trace%end
@@ -393,6 +407,10 @@ SUBROUTINE density_boundary_condition (self, it)
   else
     error stop "dbc"
   end if
+  if (self%id==io%id_debug) &
+    print '(a,2i5,2l4,3(2x,2i3))', 'MK', self%id, it, &
+      self%boundaries%is_set(bits%zl), &
+      self%boundaries%is_set(bits%zu), lx,ux, ly,uy, lz,uz
   do iz=lz,uz
     z = m(3)%p + r3(iz) - planet%position(3)
     do iy=ly,uy
@@ -403,11 +421,12 @@ SUBROUTINE density_boundary_condition (self, it)
                mem(ix,iy,iz0,3,it,1)**2 + &
                mem(ix,iy,iz0,4,it,1)**2)/d0)
         d = d0*exp(-(planet%omega(3)**2*d0/p0*0.5*(z**2-z0**2)))
-        self%mem(ix,iy,iz,1,it,1) = d
         if (self%id==io%id_debug.and.iy==uy/2.and.iz==uz) &
           print '(a,i4,1p,8e14.6)', &
-          'BCd: ix,d0,p0/do,exp =',ix,d0,p0/d0,(z-z0), &
-          exp(-(planet%omega(3)**2*d0/p0*0.5*(z**2-z0**2)))
+          'BCd: ix,d0,p0/do,exp,do,d =',ix, d0, p0/d0, (z-z0), &
+          exp(-(planet%omega(3)**2*d0/p0*0.5*(z**2-z0**2))), &
+          self%mem(ix,iy,iz,1,it,1), d
+        self%mem(ix,iy,iz,1,it,1) = d
       end do
     end do
   end do
