@@ -36,6 +36,8 @@ SUBROUTINE init (self)
   else
     call self%initial%selected (self%mesh, ff)
     self%time = restart_time
+    self%iout = restart_time+1
+    self%out_next = (int(self%time/self%out_time)+1)*self%out_time
     self%t(self%it) = self%time
   end if
 END SUBROUTINE
