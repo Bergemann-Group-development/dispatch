@@ -182,11 +182,11 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   end if
   !-----------------------------------------------------------------------------
   ! Add the classical Coriolis force term: -2*(\Omega x U). A positive omega(3)
-  ! is motion in the positive x-direction, if y points towards the system center.
-  ! Hence, a positive velocity in the x-direction increases the centripetal force,
-  ! and leads to acceleration in the negative y-direction -- vice versa for
-  ! motion in the y-direction; a motion inwards (+y) leads to acceleration in
-  ! the forward (+x) direction
+  ! corresponds to rotation in the y-direction, if x points radially outwards.
+  ! Hence, a positive velocity in the y-direction increases the centripetal force,
+  ! and leads to acceleration in the positive x-direction -- vice versa for
+  ! motion in the x-direction; a motion inwards (-x) leads to acceleration in
+  ! the forward (+y) direction
   !-----------------------------------------------------------------------------
   !print *, 'general vel X minmax', minval(ff(:,:,:,1)), maxval(ff(:,:,:,1))
   !print *, 'general vel y minmax', minval(ff(:,:,:,2)), maxval(ff(:,:,:,2))

@@ -516,6 +516,7 @@ SUBROUTINE spherical_extrapolate (self, mem, m, iv)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
+        r = max(r,self%radius-4.0*ds)
         if (r < self%radius-0.5*ds) then
           if (a1 /= 0d0 .and. a2 /= 0d0) then
             p = (self%radius-r)/(2.0*ds) + 1.0

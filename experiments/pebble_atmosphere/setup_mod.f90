@@ -54,7 +54,7 @@ SUBROUTINE init (self, label)
   call star%init
   call planet%init
   call atmosphere%init
-  self%size = planet%radius*2.2
+  self%size = planet%radius*2.3
   planet%position = 0.0
   self%position = planet%position
   call self%rubiks_t%init_hierarchy (label)
