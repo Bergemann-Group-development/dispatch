@@ -247,11 +247,7 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   e => self%mem(:,:,:,self%i_e,it,1)
   allocate (u(size(d,1),size(d,2),size(d,3)))
   allocate (k(size(d,1),size(d,2),size(d,3)))
-  if (ii==3) then
-    call self%density_boundary_condition (it)   ! vertical density BC
-  else
-    call self%boundaries%symmetric (d)          ! zero gradient in x,y
-  end if
+  call self%density_boundary_condition (it,ii)  ! vertical density BC
   k = 0.0                                       ! initialize kinetic energy
   do iv=self%i_px,self%i_pz
     p => self%mem(:,:,:,iv,it,1)                ! momentum
@@ -362,53 +358,86 @@ END SUBROUTINE constant_boundary_conditions
 !> =====================================================================
 !> Constrain the density to follow an achored Gaussian profile
 !> =====================================================================
-SUBROUTINE density_boundary_condition (self, it)
+SUBROUTINE density_boundary_condition (self, it, ii)
   class(experiment_t):: self
-  integer:: it
+  integer:: it, ii
   class(mesh_t), pointer, dimension(:) :: m
-  integer:: iv, iz, iy, ix, lz, uz, ly, uy, lx, ux, iz0
-  real(8) :: z, z0, r, d, d0, tt
+  integer:: iv, iz, iy, ix, lz, uz, ly, uy, lx, ux, ix0, iz0
+  real(8) :: x, x0, z, z0, r, d1, d0, tt, c2
+  real, dimension(:,:,:), pointer:: d
   !-----------------------------------------------------------------------------
   ! Vertical edge boundary conditions
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%density_boundary_conditions')
   m => self%mesh
-  associate (r3=>m(3)%r, mem=>self%mem)
-  if(self%boundaries%is_set(bits%zl)) then
-    lx = m(1)%lb; ux = m(1)%ub
-    ly = m(2)%lb; uy = m(2)%ub
-    lz = m(3)%lb; uz = m(3)%lo
-    iz0 = uz+1
-    z0 = m(3)%p + r3(iz0) - planet%position(3)
-  else if (self%boundaries%is_set(bits%zu)) then
-    lx = m(1)%lb; ux = m(1)%ub
-    ly = m(2)%lb; uy = m(2)%ub
-    lz = m(3)%uo; uz = m(3)%ub
-    iz0 = lz-1
-    z0 = m(3)%p + r3(iz0) - planet%position(3)
-  else
-    error stop "dbc"
-  end if
+  d => self%mem(:,:,:,1,it,1)
+  associate (r1=>m(1)%r, r3=>m(3)%r, mem=>self%mem)
   if (self%id==io%id_debug) &
     print '(a,2i5,2l4,3(2x,2i3))', 'MK', self%id, it, &
       self%boundaries%is_set(bits%zl), &
       self%boundaries%is_set(bits%zu), lx,ux, ly,uy, lz,uz
   tt = atmosphere%external%temperature
-  do iz=lz,uz
-    z = m(3)%p + r3(iz) - planet%position(3)
-    do iy=ly,uy
-      do ix=lx,ux
-        d0 = mem(ix,iy,iz0,1,it,1)
-        d = d0*exp(-(planet%omega(3)**2*0.5*(z**2-z0**2)/tt))
-        if (self%id==io%id_debug.and.iy==uy/2.and.iz==uz) &
-          print '(a,i4,1p,8e14.6)', &
-          'BCd: ix,d0,p0/do,exp,do,d =',ix, d0, tt, (z-z0), &
-          exp(-(planet%omega(3)**2*0.5*(z**2-z0**2)/tt)), &
-          self%mem(ix,iy,iz,1,it,1), d
-        self%mem(ix,iy,iz,1,it,1) = d
+  c2 = 0.5*planet%omega(3)**2/tt
+  if (ii==1) then
+    if(self%boundaries%is_set(bits%xl)) then
+      lx = m(1)%lb; ux = m(1)%lo
+      ly = m(2)%lb; uy = m(2)%ub
+      lz = m(3)%lb; uz = m(3)%ub
+      ix0 = ux+1
+      x0 = m(1)%p + r1(ix0) - planet%position(1)
+    else if (self%boundaries%is_set(bits%xu)) then
+      lx = m(1)%uo; ux = m(1)%ub
+      ly = m(2)%lb; uy = m(2)%ub
+      lz = m(3)%lb; uz = m(3)%ub
+      ix0 = lx-1
+      x0 = m(1)%p + r1(ix0) - planet%position(1)
+    else
+      error stop "dbc"
+    end if
+    c2 = c2*atmosphere%trap
+    do iz=lz,uz
+      do iy=ly,uy
+        do ix=lx,ux
+          x = m(1)%p + r1(ix) - planet%position(1)
+          d0 = mem(ix0,iy,iz,1,it,1)
+          self%mem(ix,iy,iz,1,it,1) = d0*exp(-c2*(x**2-x0**2))
+        end do
       end do
     end do
-  end do
+  else if (ii==2) then
+    call self%boundaries%symmetric (d)
+  else if (ii==3) then
+    if(self%boundaries%is_set(bits%zl)) then
+      lx = m(1)%lb; ux = m(1)%ub
+      ly = m(2)%lb; uy = m(2)%ub
+      lz = m(3)%lb; uz = m(3)%lo
+      iz0 = uz+1
+      z0 = m(3)%p + r3(iz0) - planet%position(3)
+    else if (self%boundaries%is_set(bits%zu)) then
+      lx = m(1)%lb; ux = m(1)%ub
+      ly = m(2)%lb; uy = m(2)%ub
+      lz = m(3)%uo; uz = m(3)%ub
+      iz0 = lz-1
+      z0 = m(3)%p + r3(iz0) - planet%position(3)
+    else
+      error stop "dbc"
+    end if
+    do iz=lz,uz
+      z = m(3)%p + r3(iz) - planet%position(3)
+      do iy=ly,uy
+        do ix=lx,ux
+          d0 = mem(ix,iy,iz0,1,it,1)
+          d1 = d0*exp(-c2*(z**2-z0**2))
+          if (self%id==io%id_debug.and.iy==uy/2.and.iz==uz) &
+            print '(a,i4,1p,8e14.6)', &
+            'BCd: ix,d0,p0/do,exp,do,d =',ix, d0, tt, (z-z0), &
+            exp(-c2*(z**2-z0**2)), &
+            self%mem(ix,iy,iz,1,it,1), d1
+          self%mem(ix,iy,iz,1,it,1) = d1
+        end do
+      end do
+    end do
+  end if
   end associate
   call trace%end
 END SUBROUTINE density_boundary_condition

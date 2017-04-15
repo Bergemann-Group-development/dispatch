@@ -75,13 +75,13 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, d0, p, ux, uy, uz
+  real(8) :: x, y, z, r, d, d0, T0, p, ux, uy, uz
   type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
-  real, save:: omega(3)=0.0
+  real, save:: omega(3)=0.0, trap=0.0
   real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0
-  namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs
+  namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs, trap
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('initial_t%planet_atmosphere', itimer=itimer)
@@ -94,9 +94,11 @@ SUBROUTINE planet_atmosphere (self, m, mem)
     if (io%master) write (*, planet_atm_params)
   end if
   !$omp end critical (input_cr)
+  atmosphere%trap = trap
   planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
+  T0 = atmosphere%external%temperature
   nr = atmosphere%nr
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -113,8 +115,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         ! subtracting off the otherwise constant external density
         !-----------------------------------------------------------------------
         d0 = d
-        d = d + &
-          atmosphere%external%density*(exp(-(planet%omega(3)**2*d0/p*0.5*z**2))-1d0)
+        d = d*exp(-(planet%omega(3)**2*0.5*(z**2+2.*trap*x**2)/T0))
         p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
         !  mem(ix,iy,iz,2) = d*(log(p)-gamma*log(d))/(gamma-1.0)
@@ -129,7 +130,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
         ux = -self%v_accrete
-        uy = -1.5*planet%omega(3)*x - self%v_head
+        uy = -(1.5+trap)*planet%omega(3)*x - self%v_head
         uz = 0.0
         mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
         mem(ix,iy,iz,i%px) = d*ux
@@ -156,13 +157,13 @@ SUBROUTINE disk (self, m, mem)
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, d0, p, ux, uy, uz
+  real(8) :: x, y, z, r, d, d0, T0, p, ux, uy, uz
   type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
-  real, save:: omega(3)=0.0
+  real, save:: omega(3)=0.0, trap=0.0
   real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0
-  namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs
+  namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs, trap
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('initial_t%planet_atmosphere', itimer=itimer)
@@ -175,10 +176,12 @@ SUBROUTINE disk (self, m, mem)
     if (io%master) write (*, planet_atm_params)
   end if
   !$omp end critical (input_cr)
+  atmosphere%trap = trap
   planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
   self%v_head    =    v_head_cgs/scaling%u
   self%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr
+  T0 = atmosphere%external%temperature
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz) - planet%position(3)
@@ -194,14 +197,14 @@ SUBROUTINE disk (self, m, mem)
         ! isothermal conditions
         !-----------------------------------------------------------------------
         d0 = d
-        d = d0*exp(-(planet%omega(3)**2*d0/p*0.5*z**2))
+        d = d*exp(-(planet%omega(3)**2*0.5*(z**2+2.*trap*x**2)/T0))
         p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
         !-----------------------------------------------------------------------
         ! A steady rotations profile in the rotating coordinate frame
         !-----------------------------------------------------------------------
         ux = -self%v_accrete
-        uy = -1.5*planet%omega(3)*x - self%v_head
+        uy = -(1.5+trap)*planet%omega(3)*x - self%v_head
         uz = 0.0
         mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
         mem(ix,iy,iz,i%px) = d*ux

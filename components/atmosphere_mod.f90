@@ -21,7 +21,7 @@ MODULE atmosphere_mod
     real:: gamma(2), temp_gamma
     real:: mass
     real(kind=8), dimension(:), pointer:: rho, pg, temp, rr
-    real(8):: dlnr, hill_radius, orbit_radius
+    real(8):: dlnr, hill_radius, orbit_radius, trap
     type(conditions_t):: external, surface
   contains
     procedure init

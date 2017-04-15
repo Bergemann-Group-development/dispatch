@@ -65,9 +65,10 @@ gamma=1.4
 !dt_fixed=0.001
 /
 &out_params
-!end_time=500  out_time=20              ! 0-25
- end_time=2500 out_time=50  restart=50  ! 26-65
+!end_time=500  out_time=20              ! 00-25
+!end_time=2500 out_time=50  restart=50  ! 26-65
 !end_time=5500 out_time=100 restart=65  ! 65-95
+ end_time=9000 out_time=100             ! 00-90
  print_time=0.01
  guard_zones=t
  time_derivs=f
