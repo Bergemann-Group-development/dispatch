@@ -39,9 +39,8 @@ gamma=1.4
  mass_m_earth=3.0
  orbit_radius_au=1.0
  position_orbit_radii=0.0, 1.0, 0.0 ! planet position in orbit radii      
- temperature_k=200.                ! surface temperature in K as an initial guess
- artificial_friction_time = 0.
- artificial_friction_strength = 0.0
+ trap=0.05                          ! Hx = sqrt(10.)*Hz = 3.16*Hz
+ artificial_friction=1e-3           ! friction time = 1e3
 /
 &atmosphere_params
  densitY_cgs=3e-12                  ! outer density of the atmosphere at 1 Hill radius (i.e. surrounding local disk density)
@@ -57,7 +56,6 @@ gamma=1.4
  v_head_cgs=0.0                     ! headwind speed
  v_accrete_cgs=0.0                  ! accretion speed
  omega = 0.0,0.0,1.0
- trap=0.05                          ! Hx = sqrt(10.)*Hz = 3.16*Hz
 /
 &patch_params
  n=3*32
@@ -71,7 +69,8 @@ gamma=1.4
 !end_time=500  out_time=20              ! 00-25
 !end_time=2500 out_time=50  restart=50  ! 26-65
 !end_time=5500 out_time=100 restart=65  ! 65-95
- end_time=9000 out_time=100             ! 00-90
+!end_time=9000 out_time=100             ! 00-90
+ end_time=9000 out_time=100 restart=80  ! 00-90
  print_time=0.01
  guard_zones=t
  time_derivs=f
@@ -92,7 +91,6 @@ gamma=1.4
  do_isothermal=f
  csound=0.2
  detailed_timer=f
- friction=0.0
 /
 
 &refine_params

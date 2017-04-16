@@ -15,7 +15,7 @@ MODULE force_mod
   contains
     procedure :: init
   end type
- logical, save:: first_time=.true.
+  logical, save:: first_time=.true.
 CONTAINS
 
 !> =============================================================================
@@ -105,6 +105,15 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
         !-----------------------------------------------------------------------
         ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xp
         ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp
+        !-----------------------------------------------------------------------
+        ! Friction term, to damp out initial sloshing motions, relative to the
+        ! average shear.
+        !-----------------------------------------------------------------------
+        ux = -planet%v_accrete
+        uy = -(1.5+planet%trap)*planet%omega(3)*xp - planet%v_head
+        ff(ix,iy,iz,1) = ff(ix,iy,iz,1) - planet%friction*(p(ix,iy,iz,1)/d(ix,iy,iz)-ux)
+        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) - planet%friction*(p(ix,iy,iz,2)/d(ix,iy,iz)-uy)
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - planet%friction*(p(ix,iy,iz,3)/d(ix,iy,iz))
       end do
     end do
   end do
@@ -119,7 +128,7 @@ FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
   ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
   ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
   ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
-    end associate
+  end associate
   call trace_end
 END FUNCTION star_and_planet
 
@@ -163,6 +172,14 @@ FUNCTION disk (self, time, d, p, m) RESULT (ff)
         !-----------------------------------------------------------------------
         ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xp
         ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zp
+        !-----------------------------------------------------------------------
+        ! Friction term, to damp out initial sloshing motions
+        !-----------------------------------------------------------------------
+        ux = -planet%v_accrete
+        uy = -(1.5+planet%trap)*planet%omega(3)*xp - planet%v_head
+        ff(ix,iy,iz,1) = ff(ix,iy,iz,1) - planet%friction*(p(ix,iy,iz,1)/d(ix,iy,iz)-ux)
+        ff(ix,iy,iz,2) = ff(ix,iy,iz,2) - planet%friction*(p(ix,iy,iz,2)/d(ix,iy,iz)-uy)
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - planet%friction*(p(ix,iy,iz,3)/d(ix,iy,iz))
       end do
     end do
   end do
