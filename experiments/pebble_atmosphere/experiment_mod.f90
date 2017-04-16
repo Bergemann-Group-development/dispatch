@@ -342,8 +342,8 @@ SUBROUTINE constant_boundary_conditions (self, it, wl)
         ! the Hill sphere, so we will probably only be seeing effects of the
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
-        px = -self%initial%v_accrete
-        py = -1.5*planet%omega(3)*x - self%initial%v_head
+        px = -planet%v_accrete
+        py = -1.5*planet%omega(3)*x - planet%v_head
         pz = 0.0
         self%mem(ix,iy,iz,self%i_px,it,1) = d*px ! radial speed
         self%mem(ix,iy,iz,self%i_py,it,1) = d*py ! azimuthal speed
@@ -394,7 +394,7 @@ SUBROUTINE density_boundary_condition (self, it, ii)
     else
       error stop "dbc"
     end if
-    c2 = c2*atmosphere%trap
+    c2 = c2*planet%trap
     do iz=lz,uz
       do iy=ly,uy
         do ix=lx,ux
