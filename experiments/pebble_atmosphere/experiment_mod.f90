@@ -394,7 +394,7 @@ SUBROUTINE density_boundary_condition (self, it, ii)
     else
       error stop "dbc"
     end if
-    c2 = c2*planet%trap
+    c2 = c2*2.0*planet%trap
     do iz=lz,uz
       do iy=ly,uy
         do ix=lx,ux
