@@ -2,6 +2,7 @@
 !> The gpatch_t data type extends the patch_t with a generic guard zone dnload
 !> procedure, which covers the need for all simple, Cartesian mesh based 
 !> solvers, and eliminates the need for a dnload procedure in each one of them.
+!> It also adds restart functionality when initializing patches.
 !> =============================================================================
 MODULE gpatch_mod
   USE io_mod
@@ -21,6 +22,7 @@ MODULE gpatch_mod
 CONTAINS
 
 !> =============================================================================
+!> Add restart functionality to patch initialization
 !> =============================================================================
 SUBROUTINE init (self)
   class(gpatch_t):: self
@@ -30,18 +32,36 @@ SUBROUTINE init (self)
   call self%patch_t%init
   call self%initial%init
   ff => self%mem(:,:,:,:,1,1)
+  !-----------------------------------------------------------------------------
+  ! Try reading a restart snapshot.
+  !-----------------------------------------------------------------------------
   call self%input (ok)
   if (ok) then
     restart_time = self%time
+  !-----------------------------------------------------------------------------
+  ! If the restart parameter is not set, or the file does not exist, initialize
+  ! the patch from scratch, resetting other necessary counters only if positive
+  ! restart_time indicates that restart files were read for previous patches.
+  !-----------------------------------------------------------------------------
   else
     call self%initial%selected (self%mesh, ff)
+  end if
+  !-----------------------------------------------------------------------------
+  ! If restart succeeded for some patch, use it to set time and output cadence.
+  ! FIXME: This may fail in some corner cases when running on multiple MPI ranks,
+  ! if one rank happens to handle only patches that do not exist yet.
+  !-----------------------------------------------------------------------------
+  if (restart_time > 0d0) then
     self%time = restart_time
-    self%out_next = (int(self%time/self%out_time)+1)*self%out_time
     self%t(self%it) = self%time
+    self%out_next = (int(self%time/self%out_time)+1)*self%out_time
+    self%iout = self%restart+1
   end if
 END SUBROUTINE
 
 !> =============================================================================
+!> Add default guard zone download functionality.  This may be overloaded in
+!> experiment_mod, if more specialized guard zone loading is required.
 !> =============================================================================
 SUBROUTINE dnload (self)
   class(gpatch_t):: self

@@ -1100,7 +1100,6 @@ SUBROUTINE input_legacy (self, ok)
     if (self%id==io%id_debug) &
       print *,'MK input_legacy: no .txt file', trim(filename)//'.txt'
     call trace_end
-    self%iout = self%restart+1
     return
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
@@ -1135,7 +1134,6 @@ SUBROUTINE input_legacy (self, ok)
   !-----------------------------------------------------------------------------
   ! Update the iout and out_next for continued experiment
   !-----------------------------------------------------------------------------
-  self%iout = self%restart+1
   self%out_next = (int(self%time/self%out_time)+1)*self%out_time
   call trace_end
 END SUBROUTINE input_legacy
