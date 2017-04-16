@@ -7,6 +7,15 @@ import itertools
 import yt as yt
 import scaling as sc
 
+# a procedure to read in the data from patches. It uses dispatch_data.py to do that. Data from .txt files is
+# stored in patches[] array, memory mapping is used for the actual data.
+# input:
+# snap - snapshot number
+# datadir - self explanatory
+# verbose - self explanatory
+# ThisPatch - the type of patch we are dealing here with
+# skip - patches to be skipped
+# gamma - temorary here, later should be a memory entry
 def get_data(snap,datadir,prefix='',verbose=False, ThisPatch='', skip=[], gamma = 1.4):
     ld = os.listdir(datadir)
     ld.sort()
@@ -21,15 +30,18 @@ def get_data(snap,datadir,prefix='',verbose=False, ThisPatch='', skip=[], gamma 
         ul = np.zeros(3)
         ll=list(p.llc)
         for i in range(3):
-            ll[i] = p.pos[i] - p.dx[i]*0.5*p.n[i]
-            ul[i] = p.pos[i] + p.dx[i]*0.5*p.n[i]
-        p.llc=tuple(ll)
+            #ll[i] = p.pos[i] - p.dx[i]*0.5*p.n[i]
+            ul[i] = p.llc[i] + p.dx[i]*float(p.n[i])
+        #p.llc=tuple(ll)
         p.urc=tuple(ul)
         p.gamma = gamma                                                     
     return patches
 
 def make_yt_dict(patches):
     gd=[]
+    lbox=[0] * 3
+    ubox=[0] * 3
+    bbox=np.array([[0.,0.],[0.,0.],[0.,0.]])
     for p in patches:
         sg = (p.gamma-1.)*sc.scaling().temp
         if p.data.shape[1] > p.n[0]:
@@ -38,12 +50,16 @@ def make_yt_dict(patches):
             l=[0] *3
             u=[0] *3
             for cc in range(3):
-                l[cc] = ng[cc]-1
-                u[cc] = gn[cc] - ng[cc] - 1
+                l[cc] = ng[cc]
+                u[cc] = gn[cc] - ng[cc]
+                if p.llc[cc] < lbox[cc]:
+                    lbox[cc] = p.llc[cc]
+                if p.urc[cc] > ubox[cc]:
+                    ubox[cc] = p.urc[cc]
             gd.append(dict(
-                left_edge = [a-b for a,b in zip(p.pos,[c*0.5*d for c,d in zip(p.dx,p.n)])],
-                right_edge = [a+b for a,b in zip(p.pos,[c*0.5*d for c,d in zip(p.dx,p.n)])],
-                level = p.level-1,
+                left_edge = p.llc,
+                right_edge = p.urc,
+                level = p.level,
                 dimensions=p.n,
                 number_of_particles=0,
                 density=p.data[l[0]:u[0],l[1]:u[1],l[2]:u[2],p.varidx['d']],
@@ -55,10 +71,15 @@ def make_yt_dict(patches):
                 velocity_z=[a/b for a,b in zip (p.data[l[0]:u[0],l[1]:u[1],l[2]:u[2],p.varidx['p3']],p.data[l[0]:u[0],l[1]:u[1],l[2]:u[2],p.varidx['d']])],
                 temperature = [(a-0.5*((p1**2+p2**2+p3**2)/d))/d*sg for a,p1,p2,p3,d in zip(p.data[l[0]:u[0],l[1]:u[1],l[2]:u[2],p.varidx['e']], p.data[l[0]:u[0],l[1]:u[1],l[2]:u[2],p.varidx['p1']], p.data[l[0]:u[0],l[1]:u[1],l[2]:u[2],p.varidx['p2']], p.data[l[0]:u[0],l[1]:u[1],l[2]:u[2],p.varidx['p3']], p.data[l[0]:u[0],l[1]:u[1],l[2]:u[2],p.varidx['d']])],))
         else:
+            for cc in range(3):
+                if p.llc[cc] < lbox[cc]:
+                    lbox[cc] = p.llc[cc]
+                if p.urc[cc] > ubox[cc]:
+                    ubox[cc] = p.urc[cc]
             gd.append(dict(
-                left_edge = [a-b for a,b in zip(p.pos,[c*0.5*d for c,d in zip(p.dx,p.n)])],
-                right_edge = [a+b for a,b in zip(p.pos,[c*0.5*d for c,d in zip(p.dx,p.n)])],
-                level = p.level-1,
+                left_edge = p.llc,
+                right_edge = p.urc,
+                level = p.level,
                 dimensions=p.n,
                 number_of_particles=0,
                 density=p.data[:,:,:,p.varidx['d']],
@@ -69,28 +90,18 @@ def make_yt_dict(patches):
                 velocity_y=[a/b for a,b in zip (p.data[:,:,:,p.varidx['p2']],p.data[:,:,:,p.varidx['d']])],
                 velocity_z=[a/b for a,b in zip (p.data[:,:,:,p.varidx['p3']],p.data[:,:,:,p.varidx['d']])],
                 temperature = [(a-0.5*((p1**2+p2**2+p3**2)/d))/d*sg for a,p1,p2,p3,d in zip(p.data[:,:,:,p.varidx['e']], p.data[:,:,:,p.varidx['p1']], p.data[:,:,:,p.varidx['p2']], p.data[:,:,:,p.varidx['p3']], p.data[:,:,:,p.varidx['d']])]))
+    for cc in range(3):
+        bbox[cc][0]=lbox[cc]
+        bbox[cc][1]=ubox[cc]
+    patches[0].bbox=bbox
     return gd
     
     
     
-def load_yt(dc,nx,sz=10000,refine_by=3,geometry="cartesian",time=0):
+def load_yt(dc,nx,bbox=np.array([[-100,100],[-100,100],[-100,100]]),refine_by=3,geometry="cartesian",time=0):
     ds=yt.load_amr_grids(dc,nx,
-                       bbox=np.array([[-sz,sz],[-sz,sz],[-sz,sz]]),
+                       bbox=bbox,
                        refine_by=refine_by,
-                       geometry="cartesian",
-                       mass_unit=sc.scaling().m,
-                       length_unit=sc.scaling().l,
-                       velocity_unit=sc.scaling().v,
-                       time_unit=sc.scaling().t,
-                       sim_time = time,
-                       periodicity=(False,False,False))
-    return ds
-
-def load_long_yt(dc,nx,sz=100,refine_by=3,geometry="cartesian",mass_unit=sc.scaling().m,length_unit=sc.scaling().l,
-            time_unit=sc.scaling().t,velocity_unit=sc.scaling().v,periodicity=(False,False,False),time=0):
-    ds=yt.load_amr_grids(dc,nx,
-                       bbox=np.array([[-sz,sz],[-sz*3,sz*3],[-sz,sz]]),
-                       refine_by=3,
                        geometry="cartesian",
                        mass_unit=sc.scaling().m,
                        length_unit=sc.scaling().l,
