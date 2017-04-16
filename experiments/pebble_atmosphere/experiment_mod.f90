@@ -229,13 +229,14 @@ END SUBROUTINE boundary_conditions
 !> Boundary conditions at the edges of the outermost rubiks cubes; extrapolate
 !> the density and pressure, and enforce vanishing derivative on the perpendicular
 !> velocities. To what extend the boundary conditions are applied in the x,y,z
-!> directions depends on the self%boundary%status bits
+!> directions depends on the self%boundary%status bits. Note that the same
+!> condition is applied in all directions that have boundary bits set!
 !> =============================================================================
 SUBROUTINE edge_boundary_conditions (self, it, ii)
   class(experiment_t):: self
   integer:: it
   integer, optional:: ii
-  real, dimension(:,:,:), pointer:: d, e, p, u, k
+  real, dimension(:,:,:), pointer:: d, e, p, u, k1, k2
   integer:: iv
   real:: ee
   !-----------------------------------------------------------------------------
@@ -246,23 +247,39 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   d => self%mem(:,:,:,self%i_d,it,1)
   e => self%mem(:,:,:,self%i_e,it,1)
   allocate (u(size(d,1),size(d,2),size(d,3)))
-  allocate (k(size(d,1),size(d,2),size(d,3)))
+  allocate (k1(size(d,1),size(d,2),size(d,3)))
+  allocate (k2(size(d,1),size(d,2),size(d,3)))
   call self%density_boundary_condition (it,ii)  ! vertical density BC
-  k = 0.0                                       ! initialize kinetic energy
+  k1 = 0.0                                      ! initialize kinetic energy
+  k2 = 0.0                                      ! initialize kinetic energy
   do iv=self%i_px,self%i_pz
     p => self%mem(:,:,:,iv,it,1)                ! momentum
+    k1 = k1+p**2                                ! accumulate kinetic energy
     u = p/d                                     ! velocity
-    call self%boundaries%symmetric (u)          ! zero gradient velocity
+    call self%boundaries%symmetric (u, ii=ii)   ! zero gradient velocity
+    !if (ii==1) then                             ! BC in x-direction
+    !  if (iv==self%i_py) then
+    !    if (self%id==io%id_debug) print*,'MK extrapolate',ii,iv
+    !    call self%boundaries%extrapolate (u)    ! extrapolate perpendicular components
+    !  else
+    !    if (self%id==io%id_debug) print*,'MK symmetric',ii,iv
+    !    call self%boundaries%symmetric (u)      ! zero gradient parallel component
+    !  end if
+    !else
+    !  if (self%id==io%id_debug) print*,'MK symmetric',ii,iv
+    !  call self%boundaries%symmetric (u)        ! zero gradient parallel component
+    !end if
     p = u*d                                     ! recontruct momentum
-    k = k+p**2                                  ! accumulate kinetic energy
+    k2 = k2+p**2
   end do
-  k = 0.5*k/d                                   ! normalize kinetic energy
-  u = (e-k)/d                                   ! internal energy
+  k1 = 0.5*k1/d                                 ! old kinetic energy
+  k2 = 0.5*k2/d                                 ! new kinetic energy
   ee = atmosphere%external%temperature &        ! external disk e/d
     /(self%gamma-1.0)
-  call self%boundaries%constant (u, ee)         ! constant bdry value
-  e = u*d+k                                     ! reconstruct total energy
-  deallocate (u,k)
+  u = (e-k1)/d                                  ! remove old kinetic energy
+  call self%boundaries%constant (u, ee, ii=ii)  ! constant bdry value
+  e = u*d+k2                                    ! add new kinetic energy
+  deallocate (u,k1,k2)
   call trace%end
 END SUBROUTINE edge_boundary_conditions
 
@@ -405,7 +422,7 @@ SUBROUTINE density_boundary_condition (self, it, ii)
       end do
     end do
   else if (ii==2) then
-    call self%boundaries%symmetric (d)
+    call self%boundaries%symmetric (d, ii)
   else if (ii==3) then
     if(self%boundaries%is_set(bits%zl)) then
       lx = m(1)%lb; ux = m(1)%ub

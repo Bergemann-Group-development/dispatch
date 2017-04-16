@@ -26,6 +26,7 @@ MODULE boundaries_mod
     procedure:: symmetric
     procedure:: antisymmetric
     procedure:: extrapolate
+    procedure:: log_extrapolate
     procedure:: constant
     procedure:: spherical_extrapolate
     procedure:: spherical0
@@ -85,10 +86,11 @@ END FUNCTION is_clear
 !> =============================================================================
 !> Apply a boundary condition, using the procedure pointer "operator"
 !> =============================================================================
-SUBROUTINE condition (self, f, operator, value)
+SUBROUTINE condition (self, f, operator, value, ii)
   class(boundaries_t):: self
   real, dimension(:,:,:):: f
   real, optional:: value
+  integer, optional:: ii
   procedure(make_symmetric), pointer:: operator
   !.............................................................................
   class(mesh_t), pointer:: m(:), m1, m2
@@ -99,89 +101,128 @@ SUBROUTINE condition (self, f, operator, value)
     call mpi%abort ('boundaries_t%init has not been called')
   end if
   m => self%m
-  if (self%is_set(bits%xl+bits%xu)) then
+  if (present(ii)) then
+    select case(ii)
+    case(1)
+      call x_condition
+    case(2)
+      call y_condition
+    case(3)
+      call z_condition
+    end select
+  else
+    if (self%is_set(bits%xl+bits%xu)) then
+      call x_condition
+    end if
+    if (self%is_set(bits%yl+bits%yu)) then
+      call y_condition
+    end if
+    if (self%is_set(bits%zl+bits%zu)) then
+      call z_condition
+    end if
+  end if
+  call trace%end
+  return
+  contains
+  subroutine x_condition
     if (self%id==io%id_debug) &
-      print *, 'BOUNDARY CONDITION: x-direction', self%status, present(value)
+      print *, 'MK BOUNDARY CONDITION: x-direction', self%status, present(value)
     m1 => self%m(2)
     m2 => self%m(1)
     do i=m(3)%lb,m(3)%ub
       call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%xl), &
         upper=self%is_set(bits%xu), transpose=.true., value=value)
     end do
-  end if
-  if (self%is_set(bits%yl+bits%yu)) then
+  end subroutine x_condition
+  subroutine y_condition
     if (self%id==io%id_debug) &
-      print *, 'BOUNDARY CONDITION: y-direction', self%status, present(value)
+      print *, 'MK BOUNDARY CONDITION: y-direction', self%status, present(value)
     m1 => self%m(1)
     m2 => self%m(2)
     do i=m(3)%lb,m(3)%ub
       call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%yl), &
         upper=self%is_set(bits%yu), transpose=.false., value=value)
     end do
-  end if
-  if (self%is_set(bits%zl+bits%zu)) then
+  end subroutine y_condition
+  subroutine z_condition
     if (self%id==io%id_debug) &
-      print *, 'BOUNDARY CONDITION: z-direction', self%status, present(value)
+      print *, 'MK BOUNDARY CONDITION: z-direction', self%status, present(value)
     m1 => self%m(1)
     m2 => self%m(3)
     do i=m(2)%lb,m(2)%ub
       call operator (self, f(:,i,:),m1,m2,lower=self%is_set(bits%zl), &
         upper=self%is_set(bits%zu), transpose=.false., value=value)
     end do
-  end if
-  call trace%end
+  end subroutine z_condition
 END SUBROUTINE condition
 
 !> =============================================================================
 !> Apply symmetric boundary conditions in the directions indicated by status bits
 !> =============================================================================
-SUBROUTINE symmetric (self, mem)
+SUBROUTINE symmetric (self, mem, ii)
   class(boundaries_t):: self
   real, dimension(:,:,:), pointer:: mem
+  integer, optional:: ii
   procedure(make_symmetric), pointer:: operator => make_symmetric
   !-----------------------------------------------------------------------------
   call trace%begin ('boundaries_t%symmetric')
-  call self%condition (mem, operator)
+  call self%condition (mem, operator, ii=ii)
   call trace%end
 END SUBROUTINE symmetric
 
 !> =============================================================================
 !> Apply antisymmetric boundary conditions
 !> =============================================================================
-SUBROUTINE antisymmetric (self, mem)
+SUBROUTINE antisymmetric (self, mem, ii)
   class(boundaries_t):: self
   real, dimension(:,:,:), pointer:: mem
+  integer, optional:: ii
   procedure(make_symmetric), pointer:: operator => make_antisymmetric
   !-----------------------------------------------------------------------------
   call trace%begin ('boundaries_t%antisymmetric')
-  call self%condition (mem, operator)
+  call self%condition (mem, operator, ii=ii)
   call trace%end
 END SUBROUTINE antisymmetric
 
 !> =============================================================================
 !> Apply extrapolating boundary conditions
 !> =============================================================================
-SUBROUTINE extrapolate (self, mem)
+SUBROUTINE extrapolate (self, mem, ii)
   class(boundaries_t):: self
   real, dimension(:,:,:), pointer:: mem
+  integer, optional:: ii
   procedure(make_symmetric), pointer:: operator => make_extrapolated
   !-----------------------------------------------------------------------------
   call trace%begin ('boundaries_t%extrapolate')
-  call self%condition (mem, operator)
+  call self%condition (mem, operator, ii=ii)
   call trace%end
 END SUBROUTINE extrapolate
 
 !> =============================================================================
-!> Apply constant boundary conditions
+!> Apply extrapolating boundary conditions
 !> =============================================================================
-SUBROUTINE constant (self, mem, value)
+SUBROUTINE log_extrapolate (self, mem)
   class(boundaries_t):: self
   real, dimension(:,:,:), pointer:: mem
-  procedure(make_symmetric), pointer:: operator => make_constant
+  procedure(make_symmetric), pointer:: operator => make_log_extrapolated
+  !-----------------------------------------------------------------------------
+  call trace%begin ('boundaries_t%extrapolate')
+  call self%condition (mem, operator)
+  call trace%end
+END SUBROUTINE log_extrapolate
+
+!> =============================================================================
+!> Apply constant boundary conditions
+!> =============================================================================
+SUBROUTINE constant (self, mem, value, ii)
+  class(boundaries_t):: self
+  real, dimension(:,:,:), pointer:: mem
   real:: value
+  integer, optional:: ii
+  procedure(make_symmetric), pointer:: operator => make_constant
   !-----------------------------------------------------------------------------
   call trace%begin ('boundaries_t%constant')
-  call self%condition (mem, operator, value=value)
+  call self%condition (mem, operator, value=value, ii=ii)
   call trace%end
 END SUBROUTINE constant
 
@@ -287,6 +328,50 @@ SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose, value)
     if (transpose) then
       do j=1,m2%lo
         do i=m1%lb,m1%ub
+          f(j,i) = 2.*f(m2%li,i) - f(m2%li+1+(m2%lo-j),i)
+        end do
+      end do
+    else
+      do j=1,m2%lo
+        do i=m1%lb,m1%ub
+          f(i,j) = 2.*f(i,m2%li) - f(i,m2%li+1+(m2%lo-j))
+        end do
+      end do
+    end if
+  end if
+  if (upper) then
+    if (transpose) then
+      do j=m2%uo,m2%ub
+        do i=m1%lb,m1%ub
+          f(j,i) = 2.*f(m2%ui,i) - f(m2%ui-1-(j-m2%uo),i)
+        end do
+      end do
+    else
+      do j=m2%uo,m2%ub
+        do i=m1%lb,m1%ub
+          f(i,j) = 2.*f(i,m2%ui) - f(i,m2%ui-1-(j-m2%uo))
+        end do
+      end do
+    end if
+  end if
+END SUBROUTINE make_extrapolated
+
+!> =============================================================================
+!> Make an extrapolated boundary condition, possibly transposing for vector
+!> speedup
+!> =============================================================================
+SUBROUTINE make_log_extrapolated (self, f, m1, m2, lower, upper, transpose, value)
+  class(boundaries_t):: self
+  real, dimension(:,:):: f
+  class(mesh_t), pointer:: m1, m2
+  logical:: lower, upper, transpose
+  real, optional:: value
+  integer:: i, j
+  !-----------------------------------------------------------------------------
+  if (lower) then
+    if (transpose) then
+      do j=1,m2%lo
+        do i=m1%lb,m1%ub
           f(j,i) = exp(2.*log(f(m2%li,i)) - log(f(m2%li+1+(m2%lo-j),i)))
         end do
       end do
@@ -313,7 +398,7 @@ SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose, value)
       end do
     end if
   end if
-END SUBROUTINE make_extrapolated
+END SUBROUTINE make_log_extrapolated
 
 !> =============================================================================
 !> Make an constant boundary condition, possibly transposing for vector
