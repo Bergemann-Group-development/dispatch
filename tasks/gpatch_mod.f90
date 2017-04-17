@@ -6,6 +6,7 @@
 !> =============================================================================
 MODULE gpatch_mod
   USE io_mod
+  USE trace_mod
   USE patch_mod
   USE download_mod
   USE initial_mod
@@ -29,9 +30,9 @@ SUBROUTINE init (self)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: ff
   logical:: ok
   !-----------------------------------------------------------------------------
+  call trace%begin ('gpatch_t%init')
   call self%patch_t%init
   call self%initial%init
-  ff => self%mem(:,:,:,:,1,1)
   !-----------------------------------------------------------------------------
   ! Try reading a restart snapshot.
   !-----------------------------------------------------------------------------
@@ -44,6 +45,7 @@ SUBROUTINE init (self)
   ! restart_time indicates that restart files were read for previous patches.
   !-----------------------------------------------------------------------------
   else
+    ff => self%mem(:,:,:,:,1,1)
     call self%initial%selected (self%mesh, ff)
   end if
   !-----------------------------------------------------------------------------
@@ -57,6 +59,7 @@ SUBROUTINE init (self)
     self%out_next = (int(self%time/self%out_time)+1)*self%out_time
     self%iout = self%restart+1
   end if
+  call trace%end
 END SUBROUTINE
 
 !> =============================================================================

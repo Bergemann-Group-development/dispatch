@@ -111,7 +111,7 @@ SUBROUTINE init (self)
     if (io%verbose>1) &
       print*, 'thread', omp_mythread, ' reading namelist'
     rewind (io%input)
-    read (io%input, pebble_params, iostat=iostat)
+    read (io%input, pebble_params)
     if (io%master) write(*, pebble_params)
     call pebble_trace%init (trace_every)
   end if

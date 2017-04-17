@@ -344,6 +344,7 @@ SUBROUTINE init (self)
   !$omp end critical (patch_input_cr)
   ! reasonable values of self%n should take precedence over a saved value of `n`.
   if (any(self%n == 0)) self%n = n              ! patch dimensions
+  io%inputdir      = inputdir
   self%restart     = restart                    ! restart snapshot
   self%ng          = ng                         ! number of guard zones
   self%nv          = nv                         ! number of variables
@@ -1018,7 +1019,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   if (io%master .and. io%verbose>=-1) then
-    print'(a,3x,"time:",2f13.6)', 'patch_mod::output: file= '//trim(filename), time, self%time
+    print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   write (io%data_unit,'(1p,e18.10,6(2x,3e18.10)1x,i3.1,1x,e10.3)') time, self%position, self%ds, &
@@ -1127,7 +1128,7 @@ SUBROUTINE input_legacy (self, ok)
   do iv=1,self%nv
     read (io%data_unit,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
   end do
-  if (io%master .and. io%verbose>=0) print*, 'input_legacy: ', trim(filename), time
+  if (io%master .and. io%verbose>=0) print*, 'patch_t%input_legacy: ', trim(filename), time
   close (io%data_unit)
   if (self%id==io%id_debug) &
     print *,'MK input_legacy', self%id, ok, self%mem(18,18,36,1,self%it,1)

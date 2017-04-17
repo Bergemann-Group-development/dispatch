@@ -172,7 +172,7 @@ SUBROUTINE output (self, experiment_name)
     end do
   end if
   call self%boundary_conditions (self%it)
-  call self%patch_t%output
+  call self%pebble_patch_t%output
 END SUBROUTINE
 
 !> =============================================================================
