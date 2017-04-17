@@ -56,6 +56,7 @@ MODULE pebble_patch_mod
     procedure inside_r4                         ! is it inside?
     procedure interpolate_r4                    ! interpolation
     procedure output                            ! pebble output
+    procedure input                             ! pebble input
   end type
   logical, save:: debug = .false.
   integer, save:: id_dbg = 0
@@ -144,6 +145,16 @@ SUBROUTINE init (self)
   case ('kdk_drag')
     self%move => kdk_drag
   end select
+  !-----------------------------------------------------------------------------
+  ! Try reading a restart snapshot and initialize new pebbles if that fails
+  !-----------------------------------------------------------------------------
+  call self%input (ok)
+  if (ok) then
+    ! ...
+  else
+    call self%boundary_add
+    call self%volume_add
+  end if
   call trace_end (itimer)
 END SUBROUTINE init
 
@@ -971,7 +982,7 @@ SUBROUTINE output (self, experiment_name)
   character(len=128):: filename
   integer, parameter:: data_format=4, n_var=9
   real, dimension(:,:), pointer:: buffer
-  integer, dimension(:), pointer:: idbuf
+  integer, dimension(:,:), pointer:: idbuf
   integer:: i, j, np, n_not
   class(pebble_t), pointer:: p
   !-----------------------------------------------------------------------------
@@ -982,12 +993,12 @@ SUBROUTINE output (self, experiment_name)
   if (self%do_pebbles) then
     !$omp critical (out_cr)
     write (filename,'(a,i4.4,"_",i4.4,".peb")') &
-        trim(io%outputname)//'/', self%id, self%iout
+        trim(io%outputname)//'/', self%id, self%iout-1
     open  (io%data_unit, file=filename, form='unformatted', status='unknown')
     write (io%data_unit) data_format
     !
     np = max(self%pebbles%n,1)
-    allocate (buffer(np,n_var), idbuf(np))
+    allocate (buffer(np,n_var), idbuf(np,2))
     buffer = 0.0
     p => self%pebbles%head
     n_not = 0
@@ -996,13 +1007,15 @@ SUBROUTINE output (self, experiment_name)
         n_not = n_not+1
         cycle
       end if
-      idbuf(i) = p%id
+      idbuf(i,1) = p%id
+      idbuf(i,2) = p%status
       buffer(i,1:3) = p%p
       buffer(i,4:6) = p%v
-      buffer(i,7:9) = [real(p%t,kind=4),p%s,p%c]
+      buffer(i,7:9) = [real(p%t,kind=4),p%s,p%w]
       p => p%next
     end do
-    if (io%verbose>1) print *,'PEBBLE FILE: ', trim(filename), self%pebbles%n, np, n_not
+    if (io%master .and. io%verbose>=0) &
+      print*, 'pebble_patch_t%output: ', trim(filename), np, ' particles', n_not
     write (io%data_unit) np, n_var, scene%n_repeat, scene%n_patch
     write (io%data_unit) buffer
     write (io%data_unit) idbuf
@@ -1013,5 +1026,59 @@ SUBROUTINE output (self, experiment_name)
   end if
   !
 END SUBROUTINE output
+
+!> =============================================================================
+!> Read .peb file produced by the output procedure above
+!> =============================================================================
+SUBROUTINE input (self, ok)
+  class(pebble_patch_t):: self
+  logical:: ok
+  !.............................................................................
+  character(len=128):: filename
+  real, dimension(:,:), pointer:: buffer
+  integer, dimension(:,:), pointer:: idbuf
+  integer:: i, np, n_repeat, n_patch, data_format, n_var
+  class(pebble_t), pointer:: p
+  logical:: exists
+  !-----------------------------------------------------------------------------
+  ok = .false.
+  if (.not.self%do_pebbles) return
+  !
+  write (filename,'(a,"/",i4.4,"_",i4.4,".peb")') &
+      trim(io%inputdir), self%id, self%iout-1
+  inquire  (file=filename, exist=exists)
+  if (.not.exists) then
+    return
+  end if
+  !
+  call trace%begin ('pebble_patch_t%input')
+  !$omp critical (out_cr)
+  open (io%data_unit, file=filename, form='unformatted', status='unknown')
+  read (io%data_unit) data_format
+  read (io%data_unit) np, n_var, n_repeat, n_patch
+  allocate (buffer(np,n_var), idbuf(np,2))
+  read (io%data_unit) buffer
+  read (io%data_unit) idbuf
+  if (io%master .and. io%verbose>=0) &
+    print*, 'pebble_patch_t%input: ', trim(filename), np, ' particles'
+  !
+  do i=1,np
+    allocate (p)
+    p%id = idbuf(i,1)
+    p%status = idbuf(i,2)
+    p%p = buffer(i,1:3)
+    p%v = buffer(i,4:6)
+    p%t = buffer(i,7)
+    p%s = buffer(i,8)
+    p%w = buffer(i,9)
+    p%m = p%s**3*self%pebbles%density
+    call self%pebbles%append (p)
+  end do
+  close (io%data_unit)
+  deallocate (buffer,idbuf)
+  !$omp end critical (out_cr)
+  ok = .true.
+  call trace%end
+END SUBROUTINE input
 
 END MODULE pebble_patch_mod
