@@ -6,7 +6,7 @@ def trace_utils():
     '''
     trace_files(dir):  Returns a list of *.trc trace data files in dir
     trace(file):       Returns a structure with info for one particle
-    traces(dir):       Returns an array of structures, one for each particle
+    traces(dir):       Returns a list of structures, one for each particle
     
     # Example traces() use, plotting trace x- and y-components:
     for tr in traces(dir):
@@ -96,7 +96,7 @@ def trace(file,verbose=1):
 
 def traces(run='', dir='../data', verbose=1):
     '''
-    Return an array of structures {file,trace,rmin,rmax,first,last},
+    Return a list of structures {file,trace,rmin,rmax,first,last},
     where self.trace() is a function returning a trace(self.file)
     structure, rmin,rmax are the min and max radii for the trace, 
     and first,last are the first and last 3D trace points
