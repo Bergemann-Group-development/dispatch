@@ -5,18 +5,20 @@ import os
 
 def mayavi_utils():
     '''
-    spin():      Spin the view interactively
-    zoom():      Zoom the view a factor exp(e), in n steps
-    spin_zoom(): Spin + zoom the view interactively
-    dolly():     Dolly the view a factor exp(e), in n steps
-    animate():   Spin one turn, saving images in dir
-    cube():      Construct a cube
-    torus():     Construct a torus of cubes
+    spin():       Spin the view interactively
+    zoom():       Zoom the view a factor exp(e), in n steps
+    dolly():      Dolly the view a factor exp(e), in n steps
+    spin_zoom():  Spin + zoom the view interactively
+    spin_movie(): Spin one turn, saving images in dir
+    cube():       Construct a cube
+    torus():      Construct a torus of cubes
     
-    Type a procedure name + left parenthesis for help: e.g. spin(
+    Type e.g. spin?<RETURN> for iPython help, or spin( for 
+    pop-up help in Canopy.
     '''
-    print "Use the standard Python help feature: type mayavi_utils("
-
+    print "Type mayavi_utils?<RETURN> for help text, or \
+mayavi_utils( for pop-up help in Canopy"
+ 
 @ml.animate(delay=30)
 def spin():
     '''

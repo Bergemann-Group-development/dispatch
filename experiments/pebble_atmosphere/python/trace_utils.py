@@ -2,30 +2,31 @@ import fortranfile as ftf
 import numpy as np
 import os
 
-
 def trace_utils():
     '''
     trace_files(dir):  Returns a list of *.trc trace data files in dir
     trace(file):       Returns a structure with info for one particle
     traces(dir):       Returns an array of structures, one for each particle
     
-    Example traces() use, plotting trace x- and y-components:
-
-        for tr in traces(dir):
-            if tr.rmin < 100:
-                s=tr.trace()
-                plot(s.x,s.y)
-            ...
+    # Example traces() use, plotting trace x- and y-components:
+    for tr in traces(dir):
+        if tr.rmin < 100:
+            s=tr.trace()
+            plot(s.x,s.y)
+        ...
             
-    The construct is analogous to one that loops over files:
-    
-        for file in trace_files(dir):
-            tr=trace(file)
-            if tr.rmin < 100:
-                plot(tr.x,tr.y)
-            ...
+    # The construct is analogous to one that loops over files:
+    for file in trace_files(dir):
+        tr=trace(file)
+        if tr.rmin < 100:
+            plot(tr.x,tr.y)
+        ...      
+
+    # To select a subset based on e.g. rmin, use syntax such as:  
+    subset=[tr for tr in trace(run) if tr.rmin < 200]
     '''
-    print "Type trace_util( for pop-up help"
+    print "Type trace_utils?<RETURN> for help text, or trace_utils(\
+ for pop-up help in Canopy"
 
 
 def trace_files (run='', dir='../data', verbose=1):
@@ -40,10 +41,17 @@ def trace_files (run='', dir='../data', verbose=1):
 def trace(file,verbose=1):
     '''
     Return a structure with trace data from a trace file, with fields
-    {n,p,v,vg,c,d,t}, where p[3,:], v[3,:], vg[3,:] are the position, 
+    {n,p,v,vg,c,d,t}, where p[0:3,:], v[0:3,:], vg[0:3,:] are the positions,
     velocities, and gas velocities, and c[:], d[:], t[:] are the drag 
     coefficients, densities, and times.  Fields x, y, and z are
     shorthand for the arrays p[0], p[1], and p[2], respectively.
+    
+    Example use:
+        
+        s=traces()
+        path=s[0].trace()
+        plot(path.t,path.x)
+        mayavi.mlab.plot3d(path.x,path.y,path.z)
     '''
     class p:
         pass
@@ -86,12 +94,20 @@ def trace(file,verbose=1):
     if verbose==1: print file, p.n, 'points'
     return p
 
-def traces(run='', dir='../data', verbose=0):
+def traces(run='', dir='../data', verbose=1):
     '''
     Return an array of structures {file,trace,rmin,rmax,first,last},
     where self.trace() is a function returning a trace(self.file)
     structure, rmin,rmax are the min and max radii for the trace, 
     and first,last are the first and last 3D trace points
+
+    To select a subset based on e.g. rmin and cache the paths,
+    use syntax such as:  
+    
+        subset=[tr for tr in trace(run) if tr.rmin < 200]
+        for tr in subset: tr.path=tr.trace()
+    
+    See trace( for more about the contents of the path structure
     '''
     files=trace_files(dir=dir,run=run,verbose=verbose)
     s=[]
