@@ -4,24 +4,23 @@ import os
 
 def trace_utils():
     '''
-    trace_files(dir):  Returns a list of *.trc trace data files in dir
-    trace(file):       Returns a structure with info for one particle
-    traces(dir):       Returns a list of structures, one for each particle
+    f=trace_files(dir):  Returns a list of *.trc trace data files in dir
+    tr=trace(file):      Returns a structure with info for one particle
+    trs=traces(dir):     Returns a list of structures, one for each particle
+    cache_traces(trs):   Dress a list of trace objects with actual paths
     
     # Example traces() use, plotting trace x- and y-components:
     for tr in traces(dir):
         if tr.rmin < 100:
             s=tr.trace()
             plot(s.x,s.y)
-        ...
-            
+        ...            
     # The construct is analogous to one that loops over files:
     for file in trace_files(dir):
         tr=trace(file)
         if tr.rmin < 100:
             plot(tr.x,tr.y)
         ...      
-
     # To select a subset based on e.g. rmin, use syntax such as:  
     subset=[tr for tr in trace(run) if tr.rmin < 200]
     '''
@@ -122,7 +121,18 @@ def traces(run='', dir='../data', verbose=1):
         a.rmax=p.rmax
         a.first=p.first
         a.last=p.last
+        a.ip=p.ip[0]
         a.file=f
         s.append(a)
         if verbose>1: print '{}: {:10.3f} {:10.3f}'.format(a.file,a.rmin,a.rmax)
     return s
+
+def cache_path(tr):
+    '''Dress a trace object with actual path'''
+    tr.path=tr.trace()
+    return tr
+
+def cache_paths(trs):
+    '''Dress a list of objects with path data'''
+    for tr in trs:
+        cache_path(tr)
