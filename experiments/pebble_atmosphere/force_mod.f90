@@ -55,10 +55,10 @@ END SUBROUTINE init
 !> hence a positive Omega_z corresponds to positive rotation speed in the x-
 !> direction
 !> =============================================================================
-FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
+FUNCTION star_and_planet (self, time, d, p, uux, uuy, uuz, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
-  real, dimension(:,:,:), pointer:: d
+  real, dimension(:,:,:), pointer:: d, uux, uuy, uuz
   real, dimension(:,:,:,:), pointer:: p
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
@@ -135,10 +135,10 @@ END FUNCTION star_and_planet
 !> =============================================================================
 !> Force of gravity from a star, in a rotating disk coordinate system
 !> =============================================================================
-FUNCTION disk (self, time, d, p, m) RESULT (ff)
+FUNCTION disk (self, time, d, p, uux, uuy, uuz, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
-  real, dimension(:,:,:), pointer:: d
+  real, dimension(:,:,:), pointer:: d, uux, uuy, uuz
   real, dimension(:,:,:,:), pointer:: p
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
