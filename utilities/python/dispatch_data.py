@@ -5,34 +5,25 @@
 """
 
 import numpy as np
-from abc import abstractproperty, abstractmethod, ABCMeta
+from abc import abstractproperty, ABCMeta
 import os
-import fnmatch
-from warnings import warn
 
 class Task(object):
     """An abstract class to describe tasks."""
-
     __metaclass__ = ABCMeta
-
     def __init__(self):
         pass
-
     @abstractproperty
     def data(self):
         """An iterable that yields the data associated with the object."""
-
         pass
 
 class Patch(Task):
     """An abstract derived class for patches."""
-
     __metaclass__ = ABCMeta
-
     def __init__(self, filename, verbose=False):
         self.filename = filename
         self.__data = None
-
         fp = open(filename+'.txt','r')
         self.read_single_patch_legacy(fp, filename, verbose)
         fp.close()
@@ -41,38 +32,34 @@ class Patch(Task):
         """
         An concrete method for reading information for a single patch.
         The following must mirror what is in `patch_mod.f90::output_legacy`.
-
         """
-
         # line 1: time, pos(1:3), ds(1:3), vel(1:3), origin(1:3), llc(1:3), cent(1:3)
         line = fp.readline().split()
         self.time = float(line[0])
-        self.pos  = (float(line[1]),float(line[2]),float(line[3]))
-        self.dx = (float(line[4]),float(line[5]),float(line[6]))
-        self.vel = (float(line[7]),float(line[8]),float(line[9]))
+        self.pos    = (float(line[1]),float(line[2]),float(line[3]))
+        self.dx     = (float(line[4]),float(line[5]),float(line[6]))
+        self.vel    = (float(line[7]),float(line[8]),float(line[9]))
         self.origin = (float(line[10]),float(line[11]),float(line[12]))
-        self.llc = (float(line[13]),float(line[14]),float(line[15]))
+        self.llc    = (float(line[13]),float(line[14]),float(line[15]))
         self.centre = (float(line[16]),float(line[17]),float(line[18]))
-        self.level = int(line[19])
-        self.quality = float(line[20])
-
+        self.quality= float(line[20])
+        self.level  = int(line[19])
         # line 2: m(1:3), n(1:3), li(1:3), ui(1:3), gn(1:3), nghost(1:3), nvar
         line = fp.readline().split()
-        self.m  = (int(line[0]),int(line[1]),int(line[2]))
+        self.m      = (int(line[0]),int(line[1]),int(line[2]))
         self.nwrite = (int(line[3]),int(line[4]),int(line[5]))
-        self.li = (int(line[6]),int(line[7]),int(line[8]))
-        self.ui = (int(line[9]),int(line[10]),int(line[11]))
-        self.n  = (int(line[12]),int(line[13]),int(line[14]))
-        self.gn = (int(line[15]),int(line[16]),int(line[17]))
+        self.li     = (int(line[6]),int(line[7]),int(line[8]))
+        self.ui     = (int(line[9]),int(line[10]),int(line[11]))
+        self.n      = (int(line[12]),int(line[13]),int(line[14]))
+        self.gn     = (int(line[15]),int(line[16]),int(line[17]))
         self.nghost = (int(line[18]),int(line[19]),int(line[20]))
-        self.nvar = int(line[21])
-
+        self.nvar   = int(line[21])
         # line 3: id, iout, istep, mesh_type
         line = fp.readline().split()
-        self.id = int(line[0])
-        self.iout = int(line[1])
+        self.id    = int(line[0])
+        self.iout  = int(line[1])
         self.istep = int(line[2])
-        self.dt = float(line[3])
+        self.dt    = float(line[3])
         self.mesh_type = get_mesh_type(int(line[4]))
         self.task_type = line[5].strip()
         if (verbose):
@@ -96,9 +83,12 @@ class Patch(Task):
             print "           level:", self.level
             print "         quality:", self.quality
             print "       task type:", self.task_type
-
-        self.corners = self._determine_corners()
+        self.corners        = self._determine_corners()
         self.active_corners = self._determine_corners(active_only=True)
+        a=np.array(self.active_corners)
+        self.extent=[[a[0,1],a[1,1],a[0,2],a[1,2]],\
+                     [a[0,0],a[1,0],a[0,2],a[1,2]],\
+                     [a[0,0],a[1,0],a[0,1],a[1,1]]]
 
     @property
     def data(self):
@@ -108,17 +98,13 @@ class Patch(Task):
         Note that a file handle is opened when this is invoked for the first time
         and, if there are a very large number of patches, python will raise
         an exception when it reaches its file handler limit.
-
         """
-
         if self.__data is None:
             self.__data = self._read_legacy_data(self.filename+'.dat', self.nwrite, self.nvar)
-
         return self.__data
 
     def _read_legacy_data(self, filename, dims, nvar):
         """Return a memory map pointing to MHD data."""
-
         myshape = dims + (nvar,)
         return np.memmap(filename, dtype=np.float32, mode='r', order='F', shape=myshape)
 
@@ -129,12 +115,9 @@ class Patch(Task):
         `corners` are defined as the absolute lowest coords. of a patch (i.e,
         the first or last interface). `active_corners` are instead defined to
         only include active cells.
-
         """
-
         c_lo = []
         c_hi = []
-
         if not active_only:
             for o,n,d,ng in zip(self.origin, self.n, self.dx, self.nghost):
                 c_lo.append(o - ng * d)
@@ -143,70 +126,69 @@ class Patch(Task):
             for o,n,d in zip(self.origin, self.n, self.dx):
                 c_lo.append(o)
                 c_hi.append(o + n * d)
-
         # we want the data to be immutable
         c_lo = tuple(c_lo)
         c_hi = tuple(c_hi)
-
         return c_lo, c_hi
 
 class MHDPatch(Patch):
     """An abstract derived class for MHD patches."""
-
-    __metaclass__ = ABCMeta
-    
+    __metaclass__ = ABCMeta    
     varidx = dict()
 
-class StaggerMHDPatch(MHDPatch):
+class StaggerPatch(MHDPatch):
     """A concrete derived class for Stagger MHD patches."""
-
     def __init__ (self, filename, verbose=False, read_derivs=False):
         super(MHDPatch, self).__init__(filename, verbose)
-
         # it's possible that the dump also contains the time derivatives.
         # note that the following only works because the `data` property has
         # not yet been used.
         if read_derivs: self.nvar = 2 * self.nvar
+        self.solver = 'stagger'
+        self.varidx = variable_indices(self.solver, read_derivs)
 
-        self.varidx = variable_indices('stagger', read_derivs)
+class StaggerMHDPatch(StaggerPatch):
+    """A concrete derived class for Stagger MHD patches."""
+    def __init__ (self, filename, verbose=False, read_derivs=False):
+        super(StaggerPatch, self).__init__(filename, verbose)
+        # it's possible that the dump also contains the time derivatives.
+        # note that the following only works because the `data` property has
+        # not yet been used.
+        if read_derivs: self.nvar = 2 * self.nvar
+        self.solver = 'stagger'
+        self.varidx = variable_indices(self.solver, read_derivs)
         
-class Stagger2eMHDPatch(MHDPatch):
+class Stagger2eMHDPatch(StaggerPatch):
     """A concrete derived class for Stagger MHD patches."""
-
     def __init__ (self, filename, verbose=False, read_derivs=False):
-        super(MHDPatch, self).__init__(filename, verbose)
-
+        super(StaggerPatch, self).__init__(filename, verbose)
         # it's possible that the dump also contains the time derivatives.
         # note that the following only works because the `data` property has
         # not yet been used.
         if read_derivs: self.nvar = 2 * self.nvar
-
-        self.varidx = variable_indices('stagger2e', read_derivs)
+        self.solver = 'stagger2e'
+        self.varidx = variable_indices(self.solver, read_derivs)
         
 class RamsesMHDPatch(MHDPatch):
     """A concrete derived class for Ramses MHD patches."""
-
     def __init__ (self, filename, verbose=False, read_derivs=False):
         super(MHDPatch, self).__init__(filename, verbose)
-
         # it's possible that the dump also contains the time derivatives.
         # note that the following only works because the `data` property has
         # not yet been used.
         if read_derivs: self.nvar = 2 * self.nvar
-
-        self.varidx = variable_indices('ramses', read_derivs)
+        self.solver = 'ramses'
+        self.varidx = variable_indices(self.solver, read_derivs)
 
 class ZeusMHDPatch(MHDPatch):
     """A concrete derived class for Zeus-3D/AZEuS MHD patches."""
-
-    def __init__ (self, filename, verbose=False):
+    def __init__ (self, filename, verbose=False, read_derivs=False):
         super(MHDPatch, self).__init__(filename, verbose)
-
-        self.varidx = variable_indices('zeus', read_derivs=False)
+        self.solver = 'zeus'
+        self.varidx = variable_indices(self.solver, read_derivs)
 
 class ImmersedBoundaryPatch(Patch):
     """A concrete derived class for immersed boundary patches."""
-
     def __init__ (self, filename, verbose=False):
         super(Patch, self).__init__(filename, verbose)
 
@@ -214,11 +196,8 @@ def variable_indices(solver_type, read_derivs=False):
     """
     A simple function to provide the indices of the variable stored in the binary
     dump.
-
     """
-
     assert isinstance(solver_type, str), "expecting a string for `solver_type`"
-
     if solver_type.lower() == 'stagger':
         indices = {'d':  0,
                    's':  1,
@@ -263,7 +242,6 @@ def variable_indices(solver_type, read_derivs=False):
                    'b1': 7, 'b2': 8, 'b3': 9}
     else:
         raise Exception("Unrecognised solver type!")
-
     return indices
 
 mesh_types = {1: 'Cartesian',
@@ -277,14 +255,10 @@ def get_mesh_type(current_mesh_type):
     A quick and hard-wired way to turn the integer mesh type index into a
     string. The following must mirror the `mesh_types` variable in the 
     header of `mesh_mod.f90`.
-
     """
-
     assert isinstance(current_mesh_type, int), "expecting an integer for `mesh_type`"
-
     try:
         mesh_string = mesh_types[current_mesh_type]
     except:
         raise Exception("Unrecognised mesh type!")
-
     return mesh_string
