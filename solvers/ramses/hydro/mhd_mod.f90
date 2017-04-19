@@ -76,6 +76,7 @@ SUBROUTINE init (self)
 
   self%nw = 1
   call self%gpatch_t%init
+  self%kind = 'ramses_hd_patch'
   self%i_d  = idx%d
   self%i_e  = idx%e
   self%i_px = idx%px

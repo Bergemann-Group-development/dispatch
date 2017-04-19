@@ -81,6 +81,11 @@ SUBROUTINE init (self)
     if (self%nv > 5) self%mesh(i)%h(5+i) = -0.5
   end do
   call self%force%init
+  if (self%mhd) then
+    self%kind = 'stagger2e_mhd_patch'
+  else
+    self%kind = 'stagger2e_hd_patch'
+  end if
   call trace%end
 END SUBROUTINE init
 

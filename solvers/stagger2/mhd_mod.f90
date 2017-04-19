@@ -86,13 +86,20 @@ SUBROUTINE init (self)
   self%gamma = gamma
   self%csound = csound
   self%cdtd = cdtd
+  if (self%mhd) then
+    self%kind = 'stagger2_mhd_patch'
+  else
+    self%kind = 'stagger2_hd_patch'
+  end if
   if (mhd_Ohm) then
     self%mhd_Ohm = mhd_Ohm
+    self%kind = 'stagger2_mhd_Ohm_patch'
   end if
   if (mhd_AD) then
     self%mhd_AD = mhd_AD
     self%gamma_AD  = gamma_AD
     self%rho_ions  = rho_ions
+    self%kind = 'stagger2_mhd_AD_patch'
   endif
   do i=1,3
     self%mesh(i)%h(2+i) = -0.5
