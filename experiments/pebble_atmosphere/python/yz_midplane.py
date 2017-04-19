@@ -19,22 +19,13 @@ def yz_midplane(run='',dir='../data',iout=0,var='d'):
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
     l=np.array(p.nghost)
-    u=l+np.array(p.n)-1
+    u=l+np.array(p.n)
     m=(l+u)/2
     for p in pp:
-        p=du.cache_patch(p)
-        if var=='d':
-            p.f= p.d[m[0],l[1]:u[1],l[2]:u[2]]
-            p.f=np.log10(p.f)
-        elif var=='ux':
-            p.f=p.ux[m[0],l[1]:u[1],l[2]:u[2]]
-        elif var=='uy':
-            p.f=p.uy[m[0],l[1]:u[1],l[2]:u[2]]
-        elif var=='uz':
-            p.f=p.uz[m[0],l[1]:u[1],l[2]:u[2]]            
-        elif var=='e':
-            p.f= p.e[m[0],l[1]:u[1],l[2]:u[2]]            
-            p.f=np.log10(p.f)
+        p.cache()
+        p.vars()
+        p.f=p.var[var]
+        p.f=p.f[m[0],l[1]:u[1],l[2]:u[2]]
         e=p.extent[0]
         vmin=min(vmin,p.f.min())
         vmax=max(vmax,p.f.max())
@@ -53,9 +44,9 @@ def yz_midplane(run='',dir='../data',iout=0,var='d'):
     pl.tight_layout()
     pl.show()
 
-iout=2
+iout=30
 run='m10r40t10'
 dir='d:\\pebble_atmosphere\\data'
-vars=['d','ux','uy','uz','e']
+vars=['logd','ux','uy','uz','loge']
 for var in vars:
     yz_midplane(run,dir,iout=iout,var=var)

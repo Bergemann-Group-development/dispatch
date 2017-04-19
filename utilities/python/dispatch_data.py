@@ -7,6 +7,7 @@
 import numpy as np
 from abc import abstractproperty, ABCMeta
 import os
+import stagger_utils as su
 
 class Task(object):
     """An abstract class to describe tasks."""
@@ -131,6 +132,29 @@ class Patch(Task):
         c_hi = tuple(c_hi)
         return c_lo, c_hi
 
+    def stripv (self, v):
+        l=np.array(self.nghost)
+        u=l+np.array(self.n)
+        return v[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
+
+    def strip(self):
+        '''Remove guard cells from cached arrays'''
+        self.d  = self.stripv (self.d)
+        self.e  = self.stripv (self.e)
+        self.ux = self.stripv (self.ux)
+        self.uy = self.stripv (self.uy)
+        self.uz = self.stripv (self.uz)
+
+    def vars(self):
+        '''Make arrays available in a .var dict'''
+        self.var={'d':self.d,\
+                  'e':self.e,\
+                  'ux':self.ux,\
+                  'uy':self.uy,\
+                  'uz':self.uz,\
+               'logd':np.log10(self.d),\
+               'loge':np.log10(self.d)}
+
 class MHDPatch(Patch):
     """An abstract derived class for MHD patches."""
     __metaclass__ = ABCMeta    
@@ -146,6 +170,13 @@ class StaggerPatch(MHDPatch):
         if read_derivs: self.nvar = 2 * self.nvar
         self.solver = 'stagger'
         self.varidx = variable_indices(self.solver, read_derivs)
+    def cache(self):
+        self.d =self.data[:,:,:,self.varidx['d']]
+        self.e =self.data[:,:,:,self.varidx['e']]/self.d
+        logd=np.log(self.d)
+        self.ux=self.data[:,:,:,self.varidx['p1']]/np.exp(su.xdn(logd))
+        self.uy=self.data[:,:,:,self.varidx['p2']]/np.exp(su.ydn(logd))
+        self.uz=self.data[:,:,:,self.varidx['p3']]/np.exp(su.zdn(logd))
 
 class StaggerMHDPatch(StaggerPatch):
     """A concrete derived class for Stagger MHD patches."""
@@ -179,6 +210,14 @@ class RamsesMHDPatch(MHDPatch):
         if read_derivs: self.nvar = 2 * self.nvar
         self.solver = 'ramses'
         self.varidx = variable_indices(self.solver, read_derivs)
+    def cache(self):
+        '''Add cached data arrays to patch'''
+        self.d =self.data[:,:,:,self.varidx['d']]
+        self.ux=self.data[:,:,:,self.varidx['p1']]/self.d
+        self.uy=self.data[:,:,:,self.varidx['p2']]/self.d
+        self.uz=self.data[:,:,:,self.varidx['p3']]/self.d
+        self.e =self.data[:,:,:,self.varidx['e']]/self.d
+        self.e=self.e-0.5*(self.ux**2+self.uy**2+self.uz**2)
 
 class ZeusMHDPatch(MHDPatch):
     """A concrete derived class for Zeus-3D/AZEuS MHD patches."""

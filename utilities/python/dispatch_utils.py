@@ -1,15 +1,24 @@
 import numpy as np
-import dispatch_data as dd
-reload(dd)
 import os
 
 import stagger_utils as su
+import dispatch_data as dd
+reload(dd)
 
 def dispatch_utils():
     '''
-    ff=patch_file(run,dir)     Return list of patch file root names
-    pp=patches(run)            Return list of structures for all 'data/run' patches
-    p=patch(id,iout,run)       Return patch strucure for 'data/run/id_iout.*'
+    Main methods: patches, cache
+        patches()        Return list of objects for all 'data/run' patches
+        cache()          Adds cached arrays to the object
+    Typical use:
+        pp=patches('run')
+        pp=[p for p in pp if select(p)]
+        pp=cache(pp)
+        for p in pp:
+            ... do something with the data in p.d, p.ux, ...
+    Other methods:
+        patch_files()    Return list of patch file root names
+        p=patch()        Return one patch object    
     '''
     print "Type dispatch_utils?<RETURN> for help text, or dispach_utils(\
  for pop-up help in Canopy"
@@ -66,37 +75,9 @@ def rotate(d,e):
     e=[e[2],e[3],e[0],e[1]]
     return d,e
 
-def internal (p, d):
-    '''Internal part of array'''
-    l=np.array(p.nghost)
-    u=l+np.array(p.n)-1
-    return d[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
-
-def cache_patch (p):
-    '''
-    Cache actual data into a patch instance
-    '''
-    p.d =p.data[:,:,:,p.varidx['d']]
-    if isinstance(p,dd.StaggerPatch):
-        p.ux=p.data[:,:,:,p.varidx['p1']]/np.exp(su.xdn(np.log(p.d)))
-        p.uy=p.data[:,:,:,p.varidx['p2']]/np.exp(su.ydn(np.log(p.d)))
-        p.uz=p.data[:,:,:,p.varidx['p3']]/np.exp(su.zdn(np.log(p.d)))
-        p.ux=internal(p,su.xup(p.ux))
-        p.uy=internal(p,su.yup(p.uy))
-        p.uz=internal(p,su.zup(p.uz))
-    else:
-        p.ux=p.data[:,:,:,p.varidx['p1']]/p.d
-        p.uy=p.data[:,:,:,p.varidx['p2']]/p.d
-        p.uz=p.data[:,:,:,p.varidx['p3']]/p.d
-    p.e =p.data[:,:,:,p.varidx['e']]/p.d
-    if p.solver == 'ramses':
-        p.e=p.e-0.5*(p.ux**2+p.uy**2+p.uz**2)
-    return p
-
-def cache_patches (pp):
+def cache(pp):
     '''
     Cache actual data into the list of structures -- typically for a selected subset
     '''
     for p in pp:
-        cache_patch(p)
-    return pp
+        p.cache()
