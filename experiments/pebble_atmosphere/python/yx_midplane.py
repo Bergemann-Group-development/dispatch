@@ -4,37 +4,37 @@ import dispatch_utils as du
 reload(du)
 import plot_utils as pu
 
-def yx_midplane(run='',dir='../data',iout=0,var='d'):
+def yx_midplane(run='',dir='../data',iout=0,z=0.0,var='d',cmap='Spectral',**kwargs):
     '''
     Display midplane (z=0) xy-images
     '''
     pp=du.patches(run=run,dir=dir)
     pp=[p for p in pp if p.iout==iout]
-    pp=[p for p in pp if p.pos[2]==0.0 and p.level<8]
-    print np.size(pp),'patches in midplane'    
+    def inside(p, z):
+        return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
+    pp=[p for p in pp if inside(p,z) and p.level<8]
+    print np.size(pp),'patches in plane'    
     pl.figure(figsize=[8,3])
+    pl.gcf().set_size_inches(12, 3)
     #pl.clf()
     vmin=1e9
     vmax=-vmin
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
     l=np.array(p.nghost)
-    u=l+np.array(p.n)-1
+    u=l+np.array(p.n)
     m=(l+u)/2
+    def interpolate(p,x,x0,dx,n,f):
+        s=(x-x0)/dx
+        i=int(s)
+        i=max(0,min(n-2,i))
+        p=s-i
+        return (1.0-p)*f[l[0]:u[0],l[1]:u[1],i]+p*f[l[0]:u[0],l[1]:u[1],i+1]
     for p in pp:
-        p=du.cache_patch(p)
-        if var=='d':
-            p.f= p.d[l[0]:u[0],l[1]:u[1],m[2]]
-            p.f=np.log10(p.f)
-        elif var=='ux':
-            p.f=p.ux[l[0]:u[0],l[1]:u[1],m[2]]
-        elif var=='uy':
-            p.f=p.uy[l[0]:u[0],l[1]:u[1],m[2]]
-        elif var=='uz':
-            p.f=p.uz[l[0]:u[0],l[1]:u[1],m[2]]            
-        elif var=='e':
-            p.f= p.e[l[0]:u[0],l[1]:u[1],m[2]]
-            p.f=np.log10(p.f)            
+        p.cache()
+        p.vars()
+        p.f=p.var[var]
+        p.f=interpolate(p,z,p.corners[0][2],p.dx[2],p.gn[2],p.f)
         e=p.extent[2]
         p.f,e=du.rotate(p.f,e)
         p.extent[2]=e
@@ -43,22 +43,22 @@ def yx_midplane(run='',dir='../data',iout=0,var='d'):
         xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
         ylim=[min(ylim[0],e[2]),max(ylim[1],e[3])]
         #print p.id,p.level
-    print vmin,vmax    
     for p in pp:
-        pu.image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax)    
+        pu.image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
     pl.xlim(xlim)
     pl.ylim(ylim)
-    pl.title(var+'   t={:d}'.format(np.int(p.time)))
+    pl.title('var='+var+'   t={:d}  z={:d}'.format(np.int(p.time),np.int(z)))
     pl.xlabel('y')
     pl.ylabel('x')
     pl.colorbar(shrink=0.8,aspect=15,fraction=0.04,pad=0.02)
-    pl.gcf().set_size_inches(12, 3)
     pl.tight_layout()
     pl.show()
 
-iout=3
+iout=30
 run='m10r40t10'
 dir='d:\\pebble_atmosphere\\data'
-vars=['d','ux','uy','uz','e']
-for var in vars:
-    yx_midplane(run,dir,iout=iout,var=var)
+yx_midplane(run,dir,iout=iout,var='logd',z=1000.)
+
+vars=['logd','ux','uy','uz','loge']
+#for var in vars:
+#    yx_midplane(run,dir,iout=iout,var=var,z=20.)

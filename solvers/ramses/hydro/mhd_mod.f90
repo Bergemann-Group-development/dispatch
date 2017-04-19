@@ -76,6 +76,7 @@ SUBROUTINE init (self)
 
   self%nw = 1
   call self%gpatch_t%init
+  self%kind = 'ramses_hd_patch'
   self%i_d  = idx%d
   self%i_e  = idx%e
   self%i_px = idx%px
@@ -107,7 +108,7 @@ SUBROUTINE update (self)
   integer:: n(3), m, i, l(3), u(3)
   integer, save:: itimer=0
   real, dimension(:,:,:,:), pointer:: p
-  real, dimension(:,:,:), pointer:: d, e
+  real, dimension(:,:,:), pointer:: d, e, Ux, Uy, Uz
   real, dimension(:,:,:), pointer:: tmp
   !----------------------------------------------------------------------------
   ! Fill guard zones and checks whether to do output
@@ -149,7 +150,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   allocate (self%ff(size(d,1),size(d,2),size(d,3),3))
   if (associated(self%force%selected)) then
-    self%ff = self%force%selected (self%time, d, p, self%mesh)
+    self%ff = self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
   else
     self%ff = 0.0
   end if
