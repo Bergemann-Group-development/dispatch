@@ -153,7 +153,7 @@ class Patch(Task):
                   'uy':self.uy,\
                   'uz':self.uz,\
                'logd':np.log10(self.d),\
-               'loge':np.log10(self.d)}
+               'loge':np.log10(self.e)}
 
 class MHDPatch(Patch):
     """An abstract derived class for MHD patches."""
