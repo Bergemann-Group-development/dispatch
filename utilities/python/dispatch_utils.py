@@ -66,6 +66,7 @@ def patches (run='', dir='../data', ThisPatch=dd.RamsesMHDPatch, verbose=0):
     list=[]
     for f in files:
         s=ThisPatch(f,verbose=verbose)
+        s.gamma=1.4
         list.append(s)
     return list
 

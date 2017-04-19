@@ -147,8 +147,11 @@ class Patch(Task):
 
     def vars(self):
         '''Make arrays available in a .var dict'''
+        p=self.d*self.e*(self.gamma-1.0)
+        self.s=np.log(p/self.d**self.gamma)/(self.gamma-1.0)
         self.var={'d':self.d,\
                   'e':self.e,\
+                  's':self.s,\
                   'ux':self.ux,\
                   'uy':self.uy,\
                   'uz':self.uz,\
