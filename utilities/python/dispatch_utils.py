@@ -1,6 +1,9 @@
 import numpy as np
 import dispatch_data as dd
+reload(dd)
 import os
+
+import stagger_utils as su
 
 def dispatch_utils():
     '''
@@ -38,7 +41,7 @@ def patch (id=2, iout=0, run='', dir='../data', ThisPatch=dd.RamsesMHDPatch, ver
     file=dir+'/'+run+'/{:04d}_{:04d}'.format(id,iout)
     s=ThisPatch(file, verbose=verbose)
     return s
-    
+
 def patches (run='', dir='../data', ThisPatch=dd.RamsesMHDPatch, verbose=0):
     '''
     Return a list of structures s={id,iout,time,data,...}, where id,iout
@@ -56,16 +59,44 @@ def patches (run='', dir='../data', ThisPatch=dd.RamsesMHDPatch, verbose=0):
         s=ThisPatch(f,verbose=verbose)
         list.append(s)
     return list
-    
-def cache_data (pp):
+
+def rotate(d,e):
+    '''Rotate data and extent to landscape format'''
+    d=d.transpose()
+    e=[e[2],e[3],e[0],e[1]]
+    return d,e
+
+def internal (p, d):
+    '''Internal part of array'''
+    l=np.array(p.nghost)
+    u=l+np.array(p.n)-1
+    return d[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
+
+def cache_patch (p):
+    '''
+    Cache actual data into a patch instance
+    '''
+    p.d =p.data[:,:,:,p.varidx['d']]
+    if isinstance(p,dd.StaggerPatch):
+        p.ux=p.data[:,:,:,p.varidx['p1']]/np.exp(su.xdn(np.log(p.d)))
+        p.uy=p.data[:,:,:,p.varidx['p2']]/np.exp(su.ydn(np.log(p.d)))
+        p.uz=p.data[:,:,:,p.varidx['p3']]/np.exp(su.zdn(np.log(p.d)))
+        p.ux=internal(p,su.xup(p.ux))
+        p.uy=internal(p,su.yup(p.uy))
+        p.uz=internal(p,su.zup(p.uz))
+    else:
+        p.ux=p.data[:,:,:,p.varidx['p1']]/p.d
+        p.uy=p.data[:,:,:,p.varidx['p2']]/p.d
+        p.uz=p.data[:,:,:,p.varidx['p3']]/p.d
+    p.e =p.data[:,:,:,p.varidx['e']]/p.d
+    if p.solver == 'ramses':
+        p.e=p.e-0.5*(p.ux**2+p.uy**2+p.uz**2)
+    return p
+
+def cache_patches (pp):
     '''
     Cache actual data into the list of structures -- typically for a selected subset
     '''
     for p in pp:
-        p.d =p.data[:,:,:,p.varidx['d']]
-        p.ux=p.data[:,:,:,p.varidx['p1']]/p.d
-        p.uy=p.data[:,:,:,p.varidx['p2']]/p.d
-        p.uz=p.data[:,:,:,p.varidx['p3']]/p.d
-        p.e =p.data[:,:,:,p.varidx['e']]/p.d
-        p.e=p.e-0.5*(p.ux**2+p.uy**2+p.uz**2)
+        cache_patch(p)
     return pp
