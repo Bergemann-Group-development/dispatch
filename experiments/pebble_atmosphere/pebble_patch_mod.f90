@@ -45,8 +45,8 @@ MODULE pebble_patch_mod
     real:: omega(3)                             ! angular rate of rotation
   contains
     procedure init                              ! initialize the position and size
-    procedure initial_add                       ! add pebbles
-    procedure add                               ! add pebbles
+    procedure volume_add                        ! add particles throughout
+    procedure boundary_add                      ! add particles at boundaries
     procedure drag                              ! compute gas drag
     procedure kdk_drag                          ! kick-drift-kick with drag
     procedure scatter                           ! scatter to not_done
@@ -57,6 +57,7 @@ MODULE pebble_patch_mod
     procedure inside_r4                         ! is it inside?
     procedure interpolate_r4                    ! interpolation
     procedure output                            ! pebble output
+    procedure input                             ! pebble input
   end type
   logical, save:: debug = .false.
   integer, save:: id_dbg = 0
@@ -72,19 +73,20 @@ SUBROUTINE init (self)
   !.............................................................................
   character(len=8), save:: type='kdk_drag'
   real, save:: density_yr_cgs = 1e-12, solid_density_cgs=3., size(3), pebble_size_cm=1.
-  real, save:: pebble_rate_cgs = 1e2    ! about one pebble per 10 second (3e6 per year)
+  real, save:: pebble_rate_cgs = 0.0    ! 1e2 = about one pebble per 10 second (3e6 per year)
   real, save:: vz_pebble_cgs = 3e6      ! about 30 km/s vertically
   real, save:: power = 2.0              ! random number range in power of 10
-  real, save:: cell_probability = 0.02  ! probability of making a pebble
+  real, save:: ppc = 0.10               ! probability per cell of making a pebble
   real, save:: omega_yr(3)=0.0          ! omega in units where 1 = 1/yr
   integer, save:: trace_every=0         ! trace pebble frequency
-  integer, save:: it_max=1000000, ppc=5
+  integer, save:: it_max=1000000
   logical, save:: do_pebbles=.true., only_pebbles=.false.
   integer:: iostat
+  logical:: ok
   logical, save:: first_time=.true.
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
     solid_density_cgs, size, it_max, pebble_rate_cgs, vz_pebble_cgs, id_dbg, &
-    only_pebbles, ppc, cell_probability, power, omega_yr, trace_every
+    only_pebbles, ppc, power, omega_yr, trace_every
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Make sure to initialize, but only once
@@ -112,7 +114,7 @@ SUBROUTINE init (self)
     if (io%verbose>1) &
       print*, 'thread', omp_mythread, ' reading namelist'
     rewind (io%input)
-    read (io%input, pebble_params, iostat=iostat)
+    read (io%input, pebble_params)
     if (io%master) write(*, pebble_params)
     call pebble_trace%init (trace_every)
   end if
@@ -130,7 +132,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   self%pebbles%power = power
   self%pebbles%ppc = ppc
-  self%pebbles%cell_probability = cell_probability
   self%pebbles%id_dbg = id_dbg
   self%pebbles%size = pebble_size_cm/scaling%l
   self%pebbles%it_max = it_max
@@ -145,6 +146,16 @@ SUBROUTINE init (self)
   case ('kdk_drag')
     self%move => kdk_drag
   end select
+  !-----------------------------------------------------------------------------
+  ! Try reading a restart snapshot and initialize new pebbles if that fails
+  !-----------------------------------------------------------------------------
+  call self%input (ok)
+  if (ok) then
+    ! ...
+  else
+    call self%boundary_add
+    call self%volume_add
+  end if
   call trace_end (itimer)
 END SUBROUTINE init
 
@@ -152,7 +163,7 @@ END SUBROUTINE init
 !> Create a number of particles distributed randomly, with the velocity initially
 !> equal to the gas velocity
 !> =============================================================================
-SUBROUTINE initial_add (self, n)
+SUBROUTINE volume_add (self, n)
   class(pebble_patch_t):: self
   integer, intent(in), optional:: n
   !.............................................................................
@@ -164,7 +175,7 @@ SUBROUTINE initial_add (self, n)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles .or. self%is_set(bits%not_leaf)) return
-  call trace_begin ('pebbles_t%add', 3, itimer=itimer)
+  call trace_begin ('pebbles_t%volume_add', 3, itimer=itimer)
   pebbles => self%pebbles
   if (io%verbose>1 .or. (io%verbose>0.and.nprint>0)) then
     nprint = nprint-1
@@ -185,8 +196,7 @@ SUBROUTINE initial_add (self, n)
   do iz=self%mesh(3)%li,self%mesh(3)%ui
   do iy=self%mesh(2)%li,self%mesh(2)%ui
   do ix=self%mesh(1)%li,self%mesh(1)%ui
-    ppc = self%pebbles%ppc*self%pebbles%cell_probability &
-        * self%density(ix,iy,iz,self%it)/average_density
+    ppc = self%pebbles%ppc*self%density(ix,iy,iz,self%it)/average_density
     ippc = ppc
     ppc = ppc-ippc
     do iter=1,ippc+1
@@ -200,9 +210,8 @@ SUBROUTINE initial_add (self, n)
           pebble%status = ior(pebble%status,bits%trace+bits%has_BC)
         end if
         pebble%t = self%time
-        pebble%s = self%pebbles%size*10**(-self%pebbles%power*random%ran1())
-        pebble%d = self%density(ix,iy,iz,self%it)
-        pebble%m = pebble%s**3*pebble%d
+        pebble%s = self%pebbles%size*10.0**(-self%pebbles%power*random%ran1())
+        pebble%m = pebble%s**3*self%pebbles%density
         pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
         pebble%p(2) =   (self%position(2) - planet%position(2)) + self%size(2)*(0.5-random%ran1())
         pebble%p(3) =   (self%position(3) - planet%position(3)) + self%size(3)*(0.5-random%ran1())
@@ -231,10 +240,10 @@ SUBROUTINE initial_add (self, n)
     print '(a,i7,i3,2i6,1p,2e14.6)', 'initial_trace: id, level, n_initial, n_add =', &
       self%id, self%level, scene%n_initial, scene%n_add, xmin, xmax
   if (io%verbose>1) &
-    print *, 'initial_add:', self%id, self%position(3), self%pebbles%n
-  call self%pebbles%check_list ('after initial_add')
+    print *, 'volume_add:', self%id, self%position(3), self%pebbles%n
+  call self%pebbles%check_list ('after volume_add')
   call trace_end (itimer)
-END SUBROUTINE initial_add
+END SUBROUTINE volume_add
 
 !> =============================================================================
 !> Create a number of particles proportional at the top and bottom walls,
@@ -243,7 +252,7 @@ END SUBROUTINE initial_add
 !> to the time step (and hence very much larger in the large, cold, outer
 !> patches.  Building the rate into the weight factor may be a better strategy.
 !> =============================================================================
-SUBROUTINE add (self, n)
+SUBROUTINE boundary_add (self, n)
   class(pebble_patch_t):: self
   integer, intent(in), optional:: n
   !.............................................................................
@@ -254,9 +263,9 @@ SUBROUTINE add (self, n)
   integer, save:: nprint=10
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (.not.self%do_pebbles) return
-  if (self%is_clear(bits%top_bottom)) return
-  call trace_begin ('pebbles_t%add', 3, itimer=itimer)
+  if (.not.self%do_pebbles .or. self%pebble_rate==0.0) return
+  if (self%level>1 .or. self%is_clear(bits%top_bottom)) return
+  call trace_begin ('pebbles_t%boundary_add', 3, itimer=itimer)
   pebbles => self%pebbles
   if (present(n)) then
     n_local = n
@@ -319,7 +328,7 @@ SUBROUTINE add (self, n)
   end do
   call self%pebbles%check_list ('after add')
   call trace_end (itimer)
-END SUBROUTINE add
+END SUBROUTINE boundary_add
 
 !> =============================================================================
 !> Look up gas velocity components, given positions, and compute the drag rate
@@ -750,14 +759,6 @@ SUBROUTINE update_pebbles (self)
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles) return
   call trace_begin ('pebbles_mod::update_pebbles')
-  if (self%time == 0d0) then
-    if (self%level==1 .and. self%is_set(bits%top_bottom)) call self%add
-    call self%initial_add
-  else if (first_time) then
-    first_time = .false.
-    print*,'initialized particles: n_vol, n_bdry, tr_vol, tr_bdry =', &
-      n_vol, n_bdry, scene%n_add, scene%n_initial
-  end if
   if (self%pebbles%n>0) then
     if (io%verbose>1) then
       if (associated(self%pebbles%head)) then
@@ -846,7 +847,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       if (io%verbose>0 .or. self%id==1) then
         if (self%nw > 1) then
           do iv=1,nv
-            print '(a,i8,2i4,i3,f10.5,1p,2e12.4,2x,3(2e10.2,2x),z10,2i6)', &
+            print '(a,i8,2i4,i3,f12.5,1p,2e12.4,2x,3(2e10.2,2x),z10,2i6)', &
               'upd', self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
               self%dtime, self%u_max, &
               minval(self%mem(:,:,:,iv,self%it ,2)), &
@@ -859,7 +860,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           end do
         else
           do iv=1,nv
-            print '(a,i8,2i4,i3,f10.5,1p,2e12.4,2x,2(2e14.6,2x),z10,2i6)', &
+            print '(a,i8,2i4,i3,f12.5,1p,2e12.4,2x,2(2e14.6,2x),z10,2i6)', &
               'upd', self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
               self%dtime, self%u_max, &
               minval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -982,7 +983,7 @@ SUBROUTINE output (self, experiment_name)
   character(len=128):: filename
   integer, parameter:: data_format=4, n_var=9
   real, dimension(:,:), pointer:: buffer
-  integer, dimension(:), pointer:: idbuf
+  integer, dimension(:,:), pointer:: idbuf
   integer:: i, j, np, n_not
   class(pebble_t), pointer:: p
   !-----------------------------------------------------------------------------
@@ -993,12 +994,12 @@ SUBROUTINE output (self, experiment_name)
   if (self%do_pebbles) then
     !$omp critical (out_cr)
     write (filename,'(a,i4.4,"_",i4.4,".peb")') &
-        trim(io%outputname)//'/', self%id, self%iout
+        trim(io%outputname)//'/', self%id, self%iout-1
     open  (io%data_unit, file=filename, form='unformatted', status='unknown')
     write (io%data_unit) data_format
     !
     np = max(self%pebbles%n,1)
-    allocate (buffer(np,n_var), idbuf(np))
+    allocate (buffer(np,n_var), idbuf(np,2))
     buffer = 0.0
     p => self%pebbles%head
     n_not = 0
@@ -1007,13 +1008,15 @@ SUBROUTINE output (self, experiment_name)
         n_not = n_not+1
         cycle
       end if
-      idbuf(i) = p%id
+      idbuf(i,1) = p%id
+      idbuf(i,2) = p%status
       buffer(i,1:3) = p%p
       buffer(i,4:6) = p%v
-      buffer(i,7:9) = [real(p%t,kind=4),p%s,p%c]
+      buffer(i,7:9) = [real(p%t,kind=4),p%s,p%w]
       p => p%next
     end do
-    if (io%verbose>1) print *,'PEBBLE FILE: ', trim(filename), self%pebbles%n, np, n_not
+    if (io%master .and. io%verbose>=0) &
+      print*, 'pebble_patch_t%output: ', trim(filename), np, ' particles', n_not
     write (io%data_unit) np, n_var, scene%n_repeat, scene%n_patch
     write (io%data_unit) buffer
     write (io%data_unit) idbuf
@@ -1024,5 +1027,59 @@ SUBROUTINE output (self, experiment_name)
   end if
   !
 END SUBROUTINE output
+
+!> =============================================================================
+!> Read .peb file produced by the output procedure above
+!> =============================================================================
+SUBROUTINE input (self, ok)
+  class(pebble_patch_t):: self
+  logical:: ok
+  !.............................................................................
+  character(len=128):: filename
+  real, dimension(:,:), pointer:: buffer
+  integer, dimension(:,:), pointer:: idbuf
+  integer:: i, np, n_repeat, n_patch, data_format, n_var
+  class(pebble_t), pointer:: p
+  logical:: exists
+  !-----------------------------------------------------------------------------
+  ok = .false.
+  if (.not.self%do_pebbles) return
+  !
+  write (filename,'(a,"/",i4.4,"_",i4.4,".peb")') &
+      trim(io%inputdir), self%id, self%iout-1
+  inquire  (file=filename, exist=exists)
+  if (.not.exists) then
+    return
+  end if
+  !
+  call trace%begin ('pebble_patch_t%input')
+  !$omp critical (out_cr)
+  open (io%data_unit, file=filename, form='unformatted', status='unknown')
+  read (io%data_unit) data_format
+  read (io%data_unit) np, n_var, n_repeat, n_patch
+  allocate (buffer(np,n_var), idbuf(np,2))
+  read (io%data_unit) buffer
+  read (io%data_unit) idbuf
+  if (io%master .and. io%verbose>=0) &
+    print*, 'pebble_patch_t%input: ', trim(filename), np, ' particles'
+  !
+  do i=1,np
+    allocate (p)
+    p%id = idbuf(i,1)
+    p%status = idbuf(i,2)
+    p%p = buffer(i,1:3)
+    p%v = buffer(i,4:6)
+    p%t = buffer(i,7)
+    p%s = buffer(i,8)
+    p%w = buffer(i,9)
+    p%m = p%s**3*self%pebbles%density
+    call self%pebbles%append (p)
+  end do
+  close (io%data_unit)
+  deallocate (buffer,idbuf)
+  !$omp end critical (out_cr)
+  ok = .true.
+  call trace%end
+END SUBROUTINE input
 
 END MODULE pebble_patch_mod

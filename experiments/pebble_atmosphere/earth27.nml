@@ -2,12 +2,10 @@
 &initial_params /
 &force_params   /
 
-&timer_params sec_per_report=2 /
+&timer_params sec_per_report=5 /
 &io_params
- !restart=10
- !inputdir='data/earth9'
  do_trace=f
- verbose=0
+ verbose=1
  do_debug=f
  do_output=t
  do_legacy=t
@@ -60,15 +58,17 @@ gamma=1.4
  omega = 0.0,0.0,1.0
 /
 &patch_params
- n=24,24,24
+ n=3*32
  nt=5
  grace=0.0
  courant=0.2
 !dt_fixed=0.001
 /
 &out_params
- end_time=1500.
- out_time=20.
+!end_time=500  out_time=20              ! 00-25
+!end_time=2500 out_time=50  restart=50  ! 26-65
+!end_time=5500 out_time=100 restart=65  ! 65-95
+ end_time=9000 out_time=100             ! 00-90
  print_time=0.01
  guard_zones=t
  time_derivs=f

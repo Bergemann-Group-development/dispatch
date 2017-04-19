@@ -142,6 +142,7 @@ MODULE patch_mod
     integer:: n(3)=16                   ! convenience
     integer:: ng(3)=2                   ! convenience
   end type
+  character(len=64), save:: inputdir    ! input directory for restarts
   !-----------------------------------------------------------------------------
   ! Template task, with procedure to place it it MPI-space
   !-----------------------------------------------------------------------------
@@ -306,7 +307,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
-  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000
+  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, restart=-9
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false.
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
@@ -315,9 +316,9 @@ SUBROUTINE init (self)
   integer:: iostat, i
   namelist /patch_params/ size, n, nv, nw, ng, nt, courant, u_fixed, dt_fixed, grace
   namelist /out_params/ out_time, end_time, print_time, max_files, &
-    guard_zones, time_derivs
+    restart, inputdir, guard_zones, time_derivs
   !.............................................................................
-  call trace_begin ('patch_mod::init', 2)
+  call trace_begin ('patch_mod::init')
   call self%task_t%init                         ! sets unique id
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
@@ -335,6 +336,7 @@ SUBROUTINE init (self)
     read (io%input, patch_params)
     if (io%master) write (*, patch_params)
     rewind (io%input)
+    inputdir = io%outputname
     read (io%input, out_params)
     if (io%master) write (*, out_params)
   end if
@@ -342,6 +344,8 @@ SUBROUTINE init (self)
   !$omp end critical (patch_input_cr)
   ! reasonable values of self%n should take precedence over a saved value of `n`.
   if (any(self%n == 0)) self%n = n              ! patch dimensions
+  io%inputdir      = inputdir
+  self%restart     = restart                    ! restart snapshot
   self%ng          = ng                         ! number of guard zones
   self%nv          = nv                         ! number of variables
   self%nw          = nw                         ! number of work indices
@@ -731,15 +735,14 @@ END SUBROUTINE output
 !> =============================================================================
 !> Read snapshot from disk
 !> =============================================================================
-SUBROUTINE input (self, snapshot, ok)
+SUBROUTINE input (self, ok)
   class(patch_t):: self
-  integer:: snapshot
   logical:: ok
   !-----------------------------------------------------------------------------
   !$omp critical (out_cr)
   if (io%do_legacy) then
     if (io%verbose>1) print *, self%id, ' LEGACY INPUT'
-    call self%input_legacy (snapshot, ok)
+    call self%input_legacy (ok)
   !else
     !call self%input_new
   end if
@@ -1016,7 +1019,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   if (io%master .and. io%verbose>=-1) then
-    print'(a,3x,"time:",2f13.6)', 'patch_mod::output: file= '//trim(filename), time, self%time
+    print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   write (io%data_unit,'(1p,e18.10,6(2x,3e18.10)1x,i3.1,1x,e10.3)') time, self%position, self%ds, &
@@ -1076,22 +1079,30 @@ END SUBROUTINE output_legacy
 !> =============================================================================
 !> Read snapshot from disk
 !> =============================================================================
-SUBROUTINE input_legacy (self, snapshot, ok)
+SUBROUTINE input_legacy (self, ok)
   USE iso_fortran_env, only: real32
   class(patch_t):: self
-  integer:: snapshot
   logical:: ok
   character(len=64) filename
   integer:: iv, l(3), u(3)
   real(8):: time
   !-----------------------------------------------------------------------------
+  ok = .false.
+  if (self%id==io%id_debug) &
+    print *,'MK input_legacy', self%id, self%restart
+  if (self%restart < 0) return
   call trace_begin('patch_mod::input_legacy')
   !-----------------------------------------------------------------------------
   ! Read the patch time from the .txt file
   !-----------------------------------------------------------------------------
-  write (filename,'(a,"/",i4.4,"_",i4.4)') trim(io%inputdir), self%id, snapshot
+  write (filename,'(a,"/",i4.4,"_",i4.4)') trim(inputdir), self%id, self%restart
   inquire (file=trim(filename)//'.txt', exist=ok)
-  if (.not.ok) return
+  if (.not.ok) then
+    if (self%id==io%id_debug) &
+      print *,'MK input_legacy: no .txt file', trim(filename)//'.txt'
+    call trace_end
+    return
+  end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   read (io%data_unit,*) time
   close (io%data_unit)
@@ -1106,18 +1117,24 @@ SUBROUTINE input_legacy (self, snapshot, ok)
   ! Read the binary file with the data cube.
   !-----------------------------------------------------------------------------
   inquire (file=trim(filename)//'.dat', exist=ok)
-  if (.not.ok) return
+  if (.not.ok) then
+    if (self%id==io%id_debug) &
+      print *,'MK input_legacy: no .dat file', trim(filename)//'.dat'
+    call trace_end
+    return
+  end if
   open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', &
     access='direct', status='unknown', recl=real32*product(u-l+1))
   do iv=1,self%nv
     read (io%data_unit,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
   end do
-  if (io%master .and. io%verbose>=0) print*, 'input_legacy: ', trim(filename), time
+  if (io%master .and. io%verbose>=0) print*, 'patch_t%input_legacy: ', trim(filename), time
   close (io%data_unit)
+  if (self%id==io%id_debug) &
+    print *,'MK input_legacy', self%id, ok, self%mem(18,18,36,1,self%it,1)
   !-----------------------------------------------------------------------------
   ! Update the iout and out_next for continued experiment
   !-----------------------------------------------------------------------------
-  self%iout = snapshot+1
   self%out_next = (int(self%time/self%out_time)+1)*self%out_time
   call trace_end
 END SUBROUTINE input_legacy
@@ -1722,7 +1739,7 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   real(kind=KindScalarVar), intent(out):: out(size(in))
   integer, intent(in) :: ii(3), jj(3)
   !.............................................................................
-  call trace_begin('patch_t%MapVectors')
+  call trace_begin('patch_t%MapVectors', 2)
 
   select case (self%mesh_type)
   case (1) ! Cartesian
@@ -1815,7 +1832,7 @@ SUBROUTINE log_interpolate (self, time, i, a)
   real                            :: pt(2)
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
-  call trace%begin ('rmhd_t%log_interpolate', itimer=itimer)
+  call trace%begin ('patch_t%log_interpolate', itimer=itimer)
   call self%time_interval (time, jt, pt)
   if (io%verbose > 1) then
     b => self%mem(:,:,:,i,jt(1),1)
@@ -1842,7 +1859,7 @@ SUBROUTINE time_interval (self, time, jt, pt)
   integer                         :: i, j
   real(8)                         :: t(self%nt), dt
   ! --------------------------------------------------------------------
-  call trace%begin ('rmhd_t%time_interval')
+  call trace%begin ('patch_t%time_interval', 2)
   t = self%t(self%iit)
   j = 1
   do i=1,self%nt-2

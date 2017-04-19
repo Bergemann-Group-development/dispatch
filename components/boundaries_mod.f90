@@ -12,6 +12,7 @@ MODULE boundaries_mod
   implicit none
   private
   type, public:: boundaries_t
+    integer:: id = 0
     integer:: status = 0
     logical:: unset = .true.
     class(mesh_t), pointer:: m(:)
@@ -26,6 +27,8 @@ MODULE boundaries_mod
     procedure:: symmetric
     procedure:: antisymmetric
     procedure:: extrapolate
+    procedure:: log_extrapolate
+    procedure:: constant
     procedure:: spherical_extrapolate
     procedure:: spherical0
     procedure:: spherical3
@@ -84,9 +87,11 @@ END FUNCTION is_clear
 !> =============================================================================
 !> Apply a boundary condition, using the procedure pointer "operator"
 !> =============================================================================
-SUBROUTINE condition (self, f, operator)
+SUBROUTINE condition (self, f, operator, value, ii)
   class(boundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:,:):: f
+  real, optional:: value
+  integer, optional:: ii
   procedure(make_symmetric), pointer:: operator
   !.............................................................................
   class(mesh_t), pointer:: m(:), m1, m2
@@ -97,78 +102,143 @@ SUBROUTINE condition (self, f, operator)
     call mpi%abort ('boundaries_t%init has not been called')
   end if
   m => self%m
-  if (self%is_set(bits%xl+bits%xu)) then
-    if (io%verbose>1) print *, 'BOUNDARY CONDITION: x-direction'
+  if (present(ii)) then
+    select case(ii)
+    case(1)
+      call x_condition
+    case(2)
+      call y_condition
+    case(3)
+      call z_condition
+    end select
+  else
+    if (self%is_set(bits%xl+bits%xu)) then
+      call x_condition
+    end if
+    if (self%is_set(bits%yl+bits%yu)) then
+      call y_condition
+    end if
+    if (self%is_set(bits%zl+bits%zu)) then
+      call z_condition
+    end if
+  end if
+  call trace%end
+  return
+  contains
+  subroutine x_condition
+    if (self%id==io%id_debug) &
+      print *, 'MK BOUNDARY CONDITION: x-direction', self%status, present(value)
     m1 => self%m(2)
     m2 => self%m(1)
     do i=m(3)%lb,m(3)%ub
-      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%xl),upper=self%is_set(bits%xu),transpose=.true.)
+      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%xl), &
+        upper=self%is_set(bits%xu), transpose=.true., value=value)
     end do
-  end if
-  if (self%is_set(bits%yl+bits%yu)) then
-    if (io%verbose>1) print *, 'BOUNDARY CONDITION: y-direction'
+  end subroutine x_condition
+  subroutine y_condition
+    if (self%id==io%id_debug) &
+      print *, 'MK BOUNDARY CONDITION: y-direction', self%status, present(value)
     m1 => self%m(1)
     m2 => self%m(2)
     do i=m(3)%lb,m(3)%ub
-      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%yl),upper=self%is_set(bits%yu),transpose=.false.)
+      call operator (self, f(:,:,i),m1,m2,lower=self%is_set(bits%yl), &
+        upper=self%is_set(bits%yu), transpose=.false., value=value)
     end do
-  end if
-  if (self%is_set(bits%zl+bits%zu)) then
-    if (io%verbose>1) print *, 'BOUNDARY CONDITION: z-direction'
+  end subroutine y_condition
+  subroutine z_condition
+    if (self%id==io%id_debug) &
+      print *, 'MK BOUNDARY CONDITION: z-direction', self%status, present(value)
     m1 => self%m(1)
     m2 => self%m(3)
     do i=m(2)%lb,m(2)%ub
-      call operator (self, f(:,i,:),m1,m2,lower=self%is_set(bits%zl),upper=self%is_set(bits%zu),transpose=.false.)
+      call operator (self, f(:,i,:),m1,m2,lower=self%is_set(bits%zl), &
+        upper=self%is_set(bits%zu), transpose=.false., value=value)
     end do
-  end if
-  call trace%end
+  end subroutine z_condition
 END SUBROUTINE condition
 
 !> =============================================================================
 !> Apply symmetric boundary conditions in the directions indicated by status bits
 !> =============================================================================
-SUBROUTINE symmetric (self, mem)
+SUBROUTINE symmetric (self, mem, ii)
   class(boundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
+  integer, optional:: ii
   procedure(make_symmetric), pointer:: operator => make_symmetric
   !-----------------------------------------------------------------------------
-  call self%condition (mem, operator)
+  call trace%begin ('boundaries_t%symmetric')
+  call self%condition (mem, operator, ii=ii)
+  call trace%end
 END SUBROUTINE symmetric
 
 !> =============================================================================
 !> Apply antisymmetric boundary conditions
 !> =============================================================================
-SUBROUTINE antisymmetric (self, mem)
+SUBROUTINE antisymmetric (self, mem, ii)
   class(boundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
+  integer, optional:: ii
   procedure(make_symmetric), pointer:: operator => make_antisymmetric
   !-----------------------------------------------------------------------------
-  call self%condition (mem, operator)
+  call trace%begin ('boundaries_t%antisymmetric')
+  call self%condition (mem, operator, ii=ii)
+  call trace%end
 END SUBROUTINE antisymmetric
 
 !> =============================================================================
 !> Apply extrapolating boundary conditions
 !> =============================================================================
-SUBROUTINE extrapolate (self, mem)
+SUBROUTINE extrapolate (self, mem, ii)
   class(boundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
+  integer, optional:: ii
   procedure(make_symmetric), pointer:: operator => make_extrapolated
   !-----------------------------------------------------------------------------
-  call self%condition (mem, operator)
+  call trace%begin ('boundaries_t%extrapolate')
+  call self%condition (mem, operator, ii=ii)
+  call trace%end
 END SUBROUTINE extrapolate
+
+!> =============================================================================
+!> Apply extrapolating boundary conditions
+!> =============================================================================
+SUBROUTINE log_extrapolate (self, mem)
+  class(boundaries_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
+  procedure(make_symmetric), pointer:: operator => make_log_extrapolated
+  !-----------------------------------------------------------------------------
+  call trace%begin ('boundaries_t%extrapolate')
+  call self%condition (mem, operator)
+  call trace%end
+END SUBROUTINE log_extrapolate
+
+!> =============================================================================
+!> Apply constant boundary conditions
+!> =============================================================================
+SUBROUTINE constant (self, mem, value, ii)
+  class(boundaries_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
+  real:: value
+  integer, optional:: ii
+  procedure(make_symmetric), pointer:: operator => make_constant
+  !-----------------------------------------------------------------------------
+  call trace%begin ('boundaries_t%constant')
+  call self%condition (mem, operator, value=value, ii=ii)
+  call trace%end
+END SUBROUTINE constant
 
 !> =============================================================================
 !> Apply symmtric boundary condition to the 2nd index, looping over the 1st
 !> =============================================================================
-SUBROUTINE make_symmetric (self, f, m1, m2, lower, upper, transpose)
+SUBROUTINE make_symmetric (self, f, m1, m2, lower, upper, transpose, value)
   class(boundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
+  real, optional:: value
   integer:: i, j
   !-----------------------------------------------------------------------------
   if (lower) then
-    !print *, 'lower boundary'
     if (transpose) then
       do j=1,m2%lo
         do i=m1%lb,m1%ub
@@ -184,7 +254,6 @@ SUBROUTINE make_symmetric (self, f, m1, m2, lower, upper, transpose)
     end if
   end if
   if (upper) then
-    !print *, 'upper boundary'
     if (transpose) then
       do j=m2%uo,m2%ub
         do i=m1%lb,m1%ub
@@ -204,15 +273,15 @@ END SUBROUTINE make_symmetric
 !> =============================================================================
 !> Make the solution antisymmetric across the boundary
 !> =============================================================================
-SUBROUTINE make_antisymmetric (self, f, m1, m2, lower, upper, transpose)
+SUBROUTINE make_antisymmetric (self, f, m1, m2, lower, upper, transpose, value)
   class(boundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
+  real, optional:: value
   integer:: i, j
   !-----------------------------------------------------------------------------
   if (lower) then
-    !print *, 'lower boundary'
     if (transpose) then
       do j=1,m2%lo
         do i=m1%lb,m1%ub
@@ -228,7 +297,6 @@ SUBROUTINE make_antisymmetric (self, f, m1, m2, lower, upper, transpose)
     end if
   end if
   if (upper) then
-    !print *, 'upper boundary'
     if (transpose) then
       do j=m2%uo,m2%ub
         do i=m1%lb,m1%ub
@@ -249,15 +317,59 @@ END SUBROUTINE make_antisymmetric
 !> Make an extrapolated boundary condition, possibly transposing for vector
 !> speedup
 !> =============================================================================
-SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose)
+SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose, value)
   class(boundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
+  real, optional:: value
   integer:: i, j
   !-----------------------------------------------------------------------------
   if (lower) then
-    !print *, 'lower boundary'
+    if (transpose) then
+      do j=1,m2%lo
+        do i=m1%lb,m1%ub
+          f(j,i) = 2.*f(m2%li,i) - f(m2%li+1+(m2%lo-j),i)
+        end do
+      end do
+    else
+      do j=1,m2%lo
+        do i=m1%lb,m1%ub
+          f(i,j) = 2.*f(i,m2%li) - f(i,m2%li+1+(m2%lo-j))
+        end do
+      end do
+    end if
+  end if
+  if (upper) then
+    if (transpose) then
+      do j=m2%uo,m2%ub
+        do i=m1%lb,m1%ub
+          f(j,i) = 2.*f(m2%ui,i) - f(m2%ui-1-(j-m2%uo),i)
+        end do
+      end do
+    else
+      do j=m2%uo,m2%ub
+        do i=m1%lb,m1%ub
+          f(i,j) = 2.*f(i,m2%ui) - f(i,m2%ui-1-(j-m2%uo))
+        end do
+      end do
+    end if
+  end if
+END SUBROUTINE make_extrapolated
+
+!> =============================================================================
+!> Make an extrapolated boundary condition, possibly transposing for vector
+!> speedup
+!> =============================================================================
+SUBROUTINE make_log_extrapolated (self, f, m1, m2, lower, upper, transpose, value)
+  class(boundaries_t):: self
+  real(kind=KindScalarVar), dimension(:,:):: f
+  class(mesh_t), pointer:: m1, m2
+  logical:: lower, upper, transpose
+  real, optional:: value
+  integer:: i, j
+  !-----------------------------------------------------------------------------
+  if (lower) then
     if (transpose) then
       do j=1,m2%lo
         do i=m1%lb,m1%ub
@@ -273,7 +385,6 @@ SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose)
     end if
   end if
   if (upper) then
-    !print *, 'upper boundary'
     if (transpose) then
       do j=m2%uo,m2%ub
         do i=m1%lb,m1%ub
@@ -288,7 +399,51 @@ SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose)
       end do
     end if
   end if
-END SUBROUTINE make_extrapolated
+END SUBROUTINE make_log_extrapolated
+
+!> =============================================================================
+!> Make an constant boundary condition, possibly transposing for vector
+!> speedup
+!> =============================================================================
+SUBROUTINE make_constant (self, f, m1, m2, lower, upper, transpose, value)
+  class(boundaries_t):: self
+  real(kind=KindScalarVar), dimension(:,:):: f
+  class(mesh_t), pointer:: m1, m2
+  logical:: lower, upper, transpose
+  real, optional:: value
+  integer:: i, j
+  !-----------------------------------------------------------------------------
+  if (lower) then
+    if (transpose) then
+      do j=1,m2%lo
+        do i=m1%lb,m1%ub
+          f(j,i) = value
+        end do
+      end do
+    else
+      do j=1,m2%lo
+        do i=m1%lb,m1%ub
+          f(i,j) = value
+        end do
+      end do
+    end if
+  end if
+  if (upper) then
+    if (transpose) then
+      do j=m2%uo,m2%ub
+        do i=m1%lb,m1%ub
+          f(j,i) = value
+        end do
+      end do
+    else
+      do j=m2%uo,m2%ub
+        do i=m1%lb,m1%ub
+          f(i,j) = value
+        end do
+      end do
+    end if
+  end if
+END SUBROUTINE make_constant
 
 !> =============================================================================
 !> Compute stagger offsets, taking care with buggy compilers, which may need
@@ -313,9 +468,9 @@ END SUBROUTINE set_stagger
 !> Impose fixed boundary condition; scalar values
 !> =============================================================================
 SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
-  class(boundaries_t)      :: self
+  class(boundaries_t)    :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
-  real :: v
+  real                   :: v
   class(mesh_t), pointer :: m(:)
   integer                :: iv
   logical, optional      :: maxfill
@@ -323,7 +478,7 @@ SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
   integer                :: ix, iy, iz
   real(8)                :: x, y, z, r, h(3)
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%fixed0')
+  call trace_begin('boundaries_t%spherical0')
   call set_stagger (m, h, iv)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -333,7 +488,7 @@ SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < self%radius-m(1)%d*0.1) then
+        if (r < self%radius+m(1)%d*0.5) then
           mem(ix,iy,iz) = v
         end if
       end do
@@ -347,7 +502,7 @@ END SUBROUTINE spherical0
 !> Impose fixed boundary condition; array values
 !> =============================================================================
 SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
-  class(boundaries_t)      :: self
+  class(boundaries_t)    :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem, v
   class(mesh_t), pointer :: m(:)
   integer                :: iv
@@ -356,7 +511,7 @@ SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
   integer                :: ix, iy, iz, n1, n2
   real(8)                :: x, y, z, r, h(3)
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%fixed3')
+  call trace_begin('boundaries_t%spherical3')
   call set_stagger (m, h, iv)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   self%vmax = 0.0
@@ -367,7 +522,7 @@ SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < self%radius-m(1)%d*0.1) then
+        if (r < self%radius+m(1)%d*0.5) then
           mem(ix,iy,iz) = v(ix,iy,iz)
         else if (present(maxfill)) then
           self%vmax = max(self%vmax,mem(ix,iy,iz))
@@ -398,21 +553,24 @@ END SUBROUTINE spherical3
 !> Extrapolate values across a spherical boundary, sampling values 4 mesh points
 !> from the boundary, and at the boundary, to establish a stable slope
 !> =============================================================================
-SUBROUTINE spherical_extrapolate (self, mem, v, m, iv)
-  class(boundaries_t)      :: self
-  real(kind=KindScalarVar), dimension(:,:,:) :: mem, v
+SUBROUTINE spherical_extrapolate (self, mem, m, iv)
+  class(boundaries_t)    :: self
+  real(kind=KindScalarVar), dimension(:,:,:) :: mem
   class(mesh_t), pointer :: m(:)
   integer                :: iv
   !............................................................................
   integer                :: ix, iy, iz, n1, n2
   real(8)                :: x, y, z, r, h(3), a1, a2, ds, p
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%fixed3')
+  call trace_begin('boundaries_t%spherical_extrapolate')
   call set_stagger (m, h, iv)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   ds = m(1)%d
   a1 = 0d0; n1 = 0
   a2 = 0d0; n2 = 0
+  !-----------------------------------------------------------------------------
+  ! a1 and a2 sample the values in annuli around R-3*ds and R, respectively
+  !-----------------------------------------------------------------------------
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz) + h(3)*m(3)%d - self%position(3)
     do iy=m(2)%lb,m(2)%ub
@@ -420,10 +578,10 @@ SUBROUTINE spherical_extrapolate (self, mem, v, m, iv)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (abs(r-(self%radius+4.*ds)) <= ds) then
+        if (abs(r-(self%radius+2.*ds)) <= ds) then
           n1 = n1+1
           a1 = a1 + mem(ix,iy,iz)
-        else if (abs(r-(self%radius+ds)) <= ds) then
+        else if (abs(r-self%radius) <= ds) then
           n2 = n2+1
           a2 = a2 + mem(ix,iy,iz)
         end if
@@ -433,6 +591,10 @@ SUBROUTINE spherical_extrapolate (self, mem, v, m, iv)
   if (n1>0) a1 = log(a1/n1)
   if (n2>0) a2 = log(a2/n2)
   a2 = max(a2,a1)
+  !-----------------------------------------------------------------------------
+  ! For radii inside R-0.5*ds, set the value to be log-interpolated from a1, a2
+  ! The value at a2 would be chosen for r=R
+  !-----------------------------------------------------------------------------
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz) + h(3)*m(3)%d - self%position(3)
     do iy=m(2)%lb,m(2)%ub
@@ -440,12 +602,11 @@ SUBROUTINE spherical_extrapolate (self, mem, v, m, iv)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < self%radius-0.1*ds) then
-          p = (self%radius+ds-r)/(3.*ds) + 1.0
+        r = max(r,self%radius-4.0*ds)
+        if (r < self%radius-0.5*ds) then
           if (a1 /= 0d0 .and. a2 /= 0d0) then
+            p = (self%radius-r)/(2.0*ds) + 1.0
             mem(ix,iy,iz) = exp(a1*(1d0-p) + a2*p)
-          else
-            mem(ix,iy,iz) = v(ix,iy,iz)
           end if
         end if
       end do

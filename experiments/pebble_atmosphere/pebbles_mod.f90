@@ -143,7 +143,7 @@ SUBROUTINE remove (self, pebble)
       call self%lock%unset ('remove')
       return
     end if
-    if (io%verbose>1) print*,'removing head'
+    if (io%verbose>2) print*,'removing head'
     self%head => pebble%next
     if (associated(self%head)) nullify(self%head%prev)
   end if

@@ -75,24 +75,18 @@ SUBROUTINE init_hierarchy (self, label)
   self%task_list%size = self%size*self%n_patch*self%m_zoom**(n_levels-1)*n_repeat
   n_repeat = (n_repeat/2)*2 + 1
   scene%n_repeat = n_repeat
-  !xomp parallel do private (ir,levels,level)
+  level = 1
   do ir=0,n_repeat-1
     position(2) = ((ir-n_repeat/2)*self%task_list%size(2))/n_repeat
-    if (ir==n_repeat/2) then
-      levels = n_levels
-      if (io%verbose>1) &
-        print*,'generating a hiearchy of ',n_patch,' patches',' at position', position
-    else
-      levels = 1
-      if (io%verbose>1) &
-        print*,'generating a cube of ',n_patch,' patches',' at position', position
-    end if
-    if (io%verbose>0) &
-      print'("repeated Rubiks Cubes: ir, levels, position =",i4,i3,1p,3g14.4)', &
-      ir, levels, position
-    do level=1,levels
-      call self%init_level (level, position)
-    end do
+    if (io%verbose>1) &
+      print*,'generating a cube of ',n_patch,' patches',' at position', position
+    call self%init_level (level, position)
+  end do
+  position(2) = 0.0
+  if (io%verbose>1) &
+    print*,'generating a hiearchy of ',n_patch,' patches',' at position', position
+  do level=2,n_levels
+    call self%init_level (level, position)
   end do
   !-----------------------------------------------------------------------------
   ! Initialize the task list
@@ -150,7 +144,7 @@ SUBROUTINE init_level (self, level, position)
     if (j==1.or.k==self%n_patch) call patch%set (bits%top_bottom)
     if (io%verbose>0) &
       print'(a,i6,i4,2(2x,3g16.6))', 'rubiks_mod%init_level: id, level, size, pos =', &
-        patch%id, level, patch%size, patch%position - position
+        patch%id, level, patch%size, patch%position
     !---------------------------------------------------------------------------
     ! Add to a list of links, with pointers from patch to patch
     !---------------------------------------------------------------------------

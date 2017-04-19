@@ -1,174 +1,138 @@
-import matplotlib.pyplot as pl
-import matplotlib.mlab as mml
-import mayavi.mlab as ml
 import fortranfile as ftf
 import numpy as np
 import os
 
-'''
-   Return an array with the data from one of the data/run/iiii.trc files,
-   with shape [i,j], where i is along the patch, and j=0:3 is position,
-   j=3:6 is velocity, j=6:9 is gas velocity, j=9 is j=10 is gas density, and 
-   j=11 is time.
-'''
-def trace_path(ip,run='pebbles1',o=2,maxrec=10000):
-    file='data/'+run+'/{:04d}.trc'.format(ip+o)
-    f=ftf.FortranFile(file,'rb')
-    k=0
-    id,rec,n,zz=f.readInts()
-    #print file, id
-    while id:
+def trace_utils():
+    '''
+    f=trace_files(dir):  Returns a list of *.trc trace data files in dir
+    tr=trace(file):      Returns a structure with info for one particle
+    trs=traces(dir):     Returns a list of structures, one for each particle
+    cache_traces(trs):   Dress a list of trace objects with actual paths
+    
+    # Example traces() use, plotting trace x- and y-components:
+    for tr in traces(dir):
+        if tr.rmin < 100:
+            s=tr.trace()
+            plot(s.x,s.y)
+        ...            
+    # The construct is analogous to one that loops over files:
+    for file in trace_files(dir):
+        tr=trace(file)
+        if tr.rmin < 100:
+            plot(tr.x,tr.y)
+        ...      
+    # To select a subset based on e.g. rmin, use syntax such as:  
+    subset=[tr for tr in trace(run) if tr.rmin < 200]
+    '''
+    print "Type trace_utils?<RETURN> for help text, or trace_utils(\
+ for pop-up help in Canopy"
+
+
+def trace_files (run='', dir='../data', verbose=1):
+    '''
+    Get a list of .trc trace files
+    '''
+    filenames = os.listdir(dir+'/'+run)
+    files=[dir+'/'+f for f in filenames if f.endswith(".trc")]
+    if verbose==1: print np.size(files), 'files found'
+    return np.sort(files)
+
+def trace(file,verbose=1):
+    '''
+    Return a structure with trace data from a trace file, with fields
+    {n,p,v,vg,c,d,t}, where p[0:3,:], v[0:3,:], vg[0:3,:] are the positions,
+    velocities, and gas velocities, and c[:], d[:], t[:] are the drag 
+    coefficients, densities, and times.  Fields x, y, and z are
+    shorthand for the arrays p[0], p[1], and p[2], respectively.
+    
+    Example use:
+        
+        s=traces()
+        path=s[0].trace()
+        plot(path.t,path.x)
+        mayavi.mlab.plot3d(path.x,path.y,path.z)
+    '''
+    class p:
+        pass
+    with ftf.FortranFile(file,'rb') as f:
         j=f.readInts()
-        a=f.readReals()
-        a=a.reshape(n,a.size/n)
-        if k==0:
-            v=np.copy(a)
-            i=np.copy(j)
-        else:
-            v=np.concatenate((v,a))
-            i=np.concatenate((i,j))
-        k=k+1
-        id,rec,n,zz=f.readInts()
-        if rec>maxrec:
-            break
-    f.close()
-    return v
-'''
-    Compute the first and last distance for all particle paths for the given run
-'''
-def search_traces(run='pebbles1',o=2,nf=0,maxrec=10000):
-    if nf==0:
-        ii=[-1]
-        for i in range(0,10000):
-            file='data/'+run+'/{:04d}.trc'.format(i+o)
-            if os.path.isfile(file):
-                ii=np.append(ii,i)
-        ii=ii[1:]
-        nf=np.size(ii)
-        print 'found ',nf,' files'
-    s=np.zeros((nf,2),dtype=np.float32)
-    for i in range(0,nf):
-        ip=ii[i]
-        v=trace_path(ip,run=run,o=o)
-        n,nv=v.shape
-        n=n-1
-        s[i,0]=np.sqrt(v[0,0]**2+v[0,1]**2+v[0,2]**2)
-        s[i,1]=np.sqrt(v[n,0]**2+v[n,1]**2+v[n,2]**2)
-        #print ip,n,s[ip,:]
-    return s,ii
-'''
-    Find the relevant slow particles that can accrete
-'''
-def search_slow(run='pebbles1',o=2,maxrec=10000,verbose=0):
-    ii=[]
-    for ip in range(0,10000):
-        file='data/'+run+'/{:04d}.trc'.format(ip+o)
-        if os.path.isfile(file):
-            f=ftf.FortranFile(file,'rb')
-            id,rec,n,z=f.readInts()
+        p.status=j[1]
+        size=f.readReals()
+        p.size=size[0]
+        id,rec,n=f.readInts()
+        list=[]
+        # flatten records, which contain several trace points, into list
+        while id:
             j=f.readInts()
             a=f.readReals()
-            a=a.reshape(n,a.size/n)
-            if verbose:
-                print ip,a[0,0],a[0,2],a[0,5]
-            if a[0,0]>-200. and abs(a[0,2])<250. and abs(a[0,5])<2:
-                ii=np.append(ii,ip)
-    print 'found ',np.size(ii),' files'
-    return ii
-'''
-    Spin the view created by show_traces
-''' 
-@ml.animate(delay=30)
-def spin():
-    f = ml.gcf()
-    while 1:
-        f.scene.camera.azimuth(1)
-        f.scene.render()
-        yield
-@ml.animate(delay=10,ui=None)
-def spin_zoom():
-    f = ml.gcf()
-    eps=0.003
-    for i in range(360*2):
-        f.scene.camera.azimuth(1)
-        f.scene.camera.zoom(1+eps)
-        f.scene.render()
-        yield
-    for i in range(360*3):
-        f.scene.camera.azimuth(1)
-        f.scene.camera.zoom(1-eps)
-        f.scene.render()
-        yield
-def spin_movie():
-    f = ml.gcf()
-    os.system('mkdir -p anim')
-    for phi in range(360):
-        f.scene.camera.azimuth(1)
-        f.scene.render()
-        file='anim/im_{:03d}.png'.format(phi)
-        print file
-        ml.savefig(file)
+            a=a.reshape(n,np.size(a)/n)
+            for i in range(n):
+                q=p()
+                q.ip=j[i]
+                q.a=a[i,:]
+                list.append(q)
+            ii=f.readInts()
+            id,rec,n=ii[0:3]
+    # extract structure fields from list
+    p.n=np.size(list)
+    p.ip=np.array([i.ip     for i in list])
+    p.p =np.array([i.a[0:3] for i in list]).transpose()
+    p.v =np.array([i.a[3:6] for i in list]).transpose()
+    p.vg=np.array([i.a[6:9] for i in list]).transpose()
+    p.c =np.array([i.a[9]   for i in list])
+    p.d =np.array([i.a[10]  for i in list])
+    p.t =np.array([i.a[11]  for i in list])
+    p.x = p.p[0]
+    p.y = p.p[1]
+    p.z = p.p[2]
+    r=np.sqrt(np.sum(p.p**2,0))
+    p.rmin=r.min()
+    p.rmax=r.max()
+    p.first=p.p[:,0]
+    p.last=p.p[:,-1]
+    if verbose==1: print file, p.n, 'points'
+    return p
 
-def show_trace(ip=10,run='pebbles1',o=2,radius=30):
-    v=trace_path(ip,run=run,o=o)
-    t=v[:,11]
-    pl.figure(1)
-    pl.clf()
-    pl.subplot(2,2,1)
-    pl.plot(t,v[:,0:3],'-+'); pl.ylabel('position')
-    pl.subplot(2,2,2)
-    pl.plot(t,v[:,3:9],'-+'); pl.ylabel('velocitu')
-    pl.subplot(2,2,3)
-    pl.plot(t,v[:,6:9])
-    pl.subplot(2,2,4)
-    pl.semilogy(t,v[:,9],'-+')
-    pl.hold(1)
-    pl.semilogy(t,v[:,10]*1e10)
+def traces(run='', dir='../data', verbose=1):
+    '''
+    Return a list of structures {file,trace,rmin,rmax,first,last},
+    where self.trace() is a function returning a trace(self.file)
+    structure, rmin,rmax are the min and max radii for the trace, 
+    and first,last are the first and last 3D trace points
+
+    To select a subset based on e.g. rmin and cache the paths,
+    use syntax such as:  
     
-    ml.figure(1,size=[800,750])
-    ml.clf()
-    x=np.array([-1.1,0,1.1],dtype=np.float32)
-    s=np.array([0.0,1.9,0.0],dtype=np.float32)
-    ml.points3d(x,x,x,s,scale_factor=1,resolution=16)
-    a=radius
-    extent=[-a,a,-a,a,-a,a]
-    ml.outline(extent=extent)
-    x,y,z=v[:,0:3].transpose()
-    r=np.sqrt(x**2+y**2+z**2)
-    a=r.max
-    ml.plot3d(x,y,z,tube_radius=0.5*radius/30.)
-    ml.view(focalpoint=[0.,0.,0.],azimuth=270,elevation=75,distance=100*a)
-    ml.show()
-'''
-    Create a view showing the planet embryo and all paths that end within
-    the given radius
-'''
-def show_traces(run='pebbles1',radius=30,o=2,maxrec=10000,outline=0):
-    s,ip=search_traces(run,o=o)
-    w=mml.find(s[:,1]<radius)
-    nw=w.size
-    print 'found',nw,' paths:', ip[w]
-    print 'rendering'
+        subset=[tr for tr in trace(run) if tr.rmin < 200]
+        for tr in subset: tr.path=tr.trace()
+    
+    See trace( for more about the contents of the path structure
+    '''
+    files=trace_files(dir=dir,run=run,verbose=verbose)
+    s=[]
+    class tr:
+        file=''
+        def trace(self):
+            return trace(self.file,verbose=0)
+    for f in files:
+        p=trace(f,verbose=0)
+        a=tr()
+        a.rmin=p.rmin
+        a.rmax=p.rmax
+        a.first=p.first
+        a.last=p.last
+        a.ip=p.ip[0]
+        a.file=f
+        s.append(a)
+        if verbose>1: print '{}: {:10.3f} {:10.3f}'.format(a.file,a.rmin,a.rmax)
+    return s
 
-    ml.figure(1,size=[800,750])
-    ml.clf()
-    x=np.array([-1.1,0,1.1],dtype=np.float32)
-    s=np.array([0.0,1.9,0.0],dtype=np.float32)
-    ml.points3d(x,x,x,s,scale_factor=1,resolution=16)
-    a=radius
-    if outline:
-        extent=[-a,a,-a,a,-a,a]
-        ml.outline(extent=extent)
+def cache_path(tr):
+    '''Dress a trace object with actual path'''
+    tr.path=tr.trace()
+    return tr
 
-    ip=ip[w]
-    for iw in range(nw):
-        v=trace_path(ip[iw],run=run)    
-        x,y,z=v[:,0:3].transpose()
-        r=np.sqrt(x**2+y**2+z**2)
-        s=np.sqrt(v[:,3]**2+v[:,4]**2+v[:,5]**2)
-        ml.plot3d(x,y,z,s,tube_radius=2.0*r.min()/30.,vmin=0,vmax=10)
-
-    ml.view(focalpoint=[0.,0.,0.],azimuth=250,elevation=75,distance=6*a)
-    ml.show()
-    #spin()
-    return ip
+def cache_paths(trs):
+    '''Dress a list of objects with path data'''
+    for tr in trs:
+        cache_path(tr)

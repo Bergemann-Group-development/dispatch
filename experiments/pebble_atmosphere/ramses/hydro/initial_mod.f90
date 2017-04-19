@@ -19,8 +19,6 @@ MODULE initial_mod
     character(len=20) :: initial_condition
     real:: b0(3)
     real:: gamma
-    real:: v_head, v_accrete
-    real:: surface_temperature, surface_pressure
     real(8):: size(3)
     logical:: mhd
     procedure(planet_atmosphere), pointer:: selected => null()
@@ -75,7 +73,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, d0, p, ux, uy, uz
+  real(8) :: x, y, z, r, d, d0, T0, p, ux, uy, uz
   type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
@@ -95,8 +93,9 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   end if
   !$omp end critical (input_cr)
   planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
-  self%v_head    =    v_head_cgs/scaling%u
-  self%v_accrete = v_accrete_cgs/scaling%u
+  planet%v_head    =    v_head_cgs/scaling%u
+  planet%v_accrete = v_accrete_cgs/scaling%u
+  T0 = atmosphere%external%temperature
   nr = atmosphere%nr
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -113,8 +112,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         ! subtracting off the otherwise constant external density
         !-----------------------------------------------------------------------
         d0 = d
-        d = d + &
-          atmosphere%external%density*(exp(-(planet%omega(3)**2*d0/p*0.5*z**2))-1d0)
+        d = d*exp(-(planet%omega(3)**2*0.5*(z**2+2.*planet%trap*x**2)/T0))
         p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
         !  mem(ix,iy,iz,2) = d*(log(p)-gamma*log(d))/(gamma-1.0)
@@ -128,8 +126,8 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         ! the Hill sphere, so we will probably only be seeing effects of the
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
-        ux = -self%v_accrete
-        uy = -1.5*planet%omega(3)*x - self%v_head
+        ux = -planet%v_accrete
+        uy = -(1.5+planet%trap)*planet%omega(3)*x - planet%v_head
         uz = 0.0
         mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
         mem(ix,iy,iz,i%px) = d*ux
@@ -156,7 +154,7 @@ SUBROUTINE disk (self, m, mem)
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, d0, p, ux, uy, uz
+  real(8) :: x, y, z, r, d, d0, T0, p, ux, uy, uz
   type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
@@ -176,9 +174,10 @@ SUBROUTINE disk (self, m, mem)
   end if
   !$omp end critical (input_cr)
   planet%omega   = omega*2.*cgs%pi*scaling%t/cgs%yr
-  self%v_head    =    v_head_cgs/scaling%u
-  self%v_accrete = v_accrete_cgs/scaling%u
+  planet%v_head    =    v_head_cgs/scaling%u
+  planet%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr
+  T0 = atmosphere%external%temperature
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz) - planet%position(3)
@@ -194,14 +193,14 @@ SUBROUTINE disk (self, m, mem)
         ! isothermal conditions
         !-----------------------------------------------------------------------
         d0 = d
-        d = d0*exp(-(planet%omega(3)**2*d0/p*0.5*z**2))
+        d = d*exp(-(planet%omega(3)**2*0.5*(z**2+2.*planet%trap*x**2)/T0))
         p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
         !-----------------------------------------------------------------------
         ! A steady rotations profile in the rotating coordinate frame
         !-----------------------------------------------------------------------
-        ux = -self%v_accrete
-        uy = -1.5*planet%omega(3)*x - self%v_head
+        ux = -planet%v_accrete
+        uy = -(1.5+planet%trap)*planet%omega(3)*x - planet%v_head
         uz = 0.0
         mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
         mem(ix,iy,iz,i%px) = d*ux
