@@ -12,6 +12,7 @@ MODULE initial_mod
   USE units_mod
   USE scaling_mod
   USE index_mod
+  USE kinds_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -69,7 +70,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE planet_atmosphere (self, m, mem)
   class(initial_t) :: self
-  real, dimension(:,:,:,:), pointer  :: mem
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr
@@ -150,7 +151,7 @@ END SUBROUTINE planet_atmosphere
 !> =============================================================================
 SUBROUTINE disk (self, m, mem)
   class(initial_t) :: self
-  real, dimension(:,:,:,:), pointer  :: mem
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr
