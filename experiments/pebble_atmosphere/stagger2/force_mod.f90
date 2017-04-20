@@ -60,12 +60,13 @@ END SUBROUTINE init
 !> hence a positive Omega_z corresponds to positive rotation speed in the x-
 !> direction
 !> =============================================================================
-FUNCTION star_and_planet (self, time, Ux, Uy, Uz, m) RESULT (ff)
+FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
-  real, dimension(:,:,:):: Ux, Uy, Uz
+  real, dimension(:,:,:):: Ux, Uy, Uz, d
+  real, dimension(:,:,:,:):: p
   !.............................................................................
   integer:: ix, iy, iz, iv
   real(8):: kx, ky, kz, rs(3), rp(3), rs1, rp1
@@ -127,12 +128,13 @@ END FUNCTION star_and_planet
 !> =============================================================================
 !> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
 !> =============================================================================
-FUNCTION single_solenoidal (self, time, Ux, Uy, Uz, m) RESULT (ff)
+FUNCTION single_solenoidal (self, time, d, p,, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t)        :: self
   real(8)               :: time
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
-  real, dimension(:,:,:):: Ux, Uy, Uz
+  real, dimension(:,:,:):: Ux, Uy, Uz, d
+  real, dimension(:,:,:,:):: p
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz, iostat
