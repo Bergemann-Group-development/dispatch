@@ -22,7 +22,6 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(rmhd_t):: experiment_t
-    type(initial_t):: initial
     type(boundary_t) :: boundary
   contains
     procedure init

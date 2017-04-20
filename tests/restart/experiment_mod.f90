@@ -17,7 +17,6 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(pebble_patch_t):: experiment_t
-    type(initial_t):: initial
   contains
     procedure init
     procedure update

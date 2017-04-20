@@ -45,7 +45,7 @@ CONTAINS
 !>           force_mod::init                    ! initialize forcing
 !>         pebbles_mod::init                    ! reads omega
 !>         initial_mod::init                    ! selects ICs
-!>         initial_mod::selected                ! computes ICs
+!>         initial_mod::condition               ! computes ICs
 !>         boundaries_mod::condition            ! apply BCs to ICs
 !> =============================================================================
 SUBROUTINE init (self)
@@ -80,7 +80,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Through the hierarchy of class(task_t)%init calls, the call to %init below
   ! sets the IC values, either from reading in snapshot values, or by calling
-  ! the IC condition procedure self%initial%selected() from gpatch_t%init.
+  ! the IC condition procedure self%initial%condition() from gpatch_t%init.
   !----------------------------------------------------------------------------
   call self%pebble_patch_t%init
   ! In the case that we're using ZEUS, `self%nv` should now be 10.
