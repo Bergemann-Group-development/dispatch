@@ -9,7 +9,6 @@ UPD             = adams_bashforth
 #SOLVER          = ramses/hydro
 SOLVER          = stagger2
 RT_SOLVER       = cooling_function
-MESH            = staggered
 EXEC            = dispatch.x
 TOP             = ../../..
 sinclude $(TOP)/config/Makefile
@@ -22,5 +21,5 @@ sinclude $(PPCODE)/Experiments/DISPATCH/Makefile
 $(EXEC): cartesian_mod.o $(PICOBJ)
 
 # Dependencies
-experiment_mod.o        : mhd_mod.o trace_mod.o io_mod.o timestep_mod.o initial_mod.o download_mod.o link_mod.o 
-boundary_mod.o          : patch_mod.o
+experiment_mod.o        : io_mod.o trace_mod.o patch_mod.o gmhd_mod.o boundary_mod.o initial_mod.o download_mod.o
+boundary_mod.o          : trace_mod.o patch_mod.o
