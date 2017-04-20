@@ -4,9 +4,9 @@ reload(du)
 import plot_utils as pu
 reload(pu)
 
-iout=30
+iout=60
 run='m10r40t10'
 data='d:\\pebble_atmosphere\\data'
 
 fig=pl.figure(1,figsize=(12,3))
-a=pu.yx_scan(fig,run,data,iout=iout,var='logd',dz=25)
+a=pu.yx_scan(fig,run,data,iout=iout,var='e',dz=100)

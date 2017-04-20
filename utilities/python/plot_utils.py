@@ -109,7 +109,8 @@ def yz_plane(run='',dir='../data',iout=0,var='d',x=0.0):
     pl.tight_layout()
     pl.show()
     
-def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',**kwargs):
+def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
+            repeat=0,**kwargs):
     '''
     Display yx-image in steps of dz in z 
     '''
@@ -163,10 +164,11 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',**
         pl.colorbar(shrink=0.9,aspect=15,fraction=0.06,pad=0.02)
         pl.draw()
         return im
-    a=an.FuncAnimation(fig,anim,np.arange(zmin,zmax,dz),interval=10,repeat=1)
+    a=an.FuncAnimation(fig,anim,np.arange(zmin,zmax,dz),repeat=repeat,**kwargs)
     return a
 
-def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',**kwargs):
+def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
+            repeat=0,**kwargs):
     '''
     Display yz-image in steps of dx in x
     '''
@@ -218,5 +220,5 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',**
         pl.colorbar(shrink=0.9,aspect=15,fraction=0.06,pad=0.02)
         pl.draw()
         return im
-    a=an.FuncAnimation(fig,anim,np.arange(xmin,xmax,dx),interval=10,repeat=1)
+    a=an.FuncAnimation(fig,anim,np.arange(xmin,xmax,dx),repeat=repeat,**kwargs)
     return a
