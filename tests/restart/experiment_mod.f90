@@ -42,7 +42,7 @@ CONTAINS
 !>           force_mod::init                    ! initialize forcing
 !>         pebbles_mod::init                    ! reads omega
 !>         initial_mod::init                    ! selects ICs
-!>         initial_mod::selected                ! computes ICs
+!>         initial_mod::condition              ! computes ICs
 !>         boundaries_mod::condition            ! apply BCs to ICs
 !> =============================================================================
 SUBROUTINE init (self)
@@ -66,7 +66,7 @@ SUBROUTINE init (self)
   call self%set (bits%static)
   call self%initial%init
   ff => self%mem(:,:,:,:,1,1)
-  call self%initial%selected (self%mesh, ff, self%level)
+  call self%initial%condition (self%mesh, ff, self%level)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   do iv=self%i_px,self%i_pz
     call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)

@@ -51,7 +51,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  self%mem(:,:,:,:,1,1) = self%initial%selected(self%mesh)
+  self%mem(:,:,:,:,1,1) = self%initial%condition(self%mesh)
   self%mhd = self%initial%mhd
   self%time = self%initial%time
   self%t(self%it) = self%initial%time

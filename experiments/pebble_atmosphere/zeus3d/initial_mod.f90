@@ -24,7 +24,7 @@ MODULE initial_mod
     real:: surface_temperature, surface_pressure
     real(8):: size(3)
     logical:: mhd
-    procedure(planet_atmosphere), pointer:: selected => null()
+    procedure(planet_atmosphere), pointer:: condition => null()
   contains
     procedure init
   end type
@@ -56,11 +56,11 @@ SUBROUTINE init (self, type)
    self%initial_condition = initial_condition
    select case(trim(self%initial_condition))
      case('star_and_planet')
-       self%selected => planet_atmosphere
+       self%condition => planet_atmosphere
      case('planet_atmosphere')
-       self%selected => planet_atmosphere
+       self%condition => planet_atmosphere
      case('disk')
-       self%selected => disk
+       self%condition => disk
      case default
        error stop "initial condition not understood"
      end select

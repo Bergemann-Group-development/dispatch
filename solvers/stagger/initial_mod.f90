@@ -1,4 +1,4 @@
-!> =============================================================================
+condition =============================================================================
 !> This is a start on a module that could become a general turbulence forcing
 !> module, where the standard forcing we have been using in RAMSES is implemented
 !> =============================================================================
@@ -16,7 +16,7 @@ MODULE initial_mod
     logical:: mhd
     real(8):: a(3), b(3), phi(3), d0, s0
     real(8):: a0(3), k(3), b0(3), u0(3)
-    procedure(single_solenoidal), pointer:: selected=>null()
+    procedure(single_solenoidal), pointer:: condition=>null()
   contains
     procedure init
   end type
@@ -56,11 +56,11 @@ SUBROUTINE init (self)
    self%mhd    = mhd
    select case (type)
    case ('single_solenoidal')
-     self%selected => single_solenoidal
+     self%condition => single_solenoidal
    case ('single_compressive')
-     self%selected => single_compressive
+     self%condition => single_compressive
    case ('single_advection')
-     self%selected => single_advection
+     self%condition => single_advection
    case default
      print*,'UNKNOWN INITIAL CONDITION TYPE'
      stop

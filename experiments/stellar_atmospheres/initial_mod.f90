@@ -17,7 +17,7 @@ MODULE initial_mod
     integer:: nv
     integer:: iread=0, iwrite=0
     real(8):: time
-    procedure(single_solenoidal), pointer:: selected=>null()
+    procedure(single_solenoidal), pointer:: condition=>null()
   contains
     procedure:: init
     procedure, nopass:: cleanup
@@ -51,19 +51,19 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   select case (trim(type))
   case ('snapshot')
-    self%selected => snapshot                   ! snapshot reader
+    self%condition => snapshot                   ! snapshot reader
     self%nv = 8
   case ('stagger')
-    self%selected => stagger                    ! legacy STAGGER code reader
+    self%condition => stagger                    ! legacy STAGGER code reader
     self%nv = 9
   case ('stagger_hd')
-    self%selected => stagger                    ! legacy STAGGER code reader
+    self%condition => stagger                    ! legacy STAGGER code reader
     self%nv = 6
   case ('raw')
-    self%selected => raw                        ! generic raw data reader
+    self%condition => raw                        ! generic raw data reader
     self%nv = 5
   case ('single_solenoidal')
-    self%selected => single_solenoidal          ! for testing
+    self%condition => single_solenoidal          ! for testing
     self%nv = 8
   case default
     print*,'UNKNOWN INITIAL CONDITION TYPE'

@@ -17,7 +17,7 @@ MODULE initial_mod
     integer:: seed
     logical:: mhd
     real(8):: time
-    procedure(single_solenoidal), pointer:: selected=>null()
+    procedure(single_solenoidal), pointer:: condition=>null()
   contains
     procedure:: init
     procedure, nopass:: cleanup
@@ -46,15 +46,15 @@ SUBROUTINE init (self)
   !$omp end critical (input_cr)
   select case (type)
   case ('single_solenoidal')
-    self%selected => single_solenoidal
+    self%condition => single_solenoidal
   case ('single_compressive')
-    self%selected => single_compressive
+    self%condition => single_compressive
   case ('single_advection')
-    self%selected => single_advection
+    self%condition => single_advection
   case ('exa256')
-    self%selected => exa256
+    self%condition => exa256
   case ('raw')
-    self%selected => raw
+    self%condition => raw
   case default
     print*,'UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':'
     stop
