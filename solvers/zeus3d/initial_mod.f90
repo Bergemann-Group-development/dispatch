@@ -109,7 +109,7 @@ SUBROUTINE single_solenoidal (self, m, ff)
         ff(ix,iy,iz,idx%px) = a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,idx%py) = a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,idx%pz) = a0(3)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,idx%e1) = e0
+        ff(ix,iy,iz,idx%e) = e0
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(1)*(sin(kx)+sin(ky))
           ff(ix,iy,iz,idx%by) = b0(2)*(sin(kx)+sin(ky))
@@ -164,7 +164,7 @@ SUBROUTINE single_compressive (self, m, ff)
         ff(ix,iy,iz,idx%px) = u0(1)*sin(kx)
         ff(ix,iy,iz,idx%py) = u0(2)*sin(ky)
         ff(ix,iy,iz,idx%pz) = u0(3)*sin(kz)
-        ff(ix,iy,iz,idx%e1) = e0
+        ff(ix,iy,iz,idx%e) = e0
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(1)
           ff(ix,iy,iz,idx%by) = b0(2)
@@ -218,7 +218,7 @@ SUBROUTINE single_advection (self, m, ff)
         ff(ix,iy,iz,idx%px) = d0*u0(1)
         ff(ix,iy,iz,idx%py) = d0*u0(2)
         ff(ix,iy,iz,idx%pz) = d0*u0(3)
-        ff(ix,iy,iz,idx%e1) = e0
+        ff(ix,iy,iz,idx%e) = e0
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(3)*sin(kz)
           ff(ix,iy,iz,idx%by) = b0(1)*sin(kx)
@@ -283,7 +283,7 @@ SUBROUTINE exa256 (self, m, ff)
                            +abs(ff(li(1):ui(1),jy,jz,idx%pz))))
   end do
   end do
-  ff(:,:,:,idx%e1) = ff(:,:,:,idx%d)
+  ff(:,:,:,idx%e) = ff(:,:,:,idx%d)
   do iv=idx%px,idx%pz
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
@@ -342,7 +342,7 @@ SUBROUTINE raw (self, m, ff)
                                         i(2):i(2)+m(2)%n-1, &
                                         i(3):i(3)+m(3)%n-1,iv)
   end do
-  ff(:,:,:,idx%e1) = ff(:,:,:,idx%d)
+  ff(:,:,:,idx%e) = ff(:,:,:,idx%d)
   do iv=idx%px,idx%pz
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
