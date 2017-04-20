@@ -5,6 +5,7 @@
 MODULE boundaries_mod
   USE io_mod
   USE trace_mod
+  USE kinds_mod
   USE mpi_mod
   USE bits_mod
   USE mesh_mod
@@ -88,7 +89,7 @@ END FUNCTION is_clear
 !> =============================================================================
 SUBROUTINE condition (self, f, operator, value, ii)
   class(boundaries_t):: self
-  real, dimension(:,:,:):: f
+  real(kind=KindScalarVar), dimension(:,:,:):: f
   real, optional:: value
   integer, optional:: ii
   procedure(make_symmetric), pointer:: operator
@@ -161,7 +162,7 @@ END SUBROUTINE condition
 !> =============================================================================
 SUBROUTINE symmetric (self, mem, ii)
   class(boundaries_t):: self
-  real, dimension(:,:,:), pointer:: mem
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
   integer, optional:: ii
   procedure(make_symmetric), pointer:: operator => make_symmetric
   !-----------------------------------------------------------------------------
@@ -175,7 +176,7 @@ END SUBROUTINE symmetric
 !> =============================================================================
 SUBROUTINE antisymmetric (self, mem, ii)
   class(boundaries_t):: self
-  real, dimension(:,:,:), pointer:: mem
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
   integer, optional:: ii
   procedure(make_symmetric), pointer:: operator => make_antisymmetric
   !-----------------------------------------------------------------------------
@@ -189,7 +190,7 @@ END SUBROUTINE antisymmetric
 !> =============================================================================
 SUBROUTINE extrapolate (self, mem, ii)
   class(boundaries_t):: self
-  real, dimension(:,:,:), pointer:: mem
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
   integer, optional:: ii
   procedure(make_symmetric), pointer:: operator => make_extrapolated
   !-----------------------------------------------------------------------------
@@ -203,7 +204,7 @@ END SUBROUTINE extrapolate
 !> =============================================================================
 SUBROUTINE log_extrapolate (self, mem)
   class(boundaries_t):: self
-  real, dimension(:,:,:), pointer:: mem
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
   procedure(make_symmetric), pointer:: operator => make_log_extrapolated
   !-----------------------------------------------------------------------------
   call trace%begin ('boundaries_t%extrapolate')
@@ -216,7 +217,7 @@ END SUBROUTINE log_extrapolate
 !> =============================================================================
 SUBROUTINE constant (self, mem, value, ii)
   class(boundaries_t):: self
-  real, dimension(:,:,:), pointer:: mem
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: mem
   real:: value
   integer, optional:: ii
   procedure(make_symmetric), pointer:: operator => make_constant
@@ -231,7 +232,7 @@ END SUBROUTINE constant
 !> =============================================================================
 SUBROUTINE make_symmetric (self, f, m1, m2, lower, upper, transpose, value)
   class(boundaries_t):: self
-  real, dimension(:,:):: f
+  real(kind=KindScalarVar), dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
   real, optional:: value
@@ -274,7 +275,7 @@ END SUBROUTINE make_symmetric
 !> =============================================================================
 SUBROUTINE make_antisymmetric (self, f, m1, m2, lower, upper, transpose, value)
   class(boundaries_t):: self
-  real, dimension(:,:):: f
+  real(kind=KindScalarVar), dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
   real, optional:: value
@@ -318,7 +319,7 @@ END SUBROUTINE make_antisymmetric
 !> =============================================================================
 SUBROUTINE make_extrapolated (self, f, m1, m2, lower, upper, transpose, value)
   class(boundaries_t):: self
-  real, dimension(:,:):: f
+  real(kind=KindScalarVar), dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
   real, optional:: value
@@ -362,7 +363,7 @@ END SUBROUTINE make_extrapolated
 !> =============================================================================
 SUBROUTINE make_log_extrapolated (self, f, m1, m2, lower, upper, transpose, value)
   class(boundaries_t):: self
-  real, dimension(:,:):: f
+  real(kind=KindScalarVar), dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
   real, optional:: value
@@ -406,7 +407,7 @@ END SUBROUTINE make_log_extrapolated
 !> =============================================================================
 SUBROUTINE make_constant (self, f, m1, m2, lower, upper, transpose, value)
   class(boundaries_t):: self
-  real, dimension(:,:):: f
+  real(kind=KindScalarVar), dimension(:,:):: f
   class(mesh_t), pointer:: m1, m2
   logical:: lower, upper, transpose
   real, optional:: value
@@ -468,7 +469,7 @@ END SUBROUTINE set_stagger
 !> =============================================================================
 SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
   class(boundaries_t)    :: self
-  real, dimension(:,:,:) :: mem
+  real(kind=KindScalarVar), dimension(:,:,:) :: mem
   real                   :: v
   class(mesh_t), pointer :: m(:)
   integer                :: iv
@@ -502,7 +503,7 @@ END SUBROUTINE spherical0
 !> =============================================================================
 SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
   class(boundaries_t)    :: self
-  real, dimension(:,:,:) :: mem, v
+  real(kind=KindScalarVar), dimension(:,:,:) :: mem, v
   class(mesh_t), pointer :: m(:)
   integer                :: iv
   logical, optional      :: maxfill
@@ -554,7 +555,7 @@ END SUBROUTINE spherical3
 !> =============================================================================
 SUBROUTINE spherical_extrapolate (self, mem, m, iv)
   class(boundaries_t)    :: self
-  real, dimension(:,:,:) :: mem
+  real(kind=KindScalarVar), dimension(:,:,:) :: mem
   class(mesh_t), pointer :: m(:)
   integer                :: iv
   !............................................................................

@@ -5,6 +5,7 @@ MODULE experiment_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
+  USE kinds_mod
   USE pebble_patch_mod
   USE initial_mod
   USE atmosphere_mod
@@ -69,20 +70,22 @@ SUBROUTINE init (self)
   ! type of IC to be applied when the call to gpatch_t%init is made.
   !----------------------------------------------------------------------------
   self%nv = 5
+  self%mhd = .false.
   self%msplit = 3
   call scaling%init
   call self%initial%init (type)
   call self%force%init (type)
-  self%nv = 5
-  self%mhd = .false.
+  !self%nv = 5
+  !self%mhd = .false.
   !----------------------------------------------------------------------------
   ! Through the hierarchy of class(task_t)%init calls, the call to %init below
   ! sets the IC values, either from reading in snapshot values, or by calling
   ! the IC condition procedure self%initial%selected() from gpatch_t%init.
   !----------------------------------------------------------------------------
   call self%pebble_patch_t%init
-  self%mhd = .false.
-  self%nv = 5
+  ! In the case that we're using ZEUS, `self%nv` should now be 10.
+  !self%mhd = .false.
+  !self%nv = 5
   call self%set (bits%static)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   if (trim(type)/='disk' .and. all(abs(self%position) < self%ds)) then
@@ -236,7 +239,7 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   class(experiment_t):: self
   integer:: it
   integer, optional:: ii
-  real, dimension(:,:,:), pointer:: d, e, p, u, k1, k2
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e, p, u, k1, k2
   integer:: iv
   real:: ee
   !-----------------------------------------------------------------------------
@@ -280,6 +283,7 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   call self%boundaries%constant (u, ee, ii=ii)  ! constant bdry value
   e = u*d+k2                                    ! add new kinetic energy
   deallocate (u,k1,k2)
+  nullify (d,e,p)
   call trace%end
 END SUBROUTINE edge_boundary_conditions
 
@@ -381,7 +385,7 @@ SUBROUTINE density_boundary_condition (self, it, ii)
   class(mesh_t), pointer, dimension(:) :: m
   integer:: iv, iz, iy, ix, lz, uz, ly, uy, lx, ux, ix0, iz0
   real(8) :: x, x0, z, z0, r, d1, d0, tt, c2
-  real, dimension(:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
   !-----------------------------------------------------------------------------
   ! Vertical edge boundary conditions
   !-----------------------------------------------------------------------------

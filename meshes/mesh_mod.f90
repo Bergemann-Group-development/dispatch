@@ -49,7 +49,7 @@ MODULE mesh_mod
     real(8) :: b = 1d0       ! box size
     real(8) :: o = 0.0       ! position offset in index space
     real(4) :: lf = 0.0, uf = 0.0  ! interpolation boundary indices (must be floating point)
-    ! the variables `llc` and `origin` describe the same location, but in
+    ! the variables `llc_cart` and `llc_nat` describe the same location, but in
     ! different reference frames.
     real(8) :: llc_cart = 0.0  ! position of the patch's lower left corner in Cartesian
                                ! coords.; replacement for `p`.
