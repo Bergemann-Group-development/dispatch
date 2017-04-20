@@ -15,18 +15,19 @@ def image(f,**kwargs):
     Turn images the Fortran way; 1st index increases to the right,
     2nd index upwards
     '''
-    pl.imshow(f.squeeze().transpose(),origin='lower',**kwargs)
+    im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation=None,**kwargs)
+    return im
 
-def yx_plane(run='',dir='../data',iout=0,z=0.0,var='logd',cmap='Spectral',**kwargs):
+def yx_plane(run='',dir='../data',iout=0,z=0.0,var='logd',cmap='seismic',**kwargs):
     '''
     Display xy-image for given z  
     '''
     pp=du.patches(run=run,dir=dir)
-    pp=[p for p in pp if p.iout==iout]
+    select=[p for p in pp if p.iout==iout]
     def inside(p, z):
         return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
-    pp=[p for p in pp if inside(p,z) and p.level<8]
-    print np.size(pp),'patches in plane'    
+    select=[p for p in select if inside(p,z) and p.level<8]
+    print np.size(select),'patches in plane'    
     vmin=1e9
     vmax=-vmin
     xlim=[vmin,vmax]
@@ -39,7 +40,7 @@ def yx_plane(run='',dir='../data',iout=0,z=0.0,var='logd',cmap='Spectral',**kwar
         i=max(0,min(n-2,int(s)))
         s=s-i
         return (1.0-s)*f[l[0]:u[0],l[1]:u[1],i]+s*f[l[0]:u[0],l[1]:u[1],i+1]
-    for p in pp:
+    for p in select:
         p.cache()
         p.vars()
         p.f=p.var[var]
@@ -52,7 +53,7 @@ def yx_plane(run='',dir='../data',iout=0,z=0.0,var='logd',cmap='Spectral',**kwar
         xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
         ylim=[min(ylim[0],e[2]),max(ylim[1],e[3])]
         #print p.id,p.level
-    for p in pp:
+    for p in select:
         image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
     pl.xlim(xlim)
     pl.ylim(ylim)

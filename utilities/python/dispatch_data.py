@@ -147,16 +147,17 @@ class Patch(Task):
 
     def vars(self):
         '''Make arrays available in a .var dict'''
-        p=self.d*self.e*(self.gamma-1.0)
-        self.s=np.log(p/self.d**self.gamma)/(self.gamma-1.0)
-        self.var={'d':self.d,\
-                  'e':self.e,\
-                  's':self.s,\
-                  'ux':self.ux,\
-                  'uy':self.uy,\
-                  'uz':self.uz,\
-               'logd':np.log10(self.d),\
-               'loge':np.log10(self.e)}
+        if not 'var' in dir(self):
+            p=self.d*self.e*(self.gamma-1.0)
+            self.s=np.log(p/self.d**self.gamma)/(self.gamma-1.0)
+            self.var={'d':self.d,\
+                    'e':self.e,\
+                    's':self.s,\
+                    'ux':self.ux,\
+                    'uy':self.uy,\
+                    'uz':self.uz,\
+                'logd':np.log10(self.d),\
+                'loge':np.log10(self.e)}
 
 class MHDPatch(Patch):
     """An abstract derived class for MHD patches."""
@@ -174,12 +175,13 @@ class StaggerPatch(MHDPatch):
         self.solver = 'stagger'
         self.varidx = variable_indices(self.solver, read_derivs)
     def cache(self):
-        self.d =self.data[:,:,:,self.varidx['d']]
-        self.e =self.data[:,:,:,self.varidx['e']]/self.d
-        logd=np.log(self.d)
-        self.ux=self.data[:,:,:,self.varidx['p1']]/np.exp(su.xdn(logd))
-        self.uy=self.data[:,:,:,self.varidx['p2']]/np.exp(su.ydn(logd))
-        self.uz=self.data[:,:,:,self.varidx['p3']]/np.exp(su.zdn(logd))
+        if not 'd' in dir(self):
+            self.d =self.data[:,:,:,self.varidx['d']]
+            self.e =self.data[:,:,:,self.varidx['e']]/self.d
+            logd=np.log(self.d)
+            self.ux=self.data[:,:,:,self.varidx['p1']]/np.exp(su.xdn(logd))
+            self.uy=self.data[:,:,:,self.varidx['p2']]/np.exp(su.ydn(logd))
+            self.uz=self.data[:,:,:,self.varidx['p3']]/np.exp(su.zdn(logd))
 
 class StaggerMHDPatch(StaggerPatch):
     """A concrete derived class for Stagger MHD patches."""
@@ -215,12 +217,13 @@ class RamsesMHDPatch(MHDPatch):
         self.varidx = variable_indices(self.solver, read_derivs)
     def cache(self):
         '''Add cached data arrays to patch'''
-        self.d =self.data[:,:,:,self.varidx['d']]
-        self.ux=self.data[:,:,:,self.varidx['p1']]/self.d
-        self.uy=self.data[:,:,:,self.varidx['p2']]/self.d
-        self.uz=self.data[:,:,:,self.varidx['p3']]/self.d
-        self.e =self.data[:,:,:,self.varidx['e']]/self.d
-        self.e=self.e-0.5*(self.ux**2+self.uy**2+self.uz**2)
+        if not 'd' in dir(self):
+            self.d =self.data[:,:,:,self.varidx['d']]
+            self.ux=self.data[:,:,:,self.varidx['p1']]/self.d
+            self.uy=self.data[:,:,:,self.varidx['p2']]/self.d
+            self.uz=self.data[:,:,:,self.varidx['p3']]/self.d
+            self.e =self.data[:,:,:,self.varidx['e']]/self.d
+            self.e=self.e-0.5*(self.ux**2+self.uy**2+self.uz**2)
 
 class ZeusMHDPatch(MHDPatch):
     """A concrete derived class for Zeus-3D/AZEuS MHD patches."""
