@@ -272,7 +272,7 @@ associate (d=>self%d, dddt=>self%dddt, &
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) &
-    dpdt = dpdt + dd*self%force%selected (self%time, Ux, Uy, Uz, self%mesh)
+    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
   !-----------------------------------------------------------------------------
   ! Induction equation
   !-----------------------------------------------------------------------------

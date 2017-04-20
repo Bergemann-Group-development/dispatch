@@ -88,10 +88,10 @@ END SUBROUTINE friction2
 !> hence a positive Omega_z corresponds to positive rotation speed in the x-
 !> direction
 !> =============================================================================
-FUNCTION star_and_planet (self, time, d, p, m) RESULT (ff)
+FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, Ux, Uy, Uz
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: p
   class(mesh_t), pointer, dimension(:):: m
   real(kind=KindScalarVar), dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
@@ -207,10 +207,10 @@ END FUNCTION star_and_planet
 !> =============================================================================
 !> Force of gravity from a star, in a rotating disk coordinate system
 !> =============================================================================
-FUNCTION disk (self, time, d, p, m) RESULT (ff)
+FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, Ux, Uy, Uz
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: p
   class(mesh_t), pointer, dimension(:):: m
   real(kind=KindScalarVar), dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
@@ -275,10 +275,10 @@ END FUNCTION disk
 !> =============================================================================
 !> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
 !> =============================================================================
-FUNCTION single_solenoidal (self, time, d, p, m) RESULT (ff)
+FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t)        :: self
   real(8)               :: time
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, Ux, Uy, Uz
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: p
   class(mesh_t), pointer, dimension(:) :: m
   real(kind=KindScalarVar), dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
