@@ -28,12 +28,13 @@ def trace_utils():
  for pop-up help in Canopy"
 
 
-def trace_files (run='', dir='../data', verbose=1):
+def trace_files (run='', data='../data', verbose=1):
     '''
     Get a list of .trc trace files
     '''
-    filenames = os.listdir(dir+'/'+run)
-    files=[dir+'/'+f for f in filenames if f.endswith(".trc")]
+    rundir=data+'/'+run
+    filenames = os.listdir(rundir)
+    files=[rundir+'/'+f for f in filenames if f.endswith(".trc")]
     if verbose==1: print np.size(files), 'files found'
     return np.sort(files)
 

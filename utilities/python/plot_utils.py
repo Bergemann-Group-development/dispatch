@@ -19,11 +19,11 @@ def image(f,**kwargs):
     im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation=None,**kwargs)
     return im
 
-def yx_plane(run='',dir='../data',iout=0,z=0.0,var='logd',cmap='seismic',**kwargs):
+def yx_plane(run='',data='../data',iout=0,z=0.0,var='logd',cmap='seismic',**kwargs):
     '''
     Display xy-image for given z  
     '''
-    pp=du.patches(run=run,dir=dir)
+    pp=du.patches(run,data)
     select=[p for p in pp if p.iout==iout]
     def inside(p, z):
         return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
@@ -65,11 +65,11 @@ def yx_plane(run='',dir='../data',iout=0,z=0.0,var='logd',cmap='seismic',**kwarg
     pl.tight_layout()
     pl.show()
 
-def yz_plane(run='',dir='../data',iout=0,var='d',x=0.0):
+def yz_plane(run='',data='../data',iout=0,var='d',x=0.0):
     '''
     Display yz-image for given x
     '''
-    pp=du.patches(run=run,dir=dir)
+    pp=du.patches(run,data)
     pp=[p for p in pp if p.iout==iout]
     def inside(p,x):
         return x<=p.active_corners[1][0] and x>=p.active_corners[0][0]
