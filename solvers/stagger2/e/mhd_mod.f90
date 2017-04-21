@@ -31,6 +31,10 @@ MODULE mhd_mod
     procedure:: output
     procedure:: log_density => void
     procedure:: log_pressure => void
+    procedure:: p2U                                                     ! get velocities
+    procedure:: U2p                                                     ! put velocities to momentum
+    procedure:: e2E_th                                                  ! get thermal energy
+    procedure:: E_th2e                                                  ! put thermal energy to specific/total energy
     procedure:: gas_pressure
     procedure:: cell_gas_pressure
     procedure:: gas_temperature
@@ -54,7 +58,12 @@ SUBROUTINE init (self)
   namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
-  call self%patch_t%init
+  if (self%mhd) then
+    self%kind = 'stagger2e_mhd_patch'
+  else
+    self%kind = 'stagger2e_hd_patch'
+  end if
+  call self%gpatch_t%init
   self%i_d  = idx%d
   self%i_px = idx%px
   self%i_py = idx%py
@@ -80,12 +89,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h(2+i) = -0.5
     if (self%nv > 5) self%mesh(i)%h(5+i) = -0.5
   end do
-  call self%force%init
-  if (self%mhd) then
-    self%kind = 'stagger2e_mhd_patch'
-  else
-    self%kind = 'stagger2e_hd_patch'
-  end if
+  call self%force%init(self%kind)
   call trace%end
 END SUBROUTINE init
 
@@ -305,7 +309,7 @@ SUBROUTINE pde (self)
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) &
-    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
+    dpdt = dpdt + dd*self%force%selected (self%time, pg, p, Ux, Uy, Uz, self%mesh)
   !-----------------------------------------------------------------------------
   ! Conservation of energy.  The formulation that works best so far is to make
   ! the diffusive energy flux directly proportional to the diffusive mass flux,
@@ -347,6 +351,68 @@ SUBROUTINE pde (self)
   end if
   call trace%end (itimer)
 END SUBROUTINE pde
+
+!> =====================================================================
+!> Get velocities from momentum
+!> =====================================================================
+SUBROUTINE p2U(self, U)
+  class(mhd_t) :: self
+  real, dimension(:,:,:,:), pointer:: U
+  !.....................................................................
+  real, dimension(:,:,:,:), pointer:: dd
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d,           self%it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  allocate(dd(size(d,1),size(d,2),size(d,3),3))
+  dd=exp(down(log(d)))
+  U = p/dd
+  deallocate(dd)
+  end associate
+END SUBROUTINE p2U
+
+!> =====================================================================
+!> Put velocities to momentum
+!> =====================================================================
+SUBROUTINE U2p(self, U)
+  class(mhd_t) :: self
+  real, dimension(:,:,:,:), pointer:: U
+  !.....................................................................
+  real, dimension(:,:,:,:), pointer:: dd
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  allocate(dd(size(d,1),size(d,2),size(d,3),3))
+  dd=exp(down(log(d)))
+  p = U*dd
+  deallocate(dd)
+  end associate
+END SUBROUTINE U2p
+
+!> =====================================================================
+!> Get thermal energy from total/specific energy
+!> =====================================================================
+SUBROUTINE e2E_th(self, E_th)
+  class(mhd_t) :: self
+  real, dimension(:,:,:), pointer:: E_th
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
+            e => self%mem(:,:,:,self%i_e,self%it,1))
+  E_th = e/d
+  end associate
+END SUBROUTINE e2E_th
+
+!> =====================================================================
+!> Put thermal energy to total/specific energy
+!> =====================================================================
+SUBROUTINE E_th2e(self, E_th)
+  class(mhd_t) :: self
+  real, dimension(:,:,:), pointer:: E_th
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
+            e => self%mem(:,:,:,self%i_e,self%it,1))
+  e = E_th*d
+  end associate
+END SUBROUTINE E_th2e
 
 !> =============================================================================
 !> Take a complete update step.  This can be overloaded in higher level ud

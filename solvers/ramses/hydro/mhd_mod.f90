@@ -45,6 +45,10 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: update
+    procedure:: p2U                                                     ! get velocities
+    procedure:: U2p                                                     ! put velocities to momentum
+    procedure:: e2E_th                                                  ! get thermal energy
+    procedure:: E_th2e                                                  ! put thermal energy to specific/total energy
     procedure:: log_density
     procedure:: log_pressure
     procedure:: grav_potential
@@ -75,8 +79,8 @@ SUBROUTINE init (self)
   end if
 
   self%nw = 1
-  call self%gpatch_t%init
   self%kind = 'ramses_hd_patch'
+  call self%gpatch_t%init
   self%i_d  = idx%d
   self%i_e  = idx%e
   self%i_px = idx%px
@@ -97,7 +101,7 @@ SUBROUTINE init (self)
   do i=1,3
     self%mesh(i)%h = 0d0
   end do
-  call self%force%init
+  call self%force%init(self%kind)
   call trace_end
 END SUBROUTINE init
 
@@ -202,6 +206,88 @@ SUBROUTINE update (self)
   deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%c,self%s,self%ff)
   call trace_end (itimer)
 END SUBROUTINE update
+
+!> =====================================================================
+!> Get velocities from momentum
+!> =====================================================================
+SUBROUTINE p2U(self, U)
+  class(mhd_t) :: self
+  real, dimension(:,:,:,:), pointer:: U
+  !.....................................................................
+  integer:: i
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d,           self%it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  do i=1,size(p,4)
+  U(:,:,:,i) = p(:,:,:,i)/d
+  end do
+  end associate
+END SUBROUTINE p2U
+
+!> =====================================================================
+!> Put velocities to momentum
+!> =====================================================================
+SUBROUTINE U2p(self, U)
+  class(mhd_t) :: self
+  real, dimension(:,:,:,:), pointer:: U
+  !.....................................................................
+  integer:: i
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  do i=1,size(p,4)
+  p(:,:,:,i)= U(:,:,:,i)*d
+  end do
+  end associate
+END SUBROUTINE U2p
+
+!> =====================================================================
+!> Get thermal energy from total/specific energy
+!> =====================================================================
+SUBROUTINE e2E_th(self, E_th)
+  class(mhd_t) :: self
+  real, dimension(:,:,:), pointer:: E_th
+  !.....................................................................
+  real, dimension(:,:,:), pointer:: k
+  integer :: i
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
+            e => self%mem(:,:,:,self%i_e           ,self%it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  allocate(k(size(d,1),size(d,2),size(d,3)))
+  k = 0.0
+  do i=1,size(p,4)
+    k = k+p(:,:,:,i)**2
+  end do
+  k = 0.5*k/d
+  E_th = (e-k)/d
+  deallocate(k)
+  end associate
+END SUBROUTINE e2E_th
+
+!> =====================================================================
+!> Put thermal energy to total/specific energy
+!> =====================================================================
+SUBROUTINE E_th2e(self, E_th)
+  class(mhd_t) :: self
+  real, dimension(:,:,:), pointer:: E_th
+  !.....................................................................
+  real, dimension(:,:,:), pointer:: k
+  integer :: i
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
+            e => self%mem(:,:,:,self%i_e           ,self%it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  allocate(k(size(d,1),size(d,2),size(d,3)))
+  k = 0.0
+  do i=1,size(p,4)
+    k = k+p(:,:,:,i)**2
+  end do
+  k = 0.5*k/d
+  e = E_th*d+k
+  deallocate(k)
+  end associate
+END SUBROUTINE E_th2e
 
 !> =============================================================================
 subroutine godunov (self)

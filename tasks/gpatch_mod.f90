@@ -32,7 +32,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init')
   call self%patch_t%init
-  call self%initial%init
+  call self%initial%init(self%kind)
   !-----------------------------------------------------------------------------
   ! Try reading a restart snapshot.
   !-----------------------------------------------------------------------------
