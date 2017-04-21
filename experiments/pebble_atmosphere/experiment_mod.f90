@@ -22,7 +22,6 @@ MODULE experiment_mod
     procedure :: output
     procedure :: boundary_conditions
     procedure :: edge_boundary_conditions
-    procedure :: constant_boundary_conditions
     procedure :: density_boundary_condition
   end type
   real, save:: temp0=0.0
@@ -71,8 +70,8 @@ SUBROUTINE init (self)
   self%nv = 5
   self%msplit = 3
   call scaling%init
-  call self%initial%init (type)
-  call self%force%init (type)
+  call self%initial%init (self%kind, type)
+  call self%force%init (self%kind, type)
   self%nv = 5
   self%mhd = .false.
   !----------------------------------------------------------------------------
@@ -110,6 +109,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%check_density ('before update')
+ ! print *, 'before upd min max rho', minval(self%mem(:,:,:,self%i_d,self%it,1)), maxval (self%mem(:,:,:,self%i_d,self%it,1))
   !-----------------------------------------------------------------------------
   ! Option for transporting pebbles with frozen MHD values, in this case, make
   ! sure to wrap around in the time buffer before freezing, so the value needed
@@ -152,6 +152,7 @@ SUBROUTINE update (self)
   end if
   call self%pebble_patch_t%update_pebbles
   call self%check_density ('after timestep')
+!   print *, 'after upd min max rho', minval(self%mem(:,:,:,self%i_d,self%it,1)), maxval (self%mem(:,:,:,self%i_d,self%it,1))
   call trace_end
 END SUBROUTINE update
 
@@ -236,7 +237,8 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   class(experiment_t):: self
   integer:: it
   integer, optional:: ii
-  real, dimension(:,:,:), pointer:: d, e, p, u, k1, k2
+  real, dimension(:,:,:), pointer:: d, e_th, uu
+  real, dimension(:,:,:,:), pointer:: u
   integer:: iv
   real:: ee
   !-----------------------------------------------------------------------------
@@ -245,132 +247,23 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   call trace%begin ('experiment_t%edge_boundary_conditions')
   self%boundaries%id = self%id
   d => self%mem(:,:,:,self%i_d,it,1)
-  e => self%mem(:,:,:,self%i_e,it,1)
-  allocate (u(size(d,1),size(d,2),size(d,3)))
-  allocate (k1(size(d,1),size(d,2),size(d,3)))
-  allocate (k2(size(d,1),size(d,2),size(d,3)))
-  call self%density_boundary_condition (it,ii)  ! vertical density BC
-  k1 = 0.0                                      ! initialize kinetic energy
-  k2 = 0.0                                      ! initialize kinetic energy
-  do iv=self%i_px,self%i_pz
-    p => self%mem(:,:,:,iv,it,1)                ! momentum
-    k1 = k1+p**2                                ! accumulate kinetic energy
-    u = p/d                                     ! velocity
-    call self%boundaries%symmetric (u, ii=ii)   ! zero gradient velocity
-    !if (ii==1) then                             ! BC in x-direction
-    !  if (iv==self%i_py) then
-    !    if (self%id==io%id_debug) print*,'MK extrapolate',ii,iv
-    !    call self%boundaries%extrapolate (u)    ! extrapolate perpendicular components
-    !  else
-    !    if (self%id==io%id_debug) print*,'MK symmetric',ii,iv
-    !    call self%boundaries%symmetric (u)      ! zero gradient parallel component
-    !  end if
-    !else
-    !  if (self%id==io%id_debug) print*,'MK symmetric',ii,iv
-    !  call self%boundaries%symmetric (u)        ! zero gradient parallel component
-    !end if
-    p = u*d                                     ! recontruct momentum
-    k2 = k2+p**2
+  allocate (u   (size(d,1),size(d,2),size(d,3),3))
+  allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
+  call self%density_boundary_condition (it,ii)                          ! vertical density BC
+  call self%p2U(u)                                                      ! velocities
+  call self%e2E_th(e_th)                                                ! thermal energy
+  do iv=1, 3
+    uu => u(:,:,:,iv)
+    call self%boundaries%symmetric(uu, ii=ii)                           ! apply symmetric boundaries to velocities
   end do
-  k1 = 0.5*k1/d                                 ! old kinetic energy
-  k2 = 0.5*k2/d                                 ! new kinetic energy
-  ee = atmosphere%external%temperature &        ! external disk e/d
-    /(self%gamma-1.0)
-  u = (e-k1)/d                                  ! remove old kinetic energy
-  call self%boundaries%constant (u, ee, ii=ii)  ! constant bdry value
-  e = u*d+k2                                    ! add new kinetic energy
-  deallocate (u,k1,k2)
+  call self%U2p(u)                                                      ! convert velocities to momentum
+  ee = atmosphere%external%temperature/(self%gamma-1.0)                 ! external disk e/d
+  call self%boundaries%constant(e_th, ee, ii=ii)                        ! apply constant boundaries to thermal energy
+  call self%E_th2e(e_th)                                                ! convert thermal energy to internal/total energy or entropy
+    
+  deallocate (u,e_th)
   call trace%end
 END SUBROUTINE edge_boundary_conditions
-
-!> =====================================================================
-!> fixed boundary conditions to test that normal BCs work
-!> =====================================================================
-SUBROUTINE constant_boundary_conditions (self, it, wl)
-  class(experiment_t):: self
-  integer:: it
-  integer, optional :: wl
-  class(mesh_t), pointer, dimension(:) :: m
-  integer:: iv, iz, iy, ix, lz, uz, ly, uy, lx, ux
-  real(8) :: x, y, z, r, p, d, px, py, pz
-  !-----------------------------------------------------------------------------
-  ! Edge boundary conditions
-  !-----------------------------------------------------------------------------
-  call trace%begin ('experiment_t%constant_boundary_conditions')
-  m => self%mesh
-  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
-  select case(wl)
-  case(1)
-    if(self%boundaries%is_set(bits%xl)) then
-      lx = m(1)%lb; ux = m(1)%lo
-      ly = m(2)%lb; uy = m(2)%ub
-      lz = m(3)%lb; uz = m(3)%ub
-    else if (self%boundaries%is_set(bits%xu)) then
-      lx = m(1)%uo; ux = m(1)%ub
-      ly = m(2)%lb; uy = m(2)%ub
-      lz = m(3)%lb; uz = m(3)%ub
-    else
-      error stop "cbc (1)"
-    end if
-  case(2)
-    if(self%boundaries%is_set(bits%yl)) then
-      lx = m(1)%lb; ux = m(1)%ub
-      ly = m(2)%lb; uy = m(2)%lo
-      lz = m(3)%lb; uz = m(3)%ub
-    else if (self%boundaries%is_set(bits%yu)) then
-      lx = m(1)%lb; ux = m(1)%ub
-      ly = m(2)%uo; uy = m(2)%ub
-      lz = m(3)%lb; uz = m(3)%ub
-    else
-      error stop "cbc (2)"
-    end if
-  case(3)
-    if(self%boundaries%is_set(bits%zl)) then
-      lx = m(1)%lb; ux = m(1)%ub
-      ly = m(2)%lb; uy = m(2)%ub
-      lz = m(3)%lb; uz = m(3)%lo
-
-    else if (self%boundaries%is_set(bits%zu)) then
-      lx = m(1)%lb; ux = m(1)%ub
-      ly = m(2)%lb; uy = m(2)%ub
-      lz = m(3)%uo; uz = m(3)%ub
-    else
-      error stop "cbc (3)"
-    end if
-  end select
-  do iz=lz,uz
-    z = m(3)%p + r3(iz) - planet%position(3)
-    do iy=ly,uy
-      y = m(2)%p + r2(iy) - planet%position(2)
-      do ix=lx,ux
-        x = m(1)%p + r1(ix) - planet%position(1)
-        r = sqrt(x**2+y**2+z**2)
-        d = atmosphere%external%density
-        p = atmosphere%external%pressure
-        self%mem(ix,iy,iz,self%i_d,it,1) = d
-        self%mem(ix,iy,iz,self%i_e,it,1) = p/self%gamma
-        !-----------------------------------------------------------------------
-        ! A rotation profile, where the rotation center is at y=+1 AU, and
-        ! the direction of rotation is +x, so the head wind is in the -x
-        ! direction.  The slower rotation at larger radii means that Ux is
-        ! proportional to +y.  This gives a speed difference of only 130 cm/s
-        ! across the Earth, and plus/minus 0.15 km/s across two Hill radii.
-        ! The effect is not enough to significantly flatten the outer part of
-        ! the Hill sphere, so we will probably only be seeing effects of the
-        ! Coriolis force beyond the Hill radius.
-        !-----------------------------------------------------------------------
-        px = -planet%v_accrete
-        py = -1.5*planet%omega(3)*x - planet%v_head
-        pz = 0.0
-        self%mem(ix,iy,iz,self%i_px,it,1) = d*px ! radial speed
-        self%mem(ix,iy,iz,self%i_py,it,1) = d*py ! azimuthal speed
-        self%mem(ix,iy,iz,self%i_pz,it,1) = d*pz ! vertical speed
-      end do
-    end do
-  end do
-  end associate
-  call trace%end
-END SUBROUTINE constant_boundary_conditions
 
 !> =====================================================================
 !> Constrain the density to follow an achored Gaussian profile
