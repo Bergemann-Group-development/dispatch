@@ -18,6 +18,7 @@ MODULE initial_mod
     real:: gamma
     logical:: mhd
     real(8):: time=0d0
+    character(len=64):: solver
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure:: init
@@ -45,6 +46,7 @@ SUBROUTINE init (self)
     if (io%master) write (*, initial_params)
   end if
   !$omp end critical (input_cr)
+  self%solver = trim(solver)
   select case (type)
   case ('single_solenoidal')
     self%selected => single_solenoidal

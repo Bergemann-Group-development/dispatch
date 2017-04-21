@@ -17,6 +17,7 @@ MODULE initial_mod
     !procedure, pointer:: conditions => advection
     logical:: mhd
     real(8):: time
+    character(len=64):: solver
   contains
     procedure:: init
     procedure:: cleanup
@@ -34,9 +35,11 @@ CONTAINS
 !> =============================================================================
 !> Generic initial conditions
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, solver)
   class(initial_t):: self
+  character(len=64):: solver
   !.............................................................................
+  self%solver = solver
 END SUBROUTINE init
 
 !> =============================================================================
@@ -54,6 +57,7 @@ SUBROUTINE conditions (self, mesh, mem)
   class(initial_t):: self
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
+  character(len=64):: solver
   !.............................................................................
   integer:: ix, iostat
   logical, save:: first_time=.true.
@@ -90,10 +94,11 @@ END SUBROUTINE conditions
 !> =============================================================================
 !> Sedov blast wave initial conditions
 !> =============================================================================
-SUBROUTINE sedov (self, mesh, mem)
+SUBROUTINE sedov (self, mesh, mem, solver)
   class(initial_t):: self
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
+  character(len=64):: solver
   !.............................................................................
   real(8), dimension(:), pointer:: rx, ry, rz
   integer:: ix, iy, iz, iostat
@@ -148,10 +153,11 @@ END SUBROUTINE sedov
 !> Map variables to the current memory slot and initialize the deriv operators.
 !> mhd_t%init is called from timestep_t%init, again called from task_list_t%init.
 !> =============================================================================
-SUBROUTINE advection (self, mesh, mem)
+SUBROUTINE advection (self, mesh, mem, solver)
   class(initial_t):: self
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
+  character(len=64):: solver
   !.............................................................................
   real(8), dimension(:), pointer:: rx, ry, rz
   integer:: ix, iy, iz, iostat

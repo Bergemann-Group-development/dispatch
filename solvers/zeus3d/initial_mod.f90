@@ -17,6 +17,7 @@ MODULE initial_mod
     integer:: seed
     logical:: mhd
     real(8):: time
+    character(len=64):: solver
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure:: init
@@ -29,8 +30,9 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, solver)
   class(initial_t):: self
+  character(len=64):: solver
   character(len=32), save:: type='single_solenoidal'
   logical, save:: first_time=.true.
   namelist /initial_params/ type
@@ -44,6 +46,7 @@ SUBROUTINE init (self)
     if (io%master) write (*, initial_params)
   end if
   !$omp end critical (input_cr)
+  self%solver = trim(solver)
   select case (type)
   case ('single_solenoidal')
     self%selected => single_solenoidal
@@ -125,10 +128,11 @@ END SUBROUTINE single_solenoidal
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with non-random amplitude and zero phase
 !> =============================================================================
-SUBROUTINE single_compressive (self, m, ff)
+SUBROUTINE single_compressive (self, m, ff,solver)
   class(initial_t):: self
   class(mesh_t), pointer, dimension(:):: m
   real(kind=KindScalarVar), dimension(:,:,:,:) :: ff
+  character(len=64):: solver
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
@@ -180,10 +184,11 @@ END SUBROUTINE single_compressive
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-SUBROUTINE single_advection (self, m, ff)
+SUBROUTINE single_advection (self, m, ff,solver)
   class(initial_t):: self
   class(mesh_t), pointer, dimension(:):: m
   real(kind=KindScalarVar), dimension(:,:,:,:) :: ff
+  character(len=64):: solver
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
@@ -234,11 +239,12 @@ END SUBROUTINE single_advection
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-SUBROUTINE exa256 (self, m, ff)
+SUBROUTINE exa256 (self, m, ff,solver)
   USE io_unit_mod
   class(initial_t):: self
   class(mesh_t), pointer, dimension(:):: m
   real(kind=KindScalarVar), dimension(:,:,:,:) :: ff
+  character(len=64):: solver
   real, dimension(:), allocatable:: u, d
   !.............................................................................
   integer:: ix, iy, iz, jy, jz, rec, iv, li(3), ui(3)
@@ -298,11 +304,12 @@ END SUBROUTINE exa256
 !> Initialize from a raw data file, assumed to contain isothermal data, in the
 !> order rho, Ux, Uy, Uz
 !> =============================================================================
-SUBROUTINE raw (self, m, ff)
+SUBROUTINE raw (self, m, ff,solver)
   USE io_unit_mod
   class(initial_t):: self
   class(mesh_t), pointer, dimension(:):: m
   real(kind=KindScalarVar), dimension(:,:,:,:):: ff
+  character(len=64):: solver
   !.............................................................................
   integer, parameter:: mv=4
   integer:: n(3), i(3), iv, jv(mv)

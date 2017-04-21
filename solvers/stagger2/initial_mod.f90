@@ -19,6 +19,7 @@ MODULE initial_mod
     real(8):: a(3), b(3), phi(3), d0, s0
     real(8):: a0(3), k(3), b0(3), u0(3)
     real(8):: time
+    character(len=64):: solver
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure:: init
@@ -32,8 +33,9 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, solver)
    class(initial_t):: self
+   character(len=64):: solver
    integer, save:: seed=-33
    logical, save:: mhd=.true.
    real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0
@@ -49,6 +51,7 @@ SUBROUTINE init (self)
      mhd = mhd .and. any(b0 /= 0.0)
      if (io%master) write (*, initial_params)
    end if
+   self%solver = trim(solver)
    !$omp end critical (input_cr)
    self%seed   = seed
    self%k      = k
