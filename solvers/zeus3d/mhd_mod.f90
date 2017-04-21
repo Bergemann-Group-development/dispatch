@@ -2,7 +2,7 @@
 !> **ZEUS-3D MHD method/operators module**
 !> Concrete module containing a patch derived from `mhd_patch_t`.
 !> The type defined/extended here is intended for instantiation/invokation/use.
-!> This particular form uses rho, e1, \vec{s} = rho * \vec{v}, \vec{B} as the
+!> This particular form uses rho, e, \vec{s} = rho * \vec{v}, \vec{B} as the
 !> MHD fluid variables.
 !> =============================================================================
 MODULE mhd_mod
@@ -15,6 +15,7 @@ MODULE mhd_mod
   USE mesh_mod
   USE timestep_mod
   USE index_mod
+  USE force_mod
   implicit none
   private
 
@@ -31,11 +32,12 @@ MODULE mhd_mod
   end type
 
   type, extends(gpatch_t), public:: mhd_t
-    type(scalar_t):: d, e1, et, gp
+    type(scalar_t):: d, e, et, gp
     type(vector_t):: s, B
     logical:: mhd = .true.
     type(zeus_boundaries_t):: btypes
     integer:: i_et=0
+    type(force_t):: force
   contains
     procedure:: init => init_zeus
     procedure:: update => update_zeus
@@ -80,7 +82,7 @@ MODULE mhd_mod
           , itote   , isetemf , cadvs   , cadvc   , cadvt   , trnvrsn &
           , uordq   , avordw  , voutbc  , istpcd  , zniib   , znoib   &
           , znijb   , znojb   , znikb   , znokb   , nghst
-  real(KindReal):: gamma_z , qcon    , qlin    , dfloor  , e1floor &
+  real(KindReal):: gamma_z , qcon    , qlin    , dfloor  , efloor &
                  , e2floor , v1floor , v2floor , v3floor , b1floor , b2floor &
                  , b3floor , nuscalar, diffc1  , diffc2  , dtmax   , dt      &
                  , dtold   , dtnew   , dtcs    , dtal    , dtqq    , dtv1    &
@@ -110,7 +112,7 @@ MODULE mhd_mod
                   , voutbc
 ! thread-shared common block
   common / zcompubr /&
-                    b1floor , b2floor , b3floor , dfloor  , e1floor&
+                    b1floor , b2floor , b3floor , dfloor  , efloor&
                   , e2floor , v1floor , v2floor , v3floor , dtmax&
                   , qcon    , qlin    , diffc1  , diffc2  , nuscalar&
                   , glblnmax, gamma_z , adbmin  , adbmax  , dtinit
@@ -212,8 +214,8 @@ CONTAINS
 !
 !  uordq     =1 =>   upwinded interpolations of qq (artificial visc.)
 !            =2 => downwinded interpolations of qq
-!  avordw    =1 => use 2-point averages for v* for et <-> e1
-!            =2 => downwind v* for et <-> e1 (default)
+!  avordw    =1 => use 2-point averages for v* for et <-> e
+!            =2 => downwind v* for et <-> e (default)
 !  voutbc    =1 => outflow BC, v1(is) set to min(0,v1(isp1)), original
 !                  Wilson scheme (similar for other boundaries; default)
 !            =2 => outflow BC, v1(is) set to min(0,v1(is)) to reduce 
@@ -241,8 +243,8 @@ CONTAINS
 !
 !  In keeping with the general rule that the user set the *primitive*
 !  variables at initialisation, the user should set the first internal
-!  energy density, "e1", and any required inflow boundary values (e.g.,
-!  "e1iib1", etc.) and *not* the total energy density, "et", regardless
+!  energy density, "e", and any required inflow boundary values (e.g.,
+!  "eiib1", etc.) and *not* the total energy density, "et", regardless
 !  of whether the internal/total energy equation (itote=0/1) is being
 !  solved.  A call to TOTNRG in SETUP after the problem generator has
 !  been called sets the total energy array "et" and its inflow boundary
@@ -359,7 +361,7 @@ SUBROUTINE init_zeus (self)
     self%mesh(i)%h(7+i) = -0.5 ! mag. field components
   end do
   self%i_d   = idx%d
-  self%i_e   = idx%e1
+  self%i_e   = idx%e
   self%i_et  = idx%et
   self%i_phi = idx%phi
   self%i_px  = idx%px
@@ -370,13 +372,13 @@ SUBROUTINE init_zeus (self)
   self%i_bz  = idx%bz
   ! initialise variable storage
   call self%d%init(self%mem, idx%d, self%it)
-  call self%e1%init(self%mem, idx%e1, self%it)
+  call self%e%init(self%mem, idx%e, self%it)
   call self%et%init(self%mem, idx%et, self%it)
   call self%gp%init(self%mem, idx%phi, self%it)
   call self%s%init(self%mem, [idx%px,idx%py,idx%pz], self%it, zeus_staggering)
   call self%B%init(self%mem, [idx%bx,idx%by,idx%bz], self%it, zeus_staggering)
   self%d%name = 'mass density'
-  self%e1%name = 'int. energy density'
+  self%e%name = 'int. energy density'
   self%s%name = 'momentum density'
   self%B%name = 'magnetic field'
 
@@ -413,6 +415,7 @@ SUBROUTINE CopyToZeus (self)
   !$omp threadprivate (first_time)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
   integer, save:: itimer=0
+  type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace_begin ('zeus_mhd_mod%CopyToZeus', itimer=itimer)
 
@@ -467,6 +470,13 @@ SUBROUTINE CopyToZeus (self)
   call bndyflgs
   call bndyall
   if (first_time) first_time = .false.
+
+  if (self%do_pebbles) then
+    associate (v1=>self%vgas(:,:,:,1,self%it),v2=>self%vgas(:,:,:,2,self%it),v3=>self%vgas(:,:,:,3,self%it))
+    call get_vel (v1, v2, v3)
+    end associate
+    self%pressure(:,:,:,self%it) = self%mem(:,:,:,idx%e,self%it,1) * (self%gamma - 1.0)
+  end if
 
   courno = self%courant
   dt = self%dt(self%it)
@@ -682,7 +692,7 @@ END SUBROUTINE MapVectors
 !  !-----------------------------------------------------------------------------
 
 !  call self%d%init(self%mem, self%i_d, self%it)
-!  call self%e1%init(self%mem, e1idx, self%it)
+!  call self%e%init(self%mem, eidx, self%it)
 !  call self%et%init(self%mem, etidx, self%it)
 !  call self%gp%init(self%mem, gpidx, self%it)
 !  call self%s%init(self%mem, sidxs, self%it, zeus_staggering)
@@ -698,7 +708,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   if (self%gamma==1.0) then
     pg = self%d%q
   else
-    pg = self%e1%q * (self%gamma - 1.0)
+    pg = self%e%q * (self%gamma - 1.0)
   end if
 END FUNCTION gas_pressure
 

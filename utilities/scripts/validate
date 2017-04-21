@@ -61,8 +61,15 @@ end
 
 # with no directories parsed, base the choice on the current directory
 if ($#dirs == 0) then
-  set dirs = ( . )
-  if (-d experiments)          set dirs = ( `find . -mindepth 3 -maxdepth 4 -name validate -type d | sed -e 's:/validate::'` )
+  set d = $cwd:t
+  if ("$d" == "experiments") then
+    set dirs = ( `find . -mindepth 2 -maxdepth 4 -name validate -type d | sed -e 's:/validate::'` )
+  else if (-d experiments) then
+    set dirs = ( `find . -mindepth 3 -maxdepth 4 -name validate -type d | sed -e 's:/validate::'` )
+  else
+    echo "no validation dirs found"
+    exit
+  end if
   echo dirs = $dirs
 endif
 

@@ -24,7 +24,6 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(mhd_t):: experiment_t
-    type(initial_t):: initial
   contains
     procedure init
     procedure update
@@ -56,7 +55,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  call self%initial%selected(self%mesh, self%mem(:,:,:,:,1,1))
+  call self%initial%condition(self%mesh, self%mem(:,:,:,:,1,1))
   self%time = self%initial%time
   self%t(self%it) = self%initial%time
   call trace_end (itimer=itimer)

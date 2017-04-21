@@ -5,6 +5,7 @@ MODULE experiment_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
+  USE kinds_mod
   USE pebble_patch_mod
   USE initial_mod
   USE atmosphere_mod
@@ -43,7 +44,7 @@ CONTAINS
 !>           force_mod::init                    ! initialize forcing
 !>         pebbles_mod::init                    ! reads omega
 !>         initial_mod::init                    ! selects ICs
-!>         initial_mod::selected                ! computes ICs
+!>         initial_mod::condition               ! computes ICs
 !>         boundaries_mod::condition            ! apply BCs to ICs
 !> =============================================================================
 SUBROUTINE init (self)
@@ -68,6 +69,7 @@ SUBROUTINE init (self)
   ! type of IC to be applied when the call to gpatch_t%init is made.
   !----------------------------------------------------------------------------
   self%nv = 5
+  self%mhd = .false.
   self%msplit = 3
   call scaling%init
   call self%initial%init (self%kind, type)
@@ -77,11 +79,12 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Through the hierarchy of class(task_t)%init calls, the call to %init below
   ! sets the IC values, either from reading in snapshot values, or by calling
-  ! the IC condition procedure self%initial%selected() from gpatch_t%init.
+  ! the IC condition procedure self%initial%condition() from gpatch_t%init.
   !----------------------------------------------------------------------------
   call self%pebble_patch_t%init
-  self%mhd = .false.
-  self%nv = 5
+  ! In the case that we're using ZEUS, `self%nv` should now be 10.
+  !self%mhd = .false.
+  !self%nv = 5
   call self%set (bits%static)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   if (trim(type)/='disk' .and. all(abs(self%position) < self%ds)) then
@@ -109,7 +112,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%check_density ('before update')
- ! print *, 'before upd min max rho', minval(self%mem(:,:,:,self%i_d,self%it,1)), maxval (self%mem(:,:,:,self%i_d,self%it,1))
   !-----------------------------------------------------------------------------
   ! Option for transporting pebbles with frozen MHD values, in this case, make
   ! sure to wrap around in the time buffer before freezing, so the value needed
@@ -152,7 +154,6 @@ SUBROUTINE update (self)
   end if
   call self%pebble_patch_t%update_pebbles
   call self%check_density ('after timestep')
-!   print *, 'after upd min max rho', minval(self%mem(:,:,:,self%i_d,self%it,1)), maxval (self%mem(:,:,:,self%i_d,self%it,1))
   call trace_end
 END SUBROUTINE update
 
@@ -237,8 +238,8 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   class(experiment_t):: self
   integer:: it
   integer, optional:: ii
-  real, dimension(:,:,:), pointer:: d, e_th, uu
-  real, dimension(:,:,:,:), pointer:: u
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e_th, uu
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: u
   integer:: iv
   real:: ee
   !-----------------------------------------------------------------------------
@@ -274,7 +275,7 @@ SUBROUTINE density_boundary_condition (self, it, ii)
   class(mesh_t), pointer, dimension(:) :: m
   integer:: iv, iz, iy, ix, lz, uz, ly, uy, lx, ux, ix0, iz0
   real(8) :: x, x0, z, z0, r, d1, d0, tt, c2
-  real, dimension(:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
   !-----------------------------------------------------------------------------
   ! Vertical edge boundary conditions
   !-----------------------------------------------------------------------------

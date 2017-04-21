@@ -12,6 +12,7 @@ MODULE initial_mod
   USE units_mod
   USE scaling_mod
   USE index_mod
+  USE kinds_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -22,7 +23,7 @@ MODULE initial_mod
     real(8):: size(3)
     logical:: mhd = .false.
     character(len=64):: solver
-    procedure(planet_atmosphere), pointer:: selected => null()
+    procedure(planet_atmosphere), pointer:: condition => null()
   contains
     procedure init
   end type
@@ -56,11 +57,11 @@ SUBROUTINE init (self, solver, type)
    self%solver = trim(solver)
    select case(trim(self%initial_condition))
      case('star_and_planet')
-       self%selected => planet_atmosphere
+       self%condition => planet_atmosphere
      case('planet_atmosphere')
-       self%selected => planet_atmosphere
+       self%condition => planet_atmosphere
      case('disk')
-       self%selected => disk
+       self%condition => disk
      case default
        error stop "initial condition not understood"
      end select
@@ -72,7 +73,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE planet_atmosphere (self, m, mem)
   class(initial_t) :: self
-  real, dimension(:,:,:,:), pointer  :: mem
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr
@@ -166,7 +167,6 @@ SUBROUTINE planet_atmosphere (self, m, mem)
       end do
     end do
   end do
-  
   end associate
   call trace%end (itimer)
 END SUBROUTINE planet_atmosphere
@@ -176,7 +176,7 @@ END SUBROUTINE planet_atmosphere
 !> =============================================================================
 SUBROUTINE disk (self, m, mem)
   class(initial_t) :: self
-  real, dimension(:,:,:,:), pointer  :: mem
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr

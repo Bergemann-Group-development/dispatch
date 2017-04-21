@@ -46,7 +46,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   else
     ff => self%mem(:,:,:,:,1,1)
-    call self%initial%selected (self%mesh, ff)
+    call self%initial%condition (self%mesh, ff)
   end if
   !-----------------------------------------------------------------------------
   ! If restart succeeded for some patch, use it to set time and output cadence.

@@ -26,8 +26,8 @@ MODULE initial_mod
     real:: surface_temperature, surface_pressure
     real(8):: size(3)
     logical:: mhd
-    procedure(planet_atmosphere), pointer:: selected => null()
-    procedure(planet_atmosphere), pointer:: second_selected => null()
+    procedure(planet_atmosphere), pointer:: condition => null()
+    procedure(planet_atmosphere), pointer:: second_condition => null()
   contains
     procedure init
   end type
@@ -58,23 +58,23 @@ SUBROUTINE init (self)
    self%secondary_ic = secondary_ic
    select case(trim(self%initial_condition))
      case('planet_atmosphere')
-       self%selected => planet_atmosphere
+       self%condition => planet_atmosphere
      case('snapshot')
        call dp_reader%init
-       self%selected => snapshot
+       self%condition => snapshot
      case('disk')
-       self%selected => disk
+       self%condition => disk
      case default
        error stop "initial condition not understood"
      end select
    select case(trim(self%secondary_ic))
      case('planet_atmosphere')
-       self%second_selected => planet_atmosphere
+       self%second_condition => planet_atmosphere
      case('snapshot')
        call dp_reader%init
-       self%second_selected => snapshot
+       self%second_condition => snapshot
      case('disk')
-       self%second_selected => disk
+       self%second_condition => disk
      case default
        error stop "secondary IC not understood"
      end select
@@ -254,7 +254,7 @@ SUBROUTINE snapshot (self, m, mem, level)
   ! --------------------------------------------------------------------
   call dp_reader%snapshot(m, mem, level,used)  
   if (.not.used) then
-    call self%second_selected(m,mem,level)
+    call self%second_condition(m,mem,level)
     print *, 'using secondary IC...'
   end if
 END SUBROUTINE snapshot

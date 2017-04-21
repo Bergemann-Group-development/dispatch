@@ -14,7 +14,7 @@ MODULE initial_mod
   private
   !-----------------------------------------------------------------------------
   type, public:: initial_t
-    !procedure, pointer:: conditions => advection
+    procedure(advection), pointer:: condition=>null()
     logical:: mhd
     real(8):: time
     character(len=64):: solver

@@ -21,7 +21,7 @@ MODULE initial_mod
     real:: surface_temperature, surface_pressure
     real(8):: size(3)
     logical:: mhd
-    procedure(planet_atmosphere), pointer:: selected => null()
+    procedure(planet_atmosphere), pointer:: condition => null()
   contains
     procedure init
   end type
@@ -46,7 +46,7 @@ SUBROUTINE init (self)
      if (io%master) write (*, initial_params)
    end if
    self%b0 = b0
-   self%selected => planet_atmosphere
+   self%condition => planet_atmosphere
    call trace_end
 END SUBROUTINE init
 
