@@ -5,13 +5,10 @@
 MODULE force_mod
   USE io_mod
   USE trace_mod
-  USE vector_mod
   USE mesh_mod
   USE random_mod
   USE planet_mod
-  USE star_mod
   USE scaling_mod
-  USE stagger_mod
   implicit none
   private
   real(8), parameter:: pi2=8.0*atan(1.0)
@@ -193,9 +190,9 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
     ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
   case('stagger2e_hd_patch','stagger2e_mhd_patch')
-    ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*xdn(zup(Uz)) - planet%omega(3)*xdn(yup(Uy)))
-    ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*ydn(xup(Ux)) - planet%omega(1)*ydn(zup(Uz)))
-    ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*zdn(yup(Uy)) - planet%omega(2)*zdn(xup(Ux)))
+    ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*st_dn(st_up(Uz,3),1) - planet%omega(3)*st_dn(st_up(Uy,2),1))
+    ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*st_dn(st_up(Ux,1),2) - planet%omega(1)*st_dn(st_up(Uz,3),2))
+    ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*st_dn(st_up(Uy,2),3) - planet%omega(2)*st_dn(st_up(Ux,1),3))
   case default
     print *, trim(self%solver)
     error stop "force_mod(2) :: unknown solver"
@@ -312,9 +309,9 @@ FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
     ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
   case('stagger2e_hd_patch','stagger2e_mhd_patch')
-    ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*xdn(zup(Uz)) - planet%omega(3)*xdn(yup(Uy)))
-    ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*ydn(xup(Ux)) - planet%omega(1)*ydn(zup(Uz)))
-    ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*zdn(yup(Uy)) - planet%omega(2)*zdn(xup(Ux)))
+    ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*st_dn(st_up(Uz,3),1) - planet%omega(3)*st_dn(st_up(Uy,2),1))
+    ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*st_dn(st_up(Ux,1),2) - planet%omega(1)*st_dn(st_up(Uz,3),2))
+    ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*st_dn(st_up(Uy,2),3) - planet%omega(2)*st_dn(st_up(Ux,1),3))
   case default
     print *, trim(self%solver)
     error stop "force_mod(2) :: unknown solver"
@@ -373,5 +370,83 @@ FUNCTION single_solenoidal (self, time, Ux, Uy, Uz, m) RESULT (ff)
   end associate
   call trace_end
 END FUNCTION single_solenoidal
+
+FUNCTION st_up (a, i) result (b)
+  real, dimension(:,:,:) :: a
+  real, dimension(size(a,1), size(a,2), size(a,3)):: b
+  real    :: c
+  integer :: ix, iy, iz, i, n(3)
+!...............................................................................
+  c = 0.5
+  n = shape(a)
+  select case(i)
+  case(1)
+    b(n(1),:,:) = a(n(1),:,:)
+    do iz=1,n(3)
+      do iy=1,n(2)
+        do ix=1,n(1)-1
+          b(ix,iy,iz) = c*(a(ix+1,iy,iz) + a(ix,iy,iz))
+        end do
+      end do
+    end do
+  case(2)
+    b(:,n(2),:) = a(:,n(2),:)
+    do iz=1,n(3)
+      do iy=1,n(2)-1
+        do ix=1,n(1)
+          b(ix,iy,iz) = c*(a(ix,iy+1,iz) + a(ix,iy,iz))
+        end do
+      end do
+    end do
+  case(3)
+    b(:,:,n(3)) = a(:,:,n(3))
+    do iz=1,n(3)-1
+      do iy=1,n(2)
+        do ix=1,n(1)
+          b(ix,iy,iz) = c*(a(ix,iy,iz+1) + a(ix,iy,iz))
+        end do
+      end do
+    end do
+  end select
+END FUNCTION st_up
+
+FUNCTION st_dn (a, i) result (b)
+  real, dimension(:,:,:) :: a
+  real, dimension(size(a,1), size(a,2), size(a,3)):: b
+  real    :: c
+  integer :: ix, iy, iz, i, n(3)
+!...............................................................................
+  c = 0.5
+  n = shape(a)
+  select case(i)
+  case(1)
+    b(1,:,:) = a(1,:,:)
+    do iz=1,n(3)
+      do iy=1,n(2)
+        do ix=2,n(1)
+          b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix-1,iy,iz))
+        end do
+      end do
+    end do
+  case(2)
+    b(:,1,:) = a(:,1,:)
+    do iz=1,n(3)
+      do iy=2,n(2)
+        do ix=1,n(1)
+          b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy-1,iz))
+        end do
+      end do
+    end do
+  case(3)
+    b(:,:,1) = a(:,:,1)
+    do iz=2,n(3)
+      do iy=1,n(2)
+        do ix=1,n(1)
+          b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy,iz-1))
+        end do
+      end do
+    end do
+  end select
+END FUNCTION st_dn
 
 END MODULE

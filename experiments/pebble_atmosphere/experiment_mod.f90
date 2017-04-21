@@ -197,6 +197,10 @@ SUBROUTINE boundary_conditions (self, it)
       print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
       call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), self%mesh, self%i_d)
       call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), self%mesh, self%i_e)
+      if (self%nw>1) then
+        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,2), self%mesh, self%i_d)
+        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,2), self%mesh, self%i_e)
+      end if
       do iv=self%i_px,self%i_pz
         call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
         if (self%nw>1) &
@@ -275,13 +279,14 @@ SUBROUTINE density_boundary_condition (self, it, ii)
   class(mesh_t), pointer, dimension(:) :: m
   integer:: iv, iz, iy, ix, lz, uz, ly, uy, lx, ux, ix0, iz0
   real(8) :: x, x0, z, z0, r, d1, d0, tt, c2
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, dd
   !-----------------------------------------------------------------------------
   ! Vertical edge boundary conditions
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%density_boundary_conditions')
   m => self%mesh
   d => self%mem(:,:,:,1,it,1)
+  if (self%nw>1) dd => self%mem(:,:,:,self%i_d,it,2)
   associate (r1=>m(1)%r, r3=>m(3)%r, mem=>self%mem)
   if (self%id==io%id_debug) &
     print '(a,2i5,2l4,3(2x,2i3))', 'MK', self%id, it, &
@@ -310,13 +315,23 @@ SUBROUTINE density_boundary_condition (self, it, ii)
       do iy=ly,uy
         do ix=lx,ux
           x = m(1)%p + r1(ix) - planet%position(1)
-          d0 = mem(ix0,iy,iz,1,it,1)
-          self%mem(ix,iy,iz,1,it,1) = d0*exp(-c2*(x**2-x0**2))
+          d0 = mem(ix0,iy,iz,self%i_d,it,1)
+          self%mem(ix,iy,iz,self%i_d,it,1) = d0*exp(-c2*(x**2-x0**2))
         end do
       end do
     end do
+    if (self%nw>1) then
+      do iz=lz,uz
+        do iy=ly,uy
+          do ix=lx,ux
+            self%mem(ix,iy,iz,self%i_d,it,2) = 0.0
+          end do
+        end do
+      end do
+    end if
   else if (ii==2) then
     call self%boundaries%symmetric (d, ii)
+    if (self%nw>1) call self%boundaries%symmetric (dd, ii)
   else if (ii==3) then
     if(self%boundaries%is_set(bits%zl)) then
       lx = m(1)%lb; ux = m(1)%ub
@@ -337,17 +352,27 @@ SUBROUTINE density_boundary_condition (self, it, ii)
       z = m(3)%p + r3(iz) - planet%position(3)
       do iy=ly,uy
         do ix=lx,ux
-          d0 = mem(ix,iy,iz0,1,it,1)
+          d0 = mem(ix,iy,iz0,self%i_d,it,1)
           d1 = d0*exp(-c2*(z**2-z0**2))
           if (self%id==io%id_debug.and.iy==uy/2.and.iz==uz) &
             print '(a,i4,1p,8e14.6)', &
             'BCd: ix,d0,p0/do,exp,do,d =',ix, d0, tt, (z-z0), &
             exp(-c2*(z**2-z0**2)), &
-            self%mem(ix,iy,iz,1,it,1), d1
-          self%mem(ix,iy,iz,1,it,1) = d1
+            self%mem(ix,iy,iz,self%i_d,it,1), d1
+          self%mem(ix,iy,iz,self%i_d,it,1) = d1
         end do
       end do
     end do
+    if (self%nw>1) then
+      do iz=lz,uz
+        z = m(3)%p + r3(iz) - planet%position(3)
+        do iy=ly,uy
+          do ix=lx,ux
+            self%mem(ix,iy,iz,self%i_d,it,2) = 0.0
+          end do
+        end do
+     end do
+    end if
   end if
   end associate
   call trace%end

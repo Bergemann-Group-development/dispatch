@@ -104,7 +104,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   nr = atmosphere%nr
   select case(trim(self%solver))
   case('ramses_hd_patch','ramses_mhd_patch')
-    ds2 = 0
+    ds2 = 0.0
   case('stagger2e_hd_patch','stagger2e_mhd_patch')
     ds2 = 0.5*m%d
   end select
