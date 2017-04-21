@@ -17,6 +17,7 @@ MODULE initial_mod
     integer:: nv
     integer:: iread=0, iwrite=0
     real(8):: time
+    character(len=64):: solver
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure:: init
@@ -30,8 +31,9 @@ CONTAINS
 !> Setup an initial state -- from reading a STAGGER code snapshot, a test case,
 !> or (FIXME) by reading a snapshot from a production run
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, solver)
   class(initial_t):: self
+  character(len=64):: solver
   integer:: iostat
   logical, save:: first_time=.true.
   !.............................................................................
@@ -48,6 +50,7 @@ SUBROUTINE init (self)
     if (io%master) write (*, initial_params)
   end if
   !$omp end critical (init_cr)
+  self%solver = trim(solver)
   !-----------------------------------------------------------------------------
   select case (trim(type))
   case ('snapshot')
