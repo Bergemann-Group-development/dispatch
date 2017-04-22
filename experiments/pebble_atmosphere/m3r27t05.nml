@@ -65,8 +65,8 @@ gamma=1.4
 !dt_fixed=0.001
 /
 &out_params
-!end_time=50   out_time=5               ! 00-10
-!end_time=500  out_time=20              ! 00-25
+end_time=150  out_time=10              ! 00-10
+!end_time=500  out_time=5 restart=7              ! 00-25
 !end_time=2500 out_time=50  restart=50  ! 26-65
 !end_time=5500 out_time=100 restart=65  ! 65-95
 !end_time=9000 out_time=100             ! 00-90

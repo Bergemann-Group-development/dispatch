@@ -22,7 +22,7 @@ def dispatch_utils():
     '''
     print "Type dispatch_utils?<RETURN> for help text, or dispach_utils(\
  for pop-up help in Canopy"
-
+ 
 def patch_files(run='', data='../data', verbose=0):
     '''
     Return a list of patch file root names, and count patches and snapshots,
@@ -43,15 +43,15 @@ def patch_files(run='', data='../data', verbose=0):
     files=[rundir+f for f in files]
     return files
 
-def patch (id=2, iout=0, run='', data='../data', ThisPatch=dd.RamsesMHDPatch, verbose=0):
+def patch (id=2, iout=0, run='', data='../data', verbose=0):
     '''
     Return patch structure for a single patch, identified by id and iout
     '''
     file=data+'/'+run+'/{:04d}_{:04d}'.format(id,iout)
-    s=ThisPatch(file, verbose=verbose)
+    s=dd.Patch(file,verbose=verbose)
     return s
 
-def patches (run='', data='../data', ThisPatch=dd.RamsesMHDPatch, verbose=0):
+def patches (run='', data='../data', verbose=0):
     '''
     Return a list of structures s={id,iout,time,data,...}, where id,iout
     are the integer patch and snapshot numbers, time is in code units,
@@ -65,7 +65,7 @@ def patches (run='', data='../data', ThisPatch=dd.RamsesMHDPatch, verbose=0):
     files = patch_files (run=run, data=data, verbose=verbose)
     list=[]
     for f in files:
-        s=ThisPatch(f,verbose=verbose)
+        s=dd.Patch(f,verbose=verbose)
         s.gamma=1.4
         list.append(s)
     return list

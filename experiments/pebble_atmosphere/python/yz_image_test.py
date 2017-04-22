@@ -5,13 +5,9 @@ reload(du)
 import plot_utils as pu
 reload(pu)
 
-pl.figure(figsize=[8,3])
-pl.gcf().set_size_inches(12, 3)
-iout=41
+iout=14
 run='m10r40t10'
-dir='d:\\pebble_atmosphere\\data'
-pu.yz_plane(run,dir,iout=iout,var='logd',x=100.)
+data='d:\\pebble_atmosphere\\data'
 
-#vars=['logd','ux','uy','uz','loge']
-#for var in vars:
-#    yz_midplane(run,dir,iout=iout,var=var)
+fig=pl.figure(1,figsize=(12,3))
+pu.yx_plane(run,data,iout=iout,var='uy',z=0.)

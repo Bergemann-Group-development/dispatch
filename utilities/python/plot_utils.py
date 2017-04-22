@@ -19,7 +19,7 @@ def image(f,**kwargs):
     im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation=None,**kwargs)
     return im
 
-def yx_plane(run='',data='../data',iout=0,z=0.0,var='logd',cmap='seismic',**kwargs):
+def yx_plane(run='',data='../data',iout=0,z=0.0,var='logd',cmap='coolwarm',**kwargs):
     '''
     Display xy-image for given z  
     '''
@@ -29,8 +29,7 @@ def yx_plane(run='',data='../data',iout=0,z=0.0,var='logd',cmap='seismic',**kwar
         return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
     select=[p for p in select if inside(p,z) and p.level<8]
     print np.size(select),'patches in plane'    
-    vmin=1e9
-    vmax=-vmin
+    vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
     l=np.array(p.nghost)
@@ -46,8 +45,7 @@ def yx_plane(run='',data='../data',iout=0,z=0.0,var='logd',cmap='seismic',**kwar
         p.vars()
         p.f=p.var[var]
         p.f=interpolate(p,z,p.corners[0][2],p.dx[2],p.gn[2],p.f)
-        e=p.extent[2]
-        p.f,e=du.rotate(p.f,e)
+        p.f,e=du.rotate(p.f,p.extent[2])
         p.extent[2]=e
         vmin=min(vmin,p.f.min())
         vmax=max(vmax,p.f.max())
@@ -56,16 +54,13 @@ def yx_plane(run='',data='../data',iout=0,z=0.0,var='logd',cmap='seismic',**kwar
         #print p.id,p.level
     for p in select:
         image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
-    pl.xlim(xlim)
-    pl.ylim(ylim)
+    pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('x')
     pl.title('var='+var+'   t={:d}  z={:d}'.format(np.int(p.time),np.int(z)))
-    pl.xlabel('y')
-    pl.ylabel('x')
     pl.colorbar(shrink=0.8,aspect=15,fraction=0.04,pad=0.02)
     pl.tight_layout()
     pl.show()
 
-def yz_plane(run='',data='../data',iout=0,var='d',x=0.0):
+def yz_plane(run='',data='../data',iout=0,var='logd',x=0.0,cmap='coolwarm',**kwargs):
     '''
     Display yz-image for given x
     '''
@@ -75,8 +70,7 @@ def yz_plane(run='',data='../data',iout=0,var='d',x=0.0):
         return x<=p.active_corners[1][0] and x>=p.active_corners[0][0]
     pp=[p for p in pp if inside(p,x) and p.level<8]
     print np.size(pp),'patches in plane' 
-    vmin=1e9
-    vmax=-vmin
+    vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
     l=np.array(p.nghost)
@@ -100,11 +94,8 @@ def yz_plane(run='',data='../data',iout=0,var='d',x=0.0):
     print vmin,vmax   
     for p in pp:
         image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax)
-    pl.xlim(xlim)
-    pl.ylim(ylim)
+    pl.clf(); pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('z')
     pl.title('var='+var+'   t={:d}  x={:d}'.format(np.int(p.time),np.int(x)))
-    pl.xlabel('y')
-    pl.ylabel('z')
     pl.colorbar(shrink=0.8,aspect=15,fraction=0.04,pad=0.02)
     pl.tight_layout()
     pl.show()
@@ -114,7 +105,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
     '''
     Display yx-image in steps of dz in z 
     '''
-    pp=du.patches(run=run,data=data)
+    pp=du.patches(run,data)
     pp=[p for p in pp if p.iout==iout and p.level<8]
     co=du.corners(pp)
     zmin=co[0,2]
