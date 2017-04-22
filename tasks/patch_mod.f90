@@ -42,6 +42,8 @@ MODULE patch_mod
     logical:: staggered=.true.
     class(link_t), pointer:: link       ! this could be useful
     type(boundaries_t):: boundaries
+    character(len=32):: eos='ideal'
+    character(len=32):: opacity='none'
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
@@ -992,42 +994,24 @@ SUBROUTINE output_legacy (self, experiment_name)
     time = self%out_next
   end if
   !-----------------------------------------------------------------------------
-  ! Write a log file, with files written by this rank
-  !-----------------------------------------------------------------------------
-  write (logname,'(a)') trim(io%outputname)//'log'
-  if (first_time) then
-    first_time = .false.
-    if (io%master) print*, 'output data file log written to '//trim(logname)
-    open (io%data_unit,file=trim(logname),status='unknown')
-  else
-    open (io%data_unit,file=trim(logname),status='unknown',position='append')
-  end if
-  write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout
-  write (io%data_unit,'(a)') trim(filename)
-  ds = self%box/2.0**io%levelmax
-  do i=1,3
-    if (self%size(i) > 0.0) then
-      li(i) = (self%position(i)+0.5*(self%box(i)-self%size(i)))/ds(i)
-      ui(i) = (self%position(i)+0.5*(self%box(i)+self%size(i)))/ds(i) - 1.0
-    end if
-  end do
-  write (io%data_unit,'(1p,e14.6,3(2x,3e14.6),1x,i3.1,1x,e10.3)') time, self%position, self%ds, &
-        self%velocity, self%level, self%quality
-  write (io%data_unit,'(4(3i7,2x))') int(self%box/self%ds+0.5), u-l+1, li, ui
-  close (io%data_unit)
-  !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
+  self%ioformat = 1
+  write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout
   if (io%master .and. io%verbose>=-1) then
     print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  write (io%data_unit,'(1p,e18.10,6(2x,3e18.10)1x,i3.1,1x,e10.3)') time, self%position, self%ds, &
-        self%velocity, self%llc_nat, self%llc_cart, self%mesh%centre_nat, self%level, self%quality
-  write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1)') int(self%box/self%ds+0.5), u-l+1, &
-        li, ui, self%n, self%gn, self%ng, self%nv
-  write (io%data_unit,'(3(1i8.1,1x),e10.3,i2.1,1x,a)') self%id, self%iout, self%istep, self%dtime, &
-        self%mesh_type, trim(self%kind)
+  write (io%data_unit,'(i2.2)') self%ioformat
+  write (io%data_unit,'(a)') trim(self%kind)
+  write (io%data_unit,'(a)') trim(self%eos)
+  write (io%data_unit,'(a)') trim(self%opacity)
+  write (io%data_unit,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') time, self%dtime, &
+        self%position, self%ds, self%velocity, self%llc_nat, self%llc_cart, &
+        self%mesh%centre_nat, self%quality, self%gamma
+  write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1,i3)') int(self%box/self%ds+0.5), &
+        u-l+1, self%li, self%ui, self%n, self%gn, self%ng, self%nv, self%level
+  write (io%data_unit,'(3(1i8.1,1x),i2.1)') self%id, self%iout, self%istep, self%mesh_type
   close (io%data_unit)
   !-----------------------------------------------------------------------------
   ! Write a binary file with the data cube.
