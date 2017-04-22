@@ -3,7 +3,7 @@
 # Only use spaces to indent your .yml configuration.
 # -----
 # You can specify a custom docker image from Docker Hub as your build environment.
-image: perrybothron/ubuntu-gfortran5-openmpi:16.04-5.4.2-1.10.2
+image: perrybothron/ubuntu-gfortran5-openmpi:16.04-5.4.0-1.10.2
 
 pipelines:
   default:
