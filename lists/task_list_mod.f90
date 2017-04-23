@@ -259,7 +259,7 @@ SUBROUTINE update (self)
       !$omp atomic
       self%nq = self%nq-1                               ! decrement queue count
       task%nq = self%nq                                 ! for info print
-      if (io%verbose>=0) then 
+      if (io%verbose>=0) then
         otask => self%active%task
         time = otask%atime
         if (time < otime) &
@@ -335,6 +335,10 @@ SUBROUTINE update (self)
       self%syncing = .false.
     end if
     task%sync_time = self%sync_next
+    !-----------------------------------------------------------------------------
+    ! To make sure the output has proper guard zone values, place the call here
+    !-----------------------------------------------------------------------------
+    if (task%kind/='rt_patch') call task%output (self%name)
     !----------------------------------------------------------------------------
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
@@ -405,11 +409,6 @@ SUBROUTINE update (self)
     call task%clear (bits%busy)                         ! clear busy bit
     call task%clear (bits%ready)                        ! needs new check
     call self%check_nbors (head)                        ! any nbors ready?
-    !-----------------------------------------------------------------------------
-    ! Since output of a task may be time consuming, wait with this until the task
-    ! has been used for all other purposes
-    !-----------------------------------------------------------------------------
-    if (task%kind/='rt_patch') call task%output (self%name)             ! check output
     !$omp atomic write
     stalled = 0
     !call mpi_mesg%diagnostics (0)

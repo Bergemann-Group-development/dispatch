@@ -31,8 +31,14 @@ class Patch(Task):
         fp = open(filename+'.txt','r')
         legacy_reader.single_patch (self, fp, verbose=False)
         if read_derivs: self.nvar = 2 * self.nvar
-        self.varidx = variable_indices(self.kind, read_derivs)
         fp.close()
+        self.varidx = variable_indices(self.kind, read_derivs)
+        self.varnames = []
+        for k in self.varidx.keys():
+            self.varnames.append(k)
+        for k in self.varidx.keys():
+            v = self.varidx[k]
+            self.varnames[v] = k
 
     @property
     def data(self):

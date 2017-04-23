@@ -23,14 +23,16 @@ def dispatch_utils():
     print "Type dispatch_utils?<RETURN> for help text, or dispach_utils(\
  for pop-up help in Canopy"
  
-def patch_files(run='', data='../data', verbose=0):
+def patch_files(run='', data='../data', verbose=0, iout=-1):
     '''
     Return a list of patch file root names, and count patches and snapshots,
     unless verbose is negative
     '''
     rundir=data+'/'+run+'/'
     files=np.sort(os.listdir(rundir))
-    files=[f.replace('.txt','') for f in files if f.endswith('.txt')]
+    ext='.txt'
+    if iout>=0: ext='{:04d}.txt'.format(iout)
+    files=[f.replace('.txt','') for f in files if f.endswith(ext)]
     if verbose>-1:
         sid0,stime0=files[0].split('_')
         npatch=0
@@ -51,7 +53,7 @@ def patch (id=2, iout=0, run='', data='../data', verbose=0):
     s=dd.Patch(file,verbose=verbose)
     return s
 
-def patches (run='', data='../data', verbose=0):
+def patches (run='', data='../data', iout=-1, verbose=0):
     '''
     Return a list of structures s={id,iout,time,data,...}, where id,iout
     are the integer patch and snapshot numbers, time is in code units,
@@ -62,7 +64,7 @@ def patches (run='', data='../data', verbose=0):
         time_select  = [p for p in pp if p.iout==iout]
         patch_select = [p for p in pp if p.id==id]
     '''
-    files = patch_files (run=run, data=data, verbose=verbose)
+    files = patch_files (run=run, data=data, iout=iout, verbose=verbose)
     list=[]
     for f in files:
         s=dd.Patch(f,verbose=verbose)

@@ -5,11 +5,12 @@
 &timer_params sec_per_report=5 /
 &io_params
  do_trace=f
+ omp_trace=f
  verbose=1
  do_debug=f
  do_output=t
  do_legacy=t
- !id_debug=154
+ id_debug=178
 /
 &rubiks_params
  n_levels=4                         ! # of refinement levels in for the rubiks cube
@@ -25,10 +26,6 @@ gamma=1.4
  do_pebbles=f                       ! pebbles are on/off
  only_pebbles=f                     ! do only pebbles?
  omega_yr=0.0,0.0,1.0               ! omega in units where 1 = 1/yr
- vz_pebble_cgs=1.5e6                ! about 15 km/s vertically
- !vz_pebble_cgs = 3e6               ! about 30 km/s vertically
- pebble_rate_cgs = 1e2              ! about one pebble per 10 second (3e6 per year)
- initial_density=1e-7
  solid_density_cgs=3.               ! density of a pebble
  pebble_size_cm=1.                  ! size of a pebble
 /
@@ -65,13 +62,14 @@ gamma=1.4
 !dt_fixed=0.001
 /
 &out_params
-end_time=150  out_time=10              ! 00-10
+end_time=5 out_time=1
+!end_time=150  out_time=10              ! 00-10
 !end_time=500  out_time=5 restart=7              ! 00-25
 !end_time=2500 out_time=50  restart=50  ! 26-65
 !end_time=5500 out_time=100 restart=65  ! 65-95
 !end_time=9000 out_time=100             ! 00-90
 !end_time=9000 out_time=100 restart=80  ! 00-90
- end_time=1e4  out_time=100 restart=90  ! 90-100
+!end_time=1e4  out_time=100 restart=90  ! 90-100
  print_time=0.01
  guard_zones=t
  time_derivs=f
@@ -79,7 +77,6 @@ end_time=150  out_time=10              ! 00-10
 /
 &mhd_params
  gamma=1.4
- omega_yr=0.0,0.0,1.0
  nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta
 /
@@ -102,5 +99,4 @@ refine_level = 5, 6, 7
 /
 
 &timestep_params
- time_order=0
 /

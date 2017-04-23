@@ -4,9 +4,16 @@ reload(du)
 import plot_utils as pu
 reload(pu)
 
-iout=13
+iout=5
 run='m3r27t05'
 data='d:\\pebble_atmosphere\\data'
 
-fig=pl.figure(1,figsize=(12,3))
-a=pu.yx_scan(fig,run,data,iout=iout,var='ux',dz=100)
+#fig=pl.figure(1,figsize=(12,3)); extent=None
+fig=pl.figure(1,figsize=(7,6)); w=1500; extent=[-w,w,-w,w]
+
+p=du.patch(178-27*2,1,run,data)
+pos=[p.size[0]/2,p.size[1]/2,p.size[2]/2]
+w=200
+extent=[pos[0]-w,pos[0]+w,pos[1]-w,pos[1]+w,-pos[2]-w,-pos[2]+w]
+
+a=pu.yx_scan(fig,run,data,iout=iout,var='ux',dz=100,extent=extent)
