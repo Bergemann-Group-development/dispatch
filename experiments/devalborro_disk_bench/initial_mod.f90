@@ -12,7 +12,7 @@ MODULE initial_mod
   type, public:: initial_t
   contains
     procedure:: init
-    procedure:: selected
+    procedure:: condition
   end type
 
 CONTAINS
@@ -25,10 +25,10 @@ SUBROUTINE init (self, solver)
   character(len=64):: solver
 END SUBROUTINE init
 
-SUBROUTINE selected (self, m, ff)
+SUBROUTINE condition (self, m, ff)
   class(initial_t):: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: ff
   class(mesh_t), pointer, dimension(:):: m
-END SUBROUTINE selected
+END SUBROUTINE condition
 
 END MODULE initial_mod

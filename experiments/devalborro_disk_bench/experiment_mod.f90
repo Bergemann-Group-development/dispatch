@@ -91,7 +91,7 @@ SUBROUTINE initial_conditions (patch)
       do i1=m1%lb,m1%ub
         z = m1%centre_nat + patch%mesh(1)%r(i1)
         patch%d%q(i1,i2,i3) = sigma0
-        patch%e1%q(i1,i2,i3) = (experiment_params%aspect_rat * vkep(i2))**2 &
+        patch%e%q(i1,i2,i3) = (experiment_params%aspect_rat * vkep(i2))**2 &
                              * sigma0 / (patch%gamma - 1.0)
         patch%s%x%q(i1,i2,i3) = 0.0
         patch%s%y%q(i1,i2,i3) = 0.0
