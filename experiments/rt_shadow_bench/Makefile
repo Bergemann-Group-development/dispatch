@@ -9,7 +9,7 @@ UPD             = adams_bashforth
 SOLVER          = stagger2/e
 #RT_SOLVER       = hybrid
 #RT_SOLVER       = hybrid2
-RT_SOLVER       = hybrid_v02
+RT_SOLVER       = hybrid
 #EOS             = stagger
 #EOS             = ideal
 EXEC            = dispatch.x
@@ -36,7 +36,8 @@ $(EXEC): cartesian_mod.o radiative_transfer_mod.o eos_mod.o opacity_mod.o
 boundary_mod.o          : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o
 mhd_mod.o               : io_mod.o trace_mod.o scalar_mod.o vector_mod.o force_mod.o patch_mod.o scaling_mod.o cgs_mod.o download_mod.o \
                           stagger_mod.o eos_mod.o
-experiment_mod.o	: rmhd_mod.o trace_mod.o io_mod.o initial_mod.o bits_mod.o boundary_mod.o
-intial_mod.o		: io_mod.o trace_mod.o mesh_mod.o rmhd_mod.o cgs_mod.o scaling_mod.o
+experiment_mod.o	: rmhd_mod.o trace_mod.o io_mod.o initial_mod.o bits_mod.o boundaries_mod.o
+intial_mod.o		: io_mod.o trace_mod.o mesh_mod.o cgs_mod.o scaling_mod.o
+
 
 

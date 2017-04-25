@@ -18,11 +18,10 @@ MODULE experiment_mod
   USE trace_mod
   USE rmhd_mod
   USE initial_mod
-  USE boundary_mod
+  USE boundaries_mod
   implicit none
   private
   type, public, extends(rmhd_t):: experiment_t
-    type(boundary_t) :: boundary
   contains
     procedure init
     procedure update
@@ -35,6 +34,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
+  real, dimension(:,:,:,:), pointer :: mem
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   !----------------------------------------------------------------------------
@@ -53,9 +53,10 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  call self%initial%init()
-  call self%boundary%init()
-  call self%initial%initial_conditions(self)
+  call self%initial%init(self%kind)
+  !call self%boundaries%init(self%kind)
+  mem => self%mem(:,:,:,:,self%it,1)
+  call self%initial%condition(self%mesh,mem)
   call self%stats ('initial')
   call trace_end
 END SUBROUTINE init
@@ -75,10 +76,6 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%rmhd_t%update
-   if (io%verbose>2) &
-    call self%check_density('before timestep')
-  call self%check_density(' after timestep')
-
   call trace_end
 END SUBROUTINE update
 

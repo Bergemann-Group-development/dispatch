@@ -1,11 +1,9 @@
 # Append to VPATH
-VPATH := $(VPATH):$(TOP)/solvers/rt/$(RT_SOLVER)
+VPATH := $(VPATH):$(TOP)/solvers/rt/hybrid
 
 # Dependencies
-mhd_rt_mod.o            : mhd_mod.o trace_mod.o microphysics_mod.o
-rt_mod.o                : ray_geometry_mod.o experiment_mod.o link_mod.o rt_boundary_mod.o
-rt_data_mod.o           : microphysics_mod.o rt_mod.o
-rt_internal_mod.o       : microphysics_mod.o rt_mod.o rt_data_mod.o
-radiative_transfer_mod.o: ray_geometry_mod.o microphysics_mod.o rt_mod.o list_mod.o rt_boundary_mod.o rt_data_mod.o rt_internal_mod.o rt_corrections_mod.o
-rt_corrections_mod.o    : io_mod.o trace_mod.o bits_mod.o link_mod.o microphysics_mod.o rt_mod.o rt_data_mod.o rt_internal_mod.o rt_boundary_mod.o ray_geometry_mod.o
-rt_boundary_mod.o       : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o
+rt_solver_mod.o           : io_mod.o trace_mod.o
+rt_components_mod.o       : ray_geometry_v3_mod.o trace_mod.o io_mod.o link_mod.o
+rt_mod.o                  : ray_geometry_v3_mod.o patch_mod.o rt_boundary_mod.o rt_components_mod.o trace_mod.o rt_solver_mod.o eos_mod.o
+radiative_transfer_mod.o  : experiment_mod.o mesh_mod.o ray_geometry_v3_mod.o rt_mod.o rt_boundary_mod.o
+rt_boundary_mod.o         : io_mod.o trace_mod.o cgs_mod.o scaling_mod.o

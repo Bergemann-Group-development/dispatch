@@ -8,17 +8,17 @@ MODULE initial_mod
   USE units_mod
   USE scaling_mod
   USE mesh_mod
-  USE rmhd_mod
+  USE index_mod
   implicit none
   private
 
   real(8), parameter:: pi2=8d0*atan(1d0)
 
   type, public:: initial_t
-    real:: clump_pos(3), clump_a, clump_b, d0, t0, clump_dfact
+    real:: clump_pos(3), clump_a, clump_b, d0, t0, clump_dfact, gamma
   contains
     procedure :: init
-    procedure :: initial_conditions
+    procedure :: condition
   end type
 
   logical, save:: first_time=.true.
@@ -27,17 +27,20 @@ CONTAINS
 !> =============================================================================
 !> Read namelist
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, solver)
   class(initial_t):: self
+  character(len=64):: solver
   real, save:: clump_pos(3)=0.0, clump_a=0.1, clump_b=0.06, d0=1.0, t0=290.0, clump_dfact=10.0
-  namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact
+  real, save:: gamma=1.4
+  namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact, gamma
+  integer:: iostat
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params)
+    read (io%input, initial_params, iostat=iostat)
     if (io%master) write (*, initial_params)
     call scaling%init()
   end if
@@ -49,27 +52,28 @@ SUBROUTINE init (self)
   self%d0 = d0 /scaling%d
   self%t0 = t0 /scaling%temp
   self%clump_dfact = clump_dfact
+  self%gamma=gamma
 
   call trace_end
 END SUBROUTINE init
 
-SUBROUTINE initial_conditions (self, patch)
+SUBROUTINE condition (self, m, mem)
 !> =============================================================================
 !> Set the initial conditions
 !> =============================================================================
   class(initial_t) :: self
-  class(rmhd_t), target :: patch
+  class(mesh_t), pointer, dimension(:) :: m
+  real, dimension(:,:,:,:), pointer :: mem
   class(mesh_t), pointer :: mx, my, mz
-  real, dimension(:,:,:,:), pointer :: f
   integer :: ix, iy, iz
   real :: p0, q, x, y, z
+  type(index_t) :: i
   !----------------------------------------------------------------------------
   call trace_begin('initial_t::initial_conditions')
 
-  mx => patch%mesh(1)
-  my => patch%mesh(2)
-  mz => patch%mesh(3)
-  f => patch%mem(:,:,:,:,1,1)
+  mx => m(1)
+  my => m(2)
+  mz => m(3)
 
   ! note: I've assumed a unit system where k_B / mu * m_pro is 1.
   p0 = self%d0 * self%t0
@@ -88,29 +92,29 @@ SUBROUTINE initial_conditions (self, patch)
 
         ! the if-then-else is to prevent overflow when (x,y,z) is very from zero.
         if (q > 88.0) then
-          f(ix,iy,iz,patch%i_d) = self%d0
+          mem(ix,iy,iz,i%d) = self%d0
         else
-          f(ix,iy,iz,patch%i_d) = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
+          mem(ix,iy,iz,i%d) = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
                                   / (1.0 + exp(q))
         end if
 
         ! the clump is initially in pressure equilibrium with the ambient medium
-        f(ix,iy,iz,patch%i_e) = p0 / (patch%gamma - 1.0)
+        mem(ix,iy,iz,i%e) = p0 / (self%gamma - 1.0)
 
         ! momentum components
-        f(ix,iy,iz,3) = 0.0
-        f(ix,iy,iz,4) = 0.0
-        f(ix,iy,iz,5) = 0.0
+        mem(ix,iy,iz,i%px) = 0.0
+        mem(ix,iy,iz,i%py) = 0.0
+        mem(ix,iy,iz,i%pz) = 0.0
         ! magnetic field components
-        f(ix,iy,iz,6) = 0.0
-        f(ix,iy,iz,7) = 0.0
-        f(ix,iy,iz,8) = 0.0
+        mem(ix,iy,iz,i%bx) = 0.0
+        mem(ix,iy,iz,i%by) = 0.0
+        mem(ix,iy,iz,i%bz) = 0.0
       end do
     end do
   end do
 
-  nullify (mx, my, mz, f)
+  nullify (mx, my, mz, mem)
   call trace_end
-END SUBROUTINE initial_conditions
+END SUBROUTINE condition
 
 END MODULE
