@@ -1,0 +1,123 @@
+!> =============================================================================
+!> Radiative transfer shadow test.
+!> http://adsabs.harvard.edu/abs/2015A&A...574A..81R
+!> =============================================================================
+MODULE initial_mod
+  USE io_mod
+  USE trace_mod
+  USE units_mod
+  USE scaling_mod
+  USE mesh_mod
+  USE index_mod
+  implicit none
+  private
+
+  real(8), parameter:: pi2=8d0*atan(1d0)
+
+  type, public:: initial_t
+    real:: clump_pos(3), clump_a, clump_b, d0, t0, clump_dfact, gamma
+    logical::mhd=.false.
+  contains
+    procedure :: init
+    procedure :: condition
+  end type
+
+  logical, save:: first_time=.true.
+
+CONTAINS
+!> =============================================================================
+!> Read namelist
+!> =============================================================================
+SUBROUTINE init (self, solver)
+  class(initial_t):: self
+  character(len=64):: solver
+  real, save:: clump_pos(3)=0.0, clump_a=0.1, clump_b=0.06, d0=1.0, t0=290.0, clump_dfact=10.0
+  real, save:: gamma=1.4
+  namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact, gamma
+  integer:: iostat
+  !----------------------------------------------------------------------------
+  call trace_begin('initial_t%init')
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, initial_params, iostat=iostat)
+    if (io%master) write (*, initial_params)
+    call scaling%init()
+  end if
+  !$omp end critical (input_cr)
+
+  self%clump_pos = clump_pos
+  self%clump_a = clump_a
+  self%clump_b = clump_b
+  self%d0 = d0 /scaling%d
+  self%t0 = t0 /scaling%temp
+  self%clump_dfact = clump_dfact
+  self%gamma=gamma
+
+  call trace_end
+END SUBROUTINE init
+
+SUBROUTINE condition (self, m, mem)
+!> =============================================================================
+!> Set the initial conditions
+!> =============================================================================
+  class(initial_t) :: self
+  class(mesh_t), pointer, dimension(:) :: m
+  real, dimension(:,:,:,:), pointer :: mem
+  class(mesh_t), pointer :: mx, my, mz
+  integer :: ix, iy, iz
+  real :: p0, q, x, y, z
+  type(index_t) :: i
+  !----------------------------------------------------------------------------
+  call trace_begin('initial_t::initial_conditions')
+
+  mx => m(1)
+  my => m(2)
+  mz => m(3)
+
+  ! note: I've assumed a unit system where k_B / mu * m_pro is 1.
+  p0 = self%d0 * self%t0
+  do iz=mz%lb,mz%ub
+    z = mz%p + mz%r(iz)
+    do iy=my%lb,my%ub
+      y = my%p  + my%r(iy)
+      do ix=mx%lb,mx%ub
+        x = mx%p  + mx%r(ix)
+
+        ! currently, the y and z coordinates are treated symmetrically; this
+        ! leads to a cylindrically symmetric problem in 3-D.
+        q = ((x - self%clump_pos(1)) / self%clump_a)**2 &
+          + ((y - self%clump_pos(2)) / self%clump_b)**2 &
+          + ((z - self%clump_pos(3)) / self%clump_b)**2
+
+        ! the if-then-else is to prevent overflow when (x,y,z) is very from zero.
+        if (q > 88.0) then
+          mem(ix,iy,iz,i%d) = self%d0
+        else
+          mem(ix,iy,iz,i%d) = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
+                                  / (1.0 + exp(q))
+        end if
+
+        ! the clump is initially in pressure equilibrium with the ambient medium
+        mem(ix,iy,iz,i%e) = p0 / (self%gamma - 1.0)
+
+        ! momentum components
+        mem(ix,iy,iz,i%px) = 0.0
+        mem(ix,iy,iz,i%py) = 0.0
+        mem(ix,iy,iz,i%pz) = 0.0
+        ! magnetic field components
+        if (self%mhd) then
+          mem(ix,iy,iz,i%bx) = 0.0
+          mem(ix,iy,iz,i%by) = 0.0
+          mem(ix,iy,iz,i%bz) = 0.0
+        end if
+      end do
+    end do
+  end do
+
+  nullify (mx, my, mz, mem)
+  call trace_end
+END SUBROUTINE condition
+
+END MODULE
