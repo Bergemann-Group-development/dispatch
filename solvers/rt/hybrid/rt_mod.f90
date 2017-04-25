@@ -3,6 +3,7 @@ MODULE rt_mod
   USE eos_mod
   USE io_mod
   USE link_mod
+  USE kinds_mod
   USE ray_geometry_v3_mod
   USE rt_boundary_mod
   USE rt_components_mod
@@ -54,10 +55,10 @@ MODULE rt_mod
     procedure :: get_boundary
     procedure :: execute_chain
     procedure :: finish
+    procedure :: get_q
     procedure :: has_OB
     procedure :: has_IB
     procedure :: init => init_rt
-    procedure :: interpolate
     procedure :: map_intensity_shell
     procedure :: nudge
     procedure :: optical_depth_centered
@@ -1018,14 +1019,26 @@ SUBROUTINE density_weight_factor (self, ds, dwf)
 END SUBROUTINE density_weight_factor
 
 !> =====================================================================
-!> Compute the optical depth along rays
+!> Get heating rates for given time in terms of internal energy. Heating
+!> rates are interpolated in time. 
 !> =====================================================================
-SUBROUTINE interpolate (self, time)
+SUBROUTINE get_q (self, time, de)
   class (rt_t) :: self
   real(8):: time
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: de
   !.....................................................................
+  integer       :: jt(2)
+  real          :: pt(2)
+  integer, save :: itimer=0
   !---------------------------------------------------------------------
-END SUBROUTINE interpolate
+  call trace%begin ('rt_t%get_q', itimer=itimer)
+  call self%time_interval (time, jt, pt)
+  print *, 'pt:',pt
+  de= self%mem(:,:,:,self%i_e,jt(1),1)*pt(1) + &
+      self%mem(:,:,:,self%i_e,jt(2),1)*pt(2)
+  call trace%end (itimer)
+
+END SUBROUTINE get_q
 
 !> =====================================================================
 !> Return the absolute position of integer index triple 'cell'
