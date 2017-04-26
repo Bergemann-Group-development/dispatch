@@ -7,7 +7,8 @@
 import numpy as np
 from abc import abstractproperty, abstractmethod, ABCMeta
 from curvilinear_transforms import *
-from dispatch_data import Patch, mesh_types
+from dispatch_data import Patch
+from legacy_reader import mesh_types
 
 class Grid(dict):
     """An abstract grid class based on `dict()`."""
@@ -206,7 +207,7 @@ def dispatch_grid(p):
 
     """
 
-    if p.n != p.nwrite:
+    if np.any(p.n != p.nwrite):
         x1 = p.corners[0][0] + np.arange(p.nwrite[0]) * p.dx[0] + 0.5 * p.dx[0]
         x2 = p.corners[0][1] + np.arange(p.nwrite[1]) * p.dx[1] + 0.5 * p.dx[1]
         x3 = p.corners[0][2] + np.arange(p.nwrite[2]) * p.dx[2] + 0.5 * p.dx[2]

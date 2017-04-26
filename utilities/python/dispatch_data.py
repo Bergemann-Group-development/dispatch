@@ -127,11 +127,6 @@ class Patch(Task):
                    'logd':np.log10(self.d),\
                    'loge':np.log10(self.e)}
 
-class ImmersedBoundaryPatch(Patch):
-    """A concrete derived class for immersed boundary patches."""
-    def __init__ (self, filename, verbose=False):
-        super(Patch, self).__init__(filename, verbose)
-
 def variable_indices(solver_type, read_derivs=False):
     """
     A simple function to provide the indices of the variable stored in the binary
@@ -157,12 +152,6 @@ def variable_indices(solver_type, read_derivs=False):
                         'dp1': 10, 'dp2': 11, 'dp3': 12,
                         'db1': 13, 'db2': 14, 'db3': 15,}
             indices.update(indicesd)
-        if read_derivs:
-            indicesd = {'dd': 8,
-                        'ds': 9,
-                        'dp1': 10, 'dp2': 11, 'dp3': 12,
-                        'db1': 13, 'db2': 14, 'db3': 15,}
-            indices.update(indicesd)
     elif solver[0:6] == 'ramses':
         indices = {'d':  0,
                    'e':  4,
@@ -181,6 +170,8 @@ def variable_indices(solver_type, read_derivs=False):
                    'gp': 3,
                    's1': 4, 's2': 5, 's3': 6,
                    'b1': 7, 'b2': 8, 'b3': 9}
+    elif solver_type.lower() == 'rt_solver':
+        indices = {'dedt':  0}
     else:
-        raise Exception("Unrecognised solver type!")
+        raise Exception("Unrecognised solver type! => "+solver_type.lower())
     return indices

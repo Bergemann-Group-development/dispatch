@@ -4,7 +4,9 @@ from matplotlib import cm, ticker, patches as mplpatches
 from dispatch_data import *
 from dispatch_grid import *
 from derived_variables import *
+from patch_types import *
 import itertools
+import fnmatch
 
 def dump_min_max(p):
     """
@@ -25,11 +27,11 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     gamma = 1.0001
-    datadir = './data/'
+    datadir = './data/input_1Mj_check/'
     prefix = ''
-    ptimes = [0.0, 0.0628, 0.628]
+    ptimes = [62.83]
     #ptimes = 0.629*np.arange(0,2)
-    t_eps = 0.05
+    t_eps = 1e-3
     #pxsize = [-2.6, 2.6]
     #pysize = [-2.6, 2.6]
     pxsize = [0.39,2.6]
@@ -37,7 +39,7 @@ if __name__ == "__main__":
     #pxsize = [0.90,1.10]
     #pysize = [-0.10,0.10]
     pltvar = ['d ']
-    cmin   = [1e-5]
+    cmin   = [3e-5]
     cmax   = [8e-3]
     clog   = [  1]
     slicedir = 1  # given with respect to the *root* grid (typically patch id = 1)
@@ -99,7 +101,7 @@ if __name__ == "__main__":
         qmin, qmax = 1.0e99, -1.0e99
         m2 = 0 # counter 2
         for p in patches:
-            if p.task_type == 'immersed_boundary_t':
+            if p.kind == 'immersed_boundary_t':
                 circle = mplpatches.Circle((p.pos[0],p.pos[1]),radius=pradius,color='k')
                 cax.add_patch(circle)
                 print "Skipping ",p.id," (immersed boundary)"
@@ -156,7 +158,7 @@ if __name__ == "__main__":
             ione = (0,1)[p.n[0] > 1]
             jone = (0,1)[p.n[1] > 1]
             kone = (0,1)[p.n[2] > 1]
-            if p.n != p.nwrite:
+            if np.any(p.n != p.nwrite):
                 iindex = slice(p.nghost[0] - ione,p.n[0] + p.nghost[0] + ione)
                 jindex = slice(p.nghost[1] - jone,p.n[1] + p.nghost[1] + jone)
                 kindex = slice(p.nghost[2] - kone,p.n[2] + p.nghost[2] + kone)
