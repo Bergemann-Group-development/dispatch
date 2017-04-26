@@ -128,11 +128,10 @@ END SUBROUTINE single_solenoidal
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with non-random amplitude and zero phase
 !> =============================================================================
-SUBROUTINE single_compressive (self, m, ff,solver)
+SUBROUTINE single_compressive (self, m, ff)
   class(initial_t):: self
   class(mesh_t), pointer, dimension(:):: m
   real(kind=KindScalarVar), dimension(:,:,:,:) :: ff
-  character(len=64):: solver
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
@@ -184,11 +183,10 @@ END SUBROUTINE single_compressive
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-SUBROUTINE single_advection (self, m, ff,solver)
+SUBROUTINE single_advection (self, m, ff)
   class(initial_t):: self
   class(mesh_t), pointer, dimension(:):: m
   real(kind=KindScalarVar), dimension(:,:,:,:) :: ff
-  character(len=64):: solver
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
@@ -239,12 +237,11 @@ END SUBROUTINE single_advection
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-SUBROUTINE exa256 (self, m, ff,solver)
+SUBROUTINE exa256 (self, m, ff)
   USE io_unit_mod
   class(initial_t):: self
   class(mesh_t), pointer, dimension(:):: m
   real(kind=KindScalarVar), dimension(:,:,:,:) :: ff
-  character(len=64):: solver
   real, dimension(:), allocatable:: u, d
   !.............................................................................
   integer:: ix, iy, iz, jy, jz, rec, iv, li(3), ui(3)
@@ -304,12 +301,11 @@ END SUBROUTINE exa256
 !> Initialize from a raw data file, assumed to contain isothermal data, in the
 !> order rho, Ux, Uy, Uz
 !> =============================================================================
-SUBROUTINE raw (self, m, ff,solver)
+SUBROUTINE raw (self, m, ff)
   USE io_unit_mod
   class(initial_t):: self
   class(mesh_t), pointer, dimension(:):: m
   real(kind=KindScalarVar), dimension(:,:,:,:):: ff
-  character(len=64):: solver
   !.............................................................................
   integer, parameter:: mv=4
   integer:: n(3), i(3), iv, jv(mv)

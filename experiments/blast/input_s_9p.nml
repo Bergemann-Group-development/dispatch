@@ -12,7 +12,7 @@
 
 &box_params
   size=1,1,0.01
-  dims=5,5,1
+  dims=3,3,1
   origin=-0.5,-0.5,0.0
 /
 
@@ -22,7 +22,7 @@
  guard_zones=t
 /
 
-&initial_params
+&experiment_params
   r0=0.125
   d0=1.0,1.0
   p0=1.0,100.0
@@ -48,7 +48,7 @@
 
 &patch_params
   courant=0.5
-  n=100,100,1
+  n=32,32,1
 /
 
 &refine_params
