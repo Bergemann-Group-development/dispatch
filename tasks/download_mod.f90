@@ -539,7 +539,7 @@ SUBROUTINE find_best_nbor (link, target, ii, position, best, jt, pt, idir, old_s
   nbor => link%nbor
   do while (associated(nbor))
     !---------------------------------------------------------------------------
-    ! Skíp patches more than one level up/down, and the parent patch
+    ! SkÃ­p patches more than one level up/down, and the parent patch
     !---------------------------------------------------------------------------
     other => task2patch(nbor%task)
     if (abs(target%level-other%level)<2) then
