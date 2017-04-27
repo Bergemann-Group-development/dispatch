@@ -19,7 +19,7 @@ MODULE initial_mod
     logical:: mhd
     real(8):: time=0d0
     character(len=64):: solver
-    procedure(single_solenoidal), pointer:: selected=>null()
+    procedure(single_solenoidal), pointer:: condition=>null()
   contains
     procedure:: init
     procedure, nopass:: cleanup
@@ -31,8 +31,9 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, solver)
   class(initial_t):: self
+  character(len=64):: solver
   character(len=32), save:: type='single_solenoidal'
   logical, save:: first_time=.true.
   namelist /initial_params/ type

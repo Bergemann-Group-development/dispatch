@@ -15,6 +15,7 @@ MODULE force_mod
     real(8):: a(3), phi(3)
     real(8):: t_turn, t_save=0.0
     real(8):: a0(3), k(3)
+    character(len=64):: solver
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure init
@@ -25,8 +26,9 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, solver)
    class(force_t):: self
+   character(len=64):: solver
    integer,save:: seed=-11, iostat
    character(len=32), save:: type='zero'
    real, save:: t_turn=0.3, a0(3)=0.1, k(3)=1.0
@@ -53,6 +55,7 @@ SUBROUTINE init (self)
    case default
      print*,'UNKNOWN FORCING TYPE'
    end select
+   self%solver = trim(solver)
    call trace_end
 END SUBROUTINE init
 

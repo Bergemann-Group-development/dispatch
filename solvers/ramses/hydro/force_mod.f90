@@ -14,6 +14,7 @@ MODULE force_mod
   type, public:: force_t
     real:: omega(3)
     procedure(single_solenoidal), pointer:: selected=>null()
+    character(len=64):: solver
   contains
     procedure init
     procedure single_solenoidal
@@ -23,8 +24,9 @@ CONTAINS
 !> =============================================================================
 !> Choose type of initial condition
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, solver)
   class(force_t):: self
+  character(len=64):: solver
   integer:: iostat
   character(len=32), save:: type='none'
   logical, save:: first_time=.true.
@@ -45,6 +47,7 @@ SUBROUTINE init (self)
   case default
     nullify(self%selected)
   end select
+  self%solver = trim(solver)
   call trace_end
 END SUBROUTINE init
 
