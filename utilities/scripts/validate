@@ -7,6 +7,7 @@
 # -r       : reset (create .val files even if fails)
 # -v       : verbose output
 # -x       : skip execution
+# -l       : read experiment_list.txt
 # -h       : help
 # --help   : help
 # dir1 ..  : experiment directories
@@ -25,7 +26,7 @@ while ($#argv > 0)
     case -h:
     case --help:
       sed -n -e '3,/##/p' `which validate` | sed -e 's/#//g'
-      exit
+      exit 0
     # dryrun
     case -d:
       setenv dryrun 1
@@ -51,7 +52,10 @@ while ($#argv > 0)
       breaksw
     case -q:
       echo "The -q option is now obsolete; use -v for verbose output"
-      exit
+      exit 1
+    case -l:
+      set readlist
+      breaksw
     # list of directories
     default:
       set dirs = ( $dirs $1 )
@@ -59,17 +63,26 @@ while ($#argv > 0)
   shift
 end
 
-# with no directories parsed, base the choice on the current directory
 if ($#dirs == 0) then
-  set d = $cwd:t
-  if ("$d" == "experiments") then
-    set dirs = ( `find . -mindepth 2 -maxdepth 4 -name validate -type d | sed -e 's:/validate::'` )
-  else if (-d experiments) then
-    set dirs = ( `find . -mindepth 3 -maxdepth 4 -name validate -type d | sed -e 's:/validate::'` )
+  if ($?readlist) then
+    # if "-f" is specified, read experiments to validate from "experiment_list.txt"
+    set scriptdir = `dirname $0`
+    set absdir = `cd $scriptdir && pwd`
+    foreach line (`cat $absdir/experiment_list.txt`)
+      set dirs = ($dirs $line)
+    end
   else
-    echo "no validation dirs found"
-    exit
-  end if
+    # with no directories parsed, base the choice on the current directory
+    set d = $cwd:t
+    if ("$d" == "experiments") then
+      set dirs = ( `find . -mindepth 2 -maxdepth 4 -name validate -type d | sed -e 's:/validate::'` )
+    else if (-d experiments) then
+      set dirs = ( `find . -mindepth 3 -maxdepth 4 -name validate -type d | sed -e 's:/validate::'` )
+    else
+      echo "no validation dirs found"
+      exit 1
+    endif
+  endif
   echo dirs = $dirs
 endif
 
@@ -148,6 +161,7 @@ foreach d ( $dirs )
     if (`uname -o` != "Cygwin" ) then
       echo "Validation failed -- see $cwd/validate/" | mail -s "validation failed in $cwd" $user
     endif
+    exit 1
   else
     echo "validation OK"
     make clean >& /dev/null

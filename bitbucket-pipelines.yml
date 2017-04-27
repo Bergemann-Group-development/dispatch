@@ -10,4 +10,5 @@ pipelines:
     - step:
         script:
           - echo "Everything is awesome!"
-          - cd tests/meshes; make clean; make; ./test.x
+          - cd $BITBUCKET_CLONE_DIR; cd tests/meshes; make clean; make; ./test.x
+          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -l -x
