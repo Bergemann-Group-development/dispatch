@@ -416,6 +416,18 @@ SUBROUTINE CopyToZeus (self)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
   integer, save:: itimer=0
   type(index_t):: idx
+  external abndyall, bndyflgs, bndyall, get_vel
+  ! DISPATCH does not have explicit information about the interface of the ZEUScore
+  ! procedure, so let's provide it. This allows for passing pointers to arrays
+  ! to ZEUScore.
+  interface
+    subroutine copyatoz (val, mito, mjto, mkto, nvar, x1low, x2low, x3low, dx1, dx2, dx3, mptr, firsttim)
+       logical:: firsttim
+       integer:: mito, mjto, mkto, nvar, mptr
+       real(kind=8):: x1low, x2low, x3low, dx1, dx2, dx3
+       real(kind=8), dimension(:,:,:,:), pointer:: val
+    end subroutine copyatoz
+  end interface
   !-----------------------------------------------------------------------------
   call trace_begin ('zeus_mhd_mod%CopyToZeus', itimer=itimer)
 
@@ -473,7 +485,7 @@ SUBROUTINE CopyToZeus (self)
 
   if (self%do_pebbles) then
     associate (v1=>self%vgas(:,:,:,1,self%it),v2=>self%vgas(:,:,:,2,self%it),v3=>self%vgas(:,:,:,3,self%it))
-    call get_vel (v1, v2, v3)
+    call get_vel (self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, v1, v2, v3)
     end associate
     self%pressure(:,:,:,self%it) = self%mem(:,:,:,idx%e,self%it,1) * (self%gamma - 1.0)
   end if
@@ -491,6 +503,12 @@ SUBROUTINE CopyFromZeus (self)
   class(mhd_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
   integer, save:: itimer=0
+  interface
+    subroutine copyztoa (val, mito, mjto, mkto, nvar)
+       integer:: mito, mjto, mkto, nvar
+       real(kind=8), dimension(:,:,:,:), pointer:: val
+    end subroutine copyztoa
+  end interface
   !-----------------------------------------------------------------------------
   call trace_begin ('zeus_mhd_mod%CopyFromZeus', itimer=itimer)
 

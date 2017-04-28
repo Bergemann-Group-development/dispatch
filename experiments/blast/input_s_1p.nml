@@ -22,6 +22,11 @@
  guard_zones=t
 /
 
+&patch_params
+  courant=0.5
+  n=180,180,1
+/
+
 &experiment_params
   r0=0.125
   d0=1.0,1.0
@@ -44,11 +49,6 @@
 
 &timestep_params
   time_order=0
-/
-
-&patch_params
-  courant=0.5
-  n=96,96,1
 /
 
 &refine_params

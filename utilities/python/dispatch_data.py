@@ -165,7 +165,7 @@ def variable_indices(solver_type, read_derivs=False):
                         'db1': 13, 'db2': 14, 'db3': 15,}
             indices.update(indicesd)
     elif solver[0:4] == 'zeus':
-        indices = {'d ': 0,
+        indices = {'d': 0,
                    'e1': 1, 'et': 2,
                    'gp': 3,
                    's1': 4, 's2': 5, 's3': 6,

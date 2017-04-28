@@ -26,23 +26,19 @@ if __name__ == "__main__":
     plt.rc('font', size=18)
     plt.interactive(True)
 
-    gamma = 1.0001
-    datadir = './data/input_1Mj_check/'
+    gamma = 5./3.
+    datadir = './data/input_s_1p/'
     prefix = ''
-    ptimes = [62.83]
+    ptimes = [0.019]
     #ptimes = 0.629*np.arange(0,2)
-    t_eps = 1e-3
-    #pxsize = [-2.6, 2.6]
-    #pysize = [-2.6, 2.6]
-    pxsize = [0.39,2.6]
-    pysize = [-3.2,3.2]
-    #pxsize = [0.90,1.10]
-    #pysize = [-0.10,0.10]
-    pltvar = ['d ']
-    cmin   = [3e-5]
-    cmax   = [8e-3]
-    clog   = [  1]
-    slicedir = 1  # given with respect to the *root* grid (typically patch id = 1)
+    t_eps = 1e-4
+    pxsize = [-0.5,0.5]
+    pysize = [-0.5,0.5]
+    pltvar = [ 'd']
+    cmin   = [ 0.0]
+    cmax   = [ 3.7]
+    clog   = [   0]
+    slicedir = 3  # given with respect to the *root* grid (typically patch id = 1)
     sliceloc = 0.0 # coord. of slice to be taken
     showgrids = True
     showgridno = True
@@ -194,6 +190,10 @@ if __name__ == "__main__":
             var = np.ma.array(var,mask=cut_mask)
             cpltvar = pltvar[0]
             print cpltvar, ": ", var.min(), var.max(), var.shape
+            # Note that these values, in general, will differ between patches.
+            if cmin[0] == 0.0 and cmax[0] == 0.0:
+                cmin[0] = qmin
+                cmax[0] = qmax
             if clog[0] == 1:
                 var = np.log10(var)
                 cpltvar = r'log ' + cpltvar
