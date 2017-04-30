@@ -6,11 +6,11 @@
 &io_params
  do_trace=f
  omp_trace=f
- verbose=1
+ verbose=0
  do_debug=f
  do_output=t
  do_legacy=t
- id_debug=178
+ id_debug=158
 /
 &rubiks_params
  n_levels=4                         ! # of refinement levels in for the rubiks cube
@@ -53,17 +53,18 @@ gamma=1.4
  v_head_cgs=0.0                     ! headwind speed
  v_accrete_cgs=0.0                  ! accretion speed
  omega = 0.0,0.0,1.0
+ test=t
 /
 &patch_params
- n=3*32
+ n=3*33
  nt=5
- grace=0.0
+ grace=0.1
  courant=0.2
 !dt_fixed=0.001
 /
 &out_params
-end_time=5 out_time=1
-!end_time=150  out_time=10              ! 00-10
+end_time=5.5 out_time=1
+!end_time=200  out_time=10              ! 00-10
 !end_time=500  out_time=5 restart=7              ! 00-25
 !end_time=2500 out_time=50  restart=50  ! 26-65
 !end_time=5500 out_time=100 restart=65  ! 65-95

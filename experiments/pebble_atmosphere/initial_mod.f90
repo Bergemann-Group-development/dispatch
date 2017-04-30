@@ -28,6 +28,7 @@ MODULE initial_mod
   contains
     procedure init
   end type
+  logical, save:: test=.false.
   public planet_atmosphere
   type(lagrange_t):: interp
 CONTAINS
@@ -77,7 +78,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
-  integer :: ix, iy, iz, nr
+  integer :: ix, iy, iz, nr, l(3), u(3)
   real(8) :: x, y, z, rp, d, ds, d0, T0, p, ux, uy, uz, ds2(3)
   real(8) :: xs, ys, zs, xp, yp, zp
   type(index_t):: i
@@ -85,7 +86,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   logical, save:: first_time=.true.
   real, save:: omega(3)=0.0
   real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0
-  namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs
+  namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs, test
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('initial_t%planet_atmosphere', itimer=itimer)
@@ -108,16 +109,23 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   else
     ds2 = 0.0
   endif
+  if (test) then
+   l = m%li
+   u = m%ui
+  else
+   l = m%lb
+   u = m%ub
+  end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
-  do iz=m(3)%lb,m(3)%ub
+  do iz=l(3),u(3)
     z = m(3)%p + r3(iz)
     zp = z  - planet%position(3)
     zs = zp - ds2(3)
-    do iy=m(2)%lb,m(2)%ub
+    do iy=l(2),u(2)
       y = m(2)%p + r2(iy)
       yp = y  - planet%position(2)
       ys = yp - ds2(2)
-      do ix=m(1)%lb,m(1)%ub
+      do ix=l(1),u(1)
         x = m(1)%p + r1(ix)
         xp = x  - planet%position(1)
         xs = xp - ds2(1)
@@ -133,6 +141,13 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
         !-----------------------------------------------------------------------
+        ! Non-zero initial velocity components, to be used in tests only
+        !-----------------------------------------------------------------------
+        if (test) then
+          ux = -planet%v_accrete + planet%omega(3)*(yp-xs+zp)*0.01
+          uy = -(1.5+planet%trap)*planet%omega(3)*(xp-(ys+zp)*0.01) - planet%v_head
+          uz = planet%omega(3)*(zs+xp-yp)*0.01
+        !-----------------------------------------------------------------------
         ! A rotation profile, where the rotation center is at x=-1 AU, and
         ! the direction of rotation is +y, so the head wind is in the -y
         ! direction.  The slower rotation at larger radii means that Uy is
@@ -142,15 +157,11 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         ! the Hill sphere, so we will probably only be seeing effects of the
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
-        ux = -planet%v_accrete
-        uy = -(1.5+planet%trap)*planet%omega(3)*xp - planet%v_head
-        uz = 0.0
-        !-----------------------------------------------------------------------
-        ! Non-zero initial velocity components, to be used in tests only
-        !-----------------------------------------------------------------------
-        !ux = -planet%v_accrete + planet%omega(3)*(yp-xs)
-        !uy = -(1.5+planet%trap)*planet%omega(3)*(xp-ys) - planet%v_head
-        !uz = planet%omega(3)*zs*0.01
+        else
+          ux = -planet%v_accrete
+          uy = -(1.5+planet%trap)*planet%omega(3)*xp - planet%v_head
+          uz = 0.0
+        end if
         !-----------------------------------------------------------------------
         ! Momenta from (possibly) staggered densities
         !-----------------------------------------------------------------------
