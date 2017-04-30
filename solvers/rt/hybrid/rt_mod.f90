@@ -71,6 +71,7 @@ MODULE rt_mod
     procedure :: solve_feautrier
     procedure :: update => update_rt
     procedure :: update_q  
+    procedure :: output
   end type
   real, parameter:: pi4 = 16.*atan(1.)
   
@@ -1079,5 +1080,12 @@ SUBROUTINE boundary_conditions (self)
   !call trace%end
 END SUBROUTINE boundary_conditions
 
+!> =============================================================================
+!> Bypass output
+!> =============================================================================
+SUBROUTINE output (self)
+  class(rt_t):: self
+  !----------------------------------------------------------------------------
+END SUBROUTINE output
 
 END MODULE rt_mod

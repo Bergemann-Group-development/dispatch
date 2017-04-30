@@ -338,7 +338,7 @@ SUBROUTINE update (self)
     !-----------------------------------------------------------------------------
     ! To make sure the output has proper guard zone values, place the call here
     !-----------------------------------------------------------------------------
-    if (task%kind/='rt_patch') call task%output (self%name)
+    call task%output (self%name)
     !----------------------------------------------------------------------------
     ! Update the task, whatever that means
     !----------------------------------------------------------------------------
