@@ -53,7 +53,7 @@ gamma=1.4
  v_head_cgs=0.0                     ! headwind speed
  v_accrete_cgs=0.0                  ! accretion speed
  omega = 0.0,0.0,1.0
- test=t
+ !test=t
 /
 &patch_params
  n=3*33
@@ -63,9 +63,9 @@ gamma=1.4
 !dt_fixed=0.001
 /
 &out_params
-end_time=5.5 out_time=1
-!end_time=200  out_time=10              ! 00-10
-!end_time=500  out_time=5 restart=7              ! 00-25
+!end_time=5.5 out_time=1
+!end_time=201  out_time=10  restart=19  ! 00-20
+ end_time=1001 out_time=20  restart=20  ! 20-60
 !end_time=2500 out_time=50  restart=50  ! 26-65
 !end_time=5500 out_time=100 restart=65  ! 65-95
 !end_time=9000 out_time=100             ! 00-90
