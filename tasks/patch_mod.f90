@@ -75,8 +75,6 @@ MODULE patch_mod
     procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
     procedure:: point_distances         ! distances btw two points
-    procedure:: upload_range            ! returns the index ranges btw two points
-    procedure:: dnload_range            ! returns the index ranges btw two points
     procedure:: index                   ! compute the index for a single point
     procedure:: nearest                 ! the nearest index that maps to patch point
     procedure:: lowest                  ! the lowest index that maps to patch point
@@ -93,6 +91,7 @@ MODULE patch_mod
     generic, public :: fmaxval => fmaxval4, fmaxval8  ! interior max value
     procedure:: courant_condition
     procedure:: check_density
+    procedure:: check_nan
     procedure:: patch_to_header
     procedure:: header_to_patch
     procedure:: local_iit
@@ -104,6 +103,10 @@ MODULE patch_mod
     procedure:: log_interpolate
     procedure:: time_interval
     procedure:: distance => distance_curvilinear
+    procedure:: index_stagger
+    procedure:: interpolate
+    procedure:: index_space             ! full mapping to index space
+    procedure:: index_only
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -400,6 +403,7 @@ SUBROUTINE init (self)
     if (self%kind == 'zeus_mhd_patch' .and. &
         self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
   end do
+  self%mesh%id = self%id
   self%mesh%b = self%box
   self%mesh%llc_cart = self%llc_cart
   self%centre_nat = [self%mesh(1)%centre_nat,self%mesh(2)%centre_nat,self%mesh(3)%centre_nat]
@@ -516,16 +520,23 @@ END SUBROUTINE rotate
 !> This function gives the physical position of an index triple (patch point)
 !> in absolute Cartesian coords.
 !> =============================================================================
-FUNCTION myposition (self, ii) RESULT(out)
-  class(patch_t):: self
-  integer, intent(in):: ii(3)
-  real(8):: out(3), cellpos(3)
+FUNCTION myposition (self, ii, iv, pp) RESULT(out)
+  class(patch_t)      :: self
+  integer, intent(in) :: ii(3)
+  integer, optional   :: iv
+  real, optional      :: pp(3)
   !.............................................................................
-  !cellpos = (real(ii-self%li,kind=8) + merge(0.5,0.0,self%n>1)) * self%ds &
-  !        + self%llc_nat ! in patch coords.
-  !if (self%id == io%id_debug) &
-  !  print *,'A', real(cellpos/self%size), real(self%llc_nat)
-  cellpos = self%position + (real(ii)-self%offset)*self%ds
+  real(8)             :: out(3), cellpos(3), h(3)
+  !.............................................................................
+  if (present(pp)) then
+    cellpos = self%position + (real(ii)-self%offset + pp)*self%ds
+  else
+    cellpos = self%position + (real(ii)-self%offset)*self%ds
+  end if
+  if (present(iv)) then
+    h = self%index_stagger(iv)
+    cellpos = cellpos + h*self%mesh%d
+  end if
   if (self%id==io%id_debug .and. io%verbose>1) &
     print '(a,3i4,4(3x,3f10.2))', 'mypos:',ii,self%position,self%offset,self%ds,cellpos
   ! convert to Cartesian coords.
@@ -1088,7 +1099,7 @@ SUBROUTINE input_legacy (self, ok)
     return
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  read (io%data_unit,*) time
+      read (io%data_unit,*) time
   close (io%data_unit)
   self%time = time
   self%t(self%it) = time
@@ -1263,58 +1274,6 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
 END SUBROUTINE info
 
 !> =============================================================================
-!> Find the p1 target and p2 source index ranges that correspond to the overlap
-!> region, for upload from p2 to p1 (p1 has lower level than p2)
-!> =============================================================================
-SUBROUTINE upload_range (p1, p2, l1, u1, l2, u2)
-  class(patch_t):: p1
-  class(patch_t):: p2
-  integer, dimension(3):: l1, u1, l2, u2
-  real, dimension(3):: f, pos1, pos2
-  !-----------------------------------------------------------------------------
-  ! Lower index limits
-  !-----------------------------------------------------------------------------
-  !print*, p1%id, ' target position, size:', p1%position, p1%size
-  !print*, p2%id, ' source position, size:', p2%position, p2%size
-  l2 = max(p2%mesh%li, p2%lowest  (p1, p1%mesh%lb))
-  u2 = min(p2%mesh%ui, p2%highest (p1, p1%mesh%ub))
-  l1 = p1%nearest (p2, l2)
-  u1 = p1%nearest (p2, u2)
-  !print*,'l1,l2', l1, l2
-  !print*,'u1,u2', u1, u2
-END SUBROUTINE upload_range
-
-!> =============================================================================
-!> Find the p1 target index ranges that correspond to the overlap region, for
-!> download from p2 to p1 (p1 has higher or the same level as p2)
-!> =============================================================================
-SUBROUTINE dnload_range (target, source, l, u, o)
-  class(patch_t):: target
-  class(patch_t):: source
-  integer, dimension(3):: l, u, o
-  real, dimension(3):: f, pos1, pos2, dist
-  !-----------------------------------------------------------------------------
-  if (target%level == source%level) then
-    l = target%mesh%li
-    u = target%mesh%ui
-    o = 0
-    dist = source%distance(target)  ! positive if source to the right of target
-    where (dist > 0.0)
-      l = target%mesh%uo
-      u = target%mesh%ub
-      o = -target%mesh%n
-    else where (dist < 0)
-      l = target%mesh%lb
-      u = target%mesh%lo
-      o = target%mesh%n
-    end where
-  else
-    print*,'dnload_range: ERROR, not implemented yet'
-    stop
-  end if
-END SUBROUTINE dnload_range
-
-!> =============================================================================
 !> Signed distance between the centers of two tasks in the periodic box
 !> This version is adjusted to account for curvilinear coords. (the position of
 !> a curvilinear patch is set to the coordinate *origin) and requires components
@@ -1360,6 +1319,7 @@ FUNCTION index (self, other, oindex, f)
   index = f                                                     ! smaller integer
   f = f - index                                                 ! remainder
 END FUNCTION index
+
 !> =============================================================================
 !> The nearest index position in the self patch of the point in another patch.
 !> The cost of this operation is 4 plus and 2 multiply per direction = 18 flops
@@ -1375,6 +1335,7 @@ FUNCTION nearest (self, other, index) RESULT (out)
   f = self%offset + pos/self%ds                                 ! floating integer
   out = nint(f)                                                 ! nearest integer
 END FUNCTION nearest
+
 !> =============================================================================
 !> The lowest index position in the self patch of the point in another patch
 !> =============================================================================
@@ -1494,6 +1455,64 @@ FUNCTION fminval8 (self, f) RESULT(fminval)
 END FUNCTION fminval8
 
 !> =============================================================================
+!> Check for NaN
+!> =============================================================================
+SUBROUTINE check_nan (self, label)
+  class(patch_t):: self
+  character(len=*), optional:: label
+  integer:: ix, iy, iz, iv
+  logical:: nan
+  !-----------------------------------------------------------------------------
+  if (io%verbose<1) return
+  if (.not. associated(self%mem)) return
+  call trace%begin ('patch_mod::check_nan')
+  if (io%verbose>1) then
+    if (present(label)) then
+      print *, self%id, trim(label)//', min(d), max(d):', &
+        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%i_d,self%it,1))
+    else
+      print *, self%id, 'min(d), max(d):', &
+        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%i_d,self%it,1))
+    end if
+  end if
+  nan = .false.
+  do iv=1,self%nv
+  do iz=1,self%gn(3)
+  do iy=1,self%gn(2)
+  do ix=1,self%gn(1)
+    if (isnan(self%mem(ix,iy,iz,iv,self%it,1))) then
+      if (io%verbose>1) then
+        if (present(label)) then
+          print 1,trim(label)//' ERROR: NaN id,ix,iy,iz,iv:', self%id,ix,iy,iz,iv
+          1 format(a,i6,3i4,i5)
+        else
+          print 1,'ERROR: NaN ix,iy,iz,iv:', ix,iy,iz,iv
+        end if
+      end if
+      nan = .true.
+    end if
+  end do
+  end do
+  end do
+  end do
+  if (nan) then
+    if (present(label)) then
+      print *, self%id, trim(label)//' ERROR NaN, min(d), max(d):', &
+        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%i_d,self%it,1))
+    else
+      print *, self%id, ' ERROR NaN, min(d), max(d):', &
+        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%i_d,self%it,1))
+    end if
+    error stop 'NaN'
+  end if
+  call trace%end
+END SUBROUTINE check_nan
+
+!> =============================================================================
 !> Check if the density is negative somewhere, counting points in the interior
 !> and guard zones separately.  Attempt to patch the guard zones, if applicable.
 !> =============================================================================
@@ -1502,11 +1521,12 @@ SUBROUTINE check_density (self, label)
   character(len=*), optional:: label
   real(kind=KindScalarVar):: mind, posd
   real:: tiny = 1.0e-32
-  integer:: ix, iy, iz, ii(3), ntot, nins, l(3), u(3)
-  logical:: inside
+  integer:: ix, iy, iz, iv, ii(3), ntot, nins, l(3), u(3)
+  logical:: inside, nan
   !-----------------------------------------------------------------------------
   if (io%verbose < 1) return
   if (.not. associated(self%mem)) return
+  call trace%begin ('patch_mod::check_density')
   l = self%mesh%lb
   u = self%mesh%ub
   mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1))
@@ -1548,6 +1568,8 @@ SUBROUTINE check_density (self, label)
          'WARNING: density non-positive in',ntot,' points,',nins,' inside'
     end if
   end if
+  call self%check_nan (label)
+  call trace%end
 END SUBROUTINE check_density
 
 !> =============================================================================
@@ -1862,5 +1884,125 @@ SUBROUTINE time_interval (self, time, jt, pt)
   end if
   call trace%end
 END SUBROUTINE time_interval
+
+!> =============================================================================
+!> =============================================================================
+FUNCTION index_stagger (self, iv) RESULT (out)
+  class(patch_t) :: self
+  integer        :: iv
+  integer        :: i
+  real(8)        :: out(3)
+  !-----------------------------------------------------------------------------
+  do i=1,3
+    out(i) = self%mesh(i)%h(iv)
+  end do
+END FUNCTION index_stagger
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE index_space (self, pos, time, iv, ii, p, full_domain)
+  class(patch_t):: self
+  real(8)           :: pos(3), time
+  integer           :: iv
+  integer           :: ii(5)
+  real              :: p(5)
+  logical, optional :: full_domain
+  !.............................................................................
+  integer           :: i, jt(2)
+  real              :: pt(2)
+  logical           :: full
+  !-----------------------------------------------------------------------------
+  if (present(full_domain)) then
+    full = full_domain
+  else
+    full = .false.
+  end if
+  do i=1,3
+    p(i) = pos(i) - self%position(i)                            ! relative position
+    p(i) = modulo(p(i)+0.5_8*self%mesh(i)%b,self%mesh(i)%b) &   ! wrap
+         - 0.5_8*self%mesh(i)%b
+    p(i) = p(i)/self%mesh(i)%d+self%mesh(i)%o-self%mesh(i)%h(iv)! float index
+    ii(i) = p(i)                                                ! integer part
+    if (full) then
+      ii(i) = max(self%mesh(i)%lb, &
+              min(self%mesh(i)%ub-1,ii(i)))                     ! valid range
+    else
+      ii(i) = max(self%mesh(i)%li, &
+              min(self%mesh(i)%ui-1,ii(i)))                     ! valid range
+    end if
+    p(i) = p(i) - ii(i)                                         ! remaining fraction
+  end do
+  call self%time_interval (time, jt, pt)
+  ii(4:5) = jt
+  p(4:5) = pt
+END SUBROUTINE index_space
+
+!> =============================================================================
+!> Return only the index in self corresponding to a point in native space
+!> =============================================================================
+FUNCTION index_only (self, pos, iv, roundup) RESULT (ii)
+  class(patch_t)    :: self
+  real(8)           :: pos(3)
+  integer           :: iv
+  integer           :: ii(3)
+  logical, optional :: roundup
+  !.............................................................................
+  integer           :: i
+  real(8), parameter:: eps=0.001_8
+  real(8)           :: p(3)
+  !-----------------------------------------------------------------------------
+  do i=1,3
+    p(i) = pos(i) - self%position(i)                            ! relative position
+    p(i) = modulo(p(i)+0.5_8*self%mesh(i)%b,self%mesh(i)%b) &   ! wrap
+         - 0.5_8*self%mesh(i)%b
+    p(i) = p(i)/self%mesh(i)%d+self%offset(i)-self%mesh(i)%h(iv)! float index
+    if (present(roundup)) then
+      ii(i) = ceiling(p(i) - eps)                               ! round up
+    else
+      ii(i) = p(i) + eps                                        ! integer part
+    end if
+    ii(i) = max(self%mesh(i)%lb, &
+            min(self%mesh(i)%ub,ii(i)))                         ! valid range
+  end do
+END FUNCTION index_only
+
+!> =============================================================================
+!> Interpolate in space and time, for a case where it is safe = the source point
+!> is inside the valid domain (inside a distance of half a cell from the source
+!> patch boundary for non-staggered points)
+!> =============================================================================
+SUBROUTINE interpolate (self, target, ii, iv)
+  class(patch_t)           :: self
+  class(patch_t), pointer  :: target
+  integer                  :: ii(3), iv
+  !.............................................................................
+  real(8)                  :: pos(3)
+  integer                  :: j(5)
+  real                     :: p(5)
+  !-----------------------------------------------------------------------------
+  pos = target%myposition (ii, iv)
+  call self%index_space (pos, target%time, iv, j, p, full_domain=.true.)
+  target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
+    p(4)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(4),1)    + &
+                                (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(4),1))   + &
+                     (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(4),1)    + &
+                                (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(4),1)))  + &
+          (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(4),1)    + &
+                                (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(4),1))   + &
+                     (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(4),1)    + &
+                                (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(4),1)))) + &
+    p(5)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(5),1)    + &
+                                (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(5),1))   + &
+                     (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(5),1)    + &
+                                (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(5),1)))  + &
+          (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(5),1)    + &
+                                (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(5),1))   + &
+                     (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(5),1)    + &
+                                (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(5),1))))
+  if (target%id==io%id_debug) &
+    print 1, target%id, ii, iv, self%id, j, p, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
+    1 format(i6,3i3,i4,2x,"DBG patch_t%interpolate src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
+      "   out:",1p,e15.6)
+END SUBROUTINE interpolate
 
 END MODULE

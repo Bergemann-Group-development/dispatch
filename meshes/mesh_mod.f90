@@ -25,7 +25,7 @@ MODULE mesh_mod
   !                                    dvol3f, dar1c, dar1f, dar2c, dar2f,
   !                                    dar31c, dar31f, dar32c, dar32f
   !
-  ! Current requirements for curvilinear meshes: 
+  ! Current requirements for curvilinear meshes:
   ! - The scale factors are either a function of one variable or are separable
   !   (e.g., h3 = r sin \theta in spherical coords. but can be expressed as
   !   h31(i) = r(i) and h32(j) = sin theta(j)).
@@ -33,6 +33,7 @@ MODULE mesh_mod
   !-----------------------------------------------------------------------------
   !-----------------------------------------------------------------------------
   type, abstract, public :: mesh_t
+    integer :: id=0          ! copy of task id, for info
     integer :: n = 16        ! number of "active" zones
     integer :: ng = 2        ! number of ghost zones
     integer :: lb            ! lower boundary of mesh incl. ghost zones
@@ -107,7 +108,7 @@ MODULE mesh_mod
       integer, intent(in) :: idir
       real(8), intent(in) :: origin
     end subroutine
-    
+
     function func_interface(self, i) result(x)
       import mesh_t
       class(mesh_t) :: self
@@ -115,7 +116,7 @@ MODULE mesh_mod
       real(8) :: x
     end function
   end interface
-  
+
   !-----------------------------------------------------------------------------
   ! Utility list of coordinate systems available for meshes
   !-----------------------------------------------------------------------------
@@ -158,7 +159,7 @@ MODULE mesh_mod
   contains
     procedure :: init_geometry => init_spherical_geometry
   end type spherical_mesh
-  
+
   interface CylindricalToCartesian
     module procedure :: CylindricalToCartesian4, CylindricalToCartesian8
   end interface
@@ -311,7 +312,7 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   endif
 
   ! initialise mesh indices
-  self%lb = 1  
+  self%lb = 1
   self%li = self%lb + self%ng
   self%lo = self%li - 1
   self%ui = self%lo + self%n
@@ -426,7 +427,7 @@ SUBROUTINE init_Cartesian_geometry (self, idir, origin)
     self%dvol3c => func_dx
     self%dvol3f => func_dx
   end select
-  
+
 END SUBROUTINE init_Cartesian_geometry
 
 !> =============================================================================
@@ -558,14 +559,14 @@ FUNCTION func_position_f (self, i) RESULT(r)
   r = self%centre_nat + self%r(i) - 0.5 * self%d
 
 END FUNCTION func_position_f
-  
+
 FUNCTION func_radius_c (self, i) RESULT(r)
   class(mesh_t) :: self
   integer, intent(in) :: i
   real(8) :: r
   !.............................................................................
   r = abs(func_position_c(self, i))
-  
+
 END FUNCTION func_radius_c
 
 FUNCTION func_radius_f (self, i) RESULT(r)
@@ -574,7 +575,7 @@ FUNCTION func_radius_f (self, i) RESULT(r)
   real(8) :: r
   !.............................................................................
   r = abs(func_position_f(self, i))
-  
+
 END FUNCTION func_radius_f
 
 FUNCTION func_sintheta_c (self, j) RESULT(sintc)
@@ -723,7 +724,7 @@ FUNCTION func_dar32_c (self, j) RESULT(dar32c)
   real(8) :: dar32c
   !.............................................................................
   dar32c = self%d / self%dvol2c(j)
-  
+
 END FUNCTION func_dar32_c
 
 FUNCTION func_dar32_f (self, j) RESULT(dar32f)
@@ -732,7 +733,7 @@ FUNCTION func_dar32_f (self, j) RESULT(dar32f)
   real(8) :: dar32f
   !.............................................................................
   dar32f = self%d / self%dvol2f(j)
-  
+
 END FUNCTION func_dar32_f
 
 !> =============================================================================
