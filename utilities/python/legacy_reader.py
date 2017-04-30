@@ -35,7 +35,7 @@ def info (self):
     print "     ghost cells:", self.nghost
     print "            time:", self.time
     print "        position:", self.pos
-    print "         delta x:", self.dx
+    print "         delta s:", self.ds
     print "        velocity:", self.vel
     print "          origin:", self.origin
     print "          l.l.c.:", self.llc
@@ -58,7 +58,7 @@ def read_version0 (self, fp, line, verbose):
     self.level   = int  (line[19])
     self.quality = float(line[20])
     self.pos     = np.array(line[ 1: 4],dtype=np.float64)
-    self.dx      = np.array(line[ 4: 7],dtype=np.float64)
+    self.ds      = np.array(line[ 4: 7],dtype=np.float64)
     self.vel     = np.array(line[ 7:10],dtype=np.float64)
     self.origin  = np.array(line[10:13],dtype=np.float64)
     self.llc     = np.array(line[13:16],dtype=np.float64)
@@ -82,12 +82,6 @@ def read_version0 (self, fp, line, verbose):
     self.mesh_type = get_mesh_type(int(line[4]))
     if (verbose):
         info (self)
-    self.corners        = self._determine_corners()
-    self.active_corners = self._determine_corners(active_only=True)
-    a=np.array(self.active_corners)
-    self.extent=[[a[0,1],a[1,1],a[0,2],a[1,2]],\
-                    [a[0,0],a[1,0],a[0,2],a[1,2]],\
-                    [a[0,0],a[1,0],a[0,1],a[1,1]]]
   
 def read_version1 (self, fp, verbose):
     """
@@ -102,7 +96,7 @@ def read_version1 (self, fp, verbose):
     line = fp.readline().split()
     self.time,self.dt       = np.array(line[ 0: 2],dtype=np.float64)
     self.pos                = np.array(line[ 2: 5],dtype=np.float64)
-    self.dx                 = np.array(line[ 5: 8],dtype=np.float64)
+    self.ds                 = np.array(line[ 5: 8],dtype=np.float64)
     self.vel                = np.array(line[ 8:11],dtype=np.float64)
     self.origin             = np.array(line[11:14],dtype=np.float64)
     self.llc                = np.array(line[14:17],dtype=np.float64)
@@ -125,14 +119,6 @@ def read_version1 (self, fp, verbose):
     self.iout  = np.int(line[1])
     self.istep = np.int(line[2])
     self.mesh_type = get_mesh_type(int(line[3]))
-    self.corners        = self._determine_corners()
-    self.active_corners = self._determine_corners(active_only=True)
-    a=np.array(self.active_corners)
-    self.extent=np.array([[a[0,1],a[1,1],a[0,2],a[1,2]],\
-                          [a[0,0],a[1,0],a[0,2],a[1,2]],\
-                          [a[0,0],a[1,0],a[0,1],a[1,1]]])
-    if (verbose):
-        info (self)
 
 def single_patch (self, fp, verbose=False):
     line=fp.readline()
@@ -144,3 +130,16 @@ def single_patch (self, fp, verbose=False):
     else:
         self.ioformat=np.int(chars)
         read_version1 (self, fp, verbose)
+    self.dx   = self.ds
+    self.size = self.ds*self.n
+    self.corners        = self._determine_corners()
+    self.active_corners = self._determine_corners(active_only=True)
+    a=np.array(self.active_corners)
+    self.extent=np.array([[a[0,1],a[1,1],a[0,2],a[1,2]],\
+                          [a[0,0],a[1,0],a[0,2],a[1,2]],\
+                          [a[0,0],a[1,0],a[0,1],a[1,1]]])
+    self.x=self.corners[0][0]+(0.5+np.arange(self.gn[0]))*self.ds[0]
+    self.y=self.corners[0][1]+(0.5+np.arange(self.gn[1]))*self.ds[1]
+    self.z=self.corners[0][2]+(0.5+np.arange(self.gn[2]))*self.ds[2]
+    if (verbose):
+        info (self)

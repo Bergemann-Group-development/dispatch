@@ -39,9 +39,6 @@ class Patch(Task):
         for k in self.varidx.keys():
             v = self.varidx[k]
             self.varnames[v] = k
-        self.x=self.corners[0][0]+(0.4+np.arange(self.gn[0]))*self.dx[0]
-        self.y=self.corners[0][1]+(0.4+np.arange(self.gn[1]))*self.dx[1]
-        self.z=self.corners[0][2]+(0.4+np.arange(self.gn[2]))*self.dx[2]
 
     @property
     def data(self):
