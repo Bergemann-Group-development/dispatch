@@ -42,7 +42,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
-  call self%initial%init
+  call self%initial%init (self%kind)
   if (self%initial%mhd) then
     self%nv = 8
   else

@@ -63,7 +63,7 @@ SUBROUTINE init (self)
   self%mhd = .false.
   self%nv = 5
   call self%set (bits%static)
-  call self%initial%init
+  call self%initial%init (self%kind)
   ff => self%mem(:,:,:,:,1,1)
   call self%initial%condition (self%mesh, ff, self%level)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)

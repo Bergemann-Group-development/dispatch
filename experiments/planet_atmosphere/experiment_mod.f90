@@ -40,7 +40,7 @@ SUBROUTINE init (self)
   self%msplit = 3
   call self%mhd_t%init
   call self%set (bits%static)
-  call self%initial%init
+  call self%initial%init (self%kind)
   call self%initial%condition (self%mem, self%mesh)
   call force%init
   call trace_end

@@ -33,7 +33,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
-  call self%initial%init
+  call self%initial%init (self%kind)
   self%nv  = self%initial%nv
   self%mhd = self%initial%mhd
   call self%rmhd_t%init

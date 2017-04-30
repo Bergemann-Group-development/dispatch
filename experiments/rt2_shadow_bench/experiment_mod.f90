@@ -52,7 +52,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  call self%initial%init()
+  call self%initial%init  (self%kind)
   call self%initial%initial_conditions(self)
   call self%stats ('initial')
   call trace_end
