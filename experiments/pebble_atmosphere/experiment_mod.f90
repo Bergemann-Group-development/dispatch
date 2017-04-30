@@ -19,6 +19,7 @@ MODULE experiment_mod
   type, public, extends(pebble_patch_t):: experiment_t
   contains
     procedure :: init
+    procedure :: debug
     procedure :: update
     procedure :: output
     procedure :: boundary_conditions
@@ -76,6 +77,7 @@ SUBROUTINE init (self)
   call self%force%init (self%kind, type)
   self%nv = 5
   self%mhd = .false.
+  self%initial%id = self%id
   !----------------------------------------------------------------------------
   ! Through the hierarchy of class(task_t)%init calls, the call to %init below
   ! sets the IC values, either from reading in snapshot values, or by calling
@@ -95,10 +97,22 @@ SUBROUTINE init (self)
       call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
     end do
   end if
-  if (self%restart<0) &
-    call self%output
+  call self%debug ('end init')
   call trace_end
 END SUBROUTINE init
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE debug (self, label)
+  class(experiment_t):: self
+  character(len=*):: label
+  !.............................................................................
+  if (self%id==io%id_debug) &
+    print '(i6,2x,a,f12.6,1p,2(2x,3e14.6),2x,a)', &
+    self%id, 'XX time, mem:', self%time, &
+      self%mem(3  ,19,34:36,1,self%it,1), &
+      self%mem(2:4,19,34   ,1,self%it,1), trim(label)
+END SUBROUTINE debug
 
 !> =============================================================================
 !> Choice of update steps for this experiment
@@ -110,6 +124,7 @@ SUBROUTINE update (self)
   real(8), dimension(3):: h
   integer:: it, iv, nb,i
   !-----------------------------------------------------------------------------
+  call self%debug('start update')
   call trace_begin('experiment_t%update')
   call self%check_density ('before update')
   !-----------------------------------------------------------------------------
@@ -134,7 +149,9 @@ SUBROUTINE update (self)
     ! Update the MHD state
     !--------------------------------------------------------------------------
     call self%boundary_conditions (self%it)
+    call self%debug('after BCs')
     call self%mhd_t%update
+    call self%debug('after mhd_mod::update')
   end if
   !-----------------------------------------------------------------------------
   if (self%id==io%id_debug) then
@@ -154,6 +171,7 @@ SUBROUTINE update (self)
   end if
   call self%pebble_patch_t%update_pebbles
   call self%check_density ('after timestep')
+  call self%debug('end update')
   call trace_end
 END SUBROUTINE update
 
@@ -181,14 +199,19 @@ END SUBROUTINE
 !> Boundary conditions for this experiment
 !> =============================================================================
 SUBROUTINE boundary_conditions (self, it)
-  class(experiment_t):: self
-  integer:: it
+  class(experiment_t) :: self
+  integer             :: it
   !.............................................................................
-  real(8), dimension(3):: h
-  integer:: iv, nb,i
+  real(8)             :: h(3)
+  integer             :: iv, nb,i
+  integer, save       :: itimer=0
+  real, pointer       :: d(:,:,:), e(:,:,:)
+  real                :: s
   !-----------------------------------------------------------------------------
   if (self%boundaries%status /= 0) then
+    call trace%begin ('experiment_mod::boundary_conditions', itimer=itimer)
   !  print *, self%id, 'BOUNDARY CONDITION BITS:', self%boundaries%status
+    call self%check_density ('before boundary_conditions')
     !---------------------------------------------------------------------------
     ! If spherical inner BCs, save the incoming values
     !---------------------------------------------------------------------------
@@ -196,10 +219,14 @@ SUBROUTINE boundary_conditions (self, it)
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
       print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
       call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), self%mesh, self%i_d)
-      call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), self%mesh, self%i_e)
+      d => self%mem(:,:,:,self%i_d,it,1)
+      e => self%mem(:,:,:,self%i_e,it,1)
+      s = (log(atmosphere%surface%pressure) - &
+           log(atmosphere%surface%density)*self%gamma)/(self%gamma-1.0)
+      call self%boundaries%spherical_constant_entropy (d, e, self%mesh, s, self%gamma)
       if (self%nw>1) then
-        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,2), self%mesh, self%i_d)
-        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,2), self%mesh, self%i_e)
+        call self%boundaries%spherical (self%mem(:,:,:,self%i_d,it,2), 0.0, self%mesh, self%i_d)
+        call self%boundaries%spherical (self%mem(:,:,:,self%i_e,it,2), 0.0, self%mesh, self%i_e)
       end if
       do iv=self%i_px,self%i_pz
         call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
@@ -211,23 +238,15 @@ SUBROUTINE boundary_conditions (self, it)
     ! Edge boundary conditions
     !------------------------------------------------------------------------
     if (self%boundaries%status /= 0) then
-      nb = 0
-      if (self%boundaries%is_set (bits%xl+bits%xu)) then
-        nb = nb+1
-        call self%edge_boundary_conditions(it, 1)
+      if (io%verbose>2) then
+        print *, self%id, 'MK x-BC:', self%boundaries%is_set (bits%xl), self%boundaries%is_set (bits%xu)
+        print *, self%id, 'MK y-BC:', self%boundaries%is_set (bits%yl), self%boundaries%is_set (bits%yu)
+        print *, self%id, 'MK z-BC:', self%boundaries%is_set (bits%zl), self%boundaries%is_set (bits%zu)
       end if
-      if (self%boundaries%is_set (bits%yl+bits%yu)) then
-        nb = nb+1
-        call self%edge_boundary_conditions(it, 2)
-      end if
-      if (self%boundaries%is_set (bits%zl+bits%zu)) then
-        nb = nb+1
-        call self%edge_boundary_conditions(it, 3)
-      end if
-  !    if (nb == 1) print *, self%id, 'BOUNDARY CONDITION: face'
-  !    if (nb == 2) print *, self%id, 'BOUNDARY CONDITION: edge'
-  !    if (nb == 3) print *, self%id, 'BOUNDARY CONDITION: corner'
+      call self%edge_boundary_conditions(it)
     end if
+    call self%check_density ('after boundary_conditions')
+    call trace%end
   end if
 END SUBROUTINE boundary_conditions
 
@@ -238,10 +257,9 @@ END SUBROUTINE boundary_conditions
 !> directions depends on the self%boundary%status bits. Note that the same
 !> condition is applied in all directions that have boundary bits set!
 !> =============================================================================
-SUBROUTINE edge_boundary_conditions (self, it, ii)
+SUBROUTINE edge_boundary_conditions (self, it)
   class(experiment_t):: self
   integer:: it
-  integer, optional:: ii
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e_th, uu
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: u
   integer:: iv
@@ -254,18 +272,25 @@ SUBROUTINE edge_boundary_conditions (self, it, ii)
   d => self%mem(:,:,:,self%i_d,it,1)
   allocate (u   (size(d,1),size(d,2),size(d,3),3))
   allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
-  call self%density_boundary_condition (it,ii)                          ! vertical density BC
+                            call self%check_density ('before density_BC')
+  call self%density_boundary_condition (it)                             ! vertical density BC
+                            call self%check_density ('after density_BC')
   call self%p2U(u)                                                      ! velocities
+                            call self%check_density ('after p2U')
   call self%e2E_th(e_th)                                                ! thermal energy
+                            call self%check_density ('after e2E')
   do iv=1, 3
     uu => u(:,:,:,iv)
-    call self%boundaries%symmetric(uu, ii=ii)                           ! apply symmetric boundaries to velocities
+    call self%boundaries%symmetric (uu, self%i_px+iv-1)                 ! apply symmetric boundaries to velocities
   end do
+                            call self%check_density ('after u BC')
   call self%U2p(u)                                                      ! convert velocities to momentum
+                            call self%check_density ('after U2p')
   ee = atmosphere%external%temperature/(self%gamma-1.0)                 ! external disk e/d
-  call self%boundaries%constant(e_th, ee, ii=ii)                        ! apply constant boundaries to thermal energy
+  call self%boundaries%constant(e_th, self%i_e, value=ee)               ! apply constant boundaries to thermal energy
+                            call self%check_nan ('after energy_BC')
   call self%E_th2e(e_th)                                                ! convert thermal energy to internal/total energy or entropy
-    
+                            call self%check_nan ('after th2e')
   deallocate (u,e_th)
   call trace%end
 END SUBROUTINE edge_boundary_conditions
@@ -273,11 +298,11 @@ END SUBROUTINE edge_boundary_conditions
 !> =====================================================================
 !> Constrain the density to follow an achored Gaussian profile
 !> =====================================================================
-SUBROUTINE density_boundary_condition (self, it, ii)
+SUBROUTINE density_boundary_condition (self, it)
   class(experiment_t):: self
-  integer:: it, ii
+  integer:: it
   class(mesh_t), pointer, dimension(:) :: m
-  integer:: iv, iz, iy, ix, lz, uz, ly, uy, lx, ux, ix0, iz0
+  integer:: iv, iz, iy, ix, lz, uz, ly, uy, lx, ux, ix0, iy0, iz0
   real(8) :: x, x0, z, z0, r, d1, d0, tt, c2
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, dd
   !-----------------------------------------------------------------------------
@@ -287,36 +312,95 @@ SUBROUTINE density_boundary_condition (self, it, ii)
   m => self%mesh
   d => self%mem(:,:,:,1,it,1)
   if (self%nw>1) dd => self%mem(:,:,:,self%i_d,it,2)
-  associate (r1=>m(1)%r, r3=>m(3)%r, mem=>self%mem)
+  associate (r1=>m(1)%r, r3=>m(3)%r)
   if (self%id==io%id_debug) &
     print '(a,2i5,2l4,3(2x,2i3))', 'MK', self%id, it, &
       self%boundaries%is_set(bits%zl), &
       self%boundaries%is_set(bits%zu), lx,ux, ly,uy, lz,uz
   tt = atmosphere%external%temperature
-  c2 = 0.5*planet%omega(3)**2/tt
-  if (ii==1) then
-    if(self%boundaries%is_set(bits%xl)) then
-      lx = m(1)%lb; ux = m(1)%lo
-      ly = m(2)%lb; uy = m(2)%ub
-      lz = m(3)%lb; uz = m(3)%ub
-      ix0 = ux+1
-      x0 = m(1)%p + r1(ix0) - planet%position(1)
-    else if (self%boundaries%is_set(bits%xu)) then
-      lx = m(1)%uo; ux = m(1)%ub
-      ly = m(2)%lb; uy = m(2)%ub
-      lz = m(3)%lb; uz = m(3)%ub
-      ix0 = lx-1
-      x0 = m(1)%p + r1(ix0) - planet%position(1)
-    else
-      error stop "dbc"
-    end if
-    c2 = c2*2.0*planet%trap
+  if(self%boundaries%is_set(bits%xl)) then
+    lx = m(1)%lb; ux = m(1)%lo
+    ly = m(2)%lb; uy = m(2)%ub
+    lz = m(3)%lb; uz = m(3)%ub
+    ix0 = m(1)%li
+    x0 = m(1)%p + r1(ix0) - planet%position(1)
+    call apply_x
+  end if
+  if (self%boundaries%is_set(bits%xu)) then
+    lx = m(1)%uo; ux = m(1)%ub
+    ly = m(2)%lb; uy = m(2)%ub
+    lz = m(3)%lb; uz = m(3)%ub
+    ix0 = m(1)%ui
+    x0 = m(1)%p + r1(ix0) - planet%position(1)
+    call apply_x
+  end if
+  if(self%boundaries%is_set(bits%yl)) then
+    lx = m(1)%lb; ux = m(1)%ub
+    ly = m(2)%lb; uy = m(2)%lo
+    lz = m(3)%lb; uz = m(3)%ub
+    iy0 = m(2)%li
+    call apply_y
+  end if
+  if (self%boundaries%is_set(bits%yu)) then
+    lx = m(1)%lb; ux = m(1)%ub
+    ly = m(2)%uo; uy = m(2)%ub
+    lz = m(3)%lb; uz = m(3)%ub
+    iy0 = m(2)%ui
+    call apply_y
+  end if
+  if(self%boundaries%is_set(bits%zl)) then
+    lx = m(1)%lb; ux = m(1)%ub
+    ly = m(2)%lb; uy = m(2)%ub
+    lz = m(3)%lb; uz = m(3)%lo
+    iz0 = m(3)%li
+    z0 = m(3)%p + r3(iz0) - planet%position(3)
+    call apply_z
+  end if
+  if (self%boundaries%is_set(bits%zu)) then
+    lx = m(1)%lb; ux = m(1)%ub
+    ly = m(2)%lb; uy = m(2)%ub
+    lz = m(3)%uo; uz = m(3)%ub
+    iz0 = m(3)%ui
+    z0 = m(3)%p + r3(iz0) - planet%position(3)
+    call apply_z
+  end if
+  call self%check_density ('after density BC')
+  end associate
+  call trace%end
+  return
+contains
+  subroutine apply_x
+    if (io%verbose>2) &
+    print *, self%id, 'MK: x-density BC', lx, ux, ly, uy, lz, uz
+    c2 = planet%omega(3)**2*planet%trap/tt
+    associate (r1=>m(1)%r)
     do iz=lz,uz
       do iy=ly,uy
         do ix=lx,ux
           x = m(1)%p + r1(ix) - planet%position(1)
-          d0 = mem(ix0,iy,iz,self%i_d,it,1)
+          d0 = self%mem(ix0,iy,iz,self%i_d,it,1)
           self%mem(ix,iy,iz,self%i_d,it,1) = d0*exp(-c2*(x**2-x0**2))
+        end do
+      end do
+    end do
+    end associate
+    if (self%nw>1) then
+      do iz=lz,uz
+        do iy=ly,uy
+          do ix=lx,ux
+            self%mem(ix,iy,iz,self%i_d,it,2) = 0.0
+          end do
+        end do
+      end do
+    end if
+  end subroutine apply_x
+  subroutine apply_y
+    if (io%verbose>2) &
+      print *, self%id, 'MK: y-density BC', lx, ux, ly, uy, lz, uz
+    do iz=lz,uz
+      do iy=ly,uy
+        do ix=lx,ux
+          self%mem(ix,iy,iz,self%i_d,it,1) = self%mem(ix,iy0,iz,self%i_d,it,1)
         end do
       end do
     end do
@@ -329,30 +413,17 @@ SUBROUTINE density_boundary_condition (self, it, ii)
         end do
       end do
     end if
-  else if (ii==2) then
-    call self%boundaries%symmetric (d, ii)
-    if (self%nw>1) call self%boundaries%symmetric (dd, ii)
-  else if (ii==3) then
-    if(self%boundaries%is_set(bits%zl)) then
-      lx = m(1)%lb; ux = m(1)%ub
-      ly = m(2)%lb; uy = m(2)%ub
-      lz = m(3)%lb; uz = m(3)%lo
-      iz0 = uz+1
-      z0 = m(3)%p + r3(iz0) - planet%position(3)
-    else if (self%boundaries%is_set(bits%zu)) then
-      lx = m(1)%lb; ux = m(1)%ub
-      ly = m(2)%lb; uy = m(2)%ub
-      lz = m(3)%uo; uz = m(3)%ub
-      iz0 = lz-1
-      z0 = m(3)%p + r3(iz0) - planet%position(3)
-    else
-      error stop "dbc"
-    end if
+  end subroutine apply_y
+  subroutine apply_z
+    if (io%verbose>2) &
+    print *, self%id, 'MK: z-density BC', lx, ux, ly, uy, lz, uz
+    c2 = 0.5*planet%omega(3)**2/tt
+    associate (r3=>m(3)%r)
     do iz=lz,uz
       z = m(3)%p + r3(iz) - planet%position(3)
       do iy=ly,uy
         do ix=lx,ux
-          d0 = mem(ix,iy,iz0,self%i_d,it,1)
+          d0 = self%mem(ix,iy,iz0,self%i_d,it,1)
           d1 = d0*exp(-c2*(z**2-z0**2))
           if (self%id==io%id_debug.and.iy==uy/2.and.iz==uz) &
             print '(a,i4,1p,8e14.6)', &
@@ -363,9 +434,9 @@ SUBROUTINE density_boundary_condition (self, it, ii)
         end do
       end do
     end do
+    end associate
     if (self%nw>1) then
       do iz=lz,uz
-        z = m(3)%p + r3(iz) - planet%position(3)
         do iy=ly,uy
           do ix=lx,ux
             self%mem(ix,iy,iz,self%i_d,it,2) = 0.0
@@ -373,9 +444,7 @@ SUBROUTINE density_boundary_condition (self, it, ii)
         end do
      end do
     end if
-  end if
-  end associate
-  call trace%end
+  end subroutine apply_z
 END SUBROUTINE density_boundary_condition
 
 END MODULE
