@@ -668,7 +668,7 @@ END SUBROUTINE periodic_grid
 SUBROUTINE extrapolate_guards (self)
   class(patch_t):: self
   integer:: ix, iy, iz, i(3), it0, it1, it2, nt, iit(self%nt)
-  integer:: li(3), ui(3)
+  integer, dimension(3):: lb, lo, li, ub, uo, ui
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin ('patch_t%extrapolate_guards', 3, itimer=itimer)
@@ -677,8 +677,15 @@ SUBROUTINE extrapolate_guards (self)
   it0 = iit(nt)                                         ! current time slot
   it1 = iit(nt-1)                                       ! previous time slot
   it2 = iit(nt-2)                                       ! the one before that
+  !-----------------------------------------------------------------------------
+  ! Before someone asks: Associate on the non-changing 6 doesn't please gfort
+  !-----------------------------------------------------------------------------
+  lb = self%mesh%lb
   li = self%mesh%li
+  lo = self%mesh%lo
+  ub = self%mesh%ub
   ui = self%mesh%ui
+  uo = self%mesh%uo
   where (self%mesh%lower_boundary)
     li = self%mesh%lb
   end where
@@ -688,19 +695,33 @@ SUBROUTINE extrapolate_guards (self)
   if (io%id_debug>0.and.(self%id==io%id_debug.or.abs(self%id-io%id_debug)==27)) then
     print '(i5,2x,a,6i7)',self%id,'MK extrapolating guard zone values', it2, it1, it0, self%it, self%new
   end if
-  do iz=self%mesh(3)%lb,self%mesh(3)%ub                 ! loop over all cells
-  do iy=self%mesh(2)%lb,self%mesh(2)%ub
-  do ix=self%mesh(1)%lb,self%mesh(1)%ub
-    i = [ix,iy,iz]
-    if (all(i >= li .and. i <= ui)) cycle               ! skip interior
-    self%mem(ix,iy,iz,:,it0,1)     = &
-    self%mem(ix,iy,iz,:,it1,1)*2.0 - &
-    self%mem(ix,iy,iz,:,it2,1)
-  end do
-  end do
-  end do
-  if (io%verbose>2) print *, &
-    'extrapolate_guards: id, it =', self%id, it0, self%time
+  !-----------------------------------------------------------------------------
+  ! YZ-layers
+  !-----------------------------------------------------------------------------
+  self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),:,it0,1) =   &
+  self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),:,it1,1)*2 - &
+  self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),:,it2,1)
+  self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),:,it0,1) =   &
+  self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),:,it1,1)*2 - &
+  self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),:,it2,1)
+  !-----------------------------------------------------------------------------
+  ! ZX-layers
+  !-----------------------------------------------------------------------------
+  self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),:,it0,1) =   &
+  self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),:,it1,1)*2 - &
+  self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),:,it2,1)
+  self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),:,it0,1) =   &
+  self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),:,it1,1)*2 - &
+  self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),:,it2,1)
+  !-----------------------------------------------------------------------------
+  ! XY-layers
+  !-----------------------------------------------------------------------------
+  self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),:,it0,1) =   &
+  self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),:,it1,1)*2 - &
+  self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),:,it2,1)
+  self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),:,it0,1) =   &
+  self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),:,it1,1)*2 - &
+  self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),:,it2,1)
   call trace_end (itimer)
 END SUBROUTINE extrapolate_guards
 
