@@ -13,7 +13,7 @@ MODULE stagger_mod
   implicit none
   public
   integer, private:: verbose=0
-  logical, save:: hardwire=.true.
+  logical, save:: hardwire=.false.
   type, public:: stagger_t
     real:: ds(3)
   contains
