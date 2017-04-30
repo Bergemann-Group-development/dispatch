@@ -115,10 +115,7 @@ SUBROUTINE update (self)
   real, dimension(:,:,:), pointer:: d, e, Ux, Uy, Uz
   real, dimension(:,:,:), pointer:: tmp
   !----------------------------------------------------------------------------
-  ! Fill guard zones and checks whether to do output
-  !----------------------------------------------------------------------------
   call trace_begin ('mhd_t%update', itimer=itimer)
-  call self%output
   !-----------------------------------------------------------------------------
   ! Memory mapping and allocations
   !-----------------------------------------------------------------------------

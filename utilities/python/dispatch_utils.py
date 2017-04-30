@@ -68,7 +68,6 @@ def patches (run='', data='../data', iout=-1, verbose=0):
     list=[]
     for f in files:
         s=dd.Patch(f,verbose=verbose)
-        s.gamma=1.4
         list.append(s)
     return list
 
