@@ -1078,9 +1078,10 @@ SUBROUTINE input_legacy (self, ok)
   USE iso_fortran_env, only: real32
   class(patch_t):: self
   logical:: ok
-  character(len=64) filename
-  integer:: iv, l(3), u(3)
+  character(len=64) filename, line, fmt
+  integer:: iv, l(3), u(3), ioformat
   real(8):: time
+  logical, save:: do_print=.true.
   !-----------------------------------------------------------------------------
   ok = .false.
   if (self%id==io%id_debug) &
@@ -1098,8 +1099,30 @@ SUBROUTINE input_legacy (self, ok)
     call trace_end
     return
   end if
+  do_print = do_print .and. io%master
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
+  read (io%data_unit,'(a)') line
+  if (line(1:2)=='  ') then
+    read (line,*) time
+    ioformat = 0
+    if (do_print) print '(a,i12)', 'snapshot ioformat:', ioformat
+  else
+    read (line,*) ioformat
+    if (do_print) print '(a,i12)', 'snapshot ioformat:', ioformat
+    if (ioformat==1) then
+      fmt = '(a)'
+      read (io%data_unit,fmt) line
+      if (trim(line) /= trim(self%kind)) error stop 'wrong solver'
+      read (io%data_unit,fmt) line
+      if (do_print) print '(a,a12)','snapshot      EOS:', trim(line)
+      read (io%data_unit,fmt) line
+      if (do_print) print '(a,a12)','snapshot       RT:', trim(line)
       read (io%data_unit,*) time
+    else
+      error stop 'unsupported ioformat'
+    end if
+  end if
+  do_print = .false.
   close (io%data_unit)
   self%time = time
   self%t(self%it) = time
