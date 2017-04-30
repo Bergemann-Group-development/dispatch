@@ -39,6 +39,9 @@ class Patch(Task):
         for k in self.varidx.keys():
             v = self.varidx[k]
             self.varnames[v] = k
+        self.x=self.corners[0][0]+(0.4+np.arange(self.gn[0]))*self.dx[0]
+        self.y=self.corners[0][1]+(0.4+np.arange(self.gn[1]))*self.dx[1]
+        self.z=self.corners[0][2]+(0.4+np.arange(self.gn[2]))*self.dx[2]
 
     @property
     def data(self):
@@ -86,31 +89,42 @@ class Patch(Task):
         u=l+np.array(self.n)
         return v[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
 
-    def strip(self):
+    def stripit(self):
         '''Remove guard cells from cached arrays'''
+        if not 'd' in dir(self):
+            self.cache()
         self.d  = self.stripv (self.d)
         self.e  = self.stripv (self.e)
-        self.ux = self.stripv (self.ux)
-        self.uy = self.stripv (self.uy)
-        self.uz = self.stripv (self.uz)
+        self.s  = self.stripv (self.s)
+        self.u1 = self.stripv (self.u1)
+        self.u2 = self.stripv (self.u2)
+        self.u3 = self.stripv (self.u3)
+        self.p1 = self.stripv (self.p1)
+        self.p2 = self.stripv (self.p2)
+        self.p3 = self.stripv (self.p3)
+        l=self.nghost[0]; u=l+self.n[0]; self.x = self.x[l:u]
+        l=self.nghost[1]; u=l+self.n[1]; self.y = self.y[l:u]
+        l=self.nghost[2]; u=l+self.n[2]; self.z = self.z[l:u]
 
     def cache(self):
         if not 'd' in dir(self):
             self.d =self.data[:,:,:,self.varidx['d']]
+            self.p1=self.data[:,:,:,self.varidx['p1']]
+            self.p2=self.data[:,:,:,self.varidx['p2']]
+            self.p3=self.data[:,:,:,self.varidx['p3']]
+            self.e =self.data[:,:,:,self.varidx['e']]/self.d
             if self.kind[0:7]=='stagger':
-                self.e =self.data[:,:,:,self.varidx['e']]/self.d
                 logd=np.log(self.d)
-                self.ux=self.data[:,:,:,self.varidx['p1']]/np.exp(su.xdn(logd))
-                self.uy=self.data[:,:,:,self.varidx['p2']]/np.exp(su.ydn(logd))
-                self.uz=self.data[:,:,:,self.varidx['p3']]/np.exp(su.zdn(logd))
+                self.u1=su.xup(self.p1/np.exp(su.xdn(logd)))
+                self.u2=su.yup(self.p2/np.exp(su.ydn(logd)))
+                self.u3=su.zup(self.p3/np.exp(su.zdn(logd)))
             elif self.kind[0:6]=='ramses':
-                self.e =self.data[:,:,:,self.varidx['e']]/self.d
-                self.ux=self.data[:,:,:,self.varidx['p1']]/self.d
-                self.uy=self.data[:,:,:,self.varidx['p2']]/self.d
-                self.uz=self.data[:,:,:,self.varidx['p3']]/self.d
-                self.e=self.e-0.5*(self.ux**2+self.uy**2+self.uz**2)
+                self.u1=self.p1/self.d
+                self.u2=self.p2/self.d
+                self.u3=self.p3/self.d
+                self.e=self.e-0.5*(self.u1**2+self.u2**2+self.u3**2)
             p=self.d*self.e*(self.gamma-1.0)
-            p=np.max(p,1e-35)
+            #p=np.max(p,1e-35)
             self.s=np.log(p/self.d**self.gamma)/(self.gamma-1.0)
 
     def vars(self):
@@ -121,11 +135,19 @@ class Patch(Task):
             self.var={'d':self.d,\
                       'e':self.e,\
                       's':self.s,\
-                     'ux':self.ux,\
-                     'uy':self.uy,\
-                     'uz':self.uz,\
+                     'p1':self.p1,\
+                     'p2':self.p2,\
+                     'p3':self.p3,\
+                     'u1':self.u1,\
+                     'u2':self.u2,\
+                     'u3':self.u3,\
                    'logd':np.log10(self.d),\
                    'loge':np.log10(self.e)}
+
+class ImmersedBoundaryPatch(Patch):
+    """A concrete derived class for immersed boundary patches."""
+    def __init__ (self, filename, verbose=False):
+        super(Patch, self).__init__(filename, verbose)
 
 def variable_indices(solver_type, read_derivs=False):
     """
@@ -152,6 +174,12 @@ def variable_indices(solver_type, read_derivs=False):
                         'dp1': 10, 'dp2': 11, 'dp3': 12,
                         'db1': 13, 'db2': 14, 'db3': 15,}
             indices.update(indicesd)
+        if read_derivs:
+            indicesd = {'dd': 8,
+                        'ds': 9,
+                        'dp1': 10, 'dp2': 11, 'dp3': 12,
+                        'db1': 13, 'db2': 14, 'db3': 15,}
+            indices.update(indicesd)
     elif solver[0:6] == 'ramses':
         indices = {'d':  0,
                    'e':  4,
@@ -165,13 +193,11 @@ def variable_indices(solver_type, read_derivs=False):
                         'db1': 13, 'db2': 14, 'db3': 15,}
             indices.update(indicesd)
     elif solver[0:4] == 'zeus':
-        indices = {'d': 0,
+        indices = {'d ': 0,
                    'e1': 1, 'et': 2,
                    'gp': 3,
                    's1': 4, 's2': 5, 's3': 6,
                    'b1': 7, 'b2': 8, 'b3': 9}
-    elif solver_type.lower() == 'rt_solver':
-        indices = {'dedt':  0}
     else:
-        raise Exception("Unrecognised solver type! => "+solver_type.lower())
+        raise Exception("Unrecognised solver type!")
     return indices
