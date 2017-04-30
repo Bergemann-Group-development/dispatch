@@ -17,6 +17,7 @@ MODULE initial_mod
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
+    integer:: id
     character(len=20) :: initial_condition
     real:: b0(3)
     real:: gamma
@@ -77,7 +78,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, rp, d, d0, T0, p, ux, uy, uz, ds2(3)
+  real(8) :: x, y, z, rp, d, ds, d0, T0, p, ux, uy, uz, ds2(3)
   real(8) :: xs, ys, zs, xp, yp, zp
   type(index_t):: i
   !-----------------------------------------------------------------------------
@@ -102,16 +103,15 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   planet%v_accrete = v_accrete_cgs/scaling%u
   T0 = atmosphere%external%temperature
   nr = atmosphere%nr
-  select case(trim(self%solver))
-  case('ramses_hd_patch','ramses_mhd_patch')
-    ds2 = 0.0
-  case('stagger2e_hd_patch','stagger2e_mhd_patch')
+  if (self%solver(1:7)=='stagger') then
     ds2 = 0.5*m%d
-  end select
+  else
+    ds2 = 0.0
+  endif
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
-    do iz=m(3)%lb,m(3)%ub
+  do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz)
-    zp = z  - planet%position(3) 
+    zp = z  - planet%position(3)
     zs = zp - ds2(3)
     do iy=m(2)%lb,m(2)%ub
       y = m(2)%p + r2(iy)
@@ -129,7 +129,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         ! subtracting off the otherwise constant external density
         !-----------------------------------------------------------------------
         d0 = d
-        d = d*exp(-(planet%omega(3)**2*0.5*(z**2+2.*planet%trap*xp**2)/T0))
+        d = d*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
         p = p*(d/d0)
         mem(ix,iy,iz,i%d) = d
         !-----------------------------------------------------------------------
@@ -143,31 +143,50 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
         ux = -planet%v_accrete
-        uy = -(1.5+planet%trap)*planet%omega(3)*xs - planet%v_head
-        uz = 0.0    
-        select case (trim(self%solver))
-          case('ramses_hd_patch','ramses_mhd_patch')
-            mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
-          case('stagger2e_hd_patch','stagger2e_mhd_patch')
-            mem(ix,iy,iz,i%e) = p/(gamma-1.0)
-          case('stagger2_hd_patch','stagger2_mhd_patch')
-            mem(ix,iy,iz,i%s) = d*(log(p)-gamma*log(d))/(gamma-1.0)
-          case default
-            print *,trim(self%solver)
-            error stop "initial_mod (1): solver type not known"
-        end select
+        uy = -(1.5+planet%trap)*planet%omega(3)*xp - planet%v_head
+        uz = 0.0
+        !-----------------------------------------------------------------------
+        ! Non-zero initial velocity components, to be used in tests only
+        !-----------------------------------------------------------------------
+        !ux = -planet%v_accrete + planet%omega(3)*(yp-xs)
+        !uy = -(1.5+planet%trap)*planet%omega(3)*(xp-ys) - planet%v_head
+        !uz = planet%omega(3)*zs*0.01
+        !-----------------------------------------------------------------------
+        ! Momenta from (possibly) staggered densities
+        !-----------------------------------------------------------------------
+        rp = sqrt(xs**2+yp**2+zp**2)
+        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xs**2)/T0))
+        mem(ix,iy,iz,i%px) = ds*ux
+        rp = sqrt(xp**2+ys**2+zp**2)
+        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
+        mem(ix,iy,iz,i%py) = ds*uy
+        rp = sqrt(xp**2+yp**2+zs**2)
+        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = ds*exp(-(planet%omega(3)**2*0.5*(zs**2+2.*planet%trap*xp**2)/T0))
+        mem(ix,iy,iz,i%pz) = ds*uz
+        if (self%solver(1:7)=='ramses_') then
+          mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
+        else if (self%solver(1:9)=='stagger2e') then
+          mem(ix,iy,iz,i%e) = p/(gamma-1.0)
+        else if (self%solver(1:9)=='stagger2_') then
+          mem(ix,iy,iz,i%s) = d*(log(p)-gamma*log(d))/(gamma-1.0)
+        else
+          print *,trim(self%solver)
+          error stop "initial_mod (1): solver type not known"
+        end if
         if (self%mhd) then
           mem(ix,iy,iz,i%bx) = b0(1)
           mem(ix,iy,iz,i%by) = b0(2)
           mem(ix,iy,iz,i%bz) = b0(3)
         end if
-        mem(ix,iy,iz,i%px) = d*ux
-        mem(ix,iy,iz,i%py) = d*uy
-        mem(ix,iy,iz,i%pz) = d*uz
       end do
     end do
   end do
   end associate
+  if (self%id==io%id_debug) &
+    print *, self%id, 'XX time, mem:', 0d0, mem(3,19,36,1), 'in initial%condition'
   call trace%end (itimer)
 END SUBROUTINE planet_atmosphere
 
@@ -180,8 +199,8 @@ SUBROUTINE disk (self, m, mem)
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr
-  real(8) :: x, y, z, r, d, d0, T0, p, ux, uy, uz
-  real(8) :: xs, ys, zs, xp, yp, zp, ds2(3)
+  real(8) :: x, y, z, r, d, ds, d0, T0, p, ux, uy, uz, ds2(3)
+  real(8) :: xs, ys, zs, xp, yp, zp, rp
   type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
@@ -205,16 +224,15 @@ SUBROUTINE disk (self, m, mem)
   planet%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr
   T0 = atmosphere%external%temperature
-  select case(trim(self%solver))
-  case('ramses_hd_patch','ramses_mhd_patch')
-    ds2 = 0
-  case('stagger2e_hd_patch','stagger2e_mhd_patch')
+  if (self%solver(1:7)=='stagger') then
     ds2 = 0.5*m%d
-  end select
+  else
+    ds2 = 0.0
+  endif
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
     do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz)
-    zp = z  - planet%position(3) 
+    zp = z  - planet%position(3)
     zs = zp - ds2(3)
     do iy=m(2)%lb,m(2)%ub
       y = m(2)%p + r2(iy)
@@ -245,27 +263,44 @@ SUBROUTINE disk (self, m, mem)
         ! Coriolis force beyond the Hill radius.
         !-----------------------------------------------------------------------
         ux = -planet%v_accrete
-        uy = -(1.5+planet%trap)*planet%omega(3)*xs - planet%v_head
-        uz = 0.0    
-        select case (trim(self%solver))
-          case('ramses_hd_patch','ramses_mhd_patch')
-            mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
-          case('stagger2e_hd_patch','stagger2e_mhd_patch')
-            mem(ix,iy,iz,i%e) = p/(gamma-1.0)
-          case('stagger2_hd_patch','stagger2_mhd_patch')
-            mem(ix,iy,iz,i%s) = d*(log(p)-gamma*log(d))/(gamma-1.0)
-          case default
-            print *,trim(self%solver)
-            error stop "initial_mod (1): solver type not known"
-        end select
+        uy = -(1.5+planet%trap)*planet%omega(3)*xp - planet%v_head
+        uz = 0.0
+        !-----------------------------------------------------------------------
+        ! Non-zero initial velocity components, to be used in tests only
+        !-----------------------------------------------------------------------
+        !ux = -planet%v_accrete + planet%omega(3)*(yp-xs)
+        !uy = -(1.5+planet%trap)*planet%omega(3)*(xp-ys) - planet%v_head
+        !uz = planet%omega(3)*zs*0.01
+        !-----------------------------------------------------------------------
+        ! Momenta from (possibly) staggered densities
+        !-----------------------------------------------------------------------
+        rp = sqrt(xs**2+yp**2+zp**2)
+        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xs**2)/T0))
+        mem(ix,iy,iz,i%px) = ds*ux
+        rp = sqrt(xp**2+ys**2+zp**2)
+        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
+        mem(ix,iy,iz,i%py) = ds*uy
+        rp = sqrt(xp**2+yp**2+zs**2)
+        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = ds*exp(-(planet%omega(3)**2*0.5*(zs**2+2.*planet%trap*xp**2)/T0))
+        mem(ix,iy,iz,i%pz) = ds*uz
+        if (self%solver(1:7)=='ramses_') then
+          mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
+        else if (self%solver(1:9)=='stagger2e') then
+          mem(ix,iy,iz,i%e) = p/(gamma-1.0)
+        else if (self%solver(1:9)=='stagger2_') then
+          mem(ix,iy,iz,i%s) = d*(log(p)-gamma*log(d))/(gamma-1.0)
+        else
+          print *,trim(self%solver)
+          error stop "initial_mod (1): solver type not known"
+        end if
         if (self%mhd) then
           mem(ix,iy,iz,i%bx) = b0(1)
           mem(ix,iy,iz,i%by) = b0(2)
           mem(ix,iy,iz,i%bz) = b0(3)
         end if
-        mem(ix,iy,iz,i%px) = d*ux
-        mem(ix,iy,iz,i%py) = d*uy
-        mem(ix,iy,iz,i%pz) = d*uz
       end do
     end do
   end do
