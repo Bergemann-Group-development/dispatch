@@ -77,7 +77,6 @@ SUBROUTINE init (self)
   call self%force%init (self%kind, type)
   self%nv = 5
   self%mhd = .false.
-  self%initial%id = self%id
   !----------------------------------------------------------------------------
   ! Through the hierarchy of class(task_t)%init calls, the call to %init below
   ! sets the IC values, either from reading in snapshot values, or by calling
@@ -98,6 +97,11 @@ SUBROUTINE init (self)
     end do
   end if
   call self%debug ('end init')
+  !----------------------------------------------------------------------------
+  ! Export the patch ids for debugging purposes
+  !----------------------------------------------------------------------------
+  self%force%id = self%id
+  self%initial%id = self%id
   call trace_end
 END SUBROUTINE init
 

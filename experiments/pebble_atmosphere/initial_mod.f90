@@ -80,7 +80,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   !.............................................................................
   integer :: ix, iy, iz, nr, l(3), u(3)
   real(8) :: x, y, z, rp, d, ds, d0, T0, p, ux, uy, uz, ds2(3)
-  real(8) :: xs, ys, zs, xp, yp, zp
+  real(8) :: xs, ys, zs, xp, yp, zp, R_Hill, f_Hill
   type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
@@ -116,6 +116,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
    l = m%lb
    u = m%ub
   end if
+  R_Hill = cgs%au/scaling%l*(cgs%m_earth/(3.*cgs%m_sun))**(1./3.)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=l(3),u(3)
     z = m(3)%p + r3(iz)
@@ -145,7 +146,7 @@ SUBROUTINE planet_atmosphere (self, m, mem)
         !-----------------------------------------------------------------------
         if (test) then
           ux = -planet%v_accrete + planet%omega(3)*(yp-xs+zp)*0.01
-          uy = -(1.5+planet%trap)*planet%omega(3)*(xp-(ys+zp)*0.01) - planet%v_head
+          uy = -(1.5+planet%trap)*planet%omega(3)*(xp-(ys+zp))*0.01 - planet%v_head
           uz = planet%omega(3)*(zs+xp-yp)*0.01
         !-----------------------------------------------------------------------
         ! A rotation profile, where the rotation center is at x=-1 AU, and
@@ -162,6 +163,8 @@ SUBROUTINE planet_atmosphere (self, m, mem)
           uy = -(1.5+planet%trap)*planet%omega(3)*xp - planet%v_head
           uz = 0.0
         end if
+        f_Hill = (1.-exp(-rp**2/(2.*R_Hill**2)))
+        uy = uy*f_Hill
         !-----------------------------------------------------------------------
         ! Momenta from (possibly) staggered densities
         !-----------------------------------------------------------------------

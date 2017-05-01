@@ -13,6 +13,7 @@ MODULE force_mod
   private
   real(8), parameter:: pi2=8.0*atan(1.0)
   type, public:: force_t
+    integer:: id
     character(len=64):: solver
     procedure(star_and_planet), pointer:: selected=>null()
   contains
@@ -84,7 +85,7 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   ff = 0.0
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz)
-    zp = z  - planet%position(3) 
+    zp = z  - planet%position(3)
     zs = zp - ds2(3)
     do iy=m(2)%lb,m(2)%ub
       y = m(2)%p + r2(iy)
@@ -115,14 +116,14 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
         ! The net force in the radial direction increases with increasing x,
         ! giving that x now points in the radial direction.  It has two
         ! contributions:  The centripetal force \Omega^2 x, and the reduction
-        ! of the force of gravity from the central star, which contributs a
+        ! of the force of gravity from the central star, which contributes a
         ! factor of 2 more, for a total factor of 3.  Vertically, there
         ! is a net force that comes from the projection of the force of
         ! gravity onto the z-axis, and has the same scaling constant as the
         ! radial force, but the opposite sign.
         !---------------------------------------------------------------
         ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xs
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zs        
+        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zs
       end do
     end do
   end do
@@ -135,7 +136,7 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     case('ramses_hd_patch','ramses_mhd_patch')
       do iz=m(3)%lb,m(3)%ub
         z = m(3)%p + r3(iz)
-        zp = z  - planet%position(3) 
+        zp = z  - planet%position(3)
         do iy=m(2)%lb,m(2)%ub
           y = m(2)%p + r2(iy)
           yp = y  - planet%position(2)
@@ -153,7 +154,7 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     case('stagger2e_hd_patch','stagger2e_mhd_patch')
       do iz=m(3)%lb,m(3)%ub
         z = m(3)%p + r3(iz)
-        zp = z  - planet%position(3) 
+        zp = z  - planet%position(3)
         zs = zp - ds2(3)
         do iy=m(2)%lb,m(2)%ub
           y = m(2)%p + r2(iy)
@@ -175,7 +176,7 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
       print *, trim(self%solver)
       error stop "force_mod(1) :: unknown solver"
     end select
-  end if  
+  end if
   !---------------------------------------------------------------------
   ! Add the classical Coriolis force term: -2*(\Omega x U). A positive omega(3)
   ! corresponds to rotation in the y-direction, if x points radially outwards.
@@ -193,10 +194,36 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*st_dn(st_up(Uz,3),1) - planet%omega(3)*st_dn(st_up(Uy,2),1))
     ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*st_dn(st_up(Ux,1),2) - planet%omega(1)*st_dn(st_up(Uz,3),2))
     ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*st_dn(st_up(Uy,2),3) - planet%omega(2)*st_dn(st_up(Ux,1),3))
+!    ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*Uz - planet%omega(3)*Uy)
+!    ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*Ux - planet%omega(1)*Uz)
+!    ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*Uy - planet%omega(2)*Ux)
   case default
     print *, trim(self%solver)
     error stop "force_mod(2) :: unknown solver"
   end select
+  !---------------------------------------------------------------------
+  ! The force of gravity from the planet, -G m/r^2, balances the
+  ! tripled centripetal force 3\Omega*r at r**3 = (G m)/(3 \Omega^2)
+  ! and since \Omega^2 = G M/R^3, r = R (m/(3M))^(1/3)
+  !---------------------------------------------------------------------
+  if (self%id==io%id_debug) then
+    if (maxval(abs(m(2:3)%p)/m(2:3)%d) < 0.5) then
+      iz = (m(3)%li+m(3)%ui)/2
+      iy = (m(2)%li+m(2)%ui)/2
+      do ix=m(1)%li,m(1)%ui
+        xs = m(1)%p + r1(ix) - planet%position(1) - ds2(1)
+        if (self%solver(1:6)=='ramses') then
+          print '("FORCE:",i6,i4,f12.2,1p,4e14.3)', self%id, ix, m(1)%p + r1(ix), &
+            ff(ix,iy,iz,1), p(ix,iy,iz,2)/d(ix,iy,iz), &
+            2.*planet%omega(3)*p(ix,iy,iz,2)/d(ix,iy,iz), 3.*planet%omega(3)**2*xs
+        else
+          print '("FORCE:",i6,i4,f12.2,1p,4e14.3)', self%id, ix, m(1)%p + r1(ix), &
+            ff(ix,iy,iz,1), Uy(ix,iy,iz), &
+            2.*planet%omega(3)*Uy(ix,iy,iz), 3.*planet%omega(3)**2*xs
+        end if
+      end do
+    end if
+  end if
   end associate
   call trace_end
 END FUNCTION star_and_planet
@@ -224,7 +251,7 @@ FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   ff = 0.0
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz)
-    zp = z  - planet%position(3) 
+    zp = z  - planet%position(3)
     zs = zp - ds2(3)
     do iy=m(2)%lb,m(2)%ub
       y = m(2)%p + r2(iy)
@@ -233,7 +260,7 @@ FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
       do ix=m(1)%lb,m(1)%ub
         x = m(1)%p + r1(ix)
         xp = x  - planet%position(1)
-        xs = xp - ds2(1) 
+        xs = xp - ds2(1)
         !-----------------------------------------------------------------------
         ! Add the vertical and radial rotating coordinate frame accelerations.
         ! The force in the radial direction increases with increasing y,
@@ -254,7 +281,7 @@ FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     case('ramses_hd_patch','ramses_mhd_patch')
       do iz=m(3)%lb,m(3)%ub
         z = m(3)%p + r3(iz)
-        zp = z  - planet%position(3) 
+        zp = z  - planet%position(3)
         do iy=m(2)%lb,m(2)%ub
           y = m(2)%p + r2(iy)
           yp = y  - planet%position(2)
@@ -272,7 +299,7 @@ FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     case('stagger2e_hd_patch','stagger2e_mhd_patch')
       do iz=m(3)%lb,m(3)%ub
         z = m(3)%p + r3(iz)
-        zp = z  - planet%position(3) 
+        zp = z  - planet%position(3)
         zs = zp - ds2(3)
         do iy=m(2)%lb,m(2)%ub
           y = m(2)%p + r2(iy)
@@ -294,7 +321,7 @@ FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
       print *, trim(self%solver)
       error stop "force_mod(1) :: unknown solver"
     end select
-  end if  
+  end if
   !---------------------------------------------------------------------
   ! Add the classical Coriolis force term: -2*(\Omega x U). A positive omega(3)
   ! corresponds to rotation in the y-direction, if x points radially outwards.
@@ -317,7 +344,7 @@ FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     error stop "force_mod(2) :: unknown solver"
   end select
   end associate
-  
+
   call trace_end
 END FUNCTION disk
 
