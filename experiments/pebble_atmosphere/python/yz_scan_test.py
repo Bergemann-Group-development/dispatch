@@ -4,12 +4,20 @@ reload(du)
 import plot_utils as pu
 reload(pu)
 
-iout=3
+iout=13
 run='m3r27t05'
 data='d:\\pebble_atmosphere\\data'
 
-#fig=pl.figure(1,figsize=(12,3))
-fig=pl.figure(1,figsize=(5,5))
+w=1500; dx=50; ext=[-w,w,-w,w,-w,w]
 
-w=1500; ext=[800,1200,-w,w,-w,w]
-a=pu.yz_scan(fig,run,data,iout=iout,var='u3',dx=10,extent=ext)
+var='u3'  ; vlim=[-0.05,0.05]
+#var='logd'; vlim=[-13,-11]
+#var='s'   ; vlim=[28,31]
+#var='p1'  ; vlim=None
+
+if ext==None:
+    fig=pl.figure(1,figsize=(12,3)); extent=None
+else:
+    fig=pl.figure(1,figsize=(7,6))
+
+a=pu.yz_scan(fig,run,data,iout=iout,var=var,vlim=vlim,dx=dx,extent=ext)

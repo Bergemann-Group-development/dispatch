@@ -24,6 +24,7 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
     '''
     Display xy-image for given z  
     '''
+    pl.show()
     pp=du.patches(run,data,iout=iout)
     def inside(p, z):
         return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
@@ -64,6 +65,7 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
     '''
     Display yz-image for given x
     '''
+    pl.show()
     pp=du.patches(run,data,iout==iout)
     def inside(p,x):
         return x<=p.active_corners[1][0] and x>=p.active_corners[0][0]
@@ -105,6 +107,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
     '''
     Display yx-image in steps of dz in z 
     '''
+    pl.show()
     pp=du.patches(run,data,iout=iout)
     co=du.corners(pp)
     zmin=co[0,2]
@@ -115,7 +118,9 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
         if np.size(extent)==6:
             zmin=extent[4]
             zmax=extent[5]
-    pl.show()
+            zmin=np.int(zmin/dz+0.5)*dz
+            zmax=np.int(zmax/dz+0.5)*dz
+            print zmin,zmax
     def anim(z):
         def inside(p, z):
             ac=p.active_corners
@@ -127,7 +132,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
         select=[p for p in pp if inside(p,z)]
         #print np.size(select),'patches selected at z =',z
         p=select[0]
-        title='var='+var+'   t={:d}  z={:d}'.format(np.int(p.time),np.int(z))
+        title='var='+var+'   t={:d}  (:,:,{:d})'.format(np.int(p.time),np.int(z))
         vmin=1e9
         vmax=-vmin
         xlim=[vmin,vmax]
@@ -172,6 +177,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
             #im=image(p.f,extent=p.ext,cmap=cmap,**kwargs)    
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
+        pl.tight_layout()
         return im
     a=an.FuncAnimation(fig,anim,np.arange(zmin,zmax+dz,dz),repeat=repeat,interval=interval,**kwargs)
     return a
@@ -181,17 +187,19 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
     '''
     Display yz-image in steps of dx in x
     '''
+    pl.show()
     pp=du.patches(run=run,data=data,iout=iout)
     co=du.corners(pp)
     xmin=co[0,0]
     xmax=co[1,0]
-    xmin=np.int(xmin/dx+0.5)*dx
-    xmax=np.int(xmax/dx+0.5)*dx
-    pl.show()
+    xmin=(np.int(xmin/dx+0.5)+0.5)*dx
+    xmax=(np.int(xmax/dx+0.5)-0.5)*dx
     if extent<>None:
         if np.size(extent)==6:
             xmin=extent[0]
             xmax=extent[1]
+            xmin=np.int(xmin/dx+0.5)*dx
+            xmax=np.int(xmax/dx+0.5)*dx
     def anim(x):
         def inside(p, x):
             ac=p.active_corners
@@ -202,7 +210,7 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
             return ok
         select=[p for p in pp if inside(p,x)] # and p.level<8]
         p=select[0]
-        title='var='+var+'   t={:d}  x={:d}'.format(np.int(p.time),np.int(x))
+        title='var='+var+'   t={:d}  ({:d},:,:)'.format(np.int(p.time),np.int(x))
         vmin=1e9
         vmax=-vmin
         zlim=[vmin,vmax]
@@ -247,6 +255,7 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
             im=image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
+        pl.tight_layout()
         return im
     a=an.FuncAnimation(fig,anim,np.arange(xmin,xmax+dx,dx),repeat=repeat,**kwargs)
     return a
