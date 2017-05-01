@@ -322,8 +322,12 @@ LOGICAL FUNCTION has_finished (self)
   class (task_t):: self
   integer:: bit
   !.............................................................................
-  has_finished = (self%time + 1e-6*self%dtime > self%end_time) &
-    .or. self%is_set(bits%virtual)
+  if (do_output) then
+    has_finished = (self%out_next > self%end_time)
+  else
+    has_finished = (self%time + 1e-6*self%dtime > self%end_time) &
+      .or. self%is_set(bits%virtual)
+  end if
   if (has_finished) call self%set (bits%frozen)
 END FUNCTION
 

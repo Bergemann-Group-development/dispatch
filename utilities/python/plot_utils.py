@@ -173,7 +173,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
         return im
-    a=an.FuncAnimation(fig,anim,np.arange(zmin,zmax,dz),repeat=repeat,interval=interval,**kwargs)
+    a=an.FuncAnimation(fig,anim,np.arange(zmin,zmax+dz,dz),repeat=repeat,interval=interval,**kwargs)
     return a
 
 def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
@@ -248,5 +248,5 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
         return im
-    a=an.FuncAnimation(fig,anim,np.arange(xmin,xmax,dx),repeat=repeat,**kwargs)
+    a=an.FuncAnimation(fig,anim,np.arange(xmin,xmax+dx,dx),repeat=repeat,**kwargs)
     return a

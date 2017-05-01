@@ -742,10 +742,10 @@ SUBROUTINE output (self, experiment_name)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
-  !$omp critical (out_cr)
   call trace_begin('patch_mod::output', itimer=itimer)
   if (self%out_time==0.0) then
     call output1
+    self%out_next = self%time
   else
     do while (self%time >= self%out_next)
       call output1
@@ -753,9 +753,9 @@ SUBROUTINE output (self, experiment_name)
     end do
   end if
   call trace_end (itimer)
-  !$omp end critical (out_cr)
   contains
   subroutine output1
+    !$omp critical (out_cr)
     if (io%do_legacy) then
       if (io%verbose>1) print *, self%id, ' LEGACY OUTPUT'
       call self%output_legacy
@@ -763,6 +763,7 @@ SUBROUTINE output (self, experiment_name)
       call self%output_new
     end if
     self%iout = self%iout+1
+    !$omp end critical (out_cr)
   end subroutine output1
 END SUBROUTINE output
 
