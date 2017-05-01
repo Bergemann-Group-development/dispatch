@@ -84,12 +84,12 @@ SUBROUTINE initial_conditions (patch)
         f(i1,i2,i3,patch%i_by) = by0(1)
         f(i1,i2,i3,patch%i_bz) = bz0(1)
 
-        if (patch%kind == 'stagger_mhd_patch') then
+        if (trim(patch%kind) == 'stagger_mhd_patch') then
           f(i1,i2,i3,patch%i_s)  = (log(p0(1)) - log(d0(1)) * patch%gamma) &
                             * d0(1) / (patch%gamma - 1.0)
-        else if (patch%kind == 'ramses_mhd_patch') then
+        else if (trim(patch%kind) == 'ramses_mhd_patch') then
           f(i1,i2,i3,patch%i_e) = p0(1) + 0.5 * d0(1) * speedsq + 0.5 * bsq
-        else if (patch%kind == 'zeus_mhd_patch') then
+        else if (trim(patch%kind) == 'zeus_mhd_patch') then
           f(i1,i2,i3,patch%i_e) = p0(1)
 
           ! the ZEUS module stores the angular momentum rather than the linear momentum
@@ -119,12 +119,12 @@ SUBROUTINE initial_conditions (patch)
           f(i1,i2,i3,patch%i_by) = by0(2)
           f(i1,i2,i3,patch%i_bz) = bz0(2)
 
-          if (patch%kind == 'stagger_mhd_patch') then
+          if (trim(patch%kind) == 'stagger_mhd_patch') then
             f(i1,i2,i3,patch%i_s)  = (log(p0(2)) - log(d0(2)) * patch%gamma) &
                               * d0(2) / (patch%gamma - 1.0)
-          else if (patch%kind == 'ramses_mhd_patch') then
+          else if (trim(patch%kind) == 'ramses_mhd_patch') then
             f(i1,i2,i3,patch%i_e) = p0(2) + 0.5 * d0(2) * speedsq + 0.5 * bsq
-          else if (patch%kind == 'zeus_mhd_patch') then
+          else if (trim(patch%kind) == 'zeus_mhd_patch') then
             f(i1,i2,i3,patch%i_e) = p0(2)
 
             ! the ZEUS module stores the angular momentum rather than the linear momentum

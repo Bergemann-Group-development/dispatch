@@ -65,17 +65,8 @@ MODULE mhd_mod
   ! ---- ZEUS common blocks, variables, and namelist parameters ----
   ! TODO: Purge common blocks!
 
-  ! Logical variables for boundaries (internal and physical)
-  ! TODO: Are all these really necessary?
-  logical:: x1perdom, x2perdom, x3perdom
-
   ! Domain description variables
-  real(KindReal):: x1upper , x2upper , x3upper , x1lower , x2lower , x3lower
   character(len=3):: zcoordsys
-  
-  ! AMR zoning parameters.
-  integer::  nblx1   , nblx2   , nblx3
-  real(KindReal)::  ax1low  , ax2low  , ax3low  , adx1    , adx2    , adx3
   
   ! Input parameters
   integer:: iord    , iords   , istp    , iscydf  , iscyqq  , ix1x2x3 &
@@ -96,15 +87,6 @@ MODULE mhd_mod
   logical:: do_mhd
 
   ! Common blocks
-  common / nodali / &
-                    nblx1   , nblx2   , nblx3
-  common / nodall / &
-                    x1perdom, x2perdom, x3perdom
-  common / nodalr / &
-                    x1upper , x2upper , x3upper , x1lower , x2lower &
-                  , x3lower , ax1low  , ax2low  , ax3low  , adx1    &
-                  , adx2    , adx3
-!$omp threadprivate (/nodali/, /nodalr/, /nodall/)
   common / zcompubi / &
                     iscydf  , iscyqq  , isetemf , itote   , nghst &
                   , iord    , iords   , istp    , istpcd  , cadvs   &
@@ -339,9 +321,6 @@ SUBROUTINE init_zeus (self)
     if ( (trnvrsn .lt.-3) .or. (trnvrsn .gt. 3) .or. (trnvrsn .eq.-1) ) &
       trnvrsn = 1
 
-    ! Initialise boundary zone arrays.
-    call inibndys()
-
     ! Initialise DISPATCH time-stepping.
     call timestep%init
   endif
@@ -409,6 +388,7 @@ END SUBROUTINE update_zeus
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE CopyToZeus (self)
+  use amnodal
   class(mhd_t) :: self
   real(KindReal) :: x1low, x2low, x3low, dx1, dx2, dx3
   logical, save :: first_time=.true.
