@@ -110,19 +110,12 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
     l = target%index_only (source%myposition (source%mesh%li, iv), iv)
     u = target%index_only (source%myposition (source%mesh%ui, iv), iv)
   !-----------------------------------------------------------------------------
-  ! If the source is smaller, map the first possible source point to the next
+  ! If the source is different, map the first possible source point to the next
   ! available target point to the right (or coinciding)
   !-----------------------------------------------------------------------------
-!  else if (source%level > target%level) then
   else
     l = target%index_only (source%mesh%p+source%mesh%lf-eps, iv, roundup=.true.)
-    u = target%index_only (source%mesh%p+source%mesh%uf-eps , iv)
-  !-----------------------------------------------------------------------------
-  ! If the source is larger, use the entire range as a first guess
-  !-----------------------------------------------------------------------------
-!  else if (source%level < target%level) then
-!    l = target%index_only (source%mesh%p + source%mesh%lf + 0.5_8*target%ds + eps, iv)
-!    u = target%index_only (source%mesh%p + source%mesh%uf - 0.5_8*target%ds + eps, iv)
+    u = target%index_only (source%mesh%p+source%mesh%uf-eps, iv)
   end if
   !-----------------------------------------------------------------------------
   ! Make sure the range is legal, and includes all guard cell layers
@@ -199,126 +192,8 @@ SUBROUTINE same (target, source)
   call trace%end (itimer)
 END SUBROUTINE same
 
-SUBROUTINE edge_fill (target, ix, iy, iz, iv)
-  class(patch_t), pointer :: target
-  integer        :: ix, iy, iz, iv, xb, yb, zb, l(3), u(3)
-  logical        :: xedge, yedge, zedge, xlo, xhi, ylo, yhi, zlo, zhi
-  !-----------------------------------------------------------------------------
-  l = target%mesh%lb
-  u = target%mesh%ub
-  associate (mem => target%mem(:,:,:,iv,target%it,1))
-  if (ix==l(1)+1) then
-    xlo = .true.
-    xb = l(1)
-  end if
-  if (ix==u(1)-1) then
-    xhi = .true.
-    xb = u(1)
-  end if
-  if (iy==l(2)+1) then
-    ylo = .true.
-    yb = l(2)
-  end if
-  if (iy==u(2)-1) then
-    yhi = .true.
-    yb = u(2)
-  end if
-  if (iz==l(3)+1) then
-    zlo = .true.
-    zb = l(3)
-  end if
-  if (iz==u(3)-1) then
-    zhi = .true.
-    zb = u(3)
-  end if
-  xedge = xlo.or.xhi
-  yedge = ylo.or.yhi
-  zedge = zlo.or.zhi
-  if (xedge.and.yedge.and.zedge) then
-    mem(xb,iy,iz) = 0.5*(mem(xb,iy-1,iz)+mem(xb,iy+1,iz))
-    mem(ix,yb,iz) = 0.5*(mem(ix-1,yb,iz)+mem(ix+1,yb,iz))
-    mem(ix,iy,zb) = 0.5*(mem(ix-1,iy,zb)+mem(ix+1,iy,zb))
-  else if (xedge.and.yedge) then
-    mem(xb,iy,iz) = 0.5*(mem(xb,iy-1,iz)+mem(xb,iy+1,iz))
-    mem(ix,yb,iz) = 0.5*(mem(ix-1,yb,iz)+mem(ix+1,yb,iz))
-  else if (yedge.and.zedge) then
-    mem(ix,yb,iz) = 0.5*(mem(ix,yb,iz-1)+mem(ix,yb,iz+1))
-    mem(ix,iy,zb) = 0.5*(mem(ix,iy-1,zb)+mem(ix,iy+1,zb))
-  else if (zedge.and.xedge) then
-    mem(ix,iy,zb) = 0.5*(mem(ix-1,iy,zb)+mem(ix+1,iy,zb))
-    mem(xb,iy,iz) = 0.5*(mem(xb,iy,iz-1)+mem(xb,iy,iz+1))
-  end if
-  if (xedge) then
-    mem(ix,iy,iz) = 0.5*(mem(ix-1,iy,iz)+mem(ix+1,iy,iz))
-  end if
-  if (yedge) then
-    mem(ix,iy,iz) = 0.5*(mem(ix,iy-1,iz)+mem(ix,iy+1,iz))
-  end if
-  if (zedge) then
-    mem(ix,iy,iz) = 0.5*(mem(ix,iy,iz-1)+mem(ix,iy,iz+1))
-  end if
-  end associate
-END SUBROUTINE edge_fill
-
-!> =============================================================================
-!> Fix the problematic layer just inside the boundary of the ghost zones
-!> =============================================================================
-SUBROUTINE edge_fill2 (self)
-  class(patch_t):: self
-  integer:: ix, iy, iz, it0, it1, it2
-  integer, dimension(3):: lb, lo, li, ub, uo, ui
-  integer, save:: itimer=0
-  !.............................................................................
-  call trace_begin ('patch_t%edge_fill2', itimer=itimer)
-  lb = self%mesh%lb
-  li = self%mesh%li
-  lo = self%mesh%lo
-  ub = self%mesh%ub
-  ui = self%mesh%ui
-  uo = self%mesh%uo
-  !-----------------------------------------------------------------------------
-  ! XY-layers
-  !-----------------------------------------------------------------------------
-  self%mem(li(1):ui(1),li(2):ui(2),lb(3)+1,:,it0,1) = 0.5*( &
-  self%mem(li(1):ui(1),li(2):ui(2),lb(3)  ,:,it1,1) + &
-  self%mem(li(1):ui(1),li(2):ui(2),lb(3)+2,:,it2,1) )
-  self%mem(li(1):ui(1),li(2):ui(2),ub(3)-1,:,it0,1) = 0.5*( &
-  self%mem(li(1):ui(1),li(2):ui(2),ub(3)  ,:,it1,1) + &
-  self%mem(li(1):ui(1),li(2):ui(2),ub(3)-2,:,it2,1) )
-  !-----------------------------------------------------------------------------
-  ! YZ-layers
-  !-----------------------------------------------------------------------------
-  self%mem(lb(1)+1,li(2):ui(2),li(3):ui(3),:,it0,1) = 0.5*( &
-  self%mem(lb(1)  ,li(2):ui(2),li(3):ui(3),:,it1,1) + &
-  self%mem(lb(1)+2,li(2):ui(2),li(3):ui(3),:,it2,1) )
-  self%mem(ub(1)-1,li(2):ui(2),li(3):ui(3),:,it0,1) = 0.5*( &
-  self%mem(ub(1)  ,li(2):ui(2),li(3):ui(3),:,it1,1) + &
-  self%mem(ub(1)-2,li(2):ui(2),li(3):ui(3),:,it2,1) )
-  !-----------------------------------------------------------------------------
-  ! ZX-layers
-  !-----------------------------------------------------------------------------
-  self%mem(li(1):ui(1),lb(2)+1,li(3):ui(3),:,it0,1) = 0.5*( &
-  self%mem(li(1):ui(1),lb(2)  ,li(3):ui(3),:,it1,1) + &
-  self%mem(li(1):ui(1),lb(2)+2,li(3):ui(3),:,it2,1) )
-  self%mem(li(1):ui(1),ub(2)-1,li(3):ui(3),:,it0,1) = 0.5*( &
-  self%mem(li(1):ui(1),ub(2)  ,li(3):ui(3),:,it1,1) + &
-  self%mem(li(1):ui(1),ub(2)-2,li(3):ui(3),:,it2,1) )
-  call trace_end (itimer)
-END SUBROUTINE edge_fill2
-
 !> =============================================================================
 !> Interpolate guard zone info from source patch at a different level
-!>
-!> different
-!>   dnload_range
-!>   interpolate_different
-!>     myposition
-!>     is_valid_at
-!>       index_stagger
-!>     interpolate
-!>       index_space
-!>         time_interval
-!> =============================================================================
 SUBROUTINE different (target, source)
   class(patch_t), pointer :: target, source
   !.............................................................................
