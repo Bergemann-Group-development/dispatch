@@ -322,7 +322,7 @@ LOGICAL FUNCTION has_finished (self)
   class (task_t):: self
   integer:: bit
   !.............................................................................
-  if (do_output) then
+  if (io%do_output) then
     has_finished = (self%out_next > self%end_time)
   else
     has_finished = (self%time + 1e-6*self%dtime > self%end_time) &
