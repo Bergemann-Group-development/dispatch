@@ -27,14 +27,14 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     gamma = 5./3.
-    datadir = './data/input_s_1p/'
+    datadir = './data/input_s_9p/'
     prefix = ''
-    ptimes = [0.019]
+    ptimes = [0.005,0.01,0.019]
     #ptimes = 0.629*np.arange(0,2)
     t_eps = 1e-4
     pxsize = [-0.5,0.5]
     pysize = [-0.5,0.5]
-    pltvar = [ 'd']
+    pltvar = ['d']
     cmin   = [ 0.0]
     cmax   = [ 3.7]
     clog   = [   0]
@@ -165,16 +165,16 @@ if __name__ == "__main__":
 
             if pltvar[0] == 'v1':
                 var = p.data[iindex,jindex,kindex,p.varidx['s1']]
-                var = var / p.data[iindex,jindex,kindex,p.varidx['d ']]
+                var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
             elif pltvar[0] == 'v2':
                 var = p.data[iindex,jindex,kindex,p.varidx['s2']]
-                var = var / p.data[iindex,jindex,kindex,p.varidx['d ']]
+                var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
                 var = var / gf['h2c'][iindex,np.newaxis,np.newaxis]
                 if p.mesh_type == 'spherical':
                     var = var / x_i[0][iindex,np.newaxis,np.newaxis]
             elif pltvar[0] == 'v3':
                 var = p.data[iindex,jindex,kindex,p.varidx['s3']]
-                var = var / p.data[iindex,jindex,kindex,p.varidx['d ']]
+                var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
                 var = ( var / gf['h31c'][iindex,np.newaxis,np.newaxis] / gf['h32c'][np.newaxis,jindex,np.newaxis] )
             elif pltvar[0] == 'divb':
                 var, sumd, normmax = divergence(p, (p.varidx['b1'],p.varidx['b2'],p.varidx['b3']), gf)
