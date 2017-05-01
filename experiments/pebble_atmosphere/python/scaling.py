@@ -1,6 +1,7 @@
 class cgs:
     name='cgs'
     m_earth=5.972e27
+    m_sun=1.989e33
     r_earth=6.371e8
     grav=6.673e-8
     yr=3.156e+7
@@ -17,6 +18,7 @@ class cgs:
 class SI:
     name='SI'
     m_earth=5.972e24
+    m_sun=1.989e30
     r_earth=6.371e6
     grav=6.673e-11
     yr=3.156e+7

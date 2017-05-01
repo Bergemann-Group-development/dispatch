@@ -12,8 +12,8 @@ reload(pu)
 '''
 
 data='d:\\pebble_atmosphere\\data'
-run='m3r27t05st'
-iout=3
+run='m3r27t05st_test'
+iout=0
 sgn=1
 
 pp=du.patches(run,data,iout=iout)

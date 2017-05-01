@@ -103,7 +103,8 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
     pl.show()
     
 def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
-            fraction=0.1,extent=None,repeat=0,vlim=None,interval=200,**kwargs):
+            verbose=0,fraction=0.1,extent=None,repeat=0,vlim=None,interval=200,\
+            labels=None,**kwargs):
     '''
     Display yx-image in steps of dz in z 
     '''
@@ -174,7 +175,9 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
         for p in select:
             #print np.shape(p.f)
             im=image(p.f,extent=p.ext,vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
-            #im=image(p.f,extent=p.ext,cmap=cmap,**kwargs)    
+            #im=image(p.f,extent=p.ext,cmap=cmap,**kwargs)
+            if labels<>None:
+                pl.text(p.active_corners[0][1],p.active_corners[0][0],p.id)
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
         pl.tight_layout()
@@ -183,7 +186,8 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
     return a
 
 def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
-            verbose=0,fraction=0.1,extent=None,repeat=0,vlim=None,**kwargs):
+            verbose=0,fraction=0.1,extent=None,repeat=0,vlim=None,interval=200,\
+            labels=None,**kwargs):
     '''
     Display yz-image in steps of dx in x
     '''
@@ -253,6 +257,8 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
         for p in select:
             #print np.shape(p.f)
             im=image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
+            if labels<>None:
+                pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
         pl.tight_layout()
