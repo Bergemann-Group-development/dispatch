@@ -59,7 +59,6 @@ MODULE mhd_mod
   logical:: detailed_timer=.false.
   character(len=16):: eqn='mhd'
   logical, save:: debug=.false.
-  real, save:: friction=0.0
 CONTAINS
 
 !> =============================================================================
@@ -68,7 +67,7 @@ SUBROUTINE init (self)
   character(len=10):: riemann='hllc'
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    friction, smallc, do_isothermal, csound, detailed_timer, debug
+    smallc, do_isothermal, csound, detailed_timer, debug
   type(index_t):: idx
 !...............................................................................
   call trace_begin('mhd_mod::init')
@@ -157,18 +156,6 @@ SUBROUTINE update (self)
     self%ff = 0.0
   end if
   !-----------------------------------------------------------------------------
-  ! Optional friction subtracted from external force (per unit volume)
-  !-----------------------------------------------------------------------------
-  if (friction > 0.0) then
-    l = self%mesh%lb
-    u = self%mesh%ub
-    do i=1,3
-      self%ff(l(1):u(1),l(2):u(2),l(3):u(3),i) = &
-      self%ff(l(1):u(1),l(2):u(2),l(3):u(3),i) - friction*&
-            p(l(1):u(1),l(2):u(2),l(3):u(3),i)
-    end do
-  end if
-  !-----------------------------------------------------------------------------
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
@@ -189,14 +176,6 @@ SUBROUTINE update (self)
   ! Add external force as source term
   !-----------------------------------------------------------------------------
   p => self%mem(:,:,:,self%i_px:self%i_pz,self%new,1)
-  if (debug) then
-    if (self%id==229.or.self%id==231) then
-      print *,self%id, 'mk3:px', self%mem(19-2:19+2,19,19,self%i_px,self%new,1), self%i_px
-    end if
-    if (self%id==230) then
-      print *,self%id, 'mk3:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%new,1), self%i_px
-    end if
-  end if
   do i=1,3
     p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%ff(:,:,:,i)*d
   end do
