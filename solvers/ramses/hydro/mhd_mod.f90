@@ -112,7 +112,7 @@ SUBROUTINE update (self)
   integer:: n(3), m, i, l(3), u(3)
   integer, save:: itimer=0
   real, dimension(:,:,:,:), pointer:: p
-  real, dimension(:,:,:), pointer:: d, e, Ux, Uy, Uz
+  real, dimension(:,:,:), pointer:: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real, dimension(:,:,:), pointer:: tmp
   !----------------------------------------------------------------------------
   call trace_begin ('mhd_t%update', itimer=itimer)
@@ -147,7 +147,8 @@ SUBROUTINE update (self)
   e => self%mem(:,:,:,          self%i_e ,self%it,1)
   p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
   !-----------------------------------------------------------------------------
-  ! External force
+  ! External force; note that Ux, Uy, Uz are empty pointers here, so they
+  ! should not and cannot be used in the solver
   !-----------------------------------------------------------------------------
   allocate (self%ff(size(d,1),size(d,2),size(d,3),3))
   if (associated(self%force%selected)) then
@@ -188,7 +189,6 @@ SUBROUTINE update (self)
   ! Add external force as source term
   !-----------------------------------------------------------------------------
   p => self%mem(:,:,:,self%i_px:self%i_pz,self%new,1)
-  p = p + self%dtime*self%ff
   if (debug) then
     if (self%id==229.or.self%id==231) then
       print *,self%id, 'mk3:px', self%mem(19-2:19+2,19,19,self%i_px,self%new,1), self%i_px
@@ -197,6 +197,9 @@ SUBROUTINE update (self)
       print *,self%id, 'mk3:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%new,1), self%i_px
     end if
   end if
+  do i=1,3
+    p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%ff(:,:,:,i)*d
+  end do
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
@@ -671,9 +674,9 @@ subroutine trace3d(self)
         ! Source terms (including transverse derivatives)
         sr0 = -u*drx-v*dry-w*drz - (dux+dvy+dwz)*r
         sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p
-        su0 = -u*dux-v*duy-w*duz - (dpx - self%ff(i,j,k,1)*self%mesh(1)%d)/r
-        sv0 = -u*dvx-v*dvy-w*dvz - (dpy - self%ff(i,j,k,2)*self%mesh(2)%d)/r
-        sw0 = -u*dwx-v*dwy-w*dwz - (dpz - self%ff(i,j,k,3)*self%mesh(3)%d)/r
+        su0 = -u*dux-v*duy-w*duz - dpx/r - self%ff(i,j,k,1)*self%mesh(1)%d
+        sv0 = -u*dvx-v*dvy-w*dvz - dpy/r - self%ff(i,j,k,2)*self%mesh(2)%d
+        sw0 = -u*dwx-v*dwy-w*dwz - dpz/r - self%ff(i,j,k,3)*self%mesh(3)%d
 
         ! Right state at left interface
         qp(i,j,k,ir,1) = r - half*drx + sr0*dtdx*half
