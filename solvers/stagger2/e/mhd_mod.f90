@@ -307,6 +307,7 @@ SUBROUTINE pde (self)
     !fxy = fxy + 0.5*(xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
     !fyz = fyz + 0.5*(ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
     !fzx = fzx + 0.5*(zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
+    if (self%id==io%id_debug) print *, 'DPDTZ4', fzx(19:20,19,5)
   end if
   !-----------------------------------------------------------------------------
   ! Momentum equations
@@ -314,18 +315,30 @@ SUBROUTINE pde (self)
   dpdtx = - st%ddxdn1(fxx) - st%ddyup1(fxy) - st%ddzup1(fzx)
   dpdty = - st%ddxup1(fxy) - st%ddydn1(fyy) - st%ddzup1(fyz)
   dpdtz = - st%ddxup1(fzx) - st%ddyup1(fyz) - st%ddzdn1(fzz)
+  if (self%id==io%id_debug) then
+    print *, 'DPDTZ', st%m%d,    dpdtz(19,19,5), fzz(19,19,4:5)
+    dpdtz = - st%ddxup1(fzx)
+    print *, 'DPDTZ', st%m(1)%d, dpdtz(19,19,5), fzx(19:20,19,5)
+    dpdtz = - st%ddyup1(fyz)
+    print *, 'DPDTZ', st%m(2)%d, dpdtz(19,19,5), fyz(19,19:20,5)
+    dpdtz = - st%ddzdn1(fzz)
+    print *, 'DPDTZ', st%m(3)%d, dpdtz(19,19,5), fzz(19,19,4:5)
+    dpdtz = - st%ddxup1(fzx) - st%ddyup1(fyz) - st%ddzdn1(fzz)
+  end if
   !-----------------------------------------------------------------------------
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) &
-    dpdt = dpdt + dd*self%force%selected (self%time, pg, p, Ux, Uy, Uz, self%mesh)
+    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
   !-----------------------------------------------------------------------------
   ! Conservation of energy.  The formulation that works best so far is to make
   ! the diffusive energy flux directly proportional to the diffusive mass flux,
   ! plus a contribution proportional to the gradient of specific energy ee.
   !-----------------------------------------------------------------------------
-  if (self%gamma /= 1.0) then
+  if (self%gamma == 1.0) then
+    dedt = dddt*e/d
+  else
     ee = e/d
     fm = fm*down(ee) - (self%nu(5)*dd*down(du))*st%ddown(ee)
     dedt = dedt - st%div(fm) + Q
