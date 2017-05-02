@@ -283,15 +283,15 @@ SUBROUTINE update (self)
   ! Note that, because of the symmmetry, we define only three components
   !---------------------------------------------------------------------------
   fxy = ydn(Ux)*xdn(Uy)
-  fxz = zdn(Ux)*xdn(Uz)
   fyz = zdn(Uy)*ydn(Uz)
+  fzx = xdn(Uz)*zdn(Ux)
   if (self%id==io%id_debug) print *, 'DPDTZ1', fzx(19:20,19,5)
   !---------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !---------------------------------------------------------------------------
   fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
-  fxz = fxz - self%nu(3)*0.5*ydn1(zdn1(du))*(ddxdn(ds,Uz)+ddzdn(ds,Ux))
-  fyz = fyz - self%nu(3)*0.5*zdn1(xdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
+  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
+  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(ddzdn(ds,Ux)+ddxdn(ds,Uz))
    fzx = ddzdn(ds,Uy)
    if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5)
    fzx = self%nu(3)*0.5*ddzdn(ds,Uy)
@@ -305,16 +305,16 @@ SUBROUTINE update (self)
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
   fxy = exp(ydn(ldx))*fxy
-  fxz = exp(zdn(ldx))*fxz
   fyz = exp(zdn(ldy))*fyz
+  fzx = exp(xdn(ldz))*fzx
   if (self%id==io%id_debug) print *, 'DPDTZ3', fzx(19:20,19,5)
   !---------------------------------------------------------------------------
   ! Off-diagonal Maxwell stress
   !---------------------------------------------------------------------------
   if (self%mhd) then
     fxy = fxy - ydn(Bx)*xdn(By)
-    fxz = fxz - zdn(Bx)*xdn(Bz)
     fyz = fyz - zdn(By)*ydn(Bz)
+    fzx = fzx - xdn(Bz)*zdn(Bx)
   end if
   !-----------------------------------------------------------------------------
   ! Consistent addition of mass flux related momentum flux, symmetrized. The
@@ -327,15 +327,16 @@ SUBROUTINE update (self)
     fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)
     fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)
     fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
-    fxz = fxz + (xdn1(fdz)*zdn(Ux)+zdn1(fdx)*xdn(Uz))
-    fyz = fyz + (zdn1(fdy)*ydn(Uz)+ydn1(fdz)*zdn(Uy))
+    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
+    fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
+    if (self%id==io%id_debug) print *, 'DPDTZ4', fzx(19:20,19,5)
   end if
   !-----------------------------------------------------------------------------
   ! Momentum equations
   !-----------------------------------------------------------------------------
-  dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fxz)
+  dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)
   dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)
-  dpdtz = - ddxup1(ds,fxz) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
+  dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
   if (self%id==io%id_debug) then
     print *, 'DPDTZ', ds,    dpdtz(19,19,5), fzz(19,19,4:5)
     dpdtz = - ddxup1(ds,fzx)
