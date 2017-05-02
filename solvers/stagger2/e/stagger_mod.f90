@@ -164,7 +164,8 @@ FUNCTION ddxdn (self, a) RESULT (b)
   class(stagger_t):: self
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real    :: c, ds
+  real(8) :: c
+  real    :: ds
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
@@ -205,7 +206,8 @@ FUNCTION ddydn (self, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, ds
+  real(8) :: c
+  real    :: ds
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddydn', itimer=itimer)
@@ -244,7 +246,8 @@ FUNCTION ddzdn (self, a) RESULT (b)
   class(stagger_t):: self
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real    :: c, ds
+  real(8) :: c
+  real    :: ds
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
@@ -285,7 +288,8 @@ FUNCTION ddxup (self, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, ds
+  real(8) :: c
+  real    :: ds
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddxup', itimer=itimer)
@@ -326,7 +330,8 @@ FUNCTION ddyup (self, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, ds
+  real(8) :: c
+  real    :: ds
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddyup', itimer=itimer)
@@ -366,7 +371,8 @@ FUNCTION ddzup (self, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
-  real    :: c, ds
+  real(8) :: c
+  real    :: ds
   integer, save:: itimer=0
 !...............................................................................
 !  call trace%begin ('stagger_mod::ddzup', itimer=itimer)
