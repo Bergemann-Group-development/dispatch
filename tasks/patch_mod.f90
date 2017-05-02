@@ -1950,6 +1950,13 @@ FUNCTION index_stagger (self, iv) RESULT (out)
 END FUNCTION index_stagger
 
 !> =============================================================================
+!> Return indices and fractions for 3D interpolation.  Only called from
+!> patch_mod::interpolation, where a possible issue is to ensure the correct
+!> behavior when the source and target points are essentially the same, except
+!> for roundoff.  We then want to make sure that the index becomes the same,
+!> with fraction vanishing, so there is no possible issue with extrapolations.
+!> Hence we should add a small fraction before taking the floor value, and then
+!> subtract the same.
 !> =============================================================================
 SUBROUTINE index_space (self, pos, time, iv, ii, p, full_domain)
   class(patch_t):: self
@@ -1962,6 +1969,7 @@ SUBROUTINE index_space (self, pos, time, iv, ii, p, full_domain)
   integer           :: i, jt(2)
   real              :: pt(2)
   logical           :: full
+  real, parameter   :: eps=0.001
   !-----------------------------------------------------------------------------
   if (present(full_domain)) then
     full = full_domain
@@ -1973,6 +1981,7 @@ SUBROUTINE index_space (self, pos, time, iv, ii, p, full_domain)
     p(i) = modulo(p(i)+0.5_8*self%mesh(i)%b,self%mesh(i)%b) &   ! wrap
          - 0.5_8*self%mesh(i)%b
     p(i) = p(i)/self%mesh(i)%d+self%mesh(i)%o-self%mesh(i)%h(iv)! float index
+    p(i) = p(i) + eps                                           ! ensure same points ok
     ii(i) = p(i)                                                ! integer part
     if (full) then
       ii(i) = max(self%mesh(i)%lb, &
@@ -1981,7 +1990,7 @@ SUBROUTINE index_space (self, pos, time, iv, ii, p, full_domain)
       ii(i) = max(self%mesh(i)%li, &
               min(self%mesh(i)%ui-1,ii(i)))                     ! valid range
     end if
-    p(i) = p(i) - ii(i)                                         ! remaining fraction
+    p(i) = p(i) - eps - ii(i)                                   ! remaining fraction
   end do
   call self%time_interval (time, jt, pt)
   ii(4:5) = jt
@@ -2008,9 +2017,9 @@ FUNCTION index_only (self, pos, iv, roundup) RESULT (ii)
          - 0.5_8*self%mesh(i)%b
     p(i) = p(i)/self%mesh(i)%d+self%offset(i)-self%mesh(i)%h(iv)! float index
     if (present(roundup)) then
-      ii(i) = ceiling(p(i) - eps)                               ! round up
+      ii(i) = ceiling(p(i))                                     ! round up
     else
-      ii(i) = p(i) + eps                                        ! integer part
+      ii(i) = p(i)                                              ! integer part
     end if
     ii(i) = max(self%mesh(i)%lb, &
             min(self%mesh(i)%ub,ii(i)))                         ! valid range
@@ -2056,4 +2065,4 @@ SUBROUTINE interpolate (self, target, ii, iv)
       "   out:",1p,e15.6)
 END SUBROUTINE interpolate
 
-END MODULE
+END MODULE patch_mod
