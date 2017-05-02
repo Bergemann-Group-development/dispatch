@@ -180,6 +180,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
                 pl.text(p.active_corners[0][1],p.active_corners[0][0],p.id)
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
+        if p==select[0]:
         pl.tight_layout()
         return im
     a=an.FuncAnimation(fig,anim,np.arange(zmin,zmax+dz,dz),repeat=repeat,interval=interval,**kwargs)
@@ -261,6 +262,7 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
                 pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
+        if p==select[0]:
         pl.tight_layout()
         return im
     a=an.FuncAnimation(fig,anim,np.arange(xmin,xmax+dx,dx),repeat=repeat,**kwargs)
