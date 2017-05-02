@@ -7,6 +7,7 @@ MODULE potential_mod
   USE scaling_mod
   USE mesh_mod
   USE parameters_mod
+  USE kinds_mod
   implicit none
   private
 
@@ -42,7 +43,7 @@ FUNCTION star_and_planet (self, m, time, dt) RESULT (gp)
   class(mesh_t), dimension(:), pointer :: m
   class(mesh_t), pointer :: m1, m2, m3
   real(8), intent(in) :: time, dt
-  real(8), dimension(m(1)%gn,m(2)%gn,m(3)%gn):: gp
+  real(kind=KindScalarVar), dimension(m(1)%gn,m(2)%gn,m(3)%gn):: gp
   !.............................................................................
   integer:: i1, i2, i3
   real(8):: z, r, phi, z_s, r_s, gm_s, gm_p, rvec_s, rvec_p, soft, radius_p_i, r_dot_rp
@@ -62,6 +63,9 @@ FUNCTION star_and_planet (self, m, time, dt) RESULT (gp)
   gm_p = scaling%grav * planet%mass
   soft = experiment_params%gpp_soften * experiment_params%aspect_rat * experiment_params%aplanet
   radius_p_i = 1.0d0 / (planet%position(1)**2 + planet%position(2)**2)
+  ! for safety
+  gp = 0.0
+  !
   do i3=m3%lb,m3%ub
     phi = m3%centre_nat + m3%r(i3)
     do i2=m2%lb,m2%ub
