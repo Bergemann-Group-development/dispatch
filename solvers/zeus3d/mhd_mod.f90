@@ -38,6 +38,7 @@ MODULE mhd_mod
     type(zeus_boundaries_t):: btypes
     integer:: i_et=0
     type(force_t):: force
+    integer:: ix1x2x3
   contains
     procedure:: init => init_zeus
     procedure:: update => update_zeus
@@ -325,6 +326,7 @@ SUBROUTINE init_zeus (self)
     call timestep%init
   endif
 
+  self%ix1x2x3 = ix1x2x3
   self%nv = nvar_zeus
   self%gamma = gamma
   gamma_z = gamma
@@ -473,6 +475,7 @@ SUBROUTINE CopyToZeus (self)
   courno = self%courant
   dt = self%dt(self%it)
   prtime = self%time
+  ix1x2x3 = self%ix1x2x3
 
   nullify (qz)
   call trace_end (itimer)
@@ -498,6 +501,7 @@ SUBROUTINE CopyFromZeus (self)
   ! update time step.
   self%dt(self%new) = dt
   self%dtime = dtold
+  self%ix1x2x3 = ix1x2x3
 
   nullify (qz)
   call trace_end (itimer)
