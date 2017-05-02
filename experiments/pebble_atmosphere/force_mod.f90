@@ -185,22 +185,21 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   ! motion in the x-direction; a motion inwards (-x) leads to acceleration in
   ! the forward (+y) direction
   !---------------------------------------------------------------------
-  select case(trim(self%solver))
-  case('ramses_hd_patch','ramses_mhd_patch')
+  if (self%solver(1:6)=='ramses') then
     ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))/d
     ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))/d
     ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))/d
-  case('stagger2e_hd_patch','stagger2e_mhd_patch')
+  else if (self%solver(1:7)=='stagger') then
     ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*st_dn(st_up(Uz,3),1) - planet%omega(3)*st_dn(st_up(Uy,2),1))
     ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*st_dn(st_up(Ux,1),2) - planet%omega(1)*st_dn(st_up(Uz,3),2))
     ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*st_dn(st_up(Uy,2),3) - planet%omega(2)*st_dn(st_up(Ux,1),3))
 !    ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*Uz - planet%omega(3)*Uy)
 !    ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*Ux - planet%omega(1)*Uz)
 !    ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*Uy - planet%omega(2)*Ux)
-  case default
+  else
     print *, trim(self%solver)
     error stop "force_mod(2) :: unknown solver"
-  end select
+  end if
   !---------------------------------------------------------------------
   ! The force of gravity from the planet, -G m/r^2, balances the
   ! tripled centripetal force 3\Omega*r at r**3 = (G m)/(3 \Omega^2)
