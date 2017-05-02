@@ -113,14 +113,14 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
     co=du.corners(pp)
     zmin=co[0,2]
     zmax=co[1,2]
-    zmin=(np.int(zmin/dz+0.5)+0.5)*dz
-    zmax=(np.int(zmax/dz+0.5)-0.5)*dz
+    zmin=(np.floor(zmin/dz+0.5)+0.5)*dz
+    zmax=(np.floor(zmax/dz+0.5)-0.5)*dz
     if extent<>None:
         if np.size(extent)==6:
             zmin=extent[4]
             zmax=extent[5]
-            zmin=np.int(zmin/dz+0.5)*dz
-            zmax=np.int(zmax/dz+0.5)*dz
+            zmin=np.floor(zmin/dz+0.5)*dz
+            zmax=np.floor(zmax/dz+0.5)*dz
             print zmin,zmax
     def anim(z):
         def inside(p, z):
@@ -196,14 +196,14 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
     co=du.corners(pp)
     xmin=co[0,0]
     xmax=co[1,0]
-    xmin=(np.int(xmin/dx+0.5)+0.5)*dx
-    xmax=(np.int(xmax/dx+0.5)-0.5)*dx
+    xmin=(np.floor(xmin/dx+0.5)+0.5)*dx
+    xmax=(np.floor(xmax/dx+0.5)-0.5)*dx
     if extent<>None:
         if np.size(extent)==6:
             xmin=extent[0]
             xmax=extent[1]
-            xmin=np.int(xmin/dx+0.5)*dx
-            xmax=np.int(xmax/dx+0.5)*dx
+            xmin=np.floor(xmin/dx+0.5)*dx
+            xmax=np.floor(xmax/dx+0.5)*dx
     def anim(x):
         def inside(p, x):
             ac=p.active_corners
