@@ -44,6 +44,10 @@ MODULE mhd_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
     procedure:: apply_heating
+    procedure:: p2U
+    procedure:: U2p
+    procedure:: e2E_th
+    procedure:: E_th2e
   end type
 CONTAINS
 
@@ -62,17 +66,6 @@ SUBROUTINE init (self)
     rho_ions, hardwire
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
-  call self%gpatch_t%init
-  self%i_d  = idx%d
-  self%i_e  = idx%e
-  self%i_s  = idx%s
-  self%i_px = idx%px
-  self%i_py = idx%py
-  self%i_pz = idx%pz
-  self%i_bx = idx%bx
-  self%i_by = idx%by
-  self%i_bz = idx%bz
-  self%type = 'mhd_t'
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -101,6 +94,17 @@ SUBROUTINE init (self)
     self%rho_ions  = rho_ions
     self%kind = 'stagger2_mhd_AD_patch'
   endif
+  call self%gpatch_t%init
+  self%i_d  = idx%d
+  self%i_e  = idx%e
+  self%i_s  = idx%s
+  self%i_px = idx%px
+  self%i_py = idx%py
+  self%i_pz = idx%pz
+  self%i_bx = idx%bx
+  self%i_by = idx%by
+  self%i_bz = idx%bz
+  self%type = 'mhd_t'
   do i=1,3
     self%mesh(i)%h(2+i) = -0.5
     if (self%mhd) self%mesh(i)%h(5+i) = -0.5
@@ -483,6 +487,72 @@ SUBROUTINE output (self, experiment_name)
   end if
   !$omp end critical (output_cr)
 END SUBROUTINE output
+
+!> =====================================================================
+!> Get velocities from momentum
+!> =====================================================================
+SUBROUTINE p2U(self, U)
+  class(mhd_t) :: self
+  real, dimension(:,:,:,:), pointer:: U
+  !.....................................................................
+  real, dimension(:,:,:,:), pointer:: dd
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d,           self%it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  allocate(dd(size(d,1),size(d,2),size(d,3),3))
+  dd=exp(down(log(d)))
+  U = p/dd
+  deallocate(dd)
+  end associate
+END SUBROUTINE p2U
+
+!> =====================================================================
+!> Put velocities to momentum
+!> =====================================================================
+SUBROUTINE U2p(self, U)
+  class(mhd_t) :: self
+  real, dimension(:,:,:,:), pointer:: U
+  !.....................................................................
+  real, dimension(:,:,:,:), pointer:: dd
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  allocate(dd(size(d,1),size(d,2),size(d,3),3))
+  dd=exp(down(log(d)))
+  p = U*dd
+  deallocate(dd)
+  end associate
+END SUBROUTINE U2p
+
+!> =====================================================================
+!> Get thermal energy per unit mass from entropy
+!> =====================================================================
+SUBROUTINE e2E_th(self, E_th)
+  class(mhd_t) :: self
+  real, dimension(:,:,:), pointer:: E_th
+  real:: g1
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
+            s => self%mem(:,:,:,self%i_s,self%it,1))
+  g1 = self%gamma-1.0
+  E_th = d**g1*exp(s*g1/d)/g1
+  end associate
+END SUBROUTINE e2E_th
+
+!> =====================================================================
+!> Put thermal energy to total/specific energy
+!> =====================================================================
+SUBROUTINE E_th2e(self, E_th)
+  class(mhd_t) :: self
+  real, dimension(:,:,:), pointer:: E_th
+  real:: g1
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
+            s => self%mem(:,:,:,self%i_s,self%it,1))
+  g1 = self%gamma-1.0
+  s = d*log(E_th*g1/d**g1)/g1
+  end associate
+END SUBROUTINE E_th2e
 
 !> =============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)
