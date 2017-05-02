@@ -105,9 +105,9 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez, Jx, Jy, Jz
   real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
-  real, dimension(:,:,:),   pointer:: fxx, fxy, fxz
-  real, dimension(:,:,:),   pointer:: fyx, fyy, fyz
-  real, dimension(:,:,:),   pointer:: fzx, fzy, fzz
+  real, dimension(:,:,:),   pointer:: fxx, fxy
+  real, dimension(:,:,:),   pointer::      fyy, fyz
+  real, dimension(:,:,:),   pointer:: fzx,      fzz
   !.............................................................................
   real:: ds(3), dx
   integer, save:: itimer=0
@@ -146,9 +146,9 @@ SUBROUTINE pde (self)
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
   Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
   Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
-  fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2); fxz=>fx(:,:,:,3)
-  fyx=>fy(:,:,:,1); fyy=>fy(:,:,:,2); fyz=>fy(:,:,:,3)
-  fzx=>fz(:,:,:,1); fzy=>fz(:,:,:,2); fzz=>fz(:,:,:,3)
+  fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2)
+                    fyy=>fy(:,:,:,2); fyz=>fy(:,:,:,3)
+  fzx=>fz(:,:,:,1);                   fzz=>fz(:,:,:,3)
   fdx=>fd(:,:,:,1); fdy=>fd(:,:,:,2); fdz=>fd(:,:,:,3)
   ldx=>ld(:,:,:,1); ldy=>ld(:,:,:,2); ldz=>ld(:,:,:,3)
   ddx=>dd(:,:,:,1); ddy=>dd(:,:,:,2); ddz=>dd(:,:,:,3)
@@ -258,12 +258,22 @@ SUBROUTINE pde (self)
   fxy = ydn(Ux)*xdn(Uy)
   fyz = zdn(Uy)*ydn(Uz)
   fzx = xdn(Uz)*zdn(Ux)
+  if (self%id==io%id_debug) print *, 'DPDTZ1', fzx(19:20,19,5)
   !---------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !---------------------------------------------------------------------------
   fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(st%ddxdn(Uy)+st%ddydn(Ux))
   fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*(st%ddydn(Uz)+st%ddzdn(Uy))
   fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
+   fzx = st%ddzdn(Uy)
+   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5)
+   fzx = self%nu(3)*0.5*st%ddzdn(Uy)
+   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5)
+   fzx = self%nu(3)*0.5*ydn1(zdn1(du))*st%ddzdn(Uy)
+   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5)
+  fzx = xdn(Uz)*zdn(Ux)
+  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
+  if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5), Uy(19:20,19,4:5), Uz(19:20,18:19,5)
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
