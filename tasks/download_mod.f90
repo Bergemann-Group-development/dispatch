@@ -104,19 +104,10 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   eps = 0.001_8*target%ds
   h = source%index_stagger (iv)
   !-----------------------------------------------------------------------------
-  ! If the source and target have the same size, then map point to point
+  ! Map to the first and last point inside the source domain
   !-----------------------------------------------------------------------------
-  if (source%level == target%level) then
-    l = target%index_only (source%myposition (source%mesh%li, iv), iv)
-    u = target%index_only (source%myposition (source%mesh%ui, iv), iv)
-  !-----------------------------------------------------------------------------
-  ! If the source is different, map the first possible source point to the next
-  ! available target point to the right (or coinciding)
-  !-----------------------------------------------------------------------------
-  else
-    l = target%index_only (source%mesh%p+source%mesh%lf-eps, iv, roundup=.true.)
-    u = target%index_only (source%mesh%p+source%mesh%uf-eps, iv)
-  end if
+  l = target%index_only (source%mesh%p+source%mesh%lf-eps, iv, roundup=.true.)
+  u = target%index_only (source%mesh%p+source%mesh%uf-eps, iv)
   !-----------------------------------------------------------------------------
   ! Make sure the range is legal, and includes all guard cell layers
   !-----------------------------------------------------------------------------
