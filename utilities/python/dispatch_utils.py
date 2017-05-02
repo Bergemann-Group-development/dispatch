@@ -45,12 +45,12 @@ def patch_files(run='', data='../data', verbose=0, iout=-1):
     files=[rundir+f for f in files]
     return files
 
-def patch (id=2, iout=0, run='', data='../data', verbose=0):
+def patch (id=2, iout=0, run='', data='../data', verbose=0, **kwargs):
     '''
     Return patch structure for a single patch, identified by id and iout
     '''
     file=data+'/'+run+'/{:04d}_{:04d}'.format(id,iout)
-    s=dd.Patch(file,verbose=verbose)
+    s=dd.Patch(file,verbose=verbose,**kwargs)
     return s
 
 def patches (run='', data='../data', iout=-1, verbose=0):
