@@ -127,14 +127,14 @@ SUBROUTINE update (self)
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez, Jx, Jy, Jz
   real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
-  real, dimension(:,:,:),   pointer:: fxx, fxy, fxz
-  real, dimension(:,:,:),   pointer:: fyx, fyy, fyz
-  real, dimension(:,:,:),   pointer:: fzx, fzy, fzz
+  real, dimension(:,:,:),   pointer:: fxx, fxy
+  real, dimension(:,:,:),   pointer::      fyy, fyz
+  real, dimension(:,:,:),   pointer:: fzx,      fzz
   real, dimension(:,:,:),   pointer:: Ud_x, Ud_y, Ud_z, eta_non, eta_th, eta_Ohm, ambi, H_AD
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   logical, save:: first_time=.true., first_AD=.true.
   !.............................................................................
-  real:: ds(3), dx
+  real(8):: ds(3), dx
   integer, save:: itimer=0
   type(index_t):: i
   !-----------------------------------------------------------------------------
@@ -173,9 +173,9 @@ SUBROUTINE update (self)
   end if
   Ex=>E(:,:,:,1); Ey=>E(:,:,:,2); Ez=>E(:,:,:,3)
   Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
-  fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2); fxz=>fx(:,:,:,3)
-  fyx=>fy(:,:,:,1); fyy=>fy(:,:,:,2); fyz=>fy(:,:,:,3)
-  fzx=>fz(:,:,:,1); fzy=>fz(:,:,:,2); fzz=>fz(:,:,:,3)
+  fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2)
+                    fyy=>fy(:,:,:,2); fyz=>fy(:,:,:,3)
+  fzx=>fz(:,:,:,1);                   fzz=>fz(:,:,:,3)
   fdx=>fd(:,:,:,1); fdy=>fd(:,:,:,2); fdz=>fd(:,:,:,3)
   ldx=>ld(:,:,:,1); ldy=>ld(:,:,:,2); ldz=>ld(:,:,:,3)
   ddx=>dd(:,:,:,1); ddy=>dd(:,:,:,2); ddz=>dd(:,:,:,3)
@@ -194,7 +194,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure
   !-----------------------------------------------------------------------------
-  ds = self%mesh%d
+  ds = self%ds
   dx = minval(ds)                                       ! smallest {dx,dy,dz}
   du = -dx*div(ds,U)                                    ! convergence rate
   du = max(du,0.0)                                      ! positive part
@@ -285,18 +285,29 @@ SUBROUTINE update (self)
   fxy = ydn(Ux)*xdn(Uy)
   fxz = zdn(Ux)*xdn(Uz)
   fyz = zdn(Uy)*ydn(Uz)
+  if (self%id==io%id_debug) print *, 'DPDTZ1', fzx(19:20,19,5)
   !---------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !---------------------------------------------------------------------------
   fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
   fxz = fxz - self%nu(3)*0.5*ydn1(zdn1(du))*(ddxdn(ds,Uz)+ddzdn(ds,Ux))
   fyz = fyz - self%nu(3)*0.5*zdn1(xdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
+   fzx = ddzdn(ds,Uy)
+   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5)
+   fzx = self%nu(3)*0.5*ddzdn(ds,Uy)
+   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5)
+   fzx = self%nu(3)*0.5*ydn1(zdn1(du))*ddzdn(ds,Uy)
+   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5)
+  fzx = xdn(Uz)*zdn(Ux)
+  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(ddzdn(ds,Ux)+ddxdn(ds,Uz))
+  if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5), Uy(19:20,19,4:5), Uz(19:20,18:19,5)
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
   fxy = exp(ydn(ldx))*fxy
   fxz = exp(zdn(ldx))*fxz
   fyz = exp(zdn(ldy))*fyz
+  if (self%id==io%id_debug) print *, 'DPDTZ3', fzx(19:20,19,5)
   !---------------------------------------------------------------------------
   ! Off-diagonal Maxwell stress
   !---------------------------------------------------------------------------
@@ -325,6 +336,16 @@ SUBROUTINE update (self)
   dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fxz)
   dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)
   dpdtz = - ddxup1(ds,fxz) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
+  if (self%id==io%id_debug) then
+    print *, 'DPDTZ', ds,    dpdtz(19,19,5), fzz(19,19,4:5)
+    dpdtz = - ddxup1(ds,fzx)
+    print *, 'DPDTZ', ds(1), dpdtz(19,19,5), fzx(19:20,19,5)
+    dpdtz = - ddyup1(ds,fyz)
+    print *, 'DPDTZ', ds(2), dpdtz(19,19,5), fyz(19,19:20,5)
+    dpdtz = - ddzdn1(ds,fzz)
+    print *, 'DPDTZ', ds(2), dpdtz(19,19,5), fzz(19,19,4:5)
+    dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
+  end if
   !-----------------------------------------------------------------------------
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
@@ -489,7 +510,7 @@ SUBROUTINE output (self, experiment_name)
 END SUBROUTINE output
 
 !> =====================================================================
-!> Get velocities from momentum
+!> Get velocities from momenta
 !> =====================================================================
 SUBROUTINE p2U(self, U)
   class(mhd_t) :: self
@@ -500,14 +521,14 @@ SUBROUTINE p2U(self, U)
   associate(d => self%mem(:,:,:,self%i_d,           self%it,1), &
             p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
-  dd=exp(down(log(d)))
-  U = p/dd
+  dd=down(log(d))
+  U = p/exp(dd)
   deallocate(dd)
   end associate
 END SUBROUTINE p2U
 
 !> =====================================================================
-!> Put velocities to momentum
+!> Put velocities to momenta
 !> =====================================================================
 SUBROUTINE U2p(self, U)
   class(mhd_t) :: self
@@ -518,8 +539,8 @@ SUBROUTINE U2p(self, U)
   associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
             p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
-  dd=exp(down(log(d)))
-  p = U*dd
+  dd=down(log(d))
+  p = U*exp(dd)
   deallocate(dd)
   end associate
 END SUBROUTINE U2p
@@ -540,7 +561,7 @@ SUBROUTINE e2E_th(self, E_th)
 END SUBROUTINE e2E_th
 
 !> =====================================================================
-!> Put thermal energy to total/specific energy
+!> Put thermal energy to entropy per unit volume
 !> =====================================================================
 SUBROUTINE E_th2e(self, E_th)
   class(mhd_t) :: self
