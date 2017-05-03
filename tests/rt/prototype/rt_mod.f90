@@ -60,7 +60,7 @@ MODULE rt_mod
     procedure :: optical_depth_centered
     procedure :: optical_depth_staggered
     procedure :: density_weight_factor
-    procedure :: interpolate
+    procedure :: interpolate_rt
     procedure :: boundary_conditions
   end type
   real, parameter:: pi4 = 16.*atan(1.)
@@ -374,15 +374,16 @@ SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
   end do
   deallocate(dt)
 END SUBROUTINE optical_depth_staggered
+
 !> =====================================================================
 !> Compute the optical depth along rays
 !> =====================================================================
-SUBROUTINE interpolate (self, time)
+SUBROUTINE interpolate_rt (self, time)
   class (rt_t) :: self
   real(8):: time
   !.....................................................................
   !---------------------------------------------------------------------
-END SUBROUTINE interpolate
+END SUBROUTINE interpolate_rt
 
 !> =============================================================================
 !> Apply boundary conditions

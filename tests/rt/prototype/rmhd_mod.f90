@@ -71,7 +71,7 @@ SUBROUTINE update (self)
   !---------------------------------------------------------------------
   call trace%begin ('rmhd_t%update', itimer=itimer)
   call self%mhd_t%pde                                                   ! get df/dt from MHD
-  call self%rt%interpolate (self%time)                                  ! interpolate in time and space
+  call self%rt%interpolate_rt (self%time)                               ! interpolate in time and space
   self%dedt = self%dedt + self%rt%dedt                                  ! add the RT contribution to de/dt
   call trace%end (itimer)
 END SUBROUTINE update

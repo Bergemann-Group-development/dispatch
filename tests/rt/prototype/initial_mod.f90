@@ -30,11 +30,12 @@ CONTAINS
 !> Setup an initial state -- from reading a STAGGER code snapshot, a test case,
 !> or (FIXME) by reading a snapshot from a production run
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, kind)
   class(initial_t):: self
+  character(len=*):: kind
+  !.............................................................................
   integer:: iostat
   logical, save:: first_time=.true.
-  !.............................................................................
   character(len=20), save:: type='stagger'
   logical, save:: mhd=.true.
   namelist /initial_params/ type, mhd

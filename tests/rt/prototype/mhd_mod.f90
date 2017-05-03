@@ -80,7 +80,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h(2+i) = -0.5
     if (self%nv > 5) self%mesh(i)%h(5+i) = -0.5
   end do
-  call self%force%init
+  call self%force%init (self%kind)
   call trace%end
 END SUBROUTINE init
 
@@ -300,7 +300,7 @@ SUBROUTINE pde (self)
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) &
-    dpdt = dpdt + dd*self%force%selected (self%time, Ux, Uy, Uz, self%mesh)
+    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
   !-----------------------------------------------------------------------------
   ! Conservation of energy.  The formulation that works best so far is to make
   ! the diffusive energy flux directly proportional to the diffusive mass flux,
