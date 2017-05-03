@@ -69,19 +69,61 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   real, dimension(:,:,:), pointer:: Ux, Uy, Uz, d
   real, dimension(:,:,:,:), pointer:: p
   !.............................................................................
+  ff = disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet=.true.)
+END FUNCTION star_and_planet
+
+!> =============================================================================
+!> Force of gravity from a star and a planet.  To interprete the local forces,
+!> we choose a position such that the star is in the positive y-direction, and
+!> hence a positive Omega_z corresponds to positive rotation speed in the x-
+!> direction
+!> =============================================================================
+FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
+  class(force_t):: self
+  real(8):: time
+  class(mesh_t), pointer, dimension(:):: m
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
+  real, dimension(:,:,:), pointer:: Ux, Uy, Uz, d
+  real, dimension(:,:,:,:), pointer:: p
+  !.............................................................................
+  ff = disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m)
+END FUNCTION disk
+
+!> =============================================================================
+!> Force of gravity from a star and a planet.  To interprete the local forces,
+!> we choose a position such that the star is in the positive y-direction, and
+!> hence a positive Omega_z corresponds to positive rotation speed in the x-
+!> direction
+!> =============================================================================
+FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet) RESULT (ff)
+  class(force_t):: self
+  real(8):: time
+  class(mesh_t), pointer, dimension(:):: m
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
+  real, dimension(:,:,:), pointer:: Ux, Uy, Uz, d
+  real, dimension(:,:,:,:), pointer:: p
+  logical, optional:: with_planet
+  !.............................................................................
   integer:: ix, iy, iz, iv
   real(8):: rp, newton
   real(8):: x, y, z, xs, ys, zs, xp, yp, zp, ds2(3), uxx, uyy
   !-----------------------------------------------------------------------------
   call trace_begin('force_t:star_and_planet')
-  select case(trim(self%solver))
-  case('ramses_hd_patch','ramses_mhd_patch')
+  if (self%solver(1:7)=='ramses_') then
     ds2 = 0.
-  case('stagger2e_hd_patch','stagger2e_mhd_patch')
+  else if (self%solver(1:7)=='stagger') then
     ds2 = 0.5*m%d
-  end select
+  else if (self%solver(1:6)=='zeus3d') then
+    ds2 = 0.5*m%d
+  else
+    error stop 'force'
+  end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
-  newton = planet%mass*scaling%grav
+  if (present(with_planet)) then
+    newton = planet%mass*scaling%grav
+  else
+    newton = 0.0
+  end if
   ff = 0.0
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + r3(iz)
@@ -132,8 +174,7 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   ! average shear.
   !---------------------------------------------------------------------
   if (planet%friction > 0.0) then
-    select case(trim(self%solver))
-    case('ramses_hd_patch','ramses_mhd_patch')
+    if (self%solver(1:6)=='ramses') then
       do iz=m(3)%lb,m(3)%ub
         z = m(3)%p + r3(iz)
         zp = z  - planet%position(3)
@@ -151,7 +192,7 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
           end do
         end do
       end do
-    case('stagger2e_hd_patch','stagger2e_mhd_patch')
+    else if (self%solver(1:6)=='stagge'.or.self%solver(1:6)=='zeus3d') then
       do iz=m(3)%lb,m(3)%ub
         z = m(3)%p + r3(iz)
         zp = z  - planet%position(3)
@@ -172,10 +213,10 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
           end do
         end do
       end do
-    case default
+    else
       print *, trim(self%solver)
       error stop "force_mod(1) :: unknown solver"
-    end select
+    end if
   end if
   !---------------------------------------------------------------------
   ! Add the classical Coriolis force term: -2*(\Omega x U). A positive omega(3)
@@ -189,7 +230,7 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))/d
     ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))/d
     ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))/d
-  else if (self%solver(1:7)=='stagger') then
+  else if (self%solver(1:6)=='stagge'.or.self%solver(1:6)=='zeus3d') then
     ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*st_dn(st_up(Uz,3),1) - planet%omega(3)*st_dn(st_up(Uy,2),1))
     ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*st_dn(st_up(Ux,1),2) - planet%omega(1)*st_dn(st_up(Uz,3),2))
     ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*st_dn(st_up(Uy,2),3) - planet%omega(2)*st_dn(st_up(Ux,1),3))
@@ -211,141 +252,21 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
       iy = (m(2)%li+m(2)%ui)/2
       do ix=m(1)%li,m(1)%ui
         xs = m(1)%p + r1(ix) - planet%position(1) - ds2(1)
-        if (self%solver(1:6)=='ramses') then
-          print '("FORCE:",i6,i4,f12.2,1p,4e14.3)', self%id, ix, m(1)%p + r1(ix), &
-            ff(ix,iy,iz,1), p(ix,iy,iz,2)/d(ix,iy,iz), &
-            2.*planet%omega(3)*p(ix,iy,iz,2)/d(ix,iy,iz), 3.*planet%omega(3)**2*xs
-        else
+        if (self%solver(1:6)=='stagge'.or.self%solver(1:6)=='zeus3d') then
           print '("FORCE:",i6,i4,f12.2,1p,4e14.3)', self%id, ix, m(1)%p + r1(ix), &
             ff(ix,iy,iz,1), Uy(ix,iy,iz), &
             2.*planet%omega(3)*Uy(ix,iy,iz), 3.*planet%omega(3)**2*xs
+        else
+          print '("FORCE:",i6,i4,f12.2,1p,4e14.3)', self%id, ix, m(1)%p + r1(ix), &
+            ff(ix,iy,iz,1), p(ix,iy,iz,2)/d(ix,iy,iz), &
+            2.*planet%omega(3)*p(ix,iy,iz,2)/d(ix,iy,iz), 3.*planet%omega(3)**2*xs
         end if
       end do
     end if
   end if
   end associate
   call trace_end
-END FUNCTION star_and_planet
-
-!> =============================================================================
-FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
-  class(force_t):: self
-  real(8):: time
-  class(mesh_t), pointer, dimension(:):: m
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
-  real, dimension(:,:,:), pointer:: Ux, Uy, Uz, d
-  real, dimension(:,:,:,:), pointer:: p
-  !.............................................................................
-  integer:: ix, iy, iz, iv
-  real(8):: x, y, z, xs, ys, zs, xp, yp, zp, ds2(3), uxx, uyy
-  !-----------------------------------------------------------------------------
-  call trace_begin('force_t:disk')
-  select case(trim(self%solver))
-  case('ramses_hd_patch','ramses_mhd_patch')
-    ds2 = 0.
-  case('stagger2e_hd_patch','stagger2e_mhd_patch')
-    ds2 = 0.5*m%d
-  end select
-  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
-  ff = 0.0
-  do iz=m(3)%lb,m(3)%ub
-    z = m(3)%p + r3(iz)
-    zp = z  - planet%position(3)
-    zs = zp - ds2(3)
-    do iy=m(2)%lb,m(2)%ub
-      y = m(2)%p + r2(iy)
-      yp = y  - planet%position(2)
-      ys = yp - ds2(2)
-      do ix=m(1)%lb,m(1)%ub
-        x = m(1)%p + r1(ix)
-        xp = x  - planet%position(1)
-        xs = xp - ds2(1)
-        !-----------------------------------------------------------------------
-        ! Add the vertical and radial rotating coordinate frame accelerations.
-        ! The force in the radial direction increases with increasing y,
-        ! giving an equilbrium velocity in the x-direction that is positive
-        ! (faster rotation) for a positive y-displacement
-        !-----------------------------------------------------------------------
-        ff(ix,iy,iz,1) = ff(ix,iy,iz,1) - 3.0* planet%omega(3)**2*xs
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) +      planet%omega(3)**2*zs
-      end do
-    end do
-  end do
-  !---------------------------------------------------------------------
-  ! Friction term, to damp out initial sloshing motions, relative to the
-  ! average shear.
-  !---------------------------------------------------------------------
-  if (planet%friction > 0.0) then
-    select case(trim(self%solver))
-    case('ramses_hd_patch','ramses_mhd_patch')
-      do iz=m(3)%lb,m(3)%ub
-        z = m(3)%p + r3(iz)
-        zp = z  - planet%position(3)
-        do iy=m(2)%lb,m(2)%ub
-          y = m(2)%p + r2(iy)
-          yp = y  - planet%position(2)
-          do ix=m(1)%lb,m(1)%ub
-            x = m(1)%p + r1(ix)
-            xp = x  - planet%position(1)
-            uxx = -planet%v_accrete
-            uyy = -(1.5+planet%trap)*planet%omega(3)*xp - planet%v_head
-            ff(ix,iy,iz,1) = ff(ix,iy,iz,1) - planet%friction*(p(ix,iy,iz,1)/d(ix,iy,iz)-uxx)
-            ff(ix,iy,iz,2) = ff(ix,iy,iz,2) - planet%friction*(p(ix,iy,iz,2)/d(ix,iy,iz)-uyy)
-            ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - planet%friction*(p(ix,iy,iz,3)/d(ix,iy,iz))
-          end do
-        end do
-      end do
-    case('stagger2e_hd_patch','stagger2e_mhd_patch')
-      do iz=m(3)%lb,m(3)%ub
-        z = m(3)%p + r3(iz)
-        zp = z  - planet%position(3)
-        zs = zp - ds2(3)
-        do iy=m(2)%lb,m(2)%ub
-          y = m(2)%p + r2(iy)
-          yp = y  - planet%position(2)
-          ys = yp - ds2(2)
-          do ix=m(1)%lb,m(1)%ub
-            x = m(1)%p + r1(ix)
-            xp = x  - planet%position(1)
-            xs = xp - ds2(1)
-            uxx = -planet%v_accrete
-            uyy = -(1.5+planet%trap)*planet%omega(3)*xs - planet%v_head
-            ff(ix,iy,iz,1) = ff(ix,iy,iz,1) - planet%friction*(Ux(ix,iy,iz)-uxx)
-            ff(ix,iy,iz,2) = ff(ix,iy,iz,2) - planet%friction*(Uy(ix,iy,iz)-uyy)
-            ff(ix,iy,iz,3) = ff(ix,iy,iz,3) - planet%friction*(Uz(ix,iy,iz))
-          end do
-        end do
-      end do
-    case default
-      print *, trim(self%solver)
-      error stop "force_mod(1) :: unknown solver"
-    end select
-  end if
-  !---------------------------------------------------------------------
-  ! Add the classical Coriolis force term: -2*(\Omega x U). A positive omega(3)
-  ! corresponds to rotation in the y-direction, if x points radially outwards.
-  ! Hence, a positive velocity in the y-direction increases the centripetal force,
-  ! and leads to acceleration in the positive x-direction -- vice versa for
-  ! motion in the x-direction; a motion inwards (-x) leads to acceleration in
-  ! the forward (+y) direction
-  !---------------------------------------------------------------------
-  select case(trim(self%solver))
-  case('ramses_hd_patch','ramses_mhd_patch')
-    ff(:,:,:,1) = d*ff(:,:,:,1) - 2.*(planet%omega(2)*p(:,:,:,3)-planet%omega(3)*p(:,:,:,2))
-    ff(:,:,:,2) = d*ff(:,:,:,2) - 2.*(planet%omega(3)*p(:,:,:,1)-planet%omega(1)*p(:,:,:,3))
-    ff(:,:,:,3) = d*ff(:,:,:,3) - 2.*(planet%omega(1)*p(:,:,:,2)-planet%omega(2)*p(:,:,:,1))
-  case('stagger2e_hd_patch','stagger2e_mhd_patch')
-    ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*st_dn(st_up(Uz,3),1) - planet%omega(3)*st_dn(st_up(Uy,2),1))
-    ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*st_dn(st_up(Ux,1),2) - planet%omega(1)*st_dn(st_up(Uz,3),2))
-    ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*st_dn(st_up(Uy,2),3) - planet%omega(2)*st_dn(st_up(Ux,1),3))
-  case default
-    print *, trim(self%solver)
-    error stop "force_mod(2) :: unknown solver"
-  end select
-  end associate
-
-  call trace_end
-END FUNCTION disk
+END FUNCTION disk_perhaps_with_planet
 
 !> =============================================================================
 !> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically

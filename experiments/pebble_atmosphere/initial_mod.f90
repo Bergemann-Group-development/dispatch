@@ -106,6 +106,8 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   nr = atmosphere%nr
   if (self%solver(1:7)=='stagger') then
     ds2 = 0.5*m%d
+  else if (self%solver(1:6)=='zeus3d') then
+    ds2 = 0.5*m%d
   else
     ds2 = 0.0
   endif
