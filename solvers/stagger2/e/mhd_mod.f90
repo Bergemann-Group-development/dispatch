@@ -90,6 +90,8 @@ SUBROUTINE init (self)
     self%mesh(i)%h(2+i) = -0.5
     if (self%nv > 5) self%mesh(i)%h(5+i) = -0.5
   end do
+  !self%unsigned(idx%d) = .true.
+  !self%unsigned(idx%e) = .true.
   call self%force%init(self%kind)
   call trace%end
 END SUBROUTINE init
@@ -267,14 +269,14 @@ SUBROUTINE pde (self)
   fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*(st%ddydn(Uz)+st%ddzdn(Uy))
   fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
   if (self%id==io%id_debug) then
-   fzx = st%ddzdn(Uy)
+    fzx = st%ddzdn(Uy)
     print *, 'DPDTZ2', fzx(19:20,19,5)
-   fzx = self%nu(3)*0.5*st%ddzdn(Uy)
+    fzx = self%nu(3)*0.5*st%ddzdn(Uy)
     print *, 'DPDTZ2', fzx(19:20,19,5)
-   fzx = self%nu(3)*0.5*ydn1(zdn1(du))*st%ddzdn(Uy)
+    fzx = self%nu(3)*0.5*ydn1(zdn1(du))*st%ddzdn(Uy)
     print *, 'DPDTZ2', fzx(19:20,19,5)
-  fzx = xdn(Uz)*zdn(Ux)
-  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
+    fzx = xdn(Uz)*zdn(Ux)
+    fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5), Uy(19:20,19,4:5), Uz(19:20,18:19,5)
   end if
   !---------------------------------------------------------------------------

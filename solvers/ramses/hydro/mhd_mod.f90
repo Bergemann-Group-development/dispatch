@@ -100,6 +100,8 @@ SUBROUTINE init (self)
   do i=1,3
     self%mesh(i)%h = 0d0
   end do
+!  self%unsigned(idx%d) = .true.
+!  self%unsigned(idx%e) = .true.
   call self%force%init(self%kind)
   call trace_end
 END SUBROUTINE init

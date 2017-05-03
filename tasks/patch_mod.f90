@@ -40,6 +40,7 @@ MODULE patch_mod
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
+    logical, dimension(:), pointer:: unsigned=>null()
     class(link_t), pointer:: link       ! this could be useful
     type(boundaries_t):: boundaries
     character(len=32):: eos='ideal'
@@ -453,6 +454,8 @@ SUBROUTINE init (self)
       self%mem_allocated = .true.               ! mark
       timer%gb = timer%gb + storage_size(self%mem)*product(shape(self%mem))/(8*1024.**3)
 !    end if
+    allocate (self%unsigned(self%nv))
+    self%unsigned(:) = .false.
   end if
   self%dt = 0.0
   self%t =  0.0
@@ -2042,6 +2045,25 @@ SUBROUTINE interpolate (self, target, ii, iv)
   !-----------------------------------------------------------------------------
   pos = target%myposition (ii, iv)
   call self%index_space (pos, target%time, iv, j, p, full_domain=.true.)
+  if (self%unsigned(iv)) then
+    target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
+      p(4)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(4),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(4),1)))   + &
+                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(4),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(4),1))))  + &
+            (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(4),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(4),1)))   + &
+                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(4),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(4),1))))) + &
+      p(5)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(5),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(5),1)))   + &
+                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(5),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(5),1))))  + &
+            (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(5),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(5),1)))   + &
+                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(5),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(5),1))))))
+  else
   target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
     p(4)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(4),1)    + &
                                 (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(4),1))   + &
@@ -2059,6 +2081,7 @@ SUBROUTINE interpolate (self, target, ii, iv)
                                 (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(5),1))   + &
                      (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(5),1)    + &
                                 (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(5),1))))
+  end if
   if (target%id==io%id_debug) &
     print 1, target%id, ii, iv, self%id, j, p, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
     1 format(i6,3i3,i4,2x,"DBG patch_t%interpolate src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
