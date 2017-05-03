@@ -34,6 +34,8 @@ MODULE mhd_mod
     procedure:: U2p
     procedure:: e2E_th
     procedure:: E_th2e
+    procedure:: e2S
+    procedure:: S2e
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure
@@ -449,6 +451,36 @@ SUBROUTINE E_th2e(self, E_th)
   e = E_th*d
   end associate
 END SUBROUTINE E_th2e
+
+!> =====================================================================
+!> Get thermal energy per unit mass from entropy
+!> =====================================================================
+SUBROUTINE e2S(self, s)
+  class(mhd_t) :: self
+  real, dimension(:,:,:), pointer:: s
+  real:: g1
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
+            e => self%mem(:,:,:,self%i_s,self%it,1))
+  g1 = self%gamma-1.0
+  s = log(e*g1/d**self%gamma)/g1
+  end associate
+END SUBROUTINE e2S
+
+!> =====================================================================
+!> Get thermal energy per unit mass from entropy
+!> =====================================================================
+SUBROUTINE S2e(self, s)
+  class(mhd_t) :: self
+  real, dimension(:,:,:), pointer:: s
+  real:: g1
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
+            e => self%mem(:,:,:,self%i_s,self%it,1))
+  g1 = self%gamma-1.0
+  e = d**self%gamma*exp(s*g1)/g1
+  end associate
+END SUBROUTINE S2e
 
 !> =============================================================================
 !> Take a complete update step.  This can be overloaded in higher level ud

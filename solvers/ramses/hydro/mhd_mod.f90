@@ -45,10 +45,12 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: p2U                                                     ! get velocities
-    procedure:: U2p                                                     ! put velocities to momentum
-    procedure:: e2E_th                                                  ! get thermal energy
-    procedure:: E_th2e                                                  ! put thermal energy to specific/total energy
+    procedure:: p2U                               ! get velocities
+    procedure:: U2p                               ! put velocities to momentum
+    procedure:: e2E_th                            ! get thermal energy
+    procedure:: E_th2e                            ! put thermal energy to total energy
+    procedure:: e2S                               ! get entropy from total energy
+    procedure:: S2e                               ! put entropy to total energy
     procedure:: log_density
     procedure:: log_pressure
     procedure:: grav_potential
@@ -245,6 +247,54 @@ SUBROUTINE e2E_th(self, E_th)
   deallocate(k)
   end associate
 END SUBROUTINE e2E_th
+
+!> =====================================================================
+!> Get etropy per unit mass from total energy
+!> =====================================================================
+SUBROUTINE e2S(self, s)
+  class(mhd_t) :: self
+  real, dimension(:,:,:), pointer:: s
+  !.....................................................................
+  real, dimension(:,:,:), pointer:: k
+  integer :: i
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
+            e => self%mem(:,:,:,self%i_e           ,self%it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  allocate(k(size(d,1),size(d,2),size(d,3)))
+  k = 0.0
+  do i=1,size(p,4)
+    k = k+p(:,:,:,i)**2
+  end do
+  k = 0.5*k/d
+  s = log((e-k)*(self%gamma-1.0)/d**self%gamma)/(self%gamma-1.0)
+  deallocate(k)
+  end associate
+END SUBROUTINE e2S
+
+!> =====================================================================
+!> Put etropy per unit mass to total energy
+!> =====================================================================
+SUBROUTINE S2e (self, s)
+  class(mhd_t) :: self
+  real, dimension(:,:,:), pointer:: s
+  !.....................................................................
+  real, dimension(:,:,:), pointer:: k
+  integer :: i
+  !---------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
+            e => self%mem(:,:,:,self%i_e           ,self%it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  allocate(k(size(d,1),size(d,2),size(d,3)))
+  k = 0.0
+  do i=1,size(p,4)
+    k = k+p(:,:,:,i)**2
+  end do
+  k = 0.5*k/d
+  e = d**self%gamma*exp(s*(self%gamma-1.0)) + k
+  deallocate(k)
+  end associate
+END SUBROUTINE S2e
 
 !> =====================================================================
 !> Put thermal energy to total/specific energy

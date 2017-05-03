@@ -230,14 +230,12 @@ SUBROUTINE boundary_conditions (self, it)
         s => self%mem(:,:,:,self%i_s,it,1)
         s = s/d
         call self%boundaries%spherical (s, s0, self%mesh, self%i_s)
-        print *,'S0', s0, minval(s), maxval(s)
         s = s*d
       else
-        e => self%mem(:,:,:,self%i_e,it,1)
         allocate (s(self%gn(1),self%gn(2),self%gn(3)))
-        s = log(e*(self%gamma-1.0)/d**self%gamma)/(self%gamma-1.0)
+        call self%e2S (s)
         call self%boundaries%spherical (s, s0, self%mesh, self%i_s)
-        e = d**self%gamma*exp(s*(self%gamma-1.0))/(self%gamma-1.0)
+        call self%S2e (s)
         deallocate (s)
       end if
       if (self%nw>1) then
