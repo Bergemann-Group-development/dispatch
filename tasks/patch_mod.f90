@@ -432,9 +432,10 @@ SUBROUTINE init (self)
     1 format(a,1p,3e15.6)
   end if
   !-----------------------------------------------------------------------------
-  ! Measure levels in terms of the refinement factor
+  ! Measure levels in terms of the refinement factor -- however, this may come
+  ! in conflict with levels set by e.g. rubiks_mod
   !-----------------------------------------------------------------------------
-  self%level = log(maxval(self%box)/minval(self%ds))/log(real(self%msplit)) + 0.1
+  ! FIXME: self%level = log(maxval(self%box)/minval(self%ds))/log(real(self%msplit)) + 0.1
   if (io%verbose>2) &
     write (io_unit%log,'(1x,a,i7,2(1p,3e12.4,2x))') 'patch_mod::init: id, size, pos =', &
       self%id, self%size, self%position
@@ -2064,23 +2065,23 @@ SUBROUTINE interpolate (self, target, ii, iv)
                        (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(5),1))    + &
                                   (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(5),1))))))
   else
-  target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
-    p(4)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(4),1)    + &
-                                (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(4),1))   + &
-                     (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(4),1)    + &
-                                (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(4),1)))  + &
-          (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(4),1)    + &
-                                (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(4),1))   + &
-                     (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(4),1)    + &
-                                (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(4),1)))) + &
-    p(5)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(5),1)    + &
-                                (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(5),1))   + &
-                     (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(5),1)    + &
-                                (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(5),1)))  + &
-          (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(5),1)    + &
-                                (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(5),1))   + &
-                     (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(5),1)    + &
-                                (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(5),1))))
+    target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
+      p(4)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(4),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(4),1))   + &
+                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(4),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(4),1)))  + &
+            (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(4),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(4),1))   + &
+                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(4),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(4),1)))) + &
+      p(5)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(5),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(5),1))   + &
+                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(5),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(5),1)))  + &
+            (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(5),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(5),1))   + &
+                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(5),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(5),1))))
   end if
   if (target%id==io%id_debug) &
     print 1, target%id, ii, iv, self%id, j, p, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
