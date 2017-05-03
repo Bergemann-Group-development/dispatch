@@ -258,6 +258,10 @@ SUBROUTINE pde (self)
     fxx = pp + d*(fxx - du*ddxup(ds,Ux))
     fyy = pp + d*(fyy - du*ddyup(ds,Uy))
     fzz = pp + d*(fzz - du*ddzup(ds,Uz))
+    !---------------------------------------------------------------------------
+    ! du has units area per unit time, which gives velocity squared times mass
+    ! density per unit time = energy per unit volume and time
+    !---------------------------------------------------------------------------
     Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz)**2)
   end if
   !-----------------------------------------------------------------------------
@@ -363,6 +367,12 @@ SUBROUTINE pde (self)
   else
     ss = s/d
     fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)
+    !---------------------------------------------------------------------------
+    ! Q is heating per unit volume (energy per unit volume and time), which when
+    ! divided by presssure (energy per unit volume) becomes entropy (unitless)
+    ! per unit mass.  Multiplied by mass density it becomes mass-entropy per
+    ! unit volume, which is our units for s.
+    !---------------------------------------------------------------------------
     dsdt = -div(ds,fm) + Q*d/pg
   end if
   !-----------------------------------------------------------------------------

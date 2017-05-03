@@ -209,8 +209,8 @@ SUBROUTINE boundary_conditions (self, it)
   real(8)             :: h(3)
   integer             :: iv, nb,i
   integer, save       :: itimer=0
-  real, pointer       :: d(:,:,:), e(:,:,:)
-  real                :: s
+  real, pointer       :: d(:,:,:), e(:,:,:), s(:,:,:)
+  real                :: s0
   !-----------------------------------------------------------------------------
   if (self%boundaries%status /= 0) then
     call trace%begin ('experiment_mod::boundary_conditions', itimer=itimer)
@@ -224,10 +224,22 @@ SUBROUTINE boundary_conditions (self, it)
       print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
       call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), self%mesh, self%i_d)
       d => self%mem(:,:,:,self%i_d,it,1)
-      e => self%mem(:,:,:,self%i_e,it,1)
-      s = (log(atmosphere%surface%pressure) - &
-           log(atmosphere%surface%density)*self%gamma)/(self%gamma-1.0)
-      call self%boundaries%spherical_constant_entropy (d, e, self%mesh, s, self%gamma)
+      s0 = (log(atmosphere%surface%pressure) - &
+        log(atmosphere%surface%density)*self%gamma)/(self%gamma-1.0)
+      if (self%kind(1:9)=='stagger2_') then
+        s => self%mem(:,:,:,self%i_s,it,1)
+        s = s/d
+        call self%boundaries%spherical (s, s0, self%mesh, self%i_s)
+        print *,'S0', s0, minval(s), maxval(s)
+        s = s*d
+      else
+        e => self%mem(:,:,:,self%i_e,it,1)
+        allocate (s(self%gn(1),self%gn(2),self%gn(3)))
+        s = log(e*(self%gamma-1.0)/d**self%gamma)/(self%gamma-1.0)
+        call self%boundaries%spherical (s, s0, self%mesh, self%i_s)
+        e = d**self%gamma*exp(s*(self%gamma-1.0))/(self%gamma-1.0)
+        deallocate (s)
+      end if
       if (self%nw>1) then
         call self%boundaries%spherical (self%mem(:,:,:,self%i_d,it,2), 0.0, self%mesh, self%i_d)
         call self%boundaries%spherical (self%mem(:,:,:,self%i_e,it,2), 0.0, self%mesh, self%i_e)
