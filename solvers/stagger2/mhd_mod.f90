@@ -29,9 +29,14 @@ MODULE mhd_mod
     type(force_t):: force
   contains
     procedure:: init
-    procedure:: update
+    procedure:: pde
     procedure:: nonideal_MHD_courant_condition
+    procedure:: update
     procedure:: output
+    procedure:: p2U
+    procedure:: U2p
+    procedure:: e2E_th
+    procedure:: E_th2e
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure
@@ -44,10 +49,6 @@ MODULE mhd_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
     procedure:: apply_heating
-    procedure:: p2U
-    procedure:: U2p
-    procedure:: e2E_th
-    procedure:: E_th2e
   end type
 CONTAINS
 
@@ -114,7 +115,7 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE pde (self)
   USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
@@ -266,18 +267,6 @@ SUBROUTINE update (self)
   dddt = -div(ds,fm)                                    ! density derivative
   self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))
   if (io%verbose>3) print*,'u_max',self%u_max
-  !-----------------------------------------------------------------------------
-  ! Conservation of entropy.  The formulation that works best so far is to make
-  ! the diffusive entropy flux directly proportional to the diffusive mass flux,
-  ! plus a contribution proportional to the gradient of specific entropy ss.
-  !-----------------------------------------------------------------------------
-  if (self%gamma==1.0) then
-    dsdt = 0.0
-  else
-    ss = s/d
-    fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)
-    dsdt = -div(ds,fm) + Q*d/pg
-  end if
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -353,6 +342,18 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) &
     dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
+  !-----------------------------------------------------------------------------
+  ! Conservation of entropy.  The formulation that works best so far is to make
+  ! the diffusive entropy flux directly proportional to the diffusive mass flux,
+  ! plus a contribution proportional to the gradient of specific entropy ss.
+  !-----------------------------------------------------------------------------
+  if (self%gamma==1.0) then
+    dsdt = 0.0
+  else
+    ss = s/d
+    fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)
+    dsdt = -div(ds,fm) + Q*d/pg
+  end if
   !-----------------------------------------------------------------------------
   ! Induction equation
   !-----------------------------------------------------------------------------
@@ -437,13 +438,8 @@ SUBROUTINE update (self)
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
-  call self%courant_condition
-  if (io%verbose>2) &
-    call self%check_density('before timestep')
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  call self%check_density(' after timestep')
   call trace%end (itimer)
-END SUBROUTINE update
+END SUBROUTINE pde
 
 !> =============================================================================
 !> Courant condition, one way or another
@@ -485,6 +481,20 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
   call self%lock%unset ('nonideal_MHD_courant')
   call trace%end
 END SUBROUTINE nonideal_MHD_courant_condition
+
+!> =============================================================================
+!> Take a complete update step.  This can be overloaded in higher level ud
+!> =============================================================================
+SUBROUTINE update (self)
+  class(mhd_t):: self
+  !.............................................................................
+  call self%pde
+  call self%courant_condition
+  if (io%verbose>2) &
+    call self%check_density('before timestep')
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density(' after timestep')
+END SUBROUTINE update
 
 !> =============================================================================
 !> Add extra, MHD-related information to the patch .txt output file

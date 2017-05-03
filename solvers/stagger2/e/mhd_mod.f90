@@ -29,12 +29,12 @@ MODULE mhd_mod
     procedure:: pde
     procedure:: update
     procedure:: output
+    procedure:: p2U
+    procedure:: U2p
+    procedure:: e2E_th
+    procedure:: E_th2e
     procedure:: log_density => void
     procedure:: log_pressure => void
-    procedure:: p2U                                                     ! get velocities
-    procedure:: U2p                                                     ! put velocities to momentum
-    procedure:: e2E_th                                                  ! get thermal energy
-    procedure:: E_th2e                                                  ! put thermal energy to specific/total energy
     procedure:: gas_pressure
     procedure:: cell_gas_pressure
     procedure:: gas_temperature
@@ -387,8 +387,8 @@ SUBROUTINE p2U(self, U)
   associate(d => self%mem(:,:,:,self%i_d,           self%it,1), &
             p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
-  dd=exp(down(log(d)))
-  U = p/dd
+  dd=down(log(d))
+  U = p/exp(dd)
   deallocate(dd)
   end associate
 END SUBROUTINE p2U
@@ -405,8 +405,8 @@ SUBROUTINE U2p(self, U)
   associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
             p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
-  dd=exp(down(log(d)))
-  p = U*dd
+  dd=down(log(d))
+  p = U*exp(dd)
   deallocate(dd)
   end associate
 END SUBROUTINE U2p
