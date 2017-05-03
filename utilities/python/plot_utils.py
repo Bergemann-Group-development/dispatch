@@ -119,8 +119,8 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
         if np.size(extent)==6:
             zmin=extent[4]
             zmax=extent[5]
-            zmin=np.floor(zmin/dz+0.5)*dz
-            zmax=np.floor(zmax/dz+0.5)*dz
+            #zmin=np.floor(zmin/dz+0.5)*dz
+            #zmax=np.floor(zmax/dz+0.5)*dz
             print zmin,zmax
     def anim(z):
         def inside(p, z):
@@ -144,6 +144,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
             s=(x-x0)/dx
             i=max(0,min(n-2,int(s)))
             s=s-i
+            #print p.id,i,s
             return (1.0-s)*f[l[0]:u[0],l[1]:u[1],i]+s*f[l[0]:u[0],l[1]:u[1],i+1]
         for p in select:
             p.cache()
@@ -180,7 +181,6 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
                 pl.text(p.active_corners[0][1],p.active_corners[0][0],p.id)
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
-        if p==select[0]:
         pl.tight_layout()
         return im
     a=an.FuncAnimation(fig,anim,np.arange(zmin,zmax+dz,dz),repeat=repeat,interval=interval,**kwargs)
@@ -237,7 +237,6 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
             fmin=np.float(p.f.min()); fmax=np.float(p.f.max())
             vmin=min(vmin,fmin)
             vmax=max(vmax,fmax)
-            #print x,p.id
             e=p.extent[0]
             zlim=[min(zlim[0],e[0]),max(zlim[1],e[1])]
             ylim=[min(ylim[0],e[2]),max(ylim[1],e[3])]
@@ -262,7 +261,6 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
                 pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
-        if p==select[0]:
         pl.tight_layout()
         return im
     a=an.FuncAnimation(fig,anim,np.arange(xmin,xmax+dx,dx),repeat=repeat,**kwargs)
