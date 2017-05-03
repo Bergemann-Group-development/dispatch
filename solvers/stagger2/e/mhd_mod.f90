@@ -15,6 +15,7 @@ MODULE mhd_mod
   USE eos_mod
   USE index_mod
   USE timestep_mod
+  USE planet_mod
   implicit none
   private
   type, extends(gpatch_t), public:: mhd_t
@@ -265,15 +266,17 @@ SUBROUTINE pde (self)
   fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(st%ddxdn(Uy)+st%ddydn(Ux))
   fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*(st%ddydn(Uz)+st%ddzdn(Uy))
   fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
+  if (self%id==io%id_debug) then
    fzx = st%ddzdn(Uy)
-   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5)
+    print *, 'DPDTZ2', fzx(19:20,19,5)
    fzx = self%nu(3)*0.5*st%ddzdn(Uy)
-   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5)
+    print *, 'DPDTZ2', fzx(19:20,19,5)
    fzx = self%nu(3)*0.5*ydn1(zdn1(du))*st%ddzdn(Uy)
-   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5)
+    print *, 'DPDTZ2', fzx(19:20,19,5)
   fzx = xdn(Uz)*zdn(Ux)
   fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5), Uy(19:20,19,4:5), Uz(19:20,18:19,5)
+  end if
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
@@ -329,8 +332,16 @@ SUBROUTINE pde (self)
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
+  if (io%verbose>1 .and. self%position(1)==0d0.and.self%position(2)==0d0) then
+    print *, self%id, 'VELOC', Ux(18,18,5), Uy(18,18,5), Uz(18,18,5), pg(18,18,5)
+    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
   if (associated(self%force%selected)) &
     dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
+    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
+  else
+    if (associated(self%force%selected)) &
+      dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
+  end if
   !-----------------------------------------------------------------------------
   ! Conservation of energy.  The formulation that works best so far is to make
   ! the diffusive energy flux directly proportional to the diffusive mass flux,
