@@ -15,10 +15,10 @@ pl.show()
 pl.ion()
 
 ipp=[204,141,166,169,172]
+iouts=[20]
 
-for j in range(2):
+for io in iouts:
     pl.clf()
-    io=34+j
     p=du.patch(ipp[0],io,run,data)
     p.vars()
     for i in range(4):

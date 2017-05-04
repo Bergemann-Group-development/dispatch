@@ -195,7 +195,8 @@ SUBROUTINE output (self, experiment_name)
         self%mem(m(1),m(2),m(3)-2:m(3)+2, 1,it,1)
     end do
   end if
-  call self%boundary_conditions (self%it)
+  if (self%time > self%out_next) &
+    call self%boundary_conditions (self%it)
   call self%pebble_patch_t%output
 END SUBROUTINE
 
@@ -212,9 +213,9 @@ SUBROUTINE boundary_conditions (self, it)
   real, pointer       :: d(:,:,:), e(:,:,:), s(:,:,:)
   real                :: s0
   !-----------------------------------------------------------------------------
-  if (self%boundaries%status /= 0) then
+  if (self%boundaries%bits /= 0) then
     call trace%begin ('experiment_mod::boundary_conditions', itimer=itimer)
-  !  print *, self%id, 'BOUNDARY CONDITION BITS:', self%boundaries%status
+  !  print *, self%id, 'BOUNDARY CONDITION BITS:', self%boundaries%bits
     call self%check_density ('before boundary_conditions')
     !---------------------------------------------------------------------------
     ! If spherical inner BCs, save the incoming values
@@ -251,7 +252,7 @@ SUBROUTINE boundary_conditions (self, it)
     !------------------------------------------------------------------------
     ! Edge boundary conditions
     !------------------------------------------------------------------------
-    if (self%boundaries%status /= 0) then
+    if (self%boundaries%bits /= 0) then
       if (io%verbose>2) then
         print *, self%id, 'MK x-BC:', self%boundaries%is_set (bits%xl), self%boundaries%is_set (bits%xu)
         print *, self%id, 'MK y-BC:', self%boundaries%is_set (bits%yl), self%boundaries%is_set (bits%yu)
@@ -268,7 +269,7 @@ END SUBROUTINE boundary_conditions
 !> Boundary conditions at the edges of the outermost rubiks cubes; extrapolate
 !> the density and pressure, and enforce vanishing derivative on the perpendicular
 !> velocities. To what extend the boundary conditions are applied in the x,y,z
-!> directions depends on the self%boundary%status bits. Note that the same
+!> directions depends on the self%boundaries%bits bits. Note that the same
 !> condition is applied in all directions that have boundary bits set!
 !> =============================================================================
 SUBROUTINE edge_boundary_conditions (self, it)
@@ -276,7 +277,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
   integer:: it
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e_th, uu
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: u
-  integer:: iv
+  integer:: iv, select
   real:: ee
   !-----------------------------------------------------------------------------
   ! Edge boundary conditions
@@ -288,21 +289,82 @@ SUBROUTINE edge_boundary_conditions (self, it)
   allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
                             call self%check_density ('before density_BC')
   call self%density_boundary_condition (it)                             ! vertical density BC
+  if (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
+    select = bits%yu
+    print *, self%id, 'EXTRAP rho at yu', &
+      self%boundaries%is_set(bits%xl), self%boundaries%is_set(bits%xu), &
+      self%boundaries%is_set(bits%yl), self%boundaries%is_set(bits%yu), &
+      self%boundaries%is_set(bits%zl), self%boundaries%is_set(bits%zu)
+    call self%boundaries%log_extrapolate (d, self%i_d, select=select)
+    if (self%id==io%id_debug) &
+      print *, self%id, 'EXTRAP D', d(6,33:37,31)
+  else if (self%position(1)>0.0 .and. self%position(2)<0.0 .and. self%boundaries%is_set(bits%yl)) then
+    select = bits%yl
+    print *, self%id, 'EXTRAP rho at yl', &
+      self%boundaries%is_set(bits%xl), self%boundaries%is_set(bits%xu), &
+      self%boundaries%is_set(bits%yl), self%boundaries%is_set(bits%yu), &
+      self%boundaries%is_set(bits%zl), self%boundaries%is_set(bits%zu)
+    call self%boundaries%log_extrapolate (d, self%i_d, select=select)
+    if (self%id==io%id_debug) &
+      print *, self%id, 'EXTRAP D', d(6,1:4,31)
+  end if
                             call self%check_density ('after density_BC')
+  !---------------------------------------------------------------------
+  ! In the vertical and radial directions, where density varies
+  ! systematically, apply BCs to velocity
+  !---------------------------------------------------------------------
   call self%p2U(u)                                                      ! velocities
-                            call self%check_density ('after p2U')
-  call self%e2E_th(e_th)                                                ! thermal energy
-                            call self%check_density ('after e2E')
-  do iv=1, 3
+  do iv=1,3
     uu => u(:,:,:,iv)
-    call self%boundaries%symmetric (uu, self%i_px+iv-1)                 ! apply symmetric boundaries to velocities
+!    call self%boundaries%symmetric (uu, self%i_px+iv-1, select=select) ! apply symmetric boundaries to velocities
+    !-------------------------------------------------------------------
+    ! Extrapolate at boundaries with supersonic outflow, otherwise
+    ! force vanishing derivatives
+    !-------------------------------------------------------------------
+    if      (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
+      select = iand(self%boundaries%bits,not(bits%yu))
+      call self%boundaries%symmetric (uu, self%i_px+iv-1, select=select)
+      select = bits%yu
+      call self%boundaries%extrapolate (uu, self%i_px+iv-1, select=select)
+      print *, self%id, 'EXTRAP U1', iv, u(6,33:37,31,2)
+    else if (self%position(1)>0.0 .and. self%position(2)<0.0 .and. self%boundaries%is_set(bits%yl)) then
+      select = iand(self%boundaries%bits,not(bits%yl))
+      call self%boundaries%symmetric (uu, self%i_px+iv-1, select=select)
+      select = bits%yl
+      call self%boundaries%extrapolate (uu, self%i_px+iv-1, select=select)
+      print *, self%id, 'EXTRAP U2', iv, u(6,33:37,31,2)
+    else
+      call self%boundaries%symmetric (uu, self%i_px+iv-1)               ! apply symmetric boundaries to velocities
+    end if
   end do
                             call self%check_density ('after u BC')
+  if (self%id==io%id_debug) &
+    print *, self%id, 'EXTRAP UY2', u(6,33:37,31,2)
   call self%U2p(u)                                                      ! convert velocities to momentum
+  if (self%id==io%id_debug) &
+    print *, self%id, 'EXTRAP PY2', self%mem(6,33:37,31,self%i_py,it,1)
                             call self%check_density ('after U2p')
+  call self%e2E_th(e_th)                                                ! thermal energy
+    if (self%id==io%id_debug) &
+      print *, self%id, 'EXTRAP E (before)', e_th(6,33:37,31)
+                            call self%check_density ('after e2E')
   ee = atmosphere%external%temperature/(self%gamma-1.0)                 ! external disk e/d
   call self%boundaries%constant(e_th, self%i_e, value=ee)               ! apply constant boundaries to thermal energy
+    if (self%id==io%id_debug) &
+      print *, self%id, 'EXTRAP E (after)', e_th(6,33:37,31)
                             call self%check_nan ('after energy_BC')
+  !---------------------------------------------------------------------
+  ! In the supersonic outflow patches, extrapolate the thermal energy
+  !---------------------------------------------------------------------
+  if      (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
+    select = bits%yu
+    call self%boundaries%log_extrapolate (e_th, self%i_e, select=select)
+    print *, self%id, 'EXTRAP E', e_th(6,33:37,31)
+  else if (self%position(1)>0.0 .and. self%position(2)<0.0 .and. self%boundaries%is_set(bits%yl)) then
+    select = bits%yl
+    call self%boundaries%log_extrapolate (e_th, self%i_e, select=select)
+    print *, self%id, 'EXTRAP E', e_th(6,1:4,31)
+  end if
   call self%E_th2e(e_th)                                                ! convert thermal energy to internal/total energy or entropy
                             call self%check_nan ('after th2e')
   deallocate (u,e_th)
@@ -310,7 +372,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
 END SUBROUTINE edge_boundary_conditions
 
 !> =====================================================================
-!> Constrain the density to follow an achored Gaussian profile
+!> Constrain the density to follow an anchored Gaussian profile
 !> =====================================================================
 SUBROUTINE density_boundary_condition (self, it)
   class(experiment_t):: self

@@ -16,8 +16,8 @@
 !> vertical, and in opposite directions.
 !>
 !> The module is allowed to generate two tasks for each direction, so
-!> the exponetial factor only need to be computed once, and can be ued
-!> in both solutions.
+!> the exponential factor only neeas to be computed once, and can be
+!> used in both solutions.
 !> =====================================================================
 MODULE rt_mod
   USE io_mod

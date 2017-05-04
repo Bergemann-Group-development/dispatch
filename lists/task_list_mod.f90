@@ -121,13 +121,13 @@ SUBROUTINE init_bdries (self)
     ! If at edge, set boundary bits
     !---------------------------------------------------------------------------
     if (task%position(1) <= self%lc(1)) call task%boundaries%set (bits%xl)
-    if (task%position(2) <= self%lc(2)) call task%boundaries%set (bits%yl)
+!    if (task%position(2) <= self%lc(2)) call task%boundaries%set (bits%yl)
     if (task%position(3) <= self%lc(3)) call task%boundaries%set (bits%zl)
     if (task%position(1) >= self%uc(1)) call task%boundaries%set (bits%xu)
-    if (task%position(2) >= self%uc(2)) call task%boundaries%set (bits%yu)
+!    if (task%position(2) >= self%uc(2)) call task%boundaries%set (bits%yu)
     if (task%position(3) >= self%uc(3)) call task%boundaries%set (bits%zu)
-    if (task%boundaries%status /= 0) print '(2i6,2(2x,a6),o9,2(2x,3f10.0))', &
-      task%id, task%level, 'BCs: ', formatted(task), task%boundaries%status, &
+    if (task%boundaries%bits /= 0) print '(2i6,2(2x,a6),o9,2(2x,3f10.0))', &
+      task%id, task%level, 'BCs: ', formatted(task), task%boundaries%bits, &
       task%size, task%position
     end select
     link => link%next

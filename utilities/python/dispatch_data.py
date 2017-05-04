@@ -104,33 +104,33 @@ class Patch(Task):
         l=self.nghost[2]; u=l+self.n[2]; self.z = self.z[l:u]
 
     def cache(self):
-        if not 'd' in dir(self):
-            self.d =self.data[:,:,:,self.varidx['d']]
-            self.p1=self.data[:,:,:,self.varidx['p1']]
-            self.p2=self.data[:,:,:,self.varidx['p2']]
-            self.p3=self.data[:,:,:,self.varidx['p3']]
-            g1=self.gamma-1.0
-            if self.kind[0:7]=='stagger':
-                logd=np.log(self.d)
-                self.u1=su.xup(self.p1/np.exp(su.xdn(logd)))
-                self.u2=su.yup(self.p2/np.exp(su.ydn(logd)))
-                self.u3=su.zup(self.p3/np.exp(su.zdn(logd)))
-                if self.kind[0:9]=='stagger2_':
-                    self.s =self.data[:,:,:,self.varidx['s']]/self.d
-                    self.e =np.exp(self.s*g1*+logd*g1)/g1
-                elif self.kind[0:9]=='stagger2e':
-                    self.e =self.data[:,:,:,self.varidx['e']]/self.d
-                    pg=self.d*self.e*g1
-                    self.s=np.log(pg/self.d**self.gamma)/g1
-            elif self.kind[0:6]=='ramses':
+        #if not 'd' in dir(self):
+        self.d =self.data[:,:,:,self.varidx['d']]
+        self.p1=self.data[:,:,:,self.varidx['p1']]
+        self.p2=self.data[:,:,:,self.varidx['p2']]
+        self.p3=self.data[:,:,:,self.varidx['p3']]
+        g1=self.gamma-1.0
+        if self.kind[0:7]=='stagger':
+            logd=np.log(self.d)
+            self.u1=su.xup(self.p1/np.exp(su.xdn(logd)))
+            self.u2=su.yup(self.p2/np.exp(su.ydn(logd)))
+            self.u3=su.zup(self.p3/np.exp(su.zdn(logd)))
+            if self.kind[0:9]=='stagger2_':
+                self.s =self.data[:,:,:,self.varidx['s']]/self.d
+                self.e =np.exp(self.s*g1+logd*g1)/g1
+            elif self.kind[0:9]=='stagger2e':
                 self.e =self.data[:,:,:,self.varidx['e']]/self.d
-                self.u1=self.p1/self.d
-                self.u2=self.p2/self.d
-                self.u3=self.p3/self.d
-                self.e=self.e-0.5*(self.u1**2+self.u2**2+self.u3**2)
                 pg=self.d*self.e*g1
                 self.s=np.log(pg/self.d**self.gamma)/g1
-            #p=np.max(p,1e-35)
+        elif self.kind[0:6]=='ramses':
+            self.e =self.data[:,:,:,self.varidx['e']]/self.d
+            self.u1=self.p1/self.d
+            self.u2=self.p2/self.d
+            self.u3=self.p3/self.d
+            self.e=self.e-0.5*(self.u1**2+self.u2**2+self.u3**2)
+            pg=self.d*self.e*g1
+            self.s=np.log(pg/self.d**self.gamma)/g1
+        #p=np.max(p,1e-35)
 
     def vars(self):
         '''Make arrays available in a .var dict'''

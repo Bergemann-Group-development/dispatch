@@ -183,7 +183,8 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
         pl.draw()
         pl.tight_layout()
         return im
-    a=an.FuncAnimation(fig,anim,np.arange(zmin,zmax+dz,dz),repeat=repeat,interval=interval,**kwargs)
+    a=an.FuncAnimation(fig,anim,np.arange(zmin,zmax+dz,dz),\
+        repeat=repeat,interval=interval,**kwargs)
     return a
 
 def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\

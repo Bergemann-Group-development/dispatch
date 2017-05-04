@@ -2,7 +2,8 @@
 &io_params
  verbose=3
  do_validate=f
- do_trace=f
+ do_trace=t
+ omp_trace=f
  do_debug=f
  do_output=t
  omp_trace=f
@@ -24,7 +25,7 @@
 /
 &out_params
  end_time=0.02
- out_time=0.0
+ out_time=0.001
  print_time=0.0
  guard_zones=t
  time_derivs=f
