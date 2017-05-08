@@ -40,6 +40,7 @@ MODULE patch_mod
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
+    logical:: periodic(3)=.false.
     logical, dimension(:), pointer:: unsigned=>null()
     class(link_t), pointer:: link       ! this could be useful
     type(boundaries_t):: boundaries
@@ -315,12 +316,13 @@ SUBROUTINE init (self)
   class(patch_t):: self
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, restart=-9
   logical, save:: first_time = .true.
-  logical, save:: guard_zones=.false., time_derivs=.false.
+  logical, save:: guard_zones=.false., time_derivs=.false., periodic(3)=.false.
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
   real(8):: position(3), size(3)
   integer:: iostat, i
-  namelist /patch_params/ size, n, nv, nw, ng, nt, courant, u_fixed, dt_fixed, grace
+  namelist /patch_params/ size, n, nv, nw, ng, nt, courant, u_fixed, dt_fixed, &
+    grace, periodic
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     restart, inputdir, guard_zones, time_derivs
   !.............................................................................
@@ -337,6 +339,7 @@ SUBROUTINE init (self)
     nv   = self%nv
     nw   = self%nw
     nt   = self%nt
+    periodic = self%periodic
     first_time = .false.
     rewind (io%input)
     read (io%input, patch_params)
@@ -361,6 +364,7 @@ SUBROUTINE init (self)
   self%dt_fixed    = dt_fixed
   self%u_fixed     = u_fixed
   self%max_files   = max_files                  ! prevent run-away NaN
+  self%periodic    = periodic                   ! periodic box or not
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
