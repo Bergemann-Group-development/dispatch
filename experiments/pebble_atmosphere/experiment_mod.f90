@@ -296,7 +296,8 @@ SUBROUTINE edge_boundary_conditions (self, it)
   allocate (u   (size(d,1),size(d,2),size(d,3),3))
   allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
                             call self%check_density ('before density_BC')
-  call self%density_boundary_condition (it)                             ! vertical density BC
+  !call self%density_boundary_condition (it)                             ! vertical density BC
+  call self%boundaries%log_extrapolate (d, self%i_d)
   if (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
     select = bits%yu
     if (io%verbose>2) &
