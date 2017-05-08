@@ -74,7 +74,7 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE pde (self)
   USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
@@ -86,7 +86,7 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   type(index_t):: i
   !-----------------------------------------------------------------------------
-  call trace_begin('mhd_t%update',itimer=itimer)
+  call trace_begin('mhd_t%pde',itimer=itimer)
   call self%output
 
   !-----------------------------------------------------------------------------
@@ -301,13 +301,29 @@ associate (d=>self%d, dddt=>self%dddt, &
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
+  call trace_end (itimer)
+end associate
+END SUBROUTINE pde
+
+!> =============================================================================
+!> Take a complete update step.  This can be overloaded in higher levels, e.g.
+!> in experiment_mod.
+!> =============================================================================
+SUBROUTINE update (self)
+  class(mhd_t):: self
+  !-----------------------------------------------------------------------------
+  ! The call to output below catches the state after both guard zone downloads
+  ! and boundary conditions.  The call here is a fall back; if another call is
+  ! placed at an earlier point in the task handling the call here will have no
+  ! effect, since out_next has already been updated.
+  !-----------------------------------------------------------------------------
+  call self%output
+  call self%pde
   call self%courant_condition
   if (io%verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
-  call trace_end (itimer)
-end associate
 END SUBROUTINE update
 
 !> =============================================================================

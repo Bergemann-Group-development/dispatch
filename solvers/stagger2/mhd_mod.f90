@@ -507,11 +507,18 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
 END SUBROUTINE nonideal_MHD_courant_condition
 
 !> =============================================================================
-!> Take a complete update step.  This can be overloaded in higher level ud
+!> Take a complete update step.  This can be overloaded in higher levels, e.g.
+!> in experiment_mod.
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
-  !.............................................................................
+  !-----------------------------------------------------------------------------
+  ! The call to output below catches the state after both guard zone downloads
+  ! and boundary conditions.  The call here is a fall back; if another call is
+  ! placed at an earlier point in the task handling the call here will have no
+  ! effect, since out_next has already been updated.
+  !-----------------------------------------------------------------------------
+  call self%output
   call self%pde
   call self%courant_condition
   if (io%verbose>2) &

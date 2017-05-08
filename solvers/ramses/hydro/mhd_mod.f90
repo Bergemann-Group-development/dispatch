@@ -120,6 +120,13 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin ('mhd_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
+  ! The call to output below catches the state after both guard zone downloads
+  ! and boundary conditions.  The call here is a fall back; if another call is
+  ! placed at an earlier point in the task handling the call here will have no
+  ! effect, since out_next has already been updated.
+  !-----------------------------------------------------------------------------
+  call self%output
+  !-----------------------------------------------------------------------------
   ! Memory mapping and allocations
   !-----------------------------------------------------------------------------
   self%uin => self%mem(:,:,:,:,self%it,1)

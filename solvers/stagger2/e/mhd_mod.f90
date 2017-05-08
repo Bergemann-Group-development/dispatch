@@ -118,7 +118,7 @@ SUBROUTINE pde (self)
   integer, save:: itimer=0
   type(stagger_t):: st
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%update',itimer=itimer)
+  call trace%begin('mhd_t%pde',itimer=itimer)
   st%m => self%mesh
   self%d    => self%mem(:,:,:,self%i_d,self%it,1)
   self%dddt => self%mem(:,:,:,self%i_d,self%it,2)
@@ -390,6 +390,26 @@ SUBROUTINE pde (self)
   call trace%end (itimer)
 END SUBROUTINE pde
 
+!> =============================================================================
+!> Take a complete update step.  This can be overloaded in higher level ud
+!> =============================================================================
+SUBROUTINE update (self)
+  class(mhd_t):: self
+  !-----------------------------------------------------------------------------
+  ! The call to output below catches the state after both guard zone downloads
+  ! and boundary conditions.  The call here is a fall back; if another call is
+  ! placed at an earlier point in the task handling the call here will have no
+  ! effect, since out_next has already been updated.
+  !-----------------------------------------------------------------------------
+  call self%output
+  call self%pde
+  call self%courant_condition
+  if (io%verbose>2) &
+    call self%check_density('before timestep')
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density(' after timestep')
+END SUBROUTINE update
+
 !> =====================================================================
 !> Get velocities from momentum
 !> =====================================================================
@@ -481,20 +501,6 @@ SUBROUTINE S2e(self, s)
   e = d**self%gamma*exp(s*g1)/g1
   end associate
 END SUBROUTINE S2e
-
-!> =============================================================================
-!> Take a complete update step.  This can be overloaded in higher level ud
-!> =============================================================================
-SUBROUTINE update (self)
-  class(mhd_t):: self
-  !.............................................................................
-  call self%pde
-  call self%courant_condition
-  if (io%verbose>2) &
-    call self%check_density('before timestep')
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  call self%check_density(' after timestep')
-END SUBROUTINE update
 
 !> =============================================================================
 !> Add extra, MHD-related information to the patch .txt output file

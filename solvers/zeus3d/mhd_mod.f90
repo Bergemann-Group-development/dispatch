@@ -68,7 +68,7 @@ MODULE mhd_mod
 
   ! Domain description variables
   character(len=3):: zcoordsys
-  
+
   ! Input parameters
   integer:: iord    , iords   , istp    , iscydf  , iscyqq  , ix1x2x3 &
           , itote   , isetemf , cadvs   , cadvc   , cadvt   , trnvrsn &
@@ -188,8 +188,8 @@ CONTAINS
 !            = 2 => same as 1, but with transverse Lorentz terms
 !                   rendered in conservative form.
 !            =-2 => same as 2 but for legacy transport
-!            = 3 => same as 2, but with new source terms in CTRAN* 
-!                   expressed as a true flux triggering "magnetic 
+!            = 3 => same as 2, but with new source terms in CTRAN*
+!                   expressed as a true flux triggering "magnetic
 !                   centrifugal" terms in STV*
 !            =-3 => same as 3 but for legacy transport
 !
@@ -201,7 +201,7 @@ CONTAINS
 !            =2 => downwind v* for et <-> e (default)
 !  voutbc    =1 => outflow BC, v1(is) set to min(0,v1(isp1)), original
 !                  Wilson scheme (similar for other boundaries; default)
-!            =2 => outflow BC, v1(is) set to min(0,v1(is)) to reduce 
+!            =2 => outflow BC, v1(is) set to min(0,v1(is)) to reduce
 !                  negative pressures at boundaries
 !
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -317,7 +317,7 @@ SUBROUTINE init_zeus (self)
     if ( (uordq   .lt. 1) .or. (uordq   .gt. 2) ) uordq   = 1
     if ( (avordw  .lt. 1) .or. (avordw  .gt. 2) ) avordw  = 2
     if ( (voutbc  .lt. 1) .or. (voutbc  .gt. 2) ) voutbc  = 1
-    
+
     ! Transport algorithm
     if ( (trnvrsn .lt.-3) .or. (trnvrsn .gt. 3) .or. (trnvrsn .eq.-1) ) &
       trnvrsn = 1
@@ -335,7 +335,7 @@ SUBROUTINE init_zeus (self)
   self%kind = 'zeus_mhd_patch'
   ! don't store the time derivatives, only the MHD quantities;
   ! this also implies that `time_order` in `timestep_params` should be set to 0.
-  self%nw = 1  
+  self%nw = 1
   call self%gpatch_t%init()
   do i=1,3
     self%mesh(i)%h(4+i) = -0.5 ! momentum/velocity components
@@ -376,7 +376,13 @@ SUBROUTINE update_zeus (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
 !  call trace_begin('zeus_mhd_mod%update_zeus')
-
+  !-----------------------------------------------------------------------------
+  ! The call to output below catches the state after both guard zone downloads
+  ! and boundary conditions.  The call here is a fall back; if another call is
+  ! placed at an earlier point in the task handling the call here will have no
+  ! effect, since out_next has already been updated.
+  !-----------------------------------------------------------------------------
+  call self%output
   call CopyToZeus (self)
   call trace_begin ('zeus3d (external)', itimer=itimer)
   call zeus3d (self%istep)  ! run ZEUS
@@ -426,14 +432,14 @@ SUBROUTINE CopyToZeus (self)
   x1upper = self%llc_nat(1) + self%size(1)
   x2upper = self%llc_nat(2) + self%size(2)
   x3upper = self%llc_nat(3) + self%size(3)
-  
+
   zniib = self%btypes%iib
   znijb = self%btypes%ijb
   znikb = self%btypes%ikb
   znoib = self%btypes%oib
   znojb = self%btypes%ojb
   znokb = self%btypes%okb
-  
+
   dx1 = self%mesh(1)%d
   dx2 = self%mesh(2)%d
   dx3 = self%mesh(3)%d
