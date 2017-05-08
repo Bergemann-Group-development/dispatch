@@ -108,15 +108,22 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE debug (self, label)
+SUBROUTINE debug (self, label, it)
   class(experiment_t):: self
+  integer, optional:: it
   character(len=*):: label
+  integer:: it_l
   !.............................................................................
+  if (present(it)) then
+    it_l = it
+  else
+    it_l = self%it
+  end if
   if (self%id==io%id_debug) &
-    print '(i6,2x,a,f12.6,1p,2(2x,3e14.6),2x,a)', &
-    self%id, 'XX time, mem:', self%time, &
-      self%mem(3  ,19,34:36,1,self%it,1), &
-      self%mem(2:4,19,34   ,1,self%it,1), trim(label)
+    print '(i5,1x,a,f8.2,1p,2(2x,5e13.5),1x,a)', &
+    self%id, 'DBG:', self%time, &
+      self%mem(1:5,18,18,self%i_d ,it_l,1), &
+      self%mem(1:5,18,18,self%i_px,it_l,1), trim(label)
 END SUBROUTINE debug
 
 !> =============================================================================
@@ -153,10 +160,10 @@ SUBROUTINE update (self)
     !--------------------------------------------------------------------------
     ! Update the MHD state
     !--------------------------------------------------------------------------
+    call self%debug ('before BCs')
     call self%boundary_conditions (self%it)
-    call self%debug('after BCs')
+    call self%debug ('after BCs')
     call self%mhd_t%update
-    call self%debug('after mhd_mod::update')
   end if
   !-----------------------------------------------------------------------------
   if (self%id==io%id_debug) then
@@ -176,7 +183,7 @@ SUBROUTINE update (self)
   end if
   call self%pebble_patch_t%update_pebbles
   call self%check_density ('after timestep')
-  call self%debug('end update')
+    call self%debug ('after update', self%new)
   call trace_end
 END SUBROUTINE update
 
@@ -292,7 +299,8 @@ SUBROUTINE edge_boundary_conditions (self, it)
   call self%density_boundary_condition (it)                             ! vertical density BC
   if (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
     select = bits%yu
-    print *, self%id, 'EXTRAP rho at yu', &
+    if (io%verbose>2) &
+      print *, self%id, 'EXTRAP rho at yu', &
       self%boundaries%is_set(bits%xl), self%boundaries%is_set(bits%xu), &
       self%boundaries%is_set(bits%yl), self%boundaries%is_set(bits%yu), &
       self%boundaries%is_set(bits%zl), self%boundaries%is_set(bits%zu)
@@ -301,7 +309,8 @@ SUBROUTINE edge_boundary_conditions (self, it)
       print *, self%id, 'EXTRAP D', d(6,33:37,31)
   else if (self%position(1)>0.0 .and. self%position(2)<0.0 .and. self%boundaries%is_set(bits%yl)) then
     select = bits%yl
-    print *, self%id, 'EXTRAP rho at yl', &
+    if (io%verbose>2) &
+      print *, self%id, 'EXTRAP rho at yl', &
       self%boundaries%is_set(bits%xl), self%boundaries%is_set(bits%xu), &
       self%boundaries%is_set(bits%yl), self%boundaries%is_set(bits%yu), &
       self%boundaries%is_set(bits%zl), self%boundaries%is_set(bits%zu)
@@ -327,13 +336,15 @@ SUBROUTINE edge_boundary_conditions (self, it)
       call self%boundaries%symmetric (uu, self%i_px+iv-1, select=select)
       select = bits%yu
       call self%boundaries%extrapolate (uu, self%i_px+iv-1, select=select)
-      print *, self%id, 'EXTRAP U1', iv, u(6,33:37,31,2)
+      if (io%verbose>2) &
+        print *, self%id, 'EXTRAP U1', iv, u(6,33:37,31,2)
     else if (self%position(1)>0.0 .and. self%position(2)<0.0 .and. self%boundaries%is_set(bits%yl)) then
       select = iand(self%boundaries%bits,not(bits%yl))
       call self%boundaries%symmetric (uu, self%i_px+iv-1, select=select)
       select = bits%yl
       call self%boundaries%extrapolate (uu, self%i_px+iv-1, select=select)
-      print *, self%id, 'EXTRAP U2', iv, u(6,33:37,31,2)
+      if (io%verbose>2) &
+        print *, self%id, 'EXTRAP U2', iv, u(6,33:37,31,2)
     else
       call self%boundaries%symmetric (uu, self%i_px+iv-1)               ! apply symmetric boundaries to velocities
     end if
@@ -360,11 +371,13 @@ SUBROUTINE edge_boundary_conditions (self, it)
   if      (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
     select = bits%yu
     call self%boundaries%log_extrapolate (e_th, self%i_e, select=select)
-    print *, self%id, 'EXTRAP E', e_th(6,33:37,31)
+    if (io%verbose>2) &
+      print *, self%id, 'EXTRAP E', e_th(6,33:37,31)
   else if (self%position(1)>0.0 .and. self%position(2)<0.0 .and. self%boundaries%is_set(bits%yl)) then
     select = bits%yl
     call self%boundaries%log_extrapolate (e_th, self%i_e, select=select)
-    print *, self%id, 'EXTRAP E', e_th(6,1:4,31)
+    if (io%verbose>2) &
+      print *, self%id, 'EXTRAP E', e_th(6,1:4,31)
   end if
   call self%E_th2e(e_th)                                                ! convert thermal energy to internal/total energy or entropy
                             call self%check_nan ('after th2e')

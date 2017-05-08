@@ -93,9 +93,10 @@ CONTAINS
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE debug (self, label)
+SUBROUTINE debug (self, label, it)
   class(task_t):: self
   character(len=*):: label
+  integer, optional:: it
   !.............................................................................
   if (self%id==io%id_debug) &
     print *, self%id, 'XX time, mem:', self%time, trim(label)//' (in task_mod)'
