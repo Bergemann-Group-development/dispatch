@@ -234,16 +234,20 @@ END SUBROUTINE constant
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE bndry_indices (m, iv, jl, ju)
+SUBROUTINE bndry_indices (m, iv, lo, li, ui, uo)
   class(mesh_t), pointer :: m
-  integer                :: iv, jl, ju
+  integer                :: iv, lo, li, ui, uo
   !.............................................................................
   if (m%h(iv) < 0.0) then
-    jl = m%li+1
-    ju = m%ui
+    lo = m%lo+1
+    li = m%lo+2
+    uo = m%uo
+    ui = m%uo-1
   else
-    jl = m%li
-    ju = m%ui-1
+    lo = m%lo
+    li = m%lb+2
+    uo = m%uo
+    ui = m%uo-2
   end if
 END SUBROUTINE bndry_indices
 
@@ -257,35 +261,35 @@ SUBROUTINE make_symmetric (self, f, m1, m2, iv, lower, upper, transpose, value)
   integer                                  :: iv
   logical                                  :: lower, upper, transpose
   real, optional                           :: value
-  integer                                  :: i, j, jl, ju
+  integer                                  :: i, j, lo, li, ui, uo
   !-----------------------------------------------------------------------------
-  call bndry_indices (m2, iv, jl, ju)
+  call bndry_indices (m2, iv, lo, li, ui, uo)
   if (lower) then
     if (transpose) then
-      do j=1,m2%lo
+      do j=1,lo
         do i=m1%lb,m1%ub
-          f(j,i) = f(jl+(m2%lo-j),i)
+          f(j,i) = f(li+(lo-j),i)
         end do
       end do
     else
-      do j=1,m2%lo
+      do j=1,lo
         do i=m1%lb,m1%ub
-          f(i,j) = f(i,jl+(m2%lo-j))
+          f(i,j) = f(i,li+(lo-j))
         end do
       end do
     end if
   end if
   if (upper) then
     if (transpose) then
-      do j=m2%uo,m2%ub
+      do j=uo,m2%ub
         do i=m1%lb,m1%ub
-          f(j,i) = f(ju-(j-m2%uo),i)
+          f(j,i) = f(ui-(j-uo),i)
         end do
       end do
     else
-      do j=m2%uo,m2%ub
+      do j=uo,m2%ub
         do i=m1%lb,m1%ub
-          f(i,j) = f(i,ju-(j-m2%uo))
+          f(i,j) = f(i,ui-(j-uo))
         end do
       end do
     end if
@@ -302,35 +306,35 @@ SUBROUTINE make_antisymmetric (self, f, m1, m2, iv, lower, upper, transpose, val
   integer                                  :: iv
   logical                                  :: lower, upper, transpose
   real, optional                           :: value
-  integer                                  :: i, j, jl, ju
+  integer                                  :: i, j, lo, li, ui, uo
   !-----------------------------------------------------------------------------
-  call bndry_indices (m2, iv, jl, ju)
+  call bndry_indices (m2, iv, lo, li, ui, uo)
   if (lower) then
     if (transpose) then
-      do j=1,m2%lo
+      do j=1,lo
         do i=m1%lb,m1%ub
-          f(j,i) = -f(jl+(m2%lo-j),i)
+          f(j,i) = -f(li+(lo-j),i)
         end do
       end do
     else
-      do j=1,m2%lo
+      do j=1,lo
         do i=m1%lb,m1%ub
-          f(i,j) = -f(i,jl+(m2%lo-j))
+          f(i,j) = -f(i,li+(lo-j))
         end do
       end do
     end if
   end if
   if (upper) then
     if (transpose) then
-      do j=m2%uo,m2%ub
+      do j=uo,m2%ub
         do i=m1%lb,m1%ub
-          f(j,i) = -f(ju-(j-m2%uo),i)
+          f(j,i) = -f(ui-(j-uo),i)
         end do
       end do
     else
-      do j=m2%uo,m2%ub
+      do j=uo,m2%ub
         do i=m1%lb,m1%ub
-          f(i,j) = -f(i,ju-(j-m2%uo))
+          f(i,j) = -f(i,ui-(j-uo))
         end do
       end do
     end if
@@ -348,37 +352,35 @@ SUBROUTINE make_extrapolated (self, f, m1, m2, iv, lower, upper, transpose, valu
   integer                                  :: iv
   logical                                  :: lower, upper, transpose
   real, optional                           :: value
-  integer                                  :: i, j, jl, ju
+  integer                                  :: i, j, lo, li, ui, uo
   !-----------------------------------------------------------------------------
-!  if (self%id==io%id_debug) &
-!    print *, self%id, 'make EXTRAP' , iv, m2%h(iv), lower, upper
-  call bndry_indices (m2, iv, jl, ju)
+  call bndry_indices (m2, iv, lo, li, ui, uo)
   if (lower) then
     if (transpose) then
-      do j=1,m2%lo
+      do j=1,lo
         do i=m1%lb,m1%ub
-          f(j,i) = 2.*f(m2%li,i) - f(jl+(m2%lo-j),i)
+          f(j,i) = 2.*f(lo+1,i) - f(lo+2+(lo-j),i)
         end do
       end do
     else
-      do j=1,m2%lo
+      do j=1,lo
         do i=m1%lb,m1%ub
-          f(i,j) = 2.*f(i,m2%li) - f(i,jl+(m2%lo-j))
+          f(i,j) = 2.*f(i,lo+1) - f(i,lo+2+(lo-j))
         end do
       end do
     end if
   end if
   if (upper) then
     if (transpose) then
-      do j=m2%uo,m2%ub
+      do j=uo,m2%ub
         do i=m1%lb,m1%ub
-          f(j,i) = 2.*f(m2%ui,i) - f(ju-(j-m2%uo),i)
+          f(j,i) = 2.*f(uo-1,i) - f(uo-2-(j-uo),i)
         end do
       end do
     else
-      do j=m2%uo,m2%ub
+      do j=uo,m2%ub
         do i=m1%lb,m1%ub
-          f(i,j) = 2.*f(i,m2%ui) - f(i,ju-(j-m2%uo))
+          f(i,j) = 2.*f(i,uo-1) - f(i,uo-2-(j-uo))
         end do
       end do
     end if
@@ -396,35 +398,35 @@ SUBROUTINE make_log_extrapolated (self, f, m1, m2, iv, lower, upper, transpose, 
   integer                                  :: iv
   logical                                  :: lower, upper, transpose
   real, optional                           :: value
-  integer                                  :: i, j, jl, ju
+  integer                                  :: i, j, lo, li, ui, uo
   !-----------------------------------------------------------------------------
-  call bndry_indices (m2, iv, jl, ju)
+  call bndry_indices (m2, iv, lo, li, ui, uo)
   if (lower) then
     if (transpose) then
-      do j=1,m2%lo
+      do j=1,lo
         do i=m1%lb,m1%ub
-          f(j,i) = exp(2.*log(f(m2%li,i)) - log(f(jl+(m2%lo-j),i)))
+          f(j,i) = exp(2.*log(f(lo+1,i)) - log(f(lo+2+(lo-j),i)))
         end do
       end do
     else
-      do j=1,m2%lo
+      do j=1,lo
         do i=m1%lb,m1%ub
-          f(i,j) = exp(2.*log(f(i,m2%li)) - log(f(i,jl+(m2%lo-j))))
+          f(i,j) = exp(2.*log(f(i,lo+1)) - log(f(i,lo+2+(lo-j))))
         end do
       end do
     end if
   end if
   if (upper) then
     if (transpose) then
-      do j=m2%uo,m2%ub
+      do j=uo,m2%ub
         do i=m1%lb,m1%ub
-          f(j,i) = exp(2.*log(f(m2%ui,i)) - log(f(ju-(j-m2%uo),i)))
+          f(j,i) = exp(2.*log(f(uo-1,i)) - log(f(uo-2-(j-uo),i)))
         end do
       end do
     else
-      do j=m2%uo,m2%ub
+      do j=uo,m2%ub
         do i=m1%lb,m1%ub
-          f(i,j) = exp(2.*log(f(i,m2%ui)) - log(f(i,ju-(j-m2%uo))))
+          f(i,j) = exp(2.*log(f(i,uo-1)) - log(f(i,uo-2-(j-uo))))
         end do
       end do
     end if
@@ -442,17 +444,18 @@ SUBROUTINE make_constant (self, f, m1, m2, iv, lower, upper, transpose, value)
   integer                                  :: iv
   logical                                  :: lower, upper, transpose
   real, optional                           :: value
-  integer                                  :: i, j
+  integer                                  :: i, j, lo, li, ui, uo
   !-----------------------------------------------------------------------------
+  call bndry_indices (m2, iv, lo, li, ui, uo)
   if (lower) then
     if (transpose) then
-      do j=1,m2%lo
+      do j=1,lo
         do i=m1%lb,m1%ub
           f(j,i) = value
         end do
       end do
     else
-      do j=1,m2%lo
+      do j=1,lo
         do i=m1%lb,m1%ub
           f(i,j) = value
         end do
@@ -461,13 +464,13 @@ SUBROUTINE make_constant (self, f, m1, m2, iv, lower, upper, transpose, value)
   end if
   if (upper) then
     if (transpose) then
-      do j=m2%uo,m2%ub
+      do j=uo,m2%ub
         do i=m1%lb,m1%ub
           f(j,i) = value
         end do
       end do
     else
-      do j=m2%uo,m2%ub
+      do j=uo,m2%ub
         do i=m1%lb,m1%ub
           f(i,j) = value
         end do
