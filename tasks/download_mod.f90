@@ -188,15 +188,17 @@ END SUBROUTINE same
 SUBROUTINE different (target, source)
   class(patch_t), pointer :: target, source
   !.............................................................................
-  integer                 :: ix, iy, iz, iv
+  integer                 :: ix, iy, iz, iv, jt(2)
   integer, dimension(3)   :: l, u, ii, lb, ub
   real(8), dimension(3)   :: pos
   logical                 :: valid
   integer, save           :: itimer=0
+  real                    :: pt(2)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different', itimer=itimer)
   lb = target%mesh%lb
   ub = target%mesh%ub
+  call source%time_interval (target%time, jt, pt)
   do iv=1,target%nv
     call dnload_range (target, source, iv, l, u)
     if (target%id==io%id_debug) &
@@ -206,7 +208,7 @@ SUBROUTINE different (target, source)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
-          call source%interpolate (target, ii, iv)
+          call source%interpolate (target, ii, iv, jt, pt)
         end do
       end do
     end do

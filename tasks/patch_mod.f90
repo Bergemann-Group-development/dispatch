@@ -1923,8 +1923,9 @@ SUBROUTINE time_interval (self, time, jt, pt)
   !.....................................................................
   integer                         :: i, j
   real(8)                         :: t(self%nt), dt
+  integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
-  call trace%begin ('patch_t%time_interval', 2)
+  call trace%begin ('patch_t%time_interval', 2, itimer=itimer)
   t = self%t(self%iit)
   j = 1
   do i=1,self%nt-2
@@ -1941,7 +1942,7 @@ SUBROUTINE time_interval (self, time, jt, pt)
   if (io%verbose>1 .and. pt(2)>0.0) then
     print '(a,1p,3e12.4,2i5,0p,2f8.4)', 'time_interval: times  =', t(j), time, t(j+1), jt, pt
   end if
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE time_interval
 
 !> =============================================================================
@@ -1966,43 +1967,31 @@ END FUNCTION index_stagger
 !> Hence we should add a small fraction before taking the floor value, and then
 !> subtract the same.
 !> =============================================================================
-SUBROUTINE index_space (self, pos, time, iv, ii, p, full_domain)
+SUBROUTINE index_space (self, pos, iv, i, p)
   class(patch_t):: self
-  real(8)           :: pos(3), time
+  real(8)           :: pos(3)
   integer           :: iv
-  integer           :: ii(5)
-  real              :: p(5)
-  logical, optional :: full_domain
+  integer           :: i(3)
+  real              :: p(3)
   !.............................................................................
-  integer           :: i, jt(2)
-  real              :: pt(2)
+  integer           :: jt(2)
+  real              :: pt(2), h(3)
   logical           :: full
   real, parameter   :: eps=0.001
+  integer, save     :: itimer=0
   !-----------------------------------------------------------------------------
-  if (present(full_domain)) then
-    full = full_domain
-  else
-    full = .false.
-  end if
-  do i=1,3
-    p(i) = pos(i) - self%position(i)                            ! relative position
-    p(i) = modulo(p(i)+0.5_8*self%mesh(i)%b,self%mesh(i)%b) &   ! wrap
-         - 0.5_8*self%mesh(i)%b
-    p(i) = p(i)/self%mesh(i)%d+self%mesh(i)%o-self%mesh(i)%h(iv)! float index
-    p(i) = p(i) + eps                                           ! ensure same points ok
-    ii(i) = p(i)                                                ! integer part
-    if (full) then
-      ii(i) = max(self%mesh(i)%lb, &
-              min(self%mesh(i)%ub-1,ii(i)))                     ! valid range
-    else
-      ii(i) = max(self%mesh(i)%li, &
-              min(self%mesh(i)%ui-1,ii(i)))                     ! valid range
-    end if
-    p(i) = p(i) - eps - ii(i)                                   ! remaining fraction
-  end do
-  call self%time_interval (time, jt, pt)
-  ii(4:5) = jt
-  p(4:5) = pt
+  !call trace%begin ('patch_t%index_space', itimer=itimer)
+  h = self%index_stagger(iv)
+  p = pos - self%position                               ! relative position
+  p = modulo(p+0.5_8*self%mesh%b,self%mesh%b) &         ! wrap
+              -0.5_8*self%mesh%b
+  p = p/self%mesh%d + self%mesh%o - h                   ! float index
+  p = p + eps                                           ! ensure same points ok
+  i = p                                                 ! integer part
+  i = max(self%mesh%lb, &
+      min(self%mesh%ub-1,i))                            ! valid range
+  p = p - eps - i                                       ! remaining fraction
+  !call trace%end (itimer)
 END SUBROUTINE index_space
 
 !> =============================================================================
@@ -2039,58 +2028,62 @@ END FUNCTION index_only
 !> is inside the valid domain (inside a distance of half a cell from the source
 !> patch boundary for non-staggered points)
 !> =============================================================================
-SUBROUTINE interpolate (self, target, ii, iv)
+SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
   class(patch_t)           :: self
   class(patch_t), pointer  :: target
-  integer                  :: ii(3), iv
+  integer                  :: ii(3), iv, jt(2)
+  real                     :: pt(2)
   !.............................................................................
   real(8)                  :: pos(3)
-  integer                  :: j(5)
-  real                     :: p(5)
+  integer                  :: j(3)
+  real                     :: p(3)
+  integer, save            :: itimer=0
   !-----------------------------------------------------------------------------
   pos = target%myposition (ii, iv)
-  call self%index_space (pos, target%time, iv, j, p, full_domain=.true.)
+  call self%index_space (pos, iv, j, p)
+  !call trace%begin ('patch_t%interpolate', itimer=itimer)
   if (self%unsigned(iv)) then
     target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
-      p(4)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(4),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(4),1)))   + &
-                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(4),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(4),1))))  + &
-            (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(4),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(4),1)))   + &
-                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(4),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(4),1))))) + &
-      p(5)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(5),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(5),1)))   + &
-                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(5),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(5),1))))  + &
-            (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(5),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(5),1)))   + &
-                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(5),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(5),1))))))
+     pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1)))   + &
+                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1))))  + &
+            (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1)))   + &
+                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1))))) + &
+     pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1)))   + &
+                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1))))  + &
+            (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1)))   + &
+                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1))    + &
+                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))))
   else
     target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
-      p(4)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(4),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(4),1))   + &
-                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(4),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(4),1)))  + &
-            (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(4),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(4),1))   + &
-                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(4),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(4),1)))) + &
-      p(5)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,j(5),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,j(5),1))   + &
-                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,j(5),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,j(5),1)))  + &
-            (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,j(5),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,j(5),1))   + &
-                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,j(5),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,j(5),1))))
+     pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1))   + &
+                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1)))  + &
+            (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1))   + &
+                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1)))) + &
+     pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1))   + &
+                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1)))  + &
+            (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1))   + &
+                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1)    + &
+                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))
   end if
   if (target%id==io%id_debug) &
     print 1, target%id, ii, iv, self%id, j, p, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
     1 format(i6,3i3,i4,2x,"DBG patch_t%interpolate src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
       "   out:",1p,e15.6)
+  !call trace%end (itimer)
 END SUBROUTINE interpolate
 
 END MODULE patch_mod
