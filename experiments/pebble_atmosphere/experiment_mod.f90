@@ -129,7 +129,7 @@ SUBROUTINE debug (self, label, it)
         self%mem(n-3:n-1,18,18,self%i_s ,it_l,1)/self%mem(n-3:n-1,18,18,self%i_d ,it_l,1), &
         self%mem(n-3:n-1,18,18,self%i_px,it_l,1), trim(label)
     else
-      print '(i4,1x,a,f6.1,1p,2(1x,3e14.6),1x,a)', &
+      print '(i4,1x,a,f6.1,1p,3(1x,3e14.6),1x,a)', &
         self%id, 'DBG:', self%time, &
         self%mem(2:4,18,18,self%i_d ,it_l,1), &
         self%mem(2:4,18,18,self%i_s ,it_l,1)/self%mem(2:4,18,18,self%i_d ,it_l,1), &
