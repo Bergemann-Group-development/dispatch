@@ -164,18 +164,33 @@ SUBROUTINE same (target, source)
     if (target%id==io%id_debug) &
       print 1, source%id, l, u, o, jt, pt
       1 format("DBG download_t%same:", i6,"  l,u,o:",3(3i4,2x)," jt,pt:",2i4,2x,2f6.2)
-    do iz=l(3),u(3)
-      do iy=l(2),u(2)
-        do ix=l(1),u(1)
-          ii = [ix,iy,iz]
-          target%mem(ix,iy,iz,iv,target%it,1) = &
-             pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
-             pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
-          if (all(ii>target%mesh%li.and.ii<=target%mesh%ui)) print *, &
-            target%id, 'ERROR: internal point modified', source%id, ii, iv
+    if (source%unsigned(iv)) then
+      do iz=l(3),u(3)
+        do iy=l(2),u(2)
+          do ix=l(1),u(1)
+            ii = [ix,iy,iz]
+            target%mem(ix,iy,iz,iv,target%it,1) = exp( &
+               pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
+               pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
+            !if (all(ii>target%mesh%li.and.ii<=target%mesh%ui)) print *, &
+              !target%id, 'ERROR: internal point modified', source%id, ii, iv
+          end do
         end do
       end do
-    end do
+    else
+      do iz=l(3),u(3)
+        do iy=l(2),u(2)
+          do ix=l(1),u(1)
+            ii = [ix,iy,iz]
+            target%mem(ix,iy,iz,iv,target%it,1) = &
+               pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
+               pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
+            !if (all(ii>target%mesh%li.and.ii<=target%mesh%ui)) print *, &
+              !target%id, 'ERROR: internal point modified', source%id, ii, iv
+          end do
+        end do
+      end do
+    end if
   end do
   if (io%verbose>2.or.target%id==io%id_debug) &
     print *, target%id, source%id, 'same picked up', product(u-l+1), ' values, mind =', &
