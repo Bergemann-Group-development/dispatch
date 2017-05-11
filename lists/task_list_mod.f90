@@ -227,6 +227,7 @@ SUBROUTINE update (self)
   real(8), save:: time, otime=0d0
   integer, save:: oid=0
   integer, save:: itimer=0
+  integer:: id
   !.............................................................................
   call trace%begin('task_list_t%update')
   call self%check_flags
@@ -258,6 +259,7 @@ SUBROUTINE update (self)
     ! one time.
     !---------------------------------------------------------------------------
     already_busy = task%is_set (bits%busy)
+    id = task%id
     if (.not.already_busy) then
       call task%set (bits%busy)                         ! mark task busy
       self%queue => head%next_time                      ! chop head off
@@ -274,8 +276,8 @@ SUBROUTINE update (self)
         otime = time
         !$omp atomic write
         oid = otask%id
-        write (io_unit%queue,'(f12.6,i6,2f12.6,2i5)') &
-          wallclock(), task%istep, task%time, otask%atime, self%nq, self%nac
+        !write (io_unit%queue,'(f12.6,i6,2f12.6,2i5)') &
+        !  wallclock(), task%istep, task%time, otask%atime, self%nq, self%nac
       end if
     end if
     !---------------------------------------------------------------------------
@@ -299,8 +301,12 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   if (associated(head)) then
     if (already_busy) then
-      write (io_unit%log,*) mpi%rank,' WARNING: thread',omp%thread, &
-        ' tried to update busy task', task%id
+      !!$omp critical (io_cr)
+      !write (io_unit%log,*) mpi%rank,' WARNING: thread',omp%thread, &
+      !  ' tried to update busy task', task%id
+      print *, mpi%rank,' WARNING: thread',omp%thread, &
+        ' tried to update busy task', id
+      !!$omp end critical (io_cr)
       call trace_end
       return
     end if

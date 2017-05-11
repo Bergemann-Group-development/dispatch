@@ -1559,7 +1559,7 @@ END FUNCTION fminval8
 SUBROUTINE check_nan (self, label)
   class(patch_t):: self
   character(len=*), optional:: label
-  integer:: ix, iy, iz, iv
+  integer:: ix, iy, iz, iv, ii(3)
   logical:: nan
   !-----------------------------------------------------------------------------
   if (io%verbose<1) return
@@ -1590,6 +1590,7 @@ SUBROUTINE check_nan (self, label)
           print 1,'ERROR: NaN ix,iy,iz,iv:', ix,iy,iz,iv
         end if
       end if
+      ii = [ix,iy,iz]
       nan = .true.
     end if
   end do
@@ -1600,12 +1601,13 @@ SUBROUTINE check_nan (self, label)
     if (present(label)) then
       print *, self%id, trim(label)//' ERROR NaN, min(d), max(d):', &
         minval(self%mem(:,:,:,self%i_d,self%it,1)), &
-        maxval(self%mem(:,:,:,self%i_d,self%it,1))
+        maxval(self%mem(:,:,:,self%i_d,self%it,1)), ii
     else
       print *, self%id, ' ERROR NaN, min(d), max(d):', &
         minval(self%mem(:,:,:,self%i_d,self%it,1)), &
-        maxval(self%mem(:,:,:,self%i_d,self%it,1))
+        maxval(self%mem(:,:,:,self%i_d,self%it,1)), ii
     end if
+    print *, self%unsigned
     error stop 'NaN'
   end if
   call trace%end
@@ -2051,7 +2053,7 @@ FUNCTION index_only (self, pos, iv, roundup) RESULT (ii)
   do i=1,3
     p(i) = pos(i) - self%position(i)                            ! relative position
     p(i) = modulo(p(i)+0.5_8*self%mesh(i)%b,self%mesh(i)%b) &   ! wrap
-         - 0.5_8*self%mesh(i)%b
+                      -0.5_8*self%mesh(i)%b
     p(i) = p(i)/self%mesh(i)%d+self%offset(i)-self%mesh(i)%h(iv)! float index
     if (present(roundup)) then
       ii(i) = ceiling(p(i))                                     ! round up
