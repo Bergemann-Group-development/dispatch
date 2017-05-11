@@ -113,7 +113,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h(2+i) = -0.5
     if (self%mhd) self%mesh(i)%h(5+i) = -0.5
   end do
-  !self%unsigned(idx%d) = .true.
+  self%unsigned(idx%d) = .true.
   call self%force%init(self%kind)
   call trace%end
 END SUBROUTINE init

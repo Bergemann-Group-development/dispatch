@@ -674,11 +674,13 @@ END SUBROUTINE periodic_grid
 !> slot rotation, so the slot that has just been updated is iit(nt).
 !> =============================================================================
 SUBROUTINE extrapolate_guards (self)
-  class(patch_t):: self
-  integer:: ix, iy, iz, i(3), it0, it1, it2, nt, iit(self%nt)
-  integer, dimension(3):: lb, lo, li, ub, uo, ui
-  integer, save:: itimer=0
+  class(patch_t)        :: self
   !.............................................................................
+  integer               :: it0, it1, it2, nt, iit(self%nt)
+  integer, dimension(3) :: lb, lo, li, ub, uo, ui, i
+  integer               :: iv
+  integer, save         :: itimer=0
+  !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%extrapolate_guards', 3, itimer=itimer)
   nt = self%nt
   iit = self%local_iit()
@@ -703,39 +705,77 @@ SUBROUTINE extrapolate_guards (self)
   if (io%id_debug>0.and.(self%id==io%id_debug.or.abs(self%id-io%id_debug)==27)) then
     print '(i5,2x,a,6i7)',self%id,'MK extrapolating guard zone values', it2, it1, it0, self%it, self%new
   end if
-  !-----------------------------------------------------------------------------
-  ! XY-layers (Z varies the least)
-  !-----------------------------------------------------------------------------
-  if (self%gn(3) > 1) then
-    self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),:,it0,1) =   &
-    self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),:,it1,1)*2 - &
-    self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),:,it2,1)
-    self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),:,it0,1) =   &
-    self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),:,it1,1)*2 - &
-    self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),:,it2,1)
-  end if
-  !-----------------------------------------------------------------------------
-  ! ZX-layers (Y varies the least)
-  !-----------------------------------------------------------------------------
-  if (self%gn(2) > 1) then
-    self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),:,it0,1) =   &
-    self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),:,it1,1)*2 - &
-    self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),:,it2,1)
-    self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),:,it0,1) =   &
-    self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),:,it1,1)*2 - &
-    self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),:,it2,1)
-  end if
-  !-----------------------------------------------------------------------------
-  ! YZ-layers (X varies the least)
-  !-----------------------------------------------------------------------------
-  if (self%gn(1) > 1) then
-    self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),:,it0,1) =   &
-    self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),:,it1,1)*2 - &
-    self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),:,it2,1)
-    self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),:,it0,1) =   &
-    self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),:,it1,1)*2 - &
-    self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),:,it2,1)
-  end if
+  do iv=1,self%nv
+    if (self%unsigned(iv)) then
+      !-------------------------------------------------------------------------
+      ! XY-layers (Z varies the least)
+      !-------------------------------------------------------------------------
+      if (self%gn(3) > 1) then
+            self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it0,1) = exp(  &
+        log(self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it1,1))*2 - &
+        log(self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it2,1)) )
+            self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it0,1) = exp(  &
+        log(self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it1,1))*2 - &
+        log(self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it2,1)) )
+      end if
+      !-------------------------------------------------------------------------
+      ! ZX-layers (Y varies the least)
+      !-------------------------------------------------------------------------
+      if (self%gn(2) > 1) then
+            self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it0,1) = exp(  &
+        log(self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it1,1))*2 - &
+        log(self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it2,1)) )
+            self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it0,1) = exp(  &
+        log(self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it1,1))*2 - &
+        log(self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it2,1)) )
+      end if
+      !-------------------------------------------------------------------------
+      ! YZ-layers (X varies the least)
+      !-------------------------------------------------------------------------
+      if (self%gn(1) > 1) then
+            self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it0,1) = exp(  &
+        log(self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it1,1))*2 - &
+        log(self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it2,1)) )
+            self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it0,1) = exp(  &
+        log(self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it1,1))*2 - &
+        log(self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it2,1)) )
+      end if
+    else
+      !-------------------------------------------------------------------------
+      ! XY-layers (Z varies the least)
+      !-------------------------------------------------------------------------
+      if (self%gn(3) > 1) then
+        self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it0,1) =   &
+        self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it1,1)*2 - &
+        self%mem(lb(1):ub(1),lb(2):ub(2),lb(3):lo(3),iv,it2,1)
+        self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it0,1) =   &
+        self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it1,1)*2 - &
+        self%mem(lb(1):ub(1),lb(2):ub(2),uo(3):ub(3),iv,it2,1)
+      end if
+      !-------------------------------------------------------------------------
+      ! ZX-layers (Y varies the least)
+      !-------------------------------------------------------------------------
+      if (self%gn(2) > 1) then
+        self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it0,1) =   &
+        self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it1,1)*2 - &
+        self%mem(lb(1):ub(1),lb(2):lo(2),li(3):ui(3),iv,it2,1)
+        self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it0,1) =   &
+        self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it1,1)*2 - &
+        self%mem(lb(1):ub(1),uo(2):ub(2),li(3):ui(3),iv,it2,1)
+      end if
+      !-------------------------------------------------------------------------
+      ! YZ-layers (X varies the least)
+      !-------------------------------------------------------------------------
+      if (self%gn(1) > 1) then
+        self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it0,1) =   &
+        self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it1,1)*2 - &
+        self%mem(lb(1):lo(1),li(2):ui(2),li(3):ui(3),iv,it2,1)
+        self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it0,1) =   &
+        self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it1,1)*2 - &
+        self%mem(uo(1):ub(1),li(2):ui(2),li(3):ui(3),iv,it2,1)
+      end if
+    end if
+  end do
   call trace_end (itimer)
 END SUBROUTINE extrapolate_guards
 
