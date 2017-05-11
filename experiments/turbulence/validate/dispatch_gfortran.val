@@ -4,9 +4,6 @@
  MPI implementation provides only support for serial MPI calls by any thread
 --------------------------------------------------------------------------------
 reading /proc/cpuinfo:   0.0 sec
- n_socket =   1
-   n_core =   6
- n_thread =   1
 &IO_PARAMS
  VERBOSE=          2,
  DO_DEBUG=F,
@@ -27,7 +24,6 @@ reading /proc/cpuinfo:   0.0 sec
  =======================================================================
 &TIMER_PARAMS
  SEC_PER_REPORT=  5.0000000000000000     ,
- NCORES=          6,
  /
  -------------------------------- scaling_mod ---------------------------------
   CODE UNITS:   (cgs):

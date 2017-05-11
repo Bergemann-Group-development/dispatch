@@ -9,6 +9,7 @@ pipelines:
   default:
     - step:
         script:
+          - export OMP_STACKSIZE=265m; export OMP_NUM_THREADS=1
           - echo "Run simple tests"
           - cd $BITBUCKET_CLONE_DIR; cd tests/meshes; make clean; make; ./test.x
           - echo "Check compilation of experiments in experiment_list.txt"

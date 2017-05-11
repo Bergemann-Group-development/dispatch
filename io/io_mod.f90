@@ -85,6 +85,11 @@ SUBROUTINE init (self, name)
     rewind (io_unit%input)
     read (io_unit%input, io_params, iostat=iostat)
     if (self%master.and.first_time) write (*,io_params)
+    if (mpi%master .and. .not. do_validate) then
+      print'(a,i4)', ' n_socket =', omp%nsockets
+      print'(a,i4)', '   n_core =', omp%ncores
+      print'(a,i4)', ' n_thread =', omp_nthreads
+    end if
     !---------------------------------------------------------------------------
     ! OMP specific setup
     !---------------------------------------------------------------------------

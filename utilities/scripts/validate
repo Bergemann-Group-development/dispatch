@@ -159,7 +159,7 @@ foreach d ( $dirs )
   if ($s) then
     echo "WARNING: validation failed"
     if (`uname -o` != "Cygwin" ) then
-      echo "Validation failed -- see $cwd/validate/" | mail -s "validation failed in $cwd" $user
+      echo "Validation failed -- see $cwd/validate/"
     endif
     exit 1
   else
