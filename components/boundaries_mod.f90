@@ -242,12 +242,12 @@ SUBROUTINE bndry_indices (m, iv, lo, li, ui, uo)
     lo = m%lo+1
     li = m%lo+2
     uo = m%uo
-    ui = m%uo-1
+    ui = m%uo-2
   else
     lo = m%lo
     li = m%lb+2
     uo = m%uo
-    ui = m%uo-2
+    ui = m%uo-1
   end if
 END SUBROUTINE bndry_indices
 
