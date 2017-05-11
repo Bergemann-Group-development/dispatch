@@ -253,9 +253,9 @@ SUBROUTINE boundary_conditions (self, it)
         s = s*d
       else
         allocate (s(self%gn(1),self%gn(2),self%gn(3)))
-        call self%e2S (s)
+        call self%e2S (s, it)
         call self%boundaries%spherical (s, s0, self%mesh, self%i_s)
-        call self%S2e (s)
+        call self%S2e (s, it)
         deallocate (s)
       end if
       if (self%nw>1) then
@@ -335,7 +335,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
   ! In the vertical and radial directions, where density varies
   ! systematically, apply BCs to velocity
   !---------------------------------------------------------------------
-  call self%p2U(u)                                                      ! velocities
+  call self%p2U(u,it)                                                      ! velocities
   do iv=1,3
     uu => u(:,:,:,iv)
 !    call self%boundaries%symmetric (uu, self%i_px+iv-1, select=select) ! apply symmetric boundaries to velocities
@@ -371,7 +371,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
     end if
   end do
                             call self%check_density ('after u BC')
-  call self%U2p(u)                                                      ! convert velocities to momentum
+  call self%U2p(u,it)                                                      ! convert velocities to momentum
   !---------------------------------------------------------------------
   ! Extrapolate in per unit mass variables
   !---------------------------------------------------------------------
@@ -382,9 +382,9 @@ SUBROUTINE edge_boundary_conditions (self, it)
     call self%boundaries%extrapolate(ss, self%i_s)                      ! extrapolate in entropy per unit mass
     s = ss*d
   else
-    call self%e2E_th(e_th)                                              ! thermal energy per unit mass
+    call self%e2E_th(e_th, it)                                          ! thermal energy per unit mass
     call self%boundaries%log_extrapolate(e_th, self%i_e)                ! extrapolate in the log
-    call self%E_th2e(e_th)                                              ! convert to energy per unit volume
+    call self%E_th2e(e_th, it)                                          ! convert to energy per unit volume
   end if
                             call self%check_nan ('after th2e')
   deallocate (u,e_th)

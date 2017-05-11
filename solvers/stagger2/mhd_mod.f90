@@ -554,14 +554,15 @@ END SUBROUTINE output
 !> =====================================================================
 !> Get velocities from momenta
 !> =====================================================================
-SUBROUTINE p2U(self, U)
+SUBROUTINE p2U(self, U, it)
   class(mhd_t) :: self
   real, dimension(:,:,:,:), pointer:: U
+  integer:: it
   !.....................................................................
   real, dimension(:,:,:,:), pointer:: dd
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,           self%it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d,           it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
   dd=down(log(d))
   U = p/exp(dd)
@@ -572,14 +573,15 @@ END SUBROUTINE p2U
 !> =====================================================================
 !> Put velocities to momenta
 !> =====================================================================
-SUBROUTINE U2p(self, U)
+SUBROUTINE U2p(self, U, it)
   class(mhd_t) :: self
   real, dimension(:,:,:,:), pointer:: U
+  integer:: it
   !.....................................................................
   real, dimension(:,:,:,:), pointer:: dd
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
   dd=down(log(d))
   p = U*exp(dd)
@@ -590,13 +592,15 @@ END SUBROUTINE U2p
 !> =====================================================================
 !> Get thermal energy per unit mass from entropy
 !> =====================================================================
-SUBROUTINE e2E_th(self, E_th)
+SUBROUTINE e2E_th(self, E_th, it)
   class(mhd_t) :: self
+  integer:: it
+  !.....................................................................
   real, dimension(:,:,:), pointer:: E_th
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
-            s => self%mem(:,:,:,self%i_s,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d,it,1), &
+            s => self%mem(:,:,:,self%i_s,it,1))
   g1 = self%gamma-1.0
   E_th = d**g1*exp(s*g1/d)/g1
   end associate
@@ -605,13 +609,15 @@ END SUBROUTINE e2E_th
 !> =====================================================================
 !> Put thermal energy to entropy per unit volume
 !> =====================================================================
-SUBROUTINE E_th2e(self, E_th)
+SUBROUTINE E_th2e(self, E_th, it)
   class(mhd_t) :: self
+  integer:: it
+  !.....................................................................
   real, dimension(:,:,:), pointer:: E_th
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
-            s => self%mem(:,:,:,self%i_s,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d,it,1), &
+            s => self%mem(:,:,:,self%i_s,it,1))
   g1 = self%gamma-1.0
   s = d*log(E_th*g1/d**g1)/g1
   end associate
@@ -620,13 +626,15 @@ END SUBROUTINE E_th2e
 !> =====================================================================
 !> Get thermal energy per unit mass from entropy
 !> =====================================================================
-SUBROUTINE e2S(self, s)
+SUBROUTINE e2S(self, s, it)
   class(mhd_t) :: self
+  integer:: it
+  !.....................................................................
   real, dimension(:,:,:), pointer:: s
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
-            e => self%mem(:,:,:,self%i_s,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d,it,1), &
+            e => self%mem(:,:,:,self%i_s,it,1))
   g1 = self%gamma-1.0
   s = log(e*g1/d**self%gamma)/g1
   end associate
@@ -635,13 +643,15 @@ END SUBROUTINE e2S
 !> =====================================================================
 !> Get thermal energy per unit mass from entropy
 !> =====================================================================
-SUBROUTINE S2e(self, s)
+SUBROUTINE S2e(self, s, it)
   class(mhd_t) :: self
+  integer:: it
+  !.....................................................................
   real, dimension(:,:,:), pointer:: s
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
-            e => self%mem(:,:,:,self%i_s,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d,it,1), &
+            e => self%mem(:,:,:,self%i_s,it,1))
   g1 = self%gamma-1.0
   e = d**self%gamma*exp(s*g1)/g1
   end associate
