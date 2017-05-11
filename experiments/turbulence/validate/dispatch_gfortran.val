@@ -1,5 +1,4 @@
 --------------------------------------------------------------------------------
- mpi.f90 $Id: 7ee48c9fbb353f0ff1c7d0cc27955a0033dca0f7 $                                                                 
  MPI initialized, mpi%size =      1
  MPI implementation provides only support for serial MPI calls by any thread
 --------------------------------------------------------------------------------
