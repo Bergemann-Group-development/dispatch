@@ -82,6 +82,7 @@ SUBROUTINE init (self)
   ! sets the IC values, either from reading in snapshot values, or by calling
   ! the IC condition procedure self%initial%condition() from gpatch_t%init.
   !----------------------------------------------------------------------------
+  self%periodic = .false.
   self%periodic(2) = .true.
   call self%pebble_patch_t%init
   ! In the case that we're using ZEUS, `self%nv` should now be 10.
