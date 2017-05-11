@@ -121,9 +121,9 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
     if (source%level==target%level) then
       offset = 0
       dist = source%distance(target)  ! positive if source to the right of target
-      where (dist > 0.0)
+      where (dist > source%ds)
         offset = -target%mesh%n
-      else where (dist < 0)
+      else where (dist < -source%ds)
         offset = target%mesh%n
       end where
     else
