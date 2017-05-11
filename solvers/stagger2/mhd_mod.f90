@@ -538,7 +538,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
   call self%gpatch_t%output (experiment_name)
-  !$omp critical (output_cr)
+  !$omp critical (out_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout
   inquire(file=filename, exist=exists)
@@ -548,7 +548,7 @@ SUBROUTINE output (self, experiment_name)
     write (io%data_unit,'(8f10.4)') self%nu
     close (io%data_unit)
   end if
-  !$omp end critical (output_cr)
+  !$omp end critical (out_cr)
 END SUBROUTINE output
 
 !> =====================================================================
