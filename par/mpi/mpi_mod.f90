@@ -155,7 +155,7 @@ SUBROUTINE init_mpi (self)
   master = mpi_master
   if (master) then
     print 1, '--------------------------------------------------------------------------------'
-    print 1, ' '//id
+    !!!print 1, ' '//id
     print 1, ' MPI initialized, mpi%size =', mpi_size
   1 format(a,i7)
     select case (mpi_provided)
