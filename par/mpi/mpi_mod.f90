@@ -94,11 +94,6 @@ SUBROUTINE init (self, mpi_dims, dims)
   mpi%master = (mpi_rank==0)
 #endif
   mpi%ok     = .true.
-  if (mpi%master) then
-    print'(a,i4)', ' n_socket =', omp%nsockets
-    print'(a,i4)', '   n_core =', omp%ncores
-    print'(a,i4)', ' n_thread =', omp_nthreads
-  end if
   !-----------------------------------------------------------------------------
   ! For some reason, this must be done element by element.  Turning it around,
   ! and doing mpi = self (which is syntactically correct), values are screwed
@@ -269,7 +264,7 @@ END SUBROUTINE assert
 !> =============================================================================
 !> Attempt to determine the actual number of cores. If /proc/cpuinfo exists
 !> one has to count the number of sockets, but observing hom many different 
-!> "physical id" there are.  The number of cores per socket is in the fild
+!> "physical id" there are.  The number of cores per socket is in the field
 !> "cpu cores".
 !> =============================================================================
 SUBROUTINE detect_cores
