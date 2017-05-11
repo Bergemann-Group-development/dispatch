@@ -1,22 +1,40 @@
 ! $Id$
 !
-! This default input file runs turbulence at 50x50x50 resolution in 2x2x2 patches.
-! It should take only a few minutes on a laptop, and produces 10 snapshots in time.
+! This default input file runs turbulence at 21x21x21 resolution in 4x4x4 patches.
+! It should take only a few minutes on a laptop, and produces 5 snapshots in time.
 !
 ! Do not modify the input.nml file to make experiments with other parameters.
 ! Instead, copy input.nml to othername.nml, and run ./dispatch.x other.nml, which
 ! produces data files named data/other_ppp_tttt.dat, where ppp is the patch number
 ! and tttt is the snapshot number.
 
-&io_params do_validate=t
+&load_balance_params
+/
+&task_list_params
+ do_delay=t
+ recv_active=t          ! IMPORTANT
+ retry_stalled=10
+ sync_time=0.003
+/
+&mpi_mesg_params
+ delay_ms=300
+ send_priv=t            ! IMPORTANT
+/
+&timer_params
+ sec_per_report=5
+/
+&io_params
+ do_validate=t
  verbose=2
  do_trace=f
  do_debug=f
- do_output=f
+ do_output=t
+ omp_trace=t
 /
 &box_params
  size=1,1,1
  dims=4,4,4
+ mpi_dims=1,1,1
  origin=0,0,0
 /
 &experiment_params
@@ -24,37 +42,42 @@
 &patch_params
  nt=5
  courant=0.2
- grace=0.3
- n=20,20,20
+ grace=2.0
+ !n=3*64
+ !n=3*32
+ !n=3*28
+ !n=3*24
+ n=3*21
+ !n=3*16
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.01
- out_time=0.05
+ end_time=0.005
+ out_time=0.001
  print_time=0.0
  guard_zones=f
  time_derivs=f
 /
-&mhd_params
- nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
- !     cs    pa  ofd  mas  kap  eta
-/
 &timestep_params
- time_order=2
+ time_order=0
 /
+
+&initial_params
+ type='single_solenoidal'
+!type='single_compressive'
+!type='single_advection'
+!type='exa256'
+!type='raw'
+/
+&initial_solenoidal_params  k=1,1,2 a0=0.3,0.2,0.1                           /
+&initial_compressive_params k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
+&initial_advection_params   k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
+
 &force_params
- k=1,1,2
- a0=3,3.2,3.1
- t_turn=0.30
  type='single_solenoidal'
 /
-&initial_params
- k=3,3,3
- a0=0.0,0.0,0.0
- u0=0.1,0.2,0.3
- b0=0,0,0.0
- type='single_compressive'
-/
+&force_solenoidal_params  k=1,1,2 a0=0.0,0.2,0.1 t_turn=0.30 /
+
 &ramses_params
  courant_factor=0.8
  !courant_factor=0.266667
