@@ -113,18 +113,29 @@ SUBROUTINE debug (self, label, it)
   class(experiment_t):: self
   integer, optional:: it
   character(len=*):: label
-  integer:: it_l
+  integer:: it_l, n
   !.............................................................................
   if (present(it)) then
     it_l = it
   else
     it_l = self%it
   end if
-  if (self%id==io%id_debug) &
-    print '(i5,1x,a,f8.2,1p,2(2x,5e13.5),1x,a)', &
-    self%id, 'DBG:', self%time, &
-      self%mem(1:5,18,18,self%i_d ,it_l,1), &
-      self%mem(1:5,18,18,self%i_px,it_l,1), trim(label)
+  if (self%id==io%id_debug) then
+    if (self%position(1) > 0.0) then
+      n = self%mesh(1)%gn
+      print '(i4,1x,a,f6.1,1p,3(1x,3e14.6),1x,a)', &
+        self%id, 'DBG:', self%time, &
+        self%mem(n-3:n-1,18,18,self%i_d ,it_l,1), &
+        self%mem(n-3:n-1,18,18,self%i_s ,it_l,1)/self%mem(n-3:n-1,18,18,self%i_d ,it_l,1), &
+        self%mem(n-3:n-1,18,18,self%i_px,it_l,1), trim(label)
+    else
+      print '(i4,1x,a,f6.1,1p,2(1x,3e14.6),1x,a)', &
+        self%id, 'DBG:', self%time, &
+        self%mem(2:4,18,18,self%i_d ,it_l,1), &
+        self%mem(2:4,18,18,self%i_s ,it_l,1)/self%mem(2:4,18,18,self%i_d ,it_l,1), &
+        self%mem(2:4,18,18,self%i_px,it_l,1), trim(label)
+    end if
+  end if
 END SUBROUTINE debug
 
 !> =============================================================================
@@ -161,7 +172,6 @@ SUBROUTINE update (self)
     !--------------------------------------------------------------------------
     ! Update the MHD state
     !--------------------------------------------------------------------------
-    call self%debug ('before BCs')
     call self%boundary_conditions (self%it)
     call self%debug ('after BCs')
     call self%mhd_t%update
@@ -284,7 +294,7 @@ END SUBROUTINE boundary_conditions
 SUBROUTINE edge_boundary_conditions (self, it)
   class(experiment_t):: self
   integer:: it
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e_th, uu
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e_th, uu, s, ss
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: u
   integer:: iv, select
   real:: ee
@@ -297,8 +307,8 @@ SUBROUTINE edge_boundary_conditions (self, it)
   allocate (u   (size(d,1),size(d,2),size(d,3),3))
   allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
                             call self%check_density ('before density_BC')
-  !call self%density_boundary_condition (it)                             ! vertical density BC
-  call self%boundaries%log_extrapolate (d, self%i_d)
+  call self%density_boundary_condition (it)                             ! vertical density BC
+  !call self%boundaries%log_extrapolate (d, self%i_d)
   if (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
     select = bits%yu
     if (io%verbose>2) &
@@ -330,8 +340,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
     uu => u(:,:,:,iv)
 !    call self%boundaries%symmetric (uu, self%i_px+iv-1, select=select) ! apply symmetric boundaries to velocities
     !-------------------------------------------------------------------
-    ! Extrapolate at boundaries with supersonic outflow, otherwise
-    ! force vanishing derivatives
+    ! Extrapolate at boundaries with strong supersonic outflows
     !-------------------------------------------------------------------
     if      (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
       select = iand(self%boundaries%bits,not(bits%yu))
@@ -347,41 +356,36 @@ SUBROUTINE edge_boundary_conditions (self, it)
       call self%boundaries%extrapolate (uu, self%i_px+iv-1, select=select)
       if (io%verbose>2) &
         print *, self%id, 'EXTRAP U2', iv, u(6,33:37,31,2)
+    !-------------------------------------------------------------------
+    ! The azimuthal velocity should be safe to extrapolate in directions
+    ! where it it paralle to the boundary
+    !-------------------------------------------------------------------
+    !-------------------------------------------------------------------
+    else if (iv==2) then
+      call self%boundaries%extrapolate (uu, self%i_px+iv-1)
+    !-------------------------------------------------------------------
+    ! Use vanishing perpendicular derivative in other cases
+    !-------------------------------------------------------------------
     else
-      call self%boundaries%symmetric (uu, self%i_px+iv-1)               ! apply symmetric boundaries to velocities
+      call self%boundaries%symmetric (uu, self%i_px+iv-1)
     end if
   end do
                             call self%check_density ('after u BC')
-  if (self%id==io%id_debug) &
-    print *, self%id, 'EXTRAP UY2', u(6,33:37,31,2)
   call self%U2p(u)                                                      ! convert velocities to momentum
-  if (self%id==io%id_debug) &
-    print *, self%id, 'EXTRAP PY2', self%mem(6,33:37,31,self%i_py,it,1)
-                            call self%check_density ('after U2p')
-  call self%e2E_th(e_th)                                                ! thermal energy
-    if (self%id==io%id_debug) &
-      print *, self%id, 'EXTRAP E (before)', e_th(6,33:37,31)
-                            call self%check_density ('after e2E')
-  ee = atmosphere%external%temperature/(self%gamma-1.0)                 ! external disk e/d
-  call self%boundaries%constant(e_th, self%i_e, value=ee)               ! apply constant boundaries to thermal energy
-    if (self%id==io%id_debug) &
-      print *, self%id, 'EXTRAP E (after)', e_th(6,33:37,31)
-                            call self%check_nan ('after energy_BC')
   !---------------------------------------------------------------------
-  ! In the supersonic outflow patches, extrapolate the thermal energy
+  ! Extrapolate in per unit mass variables
   !---------------------------------------------------------------------
-  if      (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
-    select = bits%yu
-    call self%boundaries%log_extrapolate (e_th, self%i_e, select=select)
-    if (io%verbose>2) &
-      print *, self%id, 'EXTRAP E', e_th(6,33:37,31)
-  else if (self%position(1)>0.0 .and. self%position(2)<0.0 .and. self%boundaries%is_set(bits%yl)) then
-    select = bits%yl
-    call self%boundaries%log_extrapolate (e_th, self%i_e, select=select)
-    if (io%verbose>2) &
-      print *, self%id, 'EXTRAP E', e_th(6,1:4,31)
+  if (self%kind(1:9) == 'stagger2_') then
+    s => self%mem(:,:,:,self%i_s,it,1)
+    ss => e_th                                                          ! borrow local allocation
+    ss = s/d
+    call self%boundaries%extrapolate(ss, self%i_s)                      ! extrapolate in entropy per unit mass
+    s = ss*d
+  else
+    call self%e2E_th(e_th)                                              ! thermal energy per unit mass
+    call self%boundaries%log_extrapolate(e_th, self%i_e)                ! extrapolate in the log
+    call self%E_th2e(e_th)                                              ! convert to energy per unit volume
   end if
-  call self%E_th2e(e_th)                                                ! convert thermal energy to internal/total energy or entropy
                             call self%check_nan ('after th2e')
   deallocate (u,e_th)
   call trace%end
