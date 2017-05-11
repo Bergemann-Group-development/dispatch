@@ -85,8 +85,8 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
   call trace_begin ('timestep_t%update')
   if (self%time_order==-1) error stop 'timestep_mod not initialized!'
   nt = size(iit)                                ! number of time slots
-  l = mesh%li
-  u = mesh%ui
+  l = mesh%lb
+  u = mesh%ub
   where (mesh%lower_boundary)
     l = mesh%lb
   end where
