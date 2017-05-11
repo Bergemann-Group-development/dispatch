@@ -78,6 +78,8 @@ if ($#dirs == 0) then
       set dirs = ( `find . -mindepth 2 -maxdepth 4 -name validate -type d | sed -e 's:/validate::'` )
     else if (-d experiments) then
       set dirs = ( `find . -mindepth 3 -maxdepth 4 -name validate -type d | sed -e 's:/validate::'` )
+    else if (-d validate) then
+      set dirs = .
     else
       echo "no validation dirs found"
       exit 1
