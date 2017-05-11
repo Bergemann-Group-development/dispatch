@@ -200,14 +200,15 @@ END SUBROUTINE update
 !> =====================================================================
 !> Get velocities from momentum
 !> =====================================================================
-SUBROUTINE p2U(self, U)
+SUBROUTINE p2U(self, U, it)
   class(mhd_t) :: self
   real, dimension(:,:,:,:), pointer:: U
+  integer:: it
   !.....................................................................
   integer:: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,           self%it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d,           it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
   do i=1,size(p,4)
   U(:,:,:,i) = p(:,:,:,i)/d
   end do
@@ -217,14 +218,15 @@ END SUBROUTINE p2U
 !> =====================================================================
 !> Put velocities to momentum
 !> =====================================================================
-SUBROUTINE U2p(self, U)
+SUBROUTINE U2p(self, U, it)
   class(mhd_t) :: self
   real, dimension(:,:,:,:), pointer:: U
+  integer:: it
   !.....................................................................
   integer:: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
   do i=1,size(p,4)
   p(:,:,:,i)= U(:,:,:,i)*d
   end do
@@ -234,16 +236,17 @@ END SUBROUTINE U2p
 !> =====================================================================
 !> Get thermal energy from total/specific energy
 !> =====================================================================
-SUBROUTINE e2E_th(self, E_th)
+SUBROUTINE e2E_th(self, E_th, it)
   class(mhd_t) :: self
   real, dimension(:,:,:), pointer:: E_th
+  integer:: it
   !.....................................................................
   real, dimension(:,:,:), pointer:: k
   integer :: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
-            e => self%mem(:,:,:,self%i_e           ,self%it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
+            e => self%mem(:,:,:,self%i_e           ,it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
@@ -258,16 +261,17 @@ END SUBROUTINE e2E_th
 !> =====================================================================
 !> Get etropy per unit mass from total energy
 !> =====================================================================
-SUBROUTINE e2S(self, s)
+SUBROUTINE e2S(self, s, it)
   class(mhd_t) :: self
   real, dimension(:,:,:), pointer:: s
+  integer:: it
   !.....................................................................
   real, dimension(:,:,:), pointer:: k
   integer :: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
-            e => self%mem(:,:,:,self%i_e           ,self%it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
+            e => self%mem(:,:,:,self%i_e           ,it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
@@ -282,16 +286,17 @@ END SUBROUTINE e2S
 !> =====================================================================
 !> Put etropy per unit mass to total energy
 !> =====================================================================
-SUBROUTINE S2e (self, s)
+SUBROUTINE S2e (self, s, it)
   class(mhd_t) :: self
   real, dimension(:,:,:), pointer:: s
+  integer:: it
   !.....................................................................
   real, dimension(:,:,:), pointer:: k
   integer :: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
-            e => self%mem(:,:,:,self%i_e           ,self%it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
+            e => self%mem(:,:,:,self%i_e           ,it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
@@ -306,16 +311,17 @@ END SUBROUTINE S2e
 !> =====================================================================
 !> Put thermal energy to total/specific energy
 !> =====================================================================
-SUBROUTINE E_th2e(self, E_th)
+SUBROUTINE E_th2e(self, E_th, it)
   class(mhd_t) :: self
+  integer:: it
   real, dimension(:,:,:), pointer:: E_th
   !.....................................................................
   real, dimension(:,:,:), pointer:: k
   integer :: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,self%it,1), &
-            e => self%mem(:,:,:,self%i_e           ,self%it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1))
+  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
+            e => self%mem(:,:,:,self%i_e           ,it,1), &
+            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
