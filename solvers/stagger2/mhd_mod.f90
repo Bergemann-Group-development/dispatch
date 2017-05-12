@@ -113,7 +113,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h(2+i) = -0.5
     if (self%mhd) self%mesh(i)%h(5+i) = -0.5
   end do
-  self%unsigned(idx%d) = .true.
+  !self%unsigned(idx%d) = .true.
   call self%force%init(self%kind)
   call trace%end
 END SUBROUTINE init
@@ -186,7 +186,7 @@ SUBROUTINE pde (self)
   ddx=>dd(:,:,:,1); ddy=>dd(:,:,:,2); ddz=>dd(:,:,:,3)
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
-  ! density for reuse below
+  ! density for reuse below.  U is valid in (2:gn)
   !-----------------------------------------------------------------------------
   lnd = log(d)
   ld = down(lnd)
@@ -197,7 +197,8 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   pg = self%gas_pressure()
   !-----------------------------------------------------------------------------
-  ! Divergence of velocity, and artificial pressure
+  ! Divergence of velocity, and artificial pressure.  The divergence is valid
+  ! in (2,gn-1)
   !-----------------------------------------------------------------------------
   ds = self%ds
   dx = minval(ds)                                       ! smallest {dx,dy,dz}
@@ -205,6 +206,7 @@ SUBROUTINE pde (self)
   du = max(du,0.0)                                      ! positive part
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
+  ! The diagonal fxx is valid in (2:gn-1)
   !-----------------------------------------------------------------------------
   if (self%mhd) then
     ! Diagonal Reynolds stress
@@ -258,6 +260,9 @@ SUBROUTINE pde (self)
     pp = pg + pa
     ! Total diagondal stress, with density factor
     du = dx*self%nu(1)*cs
+    !---------------------------------------------------------------------------
+    ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
+    !---------------------------------------------------------------------------
     fxx = pp + d*(fxx - du*ddxup(ds,Ux))
     fyy = pp + d*(fyy - du*ddyup(ds,Uy))
     fzz = pp + d*(fzz - du*ddzup(ds,Uz))
@@ -322,6 +327,9 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   if (self%nu(4) > 0.0) then
     pa = d*du*self%nu(4)
+    !---------------------------------------------------------------------------
+    ! fxx, pa, ddxup(ldx), and xup(Ux) are all valid in (2:gn-1)
+    !---------------------------------------------------------------------------
     fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)
     fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)
     fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)
@@ -331,7 +339,8 @@ SUBROUTINE pde (self)
     if (self%id==io%id_debug) print *, 'DPDTZ4', fzx(19:20,19,5)
   end if
   !-----------------------------------------------------------------------------
-  ! Momentum equations
+  ! Momentum equations.  The ddxdn(fxx) part is valid in (3:gn-1), and hence px
+  ! only needs guard zones in (1:2) and (gn:gn)
   !-----------------------------------------------------------------------------
   dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)
   dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)
