@@ -1185,7 +1185,7 @@ SUBROUTINE input_legacy (self, ok)
   else
     read (line,*) ioformat
     if (do_print) print '(a,i12)', 'snapshot ioformat:', ioformat
-    if (ioformat==1) then
+    if (ioformat==1 .or. ioformat==2) then
       fmt = '(a)'
       read (io%data_unit,fmt) line
       if (trim(line) /= trim(self%kind)) error stop 'wrong solver'
