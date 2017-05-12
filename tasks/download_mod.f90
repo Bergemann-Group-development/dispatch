@@ -58,6 +58,7 @@ SUBROUTINE download_link (link, all_cells)
   logical, optional:: all_cells
   class(link_t), pointer:: nbor
   class(patch_t), pointer:: target, source
+  integer:: edges
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link')
   target => task2patch(link%task)
@@ -66,20 +67,27 @@ SUBROUTINE download_link (link, all_cells)
   if (target%is_set(bits%root_grid)) then
     call target%periodic_grid
   else
-    nbor => link%nbor
     associate (d=>target%mem(:,:,:,target%i_d,target%it,1))
-    do while (associated(nbor))
-      source => task2patch(nbor%task)
-      if (source%is_clear(bits%no_download)) then
-        if (abs(source%level-target%level) < 2) then
-          if (source%level==target%level) then
-            call same (target, source)
-          else
-            call different (target, source)
+    do edges=3,1,-1
+      nbor => link%nbor
+      do while (associated(nbor))
+        source => task2patch(nbor%task)
+        if (target%count_edges(source) == edges) then
+          if (target%id == io%id_debug) then
+            print *, source%id, ' EDGE COUNT:', edges
+          end if
+          if (source%is_clear(bits%no_download)) then
+            if (abs(source%level-target%level) < 2) then
+              if (source%level==target%level) then
+                call same (target, source)
+              else
+                call different (target, source)
+              end if
+            end if
           end if
         end if
-      end if
-      nbor => nbor%next
+        nbor => nbor%next
+      end do
     end do
     end associate
   end if

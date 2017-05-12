@@ -109,6 +109,7 @@ MODULE patch_mod
     procedure:: interpolate
     procedure:: index_space             ! full mapping to index space
     procedure:: index_only
+    procedure:: count_edges
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -2066,6 +2067,22 @@ FUNCTION index_only (self, pos, iv, roundup) RESULT (ii)
     if (ii(i)==self%mesh(i)%li-1) ii(i) = self%mesh(i)%li       ! enforce symmetry
   end do
 END FUNCTION index_only
+
+!> =============================================================================
+!> Return only the index in self corresponding to a point in native space
+!> =============================================================================
+FUNCTION count_edges (self, source) RESULT (out)
+  class(patch_t)          :: self
+  class(patch_t), pointer :: source
+  integer:: out, i
+  real(8):: dist(3)
+  !-----------------------------------------------------------------------------
+  dist = self%distance (source)
+  out = 0
+  do i=1,3
+    if  (abs(dist(i)) > self%ds(i)) out = out+1
+  end do
+END FUNCTION count_edges
 
 !> =============================================================================
 !> Interpolate in space and time, for a case where it is safe = the source point
