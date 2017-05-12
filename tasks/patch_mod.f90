@@ -2062,6 +2062,8 @@ FUNCTION index_only (self, pos, iv, roundup) RESULT (ii)
     end if
     ii(i) = max(self%mesh(i)%lb, &
             min(self%mesh(i)%ub,ii(i)))                         ! valid range
+    if (ii(i)==self%mesh(i)%ui-1) ii(i) = self%mesh(i)%ui       ! enforce symmetry
+    if (ii(i)==self%mesh(i)%li-1) ii(i) = self%mesh(i)%li       ! enforce symmetry
   end do
 END FUNCTION index_only
 
