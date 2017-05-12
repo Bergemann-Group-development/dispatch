@@ -131,15 +131,24 @@ def single_patch (self, fp, verbose=False):
         self.ioformat=np.int(chars)
         read_version1 (self, fp, verbose)
     self.dx   = self.ds
-    self.size = self.ds*self.n
     self.corners        = self._determine_corners()
     self.active_corners = self._determine_corners(active_only=True)
-    a=np.array(self.active_corners)
+    self.corners = np.array(self.corners)
+    self.active_corners = np.array(self.active_corners)
+    a = self.active_corners
     self.extent=np.array([[a[0,1],a[1,1],a[0,2],a[1,2]],\
                           [a[0,0],a[1,0],a[0,2],a[1,2]],\
                           [a[0,0],a[1,0],a[0,1],a[1,1]]])
+    self.size = self.ds*self.n
     self.x=self.corners[0][0]+(0.5+np.arange(self.gn[0]))*self.ds[0]
     self.y=self.corners[0][1]+(0.5+np.arange(self.gn[1]))*self.ds[1]
     self.z=self.corners[0][2]+(0.5+np.arange(self.gn[2]))*self.ds[2]
+    if self.ioformat==2:
+        self.size = self.ds*(self.n-1)
+        self.active_corners[1] = self.active_corners[1] - self.ds
+        self.corners[1]        = self.corners[1]        - self.ds
+        self.x = self.x - 0.5*self.ds[0]
+        self.y = self.y - 0.5*self.ds[1]
+        self.z = self.z - 0.5*self.ds[2]
     if (verbose):
         info (self)
