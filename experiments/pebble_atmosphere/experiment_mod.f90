@@ -172,6 +172,7 @@ SUBROUTINE update (self)
     !--------------------------------------------------------------------------
     ! Update the MHD state
     !--------------------------------------------------------------------------
+    call self%output
     call self%boundary_conditions (self%it)
     call self%debug ('after BCs')
     call self%mhd_t%update
@@ -214,8 +215,8 @@ SUBROUTINE output (self, experiment_name)
         self%mem(m(1),m(2),m(3)-2:m(3)+2, 1,it,1)
     end do
   end if
-  if (self%time > self%out_next) &
-    call self%boundary_conditions (self%it)
+  !if (self%time > self%out_next) &
+  !  call self%boundary_conditions (self%it)
   call self%pebble_patch_t%output
 END SUBROUTINE
 
