@@ -4,16 +4,16 @@ reload(du)
 import plot_utils as pu
 reload(pu)
 
-iout=3
-run='m3r27t05st2'
+iout=35; run='m3r27t05st2'
 data='d:\\pebble_atmosphere\\data'
 
 dx=100; ext=None
-w=1300; dx=50; ext=[-w,w,-w,w,-w,w]
+x0=-1130
+w=1400; dx=10; ext=[x0,x0,-w,w,-w,w]
 
 vlim=None;
-#var='u3'  ; vlim=[-0.1,0.1]
-var='p3'  ; vlim=None
+var='u1'  #; vlim=[-0.1,0.1]
+#var='p3'  ; vlim=None
 #var='logd'; vlim=[-13,-11]
 #var='s'   ; vlim=[29.1,29.5]
 #var='p1'  ; vlim=None

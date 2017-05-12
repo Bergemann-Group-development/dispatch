@@ -20,7 +20,7 @@ def image(f,verbose=0,**kwargs):
     return im
 
 def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
-             fraction=0.1,**kwargs):
+             extent=None,vlim=None,fraction=0.1,**kwargs):
     '''
     Display xy-image for given z  
     '''
@@ -29,7 +29,7 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
     def inside(p, z):
         return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
     select=[p for p in pp if inside(p,z) and p.level<8]
-    print np.size(select),'patches in plane'    
+    #print np.size(select),'patches in plane'    
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
@@ -52,13 +52,20 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
         vmax=max(vmax,p.f.max())
         xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
         ylim=[min(ylim[0],e[2]),max(ylim[1],e[3])]
+    if vlim<>None:
+        vmin=vlim[0]
+        vmax=vlim[1]
+    if extent<>None:
+        xlim=extent[2:4]
+        ylim=extent[0:2] 
+    pl.clf()
     for p in select:
-        image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
-    pl.clf(); pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('x')
-    pl.title('var='+var+'   t={:d}  z={:d}'.format(np.int(p.time),np.int(z)))
+        image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap)    
     pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
-    pl.tight_layout()
-    pl.show()
+    pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('x')
+    pl.title('var='+var+'   t={:d}  z={:d}'.format(np.int(p.time),np.int(z)))
+    #pl.tight_layout()
+    pl.draw()
 
 def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
              fraction=0.1,**kwargs):
@@ -87,7 +94,10 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
         p.stripit()
         p.vars()
         p.f=p.var[var]
-        p.f=interpolate(p,x,p.active_corners[0][0]+0.5*p.dx[0],p.dx[0],p.n[0],p.f)
+        if var=='u3': p.x=p.x-p.dx[0]
+        if var=='p3': p.x=p.x-p.dx[0]
+        ng=p.nghost[0]
+        p.f=interpolate(p,x,p.x[ng],p.dx[0],p.n[0],p.f)
         vmin=min(vmin,p.f.min())
         vmax=max(vmax,p.f.max())
         e=p.extent[0]
@@ -151,7 +161,12 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
             p.stripit()
             p.vars()
             p.f=p.var[var]
-            p.f=interpolate(p,z,p.active_corners[0][2]+0.5*p.dx[2],p.dx[2],p.n[2],p.f)
+            if p.ioformat==1: 
+                z0=p.active_corners[0][2]+0.5*p.dx[2]
+            else:
+                z0=p.active_corners[0][2]
+            if var=='u3' or var=='p3': z0=z0-0.5*p.dx[2]
+            p.f=interpolate(p,z,z0,p.dx[2],p.n[2],p.f)
             e=p.extent[2]
             p.f,e=du.rotate(p.f,e)
             p.ext=e
@@ -260,7 +275,7 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
             im=image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
             if labels<>None:
                 pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
-        pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
+        pl.colorbar(shrink=0.75,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
         pl.tight_layout()
         return im

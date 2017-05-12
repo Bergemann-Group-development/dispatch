@@ -12,8 +12,8 @@ reload(pu)
 '''
 
 data='d:\\pebble_atmosphere\\data'
-run='m3r27t05st_test'
-iout=0
+run='m3r27t05st2n'
+iout=16
 sgn=1
 
 pp=du.patches(run,data,iout=iout)
@@ -32,7 +32,7 @@ for p in pp:
     n=p.gn[0]
     u=l+n
     iy=18; iz=iy
-    x=p.corners[0][0]+(l+np.arange(n)+0.5)*p.ds[0]
+    x=p.x
     #x=sgn*x/dx0
     pg =p.data[l:u,iy,iz,4]
     pg=pg*(p.gamma-1)
@@ -41,21 +41,23 @@ for p in pp:
     ux = p.u1[l:u,iy,iz]
     s  = p.s [l:u,iy,iz]
     i0=0
+    x = sgn*x
     for i in range(n):
         if sgn*x[i]<=0.0:
             i0=i+1
     if sgn>0:
-        x=x[i0+1:n]
-        s=s[i0+1:n]
-        d=d[i0+1:n]
-        ux=ux[i0+1:n]
-        px=px[i0+1:n]
+        x=x[i0:n]
+        s=s[i0:n]
+        d=d[i0:n]
+        ux=ux[i0:n]
+        px=px[i0:n]
     else:
-        x=x[0:i0-1]
-        s=s[0:i0-1]
-        d=d[0:i0-1]
-        ux=ux[0:i0-1]
-        px=px[0:i0-1]
+        if i0<n: i0=i0-2
+        x=x[0:i0]
+        s=s[0:i0]
+        d=d[0:i0]
+        ux=ux[0:i0]
+        px=px[0:i0]
     xs=x-sgn*p.ds[0]*0.5
     pl.subplot(2,2,1)
     pl.semilogx(xs,px,'-+')
@@ -70,4 +72,5 @@ for p in pp:
     pl.subplot(2,2,4)
     pl.loglog(x,d ,'-+')
     pl.title('{}  iout={}  (:,{},{})'.format('d',iout,iy,iz))
+pl.tight_layout()
 pl.draw()
