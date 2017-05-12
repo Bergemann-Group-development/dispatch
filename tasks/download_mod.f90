@@ -122,9 +122,16 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
       offset = 0
       dist = source%distance(target)  ! positive if source to the right of target
       where (dist > source%ds)
-        offset = -target%mesh%n
+        offset = -target%mesh%n+1
+        l = target%mesh%uo
+        u = target%mesh%ub
       else where (dist < -source%ds)
-        offset = target%mesh%n
+        offset = target%mesh%n-1
+        l = target%mesh%lb
+        u = target%mesh%lo
+      else where
+        l = target%mesh%li
+        u = target%mesh%ui
       end where
     else
       print *, 'WARNING: fixed offset not valid for different levels', &
