@@ -107,7 +107,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   ! Map to the first and last point inside the source domain
   !-----------------------------------------------------------------------------
   l = target%index_only (source%mesh%p+source%mesh%lf-eps, iv, roundup=.true.)
-  u = target%index_only (source%mesh%p+source%mesh%uf-eps, iv)
+  u = target%index_only (source%mesh%p+source%mesh%uf+eps, iv)
   !-----------------------------------------------------------------------------
   ! Make sure the range is legal, and includes all guard cell layers
   !-----------------------------------------------------------------------------
