@@ -374,7 +374,7 @@ SUBROUTINE init (self)
   self%out_time    = out_time
   self%print_time  = print_time
   self%print_next  = print_time
-  self%ds = real(self%size,kind=8) / self%n     ! ds in patch
+  self%ds = real(self%size,kind=8)/(self%n-1)   ! ds in patch
   if (all(self%size==self%box)) then
     write (io_unit%log,*) mpi%rank, 'task', self%id, ' is root grid'
     call self%set(bits%root_grid)
@@ -1083,7 +1083,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
-  self%ioformat = 1
+  self%ioformat = 2
   write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout
   if (io%master .and. io%verbose>=-1) then
     print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
