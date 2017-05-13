@@ -1329,13 +1329,13 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       ! Print a one-liner if verbose==1 and id==1, or verbose>1, while
       ! accumulating counters also when not printing
       !-------------------------------------------------------------------------
-      if (io%verbose>0 .or. self%id==1) then
+      if (io%verbose>0 .or. self%id==2) then
         if (io%master) &
           counts = counts + &
             [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
              mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
              mpi_mesg%n_delay]
-        if (io%master .or. self%id==1) then
+        if (io%master .or. self%id==2) then
           if (n_lines<=0) then
             !$omp critical (info_cr2)
             print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
