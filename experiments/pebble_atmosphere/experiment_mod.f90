@@ -146,7 +146,7 @@ SUBROUTINE update (self)
   !.............................................................................
   real, dimension(:,:,:), pointer:: d, e
   real(8), dimension(3):: h
-  integer:: it, iv, nb,i
+  integer:: it, iv, nb, i
   !-----------------------------------------------------------------------------
   call self%debug('start update')
   call trace_begin('experiment_t%update')
@@ -194,7 +194,10 @@ SUBROUTINE update (self)
    end associate
   end if
   call self%pebble_patch_t%update_pebbles
-  call self%check_density ('after timestep')
+  i = io%verbose
+  io%verbose = 1
+  call self%check_nan ('after timestep')
+  io%verbose = i
     call self%debug ('after update', self%new)
   call trace_end
 END SUBROUTINE update
