@@ -5,6 +5,7 @@
 # -d       : dryrun
 # -m       : skip make
 # -r       : reset (create .val files even if fails)
+# -R       : reset, with -m and -x
 # -v       : verbose output
 # -x       : skip execution
 # -l       : read experiment_list.txt
@@ -30,6 +31,11 @@ while ($#argv > 0)
     # dryrun
     case -d:
       setenv dryrun 1
+      breaksw
+    # echo
+    case -e:
+      set echo
+      setenv ECHO
       breaksw
     # no make
     case -m:
@@ -62,6 +68,11 @@ while ($#argv > 0)
   endsw
   shift
 end
+
+if ($?RESET) then
+  unset nomake
+  unset noexec
+endif
 
 if ($#dirs == 0) then
   if ($?readlist) then

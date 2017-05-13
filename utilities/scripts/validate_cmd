@@ -9,6 +9,8 @@ set cmd = "$*"
 
 set date = `date +%y%m%d_%H%M`
 
+if ($?ECHO) set echo
+
 if ($?RESET) then
   echo "WARNING: resetting $label.val"
   cp -p $label.{log,val}

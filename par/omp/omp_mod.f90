@@ -104,6 +104,7 @@ SUBROUTINE set_stacksize (nv)
   character(len=16):: envvar
   logical, save:: first_time=.true., printed=.false.
   !-----------------------------------------------------------------------------
+  if (io_unit%do_validate) return
   recommended = (4*1024**2*nv) / 8
 #ifdef _OPENMP
 #ifdef __INTEL_COMPILER

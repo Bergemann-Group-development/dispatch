@@ -9,7 +9,7 @@
 &io_params
  do_trace=f
  omp_trace=f
- verbose=1
+ verbose=0
  !id_debug=137
  do_debug=f
  do_output=t
@@ -21,7 +21,7 @@
 !end_time=100  out_time=10              ! 00-10
 !end_time=220  out_time=02  restart=20  ! 00-30
 !end_time=500  out_time=20  restart=18  ! 20-45
-end_time=2550 out_time=50  restart=58  ! 11-58
+end_time=9000 out_time=100 restart=58  ! 11-58
 !end_time=5500 out_time=100 restart=65  ! 65-95
 !end_time=9000 out_time=100             ! 00-90
 !end_time=9000 out_time=100 restart=80  ! 00-90
@@ -77,7 +77,7 @@ gamma=1.4
  periodic=f,t,f
  n=3*33
  nt=5
- grace=0.0
+ grace=0.00
  courant=0.2
 !dt_fixed=0.001
 /
