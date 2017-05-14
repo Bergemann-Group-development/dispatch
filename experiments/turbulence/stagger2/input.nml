@@ -9,10 +9,11 @@
 ! and tttt is the snapshot number.
 
 &timer_params
- sec_per_report=2
+ sec_per_report=15
 /
 &io_params
- verbose=0
+ top='../../..'
+ verbose=1
  do_validate=f
  do_trace=f
  do_debug=f
@@ -57,6 +58,7 @@
 /
 &initial_params
  k=3,3,3
+ e0=1.0
  a0=0.0,0.0,0.0
  u0=0,0,0
  b0=0,0,0.1

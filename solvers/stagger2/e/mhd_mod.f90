@@ -169,11 +169,10 @@ SUBROUTINE pde (self)
   ! Gas pressure
   !-----------------------------------------------------------------------------
   ee = e/d
-!  call eos%lookup (shape(ee), ee=ee, lnd=lnd, pg=pg)
   if (self%gamma==1.0) then
     pg = d*self%csound**2
   else
-    pg = e*(self%gamma-1.0)
+    call eos%lookup (shape(ee), x=ee, lny=lnd, pg=pg)
   end if
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure

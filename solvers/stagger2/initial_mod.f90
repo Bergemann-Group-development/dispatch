@@ -16,7 +16,7 @@ MODULE initial_mod
   type, public:: initial_t
     integer:: seed
     logical:: mhd
-    real(8):: a(3), b(3), phi(3), d0, s0
+    real(8):: a(3), b(3), phi(3), d0, e0
     real(8):: a0(3), k(3), b0(3), u0(3)
     real(8):: time
     character(len=64):: solver
@@ -38,9 +38,9 @@ SUBROUTINE init (self, solver)
    character(len=64):: solver
    integer, save:: seed=-33
    logical, save:: mhd=.true.
-   real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0
+   real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0
    character(len=32), save:: type='single_solenoidal'
-   namelist /initial_params/ seed, k, a0, u0, b0, d0, s0, mhd, type
+   namelist /initial_params/ seed, k, a0, u0, b0, d0, e0, mhd, type
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    !$omp critical (input_cr)
@@ -59,7 +59,7 @@ SUBROUTINE init (self, solver)
    self%b0     = b0
    self%u0     = u0
    self%d0     = d0
-   self%s0     = s0
+   self%e0     = e0
    self%mhd    = mhd
    self%time   = 0d0
    select case (type)
@@ -107,7 +107,7 @@ SUBROUTINE single_solenoidal (self, m, ff)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,idx%d ) = self%d0
-        ff(ix,iy,iz,idx%s ) = self%s0
+        ff(ix,iy,iz,idx%e ) = self%e0
         ff(ix,iy,iz,idx%px) = self%a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,idx%py) = self%a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,idx%pz) = self%a0(3)*(sin(kx)+sin(ky))
@@ -141,11 +141,11 @@ SUBROUTINE single_compressive (self, m, ff)
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*self%k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + self%phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p)-0.5d0*m(2)%s/m(2)%b + self%phi(2)
+      ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p)-0.5d0*m(1)%s/m(1)%b + self%phi(1)
+        kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,idx%d ) = self%d0
-        ff(ix,iy,iz,idx%s ) = self%s0
+        ff(ix,iy,iz,idx%e ) = self%e0
         ff(ix,iy,iz,idx%px) = self%u0(1)*sin(kx)
         ff(ix,iy,iz,idx%py) = self%u0(2)*sin(ky)
         ff(ix,iy,iz,idx%pz) = self%u0(3)*sin(kz)
@@ -183,7 +183,7 @@ SUBROUTINE single_advection (self, m, ff)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,idx%d ) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
-        ff(ix,iy,iz,idx%s ) = self%s0
+        ff(ix,iy,iz,idx%e ) = self%e0
         ff(ix,iy,iz,idx%px) = self%d0*self%u0(1)
         ff(ix,iy,iz,idx%py) = self%d0*self%u0(2)
         ff(ix,iy,iz,idx%pz) = self%d0*self%u0(3)
@@ -232,7 +232,8 @@ SUBROUTINE exa256 (self, m, ff)
     rec = rec + (iy+jy-m(2)%li)*nx   /m(1)%n
     rec = rec + (iz+jz-m(3)%li)*nx*ny/m(1)%n
     !print*,ix,iy,iz,rec
-    read (io_unit%data,rec=rec) d; ff(m(1)%li:m(1)%ui,jy,jz,idx%d)  = d
+    read (io_unit%data,rec=rec) d; ff(m(1)%li:m(1)%ui,jy,jz,idx%d) = d
+                                   ff(m(1)%li:m(1)%ui,jy,jz,idx%e) = d
     rec = rec + nx*ny*nz/m(1)%n
     read (io_unit%data,rec=rec) u; ff(m(1)%li:m(1)%ui,jy,jz,idx%px) = u
     rec = rec + nx*ny*nz/m(1)%n
@@ -295,11 +296,7 @@ SUBROUTINE raw (self, m, ff)
                                     i(2):i(2)+m(2)%n-1, &
                                     i(3):i(3)+m(3)%n-1,iw)
   end do
-  idx%d  = 1
-  idx%s  = 2
-  idx%px = 3
-  idx%py = 4
-  idx%pz = 5
+  ff(:,:,:,idx%e) = ff(:,:,:,idx%d)
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &

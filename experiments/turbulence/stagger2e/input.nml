@@ -12,6 +12,7 @@
  sec_per_report=3
 /
 &io_params
+ top='../../..'
  verbose=0
  do_validate=f
  do_trace=f

@@ -7,7 +7,7 @@ MODULE scaling_mod
   implicit none
   private
   type, public:: scaling_t
-    real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu, pi
+    real(kind=8):: l, t, m, d, e, ee, p, u, temp, grav, mu, pi, rk, src
   contains
     procedure:: init
   end type
@@ -27,14 +27,18 @@ SUBROUTINE init (self)
  '-------------------------------- scaling_mod ---------------------------------'
   first_time = .false.
   !--------------------------- defining quantities -----------------------------
-  self%l  = 1d8                                         ! length = 1Mm = 1e8 cm
-  self%d  = 1d-7                                        ! photospheric density
-  self%t  = 1d2                                         ! time = 100 sec
+  call cgs%init
+  self%l  = cgs%pc                                      ! length = 1Mm = 1e8 cm
+  self%d  = 1e3*cgs%amu                                 ! typical cloud density
+  self%t  = 5.*cgs%myr                                  ! scaling%u ~0.2 km/s
   !--------------------------- derived quantities ------------------------------
   self%u  = self%l/self%t                               ! speed
   self%m  = self%d*self%l**3                            ! mass
   self%p  = self%d*self%u**2                            ! pressure = energy density
-  self%e  = self%m*self%u**2                            ! energy
+  self%e  = self%u**2*self%m                            ! energy
+  self%ee = self%u**2                                   ! energy per unit mass
+  self%rk = 1./self%l                                   ! opacity
+  self%src= self%p*self%l/self%t                        ! source function
   self%mu = 2.
   self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for given mu
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity

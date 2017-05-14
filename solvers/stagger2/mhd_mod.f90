@@ -15,6 +15,7 @@ MODULE mhd_mod
   USE index_mod
   USE timestep_mod
   USE planet_mod
+  USE eos_mod
   implicit none
   private
   type, extends(gpatch_t), public:: mhd_t
@@ -193,9 +194,11 @@ SUBROUTINE pde (self)
   dd = exp(ld)
   U = p/dd
   !-----------------------------------------------------------------------------
-  ! Gas pressure
+  ! Gas pressure. The 2nd table variable is entropy per unit mass, effectively
+  ! a log variable, from the table point of view.
   !-----------------------------------------------------------------------------
-  pg = self%gas_pressure()
+  ss = s/d
+  call eos%lookup (shape(d), lnx=lnd, lny=ss, pg=pg)
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure.  The divergence is valid
   ! in (2,gn-1)
@@ -377,7 +380,6 @@ SUBROUTINE pde (self)
   if (self%gamma==1.0) then
     dsdt = 0.0
   else
-    ss = s/d
     fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)
     !---------------------------------------------------------------------------
     ! Q is heating per unit volume (energy per unit volume and time), which when

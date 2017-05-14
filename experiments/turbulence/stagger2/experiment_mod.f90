@@ -20,6 +20,7 @@ MODULE experiment_mod
   USE initial_mod
   USE timer_mod
   USE link_mod
+  USE eos_mod
   implicit none
   private
   type, public, extends(mhd_t):: experiment_t
@@ -36,6 +37,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer, save:: itimer=0
+  real, pointer, dimension(:,:,:)::  d, e, s, ss, lnee
   !----------------------------------------------------------------------------
   call trace_begin('experiment_mod::init', itimer=itimer)
   !----------------------------------------------------------------------------
@@ -50,14 +52,31 @@ SUBROUTINE init (self)
   self%mhd = self%initial%mhd
   call self%set(bits%static)
   !----------------------------------------------------------------------------
-  ! Initial conditions
+  ! Initial conditions, loading inially the internal energy per unit volume in
+  ! the self%i_e slot
   !----------------------------------------------------------------------------
   call self%mhd_t%init
+  !----------------------------------------------------------------------------
+  ! Convert initial thermal energy per unit volume to entropy per unit volume
+  !----------------------------------------------------------------------------
+  d => self%mem(:,:,:,self%i_d,self%it,1)
+  e => self%mem(:,:,:,self%i_e,self%it,1)
+  s => self%mem(:,:,:,self%i_s,self%it,1)
+  allocate (ss  (self%gn(1),self%gn(2),self%gn(3)))
+  allocate (lnee(self%gn(1),self%gn(2),self%gn(3)))
+  lnee = log(e/d)
+  !print *, minval(lnee), maxval(lnee)
+  call eose%lookup (shape(d), x=d, lny=lnee, ss=ss)
+  !print *, minval(ss), maxval(ss)
+  s = ss*d
+  deallocate (ss,lnee)
+  !----------------------------------------------------------------------------
+  ! In case of restarts, set the time properly
+  !----------------------------------------------------------------------------
   if (self%initial%time > 0d0) then
     self%time = self%initial%time
     self%t(self%it) = self%initial%time
   end if
-  !call self%periodic_grid
   call trace_end (itimer=itimer)
 END SUBROUTINE init
 
