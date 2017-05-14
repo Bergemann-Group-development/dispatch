@@ -9,10 +9,10 @@ gpatch_mod.o:           io_mod.o trace_mod.o patch_mod.o download_mod.o initial_
 hd_mod.o:               patch_mod.o trace_mod.o
 unigrid_mod.o:          patch_mod.o mpi_coords_mod.o
 refine_mod.o:           io_mod.o trace_mod.o patch_mod.o experiment_mod.o
-scaling_mod.o:          io_mod.o cgs_mod.o
+scaling_mod.o:          io_mod.o units_mod.o
 download_mod.o:         io_mod.o trace_mod.o task_mod.o patch_mod.o link_mod.o interpolate_mod.o kinds_mod.o
 random_mod.o:           io_mod.o trace_mod.o
 lagrange_mod.o:         io_mod.o
 radiation_mod.o:        io_mod.o trace_mod.o mesh_mod.o link_mod.o
-cgs_mod.o:
+units_mod.o:
 interpolate_mod.o:      io_mod.o trace_mod.o mpi_mod.o kinds_mod.o

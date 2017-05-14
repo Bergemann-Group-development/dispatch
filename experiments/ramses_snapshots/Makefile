@@ -16,6 +16,6 @@ sinclude $(TOP)/config/Makefile
 $(EXEC): ramses_mod.o
 
 # Dependencies
-experiment_mod.o        : io_mod.o trace_mod.o mhd_mod.o force_mod.o initial_mod.o scaling_mod.o cgs_mod.o
-ramses_mod.o            : io_mod.o trace_mod.o mhd_mod.o force_mod.o initial_mod.o scaling_mod.o cgs_mod.o experiment_mod.o star_mod.o task_list_mod.o
-scaling_mod.o           : io_mod.o trace_mod.o cgs_mod.o
+experiment_mod.o        : io_mod.o trace_mod.o mhd_mod.o force_mod.o initial_mod.o scaling_mod.o units_mod.o
+ramses_mod.o            : io_mod.o trace_mod.o mhd_mod.o force_mod.o initial_mod.o scaling_mod.o units_mod.o experiment_mod.o star_mod.o task_list_mod.o
+scaling_mod.o           : io_mod.o trace_mod.o units_mod.o

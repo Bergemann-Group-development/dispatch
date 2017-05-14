@@ -14,4 +14,4 @@ laplace_mod.o           : io_mod.o trace_mod.o patches_mod.o mpi_mod.o boundary_
 interpolation_mod.o     : io_mod.o trace_mod.o patches_mod.o
 refine_mod.o            : io_mod.o trace_mod.o timestep_mod.o
 random_mod.o		: io_mod.o
-scaling_mod.o           : io_mod.o cgs_mod.o
+scaling_mod.o           : io_mod.o units_mod.o
