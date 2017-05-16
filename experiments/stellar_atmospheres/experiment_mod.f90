@@ -46,7 +46,7 @@ SUBROUTINE init (self)
   call self%initial%init (self%kind)
   self%nv  = self%initial%nv
   self%mhd = self%initial%mhd
-  self%peridic(2) = .false.                     ! non-periodic vertically
+  self%periodic(2) = .false.                     ! non-periodic vertically
   call self%mhd_t%init
   self%i_bx=7
   self%i_by=8
