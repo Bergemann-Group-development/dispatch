@@ -23,6 +23,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   if (.not.first_time) return
   first_time = .false.
+  call cgs%init
   self%mu = 2.4
   self%l = cgs%r_earth                                  ! length = 1 R_Earth
   self%m = cgs%m_sun                                    ! mass

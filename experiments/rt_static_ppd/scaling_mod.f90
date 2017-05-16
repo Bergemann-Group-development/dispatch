@@ -25,6 +25,7 @@ SUBROUTINE init (self)
 
   if (.not.first_time) return
   first_time = .false.
+  call cgs%init
   self%l = cgs%AU                                       ! length = 1 AU
   self%m = cgs%m_sun                                    ! mass = 1 M_sun
   self%d = self%m/self%l**3                             ! mass density

@@ -25,6 +25,7 @@ SUBROUTINE init (self)
   call trace_begin('scaling_t%init')
   if (.not.first_time) return
   first_time = .false.
+  call cgs%init
   self%l = cgs%au                                       ! length = 1 AU
   self%m = cgs%m_sun                                    ! mass
   self%d = self%m/self%l**3                             ! mass density

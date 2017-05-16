@@ -25,6 +25,7 @@ SUBROUTINE init (self)
   call trace_begin('scaling_t%init')
   if (.not.first_time) return
   first_time = .false.
+  call cgs%init
   self%pi = asin(1.0) * 2.0
   self%mu = 2.3                         ! mean molecular weight
   self%l = cgs%au                       ! length

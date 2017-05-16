@@ -26,6 +26,7 @@ SUBROUTINE init (self)
   if (io%master) print *, &
  '-------------------------------- scaling_mod ---------------------------------'
   first_time = .false.
+  call cgs%init
   !--------------------------- defining quantities -----------------------------
   self%l  = 40.*cgs%pc                                  ! length = 40 pc
   self%d  = 1d-24                                       ! mass density

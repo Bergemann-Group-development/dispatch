@@ -26,6 +26,7 @@ SUBROUTINE init (self)
   if (io%master) print *, &
  '-------------------------------- scaling_mod ---------------------------------'
   first_time = .false.
+  call cgs%init
   !--------------------------- defining quantities -----------------------------
   self%l  = 1d8                                         ! length = 1Mm = 1e8 cm
   self%d  = 1d-7                                        ! photospheric density
