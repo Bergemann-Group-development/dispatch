@@ -11,9 +11,8 @@ SOLVER          = ramses/hydro
 TOP             = ../..
 
 # Tomida & Hori, with opacity
-#EOS             = tabular_e
+#EOS             = data/eos/Tomida+Hori_2016/e
 #OPACITY         = Tomida+Hori_2016
-#EOS_DATA        = Tomida+Hori_2016
 
 sinclude $(TOP)/config/Makefile
 

@@ -12,14 +12,13 @@ RT_SOLVER       = hybrid
 #EOS             = ideal
 EXEC            = dispatch.x
 # Ideal or tabular EOS
-#EOS             = ideal
+#EOS             = microphysics/eos/ideal
 #OPACITY         = stagger
 # Tomida & Hori, with opacity
-#EOS              = tabular_e
-EOS             = rt_shadow_bench
+#EOS              = data/eos/Tomida+Hori_2016/e
+EOS             = microphysics/eos/rt_shadow_bench
 OPACITY         = stub
 #OPACITY         = Tomida+Hori_2016
-#EOS_DATA        = Tomida+Hori_2016
 # opacities: 
 # grey: bell_lin_1994, semenov_2003, rt_shadow_bench
 # multi-frequency: vaytet_2015

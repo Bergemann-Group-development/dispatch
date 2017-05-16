@@ -11,8 +11,6 @@ MPI  = mpi
 MOD  = mod
 PREC ?= SINGLE
 DEFS = -D$(PREC)
-EOS  ?= ideal
-OPACITY ?= stub
 
 #############################################################################
 # Check for options
@@ -161,6 +159,8 @@ info:
 	@echo "$B  PATCH       $N= $(PATCH)"
 	@echo "$B  VPATH       $N= $(VPATH)"
 	@echo "$B  SOLVER      $N= $(SOLVER)"
+	@echo "$B  OPACITY     $N= $(OPACITY)"
+	@echo "$B  EOS         $N= $(EOS)"
 	@echo "$B  PROG        $N= $(PROG).o"
 	@echo "$B  OPTS        $N= $(OPTS)"
 	@echo "$B  OPT         $N= $(OPT)"

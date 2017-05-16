@@ -11,11 +11,10 @@ SOLVER          = stagger2/e
 TOP             = ../..
 RT_SOLVER       = hybrid2
 # Ideal or tabular EOS
-#EOS             = ideal
+#EOS             = microphysics/eos/ideal
 #OPACITY         = stub
 # Tomida & Hori, with opacity
-EOS             = tabular_e
-EOS_DATA        = Tomida+Hori_2016
+EOS             = data/eos/Tomida+Hori_2016/e
 OPACITY         = Tomida+Hori_2016
 
 sinclude $(TOP)/config/Makefile

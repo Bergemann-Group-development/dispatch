@@ -12,7 +12,7 @@ SOLVER          = stagger2
 #SOLVER          = stagger3/hd/e
 #SOLVER          = zeus3d
 EXEC            = dispatch.x
-EOS             = ideal
+EOS             = microphysics/eos/ideal
 OPACITY         = stub
 TOP             = ../..
 

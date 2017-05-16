@@ -10,7 +10,7 @@ SOLVER          = ramses/hydro
 #SOLVER          = stagger2/e
 #SOLVER          = stagger3/hd/e
 EXEC            = dispatch.x
-EOS             = ideal
+EOS             = microphysics/eos/ideal
 OPACITY         = stub
 TOP             = ../..
 

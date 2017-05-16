@@ -11,16 +11,14 @@ EXEC            = dispatch.x
 TOP             = ../..
 
 # Ideal or tabular EOS
-#EOS             = ideal
+#EOS             = microphysics/eos/ideal
 #OPACITY         = stub
 # Legacy stagger code
-EOS             = stagger
-EOS_DATA        = stagger
+EOS             = microphysics/eos/stagger
 OPACITY         = stub
 # Tomida & Hori, with opacity
-#EOS             = tabular_e
+#EOS             = data/eos/Tomida+Hori_2016/e
 #OPACITY         = Tomida+Hori_2016
-#EOS_DATA        = Tomida+Hori_2016
 
 # Include Makefile chain
 sinclude $(TOP)/config/Makefile
