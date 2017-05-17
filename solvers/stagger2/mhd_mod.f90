@@ -438,7 +438,7 @@ SUBROUTINE pde (self)
       ! gamma_AD = av_sigv / (m_i + m_n) = 3.28e13 g^-1cm^3s^-1
       ! ambi = 1.4 / (gamma_AD*d**1.5)
       ! rho_i = 1.
-      ambi = 1./(self%gamma_AD*d*self%rho_ions**0.5)
+      ambi = 1./(self%gamma_AD*d*self%rho_ions)
       Ud_x = xdn(ambi) * (zup(Jy)*xdn(zup(Bz)) - yup(Jz)*xdn(yup(By)))
       Ud_y = ydn(ambi) * (xup(Jz)*ydn(xup(Bx)) - zup(Jx)*ydn(zup(Bz)))
       Ud_z = zdn(ambi) * (yup(Jx)*zdn(yup(By)) - xup(Jy)*zdn(xup(Bx)))
