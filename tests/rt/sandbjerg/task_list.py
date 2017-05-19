@@ -36,7 +36,7 @@ class dispatcher:
             node=node.next
 
     def __init__(self):
-        #id=0
+        id=0
         self.im=image.image(size=self.size)
         self.tl.clear()
         # create a task list
