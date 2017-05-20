@@ -49,7 +49,6 @@ SUBROUTINE init (self)
   else
     self%nv = 5
   end if
-  print *,self%id,'NV1',self%mhd,self%nv
   self%mhd = self%initial%mhd
   call self%set(bits%static)
   !----------------------------------------------------------------------------
@@ -57,7 +56,6 @@ SUBROUTINE init (self)
   ! the self%i_e slot
   !----------------------------------------------------------------------------
   call self%mhd_t%init
-  print *,self%id,'NV2',self%mhd,self%nv
   !----------------------------------------------------------------------------
   ! In case of restarts, set the time properly
   !----------------------------------------------------------------------------

@@ -44,10 +44,12 @@ MODULE stagger_mod
     procedure, nopass:: yup
     procedure, nopass:: zup
     procedure:: div     => scalar_div_vector
+    procedure:: div_dn  => scalar_div_dn_vector
     procedure:: curl_dn => vector_curl_dn_vector
     procedure:: curl_up => vector_curl_up_vector
     procedure:: grad    => vector_grad_scalar
     procedure:: ddown   => scalar_ddown_vector
+    procedure:: dup     => scalar_dup_vector
   end type
   interface norm
     module procedure vector_norm_scalar
@@ -60,6 +62,9 @@ MODULE stagger_mod
   end interface
   interface down
     module procedure scalar_down_vector
+  end interface
+  interface sUP
+    module procedure scalar_up_vector
   end interface
   interface up
     module procedure vector_up_vector
@@ -679,6 +684,15 @@ FUNCTION scalar_down_vector (in) RESULT (out)
   out(:,:,:,3) = zdn (in)
 END FUNCTION scalar_down_vector
 !> =============================================================================
+FUNCTION scalar_up_vector (in) RESULT (out)
+  real, dimension(:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = xup (in)
+  out(:,:,:,2) = yup (in)
+  out(:,:,:,3) = zup (in)
+END FUNCTION scalar_up_vector
+!> =============================================================================
 FUNCTION vector_up_vector (in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -698,6 +712,16 @@ FUNCTION scalar_ddown_vector (self, in) RESULT (out)
   out(:,:,:,2) = self%ddydn (in)
   out(:,:,:,3) = self%ddzdn (in)
 END FUNCTION scalar_ddown_vector
+!> =============================================================================
+FUNCTION scalar_dup_vector (self, in) RESULT (out)
+  class(stagger_t):: self
+  real, dimension(:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  !-----------------------------------------------------------------------------
+  out(:,:,:,1) = self%ddxup (in)
+  out(:,:,:,2) = self%ddyup (in)
+  out(:,:,:,3) = self%ddzup (in)
+END FUNCTION scalar_dup_vector
 !> =============================================================================
 FUNCTION vector_dup_vector (self, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
@@ -726,6 +750,14 @@ FUNCTION scalar_div_vector (self, in) RESULT (out)
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
   !-----------------------------------------------------------------------------
   out = ddxup(self, in(:,:,:,1)) + ddyup(self, in(:,:,:,2)) + ddzup(self, in(:,:,:,3))
+END FUNCTION
+!> =============================================================================
+FUNCTION scalar_div_dn_vector (self, in) RESULT (out)
+  class(stagger_t):: self
+  real, dimension(:,:,:,:), intent(in):: in
+  real, dimension(size(in,1),size(in,2),size(in,3)):: out
+  !-----------------------------------------------------------------------------
+  out = ddxdn(self, in(:,:,:,1)) + ddydn(self, in(:,:,:,2)) + ddzdn(self, in(:,:,:,3))
 END FUNCTION
 !> =============================================================================
 FUNCTION scalar_minusdiv_vector (self, in) RESULT (out)

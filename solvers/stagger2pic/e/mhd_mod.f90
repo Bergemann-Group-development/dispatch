@@ -162,7 +162,7 @@ SUBROUTINE pde (self)
   ! density for reuse below
   !-----------------------------------------------------------------------------
   lnd = log(d)
-  ld = down(lnd)
+  ld = sUP(lnd)
   dd = exp(ld)
   U = p/dd
   !-----------------------------------------------------------------------------
@@ -179,7 +179,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ds = self%mesh%d
   dx = minval(ds)                                       ! smallest {dx,dy,dz}
-  du = st%div(U)                                        ! save div(U) for now
+  du = st%div_DN(U)                                     ! save div(U) for now
   if (self%gamma /= 1.0) then                           ! unless isothermal
     dedt = -pg*du                                       ! -Pg*div(U) term
   else
@@ -192,14 +192,14 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   if (self%mhd) then
     ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2
-    fyy = yup(Uy)**2
-    fzz = zup(Uz)**2
+    fxx = xDN(Ux)**2
+    fyy = yDN(Uy)**2
+    fzz = zDN(Uz)**2
     pp = (fxx+fyy+fzz)
     ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
-    Ex = xup(Bx)**2
-    Ey = yup(By)**2
-    Ez = zup(Bz)**2
+    Ex = yDN(zDN(Bx))**2
+    Ey = zDN(xDN(By))**2
+    Ez = xDN(yDN(Bz))**2
     ! Magnetic pressure
     pb = 0.5*(Ex+Ey+Ez)
     ! Fast mode speed + velocity
@@ -217,15 +217,15 @@ SUBROUTINE pde (self)
     pp = pg + pa + pb
     ! Total diagonal stress
     du = dx*self%nu(1)*cs
-    fxx = pp + d*(fxx - du*st%ddxup(Ux)) - Ex
-    fyy = pp + d*(fyy - du*st%ddyup(Uy)) - Ey
-    fzz = pp + d*(fzz - du*st%ddzup(Uz)) - Ex
-    Q = d*du*(st%ddxup(Ux)**2+st%ddyup(Uy)**2+st%ddzup(Uz)**2)
+    fxx = pp + d*(fxx - du*st%ddxDN(Ux)) - Ex
+    fyy = pp + d*(fyy - du*st%ddyDN(Uy)) - Ey
+    fzz = pp + d*(fzz - du*st%ddzDN(Uz)) - Ex
+    Q = d*du*(st%ddxDN(Ux)**2+st%ddyDN(Uy)**2+st%ddzDN(Uz)**2)
   else
     ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2
-    fyy = yup(Uy)**2
-    fzz = zup(Uz)**2
+    fxx = xDN(Ux)**2
+    fyy = yDN(Uy)**2
+    fzz = zDN(Uz)**2
     pp = (fxx+fyy+fzz)
     ! Isotropic pressure part
     pa = self%nu(2)*d*du**2                               ! dimension: pressure
@@ -242,57 +242,57 @@ SUBROUTINE pde (self)
     pp = pg + pa
     ! Total diagondal stress, with density factor
     du = dx*self%nu(1)*cs
-    fxx = pp + d*(fxx - du*st%ddxup(Ux))
-    fyy = pp + d*(fyy - du*st%ddyup(Uy))
-    fzz = pp + d*(fzz - du*st%ddzup(Uz))
-    Q = d*du*(st%ddxup(Ux)**2+st%ddyup(Uy)**2+st%ddzup(Uz))
+    fxx = pp + d*(fxx - du*st%ddxDN(Ux))
+    fyy = pp + d*(fyy - du*st%ddyDN(Uy))
+    fzz = pp + d*(fzz - du*st%ddzDN(Uz))
+    Q = d*du*(st%ddxDN(Ux)**2+st%ddyDN(Uy)**2+st%ddzDN(Uz))
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
-  fd = -(self%nu(4)*dd*down(du))*st%ddown(lnd)          ! diffusive mass flux
+  fd = -(self%nu(4)*dd*sUP(du))*st%dUP(lnd)             ! diffusive mass flux
   fm = p+fd                                             ! mass flux
-  dddt = -st%div(fm)                                    ! density derivative
+  dddt = -st%div_DN(fm)                                 ! density derivative
   self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))
   if (io%verbose>2) print*,'u_max',self%u_max
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
   !---------------------------------------------------------------------------
-  fxy = ydn(Ux)*xdn(Uy)
-  fyz = zdn(Uy)*ydn(Uz)
-  fzx = xdn(Uz)*zdn(Ux)
+  fxy = yUP(Ux)*xUP(Uy)
+  fyz = zUP(Uy)*yUP(Uz)
+  fzx = xUP(Uz)*zUP(Ux)
   if (self%id==io%id_debug) print *, 'DPDTZ1', fzx(19:20,19,5)
   !---------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !---------------------------------------------------------------------------
-  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(st%ddxdn(Uy)+st%ddydn(Ux))
-  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*(st%ddydn(Uz)+st%ddzdn(Uy))
-  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
+  fxy = fxy - self%nu(3)*0.5*xUP1(yUP1(du))*(st%ddxUP(Uy)+st%ddyUP(Ux))
+  fyz = fyz - self%nu(3)*0.5*yUP1(zUP1(du))*(st%ddyUP(Uz)+st%ddzUP(Uy))
+  fzx = fzx - self%nu(3)*0.5*zUP1(xUP1(du))*(st%ddzUP(Ux)+st%ddxUP(Uz))
   if (self%id==io%id_debug) then
-    fzx = st%ddzdn(Uy)
+    fzx = st%ddzUP(Uy)
     print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = self%nu(3)*0.5*st%ddzdn(Uy)
+    fzx = self%nu(3)*0.5*st%ddzUP(Uy)
     print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = self%nu(3)*0.5*ydn1(zdn1(du))*st%ddzdn(Uy)
+    fzx = self%nu(3)*0.5*yUP1(zUP1(du))*st%ddzUP(Uy)
     print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = xdn(Uz)*zdn(Ux)
-    fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
+    fzx = xUP(Uz)*zUP(Ux)
+    fzx = fzx - self%nu(3)*0.5*zUP1(xUP1(du))*(st%ddzUP(Ux)+st%ddxUP(Uz))
   if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5), Uy(19:20,19,4:5), Uz(19:20,18:19,5)
   end if
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
-  fxy = exp(ydn(ldx))*fxy
-  fyz = exp(zdn(ldy))*fyz
-  fzx = exp(xdn(ldz))*fzx
+  fxy = exp(yUP(ldx))*fxy
+  fyz = exp(zUP(ldy))*fyz
+  fzx = exp(xUP(ldz))*fzx
   !---------------------------------------------------------------------------
   ! Off-diagonal Maxwell stress
   !---------------------------------------------------------------------------
   if (self%mhd) then
-    fxy = fxy - ydn(Bx)*xdn(By)
-    fyz = fyz - zdn(By)*ydn(Bz)
-    fzx = fzx - xdn(Bz)*zdn(Bx)
+    fxy = fxy - xUP(zDN(Bx))*yUP(zDN(By))
+    fyz = fyz - yUP(xDN(By))*zUP(xDN(Bz))
+    fzx = fzx - zUP(yDN(Bz))*xUP(yDN(Bx))
   end if
   !-----------------------------------------------------------------------------
   ! Consistent addition of mass flux related momentum flux, symmetrized. The
@@ -301,50 +301,32 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   if (self%nu(4) > 0.0) then
     pa = d*du*self%nu(4)
-    fxx = fxx - pa*st%ddxup(ldx)*xup(Ux)
-    fyy = fyy - pa*st%ddyup(ldy)*yup(Uy)
-    fzz = fzz - pa*st%ddzup(ldz)*zup(Uz)
-    fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
-    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
-    fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
-    !fxx = fxx + xup1(fdx)*xup(Ux)
-    !fyy = fyy + yup1(fdy)*yup(Uy)
-    !fzz = fzz + zup1(fdz)*zup(Uz)
-    !fxy = fxy + 0.5*(xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
-    !fyz = fyz + 0.5*(ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
-    !fzx = fzx + 0.5*(zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
+    fxx = fxx - pa*st%ddxDN(ldx)*xDN(Ux)
+    fyy = fyy - pa*st%ddyDN(ldy)*yDN(Uy)
+    fzz = fzz - pa*st%ddzDN(ldz)*zDN(Uz)
+    fxy = fxy + (xUP1(fdy)*yUP(Ux)+yUP1(fdx)*xUP(Uy))
+    fyz = fyz + (yUP1(fdz)*zUP(Uy)+zUP1(fdy)*yUP(Uz))
+    fzx = fzx + (zUP1(fdx)*xUP(Uz)+xUP1(fdz)*zUP(Ux))
+    !fxx = fxx + xDN1(fdx)*xDN(Ux)
+    !fyy = fyy + yDN1(fdy)*yDN(Uy)
+    !fzz = fzz + zDN1(fdz)*zDN(Uz)
+    !fxy = fxy + 0.5*(xUP1(fdy)*yUP(Ux)+yUP1(fdx)*xUP(Uy))
+    !fyz = fyz + 0.5*(yUP1(fdz)*zUP(Uy)+zUP1(fdy)*yUP(Uz))
+    !fzx = fzx + 0.5*(zUP1(fdx)*xUP(Uz)+xUP1(fdz)*zUP(Ux))
     if (self%id==io%id_debug) print *, 'DPDTZ4', fzx(19:20,19,5)
   end if
   !-----------------------------------------------------------------------------
   ! Momentum equations
   !-----------------------------------------------------------------------------
-  dpdtx = - st%ddxdn1(fxx) - st%ddyup1(fxy) - st%ddzup1(fzx)
-  dpdty = - st%ddxup1(fxy) - st%ddydn1(fyy) - st%ddzup1(fyz)
-  dpdtz = - st%ddxup1(fzx) - st%ddyup1(fyz) - st%ddzdn1(fzz)
-  if (self%id==io%id_debug) then
-    print *, 'DPDTZ', st%m%d,    dpdtz(19,19,5), fzz(19,19,4:5)
-    dpdtz = - st%ddxup1(fzx)
-    print *, 'DPDTZ', st%m(1)%d, dpdtz(19,19,5), fzx(19:20,19,5)
-    dpdtz = - st%ddyup1(fyz)
-    print *, 'DPDTZ', st%m(2)%d, dpdtz(19,19,5), fyz(19,19:20,5)
-    dpdtz = - st%ddzdn1(fzz)
-    print *, 'DPDTZ', st%m(3)%d, dpdtz(19,19,5), fzz(19,19,4:5)
-    dpdtz = - st%ddxup1(fzx) - st%ddyup1(fyz) - st%ddzdn1(fzz)
-  end if
+  dpdtx = - st%ddxUP1(fxx) - st%ddyDN1(fxy) - st%ddzDN1(fzx)
+  dpdty = - st%ddxDN1(fxy) - st%ddyUP1(fyy) - st%ddzDN1(fyz)
+  dpdtz = - st%ddxDN1(fzx) - st%ddyDN1(fyz) - st%ddzUP1(fzz)
   !-----------------------------------------------------------------------------
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (io%verbose>1 .and. self%position(1)==0d0.and.self%position(2)==0d0) then
-    print *, self%id, 'VELOC', Ux(18,18,5), Uy(18,18,5), Uz(18,18,5), pg(18,18,5)
-    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
   if (associated(self%force%selected)) &
     dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
-  else
-    if (associated(self%force%selected)) &
-      dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-  end if
   !-----------------------------------------------------------------------------
   ! Conservation of energy.  The formulation that works best so far is to make
   ! the diffusive energy flux directly proportional to the diffusive mass flux,
@@ -354,8 +336,8 @@ SUBROUTINE pde (self)
     dedt = dddt*e/d
   else
     ee = e/d
-    fm = fm*down(ee) - (self%nu(5)*dd*down(du))*st%ddown(ee)
-    dedt = dedt - st%div(fm) + Q
+    fm = fm*sUP(ee) - (self%nu(5)*dd*sUP(du))*st%dUP(ee)
+    dedt = dedt - st%div_DN(fm) + Q
   end if
   !-----------------------------------------------------------------------------
   ! Induction equation
@@ -365,19 +347,19 @@ SUBROUTINE pde (self)
     ! Electric current, resistive electric field and magnetic dissipation
     ! emf = {Ex,Ey,Ez} is the vector with components Ex, Ey, Ez
     !---------------------------------------------------------------------------
-    J = st%curl_dn(B)
+    J = st%curl_DN(B)
     emf = self%nu(6)*edge(du)*J
     if (self%gamma /= 1.0) then
-      Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
+      Q = xDN(Jx*Ex) + yDN(Jy*Ey) + zDN(Jz*Ez)
       dedt = dedt + Q
     end if
     !---------------------------------------------------------------------------
-    ! Advective electric field on cell edges
+    ! Advective electric field on cell FACES
     !---------------------------------------------------------------------------
-    Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
-    Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
-    Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
-    dBdt = -st%curl_up(emf)
+    Ex = Ex + xUP(yDN(Uz))*zDN(By) - xUP(zDN(Uy))*yDN(Bz)
+    Ey = Ey + yUP(zDN(Ux))*xDN(Bz) - yUP(xDN(Uz))*zDN(Bx)
+    Ez = Ez + zUP(xDN(Uy))*yDN(Bx) - zUP(yDN(Ux))*xDN(By)
+    dBdt = -st%curl_UP(emf)
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
@@ -520,7 +502,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
   call self%gpatch_t%output (experiment_name)
-  !$omp critical (output_cr)
+  !$omp critical (out_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout-1
   inquire(file=filename, exist=exists)
@@ -530,7 +512,7 @@ SUBROUTINE output (self, experiment_name)
     write (io%data_unit,'(8f10.4)') self%nu
     close (io%data_unit)
   end if
-  !$omp end critical (output_cr)
+  !$omp end critical (out_cr)
 END SUBROUTINE output
 
 !> =============================================================================

@@ -33,12 +33,13 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
-    l=np.zeros(3)
+    l=np.zeros(3,dtype=np.int32)
     u=l+np.array(p.n)
     def interpolate(p,x,x0,dx,n,f):
         s=(x-x0)/dx
         i=max(0,min(n-2,int(s)))
         s=s-i
+        print p.id,i,s
         return (1.0-s)*f[l[0]:u[0],l[1]:u[1],i]+s*f[l[0]:u[0],l[1]:u[1],i+1]
     for p in select:
         p.cache()
@@ -63,7 +64,7 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
         image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap)    
     pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
     pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('x')
-    pl.title('var='+var+'   t={:d}  z={:d}'.format(np.int(p.time),np.int(z)))
+    pl.title('var='+var+'   t={:4.2f}  z={:d}'.format(p.time,np.int(z)))
     #pl.tight_layout()
     pl.draw()
 
@@ -81,7 +82,7 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
-    l=np.zeros(3)
+    l=np.zeros(3,dtype=np.int32)
     u=l+np.array(p.n)
     m=(l+u)/2
     def interpolate(p,x,x0,dx,n,f):
@@ -148,7 +149,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
         vmax=-vmin
         xlim=[vmin,vmax]
         ylim=[vmin,vmax]
-        l=np.zeros(3)
+        l=np.zeros(3,dtype=np.int32)
         u=l+np.array(p.n)
         def interpolate(p,x,x0,dx,n,f):
             s=(x-x0)/dx
@@ -236,12 +237,12 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
         vmax=-vmin
         zlim=[vmin,vmax]
         ylim=[vmin,vmax]
-        l=np.zeros(3)
+        l=np.zeros(3,dtype=np.int32)
         u=l+np.array(p.n)
         def interpolate(p,x,x0,dx,n,f):
             s=(x-x0)/dx
             i=max(0,min(n-2,int(s)))
-            #print i,i+1
+            print i,i+1,n
             s=s-i
             return (1.0-s)*f[i,l[1]:u[1],l[2]:u[2]]+s*f[i+1,l[1]:u[1],l[2]:u[2]]
         for p in select:
