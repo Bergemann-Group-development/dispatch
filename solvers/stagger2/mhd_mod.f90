@@ -198,7 +198,8 @@ SUBROUTINE pde (self)
   ! a log variable, from the table point of view.
   !-----------------------------------------------------------------------------
   ss = s/d
-  call eos%lookup (shape(d), lnx=lnd, lny=ss, pg=pg)
+  !!!call eos%lookup (shape(d), lnx=lnd, lny=ss, pg=pg)
+  pg = self%gas_pressure()
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure.  The divergence is valid
   ! in (2,gn-1)
