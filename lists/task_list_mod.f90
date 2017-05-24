@@ -141,7 +141,7 @@ SUBROUTINE init_bdries (self)
   call trace_end
 contains
   function formatted (task) result (out)
-  class(experiment_t), pointer:: task
+  class(experiment_t):: task
   character(len=6):: out
   out = '......'
   if (task%boundaries%is_set(bits%xl))  out(1:1) = 'T'
