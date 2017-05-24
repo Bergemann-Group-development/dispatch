@@ -375,7 +375,11 @@ SUBROUTINE init (self)
   self%out_time    = out_time
   self%print_time  = print_time
   self%print_next  = print_time
-  self%ds = real(self%size,kind=8)/(self%n-1)   ! ds in patch
+  where (self%n > 1)
+    self%ds = real(self%size,kind=8)/(self%n-1)   ! ds in patch
+  else where
+    self%ds = real(self%size,kind=8)
+  end where
   if (all(self%size==self%box)) then
     write (io_unit%log,*) mpi%rank, 'task', self%id, ' is root grid'
     call self%set(bits%root_grid)
