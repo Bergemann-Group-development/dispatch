@@ -128,7 +128,6 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
-  type(timestep_t):: timestep
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
 
  !!  !----------------------------------------------------------------------------
