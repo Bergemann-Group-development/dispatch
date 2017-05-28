@@ -67,9 +67,8 @@
 /
 &patch_params
  !dims=16,16,16          ! patch dimensions
- n=128,3,1          	! patch dimensions
+ n=128,1,1          	! patch dimensions
  dt_fixed=1d-2        ! fixed time step
- ng = 0,0,0
  nt=8                   ! time slots
  !end_time=4.1
  !nt=1                   ! time slots
@@ -100,7 +99,7 @@
  !do_trace=f             ! =t to trace execution
  verbose=1              ! =1 for output file messages
  do_output=t
- do_debug=t 
+ do_debug=f 
 /
 &initial_params
 /

@@ -96,25 +96,25 @@ SUBROUTINE condition (self, mem, m, h)
   do ix=m(1)%lb,m(1)%ub
    do iy=m(2)%lb,m(2)%ub
      do iz=m(3)%lb,m(3)%ub
-        if (iy .gt. (m(2)%ub - 2) ) then
+        if (m(2)%n .gt. 1 .and. iy .gt. (m(2)%ub - 2) ) then
           mem(ix,iy,iz) = mem(ix,m(2)%ub - 2,iz)
         end if
-        if (iy .lt. (m(2)%lb + 2) ) then
+        if (m(2)%n .gt. 1 .and. iy .lt. (m(2)%lb + 2) ) then
           mem(ix,iy,iz) = mem(ix,m(2)%lb + 2,iz)
         endif
         if (ix .gt. (m(1)%ub - 2) ) then
-          mem(ix,iy,iz) = mem(m(1)%ub - 2,m(2)%ub/2,iz)
+          mem(ix,iy,iz) = mem(m(1)%ub - 2,(m(2)%ub+1)/2,iz)
         end if
         if (ix .lt. (m(1)%lb + 2) ) then
           !mem(ix,iy,iz) = mem(m(1)%lb + 2,m(2)%ub/2,iz)
-          if (ini .eq. 1) mem(ix,iy,iz) = inrho(ix,m(2)%ub/2,iz)
-          if (ini .eq. 2) mem(ix,iy,iz) = ins(ix,m(2)%ub/2,iz)
-          if (ini .eq. 3) mem(ix,iy,iz) = inpx(ix,m(2)%ub/2,iz)
-          if (ini .eq. 4) mem(ix,iy,iz) = inpy(ix,m(2)%ub/2,iz)
-          if (ini .eq. 5) mem(ix,iy,iz) = inpz(ix,m(2)%ub/2,iz)
-          if (ini .eq. 6) mem(ix,iy,iz) = inbx(ix,m(2)%ub/2,iz)
-          if (ini .eq. 7) mem(ix,iy,iz) = inby(ix,m(2)%ub/2,iz)
-          if (ini .eq. 8) mem(ix,iy,iz) = inbz(ix,m(2)%ub/2,iz)
+          if (ini .eq. 1) mem(ix,iy,iz) = inrho(ix,(m(2)%ub+1)/2,iz)
+          if (ini .eq. 2) mem(ix,iy,iz) = ins  (ix,(m(2)%ub+1)/2,iz)
+          if (ini .eq. 3) mem(ix,iy,iz) = inpx (ix,(m(2)%ub+1)/2,iz)
+          if (ini .eq. 4) mem(ix,iy,iz) = inpy (ix,(m(2)%ub+1)/2,iz)
+          if (ini .eq. 5) mem(ix,iy,iz) = inpz (ix,(m(2)%ub+1)/2,iz)
+          if (ini .eq. 6) mem(ix,iy,iz) = inbx (ix,(m(2)%ub+1)/2,iz)
+          if (ini .eq. 7) mem(ix,iy,iz) = inby (ix,(m(2)%ub+1)/2,iz)
+          if (ini .eq. 8) mem(ix,iy,iz) = inbz (ix,(m(2)%ub+1)/2,iz)
         end if
       end do
     end do
