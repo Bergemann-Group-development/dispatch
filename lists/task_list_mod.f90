@@ -104,14 +104,14 @@ SUBROUTINE init_bdries (self)
   class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
   call trace%begin('task_list_t%init_bdries')
-  print *,'task_list%lc =', self%lc
-  print *,'task_list%uc =', self%uc
   link => self%head
   do while (associated(link))
     self%lc = min(self%lc, link%task%position)
     self%uc = max(self%uc, link%task%position)
     link => link%next
   end do
+  print *,'task_list%lc =', self%lc
+  print *,'task_list%uc =', self%uc
   link => self%head
   do while (associated(link))
     task => link%task
