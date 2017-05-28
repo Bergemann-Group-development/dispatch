@@ -99,6 +99,10 @@ class Patch(Task):
         self.p1 = self.stripv (self.p1)
         self.p2 = self.stripv (self.p2)
         self.p3 = self.stripv (self.p3)
+        if self.nvar>=8:
+            self.b1 = self.stripv (self.b1)
+            self.b2 = self.stripv (self.b2)
+            self.b3 = self.stripv (self.b3)
         l=self.nghost[0]; u=l+self.n[0]; self.x = self.x[l:u]
         l=self.nghost[1]; u=l+self.n[1]; self.y = self.y[l:u]
         l=self.nghost[2]; u=l+self.n[2]; self.z = self.z[l:u]
@@ -109,6 +113,10 @@ class Patch(Task):
         self.p1=self.data[:,:,:,self.varidx['p1']]
         self.p2=self.data[:,:,:,self.varidx['p2']]
         self.p3=self.data[:,:,:,self.varidx['p3']]
+        if self.nvar>=8:
+            self.b1=self.data[:,:,:,self.varidx['b1']]
+            self.b2=self.data[:,:,:,self.varidx['b2']]
+            self.b3=self.data[:,:,:,self.varidx['b3']]
         g1=self.gamma-1.0
         if self.kind[0:7]=='stagger':
             logd=np.log(self.d)
@@ -146,6 +154,9 @@ class Patch(Task):
                      'u1':self.u1,\
                      'u2':self.u2,\
                      'u3':self.u3,\
+                     'b1':self.b1,\
+                     'b2':self.b2,\
+                     'b3':self.b3,\
                    'logd':np.log10(self.d),\
                    'loge':np.log10(self.e)}
 

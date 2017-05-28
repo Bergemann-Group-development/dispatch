@@ -39,7 +39,7 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
         s=(x-x0)/dx
         i=max(0,min(n-2,int(s)))
         s=s-i
-        print p.id,i,s
+        #print p.id,i,s
         return (1.0-s)*f[l[0]:u[0],l[1]:u[1],i]+s*f[l[0]:u[0],l[1]:u[1],i+1]
     for p in select:
         p.cache()
