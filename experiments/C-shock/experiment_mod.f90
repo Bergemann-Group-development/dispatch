@@ -74,9 +74,9 @@ SUBROUTINE init (self)
       if (i < self%gn(1)/2+1) then
         d (i,:,:)  = rho_l
         if (gamma_exp .eq. 1.) then
-          s (i,:,:) = -log(rho_l)
+          s (i,:,:) = -log(rho_l)*rho_l
         else
-          s (i,:,:) = (log(P_l)-log(rho_l)*gamma_exp)/(gamma_exp-1.0)
+          s (i,:,:) = (log(P_l)-log(rho_l)*gamma_exp)/(gamma_exp-1.0) * rho_l
           !s (i,:,:) = -(1.381e-16)/(gamma-1)*log(rho_l)
         end if
         px(i,:,:) = vx_l*rho_l
@@ -88,9 +88,9 @@ SUBROUTINE init (self)
       else
         d (i,:,:) = rho_r
         if (gamma_exp .eq. 1.) then
-          s (i,:,:) = -log(rho_r)
+          s (i,:,:) = -log(rho_r)*rho_r
         else
-          s (i,:,:) = (log(P_r)-log(rho_r)*gamma_exp)/(gamma_exp-1.0)
+          s (i,:,:) = (log(P_r)-log(rho_r)*gamma_exp)/(gamma_exp-1.0) * rho_r
           !s (i,:,:) = -(1.381e-16)/(gamma-1)*log(rho_r)
         end if
         px(i,:,:) = vx_r*rho_r 
