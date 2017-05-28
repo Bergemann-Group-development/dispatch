@@ -48,11 +48,11 @@ END SUBROUTINE set
 SUBROUTINE condition (self, mem, m, h)
   class(boundary_t)      :: self
   real, dimension(:,:,:) :: mem
-  !real, dimension(size(mem,1),size(mem,2),size(mem,3)):: infl
+  real, save, dimension(:,:,:), pointer:: inrho, ins, inpx, inpy, inpz, inbx, inby, inbz
   !integer, dim1          :: size(mem,1)
   !integer, dim2          :: size(mem,2)
   !integer, dim3          :: size(mem,3)
-  real,save,dimension(64,32,1):: inrho, ins, inpx, inpy, inpz, inbx, inby, inbz
+  !real,save,dimension(64,32,1):: inrho, ins, inpx, inpy, inpz, inbx, inby, inbz
   class(mesh_t), pointer, dimension(:) :: m
   integer,save           :: ini=1
   logical,save           :: first_time=.true.
@@ -65,21 +65,29 @@ SUBROUTINE condition (self, mem, m, h)
   call trace_begin('boundary_t%condition')
   if (first_time) then
     if (ini .eq. 1) then
+      allocate (inrho(size(mem,1),size(mem,2),size(mem,3)))
       inrho = mem
     else if (ini .eq. 2) then
+      allocate (ins(size(mem,1),size(mem,2),size(mem,3)))
       ins   = mem
     else if (ini .eq. 3) then
+      allocate (inpx(size(mem,1),size(mem,2),size(mem,3)))
       inpx  = mem
     else if (ini .eq. 4) then
+      allocate (inpy(size(mem,1),size(mem,2),size(mem,3)))
       inpy  = mem
     else if (ini .eq. 5) then
+      allocate (inpz(size(mem,1),size(mem,2),size(mem,3)))
       inpz  = mem
     else if (ini .eq. 6) then
+      allocate (inbx(size(mem,1),size(mem,2),size(mem,3)))
       inbx  = mem
     else if (ini .eq. 7) then
+      allocate (inby(size(mem,1),size(mem,2),size(mem,3)))
       inby  = mem
     else if (ini .eq. 8) then
       print*,'entering first_time'
+      allocate (inbz(size(mem,1),size(mem,2),size(mem,3)))
       inbz  = mem
       first_time = .false.
     end if
