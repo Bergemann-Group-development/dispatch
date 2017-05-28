@@ -401,10 +401,11 @@ SUBROUTINE pde (self)
     if (self%mhd_Ohm) then
       eta_Ohm = self%nu(6)
       self%dt_Ohm = 0.1*minval(dx**2/eta_Ohm)
+      E = eta_Ohm*J
     else
       self%dt_Ohm = 100.
+      E = self%nu(6)*edge(du)*J
     end if
-    E = self%nu(6)*edge(du)*J
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
     if (self%gamma/=1.0) &
       dsdt = dsdt + Q*d/pg
