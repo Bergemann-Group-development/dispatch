@@ -137,6 +137,9 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer::      fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx,      fzz
   real, dimension(:,:,:),   pointer:: Ud_x, Ud_y, Ud_z, eta_non, eta_th, eta_Ohm, ambi, H_AD
+  real, dimension(:,:,:),   pointer:: Txx, Txy
+  real, dimension(:,:,:),   pointer::      Tyy, Tyz
+  real, dimension(:,:,:),   pointer:: Tzx,      Tzz
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   logical, save:: first_time=.true., first_AD=.true.
   !.............................................................................
@@ -212,6 +215,10 @@ SUBROUTINE pde (self)
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   ! The diagonal fxx is valid in (2:gn-1)
   !-----------------------------------------------------------------------------
+  call allocate_scalars (self%gn, Txx, Tyy, Tzz)
+  Txx = ddxup(ds,Ux)
+  Tyy = ddyup(ds,Uy)
+  Tzz = ddzup(ds,Uz)
   if (self%mhd) then
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -239,10 +246,9 @@ SUBROUTINE pde (self)
     pp = pg + pa + pb
     ! Total diagonal stress
     du = dx*self%nu(1)*cs
-    fxx = pp + d*(fxx - du*ddxup(ds,Ux)) - Ex
-    fyy = pp + d*(fyy - du*ddyup(ds,Uy)) - Ey
-    fzz = pp + d*(fzz - du*ddzup(ds,Uz)) - Ex
-    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
+    fxx = pp + d*(fxx - du*Txx) - Ex
+    fyy = pp + d*(fyy - du*Tyy) - Ey
+    fzz = pp + d*(fzz - du*Tzz) - Ex
   else
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -267,15 +273,16 @@ SUBROUTINE pde (self)
     !---------------------------------------------------------------------------
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
-    fxx = pp + d*(fxx - du*ddxup(ds,Ux))
-    fyy = pp + d*(fyy - du*ddyup(ds,Uy))
-    fzz = pp + d*(fzz - du*ddzup(ds,Uz))
-    !---------------------------------------------------------------------------
+    fxx = pp + d*(fxx - du*Txx)
+    fyy = pp + d*(fyy - du*Tyy)
+    fzz = pp + d*(fzz - du*Tzz)
+  end if
+  !-----------------------------------------------------------------------------
     ! du has units area per unit time, which gives velocity squared times mass
     ! density per unit time = energy per unit volume and time
-    !---------------------------------------------------------------------------
-    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz)**2)
-  end if
+  !-----------------------------------------------------------------------------
+  Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)
+  call deallocate_scalars (Txx, Tyy, Tzz)
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
@@ -291,31 +298,26 @@ SUBROUTINE pde (self)
   fxy = ydn(Ux)*xdn(Uy)
   fyz = zdn(Uy)*ydn(Uz)
   fzx = xdn(Uz)*zdn(Ux)
-  if (self%id==io%id_debug) print *, 'DPDTZ1', fzx(19:20,19,5)
   !---------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !---------------------------------------------------------------------------
-  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
-  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
-  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(ddzdn(ds,Ux)+ddxdn(ds,Uz))
-  if (self%id==io%id_debug) then
-    fzx = ddzdn(ds,Uy)
-    print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = self%nu(3)*0.5*ddzdn(ds,Uy)
-    print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = self%nu(3)*0.5*ydn1(zdn1(du))*ddzdn(ds,Uy)
-    print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = xdn(Uz)*zdn(Ux)
-    fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(ddzdn(ds,Ux)+ddxdn(ds,Uz))
-  if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5), Uy(19:20,19,4:5), Uz(19:20,18:19,5)
-  end if
+  call allocate_scalars (self%gn, Txy, Tyz, Tzx)
+  Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)
+  Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)
+  Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)
+  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*Txy
+  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*Tyz
+  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*Tzx
+  Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &
+                               yup(zup(Tyz))**2 + &
+                               zup(xup(Tzx))**2)
+  call deallocate_scalars (Txy, Tyz, Tzx)
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
   fxy = exp(ydn(ldx))*fxy
   fyz = exp(zdn(ldy))*fyz
   fzx = exp(xdn(ldz))*fzx
-  if (self%id==io%id_debug) print *, 'DPDTZ3', fzx(19:20,19,5)
   !---------------------------------------------------------------------------
   ! Off-diagonal Maxwell stress
   !---------------------------------------------------------------------------
@@ -340,7 +342,6 @@ SUBROUTINE pde (self)
     fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
     fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
     fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
-    if (self%id==io%id_debug) print *, 'DPDTZ4', fzx(19:20,19,5)
   end if
   !-----------------------------------------------------------------------------
   ! Momentum equations.  The ddxdn(fxx) part is valid in (3:gn-1), and hence px
@@ -349,30 +350,12 @@ SUBROUTINE pde (self)
   dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)
   dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)
   dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
-  if (self%id==io%id_debug) then
-    print *, 'DPDTZ', ds,    dpdtz(19,19,5), fzz(19,19,4:5)
-    dpdtz = - ddxup1(ds,fzx)
-    print *, 'DPDTZ', ds(1), dpdtz(19,19,5), fzx(19:20,19,5)
-    dpdtz = - ddyup1(ds,fyz)
-    print *, 'DPDTZ', ds(2), dpdtz(19,19,5), fyz(19,19:20,5)
-    dpdtz = - ddzdn1(ds,fzz)
-    print *, 'DPDTZ', ds(2), dpdtz(19,19,5), fzz(19,19,4:5)
-    dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
-  end if
   !-----------------------------------------------------------------------------
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (io%verbose>1 .and. self%position(1)==0d0.and.self%position(2)==0d0) then
-    print *, self%id, 'VELOC', Ux(18,18,5), Uy(18,18,5), Uz(18,18,5), pg(18,18,5)
-    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
   if (associated(self%force%selected)) &
     dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
-  else
-    if (associated(self%force%selected)) &
-      dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-  end if
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
