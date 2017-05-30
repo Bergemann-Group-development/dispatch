@@ -263,8 +263,8 @@ init_cartesian: id, rank, size, pos =      63     0    2.500000E-01  2.500000E-0
           64  LEGACY INPUT
 init_cartesian: id, rank, size, pos =      64     0    2.500000E-01  2.500000E-01  2.500000E-01    8.750000E-01  8.750000E-01  8.750000E-01  FF
  Patches per process:      64
- task_list%lc =   1.7976931348623157E+308   1.7976931348623157E+308   1.7976931348623157E+308
- task_list%uc =  -1.7976931348623157E+308  -1.7976931348623157E+308  -1.7976931348623157E+308
+ task_list%lc =  0.12500000000000000       0.12500000000000000       0.12500000000000000     
+ task_list%uc =  0.87500000000000000       0.87500000000000000       0.87500000000000000     
  Memory per process:   0.093 GB
            1 before download, min(d), max(d):   1.00000000       1.00000000    
 patch_t%dnload_range: id,lv,iv:     1  0  1  source,lv,l,u,o:    64  0     1   1   1     2   2   2    20  20  20
