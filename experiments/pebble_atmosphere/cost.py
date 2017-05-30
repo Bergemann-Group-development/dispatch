@@ -3,7 +3,7 @@ from numpy import *
 km=1e5
 re=6.7e3*km
 b=2.2*re
-nbox=600
+nbox=500
 
 dx=b/nbox
 
@@ -46,7 +46,8 @@ oMch=ocost/(1e6*3600)*lfact
 print 'orbit cost Mch:',oMch
 
 Mch=60.
-Mch_exp=Mch/3.
+models=2.
+Mch_exp=Mch/3./models
 steps=4
 Mch_step=Mch_exp/steps
 print "orbits at top res:", Mch_step/oMch
