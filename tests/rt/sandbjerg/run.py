@@ -1,33 +1,47 @@
 import matplotlib.pyplot as pl
 import numpy as np
-import task_list
-reload(task_list)
-from task_list import *
 
-import image
-reload(image)
-from image import *
+import dispatcher; reload(dispatcher)
+from dispatcher import dispatcher
 
-pl.figure(1)
+save=0
+pl.figure(1,figsize=(10,5))
+if not save: pl.show()
+
 d=dispatcher()
-
-#d.info()
-#d.im.rectangle(color=0.7)
 
 node=d.tl.first
 i=0
-while node:
+j=0
+tasks=[]
+while node and j<50:
     next=node.next
     task=d.tl.remove(node)
-    print task.id,task.t
-    i=np.int(np.random.uniform(d.nthreads))
     task.update()
-    task.show(d.im,color=d.threads[i].color)
+    tasks.append(task)
     d.add_by_time(task)
     node=next
     i=i+1
-    if i>=d.nthreads:
+    ''' every nthreads time, make new image '''
+    if np.mod(i,d.node.nthreads)==0:
         i=0
+        if save:
+            pl.close()  
+            pl.figure(1,figsize=(10,5))
+        pl.clf()
+        pl.xlim(0,d.size[0])
+        pl.ylim(0,d.size[1])
+        d.show()
+        ''' show the last nthreads tasks in mid color '''
+        for task in tasks:
+            task.show(color=0.5)
+        tasks=[]
         pl.draw()
-        pl.pause(2)
-        d.im.reset()
+        pl.tight_layout()
+        if save:
+            file='anim/{:04d}.png'.format(j)
+            pl.savefig(file)
+            print file
+        else:
+            pl.pause(0.001)
+        j=j+1
