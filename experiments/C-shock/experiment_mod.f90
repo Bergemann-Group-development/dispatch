@@ -67,11 +67,15 @@ SUBROUTINE init (self)
     Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
     print*, 'gn is:', self%gn(1)
     print*, 'P and rho and gamma:', P_l, P_r, rho_l, rho_r, gamma_exp
-    do i=1,self%gn(1)
-      !x = (i-(self%gn(1)+1)*0.5)*self%ds(1) + self%position(1)
-      !y = (j-(self%gn(2)+1)*0.5)*self%ds(2) + self%position(2)
-      !z = (k-(self%gn(3)+1)*0.5)*self%ds(3) + self%position(3)
-      if (i < self%gn(1)/2+1) then
+!    do i=1,self%gn(1)
+!    do k=self%mesh(3)%lb,self%mesh(3)%ub
+!    do j=self%mesh(2)%lb,self%mesh(2)%ub
+    do i=self%mesh(1)%lb,self%mesh(1)%ub
+      x = self%mesh(1)%p + self%mesh(1)%r(i)
+      print*, 'x is:', x
+      !y = self%mesh(2)%p + self%mesh(2)%r(i)
+      !z = self%mesh(3)%p + self%mesh(3)%r(i)
+      if (x < 0.5) then
         d (i,:,:)  = rho_l
         if (gamma_exp .eq. 1.) then
           s (i,:,:) = -log(rho_l)*rho_l
@@ -102,18 +106,21 @@ SUBROUTINE init (self)
       endif
     end do
   end if
-  call boundary%condition (self%mem(:,:,:,1,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,2,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,6,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,7,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,8,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  first_time = .false.
-  self%mhd = .true.
-  print*, 'done!'
-  call trace_end
+  if (x .ge. 1.0) then
+    print*,'enter first_time set to false'
+    first_time = .false.
+    call boundary%condition (self%mem(:,:,:,1,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+    call boundary%condition (self%mem(:,:,:,2,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+    call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+    call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+    call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+    call boundary%condition (self%mem(:,:,:,6,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+    call boundary%condition (self%mem(:,:,:,7,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+    call boundary%condition (self%mem(:,:,:,8,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+    self%mhd = .true.
+    print*, 'done!'
+    call trace_end
+  end if
 END SUBROUTINE init
 
 !> =============================================================================
@@ -137,6 +144,7 @@ SUBROUTINE update (self)
   !!!and t_AD = 0.1*min(gamma_AD*rho_i*rho/B^2*Delta_x^2)!!!
   call self%mhd_t%nonideal_MHD_courant_condition(self%dt_Ohm,self%dt_AD)
   call self%check_density('before timestep')
+  ! ADD if statement that calls boundary condition only for relevant patches!
   call boundary%condition (self%mem(:,:,:,1,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
   call boundary%condition (self%mem(:,:,:,2,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
   call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
