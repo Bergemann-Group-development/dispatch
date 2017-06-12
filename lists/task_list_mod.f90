@@ -57,6 +57,7 @@ MODULE task_list_mod
   integer, save:: min_nq=2**30
   logical, save:: do_delay=.false.
   logical, save:: recv_active=.true.
+  logical, save:: queue_unpack=.true.
   real(8), save:: wc_start=0d0
   real(8), save:: sync_time=0.0
   type(task_list_t), save:: virtual_list
@@ -74,7 +75,7 @@ SUBROUTINE init (self, name)
   integer:: iostat
   integer:: debug=0
   namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, &
-    do_delay, recv_active, sync_time
+    do_delay, recv_active, queue_unpack, sync_time
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -945,12 +946,15 @@ SUBROUTINE check_active (self)
   integer:: nvirt, nunpk
   real(8):: wc
   integer, save:: itimer=0
+  type(mesg_list_t):: unpk_tmp
+  class(mesg_t), pointer:: mesg
   !.............................................................................
   call trace%begin ('task_list_t%check_active', itimer=itimer)
   !$omp critical (active_cr)
   nvirt = 0
   nunpk = 0
   link => self%head
+  if (queue_unpack) call unpk_tmp%reset
   do while (associated(link))
     task => link%task
     if (task%is_set (bits%virtual)) then
@@ -964,20 +968,36 @@ SUBROUTINE check_active (self)
       if (task%mesg%req == 0) then
         call task%mesg%irecv  (task%rank, task%id)
       end if
+      !-------------------------------------------------------------------------
+      ! If a mesg was recvd, then either unpack directly and issue a new request,
+      ! or put the mesg on a thread private unpack list, to unpack outside the
+      ! critical region
+      !-------------------------------------------------------------------------
       if (task%mesg%test_recv()) then
-        call self%unpack (task%mesg, link=link)
-        wc = wallclock() 
-        if (wc-task%wc_last > 10.) print &
-          '("WARNING: virtual patch not updated in",f5.1," sec")', wc
-        task%wc_last = wc
-        call task%mesg%irecv (task%rank, task%id)
-        nunpk = nunpk+1
+        if (queue_unpack) then
+          call unpk_tmp%add (task%mesg)
+        else
+          call self%unpack (task%mesg)
+          call task%mesg%irecv (task%rank, task%id)
+          if (task%rank /= mesg%sender) error stop 'rank ne sender'
+          if (task%id   /= mesg%id)     error stop 'task%id ne mesg%id'
+        end if
       end if
       end select
     end if
     link => link%next
   end do
   !$omp end critical (active_cr)
+  if (queue_unpack) then
+    mesg => unpk_tmp%head
+    do while (associated(mesg))
+      call self%unpack (mesg)
+      call unpk_tmp%remove (mesg)
+      call mesg%irecv (mesg%sender, mesg%id)
+      nunpk = nunpk+1
+      mesg => mesg%next
+    end do
+  end if
   call trace%end
   !print *, 'check_active:', mpi%rank, nvirt, nunpk
 END SUBROUTINE check_active
