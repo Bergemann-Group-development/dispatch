@@ -21,11 +21,16 @@ def image(f,verbose=0,**kwargs):
 
 def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
              extent=None,vlim=None,fraction=0.1,**kwargs):
+    xy_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
+             Rotate=True,extent=None,vlim=None,fraction=0.1,**kwargs)
+
+def xy_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
+             Rotate=False,extent=None,vlim=None,fraction=0.1,**kwargs):
     '''
     Display xy-image for given z  
     '''
     pl.show()
-    pp=du.patches(run,data,iout=iout)
+    pp=du.patches(iout,run,data)
     def inside(p, z):
         return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
     select=[p for p in pp if inside(p,z) and p.level<8]
@@ -47,7 +52,7 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
         p.vars()
         p.f=p.var[var]
         p.f=interpolate(p,z,p.active_corners[0][2]+0.5*p.dx[2],p.dx[2],p.n[2],p.f)
-        p.f,e=du.rotate(p.f,p.extent[2])
+        if (Rotate): p.f,e=du.rotate(p.f,p.extent[2])
         p.extent[2]=e
         vmin=min(vmin,p.f.min())
         vmax=max(vmax,p.f.max())
@@ -74,7 +79,7 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
     Display yz-image for given x
     '''
     pl.show()
-    pp=du.patches(run,data,iout==iout)
+    pp=du.patches(iout,run,data)
     def inside(p,x):
         return x<=p.active_corners[1][0] and x>=p.active_corners[0][0]
     pp=[p for p in pp if inside(p,x) and p.level<8]
@@ -120,7 +125,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
     Display yx-image in steps of dz in z 
     '''
     pl.show()
-    pp=du.patches(run,data,iout=iout)
+    pp=du.patches(iout,run,data)
     co=du.corners(pp)
     zmin=co[0,2]
     zmax=co[1,2]

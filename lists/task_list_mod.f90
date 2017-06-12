@@ -45,6 +45,7 @@ MODULE task_list_mod
     procedure:: check_mpi
     procedure:: init_virtual
     procedure:: check_virtual
+    procedure:: check_active
     procedure:: split
     procedure:: output
     procedure:: check_flags
@@ -56,6 +57,7 @@ MODULE task_list_mod
   integer, save:: min_nq=2**30
   logical, save:: do_delay=.false.
   logical, save:: recv_active=.true.
+  logical, save:: queue_unpack=.true.
   real(8), save:: wc_start=0d0
   real(8), save:: sync_time=0.0
   type(task_list_t), save:: virtual_list
@@ -73,7 +75,7 @@ SUBROUTINE init (self, name)
   integer:: iostat
   integer:: debug=0
   namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, &
-    do_delay, recv_active, sync_time
+    do_delay, recv_active, queue_unpack, sync_time
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -178,7 +180,7 @@ SUBROUTINE execute (self)
     call self%check_ready (link)
     link => link%next
   end do
-  if (recv_active) &
+  if (recv_active .and. mpi_mesg%recv_priv) &
     call self%init_virtual
   !-----------------------------------------------------------------------------
   ! Start timer, and run until the task count is zero
@@ -636,12 +638,16 @@ SUBROUTINE check_mpi (self)
   !$omp atomic read
   nq = self%nq
   call mpi_mesg%sent_list%check_sent (nq)
-  if (mpi_mesg%recv_priv) then
-    call check_priv (self)
+  if (recv_active) then
+    if (mpi_mesg%recv_priv) then
+      call self%check_virtual
+    else
+      call self%check_active
+    end if
     return
   end if
-  if (recv_active) then
-    call self%check_virtual
+  if (mpi_mesg%recv_priv) then
+    call check_priv (self)
     return
   end if
   call trace%begin ('task_list_t%check_mpi', 1, itimer=itimer)
@@ -927,6 +933,74 @@ SUBROUTINE check_virtual (self)
   if (io%verbose>1) write (io_unit%log,*) 'check_virtual', nunpk
   call trace%end
 END SUBROUTINE check_virtual
+
+!> =============================================================================
+!> Run through all virtual patches, and allocate message data types if not
+!> allocated.  If an old request exists, test if it has completed.  If yes,
+!> unpack and issue a new request.  If no request exists, issue a request.
+!> =============================================================================
+SUBROUTINE check_active (self)
+  class(task_list_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  integer:: nvirt, nunpk
+  real(8):: wc
+  integer, save:: itimer=0
+  type(mesg_list_t):: unpk_tmp
+  class(mesg_t), pointer:: mesg
+  !.............................................................................
+  call trace%begin ('task_list_t%check_active', itimer=itimer)
+  !$omp critical (active_cr)
+  nvirt = 0
+  nunpk = 0
+  link => self%head
+  if (queue_unpack) call unpk_tmp%reset
+  do while (associated(link))
+    task => link%task
+    if (task%is_set (bits%virtual)) then
+      nvirt = nvirt+1
+      select type (task)
+      class is (patch_t)
+      if (.not.associated(task%mesg)) then
+        call task%allocate_mesg
+        task%wc_last = wallclock()
+      end if
+      if (task%mesg%req == 0) then
+        call task%mesg%irecv  (task%rank, task%id)
+      end if
+      !-------------------------------------------------------------------------
+      ! If a mesg was recvd, then either unpack directly and issue a new request,
+      ! or put the mesg on a thread private unpack list, to unpack outside the
+      ! critical region
+      !-------------------------------------------------------------------------
+      if (task%mesg%test_recv()) then
+        if (queue_unpack) then
+          call unpk_tmp%add (task%mesg)
+        else
+          call self%unpack (task%mesg)
+          call task%mesg%irecv (task%rank, task%id)
+          if (task%rank /= mesg%sender) error stop 'rank ne sender'
+          if (task%id   /= mesg%id)     error stop 'task%id ne mesg%id'
+        end if
+      end if
+      end select
+    end if
+    link => link%next
+  end do
+  !$omp end critical (active_cr)
+  if (queue_unpack) then
+    mesg => unpk_tmp%head
+    do while (associated(mesg))
+      call self%unpack (mesg)
+      call unpk_tmp%remove (mesg)
+      call mesg%irecv (mesg%sender, mesg%id)
+      nunpk = nunpk+1
+      mesg => mesg%next
+    end do
+  end if
+  call trace%end
+  !print *, 'check_active:', mpi%rank, nvirt, nunpk
+END SUBROUTINE check_active
 
 !> =============================================================================
 !> Split a patch into two (parameter) in each direction, merging the new patches

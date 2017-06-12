@@ -16,7 +16,7 @@ run='m3r27t05'
 iout=5
 sgn=1
 
-pp=du.patches(run,data,iout=iout)
+pp=du.patches(iout,run,data)
 pp=[p for p in pp if p.pos[0]==0.0 and p.pos[1]==0.0 and sgn*p.pos[2]>=0.0]
 npp=np.size(pp)
 print npp,'patches to plot'
