@@ -41,6 +41,7 @@ SUBROUTINE init (self)
   cgs%k_b     = 1.3807d-16
   cgs%h_p     = 6.6260755d-27
   cgs%c       = 2.999792d10
+  cgs%e       = 1.602177e-12
   cgs%stefan  = 5.67d-5
   cgs%grav    = 6.6743d-8
   cgs%AU      = 1.496d13
@@ -63,6 +64,7 @@ SUBROUTINE init (self)
   si%k_b     = 1.3807d-23
   si%h_p     = 6.6260755d-34
   si%c       = 2.999792d8
+  si%e       = 1.602177e-19
   si%stefan  = 5.67d-8
   si%grav    = 6.6743d-11
   si%AU      = 1.496d11
