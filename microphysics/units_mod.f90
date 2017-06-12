@@ -11,6 +11,7 @@ MODULE units_mod
     real(kind=8):: k_b
     real(kind=8):: h_p
     real(kind=8):: c
+    real(kind=8):: e
     real(kind=8):: stefan
     real(kind=8):: grav
     real(kind=8):: AU
