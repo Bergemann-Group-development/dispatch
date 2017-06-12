@@ -11,7 +11,7 @@ def dispatch_utils():
         patches()        Return list of objects for all 'data/run' patches
         cache()          Adds cached arrays to the object
     Typical use:
-        pp=patches('run')
+        pp=patches(iout=0,run='run')
         pp=[p for p in pp if select(p)]
         pp=cache(pp)
         for p in pp:
@@ -53,15 +53,14 @@ def patch (id=2, iout=0, run='', data='../data', verbose=0, **kwargs):
     s=dd.Patch(file,verbose=verbose,**kwargs)
     return s
 
-def patches (run='', data='../data', iout=-1, verbose=0):
+def patches (iout=-1, run='', data='../data', verbose=0):
     '''
     Return a list of structures s={id,iout,time,data,...}, where id,iout
     are the integer patch and snapshot numbers, time is in code units,
     data is a memory mapping of the patch data, and ... are a number of
     other patch properties returned by ThisPatch().
     
-        pp = patches('run')
-        time_select  = [p for p in pp if p.iout==iout]
+        pp = patches(iout=0,run='run')
         patch_select = [p for p in pp if p.id==id]
     '''
     files = patch_files (run=run, data=data, iout=iout, verbose=verbose)
