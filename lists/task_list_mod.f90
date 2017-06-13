@@ -60,6 +60,7 @@ MODULE task_list_mod
   logical, save:: queue_unpack=.true.
   real(8), save:: wc_start=0d0
   real(8), save:: sync_time=0.0
+  real(8), save:: job_seconds=1d30
   type(task_list_t), save:: virtual_list
   !$omp threadprivate (virtual_list)
 CONTAINS
@@ -75,7 +76,7 @@ SUBROUTINE init (self, name)
   integer:: iostat
   integer:: debug=0
   namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, &
-    do_delay, recv_active, queue_unpack, sync_time
+    do_delay, recv_active, queue_unpack, sync_time, job_seconds
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -193,7 +194,7 @@ SUBROUTINE execute (self)
   call timer%print
   self%n_tasks = self%na
   !$omp parallel
-  do while (self%na > 0)
+  do while (self%na > 0 .and. (wallclock()-wc_start) < job_seconds)
     call self%update
     if (self%na == self%n_tasks) then
       !$omp atomic
