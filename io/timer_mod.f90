@@ -14,10 +14,11 @@ MODULE timer_mod
     integer(8):: calls(maxproc)=0
     real(8), dimension(maxproc):: start=0d0, total=0d0
     real(8):: bytes_recv=0.0_8
-    integer(8):: n_recv=0_8
+    integer(8):: n_recv=0_8, n_test=0_8
     integer:: nq_send_max=0
     integer:: nq_recv_max=0
     real:: gb=0.0
+    real(8):: latency_max=0d0
   contains
     procedure:: init
     procedure:: begin
@@ -185,8 +186,11 @@ SUBROUTINE print ()
       sec, 'wall sec'
     2 format(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))
     print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
-      timer%nq_send_max, timer%nq_recv_max
-    3 format(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8," nq_recv_max")
+      timer%nq_send_max, timer%nq_recv_max, timer%latency_max, timer%n_test
+    3 format(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
+      " nq_recv_max",f8.3," max latency",i8, " n_test")
+    timer%latency_max = 0d0
+    timer%n_test = 0_8
   end if
   if (omp%master .and. io_unit%verbose>0) then
     write (io_unit%mpi,2) "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
