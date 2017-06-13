@@ -17,15 +17,15 @@ MODULE omp_timer_mod
 CONTAINS
 
 !> =============================================================================
-FUNCTION wallclock() result (delta)
-  real(8):: time, delta
-  real(8), save:: offset=-1.
+FUNCTION wallclock() result (time)
+  real(8):: time
+  real(8), save:: offset=0d0
   !.............................................................................
   time = omp_get_wtime()
-  if (offset == -1.) then
-    offset=time
-  end if
-  delta = time-offset
+  !if (offset == -1.) then
+  !  offset=time
+  !end if
+  !time = time-offset
 END FUNCTION wallclock
 
 !> =============================================================================

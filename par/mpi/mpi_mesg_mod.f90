@@ -815,7 +815,9 @@ FUNCTION test_recv (self) RESULT (flag)
   logical:: flag
 #ifdef MPI
   integer:: stat(MPI_STATUS_SIZE)
+  real(8):: now
   !.............................................................................
+  now = wallclock()
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call MPI_TEST (self%req, flag, stat, ierr)
@@ -826,6 +828,8 @@ FUNCTION test_recv (self) RESULT (flag)
   if (flag) then
     self%id = stat(MPI_TAG)
   end if
+  !$omp atomic
+  timer%n_test = timer%n_test + 1
 #else
   flag = .true.
 #endif

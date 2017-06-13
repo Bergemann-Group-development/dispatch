@@ -257,6 +257,7 @@ SUBROUTINE header_to_patch (self, head)
   end if
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
+  timer%latency_max = max(timer%latency_max,self%latency)
 END SUBROUTINE header_to_patch
 
 !> =============================================================================
