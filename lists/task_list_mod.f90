@@ -630,7 +630,6 @@ SUBROUTINE check_mpi (self)
   real(8):: wc(0:10)=0.0
   !.............................................................................
   if (mpi%size <= 1) return
-  call trace%begin ('task_list_t%check_mpi', 1, itimer=itimer)
   unpk_tmp%name = 'unpk_tmp'
   recv_tmp%name = 'recv_tmp'
   wc(0) = wallclock()
@@ -654,6 +653,7 @@ SUBROUTINE check_mpi (self)
     call trace%end (itimer)
     return
   end if
+  call trace%begin ('task_list_t%check_mpi', 1, itimer=itimer)
   i=1; wc(i) = wallclock()-wc(0)
   if (wc(i) > check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
@@ -787,7 +787,7 @@ SUBROUTINE check_priv (self)
   integer:: n
   !.............................................................................
   if (mpi%size <= 1) return
-  !call trace%begin ('task_list_t%check_priv', 1, itimer=itimer)
+  call trace%begin ('task_list_t%check_priv', 1, itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Step 1: Add incoming messages to either recv_list or unpk_list
   !-----------------------------------------------------------------------------
@@ -826,7 +826,7 @@ SUBROUTINE check_priv (self)
     call unpk_list%delete (mesg, .false.)
     mesg => next
   end do
-  !call trace%end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE check_priv
 
 !> =============================================================================
@@ -900,7 +900,7 @@ SUBROUTINE check_virtual (self)
   real(8):: wc
   integer, save:: itimer=0
   !.............................................................................
-  !call trace%begin ('task_list_t%check_virtual', itimer=itimer)
+  call trace%begin ('task_list_t%check_virtual', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Each thread runs through its list of virtual tasks, unpacks completed
   ! messages, and issues a new request
@@ -934,7 +934,7 @@ SUBROUTINE check_virtual (self)
     link => link%next
   end do
   if (io%verbose>1) write (io_unit%log,*) 'check_virtual', nunpk
-  !call trace%end
+  call trace%end
 END SUBROUTINE check_virtual
 
 !> =============================================================================
