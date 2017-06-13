@@ -216,7 +216,7 @@ SUBROUTINE check_sent (self, nq)
     return
   end if
   if (mpi%size <= 1 .or. .not.associated(self%head)) return
-  call trace%begin ('mpi_mesg_t%check_sent', itimer=itimer)
+  !call trace%begin ('mpi_mesg_t%check_sent', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! If there are more than max_sent messages pending, bring the number down with
   ! wait_all on the oldest ones.
@@ -259,7 +259,7 @@ SUBROUTINE check_sent (self, nq)
   !-----------------------------------------------------------------------------
   if (every>0) then
     every = every-1
-    call trace%end (itimer)
+    !call trace%end (itimer)
     return
   else
     every = every_send
@@ -285,7 +285,7 @@ SUBROUTINE check_sent (self, nq)
     end do
     !$omp end critical (sent_cr)
   end if
-  call trace%end (itimer)
+  !call trace%end (itimer)
 END SUBROUTINE check_sent
 
 !> =============================================================================
@@ -815,7 +815,9 @@ FUNCTION test_recv (self) RESULT (flag)
   logical:: flag
 #ifdef MPI
   integer:: stat(MPI_STATUS_SIZE)
+  real(8):: now
   !.............................................................................
+  now = wallclock()
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call MPI_TEST (self%req, flag, stat, ierr)
@@ -826,6 +828,8 @@ FUNCTION test_recv (self) RESULT (flag)
   if (flag) then
     self%id = stat(MPI_TAG)
   end if
+  !$omp atomic
+  timer%n_test = timer%n_test + 1
 #else
   flag = .true.
 #endif
