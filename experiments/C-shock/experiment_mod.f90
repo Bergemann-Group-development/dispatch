@@ -106,21 +106,23 @@ SUBROUTINE init (self)
       endif
     end do
   end if
-  if (x .ge. 1.0) then
+!  if (x .ge. 1.0) then
     print*,'enter first_time set to false'
     first_time = .false.
-    call boundary%condition (self%mem(:,:,:,1,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-    call boundary%condition (self%mem(:,:,:,2,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-    call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-    call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-    call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-    call boundary%condition (self%mem(:,:,:,6,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-    call boundary%condition (self%mem(:,:,:,7,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-    call boundary%condition (self%mem(:,:,:,8,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+!    call boundary%condition (self%mem(:,:,:,1,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+!    call boundary%condition (self%mem(:,:,:,2,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+!    call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+!    call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+!    call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+!    call boundary%condition (self%mem(:,:,:,6,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+!    call boundary%condition (self%mem(:,:,:,7,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+!    call boundary%condition (self%mem(:,:,:,8,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+    call self%clear(bits%root_grid)
+    self%periodic = .false.
     self%mhd = .true.
     print*, 'done!'
     call trace_end
-  end if
+!  end if
 END SUBROUTINE init
 
 !> =============================================================================
