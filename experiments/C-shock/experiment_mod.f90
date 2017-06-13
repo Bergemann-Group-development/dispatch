@@ -106,23 +106,18 @@ SUBROUTINE init (self)
       endif
     end do
   end if
-!  if (x .ge. 1.0) then
+  if (x .ge. 1.0) then
     print*,'enter first_time set to false'
     first_time = .false.
-!    call boundary%condition (self%mem(:,:,:,1,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-!    call boundary%condition (self%mem(:,:,:,2,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-!    call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-!    call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-!    call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-!    call boundary%condition (self%mem(:,:,:,6,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-!    call boundary%condition (self%mem(:,:,:,7,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-!    call boundary%condition (self%mem(:,:,:,8,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-    call self%clear(bits%root_grid)
-    self%periodic = .false.
+  endif
+  !if (x .lt. 0.4 .or. x .gt. 0.7) then
+  !endif
+    !self%periodic = .false.
+    if ((self%mesh(1)%p - self%gsize(1)*0.5) .le. 0.0) call self%boundaries%set(bits%xl)
+  if ((self%mesh(1)%p + self%gsize(1)*0.5) .ge. self%box(1)) call self%boundaries%set(bits%xu)
     self%mhd = .true.
     print*, 'done!'
     call trace_end
-!  end if
 END SUBROUTINE init
 
 !> =============================================================================
@@ -137,24 +132,28 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
-  integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
+  integer :: iv,OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
 
  !!  !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
+  ! apply boundary conditions
+  if (self%boundaries%is_set(bits%xl)) then
+    do iv=1,self%nv
+      call boundary%xcondition (self%mem(:,:,:,iv,self%it,1), self%mesh(1), lower=.true.)
+    end do
+  end if
+  if (self%boundaries%is_set(bits%xu)) then
+    do iv=1,self%nv
+      call boundary%xcondition (self%mem(:,:,:,iv,self%it,1), self%mesh(1))
+    end do
+  end if
   call self%mhd_t%update
   !!!FIXME: Estimate adequate timestep for AD by taking the minimum of Courant number
   !!!and t_AD = 0.1*min(gamma_AD*rho_i*rho/B^2*Delta_x^2)!!!
   call self%mhd_t%nonideal_MHD_courant_condition(self%dt_Ohm,self%dt_AD)
   call self%check_density('before timestep')
   ! ADD if statement that calls boundary condition only for relevant patches!
-  call boundary%condition (self%mem(:,:,:,1,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,2,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,3,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,4,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,5,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,6,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,7,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
-  call boundary%condition (self%mem(:,:,:,8,self%it,1), self%mesh, [0d0,-0.5d0,-0.5d0])
+
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density('after timestep')
   call trace_end
