@@ -670,7 +670,7 @@ FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
       pg = self%d**self%gamma*exp(self%s/self%d*(self%gamma-1))
     end if
   else
-    call eos%table%lookup (shape(lnd), lnx=lnd, lny=ss, pg=pg)
+    call eos%lookup (shape(lnd), lnx=lnd, lny=ss, pg=pg)
   end if
 END FUNCTION gas_pressure
 

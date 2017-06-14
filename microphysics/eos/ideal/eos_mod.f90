@@ -5,13 +5,11 @@ MODULE eos_mod
   USE io_mod
   USE mpi_mod
   USE trace_mod
-  USE table_mod
   implicit none
   private
   type, public:: eos_t
     real:: gamma = 1.4                  ! in case eos%init is never called
     integer :: eos_type = 0             ! 0 - ideal, x - any other
-    type(table_t):: table
   contains
     procedure:: init
     procedure:: pressure
