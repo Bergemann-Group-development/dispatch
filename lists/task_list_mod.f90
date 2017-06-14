@@ -84,7 +84,7 @@ SUBROUTINE init (self, name)
   call self%list_t%init (name)
   call mpi_mesg%init
   rewind (io%input); read(io%input, task_list_params, iostat=iostat)
-  if (iostat==0 .and. io%master) then
+  if (io%master) then
     self%debug = debug
     if (io%master) write (*,task_list_params)
   end if
@@ -645,12 +645,10 @@ SUBROUTINE check_mpi (self)
     else
       call self%check_active
     end if
-    call trace%end (itimer)
     return
   end if
   if (mpi_mesg%recv_priv) then
     call check_priv (self)
-    call trace%end (itimer)
     return
   end if
   call trace%begin ('task_list_t%check_mpi', 1, itimer=itimer)

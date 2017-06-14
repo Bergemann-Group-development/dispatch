@@ -327,7 +327,6 @@ SUBROUTINE test_all (self, flag)
     print*,'WARNING: test_all', self%nreq, associated(self%reqs)
     return
   end if
-  call trace%begin ('mesg_t%test_all', itimer=itimer)
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
@@ -343,7 +342,6 @@ SUBROUTINE test_all (self, flag)
     write (io_unit%log,*) wallclock(), self%id, ' test_all flag =', flag
     flush (io_unit%log)
   end if
-  call trace_end
 END SUBROUTINE test_all
 
 !> =============================================================================
