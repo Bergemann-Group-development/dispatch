@@ -4,6 +4,7 @@ from matplotlib import ticker
 import dispatch_utils as du
 import plot_utils as pu
 import numpy as np
+import itertools
 
 if __name__ == "__main__":
     
@@ -13,15 +14,14 @@ if __name__ == "__main__":
     plt.rc('font', size=15)
     plt.interactive(True)
 
-    offset = 0.5
-    iy = 0
-    lb=0
-    ub=128
+    offset = 0.0
     data = ['data/input_Ohm']
     run = '.'
-    iout = [1]
+    iout = [20]
+    npatches = 5
     lsty = ['-','--','-.']
     lcolr = ['b','g','r','c','m','y']
+    lcolr = itertools.cycle(lcolr)
     lw = 2.0
 
     plot_ref_data = False
@@ -51,16 +51,19 @@ if __name__ == "__main__":
         iout.insert(0,0)
     for j in xrange(len(data)):
         for i in iout:
-            for k in range(1):
+            pp = []
+            llcolr = lcolr.next()
+            for k in range(npatches):
                 p = du.patch(id=k+1,iout=i,run=run,data=data[j])
-
-                loffset = offset
-                if data[j] == 'data/input_iso': loffset = 0.0
+                pp.append(p)
+                li = p.li[0]-1
+                ui = p.ui[0]
 
                 if j == 0:
                     ax1.set_ylabel(r'$\rho$ in code units')
-                    ax1.axis(ymin=0.36,ymax=1.1)
-                l, = ax1.plot(p.x[lb:ub]+loffset,p.data[:,iy,0,0],linestyle=lsty[j],lw=lw)
+                    ax1.axis(ymin=0.36,ymax=1.1,xmin=0.0,xmax=1.0)
+                    ax1.plot([p.x[li],p.x[li]],[-100.,100.],'k:',lw=1.0)
+                l, = ax1.plot(p.x[li:ui]+offset,p.data[:,0,0,0],linestyle=lsty[j],lw=lw,color=llcolr)
                 if lsty[j] == '-.':
                     l.set_dashes([10,3,2,3])
                 if plot_ref_data == True:
@@ -69,7 +72,8 @@ if __name__ == "__main__":
                 if j == 0:
                     ax2.set_ylabel(r'$B_y$ in code units')
                     ax2.axis(ymin=0.5,ymax=4.0)
-                l, = ax2.plot(p.x[lb:ub]+loffset,p.data[:,iy,0,6],linestyle=lsty[j],lw=lw)
+                    ax2.plot([p.x[li],p.x[li]],[-100.,100.],'k:',lw=1.0)
+                l, = ax2.plot(p.x[li:ui]+offset,p.data[:,0,0,6],linestyle=lsty[j],lw=lw,color=llcolr)
                 if lsty[j] == '-.':
                     l.set_dashes([10,3,2,3])
                 if plot_ref_data == True:
@@ -79,7 +83,9 @@ if __name__ == "__main__":
                     ax3.set_xlabel(r'$x$ in code units')
                     ax3.set_ylabel(r'$v_x$ in code units')
                     ax3.axis(ymin=1.5,ymax=5.5)
-                l, = ax3.plot(p.x[lb:ub]+loffset,p.data[:,iy,0,2]/p.data[:,iy,0,0],linestyle=lsty[j],lw=lw)
+                    ax3.plot([p.x[li],p.x[li]],[-100.,100.],'k:',lw=1.0)
+                l, = ax3.plot(p.x[li:ui]+offset,p.data[:,0,0,2]/p.data[:,0,0,0],linestyle=lsty[j],
+                              lw=lw,color=llcolr)
                 if lsty[j] == '-.':
                     l.set_dashes([10,3,2,3])
                 if plot_ref_data == True:
@@ -88,8 +94,10 @@ if __name__ == "__main__":
                 if j == 0:
                     ax4.set_xlabel(r'$x$ in code units')
                     ax4.set_ylabel(r'$v_y$ in code units')
-                    ax4.axis(ymin=-0.05,ymax=1.6)
-                l, = ax4.plot(p.x[lb:ub]+loffset,p.data[:,iy,0,3]/p.data[:,iy,0,0],linestyle=lsty[j],lw=lw)
+                    ax4.axis(ymin=-0.1,ymax=1.6)
+                    ax4.plot([p.x[li],p.x[li]],[-100.,100.],'k:',lw=1.0)
+                l, = ax4.plot(p.x[li:ui]+offset,p.data[:,0,0,3]/p.data[:,0,0,0],linestyle=lsty[j],
+                              lw=lw,color=llcolr)
                 if lsty[j] == '-.':
                     l.set_dashes([10,3,2,3])
                 if plot_ref_data == True:
