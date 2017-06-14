@@ -54,9 +54,9 @@ SUBROUTINE init (self, file)
       self%data(:,:,self%i_pg ) = self%data(:,:,self%i_pg )/scaling%p
       self%data(:,:,self%i_tt ) = self%data(:,:,self%i_tt )/scaling%temp
       if (self%i_rk>0) &
-      self%data(:,:,self%i_rk ) = self%data(:,:,self%i_rk )/scaling%rk
+      self%data(:,:,self%i_rk ) = self%data(:,:,self%i_rk )*scaling%l
       if (self%i_src>0) &
-      self%data(:,:,self%i_src) = self%data(:,:,self%i_src)/scaling%src
+      self%data(:,:,self%i_src) = self%data(:,:,self%i_src)/(scaling%e/scaling%l**2/scaling%t)
     end if
     !$omp end critical (io_cr)
   end if
@@ -83,10 +83,9 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   real, dimension(dim(1),4,size(self%data,3))  :: f
   real, dimension(dim(1),4)                     :: g
   integer, dimension(dim(1))                    :: i1, i2
-  integer                                       :: ix, iy, iz, iv, m1, m2
+  integer                                       :: ix, iy, iz, iv, m0, m1, m2, m3
   real                                          :: cx, cy
   logical, save                                 :: first_time=.true.
-  integer, save                                 :: m3
   !-----------------------------------------------------------------------------
   ! Figure out first and last table variable index needed
   !-----------------------------------------------------------------------------
