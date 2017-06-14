@@ -159,8 +159,9 @@ SUBROUTINE symmetric (self, mem, iv, select)
   real(kind=KindScalarVar), pointer  :: mem(:,:,:)
   integer                            :: iv
   integer, optional                  :: select
-  procedure(make_symmetric), pointer :: operator => make_symmetric
+  procedure(make_symmetric), pointer :: operator
   !-----------------------------------------------------------------------------
+  operator => make_symmetric
   call trace%begin ('boundaries_t%symmetric')
   if (self%id==io%id_debug) &
     print *, self%id, 'SYMM', iv, self%is_set(bits%yl), self%is_set(bits%yu)
@@ -176,8 +177,9 @@ SUBROUTINE antisymmetric (self, mem, iv, select)
   real(kind=KindScalarVar), pointer  :: mem(:,:,:)
   integer                            :: iv
   integer, optional                  :: select
-  procedure(make_symmetric), pointer :: operator => make_antisymmetric
+  procedure(make_symmetric), pointer :: operator
   !-----------------------------------------------------------------------------
+  operator => make_antisymmetric
   call trace%begin ('boundaries_t%antisymmetric')
   print *, self%id, 'ANTI', iv, self%is_set(bits%yl), self%is_set(bits%yu)
   call self%condition (mem, iv, operator)
@@ -192,8 +194,9 @@ SUBROUTINE extrapolate (self, mem, iv, select)
   real(kind=KindScalarVar), pointer  :: mem(:,:,:)
   integer                            :: iv
   integer, optional                  :: select
-  procedure(make_symmetric), pointer :: operator => make_extrapolated
+  procedure(make_symmetric), pointer :: operator
   !-----------------------------------------------------------------------------
+  operator => make_extrapolated
   call trace%begin ('boundaries_t%extrapolate')
   if (self%id==io%id_debug) &
     print *, self%id, 'EXTRAP', iv, self%is_set(bits%yl), self%is_set(bits%yu)
@@ -209,8 +212,9 @@ SUBROUTINE log_extrapolate (self, mem, iv, select)
   real(kind=KindScalarVar), pointer  :: mem(:,:,:)
   integer                            :: iv
   integer, optional                  :: select
-  procedure(make_symmetric), pointer :: operator => make_log_extrapolated
+  procedure(make_symmetric), pointer :: operator
   !-----------------------------------------------------------------------------
+  operator => make_log_extrapolated
   call trace%begin ('boundaries_t%extrapolate')
   call self%condition (mem, iv, operator)
   call trace%end
@@ -225,8 +229,9 @@ SUBROUTINE constant (self, mem, iv, value, select)
   integer                            :: iv
   real                               :: value
   integer, optional                  :: select
-  procedure(make_symmetric), pointer :: operator => make_constant
+  procedure(make_symmetric), pointer :: operator
   !-----------------------------------------------------------------------------
+  operator => make_constant
   call trace%begin ('boundaries_t%constant')
   call self%condition (mem, iv, operator, value=value)
   call trace%end
