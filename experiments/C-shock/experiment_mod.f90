@@ -68,7 +68,6 @@ SUBROUTINE init (self)
 
   do i=self%mesh(1)%lb,self%mesh(1)%ub
     x = self%mesh(1)%p + self%mesh(1)%r(i)
-    print*, 'x is:', x
     !y = self%mesh(2)%p + self%mesh(2)%r(i)
     !z = self%mesh(3)%p + self%mesh(3)%r(i)
     if (x < self%box(1)/2.0) then
@@ -165,8 +164,6 @@ SUBROUTINE update (self)
 
   call self%mhd_t%update
   
-  !!!FIXME: Estimate adequate timestep for AD by taking the minimum of Courant number
-  !!!and t_AD = 0.1*min(gamma_AD*rho_i*rho/B^2*Delta_x^2)!!!
   call self%mhd_t%nonideal_MHD_courant_condition(self%dt_Ohm,self%dt_AD)
   call self%check_density('before timestep')
 
