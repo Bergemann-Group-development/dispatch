@@ -817,7 +817,7 @@ SUBROUTINE output (self, experiment_name)
   subroutine output1
     !$omp critical (out_cr)
     if (io%do_legacy) then
-      if (io%verbose>1) print *, self%id, ' LEGACY OUTPUT'
+      if (io%verbose>2) print *, self%id, ' LEGACY OUTPUT'
       call self%output_legacy
     else
       call self%output_new
@@ -836,7 +836,7 @@ SUBROUTINE input (self, ok)
   !-----------------------------------------------------------------------------
   !$omp critical (out_cr)
   if (io%do_legacy) then
-    if (io%verbose>1) print *, self%id, ' LEGACY INPUT'
+    if (io%verbose>2) print *, self%id, ' LEGACY INPUT'
     call self%input_legacy (ok)
   !else
     !call self%input_new

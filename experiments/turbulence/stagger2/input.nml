@@ -13,12 +13,13 @@
 /
 &io_params
  top='../../..'
- verbose=1
+ verbose=2
  do_validate=f
  do_trace=f
  do_debug=f
  do_output=f
- omp_trace=t
+ omp_trace=f
+ id_debug=2
 /
 &box_params
  size=1,1,1
@@ -44,6 +45,7 @@
 /
 &mhd_params
  hardwire=f
+!eos='ideal', gamma=1.6666667
  nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
 /
