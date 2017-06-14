@@ -67,19 +67,22 @@ SUBROUTINE init (self)
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   real, save:: gamma_AD=75., rho_ions=1.
   logical, save:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
+  character(len=16), save:: eos
   namelist /mhd_params/ nu, gamma, csound, cdtd, mhd_AD, mhd_Ohm, gamma_AD, &
-    rho_ions, hardwire
+    rho_ions, hardwire, eos
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
+    eos = self%eos
     rewind (io%input)
     read (io%input, mhd_params)
     if (io%master) write (*, mhd_params)
     call timestep%init
   end if
   !$omp end critical (input_cr)
+  self%eos = eos
   self%nu = nu
   self%gamma = gamma
   self%csound = csound
@@ -201,8 +204,7 @@ SUBROUTINE pde (self)
   ! a log variable, from the table point of view.
   !-----------------------------------------------------------------------------
   ss = s/d
-  !!!call eos%lookup (shape(d), lnx=lnd, lny=ss, pg=pg)
-  pg = self%gas_pressure()
+  pg = self%gas_pressure(lnd,ss)
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure.  The divergence is valid
   ! in (2,gn-1)
@@ -654,14 +656,21 @@ SUBROUTINE S2e(self, s, it)
 END SUBROUTINE S2e
 
 !> =============================================================================
-FUNCTION gas_pressure (self) RESULT (pg)
+FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
   class(mhd_t):: self
+  real, dimension(:,:,:), pointer:: lnd, ss
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
-  if (self%gamma==1.0) then
-    pg = self%d*self%csound**2
+  if (trim(self%eos)=='ideal') then
+    self%d => self%mem(:,:,:,self%i_d,self%it,1)
+    if (self%gamma==1.0) then
+      pg = self%d*self%csound**2
+    else
+      self%s => self%mem(:,:,:,self%i_s,self%it,1)
+      pg = self%d**self%gamma*exp(self%s/self%d*(self%gamma-1))
+    end if
   else
-    pg = self%d**self%gamma*exp(self%s/self%d*(self%gamma-1))
+    call eos%table%lookup (shape(lnd), lnx=lnd, lny=ss, pg=pg)
   end if
 END FUNCTION gas_pressure
 
@@ -700,13 +709,13 @@ END FUNCTION cell_gas_pressure
 !> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
 !> =============================================================================
-FUNCTION gas_temperature (self) RESULT (tmp)
+FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
   class(mhd_t):: self
+  real, dimension(:,:,:), pointer:: lnd, ss
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
   !-----------------------------------------------------------------------------
   associate (d => self%mem(:,:,:,  1,self%it,1))
-  tmp = gas_pressure(self)/d
-
+  tmp = self%gas_pressure(lnd,ss)/d
   if (io%verbose > 2) then
     if (any(tmp<0)) then
       error stop "mhd_t%gas_temperature: T<0"
@@ -751,11 +760,11 @@ SUBROUTINE log_density (self, v)
 END SUBROUTINE
 
 !> =============================================================================
-SUBROUTINE log_pressure (self, v)
+SUBROUTINE log_pressure (self, lnd, ss, v)
   class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
+  real, dimension(:,:,:), pointer:: lnd, ss, v
   !-----------------------------------------------------------------------------
-  v = log(gas_pressure(self))
+  v = log(self%gas_pressure(lnd,ss))
 END SUBROUTINE
 
 !> =============================================================================
