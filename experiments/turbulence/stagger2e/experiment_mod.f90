@@ -56,8 +56,8 @@ SUBROUTINE init (self)
   ! the self%i_e slot
   !----------------------------------------------------------------------------
   call self%mhd_t%init
-  print *, self%id, 'emin/max:', minval(self%mem(:,:,:,self%i_e,self%it,1)), &
-                                 maxval(self%mem(:,:,:,self%i_e,self%it,1))
+  !print *, self%id, 'emin/max:', minval(self%mem(:,:,:,self%i_e,self%it,1)), &
+                                 !maxval(self%mem(:,:,:,self%i_e,self%it,1))
   !----------------------------------------------------------------------------
   ! In case of restarts, set the time properly
   !----------------------------------------------------------------------------
