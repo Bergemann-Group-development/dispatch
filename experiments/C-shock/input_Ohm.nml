@@ -37,8 +37,8 @@
  !ksi = 1d-17
 /
 &patch_params
- n=26,1,1          ! patch dimensions
- dt_fixed=1d-2        ! fixed time step
+ n=30,1,1          ! patch dimensions
+ !dt_fixed=1d-2        ! fixed time step
  ng =2,0,0
  nt=8                   ! time slots
 /

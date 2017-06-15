@@ -25,14 +25,14 @@ MODULE mhd_mod
     real:: csound
     real:: cdtd
     logical:: mhd=.true.
-    real:: gamma_AD, rho_ions
-    real(8):: dt_Ohm, dt_AD, nonideal_MHD_courant
+    real:: gamma_AD, rho_ions ! ambipolar diffusion parameters
+    real(8):: dt_Ohm, dt_AD, niMHD_courant ! non-ideal MHD time-stepping variables
     logical:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
     type(force_t):: force
   contains
     procedure:: init
     procedure:: pde
-    procedure:: nonideal_MHD_courant_condition
+    procedure:: nonideal_MHD_courant_condition ! non-ideal MHD replacement for `courant_condition`
     procedure:: update
     procedure:: output
     procedure:: p2U
@@ -65,11 +65,11 @@ SUBROUTINE init (self)
   type(index_t):: idx
   integer:: i
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
-  real, save:: gamma_AD=75., rho_ions=1.
+  real, save:: gamma_AD=75., rho_ions=1., niMHD_courant=0.1
   logical, save:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
   character(len=16), save:: eos
   namelist /mhd_params/ nu, gamma, csound, cdtd, mhd_AD, mhd_Ohm, gamma_AD, &
-    rho_ions, hardwire, eos
+    rho_ions, niMHD_courant, hardwire, eos
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -95,12 +95,14 @@ SUBROUTINE init (self)
   if (mhd_Ohm) then
     self%mhd_Ohm = mhd_Ohm
     self%kind = 'stagger2_mhd_Ohm_patch'
+    self%niMHD_courant = niMHD_courant
   end if
   if (mhd_AD) then
     self%mhd_AD = mhd_AD
     self%gamma_AD  = gamma_AD
     self%rho_ions  = rho_ions
     self%kind = 'stagger2_mhd_AD_patch'
+    self%niMHD_courant = niMHD_courant
   endif
   call self%gpatch_t%init
   self%i_d  = idx%d
@@ -385,7 +387,7 @@ SUBROUTINE pde (self)
     J = curl_dn(ds,B)
     if (self%mhd_Ohm) then
       eta_Ohm = self%nu(6)
-      self%dt_Ohm = 0.1*minval(dx**2/eta_Ohm)
+      self%dt_Ohm = self%niMHD_courant*minval(dx**2/eta_Ohm)
       E = eta_Ohm*J
     else
       self%dt_Ohm = 100.
@@ -435,7 +437,7 @@ SUBROUTINE pde (self)
       dBdt(:,:,:,1) = dBdt(:,:,:,1) + (ddyup(ds, (Ud_x*By - Ud_y*Bx)) - ddzup(ds, (Ud_z*Bx - Ud_x*Bz)) )
       dBdt(:,:,:,2) = dBdt(:,:,:,2) + (ddzup(ds, (Ud_y*Bz - Ud_z*By)) - ddxup(ds, (Ud_x*By - Ud_y*Bx)) )
       dBdt(:,:,:,3) = dBdt(:,:,:,3) + (ddxup(ds, (Ud_z*Bx - Ud_x*Bz)) - ddyup(ds, (Ud_y*Bz - Ud_z*By)) )
-      self%dt_AD = 0.1*minval(self%gamma_AD*self%rho_ions*d/(Bx**2+By**2+Bz**2)*dx**2)
+      self%dt_AD = self%niMHD_courant*minval(self%gamma_AD*self%rho_ions*d/(Bx**2+By**2+Bz**2)*dx**2)
       if (self%gamma==1.0) then
         dsdt = 0.
       else
@@ -471,36 +473,36 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
   real(8):: dt_AD_inp
   real(8):: dt_Ohm_inp
   !.............................................................................
-  call trace%begin('mhd_t%nonideal_MHD_courant')
+  call trace%begin('mhd_t%nonideal_MHD_courant_condition')
   call self%lock%set ('nonideal_MHD_courant')
   if (io%verbose>2) &
-    print*, 'nonideal_MHD_courant: u_max, ds', self%u_max, minval(self%ds)
+    print*, 'nonideal_MHD_courant_condition: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
     self%dtime = self%dt_fixed
-    self%nonideal_MHD_courant = self%dtime*self%u_max/minval(self%ds)
+    self%courant = self%dtime*self%u_max/minval(self%ds)
   else if (self%u_fixed > 0.0) then
-    self%dtime = self%nonideal_MHD_courant*minval(self%ds)/self%u_fixed
+    self%dtime = self%courant*minval(self%ds)/self%u_fixed
   else
-    self%dtime = self%nonideal_MHD_courant*minval(self%ds)/self%u_max
+    self%dtime = self%courant*minval(self%ds)/self%u_max
   endif
+  !-----------------------------------------------------------------------------
+  ! Non-ideal time step considerations; these are calculated in `pde`.
+  !-----------------------------------------------------------------------------
+  if (self%mhd_AD ) self%dtime = min (self%dtime, dt_AD_inp )
+  if (self%mhd_Ohm) self%dtime = min (self%dtime, dt_Ohm_inp)
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
   if (self%out_time > 0.0) &
     self%dtime = min (self%dtime, self%out_time)
-  if (self%mhd_AD) then
-    self%dtime = min (self%dtime, dt_AD_inp)
-  end if
-  if (self%mhd_Ohm) then
-    self%dtime = min (self%dtime, dt_Ohm_inp)
-  end if
+
   self%dt(self%it) = self%dtime
-  !self%dt(:) = self%dtime
-  !print*,'dt', self%dt
+
   if (io%verbose>3) &
-    print'(a,i7,f12.6,f8.4,1p,e10.2)', 'nonideal_MHD_courant:', &
-      self%id, self%dtime, self%nonideal_MHD_courant, self%u_max
+    print'(a,i7,f12.6,f8.4,1p,e10.2)', 'nonideal_MHD_courant_condition:', &
+      self%id, self%dtime, self%courant, self%u_max
   call self%lock%unset ('nonideal_MHD_courant')
+
   call trace%end
 END SUBROUTINE nonideal_MHD_courant_condition
 

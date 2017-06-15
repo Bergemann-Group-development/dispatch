@@ -15,9 +15,9 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     offset = 0.0
-    data = ['data/input_Ohm']
+    data = ['data/input_ADiso','data/input_ADnoniso','data/input_Ohm']
     run = '.'
-    iout = [20]
+    iout = [0,20]
     npatches = 5
     lsty = ['-','--','-.']
     lcolr = ['b','g','r','c','m','y']
@@ -41,6 +41,7 @@ if __name__ == "__main__":
         cax.yaxis.set_ticks_position('left')
         cax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
         cax.yaxis.set_minor_locator(ticker.AutoMinorLocator())
+        #cax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=10))
         for loc,spine in cax.spines.items():
             if loc in ['right','top']:
                 spine.set_color('none')
