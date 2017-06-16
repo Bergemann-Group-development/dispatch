@@ -5,7 +5,7 @@ MODULE rt_mod
   USE link_mod
   USE kinds_mod
   USE ray_geometry_v3_mod
-  USE rt_boundary_mod
+  USE rt_boundaries_mod
   USE rt_components_mod
   USE rt_solver_mod
   USE patch_mod
@@ -24,9 +24,9 @@ MODULE rt_mod
   type, extends(patch_t), public :: rt_t
     class(chain_ring_t), dimension(:), pointer :: my_rings => null()     ! list of rings, which belongs to me
     logical, dimension(:), pointer :: updated => null()                 ! list of flags, indicates if particular direction has been updated
-    type(I_data_t), dimension(:,:,:,:), pointer:: I_yz => null()        ! intensity shell data for zy plane (+/-x wall), it is primaty, that is, the largest and search starts with this one.
-    type(I_data_t), dimension(:,:,:,:), pointer:: I_xz => null()        ! (x dim | z dim | n_out_dirs | upper(1)/lower(2)). This is the secondary one, meaning z has -2 length. Tertiary has both dims -2.
-    type(I_data_t), dimension(:,:,:,:), pointer:: I_xy => null()        ! n_out_dirs is the number of directions leaving any given surface (3 dirs = 1 n_out_dir, 13 dirs = 9 n_out_dirs). This is tertiary surface.
+    type(q_data_t), dimension(:,:,:,:), pointer:: I_yz => null()        ! intensity shell data for zy plane (+/-x wall), it is primaty, that is, the largest and search starts with this one.
+    type(q_data_t), dimension(:,:,:,:), pointer:: I_xz => null()        ! (x dim | z dim | n_out_dirs | upper(1)/lower(2)). This is the secondary one, meaning z has -2 length. Tertiary has both dims -2.
+    type(q_data_t), dimension(:,:,:,:), pointer:: I_xy => null()        ! n_out_dirs is the number of directions leaving any given surface (3 dirs = 1 n_out_dir, 13 dirs = 9 n_out_dirs). This is tertiary surface.
     type(link_t), pointer             :: mhd_link                       ! link to my mhd_patch
     real(kind=8)                      :: upd_time                       ! time when the last internal update was done
     integer                           :: dim(3)                         ! patch dimensions
@@ -41,6 +41,7 @@ MODULE rt_mod
     real, dimension(:,:,:,:), pointer :: rk   => null()
     real, dimension(:,:,:,:), pointer :: src  => null()
     real, dimension(:,:,:),   pointer :: dedt => null()
+    real, dimension(:,:,:),   pointer :: intensity => null()
     character(len=16)                 :: solver ='integral'             ! choice of solver
     procedure(solve_integral), pointer:: solve => null()
     logical :: do_output  = .false.
@@ -50,6 +51,7 @@ MODULE rt_mod
     procedure :: absolute_point_position
     procedure :: boundary_conditions
     procedure :: cell2pos
+    procedure :: cell2shell
     procedure :: density_weight_factor
     procedure :: dnload
     procedure :: get_boundary
@@ -64,14 +66,14 @@ MODULE rt_mod
     procedure :: optical_depth_centered
     procedure :: optical_depth_staggered
     procedure :: pos2cell
+    procedure :: pos2cell_interp
     procedure :: ray_vol_map3
     procedure :: ray_vol_map4
     procedure :: ring_connects_to
     procedure :: solve_integral
     procedure :: solve_feautrier
     procedure :: update => update_rt
-    procedure :: update_q  
-    procedure :: output
+    procedure :: update_q
   end type
   real, parameter:: pi4 = 16.*atan(1.)
   
@@ -113,24 +115,27 @@ SUBROUTINE init_rt (self)
   !$omp end critical (init_cr)
   
   self%do_output = do_output
+  if (self%do_output) then
+  self%nv = 2                                                           ! 2nd slot - intensity
+  else
   self%nv = 1                                                           ! time slots for dedt
+  end if
   self%nw = 1                                                           ! no time deriv  
-  self%ng = 0
   call self%patch_t%init                                                ! initialize patch
   call self%set (bits%static+bits%no_download)                          ! special bits
   self%dtime = dtime                                                    ! 0.1 second default
   self%time = init_time                                                 ! 0.0 default
   self%dt_fixed = dtime                                                 ! timestep is fixed for radiative transfer
-  self%grace = 0.0                                                    ! grace on by default, but very small, so nboring rt_patches would nod do anything stupid
-  self%kind = 'rt_patch'                                                ! set the patch kind for output post-processing purposes
+  self%grace = 0.0                                                      ! grace on by default, but very small, so nboring rt_patches would nod do anything stupid
+  self%kind = 'rt_solver'                                                ! set the patch kind for output post-processing purposes
   !> -------------------------------------------------------------------
   !> modify the only memory slot to hold the dedt value, which is applied
   !> used directly by the rmhd patch.
   !> -------------------------------------------------------------------
   self%i_e = 1                                                          ! dedt slot
   self%dedt => self%mem(:,:,:,self%i_e,self%it,1)                       ! map dedt to mem
-  self%guard_zones = .false.
-  
+  if (self%do_output) self%intensity => self%mem(:,:,:,2,self%it,1)
+  self%guard_zones = .true.
   
   self%n_lambda = eos%n_lambda                                          ! number of wavelengths
   self%n_bundle = ray_geometry%head%total_n_bundles * 2                 ! double n_bundles since there are 2 directions
@@ -169,8 +174,8 @@ SUBROUTINE init_rt (self)
   !> -------------------------------------------------------------------
   n_out = ray_geometry%head%wall_n_dirs
   ! --- Allocate the intensity outer shell ---
-  allocate(self%I_yz(self%dim(2), self%dim(3), n_out(1), 2))
-  allocate(self%I_xz(self%dim(3)-2, self%dim(1), n_out(2), 2))
+  allocate(self%I_yz(self%dim(2),   self%dim(3),   n_out(1), 2))
+  allocate(self%I_xz(self%dim(3)-2, self%dim(1),   n_out(2), 2))
   allocate(self%I_xy(self%dim(1)-2, self%dim(2)-2, n_out(3), 2))
   ! FIXME: options for collapsed dimensions.
   
@@ -197,7 +202,7 @@ SUBROUTINE init_rt (self)
     ray_dir => ray_dir%next                                             ! next direction
   end do
   nullify(ray_dir, ray_bnd)
-  call trace_end  
+  call trace_end
 END SUBROUTINE init_rt   
 
 !> =====================================================================
@@ -239,13 +244,12 @@ SUBROUTINE map_intensity_shell(self, ring)
   class(chain_ring_t) :: ring
   !.....................................................................
   class(packet_t), pointer :: packet
-  class(I_data_t), dimension(:,:,:), pointer:: wall
-  class(I_data_t), pointer :: this
-  integer :: ray, rid, c(3), pt, dir, a,b, i, ipck
+  class(q_data_t), dimension(:,:,:), pointer:: wall
+  class(q_data_t), pointer :: this
+  integer :: ray, rid, c(3), pt, dir, a,b, i, ipck, ng(3)
   logical :: selected
   !---------------------------------------------------------------------
   dir = ring%direction                                                  ! forward of reverse
-  
   !> -------------------------------------------------------------------  
   !> First, we have to determine which shell walls the rays cross when 
   !> they leave the patch. 
@@ -305,6 +309,33 @@ SUBROUTINE map_intensity_shell(self, ring)
   end do
 END SUBROUTINE map_intensity_shell
 
+SUBROUTINE cell2shell(self, c_coord, s_coord, wall)
+  class(rt_t) :: self
+  integer :: c_coord(3), s_coord(2), wall
+  !.....................................................................
+  integer :: c(3)
+  !---------------------------------------------------------------------
+  c = c_coord !- self%li + 1
+  if (c_coord(1) == self%li(1)) then
+    s_coord(1) = c(2); s_coord(2) = c(3)
+    wall = -1
+  elseif (c_coord(1) == self%ui(1)) then
+    s_coord(1) = c(2); s_coord(2) = c(3)
+    wall = 1
+  elseif (c_coord(2) == self%li(2)) then
+    s_coord(1) = c(3); s_coord(2) = c(1)
+    wall = -2
+  elseif (c_coord(2) == self%ui(2)) then
+    s_coord(1) = c(3); s_coord(2) = c(1)
+    wall = 2
+  elseif (c_coord(3) == self%li(3)) then
+    s_coord(1) = c(1); s_coord(2) = c(2)
+    wall = -3
+  elseif (c_coord(3) == self%ui(3)) then
+    s_coord(1) = c(1); s_coord(2) = c(2)
+    wall = 3
+  end if
+END SUBROUTINE cell2shell
 
 !> =====================================================================
 !> Solve the RT problem, by first obtaining the thermodynamics at the
@@ -328,6 +359,11 @@ SUBROUTINE update_rt (self)
   end if
   self%dedt => self%mem(:,:,:,self%i_e,self%it,1)                       ! map dedt to mem
   self%dedt = 0.0                                                       ! reset net cooling
+
+  if (self%do_output) then
+  self%intensity => self%mem(:,:,:,2,self%it,1)                         ! map intensities to mem
+  self%intensity = 0.0                                                  ! reset intensities
+  end if
   
   task => self%mhd_link%task                                            ! pick the rmhd task
   select type (task)
@@ -357,7 +393,7 @@ SUBROUTINE update_rt (self)
   
   self%lne = self%lne - self%lnd                                        ! internal energy per unit mass
 
-  call eos%lookup (shape(self%lne), lne=self%lne, lnd=self%lnd, &       ! call the table lookup, ...
+  call eos%lookup (shape(self%lne), lne=self%lne, lny=self%lnd, &       ! call the table lookup, ...
                    rk=self%rk, src=self%src)  
   
   self%data_ready =.true.                                               ! flag, that internal data is ready
@@ -560,8 +596,15 @@ SUBROUTINE ring_connects_to (self, nbor, mine, other, connects, is_upstream)
   class (chain_ring_t) :: other
   logical :: connects, is_upstream
   !.....................................................................
-  integer :: pp, ray, first_pt(3), rev(3), rid, pid
-  logical :: tout(3)
+  class(q_data_t), dimension(:,:,:), pointer:: wall
+  class(q_data_t), pointer :: cs
+  integer :: a, b, c, mrn, ip, ray, first_pt(3), cp(3), cl(3), cu(3)
+  real(kind=8) :: ppos
+  
+  integer :: pp,  rev(3), rid, pid
+  integer :: cell(3), i, s_coord(2),face, ics, pl
+  real :: iw
+  logical :: tout(3), within(3)
   !---------------------------------------------------------------------
   connects = .false.
   is_upstream = .false.
@@ -569,29 +612,126 @@ SUBROUTINE ring_connects_to (self, nbor, mine, other, connects, is_upstream)
   
   if (mine%bundle%dir_ID /= other%bundle%dir_ID)     return             ! different ray spatial direction
   if (mine%direction /= other%direction)             return             ! different direction
-  
-  select case(mine%direction)
-  case(1)
-    if (mine%bundle%b_id_rev  /= other%bundle%ID) return                 ! wrong bundle to make a chain
-  case(2)
-    if (mine%bundle%b_id_fw /= other%bundle%ID) return                 ! wrong bundle to make a chain
-  end select
-  
+    
   if (self%level /= nbor%level) then
     if (abs(self%level-nbor%level) < 2) then
-      ! test if is_upstream = .true.
-      !if different refinement level, do cell2pos, pos2cell to check the connection possibility
-      error stop "Different refinement level connections not done yet"
-    end if
+      select case(mine%direction)
+      case(1)
+        if (mine%bundle%lwall(1) /= 0) then
+          a = 2; b = 3; c=1
+        else if (mine%bundle%lwall(2) /= 0) then
+          a = 3; b = 1; c=2
+        else if (mine%bundle%lwall(3) /= 0) then
+          a = 1; b = 2; c=3
+        end if
+
+      case(2)
+        if (mine%bundle%uwall(1) /= 0) then
+          a = 2; b = 3
+        else if (mine%bundle%uwall(2) /= 0) then
+          a = 3; b = 1
+        else if (mine%bundle%uwall(3) /= 0) then
+          a = 1; b = 2
+        end if
+      end select
+
+     ! mrn = 1
+     ! do ip = 1, mine%bundle%n_packets
+     !   do ray = 1, mine%bundle%packet(ip)%n_rays
+     !     first_pt = mine%get_upstream_coord(ip,ray)                    ! take the first point
+     !     ppos = self%myposition(first_pt)                              ! determine the absolute point position
+     !     cp = nbor%cell2pos(ppos)                                      ! locate where the point could be in the trial patch
+     !     do i=1,3                                                      ! is the ray originates in this patch?
+     !       within(i) = .false.
+     !       if ((cell(i)>=nbor%li(i)).and.(cell(i)<=nbor%ui(i))) within(i) = .true.
+     !     end do
+     !     if (all(within)) then
+     !       ! determine for (a) axis
+          
+
+     error stop "rt_mod: error 10" 
+     end if   
+     !   mrn = 1                                                         ! my global ray number in packet list
+     !   do ip = 1, mine%bundle%n_packets                                ! loop over my packets
+     !     do ray = 1, mine%bundle%packet(ip)%n_rays                     ! loop over my rays in the packet
+     !       first_pt = mine%bundle%packet(ip)%rev_coords(:,ray)         ! take the first point
+     !       do pl = 0,1
+     !       call nbor%pos2cell_interp(self%myposition(first_pt),pl,cell,iw)
+     !       
+     !       do i=1,3
+     !         within(i) = .false.
+     !         if ((cell(i)>=nbor%li(i)).and.(cell(i)<=nbor%ui(i))) within(i) = .true.
+     !       end do
+     !       if (all(within)) then
+     !         call nbor%cell2shell(cell, s_coord, face)
+     !         select case(face)                                  ! half of these go to other mine%direction case
+     !         case(-1)
+     !           wall => nbor%I_yz(:,:,:,2)
+     !         case(-2)
+     !           wall => nbor%I_xz(:,:,:,2)
+     !         case(-3)
+     !           wall => nbor%I_xy(:,:,:,2)
+     !         end select
+     !         print *, s_coord, size(wall,3), cell, pl, iw, first_pt, 'face',face, 'pos', self%myposition(first_pt)
+     !         floop: do ics=1, size(wall,3)
+     !           if (wall(s_coord(1), s_coord(2),ics)%dir_ID == mine%bundle%dir_ID) then
+     !             cs => wall(s_coord(1), s_coord(2),ics)
+     !             exit floop
+     !           end if
+     !         end do floop
+     !         call mine%add_upstream(mrn, cs, iw)
+     !         is_upstream = .true.           
+     !       end if
+     !       end do
+     !     end do
+     !   end do
+    !  case(2)
+    !    mrn = 1                                                         ! my global ray number in packet list
+    !    do ip = 1, mine%bundle%n_packets                                ! loop over my packets
+    !      do ray = 1, mine%bundle%packet(ip)%n_rays                     ! loop over my rays in the packet
+    !        first_pt = mine%bundle%packet(ip)%fwd_coords(:,ray)         ! take the first point
+    !        do pl = 0,1
+    !        call nbor%pos2cell_interp(self%myposition(first_pt),pl,cell,iw)
+    !        within = .false.
+    !        do i=1,3
+    !          if ((cell(i)>=nbor%li(i)).and.(cell(i)<=nbor%ui(i))) within(i) = .true.
+    !        end do
+    !        if (all(within)) then
+    !          call nbor%cell2shell(cell, s_coord, face)
+    !          select case(face)                                  ! half of these go to other mine%direction case
+    !          case(1)
+    !            wall => nbor%I_yz(:,:,:,2)
+    !          case(2)
+    !            wall => nbor%I_xz(:,:,:,2)
+    !          case(3)
+    !            wall => nbor%I_xy(:,:,:,2)
+    !          end select
+    !          print *, s_coord, size(wall,3), cell, pl
+    !          find_loop: do ics=1, size(wall,3)
+    !            if (wall(s_coord(1), s_coord(2),ics)%dir_ID == mine%bundle%dir_ID) then
+    !              cs => wall(s_coord(1), s_coord(2),ics)
+    !              exit find_loop
+    !            end if
+    !          end do find_loop
+    !          call mine%add_upstream(mrn, cs, iw)
+    !          is_upstream = .true.           
+    !        end if
+    !        end do
+    !      end do
+    !    end do
+    !  end select
+    !end if
   else
     ray = 1                                                             ! testing only one ray in the bundle
     select case(mine%direction)                                           
     case(1)
+      if (mine%bundle%b_id_rev  /= other%bundle%ID) return              ! wrong bundle to make a chain
       first_pt =  mine%bundle%packet(1)%coords(:,1,ray)                 ! taking the coordinates of the first point in the ray 
       rid = mine%bundle%packet(1)%r_id_rev(ray)                         ! ray id in a packet list of a ray in the previous bundle 
       pid = mine%bundle%packet(1)%p_id_rev(ray)                         ! packet id in the previous bundle 
       rev = other%bundle%packet(pid)%fwd_coords(:,rid)                  ! zeroth point in the ray (location of incoming intensity)                                     
     case(2)
+      if (mine%bundle%b_id_fw /= other%bundle%ID) return                ! wrong bundle to make a chain
       pp = mine%bundle%packet(1)%n_points
       first_pt =  mine%bundle%packet(1)%coords(:,pp,ray)                ! taking the coordinates of the last point in the ray 
       rid = mine%bundle%packet(1)%r_id_fw(ray)                          ! ray id in a packet list of a ray in the previous bundle 
@@ -605,7 +745,8 @@ SUBROUTINE ring_connects_to (self, nbor, mine, other, connects, is_upstream)
     end do
     
     if (all(tout)) connects = .true.
-  end if  
+  end if
+  
 END SUBROUTINE ring_connects_to
 
 !> =====================================================================
@@ -700,7 +841,9 @@ SUBROUTINE finish(self)
   self%updated=.false.
   self%data_ready = .false.
   call self%boundary_conditions
-  if (self%do_output) call self%output
+  if (self%do_output) then
+  call self%output
+  end if
   deallocate (self%lnd, self%lne, self%rk, self%src)                                       ! deallocate scratch
 END SUBROUTINE finish
 
@@ -936,7 +1079,7 @@ SUBROUTINE update_q (self, packet, q, dwf, ib)
   class(packet_t), pointer :: packet
   real, dimension(:,:,:), pointer :: q
   real, dimension(:,:), pointer :: dwf
-  real, dimension(:,:,:), pointer :: qq
+  real, dimension(:,:,:), pointer :: qq, ii
   integer, dimension(:,:,:), pointer :: cell
   integer :: p(3), wl, ray, pt, ib
   integer, save:: itimer=0
@@ -945,17 +1088,32 @@ SUBROUTINE update_q (self, packet, q, dwf, ib)
   
   qq => self%dedt(:,:,:)                                                ! point to the memory slot
   cell => packet%coords                                                 ! point to coordinates
-  
-  do ray = 1, packet%n_rays                                             ! loop over rays
-    do pt = 1, packet%n_points                                          ! loop over points
-      p = cell(:,pt,ray)                                                ! get the cell position
-      do wl =1, size(q,2)
-        qq(p(1),p(2),p(3)) = &
-        qq(p(1),p(2),p(3)) + q(ray,wl,pt+1)* self%w_lambda(wl) * &
-        self%w_bundle(ib)  * dwf(ray,pt+1)
+  if (self%do_output) then
+    ii => self%intensity
+    do ray = 1, packet%n_rays                                             ! loop over rays
+      do pt = 1, packet%n_points                                          ! loop over points
+        p = cell(:,pt,ray)                                                ! get the cell position
+        do wl =1, size(q,2)
+          qq(p(1),p(2),p(3)) = &
+          qq(p(1),p(2),p(3)) + q(ray,wl,pt+1)* self%w_lambda(wl) * &
+          self%w_bundle(ib)  * dwf(ray,pt+1)
+          ii(p(1),p(2),p(3)) = ii(p(1),p(2),p(3)) + self%src(p(1),p(2),p(3),wl) * &
+          self%w_bundle(ib) + qq(p(1),p(2),p(3))
+        end do
       end do
     end do
-  end do
+  else
+    do ray = 1, packet%n_rays                                             ! loop over rays
+      do pt = 1, packet%n_points                                          ! loop over points
+        p = cell(:,pt,ray)                                                ! get the cell position
+        do wl =1, size(q,2)
+          qq(p(1),p(2),p(3)) = &
+          qq(p(1),p(2),p(3)) + q(ray,wl,pt+1)* self%w_lambda(wl) * &
+          self%w_bundle(ib)  * dwf(ray,pt+1)
+        end do
+      end do
+    end do
+  end if
   
   call trace_end (itimer)
 END SUBROUTINE update_q
@@ -1034,11 +1192,9 @@ SUBROUTINE get_q (self, time, de)
   !---------------------------------------------------------------------
   call trace%begin ('rt_t%get_q', itimer=itimer)
   call self%time_interval (time, jt, pt)
-  print *, 'pt:',pt
   de= self%mem(:,:,:,self%i_e,jt(1),1)*pt(1) + &
       self%mem(:,:,:,self%i_e,jt(2),1)*pt(2)
   call trace%end (itimer)
-
 END SUBROUTINE get_q
 
 !> =====================================================================
@@ -1066,6 +1222,28 @@ FUNCTION pos2cell (self, p) result (cell)
   
 END FUNCTION pos2cell
 
+!> =====================================================================
+!> Convert absolute position to integer index triple 'cell'
+!> currently simple spatial interpolation is used and should be sufficient.
+!> if it is not accurate enough, it should be changed to something else.
+!> =====================================================================
+SUBROUTINE pos2cell_interp (self, p, fc, cell, iw)
+  class(rt_t)  :: self
+  real(kind=8) :: p(3), pp(3)
+  real :: iw
+  integer:: fc, cell(3)
+!-----------------------------------------------------------------------
+  !cell = nint((p-self%position+0.5_8*self%size)/self%ds)+self%li-1
+  pp = (p-self%position)/self%ds+self%offset
+  if (fc==0) then
+    cell = floor(pp)
+    iw   = product(1. - (pp-cell))
+  elseif (fc==1) then
+    cell = ceiling(pp)
+    iw   = product(pp-floor(pp))    
+  end if  
+END SUBROUTINE pos2cell_interp
+
 !> =============================================================================
 !> Apply boundary conditions
 !> =============================================================================
@@ -1079,13 +1257,5 @@ SUBROUTINE boundary_conditions (self)
   !end associate
   !call trace%end
 END SUBROUTINE boundary_conditions
-
-!> =============================================================================
-!> Bypass output
-!> =============================================================================
-SUBROUTINE output (self)
-  class(rt_t):: self
-  !----------------------------------------------------------------------------
-END SUBROUTINE output
 
 END MODULE rt_mod

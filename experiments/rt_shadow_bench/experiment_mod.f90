@@ -19,6 +19,8 @@ MODULE experiment_mod
   USE rmhd_mod
   USE initial_mod
   USE boundaries_mod
+  USE scaling_mod
+  USE units_mod
   implicit none
   private
   type, public, extends(rmhd_t):: experiment_t
@@ -41,6 +43,7 @@ SUBROUTINE init (self)
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
   self%nv = 8
+  call scaling%init
   self%mhd = .false.
   call self%rmhd_t%init()
   call self%set(bits%static)

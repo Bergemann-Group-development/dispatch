@@ -13,7 +13,7 @@ MODULE radiative_transfer_mod
   USE patch_mod
   USE ray_geometry_v3_mod
   USE rt_mod
-  USE rt_boundary_mod
+  USE rt_boundaries_mod
   USE rt_components_mod
   USE scaling_mod
   USE task_mod
@@ -29,14 +29,15 @@ CONTAINS
 !> The only procedure callable from the outside
 !> =============================================================================
 SUBROUTINE rt_setup (self)
-  class(task_list_t)          :: self
-  class(task_list_t), pointer :: rt_task_list                           ! local task list
-  class(list_t),      pointer :: list
-  class(link_t),      pointer :: t_list, link, rt_link
-  class(task_t),      pointer :: task
-  class(mesh_t),      pointer :: mesh
-  class(rmhd_t),      pointer :: mhd_patch
-  class(rt_t),        pointer :: rt_task
+  class(task_list_t)     :: self
+  !.....................................................................
+  class(list_t), pointer :: rt_task_list                                ! local task list
+  class(list_t), pointer :: list
+  class(link_t), pointer :: t_list, link, rt_link
+  class(task_t), pointer :: task
+  class(mesh_t), pointer :: mesh
+  class(rmhd_t), pointer :: mhd_patch
+  class(rt_t),   pointer :: rt_task
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer::rt_setup')
   associate (mhd => self%head%task)
@@ -79,7 +80,7 @@ SUBROUTINE rt_setup (self)
   !> radiative transfer patches for them.
   !> -------------------------------------------------------------------
   allocate(rt_task_list)
-  call rt_task_list%list_t%init ('rt task list')
+  call rt_task_list%init ('rt task list')
   t_list => self%head
   do while (associated(t_list))
     !> -----------------------------------------------------------------
@@ -117,28 +118,25 @@ SUBROUTINE rt_setup (self)
   end do
   
   call find_rt_nbors(rt_task_list)                                      ! connect nboring rt tasks to be nbors
-  
   !> -------------------------------------------------------------------
   !> Depending whether the RT chains are used (default, recommended) or
   !> not, call the right subroutine to initialize them.
   !> -------------------------------------------------------------------
   if (ray_geometry%head%do_chains) call make_chains (rt_task_list)      ! inter-connect all the chains
   
-  
   !> -------------------------------------------------------------------
   !> TODO:  for mesh refinement and mpi, add a call to find upstreams.
   !> -------------------------------------------------------------------
-  
   
   !> -------------------------------------------------------------------
   !> append the rt tasks to the task list.
   !> -------------------------------------------------------------------
   link => rt_task_list%head
   do while (associated(link))
+    rt_link => link%next
     call self%append_link (link)                                        ! append the task to the task list
-    link => link%next
+    link => rt_link
   end do
-  
   call self%print
   call trace_end
   if (io%master) then
@@ -200,7 +198,7 @@ SUBROUTINE make_chains (self)
   class(task_t),       pointer :: this, that
   class(rt_t),         pointer :: ithis, ithat
   logical :: connects = .false.
-  logical :: is_upstream = .false.
+  logical :: upstream = .false.
   logical :: connected = .false.
   logical :: is_bndry
   integer:: ibnd, irn, n_rings, n_masters, n_slaves, n_conn,n_bn
@@ -227,7 +225,7 @@ SUBROUTINE make_chains (self)
       is_bndry=.false.                                                  ! reset the boundary flag
       connected = .false.                                               ! no connections have been made
       n_rings=n_rings+1
-      ithis%my_rings(ibnd)%master = .true.                              ! flag the ring as being the master
+      ithis%my_rings(ibnd)%master = .true.                              ! flag the ring as being the master for now
       
       !> ---------------------------------------------------------------
       !> Check if the ring is adjacent to an outer on an inner boundary
@@ -263,13 +261,13 @@ SUBROUTINE make_chains (self)
               ! loop over ithat rings
               nbring_loop: do irn=1, ithat%n_bundle                     ! loop over nbor rings
                 connects = .false.                                      ! can rings connect?
-                is_upstream = .false.                                   ! nbor is different lvl upstreamer?
+                upstream = .false.                                      ! nbor is different lvl upstreamer?
                 call ithis%ring_connects_to(ithat,ithis%my_rings(ibnd),&
-                ithat%my_rings(irn),connects, is_upstream)
+                ithat%my_rings(irn),connects, upstream)
                 !> -----------------------------------------------------
                 !> if an upstream ring is found, do the following
                 !> -----------------------------------------------------
-                if (connects) then                                      ! the rings connect
+                if (connects.and..not.upstream) then                    ! the rings connect
                   ithis%my_rings(ibnd)%master = .false.                 ! i am no longer the master
                   ithis%my_rings(ibnd)%prev => ithat%my_rings(irn)      ! this is my superior
                   ithat%my_rings(irn)%next => ithis%my_rings(ibnd)      ! this is my inferior
@@ -292,17 +290,11 @@ SUBROUTINE make_chains (self)
                   n_conn=n_conn+1
                   exit tryloop                                          ! the loop over nbor rings can be stopped
                 end if
-                
-                !> -----------------------------------------------------
-                !> if the upstream ring is of different refnement level,
-                !> do the following
-                !> -----------------------------------------------------
-                if (is_upstream) then
-                  call &
-                  ithis%my_rings(ibnd)%connect_to_upstream_diff_level(ithat%my_rings(irn))
-                  exit nbring_loop
+
+                if (upstream) then
+                print *, 'found upstream, my id, up id', ithis%id, ithat%id
+                 ithis%my_rings(ibnd)%BC(3) = .true.       ! if the upstream ring is of different level or is a virtual patch
                 end if
-                
               end do nbring_loop
             end if
           end if

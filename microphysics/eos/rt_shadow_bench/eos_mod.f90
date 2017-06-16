@@ -46,6 +46,7 @@ SUBROUTINE init (self)
   call trace%begin ('eos_t%init')
   if (io%master) print *, &
  '------------------------ ideal equation-of-state -----------------------------'
+  call scaling%init
   !$omp critical (init_cr)
   if (first_time) then
     gamma = self%gamma
@@ -54,6 +55,7 @@ SUBROUTINE init (self)
     self%gamma = gamma
     self%t0   = 1./(290./scaling%temp)
     self%rho0 = 1./(1.  /scaling%d)
+    print *, cgs%stefan, cgs%pi, scaling%temp, scaling%f
     self%sc_stf = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
   end if
   !$omp end critical (init_cr)
@@ -83,11 +85,11 @@ END FUNCTION
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, dim, ee, lnd, lne, d, pg, tt, rk, src, gamma)
+SUBROUTINE lookup (self, dim, x, lny, lne, d, pg, tt, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
-  real, dimension(:,:,:),   optional, pointer :: ee, lnd, d, lne, pg, tt
+  real, dimension(:,:,:),   optional, pointer :: x, lny, d, lne, pg, tt
   real, dimension(:,:,:,:), optional, pointer :: src, rk
   real, dimension(:,:,:),             pointer :: ee_loc, d_loc
   integer:: i
@@ -98,15 +100,15 @@ SUBROUTINE lookup (self, dim, ee, lnd, lne, d, pg, tt, rk, src, gamma)
   !-----------------------------------------------------------------------------
   if (present(d)) then
     d_loc => d
-  else if (present(lnd)) then
+  else if (present(lny)) then
     allocate (d_loc(dim(1),dim(2),dim(3)))
-    d_loc = exp(lnd)
+    d_loc = exp(lny)
   else
     call mpi%abort ('eos_t: missing density')
   end if
   !-----------------------------------------------------------------------------
-  if (present(ee)) then
-    ee_loc => ee
+  if (present(x)) then
+    ee_loc => x
   else if (present(lne)) then
     allocate (ee_loc(dim(1),dim(2),dim(3)))
     ee_loc = exp(lne)
@@ -132,7 +134,7 @@ SUBROUTINE lookup (self, dim, ee, lnd, lne, d, pg, tt, rk, src, gamma)
     end do
   end if
   if (present(lne)) deallocate(ee_loc)
-  if (present(lnd)) deallocate( d_loc)
+  if (present(lny)) deallocate( d_loc)
 END SUBROUTINE lookup
 
 END MODULE eos_mod
