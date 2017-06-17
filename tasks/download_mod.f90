@@ -238,7 +238,11 @@ SUBROUTINE different (target, source)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
-          call source%interpolate (target, ii, iv, jt, pt)
+          if (source%pervolume(iv)) then
+            call source%interpolate_specific (target, ii, iv, jt, pt)
+          else
+            call source%interpolate (target, ii, iv, jt, pt)
+          end if
         end do
       end do
     end do
