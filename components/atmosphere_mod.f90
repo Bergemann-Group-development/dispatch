@@ -14,7 +14,7 @@ MODULE atmosphere_mod
   implicit none
   private
   type, public:: conditions_t
-    real:: density, pressure, temperature, entropy, gamma
+    real:: density, pressure, temperature, energy, entropy, gamma
   end type
   type, public, extends(particle_t):: atmosphere_t
     integer:: nr, niter
@@ -58,6 +58,8 @@ SUBROUTINE init (self)
   self%niter = niter
   self%gamma = gamma
   self%temp_gamma = temp_gamma
+  self%external%gamma = gamma(1)
+  self%surface%gamma  = gamma(2)
   self%mass = mass_m_earth*cgs%m_earth/scaling%m
   allocate (self%rr(self%nr))
   allocate (self%rho(self%nr))
@@ -68,6 +70,8 @@ SUBROUTINE init (self)
   self%external%temperature = temperature_K/scaling%temp
   self%external%pressure = density_cgs*cgs%k_B*temperature_K/(scaling%mu*cgs%m_u) &
     /scaling%p
+  self%external%energy = self%external%pressure/self%external%density &
+    /(self%external%gamma-1.0)
   self%hill_radius = self%orbit_radius*(planet%mass*scaling%m/(3d0*cgs%m_sun))**(1d0/3d0)
   planet%hill_radius = self%hill_radius
   !-----------------------------------------------------------------------------
