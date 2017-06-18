@@ -145,20 +145,34 @@ class Patch(Task):
         if not 'd' in dir(self):
             self.cache()
         if not 'var' in dir(self):
-            self.var={'d':self.d,\
-                      'e':self.e,\
-                      's':self.s,\
-                     'p1':self.p1,\
-                     'p2':self.p2,\
-                     'p3':self.p3,\
-                     'u1':self.u1,\
-                     'u2':self.u2,\
-                     'u3':self.u3,\
-                     'b1':self.b1,\
-                     'b2':self.b2,\
-                     'b3':self.b3,\
-                   'logd':np.log10(self.d),\
-                   'loge':np.log10(self.e)}
+            if self.nvar>7:
+                self.var={'d':self.d,\
+                        'e':self.e,\
+                        's':self.s,\
+                        'p1':self.p1,\
+                        'p2':self.p2,\
+                        'p3':self.p3,\
+                        'u1':self.u1,\
+                        'u2':self.u2,\
+                        'u3':self.u3,\
+                        'b1':self.b1,\
+                        'b2':self.b2,\
+                        'b3':self.b3,\
+                    'logd':np.log10(self.d),\
+                    'loge':np.log10(self.e)}
+            else:
+                 self.var={'d':self.d,\
+                        'e':self.e,\
+                        's':self.s,\
+                        'p1':self.p1,\
+                        'p2':self.p2,\
+                        'p3':self.p3,\
+                        'u1':self.u1,\
+                        'u2':self.u2,\
+                        'u3':self.u3,\
+                    'logd':np.log10(self.d),\
+                    'loge':np.log10(self.e)}
+                
 
 def variable_indices(solver_type, read_derivs=False):
     """
