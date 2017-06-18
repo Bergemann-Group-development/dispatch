@@ -172,8 +172,8 @@ SUBROUTINE update (self)
     !--------------------------------------------------------------------------
     ! Update the MHD state
     !--------------------------------------------------------------------------
-    call self%output
     call self%boundary_conditions (self%it)
+    call self%output
     call self%debug ('after BCs')
     call self%mhd_t%update
   end if

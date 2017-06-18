@@ -4,12 +4,13 @@
 
 &timer_params sec_per_report=15 /
 &io_params
- do_trace=f
+ do_trace=t
+ omp_trace=f
  verbose=0
  do_debug=f
  do_output=t
  do_legacy=t
- !id_debug=122
+ id_debug=30
 /
 &rubiks_params
  n_levels=4                         ! # of refinement levels in for the rubiks cube
@@ -52,6 +53,7 @@ gamma=1.4
  v_head_cgs=0.0                     ! headwind speed
  v_accrete_cgs=0.0                  ! accretion speed
  omega = 0.0,0.0,1.0                ! 1  AU
+ test=t                             ! only for TESTS!
 /
 &patch_params
  n=3*32
@@ -62,7 +64,7 @@ gamma=1.4
 /
 &out_params
  !inputdir='data/1me3r'
- end_time=0.05 out_time=0.01
+ end_time=0.02 out_time=0.01
  !end_time=50 out_time=5
  !end_time=15000 out_time=20 restart=25 ! zoom in
  !end_time=12000 out_time=50 restart=110 ! reduce threads
