@@ -41,7 +41,8 @@ MODULE patch_mod
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
     logical:: periodic(3)=.true.
-    logical, dimension(:), pointer:: unsigned=>null()
+    logical, dimension(:), pointer:: unsigned  => null()
+    logical, dimension(:), pointer:: pervolume => null()
     class(link_t), pointer:: link       ! this could be useful
     type(boundaries_t):: boundaries
     character(len=32):: eos='ideal'
@@ -107,6 +108,7 @@ MODULE patch_mod
     procedure:: distance => distance_curvilinear
     procedure:: index_stagger
     procedure:: interpolate
+    procedure:: interpolate_specific
     procedure:: index_space             ! full mapping to index space
     procedure:: index_only
     procedure:: count_edges
@@ -466,8 +468,10 @@ SUBROUTINE init (self)
       self%mem_allocated = .true.               ! mark
       timer%gb = timer%gb + storage_size(self%mem)*product(shape(self%mem))/(8*1024.**3)
 !    end if
-    allocate (self%unsigned(self%nv))
-    self%unsigned(:) = .false.
+    allocate (self%unsigned (self%nv))
+    allocate (self%pervolume(self%nv))
+    self%unsigned (:) = .false.
+    self%pervolume(:) = .false.
   end if
   self%dt = 0.0
   self%t =  0.0
@@ -2152,5 +2156,62 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
       "   out:",1p,e15.6)
   !call trace%end (itimer)
 END SUBROUTINE interpolate
+
+!> =============================================================================
+!> Interpolate in space and time, for a case where it is safe = the source point
+!> is inside the valid domain (inside a distance of half a cell from the source
+!> patch boundary for non-staggered points)
+!> =============================================================================
+SUBROUTINE interpolate_specific (self, target, ii, iv, jt, pt)
+  class(patch_t)           :: self
+  class(patch_t), pointer  :: target
+  integer                  :: ii(3), iv, jt(2)
+  real                     :: pt(2)
+  real                     :: tmp(2,2,2,2)
+  !.............................................................................
+  real(8)                  :: pos(3)
+  integer                  :: j(3)
+  real                     :: p(3)
+  integer, save            :: itimer=0
+  !-----------------------------------------------------------------------------
+  pos = target%myposition (ii, iv)
+  call self%index_space (pos, iv, j, p)
+  !call trace%begin ('patch_t%interpolate', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Pick up 16 values for tri-linear interpolation, divided by density
+  !-----------------------------------------------------------------------------
+  associate (id=>self%i_d)
+  tmp(:,:,:,:) = self%mem(j(1):j(1)+1,j(2):j(2)+1,j(3):j(3)+1,iv,jt(1:2),1) &
+               / self%mem(j(1):j(1)+1,j(2):j(2)+1,j(3):j(3)+1,id,jt(1:2),1)
+  target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
+   pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*tmp(1,1,1,1)    + &
+                                (    p(1))*tmp(2,1,1,1))   + &
+                     (   p(2))*((1.0-p(1))*tmp(1,2,1,1)    + &
+                                (    p(1))*tmp(2,2,1,1)))  + &
+          (   p(3))*((1.-p(2))*((1.0-p(1))*tmp(1,1,2,1)    + &
+                                (    p(1))*tmp(2,1,2,1))   + &
+                     (   p(2))*((1.0-p(1))*tmp(1,2,2,1)    + &
+                                (    p(1))*tmp(2,2,2,1)))) + &
+   pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*tmp(1,1,1,2)    + &
+                                (    p(1))*tmp(2,1,1,2))   + &
+                     (   p(2))*((1.0-p(1))*tmp(1,2,1,2)    + &
+                                (    p(1))*tmp(2,2,1,2)))  + &
+          (   p(3))*((1.-p(2))*((1.0-p(1))*tmp(1,1,2,2)    + &
+                                (    p(1))*tmp(2,1,2,2))   + &
+                     (   p(2))*((1.0-p(1))*tmp(1,2,2,2)    + &
+                                (    p(1))*tmp(2,2,2,2))))
+  !-----------------------------------------------------------------------------
+  ! Multiply by target denssity
+  !-----------------------------------------------------------------------------
+  target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
+    target%mem(ii(1),ii(2),ii(3),iv,target%it,1) * &
+    target%mem(ii(1),ii(2),ii(3),id,target%it,1)
+  end associate
+  if (target%id==io%id_debug) &
+    print 1, target%id, ii, iv, self%id, j, jt, p, pt, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
+    1 format(i6,3i3,i4,2x,"DBG patch_t%interpolate_specific src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
+      "   out:",1p,e15.6)
+  !call trace%end (itimer)
+END SUBROUTINE interpolate_specific
 
 END MODULE patch_mod
