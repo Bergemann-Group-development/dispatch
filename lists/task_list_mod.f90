@@ -111,6 +111,8 @@ SUBROUTINE init_bdries (self)
   do while (associated(link))
     self%lc = min(self%lc, link%task%position)
     self%uc = max(self%uc, link%task%position)
+    self%llc = min(self%llc, link%task%position-0.5000000001_8*link%task%size)
+    self%urc = max(self%urc, link%task%position+0.5000000001_8*link%task%size)
     link => link%next
   end do
   print *,'task_list%lc =', self%lc
