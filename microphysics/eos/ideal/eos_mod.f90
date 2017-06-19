@@ -10,6 +10,8 @@ MODULE eos_mod
   type, public:: eos_t
     real:: gamma = 1.4                  ! in case eos%init is never called
     integer :: eos_type = 0             ! 0 - ideal, x - any other
+    integer :: n_lambda = 1
+    real :: w_lambda = 1
   contains
     procedure:: init
     procedure:: pressure
@@ -105,7 +107,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   end if
   if (present(src)) then
     do i=1,size(src,4)
-      src(:,:,:,i) = ((self%gamma-1.0)*x_loc)**4
+      src(:,:,:,i) = ((self%gamma-1.0)*x_loc)**4/y_loc
     end do
   end if
   if (present(pg)) then

@@ -67,14 +67,11 @@ SUBROUTINE rt_setup (self)
   nullify(mesh)
 
   write (io_unit%log,*) 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
-  
   !> -------------------------------------------------------------------
-  !> Init the RT boundaries. FIXME: have to be patches or anything.
+  !> Initialize the RT_boundary object
   !> -------------------------------------------------------------------
-  call rt_boundary%init(lbox=mhd_patch%box-self%size,ubox=mhd_patch%box)   !!!!!!! FIXME !!!!!!
-  rt_boundary%lbox = 0.0; rt_boundary%ubox = 1.0
-
-
+  call self%init_bdries
+  call rt_boundaries%init(self%llc, self%urc)
   !> -------------------------------------------------------------------
   !> Go through the task list, select the rmhd_t tasks and initialize the
   !> radiative transfer patches for them.
@@ -105,13 +102,29 @@ SUBROUTINE rt_setup (self)
       rt_task%n        = mhd_patch%n                                    ! active innre cells
       rt_task%gn       = mhd_patch%gn                                   ! guard zones
       rt_task%size     = mhd_patch%size                                 ! shadow the size
+      rt_task%periodic = .false.
+      !> ---------------------------------------------------------------
+      !> Set up the boundary bits
+      !> ---------------------------------------------------------------
+      if (.not.rt_task%periodic(1)) then
+        if (rt_task%position(1) <= self%lc(1)) call rt_task%rt_boundaries%set (bits%xl)
+        if (rt_task%position(1) >= self%uc(1)) call rt_task%rt_boundaries%set (bits%xu)
+      end if
+      if (.not.rt_task%periodic(2)) then
+        if (rt_task%position(2) <= self%lc(2)) call rt_task%rt_boundaries%set (bits%yl)
+        if (rt_task%position(2) >= self%uc(2)) call rt_task%rt_boundaries%set (bits%yu)
+      end if
+      if (.not.rt_task%periodic(3)) then
+        if (rt_task%position(3) <= self%lc(3)) call rt_task%rt_boundaries%set (bits%zl)
+        if (rt_task%position(3) >= self%uc(3)) call rt_task%rt_boundaries%set (bits%zu)
+      end if
       call rt_task%init                                                 ! initialise
       rt_task%box      = mhd_patch%box                                  ! same box
       rt_task%level    = mhd_patch%level                                ! same level      
       rt_task%ds       = mhd_patch%ds                                   ! same cell size
       rt_task%li       = mhd_patch%li                                   ! same lower inner position
       rt_task%ui       = mhd_patch%ui                                   ! same upper inner position
-      call rt_task_list%append_link(link)                               ! insert rt_task into the rt task list
+      call rt_task_list%append_link(link)                               ! insert rt_task into the rt task list      
     end SELECT
     end associate
     t_list => t_list%next                                               ! go to the next mhd task
@@ -157,34 +170,34 @@ END SUBROUTINE rt_setup
 !> SUBROUTINES, CALLED FROM WITHIN: 
 !>   rt_mod::rt_chain_t%finish_chain
 !>   rt_mod::rt_chain_t%connect_to_upstream_diff_level
-!>   rt_mod::rt_chain_t%ring_connects_to
+!>   rt_mod::rt_chain_t%link_connects_to
 !> FLOW:
 !> 1) Subroutine loops over the rt_task list, takes one patch and loops
-!>   over all it's chain rings.
-!> 2) The appropriate chain ring is tested against being at a boundary.
+!>   over all it's chain links.
+!> 2) The appropriate chain link is tested against being at a boundary.
 !>   If that is the case, it is marked appropriately.
-!> 3) Initially the ring is marked as being the "master" ring, meaning 
+!> 3) Initially the link is marked as being the "master" link, meaning 
 !>   the chain reaction starts from it.
-!> 4) The search for an upstream ring begins. A loop over all patches in
+!> 4) The search for an upstream link begins. A loop over all patches in
 !>   the rt_task list is done until the right chain is found. If an
 !>   upstream is found, the "master" flag is removed and chains are connected.
 !> 5) This new connection is reported through the chain (if there are
-!>   more rings connected downstream), so every ring would know, that a
+!>   more links connected downstream), so every link would know, that a
 !>   new master has taken the throne. The loop (4) ends.
-!> 6) If the ring encounters an upstream with different refinement level,
+!> 6) If the link encounters an upstream with different refinement level,
 !>   it doesn't lose it's master title, but connects the upstream to
 !>   a separate link (upstream, which is an array of pointers). In such
 !>   case, a subroutine to connect the appropriate intensity positions 
 !>   is called
-!> 6) When the loop through rt tasks is done, and the ring still hasn't
+!> 6) When the loop through rt tasks is done, and the link still hasn't
 !>   lost it's title as a master, it is put to the master list. For sim-
-!>   plicity, chain_ring_t structure is used here, since rings are not
-!>   tasks. In order not to mess up the ring structure, the connections
-!>   are done backwards (ring%prev) - master rings do not have %prev 
+!>   plicity, chain_link_t structure is used here, since links are not
+!>   tasks. In order not to mess up the link structure, the connections
+!>   are done backwards (link%prev) - master links do not have %prev 
 !>   companions, so this is safe. Upon finalizing the chains, the %prev
 !>   connection is broken.
 !> 7) When the loop (1) ends, another loop, over the master chains (6) is
-!>   done. Starting from each master ring, all rings are finalized to point
+!>   done. Starting from each master link, all links are finalized to point
 !>   their incoming intensity locations to where they are supposed to
 !>   point, see rt_mod::rt_chain_t%finish_chain for more details.
 !> 8) After (7) is complete, this subroutine has done it's job.
@@ -194,19 +207,19 @@ SUBROUTINE make_chains (self)
   !.....................................................................
   class(link_t),       pointer :: rt_list
   class(link_t),       pointer :: rt, try
-  class(chain_ring_t), pointer :: master, origin, temp
+  class(chain_link_t), pointer :: master, origin, temp
   class(task_t),       pointer :: this, that
   class(rt_t),         pointer :: ithis, ithat
   logical :: connects = .false.
   logical :: upstream = .false.
   logical :: connected = .false.
   logical :: is_bndry
-  integer:: ibnd, irn, n_rings, n_masters, n_slaves, n_conn,n_bn
+  integer:: ibnd, irn, n_links, n_masters, n_slaves, n_conn,n_bn
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer_mod%add_correction_nbors ')
   !$omp critical (list_cr)
   allocate(master)                                                      ! temporary master chain list
-  n_rings=0
+  n_links=0
   n_masters=0
   n_slaves=0
   n_conn=0
@@ -221,30 +234,24 @@ SUBROUTINE make_chains (self)
       ithis => this
     end SELECT
     
-    do ibnd = 1, ithis%n_bundle                                         ! loop over chain rings
+    do ibnd = 1, ithis%n_bundle                                         ! loop over chain links
       is_bndry=.false.                                                  ! reset the boundary flag
       connected = .false.                                               ! no connections have been made
-      n_rings=n_rings+1
-      ithis%my_rings(ibnd)%master = .true.                              ! flag the ring as being the master for now
+      n_links=n_links+1
+      ithis%my_links(ibnd)%master = .true.                              ! flag the link as being the master for now
       
       !> ---------------------------------------------------------------
-      !> Check if the ring is adjacent to an outer on an inner boundary
+      !> Check if the link is adjacent to an outer on an inner boundary
       !> ---------------------------------------------------------------
-      if (ithis%has_OB(ithis%my_rings(ibnd))) then                      ! if this ring is at the outer boundary
-        ithis%my_rings(ibnd)%BC(1) = .true.                             ! then flag it to have an outer boundary condition
-        is_bndry=.true.                                                 ! since it is a boundary ring, it can't have upstreams or other masters 
+      if (ithis%has_OB(ithis%my_links(ibnd))) then                      ! if this link is at the outer boundary
+        ithis%my_links(ibnd)%BC(1) = .true.                             ! then flag it to have an outer boundary condition
+        call ithis%map_bndry(ithis%my_links(ibnd))
+        is_bndry=.true.                                                 ! since it is a boundary link, it can't have upstreams or other masters 
         n_bn=n_bn+1                                        
       end if
-        ! TODO: inner boundaries.
-     ! if (ithis%has_IB(ithis%my_rings(ibnd))) then                      ! if this ring is at the inner boundary
-     !   error stop "radiative_transfer_mod:: make_chains (1)"           ! not implemented yet!
-     !   ithis%my_rings(ibnd)%BC(2) = .true.                             ! then flag it to have an inner boundary condition
-     !   is_bndry=.true.                                                 ! since it is a boundary ring, it can't have upstreams or other masters
-     !   n_bn = n_bn+1                                               
-     ! end if
       
       !> ---------------------------------------------------------------
-      !> If it is not adjacent to a boundary, find a master ring for it
+      !> If it is not adjacent to a boundary, find a master link for it
       !> ---------------------------------------------------------------
       if(.not.is_bndry) then                                            ! if it is not a boundary, found a master on an upstream
         try => rt_list%nbor
@@ -258,57 +265,57 @@ SUBROUTINE make_chains (self)
           if (ithis%id /= ithat%id) then                                ! not the same patch
             if (ithis%overlaps(ithat)) then                             ! patches overlap
             
-              ! loop over ithat rings
-              nbring_loop: do irn=1, ithat%n_bundle                     ! loop over nbor rings
-                connects = .false.                                      ! can rings connect?
+              ! loop over ithat links
+              nblink_loop: do irn=1, ithat%n_bundle                     ! loop over nbor links
+                connects = .false.                                      ! can links connect?
                 upstream = .false.                                      ! nbor is different lvl upstreamer?
-                call ithis%ring_connects_to(ithat,ithis%my_rings(ibnd),&
-                ithat%my_rings(irn),connects, upstream)
+                call ithis%link_connects_to(ithat,ithis%my_links(ibnd),&
+                ithat%my_links(irn),connects, upstream)
                 !> -----------------------------------------------------
-                !> if an upstream ring is found, do the following
+                !> if an upstream link is found, do the following
                 !> -----------------------------------------------------
-                if (connects.and..not.upstream) then                    ! the rings connect
-                  ithis%my_rings(ibnd)%master = .false.                 ! i am no longer the master
-                  ithis%my_rings(ibnd)%prev => ithat%my_rings(irn)      ! this is my superior
-                  ithat%my_rings(irn)%next => ithis%my_rings(ibnd)      ! this is my inferior
+                if (connects.and..not.upstream) then                    ! the links connect
+                  ithis%my_links(ibnd)%master = .false.                 ! i am no longer the master
+                  ithis%my_links(ibnd)%prev => ithat%my_links(irn)      ! this is my superior
+                  ithat%my_links(irn)%next => ithis%my_links(ibnd)      ! this is my inferior
                   
-                  if(.not.associated(ithis%my_rings(ibnd)%tail)) then
-                    ithat%my_rings(irn)%tail => ithis%my_rings(ibnd)    ! connect the tails
+                  if(.not.associated(ithis%my_links(ibnd)%tail)) then
+                    ithat%my_links(irn)%tail => ithis%my_links(ibnd)    ! connect the tails
                   else
-                    ithat%my_rings(irn)%tail => ithis%my_rings(ibnd)%tail 
+                    ithat%my_links(irn)%tail => ithis%my_links(ibnd)%tail 
                   end if
                   !> ---------------------------------------------------
                   !> go through the chain (if there is any) of the newly
-                  !> connected ring and repoint their head pointers
+                  !> connected link and repoint their head pointers
                   !> ---------------------------------------------------
-                  temp => ithis%my_rings(ibnd)                            ! inform the rest of the chain, that the new master has arrived
+                  temp => ithis%my_links(ibnd)                            ! inform the rest of the chain, that the new master has arrived
                   do while(associated(temp))
-                    temp%head => ithat%my_rings(irn)
+                    temp%head => ithat%my_links(irn)
                     temp => temp%next
                   end do
                   connected = .true.                                    ! a connection has been made
                   n_conn=n_conn+1
-                  exit tryloop                                          ! the loop over nbor rings can be stopped
+                  exit tryloop                                          ! the loop over nbor links can be stopped
                 end if
 
                 if (upstream) then
                 print *, 'found upstream, my id, up id', ithis%id, ithat%id
-                 ithis%my_rings(ibnd)%BC(3) = .true.       ! if the upstream ring is of different level or is a virtual patch
+                 ithis%my_links(ibnd)%BC(3) = .true.       ! if the upstream link is of different level or is a virtual patch
                 end if
-              end do nbring_loop
+              end do nblink_loop
             end if
           end if
           try => try%next
         end do tryloop
       end if
       !> ---------------------------------------------------------------
-      !> if no connections have been done, that means this ring is still
-      !> a  master ring, therefore it has to be added to the master ting
+      !> if no connections have been done, that means this link is still
+      !> a  master link, therefore it has to be added to the master ting
       !> chain.
       !> ---------------------------------------------------------------
       if (.not.connected) then
           n_masters = n_masters+1
-          master%prev => ithis%my_rings(ibnd)
+          master%prev => ithis%my_links(ibnd)
           master => master%prev 
       else
         n_slaves = n_slaves+1
@@ -317,7 +324,7 @@ SUBROUTINE make_chains (self)
     rt_list => rt_list%next                                             ! move to next rt task
   end do
   
-  if (io%verbose>1) print *, 'n_rings',n_rings,'n_masters',n_masters, &
+  if (io%verbose>1) print *, 'n_links',n_links,'n_masters',n_masters, &
         'n_slaves',n_slaves,'n_connected',n_conn,'n_boundary',n_bn
   
   !> -------------------------------------------------------------------

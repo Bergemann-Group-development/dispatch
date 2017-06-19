@@ -88,7 +88,7 @@ class Patch(Task):
 
     def stripit(self):
         if self.kind[0:9]=='rt_solver':
-            self.dsdt = self.stripv(self.dsdt)
+            self.t = self.stripv(self.t)
             self.Q = self.stripv(self.Q)
         else:
             '''Remove guard cells from cached arrays'''
@@ -114,7 +114,7 @@ class Patch(Task):
     def cache(self):
         if self.kind[0:9]=='rt_solver':
             self.Q = self.data[:,:,:,self.varidx['Q']]
-            self.dsdt = self.data[:,:,:,self.varidx['dsdt']]
+            self.t = self.data[:,:,:,self.varidx['t']]
         else:
             #if not 'd' in dir(self):
             self.d =self.data[:,:,:,self.varidx['d']]
@@ -214,7 +214,7 @@ def variable_indices(solver_type, read_derivs=False):
                    'b1': 7, 'b2': 8, 'b3': 9}
     elif solver_type.lower() == 'rt_solver':
         indices = {'Q':  0,
-                   'dsdt': 1}
+                   't': 1}
     else:
         raise Exception("Unrecognised solver type! => "+solver_type.lower())
     return indices

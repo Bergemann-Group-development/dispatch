@@ -11,6 +11,7 @@ MODULE rt_mod
   USE task_mod
   USE timestep_mod
   USE trace_mod
+  USE scaling_mod
   implicit none
   private 
 !> =====================================================================
@@ -44,9 +45,10 @@ MODULE rt_mod
     real, dimension(:,:,:),   pointer :: intensity => null()
     character(len=16)                 :: solver ='integral'             ! choice of solver
     procedure(solve_integral), pointer:: solve => null()
-    logical :: do_output  = .false.
-    logical :: data_ready = .false.
-    logical :: do_chains  = .true.
+    logical :: do_output      = .false.
+    logical :: data_ready     = .false.
+    logical :: do_chains      = .true.
+    logical :: patch_overlaps = .false.
   contains
     procedure :: absolute_point_position
     procedure :: boundary_conditions
@@ -54,7 +56,6 @@ MODULE rt_mod
     procedure :: cell2shell
     procedure :: density_weight_factor
     procedure :: dnload
-    procedure :: get_boundary
     procedure :: execute_chain
     procedure :: finish
     procedure :: get_q
@@ -62,6 +63,7 @@ MODULE rt_mod
     procedure :: has_IB
     procedure :: init => init_rt
     procedure :: map_intensity_shell
+    procedure :: map_bndry
     procedure :: nudge
     procedure :: optical_depth_centered
     procedure :: optical_depth_staggered
@@ -96,12 +98,13 @@ SUBROUTINE init_rt (self)
   class (chain_link_t), pointer :: link
   logical, save :: first_time= .true.
   logical, save :: do_output  = .false.
+  logical, save :: overlaps = .false.
   real(8), save :: dtime=0.01_8, grace=0.01_8, init_time=0d0
   real,    save :: cr_heating=0.0
   character(len=16) :: solver = 'integral'
   integer :: a_id, dd, n_out(3)
   integer:: ignore, ibnd
-  namelist /rt_params/ init_time, dtime, grace, solver, do_output, cr_heating
+  namelist /rt_params/ init_time, dtime, grace, solver, do_output, cr_heating, overlaps
   ! --------------------------------------------------------------------
   
   call trace_begin ('rt_t%init')
@@ -115,6 +118,7 @@ SUBROUTINE init_rt (self)
   !$omp end critical (init_cr)
   self%periodic = .false.
   self%do_output = do_output
+  self%patch_overlaps = overlaps
   if (self%do_output) then
   self%nv = 2                                                           ! 2nd slot - intensity
   else
@@ -308,6 +312,62 @@ SUBROUTINE map_intensity_shell(self, link)
     end do
   end do
 END SUBROUTINE map_intensity_shell
+!> =====================================================================
+!> This subroutine maps the incoming heating rates to the outer boundary
+!> conditions
+!> =====================================================================
+SUBROUTINE map_bndry(self, link)
+  class(rt_t) :: self
+  class(chain_link_t) :: link
+  !.....................................................................
+  class(packet_t), pointer :: packet
+  real, dimension(:,:,:), pointer:: wall
+  integer :: ray, rid, c(3), pt, dir, a,b, i, ipck, ng(3)
+  logical :: selected
+  !---------------------------------------------------------------------
+  dir = link%direction                                                  ! forward of reverse
+  !> -------------------------------------------------------------------  
+  !> First, we have to determine which wall the rays cross when 
+  !> they enter the patch. 
+  !> select the right wall and coordinate axis. X axis is primary, Y axis
+  !> is secondary, Z axis is tertiary.
+  !> -------------------------------------------------------------------  
+  if      ((link%bundle%lwall(1) /= 0).and.(dir ==1)) then
+    wall => self%rt_boundaries%xl                                       ! X wall is selected
+    a = 2;  b = 3                                                       ! the remaining axes, which set the coordinate on the wall
+  else if ((link%bundle%uwall(1) /= 0).and.(dir ==2)) then  
+    wall => self%rt_boundaries%xu                                       ! X wall is selected
+    a = 2;  b = 3                                                       ! the remaining axes, which set the coordinate on the wall
+  else if ((link%bundle%lwall(2) /= 0).and.(dir ==1)) then
+    wall => self%rt_boundaries%yl                                       ! Y wall is selected
+    a = 3;  b = 1                                                       ! the remaining axes, which set the coordinate on the wall
+  else if ((link%bundle%uwall(2) /= 0).and.(dir ==2)) then
+    wall => self%rt_boundaries%yu                                       ! Y wall is selected
+    a = 3;  b = 1                                                       ! the remaining axes, which set the coordinate on the wall
+  else if ((link%bundle%lwall(3) /= 0).and.(dir ==1)) then
+    wall => self%rt_boundaries%zl                                       ! Z wall is selected
+    a = 1;  b = 2                                                       ! the remaining axes, which set the coordinate on the wall
+  else if ((link%bundle%uwall(3) /= 0).and.(dir ==2)) then
+    wall => self%rt_boundaries%zu                                       ! Z wall is selected
+    a = 1;  b = 2                                                       ! the remaining axes, which set the coordinate on the wall
+  else 
+    error stop "map_intensity_shell:: the right wall was somehow not found."        
+  end if
+  
+  rid=1
+  do ipck =1, link%bundle%n_packets
+    packet => link%bundle%packet(ipck)                                  ! loop over ray packets in the bundle
+    do ray = 1, packet%n_rays                                 
+      if (dir ==1) then
+        c = packet%rev_coords(:,ray)
+      else
+        c = packet%fwd_coords(:,ray)
+      end if
+      link%packet_data(rid)%in => wall(c(a),c(b),:)
+      rid = rid + 1
+    end do
+  end do  
+END SUBROUTINE map_bndry
 
 SUBROUTINE cell2shell(self, c_coord, s_coord, wall)
   class(rt_t) :: self
@@ -359,11 +419,6 @@ SUBROUTINE update_rt (self)
   end if
   self%dedt => self%mem(:,:,:,self%i_e,self%it,1)                       ! map dedt to mem
   self%dedt = 0.0                                                       ! reset net cooling
-
-  if (self%do_output) then
-  self%intensity => self%mem(:,:,:,2,self%it,1)                         ! map intensities to mem
-  self%intensity = 0.0                                                  ! reset intensities
-  end if
   
   task => self%mhd_link%task                                            ! pick the rmhd task
   select type (task)
@@ -393,9 +448,10 @@ SUBROUTINE update_rt (self)
   
   self%lne = self%lne - self%lnd                                        ! internal energy per unit mass
 
-  call eos%lookup (shape(self%lne), lne=self%lne, lny=self%lnd, &       ! call the table lookup, ...
+  call eos%lookup (shape(self%lne), lnx=self%lne, lny=self%lnd, &       ! call the table lookup, ...
                    rk=self%rk, src=self%src)  
-  
+  call self%rt_boundaries%condition(self%time)
+    
   self%data_ready =.true.                                               ! flag, that internal data is ready
   
   if(io%verbose >1) then
@@ -465,7 +521,7 @@ SUBROUTINE execute_chain (self, head)
   integer :: ray
   integer, save:: itimer=0
   !---------------------------------------------------------------------
-  !call trace%begin ('rmhd_t%execute_chain', itimer=itimer)
+  call trace%begin ('rmhd_t%execute_chain', itimer=itimer)
   link => head                                                          ! take the master link
   nullify(prev)                                                         ! just in case - there has to be no "prev" for the master link
   
@@ -480,14 +536,10 @@ SUBROUTINE execute_chain (self, head)
     class is (rt_t)
     rt_patch => task
     end select
-    
-    if(associated(prev)) then                                           ! if there was a link before me, take the intensities from it
-      do ray=1, link%bundle%n_rays
-        I_in(ray,:) = link%packet_data(ray)%in
-      end do
-    else                                                                ! if I am the master link,
-      call rt_patch%get_boundary(link,i_in)                             ! get intensities from the boundary
-    end if
+
+    do ray=1, link%bundle%n_rays
+      I_in(ray,:) = link%packet_data(ray)%in
+    end do
     call rt_patch%solve(link, i_in, i_out)                              ! do the radiative transfer for this particular link
     do ray = 1, link%bundle%n_rays                                      ! store the output intensities
       link%packet_data(ray)%out = I_out(ray,:)
@@ -501,68 +553,8 @@ SUBROUTINE execute_chain (self, head)
   head%nudged = .false.                                                 ! reset the nudge logicals
   head%n_ready = 0                                                      ! no links are ready in this chain
   nullify(rt_patch, task, prev)  
-  !call trace%end(itimer)
+  call trace%end(itimer)
 END SUBROUTINE execute_chain
-
-!> =====================================================================
-!> Boundary data is on inner/outer boundary, different refinement level,
-!> or on a virtual patch. Lookup through the use of cell2pos & pos2cell
-!> subroutines. Slightly more costly, but necessary. Virtual patches only
-!> store wall intensities per direction, whereas for different refinement
-!> levels bundle chains are effectively broken. Outer and inner boundaries
-!> have to modify the ray lenghs so that RT would not be solved beyond them.
-!> this setting could be done only once, unless patches or boundaries are
-!> moving or AMR is on.
-!> =====================================================================
-SUBROUTINE get_boundary (self, link, I_in)
-  class(rt_t) :: self
-  class(chain_link_t), pointer :: link, upstream
-  real, dimension(:,:), pointer :: I_in
-  !.....................................................................
-  class(packet_t), pointer :: packet
-  integer :: pck, ray, ir
-  real(kind=8) :: ppos(3)
-  !---------------------------------------------------------------------
-  !> -------------------------------------------------------------------
-  !> If the link is adjacent to the outer boundary
-  !> -------------------------------------------------------------------
-  if (link%BC(1)) then
-    ir =1
-    do pck =1, link%bundle%n_packets                                    ! loop over all packets in this bundle
-      packet => link%bundle%packet(pck)                                 ! pick a packet
-      do ray = 1, packet%n_rays                                         ! loop over all rays in this packet
-        ppos = self%absolute_point_position &                           ! for each ray index in the packet, find a point position
-        (link, packet, ray, 1, link%direction)
-        call rt_boundary%set_obc (ppos, I_in(ir,:))                     ! get the boundary value
-        ir = ir+1
-      end do
-    end do
-  end if
- 
-  !> -------------------------------------------------------------------
-  !> If the link is adjacent to the inner boundary
-  !> -------------------------------------------------------------------
-  if (link%BC(2)) then                                                   ! inner boundary should modify the ray lengths!!
-    error stop "inner BC for RT is not fully functional yet"
- !   packet => link%bundle%rays
- !   do pck =1, link%bundle%n_packets
- !     do ray = 1, packet%n_rays
-        ! for each ray index in the packet, find a point position
- !       ppos = self%absolute_point_position (link, packet, ray, 1, link%direction)
- !       call rt_boundary%set_ibc (ppos, I_in(ray,:))
- !     end do
- !     packet => packet%next
- !   end do
-  end if
-  
-  !> -------------------------------------------------------------------
-  !> If the link is adjacent to a virtual or different level patch
-  !> -------------------------------------------------------------------
-  if (link%BC(3)) then
-      error stop "getting boundary from virtual patches or different level patches is not implemented yet"
-  end if
-  
-END SUBROUTINE get_boundary
 
 !> =====================================================================
 !> Check if the rays in self match up in the downstream with the rays in other
@@ -728,18 +720,27 @@ SUBROUTINE link_connects_to (self, nbor, mine, other, connects, is_upstream)
       if (mine%bundle%b_id_rev  /= other%bundle%ID) return              ! wrong bundle to make a chain
       first_pt =  mine%bundle%packet(1)%coords(:,1,ray)                 ! taking the coordinates of the first point in the ray 
       rid = mine%bundle%packet(1)%r_id_rev(ray)                         ! ray id in a packet list of a ray in the previous bundle 
-      pid = mine%bundle%packet(1)%p_id_rev(ray)                         ! packet id in the previous bundle 
-      rev = other%bundle%packet(pid)%fwd_coords(:,rid)                  ! zeroth point in the ray (location of incoming intensity)                                     
+      pid = mine%bundle%packet(1)%p_id_rev(ray)                         ! packet id in the previous bundle
+      if(self%patch_overlaps) then
+        pp = other%bundle%packet(pid)%n_points
+        rev = other%bundle%packet(pid)%coords(:,pp,rid)
+      else 
+        rev = other%bundle%packet(pid)%fwd_coords(:,rid)                ! zeroth point in the ray (location of incoming intensity)
+      end if                                   
     case(2)
       if (mine%bundle%b_id_fw /= other%bundle%ID) return                ! wrong bundle to make a chain
       pp = mine%bundle%packet(1)%n_points
       first_pt =  mine%bundle%packet(1)%coords(:,pp,ray)                ! taking the coordinates of the last point in the ray 
       rid = mine%bundle%packet(1)%r_id_fw(ray)                          ! ray id in a packet list of a ray in the previous bundle 
-      pid = mine%bundle%packet(1)%p_id_fw(ray)                          ! packet id in the previous bundle 
-      rev = other%bundle%packet(pid)%rev_coords(:,rid)                  ! zeroth point in the ray (location of incoming intensity)                                                              
+      pid = mine%bundle%packet(1)%p_id_fw(ray)                          ! packet id in the previous bundle
+      if (self%patch_overlaps) then
+        rev = other%bundle%packet(pid)%coords(:,1,rid)
+      else
+        rev = other%bundle%packet(pid)%rev_coords(:,rid)                ! zeroth point in the ray (location of incoming intensity)
+      end if                                                           
     end select
-  
     first_pt = nbor%pos2cell(self%myposition(first_pt))
+
     do pp = 1,3
       if (first_pt(pp) == rev(pp)) tout(pp) = .true.
     end do
@@ -795,15 +796,15 @@ LOGICAL FUNCTION has_OB (self, link)
   do t = 1,3
     if (link%direction ==1) then
       if (d(t)>0) then
-        if (p(t)<rt_boundary%lbox(t)) has_OB = .true.
+        if (p(t)<rt_boundaries%llc(t)) has_OB = .true.
       else
-        if (p(t)>rt_boundary%ubox(t)) has_OB = .true.
+        if (p(t)>rt_boundaries%urc(t)) has_OB = .true.
       end if
     else
       if (d(t)>0) then
-        if (p(t)>rt_boundary%ubox(t)) has_OB = .true.
+        if (p(t)>rt_boundaries%urc(t)) has_OB = .true.
       else
-        if (p(t)<rt_boundary%lbox(t)) has_OB = .true.
+        if (p(t)<rt_boundaries%llc(t)) has_OB = .true.
       end if
     end if
   end do
@@ -817,31 +818,24 @@ LOGICAL FUNCTION has_IB (self, link)
   real(8) :: p(3)
   !.....................................................................
   has_IB = .false.
-  d = link%bundle%dstep
-  if (link%direction == 1) then
-    i = link%bundle%packet(1)%fwd_coords(:,1)
-    p = self%cell2pos(i)
-  else 
-    i = link%bundle%packet(1)%rev_coords(:,1)
-    p = self%cell2pos(i)
-  end if
-  
-  do t = 1,3
-    if (d(t)>0) then
-      if (p(t)<rt_boundary%lbox(t)) has_IB = .true.
-    else
-      if (p(t)>rt_boundary%ubox(t)) has_IB = .true.
-    end if
-  end do
+
 END FUNCTION has_IB
   
 SUBROUTINE finish(self)
-  class(rt_t) :: self  
+  class(rt_t) :: self
+  integer :: ii
   !---------------------------------------------------------------------
   self%updated=.false.
   self%data_ready = .false.
   call self%boundary_conditions
   if (self%do_output) then
+  self%intensity => self%mem(:,:,:,2,self%it,1)                         ! map intensities to mem
+  self%intensity = 0.0
+  do ii =1, eos%n_lambda
+  self%intensity = self%intensity + self%src(:,:,:,ii)*(eos%gamma-1)*scaling%temp    ! reset intensities
+  end do
+  self%intensity = (self%intensity**4 + (self%dedt*scaling%temp)**4)**0.25
+ ! print *, minval(self%intensity), maxval(self%intensity)
   call self%output
   end if
   deallocate (self%lnd, self%lne, self%rk, self%src)                                       ! deallocate scratch
@@ -1097,8 +1091,6 @@ SUBROUTINE update_q (self, packet, q, dwf, ib)
           qq(p(1),p(2),p(3)) = &
           qq(p(1),p(2),p(3)) + q(ray,wl,pt+1)* self%w_lambda(wl) * &
           self%w_bundle(ib)  * dwf(ray,pt+1)
-          ii(p(1),p(2),p(3)) = ii(p(1),p(2),p(3)) + self%src(p(1),p(2),p(3),wl) * &
-          self%w_bundle(ib) + qq(p(1),p(2),p(3))
         end do
       end do
     end do
@@ -1172,7 +1164,7 @@ SUBROUTINE density_weight_factor (self, ds, dwf)
   !---------------------------------------------------------------------
   do iz=1,size(dwf,3)
     do iy=1,size(dwf,2)
-      dwf(:,iy,iz) = self%lnd(:,iy,iz) * ds
+      dwf(:,iy,iz) = 1./self%lnd(:,iy,iz) * ds
     end do
   end do
 END SUBROUTINE density_weight_factor

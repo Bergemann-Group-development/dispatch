@@ -8,6 +8,9 @@ MODULE eos_mod
   type, public:: eos_t
     character(len=16) :: name='Tomida+Hori(e)'
     type(table_t)     :: table
+    integer :: w_lambda = 1
+    integer :: n_lambda = 1
+    real :: gamma = 1.4
   contains
     procedure         :: init
     procedure         :: lookup

@@ -12,7 +12,7 @@ def scaling():
     class s:
         l=1.
         m=1. #*1e-10
-        v=1.
+        v=100.
         t=1.
         d=1.
         p=1.

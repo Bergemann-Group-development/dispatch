@@ -2,13 +2,13 @@
  verbose=0
  do_trace=t
  do_debug=f
- do_output=t
+ do_output=f
  do_legacy=t
 /
 
 &out_params
- end_time=0.01
- out_time=0.001
+ end_time=0.000003
+ out_time=0.00001
  print_time=0.0
  guard_zones=t
  time_derivs=f
@@ -16,7 +16,7 @@
 
 &box_params
  size=1,1,1
- dims=1,1,1
+ dims=4,4,4
  origin=0.0,0.0,0.0
  !origin=-0.5,-0.5,-0.5
 /
@@ -35,8 +35,9 @@
 ! ------- Radiative transfer ---------
 &rt_params
  solver= 'integral'
- do_output = t
- dtime = 0.001
+ do_output = f
+ overlaps = t        ! do patches overlap to avoid the 'no mans land'?
+ dtime = 0.000001
  cr_heating = 0.0
  init_time = -9d0
 /
@@ -46,29 +47,19 @@ do_chains = .true.
 ! along x axis
 nx = 1 xti = 0.!,45.
 ! along y axis
-ny = 1 yti = 0.!,45.
+ny = 1 !yti = 0.!,45.
 ! along z axis
-nz = 1 zti = 0.!,45.
+nz = 1 !zti = 0.!,45.
 ! use space_diagonals?
 space_diagonals=t
 /
 
-! Treatment of boundary conditions for RT solver. obc - outer boundaries, outside the simulation box.
-! ibc - inner boundaries, e.g. any objects (planets, stars, etc.)
+! Treatment of boundary conditions for RT solver. 
 &rt_bc_params
-obc_treatment = 'custom'    !use code in initial_rt.f90
-!obc_treatment = 'reflective' ! not implemented yet
-!obc_treatment = 'periodic'   ! not implemented yet
-!ibc_treatment = 'initial'    ! not implemented yet
-!ibc_treatment = 'zero'       ! complete absorption, not implemented yet
-!ibc_treatment = 'reflective' ! not implemented yet
-ibc_treatment = 'ignore'     ! do nothing, continue as if there was no IB
+cool_temp = 290   ! in kelvins
+hot_temp  = 2000
 /
 
-&custom_bc_params
-cool_temp = 290   ! in kelvins
-hot_temp  = 200000
-/
 
 &mhd_params
  nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
