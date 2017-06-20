@@ -142,7 +142,7 @@ SUBROUTINE init_rt (self)
   self%guard_zones = .true.
   call self%rt_boundaries%init (self%dim)
   self%n_lambda = eos%n_lambda                                          ! number of wavelengths
-  self%n_bundle = ray_geometry%head%total_n_bundles * 2                 ! double n_bundles since there are 2 directions
+  self%n_bundle = ray_geometry%head%n_ray_dirs * 2                 ! double n_bundles since there are 2 directions
   self%cr_heating = cr_heating                                          ! store cr heating, if it is present
   self%do_chains = ray_geometry%head%do_chains                          ! are there chains in the system, or patches are effectively isolated
   
@@ -412,7 +412,7 @@ SUBROUTINE update_rt (self)
   if (self%data_ready) return
   
   call trace%begin ('rt_t%update', itimer=itimer)
-  if (io%verbose > 1) print *, 'RADIATIVE TRANSFER TIME', self%time
+ ! if (io%verbose > 1) print *, 'RADIATIVE TRANSFER TIME', self%time
   
   if (self%time < 0d0) then
     self%time  = 0d0 !+ self%dtime                                      ! set current time, if it was negative (to do the first RT run before MHD updates)
@@ -477,28 +477,28 @@ SUBROUTINE nudge (self)
   do r_id = 1, self%n_bundle
     link => self%my_links(r_id)
     !$omp critical (chain_cr)
-    if (io%verbose > 4) then
-      print *, 'link no.',r_id
-      print *, 'before nudge, n_ready',link%head%n_ready, link%head%l_chain
-      print *,'nudged by master', link%master,'rt time',self%time
-      print *, 'other links updated',self%updated
-      print *, 'my data is ready',self%data_ready
-      print *, 'my ID is:',self%id,'link', link%id
-    end if
+  !  if (io%verbose > 4) then
+  !    print *, 'link no.',r_id
+  !    print *, 'before nudge, n_ready',link%head%n_ready, link%head%l_chain
+  !    print *,'nudged by master', link%master,'rt time',self%time
+  !    print *, 'other links updated',self%updated
+  !    print *, 'my data is ready',self%data_ready
+  !    print *, 'my ID is:',self%id,'link', link%id
+  !  end if
     
-    tmp => link%head%link%task
-    select type(tmp)
-    class is (rt_t)
-    end select
+  !  tmp => link%head%link%task
+  !  select type(tmp)
+  !  class is (rt_t)
+  !  end select
     
-    if (io%verbose > 4) print *, 'nudging task ID:', tmp%id,'link id', link%head%id, &
-    'nudged allocated:',associated(link%head%nudged),'size'
-    if (io%verbose > 4) print *, size(link%head%nudged),'its content:',link%head%nudged, 'head assoc', associated(link%head)
-    if (io%verbose > 4) print *, 'l_chain',link%head%l_chain
+  !  if (io%verbose > 4) print *, 'nudging task ID:', tmp%id,'link id', link%head%id, &
+  !  'nudged allocated:',associated(link%head%nudged),'size'
+  !  if (io%verbose > 4) print *, size(link%head%nudged),'its content:',link%head%nudged, 'head assoc', associated(link%head)
+  !  if (io%verbose > 4) print *, 'l_chain',link%head%l_chain
     
     link%head%n_ready = link%head%n_ready+1                             ! nudge the master link
-    if (link%head%nudged(link%chain_nm)) print *,'this already was nudged..'
-    if (link%head%n_ready > link%head%l_chain) print *,'double nudging?'
+  !  if (link%head%nudged(link%chain_nm)) print *,'this already was nudged..'
+  !  if (link%head%n_ready > link%head%l_chain) print *,'double nudging?'
     link%head%nudged(link%chain_nm) = .true.                            ! mark myself as done in the ready array
         
     if (all(link%head%nudged)) call self%execute_chain(link%head)       ! execute the chain, when all links are ready
@@ -831,11 +831,8 @@ SUBROUTINE finish(self)
   if (self%do_output) then
   self%intensity => self%mem(:,:,:,2,self%it,1)                         ! map intensities to mem
   self%intensity = 0.0
-  do ii =1, eos%n_lambda
-  self%intensity = self%intensity + self%src(:,:,:,ii)*(eos%gamma-1)*scaling%temp    ! reset intensities
-  end do
-  self%intensity = (self%intensity**4 + (self%dedt*scaling%temp)**4)**0.25
- ! print *, minval(self%intensity), maxval(self%intensity)
+  self%dedt = self%dedt*self%dtime*scaling%f/scaling%l**3/scaling%t
+  !print *, minval(self%intensity), maxval(self%intensity)
   call self%output
   end if
   deallocate (self%lnd, self%lne, self%rk, self%src)                                       ! deallocate scratch
@@ -1106,7 +1103,6 @@ SUBROUTINE update_q (self, packet, q, dwf, ib)
       end do
     end do
   end if
-  
   call trace_end (itimer)
 END SUBROUTINE update_q
 
@@ -1164,7 +1160,7 @@ SUBROUTINE density_weight_factor (self, ds, dwf)
   !---------------------------------------------------------------------
   do iz=1,size(dwf,3)
     do iy=1,size(dwf,2)
-      dwf(:,iy,iz) = 1./self%lnd(:,iy,iz) * ds
+      dwf(:,iy,iz) = 1./exp(self%lnd(:,iy,iz)) * ds
     end do
   end do
 END SUBROUTINE density_weight_factor

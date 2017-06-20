@@ -54,11 +54,11 @@ SUBROUTINE init (self)
     if (io%master) write (io%output, eos_params)
     self%gamma = gamma
     self%t0   = 1./(290.)!/scaling%temp)
-    self%rho0 = 1.!/(1.  /scaling%d)
+    self%rho0 = 1./(1.  /scaling%d)
     print *, cgs%stefan, cgs%pi, scaling%temp, scaling%f
-    self%sc_stf = cgs%stefan/scaling%m*scaling%t**3*scaling%temp**4
+    !self%sc_stf = cgs%stefan/scaling%m*scaling%t**3*scaling%temp**4
     print *, self%sc_stf
-    !self%sc_stf = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
+    self%sc_stf = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
   end if
   !$omp end critical (init_cr)
   call trace%end

@@ -324,7 +324,7 @@ SUBROUTINE make_chains (self)
     rt_list => rt_list%next                                             ! move to next rt task
   end do
   
-  if (io%verbose>1) print *, 'n_links',n_links,'n_masters',n_masters, &
+  if (io%verbose>-1) print *, 'n_links',n_links,'n_masters',n_masters, &
         'n_slaves',n_slaves,'n_connected',n_conn,'n_boundary',n_bn
   
   !> -------------------------------------------------------------------

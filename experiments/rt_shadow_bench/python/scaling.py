@@ -13,11 +13,11 @@ def scaling():
         l=1.
         m=1. #*1e-10
         v=100.
-        t=1.
         d=1.
         p=1.
         g=1.
-        u=1.
+        u=100.
+        t=l/u
         e=1.
         temp = 1.
     return s

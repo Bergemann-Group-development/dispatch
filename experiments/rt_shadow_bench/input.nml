@@ -7,8 +7,8 @@
 /
 
 &out_params
- end_time=0.000003
- out_time=0.00001
+ end_time=0.00005
+ out_time=0.000001
  print_time=0.0
  guard_zones=t
  time_derivs=f
@@ -36,10 +36,10 @@
 &rt_params
  solver= 'integral'
  do_output = f
- overlaps = t        ! do patches overlap to avoid the 'no mans land'?
+ overlaps = f        ! do patches overlap to avoid the 'no mans land'?
  dtime = 0.000001
  cr_heating = 0.0
- init_time = -9d0
+ init_time = -1d-5
 /
 
 &cartesian_ray_geometry_params
@@ -47,9 +47,9 @@ do_chains = .true.
 ! along x axis
 nx = 1 xti = 0.!,45.
 ! along y axis
-ny = 1 !yti = 0.!,45.
+ny = 1 yti = 0.!,45.
 ! along z axis
-nz = 1 !zti = 0.!,45.
+nz = 1 zti = 0.!,45.
 ! use space_diagonals?
 space_diagonals=t
 /
@@ -57,7 +57,7 @@ space_diagonals=t
 ! Treatment of boundary conditions for RT solver. 
 &rt_bc_params
 cool_temp = 290   ! in kelvins
-hot_temp  = 2000
+hot_temp  = 1740
 /
 
 
