@@ -162,7 +162,7 @@ SUBROUTINE update (self)
     end if
     if (self%is_set (bits%spherical)) then
       do iv=self%i_px,self%i_pz
-        call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,2), 0.0, self%mesh, iv)
+        call self%boundaries%spherical_ns (self%mem(:,:,:,iv,self%it,2), 0.0, self%mesh, iv)
       end do
     end if
   !-----------------------------------------------------------------------------
@@ -267,9 +267,9 @@ SUBROUTINE boundary_conditions (self, it)
         call self%boundaries%spherical (self%mem(:,:,:,self%i_e,it,2), 0.0, self%mesh, self%i_e)
       end if
       do iv=self%i_px,self%i_pz
-        call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
+        call self%boundaries%spherical_ns (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
         if (self%nw>1) &
-          call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
+          call self%boundaries%spherical_ns (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
       end do
     end if
     !------------------------------------------------------------------------
