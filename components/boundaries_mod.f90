@@ -569,22 +569,26 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
         r = sqrt(x**2+y**2+z**2)
         if (iv == idx%px) then                                          ! mass flux in X-direction
           if (r < self%radius+m(1)%d*0.5) then
-            if (.not.inside) then
-              rp = sqrt(self%radius**2 - y**2 - z**2)                   ! boundary location at X axis
+            p1 = sqrt(y**2+z**2+(m(1)%p + r1(ix-1) + h(1)*m(1)%d - self%position(1))**2)
+            p2 = sqrt(y**2+z**2+(m(1)%p + r1(ix+1) + h(1)*m(1)%d - self%position(1))**2)
+            if ((p1 > self%radius+m(1)%d*0.5).and.(p2 < self%radius+m(1)%d*0.5)) then
+              !entering the boundary
+              rp = sqrt(abs(self%radius**2 - y**2 - z**2))                   ! boundary location at X axis
               if (x<0) rp = -rp
               x1 = m(1)%p + r1(ix-1) + h(1)*m(1)%d - self%position(1)   ! last point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
               dw = d1/(d1+m(1)%d)                                       ! interpolation weight for the last point before the bnd
               mem(ix-1,iy,iz) = mem(ix-2,iy,iz) * dw                    ! linear interpolation for the last point before the bnd
               mem(ix  ,iy,iz) = &
-                          extrapolate_antisym(x,x1,rp,mem(ix-1,iy,iz))  ! antisymmetric extrapolation from the last point before the bnd                     
-              inside = .true.
-            else
-              mem(ix,iy,iz) = 0.0
-            end if
-          else
-            if(inside) then
-              rp = sqrt(self%radius**2 - y**2 - z**2)                   ! boundary location at X axis
+                          extrapolate_antisym(x,x1,rp,mem(ix-1,iy,iz))  ! antisymmetric extrapolation from the last point before the bnd
+             ! print *, 'entering', ix, iy, iz
+             ! print *, 'pos', x, y, z
+             ! print *, 'radius, r, rp', r, self%radius, rp
+             ! print *, 'x1, d1, dw', x1, d1, dw
+             ! print *, 'one p before, last p, bnd p', mem(ix-2,iy,iz), mem(ix-1,iy,iz), mem(ix,iy,iz)
+            else if ((p1 < self%radius+m(1)%d*0.5).and.(p2 > self%radius+m(1)%d*0.5)) then
+            ! leaving the boundary
+              rp = sqrt(abs(self%radius**2 - y**2 - z**2))                   ! boundary location at X axis
               if (x<0) rp = -rp
               x1 = m(1)%p + r1(ix-1) + h(1)*m(1)%d - self%position(1)   ! last point INSIDE the bnd
               d1 = abs(rp-x)                                            ! distance between bnd and the point outside it
@@ -592,7 +596,37 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
               mem(ix  ,iy,iz) = mem(ix+1,iy,iz)*dw                      ! linear interpolation for the first point after the bnd
               mem(ix-1,iy,iz) = &
                           extrapolate_antisym(x1,x,rp,mem(ix,iy,iz))    ! antisymmetric extrapolation from the first point after the bnd
-              inside = .false.     
+             ! print *, 'leaving', ix, iy, iz
+             ! print *, 'pos', x, y, z
+             ! print *, 'radius, r, rp', r, self%radius, rp
+             ! print *, 'x1, d1, dw', x1, d1, dw
+             ! print *, 'one p after, first p, bnd p', mem(ix+1,iy,iz), mem(ix,iy,iz), mem(ix-1,iy,iz)
+            else if ((p1 < self%radius+m(1)%d*0.5).and.(p2 < self%radius+m(1)%d*0.5)) then
+              mem(ix,iy,iz) = 0.0                                       ! cell is well inside the boundary\
+             ! print *, 'inside', ix, iy, iz
+             ! print *, 'pos', x, y, z
+             ! print *, 'radius, r', r, self%radius
+             ! print *, 'bnd p', mem(ix,iy,iz)
+            else
+             ! print *, 'single bnd p', ix, iy, iz
+             ! print *, 'pos', x, y, z
+              rp = sqrt(abs(self%radius**2 - y**2 - z**2))                   ! boundary location at X axis
+              if (x<0) rp = -rp
+              x1 = m(1)%p + r1(ix-1) + h(1)*m(1)%d - self%position(1)   ! last point OUTSIDE the bnd
+              d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
+              dw = d1/(d1+m(1)%d)                                       ! interpolation weight for the last point before the bnd
+              mem(ix-1,iy,iz) = mem(ix-2,iy,iz) * dw                    ! linear interpolation for the last point before the bnd
+             ! print *, 'radius, r, rp', r, self%radius, rp
+             ! print *, 'x1, d1, dw', x1, d1, dw
+             ! print *, 'one p before', mem(ix-1,iy,iz)
+              x1 = m(1)%p + r1(ix+1) + h(1)*m(1)%d - self%position(1)   ! first point OUTSIDE the bnd
+              d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
+              dw = d1/(d1+m(1)%d)                                       ! interpolation weight for the last point before the bnd
+              mem(ix+1,iy,iz) = mem(ix+2,iy,iz) * dw                    ! linear interpolation for the last point before the bnd
+              mem(ix,iy,iz) = 0.0                                       ! zero for the bnd cell
+             ! print *, 'radius, r, rp', r, self%radius, rp
+             ! print *, 'x1, d1, dw', x1, d1, dw
+             ! print *, 'one p before, bnd', mem(ix+1,iy,iz), mem(ix,iy,iz)
             end if
           end if
         else if (iv == idx%py) then                                     ! mass flux in Y-direction
@@ -601,7 +635,7 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
             p2 = sqrt(x**2+(m(2)%p + r2(iy+1) + h(2)*m(2)%d - self%position(2))**2+z**2)
             if ((p1 > self%radius+m(2)%d*0.5).and.(p2 < self%radius+m(2)%d*0.5)) then
               !entering the boundary
-              rp = sqrt(self%radius**2 - x**2 - z**2)                   ! boundary location at Y axis
+              rp = sqrt(abs(self%radius**2 - x**2 - z**2))                   ! boundary location at Y axis
               if (y<0) rp = -rp
               x1 = m(2)%p + r2(iy-1) + h(2)*m(2)%d - self%position(2)   ! last point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
@@ -611,7 +645,7 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
                           extrapolate_antisym(y,x1,rp,mem(ix,iy-1,iz))  ! antisymmetric extrapolation from the last point before the bnd
             else if ((p1 < self%radius+m(2)%d*0.5).and.(p2 > self%radius+m(2)%d*0.5)) then
             ! leaving the boundary
-              rp = sqrt(self%radius**2 - x**2 - z**2)                   ! boundary location at Y axis
+              rp = sqrt(abs(self%radius**2 - x**2 - z**2))                   ! boundary location at Y axis
               if (y<0) rp = -rp
               x1 = m(2)%p + r2(iy-1) + h(2)*m(2)%d - self%position(2)   ! last point INSIDE the bnd
               d1 = abs(rp-y)                                            ! distance between bnd and the point outside it
@@ -621,8 +655,18 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
                           extrapolate_antisym(x1,y,rp,mem(ix,iy,iz))    ! antisymmetric extrapolation from the first point after the bnd
             else if ((p1 < self%radius+m(2)%d*0.5).and.(p2 < self%radius+m(2)%d*0.5)) then
               mem(ix,iy,iz) = 0.0                                       ! cell is well inside the boundary
-            else
-              error stop "boundaries_t: single cell for more than one bnd condition. Increase the cell number per patch!"
+            else                                                        ! special case, where a single cell gets a bc
+              rp = sqrt(abs(self%radius**2 - x**2 - z**2))                   ! boundary location at Y axis
+              if (y<0) rp = -rp
+              x1 = m(2)%p + r2(iy-1) + h(2)*m(2)%d - self%position(2)   ! last point OUTSIDE the bnd
+              d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
+              dw = d1/(d1+m(2)%d)                                       ! interpolation weight for the last point before the bnd
+              mem(ix,iy-1,iz) = mem(ix,iy-2,iz) * dw                    ! linear interpolation for the last point before the bnd
+              x1 = m(2)%p + r2(iy+1) + h(2)*m(2)%d - self%position(2)   ! first point OUTSIDE the bnd
+              d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
+              dw = d1/(d1+m(2)%d)                                       ! interpolation weight for the last point before the bnd
+              mem(ix,iy+1,iz) = mem(ix,iy+2,iz) * dw                    ! linear interpolation for the last point before the bnd
+              mem(ix,iy,iz) = 0.0                                       ! zero for the bnd cell
             end if
           end if
         else if (iv == idx%pz) then                                     ! mass flux in Z-direction
@@ -631,7 +675,7 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
             p2 = sqrt(x**2+y**2+(m(3)%p + r3(iz+1) + h(3)*m(3)%d - self%position(3))**2)
             if ((p1 > self%radius+m(3)%d*0.5).and.(p2 < self%radius+m(3)%d*0.5)) then
               !entering the boundary
-              rp = sqrt(self%radius**2 - x**2 - y**2)                   ! boundary location at Z axis
+              rp = sqrt(abs(self%radius**2 - x**2 - y**2))                   ! boundary location at Z axis
               if (z<0) rp = -rp
               x1 = m(3)%p + r3(iz-1) + h(3)*m(3)%d - self%position(3)   ! last point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
@@ -641,7 +685,7 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
                           extrapolate_antisym(z,x1,rp,mem(ix,iy,iz-1))  ! antisymmetric extrapolation from the last point before the bnd
             else if ((p1 < self%radius+m(3)%d*0.5).and.(p2 > self%radius+m(3)%d*0.5)) then
             ! leaving the boundary
-              rp = sqrt(self%radius**2 - x**2 - y**2)                   ! boundary location at Z axis
+              rp = sqrt(abs(self%radius**2 - x**2 - y**2))                   ! boundary location at Z axis
               if (y<0) rp = -rp
               x1 = m(3)%p + r3(iz-1) + h(3)*m(3)%d - self%position(3)   ! last point INSIDE the bnd
               d1 = abs(rp-z)                                            ! distance between bnd and the point outside it
@@ -652,7 +696,17 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
             else if ((p1 < self%radius+m(3)%d*0.5).and.(p2 < self%radius+m(3)%d*0.5)) then
               mem(ix,iy,iz) = 0.0                                       ! cell is well inside the boundary
             else
-              error stop "boundaries_t: single cell for more than one bnd condition. Increase the cell number per patch!"
+              rp = sqrt(abs(self%radius**2 - x**2 - y**2))                   ! boundary location at Z axis
+              if (z<0) rp = -rp
+              x1 = m(3)%p + r3(iz-1) + h(3)*m(3)%d - self%position(3)   ! last point OUTSIDE the bnd
+              d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
+              dw = d1/(d1+m(3)%d)                                       ! interpolation weight for the last point before the bnd
+              mem(ix,iy,iz-1) = mem(ix,iy,iz-2) * dw                    ! linear interpolation for the last point before the bnd
+              x1 = m(3)%p + r3(iz+1) + h(3)*m(3)%d - self%position(3)   ! first point OUTSIDE the bnd
+              d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
+              dw = d1/(d1+m(3)%d)                                       ! interpolation weight for the last point before the bnd
+              mem(ix,iy,iz+1) = mem(ix,iy,iz+2) * dw                    ! linear interpolation for the last point before the bnd
+              mem(ix,iy,iz) = 0.0                                       ! zero for the bnd cell
             end if
           end if
         end if
