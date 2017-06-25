@@ -44,7 +44,7 @@ SUBROUTINE init (self, name)
   character(len=64):: filename
   character(len=64), save:: top='../../'
   integer, save:: id_debug=-1
-  logical, save:: first_time=.true., omp_trace=.true., do_validate=.false.
+  logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.true., do_flags=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &

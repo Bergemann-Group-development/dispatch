@@ -6,7 +6,7 @@
  sec_per_report=10
 /
 &task_list_params
- job_seconds=60
+ job_seconds=79
  recv_active=t
  do_delay=f
 !sync_time=0.001        ! sync_time does not work ok multi-threaded yet
@@ -14,16 +14,27 @@
 &mpi_mesg_params
  recv_priv=t
 /
+&task_list_params
+ recv_active=t
+ !queue_unpack=t
+ !sync_time=0.02
+/
+&mpi_mesh_params
+ !send_priv=f
+ recv_priv=f
+/
 &io_params
  verbose=0
  do_trace=f
  do_debug=f
  do_output=f
+ omp_trace=f
 /
 &box_params
  size=1,1,1
 !dims=16,16,16          ! nearly full 20 core Ivy Bridge at steno
-dims=32,64,64          ! 32 nodes (64 sockets)
+!dims=32,64,64          ! 32 nodes (64 sockets)
+ per_rank=3*8 mpi_dims=2,2,2
  origin=0,0,0
 /
 &experiment_params
