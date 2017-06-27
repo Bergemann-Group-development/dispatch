@@ -259,7 +259,12 @@ SUBROUTINE header_to_patch (self, head)
   end if
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
-  timer%latency_max = max(timer%latency_max,self%latency)
+  !$omp atomic
+  timer%latency%max  = max(timer%latency%max,self%latency)
+  !$omp atomic
+  timer%latency%aver = timer%latency%aver+self%latency
+  !$omp atomic
+  timer%latency%n    = timer%latency%n+1
 END SUBROUTINE header_to_patch
 
 !> =============================================================================

@@ -47,15 +47,20 @@ SUBROUTINE init (self, label)
   real(8):: size(3) = [1.0,1.0,1.0]
   integer:: dims(3) = [4,4,4]
   integer:: mpi_dims(3) = [1,1,1]
+  integer:: per_rank(3) = [0,0,0]
   integer:: npatch, nvpatch, nbpatch, nlpatch
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
   logical:: face_nbors=.false.
   integer:: thread, icoords(3),ipos(3)
   integer, save:: itimer=0
-  namelist /box_params/ size, dims, mpi_dims, origin, face_nbors
+  namelist /box_params/ size, dims, mpi_dims, per_rank, origin, face_nbors
   !.............................................................................
   call trace_begin ('cartesian_mod::init',itimer=itimer)
   rewind (io%input); read (io%input, box_params)
+  if (any(per_rank/=0)) then
+    where (per_rank/=0) dims=per_rank*mpi_dims
+  end if
+  per_rank = dims/mpi_dims
   if (io%master) write (*, box_params)
   self%dims = dims
   self%size = size
