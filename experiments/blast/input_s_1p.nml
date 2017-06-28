@@ -48,7 +48,7 @@
 /
 
 &timestep_params
-  time_order=0
+  time_order=2
 /
 
 &refine_params
@@ -68,4 +68,13 @@
  smallc=5e-1
  riemann='hllc'
  do_isothermal=f
+/
+
+&mhd_params
+ gamma=1.666667
+ nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
+ !     cs    pa  ofd  mas  kap  eta
+/
+
+&force_params
 /

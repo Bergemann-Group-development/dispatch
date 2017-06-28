@@ -327,7 +327,11 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   self%gn = self%ub
   allocate (self%r(self%gn))
   ! initialise mesh floating point attributes
-  self%d = self%s/(self%n-1)
+  if (self%n > 1) then
+    self%d = self%s/(self%n-1)
+  else
+    self%d = self%s
+  end if
   self%o = (self%li+self%ui)*0.5
 
   ! calculate the volume centroid of the current mesh

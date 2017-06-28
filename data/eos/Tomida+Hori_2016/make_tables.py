@@ -20,14 +20,13 @@ t.us=logU
 # Add a new table d1, where the 2nd index corresponds to logU
 t.d1=np.copy(t.d)
 for ir in range(t.nr):
-    # f1 is logU(logT)
+    # f1 is logT(logU), based on non-linear logU
     f1=interpolate.interp1d(t.d[ir,:,1],t.ts,kind='cubic')
     t.d1[ir,:,0]=f1(logU)
-    # f2 = logT(logU)
-    f2=interpolate.interp1d(logU,t.d1[ir,:,0],kind='cubic')
-    logT = f2(logU)
-    # f3 = logP(logT)
+    logT = t.d1[ir,:,0]
+    # f3 = logP(logT), from original table
     f3=interpolate.interp1d(t.ts,t.d[ir,:,0],kind='cubic')
+    logT[0]=max(logT[0],t.ts[0])
     t.d1[ir,:,1]=f3(logT)
     for i in range(2,t.nvar):
         f3=interpolate.interp1d(t.ts,t.d[ir,:,i],kind='cubic')
@@ -84,7 +83,7 @@ for ir in range(t.nr):
 t.write("e/eos.dat",t.d1)
 
 # Contour plot showing constant entropy
-pl.xlim(np.log10(100),np.log10(5000))
+pl.xlim(np.log10(10),np.log10(5000))
 pl.ylim(-10,-3)
 pl.contour(t.ts,t.rs,t.d[:,:,i_s],200)
 pl.xlabel('log10(T)')

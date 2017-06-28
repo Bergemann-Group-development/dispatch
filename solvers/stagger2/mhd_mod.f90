@@ -25,14 +25,14 @@ MODULE mhd_mod
     real:: csound
     real:: cdtd
     logical:: mhd=.true.
-    real:: gamma_AD, rho_ions
-    real(8):: dt_Ohm, dt_AD, nonideal_MHD_courant
+    real:: gamma_AD, rho_ions ! ambipolar diffusion parameters
+    real(8):: dt_Ohm, dt_AD, niMHD_courant ! non-ideal MHD time-stepping variables
     logical:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
     type(force_t):: force
   contains
     procedure:: init
     procedure:: pde
-    procedure:: nonideal_MHD_courant_condition
+    procedure:: nonideal_MHD_courant_condition ! non-ideal MHD replacement for `courant_condition`
     procedure:: update
     procedure:: output
     procedure:: p2U
@@ -65,21 +65,24 @@ SUBROUTINE init (self)
   type(index_t):: idx
   integer:: i
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
-  real, save:: gamma_AD=75., rho_ions=1.
+  real, save:: gamma_AD=75., rho_ions=1., niMHD_courant=0.1
   logical, save:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
+  character(len=16), save:: eos
   namelist /mhd_params/ nu, gamma, csound, cdtd, mhd_AD, mhd_Ohm, gamma_AD, &
-    rho_ions, hardwire
+    rho_ions, niMHD_courant, hardwire, eos
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
+    eos = self%eos
     rewind (io%input)
     read (io%input, mhd_params)
     if (io%master) write (*, mhd_params)
     call timestep%init
   end if
   !$omp end critical (input_cr)
+  self%eos = eos
   self%nu = nu
   self%gamma = gamma
   self%csound = csound
@@ -92,12 +95,14 @@ SUBROUTINE init (self)
   if (mhd_Ohm) then
     self%mhd_Ohm = mhd_Ohm
     self%kind = 'stagger2_mhd_Ohm_patch'
+    self%niMHD_courant = niMHD_courant
   end if
   if (mhd_AD) then
     self%mhd_AD = mhd_AD
     self%gamma_AD  = gamma_AD
     self%rho_ions  = rho_ions
     self%kind = 'stagger2_mhd_AD_patch'
+    self%niMHD_courant = niMHD_courant
   endif
   call self%gpatch_t%init
   self%i_d  = idx%d
@@ -114,7 +119,8 @@ SUBROUTINE init (self)
     self%mesh(i)%h(2+i) = -0.5
     if (self%mhd) self%mesh(i)%h(5+i) = -0.5
   end do
-  !self%unsigned(idx%d) = .true.
+  self%unsigned(idx%d)  = .true.
+  self%pervolume(idx%s) = .true.
   call self%force%init(self%kind)
   call trace%end
 END SUBROUTINE init
@@ -137,6 +143,9 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer::      fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx,      fzz
   real, dimension(:,:,:),   pointer:: Ud_x, Ud_y, Ud_z, eta_non, eta_th, eta_Ohm, ambi, H_AD
+  real, dimension(:,:,:),   pointer:: Txx, Txy
+  real, dimension(:,:,:),   pointer::      Tyy, Tyz
+  real, dimension(:,:,:),   pointer:: Tzx,      Tzz
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   logical, save:: first_time=.true., first_AD=.true.
   !.............................................................................
@@ -198,7 +207,7 @@ SUBROUTINE pde (self)
   ! a log variable, from the table point of view.
   !-----------------------------------------------------------------------------
   ss = s/d
-  call eos%lookup (shape(d), lnx=lnd, lny=ss, pg=pg)
+  pg = self%gas_pressure(lnd,ss)
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure.  The divergence is valid
   ! in (2,gn-1)
@@ -211,6 +220,10 @@ SUBROUTINE pde (self)
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   ! The diagonal fxx is valid in (2:gn-1)
   !-----------------------------------------------------------------------------
+  call allocate_scalars (self%gn, Txx, Tyy, Tzz)
+  Txx = ddxup(ds,Ux)
+  Tyy = ddyup(ds,Uy)
+  Tzz = ddzup(ds,Uz)
   if (self%mhd) then
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -238,10 +251,9 @@ SUBROUTINE pde (self)
     pp = pg + pa + pb
     ! Total diagonal stress
     du = dx*self%nu(1)*cs
-    fxx = pp + d*(fxx - du*ddxup(ds,Ux)) - Ex
-    fyy = pp + d*(fyy - du*ddyup(ds,Uy)) - Ey
-    fzz = pp + d*(fzz - du*ddzup(ds,Uz)) - Ex
-    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
+    fxx = pp + d*(fxx - du*Txx) - Ex
+    fyy = pp + d*(fyy - du*Tyy) - Ey
+    fzz = pp + d*(fzz - du*Tzz) - Ex
   else
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -266,15 +278,16 @@ SUBROUTINE pde (self)
     !---------------------------------------------------------------------------
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
-    fxx = pp + d*(fxx - du*ddxup(ds,Ux))
-    fyy = pp + d*(fyy - du*ddyup(ds,Uy))
-    fzz = pp + d*(fzz - du*ddzup(ds,Uz))
-    !---------------------------------------------------------------------------
+    fxx = pp + d*(fxx - du*Txx)
+    fyy = pp + d*(fyy - du*Tyy)
+    fzz = pp + d*(fzz - du*Tzz)
+  end if
+  !-----------------------------------------------------------------------------
     ! du has units area per unit time, which gives velocity squared times mass
     ! density per unit time = energy per unit volume and time
-    !---------------------------------------------------------------------------
-    Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz)**2)
-  end if
+  !-----------------------------------------------------------------------------
+  Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)
+  call deallocate_scalars (Txx, Tyy, Tzz)
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
@@ -290,31 +303,26 @@ SUBROUTINE pde (self)
   fxy = ydn(Ux)*xdn(Uy)
   fyz = zdn(Uy)*ydn(Uz)
   fzx = xdn(Uz)*zdn(Ux)
-  if (self%id==io%id_debug) print *, 'DPDTZ1', fzx(19:20,19,5)
   !---------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !---------------------------------------------------------------------------
-  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(ddxdn(ds,Uy)+ddydn(ds,Ux))
-  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*(ddydn(ds,Uz)+ddzdn(ds,Uy))
-  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(ddzdn(ds,Ux)+ddxdn(ds,Uz))
-  if (self%id==io%id_debug) then
-    fzx = ddzdn(ds,Uy)
-    print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = self%nu(3)*0.5*ddzdn(ds,Uy)
-    print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = self%nu(3)*0.5*ydn1(zdn1(du))*ddzdn(ds,Uy)
-    print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = xdn(Uz)*zdn(Ux)
-    fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(ddzdn(ds,Ux)+ddxdn(ds,Uz))
-  if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5), Uy(19:20,19,4:5), Uz(19:20,18:19,5)
-  end if
+  call allocate_scalars (self%gn, Txy, Tyz, Tzx)
+  Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)
+  Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)
+  Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)
+  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*Txy
+  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*Tyz
+  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*Tzx
+  Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &
+                               yup(zup(Tyz))**2 + &
+                               zup(xup(Tzx))**2)
+  call deallocate_scalars (Txy, Tyz, Tzx)
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !---------------------------------------------------------------------------
   fxy = exp(ydn(ldx))*fxy
   fyz = exp(zdn(ldy))*fyz
   fzx = exp(xdn(ldz))*fzx
-  if (self%id==io%id_debug) print *, 'DPDTZ3', fzx(19:20,19,5)
   !---------------------------------------------------------------------------
   ! Off-diagonal Maxwell stress
   !---------------------------------------------------------------------------
@@ -339,7 +347,6 @@ SUBROUTINE pde (self)
     fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
     fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
     fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
-    if (self%id==io%id_debug) print *, 'DPDTZ4', fzx(19:20,19,5)
   end if
   !-----------------------------------------------------------------------------
   ! Momentum equations.  The ddxdn(fxx) part is valid in (3:gn-1), and hence px
@@ -348,30 +355,12 @@ SUBROUTINE pde (self)
   dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)
   dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)
   dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
-  if (self%id==io%id_debug) then
-    print *, 'DPDTZ', ds,    dpdtz(19,19,5), fzz(19,19,4:5)
-    dpdtz = - ddxup1(ds,fzx)
-    print *, 'DPDTZ', ds(1), dpdtz(19,19,5), fzx(19:20,19,5)
-    dpdtz = - ddyup1(ds,fyz)
-    print *, 'DPDTZ', ds(2), dpdtz(19,19,5), fyz(19,19:20,5)
-    dpdtz = - ddzdn1(ds,fzz)
-    print *, 'DPDTZ', ds(2), dpdtz(19,19,5), fzz(19,19,4:5)
-    dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
-  end if
   !-----------------------------------------------------------------------------
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (io%verbose>1 .and. self%position(1)==0d0.and.self%position(2)==0d0) then
-    print *, self%id, 'VELOC', Ux(18,18,5), Uy(18,18,5), Uz(18,18,5), pg(18,18,5)
-    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
   if (associated(self%force%selected)) &
     dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
-  else
-    if (associated(self%force%selected)) &
-      dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-  end if
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
@@ -399,11 +388,12 @@ SUBROUTINE pde (self)
     J = curl_dn(ds,B)
     if (self%mhd_Ohm) then
       eta_Ohm = self%nu(6)
-      self%dt_Ohm = 0.1*minval(dx**2/eta_Ohm)
+      self%dt_Ohm = self%niMHD_courant*minval(dx**2/eta_Ohm)
+      E = eta_Ohm*J
     else
       self%dt_Ohm = 100.
+      E = self%nu(6)*edge(du)*J
     end if
-    E = self%nu(6)*edge(du)*J
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
     if (self%gamma/=1.0) &
       dsdt = dsdt + Q*d/pg
@@ -448,7 +438,7 @@ SUBROUTINE pde (self)
       dBdt(:,:,:,1) = dBdt(:,:,:,1) + (ddyup(ds, (Ud_x*By - Ud_y*Bx)) - ddzup(ds, (Ud_z*Bx - Ud_x*Bz)) )
       dBdt(:,:,:,2) = dBdt(:,:,:,2) + (ddzup(ds, (Ud_y*Bz - Ud_z*By)) - ddxup(ds, (Ud_x*By - Ud_y*Bx)) )
       dBdt(:,:,:,3) = dBdt(:,:,:,3) + (ddxup(ds, (Ud_z*Bx - Ud_x*Bz)) - ddyup(ds, (Ud_y*Bz - Ud_z*By)) )
-      self%dt_AD = 0.1*minval(self%gamma_AD*self%rho_ions*d/(Bx**2+By**2+Bz**2)*dx**2)
+      self%dt_AD = self%niMHD_courant*minval(self%gamma_AD*self%rho_ions*d/(Bx**2+By**2+Bz**2)*dx**2)
       if (self%gamma==1.0) then
         dsdt = 0.
       else
@@ -484,36 +474,36 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
   real(8):: dt_AD_inp
   real(8):: dt_Ohm_inp
   !.............................................................................
-  call trace%begin('mhd_t%nonideal_MHD_courant')
+  call trace%begin('mhd_t%nonideal_MHD_courant_condition')
   call self%lock%set ('nonideal_MHD_courant')
   if (io%verbose>2) &
-    print*, 'nonideal_MHD_courant: u_max, ds', self%u_max, minval(self%ds)
+    print*, 'nonideal_MHD_courant_condition: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
     self%dtime = self%dt_fixed
-    self%nonideal_MHD_courant = self%dtime*self%u_max/minval(self%ds)
+    self%courant = self%dtime*self%u_max/minval(self%ds)
   else if (self%u_fixed > 0.0) then
-    self%dtime = self%nonideal_MHD_courant*minval(self%ds)/self%u_fixed
+    self%dtime = self%courant*minval(self%ds)/self%u_fixed
   else
-    self%dtime = self%nonideal_MHD_courant*minval(self%ds)/self%u_max
+    self%dtime = self%courant*minval(self%ds)/self%u_max
   endif
+  !-----------------------------------------------------------------------------
+  ! Non-ideal time step considerations; these are calculated in `pde`.
+  !-----------------------------------------------------------------------------
+  if (self%mhd_AD ) self%dtime = min (self%dtime, dt_AD_inp )
+  if (self%mhd_Ohm) self%dtime = min (self%dtime, dt_Ohm_inp)
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
   if (self%out_time > 0.0) &
     self%dtime = min (self%dtime, self%out_time)
-  if (self%mhd_AD) then
-    self%dtime = min (self%dtime, dt_AD_inp)
-  end if
-  if (self%mhd_Ohm) then
-    self%dtime = min (self%dtime, dt_Ohm_inp)
-  end if
+
   self%dt(self%it) = self%dtime
-  !self%dt(:) = self%dtime
-  !print*,'dt', self%dt
+
   if (io%verbose>3) &
-    print'(a,i7,f12.6,f8.4,1p,e10.2)', 'nonideal_MHD_courant:', &
-      self%id, self%dtime, self%nonideal_MHD_courant, self%u_max
+    print'(a,i7,f12.6,f8.4,1p,e10.2)', 'nonideal_MHD_courant_condition:', &
+      self%id, self%dtime, self%courant, self%u_max
   call self%lock%unset ('nonideal_MHD_courant')
+
   call trace%end
 END SUBROUTINE nonideal_MHD_courant_condition
 
@@ -669,14 +659,21 @@ SUBROUTINE S2e(self, s, it)
 END SUBROUTINE S2e
 
 !> =============================================================================
-FUNCTION gas_pressure (self) RESULT (pg)
+FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
   class(mhd_t):: self
+  real, dimension(:,:,:), pointer:: lnd, ss
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
-  if (self%gamma==1.0) then
-    pg = self%d*self%csound**2
+  if (trim(self%eos)=='ideal') then
+    self%d => self%mem(:,:,:,self%i_d,self%it,1)
+    if (self%gamma==1.0) then
+      pg = self%d*self%csound**2
+    else
+      self%s => self%mem(:,:,:,self%i_s,self%it,1)
+      pg = self%d**self%gamma*exp(self%s/self%d*(self%gamma-1))
+    end if
   else
-    pg = self%d**self%gamma*exp(self%s/self%d*(self%gamma-1))
+    call eos%lookup (shape(lnd), lnx=lnd, lny=ss, pg=pg)
   end if
 END FUNCTION gas_pressure
 
@@ -715,13 +712,13 @@ END FUNCTION cell_gas_pressure
 !> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
 !> =============================================================================
-FUNCTION gas_temperature (self) RESULT (tmp)
+FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
   class(mhd_t):: self
+  real, dimension(:,:,:), pointer:: lnd, ss
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
   !-----------------------------------------------------------------------------
   associate (d => self%mem(:,:,:,  1,self%it,1))
-  tmp = gas_pressure(self)/d
-
+  tmp = self%gas_pressure(lnd,ss)/d
   if (io%verbose > 2) then
     if (any(tmp<0)) then
       error stop "mhd_t%gas_temperature: T<0"
@@ -766,11 +763,11 @@ SUBROUTINE log_density (self, v)
 END SUBROUTINE
 
 !> =============================================================================
-SUBROUTINE log_pressure (self, v)
+SUBROUTINE log_pressure (self, lnd, ss, v)
   class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
+  real, dimension(:,:,:), pointer:: lnd, ss, v
   !-----------------------------------------------------------------------------
-  v = log(gas_pressure(self))
+  v = log(self%gas_pressure(lnd,ss))
 END SUBROUTINE
 
 !> =============================================================================

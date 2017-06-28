@@ -13,18 +13,20 @@
 &task_list_params
  do_delay=t
  recv_active=t          ! IMPORTANT
+ queue_unpack=t         ! CHECK
  retry_stalled=10
  sync_time=0.003
 /
 &mpi_mesg_params
  delay_ms=300
  send_priv=t            ! IMPORTANT
+ recv_priv=f            ! CHECK
 /
 &timer_params
  sec_per_report=5
 /
 &io_params
- verbose=2
+ verbose=0
  do_validate=f
  do_trace=t
  do_debug=f

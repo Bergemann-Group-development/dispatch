@@ -162,7 +162,7 @@ SUBROUTINE update (self)
     end if
     if (self%is_set (bits%spherical)) then
       do iv=self%i_px,self%i_pz
-        call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,2), 0.0, self%mesh, iv)
+        call self%boundaries%spherical_ns (self%mem(:,:,:,iv,self%it,2), 0.0, self%mesh, iv)
       end do
     end if
   !-----------------------------------------------------------------------------
@@ -172,8 +172,8 @@ SUBROUTINE update (self)
     !--------------------------------------------------------------------------
     ! Update the MHD state
     !--------------------------------------------------------------------------
-    call self%output
     call self%boundary_conditions (self%it)
+    call self%output
     call self%debug ('after BCs')
     call self%mhd_t%update
   end if
@@ -267,9 +267,9 @@ SUBROUTINE boundary_conditions (self, it)
         call self%boundaries%spherical (self%mem(:,:,:,self%i_e,it,2), 0.0, self%mesh, self%i_e)
       end if
       do iv=self%i_px,self%i_pz
-        call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
+        call self%boundaries%spherical_ns (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
         if (self%nw>1) &
-          call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
+          call self%boundaries%spherical_ns (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
       end do
     end if
     !------------------------------------------------------------------------
@@ -377,19 +377,17 @@ SUBROUTINE edge_boundary_conditions (self, it)
                             call self%check_density ('after u BC')
   call self%U2p(u,it)                                                      ! convert velocities to momentum
   !---------------------------------------------------------------------
-  ! Extrapolate in per unit mass variables
+  ! Energy: set energy per unit mass equal to initial value
   !---------------------------------------------------------------------
-  if (self%kind(1:9) == 'stagger2_') then
+  associate (ee0=>atmosphere%external%energy)
+  call self%e2E_th(e_th, it)                                            ! thermal energy per unit mass
+  call self%boundaries%constant (e_th, self%i_e, ee0)                   ! extrapolate in the log
+  call self%E_th2e(e_th, it)                                            ! convert to energy per unit volume
+  if (self%id == io%id_debug) then
     s => self%mem(:,:,:,self%i_s,it,1)
-    ss => e_th                                                          ! borrow local allocation
-    ss = s/d
-    call self%boundaries%extrapolate(ss, self%i_s)                      ! extrapolate in entropy per unit mass
-    s = ss*d
-  else
-    call self%e2E_th(e_th, it)                                          ! thermal energy per unit mass
-    call self%boundaries%log_extrapolate(e_th, self%i_e)                ! extrapolate in the log
-    call self%E_th2e(e_th, it)                                          ! convert to energy per unit volume
+    print *, self%id, 'BC outer', ee0, minval(e_th), maxval(e_th), minval(s), maxval(s)
   end if
+  end associate
                             call self%check_nan ('after th2e')
   deallocate (u,e_th)
   call trace%end

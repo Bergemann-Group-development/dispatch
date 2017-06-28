@@ -31,7 +31,7 @@ PROGRAM test
   allocate (cylindrical_mesh:: meshSingle)
   meshSingle%type = 'cylindrical_mesh'
   meshSingle%idir = 3
-  call meshSingle%init(10,2,1.0d0,0.5d0,0.0d0)
+  call meshSingle%init(11,2,1.0d0,0.5d0,0.0d0)
   call meshSingle%init_geometry(3,0.0d0)
   call meshSingle%print()
   print'(a,1pg13.6E2,a)',"dvol3f(1) = ",meshSingle%dvol3f(1), " (should be 0.1)"
@@ -47,12 +47,13 @@ PROGRAM test
   allocate (spherical_mesh:: meshSingle)
   meshSingle%type = 'spherical_mesh'
   meshSingle%idir = 2
-  call meshSingle%init(10,s=0.5d0*pi,p=0.0d0)
+  call meshSingle%init(11,s=0.5d0*pi,p=0.0d0)
   call meshSingle%init_geometry(meshSingle%idir,0.0d0)
   call meshSingle%print()
   print*,associated(meshSingle%dvol3f)," (should be F)"
   if (associated(meshSingle%dvol3f)) print*,meshSingle%dvol3f(1)
-  print'(a,1pg13.6E2,a)',"h32f(3) = ",meshSingle%h32f(3)," (should be 0.0)"
+  print'(a,1pg13.6E2,a)',"h32f(3) = ",meshSingle%h32f(3)," (should be ?)"
+  print'(a,1pg13.6E2,a)',"h32c(3) = ",meshSingle%h32c(3)," (should be ?)"
   deallocate (meshSingle)
   print*,''
 
@@ -81,7 +82,7 @@ PROGRAM test
     meshCart(i)%h = 0.0
     meshCart(i)%h(i) = -0.5
   end do
-  print'(3(1pg12.4E2),a)',meshCart%d," (should be 6.25e-2 x3)"
+  print'(3(1pg12.4E2),a)',meshCart%d," (should be 6.6667e-2 x3)"
   print'(8(1pg11.3))',meshCart(1)%h
   print*,"(the first element should be -0.5; the rest should be 0)"
   print*,''
@@ -110,7 +111,7 @@ PROGRAM test
   print*,repeat("-",20)
 
   ! -------- cylindrical; the 1-direction is collapsed in this example --------
-  call MeshFactory(mesh_types%cylindrical, meshCyl, n=[1,10,8], &
+  call MeshFactory(mesh_types%cylindrical, meshCyl, n=[1,11,9], &
                       s=[1.0d0,0.5d0,2.0d0*pi], p=[0.0d0,0.0d0,0.0d0], &
                       llc_native=[0.0d0,0.1d0,0.5d0*pi],ng=[0,3,3])
   call meshCyl(1)%print()
@@ -288,7 +289,7 @@ PROGRAM test
 
   ! ---- Take 1: Cartesian ----
   allocate(patch_t :: patch)
-  call MeshFactory(mesh_types%cartesian, patch%mesh, n=[10,10,1], ng=[2,2,0])
+  call MeshFactory(mesh_types%cartesian, patch%mesh, n=[11,11,1], ng=[2,2,0])
   call patch%mesh(1)%print()
   call patch%mesh(2)%print()
   call patch%mesh(3)%print()
@@ -309,7 +310,7 @@ PROGRAM test
 
   ! ---- Take 2: cylindrical ----
   allocate(patch_t :: patch)
-  patch%n = [2,3,4]
+  patch%n = [3,4,5]
   patch%size = [2.0,3.0,2.0*real(pi,kind=4)]
   patch%position = [0.25,0.30,0.35] ! in Cartesian coords.
   call MeshFactory(mesh_types%cylindrical, patch%mesh, n=patch%n, s=patch%size, &

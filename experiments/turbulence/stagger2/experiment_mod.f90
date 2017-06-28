@@ -21,6 +21,7 @@ MODULE experiment_mod
   USE timer_mod
   USE link_mod
   USE eos_mod
+  USE omp_timer_mod
   implicit none
   private
   type, public, extends(mhd_t):: experiment_t
@@ -37,7 +38,8 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer, save:: itimer=0
-  real, pointer, dimension(:,:,:)::  d, e, s, ss, lnee
+  real, pointer, dimension(:,:,:)::  d, e, s, ss, lnee, pg, lnd
+  real(8):: g1, wc
   !----------------------------------------------------------------------------
   call trace_begin('experiment_mod::init', itimer=itimer)
   !----------------------------------------------------------------------------
@@ -55,6 +57,7 @@ SUBROUTINE init (self)
   ! Initial conditions, loading inially the internal energy per unit volume in
   ! the self%i_e slot
   !----------------------------------------------------------------------------
+  self%eos = eos%name
   call self%mhd_t%init
   !----------------------------------------------------------------------------
   ! Convert initial thermal energy per unit volume to entropy per unit volume
@@ -62,14 +65,48 @@ SUBROUTINE init (self)
   d => self%mem(:,:,:,self%i_d,self%it,1)
   e => self%mem(:,:,:,self%i_e,self%it,1)
   s => self%mem(:,:,:,self%i_s,self%it,1)
-  allocate (ss  (self%gn(1),self%gn(2),self%gn(3)))
-  allocate (lnee(self%gn(1),self%gn(2),self%gn(3)))
-  lnee = log(e/d)
-  !print *, minval(lnee), maxval(lnee)
-  call eose%lookup (shape(d), x=d, lny=lnee, ss=ss)
-  !print *, minval(ss), maxval(ss)
-  s = ss*d
-  deallocate (ss,lnee)
+  if (trim(self%eos)=='ideal') then
+    s = d*log(e*(self%gamma-1d0)/d**self%gamma)/(self%gamma-1d0)
+  else
+    allocate (ss  (self%gn(1),self%gn(2),self%gn(3)))
+    allocate (lnee(self%gn(1),self%gn(2),self%gn(3)))
+    allocate (pg  (self%gn(1),self%gn(2),self%gn(3)))
+    lnee = log(e/d)
+    wc = wallclock()
+    call eose%table%lookup (shape(d), x=d, lny=lnee, pg=pg, ss=ss)
+    if (self%id==io%id_debug) then
+      print 1, 'eos: '//trim(self%eos), (wallclock()-wc)/product(shape(d))
+      print 1, 'd,e,lnee,pg,ss :', &
+               minval(d),    maxval(d), &
+               minval(e),    maxval(e), &
+               minval(lnee), maxval(lnee), &
+               minval(pg),   maxval(pg), &
+               minval(ss),   maxval(ss)
+      1 format(1x,a,5(2x,1p,2e12.4))
+      lnd => lnee
+      lnd = log(d)
+      pg = self%gas_pressure (lnd, ss)
+      print 1, 'gas_pressure:', minval(pg), maxval(pg)
+      wc = wallclock()
+      call eos%table%lookup (shape(d), x=d, lny=ss, pg=pg)
+      print 1, 'pg(from eos):', minval(pg), maxval(pg), &
+        (wallclock()-wc)/product(shape(d))
+      wc = wallclock()
+      call eos%table%lookup (shape(d), x=d, lny=ss, pg=pg)
+      print 1, 'time with d :', (wallclock()-wc), &
+                                (wallclock()-wc)/product(shape(d))
+      wc = wallclock()
+      call eos%table%lookup (shape(d), lnx=lnd, lny=ss, pg=pg)
+      print 1, 'time with pg:', (wallclock()-wc), &
+                                (wallclock()-wc)/product(shape(d))
+      wc = wallclock()
+      call eos%table%lookup (shape(d), lnx=lnd, lny=ss)
+      print 1, 'time with ln:', (wallclock()-wc), &
+                                (wallclock()-wc)/product(shape(d))
+    end if
+    s = ss*d
+    deallocate (ss,lnee,pg)
+  end if
   !----------------------------------------------------------------------------
   ! In case of restarts, set the time properly
   !----------------------------------------------------------------------------

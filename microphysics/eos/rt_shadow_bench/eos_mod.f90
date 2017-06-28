@@ -46,14 +46,18 @@ SUBROUTINE init (self)
   call trace%begin ('eos_t%init')
   if (io%master) print *, &
  '------------------------ ideal equation-of-state -----------------------------'
+  call scaling%init
   !$omp critical (init_cr)
   if (first_time) then
     gamma = self%gamma
     rewind (io%input); read (io%input, eos_params, iostat=iostat)
     if (io%master) write (io%output, eos_params)
     self%gamma = gamma
-    self%t0   = 1./(290./scaling%temp)
+    self%t0   = 1./(290.)!/scaling%temp)
     self%rho0 = 1./(1.  /scaling%d)
+    print *, cgs%stefan, cgs%pi, scaling%temp, scaling%f
+    !self%sc_stf = cgs%stefan/scaling%m*scaling%t**3*scaling%temp**4
+    print *, self%sc_stf
     self%sc_stf = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
   end if
   !$omp end critical (init_cr)
@@ -83,56 +87,59 @@ END FUNCTION
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, dim, ee, lnd, lne, d, pg, tt, rk, src, gamma)
+SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
-  real, dimension(:,:,:),   optional, pointer :: ee, lnd, d, lne, pg, tt
+  real, dimension(:,:,:),   optional, pointer :: lnx, x, lny, y, pg, tt
   real, dimension(:,:,:,:), optional, pointer :: src, rk
-  real, dimension(:,:,:),             pointer :: ee_loc, d_loc
+  real, dimension(:,:,:),             pointer :: x_loc, y_loc
   integer:: i
+  integer, save:: itimer = 0
   !-----------------------------------------------------------------------------
+  call trace%begin ('eos_t: lookup', itimer=itimer)
   if (present(gamma)) then
     self%gamma = gamma
   end if
   !-----------------------------------------------------------------------------
-  if (present(d)) then
-    d_loc => d
-  else if (present(lnd)) then
-    allocate (d_loc(dim(1),dim(2),dim(3)))
-    d_loc = exp(lnd)
+  if (present(y)) then
+    y_loc => y
+  else if (present(lny)) then
+    allocate (y_loc(dim(1),dim(2),dim(3)))
+    y_loc = exp(lny)
   else
     call mpi%abort ('eos_t: missing density')
   end if
   !-----------------------------------------------------------------------------
-  if (present(ee)) then
-    ee_loc => ee
-  else if (present(lne)) then
-    allocate (ee_loc(dim(1),dim(2),dim(3)))
-    ee_loc = exp(lne)
+  if (present(x)) then
+    x_loc => x
+  else if (present(lnx)) then
+    allocate (x_loc(dim(1),dim(2),dim(3)))
+    x_loc = exp(lnx)
   else
     call mpi%abort ('eos_t: missing internal energy')
   end if
   !-----------------------------------------------------------------------------
   if (present(tt)) then
-    tt = (self%gamma-1.0)*ee_loc
+    tt = (self%gamma-1.0)*x_loc
   end if
   if (present(src)) then
     do i=1,size(src,4)
-      src(:,:,:,i) = self%sc_stf*((self%gamma-1.0)*ee_loc)**4
+      src(:,:,:,i) = self%sc_stf*((self%gamma-1.0)*x_loc)**4
     end do
   end if
   if (present(pg)) then
-    pg = (self%gamma-1.0)*d_loc*ee_loc
+    pg = (self%gamma-1.0)*y_loc*x_loc
   end if
   if (present(rk)) then
     do i=1,size(rk,4)
-      rk(:,:,:,i) = (((self%gamma-1.0)*ee_loc*self%t0*scaling%temp)**(-3.5) * &
-       (d_loc*self%rho0*scaling%d)**2)* scaling%m/scaling%l**2  
+      rk(:,:,:,i) = (((self%gamma-1.0)*x_loc*self%t0*scaling%temp)**(-3.5) * &
+       (y_loc*self%rho0*scaling%d)**2)* scaling%m/scaling%l**2
     end do
   end if
-  if (present(lne)) deallocate(ee_loc)
-  if (present(lnd)) deallocate( d_loc)
+  if (present(lnx)) deallocate(x_loc)
+  if (present(lny)) deallocate( y_loc)
+    call trace%end(itimer)
 END SUBROUTINE lookup
 
 END MODULE eos_mod

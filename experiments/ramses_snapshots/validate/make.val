@@ -28,7 +28,7 @@ rm -f *.o *.mod *.stackdump
  [ FC ] gpatch_mod.o
  [ FC ] riemann_mod.o
  [ FC ] eos_mod.o
- [ FC ] cgs_mod.o
+ [ FC ] units_mod.o
  [ FC ] scaling_mod.o
  [ FC ] force_mod.o
  [ FC ] mhd_mod.o

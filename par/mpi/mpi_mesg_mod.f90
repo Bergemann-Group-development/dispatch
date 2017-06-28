@@ -22,6 +22,7 @@ MODULE mpi_mesg_mod
     integer, pointer:: reqs(:) => null()
     integer:: nbuf, nreq, req=0, sender, id, ntry=0
     integer:: tag=2**30
+    real(8):: test_next=0d0
   contains
     procedure:: send
     procedure:: recv
@@ -83,7 +84,7 @@ MODULE mpi_mesg_mod
   type(mpi_mesg_t), public:: mpi_mesg
   type(mesg_list_t), save, public:: unpk_list, sent_list, recv_list
   !$omp threadprivate (unpk_list,sent_list,recv_list)
-  real, save:: delay_ms=3.0
+  real, save:: delay_ms=3.0, test_time=20d-3
   integer, save:: min_nq=10                     ! min ready q size for MPI_Test
   integer, save:: max_sent=5                    ! max outstanding patch sends
   integer, save:: max_recv=100                  ! max outstanding patch recvs
@@ -327,7 +328,6 @@ SUBROUTINE test_all (self, flag)
     print*,'WARNING: test_all', self%nreq, associated(self%reqs)
     return
   end if
-  call trace%begin ('mesg_t%test_all', itimer=itimer)
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
@@ -343,7 +343,6 @@ SUBROUTINE test_all (self, flag)
     write (io_unit%log,*) wallclock(), self%id, ' test_all flag =', flag
     flush (io_unit%log)
   end if
-  call trace_end
 END SUBROUTINE test_all
 
 !> =============================================================================
@@ -511,7 +510,7 @@ SUBROUTINE init (self)
   class(mpi_mesg_t):: self
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, wait, send_wait, send_priv, &
-                             recv_priv
+                             recv_priv, test_time
   integer:: iostat
   !.............................................................................
   if (self%initialized) return
@@ -815,17 +814,26 @@ FUNCTION test_recv (self) RESULT (flag)
   logical:: flag
 #ifdef MPI
   integer:: stat(MPI_STATUS_SIZE)
+  real(8):: now
   !.............................................................................
+  now = wallclock()
+  if (now < self%test_next) return
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     call MPI_TEST (self%req, flag, stat, ierr)
     !$omp end critical (mpi_cr)
+  else if (wait) then
+    call MPI_WAIT (self%req, stat, ierr)
+    flag = .true.
   else
     call MPI_TEST (self%req, flag, stat, ierr)
   end if
   if (flag) then
     self%id = stat(MPI_TAG)
   end if
+  self%test_next = now + test_time
+  !$omp atomic
+  timer%n_test = timer%n_test + 1
 #else
   flag = .true.
 #endif

@@ -87,67 +87,101 @@ class Patch(Task):
         return v[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
 
     def stripit(self):
-        '''Remove guard cells from cached arrays'''
-        if not 'd' in dir(self):
-            self.cache()
-        self.d  = self.stripv (self.d)
-        self.e  = self.stripv (self.e)
-        self.s  = self.stripv (self.s)
-        self.u1 = self.stripv (self.u1)
-        self.u2 = self.stripv (self.u2)
-        self.u3 = self.stripv (self.u3)
-        self.p1 = self.stripv (self.p1)
-        self.p2 = self.stripv (self.p2)
-        self.p3 = self.stripv (self.p3)
+        if self.kind[0:9]=='rt_solver':
+            self.t = self.stripv(self.t)
+            self.Q = self.stripv(self.Q)
+        else:
+            '''Remove guard cells from cached arrays'''
+            if not 'd' in dir(self):
+                self.cache()
+            self.d  = self.stripv (self.d)
+            self.e  = self.stripv (self.e)
+            self.s  = self.stripv (self.s)
+            self.u1 = self.stripv (self.u1)
+            self.u2 = self.stripv (self.u2)
+            self.u3 = self.stripv (self.u3)
+            self.p1 = self.stripv (self.p1)
+            self.p2 = self.stripv (self.p2)
+            self.p3 = self.stripv (self.p3)
+            if self.nvar>=8:
+                self.b1 = self.stripv (self.b1)
+                self.b2 = self.stripv (self.b2)
+                self.b3 = self.stripv (self.b3)
         l=self.nghost[0]; u=l+self.n[0]; self.x = self.x[l:u]
         l=self.nghost[1]; u=l+self.n[1]; self.y = self.y[l:u]
         l=self.nghost[2]; u=l+self.n[2]; self.z = self.z[l:u]
 
     def cache(self):
-        #if not 'd' in dir(self):
-        self.d =self.data[:,:,:,self.varidx['d']]
-        self.p1=self.data[:,:,:,self.varidx['p1']]
-        self.p2=self.data[:,:,:,self.varidx['p2']]
-        self.p3=self.data[:,:,:,self.varidx['p3']]
-        g1=self.gamma-1.0
-        if self.kind[0:7]=='stagger':
-            logd=np.log(self.d)
-            self.u1=su.xup(self.p1/np.exp(su.xdn(logd)))
-            self.u2=su.yup(self.p2/np.exp(su.ydn(logd)))
-            self.u3=su.zup(self.p3/np.exp(su.zdn(logd)))
-            if self.kind[0:9]=='stagger2_':
-                self.s =self.data[:,:,:,self.varidx['s']]/self.d
-                self.e =np.exp(self.s*g1+logd*g1)/g1
-            elif self.kind[0:9]=='stagger2e':
+        if self.kind[0:9]=='rt_solver':
+            self.Q = self.data[:,:,:,self.varidx['Q']]
+            self.t = self.data[:,:,:,self.varidx['t']]
+        else:
+            #if not 'd' in dir(self):
+            self.d =self.data[:,:,:,self.varidx['d']]
+            self.p1=self.data[:,:,:,self.varidx['p1']]
+            self.p2=self.data[:,:,:,self.varidx['p2']]
+            self.p3=self.data[:,:,:,self.varidx['p3']]
+            if self.nvar>=8:
+                self.b1=self.data[:,:,:,self.varidx['b1']]
+                self.b2=self.data[:,:,:,self.varidx['b2']]
+                self.b3=self.data[:,:,:,self.varidx['b3']]
+            g1=self.gamma-1.0
+            if self.kind[0:7]=='stagger':
+                logd=np.log(self.d)
+                self.u1=su.xup(self.p1/np.exp(su.xdn(logd)))
+                self.u2=su.yup(self.p2/np.exp(su.ydn(logd)))
+                self.u3=su.zup(self.p3/np.exp(su.zdn(logd)))
+                if self.kind[0:9]=='stagger2_':
+                    self.s =self.data[:,:,:,self.varidx['s']]/self.d
+                    self.e =np.exp(self.s*g1+logd*g1)/g1
+                elif self.kind[0:9]=='stagger2e':
+                    self.e =self.data[:,:,:,self.varidx['e']]/self.d
+                    pg=self.d*self.e*g1
+                    self.s=np.log(pg/self.d**self.gamma)/g1
+            elif self.kind[0:6]=='ramses':
                 self.e =self.data[:,:,:,self.varidx['e']]/self.d
+                self.u1=self.p1/self.d
+                self.u2=self.p2/self.d
+                self.u3=self.p3/self.d
+                self.e=self.e-0.5*(self.u1**2+self.u2**2+self.u3**2)
                 pg=self.d*self.e*g1
                 self.s=np.log(pg/self.d**self.gamma)/g1
-        elif self.kind[0:6]=='ramses':
-            self.e =self.data[:,:,:,self.varidx['e']]/self.d
-            self.u1=self.p1/self.d
-            self.u2=self.p2/self.d
-            self.u3=self.p3/self.d
-            self.e=self.e-0.5*(self.u1**2+self.u2**2+self.u3**2)
-            pg=self.d*self.e*g1
-            self.s=np.log(pg/self.d**self.gamma)/g1
-        #p=np.max(p,1e-35)
+            #p=np.max(p,1e-35)
 
     def vars(self):
         '''Make arrays available in a .var dict'''
-        if not 'd' in dir(self):
-            self.cache()
+        if self.kind[0:9]!='rt_solver':
+            if not 'd' in dir(self):
+                self.cache()
         if not 'var' in dir(self):
-            self.var={'d':self.d,\
-                      'e':self.e,\
-                      's':self.s,\
-                     'p1':self.p1,\
-                     'p2':self.p2,\
-                     'p3':self.p3,\
-                     'u1':self.u1,\
-                     'u2':self.u2,\
-                     'u3':self.u3,\
-                   'logd':np.log10(self.d),\
-                   'loge':np.log10(self.e)}
+            if self.nvar>7:
+                self.var={'d':self.d,\
+                        'e':self.e,\
+                        's':self.s,\
+                        'p1':self.p1,\
+                        'p2':self.p2,\
+                        'p3':self.p3,\
+                        'u1':self.u1,\
+                        'u2':self.u2,\
+                        'u3':self.u3,\
+                        'b1':self.b1,\
+                        'b2':self.b2,\
+                        'b3':self.b3,\
+                    'logd':np.log10(self.d),\
+                    'loge':np.log10(self.e)}
+            else:
+                 self.var={'d':self.d,\
+                        'e':self.e,\
+                        's':self.s,\
+                        'p1':self.p1,\
+                        'p2':self.p2,\
+                        'p3':self.p3,\
+                        'u1':self.u1,\
+                        'u2':self.u2,\
+                        'u3':self.u3,\
+                    'logd':np.log10(self.d),\
+                    'loge':np.log10(self.e)}
+                
 
 def variable_indices(solver_type, read_derivs=False):
     """
@@ -193,7 +227,8 @@ def variable_indices(solver_type, read_derivs=False):
                    's1': 4, 's2': 5, 's3': 6,
                    'b1': 7, 'b2': 8, 'b3': 9}
     elif solver_type.lower() == 'rt_solver':
-        indices = {'dedt':  0}
+        indices = {'Q':  0,
+                   't': 1}
     else:
         raise Exception("Unrecognised solver type! => "+solver_type.lower())
     return indices

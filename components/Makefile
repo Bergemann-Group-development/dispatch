@@ -11,4 +11,5 @@ ray_geometry_v2_mod.o   : io_mod.o trace_mod.o
 ray_geometry_v3_mod.o   : io_mod.o trace_mod.o
 setup_mod.o             : io_mod.o mpi_mod.o scaling_mod.o opacity_mod.o eos_mod.o
 volleyball_mod.o        : io_mod.o trace_mod.o bits_mod.o mesh_mod.o task_mod.o task_list_mod.o experiment_mod.o
-boundaries_mod.o        : io_mod.o trace_mod.o mpi_mod.o bits_mod.o mesh_mod.o
+boundaries_mod.o        : io_mod.o trace_mod.o mpi_mod.o bits_mod.o mesh_mod.o index_mod.o
+rt_boundaries_mod.o     : io_mod.o trace_mod.o mpi_mod.o bits_mod.o mesh_mod.o

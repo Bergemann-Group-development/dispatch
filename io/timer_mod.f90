@@ -10,14 +10,20 @@ MODULE timer_mod
   private
   integer, parameter:: maxproc=100
   integer, save:: ntimer=0
+  type:: latency_t
+    real:: max=0.0
+    real(8):: aver=0d0
+    integer:: n=0
+  end type
   type:: timer_t
     integer(8):: calls(maxproc)=0
     real(8), dimension(maxproc):: start=0d0, total=0d0
     real(8):: bytes_recv=0.0_8
-    integer(8):: n_recv=0_8
+    integer(8):: n_recv=0_8, n_test=0_8
     integer:: nq_send_max=0
     integer:: nq_recv_max=0
     real:: gb=0.0
+    type(latency_t):: latency
   contains
     procedure:: init
     procedure:: begin
@@ -184,9 +190,15 @@ SUBROUTINE print ()
     print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
       sec, 'wall sec'
     2 format(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))
+    timer%latency%aver = timer%latency%aver/timer%latency%n
     print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
-      timer%nq_send_max, timer%nq_recv_max
-    3 format(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8," nq_recv_max")
+      timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
+    3 format(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
+      " nq_recv_max",2f8.3," max, aver latency",i8, " n_test")
+    timer%latency%max  = 0.0
+    timer%latency%aver = 0d0
+    timer%latency%n    = 0
+    timer%n_test = 0_8
   end if
   if (omp%master .and. io_unit%verbose>0) then
     write (io_unit%mpi,2) "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &

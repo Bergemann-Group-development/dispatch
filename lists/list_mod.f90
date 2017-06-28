@@ -33,6 +33,8 @@ MODULE list_mod
     integer:: nac=0                     ! active tasks
     real(8):: lc(3) = +huge(0d0)        ! lower corner
     real(8):: uc(3) = -huge(0d0)        ! upper corner
+    real(8):: llc(3) = +huge(0d0)       ! lower left corner
+    real(8):: urc(3) = -huge(0d0)       ! upper right corner
     real(8):: position(3) = 0.0_8       ! center offset
     real(8):: size(3) = 1.0_8           ! full extent = uc-lc
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0

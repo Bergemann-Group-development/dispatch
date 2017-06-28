@@ -16,6 +16,7 @@ class task():
     def update(self):
         self.t=self.t+self.dt
     def show(self,color=0.7):
-        image.rectangle(self.extent,color)
+        #print self.extent
+        self.im.rectangle(self.extent,color)
     def info(self):
-        print 'id:',self.id,' llc:',self.llc,' t:',self.t
+        print 'id:',self.id,' llc:',self.llc,' t:',self.t,self.dt

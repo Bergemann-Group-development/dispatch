@@ -84,9 +84,11 @@ SUBROUTINE initial_conditions (patch)
         f(i1,i2,i3,patch%i_by) = by0(1)
         f(i1,i2,i3,patch%i_bz) = bz0(1)
 
-        if (trim(patch%kind) == 'stagger_mhd_patch') then
+        if (trim(patch%kind) == 'stagger2_mhd_patch') then
           f(i1,i2,i3,patch%i_s)  = (log(p0(1)) - log(d0(1)) * patch%gamma) &
                             * d0(1) / (patch%gamma - 1.0)
+        else if (trim(patch%kind) == 'stagger2e_mhd_patch') then
+          f(i1,i2,i3,patch%i_e) = p0(1)
         else if (trim(patch%kind) == 'ramses_mhd_patch') then
           f(i1,i2,i3,patch%i_e) = p0(1) + 0.5 * d0(1) * speedsq + 0.5 * bsq
         else if (trim(patch%kind) == 'zeus_mhd_patch') then
@@ -122,6 +124,8 @@ SUBROUTINE initial_conditions (patch)
           if (trim(patch%kind) == 'stagger_mhd_patch') then
             f(i1,i2,i3,patch%i_s)  = (log(p0(2)) - log(d0(2)) * patch%gamma) &
                               * d0(2) / (patch%gamma - 1.0)
+          else if (trim(patch%kind) == 'stagger2e_mhd_patch') then
+            f(i1,i2,i3,patch%i_e) = p0(2)
           else if (trim(patch%kind) == 'ramses_mhd_patch') then
             f(i1,i2,i3,patch%i_e) = p0(2) + 0.5 * d0(2) * speedsq + 0.5 * bsq
           else if (trim(patch%kind) == 'zeus_mhd_patch') then

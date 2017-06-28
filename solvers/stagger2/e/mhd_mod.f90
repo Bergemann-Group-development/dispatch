@@ -335,16 +335,16 @@ SUBROUTINE pde (self)
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (io%verbose>1 .and. self%position(1)==0d0.and.self%position(2)==0d0) then
-    print *, self%id, 'VELOC', Ux(18,18,5), Uy(18,18,5), Uz(18,18,5), pg(18,18,5)
-    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
-  if (associated(self%force%selected)) &
-    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
-  else
+!  if (io%verbose>1 .and. self%position(1)==0d0.and.self%position(2)==0d0) then
+!    print *, self%id, 'VELOC', Ux(18,18,5), Uy(18,18,5), Uz(18,18,5), pg(18,18,5)
+!    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
+!  if (associated(self%force%selected)) &
+!    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
+!    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
+!  else
     if (associated(self%force%selected)) &
       dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-  end if
+!  end if
   !-----------------------------------------------------------------------------
   ! Conservation of energy.  The formulation that works best so far is to make
   ! the diffusive energy flux directly proportional to the diffusive mass flux,
@@ -520,7 +520,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
   call self%gpatch_t%output (experiment_name)
-  !$omp critical (output_cr)
+  !$omp critical (out_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout-1
   inquire(file=filename, exist=exists)
@@ -530,7 +530,7 @@ SUBROUTINE output (self, experiment_name)
     write (io%data_unit,'(8f10.4)') self%nu
     close (io%data_unit)
   end if
-  !$omp end critical (output_cr)
+  !$omp end critical (out_cr)
 END SUBROUTINE output
 
 !> =============================================================================
