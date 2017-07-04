@@ -97,8 +97,9 @@ SUBROUTINE read_conditions (self, m, ff)
   !-----------------------------------------------------------------------------
   ! Select patch data; beware of convention for position zero point !
   !-----------------------------------------------------------------------------
-  i = 1 + nint(m%p/m%d) - (m%n+1)/2
+  i = 1 + nint((m%p-m%origin)/m%d - m%o) + m%li
   j = i + m%n - 1 
+  print *, m%p/m%d, m%o, i, j
   l = m%li
   u = m%ui
   ff(l(1):u(1),l(2):u(2),l(3):u(3),1) = buffer(i(1):j(1),i(2):j(2),i(3):j(3),1)

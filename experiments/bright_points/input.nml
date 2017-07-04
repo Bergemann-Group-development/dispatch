@@ -13,19 +13,21 @@
 /
 &box_params
  size=72,36,36
- dims=30,13,13
+ !dims=30,13,13
+ dims=30,3,3
  origin=0,0,0
 /
 &experiment_params
- solid_upper=t
+ !solid_upper=t
 /
 &patch_params
  nt=5
  nw=2
- ng=3,3,3
+ ng=2,2,2
  courant=0.2
  grace=0.3
- n=39,27,27
+ !n=39,27,27
+ n=39,117,117
 !dt_fixed=0.001
 /
 &out_params

@@ -67,6 +67,7 @@ MODULE mesh_mod
     character(len=16):: type = ''
     real(8), allocatable :: zeta  ! position angle of the phi = 0 axis relative to the x-axis (cyl. and sph. coords.).
     real(8), allocatable :: xi    ! position angle of the theta = 0 relative to the neg. z-axis (sph. coords.).
+    real(8):: origin=0d0
     !---------------------------------------------------------------------------
     ! Physical boundary condition info; indices beyond which BCs rule
     !---------------------------------------------------------------------------

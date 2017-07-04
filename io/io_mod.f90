@@ -187,7 +187,7 @@ SUBROUTINE print_id (id)
   if (id .ne. ' ' .or. mpi_trace) then
     if (io%master) then
       call print_hl
-      print'(1x,a,f12.2)', trim(id), wallclock()
+      print'(1x,a,f12.2)', trim(id) !, wallclock()
     end if
     if (.not.mpi_trace) id = ' '
   end if
