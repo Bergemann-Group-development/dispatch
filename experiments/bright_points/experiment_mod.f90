@@ -120,17 +120,12 @@ SUBROUTINE update (self)
     end if
     !$omp end critical (first_cr)
   end if
-  call self%dnload
   if (self%initial%pic_needed) then
     call self%pic_t%update
   else
     !io%do_trace = .true.
     call self%boundary_conditions
     call self%mhd_t%update
-    call self%courant_condition
-    call self%check_density('before timestep')
-    call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-    call self%check_density(' after timestep')
   end if
   call trace_end
 END SUBROUTINE update

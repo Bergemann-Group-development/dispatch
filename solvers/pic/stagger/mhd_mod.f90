@@ -13,6 +13,7 @@ MODULE mhd_mod
   USE patch_mod
   USE force_mod
   USE download_mod
+  USE timestep_mod
   implicit none
   private
   type, extends(patch_t), public:: mhd_t
@@ -28,6 +29,7 @@ MODULE mhd_mod
     procedure:: U2p
     procedure:: update
     procedure:: dnload
+    procedure:: pde
     procedure:: output
     procedure:: log_density => void
     procedure:: log_pressure => void
@@ -83,7 +85,9 @@ SUBROUTINE init (self)
   self%mesh(3)%h(7) = +0.5
   self%mesh(1)%h(8) = +0.5
   self%mesh(2)%h(8) = +0.5
+  self%kind='stagger2e_pic'
   call self%force%init
+  call timestep%init
   call trace%end
 END SUBROUTINE init
 
@@ -133,8 +137,29 @@ SUBROUTINE U2p (self)
 END SUBROUTINE U2p
 
 !> =============================================================================
+!> Take a complete update step.  This can be overloaded in higher levels, e.g.
+!> in experiment_mod.
 !> =============================================================================
 SUBROUTINE update (self)
+  class(mhd_t):: self
+  !-----------------------------------------------------------------------------
+  ! The call to output below catches the state after both guard zone downloads
+  ! and boundary conditions.  The call here is a fall back; if another call is
+  ! placed at an earlier point in the task handling the call here will have no
+  ! effect, since out_next has already been updated.
+  !-----------------------------------------------------------------------------
+  call self%output
+  call self%pde
+  call self%courant_condition
+  if (io%verbose>2) &
+    call self%check_density('before timestep')
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density(' after timestep')
+END SUBROUTINE update
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE pde (self)
   USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
@@ -153,10 +178,7 @@ SUBROUTINE update (self)
   real:: ds(3), dx
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('mhd_t%update',itimer=itimer)
- !call self%dnload
-  call self%output
-
+  call trace_begin('mhd_t%pde',itimer=itimer)
   self%d    => self%mem(:,:,:,self%i_d,self%it,1)
   self%dddt => self%mem(:,:,:,self%i_d,self%it,2)
   self%e    => self%mem(:,:,:,self%i_e,self%it,1)
@@ -388,7 +410,7 @@ SUBROUTINE update (self)
     call deallocate_scalars (pg)
   end if
   call trace_end (itimer)
-END SUBROUTINE update
+END SUBROUTINE pde
 
 !> =============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
@@ -401,7 +423,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
   call self%patch_t%output (experiment_name)
-  !$omp critical (output_cr)
+  !$omp critical (out_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout-1
   inquire(file=filename, exist=exists)
@@ -411,7 +433,7 @@ SUBROUTINE output (self, experiment_name)
     write (io%data_unit,'(8f10.4)') self%nu
     close (io%data_unit)
   end if
-  !$omp end critical (output_cr)
+  !$omp end critical (out_cr)
 END SUBROUTINE output
 
 !> =============================================================================
