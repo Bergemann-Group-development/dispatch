@@ -56,6 +56,7 @@ MODULE pic_mod
     procedure:: mhd_to_pic
     procedure:: pic_to_mhd
     procedure:: impose_particle_boundaries_np
+    procedure, nopass:: print_patch_type
   end type
   logical, save :: firstcall = .true.
   logical, save :: periodic_bcs(3)=.false.
@@ -671,5 +672,18 @@ SUBROUTINE impose_particle_boundaries_np(self)
     end do
   END SUBROUTINE add_boundary_particles
 END SUBROUTINE impose_particle_boundaries_np
+
+!> =============================================================================
+SUBROUTINE print_patch_type (patch_type)
+  implicit none
+  logical:: patch_type
+  print*, '==============================================================================='
+  if (patch_type) then
+    print*, '| Initializing PIC patch                                                      |'
+  else
+    print*, '| Initializing MHD patch                                                      |'
+  end if
+  print*, '==============================================================================='
+END SUBROUTINE print_patch_type
 
 END MODULE pic_mod

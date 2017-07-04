@@ -63,7 +63,7 @@ END SUBROUTINE init
 SUBROUTINE single_solenoidal (self, time, m, dd, Ux, Uy, Uz, ff)
   class(force_t)        :: self
   real(8)               :: time
-  type(mesh_t)          :: m(3)
+  class(mesh_t), pointer:: m(:)
   real, dimension(:,:,:,:) :: ff, dd
   real, dimension(:,:,:):: Ux, Uy, Uz
   !.............................................................................

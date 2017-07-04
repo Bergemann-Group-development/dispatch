@@ -72,7 +72,7 @@ END SUBROUTINE cleanup
 !> =============================================================================
 SUBROUTINE initial_conditions (self, m, ff)
   class(initial_t) :: self
-  type(mesh_t) :: m(3)
+  class(mesh_t), pointer :: m(:)
   real, dimension(:,:,:,:), pointer :: ff
   !class(_t), pointer:: patch
   !.............................................................................

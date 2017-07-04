@@ -49,7 +49,7 @@ SUBROUTINE init (self)
   ! Initialize the patch
   !----------------------------------------------------------------------------
   self%nv = 8
-  call io%print_patch_type(self%initial%pic_needed)
+  call self%print_patch_type(self%initial%pic_needed)
   call self%initial%init                              ! initialize the experiment
   call self%pic_t%init
   call self%set(bits%static)
