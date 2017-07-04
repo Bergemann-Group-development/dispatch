@@ -19,8 +19,8 @@ INTERPOLATION   = tsc
 sinclude $(TOP)/config/Makefile
 
 # To include the PPcode, PPCODE should point to the PPcode top directory
-#PPCODE          = $(TOP)/solvers/pic/PPcode
-PPCODE          = $(TOP)/../ppcode
+PPCODE          = $(TOP)/solvers/pic/PPcode
+#PPCODE          = $(TOP)/../ppcode
 
  # Search paths for pic/PP module
   VPATH:=\

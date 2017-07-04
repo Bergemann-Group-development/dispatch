@@ -19,7 +19,7 @@ CONTAINS
 SUBROUTINE condition (self, mem, m, h)
   class(boundary_t)      :: self
   real, dimension(:,:,:) :: mem
-  type(mesh_t)           :: m(3)
+  class(mesh_t), pointer :: m(:)
   real(8)                :: h(3)
   !-----------------------------------------------------------------------------
 END SUBROUTINE condition

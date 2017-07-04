@@ -18,7 +18,7 @@ CONTAINS
 SUBROUTINE cylinder_driver (self, m)
       implicit none
       class(mhd_t)   :: self
-      type(mesh_t)   :: m(:)
+      class(mesh_t), pointer:: m(:)
       
       real, dimension(:,:,:), pointer :: Ux, Uy, Uz
       integer        :: i, nxgrid, nygrid, nzgrid, ix, iy, iz, iostat
@@ -163,7 +163,7 @@ SUBROUTINE smooth2dyz(f, nygrid, nzgrid, m)
 !> many patches... need to update in the loop above...
 
       implicit none
-      type(mesh_t)                       :: m(3)
+      class(mesh_t), pointer             :: m(:)
       integer                            :: nygrid, nzgrid
       real, dimension(:,:)               :: f
       real, allocatable, dimension(:,:)  :: t1, t2
@@ -187,7 +187,7 @@ END SUBROUTINE smooth2dyz
 SUBROUTINE damping(self, dfdt, f, fbound, scale, m)
       implicit none
       class(mhd_t)                           :: self
-      type(mesh_t)                           :: m(3)
+      class(mesh_t), pointer                 :: m(:)
       real, dimension(:,:,:)                 :: dfdt, f, fbound
       real, allocatable, dimension(:,:,:)    :: dissipation
       integer                                :: scale, iostat

@@ -48,7 +48,7 @@ END SUBROUTINE cleanup
 !> =============================================================================
 SUBROUTINE initial_conditions (self, m, ff)
   class(initial_t):: self
-  type(mesh_t) :: m(3)
+  class(mesh_t), pointer:: m(:)
   real, dimension(:,:,:,:), pointer :: ff
   !-----------------------------------------------------------------------------
   error stop 'bright_points/initial_mod::initial_conditions, no IC data or IC code'
@@ -60,7 +60,7 @@ END SUBROUTINE initial_conditions
 !> =============================================================================
 SUBROUTINE read_conditions (self, m, ff)
   class(initial_t):: self
-  type(mesh_t) :: m(3)
+  class(mesh_t), pointer:: m(:)
   real, dimension(:,:,:,:), pointer :: ff
   !---- variables for reading the snapshot ----
   integer(kind=4)    :: ilun=10

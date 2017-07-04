@@ -22,7 +22,6 @@ MODULE mhd_mod
     real:: nu(6), csound, cdtd=0.3
     logical:: mhd=.true.
     type(force_t):: force
-    integer:: i_d=1,i_e=2,i_s=2,i_px=3,i_py=4,i_pz=5,i_bx=6,i_by=7,i_bz=8
   contains
     procedure:: init
     procedure:: p2U

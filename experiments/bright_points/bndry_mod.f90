@@ -34,7 +34,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE symmetric_x_lb_center(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,lb
   lb = m(1)%lo
@@ -50,7 +50,7 @@ END SUBROUTINE symmetric_x_lb_center
 !===============================================================================
 SUBROUTINE extrapolate_x_lb_center(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,lb
   lb = m(1)%lo
@@ -66,7 +66,7 @@ END SUBROUTINE extrapolate_x_lb_center
 !===============================================================================
 SUBROUTINE log_extrapolate_x_lb_center(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,lb
   lb = m(1)%lo
@@ -82,7 +82,7 @@ END SUBROUTINE log_extrapolate_x_lb_center
 !===============================================================================
 SUBROUTINE extrapolate_x_ub_center(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,ub
   ub = m(1)%uo
@@ -98,7 +98,7 @@ END SUBROUTINE extrapolate_x_ub_center
 !===============================================================================
 SUBROUTINE log_extrapolate_x_ub_center(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,ub
   ub = m(1)%uo
@@ -114,7 +114,7 @@ END SUBROUTINE log_extrapolate_x_ub_center
 !===============================================================================
 SUBROUTINE antisymmetric_x_lb_center(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,lb
   lb = m(1)%lo
@@ -136,7 +136,7 @@ END SUBROUTINE antisymmetric_x_lb_center
 !===============================================================================
 SUBROUTINE symmetric_x_lb_face(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,lb
   lb = m(1)%lo
@@ -152,7 +152,7 @@ END SUBROUTINE symmetric_x_lb_face
 !===============================================================================
 SUBROUTINE antisymmetric_x_lb_face(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,lb
   lb = m(1)%lo
@@ -168,7 +168,7 @@ END SUBROUTINE antisymmetric_x_lb_face
 !===============================================================================
 SUBROUTINE extrapolate_x_lb_face(v, m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,lb
   lb = m(1)%lo
@@ -184,7 +184,7 @@ END SUBROUTINE extrapolate_x_lb_face
 !===============================================================================
 SUBROUTINE symmetric_x_ub_center(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,ub
   ub = m(1)%uo
@@ -200,7 +200,7 @@ END SUBROUTINE symmetric_x_ub_center
 !===============================================================================
 SUBROUTINE antisymmetric_x_ub_center(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,ub
   ub = m(1)%uo
@@ -221,7 +221,7 @@ END SUBROUTINE antisymmetric_x_ub_center
 !===============================================================================
 SUBROUTINE symmetric_x_ub_face(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,ub
   ub = m(1)%uo
@@ -237,7 +237,7 @@ END SUBROUTINE symmetric_x_ub_face
 !===============================================================================
 SUBROUTINE antisymmetric_x_ub_face(v,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,ub
   ub = m(1)%uo
@@ -253,7 +253,7 @@ END SUBROUTINE antisymmetric_x_ub_face
 !===============================================================================
 SUBROUTINE extrapolate_x_ub_face(v, m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real,    dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: v
   integer                                  :: ix,iy,iz,ub
   ub = m(1)%uo
@@ -269,7 +269,7 @@ END SUBROUTINE extrapolate_x_ub_face
 !===============================================================================
 SUBROUTINE divB_correction_x_lb (bx,by,bz,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: bx,by,bz
   integer                                  :: iy,iz,lb
   lb = m(1)%lo
@@ -283,7 +283,7 @@ END SUBROUTINE divB_correction_x_lb
 !===============================================================================
 SUBROUTINE divB_correction_x_ub (bx,by,bz,m)
   implicit none
-  type(mesh_t)                             :: m(3)
+  class(mesh_t), pointer                   :: m(:)
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn) :: bx,by,bz
   integer                                  :: iy,iz,ub
   ub = m(1)%uo

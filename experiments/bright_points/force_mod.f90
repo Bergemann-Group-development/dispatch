@@ -56,7 +56,7 @@ END SUBROUTINE init
 SUBROUTINE const_gravity (self, time, m, dd, Ux, Uy, Uz, dpdt)
   class(force_t)           :: self
   real(8)                  :: time
-  type(mesh_t)             :: m(3)
+  class(mesh_t), pointer   :: m(:)
   real, dimension(:,:,:,:) :: dd, dpdt
   real, dimension(:,:,:)   :: Ux, Uy, Uz
   !-----------------------------------------------------------------------------
