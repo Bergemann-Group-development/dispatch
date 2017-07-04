@@ -21,6 +21,7 @@ MODULE io_mod
     character(len=1):: sep = '/'
   contains
     procedure:: init
+    procedure:: debug
     procedure:: print_id => print_id_
     procedure, nopass:: print_hl
   end type
@@ -28,6 +29,15 @@ MODULE io_mod
   type(io_t), public:: io
   public print_id, mch, io_unit, log_unit
 CONTAINS
+
+!> =============================================================================
+!> Function suitable for testing in debug print statements
+!> =============================================================================
+LOGICAL FUNCTION debug (self, verbose)
+  class(io_t):: self
+  integer:: verbose
+  debug = self%master .and. (self%verbose >= verbose)
+END FUNCTION debug
 
 !> =============================================================================
 !> Initialize I/O related parameters.  The first thread that enters here blocks
