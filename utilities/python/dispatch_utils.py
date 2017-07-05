@@ -5,53 +5,6 @@ import stagger_utils as su
 import dispatch_data as dd
 reload(dd)
 
-class limits():
-    ''' Return extent limits in x,y,z,values '''
-    def __init__(self,pp,ix=None,iy=None,iz=None,iv=0):
-        self.xlim=np.zeros(2)
-        self.ylim=np.zeros(2)
-        self.zlim=np.zeros(2)
-        self.vlim=np.zeros(2)
-        p=pp[0]
-        xr=p.active_corners[:,0]
-        self.xlim[0]=xr[0]
-        self.xlim[1]=xr[1]
-        yr=p.active_corners[:,1]
-        self.ylim[0]=yr[0]
-        self.ylim[1]=yr[1]
-        zr=p.active_corners[:,2]
-        self.zlim[0]=zr[0]
-        self.zlim[1]=zr[1]
-        print iv
-        if ix:
-            self.vlim[0]=np.min(p.data[ix,:,:,iv])
-            self.vlim[1]=np.max(p.data[ix,:,:,iv])
-        if iy:
-            self.vlim[0]=np.min(p.data[:,iy,:,iv])
-            self.vlim[1]=np.max(p.data[:,iy,:,iv])
-        if iz:
-            self.vlim[0]=np.min(p.data[:,:,iz,iv])
-            self.vlim[1]=np.max(p.data[:,:,iz,iv])
-        for p in pp:
-            xr=p.active_corners[:,0]
-            self.xlim[0]=np.minimum(self.xlim[0],xr[0])
-            self.xlim[1]=np.maximum(self.xlim[1],xr[1])
-            yr=p.active_corners[:,1]
-            self.ylim[0]=np.minimum(self.xlim[0],yr[0])
-            self.ylim[1]=np.maximum(self.xlim[1],yr[1])
-            zr=p.active_corners[:,2]
-            self.zlim[0]=np.minimum(self.zlim[0],zr[0])
-            self.zlim[1]=np.maximum(self.zlim[1],zr[1])
-            if ix:
-                self.vlim[0]=np.minimum(self.vlim[0],np.min(p.data[ix,:,:,iv]))
-                self.vlim[1]=np.maximum(self.vlim[1],np.max(p.data[ix,:,:,iv]))
-            if iy:
-                self.vlim[0]=np.minimum(self.vlim[0],np.min(p.data[:,iy,:,iv]))
-                self.vlim[1]=np.maximum(self.vlim[1],np.max(p.data[:,iy,:,iv]))
-            if iz:
-                self.vlim[0]=np.minimum(self.vlim[0],np.min(p.data[:,:,iz,iv]))
-                self.vlim[1]=np.maximum(self.vlim[1],np.max(p.data[:,:,iz,iv]))
-
 def dispatch_utils():
     '''
     Main methods: patches, cache
@@ -69,6 +22,57 @@ def dispatch_utils():
     '''
     print "Type dispatch_utils?<RETURN> for help text, or dispach_utils(\
  for pop-up help in Canopy"
+
+class limits():
+    ''' Return extent limits in x,y,z,values '''
+    def __init__(self,pp,ix=None,iy=None,iz=None,iv=0,verbose=0):
+        self.xlim=np.zeros(2)
+        self.ylim=np.zeros(2)
+        self.zlim=np.zeros(2)
+        self.vlim=np.zeros(2)
+        p=pp[0]
+        xr=p.active_corners[:,0]
+        self.xlim[0]=xr[0]
+        self.xlim[1]=xr[1]
+        yr=p.active_corners[:,1]
+        self.ylim[0]=yr[0]
+        self.ylim[1]=yr[1]
+        zr=p.active_corners[:,2]
+        self.zlim[0]=zr[0]
+        self.zlim[1]=zr[1]
+        if ix:
+            self.vlim[0]=np.min(p.data[ix,:,:,iv])
+            self.vlim[1]=np.max(p.data[ix,:,:,iv])
+        if iy:
+            self.vlim[0]=np.min(p.data[:,iy,:,iv])
+            self.vlim[1]=np.max(p.data[:,iy,:,iv])
+        if iz:
+            self.vlim[0]=np.min(p.data[:,:,iz,iv])
+            self.vlim[1]=np.max(p.data[:,:,iz,iv])
+        for p in pp:
+            xr=p.active_corners[:,0]
+            self.xlim[0]=np.minimum(self.xlim[0],xr[0])
+            self.xlim[1]=np.maximum(self.xlim[1],xr[1])
+            yr=p.active_corners[:,1]
+            self.ylim[0]=np.minimum(self.ylim[0],yr[0])
+            self.ylim[1]=np.maximum(self.ylim[1],yr[1])
+            zr=p.active_corners[:,2]
+            self.zlim[0]=np.minimum(self.zlim[0],zr[0])
+            self.zlim[1]=np.maximum(self.zlim[1],zr[1])
+            if ix:
+                self.vlim[0]=np.minimum(self.vlim[0],np.min(p.data[ix,:,:,iv]))
+                self.vlim[1]=np.maximum(self.vlim[1],np.max(p.data[ix,:,:,iv]))
+            if iy:
+                self.vlim[0]=np.minimum(self.vlim[0],np.min(p.data[:,iy,:,iv]))
+                self.vlim[1]=np.maximum(self.vlim[1],np.max(p.data[:,iy,:,iv]))
+            if iz:
+                self.vlim[0]=np.minimum(self.vlim[0],np.min(p.data[:,:,iz,iv]))
+                self.vlim[1]=np.maximum(self.vlim[1],np.max(p.data[:,:,iz,iv]))
+        if verbose:
+            print 'xlim:',self.xlim
+            print 'ylim:',self.ylim
+            print 'zlim:',self.zlim
+            print 'vlim:',self.vlim
  
 def patch_files(run='', data='../data', verbose=0, iout=-1):
     '''
@@ -117,11 +121,11 @@ def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None)
         s=dd.Patch(f,verbose=verbose)
         pp.append(s)
     if x:
-        pp=[p for p in pp if np.abs(p.pos[0]-x)<p.size[0]/2.0]
+        pp=[p for p in pp if x>=p.active_corners[0,0] and x<p.active_corners[1,0]]
     if y:
-        pp=[p for p in pp if np.abs(p.pos[1]-y)<p.size[1]/2.0]
+        pp=[p for p in pp if y>=p.active_corners[0,1] and y<p.active_corners[1,1]]
     if z:
-        pp=[p for p in pp if np.abs(p.pos[2]-z)<p.size[2]/2.0]
+        pp=[p for p in pp if z>=p.active_corners[0,2] and z<p.active_corners[1,2]]
     return pp
 
 def corners(pp,active=1):

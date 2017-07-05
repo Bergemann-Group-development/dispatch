@@ -11,6 +11,53 @@ def plot_utils():
     See http://matplotlib.org/users/colormaps.html for color maps
     '''
 
+def simple_slice(iout=0,run='',data='../data',x=None,y=None,z=None,iv=0,verbose=0,pp=None):
+    if not pp:
+        pp=du.patches(iout=iout,run=run,data=data,x=x,y=y,z=z)
+    if (np.size(pp)==0):
+        print 'no patches found'
+        return
+    if verbose:
+        for p in pp:
+            print 'id={:04d} pos={}'.format(p.id,p.pos)
+    ix=None; iy=None; iz=None
+    if x:
+        p = pp[0]
+        ix=np.int((x-p.x[0])/p.ds[0]+0.5)
+        print 'ix =',ix,' xr=',p.active_corners[0:2,0]
+    if y:
+        p = pp[1]
+        iy=np.int((y-p.y[0])/p.ds[1]+0.5)
+        print 'iy =',iy,' yr=',p.active_corners[0:2,1]
+    if z:
+        p = pp[0]
+        iz=np.int((z-p.z[0])/p.ds[2]+0.5)
+        print 'iz =',iz,' zr=',p.active_corners[0:2,2]
+    ll=du.limits(pp,ix=ix,iy=iy,iz=iz,iv=iv,verbose=verbose)
+    pl.clf()
+    p=pp[0]
+    l=p.nghost
+    u=l+p.n-1
+    if x:
+        pl.xlim(ll.ylim)
+        pl.ylim(ll.zlim)
+        pl.title('iout={} iv={} time={} x={}'.format(iout,iv,p.time,x))
+        for p in pp:
+            image(p.data[ix,l[1]:u[1],l[2]:u[2],iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[0])
+    elif y:
+        pl.xlim(ll.xlim)
+        pl.ylim(ll.zlim)
+        pl.title('iout={} iv={} time={} y={}'.format(iout,iv,p.time,y))
+        for p in pp:
+            image(p.data[l[0]:u[0],iy,l[2]:u[2],iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[1])
+    elif z:
+        pl.xlim(ll.xlim)
+        pl.ylim(ll.ylim)
+        pl.title('iout={} iv={} time={} z={}'.format(iout,iv,p.time,z))
+        for p in pp:
+            image(p.data[l[0]:u[0],l[1]:u[1],iz,iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[2])
+    pl.colorbar()
+
 def simple_slice(iout=0,run='',data='../data',x=1.0,ix=2,y=None,iy=None,z=None,iz=None,iv=0):
     pp=du.patches(iout=iout,run=run,data=data,x=x,y=y,z=z)
     for p in pp:
