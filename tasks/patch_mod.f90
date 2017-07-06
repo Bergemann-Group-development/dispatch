@@ -161,6 +161,7 @@ MODULE patch_mod
     real:: num(3)
     integer:: dim(3)
   end type
+  logical, save:: extrapolate_gz=.false.
   public task2patch
 CONTAINS
 
@@ -331,7 +332,7 @@ SUBROUTINE init (self)
   real(8):: position(3), size(3)
   integer:: iostat, i
   namelist /patch_params/ size, n, nv, nw, ng, nt, courant, u_fixed, dt_fixed, &
-    grace, periodic
+    grace, periodic, extrapolate_gz
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     restart, inputdir, guard_zones, time_derivs
   !.............................................................................
@@ -519,7 +520,7 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   if (self%is_set(bits%root_grid)) then
     call self%periodic_grid                     ! periodic root grid
-  else
+  else if (extrapolate_gz) then
     call self%extrapolate_guards                ! time-extrapolate guard cells
   end if
   !-----------------------------------------------------------------------------

@@ -200,6 +200,7 @@ SUBROUTINE init (self, label)
       call timer%end (itimer=itimer)
       call patch%init
       call timer%begin (itimer=itimer)
+      patch%mesh%origin = origin
       !$omp atomic
       np = np + 1
       if (io%verbose>0) then
