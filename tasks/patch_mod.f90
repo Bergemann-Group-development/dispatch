@@ -887,7 +887,7 @@ SUBROUTINE output_direct (self)
   ! Pass a chunk to the procedure that eventually writes a binary file
   !-----------------------------------------------------------------------------
   l = self%mesh%li
-  u = self%mesh%ui
+  u = self%mesh%ui-1
   n = u-l+1
   allocate (buf(n(1),n(2),n(3),self%nv))
   call self%time_interval (self%out_next, jt, pt)

@@ -203,7 +203,7 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   if (io%do_direct) then
     patch => task2patch(self%head%task)
-    dims(1:3) = self%dims*patch%mesh%n
+    dims(1:3) = self%dims*(patch%mesh%n-1)
     dims(4) = patch%nv
     call direct_output%init (dims=dims, nbuf=self%n_tasks)
   end if
