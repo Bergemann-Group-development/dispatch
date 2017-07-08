@@ -40,6 +40,7 @@ MODULE list_mod
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0
     integer:: debug=0
     integer:: n_tasks=1
+    integer:: dims(3)=0
     type(lock_t):: lock
     character(len=4):: kind='list'
     logical:: face_nbors=.false.

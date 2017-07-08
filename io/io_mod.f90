@@ -13,7 +13,7 @@ MODULE io_mod
   type io_t
     integer:: verbose=0, input, output, data_unit, log_unit
     logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.true.
-    logical:: do_flags, do_legacy, omp_trace
+    logical:: do_flags, do_legacy, do_direct, omp_trace
     integer:: levelmax
     integer:: word_size=4
     integer:: id_debug=0
@@ -56,9 +56,9 @@ SUBROUTINE init (self, name)
   integer, save:: id_debug=-1
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
-    do_legacy=.true., do_flags=.false.
+    do_legacy=.true., do_flags=.false., do_direct=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
-    do_validate, do_legacy, levelmax, omp_trace, id_debug, top
+    do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, top
   real:: test
   integer:: iostat
   !.............................................................................
@@ -149,6 +149,7 @@ SUBROUTINE init (self, name)
   self%do_output = do_output
   self%do_flags  = do_flags
   self%do_legacy = do_legacy
+  self%do_direct = do_direct
   self%omp_trace = omp_trace
   self%levelmax  = levelmax
   self%inputname = inputname
