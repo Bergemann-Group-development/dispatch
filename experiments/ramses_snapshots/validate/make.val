@@ -16,14 +16,15 @@ rm -f *.o *.mod *.stackdump
  [ FC ] task_mod.o
  [ FC ] buffered_output_mod.o
  [ FC ] link_mod.o
+ [ FC ] index_mod.o
  [ FC ] boundaries_mod.o
+ [ FC ] direct_output_mod.o
  [ FC ] patch_mod.o
  [ FC ] interpolate_mod.o
  [ FC ] download_mod.o
  [ FC ] random_mod.o
  [ FC ] amr_parameters.o
  [ FC ] hydro_parameters.o
- [ FC ] index_mod.o
  [ FC ] initial_mod.o
  [ FC ] gpatch_mod.o
  [ FC ] riemann_mod.o

@@ -30,6 +30,7 @@ MODULE task_list_mod
   USE download_mod
   USE buffered_output_mod
   USE load_balance_mod
+  USE direct_output_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
@@ -166,7 +167,9 @@ SUBROUTINE execute (self)
   USE omp_timer_mod
   class(task_list_t):: self
   class(link_t), pointer:: link, rem
+  class(patch_t), pointer:: patch
   real(8):: sec
+  integer:: dims(4)
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists, and set virtual and boundary bits
   !-----------------------------------------------------------------------------
@@ -195,6 +198,18 @@ SUBROUTINE execute (self)
   call tic (time=sec)
   call timer%print
   self%n_tasks = self%na
+  !-----------------------------------------------------------------------------
+  ! Register parameters for direct access output (allocation is postponed)
+  !-----------------------------------------------------------------------------
+  if (io%do_direct) then
+    patch => task2patch(self%head%task)
+    dims(1:3) = self%dims*(patch%mesh%n-1)
+    dims(4) = patch%nv
+    call direct_output%init (dims=dims, nbuf=self%n_tasks)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Loop over tasks
+  !-----------------------------------------------------------------------------
   !$omp parallel
   do while (self%na > 0 .and. (wallclock()-wc_start) < job_seconds)
     call self%update

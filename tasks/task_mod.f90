@@ -62,6 +62,7 @@ MODULE task_mod
     class(mesg_t), pointer:: mesg=>null()
     real(8):: sync_time=0d0
     logical:: syncing=.false.
+    logical:: track=.false.
   contains
     procedure:: init
     procedure:: dnload => void

@@ -85,6 +85,7 @@ SUBROUTINE init (self, label)
   allocate (self%task_list)
   call self%task_list%init
   self%task_list%size = self%size
+  self%task_list%dims = self%dims
   self%task_list%n_tasks = product(self%dims)
   self%task_list%face_nbors = face_nbors
   do dim=1,3

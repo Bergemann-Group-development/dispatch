@@ -305,7 +305,7 @@ SUBROUTINE detect_cores
     close (io_unit%os)
     wc = wallclock()-wc
     if (wc > 5) print '(a)','############################################################'
-    print '(a,f6.1,a)',     'reading /proc/cpuinfo:', wallclock()-wc, ' sec'
+    print '(a,f6.1,a)',     'reading /proc/cpuinfo:', wc, ' sec'
     if (wc > 5) print '(a)','############################################################'
   end if
   if (n_socket>0) n_core = n_core*n_socket

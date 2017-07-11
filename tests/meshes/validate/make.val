@@ -16,6 +16,8 @@ rm -f *.o *.mod *.stackdump
  [ FC ] task_mod.o
  [ FC ] buffered_output_mod.o
  [ FC ] link_mod.o
+ [ FC ] index_mod.o
  [ FC ] boundaries_mod.o
+ [ FC ] direct_output_mod.o
  [ FC ] patch_mod.o
  [ LD ] test.x

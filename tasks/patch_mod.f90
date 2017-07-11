@@ -5,6 +5,7 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE patch_mod
   USE io_mod
+  USE mpi_mod
   USE omp_mod
   USE omp_lock_mod
   USE omp_timer_mod
@@ -17,6 +18,7 @@ MODULE patch_mod
   USE task_mod
   USE link_mod
   USE mesh_mod
+  USE direct_output_mod
   USE buffered_output_mod
   USE boundaries_mod
   implicit none
@@ -47,6 +49,7 @@ MODULE patch_mod
     type(boundaries_t):: boundaries
     character(len=32):: eos='ideal'
     character(len=32):: opacity='none'
+    integer:: file_offset(4)
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
@@ -68,11 +71,8 @@ MODULE patch_mod
     procedure:: check_error
     procedure:: init
     procedure:: rotate
-    procedure:: output                  ! legacy output
-    procedure:: input                   ! legacy input
-    procedure:: output_new              ! new output
-    procedure:: output_legacy           ! legacy output
-    procedure:: input_legacy            ! legacy input
+    procedure:: output                  ! output
+    procedure:: input                   ! input
     procedure:: allocate_mesg           ! allocate a mesg buffer
     procedure:: pack                    ! pack patch into buffer
     procedure:: unpack                  ! unpack buffer into patch
@@ -814,28 +814,21 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace_begin('patch_mod::output', itimer=itimer)
-  if (self%out_time==0.0) then
-    call output1
-    self%out_next = self%time
-  else
-    do while (self%time >= self%out_next)
-      call output1
-      self%out_next = (int(self%out_next/self%out_time)+1)*self%out_time
-    end do
-  end if
-  call trace_end (itimer)
-  contains
-  subroutine output1
+  do while (self%time >= self%out_next)
     !$omp critical (out_cr)
-    if (io%do_legacy) then
-      if (io%verbose>2) print *, self%id, ' LEGACY OUTPUT'
-      call self%output_legacy
+    if (io%do_direct) then
+      call output_direct (self)
+    else if (io%do_legacy) then
+      call output_legacy (self)
     else
-      call self%output_new
+      call output_new (self)
     end if
     self%iout = self%iout+1
     !$omp end critical (out_cr)
-  end subroutine output1
+    if (self%out_time==0.0) exit
+    self%out_next = (int(self%out_next/self%out_time)+1)*self%out_time
+  end do
+  call trace_end (itimer)
 END SUBROUTINE output
 
 !> =============================================================================
@@ -848,12 +841,68 @@ SUBROUTINE input (self, ok)
   !$omp critical (out_cr)
   if (io%do_legacy) then
     if (io%verbose>2) print *, self%id, ' LEGACY INPUT'
-    call self%input_legacy (ok)
+    call input_legacy (self, ok)
   !else
     !call self%input_new
   end if
   !$omp end critical (out_cr)
 END SUBROUTINE input
+
+!> =============================================================================
+!> Direct access buffering
+!> =============================================================================
+SUBROUTINE output_direct (self)
+  class(patch_t)       :: self
+  character(len=64)    :: filename
+  real, pointer        :: buf(:,:,:,:)
+  integer              :: n(3), l(3), u(3), ng(3)=0, jt(2), id=0, offset(4)=1
+  real                 :: pt(2)
+  !-----------------------------------------------------------------------------
+  call trace_begin('patch_mod::output_direct')
+  !-----------------------------------------------------------------------------
+  ! Write a small text file with info when the last chunk is being entered
+  !-----------------------------------------------------------------------------
+  if (direct_output%count==direct_output%nbuf-1) then
+    write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), id, self%iout
+    self%ioformat = 2
+    open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
+    write (io%data_unit,'(i2.2)') self%ioformat
+    write (io%data_unit,'(a)') trim(self%kind)
+    write (io%data_unit,'(a)') trim(self%eos)
+    write (io%data_unit,'(a)') trim(self%opacity)
+    write (io%data_unit,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') self%out_next, self%dtime, &
+          direct_output%position, self%ds, self%velocity, self%llc_nat, self%llc_cart, &
+          self%mesh%centre_nat, self%quality, self%gamma
+    l = 1
+    u = direct_output%dims(1:3)
+    n = u-l+1
+    id = mpi%rank
+    write (io%data_unit,'(6(3i10.1,2x),3i2.1,1x,1i2.1,i3)') int(self%box/self%ds+0.5), &
+          n, l, u, n, n, ng, self%nv, self%level
+    write (io%data_unit,'(3(1i8.1,1x),i2.1)') id, self%iout, self%istep, self%mesh_type
+    close (io%data_unit)
+    direct_output%filename = trim(filename)//'.dat'
+  end if
+  !-----------------------------------------------------------------------------
+  ! Pass a chunk to the procedure that eventually writes a binary file
+  !-----------------------------------------------------------------------------
+  l = self%mesh%li
+  u = self%mesh%ui-1
+  n = u-l+1
+  allocate (buf(n(1),n(2),n(3),self%nv))
+  call self%time_interval (self%out_next, jt, pt)
+  buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,jt(1),1)*pt(1) &
+      + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,jt(2),1)*pt(2)
+  offset(1:3) = 1 + self%ipos*self%mesh%n
+  call direct_output%patch (buf, offset)
+  deallocate (buf)
+  if (direct_output%count==0) then
+    if (io%debug(0)) print'(a,3x,"time:",2f13.6,2(f10.3,1x,a))', &
+      ' patch_t%output_direct: '//trim(filename), self%out_next, self%time, &
+      direct_output%gb, "GB", direct_output%gbs, "GB/s"
+  end if
+  call trace_end
+END SUBROUTINE output_direct
 
 !> =============================================================================
 !> Write results to disk, using the buffered I/O in output_mod
@@ -1102,8 +1151,9 @@ SUBROUTINE output_legacy (self, experiment_name)
   !-----------------------------------------------------------------------------
   self%ioformat = 2
   write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout
-  if (io%master .and. io%verbose>=-1) then
-    print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
+  if (io%debug(0)) then
+    if (io%debug(1) .or. self%track) &
+      print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   write (io%data_unit,'(i2.2)') self%ioformat
