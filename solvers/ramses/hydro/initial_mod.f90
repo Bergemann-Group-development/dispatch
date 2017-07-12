@@ -3,6 +3,7 @@
 !> module, where the standard forcing we have been using in RAMSES is implemented
 !> =============================================================================
 MODULE initial_mod
+  USE const
   USE io_mod
   USE trace_mod
   USE mesh_mod
@@ -25,6 +26,7 @@ MODULE initial_mod
     procedure, nopass:: cleanup
   end type
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
+  real, save:: csound=1.
   type(index_t):: idx
 CONTAINS
 

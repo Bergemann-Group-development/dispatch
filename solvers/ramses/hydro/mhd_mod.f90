@@ -16,6 +16,7 @@
 !> =============================================================================
 MODULE mhd_mod
   !.............................................................................
+  USE const
   USE io_unit_mod
   USE gpatch_mod
   USE link_mod
@@ -57,10 +58,13 @@ MODULE mhd_mod
     procedure:: velocity_magnitude
     procedure:: magnetic_field_magnitude
   end type
+  real,save:: csound=1.
+  logical:: debug=.false.
   logical:: first_time=.true.
   logical:: detailed_timer=.false.
+  logical:: do_isothermal=.false.
   character(len=16):: eqn='mhd'
-  logical, save:: debug=.false.
+  !logical, save:: debug=.false.
 CONTAINS
 
 !> =============================================================================
@@ -431,7 +435,7 @@ subroutine check_small (self, uu)
     write (io_unit%log,*) 'small: id,nr,np', self%id,n_smalld,n_smallp
   end if
   if (detailed_timer) call trace_end (itimer)
-end subroutine
+end subroutine check_small
 
 !> =============================================================================
 !>  UNSPLIT     Unsplit second order Godunov integrator for
@@ -977,19 +981,19 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
   logical:: error, detailed_timer
   !.............................................................................
   if(self%riemann.eq.'acoustic')then
-    call riemann%acoustic(qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%acoustic(qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'exact')then
-    call riemann%approx  (qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%approx  (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'llf')then
-    call riemann%llf     (qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%llf     (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'hllc')then
-    call riemann%hllc    (qleft,qright,fgdnv,ngrid,self%nv,error,detailed_timer)
+    call rieman%hllc    (qleft,qright,fgdnv,ngrid,self%nv,error,detailed_timer)
   else if (self%riemann.eq.'hllc_a')then
-    call riemann%hllc_a  (qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%hllc_a  (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'hllc_v')then
-    call riemann%hllc_v  (qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%hllc_v  (qleft,qright,fgdnv,ngrid,self%nv)
   else if (self%riemann.eq.'hll')then
-    call riemann%hll     (qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%hll     (qleft,qright,fgdnv,ngrid,self%nv)
   else
     write(*,*)'unknown Riemann solver'
     stop
