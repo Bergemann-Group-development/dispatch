@@ -8,6 +8,7 @@ OPTS = optimized
 EXEC            = dispatch.x
 UPD             = adams_bashforth
 SOLVER          = ramses/hydro
+#SOLVER          = ramses/mhd
 TOP             = ../..
 
 # Tomida & Hori, with opacity

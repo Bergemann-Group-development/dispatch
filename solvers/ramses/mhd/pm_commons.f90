@@ -1,7 +1,7 @@
 module pm_commons
   use amr_parameters
   use pm_parameters
-  use random
+  !use random
   ! Sink particle related arrays
   real(kind=8),allocatable,dimension(:)::msink,r2sink,v2sink,c2sink,oksink_new,oksink_all
   real(kind=8),allocatable,dimension(:)::tsink,tsink_new,tsink_all
@@ -43,5 +43,5 @@ module pm_commons
   ! Global particle linked lists
   integer::headp_free,tailp_free,numbp_free=0,numbp_free_tot=0
   ! Local and current seed for random number generator
-  integer,dimension(IRandNumSize) :: localseed=-1
+  !integer,dimension(IRandNumSize) :: localseed=-1
 end module pm_commons
