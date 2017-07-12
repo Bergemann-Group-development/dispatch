@@ -1,3 +1,5 @@
+#define MAXLEVEL 30
+
 module statevar
   use amr_parameters
   use hydro_parameters
