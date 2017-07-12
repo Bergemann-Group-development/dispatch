@@ -3,6 +3,7 @@
 !#########################################################################
 !#########################################################################
 subroutine dump_all(advance)
+  use omp_timer_mod, only: wallclock
   use amr_commons
   use pm_commons
   use hydro_commons
@@ -17,7 +18,7 @@ subroutine dump_all(advance)
   character(LEN=120)::filedir,filecmd
   integer::i,itest,info,ntry,ierr
   logical::exists
-  real(kind=8)::wallclock,iotime
+  real(kind=8)::iotime
 
   if (ncpu_dump == ncpu .and. .not. do_particle_dump) then
     if(nstep_coarse==nstep_coarse_old.and.nstep_coarse>0)return
@@ -74,7 +75,7 @@ subroutine dump_all(advance)
 
      if (do_particle_dump .and. pic)then
         filename=TRIM(filedir)//'part_'//TRIM(nchar)//'.out'
-        call backup_part(filename)
+        !all backup_part(filename)
         return
      end if
 
@@ -92,7 +93,7 @@ subroutine dump_all(advance)
      end if
      if(pic)then
         filename=TRIM(filedir)//'part_'//TRIM(nchar)//'.out'
-        call backup_part(filename)
+        !call backup_part(filename)
      end if
      if(poisson)then
         filename=TRIM(filedir)//'grav_'//TRIM(nchar)//'.out'
