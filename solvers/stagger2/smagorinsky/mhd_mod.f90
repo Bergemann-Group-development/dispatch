@@ -180,7 +180,7 @@ associate (d=>self%d, dddt=>self%dddt, &
     du = dx*self%nu(1)*cs
     fxx = pp + d*(fxx - du*sxx) - Ex
     fyy = pp + d*(fyy - du*syy) - Ey
-    fzz = pp + d*(fzz - du*szz) - Ex
+    fzz = pp + d*(fzz - du*szz) - Ez
     Q = d*du*(sxx**2+syy**2+szz**2)
   else
     ! Sound speed + velocity
