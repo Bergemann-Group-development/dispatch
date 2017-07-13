@@ -15,7 +15,7 @@
  n_levels=4                         ! # of refinement levels in for the rubiks cube
  n_patch=3                          ! # of patches per direction
  m_zoom=3                           ! zoom-in level per direction
- n_repeat=5                         ! how many times rubiks cube is repeated along the orbit
+ n_repeat=7                         ! how many times rubiks cube is repeated along the orbit
 /
 
 &eos_params                         ! For ideal gas EOS
@@ -24,7 +24,7 @@ gamma=1.4
 &pebble_params
  do_pebbles=f                       ! pebbles are on/off
  only_pebbles=f                     ! do only pebbles?
- omega_yr=0.0,0.0,1.0               ! 1 AU distance    ! omega in units where 1 = 1/yr
+ omega_yr=0.0,0.0,1.0               ! omega in units where 1 = 1/yr
  solid_density_cgs=3.               ! density of a pebble
  pebble_size_cm=1.                  ! size of a pebble
 /
@@ -36,12 +36,12 @@ gamma=1.4
  orbit_radius_au=1.0
  position_orbit_radii=0.0, 1.0, 0.0 ! planet position in orbit radii      
  trap=0.0                           ! Hx = sqrt(10.)*Hz = 3.16*Hz
-!artificial_friction=1e-5           ! CHECK!
+ artificial_friction=1e-5           ! CHECK!
 /
 &atmosphere_params
  densitY_cgs=3e-12                  ! outer density of the atmosphere at 1 Hill radius (i.e. surrounding local disk density)
  temperature_K=200.                 ! outer temperature of the atmosphere at 1 Hill radius
- mass_m_earth=2.7
+ mass_m_earth=3.0
  orbit_au=1.0
  gamma = 1.4                        ! adiabatic index (gradient?)
  temp_gamma=2000.                   ! temperature above which second gamma is used instead of first
@@ -54,14 +54,16 @@ gamma=1.4
  omega = 0.0,0.0,1.0
 /
 &patch_params
- n=3*42
+ n=3*63
  nt=5
  grace=0.0
  courant=0.2
 !dt_fixed=0.001
 /
 &out_params
- end_time=2000 out_time=100 !restart=36
+ !inputdir='data/3me27r'
+ !end_time=12000 out_time=500            !initial run
+ end_time=12000 out_time=500 restart=5   !restart
  print_time=0.01
  guard_zones=t
  time_derivs=f

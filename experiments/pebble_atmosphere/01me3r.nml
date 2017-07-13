@@ -36,7 +36,7 @@ gamma=1.4
  orbit_radius_au=1.0
  position_orbit_radii=0.0, 1.0, 0.0 ! planet position in orbit radii      
  trap=0.0                           ! Hx = sqrt(10.)*Hz = 3.16*Hz
-!artificial_friction=1e-5           ! CHECK!
+ artificial_friction=1e-5           ! CHECK!
 /
 &atmosphere_params
  densitY_cgs=3e-12                  ! outer density of the atmosphere at 1 Hill radius (i.e. surrounding local disk density)
@@ -62,7 +62,9 @@ gamma=1.4
 /
 &out_params
  !inputdir='data/01me9r'
- end_time=12000 out_time=50 restart=2
+ !end_time=4000 out_time=50            !initial run
+ end_time=4000 out_time=20 restart=3   ! first restart, out time change
+ end_time=4000 out_time=20 restart=11   ! second restart, no changes
  print_time=0.01
  guard_zones=t
  time_derivs=f

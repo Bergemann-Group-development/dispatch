@@ -62,7 +62,11 @@ gamma=1.4
 /
 &out_params
  !inputdir='data/3me27r'
- end_time=8000 out_time=100 restart=9
+ !end_time=4000 out_time=100            !initial run
+ !end_time=4000 out_time=100 restart=7   ! first restart, no changes
+ !end_time=4000 out_time=50 restart=13   ! second restart, out change
+ end_time=4000 out_time=50 restart=26   ! third restart
+
  print_time=0.01
  guard_zones=t
  time_derivs=f
