@@ -1,0 +1,171 @@
+ORG jobcontrol.csh with supporting scipts
+
+The job script hierarchy consists of SUBMIT scripts,
+JOB scripts, and CANNED scripts.
+
+The SUBMIT scipts contain scheduler control commands,
+but other otherwise static, since they are only read at
+submission.
+
+The JOB scripts contain whatever the user wants, and may
+be changed during the runs -- e.g. before restarting a
+process via jobcontrol.csh.
+
+The CANNED scripts are helpful with for example archiving
+copies of executables, input files and log files.
+
+SUBMIT SCRIPTS:
+        long.sh, short.sh, ...
+
+These contains control syntax such as #PBS or #SBATCH.
+Since changes after submission have no effect, they call
+other scripts where changes do have effect.  The call is
+via the jobcontrol.csh script, with submit script syntax
+such as
+
+source $HOME/codes/dispatch/config/startup.sh
+jobcontrol.csh job.sh
+
+The jobcontrol.csh script runs the script given as argument
+repeatedly, as long as there is a restart.flag file present
+in the run directory.
+
+JOB SCRIPTS:
+        long.csh, short.csh
+
+These can be anything, including calls to standard scripts for
+local systems, with syntax such as
+
+ivy.sh input.nml
+
+CANNED SCRIPTS:
+        config/host/steno/ivy.sh
+
+Since we often want to use standard ways of handling executables,
+input files, and log file, we keep a number of canned scripts,
+such as ivy.sh, which places a copy of the excutable, the input
+file, and the log file, in the data/run/ directory.
+
+The script seach path is setup by the config/startup.sh script,
+with directories seached in this order
+
+        ./
+        config/host/$HOST/
+        utilities/scripts/$SCHEDULER/
+        utilities/scripts/
+        $PATH
+
+This meane one can override the default scripts by placing scripts
+with the same name (e.g. ivy.sh) in the run directory.
+
+SCHEDULER is set by a file config/host/$HOST/env.{csh,sh}, if it
+exists, or may be set in the environment.  Possible values are
+"pbs", "slurm", etc.
+
+The utilities/scripts/$SCHEDULER/ directories contain scheduler-i
+specific scripts, used e.g. by jobcontrol.csh.  Some examples are
+
+jobid           # return the id of the current job
+jobkill id      # cancel a job
+jobmail         # send a mail to $USER
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+# On branch no-mans-land
+# Your branch is ahead of 'origin/no-mans-land' by 3 commits.
+#
+# Changes to be committed:
+#   (use "git reset HEAD^1 <file>..." to unstage)
+#
+#	new file:   ../config/host/hazelhen/env.csh
+#	new file:   ../config/host/marconi/env.csh
+#	new file:   ../config/host/pleiades/env.csh
+#	new file:   ../config/host/steno/env.csh
+#	new file:   ../config/host/steno/env.sh
+#	new file:   ../config/host/steno/ivy.sh
+#	new file:   ../config/host/steno/jobmail
+#	new file:   ../config/host/steno/jobrunning
+#	new file:   ../utilities/scripts/jobcontrol.csh
+#	new file:   ../utilities/scripts/jobcontrol.sh
+#	new file:   ../utilities/scripts/jobhelper
+#	new file:   ../utilities/scripts/jobmail
+#	new file:   ../utilities/scripts/pbs/jobid
+#	new file:   ../utilities/scripts/pbs/jobkill
+#	new file:   ../utilities/scripts/pbs/jobmail
+#	new file:   ../utilities/scripts/pbs/jobrunning
+#	new file:   ../utilities/scripts/slurm/jobhelper
+#	new file:   ../utilities/scripts/slurm/jobid
+#	new file:   ../utilities/scripts/slurm/jobkill
+#	new file:   ../utilities/scripts/slurm/jobrunning
+#
+# Changed but not updated:
+#   (use "git add <file>..." to update what will be committed)
+#   (use "git checkout -- <file>..." to discard changes in working directory)
+#
+#	modified:   ../experiments/bright_points/Makefile
+#	modified:   ../experiments/bright_points/driver_mod.f90
+#	modified:   ../experiments/bright_points/experiment_mod.f90
+#	modified:   ../experiments/bright_points/initial_mod.f90
+#	modified:   ../experiments/bright_points/input.nml
+#	modified:   ../io/io_mod.f90
+#	modified:   ../lists/task_list_mod.f90
+#	modified:   ../solvers/pic/stagger/stagger_mod.f90
+#
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#	../config/host.csh
+#	../config/host.help
+#	../config/host.mkf
+#	../config/host/steno/bin/
+#	../config/startup.csh
+#	prototype.txt
+#	../experiments/bright_points/bx_init.idlsave
+#	../experiments/bright_points/check.pro
+#	../experiments/bright_points/dispatch.0b61a8b
+#	../experiments/bright_points/fix.pro
+#	../experiments/bright_points/init.jou
+#	../experiments/bright_points/ivy.tmp
+#	../experiments/bright_points/job.sh
+#	../experiments/bright_points/long.csh
+#	../experiments/bright_points/long.sh
+#	../experiments/bright_points/prv
+#	../experiments/bright_points/restart.flag
+#	../experiments/bright_points/running.flag
+#	../experiments/bright_points/short.csh
+#	../experiments/bright_points/short.sh
+#	../experiments/bright_points/x.sh
+#	../experiments/bright_points/xx
+#	../experiments/pebble_atmosphere/.gitignore
+#	../experiments/pebble_atmosphere/python/.ipynb_checkpoints/
+#	../experiments/pebble_atmosphere/stagger3/hd/e/
+#	../experiments/pebble_atmosphere/untitled_1.pro
+#	../experiments/pic/PPcode
+#	../experiments/planet_atmosphere/.gitignore
+#	../experiments/ramses_snapshots/run16
+#	../experiments/ramses_snapshots/run22a
+#	../experiments/ramses_snapshots/run22d
+#	../experiments/rt_shadow_bench/spool
+#	../experiments/turbulence/.gitignore
+#	../experiments/turbulence/kitp_1.pdf
+#	../experiments/turbulence/kitp_1a.pdf
+#	../experiments/turbulence/kitp_512.pdf
+#	../experiments/turbulence/kitp_512a.pdf
+#	../experiments/turbulence/kitp_diff_1-512.pdf
+#	../experiments/turbulence/kitp_diff_1-512_a.pdf
+#	../experiments/turbulence/kitp_diff_courant.pdf
+#	../experiments/turbulence/kitp_diff_courant_a.pdf
+#	../experiments/turbulence/performance/steno_ivy/mpi_scaling.txt
+#	../experiments/turbulence/python/plot_nq.py
+#	../experiments/turbulence/rankq
+#	../experiments/turbulence/xx
+#	../experiments/turbulence/zeus3d/
+#	../jobcontrol.txt
+#	../microphysics/eos/stagger/Makefile
+#	../solvers/stagger2/e/.mhd_mod.f90.swp
+#	../solvers/stagger2/xx.sed
+#	../tasks/status_mod.f90
+#	../tests/omp_task_critical/
+#	../tests/rt/prototype/mhd63.msh
+#	../utilities/scripts/host.pl
+#	../xxx

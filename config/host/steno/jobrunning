@@ -1,0 +1,1 @@
+squeue --long | grep astro_ | grep "\<$1\>.* R" >/dev/null

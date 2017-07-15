@@ -1,0 +1,1 @@
+Mail -s "restart_on_`hostname`" $USER

@@ -1,0 +1,35 @@
+#!/bin/csh
+
+echo "`uname -n` `date`"
+
+@ hours = 120
+@ minutes = $hours * 60
+
+while ($minutes > 0)
+ @ minutes--
+ @ n=6
+ while ($n > 0)
+  @ n--
+  if (-e source.flag) then
+    date
+    cat source.flag
+    source source.flag
+    \rm source.flag
+  endif
+  if (-e cmd.flag) then
+    date
+    cat cmd.flag
+    set cmd = `cat cmd.flag`
+    \rm cmd.flag
+    $cmd
+  endif
+  if (-e mpikill.flag) then
+    date
+    echo "killall mpiexec srun"
+    killall mpiexec srun
+    \rm mpikill.flag
+  endif
+  sleep 10
+ end
+ echo "`date` $minutes"
+end
