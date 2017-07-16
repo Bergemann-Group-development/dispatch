@@ -52,7 +52,6 @@ MODULE task_list_mod
     procedure:: check_active
     procedure:: split
     procedure:: output
-    procedure:: check_flags
     procedure:: print => print_table
     procedure:: print_tasks
   end type
@@ -236,7 +235,7 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   io%ntask = self%n
   !$omp parallel
-  do while (self%na > 0 .and. wallclock() < self%job_seconds)
+  do while (self%na > 0 .and. .not.io%do_stop .and. wallclock() < self%job_seconds)
     call self%update
     if (self%na == self%n_tasks) then
       !$omp atomic
@@ -275,7 +274,6 @@ SUBROUTINE update (self)
   integer:: id
   !.............................................................................
   call trace%begin('task_list_t%update')
-  call self%check_flags
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
@@ -418,9 +416,19 @@ SUBROUTINE updater (self, head)
   class(task_t), pointer:: task
   real(8):: wc
   !---------------------------------------------------------------------------
-  ! If the task is frozen (e.g. because it has finished), return
+  ! Check for flag files.  If io%out_time is set, set a new out_next. 
+  ! If task%time is slightly smaller than a multiple of out_time, then
+  ! out_next will becoe that multiple.
   !---------------------------------------------------------------------------
   task => head%task
+  call io%check_flags
+  if (task%id==io%id_track) then
+    task%track =  .not.task%track
+    io%id_track = 0
+  end if
+  !---------------------------------------------------------------------------
+  ! If the task is frozen (e.g. because it has finished), return
+  !---------------------------------------------------------------------------
   if (task%is_set (bits%frozen+bits%virtual)) then
     if (task%iout == 0) call task%output(self%name)
     ! if a frozen task is set to ready, make it not ready
@@ -619,6 +627,17 @@ SUBROUTINE unpack (self, mesg, link)
   !---------------------------------------------------------------------------
   id = task%id
   call task%unpack (mesg)
+  if (mpi_mesg%debug) then
+    !$omp critical (debug_cr)
+    write (io_unit%mpi,'(f12.6,2x,a,i9,1p,e18.6,2x,a,i5,2x,5l1)') &
+      wallclock(), 'recv', mesg%id, task%time, 'fr', task%rank, &
+      task%is_set (bits%internal), &
+      task%is_set (bits%boundary), &
+      task%is_set (bits%virtual), &
+      task%is_set (bits%external), &
+      task%is_set (bits%swap_request)
+    !$omp end critical (debug_cr)
+  end if
   write (io_unit%log,*) wallclock(), 'unpack: id, time =', task%id, task%time
   if (id /= mesg%id) print *,'unpack ERROR: wrong mesg%id', id, task%id, mesg%id
   if (.not. failed) then
@@ -1196,57 +1215,5 @@ SUBROUTINE print_table (self, label)
   call self%print_queue
   call trace%end
 END SUBROUTINE print_table
-
-!> =============================================================================
-!> Check debug flag files
-!> =============================================================================
-SUBROUTINE check_flags (self)
-  class (task_list_t):: self
-  logical:: changed
-  !.............................................................................
-  if (io%verbose > 0 .and. io%do_flags) then             ! avoid speed impact
-    call trace%begin ('task_list_t%check_flags')
-    call icheck ('id_debug.flag', io%id_debug, changed)
-    call icheck ('verbose.flag' , io%verbose , changed)
-    call lcheck ('do_trace.flag', io%do_trace, changed)
-    call trace%end
-  end if
-contains
-  !=============================================================================
-  logical function exists(file)
-  character(len=*):: file
-  inquire (file=file, exist=exists)
-  end function
-  !=============================================================================
-  subroutine icheck (file, value, changed)
-  character(len=*):: file
-  integer:: value
-  logical:: changed
-  if (exists(trim(file))) then
-    open (io_unit%flag, file=trim(file), form='formatted', status='old')
-    read (io_unit%flag,*) value
-    close (io_unit%flag,status='delete')
-    write (io_unit%log,*) 'flag check:', file, value
-    changed = .true.
-  else
-    changed = .false.
-  end if
-  end subroutine
-  !=============================================================================
-  subroutine lcheck (file, value, changed)
-  character(len=*):: file
-  logical:: value
-  logical:: changed
-  if (exists(trim(file))) then
-    open (io_unit%flag, file=trim(file), form='formatted', status='old')
-    read (io_unit%flag,*) value
-    close (io_unit%flag,status='delete')
-    write (io_unit%log,*) 'flag check:', file, value
-    changed = .true.
-  else
-    changed = .false.
-  end if
-  end subroutine
-END SUBROUTINE check_flags
 
 END MODULE

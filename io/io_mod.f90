@@ -12,17 +12,33 @@ MODULE io_mod
   logical:: mpi_trace=.false.
   type io_t
     integer:: verbose=0, input, output, data_unit, log_unit
-    logical:: master=.true., do_debug=.false., do_trace=.false., do_output=.true.
-    logical:: do_flags, do_legacy, do_direct, omp_trace
+    logical:: master=.true.
+    logical:: do_legacy, do_direct, omp_trace
     integer:: levelmax
     integer:: word_size=4
-    integer:: id_debug=0
     integer:: nwrite=0, ntask=0
     character(len=64):: inputname, outputname, datadir='data', top, inputdir
     character(len=1):: sep = '/'
+    ! flag values
+    logical:: do_trace=.false.
+    logical:: do_output=.true.
+    logical:: do_debug=.false.
+    logical:: do_flags=.false.
+    logical:: do_stop=.false.
+    logical:: guard_zones=.false.
+    logical:: time_derivs=.false.
+    integer:: id_debug=0
+    integer:: id_track=0
+    real(8):: end_time=1d30
+    real(8):: out_time=1d0
+    real(8):: print_time=0d0
+    real:: flag_time=1.
+    real:: flag_max=60.
+    real:: ampl=0.0
   contains
     procedure:: init
     procedure:: debug
+    procedure:: check_flags
     procedure:: print_id => print_id_
     procedure, nopass:: mkdir
     procedure, nopass:: print_hl
@@ -231,5 +247,68 @@ SUBROUTINE print_id (id)
     if (.not.mpi_trace) id = ' '
   end if
 END SUBROUTINE print_id
+
+!> =============================================================================
+!> Check debug flag files
+!> =============================================================================
+SUBROUTINE check_flags (self)
+  class (io_t)      :: self
+  real(8), save     :: last_checked=0d0
+  real(8)           :: flag_time, checked
+  !.............................................................................
+  flag_time = merge(self%flag_time, self%flag_max, self%do_flags)
+  !$omp atomic read
+  checked = last_checked
+  if (wallclock() > checked+flag_time) then
+    !$omp critical (flag_cr)
+    last_checked = wallclock()
+    ! logical
+    call check ('do_trace.flag'       , lvalue=self%do_trace)
+    call check ('do_flags.flag'       , lvalue=self%do_flags)
+    call check ('do_debug.flag'       , lvalue=self%do_debug)
+    call check ('do_output.flag'      , lvalue=self%do_output)
+    call check ('stop.flag'           , lvalue=self%do_stop)
+    ! integer
+    call check ('id_debug.flag'       , ivalue=self%id_debug)
+    call check ('id_track.flag'       , ivalue=self%id_track)
+    call check ('verbose.flag'        , ivalue=self%verbose)
+    ! single prec
+    call check ('flag_time.flag'      , rvalue=self%flag_time)
+    call check ('flag_max.flag'       , rvalue=self%flag_max)
+    call check ('ampl.flag'           , rvalue=self%ampl)
+    ! double prec
+    call check ('out_time.flag'       , dvalue=self%out_time)
+    call check ('print_time.flag'     , dvalue=self%print_time)
+    call check ('end_time.flag'       , dvalue=self%end_time)
+    call check ('sec_per_report.flag' , dvalue=timer%sec_per_report)
+    !$omp end critical (flag_cr)
+  end if
+contains
+  !=============================================================================
+  subroutine check (file, lvalue, ivalue, rvalue, dvalue)
+  character(len=*)  :: file
+  logical, optional :: lvalue
+  integer, optional :: ivalue
+  real   , optional :: rvalue
+  real(8), optional :: dvalue
+  logical           :: exists
+  integer           :: iostat
+  !.............................................................................
+  inquire (file=trim(file), exist=exists)
+  if (exists) then
+    open (io_unit%flag, file=trim(file), form='formatted', status='old', iostat=iostat)
+    if (present(ivalue)) read (io_unit%flag,*) ivalue
+    if (present(rvalue)) read (io_unit%flag,*) rvalue
+    if (present(dvalue)) read (io_unit%flag,*) dvalue
+    if (present(lvalue).and.iostat==0) read (io_unit%flag,*,iostat=iostat) lvalue
+    if (iostat/=0) lvalue = .not.lvalue
+    close (io_unit%flag, status='delete')
+    if (present(lvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', lvalue
+    if (present(ivalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', ivalue
+    if (present(rvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', rvalue
+    if (present(dvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', dvalue
+  end if
+  end subroutine
+END SUBROUTINE check_flags
 
 END MODULE io_mod
