@@ -111,7 +111,7 @@ SUBROUTINE update (self)
     !$omp atomic read
     state = link%task%state
     if (state==4) cycle
-    if (link%task%time > link%task%end_time) then
+    if (link%task%time > io%end_time) then
       !$omp atomic
       task_list%na = task_list%na - 1
       !$omp atomic write

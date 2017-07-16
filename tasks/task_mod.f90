@@ -35,11 +35,8 @@ MODULE task_mod
     integer:: state=0
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
-    real(8):: end_time = 1d0
     real(8):: out_next = 0d0
-    real(8):: out_time = 1d0
     real(8):: print_next = 0d0
-    real(8):: print_time = 1d0
     real(8):: dtime = 0d0
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0
@@ -318,9 +315,9 @@ LOGICAL FUNCTION has_finished (self)
   integer:: bit
   !.............................................................................
   if (io%do_output) then
-    has_finished = (self%out_next > self%end_time)
+    has_finished = (self%out_next > io%end_time)
   else
-    has_finished = (self%time + 1e-6*self%dtime > self%end_time) &
+    has_finished = (self%time + 1e-6*self%dtime > io%end_time) &
       .or. self%is_set(bits%virtual)
   end if
   if (has_finished) call self%set (bits%frozen)

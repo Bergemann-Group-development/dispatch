@@ -59,7 +59,7 @@ SUBROUTINE init (self)
   if (restart_time > 0d0) then
     self%time = restart_time
     self%t(self%it) = self%time
-    self%out_next = (int(self%time/self%out_time)+1)*self%out_time
+    self%out_next = (int(self%time/io%out_time)+1)*io%out_time
     self%iout = self%restart+1
   end if
   call trace%end

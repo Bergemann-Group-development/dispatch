@@ -411,7 +411,7 @@ SUBROUTINE kdk_drag (self, p)
   !ar = 1./sqrt(sum(rp**2))
   !p%ag = p%ag + scaling%grav*star%mass*rp*ar**3
   p%dt = sqrt(sum(p%p**2)/sqrt(sum(p%ag**2)))*self%pebbles%courant
-  p%dt = min(p%dt,0.1*self%out_time,minval(self%ds/max(1e-20,abs(p%v))))
+  p%dt = min(p%dt,0.1*io%out_time,minval(self%ds/max(1e-20,abs(p%v))))
   !
   if (p%id==self%pebbles%id_dbg) then
     print'("kdkd1",1p,5(3e10.2,2x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t
@@ -432,7 +432,7 @@ SUBROUTINE kdk_drag (self, p)
     print *,'  dt',p%dt,1,io%verbose
     print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
     print *,' dt2',self%pebbles%courant*sqrt(sum(p%p**2)/sqrt(sum(p%ag**2)))
-    print *,' dt3',minval(self%ds)/max(1e-20,abs(p%v)),self%out_time
+    print *,' dt3',minval(self%ds)/max(1e-20,abs(p%v)),io%out_time
     print'(1x,a,1p,9(3e11.2,2x))', 'dt3', self%ds, abs(p%v), self%ds/max(1e-20,abs(p%v))
     print *,'  ds',self%ds
     print *,'v*dt',p%v*p%dt
@@ -840,8 +840,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !-----------------------------------------------------------------------------
   if (io%verbose >= 0) then
     if (self%time>=self%print_next) then
-      if (self%print_time > 0) &
-        self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
+      if (io%print_time > 0) &
+        self%print_next = (nint(self%time/io%print_time)+1)*io%print_time
       nv = 1
       if (io%verbose>2) nv = self%nv
       if (io%verbose>0 .or. self%id==1) then

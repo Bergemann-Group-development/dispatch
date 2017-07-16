@@ -80,8 +80,6 @@ SUBROUTINE init_rt_internal (self)
   self%size      = mhd_patch%size
   self%cell_ds   = mhd_patch%ds
   self%it        = mhd_patch%it
-  self%end_time  = mhd_patch%end_time
-  self%out_time  = mhd_patch%out_time
   self%li        = mhd_patch%li
   self%ui        = mhd_patch%ui
   self%time      = -2
@@ -105,7 +103,7 @@ SUBROUTINE init_rt_internal (self)
   if (self%solver ==  0) then                                           ! set the right solver
     self%solve => solve_internal_feautrier
   else
-   if (self%do_output) then
+   if (io%do_output) then
       self%solve => solve_internal_integral_2nd_store_mean_intensity
     else
       self%solve => solve_internal_integral_2nd

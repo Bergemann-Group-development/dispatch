@@ -166,7 +166,7 @@ SUBROUTINE output (self, experiment_name)
   character(len=64), optional:: experiment_name
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%output')
-  call bifrost_output (self%out_time)
+  call bifrost_output (io%out_time)
   call self%patch_t%output
   call trace%end
 END SUBROUTINE output

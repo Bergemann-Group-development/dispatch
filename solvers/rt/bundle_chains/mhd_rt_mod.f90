@@ -108,14 +108,14 @@ SUBROUTINE rt_output_legacy (self, experiment_name)
   ! If guard_zones is true, include the guard zones.  If time_derivs is true,
   ! write out the time derivatives also.
   !-----------------------------------------------------------------------------
-  if (self%guard_zones) then
+  if (io%guard_zones) then
     l = self%mesh%lb
     u = self%mesh%ub
   else
     l = self%mesh%li
     u = self%mesh%ui
   end if
-  if (self%time_derivs) then
+  if (io%time_derivs) then
     no = 2
   else
     no = 1
@@ -174,7 +174,7 @@ SUBROUTINE rt_output_legacy (self, experiment_name)
       ! and time derivatives, which we have at iit(nt-2).
       !-------------------------------------------------------------------------
       it1 = self%iit(self%nt-2)
-      if (self%time_derivs) then
+      if (io%time_derivs) then
         it = it1
         buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
       !-------------------------------------------------------------------------

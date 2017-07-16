@@ -38,7 +38,6 @@ MODULE patch_mod
     integer:: nw=2                      ! number of work indices
     integer:: msplit=2                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
-    logical:: guard_zones, time_derivs  ! switches for I/O
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
@@ -119,7 +118,7 @@ MODULE patch_mod
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
   !-----------------------------------------------------------------------------
-  integer, save:: n_header = (14*4 + 7*8 + 5*8*3 + 1*8 + 2*8*8 + 1*4*8 + 2*4*3)/4
+  integer, save:: n_header = (14*4 + 4*8 + 5*8*3 + 1*8 + 2*8*8 + 1*4*8 + 2*4*3)/4
   type header_t
     sequence
     integer:: version=1
@@ -137,11 +136,8 @@ MODULE patch_mod
     integer:: nq=0
     integer:: npad=0
     real(8):: time
-    real(8):: end_time
     real(8):: out_next
-    real(8):: out_time
     real(8):: print_next
-    real(8):: print_time
     real(8):: dtime
     real(8):: position(3)
     real(8):: velocity(3)
@@ -185,11 +181,8 @@ SUBROUTINE patch_to_header (self, head)
   head%iout       = self%iout
   head%level      = self%level
   head%time       = self%time
-  head%end_time   = self%end_time
   head%out_next   = self%out_next
-  head%out_time   = self%out_time
   head%print_next = self%print_next
-  head%print_time = self%print_time
   head%dtime      = self%dtime
   head%position   = self%position
   head%velocity   = self%velocity
@@ -241,11 +234,8 @@ SUBROUTINE header_to_patch (self, head)
   self%iout       = head%iout
   self%level      = head%level
   self%time       = head%time
-  self%end_time   = head%end_time
   self%out_next   = head%out_next
-  self%out_time   = head%out_time
   self%print_next = head%print_next
-  self%print_time = head%print_time
   self%dtime      = head%dtime
   self%position   = head%position
   self%velocity   = head%velocity
@@ -283,7 +273,7 @@ SUBROUTINE check_error (self, a, label, error)
   integer, save:: nerror=4
   !-----------------------------------------------------------------------------
   if (.not.io%do_debug) return
-  if (self%guard_zones) then
+  if (io%guard_zones) then
     l = self%mesh%lb
     u = self%mesh%ub
   else
@@ -383,11 +373,11 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
-  self%guard_zones = guard_zones
-  self%time_derivs = time_derivs
-  self%end_time    = end_time
-  self%out_time    = out_time
-  self%print_time  = print_time
+  io%guard_zones   = guard_zones
+  io%time_derivs   = time_derivs
+  io%end_time      = end_time
+  io%out_time      = out_time
+  io%print_time    = print_time
   self%print_next  = print_time
   if (all(self%size==self%box)) then
     write (io_unit%log,*) mpi%rank, 'task', self%id, ' is root grid'
@@ -818,8 +808,8 @@ SUBROUTINE output (self, experiment_name)
     end if
     self%iout = self%iout+1
     !$omp end critical (out_cr)
-    if (self%out_time==0.0) exit
-    self%out_next = (nint(self%out_next/self%out_time)+1)*self%out_time
+    if (io%out_time==0.0) exit
+    self%out_next = (nint(self%out_next/io%out_time)+1)*io%out_time
   end do
   call trace_end (itimer)
 END SUBROUTINE output
@@ -1137,21 +1127,21 @@ SUBROUTINE output_legacy (self, experiment_name)
   ! If guard_zones is true, include the guard zones.  If time_derivs is true,
   ! write out the time derivatives also.
   !-----------------------------------------------------------------------------
-  if (self%guard_zones) then
+  if (io%guard_zones) then
     l = self%mesh%lb
     u = self%mesh%ub
   else
     l = self%mesh%li
     u = self%mesh%ui
   end if
-  if (self%time_derivs) then
+  if (io%time_derivs) then
     no = min(2,self%nw)
   else
     no = 1
   end if
-  if (self%out_time==0.0) then
+  if (io%out_time==0.0) then
     time = self%time
-  else if (self%time_derivs) then
+  else if (io%time_derivs) then
     time = self%t(self%nt-2)
   else
     time = self%out_next
@@ -1194,14 +1184,14 @@ SUBROUTINE output_legacy (self, experiment_name)
       ! and time derivatives, which we have at iit(nt-2).
       !-------------------------------------------------------------------------
       it1 = self%iit(self%nt-2)
-        if (self%out_time == 0.0) then
+        if (io%out_time == 0.0) then
           buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
         !-------------------------------------------------------------------------
         ! Normally, we write out only variable values, which can then be interpolated
         ! to the exact output time, self%out_next, the update of which must come
         ! after this point
         !-------------------------------------------------------------------------
-        else if (self%time_derivs) then
+        else if (io%time_derivs) then
           it = it1
           buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
           call check_error(self, buf, "output 1")
@@ -1292,8 +1282,8 @@ SUBROUTINE input_legacy (self, ok)
   !-----------------------------------------------------------------------------
   ! If guard_zones is true, include the guard zones.
   !-----------------------------------------------------------------------------
-  l = merge (self%mesh%lb, self%mesh%li, self%guard_zones)
-  u = merge (self%mesh%ub, self%mesh%ui, self%guard_zones)
+  l = merge (self%mesh%lb, self%mesh%li, io%guard_zones)
+  u = merge (self%mesh%ub, self%mesh%ui, io%guard_zones)
   !-----------------------------------------------------------------------------
   ! Read the binary file with the data cube.
   !-----------------------------------------------------------------------------
@@ -1316,7 +1306,7 @@ SUBROUTINE input_legacy (self, ok)
   !-----------------------------------------------------------------------------
   ! Update the iout and out_next for continued experiment
   !-----------------------------------------------------------------------------
-  self%out_next = (int(self%time/self%out_time)+1)*self%out_time
+  self%out_next = (int(self%time/io%out_time)+1)*io%out_time
   call trace_end
 END SUBROUTINE input_legacy
 
@@ -1373,8 +1363,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   1 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,5i5,6i4,l3,l1,o12)
   if (io%verbose>=0) then
     if (self%time>=self%print_next) then
-      if (self%print_time > 0) &
-        self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
+      if (io%print_time > 0) &
+        self%print_next = (nint(self%time/io%print_time)+1)*io%print_time
       call trace%begin ('patch_t%info', itimer=itimer)
       nv = 1
       if (io%verbose>2) nv = self%nv
@@ -1619,8 +1609,8 @@ SUBROUTINE courant_condition (self, detailed_timer)
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
-  if (self%out_time > 0.0) &
-    self%dtime = min (self%dtime, self%out_time)
+  if (io%out_time > 0.0) &
+    self%dtime = min (self%dtime, io%out_time)
   self%dt(self%it) = self%dtime
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &

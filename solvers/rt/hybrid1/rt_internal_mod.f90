@@ -61,8 +61,6 @@ SUBROUTINE init_rt_internal (self)
   self%size      = mhd_patch%size
   self%cell_ds   = mhd_patch%ds
   self%it        = mhd_patch%it
-  self%end_time  = mhd_patch%end_time
-  self%out_time  = mhd_patch%out_time
   self%li        = mhd_patch%li
   self%ui        = mhd_patch%ui
   self%time      = -2

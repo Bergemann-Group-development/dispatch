@@ -108,7 +108,7 @@ SUBROUTINE init_rt (self)
   end if
   !$omp end critical (init_cr)
   self%periodic = .false.
-  self%do_output = do_output
+  io%do_output = do_output
   if (ray_geometry%head%ray_list%directionality(1) == 1) then
     nd = 2
   else
@@ -855,7 +855,7 @@ SUBROUTINE finish(self)
   !---------------------------------------------------------------------
   self%updated(:)=.false.
   self%data_ready = .false.
-  if (self%do_output) call self%output
+  if (io%do_output) call self%output
   deallocate (self%d, self%e_th, self%rk, self%src)                     ! deallocate scratch
 END SUBROUTINE finish
 
@@ -1320,21 +1320,21 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   ! If guard_zones is true, include the guard zones.  If time_derivs is true,
   ! write out the time derivatives also.
   !-----------------------------------------------------------------------------
-  if (self%guard_zones) then
+  if (io%guard_zones) then
     l = self%mesh%lb
     u = self%mesh%ub
   else
     l = self%mesh%li
     u = self%mesh%ui
   end if
-  if (self%time_derivs) then
+  if (io%time_derivs) then
     no = min(2,self%nw)
   else
     no = 1
   end if
-  if (self%out_time==0.0) then
+  if (io%out_time==0.0) then
     time = self%time
-  else if (self%time_derivs) then
+  else if (io%time_derivs) then
     time = self%t(self%nt-2)
   else
     time = self%out_next
@@ -1401,7 +1401,7 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   end do
   close (io%data_unit)
    self%iout = self%iout+1
-   self%out_next = (nint(self%out_next/self%out_time)+1)*self%out_time
+   self%out_next = (nint(self%out_next/io%out_time)+1)*io%out_time
   !$omp end critical (out_cr)
   end do
   call trace_end

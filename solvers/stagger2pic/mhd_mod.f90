@@ -499,8 +499,8 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
-  if (self%out_time > 0.0) &
-    self%dtime = min (self%dtime, self%out_time)
+  if (io%out_time > 0.0) &
+    self%dtime = min (self%dtime, io%out_time)
   if (self%mhd_AD) then
     self%dtime = min (self%dtime, dt_AD_inp)
   end if

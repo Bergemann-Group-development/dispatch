@@ -627,17 +627,6 @@ SUBROUTINE unpack (self, mesg, link)
   !---------------------------------------------------------------------------
   id = task%id
   call task%unpack (mesg)
-  if (mpi_mesg%debug) then
-    !$omp critical (debug_cr)
-    write (io_unit%mpi,'(f12.6,2x,a,i9,1p,e18.6,2x,a,i5,2x,5l1)') &
-      wallclock(), 'recv', mesg%id, task%time, 'fr', task%rank, &
-      task%is_set (bits%internal), &
-      task%is_set (bits%boundary), &
-      task%is_set (bits%virtual), &
-      task%is_set (bits%external), &
-      task%is_set (bits%swap_request)
-    !$omp end critical (debug_cr)
-  end if
   write (io_unit%log,*) wallclock(), 'unpack: id, time =', task%id, task%time
   if (id /= mesg%id) print *,'unpack ERROR: wrong mesg%id', id, task%id, mesg%id
   if (.not. failed) then
