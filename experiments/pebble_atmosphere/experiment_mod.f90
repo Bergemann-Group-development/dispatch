@@ -90,6 +90,7 @@ SUBROUTINE init (self)
   !self%nv = 5
   call self%set (bits%static)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
+  self%boundaries%id = self%id
   if (trim(type)/='disk' .and. all(abs(self%position) < self%ds)) then
     print *, 'experiment_t%init: setting spherical BC bits on patch', self%id
     call self%set (bits%has_BC)
@@ -174,7 +175,9 @@ SUBROUTINE update (self)
     !--------------------------------------------------------------------------
     call self%boundary_conditions (self%it)
     call self%output
+    !
     call self%debug ('after BCs')
+    !
     call self%mhd_t%update
   end if
   !-----------------------------------------------------------------------------
@@ -196,9 +199,13 @@ SUBROUTINE update (self)
   call self%pebble_patch_t%update_pebbles
   i = io%verbose
   io%verbose = 1
+  !
   call self%check_nan ('after timestep')
+  !
   io%verbose = i
+  !
     call self%debug ('after update', self%new)
+  !
   call trace_end
 END SUBROUTINE update
 
@@ -208,15 +215,20 @@ END SUBROUTINE update
 SUBROUTINE output (self, experiment_name)
   class(experiment_t):: self
   character(len=64), optional:: experiment_name
+  class(mesh_t), pointer :: m1, m2, m3
   integer:: iv, it, m(3)
   if (self%id==io%id_debug) then
-    m = self%mesh%gn/2
+    m1 => self%mesh(1)
+    m2 => self%mesh(2)
+    m3 => self%mesh(3)
+    m = [m1%gn/2,m2%gn/2,m3%gn/2]
     it = self%iit(self%nt-2)
     do iv=2,4
       print *,'OUT: t, iv, u(z) =', real(self%t(it)), iv, &
         self%mem(m(1),m(2),m(3)-2:m(3)+2,iv,it,1)/ &
         self%mem(m(1),m(2),m(3)-2:m(3)+2, 1,it,1)
     end do
+  nullify (m1, m2, m3)
   end if
   !if (self%time > self%out_next) &
   !  call self%boundary_conditions (self%it)
@@ -230,35 +242,40 @@ SUBROUTINE boundary_conditions (self, it)
   class(experiment_t) :: self
   integer             :: it
   !.............................................................................
-  real(8)             :: h(3)
-  integer             :: iv, nb,i
-  integer, save       :: itimer=0
-  real, pointer       :: d(:,:,:), e(:,:,:), s(:,:,:)
-  real                :: s0
+  real(kind=KindScalarVar), pointer :: d(:,:,:), d0(:,:,:), e(:,:,:), s(:,:,:)
+  real                              :: s0
+  integer                           :: iv
+  integer, save                     :: itimer=0
   !-----------------------------------------------------------------------------
   if (self%boundaries%bits /= 0) then
     call trace%begin ('experiment_mod::boundary_conditions', itimer=itimer)
-  !  print *, self%id, 'BOUNDARY CONDITION BITS:', self%boundaries%bits
+    !
     call self%check_density ('before boundary_conditions')
+    !
     !---------------------------------------------------------------------------
     ! If spherical inner BCs, save the incoming values
     !---------------------------------------------------------------------------
     if (self%boundaries%is_set (bits%spherical)) then
-      if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
       print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
-      call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), self%mesh, self%i_d)
-      d => self%mem(:,:,:,self%i_d,it,1)
-      s0 = (log(atmosphere%surface%pressure) - &
-        log(atmosphere%surface%density)*self%gamma)/(self%gamma-1.0)
+      ! --- Density ---
+      d => self%mem(:,:,:,self%i_d,it,1)                                ! density slot
       if (self%kind(1:9)=='stagger2_') then
+        allocate(d0(size(d,1),size(d,2),size(d,3)))                     ! scratch for density
+        d0 = d                                                          ! save current state
+        call self%boundaries%spherical_extrapolate (d, self%mesh, self%i_d)! apply BC to density
+        ! --- Entropy ---
+        s0 = (log(atmosphere%surface%pressure) - &
+              log(atmosphere%surface%density)*self%gamma)/(self%gamma-1.0)
         s => self%mem(:,:,:,self%i_s,it,1)
-        s = s/d
-        call self%boundaries%spherical (s, s0, self%mesh, self%i_s)
-        s = s*d
+        s = s/d0                                                        ! conserve entropy - use old state to get specific S
+        call self%boundaries%spherical (s, s0, self%mesh, self%i_s)     ! apply BC to entropy
+        s = s*d                                                         ! mass entropy
+        deallocate (d0)
       else
         allocate (s(self%gn(1),self%gn(2),self%gn(3)))
         call self%e2S (s, it)
-        call self%boundaries%spherical (s, s0, self%mesh, self%i_s)
+        call self%boundaries%spherical_extrapolate (d, self%mesh, self%i_d)! apply BC to density
+        call self%boundaries%spherical (s, s0, self%mesh, self%i_s)     ! apply BC to thermal energy
         call self%S2e (s, it)
         deallocate (s)
       end if
@@ -283,7 +300,9 @@ SUBROUTINE boundary_conditions (self, it)
       end if
       call self%edge_boundary_conditions(it)
     end if
+    !
     call self%check_density ('after boundary_conditions')
+    !
     call trace%end
   end if
 END SUBROUTINE boundary_conditions
@@ -302,17 +321,21 @@ SUBROUTINE edge_boundary_conditions (self, it)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: u
   integer:: iv, select
   real:: ee
-  !-----------------------------------------------------------------------------
+  !---------------------------------------------------------------------
   ! Edge boundary conditions
-  !-----------------------------------------------------------------------------
+  !---------------------------------------------------------------------
   call trace%begin ('experiment_t%edge_boundary_conditions')
-  self%boundaries%id = self%id
-  d => self%mem(:,:,:,self%i_d,it,1)
-  allocate (u   (size(d,1),size(d,2),size(d,3),3))
-  allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
-                            call self%check_density ('before density_BC')
-  call self%density_boundary_condition (it)                             ! vertical density BC
-  !call self%boundaries%log_extrapolate (d, self%i_d)
+  ! --------------------------------------------------------------------
+  ! Allocate scratch arrays
+  ! --------------------------------------------------------------------
+  allocate (d   (self%gn(1),self%gn(2),self%gn(3)))
+  allocate (u   (self%gn(1),self%gn(2),self%gn(3),3))
+  allocate (e_th(self%gn(1),self%gn(2),self%gn(3)  ))
+  d = self%mem(:,:,:,self%i_d,it,1)                                     ! density state to be modified
+  !
+  call self%check_density ('before density_BC')
+  !
+  call self%density_boundary_condition (it,d)                           ! vertical density BC
   if (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
     select = bits%yu
     if (io%verbose>2) &
@@ -320,7 +343,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
       self%boundaries%is_set(bits%xl), self%boundaries%is_set(bits%xu), &
       self%boundaries%is_set(bits%yl), self%boundaries%is_set(bits%yu), &
       self%boundaries%is_set(bits%zl), self%boundaries%is_set(bits%zu)
-    call self%boundaries%log_extrapolate (d, self%i_d, select=select)
+    call self%boundaries%log_extrapolate (d, self%i_d, select=select)   ! extrapolate density at yu
     if (self%id==io%id_debug) &
       print *, self%id, 'EXTRAP D', d(6,33:37,31)
   else if (self%position(1)>0.0 .and. self%position(2)<0.0 .and. self%boundaries%is_set(bits%yl)) then
@@ -330,19 +353,20 @@ SUBROUTINE edge_boundary_conditions (self, it)
       self%boundaries%is_set(bits%xl), self%boundaries%is_set(bits%xu), &
       self%boundaries%is_set(bits%yl), self%boundaries%is_set(bits%yu), &
       self%boundaries%is_set(bits%zl), self%boundaries%is_set(bits%zu)
-    call self%boundaries%log_extrapolate (d, self%i_d, select=select)
+    call self%boundaries%log_extrapolate (d, self%i_d, select=select)   ! extrapolate density at yl
     if (self%id==io%id_debug) &
       print *, self%id, 'EXTRAP D', d(6,1:4,31)
   end if
-                            call self%check_density ('after density_BC')
+  !
+  call self%check_density ('after density_BC')
+  !
   !---------------------------------------------------------------------
   ! In the vertical and radial directions, where density varies
   ! systematically, apply BCs to velocity
   !---------------------------------------------------------------------
-  call self%p2U(u,it)                                                      ! velocities
+  call self%p2U(u,it)                                                   ! velocities
   do iv=1,3
     uu => u(:,:,:,iv)
-!    call self%boundaries%symmetric (uu, self%i_px+iv-1, select=select) ! apply symmetric boundaries to velocities
     !-------------------------------------------------------------------
     ! Extrapolate at boundaries with strong supersonic outflows
     !-------------------------------------------------------------------
@@ -373,33 +397,37 @@ SUBROUTINE edge_boundary_conditions (self, it)
     else
       call self%boundaries%symmetric (uu, self%i_px+iv-1)
     end if
-  end do
-                            call self%check_density ('after u BC')
-  call self%U2p(u,it)                                                      ! convert velocities to momentum
+  end do       
   !---------------------------------------------------------------------
   ! Energy: set energy per unit mass equal to initial value
   !---------------------------------------------------------------------
   associate (ee0=>atmosphere%external%energy)
   call self%e2E_th(e_th, it)                                            ! thermal energy per unit mass
   call self%boundaries%constant (e_th, self%i_e, ee0)                   ! extrapolate in the log
+  !---------------------------------------------------------------------
+  ! Put the new boundaries back to memory
+  !---------------------------------------------------------------------
+  self%mem(:,:,:,self%i_d,it,1) = d                                     ! apply density BC
+  call self%U2p(u,it)                                                   ! convert velocities to momentum
   call self%E_th2e(e_th, it)                                            ! convert to energy per unit volume
   if (self%id == io%id_debug) then
     s => self%mem(:,:,:,self%i_s,it,1)
     print *, self%id, 'BC outer', ee0, minval(e_th), maxval(e_th), minval(s), maxval(s)
   end if
   end associate
+  call self%check_density ('after u BC')
                             call self%check_nan ('after th2e')
-  deallocate (u,e_th)
+  deallocate (u,e_th,d)
   call trace%end
 END SUBROUTINE edge_boundary_conditions
 
 !> =====================================================================
 !> Constrain the density to follow an anchored Gaussian profile
 !> =====================================================================
-SUBROUTINE density_boundary_condition (self, it)
+SUBROUTINE density_boundary_condition (self, it, d)
   class(experiment_t):: self
   integer:: it
-  class(mesh_t), pointer, dimension(:) :: m
+  class(mesh_t), pointer:: m1, m2, m3
   integer:: iv, iz, iy, ix, lz, uz, ly, uy, lx, ux, ix0, iy0, iz0
   real(8) :: x, x0, z, z0, r, d1, d0, tt, c2
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, dd
@@ -407,59 +435,60 @@ SUBROUTINE density_boundary_condition (self, it)
   ! Vertical edge boundary conditions
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%density_boundary_conditions')
-  m => self%mesh
-  d => self%mem(:,:,:,1,it,1)
+  m1 => self%mesh(1)
+  m2 => self%mesh(2)
+  m3 => self%mesh(3)
   if (self%nw>1) dd => self%mem(:,:,:,self%i_d,it,2)
-  associate (r1=>m(1)%r, r3=>m(3)%r)
+  associate (r1=>m1%r, r3=>m3%r)
   if (self%id==io%id_debug) &
     print '(a,2i5,2l4,3(2x,2i3))', 'MK', self%id, it, &
       self%boundaries%is_set(bits%zl), &
       self%boundaries%is_set(bits%zu), lx,ux, ly,uy, lz,uz
   tt = atmosphere%external%temperature
   if(self%boundaries%is_set(bits%xl)) then
-    lx = m(1)%lb; ux = m(1)%lo
-    ly = m(2)%lb; uy = m(2)%ub
-    lz = m(3)%lb; uz = m(3)%ub
-    ix0 = m(1)%li
-    x0 = m(1)%p + r1(ix0) - planet%position(1)
+    lx = m1%lb; ux = m1%lo
+    ly = m2%lb; uy = m2%ub
+    lz = m3%lb; uz = m3%ub
+    ix0 = m1%li
+    x0 = m1%p + r1(ix0) - planet%position(1)
     call apply_x
   end if
   if (self%boundaries%is_set(bits%xu)) then
-    lx = m(1)%uo; ux = m(1)%ub
-    ly = m(2)%lb; uy = m(2)%ub
-    lz = m(3)%lb; uz = m(3)%ub
-    ix0 = m(1)%ui
-    x0 = m(1)%p + r1(ix0) - planet%position(1)
+    lx = m1%uo; ux = m1%ub
+    ly = m2%lb; uy = m2%ub
+    lz = m3%lb; uz = m3%ub
+    ix0 = m1%ui
+    x0 = m1%p + r1(ix0) - planet%position(1)
     call apply_x
   end if
   if(self%boundaries%is_set(bits%yl)) then
-    lx = m(1)%lb; ux = m(1)%ub
-    ly = m(2)%lb; uy = m(2)%lo
-    lz = m(3)%lb; uz = m(3)%ub
-    iy0 = m(2)%li
+    lx = m1%lb; ux = m1%ub
+    ly = m2%lb; uy = m2%lo
+    lz = m3%lb; uz = m3%ub
+    iy0 = m2%li
     call apply_y
   end if
   if (self%boundaries%is_set(bits%yu)) then
-    lx = m(1)%lb; ux = m(1)%ub
-    ly = m(2)%uo; uy = m(2)%ub
-    lz = m(3)%lb; uz = m(3)%ub
-    iy0 = m(2)%ui
+    lx = m1%lb; ux = m1%ub
+    ly = m2%uo; uy = m2%ub
+    lz = m3%lb; uz = m3%ub
+    iy0 = m2%ui
     call apply_y
   end if
   if(self%boundaries%is_set(bits%zl)) then
-    lx = m(1)%lb; ux = m(1)%ub
-    ly = m(2)%lb; uy = m(2)%ub
-    lz = m(3)%lb; uz = m(3)%lo
-    iz0 = m(3)%li
-    z0 = m(3)%p + r3(iz0) - planet%position(3)
+    lx = m1%lb; ux = m1%ub
+    ly = m2%lb; uy = m2%ub
+    lz = m3%lb; uz = m3%lo
+    iz0 = m3%li
+    z0 = m3%p + r3(iz0) - planet%position(3)
     call apply_z
   end if
   if (self%boundaries%is_set(bits%zu)) then
-    lx = m(1)%lb; ux = m(1)%ub
-    ly = m(2)%lb; uy = m(2)%ub
-    lz = m(3)%uo; uz = m(3)%ub
-    iz0 = m(3)%ui
-    z0 = m(3)%p + r3(iz0) - planet%position(3)
+    lx = m1%lb; ux = m1%ub
+    ly = m2%lb; uy = m2%ub
+    lz = m3%uo; uz = m3%ub
+    iz0 = m3%ui
+    z0 = m3%p + r3(iz0) - planet%position(3)
     call apply_z
   end if
   call self%check_density ('after density BC')
@@ -471,13 +500,13 @@ contains
     if (io%verbose>2) &
     print *, self%id, 'MK: x-density BC', lx, ux, ly, uy, lz, uz
     c2 = planet%omega(3)**2*planet%trap/tt
-    associate (r1=>m(1)%r)
+    associate (r1=>m1%r)
     do iz=lz,uz
       do iy=ly,uy
         do ix=lx,ux
-          x = m(1)%p + r1(ix) - planet%position(1)
-          d0 = self%mem(ix0,iy,iz,self%i_d,it,1)
-          self%mem(ix,iy,iz,self%i_d,it,1) = d0*exp(-c2*(x**2-x0**2))
+          x = m1%p + r1(ix) - planet%position(1)
+          d0 = d(ix0,iy,iz)
+          d(ix,iy,iz) = d0*exp(-c2*(x**2-x0**2))
         end do
       end do
     end do
@@ -498,7 +527,7 @@ contains
     do iz=lz,uz
       do iy=ly,uy
         do ix=lx,ux
-          self%mem(ix,iy,iz,self%i_d,it,1) = self%mem(ix,iy0,iz,self%i_d,it,1)
+          d(ix,iy,iz) = d(ix,iy0,iz)
         end do
       end do
     end do
@@ -516,19 +545,19 @@ contains
     if (io%verbose>2) &
     print *, self%id, 'MK: z-density BC', lx, ux, ly, uy, lz, uz
     c2 = 0.5*planet%omega(3)**2/tt
-    associate (r3=>m(3)%r)
+    associate (r3=>m3%r)
     do iz=lz,uz
-      z = m(3)%p + r3(iz) - planet%position(3)
+      z = m3%p + r3(iz) - planet%position(3)
       do iy=ly,uy
         do ix=lx,ux
-          d0 = self%mem(ix,iy,iz0,self%i_d,it,1)
+          d0 = d(ix,iy,iz0)
           d1 = d0*exp(-c2*(z**2-z0**2))
           if (self%id==io%id_debug.and.iy==uy/2.and.iz==uz) &
             print '(a,i4,1p,8e14.6)', &
             'BCd: ix,d0,p0/do,exp,do,d =',ix, d0, tt, (z-z0), &
             exp(-c2*(z**2-z0**2)), &
             self%mem(ix,iy,iz,self%i_d,it,1), d1
-          self%mem(ix,iy,iz,self%i_d,it,1) = d1
+          d(ix,iy,iz) = d1
         end do
       end do
     end do
