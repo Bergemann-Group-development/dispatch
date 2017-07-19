@@ -37,6 +37,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self, trace_every)
   class(pebble_trace_t):: self
+  type(trace_buffer_t), pointer :: buffer
   integer:: trace_every, i
   !-----------------------------------------------------------------------------
   pebble_trace%every = trace_every
@@ -44,11 +45,13 @@ SUBROUTINE init (self, trace_every)
     call pebble_trace%lock%init ('trace')
     allocate(pebble_trace%buffer(pebble_trace%nbuffer))
     do i=1,pebble_trace%nbuffer
-      allocate (pebble_trace%buffer(i)%v(14,pebble_trace%npebble))
-      allocate (pebble_trace%buffer(i)%ip(pebble_trace%npebble))
-      pebble_trace%buffer(i)%n = 0
+      buffer => pebble_trace%buffer(i)
+      allocate (buffer%v(14,pebble_trace%npebble))
+      allocate (buffer%ip(pebble_trace%npebble))
+      buffer%n = 0
     end do
   end if
+  nullify (buffer)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -61,6 +64,7 @@ SUBROUTINE trace_pebble (self, pebble, ip, level)
   class(pebble_trace_t):: self
   class(pebble_t), pointer:: pebble
   integer:: ip, level
+  type(trace_buffer_t), pointer :: buffer
   integer:: i, n
   !-----------------------------------------------------------------------------
   call trace_begin ('pebbles_mod::trace_pebble')
@@ -75,20 +79,21 @@ SUBROUTINE trace_pebble (self, pebble, ip, level)
     i = id
   end if
   if (i <= self%nbuffer) then
-    self%buffer(i)%id      = pebble%id
-    self%buffer(i)%status  = pebble%status
-    self%buffer(i)%s       = pebble%s
-    n = self%buffer(i)%n+1
-    self%buffer(i)%ip(n) = ip
-    self%buffer(i)%v(1:3,n) = pebble%p
-    self%buffer(i)%v(4:6,n) = pebble%v
-    self%buffer(i)%v(7:9,n) = pebble%vg
-    self%buffer(i)%v(10,n)  = pebble%c
-    self%buffer(i)%v(11,n)  = pebble%d
-    self%buffer(i)%v(12,n)  = pebble%t
-    self%buffer(i)%v(13,n)  = pebble%s
-    self%buffer(i)%v(14,n)  = pebble%w
-    self%buffer(i)%n = n
+    buffer => self%buffer(i)
+    buffer%id      = pebble%id
+    buffer%status  = pebble%status
+    buffer%s       = pebble%s
+    n = buffer%n+1
+    buffer%ip(n) = ip
+    buffer%v(1:3,n) = pebble%p
+    buffer%v(4:6,n) = pebble%v
+    buffer%v(7:9,n) = pebble%vg
+    buffer%v(10,n)  = pebble%c
+    buffer%v(11,n)  = pebble%d
+    buffer%v(12,n)  = pebble%t
+    buffer%v(13,n)  = pebble%s
+    buffer%v(14,n)  = pebble%w
+    buffer%n = n
     if (io%verbose > 1) print *,'MK', pebble%id, i, n, pebble%t, pebble%dt
     if (n >= self%npebble) then
       call self%trace_output (i)
@@ -96,6 +101,7 @@ SUBROUTINE trace_pebble (self, pebble, ip, level)
   else
     if (io%verbose > 1) print *,'MK', pebble%id, i
   end if
+  nullify(buffer)
   call trace_end
 END SUBROUTINE trace_pebble
 
@@ -105,6 +111,7 @@ END SUBROUTINE trace_pebble
 SUBROUTINE trace_output (self, i, close_key)
   class(pebble_trace_t):: self
   integer:: i, close_key
+  type(trace_buffer_t), pointer :: buffer
   integer, parameter:: key=-1
   optional:: close_key
   character(len=64):: filename
@@ -112,34 +119,36 @@ SUBROUTINE trace_output (self, i, close_key)
   !-----------------------------------------------------------------------------
   if (i>self%nbuffer) return
   if (.not.associated(self%buffer)) return
-  if (self%buffer(i)%n==0) return
+  buffer => self%buffer(i)
+  if (buffer%n==0) return
   call trace_begin ('pebbles_mod::trace_output')
   call self%lock%set ('trace_output')
   write (filename,'(a,i4.4,".trc")') trim(io%outputname), i
   if (io%verbose>0) &
-    print*,'pebble_trace: ', trim(filename), self%buffer(i)%record, self%buffer(i)%n
-  if (self%buffer(i)%record == 0) then
+    print*,'pebble_trace: ', trim(filename), buffer%record, buffer%n
+  if (buffer%record == 0) then
     open (io_unit%trace, file=trim(filename), form='unformatted', &
       status='unknown')
     close (io_unit%trace, status='delete')
     open (io_unit%trace, file=trim(filename), form='unformatted', &
       status='new')
-    write (io_unit%trace) key, self%buffer(i)%status
-    write (io_unit%trace) self%buffer(i)%s
+    write (io_unit%trace) key, buffer%status
+    write (io_unit%trace) buffer%s
   else
     open (io_unit%trace, file=trim(filename), form='unformatted', &
       status='unknown', position = 'append')
     backspace (io_unit%trace)
   end if
-  n =  self%buffer(i)%n
-  self%buffer(i)%record = self%buffer(i)%record+1
-  write (io_unit%trace) self%buffer(i)%id, self%buffer(i)%record, self%buffer(i)%n
-  write (io_unit%trace) self%buffer(i)%ip(1:n)
-  write (io_unit%trace) self%buffer(i)%v(:,1:n)
-  self%buffer(i)%n = 0
+  n =  buffer%n
+  buffer%record = buffer%record+1
+  write (io_unit%trace) buffer%id, buffer%record, buffer%n
+  write (io_unit%trace) buffer%ip(1:n)
+  write (io_unit%trace) buffer%v(:,1:n)
+  buffer%n = 0
   write (io_unit%trace) 0,0,0,0
   close (io_unit%trace)
   call self%lock%unset ('trace_output')
+  nullify(buffer)
   call trace_end
 END SUBROUTINE trace_output
 

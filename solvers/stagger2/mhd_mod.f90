@@ -10,6 +10,7 @@ MODULE mhd_mod
   USE scalar_mod
   USE vector_mod
   USE stagger_mod
+  USE mesh_mod
   USE gpatch_mod
   USE force_mod
   USE index_mod
@@ -63,6 +64,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   type(index_t):: idx
+  class(mesh_t), pointer :: m
   integer:: i
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   real, save:: gamma_AD=75., rho_ions=1., niMHD_courant=0.1
@@ -116,12 +118,14 @@ SUBROUTINE init (self)
   self%i_bz = idx%bz
   self%type = 'mhd_t'
   do i=1,3
-    self%mesh(i)%h(2+i) = -0.5
-    if (self%mhd) self%mesh(i)%h(5+i) = -0.5
+    m => self%mesh(i)
+    m%h(2+i) = -0.5
+    if (self%mhd) m%h(5+i) = -0.5
   end do
   self%unsigned(idx%d)  = .true.
   self%pervolume(idx%s) = .true.
   call self%force%init(self%kind)
+  nullify(m)
   call trace%end
 END SUBROUTINE init
 
