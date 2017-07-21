@@ -38,8 +38,9 @@ SUBROUTINE rt_setup (self)
   class(mesh_t), pointer :: mesh
   class(rmhd_t), pointer :: mhd_patch
   class(rt_t),   pointer :: rt_task
+  integer :: itimer
   !---------------------------------------------------------------------
-  call trace_begin('radiative_transfer::rt_setup')
+  call trace_begin('radiative_transfer::rt_setup', itimer=itimer)
   associate (mhd => self%head%task)
   SELECT TYPE(mhd)
   class is (rmhd_t)
@@ -98,7 +99,6 @@ SUBROUTINE rt_setup (self)
       mhd%rt => rt_task                                                 ! save link to rt task
       rt_task%mhd_link => t_list                                        ! save link to mhd task
       rt_task%position = mhd_patch%position                             ! shadow the position
-      rt_task%dim      = mhd_patch%mesh%gn                              ! RT dimensions 
       rt_task%n        = mhd_patch%n                                    ! active innre cells
       rt_task%gn       = mhd_patch%gn                                   ! guard zones
       rt_task%size     = mhd_patch%size                                 ! shadow the size

@@ -8,14 +8,14 @@ MODULE rt_components_mod
 !> intensity/heating rate data type is used to store intensities in the outer shell of
 !> the patch as well as quickly retrieve incoming intensities from nbors
 !> =====================================================================
-  type, public :: q_data_t
+  type, public :: rt_hub_t
     real, dimension(:), pointer :: in  => null()                        ! (wl_bin) incoming intensity.
     real, dimension(:), pointer :: out => null()                        ! leaving intensity
     integer, pointer :: dir_ID
     !> Subsequent pointers are used to handle upstreams with different refinement level
-    type (q_data_t), pointer :: head => null()
-    type (q_data_t), pointer :: next => null()
-    type (q_data_t), pointer :: tail => null()
+    type (rt_hub_t), pointer :: head => null()
+    type (rt_hub_t), pointer :: next => null()
+    type (rt_hub_t), pointer :: tail => null()
     integer :: n_upstream = 0
     real :: weight = 1.
   end type
@@ -32,7 +32,7 @@ MODULE rt_components_mod
     class(chain_link_t),           pointer :: next => null()
     class(chain_link_t),           pointer :: prev => null()
     class(chain_link_t),           pointer :: temp => null()            ! temporal chain connection to do any required modifications
-    class(q_data_t), dimension(:), pointer :: packet_data => null()     ! quick pointing to the right locations in the data sets
+    class(rt_hub_t), dimension(:), pointer :: packet_data => null()     ! quick pointing to the right locations in the data sets
     class(ray_bndl_t),             pointer :: bundle => null()          ! ray bundle of this chain link
     logical, dimension(:), pointer :: nudged                            ! which links have already nudged me
     integer :: direction                                                ! 1 = forward / 2 = reverse
@@ -111,7 +111,7 @@ END FUNCTION get_dnstream_coord
 SUBROUTINE add_upstream(self, ir, ups, iw)
   class(chain_link_t) :: self
   integer :: ir
-  class(q_data_t), pointer :: ups, pd
+  class(rt_hub_t), pointer :: ups, pd
   real :: iw
   !---------------------------------------------------------------------
   if (.not.associated(self%packet_data(ir)%head)) then
@@ -157,7 +157,7 @@ SUBROUTINE finish_chain(self)
   !.....................................................................
   class(chain_link_t), pointer :: this, prev
   class(chain_link_t), pointer :: link, plink
-  class(q_data_t), dimension(:,:,:), pointer:: wall
+  class(rt_hub_t), dimension(:,:,:), pointer:: wall
   integer :: ray, cn, ip, ir
   integer, dimension(:), pointer :: nb_ray_pos
   !---------------------------------------------------------------------

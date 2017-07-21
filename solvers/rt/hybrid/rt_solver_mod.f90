@@ -15,15 +15,13 @@ MODULE rt_solver_mod
     procedure:: integral_forward
     procedure:: integral_reverse
     procedure:: feautrier
-    procedure:: transfer2
-    procedure:: feautrier_stag
   end type
   type (rt_solver_t), public:: rt_solver
 CONTAINS
 
-!> =============================================================================
+!> =====================================================================
 !> Choose RT solver method
-!> =============================================================================
+!> =====================================================================
 SUBROUTINE init (self)
   class (rt_solver_t):: self
   self%forward   => integral_forward
@@ -32,32 +30,29 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 
-!> =============================================================================
-!> Integral solution method
-!> =============================================================================
+!> =====================================================================
+!> Integral solution method in forward direction
+!>  Input: N, dtau(2:n), S(1:n), qfw(1)
+!> Output: Q(1:n-1), qfw(n-1)
+!>
+!> The input is the source functions and optical depths at all points,
+!> the net forward intensity (I-S) at the 1st point. As a result, we get
+!> the net heating rates in forward direction everywhere, and also the
+!> outgoing net forward intensity at the last point.
+!>
+!> The equation solved is Q' = Q - dS/dtau in the forward direction.
+!> S is assumed to be quadratic, so dS/dtau is assumed to be linear in tau.
+!> The analytic solution may be written as a linear combination of the
+!> formal solution for constant and linear source functions.
+!>
+!> Two additional points for source function are necessary to avoid the
+!> extrapolation of d1s and d2s.
+!> =====================================================================
 SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q, q_out)
   implicit none
   class (rt_solver_t):: self
   real, dimension(:,:,:), pointer :: dtau, ex0, S, q
   real, dimension(:,:)   :: q_in, q_out
-  logical :: one_p
-!-----------------------------------------------------------------------
-!
-!  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
-! Output: Q(1:n-1), qfw(n-1)
-!
-! The input is the source functions and opacities at all points, the net
-! forward intensity (I-S) at the 1st point and the net reverse intensity
-! at the last point.  As a result, we get the net bi-directional intensity
-! everywhere, and also the outgoing forward and reverse intensities at
-! points number 1 and np.
-!
-! The equations solved are Q' = Q - dS/dtau in the forward direction and
-! Q' = -Q + dS/dtau in the reverse direction.  S is assumed to be quadratic,
-! so dS/dtau is assumed to be linear in tau.  The analytic solution may
-! be written as a linear combination of the formal solution for constant
-! and linear source functions.
-!
 !-----------------------------------------------------------------------
   real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
   real(kind=8) :: ctau
@@ -76,8 +71,6 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q, q_out)
       end do
     end do
   end do 
-  
-  
 !
 !  dS/dtau and d2S/dtau2 (3a+5m+1d)
 !
@@ -91,24 +84,10 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q, q_out)
       end do
     end do  
   end do
-  
-  do j = 1, w
-   do k = 1, m
-     d2s(k,j,1) = d2s(k,j,2)                                            ! assume constant d2S/dtau2
-     d1s(k,j,1) = d1s(k,j,2) - dtau(k,j,2)*d2s(k,j,2)                   ! extrapolate to 1
-     d2s(k,j,n) = d2s(k,j,n-1)
-     d1s(k,j,n) = d1s(k,j,n-1) - dtau(k,j,n)*d2s(k,j,n)
-    end do
-  end do
-  
-  do j = 1, w
-   do k = 1, m
-     q(k,j,2) = q_in(k,j)                                               ! initial forward Q
-    end do
-  end do
-
-  
-  do i=3,n-1
+!
+  q(k,j,1) = q_in(k,j)                                                  ! initial forward Q
+!
+  do i=2,n-1
     do j = 1, w
       do k = 1, m
         q(k,j,i) = q(k,j,i-1) *ex0(k,j,i) &
@@ -117,17 +96,32 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q, q_out)
       end do
     end do  
   end do
-
-  
+!
   do j = 1, w
     do k = 1, m
-      q_out(k,j) = q(k,j,n-1)                                             ! forward boundary intensity
+      q_out(k,j) = q(k,j,n-1)                                           ! forward boundary intensity
     end do
   end do  
+END SUBROUTINE integral_forward                                         ! 2d 13m 11a 1e ! 26f + 1e
 
-
-END SUBROUTINE integral_forward                         ! 2d 13m 11a 1e ! 26f + 1e
-
+!> =============================================================================
+!> Integral solution method in forward direction
+!>  Input: N, dtau(2:n), S(1:n), qrv(n)
+!> Output: Q(1:n-1), qrv(2)
+!>
+!> The input is the source functions and optical depths at all points,
+!> the net forward intensity (I-S) at the last point. As a result, we get
+!> the net heating rates in reverse direction everywhere, and also the
+!> outgoing net reverse intensity at the first point.
+!>
+!> The equation solved is Q' = -Q + dS/dtau in the reverse direction.
+!> S is assumed to be quadratic, so dS/dtau is assumed to be linear in tau.
+!> The analytic solution may be written as a linear combination of the
+!> formal solution for constant and linear source functions.
+!>
+!> Two additional points for source function are necessary to avoid the
+!> extrapolation of d1s and d2s.
+!> =============================================================================
 SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out)
   implicit none
   class (rt_solver_t):: self
@@ -136,7 +130,7 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out)
 !-----------------------------------------------------------------------
 !
 !  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
-! Output: Q(1:n-1), qfw(n-1)
+! Output: Q(1:n-1), qrv(n-1)
 !
 ! The input is the source functions and opacities at all points, the net
 ! forward intensity (I-S) at the 1st point and the net reverse intensity
@@ -168,8 +162,6 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out)
       end do
     end do
   end do 
-  
-  
 !
 !  dS/dtau and d2S/dtau2 (3a+5m+1d)
 !
@@ -183,23 +175,10 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out)
       end do
     end do  
   end do
-  
-  do j = 1, w
-   do k = 1, m
-     d2s(k,j,1) = d2s(k,j,2)                                            ! assume constant d2S/dtau2
-     d1s(k,j,1) = d1s(k,j,2) - dtau(k,j,2)*d2s(k,j,2)                   ! extrapolate to 1
-     d2s(k,j,n) = d2s(k,j,n-1)
-     d1s(k,j,n) = d1s(k,j,n-1) - dtau(k,j,n)*d2s(k,j,n)
-    end do
-  end do
-  
-  do j = 1, w
-    do k = 1, m
-      q(k,j,n-1) = q_in(k,j)                                              ! initial forward Q
-    end do
-  end do
-
-  do i=n-2,2,-1
+!
+  q(k,j,n) = q_in(k,j)                                                  ! initial reverse Q
+!
+  do i=n-1,2,-1
     do j = 1, w
       do k = 1, m
         q(k,j,i) = q(k,j,i+1) *ex0(k,j,i+1) &
@@ -208,213 +187,15 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out)
       end do
     end do  
   end do
-
-    
+!
   do j = 1, w
     do k = 1, m
-      q_out(k,j) = q(k,j,2)                                             ! forward boundary intensity
+      q_out(k,j) = q(k,j,2)                                             ! reverse boundary intensity
     end do
   end do  
-    
+END SUBROUTINE integral_reverse                                         ! 2d 13m 11a 1e ! 26f + 1e
 
-END SUBROUTINE integral_reverse                         ! 2d 13m 11a 1e ! 26f + 1e
-
-SUBROUTINE feautrier (self, dtau, S, I_in1, I_in2, Q, I_out1, I_out2)
-  implicit none
-  class (rt_solver_t):: self
-  real, dimension(:,:,:), pointer :: dtau, S, q
-  real, dimension(:,:) :: I_in1, I_in2, I_out1, I_out2
-
-  real, dimension(size(s,1),size(s,2),size(s,3)) :: a1, a2, a3, d
-  real, dimension(size(s,2)) :: a, dsdtau_1, dsdtau_2, d2sdtau2
-  integer :: k, m, n, j
-  
-!
-  m = size(s,1)
-  n = size(s,3)
-  
-  do j=1,m
-    a2(j,:,1)  = +1. + dtau(j,:,2) + 0.5*dtau(j,:,2)**2
-    a3(j,:,1)  = -1.
-    dsdtau_1 = (s(j,:,2)-s(j,:,1))/dtau(j,:,2)
-    dsdtau_2 = (s(j,:,3)-s(j,:,2))/dtau(j,:,3)
-    d2sdtau2 = (dsdtau_2-dsdtau_1)*2./(dtau(j,:,2)+dtau(j,:,3))
-    q(j,:,1)   = I_in1(j,:)
-    a2(j,:,1)  = + dtau(j,:,2) + 0.5*dtau(j,:,2)**2
-    d(j,:,2)   = -1./dtau(j,:,2)
-  end do
-!
-  !
-!  Compute matrix elements and eliminate the sub-diagonal in one sweep
-!
-  do k=2,n-1
-  do j=1,m
-    a(:)        = 2./(dtau(j,:,k+1)+dtau(j,:,k))                               ! 1d    1a
-    d(j,:,k+1) = -1./dtau(j,:,k+1)                                          ! 1d
-    a3(j,:,k)  = a*d(j,:,k+1)                                               !    1m
-    a1(j,:,k)  = a*d(j,:,k)                                                 !    1m
-    a2(j,:,k)  = 1.
-    q(j,:,k)   = a1(j,:,k)*(s(j,:,k)-s(j,:,k-1)) + a3(j,:,k)*(s(j,:,k)-s(j,:,k+1))    !    2m 3a
-    a        = 1./(a2(j,:,k-1)-a3(j,:,k-1))                                 ! 1d    1a
-    a1(j,:,k)  = a1(j,:,k)*a                                                !    1m
-    q(j,:,k)   = q(j,:,k) - a1(j,:,k)*q(j,:,k-1)                                !    1m 1a
-    a2(j,:,k)  = a2(j,:,k) - a1(j,:,k)*a2(j,:,k-1)                              !    1m 1a
-    a2(j,:,k-1) = a
-  end do
-  end do
-  
-  !
-!  Boundary condition at k=n; infalling reverse intensity = IrvN
-!
-  do j=1,m
-   a2(j,:,n) = +1. + dtau(j,:,n) + 0.5*dtau(j,:,n)**2
-   a1(j,:,n) = -1.
-   dsdtau_1 = (s(j,:,n  )-s(j,:,n-1))/dtau(j,:,n  )
-   dsdtau_2 = (s(j,:,n-1)-s(j,:,n-2))/dtau(j,:,n-1)
-   d2sdtau2 = (dsdtau_1-dsdtau_2)*2./(dtau(j,:,n)+dtau(j,:,n-1))
-   q(j,:,n)  = I_In2(j,:) - 0.5*dtau(j,:,n)**2*d2sdtau2
-   a2(j,:,n) = + dtau(j,:,n) + 0.5*dtau(j,:,n)**2
-!
-   a       = 1./(a2(j,:,n-1)-a3(j,:,n-1))                                   ! 1d    1a
-   a1(j,:,n) = a1(j,:,n)*a                                                  !    1m
-   q(j,:,n)    = q(j,:,n) - a1(j,:,n)*q(j,:,n-1)                                !    1m 1a
-   a2(j,:,n)   = a2(j,:,n) - a1(j,:,n)*a2(j,:,n-1)                              !    1m 1a
-   a2(j,:,n-1) = a
-   q(j,:,n) = q(j,:,n)/a2(j,:,n)                                              ! solution at n
-  end do
-!
-!  Backsubstitute
-!
-  do k=n-1,1,-1
-  do j=1,m
-    q(j,:,k) = (q(j,:,k)-a3(j,:,k)*q(j,:,k+1))*a2(j,:,k)                          !    2m 1a
-  end do
-  end do
-!                                                                       ! 3d 9m 8a = 20f
-!  Surface intensities
-!
-  I_out2 = 2.*q(:,:,1) + s(:,:,1)                                           ! reverse surface intensity
-  I_out1 = 2.*q(:,:,n) + s(:,:,n)                                           ! forward surface intensity
-  
-
-
-END SUBROUTINE feautrier
-
-SUBROUTINE transfer2 (self,M, N, dtau, S, Ifw1, IrvN, Q, Irv1, IfwN)
-!
-!  Solve the transfer equation, given optical depth increments dtau, 
-!  source function S, infalling intensity Ifw1 at the first point and
-!  IrvN at the last point.
-!
-!  This version works with Q = P - S, where P is Feautriers P (the average 
-!  of in- and out-going specific intensity) and S is the source function.
-!  The equation solved is Q" = Q - S", with boundary conditions 
-!  Q' - Q = S - S' - Ifw1 at the first point and Q' + Q = -(S' + S) + Irv1
-!  at the last point
-!
-!  The choice of equations produces a high precision in Q at large optical
-!  depths (where P - S would have round off), while at the same time
-!  retaining the precision at small optical depths (see below).
-!
-!  The routine returns the net heating contribution Q at each point, and 
-!  the outgoing intensity at the first point.
-!
-!  This is a second order version.  For simulations, with rapidly
-!  varying absorption coefficients and source functions, this is to be
-!  preferred over spline and Hermitean versions because it is positive
-!  definite, in the sense that a positive source function is guaranteed
-!  to result in a positive average intensity p.  Also, the flux
-!  divergence is exactly equal to q, for the conventional definition
-!  of the flux.
-!
-!  "Steins trick" is used; storing the sum of the three elements in each
-!  row of the tridiagonal equation system, instead of the diagonal ele-
-!  ment.  This allows accurate solutions to be otained for arbitrarily
-!  small optical depths.  Without this trick, round off errors become
-!  noticeable already when the smallest optical depth is less than the
-!  square root of the machine precisions.
-!
-!  Operation count: 3 divide + 9 multiply + 8 add = 20 flops
-!
-!***********************************************************************
-!
-class (rt_solver_t):: self
-
-  integer, intent(in)               :: m, n
-  real, intent(in) , dimension(m,n) :: dtau, s
-  real, intent(in) , dimension(m)   :: Ifw1, IrvN
-  real, intent(out), dimension(m,n) :: q
-  real, intent(out), dimension(m)   :: Irv1, IfwN
-
-  real, dimension(m,n)              :: a1, a2, a3, d
-  integer                           :: j, k
-  real                              :: a, dsdtau_1, dsdtau_2, d2sdtau2
-!
-!  Boundary condition at k=1; infalling forward intensity = Ifw1
-!
-  do j=1,m
-    a2(j,1)  = +1. + dtau(j,2) + 0.5*dtau(j,2)**2
-    a3(j,1)  = -1.
-    dsdtau_1 = (s(j,2)-s(j,1))/dtau(j,2)
-    dsdtau_2 = (s(j,3)-s(j,2))/dtau(j,3)
-    d2sdtau2 = (dsdtau_2-dsdtau_1)*2./(dtau(j,2)+dtau(j,3))
-    q(j,1)   = - dtau(j,2)*(s(j,1) - dsdtau_1 - Ifw1(j)) + 0.5*dtau(j,2)**2*d2sdtau2
-    a2(j,1)  = + dtau(j,2) + 0.5*dtau(j,2)**2
-    d(j,2)   = -1./dtau(j,2)
-  end do
-!
-!  Compute matrix elements and eliminate the sub-diagonal in one sweep
-!
-  do k=2,n-1
-  do j=1,m
-    a        = 2./(dtau(j,k+1)+dtau(j,k))                               ! 1d    1a
-    d(j,k+1) = -1./dtau(j,k+1)                                          ! 1d
-    a3(j,k)  = a*d(j,k+1)                                               !    1m
-    a1(j,k)  = a*d(j,k)                                                 !    1m
-    a2(j,k)  = 1.
-    q(j,k)   = a1(j,k)*(s(j,k)-s(j,k-1)) + a3(j,k)*(s(j,k)-s(j,k+1))    !    2m 3a
-    a        = 1./(a2(j,k-1)-a3(j,k-1))                                 ! 1d    1a
-    a1(j,k)  = a1(j,k)*a                                                !    1m
-    q(j,k)   = q(j,k) - a1(j,k)*q(j,k-1)                                !    1m 1a
-    a2(j,k)  = a2(j,k) - a1(j,k)*a2(j,k-1)                              !    1m 1a
-    a2(j,k-1) = a
-  end do
-  end do
-!
-!  Boundary condition at k=n; infalling reverse intensity = IrvN
-!
-  do j=1,m
-   a2(j,n) = +1. + dtau(j,n) + 0.5*dtau(j,n)**2
-   a1(j,n) = -1.
-   dsdtau_1 = (s(j,n  )-s(j,n-1))/dtau(j,n  )
-   dsdtau_2 = (s(j,n-1)-s(j,n-2))/dtau(j,n-1)
-   d2sdtau2 = (dsdtau_1-dsdtau_2)*2./(dtau(j,n)+dtau(j,n-1))
-   q(j,n)  = - dtau(j,n)*(s(j,n) + dsdtau_1 - IrvN(j)) - 0.5*dtau(j,n)**2*d2sdtau2
-   a2(j,n) = + dtau(j,n) + 0.5*dtau(j,n)**2
-!
-   a       = 1./(a2(j,n-1)-a3(j,n-1))                                   ! 1d    1a
-   a1(j,n) = a1(j,n)*a                                                  !    1m
-   q(j,n)    = q(j,n) - a1(j,n)*q(j,n-1)                                !    1m 1a
-   a2(j,n)   = a2(j,n) - a1(j,n)*a2(j,n-1)                              !    1m 1a
-   a2(j,n-1) = a
-   q(j,n) = q(j,n)/a2(j,n)                                              ! solution at n
-  end do
-!
-!  Backsubstitute
-!
-  do k=n-1,1,-1
-  do j=1,m
-    q(j,k) = (q(j,k)-a3(j,k)*q(j,k+1))*a2(j,k)                          !    2m 1a
-  end do
-  end do
-!                                                                       ! 3d 9m 8a = 20f
-!  Surface intensities
-!
-  Irv1 = 2.*(q(:,1) + s(:,1))-Ifw1                                      ! reverse surface intensity
-  IfwN = 2.*(q(:,n) + s(:,n))-IrvN                                      ! forward surface intensity
-END SUBROUTINE transfer2
-
-SUBROUTINE feautrier_stag (self,dtau,s,q,xi,doxi)
+SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
 !> =====================================================================
 !> Solve the transfer equation, given optical depth and source function.
 !> "Steins trick" is used; storing the sum of the three elements in each
@@ -454,142 +235,153 @@ SUBROUTINE feautrier_stag (self,dtau,s,q,xi,doxi)
 !
 !> =====================================================================
   class (rt_solver_t):: self
-  real, dimension(:,:), pointer :: dtau, s, q
-  real, dimension(:,:), pointer :: sp1, sp2, sp3
-  real, dimension(:), pointer   :: ex, xi
-  real :: taum, dinv, a
-  integer :: nx, ny, l, k, n1p
+  real, dimension(:,:,:), pointer :: dtau, s, q
+  real, dimension(:,:), pointer :: qfw, qre
   logical :: doxi
+  !.....................................................................
+  real, dimension(:,:,:), pointer :: sp1, sp2, sp3
+  real, dimension(:,:), pointer   :: ex
+  real :: taum, dinv, a
+  integer :: nx, ny, nz, l, k, j, n1p
   !---------------------------------------------------------------------
+  
   nx = size(s,1)
   ny = size(s,2)
+  nz = size(s,3)
   
   !---------------------------------------------------------------------
   ! Allocate the necessary arrays
   !---------------------------------------------------------------------
-  allocate(sp1(nx,ny),sp2(nx,ny), sp3(nx,ny), ex(nx))
-  if (doxi) allocate(xi(nx))
+  allocate(sp1(nx,ny,nz),sp2(nx,ny,nz), sp3(nx,ny,nz), ex(nx,ny))
   
   !---------------------------------------------------------------------
-  ! Calculate 1-exp(-tau(l,1,iz)) straight or by series expansion,
-  ! based on max tau(l,1,iz).
+  ! Calculate 1-exp(-tau(l,k,1)) straight or by series expansion,
+  ! based on max tau(l,k,1).
   !---------------------------------------------------------------------
-  taum=dtau(1,1)
-  do l=2,nx
-    taum=amax1(taum,dtau(l,1))
+  taum=dtau(1,1,1)
+  do k=1,ny
+    do l=1,nx
+      taum=amax1(taum,dtau(l,k,1))
+    end do
   end do
   if (taum.gt.0.1) then
-    do l=1,nx
-      ex(l)=1.-exp(-dtau(l,1))
-    end do
+    ex=1.-exp(-dtau(:,:,1))
   else
-    do l=1,nx
-      ex(l)=dtau(l,1)*(1.-.5*dtau(l,1)*(1.-.3333*dtau(l,1)))
-    end do
+    ex=dtau(:,:,1)*(1.-.5*dtau(:,:,1)*(1.-.3333*dtau(:,:,1)))
   endif
 
   !---------------------------------------------------------------------
-  ! Boundary condition at l=1.
+  ! Boundary condition at j=1.
   !---------------------------------------------------------------------
-  do l=1,nx
-    sp2(l,1)=dtau(l,2)*(1.+.5*dtau(l,2))
-    sp3(l,1)=-1.
-    q  (l,1)=s(l,1)*dtau(l,2)*(.5*dtau(l,2)+ex(l))
-  end do
+  sp2(:,:,1)=dtau(:,:,2)*(1.+.5*dtau(:,:,2))
+  sp3(:,:,1)=-1.
+  q  (:,:,1)=s(:,:,1)*dtau(:,:,2)*(.5*dtau(:,:,2)+ex)
   
   !---------------------------------------------------------------------
-  ! Matrix elements for k>2, k<np: [3d+3s]
+  ! Matrix elements for j>2, j<np: [3d+3s]
   !---------------------------------------------------------------------
-  do k=2,ny-1
-    do l=1,nx
-      sp2(l,k)=1.
-      dinv=2./(dtau(l,k+1)+dtau(l,k))
-      sp1(l,k)=-dinv/dtau(l,k)
-      sp3(l,k)=-dinv/dtau(l,k+1)
+  do j=2, nz-1
+    do k=1,ny
+      do l=1,nx
+        sp2(l,k,j)=1.
+        dinv=2./(dtau(l,k,j+1)+dtau(l,k,j))
+        sp1(l,k,j)=-dinv/dtau(l,k,j)
+        sp3(l,k,j)=-dinv/dtau(l,k,j+1)
+      end do
     end do
   end do
     
   !---------------------------------------------------------------------
-  ! Right hand sides, for k>2, k<n1
+  ! Right hand sides, for j>2, j<n1
   !---------------------------------------------------------------------
-  n1p=max0(2,ny-3)
-  do k=2,n1p-1
-    do l=1,nx
-      q(l,k)=s(l,k)
+  n1p=max0(2,nz-3)
+  do j=2,n1p-1
+    do k=1,ny
+      do l=1,nx
+        q(l,k,j)=s(l,k,j)
+      end do
     end do
   end do
   
   !---------------------------------------------------------------------
-  ! RHS for k=n1p.  The equation is still in p(k), but q(k+1) is now
-  ! q(k+1)=p(k+1)-s(k+1), so to get p(k+1) we have to add s(k+1) to the
+  ! RHS for j=n1p.  The equation is still in p(j), but q(j+1) is now
+  ! q(j+1)=p(j+1)-s(j+1), so to get p(j+1) we have to add s(j+1) to the
   ! LHS, that is subtract it from the RHS.
   !---------------------------------------------------------------------
-  if (n1p.le.ny) then
+  if (n1p.le.nz) then
     do l=1,nx
-      q(l,n1p)=s(l,n1p)-sp3(l,n1p)*s(l,n1p+1)
+      do k=1,ny
+        q(l,k,n1p)=s(l,k,n1p)-sp3(l,k,n1p)*s(l,k,n1p+1)
+      end do
     end do
   endif
   !---------------------------------------------------------------------
-  ! RHS for k=n1p+1.  The equation is now in Q: Q" = Q - S", but q(k-1)
-  ! is now p(k-1)=q(k-1)+s(k-1), so we must add sp1*s(l,k-1,iz) to the RHS,
+  ! RHS for j=n1p+1.  The equation is now in Q: Q" = Q - S", but q(j-1)
+  ! is now p(j-1)=q(j-1)+s(j-1), so we must add sp1*s(l,k,j-1) to the RHS,
   ! relative to the case below.
   !---------------------------------------------------------------------
-  if (n1p+1.le.ny) then
+  if (n1p+1.le.nz) then
     do l=1,nx
-      q(l,n1p+1)=sp1(l,n1p+1)* s(l,n1p+1) &
-                +sp3(l,n1p+1)*(s(l,n1p+1)-s(l,n1p+2))
+      do k=1,ny
+        q(l,k,n1p+1)=sp1(l,k,n1p+1)* s(l,k,n1p+1) &
+                  +sp3(l,k,n1p+1)*(s(l,k,n1p+1)-s(l,k,n1p+2))
+      end do
     end do
   endif
   
   !---------------------------------------------------------------------
-  ! k>n1p+1,<np [2m+2a]
+  ! j>n1p+1,<np [2m+2a]
   !---------------------------------------------------------------------
-  do k=n1p+2,ny-1
-    do l=1,nx
-      q(l,k)=sp1(l,k)*(s(l,k)-s(l,k-1)) &
-            +sp3(l,k)*(s(l,k)-s(l,k+1))
+  do j=n1p+2,nz-1
+    do k=1,ny
+      do l=1,nx
+        q(l,k,j)=sp1(l,k,j)*(s(l,k,j)-s(l,k,j-1)) &
+                +sp3(l,k,j)*(s(l,k,j)-s(l,k,j+1))
+      end do
     end do
   end do
   
   !---------------------------------------------------------------------
-  ! k=np
+  ! j=np
   !---------------------------------------------------------------------
-    do l=1,nx
-      sp2(l,ny)=1.
-      q(l,ny)=0.0
-    end do
+  sp2(:,:,nz)=1.
+    q(:,:,nz)=0.0
     
   !---------------------------------------------------------------------
   !  Eliminate subdiagonal, save factors in sp1 [1d+2m+4a]
   !---------------------------------------------------------------------
-  do k=1,ny-2
-    do l=1,nx
-      a=-sp1(l,k+1)/(sp2(l,k)-sp3(l,k))
-      q(l,k+1)=q(l,k+1)+a*q(l,k)
-      sp2(l,k+1)=sp2(l,k+1)+a*sp2(l,k)
-      sp2(l,k)=sp2(l,k)-sp3(l,k)
+  do j=1,nz-2
+    do k=1,ny
+      do l=1,nx
+        a=-sp1(l,k,j+1)/(sp2(l,k,j)-sp3(l,k,j))
+        q(l,k,j+1)=q(l,k,j+1)+a*q(l,k,j)
+        sp2(l,k,j+1)=sp2(l,k,j+1)+a*sp2(l,k,j)
+        sp2(l,k,j)=sp2(l,k,j)-sp3(l,k,j)
+      end do
     end do
   end do
   
-  do l=1,nx
-    sp2(l,ny-1)=sp2(l,ny-1)-sp3(l,ny-1)
-  end do
+  sp2(:,:,nz-1)=sp2(:,:,nz-1)-sp3(:,:,nz-1)
   
   !---------------------------------------------------------------------
   ! Backsubstitute [1d+1m+1a]
   !---------------------------------------------------------------------
-  do k=ny-1,1,-1
-    do l=1,nx
-      q(l,k)=(q(l,k)-sp3(l,k)*q(l,k+1))/sp2(l,k)
+  do j=nz-1,1,-1
+    do k=1,ny
+      do l=1,nx
+        q(l,k,j)=(q(l,k,j)-sp3(l,k,j)*q(l,k,j+1))/sp2(l,k,j)
+      end do
     end do
   end do
   
   !---------------------------------------------------------------------
   ! Subtract S in the region where the equation is in P
   !---------------------------------------------------------------------
-  do k=1,n1p
-    do l=1,nx
-      q(l,k)=q(l,k)-s(l,k)
+  do j=1,n1p
+    do k=1,ny
+      do l=1,nx
+        q(l,k,j)=q(l,k,j)-s(l,k,j)
+      end do
     end do
   end do
   
@@ -597,14 +389,15 @@ SUBROUTINE feautrier_stag (self,dtau,s,q,xi,doxi)
   ! Surface intensity.
   !---------------------------------------------------------------------
   if (doxi) then
-    do l=1,nx
-      xi(l)=2.*(1.-ex(l))*(q(l,1)+s(l,1))+s(l,1)*ex(l)**2 !??? what?
+    do k=1,ny
+      do l=1,nx
+        qre(l,k)=2.*(q(l,k,2)+s(l,k,2))-q(l,k,1)
+        qfw(l,k)=2.*(q(l,k,nz-1)+s(l,k,nz-1))-q(l,k,nz)
+      end do
     end do
-    deallocate(xi)
   end if
-  
   deallocate(sp1,sp2, sp3, ex)
 
-END SUBROUTINE feautrier_stag
+END SUBROUTINE feautrier
 
 END MODULE rt_solver_mod

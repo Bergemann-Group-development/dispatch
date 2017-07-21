@@ -602,9 +602,10 @@ SUBROUTINE add_ray(self, theta, dir)
     self%theta = t
     self%phi = phis(pdir)
 
-    dp(a) = sin(t)*cos(phi)*self%cell_dims(a)                           ! step size along a direction
-    dp(b) = sin(t)*sin(phi)*self%cell_dims(b)                           ! step size along b direction
-    dp(c) = cos(t)         *self%cell_dims(c)                           ! step size along c direction
+    dp(a) = sin(t)*cos(phi)                                             ! step size multiplier along a direction
+    dp(b) = sin(t)*sin(phi)                                             ! step size ,ultiplier along b direction
+    dp(c) = self%cell_dims(c) / cos(t)                                  ! step size along c direction
+
 
                                                                         ! removing computer uncertainties
     dp(a) = round(dp(a))                                                ! and giving angle error of around 1 degree
@@ -674,9 +675,9 @@ SUBROUTINE add_diag(self, rep, dir)
       self%theta = t
       self%phi   = phis(pdir)
       phi=phis(pdir)
-      dp(a) = sin(t)*cos(phi)*self%cell_dims(a)                           ! step size along a direction
-      dp(b) = sin(t)*sin(phi)*self%cell_dims(b)                           ! step size along b direction
-      dp(c) = cos(t)         *self%cell_dims(c)                           ! step size along c direction
+      dp(a) = sin(t)*cos(phi)                                           ! step size multiplier along a direction
+      dp(b) = sin(t)*sin(phi)                                           ! step size ,ultiplier along b direction
+      dp(c) = self%cell_dims(c) / cos(t)                                ! step size along c direction
 
                                                                         ! removing computer uncertainties
       dp(a) = round(dp(a))                                                ! and giving angle error of around 1 degree
@@ -725,6 +726,7 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
   allocate(t)                                                           ! allocate traversal object
   allocate(ray_bundle)                                                  ! create ray tree to store rays
   call t%init(dp, self%ui, self%li, a, b, c)                            ! initialize traversal object
+  t%dstep(c) = self%cell_dims(c)
   ray_bundle%dstep = t%dstep                                            ! save for fast access later
   do ia = t%cell_min(1), t%cell_max(1)                                  ! loop over 1st direction
     do ib = t%cell_min(2), t%cell_max(2)                                ! loop over 2nd direction
@@ -790,7 +792,7 @@ SUBROUTINE init_traverse(self, dp, ui, li, a, b, c)
   self%cell_min(1) = li(a)                                              ! first cell point along a axis
   self%cell_min(2) = li(b)                                              ! first cell point along b axis
   self%cell_min(3) = li(c)                                              ! first cell point along c axis
-  self%ds = 1./dp(c)
+  self%ds = dp(c)
   self%dstep = 0
   if (dp(a) /= 0) then
     self%dstep(a) = nint(dp(a)*self%ds)                                 ! distance between points along a axis

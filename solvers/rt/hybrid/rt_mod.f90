@@ -24,16 +24,13 @@ MODULE rt_mod
   type, extends(patch_t), public :: rt_t
     class(chain_link_t), dimension(:), pointer :: my_links => null()     ! list of link, which belongs to me
     logical, dimension(:), pointer :: updated => null()                 ! list of flags, indicates if particular direction has been updated
-    type(q_data_t), dimension(:,:,:,:), pointer:: I_yz => null()        ! intensity shell data for zy plane (+/-x wall), it is primaty, that is, the largest and search starts with this one.
-    type(q_data_t), dimension(:,:,:,:), pointer:: I_xz => null()        ! (x dim | z dim | n_out_dirs | upper(1)/lower(2)). This is the secondary one, meaning z has -2 length. Tertiary has both dims -2.
-    type(q_data_t), dimension(:,:,:,:), pointer:: I_xy => null()        ! n_out_dirs is the number of directions leaving any given surface (3 dirs = 1 n_out_dir, 13 dirs = 9 n_out_dirs). This is tertiary surface.
+    type(rt_hub_t), dimension(:,:), pointer:: wall => null()            ! intensity shell data, contracted to 2D (coords | n_out_dirs). n_out_dirs is the number of directions leaving any given surface (3 dirs = 1 n_out_dir, 13 dirs = 9 n_out_dirs). This is tertiary surface.
+    integer :: wall_idx(6)                                              ! index, where data for particular wall starts
     type(link_t), pointer             :: mhd_link                       ! link to my mhd_patch
     type(rt_outer_bndry_t)            :: rt_boundaries                  ! RT outer boundaries
     real(kind=8)                      :: upd_time                       ! time when the last internal update was done
-    integer                           :: dim(3)                         ! patch dimensions
     integer                           :: n_lambda                       ! number of wavelengths
     integer                           :: n_bundle                       ! number of bundles
-    integer                           :: i_q                            ! if q is stored for printing
     real, dimension(:), pointer       :: w_lambda                       ! wavelength weights
     real, dimension(:), pointer       :: w_bundle                       ! space angle weights
     real                              :: cr_heating
@@ -51,6 +48,7 @@ MODULE rt_mod
     logical :: patch_overlaps = .false.
   contains
     procedure :: absolute_point_position
+    procedure :: allocate_shell
     procedure :: boundary_conditions
     procedure :: cell2pos
     procedure :: cell2shell
@@ -76,6 +74,7 @@ MODULE rt_mod
     procedure :: solve_feautrier
     procedure :: update => update_rt
     procedure :: update_q
+    procedure :: wall_id
   end type
   real, parameter:: pi4 = 16.*atan(1.)
   
@@ -102,7 +101,7 @@ SUBROUTINE init_rt (self)
   real(8), save :: dtime=0.01_8, grace=0.01_8, init_time=0d0
   real,    save :: cr_heating=0.0
   character(len=16) :: solver = 'integral'
-  integer :: a_id, dd, n_out(3)
+  integer :: a_id, dd
   integer:: ignore, ibnd
   namelist /rt_params/ init_time, dtime, grace, solver, do_output, cr_heating, overlaps
   ! --------------------------------------------------------------------
@@ -140,9 +139,9 @@ SUBROUTINE init_rt (self)
   self%dedt => self%mem(:,:,:,self%i_e,self%it,1)                       ! map dedt to mem
   if (self%do_output) self%intensity => self%mem(:,:,:,2,self%it,1)
   self%guard_zones = .true.
-  call self%rt_boundaries%init (self%dim)
+  call self%rt_boundaries%init (self%gn)
   self%n_lambda = eos%n_lambda                                          ! number of wavelengths
-  self%n_bundle = ray_geometry%head%n_ray_dirs * 2                 ! double n_bundles since there are 2 directions
+  self%n_bundle = ray_geometry%head%total_n_bundles * 2                 ! double n_bundles since there are 2 directions
   self%cr_heating = cr_heating                                          ! store cr heating, if it is present
   self%do_chains = ray_geometry%head%do_chains                          ! are there chains in the system, or patches are effectively isolated
   
@@ -153,7 +152,7 @@ SUBROUTINE init_rt (self)
   allocate (self%w_lambda(self%n_lambda))                               ! frequency bin weights
   allocate (self%w_bundle(self%n_bundle))                               ! space angle weights
   self%w_lambda = eos%w_lambda
-  self%w_bundle = pi4/2./self%n_bundle                                  ! space angle weights FIXME: could be different weights for different directions
+  self%w_bundle = pi4/2./(ray_geometry%head%n_ray_dirs * 2)             ! space angle weights FIXME: could be different weights for different directions
   
   self%solver = solver                                                  ! solver selection
   select case(self%solver)
@@ -168,20 +167,12 @@ SUBROUTINE init_rt (self)
   
   allocate(self%updated(self%n_bundle))                                 ! flags, indicating update status of all the bundles
   self%updated = .false.                                                ! none are updated initially
-  allocate(self%my_links(self%n_bundle))                                ! allocate all the links, this patch contains
-  
-  
+  allocate(self%my_links(self%n_bundle))                                ! allocate all the links this patch contains
+
   !> -------------------------------------------------------------------
-  !> Allocate the outer intensity shell. In this shell all the leaving
-  !> intensities are held, therefore it also acts as a hub for communications
-  !> between nboring rt patches. 
+  !> Allocate the intensity outer shell
   !> -------------------------------------------------------------------
-  n_out = ray_geometry%head%wall_n_dirs
-  ! --- Allocate the intensity outer shell ---
-  allocate(self%I_yz(self%dim(2),   self%dim(3),   n_out(1), 2))
-  allocate(self%I_xz(self%dim(3)-2, self%dim(1),   n_out(2), 2))
-  allocate(self%I_xy(self%dim(1)-2, self%dim(2)-2, n_out(3), 2))
-  ! FIXME: options for collapsed dimensions.
+  call self%allocate_shell
   
   !> -------------------------------------------------------------------
   !> set up all the links, belonging to this patch. Every link represents
@@ -208,6 +199,51 @@ SUBROUTINE init_rt (self)
   nullify(ray_dir, ray_bnd)
   call trace_end
 END SUBROUTINE init_rt   
+
+!> =====================================================================
+!> Subroutine to allocate the data structure to hold the leaving heating
+!> rates. It acts as a hub for communications between nboring rt patches. 
+!> =====================================================================
+SUBROUTINE allocate_shell (self)
+  class (rt_t) :: self
+  ! ....................................................................
+  integer :: n_out(3), idx, itot
+  ! --------------------------------------------------------------------
+  n_out = ray_geometry%head%wall_n_dirs
+  self%wall_idx(1) = 1
+  self%wall_idx(2) = self%n(2)*self%n(3)+1
+  self%wall_idx(3) = self%wall_idx(2) +     self%n(2)   *self%n(3)   +1
+  self%wall_idx(4) = self%wall_idx(3) + abs(self%n(3)-2)*self%n(1)   +1
+  self%wall_idx(5) = self%wall_idx(4) + abs(self%n(3)-2)*self%n(1)   +1
+  self%wall_idx(6) = self%wall_idx(5) + abs(self%n(1)-2)*abs(self%n(2)-2)+1
+  itot = self%wall_idx(6) + abs(self%n(1)-2)*abs(self%n(2)-2)-1
+  allocate(self%wall(itot,maxval(n_out)))    
+END SUBROUTINE allocate_shell
+
+!> =====================================================================
+!> Subroutine to allocate the data structure to hold the leaving heating
+!> rates. It acts as a hub for communications between nboring rt patches. 
+!> =====================================================================
+FUNCTION wall_id (self, c) result(out)
+  class (rt_t) :: self
+  integer :: c(3), out
+  ! --------------------------------------------------------------------
+  if (c(1) == self%li(1)) then
+    out = self%wall_idx(1) + ((c(2)-self%ng(2)-1)*self%n(3))+c(3)-self%ng(3)-1
+  else if (c(1) == self%ui(1)) then
+    out = self%wall_idx(2) + ((c(2)-self%ng(2)-1)*self%n(3))+c(3)-self%ng(3)-1
+  else if (c(2) == self%li(2)) then
+    out = self%wall_idx(3) + (abs(c(3)-self%ng(3)-3)*self%n(1))+c(1)-self%ng(1)-1
+  else if (c(2) == self%ui(2)) then
+    out = self%wall_idx(4) + (abs(c(3)-self%ng(3)-3)*self%n(1))+c(1)-self%ng(1)-1
+  else if (c(3) == self%li(3)) then
+    out = self%wall_idx(5) + (abs(c(1)-self%ng(1)-3)*self%n(2))+abs(c(2)-self%ng(2)-3)
+  else if (c(3) == self%li(3)) then
+    out = self%wall_idx(6) + (abs(c(1)-self%ng(1)-3)*self%n(2))+abs(c(2)-self%ng(2)-3)
+  else
+    error stop "rt_t:wall_id: no suitable wall found (???)"
+  end if    
+END FUNCTION wall_id
 
 !> =====================================================================
 !> =====================================================================
@@ -248,39 +284,11 @@ SUBROUTINE map_intensity_shell(self, link)
   class(chain_link_t) :: link
   !.....................................................................
   class(packet_t), pointer :: packet
-  class(q_data_t), dimension(:,:,:), pointer:: wall
-  class(q_data_t), pointer :: this
-  integer :: ray, rid, c(3), pt, dir, a,b, i, ipck, ng(3)
+  class(rt_hub_t), pointer :: this
+  integer :: ray, rid, pt, dir, i, ipck, wid
   logical :: selected
   !---------------------------------------------------------------------
   dir = link%direction                                                  ! forward of reverse
-  !> -------------------------------------------------------------------  
-  !> First, we have to determine which shell walls the rays cross when 
-  !> they leave the patch. 
-  !> select the right wall and coordinate axis. X axis is primary, Y axis
-  !> is secondary, Z axis is tertiary.
-  !> -------------------------------------------------------------------  
-  if      ((link%bundle%lwall(1) /= 0).and.(dir ==2)) then
-    wall => self%I_yz(:,:,:, dir)                                       ! X wall is selected
-    a = 2;  b = 3                                                       ! the remaining axes, which set the coordinate on the wall
-  else if ((link%bundle%uwall(1) /= 0).and.(dir ==1)) then  
-    wall => self%I_yz(:,:,:, dir)                                       ! X wall is selected
-    a = 2;  b = 3                                                       ! the remaining axes, which set the coordinate on the wall
-  else if ((link%bundle%lwall(2) /= 0).and.(dir ==2)) then
-    wall => self%I_xz(:,:,:, dir)                                       ! Y wall is selected
-    a = 3;  b = 1                                                       ! the remaining axes, which set the coordinate on the wall
-  else if ((link%bundle%uwall(2) /= 0).and.(dir ==1)) then
-    wall => self%I_xz(:,:,:, dir)                                       ! Y wall is selected
-    a = 3;  b = 1                                                       ! the remaining axes, which set the coordinate on the wall
-  else if ((link%bundle%lwall(3) /= 0).and.(dir ==2)) then
-    wall => self%I_xy(:,:,:, dir)                                       ! Z wall is selected
-    a = 1;  b = 2                                                       ! the remaining axes, which set the coordinate on the wall
-  else if ((link%bundle%uwall(3) /= 0).and.(dir ==1)) then
-    wall => self%I_xy(:,:,:, dir)                                       ! Z wall is selected
-    a = 1;  b = 2                                                       ! the remaining axes, which set the coordinate on the wall
-  else 
-    error stop "map_intensity_shell:: the right wall was somehow not found."        
-  end if
   
   rid=1
   do ipck =1, link%bundle%n_packets
@@ -292,18 +300,18 @@ SUBROUTINE map_intensity_shell(self, link)
     end if
     do ray = 1, packet%n_rays                                           ! loop over rays in the packet
       selected = .false.
-      c = packet%coords(:,pt,ray)                                       ! get the cell position of the last point
+      wid = self%wall_id(packet%coords(:,pt,ray))                       ! get the wall index for this point
       i=1
       do while (.not.selected)                                          ! loop over the data in the selected cell on the shell
-        this => wall(c(a),c(b),i)
+        this => self%wall(wid,i)
         if (associated(this%out)) then                                  ! this entry point is already occupied by another ray (direction)
           i = i+1                                                       ! switch to the next entry point.
         else        
-          allocate(wall(c(a),c(b),i)%out(self%n_lambda))                ! allocate the outgoing intensity storage
-          allocate(wall(c(a),c(b),i)%dir_id)                            ! allocate a pointer to direction id, to know, who owns the entry point
-          wall(c(a),c(b),i)%dir_ID = link%bundle%dir_ID                 ! know, which direction this intensity is from
-          link%packet_data(rid)%out => wall(c(a),c(b),i)%out            ! point the fast lookup to the shell cell position
-          link%packet_data(rid)%dir_ID =>  wall(c(a),c(b),i)%dir_ID     ! point to the direction ID to have the reference.
+          allocate(self%wall(wid,i)%out(self%n_lambda))                 ! allocate the outgoing intensity storage
+          allocate(self%wall(wid,i)%dir_id)                             ! allocate a pointer to direction id, to know, who owns the entry point
+          self%wall(wid,i)%dir_ID = link%bundle%dir_ID                  ! know, which direction this intensity is from
+          link%packet_data(rid)%out => self%wall(wid,i)%out             ! point the fast lookup to the shell cell position
+          link%packet_data(rid)%dir_ID =>  self%wall(wid,i)%dir_ID      ! point to the direction ID to have the reference.
           selected = .true.                                             ! this ray has chosen it's entry point on the rt outer shell.
           link%packet_data(rid)%out = 0.
         end if
@@ -430,10 +438,10 @@ SUBROUTINE update_rt (self)
   !> -------------------------------------------------------------------
   !> allocate all the scratch arrays
   !> -------------------------------------------------------------------
-  allocate (self%lnd (self%dim(1), self%dim(2), self%dim(3)))           ! log density scratch
-  allocate (self%lne (self%dim(1), self%dim(2), self%dim(3)))           ! log internal energy scratch
-  allocate (self%rk  (self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
-  allocate (self%src (self%dim(1), self%dim(2), self%dim(3), self%n_lambda))
+  allocate (self%lnd (self%gn(1), self%gn(2), self%gn(3)))              ! log density scratch
+  allocate (self%lne (self%gn(1), self%gn(2), self%gn(3)))              ! log internal energy scratch
+  allocate (self%rk  (self%gn(1), self%gn(2), self%gn(3), self%n_lambda))! opacity scratch
+  allocate (self%src (self%gn(1), self%gn(2), self%gn(3), self%n_lambda))! source function scratch
   
   !> -------------------------------------------------------------------
   !> interpolate in time and space to get densoties and internal energies
@@ -588,8 +596,8 @@ SUBROUTINE link_connects_to (self, nbor, mine, other, connects, is_upstream)
   class (chain_link_t) :: other
   logical :: connects, is_upstream
   !.....................................................................
-  class(q_data_t), dimension(:,:,:), pointer:: wall
-  class(q_data_t), pointer :: cs
+  class(rt_hub_t), dimension(:,:,:), pointer:: wall
+  class(rt_hub_t), pointer :: cs
   integer :: a, b, c, mrn, ip, ray, first_pt(3), cp(3), cl(3), cu(3)
   real(kind=8) :: ppos
   
@@ -871,7 +879,7 @@ SUBROUTINE solve_integral (self, link, q_in, q_out, q_in2, q_out2)
   integer, save                   :: itimer=0
   class(task_t), pointer :: tmp
   ! --------------------------------------------------------------------
-  call trace_begin ('rt_t%solve_integral', itimer=itimer)
+  !call trace_begin ('rt_t%solve_integral', itimer=itimer)
 
   nwb   =  self%n_lambda                                                ! number of wl bins
   do ipck = 1, link%bundle%n_packets                                    ! loop over packets
@@ -932,7 +940,7 @@ SUBROUTINE solve_integral (self, link, q_in, q_out, q_in2, q_out2)
     deallocate (s, rk, dtau, exp0, q, dwf, q_out0, q_in0)   
   end do
 
-  call trace_end (itimer)
+  !call trace_end (itimer)
 END SUBROUTINE solve_integral
 
 !> =====================================================================
@@ -972,7 +980,7 @@ SUBROUTINE solve_feautrier (self, link, i_in, i_out1, i_in2, i_out2)
     if (io%verbose>1) &
         print *,'dtau',self%id, minval(dtau), maxval(dtau)
     
-    call rt_solver%transfer (dtau, s, I_in, I_in2, q, I_out1, I_out2)        ! solve bi-directional
+    call rt_solver%transfer (dtau, s, q, I_out1, I_out2,.true.)         ! solve bi-directional
     call self%update_q(packet, q, dwf, link%id)
     
     deallocate (s, rk, dtau, exp0, q, dwf)
@@ -1075,7 +1083,7 @@ SUBROUTINE update_q (self, packet, q, dwf, ib)
   integer :: p(3), wl, ray, pt, ib
   integer, save:: itimer=0
   !---------------------------------------------------------------------
-  call trace_begin ('rt_t%update_q', 4, itimer=itimer)
+  !call trace_begin ('rt_t%update_q', 4, itimer=itimer)
   
   qq => self%dedt(:,:,:)                                                ! point to the memory slot
   cell => packet%coords                                                 ! point to coordinates
@@ -1103,7 +1111,7 @@ SUBROUTINE update_q (self, packet, q, dwf, ib)
       end do
     end do
   end if
-  call trace_end (itimer)
+  !call trace_end (itimer)
 END SUBROUTINE update_q
 
 !> =====================================================================

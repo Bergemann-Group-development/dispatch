@@ -65,14 +65,14 @@ SUBROUTINE update (self)
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: dedt
   integer, save :: itimer=0
   !---------------------------------------------------------------------
-  call trace%begin ('rmhd_t%update', itimer=itimer)
+  !call trace%begin ('rmhd_t%update', itimer=itimer)
   call self%mhd_t%update                                                ! get df/dt from MHD
   allocate(dedt(size(self%dedt,1),size(self%dedt,2),size(self%dedt,3)))
   call self%rt%get_q (self%time, dedt)                            ! interpolate in time and space
   self%dedt = self%dedt + dedt*self%dtime                               ! add the RT contribution to de/dt
   call self%courant_condition
   deallocate(dedt)
-  call trace%end (itimer)
+  !call trace%end (itimer)
 END SUBROUTINE update
 
 END MODULE rmhd_mod

@@ -52,7 +52,6 @@ END SUBROUTINE init
 !> =====================================================================
 !> Solve the radiative transfer equation with rt_solver%transfer
 !> =====================================================================
- rt_bundle%forward (dtau, exp0, s, I_in, q, I_out) (nrays, nwb, npt+2))
 SUBROUTINE forward (dtau, exp0, s, qin, q, qout)
   implicit none
   real, dimension(:,:,:), pointer :: dtau, exp0, s, q
