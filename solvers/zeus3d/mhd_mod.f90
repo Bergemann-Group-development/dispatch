@@ -79,7 +79,7 @@ MODULE mhd_mod
                  , b3floor , nuscalar, diffc1  , diffc2  , dtmax   , dt      &
                  , dtold   , dtnew   , dtcs    , dtal    , dtqq    , dtv1    &
                  , dtv2    , dtv3    , dtdf    , dtss    , courno  , gamma   &
-                 , dtinit  , prtime  , framerot
+                 , dtinit  , prtime
   real(KindReal), dimension(3) :: zgridvel
 
   ! Other
@@ -105,7 +105,7 @@ MODULE mhd_mod
                     ix1x2x3 , zniib   , znoib   , znijb   , znojb   &
                   , znikb   , znokb   , do_mhd
   common / zcomprvr / &
-                    dt      , dtold   , dtnew   , prtime  , framerot&
+                    dt      , dtold   , dtnew   , prtime&
                   , dtcs    , dtal    , dtqq    , dtv1    , dtv2    &
                   , dtv3    , dtdf    , dtss    , zgridvel, courno
 !$omp threadprivate (/zcomprvc/, /zcomprvi/, /zcomprvr/)
@@ -398,7 +398,7 @@ END SUBROUTINE update_zeus
 SUBROUTINE CopyToZeus (self)
   use amnodal
   class(mhd_t) :: self
-  real(KindReal) :: x1low, x2low, x3low, dx1, dx2, dx3
+  real(KindReal) :: x1low, x2low, x3low, dx1, dx2, dx3, pvelocity(3)
   logical, save :: first_time=.true.
   !$omp threadprivate (first_time)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
@@ -409,10 +409,12 @@ SUBROUTINE CopyToZeus (self)
   ! procedure, so let's provide it. This allows for passing pointers to arrays
   ! to ZEUScore.
   interface
-    subroutine copyatoz (val, mito, mjto, mkto, nvar, x1low, x2low, x3low, dx1, dx2, dx3, mptr, firsttim)
+    subroutine copyatoz (val, mito, mjto, mkto, nvar, x1low, x2low, x3low, &
+                         dx1, dx2, dx3, mptr, pvelocity, firsttim)
        logical:: firsttim
        integer:: mito, mjto, mkto, nvar, mptr
        real(kind=8):: x1low, x2low, x3low, dx1, dx2, dx3
+       real(kind=8), dimension(3):: pvelocity
        real(kind=8), dimension(:,:,:,:), pointer:: val
     end subroutine copyatoz
   end interface
@@ -462,10 +464,13 @@ SUBROUTINE CopyToZeus (self)
   ! assign the patch velocity in its native coord. system; currently
   ! only possible in spherical and cylindrical coords., and only for the
   ! phi-(i.e.3-)direction.
-  framerot = self%grid_vel(3)
+  pvelocity(1) = self%velocity(1)
+  pvelocity(2) = self%velocity(2)
+  pvelocity(3) = self%velocity(3) + self%grid_vel(3)
 
   call copyatoz (qz, self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, &
-                 self%nv, x1low, x2low, x3low, dx1, dx2, dx3, self%id, first_time)
+                 self%nv, x1low, x2low, x3low, dx1, dx2, dx3, self%id, &
+                 pvelocity, first_time)
   call abndyall
   call bndyflgs
   call bndyall
