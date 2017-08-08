@@ -14,3 +14,4 @@ lagrange_mod.o:         io_mod.o
 radiation_mod.o:        io_mod.o trace_mod.o mesh_mod.o link_mod.o
 units_mod.o:
 interpolate_mod.o:      io_mod.o trace_mod.o mpi_mod.o kinds_mod.o
+data_hub_mod.o:		io_mod.o omp_mod.o bits_mod.o kinds_mod.o mesh_mod.o trace_mod.o task_mod.o patch_mod.o link_mod.o
