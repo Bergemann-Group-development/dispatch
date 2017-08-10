@@ -250,18 +250,17 @@ SUBROUTINE boundary_conditions (self, it)
       d => self%mem(:,:,:,self%i_d,it,1)
       s0 = (log(atmosphere%surface%pressure) - &
         log(atmosphere%surface%density)*self%gamma)/(self%gamma-1.0)
+      allocate (s(self%gn(1),self%gn(2),self%gn(3)))
       if (self%kind(1:9)=='stagger2_') then
-        s => self%mem(:,:,:,self%i_s,it,1)
-        s = s/d
+        s = self%mem(:,:,:,self%i_s,it,1)/d
         call self%boundaries%spherical (s, s0, self%mesh, self%i_s)
-        s = s*d
+        self%mem(:,:,:,self%i_s,it,1) = s*d
       else
-        allocate (s(self%gn(1),self%gn(2),self%gn(3)))
         call self%e2S (s, it)
         call self%boundaries%spherical (s, s0, self%mesh, self%i_s)
         call self%S2e (s, it)
-        deallocate (s)
       end if
+      deallocate (s)
       if (self%nw>1) then
         call self%boundaries%spherical (self%mem(:,:,:,self%i_d,it,2), 0.0, self%mesh, self%i_d)
         call self%boundaries%spherical (self%mem(:,:,:,self%i_e,it,2), 0.0, self%mesh, self%i_e)
