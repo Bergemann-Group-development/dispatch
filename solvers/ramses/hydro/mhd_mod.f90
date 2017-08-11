@@ -57,6 +57,7 @@ MODULE mhd_mod
     procedure:: grav_potential
     procedure:: velocity_magnitude
     procedure:: magnetic_field_magnitude
+    procedure:: gas_velocity
   end type
   real,save:: csound=1.
   logical:: debug=.false.
@@ -64,7 +65,6 @@ MODULE mhd_mod
   logical:: detailed_timer=.false.
   logical:: do_isothermal=.false.
   character(len=16):: eqn='mhd'
-  !logical, save:: debug=.false.
 CONTAINS
 
 !> =============================================================================
@@ -1034,5 +1034,21 @@ SUBROUTINE magnetic_field_magnitude (self, v)
   real, dimension(:,:,:):: v
   !-----------------------------------------------------------------------------
 END SUBROUTINE
+
+!> =============================================================================
+FUNCTION gas_velocity (self) RESULT (v)
+  class (mhd_t):: self
+  real, dimension(:,:,:), pointer:: d
+  real, dimension(:,:,:,:), pointer:: p
+  real, dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
+  !-----------------------------------------------------------------------------
+  d => self%mem(:,:,:,self%i_d,self%it,1)
+  p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
+  v(:,:,:,1) = p(:,:,:,1) / d
+  v(:,:,:,2) = p(:,:,:,2) / d
+  v(:,:,:,3) = p(:,:,:,3) / d
+  
+  nullify (d, p)
+END FUNCTION gas_velocity
 
 END MODULE
