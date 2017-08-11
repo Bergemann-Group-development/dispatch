@@ -4,6 +4,7 @@ MODULE mhd_mod
   USE io_mod
   USE bits_mod
   USE omp_mod
+  USE mpi_mod
   USE trace_mod
   USE units_mod
   USE scaling_mod
@@ -54,6 +55,7 @@ CONTAINS
 !> region once the variable has been set.
 !> =============================================================================
 SUBROUTINE init (self)
+  use mpi_mod
   class(mhd_t):: self
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   integer:: i
@@ -82,6 +84,8 @@ SUBROUTINE init (self)
     read (io%input, mhd_params)
     if (io%master) write (*, mhd_params)
     call timestep%init
+    ! fool-proofing
+    if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
   !$omp end critical (mhd_input_cr)
   self%nu = nu

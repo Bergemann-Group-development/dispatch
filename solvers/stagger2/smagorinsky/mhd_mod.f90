@@ -4,6 +4,7 @@ MODULE mhd_mod
   USE io_mod
   USE bits_mod
   USE omp_mod
+  USE mpi_mod
   USE trace_mod
   USE units_mod
   USE scaling_mod
@@ -60,6 +61,8 @@ SUBROUTINE init (self)
     read (io%input, mhd_params)
     if (io%master) write (*, mhd_params)
     call timestep%init
+    ! fool-proofing
+    if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
   !$omp end critical (input_cr)
   self%nu = nu

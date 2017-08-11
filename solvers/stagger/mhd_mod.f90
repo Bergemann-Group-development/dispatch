@@ -2,7 +2,9 @@
 !> =============================================================================
 MODULE mhd_mod
   USE io_mod
+  USE mpi_mod
   USE trace_mod
+  USE timestep_mod
   USE scalar_mod
   USE vector_mod
   USE stagger_mod
@@ -47,6 +49,9 @@ SUBROUTINE init (self)
     self%courant = courant
     self%nu = nu
     self%gamma = gamma
+    call timestep%init
+    ! fool-proofing
+    if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
   !$omp end critical (mhd_cr)
   call trace_end
