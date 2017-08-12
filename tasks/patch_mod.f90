@@ -331,7 +331,7 @@ SUBROUTINE init (self)
   logical, save:: no_mans_land = .false.
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
-  real(8):: position(3), size(3), ds(3)
+  real(8):: position(3), size(3)
   integer:: iostat, i
   namelist /patch_params/ size, n, nv, nw, ng, nt, courant, u_fixed, dt_fixed, &
     grace, periodic, extrapolate_gz, no_mans_land
@@ -396,9 +396,9 @@ SUBROUTINE init (self)
   ! Special handling of collapsed dimensions
   !-----------------------------------------------------------------------------
   if (self%no_mans_land) then
-    ds = self%size/self%n
+    self%ds = self%size/self%n
   else
-    ds = self%size/max(1,self%n-1)
+    self%ds = self%size/max(1,self%n-1)
   end if
   where (self%n==1)                             ! for collapsed dimensions
     self%ng = 0                                 ! no guard zones
