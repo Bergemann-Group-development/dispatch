@@ -312,7 +312,6 @@ SUBROUTINE edge_boundary_conditions (self, it)
   !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%i_d,it,1)
   allocate (u   (size(d,1),size(d,2),size(d,3),3))
-  allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
   call self%p2U(u,it)
   !-----------------------------------------------------------------------------
   ! Density boundary conditions
@@ -339,21 +338,33 @@ SUBROUTINE edge_boundary_conditions (self, it)
       call self%boundaries%symmetric (uu, self%i_px+iv-1)
     end if
   end do
-  call self%U2p(u,it)                                                   ! convert velocity to momentum
-  !---------------------------------------------------------------------
-  ! Energy: set energy per unit mass equal to initial value
-  !---------------------------------------------------------------------
-  associate (ee0=>atmosphere%external%energy)
-  call self%e2E_th(e_th, it)                                            ! thermal energy per unit mass
-  call self%boundaries%constant (e_th, self%i_e, ee0)                   ! extrapolate in the log
-  call self%E_th2e(e_th, it)                                            ! convert to energy per unit volume
-  if (self%id == io%id_debug) then
-    s => self%mem(:,:,:,self%i_s,it,1)
-    print *, self%id, 'BC outer', ee0, minval(e_th), maxval(e_th), minval(s), maxval(s)
+  call self%U2p(u,it)
+  deallocate (u)
+  !-----------------------------------------------------------------------------
+  ! Energy BCs
+  !-----------------------------------------------------------------------------
+  allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
+  if (self%kind(1:9) == 'stagger2_') then
+    !---------------------------------------------------------------------------
+    ! When using entropy, extrapolate entropy per unit mass 
+    ! FIXME: in case this gives problems, set to initial values 
+    !---------------------------------------------------------------------------
+    ss => e_th
+    ss = self%mem(:,:,:,self%i_s,it,1)/d
+    call self%boundaries%extrapolate(ss, self%i_s)
+    self%mem(:,:,:,self%i_s,it,1) = ss*d
+  else
+    !---------------------------------------------------------------------------
+    ! Set thermal_energy per unit mass to initial value
+    !---------------------------------------------------------------------------
+    associate (ee0=>atmosphere%external%energy)
+    call self%e2E_th(e_th, it)
+    call self%boundaries%constant (e_th, self%i_e, ee0)
+    call self%E_th2e(e_th, it)
+    end associate
   end if
-  end associate
                             call self%check_nan ('after th2e')
-  deallocate (u,e_th)
+  deallocate (e_th)
   call trace%end
 END SUBROUTINE edge_boundary_conditions
 
