@@ -97,6 +97,9 @@ class Patch(Task):
             self.d  = self.stripv (self.d)
             self.e  = self.stripv (self.e)
             self.s  = self.stripv (self.s)
+            self.sd = self.stripv (self.sd)
+            self.temp = self.stripv (self.temp)
+            self.pg = self.stripv (self.pg)
             self.u1 = self.stripv (self.u1)
             self.u2 = self.stripv (self.u2)
             self.u3 = self.stripv (self.u3)
@@ -131,9 +134,15 @@ class Patch(Task):
                 self.u1=su.xup(self.p1/np.exp(su.xdn(logd)))
                 self.u2=su.yup(self.p2/np.exp(su.ydn(logd)))
                 self.u3=su.zup(self.p3/np.exp(su.zdn(logd)))
+                self.xs=self.x-0.5*self.ds[0]
+                self.ys=self.y-0.5*self.ds[1]
+                self.zs=self.z-0.5*self.ds[2]
                 if self.kind[0:9]=='stagger2_':
-                    self.s =self.data[:,:,:,self.varidx['s']]/self.d
+                    self.s =self.data[:,:,:,self.varidx['s']]
+                    self.sd =self.data[:,:,:,self.varidx['s']]/self.d
                     self.e =np.exp(self.s*g1+logd*g1)/g1
+                    self.pg = (self.d**self.gamma*np.exp(self.sd*g1))
+                    self.temp = self.pg/self.d
                 elif self.kind[0:9]=='stagger2e':
                     self.e =self.data[:,:,:,self.varidx['e']]/self.d
                     pg=self.d*self.e*g1
