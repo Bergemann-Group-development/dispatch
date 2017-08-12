@@ -73,6 +73,7 @@ MODULE mesh_mod
     !---------------------------------------------------------------------------
     logical:: lower_boundary = .false.
     logical:: upper_boundary = .false.
+    logical:: no_mans_land = .false.
 
     procedure (), pointer, nopass :: CurrentToCartesian => null()
     ! geometric factors as procedure pointers

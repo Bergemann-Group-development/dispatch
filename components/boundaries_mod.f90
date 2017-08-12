@@ -240,21 +240,59 @@ SUBROUTINE constant (self, mem, iv, value, select)
 END SUBROUTINE constant
 
 !> =============================================================================
+!> Set indices that define the location of the physical boundary, by determining
+!> how symmtry conditions are applied across boundaries.  lo and uo are the points
+!> in the boundary zones closest to the interior, while li and ui are the neartest
+!> points in the interior, which are being used to construct the boundary zone
+!> values.
 !> =============================================================================
 SUBROUTINE bndry_indices (m, iv, lo, li, ui, uo)
   class(mesh_t), pointer :: m
   integer                :: iv, lo, li, ui, uo
-  !.............................................................................
-  if (m%h(iv) < 0.0) then
-    lo = m%lo+1
-    li = m%lo+2
-    uo = m%uo
-    ui = m%uo-2
+  !-----------------------------------------------------------------------------
+  ! no-mans-land mesh, with staggered points at patch boundaries
+  !                    |                     |
+  !  centered:   x---x-|-o---o-- ... --o---o-|-x---x
+  !                 lo   li               ui   uo
+  ! staggered: x---x---o---o-- ... --o---o---x---x
+  !               lo       li           ui       uo
+  !-----------------------------------------------------------------------------
+  if (m%no_mans_land) then
+    ! --- staggered variables ---
+    if (m%h(iv) < 0.0) then
+      lo = m%lo
+      li = lo+2
+      uo = m%uo+1
+      ui = ui-2
+    ! --- centered variables ---
+    else
+      lo = m%lo
+      li = lo+1
+      uo = m%uo
+      ui = uo-1
+    end if
+  !-----------------------------------------------------------------------------
+  ! no-no-mans-land mesh, with centered points at patch boundaries
+  !                      |                     |
+  !  centered:   x---x---o---o-- ... --o---o---o---x---x
+  !                 lo       li           ui       uo
+  ! staggered: x---x---o-|-o-- ... --o---o---o-|-x---x
+  !                   lo   li               ui   uo
+  !-----------------------------------------------------------------------------
   else
-    lo = m%lo
-    li = m%lb+2
-    uo = m%uo
-    ui = m%uo-1
+    ! --- staggered variables ---
+    if (m%h(iv) < 0.0) then
+      lo = m%li
+      li = lo+1
+      uo = m%uo
+      ui = uo-1
+    ! --- centered variables ---
+    else
+      lo = m%lo
+      li = lo+2
+      uo = m%uo
+      ui = uo-2
+    end if
   end if
 END SUBROUTINE bndry_indices
 
