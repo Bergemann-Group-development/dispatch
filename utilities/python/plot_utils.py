@@ -58,27 +58,6 @@ def simple_slice(iout=0,run='',data='../data',x=None,y=None,z=None,iv=0,verbose=
             image(p.data[l[0]:u[0],l[1]:u[1],iz,iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[2])
     pl.colorbar()
 
-def simple_slice(iout=0,run='',data='../data',x=1.0,ix=2,y=None,iy=None,z=None,iz=None,iv=0):
-    pp=du.patches(iout=iout,run=run,data=data,x=x,y=y,z=z)
-    for p in pp:
-        p.stripit()
-    ll=du.limits(pp,ix=ix,iy=iy,iz=iz,iv=iv)
-    if x:
-        pl.xlim(ll.ylim)
-        pl.ylim(ll.zlim)
-        for p in pp:
-            image(p.data[ix,:,:,iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[0])
-    elif y:
-        pl.xlim(ll.xlim)
-        pl.ylim(ll.zlim)
-        for p in pp:
-            image(p.data[:,iy,:,iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[1])
-    elif z:
-        pl.xlim(ll.xlim)
-        pl.ylim(ll.ylim)
-        for p in pp:
-            image(p.data[:,:,iz,iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[2])
-
 def image(f,verbose=0,vlim=None,**kwargs):
     '''
     Turn images the Fortran way; 1st index increases to the right,
@@ -92,7 +71,7 @@ def image(f,verbose=0,vlim=None,**kwargs):
     return im
 
 def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
-             extent=None,vlim=None,fraction=0.1,**kwargs):
+             extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
     '''
     Display xy-image for given z  
     '''
@@ -111,13 +90,15 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
         s=(x-x0)/dx
         i=max(0,min(n-2,int(s)))
         s=s-i
+        if verbose>0:
+            print 'id,iz,pz:',p.id,i,s
         return (1.0-s)*f[l[0]:u[0],l[1]:u[1],i]+s*f[l[0]:u[0],l[1]:u[1],i+1]
     for p in select:
         p.cache()
         p.stripit()
         p.vars()
         p.f=p.var[var]
-        p.f=interpolate(p,z,p.active_corners[0][2]+0.5*p.dx[2],p.dx[2],p.n[2],p.f)
+        p.f=interpolate(p,z,p.z[0],p.dx[2],p.n[2],p.f)
         p.f,e=du.rotate(p.f,p.extent[2])
         p.extent[2]=e
         vmin=min(vmin,p.f.min())
@@ -133,6 +114,8 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
     pl.clf()
     for p in select:
         image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap)    
+        if labels<>None:
+            pl.text(p.active_corners[0][1],p.active_corners[0][0],p.id)
     pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
     pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('x')
     pl.title('var='+var+'   t={:d}  z={:d}'.format(np.int(p.time),np.int(z)))
@@ -140,7 +123,7 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
     pl.draw()
 
 def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
-             fraction=0.1,**kwargs):
+             fraction=0.1,labels=None,verbose=0,**kwargs):
     '''
     Display yz-image for given x
     '''
@@ -160,6 +143,8 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
         s=(x-x0)/dx
         i=max(0,min(n-2,int(s)))
         s=s-i
+        if verbose>0:
+            print 'id,ix,px:',p.id,i,s
         return (1.0-s)*f[i,l[1]:u[1],l[2]:u[2]]+s*f[i+1,l[1]:u[1],l[2]:u[2]]
     for p in pp:
         p.cache()
@@ -178,6 +163,8 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
     for p in pp:
         #print np.shape(p.f)
         image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax)
+        if labels<>None:
+            pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
     pl.clf(); pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('z')
     pl.title('var='+var+'   t={:d}  x={:d}'.format(np.int(p.time),np.int(x)))
     pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)

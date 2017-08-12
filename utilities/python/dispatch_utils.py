@@ -1,7 +1,6 @@
 import numpy as np
 import os
 
-import stagger_utils as su
 import dispatch_data as dd
 reload(dd)
 
