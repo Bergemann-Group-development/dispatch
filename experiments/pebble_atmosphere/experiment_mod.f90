@@ -313,6 +313,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
   d => self%mem(:,:,:,self%i_d,it,1)
   allocate (u   (size(d,1),size(d,2),size(d,3),3))
   allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
+  call self%p2U(u,it)
   !-----------------------------------------------------------------------------
   ! Density boundary conditions
   !-----------------------------------------------------------------------------
@@ -320,7 +321,6 @@ SUBROUTINE edge_boundary_conditions (self, it)
   call self%density_boundary_condition (it)
   !call self%boundaries%log_extrapolate (d, self%i_d)
                             call self%check_density ('after density_BC')
-  call self%p2U(u,it)                                                      ! velocities
   !-----------------------------------------------------------------------------
   ! Velocity boundary conditions
   !-----------------------------------------------------------------------------
