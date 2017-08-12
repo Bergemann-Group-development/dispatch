@@ -105,7 +105,7 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
-    l=np.zeros(3)
+    l=np.zeros(3,dtype=np.int32)
     u=l+np.array(p.n)
     def interpolate(p,x,x0,dx,n,f):
         s=(x-x0)/dx
@@ -153,7 +153,7 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
-    l=np.zeros(3)
+    l=np.zeros(3,dtype=np.int32)
     u=l+np.array(p.n)
     m=(l+u)/2
     def interpolate(p,x,x0,dx,n,f):
@@ -220,7 +220,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
         vmax=-vmin
         xlim=[vmin,vmax]
         ylim=[vmin,vmax]
-        l=np.zeros(3)
+        l=np.zeros(3,dtype=np.int32)
         u=l+np.array(p.n)
         def interpolate(p,x,x0,dx,n,f):
             s=(x-x0)/dx
@@ -308,7 +308,7 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
         vmax=-vmin
         zlim=[vmin,vmax]
         ylim=[vmin,vmax]
-        l=np.zeros(3)
+        l=np.zeros(3,dtype=np.int32)
         u=l+np.array(p.n)
         def interpolate(p,x,x0,dx,n,f):
             s=(x-x0)/dx
