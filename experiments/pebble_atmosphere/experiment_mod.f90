@@ -261,6 +261,9 @@ SUBROUTINE boundary_conditions (self, it)
         call self%S2e (s, it)
       end if
       deallocate (s)
+      !-------------------------------------------------------------------------
+      ! If we have time derivatives, extrapolate them (FIXME: is this redundant?)
+      !-------------------------------------------------------------------------
       if (self%nw>1) then
         call self%boundaries%spherical (self%mem(:,:,:,self%i_d,it,2), 0.0, self%mesh, self%i_d)
         call self%boundaries%spherical (self%mem(:,:,:,self%i_e,it,2), 0.0, self%mesh, self%i_e)
@@ -306,33 +309,18 @@ SUBROUTINE edge_boundary_conditions (self, it)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%edge_boundary_conditions')
   self%boundaries%id = self%id
+  !-----------------------------------------------------------------------------
+  ! Allocate and load values into velocity, consistent with current density
+  !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%i_d,it,1)
   allocate (u   (size(d,1),size(d,2),size(d,3),3))
   allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
+  !-----------------------------------------------------------------------------
+  ! Density boundary conditions
+  !-----------------------------------------------------------------------------
                             call self%check_density ('before density_BC')
   call self%density_boundary_condition (it)                             ! vertical density BC
   !call self%boundaries%log_extrapolate (d, self%i_d)
-  if (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
-    select = bits%yu
-    if (io%verbose>2) &
-      print *, self%id, 'EXTRAP rho at yu', &
-      self%boundaries%is_set(bits%xl), self%boundaries%is_set(bits%xu), &
-      self%boundaries%is_set(bits%yl), self%boundaries%is_set(bits%yu), &
-      self%boundaries%is_set(bits%zl), self%boundaries%is_set(bits%zu)
-    call self%boundaries%log_extrapolate (d, self%i_d, select=select)
-    if (self%id==io%id_debug) &
-      print *, self%id, 'EXTRAP D', d(6,33:37,31)
-  else if (self%position(1)>0.0 .and. self%position(2)<0.0 .and. self%boundaries%is_set(bits%yl)) then
-    select = bits%yl
-    if (io%verbose>2) &
-      print *, self%id, 'EXTRAP rho at yl', &
-      self%boundaries%is_set(bits%xl), self%boundaries%is_set(bits%xu), &
-      self%boundaries%is_set(bits%yl), self%boundaries%is_set(bits%yu), &
-      self%boundaries%is_set(bits%zl), self%boundaries%is_set(bits%zu)
-    call self%boundaries%log_extrapolate (d, self%i_d, select=select)
-    if (self%id==io%id_debug) &
-      print *, self%id, 'EXTRAP D', d(6,1:4,31)
-  end if
                             call self%check_density ('after density_BC')
   !---------------------------------------------------------------------
   ! In the vertical and radial directions, where density varies
@@ -341,30 +329,11 @@ SUBROUTINE edge_boundary_conditions (self, it)
   call self%p2U(u,it)                                                      ! velocities
   do iv=1,3
     uu => u(:,:,:,iv)
-!    call self%boundaries%symmetric (uu, self%i_px+iv-1, select=select) ! apply symmetric boundaries to velocities
-    !-------------------------------------------------------------------
-    ! Extrapolate at boundaries with strong supersonic outflows
-    !-------------------------------------------------------------------
-    if      (self%position(1)<0.0 .and. self%position(2)>0.0 .and. self%boundaries%is_set(bits%yu)) then
-      select = iand(self%boundaries%bits,not(bits%yu))
-      call self%boundaries%symmetric (uu, self%i_px+iv-1, select=select)
-      select = bits%yu
-      call self%boundaries%extrapolate (uu, self%i_px+iv-1, select=select)
-      if (io%verbose>2) &
-        print *, self%id, 'EXTRAP U1', iv, u(6,33:37,31,2)
-    else if (self%position(1)>0.0 .and. self%position(2)<0.0 .and. self%boundaries%is_set(bits%yl)) then
-      select = iand(self%boundaries%bits,not(bits%yl))
-      call self%boundaries%symmetric (uu, self%i_px+iv-1, select=select)
-      select = bits%yl
-      call self%boundaries%extrapolate (uu, self%i_px+iv-1, select=select)
-      if (io%verbose>2) &
-        print *, self%id, 'EXTRAP U2', iv, u(6,33:37,31,2)
     !-------------------------------------------------------------------
     ! The azimuthal velocity should be safe to extrapolate in directions
-    ! where it it paralle to the boundary
+    ! where it it parallel to the boundary
     !-------------------------------------------------------------------
-    !-------------------------------------------------------------------
-    else if (iv==2) then
+    if (iv==2) then
       call self%boundaries%extrapolate (uu, self%i_px+iv-1)
     !-------------------------------------------------------------------
     ! Use vanishing perpendicular derivative in other cases
@@ -373,8 +342,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
       call self%boundaries%symmetric (uu, self%i_px+iv-1)
     end if
   end do
-                            call self%check_density ('after u BC')
-  call self%U2p(u,it)                                                      ! convert velocities to momentum
+  call self%U2p(u,it)                                                   ! convert velocity to momentum
   !---------------------------------------------------------------------
   ! Energy: set energy per unit mass equal to initial value
   !---------------------------------------------------------------------
