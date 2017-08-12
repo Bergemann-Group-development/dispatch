@@ -42,6 +42,7 @@ MODULE patch_mod
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
+    logical:: no_mans_land=.false.
     logical:: periodic(3)=.true.
     logical, dimension(:), pointer:: unsigned  => null()
     logical, dimension(:), pointer:: pervolume => null()
@@ -327,12 +328,13 @@ SUBROUTINE init (self)
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, restart=-9
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false., periodic(3)
+  logical, save:: no_mans_land = .false.
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
-  real(8):: position(3), size(3)
+  real(8):: position(3), size(3), ds(3)
   integer:: iostat, i
   namelist /patch_params/ size, n, nv, nw, ng, nt, courant, u_fixed, dt_fixed, &
-    grace, periodic, extrapolate_gz
+    grace, periodic, extrapolate_gz, no_mans_land
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     restart, inputdir, guard_zones, time_derivs
   !.............................................................................
@@ -376,6 +378,7 @@ SUBROUTINE init (self)
   self%u_fixed     = u_fixed
   self%max_files   = max_files                  ! prevent run-away NaN
   self%periodic    = periodic                   ! periodic box or not
+  self%no_mans_land = no_mans_land              ! mesh centering
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
@@ -385,11 +388,6 @@ SUBROUTINE init (self)
   self%out_time    = out_time
   self%print_time  = print_time
   self%print_next  = print_time
-  where (self%n > 1)
-    self%ds = real(self%size,kind=8)/(self%n-1)   ! ds in patch
-  else where
-    self%ds = real(self%size,kind=8)
-  end where
   if (all(self%size==self%box)) then
     write (io_unit%log,*) mpi%rank, 'task', self%id, ' is root grid'
     call self%set(bits%root_grid)
@@ -397,6 +395,11 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Special handling of collapsed dimensions
   !-----------------------------------------------------------------------------
+  if (self%no_mans_land) then
+    ds = self%size/self%n
+  else
+    ds = self%size/max(1,self%n-1)
+  end if
   where (self%n==1)                             ! for collapsed dimensions
     self%ng = 0                                 ! no guard zones
     self%box = 1                                ! make sure it is non-zero
@@ -414,7 +417,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call omp%set_stacksize (self%nv)
   call MeshFactory(self%mesh_type, self%mesh, n=self%n, ng=self%ng, s=self%size, &
-                   p=self%position, llc_native=self%llc_nat)
+                   p=self%position, llc_native=self%llc_nat, nml=self%no_mans_land)
   ! intialise staggering indices; it is the responsibility of the *solver* to
   ! assign non-zero values to this variable (if any).
   do i=1,3
@@ -864,7 +867,11 @@ SUBROUTINE output_direct (self)
   !-----------------------------------------------------------------------------
   if (direct_output%count==direct_output%nbuf-1) then
     write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), id, self%iout
-    self%ioformat = 2
+    if (self%no_mans_land) then
+      self%ioformat = 1
+    else
+      self%ioformat = 2
+    end if
     open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
     write (io%data_unit,'(i2.2)') self%ioformat
     write (io%data_unit,'(a)') trim(self%kind)

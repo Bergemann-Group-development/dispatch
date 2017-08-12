@@ -7,7 +7,7 @@
 ! sync_time=0.5
 !/
 &io_params
- verbose=-1
+ verbose=0
  do_trace=f
  omp_trace=f
  !id_debug=137
@@ -17,15 +17,14 @@
 /
 &out_params
 !end_time=2.1   out_time=0.2
-!end_time=30    out_time=1
+!end_time=10    out_time=1              ! 00-10
 !end_time=100  out_time=10              ! 00-10
-!end_time=220  out_time=02  restart=20  ! 00-30
-!end_time=500  out_time=20  restart=18  ! 20-45
-!end_time=5500 out_time=100 restart=65  ! 65-95
-end_time=10000 out_time=500             ! 00-90
+end_time=1000 out_time=50  restart=10  ! 11-19
+!end_time=1200 out_time=20  restart=19  ! 00-90
+!end_time=9000 out_time=200 restart=19  ! 00-90
 !end_time=9000 out_time=100 restart=80  ! 00-90
 !end_time=1e4  out_time=100 restart=90  ! 90-100
- print_time=20
+ print_time=0
  guard_zones=t
  time_derivs=f
  max_files=9000
@@ -74,7 +73,7 @@ gamma=1.4
 /
 &patch_params
  periodic=f,t,f
- n=3*21
+ n=3*33
  nt=5
  grace=0.00
  courant=0.2
