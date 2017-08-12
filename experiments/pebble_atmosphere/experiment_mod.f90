@@ -305,8 +305,6 @@ SUBROUTINE edge_boundary_conditions (self, it)
   integer:: iv, select
   real:: ee
   !-----------------------------------------------------------------------------
-  ! Edge boundary conditions
-  !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%edge_boundary_conditions')
   self%boundaries%id = self%id
   !-----------------------------------------------------------------------------
@@ -319,25 +317,24 @@ SUBROUTINE edge_boundary_conditions (self, it)
   ! Density boundary conditions
   !-----------------------------------------------------------------------------
                             call self%check_density ('before density_BC')
-  call self%density_boundary_condition (it)                             ! vertical density BC
+  call self%density_boundary_condition (it)
   !call self%boundaries%log_extrapolate (d, self%i_d)
                             call self%check_density ('after density_BC')
-  !---------------------------------------------------------------------
-  ! In the vertical and radial directions, where density varies
-  ! systematically, apply BCs to velocity
-  !---------------------------------------------------------------------
   call self%p2U(u,it)                                                      ! velocities
+  !-----------------------------------------------------------------------------
+  ! Velocity boundary conditions
+  !-----------------------------------------------------------------------------
   do iv=1,3
     uu => u(:,:,:,iv)
-    !-------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! The azimuthal velocity should be safe to extrapolate in directions
     ! where it it parallel to the boundary
-    !-------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     if (iv==2) then
       call self%boundaries%extrapolate (uu, self%i_px+iv-1)
-    !-------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Use vanishing perpendicular derivative in other cases
-    !-------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     else
       call self%boundaries%symmetric (uu, self%i_px+iv-1)
     end if
@@ -360,9 +357,9 @@ SUBROUTINE edge_boundary_conditions (self, it)
   call trace%end
 END SUBROUTINE edge_boundary_conditions
 
-!> =====================================================================
+!> =============================================================================
 !> Constrain the density to follow an anchored Gaussian profile
-!> =====================================================================
+!> =============================================================================
 SUBROUTINE density_boundary_condition (self, it)
   class(experiment_t):: self
   integer:: it
