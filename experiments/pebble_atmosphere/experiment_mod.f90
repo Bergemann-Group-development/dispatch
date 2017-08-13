@@ -346,12 +346,12 @@ SUBROUTINE edge_boundary_conditions (self, it)
   allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
   if (self%kind(1:9) == 'stagger2_') then
     !---------------------------------------------------------------------------
-    ! When using entropy, extrapolate entropy per unit mass 
+    ! When using entropy, set vanishing derivative of entropy per unit mass 
     ! FIXME: in case this gives problems, set to initial values 
     !---------------------------------------------------------------------------
     ss => e_th
     ss = self%mem(:,:,:,self%i_s,it,1)/d
-    call self%boundaries%extrapolate(ss, self%i_s)
+    call self%boundaries%symmetric (ss, self%i_s)
     self%mem(:,:,:,self%i_s,it,1) = ss*d
   else
     !---------------------------------------------------------------------------
