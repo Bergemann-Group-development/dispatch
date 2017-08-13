@@ -131,9 +131,9 @@ class Patch(Task):
             g1=self.gamma-1.0
             if self.kind[0:7]=='stagger':
                 logd=np.log(self.d)
-                self.u1=su.xup(self.p1/np.exp(su.xdn(logd)))
-                self.u2=su.yup(self.p2/np.exp(su.ydn(logd)))
-                self.u3=su.zup(self.p3/np.exp(su.zdn(logd)))
+                self.u1=self.p1/np.exp(su.xdn(logd))
+                self.u2=self.p2/np.exp(su.ydn(logd))
+                self.u3=self.p3/np.exp(su.zdn(logd))
                 self.xs=self.x-0.5*self.ds[0]
                 self.ys=self.y-0.5*self.ds[1]
                 self.zs=self.z-0.5*self.ds[2]
