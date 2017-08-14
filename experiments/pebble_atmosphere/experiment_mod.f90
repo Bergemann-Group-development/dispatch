@@ -98,6 +98,7 @@ SUBROUTINE init (self)
       call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
     end do
   end if
+  call self%boundary_conditions (self%it)
   call self%debug ('end init')
   !----------------------------------------------------------------------------
   ! Export the patch ids for debugging purposes
@@ -172,10 +173,10 @@ SUBROUTINE update (self)
     !--------------------------------------------------------------------------
     ! Update the MHD state
     !--------------------------------------------------------------------------
-    call self%boundary_conditions (self%it)
     call self%output
     call self%debug ('after BCs')
     call self%mhd_t%update
+    call self%boundary_conditions (self%new)
   end if
   !-----------------------------------------------------------------------------
   if (self%id==io%id_debug) then
