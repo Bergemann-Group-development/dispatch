@@ -317,8 +317,8 @@ SUBROUTINE edge_boundary_conditions (self, it)
   ! Density boundary conditions
   !-----------------------------------------------------------------------------
                             call self%check_density ('before density_BC')
-  call self%density_boundary_condition (it)
-  !call self%boundaries%log_extrapolate (d, self%i_d)
+  !call self%density_boundary_condition (it)
+  call self%boundaries%log_extrapolate (d, self%i_d)
                             call self%check_density ('after density_BC')
   !-----------------------------------------------------------------------------
   ! Velocity boundary conditions
