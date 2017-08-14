@@ -139,23 +139,22 @@ class Patch(Task):
                 self.zs=self.z-0.5*self.ds[2]
                 if self.kind[0:9]=='stagger2_':
                     self.s =self.data[:,:,:,self.varidx['s']]
-                    self.sd =self.data[:,:,:,self.varidx['s']]/self.d
-                    self.e =np.exp(self.s*g1+logd*g1)/g1
-                    self.pg = (self.d**self.gamma*np.exp(self.sd*g1))
-                    self.temp = self.pg/self.d
+                    self.e =np.exp((self.s/self.d+logd)*g1)/g1
+                    self.pg=self.d*self.e*g1
                 elif self.kind[0:9]=='stagger2e':
                     self.e =self.data[:,:,:,self.varidx['e']]/self.d
-                    pg=self.d*self.e*g1
-                    self.s=np.log(pg/self.d**self.gamma)/g1
+                    self.pg=self.d*self.e*g1
+                    self.s=np.log(self.pg/self.d**self.gamma)/g1
             elif self.kind[0:6]=='ramses':
                 self.e =self.data[:,:,:,self.varidx['e']]/self.d
                 self.u1=self.p1/self.d
                 self.u2=self.p2/self.d
                 self.u3=self.p3/self.d
                 self.e=self.e-0.5*(self.u1**2+self.u2**2+self.u3**2)
-                pg=self.d*self.e*g1
-                self.s=np.log(pg/self.d**self.gamma)/g1
-            #p=np.max(p,1e-35)
+                self.pg=self.d*self.e*g1
+                self.s=np.log(self.pg/self.d**self.gamma)/g1
+            self.sd =self.s/self.d
+            self.temp = self.pg/self.d
 
     def vars(self):
         '''Make arrays available in a .var dict'''
