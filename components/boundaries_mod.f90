@@ -607,7 +607,7 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
           if (r <= self%radius) then
             p1 = sqrt(y**2+z**2+(m(1)%p + r1(ix-1) + h(1)*m(1)%d - self%position(1))**2)
             p2 = sqrt(y**2+z**2+(m(1)%p + r1(ix+1) + h(1)*m(1)%d - self%position(1))**2)
-            if ((p1 >= self%radius).and.(p2 <= self%radius)) then
+            if ((p1 >= self%radius+m(1)%d*0.5).and.(p2 <= self%radius+m(1)%d*0.5)) then
               !entering the boundary
               rp = sqrt(abs(self%radius**2 - y**2 - z**2))              ! boundary location at X axis
               if (x<0) rp = -rp
@@ -617,7 +617,7 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
               mem(ix-1,iy,iz) = mem(ix-2,iy,iz) * dw                    ! linear interpolation for the last point before the bnd
               mem(ix  ,iy,iz) = &
                           extrapolate_antisym(x,x1,rp,mem(ix-1,iy,iz))  ! antisymmetric extrapolation from the last point before the bnd
-            else if ((p1 <= self%radius).and.(p2 >= self%radius)) then
+            else if ((p1 <= self%radius+m(1)%d*0.5).and.(p2 >= self%radius+m(1)%d*0.5)) then
             ! leaving the boundary
               rp = sqrt(abs(self%radius**2 - y**2 - z**2))              ! boundary location at X axis
               if (x<0) rp = -rp
@@ -627,7 +627,7 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
               mem(ix+1,iy,iz) = mem(ix+2,iy,iz)*dw                      ! linear interpolation for the first point after the bnd
               mem(ix  ,iy,iz) = &
                           extrapolate_antisym(x,x1,rp,mem(ix+1,iy,iz))    ! antisymmetric extrapolation from the first point after the bnd
-            else if ((p1 <= self%radius).and.(p2 <= self%radius)) then
+            else if ((p1 <= self%radius+m(1)%d*0.5).and.(p2 <= self%radius+m(1)%d*0.5)) then
               mem(ix,iy,iz) = 0.0                                       ! cell is well inside the boundary
             else
               rp = sqrt(abs(self%radius**2 - y**2 - z**2))              ! boundary location at X axis
