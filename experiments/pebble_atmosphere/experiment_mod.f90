@@ -341,29 +341,12 @@ SUBROUTINE edge_boundary_conditions (self, it)
   call self%U2p(u,it)
   deallocate (u)
   !-----------------------------------------------------------------------------
-  ! Energy BCs
+  ! Energy BCs: Set thermal_energy per unit mass to initial value
   !-----------------------------------------------------------------------------
   allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
-  if (self%kind(1:9) == 'stagger2_') then
-    !---------------------------------------------------------------------------
-    ! When using entropy, set vanishing derivative of entropy per unit mass 
-    ! FIXME: in case this gives problems, set to initial values 
-    !---------------------------------------------------------------------------
-    ss => e_th
-    ss = self%mem(:,:,:,self%i_s,it,1)/d
-    call self%boundaries%symmetric (ss, self%i_s)
-    self%mem(:,:,:,self%i_s,it,1) = ss*d
-  else
-    !---------------------------------------------------------------------------
-    ! Set thermal_energy per unit mass to initial value
-    !---------------------------------------------------------------------------
-    associate (ee0=>atmosphere%external%energy)
-    call self%e2E_th(e_th, it)
-    call self%boundaries%constant (e_th, self%i_e, ee0)
-    call self%E_th2e(e_th, it)
-    end associate
-  end if
-                            call self%check_nan ('after th2e')
+  call self%e2E_th(e_th, it)
+  call self%boundaries%constant (e_th, self%i_e, atmosphere%external%energy)
+  call self%E_th2e(e_th, it)
   deallocate (e_th)
   call trace%end
 END SUBROUTINE edge_boundary_conditions
