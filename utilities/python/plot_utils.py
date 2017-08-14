@@ -101,16 +101,22 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
         p.f=interpolate(p,z,p.z[0],p.dx[2],p.n[2],p.f)
         p.f,e=du.rotate(p.f,p.extent[2])
         p.extent[2]=e
-        vmin=min(vmin,p.f.min())
-        vmax=max(vmax,p.f.max())
         xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
         ylim=[min(ylim[0],e[2]),max(ylim[1],e[3])]
+    if extent<>None:
+        xlim=extent[2:4]
+        ylim=extent[0:2]
+        def overlaps(p):
+            return p.extent[2][0] > xlim[0] or p.extent[2][1] < xlim[1] \
+               and p.extent[2][2] > ylim[0] or p.extent[2][3] < ylim[1] 
+        select=[p for p in select if overlaps(p)]
     if vlim<>None:
         vmin=vlim[0]
         vmax=vlim[1]
-    if extent<>None:
-        xlim=extent[2:4]
-        ylim=extent[0:2] 
+    else:
+        for p in select:
+            vmin=min(vmin,p.f.min())
+            vmax=max(vmax,p.f.max())
     pl.clf()
     for p in select:
         image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap)    
@@ -123,7 +129,7 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
     pl.draw()
 
 def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
-             fraction=0.1,labels=None,verbose=0,**kwargs):
+             extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
     '''
     Display yz-image for given x
     '''
@@ -134,8 +140,8 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
     pp=[p for p in pp if inside(p,x) and p.level<8]
     print np.size(pp),'patches in plane' 
     vmin=1e9; vmax=-vmin
-    xlim=[vmin,vmax]
     ylim=[vmin,vmax]
+    zlim=[vmin,vmax]
     l=np.zeros(3,dtype=np.int32)
     u=l+np.array(p.n)
     m=(l+u)/2
@@ -151,21 +157,31 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
         p.stripit()
         p.vars()
         p.f=p.var[var]
-        if var=='u3': p.x=p.x-p.dx[0]
-        if var=='p3': p.x=p.x-p.dx[0]
         ng=p.nghost[0]
         p.f=interpolate(p,x,p.x[ng],p.dx[0],p.n[0],p.f)
-        vmin=min(vmin,p.f.min())
-        vmax=max(vmax,p.f.max())
         e=p.extent[0]
-        xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
-        ylim=[min(ylim[0],e[2]),max(ylim[1],e[3])]
+        ylim=[min(ylim[0],e[0]),max(ylim[1],e[1])]
+        zlim=[min(zlim[0],e[2]),max(zlim[1],e[3])]
+    if extent<>None:
+        ylim=extent[0:2]
+        zlim=extent[2:4]
+        def overlaps(p):
+            return p.extent[0][0] > ylim[0] or p.extent[0][1] < ylim[1] \
+               and p.extent[0][2] > zlim[0] or p.extent[0][3] < zlim[1] 
+        pp=[p for p in pp if overlaps(p)]
+    if vlim<>None:
+        vmin=vlim[0]
+        vmax=vlim[1]
+    else:
+        for p in pp:
+            vmin=min(vmin,p.f.min())
+            vmax=max(vmax,p.f.max())
     for p in pp:
         #print np.shape(p.f)
         image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax)
         if labels<>None:
             pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
-    pl.clf(); pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('z')
+    pl.clf(); pl.xlim(ylim); pl.ylim(zlim); pl.xlabel('y'); pl.ylabel('z')
     pl.title('var='+var+'   t={:d}  x={:d}'.format(np.int(p.time),np.int(x)))
     pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
     pl.tight_layout()
