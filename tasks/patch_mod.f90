@@ -1108,7 +1108,9 @@ SUBROUTINE unpack (self, mesg)
 END SUBROUTINE unpack
 
 !> =============================================================================
-!> Write results to disk
+!> Write results to disk, placing the files belonging to each snapshot in a
+!> separate directory, to avoid the slowdown sometimes associated with having
+!> many files in the same directory.
 !> =============================================================================
 SUBROUTINE output_legacy (self, experiment_name)
   USE iso_fortran_env, only : real32
@@ -1157,7 +1159,9 @@ SUBROUTINE output_legacy (self, experiment_name)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   self%ioformat = 2
-  write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout
+  write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout
+  call system ('mkdir -p '//trim(filename))
+  write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
   if (io%debug(0)) then
     if (io%debug(1) .or. self%track) &
       print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
