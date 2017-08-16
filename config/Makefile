@@ -51,6 +51,7 @@ sinclude $(TOP)/microphysics/Makefile
 sinclude $(TOP)/timestep/$(UPD)/Makefile
 sinclude $(TOP)/particles/Makefile
 sinclude $(TOP)/states/Makefile
+sinclude $(TOP)/boundaries/Makefile
 
 #############################################################################
 # Optional patches and extra dependencies
