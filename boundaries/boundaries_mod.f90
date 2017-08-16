@@ -737,7 +737,7 @@ END SUBROUTINE spherical_ns
 !> ===================================================================== 
 FUNCTION extrapolate_antisym(ip, op, bp, yop) result(out)
   real(8) :: ip, op, bp
-  real    :: yop, out
+  real(kind=KindScalarVar):: yop, out
   !.....................................................................
   out = yop+(ip-op)/(bp-op)*(-yop)
 END FUNCTION extrapolate_antisym
