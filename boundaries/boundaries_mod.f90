@@ -10,6 +10,7 @@ MODULE boundaries_mod
   USE bits_mod
   USE mesh_mod
   USE index_mod
+  USE boundary_wavekill_mod
   implicit none
   private
   type, public:: boundaries_t
@@ -36,6 +37,7 @@ MODULE boundaries_mod
     generic:: spherical => spherical0, spherical3
     procedure:: spherical_extrapolate
     procedure:: spherical_constant_entropy
+    procedure, nopass:: sponge => wave_killing
   end type
 CONTAINS
 
