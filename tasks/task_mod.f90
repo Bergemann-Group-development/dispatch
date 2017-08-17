@@ -252,10 +252,13 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   nbtime = self%time
   !$omp atomic read
   nbdtime = self%dtime
-  is_ahead_of = nbtime + nbdtime*task%grace >= task%time
+  if (self%level==task%level) then
+    is_ahead_of = nbtime + nbdtime*task%grace >= task%time
+  else
+    is_ahead_of = nbtime >= task%time
+  end if
   ! if a task is frozen (in time), then we assume it is forever ahead of other tasks
   if (self%is_set(bits%frozen)) is_ahead_of = .true.
-
   if (task%id==io%id_debug.or.io_unit%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &
     task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of
