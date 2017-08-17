@@ -11,10 +11,10 @@ reload(pu)
     ranges, especially when using "plot" rather than "semilogx"
 '''
 
-data='d:\\pebble_atmosphere\\data'
-run='m3r27t05st2n'
-iout=16
-sgn=1
+data='../data'
+run='3me27r'
+iout=1
+sgn=-1
 
 pp=du.patches(iout,run,data)
 pp=[p for p in pp if p.pos[1]==0.0 and p.pos[2]==0.0 and sgn*p.pos[0]>=0.0]
@@ -23,7 +23,6 @@ print npp,'patches to plot'
 dx0=pp[npp-1].dx[0]
 
 pl.figure(1)
-pl.show()
 #pl.clf()
 for p in pp:
     print p.id
@@ -31,7 +30,7 @@ for p in pp:
     l=0
     n=p.gn[0]
     u=l+n
-    iy=18; iz=iy
+    iy=12; iz=iy
     x=p.x
     #x=sgn*x/dx0
     pg =p.data[l:u,iy,iz,4]
@@ -74,3 +73,4 @@ for p in pp:
     pl.title('{}  iout={}  (:,{},{})'.format('d',iout,iy,iz))
 pl.tight_layout()
 pl.draw()
+pl.show()

@@ -299,18 +299,18 @@ SUBROUTINE disk (self, m, mem)
         !-----------------------------------------------------------------------
         ! Momenta from (possibly) staggered densities
         !-----------------------------------------------------------------------
-        rp = sqrt(xs**2+yp**2+zp**2)
-        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
-        ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xs**2)/T0))
-        mem(ix,iy,iz,i%px) = ds*ux
-        rp = sqrt(xp**2+ys**2+zp**2)
-        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
-        ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
-        mem(ix,iy,iz,i%py) = ds*uy
-        rp = sqrt(xp**2+yp**2+zs**2)
-        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
-        ds = ds*exp(-(planet%omega(3)**2*0.5*(zs**2+2.*planet%trap*xp**2)/T0))
-        mem(ix,iy,iz,i%pz) = ds*uz
+        !rp = sqrt(xs**2+yp**2+zp**2)
+        !ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        !ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xs**2)/T0))
+        mem(ix,iy,iz,i%px) = d*ux
+        !rp = sqrt(xp**2+ys**2+zp**2)
+        !ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        !ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
+        mem(ix,iy,iz,i%py) = d*uy
+        !rp = sqrt(xp**2+yp**2+zs**2)
+        !ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        !ds = ds*exp(-(planet%omega(3)**2*0.5*(zs**2+2.*planet%trap*xp**2)/T0))
+        mem(ix,iy,iz,i%pz) = d*uz
         if (self%solver(1:7)=='ramses_') then
           mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
         else if (self%solver(1:9)=='stagger2e') then

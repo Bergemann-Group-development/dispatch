@@ -58,27 +58,6 @@ def simple_slice(iout=0,run='',data='../data',x=None,y=None,z=None,iv=0,verbose=
             image(p.data[l[0]:u[0],l[1]:u[1],iz,iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[2])
     pl.colorbar()
 
-def simple_slice(iout=0,run='',data='../data',x=1.0,ix=2,y=None,iy=None,z=None,iz=None,iv=0):
-    pp=du.patches(iout=iout,run=run,data=data,x=x,y=y,z=z)
-    for p in pp:
-        p.stripit()
-    ll=du.limits(pp,ix=ix,iy=iy,iz=iz,iv=iv)
-    if x:
-        pl.xlim(ll.ylim)
-        pl.ylim(ll.zlim)
-        for p in pp:
-            image(p.data[ix,:,:,iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[0])
-    elif y:
-        pl.xlim(ll.xlim)
-        pl.ylim(ll.zlim)
-        for p in pp:
-            image(p.data[:,iy,:,iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[1])
-    elif z:
-        pl.xlim(ll.xlim)
-        pl.ylim(ll.ylim)
-        for p in pp:
-            image(p.data[:,:,iz,iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[2])
-
 def image(f,verbose=0,vlim=None,**kwargs):
     '''
     Turn images the Fortran way; 1st index increases to the right,
@@ -92,7 +71,7 @@ def image(f,verbose=0,vlim=None,**kwargs):
     return im
 
 def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
-             extent=None,vlim=None,fraction=0.1,**kwargs):
+             extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
     '''
     Display xy-image for given z  
     '''
@@ -105,34 +84,44 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
-    l=np.zeros(3)
+    l=np.zeros(3,dtype=np.int32)
     u=l+np.array(p.n)
     def interpolate(p,x,x0,dx,n,f):
         s=(x-x0)/dx
         i=max(0,min(n-2,int(s)))
         s=s-i
+        if verbose>0:
+            print 'id,iz,pz:',p.id,i,s
         return (1.0-s)*f[l[0]:u[0],l[1]:u[1],i]+s*f[l[0]:u[0],l[1]:u[1],i+1]
     for p in select:
         p.cache()
         p.stripit()
         p.vars()
         p.f=p.var[var]
-        p.f=interpolate(p,z,p.active_corners[0][2]+0.5*p.dx[2],p.dx[2],p.n[2],p.f)
+        p.f=interpolate(p,z,p.z[0],p.dx[2],p.n[2],p.f)
         p.f,e=du.rotate(p.f,p.extent[2])
         p.extent[2]=e
-        vmin=min(vmin,p.f.min())
-        vmax=max(vmax,p.f.max())
         xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
         ylim=[min(ylim[0],e[2]),max(ylim[1],e[3])]
+    if extent<>None:
+        xlim=extent[2:4]
+        ylim=extent[0:2]
+        def overlaps(p):
+            return p.extent[2][0] > xlim[0] or p.extent[2][1] < xlim[1] \
+               and p.extent[2][2] > ylim[0] or p.extent[2][3] < ylim[1] 
+        select=[p for p in select if overlaps(p)]
     if vlim<>None:
         vmin=vlim[0]
         vmax=vlim[1]
-    if extent<>None:
-        xlim=extent[2:4]
-        ylim=extent[0:2] 
+    else:
+        for p in select:
+            vmin=min(vmin,p.f.min())
+            vmax=max(vmax,p.f.max())
     pl.clf()
     for p in select:
         image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap)    
+        if labels<>None:
+            pl.text(p.active_corners[0][1],p.active_corners[0][0],p.id)
     pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
     pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('x')
     pl.title('var='+var+'   t={:d}  z={:d}'.format(np.int(p.time),np.int(z)))
@@ -140,7 +129,7 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
     pl.draw()
 
 def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
-             fraction=0.1,**kwargs):
+             extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
     '''
     Display yz-image for given x
     '''
@@ -151,34 +140,48 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
     pp=[p for p in pp if inside(p,x) and p.level<8]
     print np.size(pp),'patches in plane' 
     vmin=1e9; vmax=-vmin
-    xlim=[vmin,vmax]
     ylim=[vmin,vmax]
-    l=np.zeros(3)
+    zlim=[vmin,vmax]
+    l=np.zeros(3,dtype=np.int32)
     u=l+np.array(p.n)
     m=(l+u)/2
     def interpolate(p,x,x0,dx,n,f):
         s=(x-x0)/dx
         i=max(0,min(n-2,int(s)))
         s=s-i
+        if verbose>0:
+            print 'id,ix,px:',p.id,i,s
         return (1.0-s)*f[i,l[1]:u[1],l[2]:u[2]]+s*f[i+1,l[1]:u[1],l[2]:u[2]]
     for p in pp:
         p.cache()
         p.stripit()
         p.vars()
         p.f=p.var[var]
-        if var=='u3': p.x=p.x-p.dx[0]
-        if var=='p3': p.x=p.x-p.dx[0]
         ng=p.nghost[0]
         p.f=interpolate(p,x,p.x[ng],p.dx[0],p.n[0],p.f)
-        vmin=min(vmin,p.f.min())
-        vmax=max(vmax,p.f.max())
         e=p.extent[0]
-        xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
-        ylim=[min(ylim[0],e[2]),max(ylim[1],e[3])]
+        ylim=[min(ylim[0],e[0]),max(ylim[1],e[1])]
+        zlim=[min(zlim[0],e[2]),max(zlim[1],e[3])]
+    if extent<>None:
+        ylim=extent[0:2]
+        zlim=extent[2:4]
+        def overlaps(p):
+            return p.extent[0][0] > ylim[0] or p.extent[0][1] < ylim[1] \
+               and p.extent[0][2] > zlim[0] or p.extent[0][3] < zlim[1] 
+        pp=[p for p in pp if overlaps(p)]
+    if vlim<>None:
+        vmin=vlim[0]
+        vmax=vlim[1]
+    else:
+        for p in pp:
+            vmin=min(vmin,p.f.min())
+            vmax=max(vmax,p.f.max())
     for p in pp:
         #print np.shape(p.f)
         image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax)
-    pl.clf(); pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('z')
+        if labels<>None:
+            pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
+    pl.clf(); pl.xlim(ylim); pl.ylim(zlim); pl.xlabel('y'); pl.ylabel('z')
     pl.title('var='+var+'   t={:d}  x={:d}'.format(np.int(p.time),np.int(x)))
     pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
     pl.tight_layout()
@@ -220,7 +223,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
         vmax=-vmin
         xlim=[vmin,vmax]
         ylim=[vmin,vmax]
-        l=np.zeros(3)
+        l=np.zeros(3,dtype=np.int32)
         u=l+np.array(p.n)
         def interpolate(p,x,x0,dx,n,f):
             s=(x-x0)/dx
@@ -308,7 +311,7 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
         vmax=-vmin
         zlim=[vmin,vmax]
         ylim=[vmin,vmax]
-        l=np.zeros(3)
+        l=np.zeros(3,dtype=np.int32)
         u=l+np.array(p.n)
         def interpolate(p,x,x0,dx,n,f):
             s=(x-x0)/dx

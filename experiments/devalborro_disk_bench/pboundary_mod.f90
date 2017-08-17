@@ -9,6 +9,7 @@ MODULE pboundary_mod
   USE mesh_mod
   USE mhd_mod
   USE parameters_mod
+  USE boundary_wavekill_mod
   implicit none
   private
 
@@ -32,7 +33,7 @@ SUBROUTINE conditions (self, patch, cit)
   class(mesh_t), pointer :: m1, m2, m3
   integer :: i1, i2, i3, jay3, jay2
   integer, intent(in):: cit
-  real(4) :: r
+  real(8) :: r
   real(8) :: sigma0, p0, vkep, rmin, rmax, tau_in, tau_out, rbnd, rkill, tau, &
              dt, skep
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: q
@@ -77,15 +78,15 @@ SUBROUTINE conditions (self, patch, cit)
             cycle
           end if
           q(i1,i2,i3,patch%i_d)  = q(i1,i2,i3,patch%i_d) &
-                                 + dt * wave_kill(q(i1,i2,i3,patch%i_d), sigma0, tau, rkill, rbnd, r)
+                                 + dt * wave_killing(q(i1,i2,i3,patch%i_d), sigma0, tau, rkill, rbnd, r)
           q(i1,i2,i3,patch%i_e)  = q(i1,i2,i3,patch%i_e) &
-                                 + dt * wave_kill(q(i1,i2,i3,patch%i_e), p0, tau, rkill, rbnd, r)
+                                 + dt * wave_killing(q(i1,i2,i3,patch%i_e), p0, tau, rkill, rbnd, r)
           q(i1,i2,i3,patch%i_px) = q(i1,i2,i3,patch%i_px) &
-                                 + dt * wave_kill(q(i1,i2,i3,patch%i_px), 0.0d0, tau, rkill, rbnd, r)
+                                 + dt * wave_killing(q(i1,i2,i3,patch%i_px), 0.0d0, tau, rkill, rbnd, r)
           q(i1,i2,i3,patch%i_py) = q(i1,i2,i3,patch%i_py) &
-                                 + dt * wave_kill(q(i1,i2,i3,patch%i_py), 0.0d0, tau, rkill, rbnd, r) 
+                                 + dt * wave_killing(q(i1,i2,i3,patch%i_py), 0.0d0, tau, rkill, rbnd, r) 
           q(i1,i2,i3,patch%i_pz) = q(i1,i2,i3,patch%i_pz) &
-                                 + dt * wave_kill(q(i1,i2,i3,patch%i_pz), skep, tau, rkill, rbnd, r)
+                                 + dt * wave_killing(q(i1,i2,i3,patch%i_pz), skep, tau, rkill, rbnd, r)
         end do
         if (m2%llc_nat < experiment_params%roffset ) then 
           ! reset ghost zones to initial values, except for s2, which is anti-symmetric.
@@ -145,16 +146,5 @@ SUBROUTINE conditions (self, patch, cit)
   nullify (m1, m2, m3, q)
   call trace_end
 END SUBROUTINE conditions
-
-!> =============================================================================
-FUNCTION wave_kill (x, x0, tau, rkill, rbnd, r) RESULT (rate)
-  real(8), intent(in) :: x, x0, tau, rkill, rbnd
-  real(4), intent(in) :: r
-  real(8) :: rate, quad
-  !-----------------------------------------------------------------------------
-  quad = ((r - rkill) / (rbnd - rkill))**2
-  rate = -(x - x0) * quad / tau
-
-END FUNCTION wave_kill
 
 END MODULE pboundary_mod

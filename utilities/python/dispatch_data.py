@@ -97,6 +97,9 @@ class Patch(Task):
             self.d  = self.stripv (self.d)
             self.e  = self.stripv (self.e)
             self.s  = self.stripv (self.s)
+            self.sd = self.stripv (self.sd)
+            self.temp = self.stripv (self.temp)
+            self.pg = self.stripv (self.pg)
             self.u1 = self.stripv (self.u1)
             self.u2 = self.stripv (self.u2)
             self.u3 = self.stripv (self.u3)
@@ -128,25 +131,30 @@ class Patch(Task):
             g1=self.gamma-1.0
             if self.kind[0:7]=='stagger':
                 logd=np.log(self.d)
-                self.u1=su.xup(self.p1/np.exp(su.xdn(logd)))
-                self.u2=su.yup(self.p2/np.exp(su.ydn(logd)))
-                self.u3=su.zup(self.p3/np.exp(su.zdn(logd)))
+                self.u1=self.p1/np.exp(su.xdn(logd))
+                self.u2=self.p2/np.exp(su.ydn(logd))
+                self.u3=self.p3/np.exp(su.zdn(logd))
+                self.xs=self.x-0.5*self.ds[0]
+                self.ys=self.y-0.5*self.ds[1]
+                self.zs=self.z-0.5*self.ds[2]
                 if self.kind[0:9]=='stagger2_':
-                    self.s =self.data[:,:,:,self.varidx['s']]/self.d
-                    self.e =np.exp(self.s*g1+logd*g1)/g1
+                    self.s =self.data[:,:,:,self.varidx['s']]
+                    self.e =np.exp((self.s/self.d+logd)*g1)/g1
+                    self.pg=self.d*self.e*g1
                 elif self.kind[0:9]=='stagger2e':
                     self.e =self.data[:,:,:,self.varidx['e']]/self.d
-                    pg=self.d*self.e*g1
-                    self.s=np.log(pg/self.d**self.gamma)/g1
+                    self.pg=self.d*self.e*g1
+                    self.s=np.log(self.pg/self.d**self.gamma)/g1
             elif self.kind[0:6]=='ramses':
                 self.e =self.data[:,:,:,self.varidx['e']]/self.d
                 self.u1=self.p1/self.d
                 self.u2=self.p2/self.d
                 self.u3=self.p3/self.d
                 self.e=self.e-0.5*(self.u1**2+self.u2**2+self.u3**2)
-                pg=self.d*self.e*g1
-                self.s=np.log(pg/self.d**self.gamma)/g1
-            #p=np.max(p,1e-35)
+                self.pg=self.d*self.e*g1
+                self.s=np.log(self.pg/self.d**self.gamma)/g1
+            self.sd =self.s/self.d
+            self.temp = self.pg/self.d
 
     def vars(self):
         '''Make arrays available in a .var dict'''

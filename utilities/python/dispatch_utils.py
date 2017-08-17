@@ -1,7 +1,7 @@
 import numpy as np
 import os
+import re
 
-import stagger_utils as su
 import dispatch_data as dd
 reload(dd)
 
@@ -74,37 +74,66 @@ class limits():
             print 'zlim:',self.zlim
             print 'vlim:',self.vlim
  
-def patch_files(run='', data='../data', verbose=0, iout=-1):
+def patch_files(run='', iout=-1, data='../data', verbose=0):
     '''
     Return a list of patch file root names, and count patches and snapshots,
     unless verbose is negative
     '''
     rundir=data+'/'+run+'/'
-    files=np.sort(os.listdir(rundir))
+    if iout>=0:
+        dir='{:05d}'.format(iout)
+        if os.path.isdir(rundir+dir):
+            dirs=[dir]
+        else:
+            dirs=[]
+    else:
+        dirs=[d for d in np.sort(os.listdir(rundir)) if os.path.isdir(d)]
+        dirs=[d for d in dirs if re.match("^[0-9][0-9][0-9][0-9][0-9]$",d)]
+
+    nsnaps=np.size(dirs)
+    files=[]
+    for dir in dirs:
+        if verbose>1: print rundir+dir
+        ff=np.sort(os.listdir(rundir+dir))
+        ext='.txt'
+        ff=[rundir+dir+'/'+f.replace('.txt','') for f in ff if f.endswith(ext)]
+        npatch=np.size(ff)
+        for f in ff:
+            files.append(f)
+    if iout>=0 and np.size(files)>0:
+        return files
+
+    ff=np.sort(os.listdir(rundir))
     ext='.txt'
     if iout>=0: ext='{:04d}.txt'.format(iout)
-    files=[f.replace('.txt','') for f in files if f.endswith(ext)]
+    ff=[f.replace('.txt','') for f in ff if f.endswith(ext)]
     if verbose>-1:
-        sid0,stime0=files[0].split('_')
+        sid0,stime0=ff[0].split('_')
         npatch=0
-        nsnaps=0
-        for f in files:
+        for f in ff:
             sid,stime=f.split('_')
-            if sid==sid0: nsnaps=nsnaps+1
+            if sid==sid0:
+                nsnaps=nsnaps+1
+                if verbose>1: print rundir+f
             if stime==stime0: npatch=npatch+1
-        if verbose: print npatch,'patches with',nsnaps,'snapshots found'
-    files=[rundir+f for f in files]
+    for f in ff:
+        files.append(rundir+f)
+    if verbose>0: print npatch,'patches with',nsnaps,'snapshots found'
     return files
 
 def patch (id=2, iout=0, run='', data='../data', verbose=0, **kwargs):
     '''
     Return patch structure for a single patch, identified by id and iout
     '''
-    file=data+'/'+run+'/{:04d}_{:04d}'.format(id,iout)
-    s=dd.Patch(file,verbose=verbose,**kwargs)
-    return s
+    file=data+'/'+run+'/{:05d}/{:05d}'.format(iout,id)
+    if not os.path.isfile(file+'.txt'):
+        file=data+'/'+run+'/{:04d}_{:04d}'.format(id,iout)
+        if not os.path.isfile(file+'.txt'):
+            print file,' not found'
+            return None
+    return dd.Patch(file,verbose=verbose,**kwargs)
 
-def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None):
+def patches (run='', iout=-1, data='../data', verbose=0, x=None, y=None, z=None):
     '''
     Return a list of structures s={id,iout,time,data,...}, where id,iout
     are the integer patch and snapshot numbers, time is in code units,

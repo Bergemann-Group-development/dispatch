@@ -73,6 +73,7 @@ MODULE mesh_mod
     !---------------------------------------------------------------------------
     logical:: lower_boundary = .false.
     logical:: upper_boundary = .false.
+    logical:: no_mans_land = .false.
 
     procedure (), pointer, nopass :: CurrentToCartesian => null()
     ! geometric factors as procedure pointers
@@ -199,7 +200,7 @@ CONTAINS
 !> This method creates three orthogonal meshes to form an 3-dimensional grid.
 !> It is possible for up to 2 of the meshes to have extent one.
 !> =============================================================================
-SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, llc_native)
+SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, llc_native, nml)
   class(mesh_t), dimension(:), pointer :: collection
   integer, intent(in) :: meshtype
   integer, dimension(3), optional :: ng
@@ -208,6 +209,7 @@ SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, llc_native)
   integer, dimension(3) :: ni
   real(8), dimension(3), optional :: s, p
   real(8), dimension(3) :: si, pi
+  logical, optional :: nml
   integer :: i
   ! expected form of `origin` for Cartesian coords.: [0,0,0] (unused)
   !                           for cylindrical coords.: [rmin, 0, zeta]
@@ -258,6 +260,9 @@ SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, llc_native)
     collection%type = 'cylindrical_mesh'
   else
     call mpi%abort("Invalid mesh type. Abort!")
+  end if
+  if (present(nml)) then
+    collection%no_mans_land = nml
   end if
 
   do i=1,3
@@ -329,7 +334,11 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   allocate (self%r(self%gn))
   ! initialise mesh floating point attributes
   if (self%n > 1) then
-    self%d = self%s/(self%n-1)
+    if (self%no_mans_land) then
+      self%d = self%s/self%n
+    else
+      self%d = self%s/(self%n-1)
+    end if
   else
     self%d = self%s
   end if

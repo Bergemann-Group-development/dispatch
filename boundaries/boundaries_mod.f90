@@ -10,6 +10,7 @@ MODULE boundaries_mod
   USE bits_mod
   USE mesh_mod
   USE index_mod
+  USE boundary_wavekill_mod
   implicit none
   private
   type, public:: boundaries_t
@@ -36,6 +37,7 @@ MODULE boundaries_mod
     generic:: spherical => spherical0, spherical3
     procedure:: spherical_extrapolate
     procedure:: spherical_constant_entropy
+    procedure, nopass:: sponge => wave_killing
   end type
 CONTAINS
 
@@ -98,8 +100,8 @@ SUBROUTINE condition (self, f, iv, operator, value, select)
   procedure(make_symmetric), pointer :: operator
   integer, optional                  :: select
   !.............................................................................
-  class(mesh_t), pointer:: m(:), m1, m2, m3
-  integer:: i, saved_status, l, u
+  class(mesh_t), pointer:: m(:), m1, m2
+  integer:: i, saved_status
   !-----------------------------------------------------------------------------
   call trace%begin ('boundaries_t%condition')
   if (self%unset) then
@@ -118,20 +120,16 @@ SUBROUTINE condition (self, f, iv, operator, value, select)
     if (self%is_set(bits%yl+bits%yu)) call y_condition
     if (self%is_set(bits%zl+bits%zu)) call z_condition
   end if
-  nullify (m, m1, m2, m3)
   call trace%end
   return
 contains
   subroutine x_condition
     if (self%id==io%id_debug) &
       print *, 'MK BOUNDARY CONDITION: x-direction', self%bits, present(value)
-    m1 => self%m(1)
-    m2 => self%m(2)
-    m3 => self%m(3)
-    l = m3%lb
-    u = m3%ub
-    do i=l, u
-      call operator (self, f(:,:,i),m2,m1,iv,lower=self%is_set(bits%xl), &
+    m1 => self%m(2)
+    m2 => self%m(1)
+    do i=m(3)%lb,m(3)%ub
+      call operator (self, f(:,:,i),m1,m2,iv,lower=self%is_set(bits%xl), &
         upper=self%is_set(bits%xu), transpose=.true., value=value)
     end do
   end subroutine x_condition
@@ -140,10 +138,7 @@ contains
       print *, 'MK BOUNDARY CONDITION: y-direction', self%bits, present(value)
     m1 => self%m(1)
     m2 => self%m(2)
-    m3 => self%m(3)
-    l = m3%lb
-    u = m3%ub
-    do i=l, u
+    do i=m(3)%lb,m(3)%ub
       call operator (self, f(:,:,i),m1,m2,iv,lower=self%is_set(bits%yl), &
         upper=self%is_set(bits%yu), transpose=.false., value=value)
     end do
@@ -152,12 +147,9 @@ contains
     if (self%id==io%id_debug) &
       print *, 'MK BOUNDARY CONDITION: z-direction', self%bits, present(value)
     m1 => self%m(1)
-    m2 => self%m(2)
-    m3 => self%m(3)
-    l = m2%lb
-    u = m2%ub
-    do i=l,u
-      call operator (self, f(:,i,:),m1,m3,iv,lower=self%is_set(bits%zl), &
+    m2 => self%m(3)
+    do i=m(2)%lb,m(2)%ub
+      call operator (self, f(:,i,:),m1,m2,iv,lower=self%is_set(bits%zl), &
         upper=self%is_set(bits%zu), transpose=.false., value=value)
     end do
   end subroutine z_condition
@@ -250,21 +242,59 @@ SUBROUTINE constant (self, mem, iv, value, select)
 END SUBROUTINE constant
 
 !> =============================================================================
+!> Set indices that define the location of the physical boundary, by determining
+!> how symmtry conditions are applied across boundaries.  lo and uo are the points
+!> in the boundary zones closest to the interior, while li and ui are the neartest
+!> points in the interior, which are being used to construct the boundary zone
+!> values.
 !> =============================================================================
 SUBROUTINE bndry_indices (m, iv, lo, li, ui, uo)
   class(mesh_t), pointer :: m
   integer                :: iv, lo, li, ui, uo
-  !.............................................................................
-  if (m%h(iv) < 0.0) then
-    lo = m%lo+1
-    li = m%lo+2
-    uo = m%uo
-    ui = m%uo-2
+  !-----------------------------------------------------------------------------
+  ! no-mans-land mesh, with staggered points at patch boundaries
+  !                    |                     |
+  !  centered:   x---x-|-o---o-- ... --o---o-|-x---x
+  !                 lo   li               ui   uo
+  ! staggered: x---x---o---o-- ... --o---o---x---x
+  !               lo       li           ui       uo
+  !-----------------------------------------------------------------------------
+  if (m%no_mans_land) then
+    ! --- staggered variables ---
+    if (m%h(iv) < 0.0) then
+      lo = m%lo
+      li = lo+2
+      uo = m%uo+1
+      ui = ui-2
+    ! --- centered variables ---
+    else
+      lo = m%lo
+      li = lo+1
+      uo = m%uo
+      ui = uo-1
+    end if
+  !-----------------------------------------------------------------------------
+  ! no-no-mans-land mesh, with centered points at patch boundaries
+  !                      |                     |
+  !  centered:   x---x---o---o-- ... --o---o---o---x---x
+  !                 lo       li           ui       uo
+  ! staggered: x---x---o-|-o-- ... --o---o---o-|-x---x
+  !                   lo   li               ui   uo
+  !-----------------------------------------------------------------------------
   else
-    lo = m%lo
-    li = m%lb+2
-    uo = m%uo
-    ui = m%uo-1
+    ! --- staggered variables ---
+    if (m%h(iv) < 0.0) then
+      lo = m%li
+      li = lo+1
+      uo = m%uo
+      ui = uo-1
+    ! --- centered variables ---
+    else
+      lo = m%lo
+      li = lo+2
+      uo = m%uo
+      ui = uo-2
+    end if
   end if
 END SUBROUTINE bndry_indices
 
@@ -501,15 +531,18 @@ END SUBROUTINE make_constant
 !> help from specific mesh information.
 !> =============================================================================
 SUBROUTINE set_stagger (m, h, iv)
-  class(mesh_t), pointer :: m(:), mn
+  class(mesh_t), pointer :: m(:)
   real(8)                :: h(3)
   integer                :: iv, i
   !-----------------------------------------------------------------------------
-  do i=1,3
-    mn => m(i)
-    h(i) = mn%h(iv)
-  end do
-  nullify(mn)
+  select type (m)
+  type is (Cartesian_mesh)
+    do i=1,3
+      h(i) = m(i)%h(iv)
+    end do
+  class default
+    call mpi%abort ('boundaries_mod::set_stagger: staggering h undefined')
+  end select
 END SUBROUTINE set_stagger
 
 !> =============================================================================
@@ -519,7 +552,7 @@ SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
   real                                       :: v
-  class(mesh_t), pointer                     :: m(:), m1, m2, m3
+  class(mesh_t), pointer                     :: m(:)
   integer                                    :: iv
   logical, optional                          :: maxfill
   !............................................................................
@@ -528,25 +561,21 @@ SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%spherical0')
   call set_stagger (m, h, iv)
-  m1 => m(1)
-  m2 => m(2)
-  m3 => m(3)
-  associate (r1=>m1%r, r2=>m2%r, r3=>m3%r)
-  do iz=m3%lb,m3%ub
-    z = m3%p + r3(iz) + h(3)*m3%d - self%position(3)
-    do iy=m2%lb,m2%ub
-      y = m2%p + r2(iy) + h(2)*m2%d - self%position(2)
-      do ix=m1%lb,m1%ub
-        x = m1%p + r1(ix) + h(1)*m1%d - self%position(1)
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz) + h(3)*m(3)%d - self%position(3)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy) + h(2)*m(2)%d - self%position(2)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < self%radius+m1%d*0.5) then
+        if (r < self%radius+m(1)%d*0.5) then
           mem(ix,iy,iz) = v
         end if
       end do
     end do
   end do
   end associate
-  nullify (m1,m2,m3)
   call trace_end
 END SUBROUTINE spherical0
 
@@ -557,7 +586,7 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
   real                                       :: v
-  class(mesh_t), pointer                     :: m(:), m1, m2, m3
+  class(mesh_t), pointer                     :: m(:)
   integer                                    :: iv
   logical, optional                          :: maxfill
   !............................................................................
@@ -568,133 +597,130 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%spherical0')
   call set_stagger (m, h, iv)
-  m1 => m(1)
-  m2 => m(2)
-  m3 => m(3)
-  associate (r1=>m1%r, r2=>m2%r, r3=>m3%r)
-  do iz=m3%lb,m3%ub
-    z = m3%p + r3(iz) + h(3)*m3%d - self%position(3)
-    do iy=m2%lb,m2%ub
-      y = m2%p + r2(iy) + h(2)*m2%d - self%position(2)
-      do ix=m1%lb,m1%ub
-        x = m1%p + r1(ix) + h(1)*m1%d - self%position(1)
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz) + h(3)*m(3)%d - self%position(3)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy) + h(2)*m(2)%d - self%position(2)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
         if (iv == idx%px) then                                          ! mass flux in X-direction
           if (r <= self%radius) then
-            p1 = sqrt(y**2+z**2+(m(1)%p + r1(ix-1) + h(1)*m1%d - self%position(1))**2)
-            p2 = sqrt(y**2+z**2+(m(1)%p + r1(ix+1) + h(1)*m1%d - self%position(1))**2)
-            if ((p1 >= self%radius).and.(p2 <= self%radius)) then
+            p1 = sqrt(y**2+z**2+(m(1)%p + r1(ix-1) + h(1)*m(1)%d - self%position(1))**2)
+            p2 = sqrt(y**2+z**2+(m(1)%p + r1(ix+1) + h(1)*m(1)%d - self%position(1))**2)
+            if ((p1 >= self%radius+m(1)%d*0.5).and.(p2 <= self%radius+m(1)%d*0.5)) then
               !entering the boundary
               rp = sqrt(abs(self%radius**2 - y**2 - z**2))              ! boundary location at X axis
               if (x<0) rp = -rp
-              x1 = m1%p + r1(ix-1) + h(1)*m1%d - self%position(1)       ! last point OUTSIDE the bnd
+              x1 = m(1)%p + r1(ix-1) + h(1)*m(1)%d - self%position(1)   ! last point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
-              dw = d1/(d1+m1%d)                                         ! interpolation weight for the last point before the bnd
+              dw = d1/(d1+m(1)%d)                                       ! interpolation weight for the last point before the bnd
               mem(ix-1,iy,iz) = mem(ix-2,iy,iz) * dw                    ! linear interpolation for the last point before the bnd
               mem(ix  ,iy,iz) = &
                           extrapolate_antisym(x,x1,rp,mem(ix-1,iy,iz))  ! antisymmetric extrapolation from the last point before the bnd
-            else if ((p1 <= self%radius).and.(p2 >= self%radius)) then
+            else if ((p1 <= self%radius+m(1)%d*0.5).and.(p2 >= self%radius+m(1)%d*0.5)) then
             ! leaving the boundary
               rp = sqrt(abs(self%radius**2 - y**2 - z**2))              ! boundary location at X axis
               if (x<0) rp = -rp
-              x1 = m1%p + r1(ix+1) + h(1)*m1%d - self%position(1)       ! first point OUTSIDE the bnd
+              x1 = m(1)%p + r1(ix+1) + h(1)*m(1)%d - self%position(1)   ! first point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and the point outside it
-              dw = d1/(d1+m1%d)                                         ! interpolation weight for the first point after the bnd
+              dw = d1/(d1+m(1)%d)                                       ! interpolation weight for the first point after the bnd
               mem(ix+1,iy,iz) = mem(ix+2,iy,iz)*dw                      ! linear interpolation for the first point after the bnd
               mem(ix  ,iy,iz) = &
                           extrapolate_antisym(x,x1,rp,mem(ix+1,iy,iz))    ! antisymmetric extrapolation from the first point after the bnd
-            else if ((p1 <= self%radius).and.(p2 <= self%radius)) then
+            else if ((p1 <= self%radius+m(1)%d*0.5).and.(p2 <= self%radius+m(1)%d*0.5)) then
               mem(ix,iy,iz) = 0.0                                       ! cell is well inside the boundary
             else
               rp = sqrt(abs(self%radius**2 - y**2 - z**2))              ! boundary location at X axis
               if (x<0) rp = -rp
-              x1 = m1%p + r1(ix-1) + h(1)*m1%d - self%position(1)       ! last point INSIDE the bnd
+              x1 = m(1)%p + r1(ix-1) + h(1)*m(1)%d - self%position(1)   ! last point INSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
-              dw = d1/(d1+m1%d)                                         ! interpolation weight for the last point before the bnd
+              dw = d1/(d1+m(1)%d)                                       ! interpolation weight for the last point before the bnd
               mem(ix-1,iy,iz) = mem(ix-2,iy,iz) * dw                    ! linear interpolation for the last point before the bnd
-              x1 = m1%p + r1(ix+1) + h(1)*m1%d - self%position(1)       ! first point OUTSIDE the bnd
+              x1 = m(1)%p + r1(ix+1) + h(1)*m(1)%d - self%position(1)   ! first point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
-              dw = d1/(d1+m1%d)                                         ! interpolation weight for the last point before the bnd
+              dw = d1/(d1+m(1)%d)                                       ! interpolation weight for the last point before the bnd
               mem(ix+1,iy,iz) = mem(ix+2,iy,iz) * dw                    ! linear interpolation for the last point before the bnd
               mem(ix,iy,iz) = 0.0                                       ! zero for the bnd cell
             end if
           end if
         else if (iv == idx%py) then                                     ! mass flux in Y-direction
           if (r <= self%radius) then
-            p1 = sqrt(x**2+(m2%p + r2(iy-1) + h(2)*m2%d - self%position(2))**2+z**2)
-            p2 = sqrt(x**2+(m2%p + r2(iy+1) + h(2)*m2%d - self%position(2))**2+z**2)
-            if ((p1 > self%radius+m2%d*0.5).and.(p2 < self%radius+m2%d*0.5)) then
+            p1 = sqrt(x**2+(m(2)%p + r2(iy-1) + h(2)*m(2)%d - self%position(2))**2+z**2)
+            p2 = sqrt(x**2+(m(2)%p + r2(iy+1) + h(2)*m(2)%d - self%position(2))**2+z**2)
+            if ((p1 > self%radius+m(2)%d*0.5).and.(p2 < self%radius+m(2)%d*0.5)) then
               !entering the boundary
               rp = sqrt(abs(self%radius**2 - x**2 - z**2))              ! boundary location at Y axis
               if (y<0) rp = -rp
-              x1 = m2%p + r2(iy-1) + h(2)*m2%d - self%position(2)       ! last point OUTSIDE the bnd
+              x1 = m(2)%p + r2(iy-1) + h(2)*m(2)%d - self%position(2)   ! last point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
-              dw = d1/(d1+m2%d)                                         ! interpolation weight for the last point before the bnd
+              dw = d1/(d1+m(2)%d)                                       ! interpolation weight for the last point before the bnd
               mem(ix,iy-1,iz) = mem(ix,iy-2,iz) * dw                    ! linear interpolation for the last point before the bnd
               mem(ix,iy  ,iz) = &
                           extrapolate_antisym(y,x1,rp,mem(ix,iy-1,iz))  ! antisymmetric extrapolation from the last point before the bnd
-            else if ((p1 < self%radius+m2%d*0.5).and.(p2 > self%radius+m2%d*0.5)) then
+            else if ((p1 < self%radius+m(2)%d*0.5).and.(p2 > self%radius+m(2)%d*0.5)) then
             ! leaving the boundary
               rp = sqrt(abs(self%radius**2 - x**2 - z**2))              ! boundary location at Y axis
               if (y<0) rp = -rp
-              x1 = m(2)%p + r2(iy+1) + h(2)*m2%d - self%position(2)     ! first point OUTSIDE the bnd
+              x1 = m(2)%p + r2(iy+1) + h(2)*m(2)%d - self%position(2)   ! first point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and the point outside it
-              dw = d1/(d1+m2%d)                                         ! interpolation weight for the first point after the bnd
+              dw = d1/(d1+m(2)%d)                                       ! interpolation weight for the first point after the bnd
               mem(ix,iy+1,iz) = mem(ix,iy+2,iz)*dw                      ! linear interpolation for the first point after the bnd
               mem(ix,iy,iz) = &
                           extrapolate_antisym(y,x1,rp,mem(ix,iy+1,iz))  ! antisymmetric extrapolation from the first point after the bnd
-            else if ((p1 < self%radius+m2%d*0.5).and.(p2 < self%radius+m2%d*0.5)) then
+            else if ((p1 < self%radius+m(2)%d*0.5).and.(p2 < self%radius+m(2)%d*0.5)) then
               mem(ix,iy,iz) = 0.0                                       ! cell is well inside the boundary
             else                                                        ! special case, where a single cell gets a bc
               rp = sqrt(abs(self%radius**2 - x**2 - z**2))              ! boundary location at Y axis
               if (y<0) rp = -rp
-              x1 = m2%p + r2(iy-1) + h(2)*m2%d - self%position(2)       ! last point OUTSIDE the bnd
+              x1 = m(2)%p + r2(iy-1) + h(2)*m(2)%d - self%position(2)   ! last point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
-              dw = d1/(d1+m2%d)                                          ! interpolation weight for the last point before the bnd
+              dw = d1/(d1+m(2)%d)                                       ! interpolation weight for the last point before the bnd
               mem(ix,iy-1,iz) = mem(ix,iy-2,iz) * dw                    ! linear interpolation for the last point before the bnd
-              x1 = m2%p + r2(iy+1) + h(2)*m2%d - self%position(2)       ! first point OUTSIDE the bnd
+              x1 = m(2)%p + r2(iy+1) + h(2)*m(2)%d - self%position(2)   ! first point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
-              dw = d1/(d1+m2%d)                                         ! interpolation weight for the last point before the bnd
+              dw = d1/(d1+m(2)%d)                                       ! interpolation weight for the last point before the bnd
               mem(ix,iy+1,iz) = mem(ix,iy+2,iz) * dw                    ! linear interpolation for the last point before the bnd
               mem(ix,iy,iz) = 0.0                                       ! zero for the bnd cell
             end if
           end if
         else if (iv == idx%pz) then                                     ! mass flux in Z-direction
           if (r <= self%radius) then
-            p1 = sqrt(x**2+y**2+(m3%p + r3(iz-1) + h(3)*m3%d - self%position(3))**2)
-            p2 = sqrt(x**2+y**2+(m3%p + r3(iz+1) + h(3)*m3%d - self%position(3))**2)
-            if ((p1 > self%radius+m3%d*0.5).and.(p2 < self%radius+m3%d*0.5)) then
+            p1 = sqrt(x**2+y**2+(m(3)%p + r3(iz-1) + h(3)*m(3)%d - self%position(3))**2)
+            p2 = sqrt(x**2+y**2+(m(3)%p + r3(iz+1) + h(3)*m(3)%d - self%position(3))**2)
+            if ((p1 > self%radius+m(3)%d*0.5).and.(p2 < self%radius+m(3)%d*0.5)) then
               !entering the boundary
               rp = sqrt(abs(self%radius**2 - x**2 - y**2))              ! boundary location at Z axis
               if (z<0) rp = -rp
-              x1 = m3%p + r3(iz-1) + h(3)*m3%d - self%position(3)       ! last point OUTSIDE the bnd
+              x1 = m(3)%p + r3(iz-1) + h(3)*m(3)%d - self%position(3)   ! last point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
-              dw = d1/(d1+m3%d)                                         ! interpolation weight for the last point before the bnd
+              dw = d1/(d1+m(3)%d)                                       ! interpolation weight for the last point before the bnd
               mem(ix,iy,iz-1) = mem(ix,iy,iz-2) * dw                    ! linear interpolation for the last point before the bnd
               mem(ix,iy,iz  ) = &
                           extrapolate_antisym(z,x1,rp,mem(ix,iy,iz-1))  ! antisymmetric extrapolation from the last point before the bnd
-            else if ((p1 < self%radius+m3%d*0.5).and.(p2 > self%radius+m3%d*0.5)) then
+            else if ((p1 < self%radius+m(3)%d*0.5).and.(p2 > self%radius+m(3)%d*0.5)) then
             ! leaving the boundary
               rp = sqrt(abs(self%radius**2 - x**2 - y**2))              ! boundary location at Z axis
               if (y<0) rp = -rp
-              x1 = m3%p + r3(iz+1) + h(3)*m3%d - self%position(3)       ! last point INSIDE the bnd
+              x1 = m(3)%p + r3(iz+1) + h(3)*m(3)%d - self%position(3)   ! last point INSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and the point outside it
-              dw = d1/(d1+m3%d)                                         ! interpolation weight for the first point after the bnd
+              dw = d1/(d1+m(3)%d)                                       ! interpolation weight for the first point after the bnd
               mem(ix,iy,iz+1) = mem(ix,iy,iz+2)*dw                      ! linear interpolation for the first point after the bnd
               mem(ix,iy,iz) = &
                           extrapolate_antisym(z,x1,rp,mem(ix,iy,iz+1))    ! antisymmetric extrapolation from the first point after the bnd
-            else if ((p1 < self%radius+m3%d*0.5).and.(p2 < self%radius+m3%d*0.5)) then
+            else if ((p1 < self%radius+m(3)%d*0.5).and.(p2 < self%radius+m(3)%d*0.5)) then
               mem(ix,iy,iz) = 0.0                                       ! cell is well inside the boundary
             else
               rp = sqrt(abs(self%radius**2 - x**2 - y**2))              ! boundary location at Z axis
               if (z<0) rp = -rp
-              x1 = m3%p + r3(iz-1) + h(3)*m3%d - self%position(3)       ! last point OUTSIDE the bnd
+              x1 = m(3)%p + r3(iz-1) + h(3)*m(3)%d - self%position(3)   ! last point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
-              dw = d1/(d1+m3%d)                                         ! interpolation weight for the last point before the bnd
+              dw = d1/(d1+m(3)%d)                                       ! interpolation weight for the last point before the bnd
               mem(ix,iy,iz-1) = mem(ix,iy,iz-2) * dw                    ! linear interpolation for the last point before the bnd
-              x1 = m3%p + r3(iz+1) + h(3)*m3%d - self%position(3)       ! first point OUTSIDE the bnd
+              x1 = m(3)%p + r3(iz+1) + h(3)*m(3)%d - self%position(3)   ! first point OUTSIDE the bnd
               d1 = abs(rp-x1)                                           ! distance between bnd and last point before it
-              dw = d1/(d1+m3%d)                                         ! interpolation weight for the last point before the bnd
+              dw = d1/(d1+m(3)%d)                                       ! interpolation weight for the last point before the bnd
               mem(ix,iy,iz+1) = mem(ix,iy,iz+2) * dw                    ! linear interpolation for the last point before the bnd
               mem(ix,iy,iz) = 0.0                                       ! zero for the bnd cell
             end if
@@ -704,7 +730,6 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
     end do
   end do
   end associate
-  nullify (m1, m2, m3)
   call trace_end
 END SUBROUTINE spherical_ns
 
@@ -713,7 +738,7 @@ END SUBROUTINE spherical_ns
 !> ===================================================================== 
 FUNCTION extrapolate_antisym(ip, op, bp, yop) result(out)
   real(8) :: ip, op, bp
-  real    :: yop, out
+  real(kind=KindScalarVar):: yop, out
   !.....................................................................
   out = yop+(ip-op)/(bp-op)*(-yop)
 END FUNCTION extrapolate_antisym
@@ -724,7 +749,7 @@ END FUNCTION extrapolate_antisym
 SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem, v
-  class(mesh_t), pointer                     :: m(:), m1, m2, m3
+  class(mesh_t), pointer                     :: m(:)
   integer                                    :: iv
   logical, optional                          :: maxfill
   !............................................................................
@@ -733,19 +758,16 @@ SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%spherical3')
   call set_stagger (m, h, iv)
-  m1 => m(1)
-  m2 => m(2)
-  m3 => m(3)
-  associate (r1=>m1%r, r2=>m2%r, r3=>m3%r)
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   self%vmax = 0.0
-  do iz=m3%lb,m3%ub
-    z = m3%p + r3(iz) + h(3)*m3%d - self%position(3)
-    do iy=m2%lb,m2%ub
-      y = m2%p + r2(iy) + h(2)*m2%d - self%position(2)
-      do ix=m1%lb,m1%ub
-        x = m1%p + r1(ix) + h(1)*m1%d - self%position(1)
+  do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz) + h(3)*m(3)%d - self%position(3)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy) + h(2)*m(2)%d - self%position(2)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < self%radius+m1%d*0.5) then
+        if (r < self%radius+m(1)%d*0.5) then
           mem(ix,iy,iz) = v(ix,iy,iz)
         else if (present(maxfill)) then
           self%vmax = max(self%vmax,mem(ix,iy,iz))
@@ -754,14 +776,14 @@ SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
     end do
   end do
   if (present(maxfill)) then
-  do iz=m3%lb,m3%ub
-    z = m3%p + r3(iz) + h(3)*m3%d - self%position(3)
-    do iy=m2%lb,m2%ub
-      y = m2%p + r2(iy) + h(2)*m2%d - self%position(2)
-      do ix=m1%lb,m1%ub
-        x = m1%p + r1(ix) + h(1)*m1%d - self%position(1)
+  do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz) + h(3)*m(3)%d - self%position(3)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy) + h(2)*m(2)%d - self%position(2)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
-        if (r < self%radius-m1%d*0.1) then
+        if (r < self%radius-m(1)%d*0.1) then
           mem(ix,iy,iz) = max(mem(ix,iy,iz),self%vmax)
         end if
       end do
@@ -769,7 +791,6 @@ SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
   end do
   end if
   end associate
-  nullify (m1, m2, m3)
   call trace_end
 END SUBROUTINE spherical3
 
@@ -780,7 +801,7 @@ END SUBROUTINE spherical3
 SUBROUTINE spherical_extrapolate (self, mem, m, iv)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
-  class(mesh_t), pointer                     :: m(:), m1, m2, m3
+  class(mesh_t), pointer                     :: m(:)
   integer                                    :: iv
   !............................................................................
   integer                                    :: ix, iy, iz, n1, n2
@@ -788,22 +809,19 @@ SUBROUTINE spherical_extrapolate (self, mem, m, iv)
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%spherical_extrapolate')
   call set_stagger (m, h, iv)
-  m1 => m(1)
-  m2 => m(2)
-  m3 => m(3)
-  associate (r1=>m1%r, r2=>m2%r, r3=>m3%r)
-  ds = m1%d
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  ds = m(1)%d
   a1 = 0d0; n1 = 0
   a2 = 0d0; n2 = 0
   !-----------------------------------------------------------------------------
   ! a1 and a2 sample the values in annuli around R-3*ds and R, respectively
   !-----------------------------------------------------------------------------
-  do iz=m3%lb,m3%ub
-    z = m3%p + r3(iz) + h(3)*m3%d - self%position(3)
-    do iy=m2%lb,m2%ub
-      y = m2%p + r2(iy) + h(2)*m2%d - self%position(2)
-      do ix=m1%lb,m1%ub
-        x = m1%p + r1(ix) + h(1)*m1%d - self%position(1)
+  do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz) + h(3)*m(3)%d - self%position(3)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy) + h(2)*m(2)%d - self%position(2)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
         if (abs(r-(self%radius+2.*ds)) <= ds) then
           n1 = n1+1
@@ -822,15 +840,15 @@ SUBROUTINE spherical_extrapolate (self, mem, m, iv)
   ! For radii inside R-0.5*ds, set the value to be log-interpolated from a1, a2
   ! The value at a2 would be chosen for r=R
   !-----------------------------------------------------------------------------
-  do iz=m3%lb,m3%ub
-    z = m3%p + r3(iz) + h(3)*m3%d - self%position(3)
-    do iy=m2%lb,m2%ub
-      y = m2%p + r2(iy) + h(2)*m2%d - self%position(2)
-      do ix=m1%lb,m1%ub
-        x = m1%p + r1(ix) + h(1)*m1%d - self%position(1)
+  do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz) + h(3)*m(3)%d - self%position(3)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy) + h(2)*m(2)%d - self%position(2)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix) + h(1)*m(1)%d - self%position(1)
         r = sqrt(x**2+y**2+z**2)
         r = max(r,self%radius-4.0*ds)
-        if (r < self%radius-0.5*ds) then
+        if (r < self%radius) then
           if (a1 /= 0d0 .and. a2 /= 0d0) then
             p = (self%radius-r)/(2.0*ds) + 1.0
             mem(ix,iy,iz) = exp(a1*(1d0-p) + a2*p)
@@ -840,7 +858,6 @@ SUBROUTINE spherical_extrapolate (self, mem, m, iv)
     end do
   end do
   end associate
-  nullify (m1, m2, m3)
   call trace_end
 END SUBROUTINE spherical_extrapolate
 
@@ -850,7 +867,7 @@ END SUBROUTINE spherical_extrapolate
 SUBROUTINE spherical_constant_entropy (self, d, e, m, s, gamma)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: d, e
-  class(mesh_t), pointer                     :: m(:), m1, m2, m3
+  class(mesh_t), pointer                     :: m(:)
   real                                       :: s, gamma
   !............................................................................
   integer                                    :: ix, iy, iz
@@ -861,27 +878,23 @@ SUBROUTINE spherical_constant_entropy (self, d, e, m, s, gamma)
   ! a1 and a2 sample the values in annuli around R-3*ds and R, respectively
   !-----------------------------------------------------------------------------
   c = exp(s*(gamma-1.0))/(gamma-1.0)
-  m1 => m(1)
-  m2 => m(2)
-  m3 => m(3)
-  ds = m1%d
-  associate (r1=>m1%r, r2=>m2%r, r3=>m3%r)
-  do iz=m3%lb,m3%ub
-    z = m3%p + r3(iz) - self%position(3)
-    do iy=m2%lb,m2%ub
-      y = m2%p + r2(iy) - self%position(2)
-      do ix=m1%lb,m1%ub
-        x = m1%p + r1(ix)- self%position(1)
+  ds = m(1)%d
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz) - self%position(3)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy) - self%position(2)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix)- self%position(1)
         r = sqrt(x**2+y**2+z**2)
         if (r < self%radius) then
           e(ix,iy,iz) = c*d(ix,iy,iz)**gamma
-          if (iy==18.and.iz==18) print *,'BC: s', m1%id, ix, s
+          if (iy==18.and.iz==18) print *,'BC: s', m(1)%id, ix, s
         end if
       end do
     end do
   end do
   end associate
-  nullify (m1, m2, m3)
   call trace_end
 END SUBROUTINE spherical_constant_entropy
 
