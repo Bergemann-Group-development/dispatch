@@ -23,6 +23,7 @@ MODULE io_mod
     procedure:: init
     procedure:: debug
     procedure:: print_id => print_id_
+    procedure, nopass:: mkdir
     procedure, nopass:: print_hl
   end type
   character(len=64), save:: inputname, outputname
@@ -38,6 +39,40 @@ LOGICAL FUNCTION debug (self, verbose)
   integer:: verbose
   debug = self%master .and. (self%verbose >= verbose)
 END FUNCTION debug
+
+!> =============================================================================
+!> Utility to create a new directory
+!> =============================================================================
+SUBROUTINE mkdir (dir)
+#ifdef __INTEL_COMPILER
+  USE ifport
+#endif
+  character(len=*):: dir
+  logical:: exists
+  !.............................................................................
+#ifdef __INTEL_COMPILER
+  inquire (directory=dir, exist=exists)
+  if (exists) return
+  exists = MakeDirQQ (dir)
+  if (exists) then
+    print *,omp%thread,' Intel created directory '//dir
+  else
+    print *,omp%thread,' WARNING: Intel failed to create directory '//dir
+  end if
+#else
+  inquire (file=dir, exist=exists)
+  if (exists) return
+  !$omp critical (system_cr)
+  call system ('mkdir -p '//dir)
+  !$omp end critical (system_cr)
+  inquire (file=dir, exist=exists)
+  if (exists) then
+    print *,omp%thread,' system call created directory '//dir
+  else
+    print *,omp%thread,' WARNING: system call failed to create directory '//dir
+  end if
+#endif
+END SUBROUTINE mkdir
 
 !> =============================================================================
 !> Initialize I/O related parameters.  The first thread that enters here blocks
@@ -113,7 +148,9 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     ! Open MPI rank and OMP thread-specific log files
     !---------------------------------------------------------------------------
-    call system ('mkdir -p '//trim(self%outputname))
+    call self%mkdir (trim(self%outputname))
+    write (filename,'(a,i5.5,"/")') trim(io%outputname), 0
+    call self%mkdir (trim(filename))
     if (omp_trace .and. omp%nthreads>1) then
       io_unit%log = 110+omp%mythread()
       write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread

@@ -1125,6 +1125,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   real:: pt, qt
   real, dimension(:,:,:), pointer:: buf
   real(8):: time
+  integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
   call trace_begin('patch_mod::output_legacy')
   self%max_files = self%max_files-1
@@ -1159,8 +1160,11 @@ SUBROUTINE output_legacy (self, experiment_name)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   self%ioformat = 2
-  write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout
-  call system ('mkdir -p '//trim(filename))
+  write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout+1
+  !$omp master
+  if (iodir/=self%iout+1) call io%mkdir (trim(filename))
+  iodir=self%iout+1
+  !$omp end master
   write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
   if (io%debug(0)) then
     if (io%debug(1) .or. self%track) &
