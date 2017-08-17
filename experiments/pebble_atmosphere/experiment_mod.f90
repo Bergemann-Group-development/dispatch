@@ -17,6 +17,8 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(pebble_patch_t):: experiment_t
+    real(8):: x_sponge    ! distance from the physical boundary where
+                          ! "wave-killing" boundaries are turned on.
   contains
     procedure :: init
     procedure :: debug
@@ -53,7 +55,8 @@ SUBROUTINE init (self)
   integer:: iv, iostat
   logical, save:: first_time=.true.
   character(len=32):: type='planet_atmosphere'
-  namelist /experiment_params/ type
+  real(8):: x_sponge=-1.0e99
+  namelist /experiment_params/ type, x_sponge
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
@@ -65,6 +68,7 @@ SUBROUTINE init (self)
     if (io%master) write (*,experiment_params)
   end if
   !$omp end critical (io_cr)
+  self%x_sponge = x_sponge
   !----------------------------------------------------------------------------
   ! Allocate memory and set IC values.  The initial%init (type) specifies the
   ! type of IC to be applied when the call to gpatch_t%init is made.
@@ -308,47 +312,54 @@ SUBROUTINE edge_boundary_conditions (self, it)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%edge_boundary_conditions')
   self%boundaries%id = self%id
-  !-----------------------------------------------------------------------------
-  ! Allocate and load values into velocity, consistent with current density
-  !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%i_d,it,1)
-  allocate (u   (size(d,1),size(d,2),size(d,3),3))
-  call self%p2U(u,it)
-  !-----------------------------------------------------------------------------
-  ! Density boundary conditions
-  !-----------------------------------------------------------------------------
-                            call self%check_density ('before density_BC')
-  call self%density_boundary_condition (it)
-  !call self%boundaries%log_extrapolate (d, self%i_d)
-                            call self%check_density ('after density_BC')
-  !-----------------------------------------------------------------------------
-  ! Velocity boundary conditions
-  !-----------------------------------------------------------------------------
-  do iv=1,3
-    uu => u(:,:,:,iv)
-    !---------------------------------------------------------------------------
-    ! The azimuthal velocity should be safe to extrapolate in directions
-    ! where it it parallel to the boundary
-    !---------------------------------------------------------------------------
-    if (iv==2) then
-      call self%boundaries%extrapolate (uu, self%i_px+iv-1)
-    !---------------------------------------------------------------------------
-    ! Use vanishing perpendicular derivative in other cases
-    !---------------------------------------------------------------------------
-    else
-      call self%boundaries%symmetric (uu, self%i_px+iv-1)
-    end if
-  end do
-  call self%U2p(u,it)
-  deallocate (u)
-  !-----------------------------------------------------------------------------
-  ! Energy BCs: Set thermal_energy per unit mass to initial value
-  !-----------------------------------------------------------------------------
-  allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
-  call self%e2E_th(e_th, it)
-  call self%boundaries%constant (e_th, self%i_e, atmosphere%external%energy)
-  call self%E_th2e(e_th, it)
-  deallocate (e_th)
+
+  if (self%x_sponge > -1.0e-99) then
+    ! apply the "wave killing" boundaries to all variables
+    call apply_sponge_boundaries (self)
+  else
+    !-----------------------------------------------------------------------------
+    ! Allocate and load values into velocity, consistent with current density
+    !-----------------------------------------------------------------------------
+    d => self%mem(:,:,:,self%i_d,it,1)
+    allocate (u   (size(d,1),size(d,2),size(d,3),3))
+    call self%p2U(u,it)
+    !-----------------------------------------------------------------------------
+    ! Density boundary conditions
+    !-----------------------------------------------------------------------------
+    call self%check_density ('before density_BC')
+    call self%density_boundary_condition (it)
+    !call self%boundaries%log_extrapolate (d, self%i_d)
+    call self%check_density ('after density_BC')
+    !-----------------------------------------------------------------------------
+    ! Velocity boundary conditions
+    !-----------------------------------------------------------------------------
+    do iv=1,3
+      uu => u(:,:,:,iv)
+      !---------------------------------------------------------------------------
+      ! The azimuthal velocity should be safe to extrapolate in directions
+      ! where it it parallel to the boundary
+      !---------------------------------------------------------------------------
+      if (iv==2) then
+        call self%boundaries%extrapolate (uu, self%i_px+iv-1)
+      !---------------------------------------------------------------------------
+      ! Use vanishing perpendicular derivative in other cases
+      !---------------------------------------------------------------------------
+      else
+        call self%boundaries%symmetric (uu, self%i_px+iv-1)
+      end if
+    end do
+    call self%U2p(u,it)
+    deallocate (u)
+    !-----------------------------------------------------------------------------
+    ! Energy BCs: Set thermal_energy per unit mass to initial value
+    !-----------------------------------------------------------------------------
+    allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
+    call self%e2E_th(e_th, it)
+    call self%boundaries%constant (e_th, self%i_e, atmosphere%external%energy)
+    call self%E_th2e(e_th, it)
+    deallocate (e_th)
+  end if
+
   call trace%end
 END SUBROUTINE edge_boundary_conditions
 
@@ -504,4 +515,63 @@ contains
   end subroutine apply_z
 END SUBROUTINE density_boundary_condition
 
-END MODULE
+!> =============================================================================
+!> Apply the "wave killing" boundaries of de Val-Borro et al. (2006) to all
+!> variables.
+!> =============================================================================
+SUBROUTINE apply_sponge_boundaries (self)
+  USE units_mod
+  class(experiment_t):: self
+  integer:: iv, i, j, k
+  real(8):: x, xkill_lo, xkill_hi, xbndy_lo, xbndy_hi, tau_kill
+  real(kind=KindScalarVar):: d0, p0, entropy0, px0, pz0, asymptote(self%nv)
+  class(mesh_t), pointer:: m1, m2, m3
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
+  !-----------------------------------------------------------------------------
+  if (.not. (self%boundaries%is_set(bits%xl) .or. self%boundaries%is_set(bits%xu))) &
+    return
+  call trace%begin ("experiment_t::apply_sponge_boundaries")
+
+  print*, self%id, ": Wave killing ON"
+  mem => self%mem(:,:,:,:,self%it,1)
+  m1 => self%mesh(1)
+  m2 => self%mesh(2)
+  m3 => self%mesh(3)
+  tau_kill = 2.0 * cgs%pi / planet%omega(3)
+  d0 = atmosphere%external%density
+  p0 = atmosphere%external%pressure
+  entropy0 = d0 * (log(p0) - self%gamma * log(d0)) / (self%gamma - 1.0)
+  px0 = 0.0
+  pz0 = 0.0
+  ! NOTE that the entry for py will be replaced with the real value below.
+  asymptote = [d0, entropy0, px0, 0.0, pz0]
+
+  xbndy_lo = m1%p + m1%r(m1%li) - 0.5 * m1%d
+  xkill_lo = xbndy_lo + self%x_sponge
+  xbndy_hi = m1%p + m1%r(m1%ui) + 0.5 * m1%d
+  xkill_hi = xbndy_hi - self%x_sponge
+
+  do iv=1,self%nv
+    do k=m3%lb,m3%ub
+      do j=m2%lb,m2%ub
+        do i=m1%li,m1%ui
+          x = m1%p + m1%r(i)
+          if (iv == self%i_py) &
+            asymptote(iv) = -d0 * ((1.5+planet%trap)*planet%omega(3)*x - planet%v_head)
+          if (x <= xkill_lo) then
+            mem(i,j,k,iv) = mem(i,j,k,iv) + self%dtime &
+                          * self%boundaries%sponge(mem(i,j,k,iv), asymptote(iv), tau_kill, xkill_lo, xbndy_lo, x)
+          else if (x >= xkill_hi) then
+            mem(i,j,k,iv) = mem(i,j,k,iv) + self%dtime &
+                          * self%boundaries%sponge(mem(i,j,k,iv), asymptote(iv), tau_kill, xkill_hi, xbndy_hi, x)
+          end if
+        end do
+      end do
+    end do
+  end do
+
+  nullify (mem, m1, m2, m3)
+  call trace%end
+END SUBROUTINE apply_sponge_boundaries
+
+END MODULE experiment_mod
