@@ -829,7 +829,7 @@ SUBROUTINE output (self, experiment_name)
     self%iout = self%iout+1
     !$omp end critical (out_cr)
     if (self%out_time==0.0) exit
-    self%out_next = (int(self%out_next/self%out_time)+1)*self%out_time
+    self%out_next = (nint(self%out_next/self%out_time)+1)*self%out_time
   end do
   call trace_end (itimer)
 END SUBROUTINE output
