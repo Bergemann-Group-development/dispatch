@@ -62,7 +62,6 @@ MODULE list_mod
     procedure:: init_all_nbors
     procedure:: remove_parents
     procedure:: overlaps
-    procedure:: distance
     procedure:: intpos
     procedure:: consistency
     procedure:: qconsistency
@@ -666,7 +665,7 @@ SUBROUTINE init_nbors (self, link)
           write (io%log_unit, '(3(i9,2(3f7.3,1x)),l4)') &
           scan%task%id, scan%task%position, scan%task%size, &
           link%task%id, link%task%position, link%task%size, &
-          0, self%distance (scan%task, link%task), self%size, &
+          0, scan%task%distance (link%task), self%size, &
           overlaps
         !-----------------------------------------------------------------------
         ! The ifs select to add nbors to a patch if either the patch is not a
@@ -840,21 +839,6 @@ END SUBROUTINE remove_parents
 
 !> =============================================================================
 !> =============================================================================
-FUNCTION distance (self, task1, task2)
-  class(list_t):: self
-  class(task_t), pointer:: task1, task2
-  real(8):: distance(3), size(3)
-  !.............................................................................
-  size = self%size
-  distance = task1%position - task2%position
-  distance = abs(modulo(distance + 0.5d0*size, size) - 0.5d0*size)
-  if (io%verbose>1 .and. task2%id==io%id_debug) &
-    write (*,'(a,2i4,4(3f10.3,3x))') 'distance:', task1%id, task2%id, &
-      task1%position-task2%position,  size, distance
-END FUNCTION distance
-
-!> =============================================================================
-!> =============================================================================
 FUNCTION intpos (self, task1, task2) RESULT (out)
   class(list_t):: self
   class(task_t), pointer:: task1
@@ -996,11 +980,6 @@ SUBROUTINE search_nbors_by_overlap (self, start)
     link2 => start                              ! start searching throuch nbor chain
     do while (associated(link2))
       if (.not.associated(link1%task,link2%task)) then
-        !if (io%verbose>3) &
-        !  write (io_unit%log,'(2(i5,3(3f8.4,2x)),l3)') &
-        !    link1%task%id, link1%task%size, link1%task%position, link1%task%distance(link2%task), &
-        !    link2%task%id, link2%task%size, link2%task%position, link2%task%distance(link1%task), &
-        !    link1%task%overlaps(link2%task)
         p1 => task2patch(link1%task)
         p2 => task2patch(link2%task)
         if (p1%overlaps(p2)) then
