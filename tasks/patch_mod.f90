@@ -77,6 +77,7 @@ MODULE patch_mod
     procedure:: pack                    ! pack patch into buffer
     procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
+    procedure:: overlaps                ! patch overlaps test
     procedure:: point_distances         ! distances btw two points
     procedure:: index                   ! compute the index for a single point
     procedure:: nearest                 ! the nearest index that maps to patch point
@@ -1452,6 +1453,27 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     end if
   end if
 END SUBROUTINE info
+
+!> =============================================================================
+!> Check if there is overlap, using the size plus an extra cell margin. The
+!> definition of overlap MUST be symmetric, since it is being used to define
+!> neighbor relations.  This function overloads task_t%overlaps, in order to
+!> force use of the patch_t%distance function.
+!> =============================================================================
+FUNCTION overlaps (self, task)
+  class(patch_t):: self
+  class(task_t):: task
+  logical:: overlaps
+  !.............................................................................
+  call trace%begin ('patch_t%overlaps',2)
+  select type (task)
+  class is (patch_t)
+    overlaps = all(abs(self%distance(task)) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
+  class default
+    overlaps = self%task_t%overlaps(task)
+  end select
+  call trace%end
+END FUNCTION overlaps
 
 !> =============================================================================
 !> Signed distance between the centers of two tasks in the periodic box
