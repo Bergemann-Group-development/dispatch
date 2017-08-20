@@ -1464,6 +1464,7 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
   class(task_t):: task
   real(8):: out(3)
   !.............................................................................
+  call trace%begin ('patch_t%distance_curvilinear',2)
   select type (task)
   class is (patch_t)
     out = self%centre_nat-task%centre_nat
@@ -1471,12 +1472,15 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
     out = self%position-task%position
   end select
   ! account for periodic wrapping
-  out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
+  where (self%periodic)
+    out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
+  end where
   if (io%verbose>1 .and. (task%id==io%id_debug .or. self%id==io%id_debug)) then
     print 1,'distance: self', self%id, self%position, self%size, self%box
     print 1,'distance: task', task%id, task%position, task%size, task%box, out
     1 format(a,i5,4(3x,3f10.2))
   end if
+  call trace%end
 END FUNCTION distance_curvilinear
 
 !> =============================================================================

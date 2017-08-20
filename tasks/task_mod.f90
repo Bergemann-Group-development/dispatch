@@ -404,21 +404,29 @@ FUNCTION overlaps (self, task)
 END FUNCTION overlaps
 
 !> =============================================================================
-!> Signed distance between the centers of two tasks in the periodic box
+!> Signed distance between the centers of two tasks in a possibly periodic box
+!>
+!> NOTE: This function is normally NOT used (but remains so it can be overloaded
+!> or explicitly called), since it is overloaded by the patch_t%distance, which
+!> is patch geometry aware.
 !> =============================================================================
 FUNCTION distance (self, task) RESULT (out)
   class(task_t):: self
   class(task_t):: task
   real(8):: out(3)
   !.............................................................................
+  call trace%begin ('task_t%distance',2)
   out = self%position-task%position
   ! account for periodic wrapping
-  out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
+  where (self%periodic)
+    out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
+  end where
   if (io%verbose>1 .and. (task%id==io%id_debug .or. self%id==io%id_debug)) then
     print *,'distance: self', self%position, self%id
     print *,'distance: task', task%position, task%id
     print *,'distance:  box', self%box
   end if
+  call trace%end
 END FUNCTION distance
 
 
