@@ -104,6 +104,7 @@ MODULE ray_geometry_v3_mod
     integer :: axis, dr(3)                                              ! convenience
     integer :: total_n_bundles = 0
     real    :: theta, phi                                               ! convenience
+    logical :: no_mans_land
   contains
     procedure :: add_axis
     procedure :: add_diag
@@ -197,12 +198,13 @@ CONTAINS
 !> =====================================================================
 !> Initialisation subroutine for ray geometry
 !> =====================================================================
-SUBROUTINE init (self, geometry, li, ui, cell_dims)
+SUBROUTINE init (self, geometry, li, ui, cell_dims, no_mans_land)
   class(ray_geometry_t) :: self
   class(ray_geometry_t), pointer :: new
   real(kind=8), optional :: cell_dims(3)
   integer :: li(3), ui(3)
   integer :: geometry
+  logical :: no_mans_land
   real(kind=8) :: maxdim
 ! ......................................................................
   call trace_begin('ray_geometry_t%init')
@@ -211,7 +213,7 @@ SUBROUTINE init (self, geometry, li, ui, cell_dims)
   new%geometry = geometry
   new%li = li                                                           ! cell domain lower point
   new%ui = ui                                                           ! cell domain upper point
-
+  new%no_mans_land = no_mans_land
   if(present(cell_dims)) then
      if ((cell_dims(1) == cell_dims(2)).and.(cell_dims(2) == cell_dims(3))) then
        new%cell_dims = 1.
@@ -257,7 +259,7 @@ SUBROUTINE get_my_geometry(self, geometry, li, ui, cell_dims, my_geom)
   call trace_begin('ray_geometry_t%get_my_geometry')
 
   if(.not.associated(self%head)) then
-    call self%init(geometry, li, ui,  cell_dims)
+    call self%init(geometry, li, ui,  cell_dims, self%no_mans_land)
     this => self%head
     found = .false.
     do while (associated(this).and..not.found)
@@ -311,9 +313,6 @@ SUBROUTINE init_cartesian(self)
   self%dr(2) = dy
   self%dr(3) = dz
   self%space_diagonals = space_diagonals
-  if (.not.do_chains) then
-    error stop "ray_geometry_mod:bundles for no chains mode are not set yet"
-  end if
   self%do_chains = do_chains                                            ! do connection between packets and separate rays, leaving to different walls
   d45 = 0                                                               ! flag for 45 degree angles
   if (nx > 0) then
@@ -1069,10 +1068,10 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
   class(ray_geometry_t) :: self
   class(ray_dirs_t), pointer :: dir
   class(ray_bndl_t), pointer :: bundle
-  class(packet_t)  , pointer :: ray
+  class(packet_t)  , pointer :: packet
   ! ---
   class(single_ray_bundle_t), pointer :: sbundle, sb_prev, tbundle
-  class(single_ray_packet_t), pointer :: spacket, sp_prev, tpacket
+  class(single_ray_packet_t), pointer :: spacket, sp_prev, tpacket, sp_next
   class(single_ray_t),   pointer :: sray
   logical :: found
   integer :: r_id, b_ID, p_id
@@ -1113,14 +1112,15 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
   sbundle => tbundle
   b_id = 1
   do while (associated(sbundle))                                        ! loop over the bundles again
-    dir%bundle(b_id)%id     = b_id                                      ! bundle ID
-    dir%bundle(b_id)%dir_ID = dir%ID                                    ! dir ID
-    dir%bundle(b_id)%axis   = self%axis                                 ! axis of ray flow
-    dir%bundle(b_id)%theta  = self%theta
-    dir%bundle(b_id)%phi    = self%phi
-    dir%bundle(b_id)%lwall  = sbundle%lwall                             ! wall where bundle enters the box
-    dir%bundle(b_id)%uwall  = sbundle%uwall                             ! wall where bundle leaves the box
-    dir%bundle(b_id)%dstep  = sbundle%dstep                             ! step through the cells
+    bundle => dir%bundle(b_id)
+    bundle%id     = b_id                                                ! bundle ID
+    bundle%dir_ID = dir%ID                                              ! dir ID
+    bundle%axis   = self%axis                                           ! axis of ray flow
+    bundle%theta  = self%theta
+    bundle%phi    = self%phi
+    bundle%lwall  = sbundle%lwall                                       ! wall where bundle enters the box
+    bundle%uwall  = sbundle%uwall                                       ! wall where bundle leaves the box
+    bundle%dstep  = sbundle%dstep                                       ! step through the cells
 
     ! --- go through packets in this single ray bundle and count them
     p_id = 0
@@ -1130,19 +1130,20 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
       spacket => spacket%next
     end do
     
-    dir%bundle(b_id)%n_packets = p_id                                   ! set the number of packets in this bundle
-    allocate(dir%bundle(b_id)%packet(p_id))                             ! allocate the packets
+    bundle%n_packets = p_id                                             ! set the number of packets in this bundle
+    allocate(bundle%packet(p_id))                                       ! allocate the packets
     
     spacket => sbundle%packets
     
     p_id=1
     r_id = 1
     do while(associated(spacket))                                       ! go through packets again
-      dir%bundle(b_id)%packet(p_id)%id       =p_id                      ! save the packet ID
-      dir%bundle(b_id)%packet(p_id)%n_rays   = spacket%n_rays           ! pick up the number of rays in this packet
-      dir%bundle(b_id)%packet(p_id)%n_points = spacket%n_points         ! how long the rays are in this packet
-      dir%bundle(b_id)%n_rays = dir%bundle(b_id)%n_rays + spacket%n_rays! increment the number of rays in this bundle
-      call dir%bundle(b_id)%packet(p_id)%fill_ray_list_data(spacket%rays,r_id)!fill in the ray data
+      packet => bundle%packet(p_id)
+      packet%id       = p_id                                            ! save the packet ID
+      packet%n_rays   = spacket%n_rays                                  ! pick up the number of rays in this packet
+      packet%n_points = spacket%n_points                                ! how long the rays are in this packet
+      bundle%n_rays   = bundle%n_rays + spacket%n_rays                  ! increment the number of rays in this bundle
+      call packet%fill_ray_list_data(spacket%rays,r_id)                 !fill in the ray data
 
       
       p_id = p_id+1                                                     ! increment the packet ID
@@ -1164,16 +1165,13 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     dir%n_bundles=1                                                     ! there can only be one
     self%total_n_bundles = self%total_n_bundles + 1                     ! increment total number of bundles for this geometry
     allocate(dir%bundle(1))                                             ! allocate the bundle
-    dir%bundle(1)%dir_id = dir%id                                       ! give its dir ID
-    dir%bundle(1)%axis   = self%axis                                    ! save axis
-    dir%bundle(1)%theta  = self%theta                                   ! save theta
-    dir%bundle(1)%phi    = self%phi                                     ! save phi
-    dir%bundle(1)%id     = 1                                            ! it is the only bundle                       
-    dir%bundle(1)%dstep  = sbundle%dstep
-    
-    
-   ! bundle%n_packets = 0                                                ! no packets yet
-   ! bundle%n_rays = 0                                                   ! no rays yet
+    bundle => dir%bundle(1)
+    bundle%dir_id = dir%id                                              ! give its dir ID
+    bundle%axis   = self%axis                                           ! save axis
+    bundle%theta  = self%theta                                          ! save theta
+    bundle%phi    = self%phi                                            ! save phi
+    bundle%id     = 1                                                   ! it is the only bundle                       
+    bundle%dstep  = sbundle%dstep
    
    ! -- loop over the bundles and merge all packets of same ray lenght
    ! by placing all of them into a temporary sbundle
@@ -1182,8 +1180,12 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     ! --- Go through single packets ---
       spacket => sbundle%packets
       do while (associated(spacket))
+        sp_next => spacket%next
         if (.not.associated(tbundle%packets)) then
-          tbundle%packets => spacket                                    ! pick the first packet
+          tbundle%packets => spacket                                    ! pop the first packet
+          nullify(spacket%next, spacket%prev)
+          spacket%tail => spacket
+          spacket%head => spacket
         else
           found = .false.
           tpacket => tbundle%packets
@@ -1196,15 +1198,19 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
                tpacket%rays%tail%next => spacket%rays
                spacket%rays%head => tpacket%rays
                tpacket%rays%tail => spacket%rays%tail
-               found = .true.               
+               deallocate(spacket)
+               found = .true.
                exit find_loop
             end if
-            if (tbundle%packets%n_points < spacket%n_points) then       ! prepend
-              tbundle%packets%prev => spacket%tail
-              spacket%tail%next => tbundle%packets
-              spacket%tail => tbundle%packets%tail
-              tbundle%packets%head => spacket
-              tbundle%packets => spacket
+            if (tpacket%n_points < spacket%n_points) then               ! prepend
+              if (.not.associated(tpacket%prev)) then
+                tbundle%packets => spacket
+                nullify(spacket%prev)
+              else
+                spacket%prev => tpacket%prev
+              end if
+              tpacket%prev => spacket
+              spacket%next => tpacket
               found = .true.
               exit find_loop
             end if
@@ -1213,21 +1219,18 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
           if (.not.found) then                                          ! append
             spacket%prev => tbundle%packets%tail
             tbundle%packets%tail%next=> spacket
-            tbundle%packets%tail => spacket%tail
+            tbundle%packets%tail => spacket
             spacket%head => tbundle%packets
+            nullify(spacket%next)
           end if
         end if
-        tpacket => spacket
-        spacket => spacket%next
-        deallocate(tpacket)
+        spacket => sp_next
       end do
     sb_prev => sbundle
     sbundle => sbundle%next
     deallocate(sb_prev)
     end do
-   
-   
-   
+    
    spacket => tbundle%packets
    p_id = 0
    do while (associated(spacket))
@@ -1235,22 +1238,22 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
      spacket => spacket%next
    end do
     
-   dir%bundle(1)%n_packets = p_id
-   allocate(dir%bundle(1)%packet(p_id))
+   bundle%n_packets = p_id
+   allocate(bundle%packet(p_id))
     r_id = 1
     p_id = 1
     spacket => tbundle%packets
     do while(associated(spacket))
-      dir%bundle(1)%packet(p_id)%id       = p_id                        ! unique ID for this packet
-      dir%bundle(1)%packet(p_id)%n_rays   = spacket%n_rays              ! number of rays in this packet
-      dir%bundle(1)%packet(p_id)%n_points = spacket%n_points            ! how long are the rays in this packet
-      dir%bundle(1)%n_rays = dir%bundle(1)%n_rays + spacket%n_rays      ! number of rays in the bundle
-      call dir%bundle(1)%packet(p_id)%fill_ray_list_data(spacket%rays,r_id)!fill in the ray data
+      sp_next => spacket%next
+      packet => bundle%packet(p_id)
+      packet%id        = p_id                                           ! unique ID for this packet
+      packet%n_rays    = spacket%n_rays                                 ! number of rays in this packet
+      packet%n_points  = spacket%n_points                               ! how long are the rays in this packet
+      bundle%n_rays = bundle%n_rays + spacket%n_rays                    ! number of rays in the bundle
+      call packet%fill_ray_list_data(spacket%rays,r_id)                 !fill in the ray data
       p_id = p_id+1
-      sp_prev => spacket
-      spacket => spacket%next
-      deallocate(sp_prev)
-      spacket => spacket%next
+      deallocate(spacket)
+      spacket => sp_next
     end do
   end if
 END SUBROUTINE finish_single_ray_list
