@@ -61,7 +61,6 @@ MODULE list_mod
     procedure:: init_nbors
     procedure:: init_all_nbors
     procedure:: remove_parents
-    procedure:: overlaps
     procedure:: intpos
     procedure:: consistency
     procedure:: qconsistency
@@ -614,7 +613,7 @@ SUBROUTINE init_nonleaf (self)
     do while (associated(scan))                         ! until end
       if (.not.associated(scan,link).and. &             ! skip same patch
         .not.scan%task%is_set(bits%not_leaf)) then      ! skip non-leaf patch
-        if (self%overlaps (scan%task, link%task)) then  ! if patches overlap
+        if (scan%task%overlaps(link%task)) then         ! if patches overlap
           if (scan%task%level==link%task%level-1) then  ! and level is one below
             if (all(abs(scan%task%position-link%task%position) < scan%task%size*0.55d0)) then
               call scan%task%set (bits%not_leaf)        ! mark non-leaf
@@ -656,7 +655,7 @@ SUBROUTINE init_nbors (self, link)
       call load_balance%add (scan%task%rank)
     end if
     if (.not.associated(scan,link) .and. associated(scan%task)) then
-      overlaps = self%overlaps (scan%task, link%task)
+      overlaps = scan%task%overlaps(link%task)
       !-------------------------------------------------------------------------
       ! Potential nbors are other patches that overlap
       !-------------------------------------------------------------------------
@@ -857,41 +856,6 @@ END FUNCTION intpos
 
 !> =============================================================================
 !> =============================================================================
-FUNCTION overlaps (self, task1, task2, label)
-  class(list_t):: self
-  class(task_t), pointer:: task1, task2
-  character(len=*), optional:: label
-  logical:: overlaps
-  real(8):: dist(3)
-  !.............................................................................
-  call trace_begin ('task_list_mod::overlap', 4)
-  if (self%face_nbors) then
-    overlaps = sum(abs(task1%distance(task2))/(task1%size+task2%size)) &
-             < 0.50000001_8
-  else
-    overlaps = all(abs(task1%distance(task2)) < 0.50000001_8*(task1%size+task1%ds+task2%size+task2%ds))
-  end if
-  if (task2%id==io%id_debug .or. present(label)) then
-    block
-    real(8):: limit(3), dist(3)
-    limit = 0.50000001_8*(task1%size+task1%ds+task2%size+task2%ds)
-    !write (io_unit%log,'(a,2i4,2(3f8.2,3x),l3)') 'overlap:', task1%id, task2%id, &
-    ! (task1%position-task2%position)/limit, dist/limit, overlaps
-    dist = task1%distance(task2)
-    if (task2%id==io%id_debug) &
-      write (*,'(a,2i4,2(3f8.3,3x),l3)') 'overlaps:', task1%id, task2%id, &
-        (task1%position-task2%position)/limit, &
-        dist/limit, overlaps
-    write (io_unit%log,'(a,2i4,2(3f8.3,3x),l3)') 'overlaps:', task1%id, task2%id, &
-     (task1%position-task2%position)/limit, &
-     abs(task1%distance(task2)), overlaps
-    end block
-  end if
-  call trace_end
-END FUNCTION overlaps
-
-!> =============================================================================
-!> =============================================================================
 SUBROUTINE statistics (self)
   class(list_t):: self
   write (io_unit%log,'(a,3(5x,a,i6))') 'output_experiment:', &
@@ -958,50 +922,6 @@ SUBROUTINE remove_task (self, task)
   !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE remove_task
-
-!> =============================================================================
-!> Update the nbor chains in the self list (possibly already existing) by,
-!> for each link in that list, searching from the given start point for new
-!> neighbors.
-!> =============================================================================
-SUBROUTINE search_nbors_by_overlap (self, start)
-  class(link_t), target:: self
-  class(link_t), pointer:: link1, link2, start, prev
-  class(link_t), pointer:: nbor
-  class(patch_t), pointer:: p1, p2
-  !> ===========================================================================
-  !> For each task link, make a list of neighbors, starting with link%nbor
-  !> ===========================================================================
-  call trace_begin('list_mod::search_nbors_by_overlap', 3)
-  link1 => self                                 ! start on the self list
-  if (io%verbose>3) write (io_unit%log,*)' id, size, position, distance:'
-  do while (associated(link1))
-    prev => link1%nbor                         ! existing nbor list head (empty?)
-    link2 => start                              ! start searching throuch nbor chain
-    do while (associated(link2))
-      if (.not.associated(link1%task,link2%task)) then
-        p1 => task2patch(link1%task)
-        p2 => task2patch(link2%task)
-        if (p1%overlaps(p2)) then
-          allocate (nbor)                       ! new nbor (has no nbor)
-          nbor%nbor => link2                    ! pointer back to link2
-          link1%task%n_nbors = link1%task%n_nbors+1
-          nbor%task => link2%task               ! but has a task
-          if (associated(prev)) then            ! check if we are in list
-            nbor%next => prev%next              ! could be empty
-            prev%next => nbor                   ! insert the new nbor
-          else                                  ! nbor list was empty
-            link1%nbor => nbor                  ! start with the new nbor
-          end if
-          prev => nbor                          ! remember the previous nbor
-        end if
-      end if
-      link2 => link2%next                       ! advance in the nbor chain
-    end do
-    link1 => link1%next                         ! advance in the self list
-  end do
-  call trace_end
-END SUBROUTINE search_nbors_by_overlap
 
 !> =============================================================================
 !> Add a link node into the queue chain, in ascending time order.  When a link
