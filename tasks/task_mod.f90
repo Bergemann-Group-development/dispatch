@@ -63,6 +63,7 @@ MODULE task_mod
     real(8):: sync_time=0d0
     logical:: syncing=.false.
     logical:: track=.false.
+    logical:: periodic(3)=.true.
   contains
     procedure:: init
     procedure:: dnload => void

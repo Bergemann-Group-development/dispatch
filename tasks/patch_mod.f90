@@ -43,7 +43,6 @@ MODULE patch_mod
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
     logical:: no_mans_land=.false.
-    logical:: periodic(3)=.true.
     logical, dimension(:), pointer:: unsigned  => null()
     logical, dimension(:), pointer:: pervolume => null()
     class(link_t), pointer:: link       ! this could be useful
