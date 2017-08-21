@@ -1151,7 +1151,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout+1
   !$omp master
   if (iodir/=self%iout+1) call io%mkdir (trim(filename))
-  iodir=self%iout+1
+  iodir = self%iout+1
   !$omp end master
   write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
   if (io%debug(0)) then
@@ -1240,10 +1240,14 @@ SUBROUTINE input_legacy (self, ok)
   write (filename,'(a,"/",i4.4,"_",i4.4)') trim(inputdir), self%id, self%restart
   inquire (file=trim(filename)//'.txt', exist=ok)
   if (.not.ok) then
-    if (self%id==io%id_debug) &
-      print *,'MK input_legacy: no .txt file', trim(filename)//'.txt'
-    call trace_end
-    return
+    write (filename,'(a,"/",i5.5,"/",i5.5)') trim(inputdir), self%restart, self%id
+    inquire (file=trim(filename)//'.txt', exist=ok)
+    if (.not.ok) then
+      if (self%id==io%id_debug) &
+        print *,'MK input_legacy: no .txt file', trim(filename)//'.txt'
+      call trace_end
+      return
+    end if
   end if
   do_print = do_print .and. io%master
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')

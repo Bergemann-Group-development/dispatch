@@ -191,8 +191,6 @@ SUBROUTINE print ()
       sec, 'wall sec'
     2 format(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))
     timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
-    print *, timer%bytes_recv/1024.**2,sec, timer%bytes_recv/1024.**2,n_recv, &
-      timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
     if (mpi%size>1) then
       print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
         timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
