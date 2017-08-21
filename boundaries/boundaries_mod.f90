@@ -729,6 +729,7 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
       end do
     end do
   end do
+ ! error stop "end"
   end associate
   call trace_end
 END SUBROUTINE spherical_ns

@@ -94,7 +94,6 @@ SUBROUTINE init (self)
   !self%nv = 5
   call self%set (bits%static)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
-  self%boundaries%id = self%id
   if (trim(type)/='disk' .and. all(abs(self%position) < self%ds)) then
     print *, 'experiment_t%init: setting spherical BC bits on patch', self%id
     call self%set (bits%has_BC)
@@ -312,6 +311,8 @@ SUBROUTINE edge_boundary_conditions (self, it)
   real:: ee
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%edge_boundary_conditions')
+  self%boundaries%id = self%id
+
   !-----------------------------------------------------------------------------
   ! Allocate and load values into velocity, consistent with current density
   !-----------------------------------------------------------------------------
