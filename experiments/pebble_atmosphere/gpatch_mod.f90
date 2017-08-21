@@ -71,7 +71,7 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE dnload (self)
   class(gpatch_t):: self
-  if (self%no_mans_land) then
+  if (self%use_data_hub) then
     call self%data_hub%update (self%link)
   else
     call download%download_link (self%link, all_cells=.false.)

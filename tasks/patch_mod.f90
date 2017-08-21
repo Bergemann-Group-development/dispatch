@@ -43,6 +43,7 @@ MODULE patch_mod
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
     logical:: no_mans_land=.false.
+    logical:: use_data_hub=.false.
     logical, dimension(:), pointer:: unsigned  => null()
     logical, dimension(:), pointer:: pervolume => null()
     class(link_t), pointer:: link       ! this could be useful
@@ -327,13 +328,13 @@ SUBROUTINE init (self)
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, restart=-9
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false., periodic(3)
-  logical, save:: no_mans_land = .false.
+  logical, save:: no_mans_land=.false., use_data_hub=.false.
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
   real(8):: position(3), size(3)
   integer:: iostat, i
-  namelist /patch_params/ size, n, nv, nw, ng, nt, courant, u_fixed, dt_fixed, &
-    grace, periodic, extrapolate_gz, no_mans_land
+  namelist /patch_params/ size, n, nv, ng, nt, courant, u_fixed, dt_fixed, &
+    grace, periodic, extrapolate_gz, no_mans_land, use_data_hub
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     restart, inputdir, guard_zones, time_derivs
   !.............................................................................
@@ -377,6 +378,7 @@ SUBROUTINE init (self)
   self%u_fixed     = u_fixed
   self%max_files   = max_files                  ! prevent run-away NaN
   self%periodic    = periodic                   ! periodic box or not
+  self%use_data_hub = use_data_hub              ! guard zone handling
   self%no_mans_land = no_mans_land              ! mesh centering
   !-----------------------------------------------------------------------------
   ! Output related parameters
