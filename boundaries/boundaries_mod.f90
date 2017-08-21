@@ -265,7 +265,7 @@ SUBROUTINE bndry_indices (m, iv, lo, li, ui, uo)
       lo = m%lo
       li = lo+2
       uo = m%uo+1
-      ui = ui-2
+      ui = uo-2
     ! --- centered variables ---
     else
       lo = m%lo
