@@ -57,13 +57,13 @@ SUBROUTINE rt_setup (self)
   select type(mesh)
     type is(Cartesian_mesh)
       call ray_geometry%init(geometry=1, &
-      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds)  
+      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)  
     type is(spherical_mesh)
       call ray_geometry%init(geometry=2, &
-      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds) 
+      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land) 
     type is(cylindrical_mesh)
       call ray_geometry%init(geometry=3, &
-      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds)   
+      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)   
   end select
   nullify(mesh)
 
@@ -102,6 +102,7 @@ SUBROUTINE rt_setup (self)
       rt_task%n        = mhd_patch%n                                    ! active innre cells
       rt_task%gn       = mhd_patch%gn                                   ! guard zones
       rt_task%size     = mhd_patch%size                                 ! shadow the size
+      rt_task%no_mans_land = mhd_patch%no_mans_land
       rt_task%periodic = .false.
       !> ---------------------------------------------------------------
       !> Set up the boundary bits
@@ -331,7 +332,7 @@ SUBROUTINE make_chains (self)
   !> finalize the chains by mapping their rays to the correct upstream
   !> positions.
   !> -------------------------------------------------------------------
-  call origin%finish_chain                                              
+  call origin%finish_chain(ithis%no_mans_land)                                              
   
   deallocate(origin)
   nullify(temp, this, that, ithis, ithat)
