@@ -41,9 +41,8 @@ SUBROUTINE init_hierarchy (self, label)
   type(task_list_t):: task_list
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  class(link_t), pointer:: link
   integer, save:: n_patch=3, m_zoom=3, n_levels=5
-  integer, save:: n_repeat(3)=1
+  integer, save:: n_repeat(3)=0
   integer:: iostat
   real(8), save:: position(3)
   real(8), save:: size(3)
@@ -65,6 +64,15 @@ SUBROUTINE init_hierarchy (self, label)
   self%size = size
   self%n_patch = n_patch
   self%m_zoom = m_zoom
+  !-----------------------------------------------------------------------------
+  ! Avoid having to edit dozens of existing .nml files, by interpreting a single
+  ! n_repeat value as being intended for the y-direction
+  !-----------------------------------------------------------------------------
+  if (n_repeat(1)>0 .and. n_repeat(2)==0 .and. n_repeat(3)==0) then
+    n_repeat(2) = n_repeat(1)
+    n_repeat(1) = 1
+    n_repeat(3) = 1
+  end if
   !-----------------------------------------------------------------------------
   ! Save the outer size of the hierarchy as the task list size, for distance
   ! measurements.  The self%task_list%size is the full size of the objects in
@@ -148,7 +156,7 @@ SUBROUTINE init_level (self, level, position)
     call patch%init
     patch%level = level
     call patch%set (bits%static)
-    if (j==1.or.k==self%n_patch) call patch%set (bits%top_bottom)
+    if (k==1.or.k==self%n_patch) call patch%set (bits%top_bottom)
     if (io%verbose>0) &
       print'(a,i6,i4,2(2x,3g16.6))', 'rubiks_mod%init_level: id, level, size, pos =', &
         patch%id, level, patch%size, patch%position
