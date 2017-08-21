@@ -1651,13 +1651,14 @@ END FUNCTION fminval8
 !> =============================================================================
 !> Check for NaN
 !> =============================================================================
-SUBROUTINE check_nan (self, label)
+SUBROUTINE check_nan (self, label, always)
   class(patch_t):: self
   character(len=*), optional:: label
+  logical, optional:: always
   integer:: ix, iy, iz, iv, ii(3)
   logical:: nan
   !-----------------------------------------------------------------------------
-  if (io%verbose<1) return
+  if (io%verbose<1 .and. .not.present(always)) return
   if (.not. associated(self%mem)) return
   call trace%begin ('patch_mod::check_nan')
   if (io%verbose>1) then
