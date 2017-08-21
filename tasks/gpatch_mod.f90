@@ -11,10 +11,12 @@ MODULE gpatch_mod
   USE download_mod
   USE initial_mod
   USE kinds_mod
+  USE data_hub_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
     type(initial_t):: initial
+    type(data_hub_t) :: data_hub
   contains
     procedure:: init
     procedure:: dnload
@@ -45,6 +47,7 @@ SUBROUTINE init (self)
   ! restart_time indicates that restart files were read for previous patches.
   !-----------------------------------------------------------------------------
   else
+    self%mem = 0.0
     ff => self%mem(:,:,:,:,1,1)
     call self%initial%condition (self%mesh, ff)
   end if
@@ -68,7 +71,12 @@ END SUBROUTINE
 !> =============================================================================
 SUBROUTINE dnload (self)
   class(gpatch_t):: self
-  call download%download_link (self%link, all_cells=.false.)
+  if (self%use_data_hub) then
+    call self%data_hub%update (self%link)
+  else
+    call download%download_link (self%link, all_cells=.false.)
+  end if
+  
 END SUBROUTINE
 
 END MODULE gpatch_mod

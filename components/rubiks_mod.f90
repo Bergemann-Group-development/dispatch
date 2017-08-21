@@ -15,6 +15,7 @@ MODULE rubiks_mod
   USE units_mod
   USE scaling_mod
   USE scene_mod
+  USE link_mod
   implicit none
   private
   type, public:: rubiks_t
@@ -82,36 +83,30 @@ SUBROUTINE init_hierarchy (self, label)
   self%task_list%size = self%size*self%n_patch*self%m_zoom**(n_levels-1)*n_repeat
   n_repeat = (n_repeat/2)*2 + 1
   scene%n_repeat = n_repeat
+  level = 1
   ! repeated grids at the coarsest resolution
   do krep=0,n_repeat(3)-1
     do jrep=0,n_repeat(2)-1
       do irep=0,n_repeat(1)-1
         position = (([irep,jrep,krep] - n_repeat / 2) * self%task_list%size) / n_repeat
-
-        if (irep == n_repeat(1)/2) then
-          levels = n_levels
-          if (io%verbose>1) &
-            print*,'generating a hiearchy of ',n_patch,' patches',' at position', position
-        else
-          levels = 1
-          if (io%verbose>1) &
-            print*,'generating a cube of ',n_patch,' patches',' at position', position
-        end if
-        if (io%verbose>0) &
-          print'("repeated Rubiks Cubes: irep, levels, position =",i4,i3,1p,3g14.4)', &
-            irep, jrep, krep, levels, position
-        do level=1,levels
-          call self%init_level (level, position)
-        end do
+        if (io%verbose>1) &
+          print*,'generating a cube of ',n_patch,' patches',' centred at position', position
+        call self%init_level (level, position)
       end do
     end do
+  end do
+  ! succesively refined hierarchies
+  position = self%position
+  if (io%verbose>1) &
+    print*,'generating a hiearchy of ',n_patch,' patches',' at position', position
+  do level=2,n_levels
+    call self%init_level (level, position)
   end do
   !-----------------------------------------------------------------------------
   ! Initialize the task list
   !-----------------------------------------------------------------------------
   call self%task_list%init (label)
-  call self%task_list%init_all_nbors
-  call trace_end
+  call trace%end
 END SUBROUTINE init_hierarchy
 
 !> =============================================================================
@@ -131,6 +126,7 @@ SUBROUTINE init_level (self, level, position)
   ! existing data type values
   !-----------------------------------------------------------------------------
   call trace_begin ('rubiks_revenge_t%init_level')
+
   do k=1,self%n_patch
   do j=1,self%n_patch
   do i=1,self%n_patch
@@ -163,7 +159,7 @@ SUBROUTINE init_level (self, level, position)
     if (k==1.or.k==self%n_patch) call patch%set (bits%top_bottom)
     if (io%verbose>0) &
       print'(a,i6,i4,2(2x,3g16.6))', 'rubiks_mod%init_level: id, level, size, pos =', &
-        patch%id, level, patch%size, patch%position - position
+        patch%id, level, patch%size, patch%position
     !---------------------------------------------------------------------------
     ! Add to a list of links, with pointers from patch to patch
     !---------------------------------------------------------------------------
@@ -172,18 +168,17 @@ SUBROUTINE init_level (self, level, position)
     ! If at edge, set boundary bits
     !---------------------------------------------------------------------------
     if (level==1) then
-      if (i==1)            call patch%boundaries%set (bits%xl)
-      if (j==1)            call patch%boundaries%set (bits%yl)
-      if (k==1)            call patch%boundaries%set (bits%zl)
-      if (i==self%n_patch) call patch%boundaries%set (bits%xu)
-      if (j==self%n_patch) call patch%boundaries%set (bits%yu)
-      if (k==self%n_patch) call patch%boundaries%set (bits%zu)
+      if (.not.patch%periodic(1).and.i==1)            call patch%boundaries%set (bits%xl)
+      if (.not.patch%periodic(2).and.j==1)            call patch%boundaries%set (bits%yl)
+      if (.not.patch%periodic(3).and.k==1)            call patch%boundaries%set (bits%zl)
+      if (.not.patch%periodic(1).and.i==self%n_patch) call patch%boundaries%set (bits%xu)
+      if (.not.patch%periodic(2).and.j==self%n_patch) call patch%boundaries%set (bits%yu)
+      if (.not.patch%periodic(3).and.k==self%n_patch) call patch%boundaries%set (bits%zu)
       if (patch%boundaries%bits /= 0) print *, patch%id, 'EDGE', patch%boundaries%bits
     end if
   end do
   end do
   end do
-  !-----------------------------------------------------------------------------
   call trace_end
 END SUBROUTINE init_level
 
