@@ -19,7 +19,8 @@ MODULE eos_mod
     integer :: eos_type = 0             ! 0 - ideal, x - any other
     real :: t0    = 290.
     real :: rho0 = 1.
-    real :: sc_stf
+    real :: alfa0 = 1.
+    real(8) :: sc_stf
     real :: n_lambda = 1.
     real :: w_lambda = 1.
   contains
@@ -53,12 +54,9 @@ SUBROUTINE init (self)
     rewind (io%input); read (io%input, eos_params, iostat=iostat)
     if (io%master) write (io%output, eos_params)
     self%gamma = gamma
-    self%t0   = 1./(290.)!/scaling%temp)
+    self%t0   = 1./(290./scaling%temp)
     self%rho0 = 1./(1.  /scaling%d)
-    print *, cgs%stefan, cgs%pi, scaling%temp, scaling%f
-    !self%sc_stf = cgs%stefan/scaling%m*scaling%t**3*scaling%temp**4
-    print *, self%sc_stf
-    self%sc_stf = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
+    self%alfa0 = 1. * scaling%m/scaling%l**2
   end if
   !$omp end critical (init_cr)
   call trace%end
@@ -91,9 +89,10 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
-  real, dimension(:,:,:),   optional, pointer :: lnx, x, lny, y, pg, tt
-  real, dimension(:,:,:,:), optional, pointer :: src, rk
-  real, dimension(:,:,:),             pointer :: x_loc, y_loc
+  real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y
+  real, dimension(:,:,:),                      optional :: pg, tt
+  real, dimension(:,:,:,:),                    optional :: src, rk
+  real, dimension(:,:,:), pointer :: x_loc, y_loc
   integer:: i
   integer, save:: itimer = 0
   !-----------------------------------------------------------------------------
@@ -125,16 +124,16 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
   end if
   if (present(src)) then
     do i=1,size(src,4)
-      src(:,:,:,i) = self%sc_stf*((self%gamma-1.0)*x_loc)**4
+      src(:,:,:,i) = scaling%stefan*((self%gamma-1.0)*real(x_loc,kind=8))**4
     end do
   end if
   if (present(pg)) then
-    pg = (self%gamma-1.0)*y_loc*x_loc
+    pg = (self%gamma-1.0)*x_loc*y_loc
   end if
   if (present(rk)) then
     do i=1,size(rk,4)
-      rk(:,:,:,i) = (((self%gamma-1.0)*x_loc*self%t0*scaling%temp)**(-3.5) * &
-       (y_loc*self%rho0*scaling%d)**2)* scaling%m/scaling%l**2
+      rk(:,:,:,i) = (((self%gamma-1.0)*x_loc*self%t0)**(-3.5) * &
+       (y_loc*self%rho0)**2) * self%alfa0 
     end do
   end if
   if (present(lnx)) deallocate(x_loc)

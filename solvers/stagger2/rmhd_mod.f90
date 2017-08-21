@@ -68,7 +68,7 @@ SUBROUTINE update (self)
   !---------------------------------------------------------------------
   !call trace%begin ('rmhd_t%update', itimer=itimer)
   call self%mhd_t%update                                                ! get df/dt from MHD
-  associate(d => self%mem(:,:,:,self%i_d,it,1))
+  associate(d => self%mem(:,:,:,self%i_d,self%it,1))
   allocate(dedt(size(d,1),size(d,2),size(d,3)))
   call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
   g1 = self%gamma-1.0
@@ -76,6 +76,7 @@ SUBROUTINE update (self)
   log(dedt*g1/d**self%gamma)/g1                               
   call self%courant_condition
   deallocate(dedt)
+  end associate
   !call trace%end (itimer)
 END SUBROUTINE update
 

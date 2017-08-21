@@ -16,6 +16,8 @@ MODULE initial_mod
 
   type, public:: initial_t
     real:: clump_pos(3), clump_a, clump_b, d0, t0, clump_dfact, gamma
+    character(len=64):: solver
+    logical          :: mhd = .false.
   contains
     procedure :: init
     procedure :: condition
@@ -45,10 +47,10 @@ SUBROUTINE init (self, solver)
     call scaling%init()
   end if
   !$omp end critical (input_cr)
-
-  self%clump_pos = clump_pos
-  self%clump_a = clump_a
-  self%clump_b = clump_b
+  self%solver = trim(solver)
+  self%clump_pos = clump_pos/scaling%l
+  self%clump_a = clump_a/scaling%l
+  self%clump_b = clump_b/scaling%l
   self%d0 = d0 /scaling%d
   self%t0 = t0 /scaling%temp
   self%clump_dfact = clump_dfact
@@ -66,7 +68,7 @@ SUBROUTINE condition (self, m, mem)
   real, dimension(:,:,:,:), pointer :: mem
   class(mesh_t), pointer :: mx, my, mz
   integer :: ix, iy, iz
-  real :: p0, q, x, y, z
+  real :: p0, q, x, y, z, d
   type(index_t) :: i
   !----------------------------------------------------------------------------
   call trace_begin('initial_t::initial_conditions')
@@ -97,18 +99,29 @@ SUBROUTINE condition (self, m, mem)
           mem(ix,iy,iz,i%d) = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
                                   / (1.0 + exp(q))
         end if
-
         ! the clump is initially in pressure equilibrium with the ambient medium
-        mem(ix,iy,iz,i%e) = p0 / (self%gamma - 1.0)
+        d = mem(ix,iy,iz,i%d)
+        if (self%solver(1:7)=='ramses_') then
+          mem(ix,iy,iz,i%e) = p0/(self%gamma-1.0)
+        else if (self%solver(1:9)=='stagger2e') then
+          mem(ix,iy,iz,i%e) = p0/(self%gamma-1.0)
+        else if (self%solver(1:9)=='stagger2_') then
+          mem(ix,iy,iz,i%s) = d*(log(p0)-self%gamma*log(d))/(self%gamma-1.0)
+        else
+          print *,trim(self%solver)
+          error stop "initial_mod (1): solver type not known"
+        end if
 
         ! momentum components
         mem(ix,iy,iz,i%px) = 0.0
         mem(ix,iy,iz,i%py) = 0.0
         mem(ix,iy,iz,i%pz) = 0.0
         ! magnetic field components
-        mem(ix,iy,iz,i%bx) = 0.0
-        mem(ix,iy,iz,i%by) = 0.0
-        mem(ix,iy,iz,i%bz) = 0.0
+        if (self%mhd) then
+          mem(ix,iy,iz,i%bx) = 0.0
+          mem(ix,iy,iz,i%by) = 0.0
+          mem(ix,iy,iz,i%bz) = 0.0
+        end if
       end do
     end do
   end do

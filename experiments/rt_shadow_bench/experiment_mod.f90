@@ -42,17 +42,12 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
-  self%nv = 8
+  self%nv = 5
   call scaling%init
   self%mhd = .false.
   call self%rmhd_t%init()
   call self%set(bits%static)
   !self%BC_direction = 1
-  if (self%position(1) - self%size(1) < 0.0) then
-    call self%set(bits%has_BC)
-  else if (self%position(1) + self%size(1) > self%box(1)) then
-    call self%set(bits%has_BC)
-  end if
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
