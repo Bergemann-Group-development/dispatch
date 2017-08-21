@@ -11,6 +11,7 @@ MODULE rt_mod
   USE task_mod
   USE timestep_mod
   USE trace_mod
+  USE download_mod
   USE scaling_mod
   implicit none
   private 
@@ -93,7 +94,7 @@ SUBROUTINE init_rt (self)
   real(8), save :: dtime=0.01_8, grace=0.01_8, init_time=0d0
   real,    save :: cr_heating=0.0
   character(len=16) :: solver = 'integral'
-  integer :: ignore, nd
+  integer :: ignore, nd, i
   namelist /rt_params/ init_time, dtime, grace, solver, do_output, cr_heating
   ! --------------------------------------------------------------------
   
@@ -132,7 +133,9 @@ SUBROUTINE init_rt (self)
     self%n_bundle = ray_geometry%head%total_n_bundles
   end if
   self%cr_heating = cr_heating                                          ! store cr heating, if it is present
-  
+  do i=1,3
+    self%mesh(i)%h(:)=0
+  end do
   !> -------------------------------------------------------------------
   !> set up rt-specific parameters : weights for frequency bins and
   !> space-angles. Also, select the appropriate solver.
@@ -250,6 +253,7 @@ END SUBROUTINE init_no_chain
 !> =====================================================================
 SUBROUTINE dnload (self)
   class (rt_t) :: self
+  call download%download_link (self%link, all_cells=.false.)
 END SUBROUTINE dnload
 
 !> =====================================================================

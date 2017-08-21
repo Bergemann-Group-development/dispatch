@@ -62,12 +62,13 @@ SUBROUTINE download_link (link, all_cells)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link')
   target => task2patch(link%task)
-  if (io%verbose>1) &
-    call target%check_density ("before download")
+  if (trim(target%kind)/='rt_solver') then
+    if (io%verbose>1) &
+      call target%check_density ("before download")
+  end if
   if (target%is_set(bits%root_grid)) then
     call target%periodic_grid
   else
-    associate (d=>target%mem(:,:,:,target%i_d,target%it,1))
     do edges=3,1,-1
       nbor => link%nbor
       do while (associated(nbor))
@@ -76,12 +77,24 @@ SUBROUTINE download_link (link, all_cells)
           if (target%id == io%id_debug) then
             print *, source%id, ' EDGE COUNT:', edges
           end if
-          if (source%is_clear(bits%no_download)) then
-            if (abs(source%level-target%level) < 2) then
-              if (source%level==target%level) then
-                call same (target, source)
-              else
-                call different (target, source)
+          if (trim(target%kind)/='rt_solver') then
+            if (source%is_clear(bits%no_download)) then
+              if (abs(source%level-target%level) < 2) then
+                if (source%level==target%level) then
+                  call same (target, source)
+                else
+                  call different (target, source)
+                end if
+              end if
+            end if
+          else
+            if (trim(source%kind)=='rt_solver') then
+              if (abs(source%level-target%level) < 2) then
+                if (source%level==target%level) then
+                  call same_rt (target, source)
+                else
+                  call different_rt (target, source)
+                end if
               end if
             end if
           end if
@@ -89,7 +102,6 @@ SUBROUTINE download_link (link, all_cells)
         nbor => nbor%next
       end do
     end do
-    end associate
   end if
   call target%check_density (" after download")
   call trace%end
@@ -214,6 +226,38 @@ SUBROUTINE same (target, source)
 END SUBROUTINE same
 
 !> =============================================================================
+!> Same as above, but for RT_solver type patches
+!> =============================================================================
+SUBROUTINE same_rt (target, source)
+  class(patch_t), pointer :: target, source
+  !.............................................................................
+  integer                 :: l(3), u(3), o(3), ii(3), jt(2)
+  real(8)                 :: position(3)
+  real                    :: pt(2)
+  integer                 :: ix, iy, iz, iv
+  integer, save           :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('download_t%same', itimer=itimer)
+  call source%time_interval (target%time, jt, pt)
+  call dnload_range (target, source, 1, l, u, o)
+  do iv=1,target%nv
+    do iz=l(3),u(3)
+      do iy=l(2),u(2)
+        do ix=l(1),u(1)
+          ii = [ix,iy,iz]
+          target%mem(ix,iy,iz,iv,target%it,1) = &
+             pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
+             pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
+          !if (all(ii>target%mesh%li.and.ii<=target%mesh%ui)) print *, &
+            !target%id, 'ERROR: internal point modified', source%id, ii, iv
+        end do
+      end do
+    end do
+  end do
+  call trace%end (itimer)
+END SUBROUTINE same_rt
+
+!> =============================================================================
 !> Interpolate guard zone info from source patch at a different level
 SUBROUTINE different (target, source)
   class(patch_t), pointer :: target, source
@@ -254,5 +298,36 @@ SUBROUTINE different (target, source)
   2 format(2(i6,i3),2x,a,i6,a,1p,e12.4,2(2x,3i4))
   call trace%end (itimer)
 END SUBROUTINE different
+
+!> =============================================================================
+!> Same as above, but for RT_solver type patches
+!> =============================================================================
+SUBROUTINE different_rt (target, source)
+  class(patch_t), pointer :: target, source
+  !.............................................................................
+  integer                 :: ix, iy, iz, iv, jt(2)
+  integer, dimension(3)   :: l, u, ii, lb, ub
+  real(8), dimension(3)   :: pos
+  logical                 :: valid
+  integer, save           :: itimer=0
+  real                    :: pt(2)
+  !-----------------------------------------------------------------------------
+  call trace%begin('download_t%different', itimer=itimer)
+  lb = target%mesh%lb
+  ub = target%mesh%ub
+  call source%time_interval (target%time, jt, pt)
+  call dnload_range (target, source, 1, l, u)
+  do iv=1,target%nv
+    do iz=l(3),u(3)
+      do iy=l(2),u(2)
+        do ix=l(1),u(1)
+          ii=[ix,iy,iz]
+          call source%interpolate (target, ii, iv, jt, pt)
+        end do
+      end do
+    end do
+  end do
+  call trace%end (itimer)
+END SUBROUTINE different_rt
 
 END MODULE
