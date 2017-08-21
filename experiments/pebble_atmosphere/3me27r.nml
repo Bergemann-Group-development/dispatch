@@ -17,7 +17,7 @@
  n_levels=4                         ! # of refinement levels in for the rubiks cube
  n_patch=3                          ! # of patches per direction
  m_zoom=3                           ! zoom-in level per direction
- n_repeat=7                         ! how many times rubiks cube is repeated along the orbit
+ n_repeat=3,7,1                     ! how many times rubiks cube is repeated along the orbit
 /
 
 &eos_params                         ! For ideal gas EOS

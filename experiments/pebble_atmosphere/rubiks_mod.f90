@@ -21,7 +21,7 @@ MODULE rubiks_mod
   type, public:: rubiks_t
     real(8):: size(3) = [1.0, 1.0, 1.0]
     real(8):: position(3) = [0.0, 0.0, 0.0]
-    integer:: n_levels, n_repeat
+    integer:: n_levels, n_repeat(3)
     integer:: n_patch, m_zoom
     type(task_list_t), pointer:: task_list
   contains
@@ -43,11 +43,11 @@ SUBROUTINE init_hierarchy (self, label)
   class(task_t), pointer:: task
   class(link_t), pointer:: link
   integer, save:: n_patch=3, m_zoom=3, n_levels=5
-  integer, save:: n_repeat=1
+  integer, save:: n_repeat(3)=1
   integer:: iostat
   real(8), save:: position(3)
   real(8), save:: size(3)
-  integer:: i, j, k, ir, level, levels
+  integer:: i, j, k, irep, jrep, krep, level, levels
   namelist /rubiks_params/ size, position, n_levels, n_patch, m_zoom, n_repeat
   !-----------------------------------------------------------------------------
   ! Allow size and position to be set by an overloading data type, and allow
@@ -76,13 +76,19 @@ SUBROUTINE init_hierarchy (self, label)
   n_repeat = (n_repeat/2)*2 + 1
   scene%n_repeat = n_repeat
   level = 1
-  do ir=0,n_repeat-1
-    position(2) = ((ir-n_repeat/2)*self%task_list%size(2))/n_repeat
-    if (io%verbose>1) &
-      print*,'generating a cube of ',n_patch,' patches',' at position', position
-    call self%init_level (level, position)
+  ! repeated grids at the coarsest resolution
+  do krep=0,n_repeat(3)-1
+    do jrep=0,n_repeat(2)-1
+      do irep=0,n_repeat(1)-1
+        position = (([irep,jrep,krep] - n_repeat / 2) * self%task_list%size) / n_repeat
+        if (io%verbose>1) &
+          print*,'generating a cube of ',n_patch,' patches',' centred at position', position
+        call self%init_level (level, position)
+      end do
+    end do
   end do
-  position(2) = 0.0
+  ! succesively refined hierarchies
+  position = self%position
   if (io%verbose>1) &
     print*,'generating a hiearchy of ',n_patch,' patches',' at position', position
   do level=2,n_levels
@@ -112,6 +118,7 @@ SUBROUTINE init_level (self, level, position)
   ! existing data type values
   !-----------------------------------------------------------------------------
   call trace_begin ('rubiks_revenge_t%init_level')
+
   do k=1,self%n_patch
   do j=1,self%n_patch
   do i=1,self%n_patch

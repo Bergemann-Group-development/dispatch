@@ -20,7 +20,7 @@ MODULE rubiks_mod
   type, public:: rubiks_t
     real(8):: size(3) = [1.0, 1.0, 1.0]
     real(8):: position(3) = [0.0, 0.0, 0.0]
-    integer:: n_levels, n_repeat
+    integer:: n_levels, n_repeat(3)
     integer:: n_patch, m_zoom
     type(task_list_t), pointer:: task_list
   contains
@@ -41,11 +41,11 @@ SUBROUTINE init_hierarchy (self, label)
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
   integer, save:: n_patch=3, m_zoom=3, n_levels=5
-  integer, save:: n_repeat=1
+  integer, save:: n_repeat(3)=1
   integer:: iostat
   real(8), save:: position(3)
   real(8), save:: size(3)
-  integer:: i, j, k, ir, level, levels
+  integer:: i, j, k, irep, jrep, krep, level, levels
   namelist /rubiks_params/ size, position, n_levels, n_patch, m_zoom, n_repeat
   !-----------------------------------------------------------------------------
   ! Allow size and position to be set by an overloading data type, and allow
@@ -74,22 +74,29 @@ SUBROUTINE init_hierarchy (self, label)
   n_repeat = (n_repeat/2)*2 + 1
   scene%n_repeat = n_repeat
   !xomp parallel do private (ir,levels,level)
-  do ir=0,n_repeat-1
-    position(1) = ((ir-n_repeat/2)*self%task_list%size(1))/n_repeat
-    if (ir==n_repeat/2) then
-      levels = n_levels
-      if (io%verbose>1) &
-        print*,'generating a hiearchy of ',n_patch,' patches',' at position', position
-    else
-      levels = 1
-      if (io%verbose>1) &
-        print*,'generating a cube of ',n_patch,' patches',' at position', position
-    end if
-    if (io%verbose>0) &
-      print'("repeated Rubiks Cubes: ir, levels, position =",i4,i3,1p,3g14.4)', &
-      ir, levels, position
-    do level=1,levels
-      call self%init_level (level, position)
+  ! repeated grids at the coarsest resolution
+  do krep=0,n_repeat(3)-1
+    do jrep=0,n_repeat(2)-1
+      do irep=0,n_repeat(1)-1
+        position = (([irep,jrep,krep] - n_repeat / 2) * self%task_list%size) / n_repeat
+
+        if (irep == n_repeat(1)/2) then
+          levels = n_levels
+          if (io%verbose>1) &
+            print*,'generating a hiearchy of ',n_patch,' patches',' at position', position
+        else
+          levels = 1
+          if (io%verbose>1) &
+            print*,'generating a cube of ',n_patch,' patches',' at position', position
+        end if
+        if (io%verbose>0) &
+          print'("repeated Rubiks Cubes: irep, levels, position =",i4,i3,1p,3g14.4)', &
+            irep, jrep, krep, levels, position
+        do level=1,levels
+          call self%init_level (level, position)
+        end do
+
+      end do
     end do
   end do
   !-----------------------------------------------------------------------------
@@ -158,13 +165,13 @@ SUBROUTINE init_level (self, level, position)
     ! If at edge, set boundary bits
     !---------------------------------------------------------------------------
     if (level==1) then
-      if (i==1)            call patch%boundaries%set (bits%xdir + bits%lower)
-      if (j==1)            call patch%boundaries%set (bits%ydir + bits%lower)
-      if (k==1)            call patch%boundaries%set (bits%zdir + bits%lower)
-      if (i==self%n_patch) call patch%boundaries%set (bits%xdir + bits%upper)
-      if (j==self%n_patch) call patch%boundaries%set (bits%ydir + bits%upper)
-      if (k==self%n_patch) call patch%boundaries%set (bits%zdir + bits%upper)
-      if (patch%boundaries%status /= 0) print *, patch%id, 'EDGE', patch%boundaries%status
+      if (i==1)            call patch%boundaries%set (bits%xl)
+      if (j==1)            call patch%boundaries%set (bits%yl)
+      if (k==1)            call patch%boundaries%set (bits%zl)
+      if (i==self%n_patch) call patch%boundaries%set (bits%xu)
+      if (j==self%n_patch) call patch%boundaries%set (bits%yu)
+      if (k==self%n_patch) call patch%boundaries%set (bits%zu)
+      if (patch%boundaries%bits /= 0) print *, patch%id, 'EDGE', patch%boundaries%bits
     end if
   end do
   end do
