@@ -7,13 +7,11 @@ MODULE rt_solver_mod
   implicit none
   private
   type, public:: rt_solver_t
-    procedure(feautrier), pointer:: transfer => null()
-    procedure(integral_forward), pointer:: forward  => null()
-    procedure(integral_forward), pointer:: reverse  => null()
   contains
     procedure:: init
     procedure:: integral_forward
     procedure:: integral_reverse
+    procedure:: integral_double
     procedure:: feautrier
   end type
   type (rt_solver_t), public:: rt_solver
@@ -24,9 +22,6 @@ CONTAINS
 !> =====================================================================
 SUBROUTINE init (self)
   class (rt_solver_t):: self
-  self%forward   => integral_forward
-  self%reverse   => integral_reverse
-  self%transfer  => feautrier
 END SUBROUTINE init
 
 
@@ -48,11 +43,11 @@ END SUBROUTINE init
 !> Two additional points for source function are necessary to avoid the
 !> extrapolation of d1s and d2s.
 !> =====================================================================
-SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q, q_out)
+SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q)
   implicit none
   class (rt_solver_t):: self
   real, dimension(:,:,:), pointer :: dtau, ex0, S, q
-  real, dimension(:,:)   :: q_in, q_out
+  real, dimension(:,:)   :: q_in!, q_out
 !-----------------------------------------------------------------------
   real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
   real(kind=8) :: ctau
@@ -85,7 +80,11 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q, q_out)
     end do  
   end do
 !
-  q(k,j,1) = q_in(k,j)                                                  ! initial forward Q
+  do j = 1, w
+    do k = 1, m
+      q(k,j,1) = q_in(k,j)                                              ! initial forward Q
+    end do
+  end do
 !
   do i=2,n-1
     do j = 1, w
@@ -97,11 +96,11 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q, q_out)
     end do  
   end do
 !
-  do j = 1, w
-    do k = 1, m
-      q_out(k,j) = q(k,j,n-1)                                           ! forward boundary intensity
-    end do
-  end do  
+!  do j = 1, w
+!    do k = 1, m
+!      q_out(k,j) = q(k,j,n-1)                                           ! forward boundary intensity
+!    end do
+!  end do  
 END SUBROUTINE integral_forward                                         ! 2d 13m 11a 1e ! 26f + 1e
 
 !> =============================================================================
@@ -122,11 +121,11 @@ END SUBROUTINE integral_forward                                         ! 2d 13m
 !> Two additional points for source function are necessary to avoid the
 !> extrapolation of d1s and d2s.
 !> =============================================================================
-SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out)
+SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q)
   implicit none
   class (rt_solver_t):: self
   real, dimension(:,:,:), pointer :: dtau, ex0, S, q
-  real, dimension(:,:)   :: q_in, q_out
+  real, dimension(:,:)   :: q_in!, q_out
 !-----------------------------------------------------------------------
 !
 !  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
@@ -176,7 +175,11 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out)
     end do  
   end do
 !
-  q(k,j,n) = q_in(k,j)                                                  ! initial reverse Q
+  do j = 1, w
+    do k = 1, m
+      q(k,j,n) = q_in(k,j)                                              ! initial reverse Q
+    end do
+  end do
 !
   do i=n-1,2,-1
     do j = 1, w
@@ -188,12 +191,96 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q, q_out)
     end do  
   end do
 !
+!  do j = 1, w
+!    do k = 1, m
+!      q_out(k,j) = q(k,j,2)                                             ! reverse boundary intensity
+!    end do
+!  end do  
+END SUBROUTINE integral_reverse                                         ! 2d 13m 11a 1e ! 26f + 1e
+
+!> =====================================================================
+!> Integral solution method in both directions
+!>  Input: N, dtau(2:n), S(1:n), q_in_fw(1), q_in_re(n)
+!> Output: Q(1:n-1), q_fw(2:n), q_re(1:n-1)
+!>
+!> The input is the source functions and optical depths at all points,
+!> the net forward intensity (I-S) at the 1st point and the net reverse
+!> intensity (I-S) at the Nth point . As a result, we get
+!> the net heating rates in forward and reverse directions everywhere
+!> and also the outgoing net forward intensity at the first/last points.
+!>
+!> The equation solved is Q' = Q - dS/dtau in the forward direction.
+!> S is assumed to be quadratic, so dS/dtau is assumed to be linear in tau.
+!> The analytic solution may be written as a linear combination of the
+!> formal solution for constant and linear source functions.
+!>
+!> Two additional points for source function are necessary to avoid the
+!> extrapolation of d1s and d2s.
+!> =====================================================================
+SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
+  implicit none
+  class (rt_solver_t):: self
+  real, dimension(:,:,:), pointer :: dtau, ex0, S, q_fw, q_re
+  real, dimension(:,:)   :: q_in_fw, q_in_re
+!-----------------------------------------------------------------------
+  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
+  real(kind=8) :: ctau
+  integer i, n, m, w, j, k
+!-----------------------------------------------------------------------
+!
+  m = size(s,1)
+  w = size(s,2)
+  n = size(s,3)
+  do i=2,n
+    do j = 1, w
+      do k = 1, m
+    ex1(k,j,i) = 1.-ex0(k,j,i)
+    ex2(k,j,i) = ex1(k,j,i) - dtau(k,j,i)*ex0(k,j,i)
+    ds1(k,j,i) = (s(k,j,i) - s(k,j,i-1)) / dtau(k,j,i)                  ! half-point centered dS/dtau
+      end do
+    end do
+  end do 
+!
+!  dS/dtau and d2S/dtau2 (3a+5m+1d)
+!
+  do i=2,n-1
+    do j=1,w
+      do k=1,m
+        ctau = 1. / (dtau(k,j,i+1) + dtau(k,j,i))
+        d1s(k,j,i) =(ds1(k,j,i+1) * dtau(k,j,i) &
+                   + ds1(k,j,i  ) * dtau(k,j,i+1)) * ctau               ! dS/dtau, 2nd. order accurate
+        d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2. * ctau          ! d2S/dtau2, 2nd. order accurate
+      end do
+    end do  
+  end do
+!
   do j = 1, w
     do k = 1, m
-      q_out(k,j) = q(k,j,2)                                             ! reverse boundary intensity
+      q_fw(k,j,1) = q_in_fw(k,j)                                        ! initial forward Q
+      q_re(k,j,n) = q_in_re(k,j)                                        ! initial reverse Q
     end do
-  end do  
-END SUBROUTINE integral_reverse                                         ! 2d 13m 11a 1e ! 26f + 1e
+  end do
+!
+  do i=2,n-1
+    do j = 1, w
+      do k = 1, m
+        q_fw(k,j,i) = q_fw(k,j,i-1) *ex0(k,j,i) &
+                       - d1s(k,j,i) *ex1(k,j,i) &
+                       + d2s(k,j,i) *ex2(k,j,i)                         ! formal solution forward
+      end do
+    end do  
+  end do
+!
+  do i=n-1,2,-1
+    do j = 1, w
+      do k = 1, m
+        q_re(k,j,i) = q_re(k,j,i+1) *ex0(k,j,i+1) &
+                       + d1s(k,j,i) *ex1(k,j,i+1) &
+                       + d2s(k,j,i) *ex2(k,j,i+1)                       ! formal solution reverse
+      end do
+    end do  
+  end do
+END SUBROUTINE integral_double                                          ! 2d 13m 11a 1e ! 26f + 1e
 
 SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
 !> =====================================================================
