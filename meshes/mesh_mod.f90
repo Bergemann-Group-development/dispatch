@@ -298,6 +298,7 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   integer, optional :: n, ng
   real(8), optional :: s, p
   real(8), optional :: llc_native
+  real(8):: h
   !.............................................................................
   call trace_begin ('mesh%init')
 
@@ -333,15 +334,6 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   self%gn = self%ub
   allocate (self%r(self%gn))
   ! initialise mesh floating point attributes
-  if (self%n > 1) then
-    if (self%no_mans_land) then
-      self%d = self%s/self%n
-    else
-      self%d = self%s/(self%n-1)
-    end if
-  else
-    self%d = self%s
-  end if
   self%o = (self%li+self%ui)*0.5
 
   ! calculate the volume centroid of the current mesh
@@ -350,8 +342,15 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   ! of a cell can be recovered using `self%centre_nat + self%r(i)` in the coord. system
   ! of the patch, and `self%p + self%centre_nat + self%r(i)`.
   ! in Cartesian coords., self%centre_nat = self%p
+  if (self%no_mans_land) then
+    self%d = self%s/max(1,self%n)
+    h = 0.5_8
+  else
+    self%d = self%s/max(1,self%n-1)
+    h = 1.0_8
+  end if
   do i=1,self%gn
-    self%r(i) = real(i - 1 - self%ng,kind=8) * self%d + self%llc_nat - self%centre_nat
+    self%r(i) = real(i - h - self%ng,kind=8) * self%d + self%llc_nat - self%centre_nat
   end do
   self%lf = self%r(self%li)
   self%uf = self%r(self%ui)
