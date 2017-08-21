@@ -98,7 +98,7 @@ END FUNCTION disk
 FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet) RESULT (ff)
   class(force_t):: self
   real(8):: time
-  class(mesh_t), pointer:: m(:), m1, m2, m3
+  class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
   real, dimension(:,:,:), pointer:: Ux, Uy, Uz, d
   real, dimension(:,:,:,:), pointer:: p
@@ -109,35 +109,32 @@ FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet)
   real(8):: x, y, z, xs, ys, zs, xp, yp, zp, ds2(3), uxx, uyy
   !-----------------------------------------------------------------------------
   call trace_begin('force_t:star_and_planet')
-  m1 => m(1)
-  m2 => m(2)
-  m3 => m(3)
   if (self%solver(1:7)=='ramses_') then
     ds2 = 0.
   else if (self%solver(1:7)=='stagger') then
-    ds2 = [0.5*m1%d, 0.5*m2%d, 0.5*m3%d]
+    ds2 = 0.5*m%d
   else if (self%solver(1:6)=='zeus3d') then
-    ds2 = [0.5*m1%d, 0.5*m2%d, 0.5*m3%d]
+    ds2 = 0.5*m%d
   else
     error stop 'force'
   end if
-  associate (r1=>m1%r, r2=>m2%r, r3=>m3%r)
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   if (present(with_planet)) then
     newton = planet%mass*scaling%grav
   else
     newton = 0.0
   end if
   ff = 0.0
-  do iz=m3%lb,m3%ub
-    z = m3%p + r3(iz)
+  do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz)
     zp = z  - planet%position(3)
     zs = zp - ds2(3)
-    do iy=m2%lb,m2%ub
-      y = m2%p + r2(iy)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy)
       yp = y  - planet%position(2)
       ys = yp - ds2(2)
-      do ix=m1%lb,m1%ub
-        x = m1%p + r1(ix)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix)
         xp = x  - planet%position(1)
         xs = xp - ds2(1)
         !---------------------------------------------------------------
@@ -178,14 +175,14 @@ FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet)
   !---------------------------------------------------------------------
   if (planet%friction > 0.0) then
     if (self%solver(1:6)=='ramses') then
-      do iz=m3%lb,m3%ub
-        z = m3%p + r3(iz)
+      do iz=m(3)%lb,m(3)%ub
+        z = m(3)%p + r3(iz)
         zp = z  - planet%position(3)
-        do iy=m2%lb,m2%ub
-          y = m2%p + r2(iy)
+        do iy=m(2)%lb,m(2)%ub
+          y = m(2)%p + r2(iy)
           yp = y  - planet%position(2)
-          do ix=m1%lb,m1%ub
-            x = m1%p + r1(ix)
+          do ix=m(1)%lb,m(1)%ub
+            x = m(1)%p + r1(ix)
             xp = x  - planet%position(1)
             uxx = -planet%v_accrete
             uyy = -(1.5+planet%trap)*planet%omega(3)*xp - planet%v_head
@@ -196,16 +193,16 @@ FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet)
         end do
       end do
     else if (self%solver(1:6)=='stagge'.or.self%solver(1:6)=='zeus3d') then
-      do iz=m3%lb,m3%ub
-        z = m3%p + r3(iz)
+      do iz=m(3)%lb,m(3)%ub
+        z = m(3)%p + r3(iz)
         zp = z  - planet%position(3)
         zs = zp - ds2(3)
-        do iy=m2%lb,m2%ub
-          y = m2%p + r2(iy)
+        do iy=m(2)%lb,m(2)%ub
+          y = m(2)%p + r2(iy)
           yp = y  - planet%position(2)
           ys = yp - ds2(2)
-          do ix=m1%lb,m1%ub
-            x = m1%p + r1(ix)
+          do ix=m(1)%lb,m(1)%ub
+            x = m(1)%p + r1(ix)
             xp = x  - planet%position(1)
             xs = xp - ds2(1)
             uxx = -planet%v_accrete
@@ -237,6 +234,9 @@ FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet)
     ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*st_dn(st_up(Uz,3),1) - planet%omega(3)*st_dn(st_up(Uy,2),1))
     ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*st_dn(st_up(Ux,1),2) - planet%omega(1)*st_dn(st_up(Uz,3),2))
     ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*st_dn(st_up(Uy,2),3) - planet%omega(2)*st_dn(st_up(Ux,1),3))
+!    ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*Uz - planet%omega(3)*Uy)
+!    ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*Ux - planet%omega(1)*Uz)
+!    ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*Uy - planet%omega(2)*Ux)
   else
     print *, trim(self%solver)
     error stop "force_mod(2) :: unknown solver"
@@ -248,16 +248,16 @@ FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet)
   !---------------------------------------------------------------------
   if (self%id==io%id_debug) then
     if (maxval(abs(m(2:3)%p)/m(2:3)%d) < 0.5) then
-      iz = (m3%li+m3%ui)/2
-      iy = (m2%li+m2%ui)/2
-      do ix=m1%li,m1%ui
-        xs = m1%p + r1(ix) - planet%position(1) - ds2(1)
+      iz = (m(3)%li+m(3)%ui)/2
+      iy = (m(2)%li+m(2)%ui)/2
+      do ix=m(1)%li,m(1)%ui
+        xs = m(1)%p + r1(ix) - planet%position(1) - ds2(1)
         if (self%solver(1:6)=='stagge'.or.self%solver(1:6)=='zeus3d') then
-          print '("FORCE:",i6,i4,f12.2,1p,4e14.3)', self%id, ix, m1%p + r1(ix), &
+          print '("FORCE:",i6,i4,f12.2,1p,4e14.3)', self%id, ix, m(1)%p + r1(ix), &
             ff(ix,iy,iz,1), Uy(ix,iy,iz), &
             2.*planet%omega(3)*Uy(ix,iy,iz), 3.*planet%omega(3)**2*xs
         else
-          print '("FORCE:",i6,i4,f12.2,1p,4e14.3)', self%id, ix, m1%p + r1(ix), &
+          print '("FORCE:",i6,i4,f12.2,1p,4e14.3)', self%id, ix, m(1)%p + r1(ix), &
             ff(ix,iy,iz,1), p(ix,iy,iz,2)/d(ix,iy,iz), &
             2.*planet%omega(3)*p(ix,iy,iz,2)/d(ix,iy,iz), 3.*planet%omega(3)**2*xs
         end if
@@ -265,7 +265,6 @@ FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet)
     end if
   end if
   end associate
-  nullify (m1, m2, m3)
   call trace_end
 END FUNCTION disk_perhaps_with_planet
 
@@ -275,7 +274,7 @@ END FUNCTION disk_perhaps_with_planet
 FUNCTION single_solenoidal (self, time, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t)        :: self
   real(8)               :: time
-  class(mesh_t), pointer:: m(:), m1, m2, m3
+  class(mesh_t), pointer, dimension(:) :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
   real, dimension(:,:,:):: Ux, Uy, Uz
   !.............................................................................
@@ -302,16 +301,13 @@ FUNCTION single_solenoidal (self, time, Ux, Uy, Uz, m) RESULT (ff)
     t_save = t_save + t_turn
 !     if (io%verbose>3) print *,'forcing', a, phi
   end if
-  m1 => m(1)
-  m2 => m(2)
-  m3 => m(3)
-  associate (r1=>m1%r, r2=>m2%r, r3=>m3%r)
-  do iz=m3%lb,m3%ub
-    kz = pi2*k(3)*(r3(iz)+m3%p-0.5d0*m3%s)/m3%b + phi(3)
-    do iy=m2%lb,m2%ub
-      ky = pi2*k(2)*(r2(iy)+m2%p-0.5d0*m2%s)/m2%b + phi(2)
-      do ix=m1%lb,m1%ub
-        kx = pi2*k(1)*(r1(ix)+m1%p-0.5d0*m1%s)/m1%b + phi(1)
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    kz = pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky = pi2*k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + phi(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx = pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
         ff(ix,iy,iz,1) = a(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,2) = a(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,3) = a(3)*(sin(kx)+sin(ky))
@@ -319,7 +315,6 @@ FUNCTION single_solenoidal (self, time, Ux, Uy, Uz, m) RESULT (ff)
     end do
   end do
   end associate
-  nullify (m1, m2, m3)
   call trace_end
 END FUNCTION single_solenoidal
 

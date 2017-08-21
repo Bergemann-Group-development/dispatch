@@ -75,8 +75,8 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self, id, iit, dt, mem, mesh)
   class(timestep_t):: self
-  class(mesh_t), pointer:: mesh(:), m1, m2, m3
-  integer:: id, nt, i
+  class(mesh_t):: mesh(:)
+  integer:: id, nt
   integer, dimension(:):: iit
   real(8), dimension(:):: dt
   real(kind=KindScalarVar), dimension(:,:,:,:,:,:):: mem            ! memory buffer
@@ -84,13 +84,15 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
   !......................................................................
   call trace_begin ('timestep_t%update')
   if (self%time_order==-1) error stop 'timestep_mod not initialized!'
-  m1 => mesh(1)
-  m2 => mesh(2)
-  m3 => mesh(3)
   nt = size(iit)                                ! number of time slots
-  l = [m1%lb, m2%lb, m3%lb]
-  u = [m1%ub, m2%ub, m3%ub]
-  
+  l = mesh%lb
+  u = mesh%ub
+  where (mesh%lower_boundary)
+    l = mesh%lb
+  end where
+  where (mesh%upper_boundary)
+    u = mesh%ub
+  end where
   if (size(mem,6)==1.and.self%time_order>0) then
     if (io%master) print *,id,'WARNING: setting time_order=0 in timestep%update'
     self%time_order=0
@@ -130,7 +132,6 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
       minval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt  ),1)), &
       maxval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt  ),1)), shape(mem)
   end if
-  nullify (m1, m2, m3)
   call trace_end
 END SUBROUTINE update
 !-------------------------------------------------------------------------------

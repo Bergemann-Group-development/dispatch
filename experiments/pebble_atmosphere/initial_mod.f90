@@ -76,7 +76,7 @@ END SUBROUTINE init
 SUBROUTINE planet_atmosphere (self, m, mem)
   class(initial_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
-  class(mesh_t), pointer :: m(:), m1, m2, m3
+  class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr, l(3), u(3)
   real(8) :: x, y, z, rp, d, ds, d0, T0, p, ux, uy, uz, ds2(3)
@@ -104,35 +104,32 @@ SUBROUTINE planet_atmosphere (self, m, mem)
   planet%v_accrete = v_accrete_cgs/scaling%u
   T0 = atmosphere%external%temperature
   nr = atmosphere%nr
-  m1 => m(1)
-  m2 => m(2)
-  m3 => m(3)
   if (self%solver(1:7)=='stagger') then
-    ds2 = [0.5*m1%d,0.5*m2%d,0.5*m3%d]
+    ds2 = 0.5*m%d
   else if (self%solver(1:6)=='zeus3d') then
-    ds2 = [0.5*m1%d,0.5*m2%d,0.5*m3%d]
+    ds2 = 0.5*m%d
   else
     ds2 = 0.0
   endif
   if (test) then
-   l = [m1%li, m2%li, m3%li]
-   u = [m1%ui, m2%ui, m3%ui]
+   l = m%li
+   u = m%ui
   else
-   l = [m1%lb, m2%lb, m3%lb]
-   u = [m1%ub, m2%ub, m3%ub]
+   l = m%lb
+   u = m%ub
   end if
   R_Hill = cgs%au/scaling%l*(cgs%m_earth/(3.*cgs%m_sun))**(1./3.)
-  associate (r1=>m1%r, r2=>m2%r, r3=>m3%r)
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=l(3),u(3)
-    z = m3%p + r3(iz)
+    z = m(3)%p + r3(iz)
     zp = z  - planet%position(3)
     zs = zp - ds2(3)
     do iy=l(2),u(2)
-      y = m2%p + r2(iy)
+      y = m(2)%p + r2(iy)
       yp = y  - planet%position(2)
       ys = yp - ds2(2)
       do ix=l(1),u(1)
-        x = m1%p + r1(ix)
+        x = m(1)%p + r1(ix)
         xp = x  - planet%position(1)
         xs = xp - ds2(1)
         rp = sqrt(xp**2+yp**2+zp**2)
@@ -204,7 +201,6 @@ SUBROUTINE planet_atmosphere (self, m, mem)
     end do
   end do
   end associate
-  nullify (m1, m2, m3)
   if (self%id==io%id_debug) &
     print *, self%id, 'XX time, mem:', 0d0, mem(3,19,36,1), 'in initial%condition'
   call trace%end (itimer)
@@ -216,7 +212,7 @@ END SUBROUTINE planet_atmosphere
 SUBROUTINE disk (self, m, mem)
   class(initial_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
-  class(mesh_t), pointer:: m(:), m1, m2, m3
+  class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr
   real(8) :: x, y, z, r, d, ds, d0, T0, p, ux, uy, uz, ds2(3)
@@ -244,27 +240,22 @@ SUBROUTINE disk (self, m, mem)
   planet%v_accrete = v_accrete_cgs/scaling%u
   nr = atmosphere%nr
   T0 = atmosphere%external%temperature
-  m1 => m(1)
-  m2 => m(2)
-  m3 => m(3)
   if (self%solver(1:7)=='stagger') then
-    ds2 = [0.5*m1%d,0.5*m2%d,0.5*m3%d]
-  else if (self%solver(1:6)=='zeus3d') then
-    ds2 = [0.5*m1%d,0.5*m2%d,0.5*m3%d]
+    ds2 = 0.5*m%d
   else
     ds2 = 0.0
   endif
-  associate (r1=>m1%r, r2=>m2%r, r3=>m3%r)
-    do iz=m3%lb,m3%ub
-    z = m3%p + r3(iz)
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+    do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz)
     zp = z  - planet%position(3)
     zs = zp - ds2(3)
-    do iy=m2%lb,m2%ub
-      y = m2%p + r2(iy)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy)
       yp = y  - planet%position(2)
       ys = yp - ds2(2)
-      do ix=m1%lb,m1%ub
-        x = m1%p + r1(ix)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix)
         xp = x  - planet%position(1)
         xs = xp - ds2(1)
         d = atmosphere%external%density
@@ -330,7 +321,6 @@ SUBROUTINE disk (self, m, mem)
     end do
   end do
   end associate
-  nullify (m1, m2, m3)
   call trace%end (itimer)
 END SUBROUTINE disk
 

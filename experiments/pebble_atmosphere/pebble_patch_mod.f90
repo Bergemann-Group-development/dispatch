@@ -20,7 +20,6 @@ MODULE pebble_patch_mod
   USE task_mod
   USE patch_mod
   USE mhd_mod
-  USE mesh_mod
   USE planet_mod
   USE atmosphere_mod
   USE star_mod
@@ -73,7 +72,6 @@ SUBROUTINE init (self)
   class(pebble_patch_t):: self
   !.............................................................................
   character(len=8), save:: type='kdk_drag'
-  class(mesh_t), pointer :: m1, m2, m3
   real, save:: density_yr_cgs = 1e-12, solid_density_cgs=3., size(3), pebble_size_cm=1.
   real, save:: pebble_rate_cgs = 0.0    ! 1e2 = about one pebble per 10 second (3e6 per year)
   real, save:: vz_pebble_cgs = 3e6      ! about 30 km/s vertically
@@ -98,10 +96,7 @@ SUBROUTINE init (self)
   allocate (self%pebbles,self%not_done)
   call self%pebbles%init (self%id)
   call self%not_done%init (self%id)
-  m1 => self%mesh(1)
-  m2 => self%mesh(2)
-  m3 => self%mesh(3)
-  associate (mx=>m1%gn,my=>m2%gn,mz=>m3%gn,mt=>self%nt)
+  associate (mx=>self%mesh(1)%gn,my=>self%mesh(2)%gn,mz=>self%mesh(3)%gn,mt=>self%nt)
     self%density => self%mem(:,:,:,self%i_d,:,1)
     allocate (self%pressure(mx,my,mz,mt))
     allocate (self%vgas(mx,my,mz,3,mt))
@@ -161,7 +156,6 @@ SUBROUTINE init (self)
     call self%boundary_add
     call self%volume_add
   end if
-  nullify (m1,m2,m3)
   call trace_end (itimer)
 END SUBROUTINE init
 
@@ -175,7 +169,6 @@ SUBROUTINE volume_add (self, n)
   !.............................................................................
   class(pebbles_t), pointer:: pebbles
   class(pebble_t), pointer:: pebble
-  class(mesh_t), pointer  :: m1, m2, m3
   integer:: ix, iy, iz, ippc, iter, warn, l(3), u(3)
   real:: w(3), sign, ppc, average_density
   integer, save:: nprint=10
@@ -197,15 +190,12 @@ SUBROUTINE volume_add (self, n)
     print 1, '      pebbles added:', self%pebble_rate*self%dtime, self%pebble_rate, self%dtime
     1 format(a,1p,3e11.2)
   end if
-  m1 => self%mesh(1)
-  m2 => self%mesh(2)
-  m3 => self%mesh(3)
-  l = [m1%li, m2%li, m3%li]
-  u = [m1%ui, m2%ui, m3%ui]
+  l = self%mesh%li
+  u = self%mesh%ui
   average_density = sum(self%density(l(1):u(1),l(2):u(2),l(3):u(3),self%it))/product(u-l+1)
-  do iz=m3%li,m3%ui
-  do iy=m2%li,m2%ui
-  do ix=m1%li,m1%ui
+  do iz=self%mesh(3)%li,self%mesh(3)%ui
+  do iy=self%mesh(2)%li,self%mesh(2)%ui
+  do ix=self%mesh(1)%li,self%mesh(1)%ui
     ppc = self%pebbles%ppc*self%density(ix,iy,iz,self%it)/average_density
     ippc = ppc
     ppc = ppc-ippc
@@ -252,7 +242,6 @@ SUBROUTINE volume_add (self, n)
   if (io%verbose>1) &
     print *, 'volume_add:', self%id, self%position(3), self%pebbles%n
   call self%pebbles%check_list ('after volume_add')
-  nullify (m1, m2, m3)
   call trace_end (itimer)
 END SUBROUTINE volume_add
 
@@ -903,7 +892,6 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
   class(pebble_t), pointer:: pebble
   integer:: warn
   !.............................................................................
-  class(mesh_t), pointer :: m
   real:: w(3), pos(3), v(3)
   integer:: ii(3), j, k
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: velocity
@@ -915,16 +903,14 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
   warn = 0
   do j=1,3
     do k=1,3
-      m => self%mesh(k)
-      w(k) = pos(k)/m%d - m%h(k+2) + m%o
+      w(k) = pos(k)/self%mesh(k)%d - self%mesh(k)%h(k+2) + self%mesh(k)%o
       ii(k) = w(k)
-      warn = warn + merge (1, 0, ii(k)<1 .or. ii(k)>m%gn-1)
-      ii(k) = max(1,min(ii(k),m%gn-1))
+      warn = warn + merge (1, 0, ii(k)<1 .or. ii(k)>self%mesh(k)%gn-1)
+      ii(k) = max(1,min(ii(k),self%mesh(k)%gn-1))
     end do
     velocity => self%vgas(:,:,:,j,:)
     pebble%vg(j) = self%interpolate_r4 (velocity, ii, w)
   end do
-  nullify(m)
 END SUBROUTINE interpolate_vg
 
 !> =============================================================================
