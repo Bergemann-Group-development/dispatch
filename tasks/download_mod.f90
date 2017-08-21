@@ -109,7 +109,11 @@ END SUBROUTINE download_link
 
 !> =============================================================================
 !> Find the target index ranges that correspond to the overlap region, for
-!> download from source (source has higher, same, or lower level than target)
+!> download from source (source has higher, same, or lower level than target).
+!>
+!> The first index, l(i), returned is the index of the first target point that
+!> is inside the authoritative region; i.e., it must lie to the right of the
+!> source point r(li).
 !> FIXME: To be validated/improved for moving meshes
 !> =============================================================================
 SUBROUTINE dnload_range (target, source, iv, l, u, offset)
@@ -117,45 +121,46 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   integer                 :: iv, l(3), u(3), offset(3)
   optional                :: offset
   !.............................................................................
-  real, dimension(3):: f, pos1, pos2, dist
-  real(8):: eps(3), h(3)
+  real(8), dimension(3):: h, dist, rl, ru
+  integer:: i, li, ui
   !-----------------------------------------------------------------------------
   call trace%begin ('download_mod::dnload_range')
-  eps = 0.001_8*target%ds
-  h = source%index_stagger (iv)
+  h = source%index_stagger(iv)
   !-----------------------------------------------------------------------------
-  ! Map to the first and last point inside the source domain
+  ! Map to the first and last point inside the source domain, computing first
+  ! the distance btw patch midpoints, then adding the offsets to the li and ui
+  ! points. By using rl and ru the procedure becomes independent of no_mans_land.
   !-----------------------------------------------------------------------------
-  l = target%index_only (source%mesh%p+source%mesh%lf-eps, iv, roundup=.true.)
-  u = target%index_only (source%mesh%p+source%mesh%uf+eps, iv)
+  dist = source%position - target%position + h*(source%mesh%d-target%mesh%d)
   !-----------------------------------------------------------------------------
-  ! Make sure the range is legal, and includes all guard cell layers
+  ! The lf and uf values are floating point relative coordinates corresponding
+  ! to li and ui.  These are the boundaries of the 'authoritative domain'
   !-----------------------------------------------------------------------------
-  l = max(target%mesh%lb,min(target%mesh%uo,l))
-  u = max(target%mesh%lo,min(target%mesh%ub,u))
+  l = target%index_only (dist + source%mesh%lf)
+  u = target%index_only (dist + source%mesh%uf)
   !-----------------------------------------------------------------------------
-  ! If the source is to the left or right of the target in a direction, limit
-  ! the region to the ghost zones on that side.
+  ! Make sure the range is legal.  The u index can become smaller than lb, which
+  ! means there is no overlap.  Likewise, the l index can become larger than ub
+  !-----------------------------------------------------------------------------
+  l = max(target%mesh%lb,l)
+  u = min(target%mesh%ub,u)
+  !-----------------------------------------------------------------------------
+  ! For same level patch, the integer offset is what should be added to the
+  ! target index to get the source index.  For aligned meshes, offset=0, while
+  ! for adjacent meshes, the offset is equal to the number of authoritative points.
   !-----------------------------------------------------------------------------
   if (present(offset)) then
     if (source%level==target%level) then
-      offset = 0
-      dist = source%distance(target)  ! positive if source to the right of target
-      where (dist > source%ds)
-        offset = -target%mesh%n+1
-        l = target%mesh%uo
-        u = target%mesh%ub
-      else where (dist < -source%ds)
-        offset = target%mesh%n-1
-        l = target%mesh%lb
-        u = target%mesh%lo
+      where (source%mesh%ui > u)
+        offset = source%mesh%ui - u
       else where
-        l = target%mesh%li
-        u = target%mesh%ui
+        offset = source%mesh%li - l
       end where
+      dist = source%distance(target)  ! positive if source to the right of target
     else
-      print *, 'WARNING: fixed offset not valid for different levels', &
+      print *, 'ERROR: fixed offset not valid for different levels', &
         target%id, target%level, source%id, source%level
+      error stop "dnload_range"
     end if
     if (io%verbose>1.or.target%id==io%id_debug) &
       print 1, target%id, target%level, iv, source%id, source%level, l, u, offset
@@ -199,9 +204,9 @@ SUBROUTINE same (target, source, all_cells)
             ii = [ix,iy,iz]
             if (present(all_cells) .or. &
                 any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0)) then
-            target%mem(ix,iy,iz,iv,target%it,1) = exp( &
-               pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
-               pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
+              target%mem(ix,iy,iz,iv,target%it,1) = exp( &
+                 pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
+                 pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
             else
               if (target%id==io%id_debug .and. io%verbose>1) &
                 print *, target%id, 'DBG interpolate_t%same: skipping', ii
@@ -217,9 +222,9 @@ SUBROUTINE same (target, source, all_cells)
             ii = [ix,iy,iz]
             if (present(all_cells) .or. &
                 any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0)) then
-            target%mem(ix,iy,iz,iv,target%it,1) = &
-               pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
-               pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
+              target%mem(ix,iy,iz,iv,target%it,1) = &
+                pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
+                pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
             else
               if (target%id==io%id_debug .and. io%verbose>1) &
                 print *, target%id, 'DBG interpolate_t%same: skipping', ii
@@ -296,11 +301,11 @@ SUBROUTINE different (target, source, all_cells)
           ii=[ix,iy,iz]
           if (present(all_cells) .or. &
               any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0)) then
-          if (source%pervolume(iv)) then
-            call source%interpolate_specific (target, ii, iv, jt, pt)
-          else
-            call source%interpolate (target, ii, iv, jt, pt)
-          end if
+            if (source%pervolume(iv)) then
+              call source%interpolate_specific (target, ii, iv, jt, pt)
+            else
+              call source%interpolate (target, ii, iv, jt, pt)
+            end if
           else
             if (target%id==io%id_debug .and. io%verbose>1) &
               print *, target%id, 'DBG interpolate_t%different: skipping', ii

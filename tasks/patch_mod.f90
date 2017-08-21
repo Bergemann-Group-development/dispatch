@@ -2137,33 +2137,32 @@ SUBROUTINE index_space (self, pos, iv, i, p)
 END SUBROUTINE index_space
 
 !> =============================================================================
-!> Return only the index in self corresponding to a point in native space
+!> Return only the index in self corresponding to a point in native space.
+!> "pos" is a relative position in target coordinate space, and since we are
+!> not informed about the target grid spacing it must be adjusted for staggering
+!> before the call.
 !> =============================================================================
-FUNCTION index_only (self, pos, iv, roundup) RESULT (ii)
-  class(patch_t)    :: self
-  real(8)           :: pos(3)
-  integer           :: iv
-  integer           :: ii(3)
-  logical, optional :: roundup
+FUNCTION index_only (self, pos, roundup) RESULT (ii)
+  class(patch_t)      :: self
+  real(8), intent(in) :: pos(3)
+  integer             :: ii(3)
+  logical, optional   :: roundup
   !.............................................................................
-  integer           :: i
-  real(8), parameter:: eps=0.001_8
-  real(8)           :: p(3)
+  integer             :: i
+  real(8)             :: p(3)
   !-----------------------------------------------------------------------------
   do i=1,3
-    p(i) = pos(i) - self%position(i)                            ! relative position
-    p(i) = modulo(p(i)+0.5_8*self%mesh(i)%b,self%mesh(i)%b) &   ! wrap
-                      -0.5_8*self%mesh(i)%b
-    p(i) = p(i)/self%mesh(i)%d+self%offset(i)-self%mesh(i)%h(iv)! float index
+    p(i) = pos(i)                                               ! relative position
+    if (self%periodic(i)) then
+      p(i) = modulo(p(i)+0.5_8*self%mesh(i)%b,self%mesh(i)%b) & ! wrap
+                        -0.5_8*self%mesh(i)%b
+    end if
+    p(i) = p(i)/self%mesh(i)%d + self%offset(i)                 ! float index
     if (present(roundup)) then
       ii(i) = ceiling(p(i))                                     ! round up
     else
-      ii(i) = p(i)                                              ! integer part
+      ii(i) = p(i) + 0.0001                                     ! integer part
     end if
-    ii(i) = max(self%mesh(i)%lb, &
-            min(self%mesh(i)%ub,ii(i)))                         ! valid range
-    if (ii(i)==self%mesh(i)%ui-1) ii(i) = self%mesh(i)%ui       ! enforce symmetry
-    if (ii(i)==self%mesh(i)%li-1) ii(i) = self%mesh(i)%li       ! enforce symmetry
   end do
 END FUNCTION index_only
 
