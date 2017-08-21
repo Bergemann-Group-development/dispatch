@@ -81,9 +81,9 @@ SUBROUTINE download_link (link, all_cells)
             if (source%is_clear(bits%no_download)) then
               if (abs(source%level-target%level) < 2) then
                 if (source%level==target%level) then
-                  call same (target, source)
+                  call same (target, source, all_cells)
                 else
-                  call different (target, source)
+                  call different (target, source, all_cells)
                 end if
               end if
             end if
@@ -175,8 +175,9 @@ END SUBROUTINE dnload_range
 !>   dnload_range
 !>   time_interval
 !> =============================================================================
-SUBROUTINE same (target, source)
+SUBROUTINE same (target, source, all_cells)
   class(patch_t), pointer :: target, source
+  logical, optional:: all_cells
   !.............................................................................
   integer                 :: l(3), u(3), o(3), ii(3), jt(2)
   real(8)                 :: position(3), xx
@@ -196,11 +197,16 @@ SUBROUTINE same (target, source)
         do iy=l(2),u(2)
           do ix=l(1),u(1)
             ii = [ix,iy,iz]
+            if (present(all_cells) .or. &
+                any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0)) then
             target%mem(ix,iy,iz,iv,target%it,1) = exp( &
                pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
                pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
-            !if (all(ii>target%mesh%li.and.ii<=target%mesh%ui)) print *, &
-              !target%id, 'ERROR: internal point modified', source%id, ii, iv
+            else
+              if (target%id==io%id_debug .and. io%verbose>1) &
+                print *, target%id, 'DBG interpolate_t%same: skipping', ii
+              cycle
+            end if
           end do
         end do
       end do
@@ -209,11 +215,16 @@ SUBROUTINE same (target, source)
         do iy=l(2),u(2)
           do ix=l(1),u(1)
             ii = [ix,iy,iz]
+            if (present(all_cells) .or. &
+                any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0)) then
             target%mem(ix,iy,iz,iv,target%it,1) = &
                pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
                pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
-            !if (all(ii>target%mesh%li.and.ii<=target%mesh%ui)) print *, &
-              !target%id, 'ERROR: internal point modified', source%id, ii, iv
+            else
+              if (target%id==io%id_debug .and. io%verbose>1) &
+                print *, target%id, 'DBG interpolate_t%same: skipping', ii
+              cycle
+            end if
           end do
         end do
       end do
@@ -259,8 +270,9 @@ END SUBROUTINE same_rt
 
 !> =============================================================================
 !> Interpolate guard zone info from source patch at a different level
-SUBROUTINE different (target, source)
+SUBROUTINE different (target, source, all_cells)
   class(patch_t), pointer :: target, source
+  logical, optional:: all_cells
   !.............................................................................
   integer                 :: ix, iy, iz, iv, jt(2)
   integer, dimension(3)   :: l, u, ii, lb, ub
@@ -282,10 +294,17 @@ SUBROUTINE different (target, source)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
+          if (present(all_cells) .or. &
+              any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0)) then
           if (source%pervolume(iv)) then
             call source%interpolate_specific (target, ii, iv, jt, pt)
           else
             call source%interpolate (target, ii, iv, jt, pt)
+          end if
+          else
+            if (target%id==io%id_debug .and. io%verbose>1) &
+              print *, target%id, 'DBG interpolate_t%different: skipping', ii
+            cycle
           end if
         end do
       end do

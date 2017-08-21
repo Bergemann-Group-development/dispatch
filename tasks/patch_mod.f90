@@ -2235,9 +2235,9 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
                        (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1)    + &
                                   (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))
   end if
-  if (target%id==io%id_debug) &
+  if (target%id==io%id_debug .and. io%verbose>1) &
     print 1, target%id, ii, iv, self%id, j, jt, p, pt, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
-    1 format(i6,3i3,i4,2x,"DBG patch_t%interpolate src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
+    1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
       "   out:",1p,e15.6)
   !call trace%end (itimer)
 END SUBROUTINE interpolate
@@ -2292,9 +2292,9 @@ SUBROUTINE interpolate_specific (self, target, ii, iv, jt, pt)
     target%mem(ii(1),ii(2),ii(3),iv,target%it,1) * &
     target%mem(ii(1),ii(2),ii(3),id,target%it,1)
   end associate
-  if (target%id==io%id_debug) &
+  if (target%id==io%id_debug .and. io%verbose>1) &
     print 1, target%id, ii, iv, self%id, j, jt, p, pt, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
-    1 format(i6,3i3,i4,2x,"DBG patch_t%interpolate_specific src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
+    1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate_specific src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
       "   out:",1p,e15.6)
   !call trace%end (itimer)
 END SUBROUTINE interpolate_specific
