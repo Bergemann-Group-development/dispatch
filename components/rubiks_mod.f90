@@ -41,7 +41,7 @@ SUBROUTINE init_hierarchy (self, label)
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
   integer, save:: n_patch=3, m_zoom=3, n_levels=5
-  integer, save:: n_repeat(3)=1
+  integer, save:: n_repeat(3)=0
   integer:: iostat
   real(8), save:: position(3)
   real(8), save:: size(3)
@@ -64,6 +64,15 @@ SUBROUTINE init_hierarchy (self, label)
   self%n_patch = n_patch
   self%m_zoom = m_zoom
   !-----------------------------------------------------------------------------
+  ! Avoid having to edit dozens of existing .nml files, by interpreting a single
+  ! n_repeat value as being intended for the y-direction
+  !-----------------------------------------------------------------------------
+  if (n_repeat(1)>0 .and. n_repeat(2)==0 .and. n_repeat(3)==0) then
+    n_repeat(2) = n_repeat(1)
+    n_repeat(1) = 1
+    n_repeat(3) = 1
+  end if
+  !-----------------------------------------------------------------------------
   ! Save the outer size of the hierarchy as the task list size, for distance
   ! measurements.  The self%task_list%size is the full size of the objects in
   ! the task list, and the size of the period in the periodic wrapping.  The
@@ -73,7 +82,6 @@ SUBROUTINE init_hierarchy (self, label)
   self%task_list%size = self%size*self%n_patch*self%m_zoom**(n_levels-1)*n_repeat
   n_repeat = (n_repeat/2)*2 + 1
   scene%n_repeat = n_repeat
-  !xomp parallel do private (ir,levels,level)
   ! repeated grids at the coarsest resolution
   do krep=0,n_repeat(3)-1
     do jrep=0,n_repeat(2)-1
@@ -95,7 +103,6 @@ SUBROUTINE init_hierarchy (self, label)
         do level=1,levels
           call self%init_level (level, position)
         end do
-
       end do
     end do
   end do
