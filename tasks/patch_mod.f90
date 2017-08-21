@@ -350,7 +350,6 @@ SUBROUTINE init (self)
     n    = self%n
     ng   = self%ng
     nv   = self%nv
-    nw   = self%nw
     nt   = self%nt
     periodic = self%periodic
     first_time = .false.
@@ -370,7 +369,6 @@ SUBROUTINE init (self)
   self%restart     = restart                    ! restart snapshot
   self%ng          = ng                         ! number of guard zones
   self%nv          = nv                         ! number of variables
-  self%nw          = nw                         ! number of work indices
   self%nt          = nt                         ! number of time slices
   self%courant     = courant                    ! courant number
   self%grace       = grace                      ! grace fraction of dtime
