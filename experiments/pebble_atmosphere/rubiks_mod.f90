@@ -156,6 +156,18 @@ SUBROUTINE init_level (self, level, position)
     ! Add to a list of links, with pointers from patch to patch
     !---------------------------------------------------------------------------
     call self%task_list%append (task)
+    !---------------------------------------------------------------------------
+    ! If at edge, set boundary bits
+    !---------------------------------------------------------------------------
+    if (level==1) then
+      if (.not.patch%periodic(1).and.i==1)            call patch%boundaries%set (bits%xl)
+      if (.not.patch%periodic(2).and.j==1)            call patch%boundaries%set (bits%yl)
+      if (.not.patch%periodic(3).and.k==1)            call patch%boundaries%set (bits%zl)
+      if (.not.patch%periodic(1).and.i==self%n_patch) call patch%boundaries%set (bits%xu)
+      if (.not.patch%periodic(2).and.j==self%n_patch) call patch%boundaries%set (bits%yu)
+      if (.not.patch%periodic(3).and.k==self%n_patch) call patch%boundaries%set (bits%zu)
+      if (patch%boundaries%bits /= 0) print *, patch%id, 'EDGE', patch%boundaries%bits
+    end if
   end do
   end do
   end do

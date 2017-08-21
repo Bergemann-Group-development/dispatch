@@ -100,7 +100,8 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> Initialize boundary bits, which may (optionally) be used to apply boundary
-!> conditions in experiment_t%update() procedures
+!> conditions in experiment_t%update() procedures.  This procedure must be called
+!> while each rank still has a list of all patches.
 !> =============================================================================
 SUBROUTINE init_bdries (self)
   class(task_list_t):: self
@@ -108,6 +109,7 @@ SUBROUTINE init_bdries (self)
   class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
   call trace%begin('task_list_t%init_bdries')
+  if (mpi%size > 1) error stop "task_list_t%init_bdries not MPI ready"
   link => self%head
   do while (associated(link))
     self%lc = min(self%lc, link%task%position)
@@ -173,7 +175,7 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists, and set virtual and boundary bits
   !-----------------------------------------------------------------------------
-  call self%init_bdries
+  !call self%init_bdries
   call self%init_all_nbors
   call self%reset_status
   !-----------------------------------------------------------------------------
