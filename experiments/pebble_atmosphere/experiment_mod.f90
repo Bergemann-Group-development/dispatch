@@ -17,6 +17,8 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(pebble_patch_t):: experiment_t
+    real(8):: x_sponge    ! distance from the physical boundary where
+                          ! "wave-killing" boundaries are turned on.
   contains
     procedure :: init
     procedure :: debug
@@ -53,7 +55,8 @@ SUBROUTINE init (self)
   integer:: iv, iostat
   logical, save:: first_time=.true.
   character(len=32):: type='planet_atmosphere'
-  namelist /experiment_params/ type
+  real(8):: x_sponge=-1.0e99
+  namelist /experiment_params/ type, x_sponge
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
@@ -65,6 +68,7 @@ SUBROUTINE init (self)
     if (io%master) write (*,experiment_params)
   end if
   !$omp end critical (io_cr)
+  self%x_sponge = x_sponge
   !----------------------------------------------------------------------------
   ! Allocate memory and set IC values.  The initial%init (type) specifies the
   ! type of IC to be applied when the call to gpatch_t%init is made.
@@ -317,10 +321,10 @@ SUBROUTINE edge_boundary_conditions (self, it)
   !-----------------------------------------------------------------------------
   ! Density boundary conditions
   !-----------------------------------------------------------------------------
-                            call self%check_density ('before density_BC')
+  call self%check_density ('before density_BC')
   call self%density_boundary_condition (it)
   !call self%boundaries%log_extrapolate (d, self%i_d)
-                            call self%check_density ('after density_BC')
+  call self%check_density ('after density_BC')
   !-----------------------------------------------------------------------------
   ! Velocity boundary conditions
   !-----------------------------------------------------------------------------
@@ -349,6 +353,12 @@ SUBROUTINE edge_boundary_conditions (self, it)
   call self%boundaries%constant (e_th, self%i_e, atmosphere%external%energy)
   call self%E_th2e(e_th, it)
   deallocate (e_th)
+
+  ! apply the "wave killing" boundaries to all variables near the x-boundaries;
+  if (self%x_sponge > -1.0e-32) then
+    call apply_sponge_boundaries (self)
+  end if
+
   call trace%end
 END SUBROUTINE edge_boundary_conditions
 
@@ -504,4 +514,104 @@ contains
   end subroutine apply_z
 END SUBROUTINE density_boundary_condition
 
-END MODULE
+!> =============================================================================
+!> Apply the "wave killing" boundaries of de Val-Borro et al. (2006) to all
+!> variables.
+!> Currently implemented for x-boundaries only.
+!> =============================================================================
+SUBROUTINE apply_sponge_boundaries (self)
+  USE units_mod, only: cgs
+  class(experiment_t):: self
+  integer:: iv, i, j, k, eye
+  real(8):: x, z, xkill_lo, xkill_hi, xbndy_lo, xbndy_hi, tau_kill
+  real(kind=KindScalarVar):: d0, d, p0, p, T0, entropy0, px0, py0, pz0, &
+                             asymptote
+  class(mesh_t), pointer:: m1, m2, m3
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
+  !-----------------------------------------------------------------------------
+  if (.not. (self%boundaries%is_set(bits%xl) .or. self%boundaries%is_set(bits%xu))) &
+    return
+  call trace%begin ("experiment_t::apply_sponge_boundaries")
+
+  if (io%debug(2) .or. self%track) print*, self%id, ": Wave killing ON"
+  mem => self%mem(:,:,:,:,self%it,1)
+  m1 => self%mesh(1)
+  m2 => self%mesh(2)
+  m3 => self%mesh(3)
+  tau_kill = 2.0 * cgs%pi / planet%omega(3)
+  d0 = atmosphere%external%density
+  p0 = atmosphere%external%pressure
+  T0 = atmosphere%external%temperature
+  px0 = 0.0
+  pz0 = 0.0
+
+  xbndy_lo = m1%p + m1%r(m1%li) - 0.5 * m1%d
+  xkill_lo = xbndy_lo + self%x_sponge
+  xbndy_hi = m1%p + m1%r(m1%ui) + 0.5 * m1%d
+  xkill_hi = xbndy_hi - self%x_sponge
+
+  do iv=1,self%nv
+    do k=m3%lb,m3%ub
+      z = m3%p + m3%r(k)
+      do j=m2%lb,m2%ub
+        do i=m1%lb,m1%ub
+          x = m1%p + m1%r(i)
+
+          d = d0 * exp(-(planet%omega(3)**2 * 0.5 * (z**2 + 2.0 * planet%trap * (x - planet%position(1))**2) / T0))
+          p = p0*(d/d0)
+          if (iv == self%i_d) then
+            asymptote = d
+          else if (iv == self%i_py) then
+            asymptote = -d * ((1.5+planet%trap)*planet%omega(3)*x - planet%v_head)
+          else if (iv == self%i_e) then
+            if (self%kind(1:7)=='ramses_') then
+              py0 = -d * ((1.5+planet%trap)*planet%omega(3)*x - planet%v_head)
+              asymptote = p / (self%gamma - 1.0) + 0.5 * d * py0**2
+            else if (self%kind(1:9)=='stagger2e') then
+              asymptote = p / (self%gamma - 1.0)
+            else if (self%kind(1:9)=='stagger2_') then
+              asymptote = d * (log(p) - self%gamma * log(d)) / (self%gamma - 1.0)
+            else if (self%kind(1:6)=='zeus3d') then
+              asymptote = p / (self%gamma - 1.0)
+            end if
+          else if (iv == self%i_px) then
+            asymptote = px0
+          else if (iv == self%i_pz) then
+            asymptote = pz0
+          end if
+
+          ! apply damping procedure to each variable.
+          if (self%boundaries%is_set(bits%xl) .and. (x <= xkill_lo)) then
+            mem(i,j,k,iv) = mem(i,j,k,iv) + self%dtime &
+                          * self%boundaries%sponge(mem(i,j,k,iv), asymptote, tau_kill, xkill_lo, xbndy_lo, x)
+          else if (self%boundaries%is_set(bits%xu) .and. (x >= xkill_hi)) then
+            mem(i,j,k,iv) = mem(i,j,k,iv) + self%dtime &
+                          * self%boundaries%sponge(mem(i,j,k,iv), asymptote, tau_kill, xkill_hi, xbndy_hi, x)
+          else if (self%boundaries%is_set(bits%xl) .and. (i <= m1%lo)) then
+            ! reset ghost cell values; in the case of the x-velocity, make it anti-symmetric
+            ! lower x-boundary
+            if (iv == self%i_px) then
+              eye = 2*m1%lo - i + 1
+              mem(i,j,k,iv) = -mem(eye,j,k,iv)
+            else
+              mem(i,j,k,iv) = asymptote
+            end if
+          else if (self%boundaries%is_set(bits%xu) .and. (i >= m1%uo)) then
+            ! upper x-boundary
+            if (iv == self%i_px) then
+              eye = 2*m1%uo - i - 1
+              mem(i,j,k,iv) = -mem(eye,j,k,iv)
+            else
+              mem(i,j,k,iv) = asymptote
+            end if
+          end if
+        end do
+      end do
+    end do
+  end do
+
+  nullify (mem, m1, m2, m3)
+  call trace%end
+END SUBROUTINE apply_sponge_boundaries
+
+END MODULE experiment_mod

@@ -63,6 +63,7 @@ MODULE task_mod
     real(8):: sync_time=0d0
     logical:: syncing=.false.
     logical:: track=.false.
+    logical:: periodic(3)=.true.
   contains
     procedure:: init
     procedure:: dnload => void
@@ -252,10 +253,13 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   nbtime = self%time
   !$omp atomic read
   nbdtime = self%dtime
-  is_ahead_of = nbtime + nbdtime*task%grace >= task%time
+  if (self%level==task%level) then
+    is_ahead_of = nbtime + nbdtime*task%grace >= task%time
+  else
+    is_ahead_of = nbtime >= task%time
+  end if
   ! if a task is frozen (in time), then we assume it is forever ahead of other tasks
   if (self%is_set(bits%frozen)) is_ahead_of = .true.
-
   if (task%id==io%id_debug.or.io_unit%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &
     task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of
@@ -378,35 +382,51 @@ class(task_t):: self
 END SUBROUTINE load_balance
 
 !> =============================================================================
-!> Check if there is overlap, using the full size (including guard zones), since
-!> the guard zones may be used in interpolations for qualified time slices. The
-!> definition of overlap also MUST be symmetric, since it is being used to define
+!> Check if there is overlap, using the size plus an extra cell margin. The
+!> definition of overlap MUST be symmetric, since it is being used to define
 !> neighbor relations.
+!>
+!> NOTE 1: This function was in the past NOT used by e.g. list_t%init_nbors, which
+!> was instead using list_t%overlaps, based on the same criterion as below.
+!>
+!> NOTE 2: Since overlap and nbors can have a generalized definition it makes
+!> sense that is valid for the whole task_t class.  If needed, the definition
+!> can be overloaded with alternative definitions for particular tasks.
 !> =============================================================================
 FUNCTION overlaps (self, task)
   class(task_t):: self
   class(task_t):: task
   logical:: overlaps
   !.............................................................................
-  overlaps = all(abs(distance(self,task)) <= 0.5000000001_8*(self%gsize+task%gsize))
+  call trace%begin ('task_t%overlaps',2)
+  overlaps = all(abs(distance(self,task)) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
+  call trace%end
 END FUNCTION overlaps
 
 !> =============================================================================
-!> Signed distance between the centers of two tasks in the periodic box
+!> Signed distance between the centers of two tasks in a possibly periodic box
+!>
+!> NOTE: This function is normally NOT used (but remains so it can be overloaded
+!> or explicitly called), since it is overloaded by the patch_t%distance, which
+!> is patch geometry aware.
 !> =============================================================================
 FUNCTION distance (self, task) RESULT (out)
   class(task_t):: self
   class(task_t):: task
   real(8):: out(3)
   !.............................................................................
+  call trace%begin ('task_t%distance',2)
   out = self%position-task%position
   ! account for periodic wrapping
-  out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
+  where (self%periodic)
+    out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
+  end where
   if (io%verbose>1 .and. (task%id==io%id_debug .or. self%id==io%id_debug)) then
     print *,'distance: self', self%position, self%id
     print *,'distance: task', task%position, task%id
     print *,'distance:  box', self%box
   end if
+  call trace%end
 END FUNCTION distance
 
 

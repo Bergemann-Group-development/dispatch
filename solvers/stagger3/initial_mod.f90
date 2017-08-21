@@ -57,7 +57,6 @@ SUBROUTINE conditions (self, mesh, mem)
   class(initial_t):: self
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
-  character(len=64):: solver
   !.............................................................................
   integer:: ix, iostat
   logical, save:: first_time=.true.
@@ -94,11 +93,10 @@ END SUBROUTINE conditions
 !> =============================================================================
 !> Sedov blast wave initial conditions
 !> =============================================================================
-SUBROUTINE sedov (self, mesh, mem, solver)
+SUBROUTINE sedov (self, mesh, mem)
   class(initial_t):: self
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
-  character(len=64):: solver
   !.............................................................................
   real(8), dimension(:), pointer:: rx, ry, rz
   integer:: ix, iy, iz, iostat
@@ -153,11 +151,10 @@ END SUBROUTINE sedov
 !> Map variables to the current memory slot and initialize the deriv operators.
 !> mhd_t%init is called from timestep_t%init, again called from task_list_t%init.
 !> =============================================================================
-SUBROUTINE advection (self, mesh, mem, solver)
+SUBROUTINE advection (self, mesh, mem)
   class(initial_t):: self
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
-  character(len=64):: solver
   !.............................................................................
   real(8), dimension(:), pointer:: rx, ry, rz
   integer:: ix, iy, iz, iostat

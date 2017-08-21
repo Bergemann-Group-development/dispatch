@@ -33,7 +33,7 @@ END SUBROUTINE info_b
 END MODULE
 
 !> =============================================================================
-!> Module that only knows about the basic class
+!> Module that only knows about the basic class, while the caller may know more
 !> =============================================================================
 MODULE c
 CONTAINS
@@ -48,13 +48,39 @@ END MODULE c
 !> Watch what happens in the calls to info:
 !> =============================================================================
 PROGRAM test
+  call test1
+  call test2
+END PROGRAM test
+
+!> =============================================================================
+!> Watch what happens in the calls to info:
+!> =============================================================================
+SUBROUTINE test1
 USE a
 USE b
 USE c
   type(a_t):: aa
-  type(b_t):: bb
+  type(b_t), target:: bb
+  class(a_t), pointer:: p
+  print *,'call from test1, which knows b_t'
   call aa%info
   call bb%info
+  print *,'call from test1 via c, which does not know b_t'
   call info (aa)
   call info (bb)
-END PROGRAM test
+  p => bb
+  call info (p)
+END SUBROUTINE
+
+!> =============================================================================
+!> Watch what happens in the calls to info:
+!> =============================================================================
+SUBROUTINE test2
+USE a
+USE c
+  type(a_t), target:: aa
+  class(a_t), pointer:: p
+  print *,'call from test2, which does not know b_t'
+  p => aa
+  call info (p)
+END SUBROUTINE

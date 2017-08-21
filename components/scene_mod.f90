@@ -8,7 +8,7 @@ MODULE scene_mod
   implicit none
   public
   type, public:: scene_t
-    integer:: n_repeat = 1
+    integer:: n_repeat(3) = 1
     integer:: n_patch
     integer:: n_initial = 0
     integer:: n_add = 0

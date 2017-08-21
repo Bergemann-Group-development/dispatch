@@ -43,7 +43,6 @@ MODULE patch_mod
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
     logical:: no_mans_land=.false.
-    logical:: periodic(3)=.true.
     logical, dimension(:), pointer:: unsigned  => null()
     logical, dimension(:), pointer:: pervolume => null()
     class(link_t), pointer:: link       ! this could be useful
@@ -78,6 +77,7 @@ MODULE patch_mod
     procedure:: pack                    ! pack patch into buffer
     procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
+    procedure:: overlaps                ! patch overlaps test
     procedure:: point_distances         ! distances btw two points
     procedure:: index                   ! compute the index for a single point
     procedure:: nearest                 ! the nearest index that maps to patch point
@@ -829,7 +829,7 @@ SUBROUTINE output (self, experiment_name)
     self%iout = self%iout+1
     !$omp end critical (out_cr)
     if (self%out_time==0.0) exit
-    self%out_next = (int(self%out_next/self%out_time)+1)*self%out_time
+    self%out_next = (nint(self%out_next/self%out_time)+1)*self%out_time
   end do
   call trace_end (itimer)
 END SUBROUTINE output
@@ -1125,6 +1125,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   real:: pt, qt
   real, dimension(:,:,:), pointer:: buf
   real(8):: time
+  integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
   call trace_begin('patch_mod::output_legacy')
   self%max_files = self%max_files-1
@@ -1159,8 +1160,11 @@ SUBROUTINE output_legacy (self, experiment_name)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   self%ioformat = 2
-  write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout
-  call system ('mkdir -p '//trim(filename))
+  write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout+1
+  !$omp master
+  if (iodir/=self%iout+1) call io%mkdir (trim(filename))
+  iodir=self%iout+1
+  !$omp end master
   write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
   if (io%debug(0)) then
     if (io%debug(1) .or. self%track) &
@@ -1451,6 +1455,27 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
 END SUBROUTINE info
 
 !> =============================================================================
+!> Check if there is overlap, using the size plus an extra cell margin. The
+!> definition of overlap MUST be symmetric, since it is being used to define
+!> neighbor relations.  This function overloads task_t%overlaps, in order to
+!> force use of the patch_t%distance function.
+!> =============================================================================
+FUNCTION overlaps (self, task)
+  class(patch_t):: self
+  class(task_t):: task
+  logical:: overlaps
+  !.............................................................................
+  call trace%begin ('patch_t%overlaps',2)
+  select type (task)
+  class is (patch_t)
+    overlaps = all(abs(self%distance(task)) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
+  class default
+    overlaps = self%task_t%overlaps(task)
+  end select
+  call trace%end
+END FUNCTION overlaps
+
+!> =============================================================================
 !> Signed distance between the centers of two tasks in the periodic box
 !> This version is adjusted to account for curvilinear coords. (the position of
 !> a curvilinear patch is set to the coordinate *origin) and requires components
@@ -1461,6 +1486,7 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
   class(task_t):: task
   real(8):: out(3)
   !.............................................................................
+  call trace%begin ('patch_t%distance_curvilinear',2)
   select type (task)
   class is (patch_t)
     out = self%centre_nat-task%centre_nat
@@ -1468,12 +1494,15 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
     out = self%position-task%position
   end select
   ! account for periodic wrapping
-  out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
+  where (self%periodic)
+    out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
+  end where
   if (io%verbose>1 .and. (task%id==io%id_debug .or. self%id==io%id_debug)) then
     print 1,'distance: self', self%id, self%position, self%size, self%box
     print 1,'distance: task', task%id, task%position, task%size, task%box, out
     1 format(a,i5,4(3x,3f10.2))
   end if
+  call trace%end
 END FUNCTION distance_curvilinear
 
 !> =============================================================================

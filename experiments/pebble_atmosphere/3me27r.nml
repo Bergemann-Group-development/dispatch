@@ -1,11 +1,13 @@
-&experiment_params /
+&experiment_params
+ x_sponge=500.0
+/
 &initial_params /
 &force_params   /
 
 &timer_params sec_per_report=15 /
 &io_params
  do_trace=f
- verbose=0
+ verbose=1
  do_debug=f
  do_output=t
  do_legacy=t
@@ -15,11 +17,11 @@
  n_levels=4                         ! # of refinement levels in for the rubiks cube
  n_patch=3                          ! # of patches per direction
  m_zoom=3                           ! zoom-in level per direction
- n_repeat=7                         ! how many times rubiks cube is repeated along the orbit
+ n_repeat=3,7,1                     ! how many times rubiks cube is repeated along the orbit
 /
 
 &eos_params                         ! For ideal gas EOS
-gamma=1.4
+ gamma=1.4
 /
 &pebble_params
  do_pebbles=f                       ! pebbles are on/off
@@ -63,11 +65,11 @@ gamma=1.4
 &out_params
  !inputdir='data/3me27r'
  !end_time=12000 out_time=500            !initial run
- end_time=12000 out_time=500 restart=5   !restart
- print_time=0.01
+ end_time=10000 out_time=100 restart=-1   !restart
+ print_time=5.0
  guard_zones=t
  time_derivs=f
- max_files=90000
+ max_files=100000
 /
 &mhd_params
  gamma=1.4
