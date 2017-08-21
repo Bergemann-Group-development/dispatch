@@ -87,22 +87,10 @@ MODULE task_mod
     procedure:: distance                ! return the distance btw two patches
     procedure:: pack
     procedure:: unpack
-    procedure:: debug
   end type
 
   integer, save:: id=0
 CONTAINS
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE debug (self, label, it)
-  class(task_t):: self
-  character(len=*):: label
-  integer, optional:: it
-  !.............................................................................
-  if (self%id==io%id_debug) &
-    print *, self%id, 'XX time, mem:', self%time, trim(label)//' (in task_mod)'
-END SUBROUTINE debug
 
 !> =============================================================================
 SUBROUTINE void (self)

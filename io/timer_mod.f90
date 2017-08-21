@@ -193,14 +193,16 @@ SUBROUTINE print ()
     timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
     print *, timer%bytes_recv/1024.**2,sec, timer%bytes_recv/1024.**2,n_recv, &
       timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
-    print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
-      timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
-    3 format(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
-      " nq_recv_max",2f8.3," max, aver latency",i8, " n_test")
-    timer%latency%max  = 0.0
-    timer%latency%aver = 0d0
-    timer%latency%n    = 0
-    timer%n_test = 0_8
+    if (mpi%size>1) then
+      print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
+        timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
+      3 format(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
+        " nq_recv_max",2f8.3," max, aver latency",i8, " n_test")
+      timer%latency%max  = 0.0
+      timer%latency%aver = 0d0
+      timer%latency%n    = 0
+      timer%n_test = 0_8
+    end if
   end if
   if (omp%master .and. io_unit%verbose>0) then
     write (io_unit%mpi,2) "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
