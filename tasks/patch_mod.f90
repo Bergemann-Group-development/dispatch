@@ -78,7 +78,6 @@ MODULE patch_mod
     procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
     procedure:: overlaps                ! patch overlaps test
-    procedure:: point_distances         ! distances btw two points
     procedure:: index                   ! compute the index for a single point
     procedure:: nearest                 ! the nearest index that maps to patch point
     procedure:: lowest                  ! the lowest index that maps to patch point
@@ -630,17 +629,6 @@ FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
   out = intermezzo
 
 END FUNCTION myfloatindex_scalar
-
-!> =============================================================================
-!> Max absolute distance between two points in a periodic box
-!> Assumes input is Cartesian.
-!> =============================================================================
-FUNCTION point_distances (self, p1, p2) RESULT (out)
-  class(patch_t):: self
-  real(8):: p1(3), p2(3), out(3)
-  !.............................................................................
-  out = abs(modulo(p1-p2+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box)
-END FUNCTION point_distances
 
 !> =============================================================================
 !> Periodic mapping of a grid -- typically the root grid

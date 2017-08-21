@@ -939,13 +939,14 @@ FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
 END FUNCTION
 
 !> =============================================================================
+!> Decide if a point is inside the patch
 !> =============================================================================
-FUNCTION inside_r4 (self, p) RESULT (out)
+FUNCTION inside_r4 (self, p)
   class(pebble_patch_t):: self
   real, intent(in):: p(3)
-  logical:: out
+  logical:: inside_r4
   !-----------------------------------------------------------------------------
-  out = all(abs(self%point_distances(real(p,kind=8),self%position)) < 0.5*self%size)
+  inside_r4 = all(abs(p-self%position) < 0.5*self%size)
 END FUNCTION
 
 !> =============================================================================
