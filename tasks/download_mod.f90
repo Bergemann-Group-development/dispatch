@@ -280,18 +280,28 @@ SUBROUTINE different (target, source, all_cells)
   logical, optional:: all_cells
   !.............................................................................
   integer                 :: ix, iy, iz, iv, jt(2)
-  integer, dimension(3)   :: l, u, ii, lb, ub
-  real(8), dimension(3)   :: pos
+  integer, dimension(3)   :: l, u, ii, li
+  real(8), dimension(3)   :: pos, h
   logical                 :: valid
   integer, save           :: itimer=0
   real                    :: pt(2)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different', itimer=itimer)
-  lb = target%mesh%lb
-  ub = target%mesh%ub
   call source%time_interval (target%time, jt, pt)
   do iv=1,target%nv
     call dnload_range (target, source, iv, l, u)
+    !---------------------------------------------------------------------------
+    ! For no-no-mans-land meshes, use guard zone values for the li index, to 
+    ! make fluxes up/down symmetric
+    !---------------------------------------------------------------------------
+    li = target%mesh%li
+    if (.not.target%no_mans_land) then
+      h = target%index_stagger(iv)
+      where (h /= 0.0) 
+        li = target%mesh%li + 1
+      end where
+      if (target%id==io%id_debug) print '(a,i3,3(2x,3i4))', 'XX: iv,li', iv,li,l,u
+    end if
     if (target%id==io%id_debug) &
       print 1, source%id, (source%position-target%position)/target%size, l, u
       1 format("DBG download_t%different:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
@@ -300,7 +310,7 @@ SUBROUTINE different (target, source, all_cells)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
           if (present(all_cells) .or. &
-              any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0)) then
+              any((ii-li) < 0 .or. (ii-target%mesh%ui) > 0)) then
             if (source%pervolume(iv)) then
               call source%interpolate_specific (target, ii, iv, jt, pt)
             else
