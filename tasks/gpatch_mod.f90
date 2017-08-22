@@ -74,7 +74,7 @@ SUBROUTINE dnload (self)
   if (self%use_data_hub) then
     call self%data_hub%update (self%link)
   else
-    call download%download_link (self%link, all_cells=.false.)
+    call download%download_link (self%link)
   end if
   
 END SUBROUTINE
