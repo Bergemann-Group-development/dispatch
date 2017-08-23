@@ -2209,7 +2209,8 @@ SUBROUTINE index_space2 (self, nbor, pos, iv, ii, p)
     mn => nbor%mesh(i)
     pp = mn%p - m%p                                                     ! relative position
     pp = pp + pos(i) + m%h(iv)*(mn%d-m%d)                               ! position in the local frame
-    pp = modulo(pp+0.5_8*m%b,m%b)-0.5_8*m%b                             ! wrap
+    if (self%periodic(i)) &
+      pp = modulo(pp+0.5_8*m%b,m%b)-0.5_8*m%b                           ! wrap
     pp = pp/m%d + m%o                                                   ! float index
     !pp = round(pp,rnd)
     !pp = pp + eps                                                      ! ensure same points ok
@@ -2245,7 +2246,8 @@ FUNCTION index_only2 (self, nbor, pos, iv, roundup, closest) RESULT (ii)
     mn => nbor%mesh(i)
     p(i) = mn%p - m%p                                                   ! relative position
     p(i) = p(i) + pos(i) + m%h(iv)*(mn%d-m%d)                           ! position in the local frame
-    p(i) = modulo(p(i)+0.5_8*m%b,m%b)-0.5_8*m%b                         ! wrap
+    if (self%periodic(i)) &
+      p(i) = modulo(p(i)+0.5_8*m%b,m%b)-0.5_8*m%b                       ! wrap
     p(i) = p(i)/m%d+m%o                                                 ! float index
     !p(i) = round(p(i),m%rnd)
     if (present(roundup)) then
