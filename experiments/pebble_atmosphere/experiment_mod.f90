@@ -106,6 +106,24 @@ SUBROUTINE init (self)
   call self%boundary_conditions (self%it)
   call self%debug ('end init')
   !----------------------------------------------------------------------------
+  ! Choose interpolation types. The smallest initial glitch (positive) is with 
+  !
+  ! self%unsigned(self%i_d) = .true.
+  ! self%pervolume(self%i_s) = .false.
+  !
+  ! All other combinations give a stronger negative initial glitch in p1 at
+  ! mesh%li. Both types of glitches come from the different precision in the
+  ! initial hydrostatic state, and go away with time. The glitch is visible
+  ! in u1 at index li when the pressure on one side comes from lower resolution.
+  !
+  ! Note that the current default in stagger2/mhd_mod.f90 is
+  !
+  ! self%unsigned(self%i_d) = .true.
+  ! self%pervolume(self%i_s) = .true.
+  !----------------------------------------------------------------------------
+  self%unsigned(self%i_d) = .true.
+  self%pervolume(self%i_s) = .false.
+  !----------------------------------------------------------------------------
   ! Export the patch ids for debugging purposes
   !----------------------------------------------------------------------------
   self%force%id = self%id
