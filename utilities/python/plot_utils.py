@@ -106,12 +106,16 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
         xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
         ylim=[min(ylim[0],e[2]),max(ylim[1],e[3])]
     if extent<>None:
-        xlim=extent[2:4]
-        ylim=extent[0:2]
+        xlim=extent[0:2]
+        ylim=extent[2:4]
         def overlaps(p):
-            return p.extent[2][0] > xlim[0] or p.extent[2][1] < xlim[1] \
-               and p.extent[2][2] > ylim[0] or p.extent[2][3] < ylim[1] 
+            does = ((p.extent[0][0] > xlim[0] and p.extent[0][0] < xlim[1]) \
+                 or (p.extent[0][1] > xlim[0] and p.extent[0][1] < xlim[1])) \
+               and ((p.extent[0][2] > ylim[0] and p.extent[0][2] < ylim[1]) \
+                 or (p.extent[0][3] > ylim[0] and p.extent[0][3] < ylim[1]))
+            return does
         select=[p for p in select if overlaps(p)]
+        if verbose: print np.size(select),'patches remain' 
     if vlim<>None:
         vmin=vlim[0]
         vmax=vlim[1]
@@ -166,14 +170,18 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
         e=p.extent[0]
         ylim=[min(ylim[0],e[0]),max(ylim[1],e[1])]
         zlim=[min(zlim[0],e[2]),max(zlim[1],e[3])]
-    if extent<>None:
+    if extent:
         ylim=extent[0:2]
         zlim=extent[2:4]
         def overlaps(p):
-            return p.extent[0][0] > ylim[0] or p.extent[0][1] < ylim[1] \
-               and p.extent[0][2] > zlim[0] or p.extent[0][3] < zlim[1] 
+            does = ((p.extent[0][0] > ylim[0] and p.extent[0][0] < ylim[1]) \
+                 or (p.extent[0][1] > ylim[0] and p.extent[0][1] < ylim[1])) \
+               and ((p.extent[0][2] > zlim[0] and p.extent[0][2] < zlim[1]) \
+                 or (p.extent[0][3] > zlim[0] and p.extent[0][3] < zlim[1]))
+            return does
         pp=[p for p in pp if overlaps(p)]
-    if vlim<>None:
+        if verbose: print np.size(pp),'patches remain' 
+    if vlim:
         vmin=vlim[0]
         vmax=vlim[1]
     else:
