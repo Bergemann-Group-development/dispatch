@@ -1149,7 +1149,11 @@ SUBROUTINE output_legacy (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
-  self%ioformat = 2
+  if (self%no_mans_land) then
+    self%ioformat = 1
+  else
+    self%ioformat = 2
+  end if
   write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout+1
   !$omp master
   if (iodir/=self%iout+1) call io%mkdir (trim(filename))
@@ -1181,33 +1185,28 @@ SUBROUTINE output_legacy (self, experiment_name)
       allocate (buf(n(1),n(2),n(3)))
       !-------------------------------------------------------------------------
       ! If we write out time derivatives we want a pair of consistent values
-      ! and time derivatives, which we have at iit(nt-2).
+      ! and time derivatives, which we have at iit(nt-2); time will select that.
       !-------------------------------------------------------------------------
       it1 = self%iit(self%nt-2)
-        if (io%out_time == 0.0) then
-          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
-        !-------------------------------------------------------------------------
-        ! Normally, we write out only variable values, which can then be interpolated
-        ! to the exact output time, self%out_next, the update of which must come
-        ! after this point
-        !-------------------------------------------------------------------------
-        else if (io%time_derivs) then
-          it = it1
-          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
-          call check_error(self, buf, "output 1")
-        else
-          it2 = self%iit(self%nt-1)
-          it = it2
-          pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1d-30)
-          if (self%t(it2)==self%t(it1)) pt=0.0
-          qt = 1.0-pt
-          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
-              + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
-        end if
+      it2 = self%iit(self%nt-1)
+      if (io%out_time == 0.0) then
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
+      !-------------------------------------------------------------------------
+      ! Normally, we write out only variable values, which can then be interpolated
+      ! to the exact output time, self%out_next, the update of which must come
+      ! after this point
+      !-------------------------------------------------------------------------
+      else
+        pt = (time-self%t(it1))/max(self%t(it2)-self%t(it1),1d-30)
+        if (self%t(it2)==self%t(it1)) pt=0.0
+        qt = 1.0-pt
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
+            + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
+      end if
       call check_error(self, buf, "output 2")
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
-          trim(filename),iv,it,jo,minval(buf),maxval(buf),pt
+          trim(filename),iv,it1,jo,minval(buf),maxval(buf),pt
       write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
       if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
