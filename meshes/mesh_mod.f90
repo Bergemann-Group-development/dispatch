@@ -355,9 +355,8 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   do i=1,self%gn
     self%r(i) = real(i - h - self%ng,kind=8) * self%d + self%llc_nat - self%centre_nat
   end do
-  self%lf = self%r(self%li)
-  self%uf = self%r(self%ui)
-
+  self%lf = -self%s*0.5_8
+  self%uf = +self%s*0.5_8
   call trace_end
 END SUBROUTINE init_mesh
 
