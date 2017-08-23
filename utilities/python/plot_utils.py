@@ -98,7 +98,9 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
         p.stripit()
         p.vars()
         p.f=p.var[var]
-        p.f=interpolate(p,z,p.z[0],p.dx[2],p.n[2],p.f)
+        pz=p.z
+        if var=='u3' or var=='p3': pz=p.zs
+        p.f=interpolate(p,z,pz[0],p.ds[2],p.n[2],p.f)
         p.f,e=du.rotate(p.f,p.extent[2])
         p.extent[2]=e
         xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
@@ -158,7 +160,9 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
         p.vars()
         p.f=p.var[var]
         ng=p.nghost[0]
-        p.f=interpolate(p,x,p.x[ng],p.dx[0],p.n[0],p.f)
+        px=p.x
+        if var=='u1' or var=='p1': px=p.xs
+        p.f=interpolate(p,x,px[0],p.dx[0],p.n[0],p.f)
         e=p.extent[0]
         ylim=[min(ylim[0],e[0]),max(ylim[1],e[1])]
         zlim=[min(zlim[0],e[2]),max(zlim[1],e[3])]
