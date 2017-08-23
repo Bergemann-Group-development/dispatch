@@ -110,9 +110,9 @@ class Patch(Task):
                 self.b1 = self.stripv (self.b1)
                 self.b2 = self.stripv (self.b2)
                 self.b3 = self.stripv (self.b3)
-        l=self.nghost[0]; u=l+self.n[0]; self.x = self.x[l:u]
-        l=self.nghost[1]; u=l+self.n[1]; self.y = self.y[l:u]
-        l=self.nghost[2]; u=l+self.n[2]; self.z = self.z[l:u]
+        l=self.nghost[0]; u=l+self.n[0]; self.x = self.x[l:u]; self.xs = self.xs[l:u]
+        l=self.nghost[1]; u=l+self.n[1]; self.y = self.y[l:u]; self.ys = self.ys[l:u]
+        l=self.nghost[2]; u=l+self.n[2]; self.z = self.z[l:u]; self.zs = self.zs[l:u]
 
     def cache(self):
         if self.kind[0:9]=='rt_solver':
