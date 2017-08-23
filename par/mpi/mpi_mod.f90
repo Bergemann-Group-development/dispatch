@@ -71,6 +71,7 @@ CONTAINS
 SUBROUTINE init (self, mpi_dims, dims)
   class(mpi_t):: self
   integer, optional, dimension(3):: mpi_dims, dims
+  real(8):: offset
   !.............................................................................
   if (self%ok) return
   if (first_time) then
@@ -80,6 +81,9 @@ SUBROUTINE init (self, mpi_dims, dims)
     if (mpi_rank==0) call detect_cores
 #ifdef MPI
     call MPI_Bcast (omp%ncores, 1, MPI_INTEGER, 0, mpi_comm_world, mpi_err)
+    call omp_timer%get (offset)
+    call MPI_Bcast (offset, 1, MPI_REAL8, 0, mpi_comm_world, mpi_err)
+    call omp_timer%set (offset)
 #endif
   end if
 #ifdef MPI
