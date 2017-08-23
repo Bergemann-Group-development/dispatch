@@ -882,7 +882,11 @@ SUBROUTINE output_direct (self)
   ! Pass a chunk to the procedure that eventually writes a binary file
   !-----------------------------------------------------------------------------
   l = self%mesh%li
-  u = self%mesh%ui-1
+  if (self%no_mans_land) then
+    u = self%mesh%ui
+  else
+    u = self%mesh%ui-1
+  end if
   n = u-l+1
   allocate (buf(n(1),n(2),n(3),self%nv))
   call self%time_interval (self%out_next, jt, pt)
@@ -1409,13 +1413,13 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       ! Print a one-liner if verbose==1 and id==1, or verbose>1, while
       ! accumulating counters also when not printing
       !-------------------------------------------------------------------------
-      if (io%verbose>0 .or. self%id==2) then
+      if (io%verbose>0 .or. self%track) then
         if (io%master) &
           counts = counts + &
             [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
              mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
              mpi_mesg%n_delay]
-        if (io%master .or. self%id==2) then
+        if (io%master .or. self%track) then
           if (n_lines<=0) then
             !$omp critical (info_cr2)
             print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
