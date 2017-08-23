@@ -2,6 +2,7 @@
 VPATH := $(VPATH):$(TOP)/lists
 
 # Dependencies
+dispatcher_mod.o  : omp_mod.o timer_mod.o io_mod.o io_unit_mod.o trace_mod.o link_mod.o list_mod.o task_list_mod.o mpi_mesg_mod.o
 load_balance_mod.o: io_mod.o trace_mod.o mpi_mesg_mod.o omp_timer_mod.o patch_mod.o random_mod.o
 link_mod.o        : io_mod.o trace_mod.o task_mod.o mpi_mesg_mod.o
 list_mod.o        : io_mod.o trace_mod.o task_mod.o patch_mod.o link_mod.o omp_lock_mod.o experiment_mod.o \

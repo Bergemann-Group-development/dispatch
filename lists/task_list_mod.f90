@@ -36,11 +36,14 @@ MODULE task_list_mod
   type, public, extends(list_t):: task_list_t
     logical:: syncing=.false.
     real(8):: sync_time=-1.0, sync_next=-1.0
+    real(8):: job_seconds=1d30
   contains
     procedure:: init
     procedure:: init_bdries
+    procedure:: startup
     procedure:: execute
     procedure:: update
+    procedure:: updater
     procedure:: find_task
     procedure:: unpack
     procedure:: check_mpi
@@ -59,9 +62,7 @@ MODULE task_list_mod
   logical, save:: do_delay=.false.
   logical, save:: recv_active=.true.
   logical, save:: queue_unpack=.true.
-  real(8), save:: wc_start=0d0
   real(8), save:: sync_time=0.0
-  real(8), save:: job_seconds=1d30
   type(task_list_t), save:: virtual_list
   !$omp threadprivate (virtual_list)
 CONTAINS
@@ -76,6 +77,7 @@ SUBROUTINE init (self, name)
   class(link_t), pointer:: link
   integer:: iostat
   integer:: debug=0
+  real(8):: job_seconds=1d30
   namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, &
     do_delay, recv_active, queue_unpack, sync_time, job_seconds
   !-----------------------------------------------------------------------------
@@ -92,6 +94,7 @@ SUBROUTINE init (self, name)
   if (sync_time > 0.0) &
     self%sync_next = sync_time
   self%sync_time = sync_time
+  self%job_seconds = job_seconds
   write (io_unit%mpi,*) 'task_list%init: next_sync =', self%sync_next, self%sync_time
   call load_balance%init
   call download%init
@@ -165,7 +168,7 @@ END SUBROUTINE init_bdries
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,
 !> everything local to self%update is thread private.
 !> =============================================================================
-SUBROUTINE execute (self)
+SUBROUTINE startup (self)
   USE omp_timer_mod
   class(task_list_t):: self
   class(link_t), pointer:: link, rem
@@ -196,7 +199,6 @@ SUBROUTINE execute (self)
   if (mpi%master) &
     print '(a,f8.3,a)', ' Memory per process:', timer%gb, ' GB'
   call mpi%barrier ('task_list%execute')
-  wc_start = wallclock()
   call tic (time=sec)
   call timer%print
   self%n_tasks = self%na
@@ -205,16 +207,36 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   if (io%do_direct) then
     patch => task2patch(self%head%task)
-    dims(1:3) = self%dims*(patch%mesh%n-1)
+    if (patch%no_mans_land) then
+      dims(1:3) = self%dims*patch%mesh%n
+    else
+      dims(1:3) = self%dims*(patch%mesh%n-1)
+    end if
     dims(4) = patch%nv
     call direct_output%init (dims=dims, nbuf=self%n_tasks)
   end if
+  call trace_end
+END SUBROUTINE startup
+
+!> =============================================================================
+!> Execute the task list, updating it until it is empty.  With !$omp parallel here,
+!> everything local to self%update is thread private.
+!> =============================================================================
+SUBROUTINE execute (self)
+  USE omp_timer_mod
+  class(task_list_t):: self
+  real(8):: sec
+  integer:: dims(4)
+  !-----------------------------------------------------------------------------
+  call self%startup
+  call tic (time=sec)
+  call timer%print
   !-----------------------------------------------------------------------------
   ! Loop over tasks
   !-----------------------------------------------------------------------------
   io%ntask = self%n
   !$omp parallel
-  do while (self%na > 0 .and. (wallclock()-wc_start) < job_seconds)
+  do while (self%na > 0 .and. wallclock() < self%job_seconds)
     call self%update
     if (self%na == self%n_tasks) then
       !$omp atomic
@@ -328,30 +350,12 @@ SUBROUTINE update (self)
       !write (io_unit%log,*) mpi%rank,' WARNING: thread',omp%thread, &
       !  ' tried to update busy task', task%id
       print *, mpi%rank,' WARNING: thread',omp%thread, &
-        ' tried to update busy task', id
+        ' tried to update busy task', task%id
       !!$omp end critical (io_cr)
       call trace_end
       return
     end if
-    !---------------------------------------------------------------------------
-    ! If the task is frozen (e.g. because it has finished), return
-    !---------------------------------------------------------------------------
-    if (task%is_set (bits%frozen+bits%virtual)) then
-      if (task%iout == 0) call task%output(self%name)
-      ! if a frozen task is set to ready, make it not ready
-      if (task%is_set(bits%ready)) then
-        !$omp atomic
-        self%na = self%na - 1
-      end if
-      call trace_end
-      return
-    end if
-    !----------------------------------------------------------------------------
-    ! Download nbor info -- this may be an experiment_t procedure, but if not,
-    ! the call should be answered by a solver-specific procedure (which may or
-    ! may not choose to call the generic patch guard zone handler in tasks/)
-    !----------------------------------------------------------------------------
-    call task%dnload                                    ! download nbor info
+    call self%updater (head)
     !----------------------------------------------------------------------------
     ! Periodic task syncronization:  The first time a task%time is exactly equal
     ! to load_balance%sync_next, we wait for all ranks to arrive at the same
@@ -361,84 +365,23 @@ SUBROUTINE update (self)
     if (self%syncing) then
       write (io_unit%mpi,*) task%id,omp%thread, &
         ' is waiting on a sync at t =', self%sync_next
-      call trace%end; call trace%begin ('mpi%barrier', itimer=itimer)
+      !call trace%end; call trace%begin ('mpi%barrier', itimer=itimer)
       call mpi%barrier ('sync')
-      call trace%end (itimer); call trace%begin('task_list_t%update')
+      !call trace%end (itimer); call trace%begin('task_list_t%update')
       write (io_unit%mpi,*) task%id,omp%thread, &
         ' finished wating on a sync at t =', self%sync_next
       self%sync_next = self%sync_next + self%sync_time
       self%syncing = .false.
     end if
     task%sync_time = self%sync_next
-    !----------------------------------------------------------------------------
-    ! Update the task, whatever that means (may include call to task%output)
-    !----------------------------------------------------------------------------
-    wc = wallclock()
-    call task%update                                    ! update the task
-    !----------------------------------------------------------------------------
-    ! Default delay time = first update time
-    !----------------------------------------------------------------------------
-    if (mpi_mesg%delay_ms==0.0) then
-      !$omp atomic write
-      mpi_mesg%delay_ms = 1d3*(wallclock()-wc)
-    end if
-    !$omp atomic
-    mpi_mesg%n_update = mpi_mesg%n_update+1
-    if (io%verbose>1) &
-      write (io_unit%log,'(a,i4,2x,a,i7,2x,a,2x,a,i7,2x,a,1p,2g14.6,2x,a,2i5,l3)') &
-      'thread', omp_mythread, 'task', task%id, trim(task%type), &
-      'step', task%istep, 'dt, time:', task%dtime, task%time, &
-      'n, nq', self%n, self%nq, associated(head%nbor)
-    !----------------------------------------------------------------------------
-    ! The rotate procedure in the generic patch_t module is responsible for
-    ! updating the time, and rotating the memory slots where information about
-    ! previous time steps are saved.
-    !----------------------------------------------------------------------------
-    call task%rotate
-    select type (task)
-    class is (patch_t)
-      !$omp atomic
-      n_update = n_update + product(task%n)
-    end select
-    call task%info (self%nq, self%na)                   ! print info on stdout
-    !-----------------------------------------------------------------------------
-    ! Tasks that have finished are subtracted from the task list count but are
-    ! not removed, since their data may be needed by other tasks (including on
-    ! other ranks).  They are, however, not added back onto the ready queue.
-    !-----------------------------------------------------------------------------
-    if (task%has_finished()) then  ! finished:
-      call load_balance%active (.false.)                ! turn off load balancing
-      !$omp atomic
-      self%na = self%na-1
-    end if
-    !-----------------------------------------------------------------------------
-    ! If the task is a boundary patch, first check if it should be given to
-    ! another rank.  A patch that has been given to another rank becomes
-    ! a virtual patch, and the load balance procedure has already sent those
-    ! of its nbors that became new boundary patches over to relevant ranks,
-    ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
-    !-----------------------------------------------------------------------------
-    if (task%is_set(bits%boundary)) then                ! boundary patch?
-      head%task%nq = self%nq                            ! make sure to pass on
-      if (load_balance%check_load (head)) then          ! sell?
-        !$omp atomic
-         self%na = self%na-1
-        !$omp atomic
-         self%nb = self%nb-1
-        !$omp atomic
-         self%nv = self%nv-1
-         call self%count_status                         ! redundant? (FIXME)
-      end if
-      call head%send_to_vnbors                          ! send to virtual nbors
-    end if
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the
     ! queue, and its neighbors should also be checked for return to the queue.
     ! If the task was turned into a virtual task by the load balance, its virtual
     ! bit will prevent it being checked, but its nbors still need to be checked
     !-----------------------------------------------------------------------------
-    call task%clear (bits%busy)                         ! clear busy bit
-    call task%clear (bits%ready)                        ! needs new check
+    call task%clear (bits%busy)                         ! clear busy bit (FIXME: check this!)
+    call task%clear (bits%ready)                        ! needs new check (FIXME: check this!)
     call self%check_nbors (head)                        ! any nbors ready?
     !$omp atomic write
     stalled = 0
@@ -465,13 +408,102 @@ SUBROUTINE update (self)
     end if
     !$omp end critical (delay_cr)
   end if
-  if (self%syncing) then
-    call mpi_mesg%delay (0)
-    call trace%end
-    return
-  end if
   call trace_end
 END SUBROUTINE update
+
+SUBROUTINE updater (self, head)
+  implicit none
+  class(task_list_t):: self
+  class(link_t), pointer:: head
+  class(task_t), pointer:: task
+  real(8):: wc
+  !---------------------------------------------------------------------------
+  ! If the task is frozen (e.g. because it has finished), return
+  !---------------------------------------------------------------------------
+  task => head%task
+  if (task%is_set (bits%frozen+bits%virtual)) then
+    if (task%iout == 0) call task%output(self%name)
+    ! if a frozen task is set to ready, make it not ready
+    if (task%is_set(bits%ready)) then
+      !$omp atomic
+      self%na = self%na - 1
+    end if
+    call trace_end
+    return
+  end if
+  !----------------------------------------------------------------------------
+  ! Download nbor info -- this may be an experiment_t procedure, but if not,
+  ! the call should be answered by a solver-specific procedure (which may or
+  ! may not choose to call the generic patch guard zone handler in tasks/)
+  !----------------------------------------------------------------------------
+  call task%dnload                                    ! download nbor info
+  !----------------------------------------------------------------------------
+  ! Update the task, whatever that means (may include call to task%output)
+  !----------------------------------------------------------------------------
+  wc = wallclock()
+  call task%update                                    ! update the task
+  !----------------------------------------------------------------------------
+  ! Default delay time = first update time
+  !----------------------------------------------------------------------------
+  if (mpi_mesg%delay_ms==0.0) then
+    !$omp atomic write
+    mpi_mesg%delay_ms = 1d3*(wallclock()-wc)
+  end if
+  !$omp atomic
+  mpi_mesg%n_update = mpi_mesg%n_update+1
+  if (io%verbose>1) &
+    write (io_unit%log,'(a,i4,2x,a,i7,2x,a,2x,a,i7,2x,a,1p,2g14.6,2x,a,2i5,l3)') &
+    'thread', omp_mythread, 'task', task%id, trim(task%type), &
+    'step', task%istep, 'dt, time:', task%dtime, task%time, &
+    'n, nq', self%n, self%nq, associated(head%nbor)
+  !----------------------------------------------------------------------------
+  ! The rotate procedure in the generic patch_t module is responsible for
+  ! updating the time, and rotating the memory slots where information about
+  ! previous time steps are saved.
+  !----------------------------------------------------------------------------
+  call task%rotate
+  select type (task)
+  class is (patch_t)
+    !$omp atomic
+    n_update = n_update + product(task%n)
+  end select
+  call task%info (self%nq, self%na)                   ! print info on stdout
+  !-----------------------------------------------------------------------------
+  ! Check if refinement is needed on the task; if so this will push new tasks
+  ! onto the queue, with the same task time.
+  !-----------------------------------------------------------------------------
+  if (refine%needed(task)) call self%split(head)
+  !-----------------------------------------------------------------------------
+  ! Tasks that have finished are subtracted from the task list count but are
+  ! not removed, since their data may be needed by other tasks (including on
+  ! other ranks).  They are, however, not added back onto the ready queue.
+  !-----------------------------------------------------------------------------
+  if (task%has_finished()) then  ! finished:
+    call load_balance%active (.false.)                ! turn off load balancing
+    !$omp atomic
+    self%na = self%na-1
+  end if
+  !-----------------------------------------------------------------------------
+  ! If the task is a boundary patch, first check if it should be given to
+  ! another rank.  A patch that has been given to another rank becomes
+  ! a virtual patch, and the load balance procedure has already sent those
+  ! of its nbors that became new boundary patches over to relevant ranks,
+  ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
+  !-----------------------------------------------------------------------------
+  if (task%is_set(bits%boundary)) then                ! boundary patch?
+    head%task%nq = self%nq                            ! make sure to pass on
+    if (load_balance%check_load (head)) then          ! sell?
+      !$omp atomic
+       self%na = self%na-1
+      !$omp atomic
+       self%nb = self%nb-1
+      !$omp atomic
+       self%nv = self%nv-1
+       call self%count_status                         ! redundant? (FIXME)
+    end if
+    call head%send_to_vnbors                          ! send to virtual nbors
+  end if
+END SUBROUTINE updater
 
 !> =============================================================================
 !> Find the link with a specified task id.  If there isn't any, create one!
