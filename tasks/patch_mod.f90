@@ -1116,6 +1116,12 @@ SUBROUTINE output_legacy (self, experiment_name)
   integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
   call trace_begin('patch_mod::output_legacy')
+  !-----------------------------------------------------------------------------
+  ! Check number of patches written and issue a message when all done
+  !-----------------------------------------------------------------------------
+  if (io%nwrite<=0) then
+    io%nwrite = io%ntask
+  end if
   self%max_files = self%max_files-1
   if (self%max_files <= 0) then
     write (io_unit%log,*) 'TOO MANY FILES'
@@ -1154,10 +1160,8 @@ SUBROUTINE output_legacy (self, experiment_name)
   iodir = self%iout+1
   !$omp end master
   write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
-  if (io%debug(0)) then
-    if (io%debug(1) .or. self%track) &
-      print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
-  end if
+  if (io%debug(1)) &
+    print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   write (io%data_unit,'(i2.2)') self%ioformat
   write (io%data_unit,'(a)') trim(self%kind)
@@ -1214,6 +1218,9 @@ SUBROUTINE output_legacy (self, experiment_name)
     end do
   end do
   close (io%data_unit)
+  io%nwrite = io%nwrite-1
+  if (io%debug(0) .and. io%nwrite==0) &
+    print '(a,i5.5)', 'snapshot: '//trim(io%outputname),self%iout
   call trace_end
 END SUBROUTINE output_legacy
 
@@ -2238,7 +2245,7 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
                        (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1)    + &
                                   (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))
   end if
-  if (target%id==io%id_debug .and. io%verbose>1) &
+  if (target%id==io%id_debug .and. io%verbose>2) &
     print 1, target%id, ii, iv, self%id, j, jt, p, pt, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
     1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
       "   out:",1p,e15.6)
@@ -2295,7 +2302,7 @@ SUBROUTINE interpolate_specific (self, target, ii, iv, jt, pt)
     target%mem(ii(1),ii(2),ii(3),iv,target%it,1) * &
     target%mem(ii(1),ii(2),ii(3),id,target%it,1)
   end associate
-  if (target%id==io%id_debug .and. io%verbose>1) &
+  if (target%id==io%id_debug .and. io%verbose>2) &
     print 1, target%id, ii, iv, self%id, j, jt, p, pt, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
     1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate_specific src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
       "   out:",1p,e15.6)

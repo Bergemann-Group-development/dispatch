@@ -126,6 +126,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Export the patch ids for debugging purposes
   !----------------------------------------------------------------------------
+  if (self%id==2) self%track = .true.
   self%force%id = self%id
   self%initial%id = self%id
   call trace_end

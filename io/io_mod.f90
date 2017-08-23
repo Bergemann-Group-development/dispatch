@@ -17,6 +17,7 @@ MODULE io_mod
     integer:: levelmax
     integer:: word_size=4
     integer:: id_debug=0
+    integer:: nwrite=0, ntask=0
     character(len=64):: inputname, outputname, datadir='data', top, inputdir
     character(len=1):: sep = '/'
   contains
