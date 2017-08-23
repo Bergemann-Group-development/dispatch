@@ -111,7 +111,9 @@ MODULE patch_mod
     procedure:: interpolate
     procedure:: interpolate_specific
     procedure:: index_space             ! full mapping to index space
+    procedure:: index_space2
     procedure:: index_only
+    procedure:: index_only2
     procedure:: count_edges
   end type
   !-----------------------------------------------------------------------------
@@ -2176,6 +2178,86 @@ FUNCTION index_only (self, pos, roundup) RESULT (ii)
     end if
   end do
 END FUNCTION index_only
+
+!> =============================================================================
+!> Return indices and fractions for 3D interpolation.  Only called from
+!> patch_mod::interpolation, where a possible issue is to ensure the correct
+!> behavior when the source and target points are essentially the same, except
+!> for roundoff.  We then want to make sure that the index becomes the same,
+!> with fraction vanishing, so there is no possible issue with extrapolations.
+!> Hence we should add a small fraction before taking the floor value, and then
+!> subtract the same.
+!> =============================================================================
+SUBROUTINE index_space2 (self, nbor, pos, iv, ii, p)
+  class(patch_t):: self
+  class(patch_t), pointer :: nbor
+  real(8)           :: pos(3)
+  integer           :: iv
+  integer           :: ii(3)
+  real              :: p(3)
+  !.....................................................................
+  class(mesh_t), pointer :: m,mn
+  integer           :: i
+  real(8)           :: pp
+  real(8), parameter:: eps=0.001_8
+  integer, save     :: itimer=0
+  real, parameter:: sml = -1.0e-5
+  !-----------------------------------------------------------------------------
+  !call trace%begin ('patch_t%index_space', itimer=itimer)
+  do i=1,3
+    m => self%mesh(i)
+    mn => nbor%mesh(i)
+    pp = mn%p - m%p                                                     ! relative position
+    pp = pp + pos(i) + m%h(iv)*(mn%d-m%d)                               ! position in the local frame
+    pp = modulo(pp+0.5_8*m%b,m%b)-0.5_8*m%b                             ! wrap
+    pp = pp/m%d + m%o                                                   ! float index
+    !pp = round(pp,rnd)
+    !pp = pp + eps                                                      ! ensure same points ok
+    ii(i)= floor(pp+eps)                                                ! integer part
+    ii(i) = max(m%lb, &
+        min(m%ub,ii(i)))                                                ! valid range
+    p(i) = pp - real(ii(i),kind=4)
+    if ((p(i)<0.0).and.(p(i)>sml)) p(i) = 0.0
+    !p(i) = round(p(i),rnd)                                              ! remaining fraction
+  end do
+  !call trace%end (itimer)
+END SUBROUTINE index_space2
+
+!> =============================================================================
+!> Return only the index in self corresponding to a point in native space
+!> =============================================================================
+FUNCTION index_only2 (self, nbor, pos, iv, roundup, closest) RESULT (ii)
+  class(patch_t)    :: self
+  class(patch_t), pointer :: nbor
+  real(8)           :: pos(3)
+  integer           :: iv
+  integer           :: ii(3)
+  logical, optional :: roundup
+  logical, optional :: closest
+  !.............................................................................
+  class(mesh_t), pointer :: m, mn
+  integer           :: i
+  real(8), parameter:: eps=0.001_8
+  real(8)           :: p(3)
+  !-----------------------------------------------------------------------------
+  do i=1,3
+    m => self%mesh(i)
+    mn => nbor%mesh(i)
+    p(i) = mn%p - m%p                                                   ! relative position
+    p(i) = p(i) + pos(i) + m%h(iv)*(mn%d-m%d)                           ! position in the local frame
+    p(i) = modulo(p(i)+0.5_8*m%b,m%b)-0.5_8*m%b                         ! wrap
+    p(i) = p(i)/m%d+m%o                                                 ! float index
+    !p(i) = round(p(i),m%rnd)
+    if (present(roundup)) then
+      ii(i) = ceiling(p(i)-eps)                                         ! round up, with epsilon substracted
+    else if (present(closest)) then
+      ii(i) = nint(p(i))
+    else
+      ii(i) = floor(p(i)+eps)                                           ! integer part with added epsilon
+    end if
+    ii(i) = max(m%lb,min(m%ub,ii(i)))                                   ! valid range
+  end do
+END FUNCTION index_only2
 
 !> =============================================================================
 !> Return only the index in self corresponding to a point in native space
