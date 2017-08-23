@@ -311,6 +311,8 @@ SUBROUTINE different (target, source, all_cells)
           ii=[ix,iy,iz]
           if (present(all_cells) .or. &
               any((ii-li) < 0 .or. (ii-target%mesh%ui) > 0)) then
+            if (target%id==io%id_debug .and. io%verbose>1) &
+              print *, target%id, 'DBG interpolate_t%different:    using', iv,ii, present(all_cells), (ii-li) < 0
             if (source%pervolume(iv)) then
               call source%interpolate_specific (target, ii, iv, jt, pt)
             else
@@ -318,7 +320,7 @@ SUBROUTINE different (target, source, all_cells)
             end if
           else
             if (target%id==io%id_debug .and. io%verbose>1) &
-              print *, target%id, 'DBG interpolate_t%different: skipping', ii
+              print *, target%id, 'DBG interpolate_t%different: skipping', iv,ii, present(all_cells), (ii-li) < 0
             cycle
           end if
         end do

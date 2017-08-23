@@ -7,7 +7,7 @@
 ! sync_time=0.5
 !/
 &io_params
- verbose=2
+ verbose=0
  do_trace=f
  omp_trace=f
  do_debug=f
@@ -16,11 +16,12 @@
  id_debug=158
 /
 &out_params
- end_time=5 out_time=0.2
+ !end_time=5 out_time=0.2
+ end_time=2000 out_time=50
  print_time=0
  guard_zones=t
  time_derivs=f
- max_files=9000
+ max_files=90000
 /
 &rubiks_params
  n_levels=4                         ! # of refinement levels in for the rubiks cube
