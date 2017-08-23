@@ -188,6 +188,8 @@ SUBROUTINE append_link (self, link)
     class is (patch_t)
     task%link => link
     end select
+  else
+    error stop 'append_link: no task associated'
   end if
   !$omp end critical (list_cr)
   call trace_end
@@ -300,16 +302,21 @@ END SUBROUTINE check_nbors
 !> Among a task and its neighbor tasks, move local tasks to ready_queue if they
 !> are ready, and send task data to non-locals.
 !> =============================================================================
-SUBROUTINE check_all (self)
+SUBROUTINE check_all (self, repair)
   class(list_t):: self
+  logical, optional:: repair
   class(link_t), pointer:: link
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_mod::check_all', itimer=itimer)
   write (io_unit%log,*) 'check_all: phase 1', self%nq, associated(self%queue)
   !$omp critical (list_cr)
+  if (present(repair)) then
+    nullify (self%queue)
+  end if
   link => self%head
   do while (associated (link))                          ! keep going until end
+    call link%task%clear (bits%ready)
     call self%check_ready (link)                        ! link ready?
     link => link%next
   end do
@@ -497,22 +504,29 @@ SUBROUTINE qconsistency (self, ident)
   !if (self%debug < 1) return
   call trace_begin ('list_mod::qconsistency',4)
   n = 0
-  link => self%queue
-  if (associated(link)) then
-    time = link%task%time
-    prev => link%task
-    link => link%next_time
-    n = n+1
+  if (io%verbose>2) then
+    link => self%head
+    do while (associated(link))
+      print *,'task list: id, time =', link%task%id, link%task%time
+      link => link%next
+    end do
+    print *,'nq:', self%nq
   end if
+  link => self%queue
+  prev => link%task
   do while (associated(link))
-    task => link%task
     n = n+1
     if (n > self%nq) exit
+    task => link%task
+    time = task%time
+    if (io%verbose>2) then
+      print *,'queue: n, id, time =', n, link%task%id, link%task%time, &
+        link%task%is_set (bits%ready), link%task%is_set (bits%busy)
+    end if
     if (task%time < time) then
       write (io_unit%log,'(a,i4,2(i9,1p,g15.6,3x))') &
         'ERROR: queue out of order ident, prev%id, time, task%id', ident, prev%id, time, task%id, task%time
     end if
-    time = task%time
     prev => task
     link => link%next_time
   end do
@@ -527,7 +541,7 @@ SUBROUTINE qconsistency (self, ident)
       link => link%next_time
       if (n > self%nq+1) exit
     end do
-    call mpi%abort ('ERROR: qconsistency size')
+    !call mpi%abort ('ERROR: qconsistency size')
   end if
   call trace_end
 END SUBROUTINE qconsistency
@@ -661,7 +675,7 @@ SUBROUTINE init_nbors (self, link)
       !-------------------------------------------------------------------------
       if (overlaps) then  ! if its task overlaps
         if (io%verbose>2) &
-          write (io%log_unit, '(3(i9,2(3f7.3,1x)),l4)') &
+          write (io_unit%log, '(3(i9,2(3f7.3,1x)),l4)') &
           scan%task%id, scan%task%position, scan%task%size, &
           link%task%id, link%task%position, link%task%size, &
           0, scan%task%distance (link%task), self%size, &
@@ -739,7 +753,7 @@ SUBROUTINE reset_status (self)
   !-----------------------------------------------------------------------------
   ! Clear virtual and boundary bits
   !-----------------------------------------------------------------------------
-  write (io%log_unit,*) 'reset_status'
+  write (io_unit%log,*) 'reset_status'
   n_internal = 0
   n_boundary = 0
   n_virtual  = 0
@@ -789,12 +803,12 @@ SUBROUTINE reset_status (self)
   self%na = n_internal+n_boundary
   self%n  = n_internal+n_boundary+n_virtual
   if (io%verbose>0) then
-    write (io%log_unit,'(4(a,i7,5x))') &
+    write (io_unit%log,'(4(a,i7,5x))') &
       'rank:',mpi%rank, &
       'n_internal:', n_internal, &
       'n_boundary:', n_boundary, &
       'n_virtual:' , n_virtual
-    flush (io%log_unit)
+    flush (io_unit%log)
   end if
   !$omp end critical (list_cr)
 END SUBROUTINE reset_status
@@ -944,12 +958,38 @@ END SUBROUTINE remove_task
 SUBROUTINE queue_by_time (self, this)
   class(list_t):: self
   class(link_t), pointer:: this
+  logical:: error
+  integer:: verbose
+  !-----------------------------------------------------------------------------
+  call real_queue_by_time (self, this, error)
+  if (error) then
+    io%do_trace = .true.
+    verbose = io%verbose
+    io%verbose = 4
+    call self%qconsistency (999)
+    call self%check_all (repair=.true.)
+    call real_queue_by_time (self, this, error)
+    if (error) then
+      print *,'ERROR: queue repair failed'
+      error stop
+    end if
+    io%verbose = verbose
+    io%do_trace = .false.
+  end if
+END SUBROUTINE queue_by_time
+
+SUBROUTINE real_queue_by_time (self, this, error)
+  class(list_t):: self
+  class(link_t), pointer:: this
+  logical:: error
   class(link_t), pointer:: next, prev
   class(task_t), pointer:: task
   integer, save:: itimer=0
+  integer:: nit
   !-----------------------------------------------------------------------------
   ! Refuse to queue virtual tasks and finished tasks
   !-----------------------------------------------------------------------------
+  error=.false.
   task => this%task
   if (task%is_set(bits%virtual) .or. task%has_finished()) return
   call trace_begin ('list_mod::queue_by_time ', itimer=itimer)
@@ -960,7 +1000,7 @@ SUBROUTINE queue_by_time (self, this)
   ! ready queue (or executing -- the bit is cleared only after updating).
   ! Double check that no other thread has set the ready bit on this task.
   !-----------------------------------------------------------------------------
-  !.omp critical (queue_cr)
+  !.... critical (queue_cr)
   if (task%is_clear (bits%ready)) then
     call task%set(bits%ready)
     if (io%verbose>1) &
@@ -969,7 +1009,15 @@ SUBROUTINE queue_by_time (self, this)
         'nq', self%nq
     nullify (prev)
     next => self%queue
+    nit = 0
     do while (associated(next))
+      nit = nit+1
+      if (nit > self%nq) then
+        print *,'ERROR: hang in queue_by_time, nit =', nit
+        error = .true.
+        call trace_end (itimer)
+        return
+      end if
       if (associated(next%task, task)) then
         write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, ' is already in ready queue'
         go to 9
@@ -1017,15 +1065,15 @@ SUBROUTINE queue_by_time (self, this)
   !-----------------------------------------------------------------------------
   else if (io%verbose > 1) then
     if (io%verbose > 2) &
-      print *,mpi%rank,' INFO: thread',omp%thread, &
+      print '(i6,a,i5,a,i6,1p,e15.6)', mpi%rank,' INFO: thread',omp%thread, &
       ' found ready bit in queue_by_time for task', task%id, task%time
     write (io_unit%log,*) wallclock(),' INFO: thread',omp%thread, &
       ' found ready bit in queue_by_time for task', task%id, task%time
     flush (io_unit%log)
   end if
-  !.omp end critical (queue_cr)
+  !.... end critical (queue_cr)
   call trace_end (itimer)
-END SUBROUTINE queue_by_time
+END SUBROUTINE real_queue_by_time
 
 !> =============================================================================
 !> =============================================================================
