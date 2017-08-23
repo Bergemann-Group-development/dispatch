@@ -1,1 +1,1 @@
-echo ${PBS_JOBID:-undefined} | sed -e 's/\..*//'
+echo ${SLURM_JOBID:-undefined} | sed -e 's/\..*//'
