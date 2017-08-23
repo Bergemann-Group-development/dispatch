@@ -1335,7 +1335,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   real:: fmin, fmax
   real, dimension(:,:,:), pointer:: df
   integer, save:: itimer=0
-  integer, parameter:: max_lines=25
+  integer, parameter:: max_lines=50
   integer, save:: n_lines=0
   integer, save:: counts(7)=0
   !-----------------------------------------------------------------------------
@@ -1420,6 +1420,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
              mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
              mpi_mesg%n_delay]
         if (io%master .or. self%track) then
+          !$omp atomic
+          n_lines = n_lines-1
           if (n_lines<=0) then
             !$omp critical (info_cr2)
             print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
@@ -1429,8 +1431,6 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             n_lines = max_lines
             !$omp end critical (info_cr2)
           end if
-          !$omp atomic
-          n_lines = n_lines-1
           do iv=1,nv
             print 1, &
             'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &

@@ -32,6 +32,7 @@ MODULE task_mod
     integer:: n_behind=0
     integer:: restart=-9
     integer:: ioformat=1
+    integer:: state=0
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: end_time = 1d0
