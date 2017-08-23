@@ -73,12 +73,21 @@ class limits():
             print 'ylim:',self.ylim
             print 'zlim:',self.zlim
             print 'vlim:',self.vlim
+
+def fsplit(name):
+    res=name.split('_')
+    if np.size(res)==2:
+        return res[0],res[1]
+    else:
+        res=name.split('/')
+        return res[1],res[0]
  
-def patch_files(run='', iout=-1, data='../data', verbose=0):
+def patch_files(iout=-1, run='', data='../data', verbose=0):
     '''
     Return a list of patch file root names, and count patches and snapshots,
     unless verbose is negative
     '''
+    if verbose: print 'patch_files: run={} data={} iout={}'.format(run,data,iout)
     rundir=data+'/'+run+'/'
     if iout>=0:
         dir='{:05d}'.format(iout)
@@ -87,7 +96,7 @@ def patch_files(run='', iout=-1, data='../data', verbose=0):
         else:
             dirs=[]
     else:
-        dirs=[d for d in np.sort(os.listdir(rundir)) if os.path.isdir(d)]
+        dirs=[d for d in np.sort(os.listdir(rundir)) if os.path.isdir(rundir+d)]
         dirs=[d for d in dirs if re.match("^[0-9][0-9][0-9][0-9][0-9]$",d)]
 
     nsnaps=np.size(dirs)
@@ -97,28 +106,36 @@ def patch_files(run='', iout=-1, data='../data', verbose=0):
         ff=np.sort(os.listdir(rundir+dir))
         ext='.txt'
         ff=[rundir+dir+'/'+f.replace('.txt','') for f in ff if f.endswith(ext)]
-        npatch=np.size(ff)
+        if np.size(ff)>0:
+            npatch=np.size(ff)
         for f in ff:
             files.append(f)
     if iout>=0 and np.size(files)>0:
+        if verbose>0: print npatch,'patches found'
         return files
 
+    ''' add any files with the old filename format '''
     ff=np.sort(os.listdir(rundir))
     ext='.txt'
     if iout>=0: ext='{:04d}.txt'.format(iout)
     ff=[f.replace('.txt','') for f in ff if f.endswith(ext)]
-    if verbose>-1:
-        sid0,stime0=ff[0].split('_')
+    if np.size(ff)>0 and verbose>-1:
+        sid0,stime0=fsplit(ff[0])
         npatch=0
-        for f in ff:
-            sid,stime=f.split('_')
+        for f in files:
+            sid,stime=fsplit(f)
             if sid==sid0:
                 nsnaps=nsnaps+1
                 if verbose>1: print rundir+f
             if stime==stime0: npatch=npatch+1
     for f in ff:
         files.append(rundir+f)
-    if verbose>0: print npatch,'patches with',nsnaps,'snapshots found'
+
+    if verbose>0:
+        if iout<0:
+            print nsnaps,'snapshots with',npatch,'patches each found'
+        else:
+            print npatch,'patches found'
     return files
 
 def patch (id=2, iout=0, run='', data='../data', verbose=0, **kwargs):
@@ -133,7 +150,7 @@ def patch (id=2, iout=0, run='', data='../data', verbose=0, **kwargs):
             return None
     return dd.Patch(file,verbose=verbose,**kwargs)
 
-def patches (run='', iout=-1, data='../data', verbose=0, x=None, y=None, z=None):
+def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None):
     '''
     Return a list of structures s={id,iout,time,data,...}, where id,iout
     are the integer patch and snapshot numbers, time is in code units,
@@ -144,6 +161,7 @@ def patches (run='', iout=-1, data='../data', verbose=0, x=None, y=None, z=None)
         time_select  = [p for p in pp if p.iout==iout]
         patch_select = [p for p in pp if p.id==id]
     '''
+    if verbose: print 'patches: run={} data={} iout={}'.format(run,data,iout)
     files = patch_files (run=run, data=data, iout=iout, verbose=verbose)
     pp=[]
     for f in files:

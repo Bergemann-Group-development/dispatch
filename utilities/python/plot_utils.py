@@ -80,7 +80,7 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
     def inside(p, z):
         return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
     select=[p for p in pp if inside(p,z) and p.level<8]
-    #print np.size(select),'patches in plane'    
+    if verbose: print np.size(pp),'patches in plane' 
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
@@ -90,7 +90,7 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
         s=(x-x0)/dx
         i=max(0,min(n-2,int(s)))
         s=s-i
-        if verbose>0:
+        if verbose>1:
             print 'id,iz,pz:',p.id,i,s
         return (1.0-s)*f[l[0]:u[0],l[1]:u[1],i]+s*f[l[0]:u[0],l[1]:u[1],i+1]
     for p in select:
@@ -123,10 +123,12 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
         for p in select:
             vmin=min(vmin,p.f.min())
             vmax=max(vmax,p.f.max())
+            if verbose:
+                print p.id,p.f.min(),p.f.max(),vmin,vmax
     pl.clf()
     for p in select:
         image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap)    
-        if labels<>None:
+        if labels:
             pl.text(p.active_corners[0][1],p.active_corners[0][0],p.id)
     pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
     pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('x')
@@ -144,18 +146,17 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
     def inside(p,x):
         return x<=p.active_corners[1][0] and x>=p.active_corners[0][0]
     pp=[p for p in pp if inside(p,x) and p.level<8]
-    print np.size(pp),'patches in plane' 
+    if verbose: print np.size(pp),'patches in plane' 
     vmin=1e9; vmax=-vmin
     ylim=[vmin,vmax]
     zlim=[vmin,vmax]
     l=np.zeros(3,dtype=np.int32)
     u=l+np.array(p.n)
-    m=(l+u)/2
     def interpolate(p,x,x0,dx,n,f):
         s=(x-x0)/dx
         i=max(0,min(n-2,int(s)))
         s=s-i
-        if verbose>0:
+        if verbose>1:
             print 'id,ix,px:',p.id,i,s
         return (1.0-s)*f[i,l[1]:u[1],l[2]:u[2]]+s*f[i+1,l[1]:u[1],l[2]:u[2]]
     for p in pp:
@@ -188,12 +189,12 @@ def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
         for p in pp:
             vmin=min(vmin,p.f.min())
             vmax=max(vmax,p.f.max())
+    pl.clf()
     for p in pp:
-        #print np.shape(p.f)
-        image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax)
-        if labels<>None:
+        image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap)
+        if labels:
             pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
-    pl.clf(); pl.xlim(ylim); pl.ylim(zlim); pl.xlabel('y'); pl.ylabel('z')
+    pl.xlim(ylim); pl.ylim(zlim); pl.xlabel('y'); pl.ylabel('z')
     pl.title('var='+var+'   t={:d}  x={:d}'.format(np.int(p.time),np.int(x)))
     pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
     pl.tight_layout()
@@ -276,10 +277,8 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
             vmin=vlim[0]
             vmax=vlim[1]      
         for p in select:
-            #print np.shape(p.f)
             im=image(p.f,extent=p.ext,vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
-            #im=image(p.f,extent=p.ext,cmap=cmap,**kwargs)
-            if labels<>None:
+            if labels:
                 pl.text(p.active_corners[0][1],p.active_corners[0][0],p.id)
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
@@ -360,7 +359,7 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
         for p in select:
             #print np.shape(p.f)
             im=image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
-            if labels<>None:
+            if labels:
                 pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
         pl.colorbar(shrink=0.75,aspect=15,fraction=fraction,pad=0.02)
         pl.draw()
