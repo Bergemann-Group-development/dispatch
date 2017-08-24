@@ -200,11 +200,11 @@ CONTAINS
 !> =====================================================================
 !> Initialisation subroutine for ray geometry
 !> =====================================================================
-SUBROUTINE init (self, geometry, li, ui, cell_dims, no_mans_land)
+SUBROUTINE init (self, geometry, n, cell_dims, no_mans_land)
   class(ray_geometry_t) :: self
   class(ray_geometry_t), pointer :: new
   real(kind=8), optional :: cell_dims(3)
-  integer :: li(3), ui(3)
+  integer :: n(3)
   integer :: geometry
   logical :: no_mans_land
   real(kind=8) :: maxdim
@@ -213,8 +213,8 @@ SUBROUTINE init (self, geometry, li, ui, cell_dims, no_mans_land)
   
   allocate (new)                                                        ! allocate new geometry object
   new%geometry = geometry
-  new%li = li                                                           ! cell domain lower point
-  new%ui = ui                                                           ! cell domain upper point
+  new%li = 2                                                            ! cell domain lower point
+  new%ui = n + 1                                                        ! cell domain upper point
   new%no_mans_land = no_mans_land
   if(present(cell_dims)) then
      if ((cell_dims(1) == cell_dims(2)).and.(cell_dims(2) == cell_dims(3))) then
@@ -250,23 +250,22 @@ SUBROUTINE init (self, geometry, li, ui, cell_dims, no_mans_land)
   call trace_end
 END SUBROUTINE init
 
-SUBROUTINE get_my_geometry(self, geometry, li, ui, cell_dims, my_geom)
+SUBROUTINE get_my_geometry(self, geometry, n, cell_dims, my_geom)
   class(ray_geometry_t) :: self
   class(ray_geometry_t), pointer :: this, my_geom
   real(kind=8), optional :: cell_dims(3)
-  integer :: li(3), ui(3)
+  integer :: n(3)
   integer :: geometry
   logical :: found
 ! ......................................................................
   call trace_begin('ray_geometry_t%get_my_geometry')
 
   if(.not.associated(self%head)) then
-    call self%init(geometry, li, ui,  cell_dims, self%no_mans_land)
+    call self%init(geometry, n,  cell_dims, self%no_mans_land)
     this => self%head
     found = .false.
     do while (associated(this).and..not.found)
-      if ((this%geometry == geometry).and.all(this%li==li).and.&
-        all(this%li==li)) then
+      if ((this%geometry == geometry).and.all(this%n == n)) then
         my_geom => this
         found = .true.
       else
@@ -1309,7 +1308,7 @@ SUBROUTINE finish_direction(self, dir)
     end do
   end do
   
-  if (io%verbose>3) then
+ ! if (io%verbose>3) then
   print *,'========== Direction',dir%id,'==============='
   print *, 'n_bundles:', dir%n_bundles
   do jbn =1, dir%n_bundles
@@ -1348,7 +1347,7 @@ SUBROUTINE finish_direction(self, dir)
       end do
     end do
   end do
-  end if
+ ! end if
   
   ! tests
   !neq_fw=0
