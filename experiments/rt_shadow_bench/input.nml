@@ -7,8 +7,8 @@
 /
 
 &out_params
- end_time=0.00002
- out_time=0.00001
+ end_time=0.00000015
+ out_time=0.00000001
  print_time=0.0
  guard_zones=t
  time_derivs=f
@@ -16,18 +16,18 @@
 
 &box_params
  size=1.0,1.0,1.0
- dims=4,4,4
+ dims=3,3,3
  origin=0.0,0.0,0.0
  !origin=-0.005,-0.005,-0.005
 /
 
 &patch_params
  nt=5
- courant=0.2
+ courant=0.0
  grace=0.0
- n=6,6,6
- dt_fixed=0.00001
- no_mans_land=t
+ n=33,33,33
+ dt_fixed=0.00000001
+ no_mans_land=f
 /
 
 &eos_params
@@ -38,13 +38,13 @@
 &rt_params
  solver= 'integral'
  do_output = t
- dtime = 0.00001
+ dtime = 0.00000001
  cr_heating = 0.0
  init_time = -1d-5
 /
 
 &cartesian_ray_geometry_params
-do_chains = f
+do_chains = t
 ! along x axis
 nx = 2 xti = 0.,45.
 ! along y axis
