@@ -125,12 +125,13 @@ SUBROUTINE init_outer_bndry (self, n, ndir, mesh)
   class(mesh_t), pointer, optional :: mesh(:)
   integer :: n(3), ndir
   !.....................................................................
-  integer :: i, nl
+  integer :: i, nl, saved_status
   !---------------------------------------------------------------------
   if (self%unset) then
     if (present(mesh)) self%m => mesh
     self%ndir = ndir
     nl = nint(eos%n_lambda)
+    saved_status=self%bits
     if (self%is_set(bits%xl)) then
       allocate(self%xl(nl))
       do i=1, eos%n_lambda
@@ -167,6 +168,7 @@ SUBROUTINE init_outer_bndry (self, n, ndir, mesh)
         self%zu(i) = rt_boundaries%zu(i)
       end do
     end if
+    self%bits=saved_status
     self%unset = .false.
   end if
 END SUBROUTINE init_outer_bndry
@@ -215,113 +217,105 @@ SUBROUTINE condition (self, f)
   if (self%unset) then
     call mpi%abort ('rt_outer_boundaries_t%init has not been called')
   end if
-  if (self%is_set(bits%xl)) call x_lower
-  if (self%is_set(bits%xu)) call x_upper
-  if (self%is_set(bits%yl)) call y_lower
-  if (self%is_set(bits%yu)) call y_upper
-  if (self%is_set(bits%zl)) call z_lower
-  if (self%is_set(bits%zu)) call z_upper
+  saved_status = self%bits
+  if (self%is_set(bits%xl)) then
+    m1 => self%m(1)
+    m2 => self%m(2)
+    m3 => self%m(3)
+    il = 1
+    iu = il + eos%n_lambda-1
+   ! do i=1,self%ndir
+      do b=m3%lo,m3%uo
+        do a=m2%lo,m2%uo
+          f(m1%lo,a,b,:) = self%xl(1)
+        end do
+      end do
+      il = il + eos%n_lambda
+      iu = il + eos%n_lambda-1
+  !  end do
+  end if
+  if (self%is_set(bits%xu)) then
+    m1 => self%m(1)
+    m2 => self%m(2)
+    m3 => self%m(3)
+    il = 1
+    iu = il + eos%n_lambda-1
+   ! do i=1,self%ndir
+      do b=m3%lo,m3%uo
+        do a=m2%lo,m2%uo
+          f(m1%uo,a,b,:) = self%xu(1)
+        end do
+      end do
+      il = il + eos%n_lambda
+      iu = il + eos%n_lambda-1
+    !end do
+  end if
+  if (self%is_set(bits%yl)) then
+    m1 => self%m(1)
+    m2 => self%m(2)
+    m3 => self%m(3)
+    il = 1
+    iu = il + eos%n_lambda-1
+  !  do i=1,self%ndir
+      do b=m3%lo,m3%uo
+        do a=m1%lo,m1%uo
+          f(a,m2%lo,b,:) = self%yl(1)
+        end do
+      end do
+      il = il + eos%n_lambda
+      iu = il + eos%n_lambda-1
+  !  end do
+  end if
+  if (self%is_set(bits%yu)) then
+    m1 => self%m(1)
+    m2 => self%m(2)
+    m3 => self%m(3)
+    il = 1
+    iu = il + eos%n_lambda-1
+  !  do i=1,self%ndir
+      do b=m3%lo,m3%uo
+        do a=m1%lo,m1%uo
+          f(a,m2%uo,b,:) = self%yu(1)
+        end do
+      end do
+      il = il + eos%n_lambda
+      iu = il + eos%n_lambda-1
+  !  end do
+  end if
+  if (self%is_set(bits%zl)) then
+    m1 => self%m(1)
+    m2 => self%m(2)
+    m3 => self%m(3)
+    il = 1
+    iu = il + eos%n_lambda-1
+ !   do i=1,self%ndir
+      do b=m2%lo,m2%uo
+        do a=m1%lo,m1%uo
+          f(a,b,m3%lo,:) = self%zl(1)
+        end do
+      end do
+      il = il + eos%n_lambda
+      iu = il + eos%n_lambda-1
+  !  end do
+  end if
+  if (self%is_set(bits%zu)) then
+    m1 => self%m(1)
+    m2 => self%m(2)
+    m3 => self%m(3)
+    il = 1
+    iu = il + eos%n_lambda-1
+   ! do i=1,self%ndir
+      do b=m2%lo,m2%uo
+        do a=m1%lo,m1%uo
+          f(a,b,m3%uo,:) = self%zu(1)
+        end do
+      end do
+      il = il + eos%n_lambda
+      iu = il + eos%n_lambda-1
+  !  end do
+  end if
   self%bits = saved_status
   call trace%end
-  return
-contains
-  subroutine x_lower
-    m1 => self%m(1)
-    m2 => self%m(2)
-    m3 => self%m(3)
-    il = 1
-    iu = il + eos%n_lambda-1
-    do i=1,self%ndir
-      do b=m3%lo,m3%uo
-        do a=m2%lo,m2%uo
-          f(m1%lo,a,b,il:iu) = self%xl
-        end do
-      end do
-      il = il + eos%n_lambda
-      iu = il + eos%n_lambda-1
-    end do
-  end subroutine x_lower
-  subroutine x_upper
-    m1 => self%m(1)
-    m2 => self%m(2)
-    m3 => self%m(3)
-    il = 1
-    iu = il + eos%n_lambda-1
-    do i=1,self%ndir
-      do b=m3%lo,m3%uo
-        do a=m2%lo,m2%uo
-          f(m1%uo,a,b,il:iu) = self%xu
-        end do
-      end do
-      il = il + eos%n_lambda
-      iu = il + eos%n_lambda-1
-    end do
-  end subroutine x_upper
-  subroutine y_lower
-    m1 => self%m(1)
-    m2 => self%m(2)
-    m3 => self%m(3)
-    il = 1
-    iu = il + eos%n_lambda-1
-    do i=1,self%ndir
-      do b=m3%lo,m3%uo
-        do a=m1%lo,m1%uo
-          f(a,m2%lo,b,il:iu) = self%yl
-        end do
-      end do
-      il = il + eos%n_lambda
-      iu = il + eos%n_lambda-1
-    end do
-  end subroutine y_lower
-  subroutine y_upper
-    m1 => self%m(1)
-    m2 => self%m(2)
-    m3 => self%m(3)
-    il = 1
-    iu = il + eos%n_lambda-1
-    do i=1,self%ndir
-      do b=m3%lo,m3%uo
-        do a=m1%lo,m1%uo
-          f(a,m2%uo,b,il:iu) = self%yu
-        end do
-      end do
-      il = il + eos%n_lambda
-      iu = il + eos%n_lambda-1
-    end do
-  end subroutine y_upper
-  subroutine z_lower
-    m1 => self%m(1)
-    m2 => self%m(2)
-    m3 => self%m(3)
-    il = 1
-    iu = il + eos%n_lambda-1
-    do i=1,self%ndir
-      do b=m2%lo,m2%uo
-        do a=m1%lo,m1%uo
-          f(a,b,m3%lo,il:iu) = self%zl
-        end do
-      end do
-      il = il + eos%n_lambda
-      iu = il + eos%n_lambda-1
-    end do
-  end subroutine z_lower
-  subroutine z_upper
-    m1 => self%m(1)
-    m2 => self%m(2)
-    m3 => self%m(3)
-    il = 1
-    iu = il + eos%n_lambda-1
-    do i=1,self%ndir
-      do b=m2%lo,m2%uo
-        do a=m1%lo,m1%uo
-          f(a,b,m3%uo,il:iu) = self%zu
-        end do
-      end do
-      il = il + eos%n_lambda
-      iu = il + eos%n_lambda-1
-    end do
-  end subroutine z_upper
-  
 END SUBROUTINE condition
 
 END MODULE rt_boundaries_mod
