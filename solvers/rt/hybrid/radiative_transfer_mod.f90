@@ -38,7 +38,7 @@ SUBROUTINE rt_setup (self)
   class(mesh_t), pointer :: mesh
   class(rmhd_t), pointer :: mhd_patch
   class(rt_t),   pointer :: rt_task
-  integer :: itimer
+  integer :: itimer=0
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer::rt_setup', itimer=itimer)
   associate (mhd => self%head%task)
@@ -103,7 +103,8 @@ SUBROUTINE rt_setup (self)
       rt_task%gn       = mhd_patch%gn                                   ! guard zones
       rt_task%size     = mhd_patch%size                                 ! shadow the size
       rt_task%no_mans_land = mhd_patch%no_mans_land
-      rt_task%periodic = .false.
+      !rt_task%periodic(:) = .true.
+      rt_task%periodic(:) = .false.
       !> ---------------------------------------------------------------
       !> Set up the boundary bits
       !> ---------------------------------------------------------------
@@ -119,12 +120,12 @@ SUBROUTINE rt_setup (self)
         if (rt_task%position(3) <= self%lc(3)) call rt_task%rt_boundaries%set (bits%zl)
         if (rt_task%position(3) >= self%uc(3)) call rt_task%rt_boundaries%set (bits%zu)
       end if
-      call rt_task%init                                                 ! initialise
       rt_task%box      = mhd_patch%box                                  ! same box
       rt_task%level    = mhd_patch%level                                ! same level      
       rt_task%ds       = mhd_patch%ds                                   ! same cell size
       rt_task%li       = mhd_patch%li                                   ! same lower inner position
       rt_task%ui       = mhd_patch%ui                                   ! same upper inner position
+      call rt_task%init                                                 ! initialise
       call rt_task_list%append_link(link)                               ! insert rt_task into the rt task list      
     end SELECT
     end associate
@@ -208,14 +209,14 @@ SUBROUTINE make_chains (self)
   !.....................................................................
   class(link_t),       pointer :: rt_list
   class(link_t),       pointer :: rt, try
-  class(chain_link_t), pointer :: master, origin, temp
+  class(chain_link_t), pointer :: master, origin, temp, my_link, nb_link
   class(task_t),       pointer :: this, that
   class(rt_t),         pointer :: ithis, ithat
   logical :: connects = .false.
   logical :: upstream = .false.
   logical :: connected = .false.
   logical :: is_bndry
-  integer:: ibnd, irn, n_links, n_masters, n_slaves, n_conn,n_bn
+  integer:: ip, ipn, n_links, n_masters, n_slaves, n_conn,n_bn
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer_mod%add_correction_nbors ')
   !$omp critical (list_cr)
@@ -235,18 +236,19 @@ SUBROUTINE make_chains (self)
       ithis => this
     end SELECT
     
-    do ibnd = 1, ithis%n_bundle                                         ! loop over chain links
+    do ip = 1, ithis%n_packet                                           ! loop over chain links
       is_bndry=.false.                                                  ! reset the boundary flag
       connected = .false.                                               ! no connections have been made
       n_links=n_links+1
-      ithis%my_links(ibnd)%master = .true.                              ! flag the link as being the master for now
+      my_link => ithis%my_links(ip)
+      my_link%master = .true.                                           ! flag the link as being the master for now
       
       !> ---------------------------------------------------------------
       !> Check if the link is adjacent to an outer on an inner boundary
       !> ---------------------------------------------------------------
-      if (ithis%has_OB(ithis%my_links(ibnd))) then                      ! if this link is at the outer boundary
-        ithis%my_links(ibnd)%BC(1) = .true.                             ! then flag it to have an outer boundary condition
-        call ithis%map_bndry(ithis%my_links(ibnd))
+      if (ithis%has_OB(my_link)) then                                   ! if this link is at the outer boundary
+        my_link%BC(1) = .true.                                          ! then flag it to have an outer boundary condition
+        call ithis%map_bndry(my_link)
         is_bndry=.true.                                                 ! since it is a boundary link, it can't have upstreams or other masters 
         n_bn=n_bn+1                                        
       end if
@@ -265,33 +267,33 @@ SUBROUTINE make_chains (self)
         
           if (ithis%id /= ithat%id) then                                ! not the same patch
             if (ithis%overlaps(ithat)) then                             ! patches overlap
-            
               ! loop over ithat links
-              nblink_loop: do irn=1, ithat%n_bundle                     ! loop over nbor links
+              nblink_loop: do ipn=1, ithat%n_packet                     ! loop over nbor links
                 connects = .false.                                      ! can links connect?
                 upstream = .false.                                      ! nbor is different lvl upstreamer?
-                call ithis%link_connects_to(ithat,ithis%my_links(ibnd),&
-                ithat%my_links(irn),connects, upstream)
+                nb_link => ithat%my_links(ipn)
+                call ithis%link_connects_to(ithat,my_link,nb_link, &
+                connects, upstream)
                 !> -----------------------------------------------------
                 !> if an upstream link is found, do the following
                 !> -----------------------------------------------------
                 if (connects.and..not.upstream) then                    ! the links connect
-                  ithis%my_links(ibnd)%master = .false.                 ! i am no longer the master
-                  ithis%my_links(ibnd)%prev => ithat%my_links(irn)      ! this is my superior
-                  ithat%my_links(irn)%next => ithis%my_links(ibnd)      ! this is my inferior
+                  my_link%master = .false.                              ! i am no longer the master
+                  my_link%prev => nb_link                               ! this is my superior
+                  nb_link%next => my_link                               ! this is my inferior
                   
-                  if(.not.associated(ithis%my_links(ibnd)%tail)) then
-                    ithat%my_links(irn)%tail => ithis%my_links(ibnd)    ! connect the tails
+                  if(.not.associated(my_link%tail)) then
+                    nb_link%tail => my_link                             ! connect the tails
                   else
-                    ithat%my_links(irn)%tail => ithis%my_links(ibnd)%tail 
+                    nb_link%tail => my_link%tail 
                   end if
                   !> ---------------------------------------------------
                   !> go through the chain (if there is any) of the newly
                   !> connected link and repoint their head pointers
                   !> ---------------------------------------------------
-                  temp => ithis%my_links(ibnd)                            ! inform the rest of the chain, that the new master has arrived
+                  temp => my_link                                       ! inform the rest of the chain, that the new master has arrived
                   do while(associated(temp))
-                    temp%head => ithat%my_links(irn)
+                    temp%head => nb_link
                     temp => temp%next
                   end do
                   connected = .true.                                    ! a connection has been made
@@ -301,7 +303,7 @@ SUBROUTINE make_chains (self)
 
                 if (upstream) then
                 print *, 'found upstream, my id, up id', ithis%id, ithat%id
-                 ithis%my_links(ibnd)%BC(3) = .true.       ! if the upstream link is of different level or is a virtual patch
+                 my_link%BC(3) = .true.                                 ! if the upstream link is of different level or is a virtual patch
                 end if
               end do nblink_loop
             end if
@@ -316,7 +318,7 @@ SUBROUTINE make_chains (self)
       !> ---------------------------------------------------------------
       if (.not.connected) then
           n_masters = n_masters+1
-          master%prev => ithis%my_links(ibnd)
+          master%prev => my_link
           master => master%prev 
       else
         n_slaves = n_slaves+1
@@ -332,10 +334,10 @@ SUBROUTINE make_chains (self)
   !> finalize the chains by mapping their rays to the correct upstream
   !> positions.
   !> -------------------------------------------------------------------
-  call origin%finish_chain(ithis%no_mans_land)                                              
+  call origin%finish_chain                                              
   
   deallocate(origin)
-  nullify(temp, this, that, ithis, ithat)
+  nullify(temp, this, that, ithis, ithat, my_link, nb_link)
   !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE make_chains
