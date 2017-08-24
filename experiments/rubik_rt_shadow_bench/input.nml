@@ -1,6 +1,6 @@
 &io_params
  verbose=0
- do_trace=t
+ do_trace=f
  do_debug=f
  do_output=t
  do_legacy=t
@@ -8,31 +8,33 @@
 
 &rubiks_params
  n_levels=2                         ! # of refinement levels in for the rubiks cube
- n_patch=3                          ! # of patches per direction
- m_zoom=3                           ! zoom-in level per direction
+ n_patch=4                          ! # of patches per direction
+ m_zoom=2                           ! zoom-in level per direction
  n_repeat=1                         ! how many times rubiks cube is repeated along the orbit
 /
 
 &out_params
- end_time=0.01
- out_time=0.001
+ end_time=0.00000045
+ out_time=0.00000001
  print_time=0.0
  guard_zones=t
  time_derivs=f
 /
 
 &box_params
- size=1,1,1
+ size=1.0,1.0,1.0
  dims=4,4,4
  origin=0.0,0.0,0.0
- !origin=-0.5,-0.5,-0.5
+ !origin=-0.005,-0.005,-0.005
 /
 
 &patch_params
  nt=5
- courant=0.2
- grace=0.1
- n=32,32,32
+ courant=0.0
+ grace=0.0
+ n=23,23,23
+ dt_fixed=0.00000001
+ no_mans_land=f
 /
 
 &eos_params
@@ -43,39 +45,29 @@
 &rt_params
  solver= 'integral'
  do_output = t
- dtime = 0.003
+ dtime = 0.00000001
  cr_heating = 0.0
- init_time = -9d0
+ init_time = -1d-5
 /
 
 &cartesian_ray_geometry_params
-do_chains = .true.
+do_chains = f
 ! along x axis
-nx = 1 xti = 0.!,45.
+nx = 2 xti = 0.,45.
 ! along y axis
-ny = 1 yti = 0.!,45.
+ny = 2 yti = 0.,45.
 ! along z axis
-nz = 1 zti = 0.!,45.
+nz = 2 zti = 0.,45.
 ! use space_diagonals?
 space_diagonals=t
 /
 
-! Treatment of boundary conditions for RT solver. obc - outer boundaries, outside the simulation box.
-! ibc - inner boundaries, e.g. any objects (planets, stars, etc.)
+! Treatment of boundary conditions for RT solver. 
 &rt_bc_params
-obc_treatment = 'custom'    !use code in initial_rt.f90
-!obc_treatment = 'reflective' ! not implemented yet
-!obc_treatment = 'periodic'   ! not implemented yet
-!ibc_treatment = 'initial'    ! not implemented yet
-!ibc_treatment = 'zero'       ! complete absorption, not implemented yet
-!ibc_treatment = 'reflective' ! not implemented yet
-ibc_treatment = 'ignore'     ! do nothing, continue as if there was no IB
+cool_temp = 290   ! in kelvins
+hot_temp  = 1740
 /
 
-&custom_bc_params
-cool_temp = 290   ! in kelvins
-hot_temp  = 200000
-/
 
 &mhd_params
  nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
@@ -88,12 +80,12 @@ hot_temp  = 200000
 /
 
 &initial_params
- clump_pos = 0.5,0.5,0.5 
+ clump_pos = 0.6,0.0,0.5 
  !clump_pos = 0.6666,0.6666,0.6666
  d0=1.0
  clump_dfact=10.0
  t0=290.0
- clump_a=0.1
- clump_b=0.06
+ clump_a=0.07
+ clump_b=0.04
 /
 &force_params   /
