@@ -458,7 +458,7 @@ SUBROUTINE add_axis(self, dir)
   bundle%axis      = c                                                  ! direction axis of this bundle
   bundle%theta     = 0
   bundle%phi       = 0
-  bundle%id        = 1                                                  ! bundle ID in this direction
+  bundle%id        = self%total_n_bundles                               ! bundle ID in this direction
   bundle%dir_id    = ndir%id                                            ! dir_ID of this bundle     
   bundle%n_packets = 1                                                  ! there can only be one packet for this bundle
   bundle%n_rays    = nr                                                 ! number of rays in this direction
@@ -471,7 +471,7 @@ SUBROUTINE add_axis(self, dir)
   bundle%uwall(c)  = 1                                                  ! upper wall for this direction
   ! --- Fill in rays info ---
   packet => bundle%packet(1)
-  packet%id = 1                                                         ! it's packet ID
+  packet%id = self%total_n_packets                                      ! it's packet ID
   packet%n_rays   = nr                                                  ! number of rays in this direction
   packet%dstep    = dstep                                               ! step along direction axis
   packet%n_points = pmax(c)                                             ! number of points per ray corresponds to n_cells in that direction
@@ -481,13 +481,13 @@ SUBROUTINE add_axis(self, dir)
   allocate (packet%fwd_coords(3,nr))                                    ! create table, containing x|y|z coords for upstream position for particular ray, for all rays
   allocate (packet%rev_coords(3,nr))                                    ! create table, containing x|y|z coords for downstream position for particular ray, for all rays
   
-  bundle%b_id_fw = 1                                                    ! bundle ID for ray connection in forward direction
-  bundle%b_id_rev = 1                                                   ! same for bundle ID for ray connection in forward direction
+  bundle%b_id_fw  = self%total_n_bundles                                ! bundle ID for ray connection in forward direction
+  bundle%b_id_rev = self%total_n_bundles                                ! same for bundle ID for ray connection in forward direction
   allocate(packet%p_id_fw(nr))                                          ! packet  ID for ray connection in forward direction
   packet%p_id_rev =>   packet%p_id_fw(:)                                ! same for packet ID for ray connection in reverse direction
   allocate(packet%r_id_fw(nr))                                          ! ray ID for ray connection in forward direction
   packet%r_id_fw(:) = 1
-  packet%p_id_fw(:) = 1
+  packet%p_id_fw(:) = self%total_n_packets
   packet%r_id_rev => packet%r_id_fw(:)                                  ! same for ray ID for ray connection in reverse direction
   bundle%rays_fw  => packet%r_id_fw(:)
   bundle%rays_rev => packet%r_id_fw(:)
@@ -1062,15 +1062,15 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
   end do
   ! --- allocate the bundle array, corresponding to the number of bundles
   dir%n_bundles = b_id                                                  ! now we know how many bundles there are in this direction
-  self%total_n_bundles = self%total_n_bundles + b_id                    ! increment the total number of bundles in ray geometry
   allocate(dir%bundle(b_id))                                            ! allocate the bundles
   
   ! --- Now go through single ray bundles and organize data
   sbundle => tbundle
-  b_id = 1
+  b_ID = 1
   do while (associated(sbundle))                                        ! loop over the bundles again
+    self%total_n_bundles = self%total_n_bundles + 1                     ! increment the total number of bundles in ray geometry
     bundle => dir%bundle(b_id)
-    bundle%id     = b_id                                                ! bundle ID
+    bundle%id     = self%total_n_bundles                                ! bundle ID
     bundle%dir_ID = dir%ID                                              ! dir ID
     bundle%axis   = self%axis                                           ! axis of ray flow
     bundle%theta  = self%theta
@@ -1086,7 +1086,6 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
       p_id=p_id+1
       spacket => spacket%next
     end do
-    self%total_n_packets = self%total_n_packets + p_id
     
     bundle%n_packets = p_id                                             ! set the number of packets in this bundle
     allocate(bundle%packet(p_id))                                       ! allocate the packets
@@ -1096,8 +1095,9 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     p_id=1
     r_id = 1
     do while(associated(spacket))                                       ! go through packets again
+      self%total_n_packets = self%total_n_packets + 1
       packet => bundle%packet(p_id)
-      packet%id       = p_id                                            ! save the packet ID
+      packet%id       = self%total_n_packets                            ! save the packet ID
       packet%n_rays   = spacket%n_rays                                  ! pick up the number of rays in this packet
       packet%n_points = spacket%n_points                                ! how long the rays are in this packet
       packet%dstep    = bundle%dstep
@@ -1110,7 +1110,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
       spacket => spacket%next
       deallocate(sp_prev)                                               ! deallocate the single ray packet
     end do
-    b_id = b_id+1
+    b_ID = b_ID + 1
     sb_prev => sbundle
     sbundle => sbundle%next
     deallocate(sb_prev)                                                 ! deallocate the single ray bundle
@@ -1129,7 +1129,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     bundle%axis   = self%axis                                           ! save axis
     bundle%theta  = self%theta                                          ! save theta
     bundle%phi    = self%phi                                            ! save phi
-    bundle%id     = 1                                                   ! it is the only bundle                       
+    bundle%id     = self%total_n_bundles                                ! it is the only bundle                       
     bundle%dstep  = sbundle%dstep
    
    ! -- loop over the bundles and merge all packets of same ray lenght
@@ -1196,7 +1196,6 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
      p_id = p_id + 1
      spacket => spacket%next
    end do
-   self%total_n_packets = self%total_n_packets + p_id
     
    bundle%n_packets = p_id
    allocate(bundle%packet(p_id))
@@ -1204,9 +1203,10 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     p_id = 1
     spacket => tbundle%packets
     do while(associated(spacket))
+      self%total_n_packets = self%total_n_packets + 1
       sp_next => spacket%next
       packet => bundle%packet(p_id)
-      packet%id        = p_id                                           ! unique ID for this packet
+      packet%id        = self%total_n_packets                           ! unique ID for this packet
       packet%n_rays    = spacket%n_rays                                 ! number of rays in this packet
       packet%n_points  = spacket%n_points                               ! how long are the rays in this packet
       packet%dstep     = bundle%dstep
