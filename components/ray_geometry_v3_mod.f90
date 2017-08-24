@@ -1254,7 +1254,11 @@ SUBROUTINE finish_direction(self, dir)
       end if
       
       do ray1=1, packet1%n_rays
-        coords = packet1%fwd_coords(:,ray1)
+        if (self%no_mans_land) then
+          coords = packet1%fwd_coords(:,ray1)
+        else
+          coords = packet1%coords(:,packet1%n_points,ray1)
+        end if
         do i=1,3
           if (bnd1%uwall(i) > 0) then
             coords(i) = self%li(i)
