@@ -223,13 +223,17 @@ PROGRAM test_stagger
   allocate (f(n,n,n), d(n,n,n))
   f=1.
   print*,'n =',n
+  print *,'2nd order:'
   call test_2nd (n, f, d)
+  print *,'4th order:'
   call test_4th (n, f, d)
+  print *,'6th order:'
   call test_6th (n, f, d)
 END PROGRAM
 
 SUBROUTINE test_2nd (nn, f, d)
   USE stagger_2nd
+  USE timer_mod
   USE omp_timer_mod
   implicit none
   integer(8), parameter:: n=36
@@ -264,6 +268,7 @@ END SUBROUTINE
 
 SUBROUTINE test_4th (nn, f, d)
   USE stagger_4th
+  USE timer_mod
   USE omp_timer_mod
   implicit none
   integer(8), parameter:: n=36
@@ -298,6 +303,7 @@ END SUBROUTINE
 
 SUBROUTINE test_6th (nn, f, d)
   USE stagger_6th
+  USE timer_mod
   USE omp_timer_mod
   implicit none
   integer(8), parameter:: n=36

@@ -16,6 +16,7 @@ MODULE stagger_mod
   logical, save:: hardwire=.false.
   type, public:: stagger_t
     real(8):: ds(3)
+    integer:: flops=0
   contains
     procedure, nopass:: ddxdn1
     procedure, nopass:: ddydn1
@@ -42,6 +43,7 @@ MODULE stagger_mod
     procedure, nopass:: yup
     procedure, nopass:: zup
   end type
+  type(stagger_t):: stagger
   interface norm
     module procedure vector_norm_scalar
   end interface
@@ -206,6 +208,7 @@ FUNCTION ddxdn (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ddxdn
 
 !*******************************************************************************
@@ -282,6 +285,7 @@ FUNCTION ddzdn (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ddzdn
 
 !*******************************************************************************
@@ -321,6 +325,7 @@ FUNCTION ddxup (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ddxup
 
 !*******************************************************************************
@@ -359,6 +364,7 @@ FUNCTION ddyup (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ddyup
 
 !*******************************************************************************
@@ -397,6 +403,7 @@ FUNCTION ddzup (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ddzup
 
 !*******************************************************************************
@@ -435,6 +442,7 @@ FUNCTION xdn (a) RESULT (b)
     b = a
   end if
 !  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION xdn
 
 !*******************************************************************************
@@ -473,6 +481,7 @@ FUNCTION ydn (a) RESULT (b)
     b = a
   end if
 !  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ydn
 
 !*******************************************************************************
@@ -511,6 +520,7 @@ FUNCTION zdn (a) RESULT (b)
     b = a
   end if
 !  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION zdn
 
 !*******************************************************************************
@@ -549,6 +559,7 @@ FUNCTION xup (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION
 
 !*******************************************************************************
@@ -587,6 +598,7 @@ FUNCTION yup (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION
 
 !*******************************************************************************
@@ -625,6 +637,7 @@ FUNCTION zup (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION
 
 !> =============================================================================
