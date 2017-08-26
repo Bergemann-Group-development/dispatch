@@ -70,11 +70,13 @@ SUBROUTINE mkdir (dir)
 #ifdef __INTEL_COMPILER
   inquire (directory=dir, exist=exists)
   if (exists) return
-  exists = MakeDirQQ (dir)
-  if (exists) then
-    print *,omp%thread,' Intel created directory '//dir
-  else
-    print *,omp%thread,' WARNING: Intel failed to create directory '//dir
+  if (.not.io_unit%do_validate) then
+    exists = MakeDirQQ (dir)
+    if (exists) then
+      print *,omp%thread,' Intel created directory '//dir
+    else
+      print *,omp%thread,' WARNING: Intel failed to create directory '//dir
+    end if
   end if
 #else
   inquire (file=dir, exist=exists)
@@ -82,11 +84,13 @@ SUBROUTINE mkdir (dir)
   !$omp critical (system_cr)
   call system ('mkdir -p '//dir)
   !$omp end critical (system_cr)
-  inquire (file=dir, exist=exists)
-  if (exists) then
-    print *,omp%thread,' system call created directory '//dir
-  else
-    print *,omp%thread,' WARNING: system call failed to create directory '//dir
+  if (.not.io_unit%do_validate) then
+    inquire (file=dir, exist=exists)
+    if (exists) then
+      print *,omp%thread,' system call created directory '//dir
+    else
+      print *,omp%thread,' WARNING: system call failed to create directory '//dir
+    end if
   end if
 #endif
 END SUBROUTINE mkdir
@@ -165,6 +169,7 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     ! Open MPI rank and OMP thread-specific log files
     !---------------------------------------------------------------------------
+    io_unit%do_validate = do_validate
     call self%mkdir (trim(self%outputname))
     write (filename,'(a,i5.5,"/")') trim(io%outputname), 0
     call self%mkdir (trim(filename))
