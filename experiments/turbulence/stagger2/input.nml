@@ -13,7 +13,7 @@
 /
 &io_params
  top='../../..'
- verbose=1
+ verbose=0
  do_validate=f
  do_trace=f
  do_debug=f
@@ -30,7 +30,7 @@
 /
 &patch_params
  nt=5
- ng=3
+ ng=3*3
  courant=0.2
  grace=0.3
  n=3*32

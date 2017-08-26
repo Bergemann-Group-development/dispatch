@@ -2,8 +2,8 @@
 !> Staggered mesh solver using entropy per unit volume as the energy variable.
 !>
 !> Flop counting is enable via annotation at the end of lines. To count flops,
-!> use a Linux pipeline such as 
-!> 
+!> use a Linux pipeline such as
+!>
 !> % grep ops: ../../../solvers/stagger2/mhd_mod.f90 | sed 's/.*ops://' | sumcol 2
 !>
 !> where 'sumcol' is any script that sums up values in column 2
@@ -142,8 +142,10 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:,:), pointer:: U, E, J, p, B, dpdt, dBdt
   real, dimension(:,:,:,:), pointer:: Ud, E_AD
   real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm
+  real, dimension(:,:,:),   pointer:: fmx, fmy, fmz
+  real, dimension(:,:,:),   pointer:: w1, w2, w3, w4, w5, w6
   real, dimension(:,:,:),   pointer:: d, s, dddt, dsdt
-  real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, Q
+  real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, Q, umx
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez, Jx, Jy, Jz
@@ -158,7 +160,8 @@ SUBROUTINE pde (self)
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   logical, save:: first_time=.true., first_AD=.true.
   !.............................................................................
-  real(8):: ds(3), dx
+  integer:: ix, iy, iz, mx, my, mz
+  real(8):: ds(3), dsmin, cx, cy, cz
   integer, save:: itimer=0
   type(index_t):: i
   !-----------------------------------------------------------------------------
@@ -178,6 +181,7 @@ SUBROUTINE pde (self)
   end if
   call allocate_vectors (self%gn, ld, dd, E, J, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
+  call allocate_scalars (self%gn, umx, w1, w2, w3, w4, w5, w6)
   if (self%mhd_Ohm) call allocate_scalars (self%gn, eta_Ohm)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
@@ -187,7 +191,8 @@ SUBROUTINE pde (self)
     call allocate_scalars (self%gn, pg)
     call allocate_vectors (self%gn, U)
   end if
-  Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
+  Ux => U(:,:,:,1); Uy => U(:,:,:,2); Uz => U(:,:,:,3)
+  fmx=>fm(:,:,:,1); fmy=>fm(:,:,:,2); fmz=>fm(:,:,:,3)
   if (self%mhd_AD) then
     call allocate_vectors (self%gn, Ud, E_AD)
     Ud_x=>Ud(:,:,:,1)
@@ -203,142 +208,235 @@ SUBROUTINE pde (self)
   fdx=>fd(:,:,:,1); fdy=>fd(:,:,:,2); fdz=>fd(:,:,:,3)
   ldx=>ld(:,:,:,1); ldy=>ld(:,:,:,2); ldz=>ld(:,:,:,3)
   ddx=>dd(:,:,:,1); ddy=>dd(:,:,:,2); ddz=>dd(:,:,:,3)
+  call allocate_scalars (self%gn, Txx, Tyy, Tzz)
+  call allocate_scalars (self%gn, Txy, Tyz, Tzx)
+  !-----------------------------------------------------------------------------
+  ! Stagger operator macros
+  !-----------------------------------------------------------------------------
+  mx = self%mesh(1)%gn
+  my = self%mesh(2)%gn
+  mz = self%mesh(3)%gn
+  ds = self%ds
+  cx = 1./ds(1)
+  cy = 1./ds(2)
+  cz = 1./ds(3)
+  dsmin = minval(ds)
+#define SECOND
+#ifdef SECOND
+#define mXDN(f,ix,iy,iz)    (0.5*(f(ix,iy,iz)+f(max(1,ix-1),iy,iz)))
+#define mYDN(f,ix,iy,iz)    (0.5*(f(ix,iy,iz)+f(ix,max(1,iy-1),iz)))
+#define mZDN(f,ix,iy,iz)    (0.5*(f(ix,iy,iz)+f(ix,iy,max(1,iz-1))))
+#define mXUP(f,ix,iy,iz)    (0.5*(f(ix,iy,iz)+f(min(mx,ix+1),iy,iz)))
+#define mYUP(f,ix,iy,iz)    (0.5*(f(ix,iy,iz)+f(ix,min(my,iy+1),iz)))
+#define mZUP(f,ix,iy,iz)    (0.5*(f(ix,iy,iz)+f(ix,iy,min(mz,iz+1))))
+#define mDDXDN(f,ix,iy,iz)  (cx*(f(ix,iy,iz)-f(max(1,ix-1),iy,iz)))
+#define mDDYDN(f,ix,iy,iz)  (cy*(f(ix,iy,iz)-f(ix,max(1,iy-1),iz)))
+#define mDDZDN(f,ix,iy,iz)  (cz*(f(ix,iy,iz)-f(ix,iy,max(1,iz-1))))
+#define mDDXUP(f,ix,iy,iz)  (cx*(f(min(mx,ix+1),iy,iz)-f(ix,iy,iz)))
+#define mDDYUP(f,ix,iy,iz)  (cy*(f(ix,min(my,iy+1),iz)-f(ix,iy,iz)))
+#define mDDZUP(f,ix,iy,iz)  (cz*(f(ix,iy,min(mz,iz+1))-f(ix,iy,iz)))
+#endif
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below.  U is valid in (2:gn)
   !-----------------------------------------------------------------------------
-  lnd = log(d)                                                                  ! ops: 0 0 0 0 3
-  ld = down(lnd)
-  dd = exp(ld)                                                                  ! ops: 0 0 0 0 3
-  U = p/dd                                                                      ! ops: 0 0 3
+  do iz=1,mz; do iy=1,my; do ix=1,mx
+    lnd(ix,iy,iz)   =    log(d(ix,iy,iz))
+    ld (ix,iy,iz,1) = mXDN(lnd,ix,iy,iz)
+    ld (ix,iy,iz,2) = mYDN(lnd,ix,iy,iz)
+    ld (ix,iy,iz,3) = mZDN(lnd,ix,iy,iz)
+    dd (ix,iy,iz,1) =   exp(ld(ix,iy,iz,1))
+    dd (ix,iy,iz,2) =   exp(ld(ix,iy,iz,2))
+    dd (ix,iy,iz,3) =   exp(ld(ix,iy,iz,3))
+    U  (ix,iy,iz,1) =       px(ix,iy,iz)/dd(ix,iy,iz,1)
+    U  (ix,iy,iz,2) =       py(ix,iy,iz)/dd(ix,iy,iz,2)
+    U  (ix,iy,iz,3) =       pz(ix,iy,iz)/dd(ix,iy,iz,3)
+    ss (ix,iy,iz)   =        s(ix,iy,iz)/ d(ix,iy,iz)
+  end do; end do; end do
   !-----------------------------------------------------------------------------
   ! Gas pressure. The 2nd table variable is entropy per unit mass, effectively
   ! a log variable, from the table point of view.
   !-----------------------------------------------------------------------------
-  ss = s/d                                                                      ! ops: 0 0 1
   pg = self%gas_pressure(lnd,ss)
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure.  The divergence is valid
   ! in (2,gn-1)
   !-----------------------------------------------------------------------------
-  ds = self%ds
-  dx = minval(ds)                                       ! smallest {dx,dy,dz}
-  du = -dx*div(ds,U)                                    ! convergence rate      ! ops: 0 1 0
-  du = max(du,0.0)                                      ! positive part
-  !-----------------------------------------------------------------------------
-  ! Conservation of momentum -- first the diagonal part of the stress tensor
-  ! The diagonal fxx is valid in (2:gn-1)
-  !-----------------------------------------------------------------------------
-  call allocate_scalars (self%gn, Txx, Tyy, Tzz)
-  Txx = ddxup(ds,Ux)
-  Tyy = ddyup(ds,Uy)
-  Tzz = ddzup(ds,Uz)
-  if (self%mhd) then
+  self%u_max = 0.0
+  do iz=1,mz; do iy=1,my; do ix=1,mx
+    du(ix,iy,iz) = -dsmin*min(0.0, mDDXUP(Ux,ix,iy,iz) &
+                                 + mDDYUP(Uy,ix,iy,iz) &
+                                 + mDDZUP(Uz,ix,iy,iz) )
+    !---------------------------------------------------------------------------
+    ! Conservation of momentum -- first the diagonal part of the stress tensor
+    ! The diagonal fxx is valid in (2:gn-1)
+    !---------------------------------------------------------------------------
+    Txx(ix,iy,iz) = mDDXUP(Ux,ix,iy,iz)
+    Tyy(ix,iy,iz) = mDDYUP(Uy,ix,iy,iz)
+    Tzz(ix,iy,iz) = mDDZUP(Uz,ix,iy,iz)
     ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2
-    fyy = yup(Uy)**2
-    fzz = zup(Uz)**2
-    pp = (fxx+fyy+fzz)
+!    fxx = xup(Ux)**2
+!    fyy = yup(Uy)**2
+!    fzz = zup(Uz)**2
+!    pp = (fxx+fyy+fzz)
+    fxx(ix,iy,iz) = mXUP(Ux,ix,iy,iz)**2
+    fyy(ix,iy,iz) = mYUP(Uy,ix,iy,iz)**2
+    fzz(ix,iy,iz) = mZUP(Uz,ix,iy,iz)**2
+    pp(ix,iy,iz) = (fxx(ix,iy,iz)+fyy(ix,iy,iz)+fzz(ix,iy,iz))
     ! Diagonal (negative) Maxwell stress (borrowing E for scratch)
-    Ex = xup(Bx)**2                                                             ! mhd: 0 1 0
-    Ey = yup(By)**2                                                             ! mhd: 0 1 0
-    Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
+!    Ex = xup(Bx)**2                                                             ! mhd: 0 1 0
+!    Ey = yup(By)**2                                                             ! mhd: 0 1 0
+!    Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
+    Ex(ix,iy,iz) = mXUP(Bx,ix,iy,iz)**2
+    Ey(ix,iy,iz) = mYUP(By,ix,iy,iz)**2
+    Ez(ix,iy,iz) = mZUP(Bz,ix,iy,iz)**2
+!    ! Magnetic pressure
+!    pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
+!    ! Fast mode speed + velocity
+!    pa = self%nu(2)*d*du**2
+!    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     ! Magnetic pressure
-    pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
+    pb(ix,iy,iz) = 0.5*(Ex(ix,iy,iz)+Ey(ix,iy,iz)+Ez(ix,iy,iz))
     ! Fast mode speed + velocity
-    pa = self%nu(2)*d*du**2
-    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
-    if (io%verbose>3) then
-      self%u_max = self%fmaxval(cs)
-      print*,'u_max',self%u_max
-      self%u_max = self%fmaxval(cs + sqrt(pp))
-      print*,'u_max',self%u_max
-    end if
-    self%u_max = self%fmaxval(cs + sqrt(pp) + du)
-    if (io%verbose>3) print*,'u_max',self%u_max
+    pa(ix,iy,iz) = self%nu(2)*d(ix,iy,iz)*du(ix,iy,iz)**2
+    cs(ix,iy,iz) = sqrt((self%gamma*pg(ix,iy,iz)+2.0*pb(ix,iy,iz) + pa(ix,iy,iz))/d(ix,iy,iz))
+    umx(ix,iy,iz) = cs(ix,iy,iz) + sqrt(pp(ix,iy,iz)) + du(ix,iy,iz)
+!    ! Isotropic pressure part
+!    pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Isotropic pressure part
-    pp = pg + pa + pb                                                           ! mhd: 1 0 0
+    pp(ix,iy,iz) = pg(ix,iy,iz) + pa(ix,iy,iz) + pb(ix,iy,iz)
+!    ! Total diagonal stress
+!    du = (dsmin*self%nu(1))*cs
+!    fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
+!    fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
+!    fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
     ! Total diagonal stress
-    du = (dx*self%nu(1))*cs
-    fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
-    fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
-    fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
-  else
-    ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2                                                            ! ops: 0 1 0
-    fyy = yup(Uy)**2                                                            ! ops: 0 1 0
-    fzz = zup(Uz)**2                                                            ! ops: 0 1 0
-    pp = (fxx+fyy+fzz)                                                          ! ops: 2 0 0
-    ! Isotropic pressure part
-    pa = self%nu(2)*d*du**2                          ! dimension: pressure      ! ops: 0 3 0
-    ! Sound speed + velocity
-    cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
-    if (io%verbose>3) then
-      self%u_max = self%fmaxval(cs)
-      print*,'u_max',self%u_max
-      self%u_max = self%fmaxval(cs + sqrt(pp))
-      print*,'u_max',self%u_max
-    end if
-    self%u_max = self%fmaxval(cs + sqrt(pp) + du)                               ! ops: 2 0 0 1 0
-    if (io%verbose>3) print*,'u_max',self%u_max
-    pp = pg + pa                                                                ! ops: 1 0 0
-    ! Total diagondal stress, with density factor
-    du = (dx*self%nu(1))*cs                                                     ! ops: 0 1 0
-    !---------------------------------------------------------------------------
-    ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
-    !---------------------------------------------------------------------------
-    fxx = pp + d*(fxx - du*Txx)                                                 ! ops: 2 2 0
-    fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
-    fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
-  end if
+    du(ix,iy,iz) = (dsmin*self%nu(1))*cs(ix,iy,iz)
+    fxx(ix,iy,iz) = pp(ix,iy,iz) + d(ix,iy,iz)*(fxx(ix,iy,iz) - du(ix,iy,iz)*Txx(ix,iy,iz)) - Ex(ix,iy,iz)
+    fyy(ix,iy,iz) = pp(ix,iy,iz) + d(ix,iy,iz)*(fyy(ix,iy,iz) - du(ix,iy,iz)*Tyy(ix,iy,iz)) - Ey(ix,iy,iz)
+    fzz(ix,iy,iz) = pp(ix,iy,iz) + d(ix,iy,iz)*(fzz(ix,iy,iz) - du(ix,iy,iz)*Tzz(ix,iy,iz)) - Ez(ix,iy,iz)
+!  else
+!    ! Diagonal Reynolds stress
+!    fxx = xup(Ux)**2                                                            ! ops: 0 1 0
+!    fyy = yup(Uy)**2                                                            ! ops: 0 1 0
+!    fzz = zup(Uz)**2                                                            ! ops: 0 1 0
+!    pp = (fxx+fyy+fzz)                                                          ! ops: 2 0 0
+!    ! Isotropic pressure part
+!    pa = self%nu(2)*d*du**2                          ! dimension: pressure      ! ops: 0 3 0
+!    ! Sound speed + velocity
+!    cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
+!    if (io%verbose>3) then
+!      self%u_max = self%fmaxval(cs)
+!      print*,'u_max',self%u_max
+!      self%u_max = self%fmaxval(cs + sqrt(pp))
+!      print*,'u_max',self%u_max
+!    end if
+!    self%u_max = self%fmaxval(cs + sqrt(pp) + du)                               ! ops: 2 0 0 1 0
+!    if (io%verbose>3) print*,'u_max',self%u_max
+!    pp = pg + pa                                                                ! ops: 1 0 0
+!    ! Total diagondal stress, with density factor
+!    du = (dsmin*self%nu(1))*cs                                                  ! ops: 0 1 0
+!    !---------------------------------------------------------------------------
+!    ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
+!    !---------------------------------------------------------------------------
+!    fxx = pp + d*(fxx - du*Txx)                                                 ! ops: 2 2 0
+!    fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
+!    fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
+!  end if
+  !self%u_max = self%fmaxval(cs + sqrt(pp) + du)
   !-----------------------------------------------------------------------------
   ! du has units area per unit time, which gives velocity squared times mass
   ! density per unit time = energy per unit volume and time
   !-----------------------------------------------------------------------------
-  Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
-  call deallocate_scalars (Txx, Tyy, Tzz)
+!  Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
+  Q(ix,iy,iz) = d(ix,iy,iz)*du(ix,iy,iz)*(Txx(ix,iy,iz)**2 + Tyy(ix,iy,iz)**2 + Tzz(ix,iy,iz)**2)
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
-  fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux   ! ops: 0 9 0
-  fm = p+fd                                             ! mass flux             ! ops: 3 0 0
-  dddt = -div(ds,fm)                                    ! density derivative
-  self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))           ! ops: 0 0 1
-  if (io%verbose>3) print*,'u_max',self%u_max
+!  fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux   ! ops: 0 9 0
+  fd(ix,iy,iz,1) = -(self%nu(4)*dd(ix,iy,iz,1)*mXDN(du,ix,iy,iz))*mDDXDN(lnd,ix,iy,iz)
+  fd(ix,iy,iz,2) = -(self%nu(4)*dd(ix,iy,iz,2)*mYDN(du,ix,iy,iz))*mDDYDN(lnd,ix,iy,iz)
+  fd(ix,iy,iz,3) = -(self%nu(4)*dd(ix,iy,iz,3)*mZDN(du,ix,iy,iz))*mDDZDN(lnd,ix,iy,iz)
+!  fm = p+fd                                             ! mass flux             ! ops: 3 0 0
+  fm(ix,iy,iz,1) = p(ix,iy,iz,1) + fd(ix,iy,iz,1)
+  fm(ix,iy,iz,2) = p(ix,iy,iz,2) + fd(ix,iy,iz,2)
+  fm(ix,iy,iz,3) = p(ix,iy,iz,3) + fd(ix,iy,iz,3)
+  end do; end do; end do
+!  dddt = -div(ds,fm)                                    ! density derivative
+  do iz=1,mz; do iy=1,my; do ix=1,mx
+  dddt(ix,iy,iz) = - mDDXUP(fmx,ix,iy,iz) &
+                   - mDDYUP(fmy,ix,iy,iz) &
+                   - mDDZUP(fmz,ix,iy,iz)
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
   !-----------------------------------------------------------------------------
-  fxy = ydn(Ux)*xdn(Uy)                                                         ! ops: 0 1 0
-  fyz = zdn(Uy)*ydn(Uz)                                                         ! ops: 0 1 0
-  fzx = xdn(Uz)*zdn(Ux)                                                         ! ops: 0 1 0
+!  fxy = ydn(Ux)*xdn(Uy)                                                         ! ops: 0 1 0
+!  fyz = zdn(Uy)*ydn(Uz)                                                         ! ops: 0 1 0
+!  fzx = xdn(Uz)*zdn(Ux)                                                         ! ops: 0 1 0
+  fxy(ix,iy,iz) = mYDN(Ux,ix,iy,iz)*mXDN(Uy,ix,iy,iz)
+  fyz(ix,iy,iz) = mZDN(Uy,ix,iy,iz)*mYDN(Uz,ix,iy,iz)
+  fzx(ix,iy,iz) = mXDN(Uz,ix,iy,iz)*mZDN(Ux,ix,iy,iz)
   !-----------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !-----------------------------------------------------------------------------
-  call allocate_scalars (self%gn, Txy, Tyz, Tzx)
-  Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)                                               ! ops: 0 1 0
-  Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)                                               ! ops: 0 1 0
-  Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)                                               ! ops: 0 1 0
-  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*Txy                                 ! ops: 1 3 0
-  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*Tyz                                 ! ops: 1 3 0
-  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*Tzx                                 ! ops: 1 3 0
-  Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
-                               yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
-                               zup(xup(Tzx))**2)                                ! ops: 1 0 0
-  call deallocate_scalars (Txy, Tyz, Tzx)
+!  Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)                                               ! ops: 0 1 0
+!  Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)                                               ! ops: 0 1 0
+!  Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)                                               ! ops: 0 1 0
+  Txy(ix,iy,iz) = mDDXDN(Uy,ix,iy,iz)+mDDYDN(Ux,ix,iy,iz)
+  Tyz(ix,iy,iz) = mDDYDN(Uz,ix,iy,iz)+mDDZDN(Uy,ix,iy,iz)
+  Tzx(ix,iy,iz) = mDDZDN(Ux,ix,iy,iz)+mDDXDN(Uz,ix,iy,iz)
+  end do; end do; end do
+!  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*Txy                                 ! ops: 1 3 0
+!  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*Tyz                                 ! ops: 1 3 0
+!  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*Tzx                                 ! ops: 1 3 0
+  do iz=1,mz; do iy=1,my; do ix=1,mx
+    w1(ix,iy,iz) = mYDN(du,ix,iy,iz)
+    w2(ix,iy,iz) = mZDN(du,ix,iy,iz)
+    w3(ix,iy,iz) = mXDN(du,ix,iy,iz)
+  end do; end do; end do
+  do iz=1,mz; do iy=1,my; do ix=1,mx
+    fxy(ix,iy,iz) = fxy(ix,iy,iz) - self%nu(3)*0.5*mXDN(w1,ix,iy,iz)*Txy(ix,iy,iz)
+    fyz(ix,iy,iz) = fyz(ix,iy,iz) - self%nu(3)*0.5*mYDN(w2,ix,iy,iz)*Tyz(ix,iy,iz)
+    fzx(ix,iy,iz) = fzx(ix,iy,iz) - self%nu(3)*0.5*mZDN(w3,ix,iy,iz)*Tzx(ix,iy,iz)
+  end do; end do; end do
+!  Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
+!                               yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
+!                               zup(xup(Tzx))**2)                                ! ops: 1 0 0
+  do iz=1,mz; do iy=1,my; do ix=1,mx
+    w1(ix,iy,iz) = mYUP(Txy,ix,iy,iz)
+    w2(ix,iy,iz) = mZUP(Tyz,ix,iy,iz)
+    w3(ix,iy,iz) = mXUP(Tzx,ix,iy,iz)
+  end do; end do; end do
+  do iz=1,mz; do iy=1,my; do ix=1,mx
+    Q(ix,iy,iz) = Q(ix,iy,iz) + self%nu(3)*0.5*d(ix,iy,iz)*du(ix,iy,iz)*( &
+                                 mXUP(w1,ix,iy,iz)**2 + &
+                                 mYUP(w2,ix,iy,iz)**2 + &
+                                 mZUP(w3,ix,iy,iz)**2)
+  end do; end do; end do
   !-----------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !-----------------------------------------------------------------------------
-  fxy = exp(ydn(ldx))*fxy                                                       ! ops: 0 1 0 0 1
-  fyz = exp(zdn(ldy))*fyz                                                       ! ops: 0 1 0 0 1
-  fzx = exp(xdn(ldz))*fzx                                                       ! ops: 0 1 0 0 1
+!  fxy = exp(ydn(ldx))*fxy                                                       ! ops: 0 1 0 0 1
+!  fyz = exp(zdn(ldy))*fyz                                                       ! ops: 0 1 0 0 1
+!  fzx = exp(xdn(ldz))*fzx                                                       ! ops: 0 1 0 0 1
+  do iz=1,mz; do iy=1,my; do ix=1,mx
+    fxy(ix,iy,iz) = exp(mYDN(ldx,ix,iy,iz))*fxy(ix,iy,iz)
+    fyz(ix,iy,iz) = exp(mZDN(ldy,ix,iy,iz))*fyz(ix,iy,iz)
+    fzx(ix,iy,iz) = exp(mXDN(ldz,ix,iy,iz))*fzx(ix,iy,iz)
+  end do; end do; end do
   !-----------------------------------------------------------------------------
   ! Off-diagonal Maxwell stress
   !-----------------------------------------------------------------------------
   if (self%mhd) then
-    fxy = fxy - ydn(Bx)*xdn(By)                                                 ! mhd: 1 1 0
-    fyz = fyz - zdn(By)*ydn(Bz)                                                 ! mhd: 1 1 0
-    fzx = fzx - xdn(Bz)*zdn(Bx)                                                 ! mhd: 1 1 0
+!    fxy = fxy - ydn(Bx)*xdn(By)                                                 ! mhd: 1 1 0
+!    fyz = fyz - zdn(By)*ydn(Bz)                                                 ! mhd: 1 1 0
+!    fzx = fzx - xdn(Bz)*zdn(Bx)                                                 ! mhd: 1 1 0
+    do iz=1,mz; do iy=1,my; do ix=1,mx
+      fxy(ix,iy,iz) = fxy(ix,iy,iz) - mYDN(Bx,ix,iy,iz)*mXDN(By,ix,iy,iz)
+      fyz(ix,iy,iz) = fyz(ix,iy,iz) - mZDN(By,ix,iy,iz)*mYDN(Bz,ix,iy,iz)
+      fzx(ix,iy,iz) = fzx(ix,iy,iz) - mXDN(Bz,ix,iy,iz)*mZDN(Bx,ix,iy,iz)
+    end do; end do; end do
   end if
   !-----------------------------------------------------------------------------
   ! Consistent addition of mass flux related momentum flux, symmetrized. The
@@ -346,24 +444,38 @@ SUBROUTINE pde (self)
   ! while the off-diagonal part needs to be properly symmetrized.
   !-----------------------------------------------------------------------------
   if (self%nu(4) > 0.0) then
-    pa = d*du*self%nu(4)                                                        ! ops: 0 2 0
+!    pa = d*du*self%nu(4)                                                        ! ops: 0 2 0
+  do iz=1,mz; do iy=1,my; do ix=1,mx
+    pa(ix,iy,iz) = d(ix,iy,iz)*du(ix,iy,iz)*self%nu(4)
     !---------------------------------------------------------------------------
     ! fxx, pa, ddxup(ldx), and xup(Ux) are all valid in (2:gn-1)
     !---------------------------------------------------------------------------
-    fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)                                        ! ops: 1 2 0
-    fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)                                        ! ops: 1 2 0
-    fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)                                        ! ops: 1 2 0
-    fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))                           ! ops: 2 2 0
-    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))                           ! ops: 2 2 0
-    fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))                           ! ops: 2 2 0
+!    fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)                                        ! ops: 1 2 0
+!    fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)                                        ! ops: 1 2 0
+!    fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)                                        ! ops: 1 2 0
+    fxx(ix,iy,iz) = fxx(ix,iy,iz) - pa(ix,iy,iz)*mDDXUP(ldx,ix,iy,iz)*mXUP(Ux,ix,iy,iz)
+    fyy(ix,iy,iz) = fyy(ix,iy,iz) - pa(ix,iy,iz)*mDDYUP(ldy,ix,iy,iz)*mYUP(Uy,ix,iy,iz)
+    fzz(ix,iy,iz) = fzz(ix,iy,iz) - pa(ix,iy,iz)*mDDZUP(ldz,ix,iy,iz)*mZUP(Uz,ix,iy,iz)
+!    fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))                           ! ops: 2 2 0
+!    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))                           ! ops: 2 2 0
+!    fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))                           ! ops: 2 2 0
+    fxy(ix,iy,iz) = fxy(ix,iy,iz) + (mXDN(fdy,ix,iy,iz)*mYDN(Ux,ix,iy,iz)+mYDN(fdx,ix,iy,iz)*mXDN(Uy,ix,iy,iz))
+    fyz(ix,iy,iz) = fyz(ix,iy,iz) + (mYDN(fdz,ix,iy,iz)*mZDN(Uy,ix,iy,iz)+mZDN(fdy,ix,iy,iz)*mYDN(Uz,ix,iy,iz))
+    fzx(ix,iy,iz) = fzx(ix,iy,iz) + (mZDN(fdx,ix,iy,iz)*mXDN(Uz,ix,iy,iz)+mXDN(fdz,ix,iy,iz)*mZDN(Ux,ix,iy,iz))
+  end do; end do; end do
   end if
   !-----------------------------------------------------------------------------
   ! Momentum equations.  The ddxdn(fxx) part is valid in (3:gn-1), and hence px
   ! only needs guard zones in (1:2) and (gn:gn)
   !-----------------------------------------------------------------------------
-  dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)                    ! ops: 2 0 0
-  dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)                    ! ops: 2 0 0
-  dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)                    ! ops: 2 0 0
+!  dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)                    ! ops: 2 0 0
+!  dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)                    ! ops: 2 0 0
+!  dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)                    ! ops: 2 0 0
+  do iz=1,mz; do iy=1,my; do ix=1,mx
+    dpdtx(ix,iy,iz) = - mDDXDN(fxx,ix,iy,iz) - mDDYUP(fxy,ix,iy,iz) - mDDZUP(fzx,ix,iy,iz)
+    dpdty(ix,iy,iz) = - mDDXUP(fxy,ix,iy,iz) - mDDYDN(fyy,ix,iy,iz) - mDDZUP(fyz,ix,iy,iz)
+    dpdtz(ix,iy,iz) = - mDDXUP(fzx,ix,iy,iz) - mDDYUP(fyz,ix,iy,iz) - mDDZDN(fzz,ix,iy,iz)
+  end do; end do; end do
   !-----------------------------------------------------------------------------
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
@@ -378,14 +490,28 @@ SUBROUTINE pde (self)
   if (self%gamma==1.0) then
     dsdt = 0.0
   else
-    fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)                    ! ops: 1 4 0
+!    fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)                    ! ops: 1 4 0
+    do iz=1,mz; do iy=1,my; do ix=1,mx
+      fmx(ix,iy,iz) = fmx(ix,iy,iz)*mXDN(ss,ix,iy,iz) &
+         - (self%nu(5)*dd(ix,iy,iz,1)*mXDN(du,ix,iy,iz))*mDDXDN(ss,ix,iy,iz)
+      fmy(ix,iy,iz) = fmy(ix,iy,iz)*mYDN(ss,ix,iy,iz) &
+         - (self%nu(5)*dd(ix,iy,iz,1)*mYDN(du,ix,iy,iz))*mDDYDN(ss,ix,iy,iz)
+      fmz(ix,iy,iz) = fmz(ix,iy,iz)*mZDN(ss,ix,iy,iz) &
+         - (self%nu(5)*dd(ix,iy,iz,1)*mZDN(du,ix,iy,iz))*mDDZDN(ss,ix,iy,iz)
+    end do; end do; end do
     !---------------------------------------------------------------------------
     ! Q is heating per unit volume (energy per unit volume and time), which when
     ! divided by presssure (energy per unit volume) becomes entropy (unitless)
     ! per unit mass.  Multiplied by mass density it becomes mass-entropy per
     ! unit volume, which is our units for s.
     !---------------------------------------------------------------------------
-    dsdt = -div(ds,fm) + Q*d/pg                                                 ! ops: 1 1 1
+!    dsdt = -div(ds,fm) + Q*d/pg                                                 ! ops: 1 1 1
+    do iz=1,mz; do iy=1,my; do ix=1,mx
+      dsdt(ix,iy,iz) = - (mDDXUP(fmx,ix,iy,iz) + &
+                          mDDYUP(fmy,ix,iy,iz) + &
+                          mDDZUP(fmz,ix,iy,iz)) &
+                       + Q(ix,iy,iz)*d(ix,iy,iz)/pg(ix,iy,iz)
+    end do; end do; end do
   end if
   !-----------------------------------------------------------------------------
   ! Induction equation
@@ -394,25 +520,66 @@ SUBROUTINE pde (self)
     !---------------------------------------------------------------------------
     ! Electric current, resistive electric field and magnetic dissipation
     !---------------------------------------------------------------------------
-    J = curl_dn(ds,B)
+!    J = curl_dn(ds,B)
+    do iz=1,mz; do iy=1,my; do ix=1,mx
+      Jx(ix,iy,iz) = mDDYDN(Bz,ix,iy,iz) - mDDZDN(By,ix,iy,iz)
+      Jy(ix,iy,iz) = mDDZDN(Bx,ix,iy,iz) - mDDXDN(Bz,ix,iy,iz)
+      Jz(ix,iy,iz) = mDDXDN(By,ix,iy,iz) - mDDYDN(Bx,ix,iy,iz)
+    end do; end do; end do
     if (self%mhd_Ohm) then
       eta_Ohm = self%nu(6)
-      self%dt_Ohm = self%niMHD_courant*minval(dx**2/eta_Ohm)
+      self%dt_Ohm = self%niMHD_courant*minval(dsmin**2/eta_Ohm)
       E = eta_Ohm*J
     else
       self%dt_Ohm = 100.
-      E = self%nu(6)*edge(du)*J                                                 ! mhd: 0 6 0
+!      E = self%nu(6)*edge(du)*J                                                 ! mhd: 0 6 0
+      do iz=1,mz; do iy=1,my; do ix=1,mx
+        w1(ix,iy,iz) = mYDN(du,ix,iy,iz)
+        w2(ix,iy,iz) = mZDN(du,ix,iy,iz)
+        w3(ix,iy,iz) = mXDN(du,ix,iy,iz)
+      end do; end do; end do
+      do iz=1,mz; do iy=1,my; do ix=1,mx
+        Ex(ix,iy,iz) = self%nu(6)*mZDN(w1,ix,iy,iz)*Jx(ix,iy,iz)
+        Ey(ix,iy,iz) = self%nu(6)*mXDN(w2,ix,iy,iz)*Jy(ix,iy,iz)
+        Ez(ix,iy,iz) = self%nu(6)*mYDN(w3,ix,iy,iz)*Jz(ix,iy,iz)
+      end do; end do; end do
     end if
-    Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                     ! mhd: 2 3 0
-    if (self%gamma/=1.0) &
-      dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
+    if (self%gamma/=1.0) then
+!      Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                   ! mhd: 2 3 0
+!      dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
+      do iz=mz,1,-1; do iy=my,1,-1; do ix=mx,1,-1
+        w1(ix,iy,iz) = Jx(ix,iy,iz)*Ex(ix,iy,iz)
+        w2(ix,iy,iz) = Jy(ix,iy,iz)*Ey(ix,iy,iz)
+        w3(ix,iy,iz) = Jz(ix,iy,iz)*Ez(ix,iy,iz)
+        w4(ix,iy,iz) = mZUP(w1,ix,iy,iz)
+        w5(ix,iy,iz) = mXUP(w2,ix,iy,iz)
+        w6(ix,iy,iz) = mYUP(w3,ix,iy,iz)
+        Q(ix,iy,iz)  = mYUP(w4,ix,iy,iz) &
+                     + mZUP(w5,ix,iy,iz) &
+                     + mXUP(w6,ix,iy,iz)
+        dsdt(ix,iy,iz) = dsdt(ix,iy,iz) + Q(ix,iy,iz)*d(ix,iy,iz)/pg(ix,iy,iz)
+      end do; end do; end do
+    end if
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
     !---------------------------------------------------------------------------
-    Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)                                 ! mhd: 2 2 0
-    Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
-    Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
-    dBdt = -curl_up(ds,E)
+!    Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)                                 ! mhd: 2 2 0
+!    Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
+!    Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
+    do iz=1,mz; do iy=1,my; do ix=1,mx
+      Ex(ix,iy,iz) = Ex(ix,iy,iz) + mYDN(Uz,ix,iy,iz)*mZDN(By,ix,iy,iz) &
+                                  - mZDN(Uy,ix,iy,iz)*mYDN(Bz,ix,iy,iz)
+      Ey(ix,iy,iz) = Ey(ix,iy,iz) + mZDN(Ux,ix,iy,iz)*mXDN(Bz,ix,iy,iz) &
+                                  - mXDN(Uz,ix,iy,iz)*mZDN(Bx,ix,iy,iz)
+      Ez(ix,iy,iz) = Ez(ix,iy,iz) + mXDN(Uy,ix,iy,iz)*mYDN(Bx,ix,iy,iz) &
+                                  - mYDN(Ux,ix,iy,iz)*mXDN(By,ix,iy,iz)
+    end do; end do; end do
+!    dBdt = -curl_up(ds,E)
+    do iz=1,mz; do iy=1,my; do ix=1,mx
+      dBdtx(ix,iy,iz) = - mDDYUP(Ez,ix,iy,iz) + mDDZUP(Ey,ix,iy,iz)
+      dBdty(ix,iy,iz) = - mDDZUP(Ex,ix,iy,iz) + mDDXUP(Ez,ix,iy,iz)
+      dBdtz(ix,iy,iz) = - mDDXUP(Ey,ix,iy,iz) + mDDYUP(Ex,ix,iy,iz)
+    end do; end do; end do
     if (self%mhd_AD) then
       !---------------------------------------------------------------------------
       ! Below is the actual ambipolar drift parameter as given in equation 20 in
@@ -447,7 +614,7 @@ SUBROUTINE pde (self)
       dBdt(:,:,:,1) = dBdt(:,:,:,1) + (ddyup(ds, (Ud_x*By - Ud_y*Bx)) - ddzup(ds, (Ud_z*Bx - Ud_x*Bz)) )
       dBdt(:,:,:,2) = dBdt(:,:,:,2) + (ddzup(ds, (Ud_y*Bz - Ud_z*By)) - ddxup(ds, (Ud_x*By - Ud_y*Bx)) )
       dBdt(:,:,:,3) = dBdt(:,:,:,3) + (ddxup(ds, (Ud_z*Bx - Ud_x*Bz)) - ddyup(ds, (Ud_y*Bz - Ud_z*By)) )
-      self%dt_AD = self%niMHD_courant*minval(self%gamma_AD*self%rho_ions*d/(Bx**2+By**2+Bz**2)*dx**2)
+      self%dt_AD = self%niMHD_courant*minval(self%gamma_AD*self%rho_ions*d/(Bx**2+By**2+Bz**2)*dsmin**2)
       if (self%gamma==1.0) then
         dsdt = 0.
       else
@@ -459,8 +626,15 @@ SUBROUTINE pde (self)
     end if
   end if
   !-----------------------------------------------------------------------------
+  self%u_max = self%fmaxval(umx)
+  self%u_max = max(self%u_max,self%cdtd*dsmin*self%fmaxval(abs(dddt/d)))        ! ops: 0 0 1
+  if (io%verbose>3) print*,'u_max',self%u_max
+  !-----------------------------------------------------------------------------
+  call deallocate_scalars (Txx, Tyy, Tzz)
+  call deallocate_scalars (Txy, Tyz, Tzx)
+  call deallocate_scalars (w1, w2, w3, w4, w5 ,w6)
   call deallocate_vectors (ld, dd, E, J, fd, fx, fy, fz, fm)
-  call deallocate_scalars (lnd, pa, du, ss, cs, pp, pb, Q)
+  call deallocate_scalars (lnd, pa, du, ss, cs, pp, pb, Q, umx)
   if (self%mhd_Ohm) then
     call deallocate_scalars (eta_Ohm)
   end if
