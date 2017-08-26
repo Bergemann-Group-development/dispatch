@@ -1,8 +1,7 @@
 # Default for ifort. Beware that versions prior to version 12.3 may crash
 OPT = -O1
 DEBUG = -g -traceback -fpe:0
-#HW = -axAVX -xSSE4.1
-HW =
+HW = -axAVX -xSSE4.1
 
 # Depending on MPI use mpif90 or not
 ifeq ($(strip $(MPI)),mpi)

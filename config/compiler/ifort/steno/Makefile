@@ -1,1 +1,1 @@
-HW = -axAVX -xSSE4.1
+# HW =

@@ -1,3 +1,3 @@
-OPT = -O2
-HW = -axAVX -xSSE4.1 -diag-disable remark
-DEBUG = -vec-report=7
+OPT = -Ofast
+HW =
+DEBUG = -traceback -qopt-report -qopt-report-phase=vec -qopt-report-annotate
