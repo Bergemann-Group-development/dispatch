@@ -5,8 +5,9 @@ OPTS = optimized
 
 # Common configuration
 SOLVER = stagger2
+STAGGER = stagger_4th.o
 EXEC = test.x
 TOP = ../../..
 include $(TOP)/config/Makefile
 
-test.x: stagger_mod.o omp_timer_mod.o
+test.x: $(STAGGER) omp_timer_mod.o

@@ -159,6 +159,33 @@ PROGRAM test
   !-----------------------------------------------------------------------------
   ! Eliminate temporary scalars
   !-----------------------------------------------------------------------------
+  allocate (fxy(mx,my,mz), Ux(mx,my,mz), Uy(mx,my,mz), fdx(mx,my,mz), fdy(mx,my,mz))
+  fxy = 0.0; Ux=1.1; Uy=Ux-sin(Ux); fdx=Uy+5.; fdy=fdx+cos(Uy)
+  do i=1,iter
+    fxy(:,1,:)=0.0
+    fxy(:,:,1)=0.0
+    if (i==2) wc=wallclock()
+    do iz=3,mz-1
+      do iy=3,my-1
+        fxy(1,iy,iz)=0.0
+        do ix=3,mx-1
+          fxy(ix,iy,iz) = fxy(ix,iy,iz) &
+            + ((fdy(ix,iy,iz)-fdy(ix-1,iy,iz))*0.4 + (fdy(ix+1,iy,iz)-fdy(ix-2,iy,iz))*0.1) &
+            * (( Ux(ix,iy,iz)- Ux(ix,iy-1,iz))*0.4 + ( Ux(ix,iy+1,iz)- Ux(ix,iy-2,iz))*0.1) &
+            + (( Uy(ix,iy,iz)- Uy(ix-1,iy,iz))*0.4 + ( Uy(ix+1,iy,iz)- Uy(ix-2,iy,iz))*0.1) &
+            * ((fdx(ix,iy,iz)-fdx(ix,iy-1,iz))*0.4 + (fdx(ix,iy+1,iz)-fdx(ix,iy-2,iz))*0.1)
+        end do
+      end do
+    end do
+  end do
+  wc=wallclock()-wc
+  print 1,'temporary scalars eliminated; 4th order    :', &
+    wc*1e9/mtot,' ns/upd',mtot*(4*6)/(wc*1e9),' Gfl/s'
+  deallocate (fxy, Ux, Uy, fdx, fdy)
+
+  !-----------------------------------------------------------------------------
+  ! Eliminate temporary scalars
+  !-----------------------------------------------------------------------------
   allocate (fxy(mx,my,mz), fyz(mx,my,mz), Ux(mx,my,mz), Uy(mx,my,mz), Uz(mx,my,mz), fdx(mx,my,mz), fdy(mx,my,mz), fdz(mx,my,mz))
   fxy=0.0; fyz=0.0; Ux=1.1; Uy=Ux-sin(Ux); Uz=Ux+sin(Ux); fdx=Uy+5.; fdy=fdx+cos(Uy); fdz=fdy-cos(Ux)
   do i=1,iter
