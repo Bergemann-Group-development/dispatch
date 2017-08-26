@@ -9,6 +9,7 @@ MODULE mhd_mod
   USE scaling_mod
   USE scalar_mod
   USE vector_mod
+  USE vector_ops
   USE stagger_mod
   USE gpatch_mod
   USE force_mod

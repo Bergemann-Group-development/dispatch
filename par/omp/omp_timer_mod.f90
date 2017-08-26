@@ -9,7 +9,6 @@ MODULE omp_timer_mod
   real(8), external:: omp_get_wtime
   type omp_timer_t
   contains
-    procedure, nopass:: wall => wallclock
     procedure, nopass:: delay
     procedure, nopass:: get
     procedure, nopass:: set

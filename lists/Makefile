@@ -7,7 +7,7 @@ load_balance_mod.o: io_mod.o trace_mod.o mpi_mesg_mod.o omp_timer_mod.o patch_mo
 link_mod.o        : io_mod.o trace_mod.o task_mod.o mpi_mesg_mod.o
 list_mod.o        : io_mod.o trace_mod.o task_mod.o patch_mod.o link_mod.o omp_lock_mod.o experiment_mod.o \
                     download_mod.o load_balance_mod.o
-task_list_mod.o   : mpi_mod.o list_mod.o task_mod.o bits_mod.o trace_mod.o io_mod.o load_balance_mod.o \
+task_list_mod.o   : omp_timer_mod.o mpi_mod.o list_mod.o task_mod.o bits_mod.o trace_mod.o io_mod.o load_balance_mod.o \
                     experiment_mod.o refine_mod.o download_mod.o omp_lock_mod.o mpi_mesg_mod.o timer_mod.o \
                     direct_output_mod.o
 mesg_list_mod.o   : task_list_mod.o
