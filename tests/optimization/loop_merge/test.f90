@@ -165,6 +165,31 @@ PROGRAM test
     fxy(:,1,:)=0.0
     fxy(:,:,1)=0.0
     if (i==2) wc=wallclock()
+    do iz=1,mz
+      do iy=1,my
+        fxy(1,iy,iz)=0.0
+        do ix=1,mx
+          fxy(ix,iy,iz) = fxy(ix,iy,iz) &
+            + (fdy(ix,iy,iz)-fdy(max(1,ix-1),iy,iz))*0.5*( Ux(ix,iy,iz)- Ux(ix,max(1,iy-1),iz))*0.5 &
+            + ( Uy(ix,iy,iz)- Uy(max(1,ix-1),iy,iz))*0.5*(fdx(ix,iy,iz)-fdx(ix,max(1,iy-1),iz))*0.5
+        end do
+      end do
+    end do
+  end do
+  wc=wallclock()-wc
+  print 1,'temporary scalars eliminated, min/max index:', &
+    wc*1e9/mtot,' ns/upd',mtot*(1+nstagger*fl_per_stagger)/(wc*1e9),' Gfl/s'
+  deallocate (fxy, Ux, Uy, fdx, fdy)
+
+  !-----------------------------------------------------------------------------
+  ! Eliminate temporary scalars
+  !-----------------------------------------------------------------------------
+  allocate (fxy(mx,my,mz), Ux(mx,my,mz), Uy(mx,my,mz), fdx(mx,my,mz), fdy(mx,my,mz))
+  fxy = 0.0; Ux=1.1; Uy=Ux-sin(Ux); fdx=Uy+5.; fdy=fdx+cos(Uy)
+  do i=1,iter
+    fxy(:,1,:)=0.0
+    fxy(:,:,1)=0.0
+    if (i==2) wc=wallclock()
     do iz=3,mz-1
       do iy=3,my-1
         fxy(1,iy,iz)=0.0
