@@ -8,8 +8,9 @@ OPTS = optimized
 UPD             = adams_bashforth
 PDE             = mhd_mod.o
 STAGGER         = stagger_mod.o
-SOLVER          = paper/s
+#STAGGER         = stagger_4th.o
 #SOLVER          = stagger2
+SOLVER          = paper/s
 EXEC            = dispatch.x
 TOP             = ../../..
 

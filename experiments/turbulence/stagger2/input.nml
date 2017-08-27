@@ -11,6 +11,18 @@
 &timer_params
  sec_per_report=10
 /
+&task_list_params
+ do_delay=f
+ recv_active=t          ! IMPORTANT
+ queue_unpack=t         ! CHECK
+ retry_stalled=10
+ !sync_time=0.003
+/
+&mpi_mesg_params
+ delay_ms=300
+ send_priv=t            ! IMPORTANT
+ recv_priv=t            ! CHECK
+/
 &io_params
  top='../../..'
  verbose=0
@@ -23,7 +35,8 @@
 /
 &box_params
  size=1,1,1
- dims=3*4
+ dims=3*8
+ mpi_dims=1,1,2
  origin=0,0,0
 /
 &experiment_params
@@ -33,12 +46,12 @@
  ng=3*3
  courant=0.2
  grace=0.3
- n=3*32
+ n=3*48
 !dt_fixed=0.001
 /
 &out_params
  !end_time=2 out_time=0.10
- end_time=0.02 out_time=0.01
+ end_time=0.04 out_time=0.01
  print_time=0.0
  guard_zones=f
  time_derivs=f
