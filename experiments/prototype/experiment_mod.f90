@@ -46,7 +46,7 @@ subroutine init (self)
   call self%task_t%init                       ! generic task initialization
   self%dtime = 0.01+(0.09*self%id)/n
   self%grace = grace*self%dtime
-  self%end_time = end_time
+  io%end_time = end_time
   call trace_end
   first_time = .false.
 end subroutine init

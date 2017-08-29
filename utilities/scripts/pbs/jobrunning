@@ -1,0 +1,9 @@
+#!/bin/csh
+
+#set echo
+set j = $1
+
+ssh $PBS_O_HOST qstat -f $j |& grep "job_state = R" >& /dev/null
+set s = $status
+#echo "jobrunning $* returning status $s"
+exit $s

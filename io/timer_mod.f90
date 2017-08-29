@@ -19,6 +19,7 @@ MODULE timer_mod
     integer(8):: calls(maxproc)=0
     real(8), dimension(maxproc):: start=0d0, total=0d0
     real(8):: bytes_recv=0.0_8
+    real(8):: sec_per_report=10d0
     integer(8):: n_recv=0_8, n_test=0_8
     integer:: nq_send_max=0
     integer:: nq_recv_max=0
@@ -40,8 +41,7 @@ MODULE timer_mod
   type(timer_t), pointer:: timers(:)
   type(timer_t), public:: timer
   integer, save:: nprint=20
-  real(8), save:: sec_per_report=10d0, sec=0d0, next_report_sec
-  real(8), save:: prev1=0d0
+  real(8), save:: sec=0d0, next_report_sec=0d0
   real(8), save:: prev2=0d0
   integer(8), save:: n_update=0
   interface toc
@@ -58,6 +58,7 @@ SUBROUTINE init (self)
   class(timer_t):: self
   logical, save:: first_time=.true.
   integer:: ignore, i
+  real(8):: sec_per_report=10.
   namelist /timer_params/ sec_per_report
   !.............................................................................
   !$omp critical (timer_cr)
@@ -66,7 +67,8 @@ SUBROUTINE init (self)
     rewind (io_unit%input)
     read (io_unit%input, timer_params, iostat=ignore)
     if (io_unit%master) write (*, timer_params)
-    next_report_sec = sec_per_report
+    self%sec_per_report = sec_per_report
+    next_report_sec = wallclock() + sec_per_report
     omp%nthreads = max(1,omp%nthreads)
     allocate (timers(0:omp%nthreads-1))
   end if
@@ -129,10 +131,9 @@ SUBROUTINE end (self, itimer)
       wc - timers(thread)%start(itimer)
     timers(thread)%start(itimer) = wc
     if (io_unit%master) then
-      sec = wc - prev1
-      if (sec > sec_per_report) then
+      if (wc > next_report_sec) then
         call print()
-        prev1 = wc
+        next_report_sec = wc + self%sec_per_report
       end if
     end if
   end if
@@ -190,8 +191,8 @@ SUBROUTINE print ()
     print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
       sec, 'wall sec'
     2 format(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))
-    timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
     if (mpi%size>1) then
+      timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
       print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
         timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
       3 format(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
@@ -218,7 +219,6 @@ SUBROUTINE print ()
     flush (io_unit%mpi)
   end if
   n_previous = n_update
-  prev1 = wc
   prev2 = wc
   do i=1,ntimer
     timers(:)%total(i) = 0d0

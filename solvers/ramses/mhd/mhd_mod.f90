@@ -14,6 +14,7 @@
 !> =============================================================================
 MODULE mhd_mod
   !.............................................................................
+  USE const
   USE io_mod
   USE io_unit_mod
   USE gpatch_mod
@@ -58,6 +59,7 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hlld'
   type(index_t):: idx
+  real, save:: csound=1.
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
     smallc, do_isothermal, csound
 !...............................................................................
@@ -184,6 +186,7 @@ subroutine check_small (self)
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
   real(dp):: c,d,u,v,w,p,ekin
   integer, save:: nprint=10
+  real, save:: csound=1.
   associate(uu=>self%uin)
   !-----------------------------------------------------------------------------
   n_smalld = 0
@@ -983,7 +986,7 @@ subroutine cmp_mag_flx (self, lp1 ,lp2 ,lor ,bp1 , bp2, bor, dtds, emf, ngrid, n
       qLR (1:ngrid,8) = qRB(1:ngrid,j,k,bor,xdim)
       qRR (1:ngrid,8) = qLB(1:ngrid,j,k,bor,xdim)
       DO l = 1, ngrid
-        call riemann%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
+        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
       END DO
     END DO
   END DO
@@ -999,7 +1002,7 @@ subroutine solver (self,qleft,qright,fgdnv)
   real(dp),dimension(:,:):: qleft,qright,fgdnv
   !.............................................................................
   if (self%riemann.eq.'hlld')then
-    call riemann%hlld_vec(qleft,qright,fgdnv)
+    call rieman%hlld_vec(qleft,qright,fgdnv)
   else
     write(*,*)'unknown Riemann solver'
     stop

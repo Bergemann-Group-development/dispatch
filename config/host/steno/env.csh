@@ -1,0 +1,1 @@
+setenv SCHEDULER slurm

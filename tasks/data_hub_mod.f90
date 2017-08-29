@@ -265,8 +265,6 @@ SUBROUTINE init_same (self)
       self%s_u(i,1) = self%t_u(i,1)
     end if
   end do
-  print *, self%target%id,'tl tu', self%t_l, self%t_u
-  print *, 'sl, su', self%s_l, self%s_u
 END SUBROUTINE init_same
 
 !> =====================================================================
@@ -307,7 +305,7 @@ END SUBROUTINE dnload_from_same
 
 !> =====================================================================
 !> Initialize the method when the source is of a higher level of refinement
-!> than the target patch. 
+!> than the target patch.
 !> =====================================================================
 SUBROUTINE init_higher (self)
   class(data_hub_t) :: self
@@ -388,7 +386,7 @@ END SUBROUTINE init_higher
 !> of refinement, than the target patch. A temporary scratch cube is
 !> created and values the right entries in the source memory slots are
 !> copied. Then an interpolation is done. Can be easily extended to
-!> accommodate the van Leer interpolation scheme. 
+!> accommodate the van Leer interpolation scheme.
 !> =====================================================================
 SUBROUTINE dnload_from_higher (self)
   class(data_hub_t) :: self
@@ -483,7 +481,7 @@ END SUBROUTINE dnload_from_higher
 
 !> =====================================================================
 !> Initialize the method when the source is of a lower level of refinement
-!> than the target patch. 
+!> than the target patch.
 !> =====================================================================
 SUBROUTINE init_lower (self)
   class(data_hub_t) :: self
@@ -585,12 +583,12 @@ END SUBROUTINE init_lower
 !> the right location for the data is not in the target, a search in the
 !> neighbors is done. All values are initially interpolated in time to the
 !> target%time and then interpolated in space to get the required quantities.
-!> Can be extended to accommodate the van Leer interpolation scheme. 
+!> Can be extended to accommodate the van Leer interpolation scheme.
 !> =====================================================================
 SUBROUTINE dnload_from_lower (self)
   class(data_hub_t) :: self
   ! ....................................................................
-  integer :: jt(2),jt2(2), iv, sl(3), su(3), tl(3), tu(3), i, j, k 
+  integer :: jt(2),jt2(2), iv, sl(3), su(3), tl(3), tu(3), i, j, k
   integer :: d, cl(3), ii, l(3), u(3), id, n(3)
   class(mesh_t), pointer :: m
   class(patch_t), pointer:: source, target
@@ -656,6 +654,10 @@ SUBROUTINE dnload_from_lower (self)
         end do
       end do
     end do
+   ! -------------------------------------------------------------------
+   ! Now that the scratch cube is ready, we can spatially interpolate
+   ! back to target
+   ! -------------------------------------------------------------------
     do k=tl(3), tu(3)
       do j=tl(2), tu(2)
         do i=tl(1), tu(1)
@@ -792,13 +794,10 @@ SUBROUTINE check_in_target (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   d = source%i_d
   inside = .true.
   call target%index_space2(source,pos,iv, cl, p)
-  do i = 1,3
-    m => target%mesh(i)
-    if ((cl(i)<m%li).or.(cl(i)>m%ui)) inside = .false.
-  end do
+  inside = all(cl>=target%mesh%li .and. cl<=target%mesh%ui)
   if (inside) then                                                      ! do the interpolation from smaller
   ! --------------------------------------------------------------------
-  ! do spatial interpolation. 
+  ! do spatial interpolation.
   ! --------------------------------------------------------------------
     if (id /=target%id) then
       call target%time_interval (time, jt, pt)
@@ -831,7 +830,7 @@ SUBROUTINE check_in_target (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
       end if
     end if
     deallocate(cube)
-  found = .true.
+    found = .true.
   end if
 END SUBROUTINE check_in_target
 
@@ -872,10 +871,7 @@ SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
       if (abs(nbpatch%level-source%level)<2) then
         if (nbpatch%level == source%level) then                         ! same level
           cl = nbpatch%index_only2 (source,pos, iv, closest=.true.)
-          inside = .true.
-          do i = 1,3
-            if ((cl(i)<nbpatch%li(i)).or.(cl(i)>nbpatch%ui(i))) inside = .false.
-          end do
+          inside = all(cl>=nbpatch%mesh%li .and. cl<=nbpatch%mesh%ui)
           if (inside) then                                              ! same size, just take the value by temporal interpolation
             if (id /=nbpatch%id) then
               call nbpatch%time_interval (time, jt, pt)
@@ -907,11 +903,7 @@ SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
           end if
         else
           call nbpatch%index_space2(source,pos,iv, cl, p)
-          inside = .true.
-          do i = 1,3
-            m => nbpatch%mesh(i)
-            if ((cl(i)<m%li).or.(cl(i)>m%ui)) inside = .false.
-          end do
+          inside = all(cl>=nbpatch%mesh%li .and. cl<=nbpatch%mesh%ui)
           if (inside) then                                              ! different size, spatial and temporal interpolation
             if (id /=nbpatch%id) then
               call nbpatch%time_interval (time, jt, pt)

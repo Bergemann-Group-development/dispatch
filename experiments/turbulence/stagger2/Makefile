@@ -6,7 +6,11 @@ OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
-SOLVER          = stagger2
+PDE             = mhd_mod.o
+STAGGER         = stagger_mod.o
+#STAGGER         = stagger_4th.o
+#SOLVER          = stagger2
+SOLVER          = paper/s
 EXEC            = dispatch.x
 TOP             = ../../..
 
@@ -23,5 +27,5 @@ include $(TOP)/config/Makefile
 $(EXEC): cartesian_mod.o setup_mod.o $(PICOBJ)
 
 # Dependencies
-experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.o mhd_mod.o initial_mod.o timer_mod.o link_mod.o omp_timer_mod.o
+experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.o $(PDE) initial_mod.o timer_mod.o link_mod.o omp_timer_mod.o
 scaling_mod.o           : units_mod.o

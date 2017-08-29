@@ -1,0 +1,1 @@
+echo ${SLURM_JOBID:-undefined} | sed -e 's/\..*//'

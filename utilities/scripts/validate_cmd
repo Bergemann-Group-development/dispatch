@@ -42,8 +42,14 @@ endif
 # are OK, and a "reset" (-r) option is used, then nevertheless
 # document the difference, by saving the .log and .val files,
 # for reproducibility.
-diff -ibw $label.val $label.log
-if ($status) then
+if ($?tee) then
+  diff -ibw $label.val $label.log
+  set st = $status
+else
+  diff -ibw $label.val $label.log > $label.diff
+  set st = $status
+endif
+if ($st) then
   echo "                                                                    ==> NOT the same"
   if ($?reset) then
     cp -p $label{,_$date}.log
@@ -51,6 +57,8 @@ if ($status) then
     echo "WARNING: resetting $label.val"
     cp -p $label.{log,val}
     exit(0)
+  else if (! $?tee) then
+    echo "To see the diffs, list the validate/$label.diff file"
   endif
   exit(1)
 else

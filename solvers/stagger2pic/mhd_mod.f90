@@ -240,7 +240,7 @@ SUBROUTINE pde (self)
     du = dx*self%nu(1)*cs
     fxx = pp + d*(fxx - du*ddxup(ds,Ux)) - Ex
     fyy = pp + d*(fyy - du*ddyup(ds,Uy)) - Ey
-    fzz = pp + d*(fzz - du*ddzup(ds,Uz)) - Ex
+    fzz = pp + d*(fzz - du*ddzup(ds,Uz)) - Ez
     Q = d*du*(ddxup(ds,Ux)**2+ddyup(ds,Uy)**2+ddzup(ds,Uz))
   else
     ! Diagonal Reynolds stress
@@ -499,8 +499,8 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
-  if (self%out_time > 0.0) &
-    self%dtime = min (self%dtime, self%out_time)
+  if (io%out_time > 0.0) &
+    self%dtime = min (self%dtime, io%out_time)
   if (self%mhd_AD) then
     self%dtime = min (self%dtime, dt_AD_inp)
   end if

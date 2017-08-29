@@ -9,6 +9,7 @@
 ! and tttt is the snapshot number.
 
 &io_params
+ top='../../../..'
  verbose=2
  do_validate=t
  do_trace=f
@@ -23,8 +24,9 @@
 &experiment_params
 /
 &patch_params
+ use_data_hub=f
+ no_mans_land=f
  nt=5
- nw=2
  courant=0.2
  grace=0.3
  n=20,20,20
@@ -38,6 +40,8 @@
  time_derivs=f
 /
 &mhd_params
+ eos='ideal'
+ gamma=1.666667
  nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
 /
@@ -51,9 +55,9 @@
  type='single_solenoidal'
 /
 &initial_params
- k=3,3,3
- a0=0.0,0.0,0.0
- u0=0,0,0
+ k=3,2,1
+ a0=0.1,0.2,0.3
+ u0=0.1,0.2,0.3
  b0=0,0,0.3
  type='single_compressive'
 /

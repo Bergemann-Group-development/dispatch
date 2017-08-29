@@ -50,8 +50,6 @@ SUBROUTINE init_rt_data(self)
   self%cell_ds  = mhd_patch%ds                                          ! cell size
   self%it       = mhd_patch%it                                          ! task time slot
   self%nt       = mhd_patch%nt
-  self%end_time = self%mhd_patch%end_time
-  self%out_time = self%mhd_patch%out_time
   self%time     = -3                                                    ! initial time
   self%dtime    = 1e-6                                                  ! initial dtime
   if (mhd_patch%is_set(bits%static))    call self%set (bits%static)

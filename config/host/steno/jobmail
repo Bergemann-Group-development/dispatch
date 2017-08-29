@@ -1,0 +1,7 @@
+#!bin/csh
+
+if (-e $HOME/.forward) then
+  ssh astro06 Mail -s "restart_on_`hostname`" `cat $HOME/.forward`
+else
+  ssh astro06 Mail -s "restart_on_`hostname`" $USER
+endif

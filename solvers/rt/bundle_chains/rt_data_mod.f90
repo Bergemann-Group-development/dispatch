@@ -52,8 +52,6 @@ SUBROUTINE init_rt_data(self)
   self%size     = mhd_patch%size                                        ! task size
   self%cell_ds  = mhd_patch%ds                                          ! cell size
   self%it       = mhd_patch%it                                          ! task time
-  self%end_time = self%mhd_patch%end_time
-  self%out_time = self%mhd_patch%out_time
   self%time     = -3                                                    ! initial time
   self%dtime    = 1e-6                                                  ! initial dtime
   if (mhd_patch%is_set(bits%static))    call self%set (bits%static)
@@ -67,7 +65,7 @@ SUBROUTINE init_rt_data(self)
   allocate(self%q      (n(1), n(2), n(3), self%nt))                     ! net heating
   allocate(self%opacity(n(1), n(2), n(3), nwb))                         ! opacity table
   allocate(self%source (n(1), n(2), n(3), nwb))                         ! Source function table
-  if (self%do_output)  then
+  if (io%do_output)  then
     allocate(self%intensity (n(1), n(2), n(3), nwb)) 
     self%intensity = 0
   end if
@@ -110,7 +108,7 @@ SUBROUTINE update_rt_data (self)
   ! add cosmic ray heating
   call self%add_cr_heating(self%mhd_patch%time)  ! add cr heating
   call self%update_time
- ! if (self%do_output)  self%intensity (:,:,:,:) = 0. 
+ ! if (io%do_output)  self%intensity (:,:,:,:) = 0. 
   nullify (rho, s,op,src)
   if (io%verbose>2) call self%check(2)
   call trace_end (itimer)

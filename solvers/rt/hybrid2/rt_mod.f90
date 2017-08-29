@@ -56,7 +56,7 @@ MODULE rt_mod
 !-----------------------------------------------------------------------------
 ! Sequential header, for MPI and I/O
 !-----------------------------------------------------------------------------
-  integer, save:: rt_n_header = (14*4 + 7*8 + 5*8*3 + 2*8*8 + 1*4*8 + 2*4*3)/4
+  integer, save:: rt_n_header = (14*4 + 4*8 + 5*8*3 + 2*8*8 + 1*4*8 + 2*4*3)/4
   type rt_header_t
     sequence
     integer:: version=1
@@ -74,11 +74,8 @@ MODULE rt_mod
     integer:: nq=0
     integer:: npad=0
     real(8):: time
-    real(8):: end_time
     real(8):: out_next
-    real(8):: out_time
     real(8):: print_next
-    real(8):: print_time
     real(8):: dtime
     real(8):: position(3)
     real(8):: velocity(3)

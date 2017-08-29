@@ -1,4 +1,12 @@
 !> =============================================================================
+!> Staggered mesh solver using entropy per unit volume as the energy variable.
+!>
+!> Flop counting is enable via annotation at the end of lines. To count flops,
+!> use a Linux pipeline such as 
+!> 
+!> % grep ops: ../../../solvers/stagger2/mhd_mod.f90 | sed 's/.*ops://' | sumcol 2
+!>
+!> where 'sumcol' is any script that sums up values in column 2
 !> =============================================================================
 MODULE mhd_mod
   USE io_mod
@@ -9,6 +17,7 @@ MODULE mhd_mod
   USE scaling_mod
   USE scalar_mod
   USE vector_mod
+  USE vector_ops
   USE stagger_mod
   USE gpatch_mod
   USE force_mod
@@ -198,15 +207,15 @@ SUBROUTINE pde (self)
   ! Compute velocity U=momentum/density, leaving down shifted density and log
   ! density for reuse below.  U is valid in (2:gn)
   !-----------------------------------------------------------------------------
-  lnd = log(d)
+  lnd = log(d)                                                                  ! ops: 0 0 0 0 3
   ld = down(lnd)
-  dd = exp(ld)
-  U = p/dd
+  dd = exp(ld)                                                                  ! ops: 0 0 0 0 3
+  U = p/dd                                                                      ! ops: 0 0 3
   !-----------------------------------------------------------------------------
   ! Gas pressure. The 2nd table variable is entropy per unit mass, effectively
   ! a log variable, from the table point of view.
   !-----------------------------------------------------------------------------
-  ss = s/d
+  ss = s/d                                                                      ! ops: 0 0 1
   pg = self%gas_pressure(lnd,ss)
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure.  The divergence is valid
@@ -214,7 +223,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ds = self%ds
   dx = minval(ds)                                       ! smallest {dx,dy,dz}
-  du = -dx*div(ds,U)                                    ! convergence rate
+  du = -dx*div(ds,U)                                    ! convergence rate      ! ops: 0 1 0
   du = max(du,0.0)                                      ! positive part
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -231,14 +240,14 @@ SUBROUTINE pde (self)
     fzz = zup(Uz)**2
     pp = (fxx+fyy+fzz)
     ! Diagonal (negative) Maxwell stress (borrowing E for scratch)
-    Ex = xup(Bx)**2
-    Ey = yup(By)**2
-    Ez = zup(Bz)**2
+    Ex = xup(Bx)**2                                                             ! mhd: 0 1 0
+    Ey = yup(By)**2                                                             ! mhd: 0 1 0
+    Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
     ! Magnetic pressure
-    pb = 0.5*(Ex+Ey+Ez)
+    pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
     ! Fast mode speed + velocity
     pa = self%nu(2)*d*du**2
-    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
+    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     if (io%verbose>3) then
       self%u_max = self%fmaxval(cs)
       print*,'u_max',self%u_max
@@ -248,88 +257,88 @@ SUBROUTINE pde (self)
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
     if (io%verbose>3) print*,'u_max',self%u_max
     ! Isotropic pressure part
-    pp = pg + pa + pb
+    pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
-    du = dx*self%nu(1)*cs
-    fxx = pp + d*(fxx - du*Txx) - Ex
-    fyy = pp + d*(fyy - du*Tyy) - Ey
-    fzz = pp + d*(fzz - du*Tzz) - Ex
+    du = (dx*self%nu(1))*cs
+    fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
+    fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
+    fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
   else
     ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2
-    fyy = yup(Uy)**2
-    fzz = zup(Uz)**2
-    pp = (fxx+fyy+fzz)
+    fxx = xup(Ux)**2                                                            ! ops: 0 1 0
+    fyy = yup(Uy)**2                                                            ! ops: 0 1 0
+    fzz = zup(Uz)**2                                                            ! ops: 0 1 0
+    pp = (fxx+fyy+fzz)                                                          ! ops: 2 0 0
     ! Isotropic pressure part
-    pa = self%nu(2)*d*du**2                               ! dimension: pressure
+    pa = self%nu(2)*d*du**2                          ! dimension: pressure      ! ops: 0 3 0
     ! Sound speed + velocity
-    cs = sqrt((self%gamma*pg+pa)/d)
+    cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
     if (io%verbose>3) then
       self%u_max = self%fmaxval(cs)
       print*,'u_max',self%u_max
       self%u_max = self%fmaxval(cs + sqrt(pp))
       print*,'u_max',self%u_max
     end if
-    self%u_max = self%fmaxval(cs + sqrt(pp) + du)
+    self%u_max = self%fmaxval(cs + sqrt(pp) + du)                               ! ops: 2 0 0 1 0
     if (io%verbose>3) print*,'u_max',self%u_max
-    pp = pg + pa
+    pp = pg + pa                                                                ! ops: 1 0 0
     ! Total diagondal stress, with density factor
-    du = dx*self%nu(1)*cs
+    du = (dx*self%nu(1))*cs                                                     ! ops: 0 1 0
     !---------------------------------------------------------------------------
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
-    fxx = pp + d*(fxx - du*Txx)
-    fyy = pp + d*(fyy - du*Tyy)
-    fzz = pp + d*(fzz - du*Tzz)
+    fxx = pp + d*(fxx - du*Txx)                                                 ! ops: 2 2 0
+    fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
+    fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
   end if
   !-----------------------------------------------------------------------------
-    ! du has units area per unit time, which gives velocity squared times mass
-    ! density per unit time = energy per unit volume and time
+  ! du has units area per unit time, which gives velocity squared times mass
+  ! density per unit time = energy per unit volume and time
   !-----------------------------------------------------------------------------
-  Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)
+  Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
   call deallocate_scalars (Txx, Tyy, Tzz)
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
-  fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux
-  fm = p+fd                                             ! mass flux
+  fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux   ! ops: 0 9 0
+  fm = p+fd                                             ! mass flux             ! ops: 3 0 0
   dddt = -div(ds,fm)                                    ! density derivative
-  self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))
+  self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))           ! ops: 0 0 1
   if (io%verbose>3) print*,'u_max',self%u_max
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
-  !---------------------------------------------------------------------------
-  fxy = ydn(Ux)*xdn(Uy)
-  fyz = zdn(Uy)*ydn(Uz)
-  fzx = xdn(Uz)*zdn(Ux)
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  fxy = ydn(Ux)*xdn(Uy)                                                         ! ops: 0 1 0
+  fyz = zdn(Uy)*ydn(Uz)                                                         ! ops: 0 1 0
+  fzx = xdn(Uz)*zdn(Ux)                                                         ! ops: 0 1 0
+  !-----------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call allocate_scalars (self%gn, Txy, Tyz, Tzx)
-  Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)
-  Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)
-  Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)
-  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*Txy
-  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*Tyz
-  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*Tzx
-  Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &
-                               yup(zup(Tyz))**2 + &
-                               zup(xup(Tzx))**2)
+  Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)                                               ! ops: 0 1 0
+  Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)                                               ! ops: 0 1 0
+  Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)                                               ! ops: 0 1 0
+  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*Txy                                 ! ops: 1 3 0
+  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*Tyz                                 ! ops: 1 3 0
+  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*Tzx                                 ! ops: 1 3 0
+  Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
+                               yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
+                               zup(xup(Tzx))**2)                                ! ops: 1 0 0
   call deallocate_scalars (Txy, Tyz, Tzx)
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Multiply with edge-centered density
-  !---------------------------------------------------------------------------
-  fxy = exp(ydn(ldx))*fxy
-  fyz = exp(zdn(ldy))*fyz
-  fzx = exp(xdn(ldz))*fzx
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  fxy = exp(ydn(ldx))*fxy                                                       ! ops: 0 1 0 0 1
+  fyz = exp(zdn(ldy))*fyz                                                       ! ops: 0 1 0 0 1
+  fzx = exp(xdn(ldz))*fzx                                                       ! ops: 0 1 0 0 1
+  !-----------------------------------------------------------------------------
   ! Off-diagonal Maxwell stress
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (self%mhd) then
-    fxy = fxy - ydn(Bx)*xdn(By)
-    fyz = fyz - zdn(By)*ydn(Bz)
-    fzx = fzx - xdn(Bz)*zdn(Bx)
+    fxy = fxy - ydn(Bx)*xdn(By)                                                 ! mhd: 1 1 0
+    fyz = fyz - zdn(By)*ydn(Bz)                                                 ! mhd: 1 1 0
+    fzx = fzx - xdn(Bz)*zdn(Bx)                                                 ! mhd: 1 1 0
   end if
   !-----------------------------------------------------------------------------
   ! Consistent addition of mass flux related momentum flux, symmetrized. The
@@ -337,30 +346,30 @@ SUBROUTINE pde (self)
   ! while the off-diagonal part needs to be properly symmetrized.
   !-----------------------------------------------------------------------------
   if (self%nu(4) > 0.0) then
-    pa = d*du*self%nu(4)
+    pa = d*du*self%nu(4)                                                        ! ops: 0 2 0
     !---------------------------------------------------------------------------
     ! fxx, pa, ddxup(ldx), and xup(Ux) are all valid in (2:gn-1)
     !---------------------------------------------------------------------------
-    fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)
-    fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)
-    fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)
-    fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
-    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
-    fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
+    fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)                                        ! ops: 1 2 0
+    fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)                                        ! ops: 1 2 0
+    fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)                                        ! ops: 1 2 0
+    fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))                           ! ops: 2 2 0
+    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))                           ! ops: 2 2 0
+    fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))                           ! ops: 2 2 0
   end if
   !-----------------------------------------------------------------------------
   ! Momentum equations.  The ddxdn(fxx) part is valid in (3:gn-1), and hence px
   ! only needs guard zones in (1:2) and (gn:gn)
   !-----------------------------------------------------------------------------
-  dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)
-  dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)
-  dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)
+  dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)                    ! ops: 2 0 0
+  dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)                    ! ops: 2 0 0
+  dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)                    ! ops: 2 0 0
   !-----------------------------------------------------------------------------
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) &
-    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
+   dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
@@ -369,14 +378,14 @@ SUBROUTINE pde (self)
   if (self%gamma==1.0) then
     dsdt = 0.0
   else
-    fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)
+    fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)                    ! ops: 1 4 0
     !---------------------------------------------------------------------------
     ! Q is heating per unit volume (energy per unit volume and time), which when
     ! divided by presssure (energy per unit volume) becomes entropy (unitless)
     ! per unit mass.  Multiplied by mass density it becomes mass-entropy per
     ! unit volume, which is our units for s.
     !---------------------------------------------------------------------------
-    dsdt = -div(ds,fm) + Q*d/pg
+    dsdt = -div(ds,fm) + Q*d/pg                                                 ! ops: 1 1 1
   end if
   !-----------------------------------------------------------------------------
   ! Induction equation
@@ -392,17 +401,17 @@ SUBROUTINE pde (self)
       E = eta_Ohm*J
     else
       self%dt_Ohm = 100.
-      E = self%nu(6)*edge(du)*J
+      E = self%nu(6)*edge(du)*J                                                 ! mhd: 0 6 0
     end if
-    Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
+    Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                     ! mhd: 2 3 0
     if (self%gamma/=1.0) &
-      dsdt = dsdt + Q*d/pg
+      dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
     !---------------------------------------------------------------------------
-    Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
-    Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
-    Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
+    Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)                                 ! mhd: 2 2 0
+    Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
+    Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
     dBdt = -curl_up(ds,E)
     if (self%mhd_AD) then
       !---------------------------------------------------------------------------
@@ -494,8 +503,8 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
-  if (self%out_time > 0.0) &
-    self%dtime = min (self%dtime, self%out_time)
+  if (io%out_time > 0.0) &
+    self%dtime = min (self%dtime, io%out_time)
 
   self%dt(self%it) = self%dtime
 

@@ -135,8 +135,8 @@ SUBROUTINE pre_init (self)
   call init_random                                                      ! random numbers
 
   dt   = 0.0                                                            ! trigger dt=dtnew
-  toutf = self%out_time
-  toutp = self%out_time
+  toutf = io%out_time
+  toutp = io%out_time
 
   if (firstcall) then
      call init_switches                                                 ! execution control
@@ -218,7 +218,7 @@ SUBROUTINE post_init (self)
   print *,'Bz', sum(Ex**2), sum(Ey**2), sum(Bz**2), 0
   call write_log                                        ! initialize log output
   call write_io                                         ! write initial snapshot
-  !self%out_time = tend
+  !io%out_time = tend
   !-----------------------------------------------------------------------------
   ! Save the location of dynamic PIC data for this patch
   !-----------------------------------------------------------------------------

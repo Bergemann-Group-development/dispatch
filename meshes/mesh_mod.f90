@@ -186,13 +186,16 @@ MODULE mesh_mod
   interface CartesianToCurrent
     module procedure :: CartesianToCurrent4, CartesianToCurrent8
   end interface
+  interface round
+    module procedure :: round4, round8
+  end interface
 
   real(8), parameter :: pi = 3.14159265358979323846
 
 PUBLIC MeshFactory, MeshRecycler, &
        CartesianToCylindrical, CartesianToSpherical, CylindricalToCartesian, &
        CylindricalToSpherical, SphericalToCartesian, SphericalToCylindrical, &
-       CurrentToCartesian, CartesianToCurrent
+       CurrentToCartesian, CartesianToCurrent, round
 CONTAINS
 
 !> =============================================================================
@@ -352,9 +355,8 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   do i=1,self%gn
     self%r(i) = real(i - h - self%ng,kind=8) * self%d + self%llc_nat - self%centre_nat
   end do
-  self%lf = self%r(self%li)
-  self%uf = self%r(self%ui)
-
+  self%lf = -self%s*0.5_8
+  self%uf = +self%s*0.5_8
   call trace_end
 END SUBROUTINE init_mesh
 
@@ -1051,5 +1053,59 @@ FUNCTION VolumeCentroid (mesh) result (centre)
 
   call trace_end
 END FUNCTION VolumeCentroid
+
+!> =============================================================================
+!> Round a single-precision floating point number to `digit` sig. figs.
+!> =============================================================================
+FUNCTION round4(a,digit) result (b)
+  real(4) :: a, b, rof, q1, q2, q3
+  integer :: digit
+  real(4) :: tiny = 1.0e-32
+  integer :: minexp = -6
+  integer :: i1,i2
+! ----------------------------------------------------------------------
+
+  q1 = abs(a)
+  if (q1 <= tiny .or. digit == 0.) then
+    b = a
+    return
+  end if
+  q1 = log10(q1)
+  q2 = sign(0.5, q1)
+  i1 = digit - int(q1 + q2 + 0.5)
+  i2 = min(-3, digit + minexp)
+  q1 = 10.0**i1
+  q2 = 10.0**i2
+  q3 = sign(q2, a)
+  b = anint(a * q1 + q3) / q1
+
+END FUNCTION round4
+
+!> =============================================================================
+!> Round a double-precision floating point number to `digit` sig. figs.
+!> =============================================================================
+FUNCTION round8(a,digit) result (b)
+  real(8) :: a, b, rof, q1, q2,q3
+  integer :: digit
+  real(8) :: tiny = 1.0d-99
+  integer :: minexp = -14
+  integer :: i1,i2
+! ----------------------------------------------------------------------
+
+  q1 = abs(a)
+  if (q1 <= tiny .or. digit == 0_8) then
+    b = a
+    return
+  end if
+  q1 = log10(q1)
+  q2 = sign(0.5_8, q1)
+  i1 = digit - int(q1 + q2 + 0.5_8)
+  i2 = min(-3, digit + minexp)
+  q1 = 10.0_8**i1
+  q2 = 10.0_8**i2
+  q3 = sign(q2, a)
+  b = anint(a * q1 + q3) / q1
+
+END FUNCTION round8
 
 END MODULE mesh_mod

@@ -1,6 +1,7 @@
 module riemann_mod
   use amr_parameters
   use hydro_parameters
+  use const
   USE io_mod
   USE trace_mod
   USE mpi_mod
@@ -16,7 +17,7 @@ module riemann_mod
     procedure, nopass:: hllc_a
     procedure, nopass:: hllc_v
   end type
-  type(riemann_t), public:: riemann
+  type(riemann_t), public:: rieman
 contains
 
 !> =============================================================================

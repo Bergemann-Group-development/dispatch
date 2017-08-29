@@ -38,7 +38,6 @@ MODULE patch_mod
     integer:: nw=2                      ! number of work indices
     integer:: msplit=2                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
-    logical:: guard_zones, time_derivs  ! switches for I/O
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
@@ -111,13 +110,15 @@ MODULE patch_mod
     procedure:: interpolate
     procedure:: interpolate_specific
     procedure:: index_space             ! full mapping to index space
+    procedure:: index_space2
     procedure:: index_only
+    procedure:: index_only2
     procedure:: count_edges
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
   !-----------------------------------------------------------------------------
-  integer, save:: n_header = (14*4 + 7*8 + 5*8*3 + 1*8 + 2*8*8 + 1*4*8 + 2*4*3)/4
+  integer, save:: n_header = (14*4 + 4*8 + 5*8*3 + 1*8 + 2*8*8 + 1*4*8 + 2*4*3)/4
   type header_t
     sequence
     integer:: version=1
@@ -135,11 +136,8 @@ MODULE patch_mod
     integer:: nq=0
     integer:: npad=0
     real(8):: time
-    real(8):: end_time
     real(8):: out_next
-    real(8):: out_time
     real(8):: print_next
-    real(8):: print_time
     real(8):: dtime
     real(8):: position(3)
     real(8):: velocity(3)
@@ -183,11 +181,8 @@ SUBROUTINE patch_to_header (self, head)
   head%iout       = self%iout
   head%level      = self%level
   head%time       = self%time
-  head%end_time   = self%end_time
   head%out_next   = self%out_next
-  head%out_time   = self%out_time
   head%print_next = self%print_next
-  head%print_time = self%print_time
   head%dtime      = self%dtime
   head%position   = self%position
   head%velocity   = self%velocity
@@ -239,11 +234,8 @@ SUBROUTINE header_to_patch (self, head)
   self%iout       = head%iout
   self%level      = head%level
   self%time       = head%time
-  self%end_time   = head%end_time
   self%out_next   = head%out_next
-  self%out_time   = head%out_time
   self%print_next = head%print_next
-  self%print_time = head%print_time
   self%dtime      = head%dtime
   self%position   = head%position
   self%velocity   = head%velocity
@@ -281,7 +273,7 @@ SUBROUTINE check_error (self, a, label, error)
   integer, save:: nerror=4
   !-----------------------------------------------------------------------------
   if (.not.io%do_debug) return
-  if (self%guard_zones) then
+  if (io%guard_zones) then
     l = self%mesh%lb
     u = self%mesh%ub
   else
@@ -381,11 +373,11 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
-  self%guard_zones = guard_zones
-  self%time_derivs = time_derivs
-  self%end_time    = end_time
-  self%out_time    = out_time
-  self%print_time  = print_time
+  io%guard_zones   = guard_zones
+  io%time_derivs   = time_derivs
+  io%end_time      = end_time
+  io%out_time      = out_time
+  io%print_time    = print_time
   self%print_next  = print_time
   if (all(self%size==self%box)) then
     write (io_unit%log,*) mpi%rank, 'task', self%id, ' is root grid'
@@ -816,8 +808,8 @@ SUBROUTINE output (self, experiment_name)
     end if
     self%iout = self%iout+1
     !$omp end critical (out_cr)
-    if (self%out_time==0.0) exit
-    self%out_next = (nint(self%out_next/self%out_time)+1)*self%out_time
+    if (io%out_time==0.0) exit
+    self%out_next = (nint(self%out_next/io%out_time)+1)*io%out_time
   end do
   call trace_end (itimer)
 END SUBROUTINE output
@@ -882,7 +874,11 @@ SUBROUTINE output_direct (self)
   ! Pass a chunk to the procedure that eventually writes a binary file
   !-----------------------------------------------------------------------------
   l = self%mesh%li
-  u = self%mesh%ui-1
+  if (self%no_mans_land) then
+    u = self%mesh%ui
+  else
+    u = self%mesh%ui-1
+  end if
   n = u-l+1
   allocate (buf(n(1),n(2),n(3),self%nv))
   call self%time_interval (self%out_next, jt, pt)
@@ -1116,6 +1112,12 @@ SUBROUTINE output_legacy (self, experiment_name)
   integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
   call trace_begin('patch_mod::output_legacy')
+  !-----------------------------------------------------------------------------
+  ! Check number of patches written and issue a message when all done
+  !-----------------------------------------------------------------------------
+  if (io%nwrite<=0) then
+    io%nwrite = io%ntask
+  end if
   self%max_files = self%max_files-1
   if (self%max_files <= 0) then
     write (io_unit%log,*) 'TOO MANY FILES'
@@ -1125,21 +1127,21 @@ SUBROUTINE output_legacy (self, experiment_name)
   ! If guard_zones is true, include the guard zones.  If time_derivs is true,
   ! write out the time derivatives also.
   !-----------------------------------------------------------------------------
-  if (self%guard_zones) then
+  if (io%guard_zones) then
     l = self%mesh%lb
     u = self%mesh%ub
   else
     l = self%mesh%li
     u = self%mesh%ui
   end if
-  if (self%time_derivs) then
+  if (io%time_derivs) then
     no = min(2,self%nw)
   else
     no = 1
   end if
-  if (self%out_time==0.0) then
+  if (io%out_time==0.0) then
     time = self%time
-  else if (self%time_derivs) then
+  else if (io%time_derivs) then
     time = self%t(self%nt-2)
   else
     time = self%out_next
@@ -1147,17 +1149,19 @@ SUBROUTINE output_legacy (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
-  self%ioformat = 2
+  if (self%no_mans_land) then
+    self%ioformat = 1
+  else
+    self%ioformat = 2
+  end if
   write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout+1
   !$omp master
   if (iodir/=self%iout+1) call io%mkdir (trim(filename))
   iodir = self%iout+1
   !$omp end master
   write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
-  if (io%debug(0)) then
-    if (io%debug(1) .or. self%track) &
-      print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
-  end if
+  if (io%debug(1)) &
+    print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
   write (io%data_unit,'(i2.2)') self%ioformat
   write (io%data_unit,'(a)') trim(self%kind)
@@ -1181,39 +1185,37 @@ SUBROUTINE output_legacy (self, experiment_name)
       allocate (buf(n(1),n(2),n(3)))
       !-------------------------------------------------------------------------
       ! If we write out time derivatives we want a pair of consistent values
-      ! and time derivatives, which we have at iit(nt-2).
+      ! and time derivatives, which we have at iit(nt-2); time will select that.
       !-------------------------------------------------------------------------
       it1 = self%iit(self%nt-2)
-        if (self%out_time == 0.0) then
-          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
-        !-------------------------------------------------------------------------
-        ! Normally, we write out only variable values, which can then be interpolated
-        ! to the exact output time, self%out_next, the update of which must come
-        ! after this point
-        !-------------------------------------------------------------------------
-        else if (self%time_derivs) then
-          it = it1
-          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)
-          call check_error(self, buf, "output 1")
-        else
-          it2 = self%iit(self%nt-1)
-          it = it2
-          pt = (self%out_next-self%t(it1))/max(self%t(it2)-self%t(it1),1d-30)
-          if (self%t(it2)==self%t(it1)) pt=0.0
-          qt = 1.0-pt
-          buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
-              + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
-        end if
+      it2 = self%iit(self%nt-1)
+      if (io%out_time == 0.0) then
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
+      !-------------------------------------------------------------------------
+      ! Normally, we write out only variable values, which can then be interpolated
+      ! to the exact output time, self%out_next, the update of which must come
+      ! after this point
+      !-------------------------------------------------------------------------
+      else
+        pt = (time-self%t(it1))/max(self%t(it2)-self%t(it1),1d-30)
+        if (self%t(it2)==self%t(it1)) pt=0.0
+        qt = 1.0-pt
+        buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
+            + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
+      end if
       call check_error(self, buf, "output 2")
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
-          trim(filename),iv,it,jo,minval(buf),maxval(buf),pt
+          trim(filename),iv,it1,jo,minval(buf),maxval(buf),pt
       write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
       if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
     end do
   end do
   close (io%data_unit)
+  io%nwrite = io%nwrite-1
+  if (io%debug(0) .and. io%nwrite==0) &
+    print '(a,i5.5)', 'snapshot: '//trim(io%outputname),self%iout
   call trace_end
 END SUBROUTINE output_legacy
 
@@ -1279,8 +1281,8 @@ SUBROUTINE input_legacy (self, ok)
   !-----------------------------------------------------------------------------
   ! If guard_zones is true, include the guard zones.
   !-----------------------------------------------------------------------------
-  l = merge (self%mesh%lb, self%mesh%li, self%guard_zones)
-  u = merge (self%mesh%ub, self%mesh%ui, self%guard_zones)
+  l = merge (self%mesh%lb, self%mesh%li, io%guard_zones)
+  u = merge (self%mesh%ub, self%mesh%ui, io%guard_zones)
   !-----------------------------------------------------------------------------
   ! Read the binary file with the data cube.
   !-----------------------------------------------------------------------------
@@ -1303,7 +1305,7 @@ SUBROUTINE input_legacy (self, ok)
   !-----------------------------------------------------------------------------
   ! Update the iout and out_next for continued experiment
   !-----------------------------------------------------------------------------
-  self%out_next = (int(self%time/self%out_time)+1)*self%out_time
+  self%out_next = (int(self%time/io%out_time)+1)*io%out_time
   call trace_end
 END SUBROUTINE input_legacy
 
@@ -1324,7 +1326,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   real:: fmin, fmax
   real, dimension(:,:,:), pointer:: df
   integer, save:: itimer=0
-  integer, parameter:: max_lines=25
+  integer, parameter:: max_lines=50
   integer, save:: n_lines=0
   integer, save:: counts(7)=0
   !-----------------------------------------------------------------------------
@@ -1360,8 +1362,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   1 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,5i5,6i4,l3,l1,o12)
   if (io%verbose>=0) then
     if (self%time>=self%print_next) then
-      if (self%print_time > 0) &
-        self%print_next = (nint(self%time/self%print_time)+1)*self%print_time
+      if (io%print_time > 0) &
+        self%print_next = (nint(self%time/io%print_time)+1)*io%print_time
       call trace%begin ('patch_t%info', itimer=itimer)
       nv = 1
       if (io%verbose>2) nv = self%nv
@@ -1402,13 +1404,15 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       ! Print a one-liner if verbose==1 and id==1, or verbose>1, while
       ! accumulating counters also when not printing
       !-------------------------------------------------------------------------
-      if (io%verbose>0 .or. self%id==2) then
+      if (io%verbose>0 .or. self%track) then
         if (io%master) &
           counts = counts + &
             [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
              mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
              mpi_mesg%n_delay]
-        if (io%master .or. self%id==2) then
+        if (io%master .or. self%track) then
+          !$omp atomic
+          n_lines = n_lines-1
           if (n_lines<=0) then
             !$omp critical (info_cr2)
             print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
@@ -1418,8 +1422,6 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             n_lines = max_lines
             !$omp end critical (info_cr2)
           end if
-          !$omp atomic
-          n_lines = n_lines-1
           do iv=1,nv
             print 1, &
             'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
@@ -1606,8 +1608,8 @@ SUBROUTINE courant_condition (self, detailed_timer)
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
-  if (self%out_time > 0.0) &
-    self%dtime = min (self%dtime, self%out_time)
+  if (io%out_time > 0.0) &
+    self%dtime = min (self%dtime, io%out_time)
   self%dt(self%it) = self%dtime
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
@@ -2067,7 +2069,7 @@ SUBROUTINE time_interval (self, time, jt, pt)
   real(8)                         :: t(self%nt), dt
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
-  call trace%begin ('patch_t%time_interval', 2, itimer=itimer)
+  !call trace%begin ('patch_t%time_interval', 2, itimer=itimer)
   t = self%t(self%iit)
   j = 1
   do i=1,self%nt-2
@@ -2084,7 +2086,7 @@ SUBROUTINE time_interval (self, time, jt, pt)
   if (io%verbose>1 .and. pt(2)>0.0) then
     print '(a,1p,3e12.4,2i5,0p,2f8.4)', 'time_interval: times  =', t(j), time, t(j+1), jt, pt
   end if
-  call trace%end (itimer)
+  !call trace%end (itimer)
 END SUBROUTINE time_interval
 
 !> =============================================================================
@@ -2167,6 +2169,88 @@ FUNCTION index_only (self, pos, roundup) RESULT (ii)
 END FUNCTION index_only
 
 !> =============================================================================
+!> Return indices and fractions for 3D interpolation.  Only called from
+!> patch_mod::interpolation, where a possible issue is to ensure the correct
+!> behavior when the source and target points are essentially the same, except
+!> for roundoff.  We then want to make sure that the index becomes the same,
+!> with fraction vanishing, so there is no possible issue with extrapolations.
+!> Hence we should add a small fraction before taking the floor value, and then
+!> subtract the same.
+!> =============================================================================
+SUBROUTINE index_space2 (self, nbor, pos, iv, ii, p)
+  class(patch_t):: self
+  class(patch_t), pointer :: nbor
+  real(8)           :: pos(3)
+  integer           :: iv
+  integer           :: ii(3)
+  real              :: p(3)
+  !.....................................................................
+  class(mesh_t), pointer :: m,mn
+  integer           :: i
+  real(8)           :: pp
+  real(8), parameter:: eps=0.001_8
+  integer, save     :: itimer=0
+  real, parameter:: sml = -1.0e-5
+  !-----------------------------------------------------------------------------
+  !call trace%begin ('patch_t%index_space', itimer=itimer)
+  do i=1,3
+    m => self%mesh(i)
+    mn => nbor%mesh(i)
+    pp = mn%p - m%p                                                     ! relative position
+    pp = pp + pos(i) + m%h(iv)*(mn%d-m%d)                               ! position in the local frame
+    if (self%periodic(i)) &
+      pp = modulo(pp+0.5_8*m%b,m%b)-0.5_8*m%b                           ! wrap
+    pp = pp/m%d + m%o                                                   ! float index
+    !pp = round(pp,rnd)
+    !pp = pp + eps                                                      ! ensure same points ok
+    ii(i)= floor(pp+eps)                                                ! integer part
+    ii(i) = max(m%lb, &
+        min(m%ub,ii(i)))                                                ! valid range
+    p(i) = pp - real(ii(i),kind=4)
+    if ((p(i)<0.0).and.(p(i)>sml)) p(i) = 0.0
+    !p(i) = round(p(i),rnd)                                              ! remaining fraction
+  end do
+  !call trace%end (itimer)
+END SUBROUTINE index_space2
+
+!> =============================================================================
+!> Return only the index in self corresponding to a point in native space
+!> =============================================================================
+FUNCTION index_only2 (self, nbor, pos, iv, roundup, closest) RESULT (ii)
+  class(patch_t)    :: self
+  class(patch_t), pointer :: nbor
+  real(8)           :: pos(3)
+  integer           :: iv
+  integer           :: ii(3)
+  logical, optional :: roundup
+  logical, optional :: closest
+  !.............................................................................
+  class(mesh_t), pointer :: m, mn
+  integer           :: i
+  real(8), parameter:: eps=0.001_8
+  real(8)           :: p(3)
+  !-----------------------------------------------------------------------------
+  do i=1,3
+    m => self%mesh(i)
+    mn => nbor%mesh(i)
+    p(i) = mn%p - m%p                                                   ! relative position
+    p(i) = p(i) + pos(i) + m%h(iv)*(mn%d-m%d)                           ! position in the local frame
+    if (self%periodic(i)) &
+      p(i) = modulo(p(i)+0.5_8*m%b,m%b)-0.5_8*m%b                       ! wrap
+    p(i) = p(i)/m%d+m%o                                                 ! float index
+    !p(i) = round(p(i),m%rnd)
+    if (present(roundup)) then
+      ii(i) = ceiling(p(i)-eps)                                         ! round up, with epsilon substracted
+    else if (present(closest)) then
+      ii(i) = nint(p(i))
+    else
+      ii(i) = floor(p(i)+eps)                                           ! integer part with added epsilon
+    end if
+    ii(i) = max(m%lb,min(m%ub,ii(i)))                                   ! valid range
+  end do
+END FUNCTION index_only2
+
+!> =============================================================================
 !> Return only the index in self corresponding to a point in native space
 !> =============================================================================
 FUNCTION count_edges (self, source) RESULT (out)
@@ -2238,7 +2322,7 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
                        (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1)    + &
                                   (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))
   end if
-  if (target%id==io%id_debug .and. io%verbose>1) &
+  if (target%id==io%id_debug .and. io%verbose>2) &
     print 1, target%id, ii, iv, self%id, j, jt, p, pt, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
     1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
       "   out:",1p,e15.6)
@@ -2295,7 +2379,7 @@ SUBROUTINE interpolate_specific (self, target, ii, iv, jt, pt)
     target%mem(ii(1),ii(2),ii(3),iv,target%it,1) * &
     target%mem(ii(1),ii(2),ii(3),id,target%it,1)
   end associate
-  if (target%id==io%id_debug .and. io%verbose>1) &
+  if (target%id==io%id_debug .and. io%verbose>2) &
     print 1, target%id, ii, iv, self%id, j, jt, p, pt, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
     1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate_specific src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
       "   out:",1p,e15.6)

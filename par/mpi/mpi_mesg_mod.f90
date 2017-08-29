@@ -73,6 +73,7 @@ MODULE mpi_mesg_mod
     integer:: min_nq
     logical:: wait=.false.
     logical:: recv_priv=.true.
+    logical:: debug=.false.
   contains
     procedure:: init
     procedure:: get
@@ -95,7 +96,6 @@ MODULE mpi_mesg_mod
   logical, save:: send_wait=.false.             ! if true, wait in OMP task
   logical, save:: send_priv=.true.              ! if true, sent_list is private
   logical, save:: recv_priv=.false.             ! if true, recv_list is private
-  logical, save:: debug=.false.
   integer, save:: id=0
 CONTAINS
 
@@ -508,9 +508,10 @@ END SUBROUTINE count
 !> =============================================================================
 SUBROUTINE init (self)
   class(mpi_mesg_t):: self
+  logical, save:: debug=.false.
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, wait, send_wait, send_priv, &
-                             recv_priv, test_time
+                             recv_priv, test_time, debug
   integer:: iostat
   !.............................................................................
   if (self%initialized) return
@@ -519,6 +520,7 @@ SUBROUTINE init (self)
   if (io%verbose>0) write (io_unit%log,*) 'mpi_mesg_mod::init'
   self%sent_list%name = 'sent_list'
   self%recv_list%name = 'recv_list'
+  self%debug = debug
   !$omp parallel
   recv_list%name = 'recv_list'
   sent_list%name = 'sent_list'

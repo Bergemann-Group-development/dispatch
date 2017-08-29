@@ -215,7 +215,7 @@ SUBROUTINE pde (self)
     du = dx*self%nu(1)*cs
     fxx = pp + d*(fxx - du*st%ddxup(Ux)) - Ex
     fyy = pp + d*(fyy - du*st%ddyup(Uy)) - Ey
-    fzz = pp + d*(fzz - du*st%ddzup(Uz)) - Ex
+    fzz = pp + d*(fzz - du*st%ddzup(Uz)) - Ez
     Q = d*du*(st%ddxup(Ux)**2+st%ddyup(Uy)**2+st%ddzup(Uz)**2)
   else
     ! Diagonal Reynolds stress
