@@ -69,7 +69,7 @@
 !type='exa256'
 !type='raw'
 /
-&initial_solenoidal_params  k=1,1,2 a0=0.3,0.2,0.1                           /
+&initial_solenoidal_params  k=1,1,2 a0=0.3,0.2,0.1 gamma=1.01                /
 &initial_compressive_params k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
 &initial_advection_params   k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
 
