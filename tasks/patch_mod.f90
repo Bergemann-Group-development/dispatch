@@ -336,6 +336,7 @@ SUBROUTINE init (self)
   ! Read and set patch parameters; these may have been set by the calling code
   !-----------------------------------------------------------------------------
     nv   = self%nv
+    ng   = self%ng
   !$omp critical (patch_input_cr)
   if (first_time) then
     size = self%size
