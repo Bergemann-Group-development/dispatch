@@ -42,7 +42,7 @@ SUBROUTINE init (self, label)
   call trace_begin ('setup_t%init')
   call io%init (label)
   call scaling%init
-  self%size = 0.14
+  self%size = 0.2
   self%position = 0.5
   call self%rubiks_t%init_hierarchy (label)
   call self%task_list%remove_parents

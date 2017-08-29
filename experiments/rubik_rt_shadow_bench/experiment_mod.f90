@@ -40,7 +40,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
-  self%nv = 5
+  self%nv = 8
   self%mhd = .false.
   call self%initial%init (self%kind)
   self%initial%mhd = self%mhd

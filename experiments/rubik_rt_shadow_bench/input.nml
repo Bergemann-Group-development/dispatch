@@ -7,15 +7,15 @@
 /
 
 &rubiks_params
- n_levels=2                         ! # of refinement levels in for the rubiks cube
- n_patch=4                          ! # of patches per direction
- m_zoom=2                           ! zoom-in level per direction
+ n_levels=3                         ! # of refinement levels in for the rubiks cube
+ n_patch=3                          ! # of patches per direction
+ m_zoom=3                           ! zoom-in level per direction
  n_repeat=1                         ! how many times rubiks cube is repeated along the orbit
 /
 
 &out_params
- end_time=0.00000045
- out_time=0.00000001
+ end_time=3d-7
+ out_time=1d-8
  print_time=0.0
  guard_zones=t
  time_derivs=f
@@ -23,7 +23,7 @@
 
 &box_params
  size=1.0,1.0,1.0
- dims=4,4,4
+ dims=3,3,3
  origin=0.0,0.0,0.0
  !origin=-0.005,-0.005,-0.005
 /
@@ -32,20 +32,21 @@
  nt=5
  courant=0.0
  grace=0.0
- n=23,23,23
- dt_fixed=0.00000001
+ n=43,43,43
+ dt_fixed=1d-8
  no_mans_land=f
 /
 
 &eos_params
+  gamma = 1.666667
 /
 
 
 ! ------- Radiative transfer ---------
 &rt_params
  solver= 'integral'
+ use_data_hub = t
  do_output = t
- dtime = 0.00000001
  cr_heating = 0.0
  init_time = -1d-5
 /
@@ -53,30 +54,39 @@
 &cartesian_ray_geometry_params
 do_chains = f
 ! along x axis
-nx = 2 xti = 0.,45.
+nx = 1 xti = 0.,45.
 ! along y axis
-ny = 2 yti = 0.,45.
+ny = 1 yti = 0.,45.
 ! along z axis
-nz = 2 zti = 0.,45.
+nz = 1 zti = 0.,45.
 ! use space_diagonals?
 space_diagonals=t
 /
 
 ! Treatment of boundary conditions for RT solver. 
 &rt_bc_params
-cool_temp = 290   ! in kelvins
-hot_temp  = 1740
+cool_temp = 290!40000 !290   ! in kelvins
+hot_temp  = 1740!240000 !1740
 /
 
 
 &mhd_params
- nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
+ nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
  gamma=1.666667
 /
-
+&ramses_params
+ gamma=1.666667
+ slope_type=2
+ courant_factor=0.8
+ smallr=1e-20
+ smallc=1e-3
+ do_isothermal=f
+ csound=0.2
+ detailed_timer=f
+/
 &timestep_params
- time_order=2
+ !time_order=2
 /
 
 &initial_params
@@ -85,7 +95,9 @@ hot_temp  = 1740
  d0=1.0
  clump_dfact=10.0
  t0=290.0
+ !t0=290.0
  clump_a=0.07
  clump_b=0.04
+ gamma=1.666667
 /
 &force_params   /
