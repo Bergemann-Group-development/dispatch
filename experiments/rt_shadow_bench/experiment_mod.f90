@@ -14,6 +14,7 @@
 !> =============================================================================
 MODULE experiment_mod
   USE io_mod
+  USE eos_mod
   USE bits_mod
   USE trace_mod
   USE rmhd_mod
@@ -21,6 +22,7 @@ MODULE experiment_mod
   USE boundaries_mod
   USE scaling_mod
   USE units_mod
+  USE kinds_mod
   implicit none
   private
   type, public, extends(rmhd_t):: experiment_t
@@ -42,7 +44,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
-  self%nv = 5
+  self%nv = 8
   call scaling%init
   self%mhd = .false.
   call self%rmhd_t%init()
@@ -55,6 +57,7 @@ SUBROUTINE init (self)
   !call self%boundaries%init(self%kind)
   mem => self%mem(:,:,:,:,self%it,1)
   call self%initial%condition(self%mesh,mem)
+  !----------------------------------------------------------------------------
   call self%stats ('initial')
   call trace_end
 END SUBROUTINE init
@@ -71,6 +74,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%rmhd_t%update

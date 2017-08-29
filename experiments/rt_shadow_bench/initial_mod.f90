@@ -102,9 +102,9 @@ SUBROUTINE condition (self, m, mem)
         ! the clump is initially in pressure equilibrium with the ambient medium
         d = mem(ix,iy,iz,i%d)
         if (self%solver(1:7)=='ramses_') then
-          mem(ix,iy,iz,i%e) = self%t0/(self%gamma-1.0)/d
+          mem(ix,iy,iz,i%e) = p0/(self%gamma-1.0)!*d
         else if (self%solver(1:9)=='stagger2e') then
-          mem(ix,iy,iz,i%e) = self%t0/(self%gamma-1.0)/d
+          mem(ix,iy,iz,i%e) = p0/(self%gamma-1.0)!*d
         else if (self%solver(1:9)=='stagger2_') then
           mem(ix,iy,iz,i%s) = d*(log(p0)-self%gamma*log(d))/(self%gamma-1.0)
         else
@@ -117,11 +117,11 @@ SUBROUTINE condition (self, m, mem)
         mem(ix,iy,iz,i%py) = 0.0
         mem(ix,iy,iz,i%pz) = 0.0
         ! magnetic field components
-        if (self%mhd) then
+        !if (self%mhd) then
           mem(ix,iy,iz,i%bx) = 0.0
           mem(ix,iy,iz,i%by) = 0.0
           mem(ix,iy,iz,i%bz) = 0.0
-        end if
+        !end if
       end do
     end do
   end do

@@ -6,10 +6,10 @@ OPTS = full_debug
 
 # Default target and methods
 UPD             = adams_bashforth
-SOLVER          = stagger2/e
+SOLVER          = stagger2
 #RT_SOLVER       = hybrid
 #RT_SOLVER       = hybrid2
-RT_SOLVER       = hybrid
+RT_SOLVER       = hybrid_nc
 #EOS             = microphysics/eos/stagger
 #EOS             = microphysics/eos/ideal
 EXEC            = dispatch.x
