@@ -68,8 +68,9 @@ SUBROUTINE init (self, llc, urc)
   real(8):: llc(3), urc(3)
   !.....................................................................
   real, save :: hot_temp = 1000, cool_temp = 10
+  real :: d0
   logical, save:: first_time=.true.
-  real, dimension(:,:,:), pointer :: lnd, ee
+  real, dimension(:,:,:), pointer :: lnd, s
   real, dimension(:,:,:,:), pointer :: src
   namelist /rt_bc_params/ hot_temp, cool_temp
   !---------------------------------------------------------------------
@@ -82,7 +83,7 @@ SUBROUTINE init (self, llc, urc)
     if (io%master) write (*, rt_bc_params)
     call scaling%init()
   allocate(lnd(1,1,2))
-  allocate(ee(1,1,2))
+  allocate(s(1,1,2))
   allocate(src(1,1,2, eos%n_lambda))
   allocate(self%xl(eos%n_lambda))
   allocate(self%xu(eos%n_lambda))
@@ -91,9 +92,10 @@ SUBROUTINE init (self, llc, urc)
   allocate(self%zl(eos%n_lambda))
   allocate(self%zu(eos%n_lambda))
   lnd = 0.
-  ee(:,:,1) = (cool_temp/scaling%temp)/(eos%gamma - 1.)
-  ee(:,:,2) = (hot_temp/scaling%temp)/(eos%gamma - 1.)
-  call eos%lookup (shape(ee), x=ee, lny=lnd, &                          ! call the table lookup, ...
+  d0 = 1.0/scaling%d
+  s(:,:,1) = d0*(log(cool_temp/scaling%temp/d0)-eos%gamma*log(d0))/(eos%gamma-1.0)
+  s(:,:,2) = d0*(log(hot_temp/scaling%temp/d0)-eos%gamma*log(d0))/(eos%gamma-1.0)
+  call eos%lookup (shape(s), x=s, lny=lnd, &                           ! call the table lookup, ...
                     src=src)  
   self%xl = src(1,1,2,:) - src(1,1,1,:)
   self%xu = 0.0
@@ -101,7 +103,7 @@ SUBROUTINE init (self, llc, urc)
   self%yu = 0.0
   self%zl = 0.0
   self%zu = 0.0
-  deallocate(lnd,ee,src)
+  deallocate(lnd,s,src)
   self%llc = llc
   self%urc = urc
   end if
