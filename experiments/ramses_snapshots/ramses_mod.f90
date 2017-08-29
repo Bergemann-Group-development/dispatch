@@ -1176,7 +1176,7 @@ SUBROUTINE merge_ramses_octs (self, n_max)
         end if
         
         ! double check that the two patches actually abut (!)
-        if (.not. self%task_list%overlaps(link%task, nbor%task)) then
+        if (.not. task%overlaps(nbor%task)) then
           if (io%verbose > 1) print*,'Skipping nbor ID = ',nbor_task%id
           nbor => nbor%next
           cycle
