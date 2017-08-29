@@ -62,20 +62,29 @@ END SUBROUTINE init
 !> =====================================================================
 SUBROUTINE update (self)
   class (rmhd_t) :: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer :: dedt
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: dedt, pgas, s
   integer, save :: itimer=0
   real :: g1
   !---------------------------------------------------------------------
   !call trace%begin ('rmhd_t%update', itimer=itimer)
-  call self%mhd_t%update                                                ! get df/dt from MHD
-  associate(d => self%mem(:,:,:,self%i_d,self%it,1))
-  allocate(dedt(size(d,1),size(d,2),size(d,3)))
+  call self%mhd_t%update
+  call self%rt%update
+  print *, self%time
+  associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
+            l => self%li, u => self%ui)
+  allocate(dedt(self%n(1), self%n(2), self%n(3)))
+  allocate(pgas(size(d,1), size(d,2), size(d,3)))
+  dedt=0.0
   call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
-  g1 = self%gamma-1.0
-  self%dsdt = self%dsdt + self%dtime * &                                ! add the RT contribution to ds/dt
-  log(dedt*g1/d**self%gamma)/g1                               
+  s => self%mem(:,:,:,self%i_e,self%it,1)
+  pgas = log(d)
+  pgas = self%gas_pressure(pgas,s)
+  self%dsdt(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+  self%dsdt(l(1):u(1),l(2):u(2),l(3):u(3)) + dedt * &
+          d(l(1):u(1),l(2):u(2),l(3):u(3))/ &
+       pgas(l(1):u(1),l(2):u(2),l(3):u(3))                               
   call self%courant_condition
-  deallocate(dedt)
+  deallocate(dedt, pgas)
   end associate
   !call trace%end (itimer)
 END SUBROUTINE update
