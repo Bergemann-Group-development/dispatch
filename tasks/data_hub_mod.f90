@@ -347,35 +347,37 @@ SUBROUTINE init_higher (self)
   ! --------------------------------------------------------------------
   ! Make sure the target range is legal
   ! --------------------------------------------------------------------
-  do i=1,3
-    m => target%mesh(i)
-    m2=> source%mesh(i)
-    self%t_l(i,iv) = max(m%lb,min(m%uo,self%t_l(i,iv)))
-    self%t_u(i,iv) = max(m%lo,min(m%ub,self%t_u(i,iv)))
-    dp = round(m%p-m2%p,12)+m%h(iv)*(m%d-m2%d)
-    if (self%t_u(i,iv)>m%lo) then
-      if (m%r(m%li)+dp > m2%r(m2%ui)) &
-      self%t_u(i,iv) = min(self%t_u(i,iv),m%lo)
-    end if
-    if (self%t_l(i,iv)<m%uo) then
-      if (m%r(m%ui)+dp < m2%r(m2%li)) &
-      self%t_l(i,iv) = max(self%t_l(i,iv),m%uo)
-    end if
-    if (self%t_u(i,iv)>m%ui) then
-      if (m%r(m%uo)+dp > m2%uf) then
-        self%t_u(i,iv) = min(self%t_u(i,iv),m%ui)
-      else
-        self%t_u(i,iv) = max(self%t_l(i,iv),m%ub)
+  if (.not.self%all_cells) then
+    do i=1,3
+      m => target%mesh(i)
+      m2=> source%mesh(i)
+      self%t_l(i,iv) = max(m%lb,min(m%uo,self%t_l(i,iv)))
+      self%t_u(i,iv) = max(m%lo,min(m%ub,self%t_u(i,iv)))
+      dp = round(m%p-m2%p,12)+m%h(iv)*(m%d-m2%d)
+      if (self%t_u(i,iv)>m%lo) then
+        if (m%r(m%li)+dp > m2%r(m2%ui)) &
+        self%t_u(i,iv) = min(self%t_u(i,iv),m%lo)
       end if
-    end if
-    if (self%t_l(i,iv)<m%li) then
-      if (m%r(m%lo)+dp < m2%lf) then
-        self%t_l(i,iv) = max(self%t_l(i,iv),m%li)
-      else
-        self%t_l(i,iv) = min(self%t_l(i,iv),m%lb)
+      if (self%t_l(i,iv)<m%uo) then
+        if (m%r(m%ui)+dp < m2%r(m2%li)) &
+        self%t_l(i,iv) = max(self%t_l(i,iv),m%uo)
       end if
-    end if
-  end do
+      if (self%t_u(i,iv)>m%ui) then
+        if (m%r(m%uo)+dp > m2%uf) then
+          self%t_u(i,iv) = min(self%t_u(i,iv),m%ui)
+        else
+          self%t_u(i,iv) = max(self%t_l(i,iv),m%ub)
+        end if
+      end if
+      if (self%t_l(i,iv)<m%li) then
+        if (m%r(m%lo)+dp < m2%lf) then
+          self%t_l(i,iv) = max(self%t_l(i,iv),m%li)
+        else
+          self%t_l(i,iv) = min(self%t_l(i,iv),m%lb)
+        end if
+      end if
+    end do
+  end if
   end do
   print *, self%target%id,'tl tu', self%t_l, self%t_u
   print *, 'source', self%source%id, 'sl, su', self%s_l, self%s_u
@@ -524,35 +526,37 @@ SUBROUTINE init_lower (self)
   ! --------------------------------------------------------------------
   ! Enforce proper limits
   ! --------------------------------------------------------------------
-  do i=1,3
-    m => target%mesh(i)
-    m2=> source%mesh(i)
-    self%t_l(i,iv) = max(m%lb,min(m%uo,self%t_l(i,iv)))
-    self%t_u(i,iv) = max(m%lo,min(m%ub,self%t_u(i,iv)))
-    dp = round(m%p-m2%p,12)+m%h(iv)*(m%d-m2%d)
-    if (self%t_u(i,iv)>m%lo) then
-      if (m%r(m%li)+dp > m2%r(m2%ui)) &
-      self%t_u(i,iv) = min(self%t_u(i,iv),m%lo)
-    end if
-    if (self%t_l(i,iv)<m%uo) then
-      if (m%r(m%ui)+dp < m2%r(m2%li)) &
-      self%t_l(i,iv) = max(self%t_l(i,iv),m%uo)
-    end if
-    if (self%t_u(i,iv)>m%ui) then
-      if (m%r(m%uo)+dp > m2%uf) then
-        self%t_u(i,iv) = min(self%t_u(i,iv),m%ui)
-      else
-        self%t_u(i,iv) = max(self%t_l(i,iv),m%ub)
+  if (.not.self%all_cells) then
+    do i=1,3
+      m => target%mesh(i)
+      m2=> source%mesh(i)
+      self%t_l(i,iv) = max(m%lb,min(m%uo,self%t_l(i,iv)))
+      self%t_u(i,iv) = max(m%lo,min(m%ub,self%t_u(i,iv)))
+      dp = round(m%p-m2%p,12)+m%h(iv)*(m%d-m2%d)
+      if (self%t_u(i,iv)>m%lo) then
+        if (m%r(m%li)+dp > m2%r(m2%ui)) &
+        self%t_u(i,iv) = min(self%t_u(i,iv),m%lo)
       end if
-    end if
-    if (self%t_l(i,iv)<m%li) then
-      if (m%r(m%lo)+dp < m2%lf) then
-        self%t_l(i,iv) = max(self%t_l(i,iv),m%li)
-      else
-        self%t_l(i,iv) = min(self%t_l(i,iv),m%lb)
+      if (self%t_l(i,iv)<m%uo) then
+        if (m%r(m%ui)+dp < m2%r(m2%li)) &
+        self%t_l(i,iv) = max(self%t_l(i,iv),m%uo)
       end if
-    end if
-  end do
+      if (self%t_u(i,iv)>m%ui) then
+        if (m%r(m%uo)+dp > m2%uf) then
+          self%t_u(i,iv) = min(self%t_u(i,iv),m%ui)
+        else
+          self%t_u(i,iv) = max(self%t_l(i,iv),m%ub)
+        end if
+      end if
+      if (self%t_l(i,iv)<m%li) then
+        if (m%r(m%lo)+dp < m2%lf) then
+          self%t_l(i,iv) = max(self%t_l(i,iv),m%li)
+        else
+          self%t_l(i,iv) = min(self%t_l(i,iv),m%lb)
+        end if
+      end if
+    end do
+  end if
   ! --------------------------------------------------------------------
   ! Map the acquired indices back to the source
   ! --------------------------------------------------------------------
@@ -563,11 +567,13 @@ SUBROUTINE init_lower (self)
     end do
     self%s_l(:,iv) = source%index_only2 (target,pl, iv)
     self%s_u(:,iv) = source%index_only2 (target,pu, iv, roundup=.true.)
-    do i = 1,3
-      m => source%mesh(i)
-      self%s_l(i,iv) = max(m%lo,min(m%ui,self%s_l(i,iv)))
-      self%s_u(i,iv) = min(m%uo,max(m%li,self%s_u(i,iv)))
-    end do
+    if (.not.self%all_cells) then
+      do i = 1,3
+        m => source%mesh(i)
+        self%s_l(i,iv) = max(m%lo,min(m%ui,self%s_l(i,iv)))
+        self%s_u(i,iv) = min(m%uo,max(m%li,self%s_u(i,iv)))
+      end do
+    end if
   end do
 END SUBROUTINE init_lower
 
