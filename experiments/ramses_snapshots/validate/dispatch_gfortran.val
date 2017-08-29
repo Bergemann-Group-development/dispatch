@@ -106,7 +106,6 @@ ngrids(cpu=   8)
  SIZE= 3*1.0000000000000000       ,
  N= 3*128        ,
  NV=          8,
- NW=          1,
  NG= 3*2          ,
  NT=          3,
  COURANT= 0.200000003    ,
@@ -115,6 +114,8 @@ ngrids(cpu=   8)
  GRACE=  0.00000000    ,
  PERIODIC= 3*T,
  EXTRAPOLATE_GZ=F,
+ NO_MANS_LAND=F,
+ USE_DATA_HUB=F,
  /
 &OUT_PARAMS
  OUT_TIME=  1.24999997E-03,
@@ -138,7 +139,7 @@ ngrids(cpu=   8)
  D0=  1.00000000    ,
  S0=  0.00000000    ,
  MHD=F,
- GAMMA=  1.00999999    ,
+ GAMMA=  1.39999998    ,
  T_TURN= 0.10000000149011612     ,
  /
 &RAMSES_PARAMS
@@ -1011,6 +1012,7 @@ fill (by level):  0.000  0.000  0.000  0.000  0.000  0.000  0.000  0.000
  SEND_PRIV=T,
  RECV_PRIV=F,
  TEST_TIME=  1.99999996E-02,
+ DEBUG=F,
  /
 &TASK_LIST_PARAMS
  DEBUG=          0,
