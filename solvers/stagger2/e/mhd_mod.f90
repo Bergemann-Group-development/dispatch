@@ -169,11 +169,7 @@ SUBROUTINE pde (self)
   ! Gas pressure
   !-----------------------------------------------------------------------------
   ee = e/d
-  if (self%gamma==1.0) then
-    pg = d*self%csound**2
-  else
-    call eos%lookup (shape(ee), x=ee, lny=lnd, pg=pg)
-  end if
+  pg = self%gas_pressure()
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure
   !-----------------------------------------------------------------------------
@@ -537,12 +533,22 @@ END SUBROUTINE output
 FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  real, dimension(:,:,:), pointer:: s
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_mod::gas_pressure',2)
-  if (self%gamma==1.0) then
-    pg = self%d*self%csound**2
+  self%d => self%mem(:,:,:,self%i_d,self%it,1)
+  self%e => self%mem(:,:,:,self%i_e,self%it,1)
+  if (trim(self%eos)=='ideal') then
+    if (self%gamma==1.0) then
+      pg = self%d*self%csound**2
+    else
+      pg = self%e*(self%gamma-1.0)
+    end if
   else
-    pg = self%e*(self%gamma-1.0)
+    allocate (s(self%gn(1),self%gn(2),self%gn(3)))
+    call self%e2S(s, self%it)
+    call eos%lookup (shape(self%d), x=self%d, y=s, pg=pg)
+    deallocate(s)
   end if
   call trace%end
 END FUNCTION gas_pressure
