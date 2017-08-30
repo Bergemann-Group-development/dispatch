@@ -28,6 +28,7 @@ MODULE eos_mod
     integer :: n_lambda = n_lambda
     real    :: w_lambda(n_lambda) = 1.0
     logical :: on = .false.
+    logical :: do_rt = .false.
   contains
     procedure:: init
     procedure:: lookup
@@ -41,8 +42,10 @@ CONTAINS
 SUBROUTINE init (self)
   class (eos_t):: self
   real, dimension(:,:,:), pointer:: d, ee, pg
-  namelist /eos_params/ do_eos, top, tablefile
+  logical, save :: do_rt = .false.
+  namelist /eos_params/ do_eos, top, tablefile, do_rt
   !-----------------------------------------------------------------------------
+  do_rt = self%do_rt
   !$omp critical (eos_cr)
   if (first_time) then
     first_time = .false.
@@ -76,6 +79,7 @@ SUBROUTINE init (self)
       deallocate (d, ee, pg)
     end if
   end if
+  self%do_rt = do_rt
   self%on = do_eos
   !$omp end critical (eos_cr)
   !$omp barrier

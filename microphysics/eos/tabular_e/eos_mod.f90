@@ -24,6 +24,7 @@ MODULE eos_mod
     real:: lne_min, lne_max, lne_stp
     real, dimension(:), pointer:: lnd, lne
     real, dimension(:,:,:), pointer:: table
+    logical :: do_rt
   contains
     procedure:: init
     procedure:: pressure

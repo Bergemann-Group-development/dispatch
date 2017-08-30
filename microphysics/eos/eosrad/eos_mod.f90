@@ -91,6 +91,7 @@ MODULE eos_mod
      integer :: n_lambda = n_lambda
      real    :: w_lambda(n_lambda) = 1.0
      logical :: on = .false.
+     logical :: do_rt = .false.
    CONTAINS
      procedure :: init => init_eos
      procedure :: lookup
@@ -173,10 +174,11 @@ CONTAINS
        do_cubic_eos, do_limit_tab, verbose_tab, uur, uul, uut, &
        eelimMinE, eelimMaxE, rholimMinE, rholimMaxE, &
        ttlimMinR, ttlimMaxR, rholimMinR, rholimMaxR, &
-       eelimE, rholimE
+       eelimE, rholimE, do_rt
 
     ! Default values
     do_eos        = .true.
+    do_rt         = .false.
     do_ionization = .true.
     do_table      = .false.
     eostabfile    = 'EOSrhoe.tab'

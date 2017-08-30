@@ -12,6 +12,7 @@ MODULE eos_mod
     integer :: eos_type = 0             ! 0 - ideal, x - any other
     integer :: n_lambda = 1
     real :: w_lambda = 1
+    logical :: do_rt = .false.
   contains
     procedure:: init
     procedure:: pressure
@@ -31,7 +32,8 @@ SUBROUTINE init (self)
   integer:: iostat
   logical, save:: first_time=.true.
   real, save:: gamma=1.4
-  namelist /eos_params/ gamma
+  logical, save:: do_rt = .false.
+  namelist /eos_params/ gamma, do_rt
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
   if (io%master) print *, &
@@ -39,11 +41,13 @@ SUBROUTINE init (self)
   !$omp critical (init_cr)
   if (first_time) then
     gamma = self%gamma
+    do_rt = self%do_rt
     rewind (io%input); read (io%input, eos_params, iostat=iostat)
     if (io%master) write (io%output, eos_params)
   end if
   !$omp end critical (init_cr)
   self%gamma = gamma
+  self%do_rt = do_rt
   call trace%end
 END SUBROUTINE init
 

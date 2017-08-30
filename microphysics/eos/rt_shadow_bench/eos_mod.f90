@@ -21,8 +21,9 @@ MODULE eos_mod
     real :: rho0 = 1.
     real :: alfa0 = 1.
     real(8) :: sc_stf
-    real :: n_lambda = 1.
+    integer :: n_lambda = 1
     real :: w_lambda = 1.
+    logical :: do_rt = .false.
   contains
     procedure:: init
     procedure:: pressure
@@ -42,7 +43,8 @@ SUBROUTINE init (self)
   integer:: iostat
   logical, save:: first_time=.true.
   real, save:: gamma=1.66666667
-  namelist /eos_params/ gamma
+  logical, save:: do_rt = .false.
+  namelist /eos_params/ gamma, do_rt
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
   call scaling%init
@@ -58,6 +60,7 @@ SUBROUTINE init (self)
     self%rho0 = 1./(1.  /scaling%d)
     self%alfa0 = 1. * scaling%m/scaling%l**2
     first_time = .false.
+    self%do_rt = do_rt
   end if
   !$omp end critical (init_cr)
   call trace%end
