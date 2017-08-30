@@ -17,7 +17,7 @@ MODULE rmhd_mod
   USE io_mod
   USE trace_mod
   USE kinds_mod
-!  USE eos_mod
+  USE eos_mod
   USE mhd_mod
   USE rt_mod
   implicit none
@@ -67,16 +67,18 @@ SUBROUTINE update (self)
   !---------------------------------------------------------------------
   !call trace%begin ('rmhd_t%update', itimer=itimer)
   call self%mhd_t%update                                                ! get df/dt from MHD
-  call self%rt%update
-  allocate(dedt(self%n(1), self%n(2), self%n(3)))
-  dedt = 0.0
-  call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
-  associate(l => self%li, u => self%ui)
-  self%dedt(l(1):u(1),l(2):u(2),l(3):u(3)) = &
-  self%dedt(l(1):u(1),l(2):u(2),l(3):u(3)) + dedt                       ! add the RT contribution to de/dt
-  end associate
+  if (eos%do_rt) then
+    call self%rt%update
+    allocate(dedt(self%n(1), self%n(2), self%n(3)))
+    dedt = 0.0
+    call self%rt%get_q (self%time, dedt)                                ! interpolate in time and space
+    associate(l => self%li, u => self%ui)
+    self%dedt(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+    self%dedt(l(1):u(1),l(2):u(2),l(3):u(3)) + dedt                     ! add the RT contribution to de/dt
+    end associate
+    deallocate(dedt)
+  end if
   call self%courant_condition
-  deallocate(dedt)
   !call trace%end (itimer)
 END SUBROUTINE update
 

@@ -21,4 +21,4 @@ force_mod.o             : io_mod.o trace_mod.o random_mod.o mesh_mod.o vector_mo
 boundary_mod.o          : io_mod.o trace_mod.o mesh_mod.o
 mhd_rt_mod.o            : $(PDE) trace_mod.o microphysics_mod.o
 gmhd_mod.o              : io_mod.o omp_timer_mod.o trace_mod.o task_mod.o patch_mod.o scalar_mod.o laplace_mod.o $(PDE) boundary_mod.o scalar_mod.o
-rmhd_mod.o              : io_mod.o trace_mod.o $(PDE) rt_mod.o
+rmhd_mod.o              : io_mod.o trace_mod.o $(PDE) rt_mod.o eos_mod.o
