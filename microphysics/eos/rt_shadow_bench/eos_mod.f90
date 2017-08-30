@@ -15,7 +15,7 @@ MODULE eos_mod
   implicit none
   private
   type, public:: eos_t
-    real:: gamma = 1.4                  ! in case eos%init is never called
+    real:: gamma = 1.6666667                  ! in case eos%init is never called
     integer :: eos_type = 0             ! 0 - ideal, x - any other
     real :: t0    = 290.
     real :: rho0 = 1.
@@ -41,15 +41,15 @@ SUBROUTINE init (self)
   class (eos_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  real, save:: gamma=1.4
+  real, save:: gamma=1.66666667
   namelist /eos_params/ gamma
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
-  if (io%master) print *, &
- '------------------------ ideal equation-of-state -----------------------------'
   call scaling%init
   !$omp critical (init_cr)
   if (first_time) then
+  if (io%master) print *, &
+     '------------------------ ideal equation-of-state -----------------------------'
     gamma = self%gamma
     rewind (io%input); read (io%input, eos_params, iostat=iostat)
     if (io%master) write (io%output, eos_params)
@@ -57,6 +57,7 @@ SUBROUTINE init (self)
     self%t0   = 1./(290./scaling%temp)
     self%rho0 = 1./(1.  /scaling%d)
     self%alfa0 = 1. * scaling%m/scaling%l**2
+    first_time = .false.
   end if
   !$omp end critical (init_cr)
   call trace%end
@@ -93,6 +94,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
   real, dimension(:,:,:),                      optional :: pg, tt
   real, dimension(:,:,:,:),                    optional :: src, rk
   real, dimension(:,:,:), pointer :: x_loc, y_loc
+  real(8), dimension(:,:,:), pointer :: tt_loc
   integer:: i
   integer, save:: itimer = 0
   !-----------------------------------------------------------------------------
@@ -119,25 +121,27 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
     call mpi%abort ('eos_t: missing internal energy')
   end if
   !-----------------------------------------------------------------------------
+  allocate (tt_loc(dim(1),dim(2),dim(3)))
+  tt_loc = y_loc**self%gamma*exp(x_loc/y_loc*(self%gamma-1))/y_loc
   if (present(tt)) then
-    tt = (self%gamma-1.0)*x_loc
+    tt = tt_loc
   end if
   if (present(src)) then
     do i=1,size(src,4)
-      src(:,:,:,i) = scaling%stefan*((self%gamma-1.0)*real(x_loc,kind=8))**4
+      src(:,:,:,i) = scaling%stefan*tt_loc**4
     end do
   end if
   if (present(pg)) then
-    pg = (self%gamma-1.0)*x_loc*y_loc
+    pg = y_loc**self%gamma*exp(x_loc/y_loc*(self%gamma-1))
   end if
   if (present(rk)) then
     do i=1,size(rk,4)
-      rk(:,:,:,i) = (((self%gamma-1.0)*x_loc*self%t0)**(-3.5) * &
-       (y_loc*self%rho0)**2) * self%alfa0 
+      rk(:,:,:,i) = min(1000.0,self%alfa0*(tt_loc*self%t0)**(-3.5)*(y_loc*self%rho0)**2)
     end do
   end if
   if (present(lnx)) deallocate(x_loc)
   if (present(lny)) deallocate( y_loc)
+  deallocate(tt_loc)
     call trace%end(itimer)
 END SUBROUTINE lookup
 

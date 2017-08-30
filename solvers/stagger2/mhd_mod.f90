@@ -670,7 +670,7 @@ END SUBROUTINE S2e
 !> =============================================================================
 FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
   class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: lnd, ss, ee
+  real, dimension(:,:,:), pointer:: lnd, ss
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
   if (trim(self%eos)=='ideal') then
@@ -682,10 +682,7 @@ FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
       pg = self%d**self%gamma*exp(self%s/self%d*(self%gamma-1))
     end if
   else
-    allocate (ee(self%gn(1),self%gn(2),self%gn(3)))
-    call self%e2E_th(ee, self%it)
-    call eos%lookup (shape(lnd), lnx=lnd, y=ee, pg=pg)
-    deallocate(ee)
+    call eos%lookup (shape(lnd), lnx=lnd, y=ss, pg=pg)
   end if
 END FUNCTION gas_pressure
 

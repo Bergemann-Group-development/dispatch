@@ -5,7 +5,6 @@ MODULE rt_components_mod
   USE rt_boundaries_mod
   USE eos_mod
   implicit none
-
 !> =====================================================================
 !> intensity/heating rate data type is used to store intensities in the outer shell of
 !> the patch as well as quickly retrieve incoming intensities from nbors
@@ -13,24 +12,22 @@ MODULE rt_components_mod
   type, public :: rt_packet
     real, dimension(:,:), pointer :: in  => null()                        ! (wl_bin|time slot) incoming intensity.
   end type
-
 !> =====================================================================
 !> rt_chain_t is used to make a linked list of chain link. Each rt_task
 !> owns a set of links, related to particular direction. Each link in 
 !> the set is then connected to a downstream nbor. 
 !> =====================================================================
   type, public :: chain_link_t
-    class(link_t),                  pointer :: link => null()           ! link to rt_t task
-    class(chain_link_t),            pointer :: head => null()           ! pointer to the master chain link
-    class(chain_link_t),            pointer :: tail => null()           ! pointer to the last link
-    class(chain_link_t),            pointer :: next => null()
-    class(chain_link_t),            pointer :: prev => null()
-    class(chain_link_t),            pointer :: temp => null()           ! temporal chain connection to do any required modifications
-    class(rt_packet), dimension(:), pointer :: packet_data => null()    ! quick pointing to the right locations in the data sets
-    class(ray_bndl_t),              pointer :: bundle => null()         ! ray bundle of this chain link
-    logical, dimension(:), pointer :: nudged                            ! which links have already nudged me
+    class(link_t),         pointer :: link   => null()                  ! link to rt_t task
+    class(chain_link_t),   pointer :: head   => null()                  ! pointer to the master chain link
+    class(chain_link_t),   pointer :: tail   => null()                  ! pointer to the last link
+    class(chain_link_t),   pointer :: next   => null()
+    class(chain_link_t),   pointer :: prev   => null()
+    class(chain_link_t),   pointer :: temp   => null()                  ! temporal chain connection to do any required modifications
+    class(packet_t),       pointer :: packet => null()                  ! ray packet of this chain link
+    class(rt_packet), dimension(:), pointer :: pdata => null()          ! quick pointing to the right locations in the data sets
+    logical, dimension(:), pointer :: nudged => null()                  ! which links have already nudged me
     integer :: direction                                                ! 1 = forward / 2 = reverse
-    integer :: directionality                                           ! convenience
     integer :: dir_id
     integer :: id                                                       ! location id in the link array of a particular patch
     logical :: master = .false.                                         ! Am I the link (ring) to rule them all?
@@ -44,7 +41,6 @@ MODULE rt_components_mod
     procedure :: add_upstream
     procedure :: check_masters
     procedure :: finish_chain
-    procedure :: get_ds
     procedure :: get_dnstream_coord
     procedure :: get_upstream_coord_same
   end type
@@ -75,28 +71,29 @@ END SUBROUTINE check_masters
 !> Here a modificator should come, which decides the position, depending
 !> whether the no mans land is true or false.
 !> =====================================================================
-FUNCTION get_upstream_coord_same(self, pck, ray, no_mans_land) result(coords)
+FUNCTION get_upstream_coord_same(self, ray) result(coords)
  class(chain_link_t) :: self
  class(patch_t), pointer :: patch
- logical :: no_mans_land
  integer :: pck, ray, coords(3), i
  !----------------------------------------------------------------------
  patch => task2patch(self%link%task)
  select case(self%direction)
  case(1)
-   coords = self%bundle%packet(pck)%rev_coords(:,ray)
+   coords = self%packet%rev_coords(:,ray)
  case(2)
-   coords = self%bundle%packet(pck)%fwd_coords(:,ray)
+   coords = self%packet%fwd_coords(:,ray)
+ case default
+   error stop "chain_link_t::get_upstream_coords:: direction not understood"
  end select
  do i=1,3
    if (coords(i) > patch%ui(i)) then
-     if (no_mans_land) then
+     if (patch%no_mans_land) then
        coords(i) = coords(i) - patch%n(i)
      else
-       coords(i) = coords(i) - (patch%n(i)+1)
+       coords(i) = coords(i) - (patch%n(i)-1)
      end if
    else if (coords(i) < patch%li(i)) then
-     if (no_mans_land) then
+     if (patch%no_mans_land) then
        coords(i) = coords(i) + patch%n(i)
      else
        coords(i) = coords(i) + (patch%n(i)-1)
@@ -108,15 +105,17 @@ END FUNCTION get_upstream_coord_same
 !> =====================================================================
 !> Get downstream cell coordinate for particular ray
 !> =====================================================================
-FUNCTION get_dnstream_coord(self, pck, ray) result(coords)
+FUNCTION get_dnstream_coord(self, ray) result(coords)
  class(chain_link_t) :: self
  integer :: pck, ray, coords(3)
  !----------------------------------------------------------------------
  select case(self%direction)
  case(1)
-   coords = self%bundle%packet(pck)%fwd_coords(:,ray)
+   coords = self%packet%fwd_coords(:,ray)
  case(2)
-   coords = self%bundle%packet(pck)%rev_coords(:,ray)
+   coords = self%packet%rev_coords(:,ray)
+ case default
+   error stop "chain_link_t::get_dnstream_coords:: direction not understood"
  end select
 END FUNCTION get_dnstream_coord
 
@@ -149,7 +148,7 @@ SUBROUTINE add_upstream(self, ir, ups, iw)
 END SUBROUTINE add_upstream
 
 !> =====================================================================
-!> Connect the links to the appropriate incoming intensities from the
+!> Connect the links to the appropriate incoming net heating rates from the
 !> right upstreams. 
 !> INPUT: a temporary link, which has all the master link in its chain
 !> RESULT: all the links in all the chains know, where to get incoming
@@ -169,14 +168,13 @@ END SUBROUTINE add_upstream
 !>   orientation, one determines, where the rays are (a supplement for (5))
 !> 7) the appropriate ray in the link is connected to the outer shell of
 !>   the upstream patch.
-SUBROUTINE finish_chain(self, no_mans_land)
+SUBROUTINE finish_chain(self)
   class(chain_link_t) :: self
-  logical :: no_mans_land
   !.....................................................................
   class(chain_link_t), pointer :: this, prev
   class(chain_link_t), pointer :: link, plink
   class(patch_t),      pointer :: patch
-  integer :: ray, cn, ip, ir, cc(3), irr
+  integer :: cn, ir, cc(3)
   integer, dimension(:), pointer :: nb_ray_pos
   !---------------------------------------------------------------------
   this => self%prev                                                     ! first item is not needed
@@ -192,13 +190,9 @@ SUBROUTINE finish_chain(self, no_mans_land)
       cn = cn+1
       if(.not.link%BC(1).and..not.link%BC(3)) then                      ! avoid master links, whose incoming intensities are from the boundaries or upstreams
         patch => task2patch(plink%link%task)
-        irr = 1
-        do ip = 1, link%bundle%n_packets
-          do ir = 1, link%bundle%packet(ip)%n_rays
-            cc = link%get_upstream_coord_same(ip,ir, no_mans_land)
-            link%packet_data(irr)%in => patch%mem(cc(1),cc(2),cc(3),link%ivl:link%ivu,:,1)
-            irr = irr + 1
-          end do
+        do ir = 1, link%packet%n_rays
+          cc = link%get_upstream_coord_same(ir)
+          link%pdata(ir)%in => patch%mem(cc(1),cc(2),cc(3),link%ivl:link%ivu,:,1)
         end do
       end if
       plink => link                                                     ! this will now be the previous link
@@ -211,18 +205,5 @@ SUBROUTINE finish_chain(self, no_mans_land)
   end do
   !if (io%verbose>1) call self%check_masters
 END SUBROUTINE finish_chain
-
-
-SUBROUTINE get_ds(self, cs, ds)
-  class(chain_link_t) :: self
-  real(kind=8) :: cs(3), ds
-  !.....................................................................
-  real(kind=8) :: dst(3)
-  !---------------------------------------------------------------------
-  dst = real(self%bundle%dstep,kind=8)
-  
-  ds = ((cs(1)*dst(1))**2+(cs(2)*dst(2))**2+(cs(3)*dst(3))**2)**0.5
-  
-END SUBROUTINE get_ds
 
 END MODULE rt_components_mod

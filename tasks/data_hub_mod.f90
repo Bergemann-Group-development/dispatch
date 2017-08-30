@@ -24,6 +24,8 @@ MODULE data_hub_mod
     integer, dimension(:,:), pointer :: t_l => null(), t_u => null()
     integer, dimension(:,:), pointer :: s_l => null(), s_u => null()
     logical :: first_time = .true.                                      ! if first time, hib has to be initialized.
+    logical :: rt_target  = .false.
+    logical :: all_cells  = .false.
     procedure(dnload_from_same), pointer :: dnload => null()
     integer :: int_order = -1
     integer :: level
@@ -52,9 +54,10 @@ CONTAINS
 !> =====================================================================
 !> Initialise the data communication hub.
 !> =====================================================================
-SUBROUTINE init (self, link)
+SUBROUTINE init (self, link, all_cells)
   class(data_hub_t):: self
   class(link_t), pointer :: link
+  logical, optional :: all_cells
   ! ....................................................................
   class(patch_t), pointer :: patch
   ! --------------------------------------------------------------------
@@ -62,7 +65,7 @@ SUBROUTINE init (self, link)
   if (self%first_time) then
     patch => task2patch(link%task)                                      ! convert to patch
     self%target => patch                                                ! save a pointer to target patch
-    call self%select_dnloader(link)                                     ! map the dh-cell shell
+    call self%select_dnloader(link, all_cells)                          ! map the dh-cell shell
     self%first_time = .false.                                           ! should not be repeated again.
   end if
   call trace%end
@@ -71,9 +74,10 @@ END SUBROUTINE init
 !> =====================================================================
 !> Select the download method for each nbor.
 !> =====================================================================
-SUBROUTINE select_dnloader (self, link)
+SUBROUTINE select_dnloader (self, link, all_cells)
   class(data_hub_t)      :: self
   class(link_t), pointer :: link
+  logical, optional      :: all_cells
   ! ....................................................................
   class(link_t),     pointer :: nbor
   class(patch_t),    pointer :: source, patch
@@ -83,9 +87,26 @@ SUBROUTINE select_dnloader (self, link)
   nbor  => link%nbor
   do while (associated(nbor))
     source => task2patch(nbor%task)
-    if ((source%is_clear(bits%no_download))) then
+    if (trim(patch%kind)/='rt_solver') then
+      if ((source%is_clear(bits%no_download))) then
+        if (abs(source%level-patch%level) < 2) then
+          call self%add_hub (patch, source, hub, all_cells)
+          if (source%level == patch%level) then
+            hub%dnload => dnload_from_same                                ! target and source are of the same level
+          call hub%init_same
+          else if (source%level > patch%level) then
+            hub%dnload => dnload_from_higher                              ! source is of higher level than the target
+            call hub%init_higher
+          else
+            hub%dnload => dnload_from_lower                               ! source is of lower level than the target
+            call hub%init_lower
+          end if
+        end if
+      end if 
+    else if (trim(source%kind)=='rt_solver') then
       if (abs(source%level-patch%level) < 2) then
-        call self%add_hub (patch, source, hub)
+        call self%add_hub (patch, source, hub, all_cells)
+        hub%rt_target = .true.
         if (source%level == patch%level) then
           hub%dnload => dnload_from_same                                ! target and source are of the same level
           call hub%init_same
@@ -108,10 +129,11 @@ END SUBROUTINE select_dnloader
 !> as for levels, lower than the target, additional cells are needed for
 !> interpolation.
 !> =====================================================================
-SUBROUTINE add_hub (self, target, source, hub)
+SUBROUTINE add_hub (self, target, source, hub, all_cells)
   class(data_hub_t)          :: self
   class(patch_t),    pointer :: target, source
   class(data_hub_t), pointer :: hub
+  logical, optional:: all_cells
   ! ....................................................................
   class (data_hub_t), pointer :: next, prev
   logical :: found
@@ -121,6 +143,7 @@ SUBROUTINE add_hub (self, target, source, hub)
   hub%source => source
   hub%level  = source%level
   hub%ID     = source%id
+  if (present(all_cells)) hub%all_cells = all_cells
   if (.not.associated(self%head)) then
     self%head => hub
   else
@@ -140,7 +163,7 @@ SUBROUTINE add_hub (self, target, source, hub)
         end if
       end if
       prev => next
-      next => next%next
+      next => next%next  
     end do
     if (.not.found) then
       if (associated(prev)) then
@@ -260,17 +283,23 @@ SUBROUTINE dnload_from_same (self)
   call self%source%time_interval (self%target%time, jt, pt)
   sl = self%s_l(:,1); su = self%s_u(:,1)
   tl = self%t_l(:,1); tu = self%t_u(:,1)
-  do iv = 1, self%source%nv
-    if (self%source%unsigned(iv)) then
-      self%target%mem(tl(1):tu(1),tl(2):tu(2),tl(3):tu(3),iv,self%target%it,1) = exp &
-      (pt(1) *log(self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),iv,jt(1),1)) + &
-       pt(2) *log(self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),iv,jt(2),1)))
-    else
-      self%target%mem(tl(1):tu(1),tl(2):tu(2),tl(3):tu(3),iv,self%target%it,1)= &
-       pt(1) *self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),iv,jt(1),1) + &
-       pt(2) *self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),iv,jt(2),1)
-    end if
-  end do
+  if (self%rt_target) then
+    self%target%mem(tl(1):tu(1),tl(2):tu(2),tl(3):tu(3),:,self%target%it,1)= &
+         pt(1) *self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),:,jt(1),1) + &
+         pt(2) *self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),:,jt(2),1)
+  else
+    do iv = 1, self%source%nv
+      if (self%source%unsigned(iv)) then
+        self%target%mem(tl(1):tu(1),tl(2):tu(2),tl(3):tu(3),iv,self%target%it,1) = exp &
+        (pt(1) *log(self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),iv,jt(1),1)) + &
+         pt(2) *log(self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),iv,jt(2),1)))
+      else
+        self%target%mem(tl(1):tu(1),tl(2):tu(2),tl(3):tu(3),iv,self%target%it,1)= &
+         pt(1) *self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),iv,jt(1),1) + &
+         pt(2) *self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),iv,jt(2),1)
+      end if
+    end do
+  end if
   call trace%end(itimer)
 END SUBROUTINE dnload_from_same
 
@@ -281,18 +310,25 @@ END SUBROUTINE dnload_from_same
 SUBROUTINE init_higher (self)
   class(data_hub_t) :: self
   ! ....................................................................
-  class(mesh_t),  pointer:: m
+  class(mesh_t),  pointer:: m, m2
   class(patch_t), pointer:: source, target
   real(8) :: pos(3)
-  integer :: iv, i, j(3)
-  real(8) :: eps, pl(3), pu(3)
+  integer :: iv, i, j(3), nv
+  real(8) :: eps, pl(3), pu(3), dp
   ! --------------------------------------------------------------------
   source => self%source
   target => self%target
-  allocate (self%t_l(3,target%nv))
-  allocate (self%t_u(3,target%nv))
+  if (self%rt_target) then
+    allocate (self%t_l(3,1))
+    allocate (self%t_u(3,1))
+    nv = 1
+  else
+    allocate (self%t_l(3,target%nv))
+    allocate (self%t_u(3,target%nv))
+    nv = target%nv
+  end if
   eps = 0.001_8
-  do iv = 1, target%nv
+  do iv = 1, nv
   ! --------------------------------------------------------------------
   ! First and last points inside the source domain
   ! --------------------------------------------------------------------
@@ -309,12 +345,40 @@ SUBROUTINE init_higher (self)
   ! --------------------------------------------------------------------
   ! Make sure the target range is legal
   ! --------------------------------------------------------------------
+  if (.not.self%all_cells) then
     do i=1,3
       m => target%mesh(i)
+      m2=> source%mesh(i)
       self%t_l(i,iv) = max(m%lb,min(m%uo,self%t_l(i,iv)))
       self%t_u(i,iv) = max(m%lo,min(m%ub,self%t_u(i,iv)))
+      dp = round(m%p-m2%p,12)+m%h(iv)*(m%d-m2%d)
+      if (self%t_u(i,iv)>m%lo) then
+        if (m%r(m%li)+dp > m2%r(m2%ui)) &
+        self%t_u(i,iv) = min(self%t_u(i,iv),m%lo)
+      end if
+      if (self%t_l(i,iv)<m%uo) then
+        if (m%r(m%ui)+dp < m2%r(m2%li)) &
+        self%t_l(i,iv) = max(self%t_l(i,iv),m%uo)
+      end if
+      if (self%t_u(i,iv)>m%ui) then
+        if (m%r(m%uo)+dp > m2%uf) then
+          self%t_u(i,iv) = min(self%t_u(i,iv),m%ui)
+        else
+          self%t_u(i,iv) = max(self%t_l(i,iv),m%ub)
+        end if
+      end if
+      if (self%t_l(i,iv)<m%li) then
+        if (m%r(m%lo)+dp < m2%lf) then
+          self%t_l(i,iv) = max(self%t_l(i,iv),m%li)
+        else
+          self%t_l(i,iv) = min(self%t_l(i,iv),m%lb)
+        end if
+      end if
     end do
+  end if
   end do
+  print *, self%target%id,'tl tu', self%t_l, self%t_u
+  print *, 'source', self%source%id, 'sl, su', self%s_l, self%s_u
 END SUBROUTINE init_higher
 
 !> =====================================================================
@@ -343,9 +407,8 @@ SUBROUTINE dnload_from_higher (self)
   target => self%target
   allocate(cube(2,2,2,2))
   call source%time_interval (target%time, jt, pt)
-  d = self%source%i_d
-  do iv = 1, self%source%nv
-    tl = self%t_l(:,iv); tu = self%t_u(:,iv)
+  if (self%rt_target) then
+    tl = self%t_l(:,1); tu = self%t_u(:,1)
     do k = tl(3), tu(3)
       do j = tl(2), tu(2)
         do i = tl(1), tu(1)
@@ -355,37 +418,63 @@ SUBROUTINE dnload_from_higher (self)
           pos(ii) = m%r(l(ii))
           end do
           !
-          if (all(l>=target%li).and.(all(l<=target%ui))) then
-            print *, target%id, i,j,k
-            error stop "dnload_higher:: internal cell modified"
-          end if
-          !
-          call source%index_space2(target,pos, iv, l, p)
-          u=l+1
-          mem => source%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,:,1)
-          if (source%pervolume(iv)) then
-            cube(:,:,:,1) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1) / &
-                            source%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(1),1)
-            cube(:,:,:,2) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1) / &
-                            source%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(2),1)
-          else
-            cube(:,:,:,1) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
-            cube(:,:,:,2) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
-          end if
-          if (source%unsigned(iv)) then
-            call self%interpolate_unsigned(cube, pt, p,tcell)
-            target%mem(i,j,k,iv,target%it,1) = tcell
-          else if (source%pervolume(iv)) then
-            call self%interpolate(cube, pt, p,tcell)
-            target%mem(i,j,k,iv,target%it,1) = tcell * target%mem(i,j,k,d,target%it,1)
-          else
-            call self%interpolate(cube, pt, p,tcell)
-            target%mem(i,j,k,iv,target%it,1) = tcell
+          if ((self%all_cells) .or. &
+                any((l-target%mesh%li) < 0 .or. (l-target%mesh%ui) > 0)) then
+            call source%index_space2(target,pos, 1, l, p)
+            u=l+1
+            mem => source%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,:,1)
+            do iv=1, target%nv
+              cube(:,:,:,1) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
+              cube(:,:,:,2) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
+              call self%interpolate(cube, pt, p,tcell)
+              target%mem(i,j,k,iv,target%it,1) = tcell
+            end do
           end if
         end do
       end do
     end do
-  end do
+  else
+    d = self%source%i_d
+    do iv = 1, target%nv
+      tl = self%t_l(:,iv); tu = self%t_u(:,iv)
+      do k = tl(3), tu(3)
+        do j = tl(2), tu(2)
+          do i = tl(1), tu(1)
+            l=[i,j,k]
+            do ii = 1,3
+            m => target%mesh(ii)
+            pos(ii) = m%r(l(ii))
+            end do
+            if ((self%all_cells) .or. &
+                any((l-target%mesh%li) < 0 .or. (l-target%mesh%ui) > 0)) then
+              call source%index_space2(target,pos, iv, l, p)
+              u=l+1
+              mem => source%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,:,1)
+              if (source%pervolume(iv)) then
+                cube(:,:,:,1) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1) / &
+                                source%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(1),1)
+                cube(:,:,:,2) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1) / &
+                                source%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(2),1)
+              else
+                cube(:,:,:,1) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
+                cube(:,:,:,2) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
+              end if
+              if (source%unsigned(iv)) then
+                call self%interpolate_unsigned(cube, pt, p,tcell)
+                target%mem(i,j,k,iv,target%it,1) = tcell
+              else if (source%pervolume(iv)) then
+                call self%interpolate(cube, pt, p,tcell)
+                target%mem(i,j,k,iv,target%it,1) = tcell * target%mem(i,j,k,d,target%it,1)
+              else
+                call self%interpolate(cube, pt, p,tcell)
+                target%mem(i,j,k,iv,target%it,1) = tcell
+              end if
+            end if
+          end do
+        end do
+      end do
+    end do
+  end if
   deallocate(cube)
   call trace%end(itimer)
 END SUBROUTINE dnload_from_higher
@@ -399,20 +488,29 @@ SUBROUTINE init_lower (self)
   ! ....................................................................
   class(mesh_t),  pointer:: m, m2
   class(patch_t), pointer:: source, target
-  integer :: iv, i, j(3)
+  integer :: iv, i, j(3), nv
   real(8) :: eps, pl(3), pu(3), dp
   ! --------------------------------------------------------------------
   source => self%source
   target => self%target
   eps = 0.001_8
-  allocate (self%t_l(3,target%nv))
-  allocate (self%t_u(3,target%nv))
-  allocate (self%s_l(3,target%nv))
-  allocate (self%s_u(3,target%nv))
+  if (self%rt_target) then
+    allocate (self%t_l(3,1))
+    allocate (self%t_u(3,1))
+    allocate (self%s_l(3,1))
+    allocate (self%s_u(3,1))
+    nv = 1
+  else
+    allocate (self%t_l(3,target%nv))
+    allocate (self%t_u(3,target%nv))
+    allocate (self%s_l(3,target%nv))
+    allocate (self%s_u(3,target%nv))
+    nv = target%nv
+  end if
   ! --------------------------------------------------------------------
   ! Corners of the source domain
   ! --------------------------------------------------------------------
-  do iv = 1, target%nv
+  do iv = 1, nv
     do i = 1,3
       m => source%mesh(i)
       pl(i)  = m%lf - eps
@@ -426,35 +524,37 @@ SUBROUTINE init_lower (self)
   ! --------------------------------------------------------------------
   ! Enforce proper limits
   ! --------------------------------------------------------------------
-  do i=1,3
-    m => target%mesh(i)
-    m2=> source%mesh(i)
-    self%t_l(i,iv) = max(m%lb,min(m%uo,self%t_l(i,iv)))
-    self%t_u(i,iv) = max(m%lo,min(m%ub,self%t_u(i,iv)))
-    dp = round(m%p-m2%p,12)+m%h(iv)*(m%d-m2%d)
-    if (self%t_u(i,iv)>m%lo) then
-      if (m%r(m%li)+dp > m2%r(m2%ui)) &
-      self%t_u(i,iv) = min(self%t_u(i,iv),m%lo)
-    end if
-    if (self%t_l(i,iv)<m%uo) then
-      if (m%r(m%ui)+dp < m2%r(m2%li)) &
-      self%t_l(i,iv) = max(self%t_l(i,iv),m%uo)
-    end if
-    if (self%t_u(i,iv)>m%ui) then
-      if (m%r(m%uo)+dp > m2%uf) then
-        self%t_u(i,iv) = min(self%t_u(i,iv),m%ui)
-      else
-        self%t_u(i,iv) = max(self%t_l(i,iv),m%ub)
+  if (.not.self%all_cells) then
+    do i=1,3
+      m => target%mesh(i)
+      m2=> source%mesh(i)
+      self%t_l(i,iv) = max(m%lb,min(m%uo,self%t_l(i,iv)))
+      self%t_u(i,iv) = max(m%lo,min(m%ub,self%t_u(i,iv)))
+      dp = round(m%p-m2%p,12)+m%h(iv)*(m%d-m2%d)
+      if (self%t_u(i,iv)>m%lo) then
+        if (m%r(m%li)+dp > m2%r(m2%ui)) &
+        self%t_u(i,iv) = min(self%t_u(i,iv),m%lo)
       end if
-    end if
-    if (self%t_l(i,iv)<m%li) then
-      if (m%r(m%lo)+dp < m2%lf) then
-        self%t_l(i,iv) = max(self%t_l(i,iv),m%li)
-      else
-        self%t_l(i,iv) = min(self%t_l(i,iv),m%lb)
+      if (self%t_l(i,iv)<m%uo) then
+        if (m%r(m%ui)+dp < m2%r(m2%li)) &
+        self%t_l(i,iv) = max(self%t_l(i,iv),m%uo)
       end if
-    end if
-  end do
+      if (self%t_u(i,iv)>m%ui) then
+        if (m%r(m%uo)+dp > m2%uf) then
+          self%t_u(i,iv) = min(self%t_u(i,iv),m%ui)
+        else
+          self%t_u(i,iv) = max(self%t_l(i,iv),m%ub)
+        end if
+      end if
+      if (self%t_l(i,iv)<m%li) then
+        if (m%r(m%lo)+dp < m2%lf) then
+          self%t_l(i,iv) = max(self%t_l(i,iv),m%li)
+        else
+          self%t_l(i,iv) = min(self%t_l(i,iv),m%lb)
+        end if
+      end if
+    end do
+  end if
   ! --------------------------------------------------------------------
   ! Map the acquired indices back to the source
   ! --------------------------------------------------------------------
@@ -465,11 +565,13 @@ SUBROUTINE init_lower (self)
     end do
     self%s_l(:,iv) = source%index_only2 (target,pl, iv)
     self%s_u(:,iv) = source%index_only2 (target,pu, iv, roundup=.true.)
-    do i = 1,3
-      m => source%mesh(i)
-      self%s_l(i,iv) = max(m%lo,min(m%ui,self%s_l(i,iv)))
-      self%s_u(i,iv) = min(m%uo,max(m%li,self%s_u(i,iv)))
-    end do
+    if (.not.self%all_cells) then
+      do i = 1,3
+        m => source%mesh(i)
+        self%s_l(i,iv) = max(m%lo,min(m%ui,self%s_l(i,iv)))
+        self%s_u(i,iv) = min(m%uo,max(m%li,self%s_u(i,iv)))
+      end do
+    end if
   end do
 END SUBROUTINE init_lower
 
@@ -492,8 +594,10 @@ SUBROUTINE dnload_from_lower (self)
   class(patch_t), pointer:: source, target
   real(kind=KindScalarVar), dimension(:,:,:,:,:), pointer :: mem
   real(kind=KindScalarVar), dimension(:,:,:),   pointer :: scr
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: rt_scr, rt_cube
   real(kind=KindScalarVar), dimension(:,:,:),   pointer :: cube
   real(kind=KindScalarVar), pointer :: scr3
+  real(kind=KindScalarVar), dimension(:),       pointer :: rt_scr3
   real(kind=KindScalarVar) :: tcell
   real    :: pt(2), pt2(2), p(3)
   real(8) :: pos(3), time, pos2(3)
@@ -514,45 +618,38 @@ SUBROUTINE dnload_from_lower (self)
   call source%time_interval (target%time, jt2, pt2)
   time = target%time
   id = -1
-  do iv = 1, source%nv
-    sl = self%s_l(:,iv); su = self%s_u(:,iv)
-    tl = self%t_l(:,iv); tu = self%t_u(:,iv)
+  if (self%rt_target) then
+    sl = self%s_l(:,1); su = self%s_u(:,1)
+    tl = self%t_l(:,1); tu = self%t_u(:,1)
     n = su - sl +2
-    allocate (scr(n(1), n(2), n(3)))
+    allocate (rt_scr(n(1), n(2), n(3),target%nv))
     do k = 1, n(3)
       do j = 1, n(2)
         do i = 1, n(1)
           cl = [sl(1)+i-1,sl(2)+j-1,sl(3)+k-1]
-          outside = any(cl<source%li .or. cl>source%ui)
+          outside = .false.
+          do ii = 1,3
+            if ((cl(ii)<source%li(ii)).or.(cl(ii)>source%ui(ii))) outside = .true.
+          end do
           if (outside) then
             found = .false.
             do ii = 1,3
               m => source%mesh(ii)
               pos(ii) = m%r(cl(ii))
-              pos2(ii) = m%r(cl(ii))+m%p+m%h(iv)*m%d
+              pos2(ii) = m%r(cl(ii))+m%p+m%h(1)*m%d
             end do
-            scr3 => scr(i,j,k)
-            call self%check_in_target(pos, scr3, iv, time, jt, pt, id, found)    ! many cells are needed from the target for good interpolation
+            rt_scr3 => rt_scr(i,j,k,:)
+            call self%check_in_target(pos, 1, time, jt, pt, id, found, rt_scr=rt_scr3)    ! many cells are needed from the target for good interpolation
             if (.not.found) &
-              call self%check_in_nbors (pos, scr3, iv, time, jt, pt, id, found)  ! worst case.. at least necessary nbors will be same size or smaller.
+              call self%check_in_nbors (pos, 1, time, jt, pt, id, found, rt_scr=rt_scr3)  ! worst case.. at least necessary nbors will be same size or smaller.
             if (.not.found) then
                 print *, iv, cl, pos
                 print *, pos2
                 error stop "data_hub::dnload_lower:: cell not found"    ! very unusual, but a necessary check and a stop.
             end if
           else
-            if (source%unsigned(iv)) then
-              scr(i,j,k) = exp(pt2(1) * log(mem(cl(1),cl(2),cl(3),iv, jt2(1))) + &
-                               pt2(2) * log(mem(cl(1),cl(2),cl(3),iv, jt2(2))))
-            else if (source%pervolume(iv)) then
-              scr(i,j,k) = pt2(1) * (mem(cl(1),cl(2),cl(3),iv, jt2(1))  / &
-                                     mem(cl(1),cl(2),cl(3), d, jt2(1))) + &
-                           pt2(2) * (mem(cl(1),cl(2),cl(3),iv, jt2(2))  / &
-                                     mem(cl(1),cl(2),cl(3), d, jt2(2)))
-            else
-              scr(i,j,k) = pt2(1) * mem(cl(1),cl(2),cl(3),iv, jt2(1)) + &
-                           pt2(2) * mem(cl(1),cl(2),cl(3),iv, jt2(2))
-            end if
+            rt_scr(i,j,k,:) = pt2(1) * mem(cl(1),cl(2),cl(3),:, jt2(1)) + &
+                              pt2(2) * mem(cl(1),cl(2),cl(3),:, jt2(2))
           end if
         end do
       end do
@@ -562,38 +659,110 @@ SUBROUTINE dnload_from_lower (self)
    ! back to target
    ! -------------------------------------------------------------------
     do k=tl(3), tu(3)
-     do j=tl(2), tu(2)
-       do i=tl(1), tu(1)
-         cl = [i,j,k]
-         !
-         if (all(cl>=target%li).and.(all(cl<=target%ui))) then
-            print *, target%id, cl
-            error stop "dnload_lower:: internal cell modified"
-         end if
-         !
-         do ii = 1,3
-           m => target%mesh(ii)
-           pos(ii) = m%r(cl(ii))
-         end do
-         call source%index_space2(target,pos, iv, cl, p)
-         l  = cl - sl + 1
-         u  = l +1
-         cube => scr(l(1):u(1),l(2):u(2),l(3):u(3))
-         if (source%unsigned(iv)) then
-           call self%interpolate_unsigned_one(cube, p,tcell)
-           target%mem(i,j,k,iv,target%it,1) = tcell
-         else if (self%source%pervolume(iv)) then
-           call self%interpolate_one(cube, p,tcell)
-           target%mem(i,j,k,iv,target%it,1) = tcell * target%mem(i,j,k,d,target%it,1)
-         else
-           call self%interpolate_one(cube, p,tcell)
-           target%mem(i,j,k,iv,target%it,1) = tcell
-         end if
-       end do
-     end do
-   end do
-   deallocate(scr)
- end do
+      do j=tl(2), tu(2)
+        do i=tl(1), tu(1)
+          cl = [i,j,k]
+          if ((self%all_cells) .or. &
+              any((cl-target%mesh%li) < 0 .or. (cl-target%mesh%ui) > 0)) then
+            do ii = 1,3
+              m => target%mesh(ii)
+              pos(ii) = m%r(cl(ii))
+            end do
+            call source%index_space2(target,pos, 1, cl, p)
+            l  = cl - sl + 1
+            u  = l +1
+            do iv = 1, target%nv
+              cube => rt_scr(l(1):u(1),l(2):u(2),l(3):u(3), iv)
+              call self%interpolate_one(cube, p,tcell)
+              target%mem(i,j,k,iv,target%it,1) = tcell
+            end do
+          end if
+        end do
+      end do
+    end do
+    deallocate(rt_scr)
+  else
+    do iv = 1, source%nv
+      sl = self%s_l(:,iv); su = self%s_u(:,iv)
+      tl = self%t_l(:,iv); tu = self%t_u(:,iv)
+      n = su - sl +2
+      allocate (scr(n(1), n(2), n(3)))
+      do k = 1, n(3)
+        do j = 1, n(2)
+          do i = 1, n(1)
+            cl = [sl(1)+i-1,sl(2)+j-1,sl(3)+k-1]
+            outside = .false.
+            do ii = 1,3
+              if ((cl(ii)<source%li(ii)).or.(cl(ii)>source%ui(ii))) outside = .true.
+            end do
+            if (outside) then
+              found = .false.
+              do ii = 1,3
+                m => source%mesh(ii)
+                pos(ii) = m%r(cl(ii))
+                pos2(ii) = m%r(cl(ii))+m%p+m%h(iv)*m%d
+              end do
+              scr3 => scr(i,j,k)
+              call self%check_in_target(pos, iv, time, jt, pt, id, found, scr=scr3)    ! many cells are needed from the target for good interpolation
+              if (.not.found) &
+                call self%check_in_nbors (pos, iv, time, jt, pt, id, found, scr=scr3)  ! worst case.. at least necessary nbors will be same size or smaller.
+              if (.not.found) then
+                  print *, iv, cl, pos
+                  print *, pos2
+                  error stop "data_hub::dnload_lower:: cell not found"    ! very unusual, but a necessary check and a stop.
+              end if
+            else
+              if (source%unsigned(iv)) then
+                scr(i,j,k) = exp(pt2(1) * log(mem(cl(1),cl(2),cl(3),iv, jt2(1))) + &
+                                 pt2(2) * log(mem(cl(1),cl(2),cl(3),iv, jt2(2))))
+              else if (source%pervolume(iv)) then
+                scr(i,j,k) = pt2(1) * (mem(cl(1),cl(2),cl(3),iv, jt2(1))  / &
+                                       mem(cl(1),cl(2),cl(3), d, jt2(1))) + &
+                             pt2(2) * (mem(cl(1),cl(2),cl(3),iv, jt2(2))  / &
+                                       mem(cl(1),cl(2),cl(3), d, jt2(2)))
+              else
+                scr(i,j,k) = pt2(1) * mem(cl(1),cl(2),cl(3),iv, jt2(1)) + &
+                             pt2(2) * mem(cl(1),cl(2),cl(3),iv, jt2(2))
+              end if
+            end if
+          end do
+        end do
+      end do
+     ! -------------------------------------------------------------------
+     ! Now that the scratch cube is ready, we can spatially interpolate
+     ! back to target
+     ! -------------------------------------------------------------------
+      do k=tl(3), tu(3)
+        do j=tl(2), tu(2)
+          do i=tl(1), tu(1)
+            cl = [i,j,k]
+            if ((self%all_cells) .or. &
+                any((cl-target%mesh%li) < 0 .or. (cl-target%mesh%ui) > 0)) then
+              do ii = 1,3
+                m => target%mesh(ii)
+                pos(ii) = m%r(cl(ii))
+              end do
+              call source%index_space2(target,pos, iv, cl, p)
+              l  = cl - sl + 1
+              u  = l +1
+              cube => scr(l(1):u(1),l(2):u(2),l(3):u(3))
+              if (source%unsigned(iv)) then
+                call self%interpolate_unsigned_one(cube, p,tcell)
+                target%mem(i,j,k,iv,target%it,1) = tcell
+              else if (self%source%pervolume(iv)) then
+                call self%interpolate_one(cube, p,tcell)
+                target%mem(i,j,k,iv,target%it,1) = tcell * target%mem(i,j,k,d,target%it,1)
+              else
+                call self%interpolate_one(cube, p,tcell)
+                target%mem(i,j,k,iv,target%it,1) = tcell
+              end if
+            end if
+          end do
+        end do
+      end do
+      deallocate(scr)
+    end do
+ end if      
  call trace%end(itimer)
 END SUBROUTINE dnload_from_lower
 
@@ -602,16 +771,17 @@ END SUBROUTINE dnload_from_lower
 !> resides in the target patch. This data is spatially interpolated to
 !> the source resolution and added to the scratch array.
 !> =====================================================================
-SUBROUTINE check_in_target (self, pos, scr, iv, time, jt, pt, id, found)
+SUBROUTINE check_in_target (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   class(data_hub_t)                 :: self
   real(8)                           :: pos(3), time
-  real(kind=KindScalarVar), pointer :: scr
+  real(kind=KindScalarVar), pointer, optional :: scr
+  real(kind=KindScalarVar), dimension(:),pointer, optional :: rt_scr
   integer                           :: iv, jt(2), id
   real                              :: pt(2)
   logical                           :: found
   ! ....................................................................
   integer :: sl(3), su(3), tl(3), tu(3), i, j, k, aa, bb, cc
-  integer :: d, cl(3), ii, l(3), u(3)
+  integer :: d, cl(3), ii, l(3), u(3), v
   real    :: p(3)
   real(8) :: eps = 0.001_8
   class(mesh_t), pointer :: m
@@ -622,6 +792,7 @@ SUBROUTINE check_in_target (self, pos, scr, iv, time, jt, pt, id, found)
   source => self%source
   target => self%target
   d = source%i_d
+  inside = .true.
   call target%index_space2(source,pos,iv, cl, p)
   inside = all(cl>=target%mesh%li .and. cl<=target%mesh%ui)
   if (inside) then                                                      ! do the interpolation from smaller
@@ -635,20 +806,28 @@ SUBROUTINE check_in_target (self, pos, scr, iv, time, jt, pt, id, found)
     allocate(cube(2,2,2,2))
     l = cl
     u = cl+1
-    if (source%unsigned(iv)) then
-      cube(:,:,:,1) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
-      cube(:,:,:,2) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
-      call self%interpolate_unsigned(cube, pt, p,scr)
-    else if (source%pervolume(iv)) then
-      cube(:,:,:,1) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1) / &
-                      target%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(1),1)
-      cube(:,:,:,2) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1) / &
-                      target%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(2),1)
-      call self%interpolate(cube, pt, p,scr)
+    if (self%rt_target) then
+      do v=1,target%nv
+        cube(:,:,:,1) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),v,jt(1),1)
+        cube(:,:,:,2) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),v,jt(2),1)
+        call self%interpolate(cube, pt, p,rt_scr(v))
+      end do
     else
-      cube(:,:,:,1) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
-      cube(:,:,:,2) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
-      call self%interpolate(cube, pt, p,scr)
+      if (source%unsigned(iv)) then
+        cube(:,:,:,1) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
+        cube(:,:,:,2) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
+        call self%interpolate_unsigned(cube, pt, p,scr)
+      else if (source%pervolume(iv)) then
+        cube(:,:,:,1) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1) / &
+                        target%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(1),1) 
+        cube(:,:,:,2) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1) / &
+                        target%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(2),1)
+        call self%interpolate(cube, pt, p,scr)
+      else
+        cube(:,:,:,1) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
+        cube(:,:,:,2) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
+        call self%interpolate(cube, pt, p,scr)
+      end if
     end if
     deallocate(cube)
     found = .true.
@@ -663,16 +842,17 @@ END SUBROUTINE check_in_target
 !> interpolated in time to the needed target time. Then it is added
 !> to the scratch array.
 !> =====================================================================
-SUBROUTINE check_in_nbors (self, pos, scr, iv, time, jt, pt, id, found)
+SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   class(data_hub_t)                 :: self
   real(8)                           :: pos(3), time
-  real(kind=KindScalarVar), pointer :: scr
+  real(kind=KindScalarVar), pointer, optional :: scr
+  real(kind=KindScalarVar), dimension(:),pointer, optional :: rt_scr
   integer                           :: jt(2), id
   real                              :: pt(2)
   logical                           :: found
   ! ....................................................................
   integer :: iv, sl(3), su(3), tl(3), tu(3), i, j, k
-  integer :: d, cl(3), ii, l(3), u(3)
+  integer :: d, cl(3), ii, l(3), u(3), v
   real    :: p(3)
   real(8) :: eps = 0.001_8
   class(mesh_t), pointer :: m
@@ -693,26 +873,33 @@ SUBROUTINE check_in_nbors (self, pos, scr, iv, time, jt, pt, id, found)
           cl = nbpatch%index_only2 (source,pos, iv, closest=.true.)
           inside = all(cl>=nbpatch%mesh%li .and. cl<=nbpatch%mesh%ui)
           if (inside) then                                              ! same size, just take the value by temporal interpolation
-           ! if (id /=nbpatch%id) then
+            if (id /=nbpatch%id) then
               call nbpatch%time_interval (time, jt, pt)
               id = nbpatch%id
-           ! end if
-            if (source%unsigned(iv)) then
-              scr = exp ( &
-              pt(1) * log(nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(1),1)) + &
-              pt(2) * log(nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(2),1)))
-            else if (source%pervolume(iv)) then
-              scr =  &
-              pt(1) * (nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(1),1) / &
-                         nbpatch%mem(cl(1),cl(2),cl(3), d,jt(1),1))+ &
-              pt(2) * (nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(2),1) / &
-                         nbpatch%mem(cl(1),cl(2),cl(3), d,jt(2),1))
-            else
-              scr =  &
-              pt(1) * nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(1),1) + &
-              pt(2) * nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(2),1)
             end if
-            found = .true.
+            if(self%rt_target) then
+              rt_scr =  &
+              pt(1) * nbpatch%mem(cl(1),cl(2),cl(3),:,jt(1),1) + &
+              pt(2) * nbpatch%mem(cl(1),cl(2),cl(3),:,jt(2),1)
+              found = .true.
+            else
+              if (source%unsigned(iv)) then
+                scr = exp ( &
+                pt(1) * log(nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(1),1)) + &
+                pt(2) * log(nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(2),1)))
+              else if (source%pervolume(iv)) then
+                scr =  &
+                pt(1) * (nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(1),1) / &
+                           nbpatch%mem(cl(1),cl(2),cl(3), d,jt(1),1))+ &
+                pt(2) * (nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(2),1) / &
+                           nbpatch%mem(cl(1),cl(2),cl(3), d,jt(2),1))
+              else
+                scr =  &
+                pt(1) * nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(1),1) + &
+                pt(2) * nbpatch%mem(cl(1),cl(2),cl(3),iv,jt(2),1)
+              end if
+              found = .true.
+            end if
           end if
         else
           call nbpatch%index_space2(source,pos,iv, cl, p)
@@ -725,20 +912,28 @@ SUBROUTINE check_in_nbors (self, pos, scr, iv, time, jt, pt, id, found)
             allocate(cube(2,2,2,2))
             l = cl
             u = cl+1
-            if (source%unsigned(iv)) then
-              cube(:,:,:,1) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
-              cube(:,:,:,2) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
-              call self%interpolate_unsigned(cube, pt, p,scr)
-            else if (source%pervolume(iv)) then
-              cube(:,:,:,1) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1) / &
-                              nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(1),1)
-              cube(:,:,:,2) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1) / &
-                              nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(2),1)
-              call self%interpolate(cube, pt, p,scr)
+            if (self%rt_target) then
+              do v = 1, target%nv
+                cube(:,:,:,1) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),v,jt(1),1)
+                cube(:,:,:,2) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),v,jt(2),1)
+                call self%interpolate(cube, pt, p,rt_scr(v))
+              end do
             else
-              cube(:,:,:,1) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
-              cube(:,:,:,2) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
-              call self%interpolate(cube, pt, p,scr)
+              if (source%unsigned(iv)) then
+                cube(:,:,:,1) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
+                cube(:,:,:,2) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
+                call self%interpolate_unsigned(cube, pt, p,scr)
+              else if (source%pervolume(iv)) then
+                cube(:,:,:,1) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1) / &
+                                nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(1),1) 
+                cube(:,:,:,2) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1) / &
+                                nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(2),1)
+                call self%interpolate(cube, pt, p,scr)
+              else
+                cube(:,:,:,1) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
+                cube(:,:,:,2) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
+                call self%interpolate(cube, pt, p,scr)
+              end if
             end if
             deallocate(cube)
             found = .true.
@@ -753,15 +948,16 @@ END SUBROUTINE check_in_nbors
 !> =====================================================================
 !> Update the guard zone values
 !> =====================================================================
-SUBROUTINE update (self, link)
+SUBROUTINE update (self, link, all_cells)
   class(data_hub_t):: self
   class(link_t), pointer :: link
   ! ....................................................................
   type  (data_hub_t), pointer :: hub
   integer, save:: itimer=0
+  logical, optional :: all_cells
   ! --------------------------------------------------------------------
   !call trace%begin ('data_hub_t%update',itimer=itimer)
-  if (self%first_time) call self%init(link)                             ! map data shell if it is the first time
+  if (self%first_time) call self%init(link, all_cells)                  ! map data shell if it is the first time
   !
   hub => self%head
   do while(associated(hub))

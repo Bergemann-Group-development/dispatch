@@ -13,6 +13,7 @@ MODULE rt_mod
   USE trace_mod
   USE download_mod
   USE scaling_mod
+  USE units_mod
   implicit none
   private 
 !> =====================================================================
@@ -159,6 +160,8 @@ SUBROUTINE init_rt (self)
   self%updated(:) = .false.                                             ! none are updated initially
   allocate(self%my_links(self%n_bundle))                                ! allocate all the links this patch contains
   if (self%do_chains) then
+    allocate(self%updated(self%n_packet))                               ! flags, indicating update status of all the bundles
+    self%updated(:) = .false.                                           ! none are updated initially
     call self%init_chain(nd)
   else
     call self%init_no_chain
@@ -201,6 +204,7 @@ SUBROUTINE init_chain(self, nd)
         call this_link%get_ds(self%ds,this_link%ds)
         a_id = a_id + 1                                                 ! next ID
       end do
+      self%w_lambda(ivl:ivl+eos%n_lambda-1) = eos%w_lambda
       ray_dir => ray_dir%next                                           ! next direction
       ivl = ivl + eos%n_lambda
     end do
@@ -420,24 +424,28 @@ SUBROUTINE update_rt (self)
     print *,trim(mhd%kind)
     error stop "rt_mod (1): MHD solver type not known"
   end if
-  print *, mhd%kind
 
   call eos%lookup (shape(self%e_th), x=self%e_th, y=self%d, &           ! call the table lookup, ...
                    rk=self%rk, src=self%src)  
-  print *, self%src(:,8,8,:)
-  print *, 'rk',self%rk(:,8,8,:)
   self%data_ready =.true.                                               ! flag, that internal data is ready
   
   if(io%verbose >1) then
     print *, self%id, 'rk', minval(self%rk), maxval(self%rk)
     print *, self%id, 'src', minval(self%src), maxval(self%src)
   end if
-  self%mem(:,:,:,:,self%it,1) = 0.0
-  call self%rt_boundaries%condition(self%mem(:,:,:,:,self%it,1))
   call trace%end (itimer)
   if (self%do_chains) then
+    call self%rt_boundaries%condition(self%mem(:,:,:,:,self%it,1))
     call self%nudge                                                     ! nudge the chain heads
   else
+    call self%dnload
+    !print *, 'ID, bndry bits', self%id, self%rt_boundaries%bits
+    !print *, 'pos', self%position
+    !print *, 'bnd bits set', self%rt_boundaries%is_set(bits%xl), &
+    !self%rt_boundaries%is_set(bits%xu), self%rt_boundaries%is_set(bits%yl), &
+    !self%rt_boundaries%is_set(bits%yu), self%rt_boundaries%is_set(bits%zl), &
+    !self%rt_boundaries%is_set(bits%zu)
+    call self%rt_boundaries%condition(self%mem(:,:,:,:,self%it,1))
     call self%execute_no_chain
   end if
 END SUBROUTINE update_rt 
@@ -1289,6 +1297,19 @@ SUBROUTINE boundary_conditions (self)
   class(rt_t):: self
   !---------------------------------------------------------------------
 END SUBROUTINE boundary_conditions
+
+SUBROUTINE get_ds(self, packet, ds)
+  class(rt_t) :: self
+  class(packet_t), pointer :: packet
+  real(kind=8) :: cs(3), ds
+  !.....................................................................
+  real(kind=8) :: dst(3), c(3)
+  !---------------------------------------------------------------------
+  dst = real(packet%dstep,kind=8)
+  c   = self%mesh%d
+  ds  = ((c(1)*dst(1))**2+(c(2)*dst(2))**2+(c(3)*dst(3))**2)**0.5
+  
+END SUBROUTINE get_ds
 
 !> =====================================================================
 !> Write results to disk

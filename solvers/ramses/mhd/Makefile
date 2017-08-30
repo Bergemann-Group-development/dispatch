@@ -22,7 +22,7 @@ mhd_mod.o               : io_unit_mod.o trace_mod.o mpi_mod.o omp_mod.o patch_mo
 			  output_amr.o output_hydro.o
 initial_mod.o           : io_unit_mod.o trace_mod.o random_mod.o io_mod.o mesh_mod.o hydro_parameters.o
 index_mod.o             :
-
+rmhd_mod.o              : io_mod.o trace_mod.o mhd_mod.o rt_mod.o
 output_amr.o            : amr_commons.o hydro_commons.o pm_commons.o title.o write_screen.o units.o
 output_hydro.o          : amr_commons.o hydro_commons.o title.o output_poisson.o #output_part.o
 output_poisson.o        : amr_commons.o poisson_commons.o
