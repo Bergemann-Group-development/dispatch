@@ -1255,21 +1255,21 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   ! If guard_zones is true, include the guard zones.  If time_derivs is true,
   ! write out the time derivatives also.
   !-----------------------------------------------------------------------------
-  if (self%guard_zones) then
+  if (io%guard_zones) then
     l = self%mesh%lb
     u = self%mesh%ub
   else
     l = self%mesh%li
     u = self%mesh%ui
   end if
-  if (self%time_derivs) then
+  if (io%time_derivs) then
     no = min(2,self%nw)
   else
     no = 1
   end if
-  if (self%out_time==0.0) then
+  if (io%out_time==0.0) then
     time = self%time
-  else if (self%time_derivs) then
+  else if (io%time_derivs) then
     time = self%t(self%nt-2)
   else
     time = self%out_next
@@ -1343,7 +1343,7 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   end do
   close (io%data_unit)
    self%iout = self%iout+1
-   self%out_next = (nint(self%out_next/self%out_time)+1)*self%out_time
+   self%out_next = (nint(self%out_next/io%out_time)+1)*io%out_time
   !$omp end critical (out_cr)
   end do
   call trace_end
