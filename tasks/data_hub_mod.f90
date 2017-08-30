@@ -377,8 +377,6 @@ SUBROUTINE init_higher (self)
     end do
   end if
   end do
-  print *, self%target%id,'tl tu', self%t_l, self%t_u
-  print *, 'source', self%source%id, 'sl, su', self%s_l, self%s_u
 END SUBROUTINE init_higher
 
 !> =====================================================================
