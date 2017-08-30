@@ -5,6 +5,7 @@ MODULE eos_mod
   USE io_mod
   USE mpi_mod
   USE trace_mod
+  USE scaling_mod
   implicit none
   private
   type, public:: eos_t
@@ -13,6 +14,7 @@ MODULE eos_mod
     integer :: n_lambda = 1
     real :: w_lambda = 1
     logical :: do_rt = .false.
+    real :: kappa
   contains
     procedure:: init
     procedure:: pressure
@@ -32,8 +34,9 @@ SUBROUTINE init (self)
   integer:: iostat
   logical, save:: first_time=.true.
   real, save:: gamma=1.4
+  real, save:: kappa=0.1
   logical, save:: do_rt = .false.
-  namelist /eos_params/ gamma, do_rt
+  namelist /eos_params/ gamma, do_rt, kappa
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
   if (io%master) print *, &
@@ -42,12 +45,14 @@ SUBROUTINE init (self)
   if (first_time) then
     gamma = self%gamma
     do_rt = self%do_rt
+    kappa = self%kappa
     rewind (io%input); read (io%input, eos_params, iostat=iostat)
     if (io%master) write (io%output, eos_params)
   end if
   !$omp end critical (init_cr)
   self%gamma = gamma
   self%do_rt = do_rt
+  self%kappa = kappa * scaling%m/scaling%l**2
   call trace%end
 END SUBROUTINE init
 
@@ -119,7 +124,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   end if
   if (present(rk)) then
     do i=1,size(rk,4)
-      rk(:,:,:,i) = y_loc
+      rk(:,:,:,i) = y_loc*self%kappa
     end do
   end if
   if (present(lnx)) deallocate(x_loc)
