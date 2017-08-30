@@ -83,10 +83,10 @@ SUBROUTINE update (self)
     self%dsdt(l(1):u(1),l(2):u(2),l(3):u(3)) + dedt * &
             d(l(1):u(1),l(2):u(2),l(3):u(3)) / &
          pgas(l(1):u(1),l(2):u(2),l(3):u(3))
+    end associate
     deallocate(dedt, pgas)
   end if                              
   call self%courant_condition
-  end associate
   !call trace%end (itimer)
 END SUBROUTINE update
 
