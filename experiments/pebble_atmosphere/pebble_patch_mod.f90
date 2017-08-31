@@ -900,22 +900,42 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
   real:: w(3), pos(3), v(3)
   integer:: ii(3), j, k
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: velocity
+  real, save:: h(3)=-1.0
+  class(mesh_t), pointer:: m
   !-----------------------------------------------------------------------------
-  ! By using a 4-D pointer we can treat the velocity component as a 3D+time
-  ! array, which can be passed to interpolate_r4.
+  ! Cache staggered mesh index shift for the three velocity components
   !-----------------------------------------------------------------------------
-  pos = (modulo(pebble%p-self%position+0.5_8*self%box,self%box)-0.5_8*self%box)
-  warn = 0
+  if (h(1)==-1.0) then
   do j=1,3
-    do k=1,3
-      w(k) = pos(k)/self%mesh(k)%d - self%mesh(k)%h(k+2) + self%mesh(k)%o
+      m => self%mesh(j)
+      h(j) = m%h(self%i_px+j-1)
+    end do
+    if (io%master) &
+      print *,'interpolate_vg: h =',h
+  end if
+  !-----------------------------------------------------------------------------
+  ! Periodic wrapping?
+  !-----------------------------------------------------------------------------
+  pos = pebble%p-self%position
+  where (self%periodic)
+    pos = modulo(pos+0.5_8*self%box,self%box) - 0.5_8*self%box
+  end where
+  warn = 0
+  do j=1,3      ! velocity component
+    do k=1,3    ! particle space coordinate
+      m => self%mesh(k)
+      w(k) = pos(k)/m%d - h(j) + m%o
       ii(k) = w(k)
-      warn = warn + merge (1, 0, ii(k)<1 .or. ii(k)>self%mesh(k)%gn-1)
-      ii(k) = max(1,min(ii(k),self%mesh(k)%gn-1))
+      warn = warn + merge (1, 0, ii(k)<1 .or. ii(k)>m%gn-1)
+      ii(k) = max(1,min(ii(k),m%gn-1))
+      w(k) = w(k)-ii(k)
     end do
     velocity => self%vgas(:,:,:,j,:)
     pebble%vg(j) = self%interpolate_r4 (pebble%t, velocity, ii, w)
   end do
+  if (pebble%id==id_dbg) &
+    print '(a,3i4,2x,3f5.2,i3,2x,3f8.2,2(2x,3f7.3))', &
+      'interpolate_vg:', ii, w, warn, pebble%p, pebble%v, pebble%vg
 END SUBROUTINE interpolate_vg
 
 !> =============================================================================
