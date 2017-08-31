@@ -166,7 +166,7 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> Create a number of particles distributed randomly, with the velocity initially
-!> equal to the gas velocity.  To be able to use single precision particle 
+!> equal to the gas velocity.  To be able to use single precision particle
 !> coordinates, they are measured relative to the position of the planet.
 !> =============================================================================
 SUBROUTINE volume_add (self, n)
@@ -1036,15 +1036,15 @@ FUNCTION interpolate_r4 (self, t, field, i, w) RESULT (out)
   end if
   out = &
     pt(1)*( &
-      w(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)  ,jt(1))+q(1)*field(i(1)+1,i(2)  ,i(3)  ,jt(1)))  + &
-            q(2)*(w(1)*field(i(1),i(2)+1,i(3)  ,jt(1))+q(1)*field(i(1)+1,i(2)+1,i(3)  ,jt(1)))) + &
-      q(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)+1,jt(1))+q(1)*field(i(1)+1,i(2)  ,i(3)+1,jt(1)))  + &
-            q(2)*(w(1)*field(i(1),i(2)+1,i(3)+1,jt(1))+q(1)*field(i(1)+1,i(2)+1,i(3)+1,jt(1))))) + &
+      q(3)*(q(2)*(q(1)*field(i(1),i(2)  ,i(3)  ,jt(1))+w(1)*field(i(1)+1,i(2)  ,i(3)  ,jt(1)))  + &
+            w(2)*(q(1)*field(i(1),i(2)+1,i(3)  ,jt(1))+w(1)*field(i(1)+1,i(2)+1,i(3)  ,jt(1)))) + &
+      w(3)*(q(2)*(q(1)*field(i(1),i(2)  ,i(3)+1,jt(1))+w(1)*field(i(1)+1,i(2)  ,i(3)+1,jt(1)))  + &
+            w(2)*(q(1)*field(i(1),i(2)+1,i(3)+1,jt(1))+w(1)*field(i(1)+1,i(2)+1,i(3)+1,jt(1))))) + &
     pt(2)*( &
-      w(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)  ,jt(2))+q(1)*field(i(1)+1,i(2)  ,i(3)  ,jt(2)))  + &
-            q(2)*(w(1)*field(i(1),i(2)+1,i(3)  ,jt(2))+q(1)*field(i(1)+1,i(2)+1,i(3)  ,jt(2)))) + &
-      q(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)+1,jt(2))+q(1)*field(i(1)+1,i(2)  ,i(3)+1,jt(2)))  + &
-            q(2)*(w(1)*field(i(1),i(2)+1,i(3)+1,jt(2))+q(1)*field(i(1)+1,i(2)+1,i(3)+1,jt(2)))))
+      q(3)*(q(2)*(q(1)*field(i(1),i(2)  ,i(3)  ,jt(2))+w(1)*field(i(1)+1,i(2)  ,i(3)  ,jt(2)))  + &
+            w(2)*(q(1)*field(i(1),i(2)+1,i(3)  ,jt(2))+w(1)*field(i(1)+1,i(2)+1,i(3)  ,jt(2)))) + &
+      w(3)*(q(2)*(q(1)*field(i(1),i(2)  ,i(3)+1,jt(2))+w(1)*field(i(1)+1,i(2)  ,i(3)+1,jt(2)))  + &
+            w(2)*(q(1)*field(i(1),i(2)+1,i(3)+1,jt(2))+w(1)*field(i(1)+1,i(2)+1,i(3)+1,jt(2)))))
 END FUNCTION
 
 !> =============================================================================
