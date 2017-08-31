@@ -221,7 +221,6 @@ SUBROUTINE volume_add (self, n)
         pebble%p(3) =   (self%position(3) - planet%position(3)) + self%size(3)*(0.5-random%ran1())
         call interpolate_vg (self, pebble, warn)
         pebble%v = pebble%vg
-        pebble%v = self%vgas(ix,iy,iz,:,self%it)
         pebble%d = self%mem(ix,iy,iz,self%i_d,self%it,1)
         pebble%w = average_density*product(self%ds)
         if (pebble_trace%every > 0) then
@@ -306,7 +305,7 @@ SUBROUTINE boundary_add (self, n)
     pebble%v(2) =   0.0
     pebble%v(3) = - self%vz_pebble*sign
     ii = self%index_r4 (pebble%p, w, self%mesh%gn)
-    pebble%d = self%interpolate_r4 (self%density , ii, w)
+    pebble%d = self%interpolate_r4 (pebble%t, self%density , ii, w)
     pebble%w = product(self%size)/n_local                               ! probability density
     pebble%w = pebble%w*pebble%d                                        ! normalize by gas density
     self%pebbles%z_min = min(self%pebbles%z_min,abs(pebble%p(3)))
@@ -348,8 +347,8 @@ SUBROUTINE drag (self, pebble, warning)
   integer:: w1, w2, warning
   !-----------------------------------------------------------------------------
   ii  = self%index_r4 (pebble%p, w, self%mesh%gn)
-  d   = self%interpolate_r4 (self%density , ii, w)
-  p   = self%interpolate_r4 (self%pressure, ii, w)
+  d   = self%interpolate_r4 (pebble%t, self%density , ii, w)
+  p   = self%interpolate_r4 (pebble%t, self%pressure, ii, w)
   w1  = count(w<0.0 .or. w>1.0)
   call interpolate_vg (self, pebble, w2)
   warning = w1+w2
@@ -890,6 +889,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
 END SUBROUTINE info
 
 !> =============================================================================
+!> Velocity interpolation. By using a 4-D pointer we can treat the velocity
+!> component as a 3D+time array, which can be passed to interpolate_r4.
 !> =============================================================================
 SUBROUTINE interpolate_vg (self, pebble, warn)
   class(pebble_patch_t):: self
@@ -913,7 +914,7 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
       ii(k) = max(1,min(ii(k),self%mesh(k)%gn-1))
     end do
     velocity => self%vgas(:,:,:,j,:)
-    pebble%vg(j) = self%interpolate_r4 (velocity, ii, w)
+    pebble%vg(j) = self%interpolate_r4 (pebble%t, velocity, ii, w)
   end do
 END SUBROUTINE interpolate_vg
 
@@ -955,28 +956,35 @@ END FUNCTION
 
 !> =============================================================================
 !> =============================================================================
-FUNCTION interpolate_r4 (self, field, i, w) RESULT (out)
+FUNCTION interpolate_r4 (self, t, field, i, w) RESULT (out)
   class(pebble_patch_t):: self
+  real(8):: t
   real(kind=KindScalarVar), dimension(:,:,:,:), intent(in):: field
   integer:: i(3)
   real, intent(in):: w(3)
   real:: out
   !.............................................................................
-  real:: q(3)
-  integer:: it, j, dim(4)
+  real:: q(3), pt(2)
+  integer:: it, j, dim(4), jt(2)
   !-----------------------------------------------------------------------------
   dim = shape(field)-1
-  it = self%it  ! FIXME!
+  call self%time_interval (t, jt, pt)
   q = 1.0-w
   if (any(i<1 .or. i>dim(1:3))) then
     if (io%verbose>1) print*,'interpolate_r4: warning', i, w
     i = max(1,min(i,dim(1:3)))
   end if
   out = &
-    w(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)  ,it)+q(1)*field(i(1)+1,i(2)  ,i(3)  ,it))  + &
-          q(2)*(w(1)*field(i(1),i(2)+1,i(3)  ,it)+q(1)*field(i(1)+1,i(2)+1,i(3)  ,it))) + &
-    q(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)+1,it)+q(1)*field(i(1)+1,i(2)  ,i(3)+1,it))  + &
-          q(2)*(w(1)*field(i(1),i(2)+1,i(3)+1,it)+q(1)*field(i(1)+1,i(2)+1,i(3)+1,it)))
+    pt(1)*( &
+      w(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)  ,jt(1))+q(1)*field(i(1)+1,i(2)  ,i(3)  ,jt(1)))  + &
+            q(2)*(w(1)*field(i(1),i(2)+1,i(3)  ,jt(1))+q(1)*field(i(1)+1,i(2)+1,i(3)  ,jt(1)))) + &
+      q(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)+1,jt(1))+q(1)*field(i(1)+1,i(2)  ,i(3)+1,jt(1)))  + &
+            q(2)*(w(1)*field(i(1),i(2)+1,i(3)+1,jt(1))+q(1)*field(i(1)+1,i(2)+1,i(3)+1,jt(1))))) + &
+    pt(2)*( &
+      w(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)  ,jt(2))+q(1)*field(i(1)+1,i(2)  ,i(3)  ,jt(2)))  + &
+            q(2)*(w(1)*field(i(1),i(2)+1,i(3)  ,jt(2))+q(1)*field(i(1)+1,i(2)+1,i(3)  ,jt(2)))) + &
+      q(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)+1,jt(2))+q(1)*field(i(1)+1,i(2)  ,i(3)+1,jt(2)))  + &
+            q(2)*(w(1)*field(i(1),i(2)+1,i(3)+1,jt(2))+q(1)*field(i(1)+1,i(2)+1,i(3)+1,jt(2)))))
 END FUNCTION
 
 !> =============================================================================
