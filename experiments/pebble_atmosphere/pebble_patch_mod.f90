@@ -527,6 +527,7 @@ SUBROUTINE scatter (self, nbors, not_done)
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task
   integer:: n, m
+  real(8):: pos(3)
   !-----------------------------------------------------------------------------
   self%pebbles%dt_min = 1e30
   self%pebbles%dt_max = 0.0
@@ -572,6 +573,17 @@ SUBROUTINE scatter (self, nbors, not_done)
               if (.not.(self%is_set(bits%not_leaf)) .or. task%level>self%level) then
                 if (debug.or.pebble%id==id_dbg) &
                   print*, pebble%id, 'dbg: exporting to other task', task%id, task%pebbles%id, task%pebbles%n
+                !---------------------------------------------------------------
+                ! Periodic wrapping, in case the new patch is a periodic nbor
+                !---------------------------------------------------------------
+                pos = pebble%p + planet%position
+                where (self%periodic)
+                  pos = modulo(pos+self%box*0.5_8,self%box) - self%box*0.5_8
+                end where
+                pebble%p = pos - planet%position
+                if ((io%verbose > 0) .and. any(abs(self%position-task%position) > self%box)) then
+                  print *, 'INFO: exporting across periodic boundary', self%id, task%id, pebble%id
+                end if
                 call self%pebbles%export (pebble, task%pebbles)
                 self%pebbles%n_export = self%pebbles%n_export+1
                 goto 9
@@ -987,14 +999,19 @@ FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
 END FUNCTION
 
 !> =============================================================================
-!> Decide if a point is inside the patch
+!> Decide if a point is inside a patch, taking period wrapping into account
 !> =============================================================================
 FUNCTION inside_r4 (self, p)
   class(pebble_patch_t):: self
   real, intent(in):: p(3)
   logical:: inside_r4
+  real(8):: pos(3)
   !-----------------------------------------------------------------------------
-  inside_r4 = all(abs(p-self%position) < 0.5*self%size)
+  pos = p - self%position
+  where (self%periodic)
+    pos = modulo(pos+self%box*0.5_8,self%box) - self%box*0.5_8
+  end where
+  inside_r4 = all(abs(pos) < 0.5*self%size)
 END FUNCTION
 
 !> =============================================================================
