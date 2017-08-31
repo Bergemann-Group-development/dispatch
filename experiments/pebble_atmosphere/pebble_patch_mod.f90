@@ -84,6 +84,7 @@ SUBROUTINE init (self)
   integer:: iostat
   logical:: ok
   logical, save:: first_time=.true.
+  real, dimension(:,:,:,:), pointer:: U
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
     solid_density_cgs, size, it_max, pebble_rate_cgs, vz_pebble_cgs, id_dbg, &
     only_pebbles, ppc, power, omega_yr, trace_every
@@ -100,6 +101,9 @@ SUBROUTINE init (self)
     self%density => self%mem(:,:,:,self%i_d,:,1)
     allocate (self%pressure(mx,my,mz,mt))
     allocate (self%vgas(mx,my,mz,3,mt))
+    U => self%vgas(:,:,:,:,self%it)
+    call self%p2U (U, self%it)
+    print *,'pebble_patch_t%init: max(U) =',maxval(abs(U))
   end associate
   !-----------------------------------------------------------------------------
   ! Read parameters, but only from one thread
