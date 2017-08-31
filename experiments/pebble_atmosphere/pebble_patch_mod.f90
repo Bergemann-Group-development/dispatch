@@ -30,6 +30,7 @@ MODULE pebble_patch_mod
   USE pebble_mod
   USE pebbles_mod
   USE pebble_trace_mod
+  USE mesh_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -165,7 +166,8 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> Create a number of particles distributed randomly, with the velocity initially
-!> equal to the gas velocity
+!> equal to the gas velocity.  To be able to use single precision particle 
+!> coordinates, they are measured relative to the position of the planet.
 !> =============================================================================
 SUBROUTINE volume_add (self, n)
   class(pebble_patch_t):: self
@@ -177,6 +179,7 @@ SUBROUTINE volume_add (self, n)
   real:: w(3), sign, ppc, average_density
   integer, save:: nprint=10
   integer, save:: itimer=0
+  class(mesh_t), pointer:: m
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles .or. self%is_set(bits%not_leaf)) return
   call trace_begin ('pebbles_t%volume_add', 3, itimer=itimer)
@@ -200,7 +203,10 @@ SUBROUTINE volume_add (self, n)
   do iz=self%mesh(3)%li,self%mesh(3)%ui
   do iy=self%mesh(2)%li,self%mesh(2)%ui
   do ix=self%mesh(1)%li,self%mesh(1)%ui
-    ppc = self%pebbles%ppc*self%density(ix,iy,iz,self%it)/average_density
+    !---------------------------------------------------------------------------
+    ! Probability ia uniform, but weight is proportional to local density
+    !---------------------------------------------------------------------------
+    ppc = self%pebbles%ppc
     ippc = ppc
     ppc = ppc-ippc
     do iter=1,ippc+1
@@ -216,13 +222,22 @@ SUBROUTINE volume_add (self, n)
         pebble%t = self%time
         pebble%s = self%pebbles%size*10.0**(-self%pebbles%power*random%ran1())
         pebble%m = pebble%s**3*self%pebbles%density
-        pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
-        pebble%p(2) =   (self%position(2) - planet%position(2)) + self%size(2)*(0.5-random%ran1())
-        pebble%p(3) =   (self%position(3) - planet%position(3)) + self%size(3)*(0.5-random%ran1())
+        m => self%mesh(1); pebble%p(1) = m%r(ix) + m%d*(0.5-random%ran1())
+        m => self%mesh(2); pebble%p(2) = m%r(iy) + m%d*(0.5-random%ran1())
+        m => self%mesh(3); pebble%p(3) = m%r(iz) + m%d*(0.5-random%ran1())
+        !-----------------------------------------------------------------------
+        ! Avoid placement outside (could happen for no-no-mans-land mesh)
+        !-----------------------------------------------------------------------
+        if (any(pebble%p < self%mesh%lf .or. pebble%p > self%mesh%uf)) cycle
+        !-----------------------------------------------------------------------
+        ! Single precision position measured relative to planet position, with
+        ! initial speed = gas speed, and weight proportional to local density
+        !-----------------------------------------------------------------------
+        pebble%p = pebble%p + self%position - planet%position
         call interpolate_vg (self, pebble, warn)
         pebble%v = pebble%vg
         pebble%d = self%mem(ix,iy,iz,self%i_d,self%it,1)
-        pebble%w = average_density*product(self%ds)
+        pebble%w = pebble%d*product(self%ds)
         if (pebble_trace%every > 0) then
           if (mod(pebble%id,pebble_trace%every)==0 .and. &
         abs(pebble%p(1)) < 2.0*planet%hill_radius .and. &
@@ -917,7 +932,7 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
   ! Cache staggered mesh index shift for the three velocity components
   !-----------------------------------------------------------------------------
   if (h(1)==-1.0) then
-  do j=1,3
+    do j=1,3
       m => self%mesh(j)
       h(j) = m%h(self%i_px+j-1)
     end do
@@ -925,12 +940,9 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
       print *,'interpolate_vg: h =',h
   end if
   !-----------------------------------------------------------------------------
-  ! Periodic wrapping?
+  ! Add planet position and subtract patch position for interpolation
   !-----------------------------------------------------------------------------
-  pos = pebble%p-self%position
-  where (self%periodic)
-    pos = modulo(pos+0.5_8*self%box,self%box) - 0.5_8*self%box
-  end where
+  pos = pebble%p + (planet%position - self%position)
   warn = 0
   do j=1,3      ! velocity component
     do k=1,3    ! particle space coordinate
@@ -945,8 +957,8 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
     pebble%vg(j) = self%interpolate_r4 (pebble%t, velocity, ii, w)
   end do
   if (pebble%id==id_dbg) &
-    print '(a,3i4,2x,3f5.2,i3,2x,3f8.2,2(2x,3f7.3))', &
-      'interpolate_vg:', ii, w, warn, pebble%p, pebble%v, pebble%vg
+    print '(a,i6,1x,3i4,2x,3f5.2,i3,2x,3f8.2,2(2x,3f7.3))', &
+      'interpolate_vg:', self%id, ii, w, warn, pebble%p, pebble%v, pebble%vg
 END SUBROUTINE interpolate_vg
 
 !> =============================================================================
