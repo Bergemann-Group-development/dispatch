@@ -397,7 +397,7 @@ SUBROUTINE kdk_drag (self, p)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: p
   !.............................................................................
-  real:: rp(3), ar
+  real:: rp(3), ar, ds
   integer, save:: nprint=20
   integer:: warn
   !-----------------------------------------------------------------------------
@@ -407,8 +407,8 @@ SUBROUTINE kdk_drag (self, p)
   rp = - p%p
   ar = 1./sqrt(sum(rp**2))
   p%ag = scaling%grav*planet%mass*rp*ar**3
-  p%ag(1) = p%ag(1) + 2.*self%omega(3)*p%v(2)
-  p%ag(2) = p%ag(2) - 2.*self%omega(3)*p%v(1) + self%omega(3)**2*p%p(2)
+  p%ag(1) = p%ag(1) + 2.*self%omega(3)*p%v(2) + self%omega(3)**2*p%p(1)*3.0
+  p%ag(2) = p%ag(2) - 2.*self%omega(3)*p%v(1)
   p%ag(3) = p%ag(3)                           - self%omega(3)**2*p%p(3)
   !rp = self%pebbles%position - p%p
   !ar = 1./sqrt(sum(rp**2))
@@ -417,7 +417,9 @@ SUBROUTINE kdk_drag (self, p)
   p%dt = min(p%dt,0.1*io%out_time,minval(self%ds/max(1e-20,abs(p%v))))
   !
   if (p%id==self%pebbles%id_dbg) then
-    print'("kdkd1",1p,5(3e10.2,2x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t
+    ds = sqrt(sum((p%dt*p%v/self%ds)**2))
+    print *,'kdkd0',self%id,self%it,self%time,maxval(abs(self%vgas(:,:,:,:,self%it)))
+    print'("kdkd1",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
   end if
   !
   if (io%verbose>0 .and. p%id==1 .and. nprint>0) then
@@ -431,6 +433,10 @@ SUBROUTINE kdk_drag (self, p)
   p%p = p%p + p%dt*p%v
   p%t = p%t + p%dt
   call self%drag (p,warn)
+  if (p%id==self%pebbles%id_dbg) then
+    ds = sqrt(sum((p%dt*p%v/self%ds)**2))
+    print'("kdkd2",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
+  end if
   if (warn>0 .and. io%verbose>3) then
     print *,'  dt',p%dt,1,io%verbose
     print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
@@ -459,8 +465,8 @@ SUBROUTINE kdk_drag (self, p)
   !rp = self%pebbles%position - p%p
   !ar = 1./sqrt(sum(rp**2))
   !p%ag = p%ag + scaling%grav*star%mass*rp*ar**3
-  p%ag(1) = p%ag(1) + 2.*self%omega(3)*p%v(2)
-  p%ag(2) = p%ag(2) - 2.*self%omega(3)*p%v(1) + self%omega(3)**2*p%p(2)
+  p%ag(1) = p%ag(1) + 2.*self%omega(3)*p%v(2) + self%omega(3)**2*p%p(1)*3.0
+  p%ag(2) = p%ag(2) - 2.*self%omega(3)*p%v(1)
   p%ag(3) = p%ag(3)                           - self%omega(3)**2*p%p(3)
   !---------------------------------------------------------------------------
   ! Get the drag acceleration, at t+2*dt
@@ -478,10 +484,15 @@ SUBROUTINE kdk_drag (self, p)
   !---------------------------------------------------------------------------
   ! Second kick, with drag, moving v to v(t+2*dt)
   !---------------------------------------------------------------------------
+  if (p%id==self%pebbles%id_dbg) then
+    ds = sqrt(sum((p%dt*p%v/self%ds)**2))
+    print'("kdkd3",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
+  end if
   p%v = p%v + p%dt*(p%ag+p%ad)/(1.+p%c*p%dt)
   if (p%id==self%pebbles%id_dbg) then
     nprint = nprint-1
-    print'("kdkd2",1p,5(3e10.2,2x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t
+    ds = sqrt(sum((p%dt*p%v/self%ds)**2))
+    print'("kdkd4",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
   end if
   if (p%id == id_dbg) &
     print*,'dbg: kdk_drag:', p%p
