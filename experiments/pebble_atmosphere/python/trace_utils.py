@@ -4,7 +4,7 @@ import os
 
 def trace_utils():
     '''
-    f=trace_files(dir):  Returns a list of *.trc trace data files in dir
+    f=trace_files(run):  Returns a list of *.trc trace data files in data/run
     tr=trace(file):      Returns a structure with info for one particle
     trs=traces(dir):     Returns a list of structures, one for each particle
     cache_traces(trs):   Dress a list of trace objects with actual paths
@@ -28,7 +28,7 @@ def trace_utils():
  for pop-up help in Canopy"
 
 
-def trace_files (run='', data='../data', verbose=1):
+def trace_files (run='', data='../data', verbose=0):
     '''
     Get a list of .trc trace files
     '''
@@ -38,7 +38,7 @@ def trace_files (run='', data='../data', verbose=1):
     if verbose==1: print np.size(files), 'files found'
     return np.sort(files)
 
-def trace(file,verbose=1):
+def trace(file,verbose=0):
     '''
     Return a structure with trace data from a trace file, with fields
     {n,p,v,vg,c,d,t}, where p[0:3,:], v[0:3,:], vg[0:3,:] are the positions,
@@ -91,10 +91,10 @@ def trace(file,verbose=1):
     p.rmax=r.max()
     p.first=p.p[:,0]
     p.last=p.p[:,-1]
-    if verbose==1: print file, p.n, 'points'
+    #if verbose==1: print file, p.n, 'points'
     return p
 
-def traces(run='', dir='../data', verbose=1):
+def traces(run='', data='../data', verbose=0):
     '''
     Return a list of structures {file,trace,rmin,rmax,first,last},
     where self.trace() is a function returning a trace(self.file)
@@ -109,7 +109,7 @@ def traces(run='', dir='../data', verbose=1):
     
     See trace( for more about the contents of the path structure
     '''
-    files=trace_files(dir=dir,run=run,verbose=verbose)
+    files=trace_files(data=data,run=run,verbose=verbose)
     s=[]
     class tr:
         file=''
