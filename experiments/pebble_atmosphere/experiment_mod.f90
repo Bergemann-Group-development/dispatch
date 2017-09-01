@@ -52,10 +52,13 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
+  ! ....................................................................
   integer:: iv, iostat
   logical, save:: first_time=.true.
   character(len=32):: type='planet_atmosphere'
+  logical :: sph_bnd(8)
   real(8):: x_sponge=-1.0e99
+  real(8):: r2, x1, x2, y1, y2, z1, z2
   namelist /experiment_params/ type, x_sponge
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
@@ -95,7 +98,23 @@ SUBROUTINE init (self)
   call self%set (bits%static)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   self%boundaries%id = self%id
-  if (trim(type)/='disk' .and. all(abs(self%position) < self%ds)) then
+  associate(m1 => self%mesh(1), m2 => self%mesh(2), m3 => self%mesh(3))
+  r2 = planet%radius**2
+  x1 = m1%p - planet%position(1) + m1%r(m1%lb) - 0.5*m1%d
+  x2 = m1%p - planet%position(1) + m1%r(m1%ub) + 0.5*m1%d
+  y1 = m2%p - planet%position(2) + m2%r(m2%lb) - 0.5*m2%d
+  y2 = m2%p - planet%position(2) + m2%r(m2%ub) + 0.5*m2%d
+  z1 = m3%p - planet%position(3) + m3%r(m3%lb) - 0.5*m3%d
+  z2 = m3%p - planet%position(3) + m3%r(m3%ub) + 0.5*m3%d
+  sph_bnd(1) = x1**2+y1**2+z1**2 < r2
+  sph_bnd(2) = x2**2+y1**2+z1**2 < r2
+  sph_bnd(3) = x1**2+y2**2+z1**2 < r2
+  sph_bnd(4) = x2**2+y2**2+z1**2 < r2
+  sph_bnd(5) = x1**2+y1**2+z2**2 < r2
+  sph_bnd(6) = x2**2+y1**2+z2**2 < r2
+  sph_bnd(7) = x1**2+y2**2+z2**2 < r2
+  sph_bnd(8) = x2**2+y2**2+z2**2 < r2
+  if (trim(type)/='disk' .and. any(sph_bnd)) then
     print *, 'experiment_t%init: setting spherical BC bits on patch', self%id
     call self%set (bits%has_BC)
     call self%boundaries%set (bits%spherical)
@@ -103,7 +122,8 @@ SUBROUTINE init (self)
       call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
     end do
   end if
-  call self%boundary_conditions (self%it)
+  end associate
+  call self%boundary_conditions (self%it, self%it)
   call self%debug ('end init')
   !----------------------------------------------------------------------------
   ! Choose interpolation types. The smallest initial glitch (positive) is with 
@@ -200,7 +220,7 @@ SUBROUTINE update (self)
     call self%output
     call self%debug ('after BCs')
     call self%mhd_t%update
-    call self%boundary_conditions (self%new)
+    call self%boundary_conditions (self%it,self%new)
   end if
   !-----------------------------------------------------------------------------
   if (self%id==io%id_debug) then
@@ -248,9 +268,9 @@ END SUBROUTINE
 !> =============================================================================
 !> Boundary conditions for this experiment
 !> =============================================================================
-SUBROUTINE boundary_conditions (self, it)
+SUBROUTINE boundary_conditions (self, it, new)
   class(experiment_t) :: self
-  integer             :: it
+  integer             :: it, new
   !.............................................................................
   real(8)             :: h(3)
   integer             :: iv, nb,i
@@ -268,32 +288,23 @@ SUBROUTINE boundary_conditions (self, it)
     if (self%boundaries%is_set (bits%spherical)) then
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
       print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
-      call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), self%mesh, self%i_d)
-      d => self%mem(:,:,:,self%i_d,it,1)
+      call self%boundaries%spherical_jagged_d (self%mem(:,:,:,self%i_d,:,1), self%mesh, self%i_d, it, new)
+      d => self%mem(:,:,:,self%i_d,new,1)
       s0 = (log(atmosphere%surface%pressure) - &
         log(atmosphere%surface%density)*self%gamma)/(self%gamma-1.0)
       allocate (s(self%gn(1),self%gn(2),self%gn(3)))
       if (self%kind(1:9)=='stagger2_') then
-        s = self%mem(:,:,:,self%i_s,it,1)/d
-        call self%boundaries%spherical (s, s0, self%mesh, self%i_s)
-        self%mem(:,:,:,self%i_s,it,1) = s*d
+        s = self%mem(:,:,:,self%i_s,new,1)/d
+        call self%boundaries%spherical_jagged_s (s, self%mesh, self%i_s, s0)
+        self%mem(:,:,:,self%i_s,new,1) = s*d
       else
-        call self%e2S (s, it)
-        call self%boundaries%spherical (s, s0, self%mesh, self%i_s)
-        call self%S2e (s, it)
+        call self%e2S (s, new)
+        call self%boundaries%spherical_jagged_s (s, self%mesh, self%i_s, s0)
+        call self%S2e (s, new)
       end if
       deallocate (s)
-      !-------------------------------------------------------------------------
-      ! If we have time derivatives, extrapolate them (FIXME: is this redundant?)
-      !-------------------------------------------------------------------------
-      if (self%nw>1) then
-        call self%boundaries%spherical (self%mem(:,:,:,self%i_d,it,2), 0.0, self%mesh, self%i_d)
-        call self%boundaries%spherical (self%mem(:,:,:,self%i_e,it,2), 0.0, self%mesh, self%i_e)
-      end if
       do iv=self%i_px,self%i_pz
-        call self%boundaries%spherical_ns (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
-        if (self%nw>1) &
-          call self%boundaries%spherical_ns (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
+        call self%boundaries%spherical_jagged_p (self%mem(:,:,:,iv,new,1), self%mesh, iv)
       end do
     end if
     !------------------------------------------------------------------------
@@ -305,7 +316,7 @@ SUBROUTINE boundary_conditions (self, it)
         print *, self%id, 'MK y-BC:', self%boundaries%is_set (bits%yl), self%boundaries%is_set (bits%yu)
         print *, self%id, 'MK z-BC:', self%boundaries%is_set (bits%zl), self%boundaries%is_set (bits%zu)
       end if
-      call self%edge_boundary_conditions(it)
+      call self%edge_boundary_conditions(new)
     end if
     call self%check_density ('after boundary_conditions')
     call trace%end
