@@ -848,11 +848,12 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
   type(index_t):: idx
   integer      :: ix, iy, iz
   real(8)      :: x1, x2, y1, y2, z1, z2
-  real(8)      :: r2
+  real(8)      :: r2, h(3)
   logical      :: inside(4)
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%spherical_jagged')
   associate (m1=>m(1), m2=>m(2), m3=>m(3))
+  call set_stagger (m, h, iv)
   r2 = self%radius**2
   if (iv == idx%px) then
     do iz = m3%lb, m3%ub
@@ -862,10 +863,11 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
           y2 = m2%p - planet%position(2) + m2%r(iy) - 0.5*m2%d
           z1 = m3%p - planet%position(3) + m3%r(iz) + 0.5*m3%d
           z2 = m3%p - planet%position(3) + m3%r(iz) - 0.5*m3%d
-          inside(1) = y1**2+z1**2 + m1%r(ix)**2 < r2
-          inside(2) = y2**2+z1**2 + m1%r(ix)**2 < r2
-          inside(3) = y1**2+z2**2 + m1%r(ix)**2 < r2
-          inside(4) = y2**2+z2**2 + m1%r(ix)**2 < r2
+          x1 = m1%p - planet%position(1) + m1%r(ix) + h(1)*m1%d
+          inside(1) = y1**2+z1**2 + x1**2 < r2
+          inside(2) = y2**2+z1**2 + x1**2 < r2
+          inside(3) = y1**2+z2**2 + x1**2 < r2
+          inside(4) = y2**2+z2**2 + x1**2 < r2
           if (any(inside)) mem(ix,iy,iz) = 0.0
         end do
       end do
@@ -878,10 +880,11 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
           x2 = m1%p - planet%position(1) + m1%r(ix) - 0.5*m1%d
           z1 = m3%p - planet%position(3) + m3%r(iz) + 0.5*m3%d
           z2 = m3%p - planet%position(3) + m3%r(iz) - 0.5*m3%d
-          inside(1) = x1**2+z1**2 + m2%r(iy)**2 < r2
-          inside(2) = x2**2+z1**2 + m2%r(iy)**2 < r2
-          inside(3) = x1**2+z2**2 + m2%r(iy)**2 < r2
-          inside(4) = x2**2+z2**2 + m2%r(iy)**2 < r2
+          y1 = m2%p - planet%position(2) + m2%r(iy) + h(2)*m2%d
+          inside(1) = x1**2+z1**2 + y1**2 < r2
+          inside(2) = x2**2+z1**2 + y1**2 < r2
+          inside(3) = x1**2+z2**2 + y1**2 < r2
+          inside(4) = x2**2+z2**2 + y1**2 < r2
           if (any(inside)) mem(ix,iy,iz) = 0.0
         end do
       end do
@@ -894,10 +897,11 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
           x2 = m1%p - planet%position(1) + m1%r(ix) - 0.5*m1%d
           y1 = m2%p - planet%position(2) + m2%r(iy) + 0.5*m2%d
           y2 = m2%p - planet%position(2) + m2%r(iy) - 0.5*m2%d
-          inside(1) = x1**2+y1**2 + m3%r(iz)**2 < r2
-          inside(2) = x2**2+y1**2 + m3%r(iz)**2 < r2
-          inside(3) = x1**2+y2**2 + m3%r(iz)**2 < r2
-          inside(4) = x2**2+y2**2 + m3%r(iz)**2 < r2
+          z1 = m3%p - planet%position(3) + m3%r(iz) + h(3)*m3%d
+          inside(1) = x1**2+y1**2 + z1**2 < r2
+          inside(2) = x2**2+y1**2 + z1**2 < r2
+          inside(3) = x1**2+y2**2 + z1**2 < r2
+          inside(4) = x2**2+y2**2 + z1**2 < r2
           if (any(inside)) mem(ix,iy,iz) = 0.0
         end do
       end do
