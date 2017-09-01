@@ -960,20 +960,22 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
   class(pebble_t), pointer:: pebble
   integer:: warn
   !.............................................................................
-  real:: w(3), pos(3), v(3)
-  integer:: ii(3), j, k
+  real:: w(3), pos(3), v(3), pt(2)
+  integer:: ii(3), j, k, jt(2)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: velocity
-  real, save:: h(3)=-1.0
+  real, save:: h(3,3)=-1.0
   class(mesh_t), pointer:: m
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Cache staggered mesh index shift for the three velocity components
   !-----------------------------------------------------------------------------
-  if (h(1)==-1.0) then
   if (detailed_timer) call trace_begin ('pebble_patch_t%interpolate_vg', itimer=itimer)
+  if (h(1,1)==-1.0) then
     do j=1,3
-      m => self%mesh(j)
-      h(j) = m%h(self%i_px+j-1)
+      do k=1,3
+        m => self%mesh(k)
+        h(k,j) = m%h(self%i_px+j-1)
+      end do
     end do
     if (io%master) &
       print *,'interpolate_vg: h =',h
@@ -986,7 +988,7 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
   do j=1,3      ! velocity component
     do k=1,3    ! particle space coordinate
       m => self%mesh(k)
-      w(k) = pos(k)/m%d - h(j) + m%o
+      w(k) = pos(k)/m%d - h(k,j) + m%o
       ii(k) = w(k)
       warn = warn + merge (1, 0, ii(k)<1 .or. ii(k)>m%gn-1)
       ii(k) = max(1,min(ii(k),m%gn-1))
