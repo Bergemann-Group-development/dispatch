@@ -74,6 +74,7 @@
  grace=0.00
  courant=0.2
 !dt_fixed=0.001
+! use_data_hub = t
 /
 
 &mhd_params
