@@ -115,6 +115,7 @@ SUBROUTINE init (self)
     random%seed = 11
     do_pebbles = .true.
     first_time = .false.
+    do_trace_output = io%do_output
     size = self%size
     if (io%verbose>1) &
       print*, 'thread', omp_mythread, ' reading namelist'
@@ -144,6 +145,7 @@ SUBROUTINE init (self)
   self%pebbles%mass = self%pebbles%density*self%pebbles%size**3
   self%pebbles%drag_coeff = scaling%d/(scaling%l*density_yr_cgs*cgs%yr/scaling%t)
   pebble_trace%every = trace_every
+  pebble_trace%do_trace_output = do_trace_output
   !-----------------------------------------------------------------------------
   ! Select mover
   !-----------------------------------------------------------------------------
