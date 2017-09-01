@@ -72,8 +72,9 @@ SUBROUTINE update (self)
   dedt = 0.0
   call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
   associate(l => self%li, u => self%ui)
-  self%dedt(l(1):u(1),l(2):u(2),l(3):u(3)) = &
-  self%dedt(l(1):u(1),l(2):u(2),l(3):u(3)) + dedt                       ! add the RT contribution to de/dt
+  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_e,self%new,1) = &
+  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_e,self%new,1) +
+  dedt * self%dtime                                                     ! add the RT contribution to de/dt                    
   end associate
   call self%courant_condition
   deallocate(dedt)

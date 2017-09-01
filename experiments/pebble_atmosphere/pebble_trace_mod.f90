@@ -22,6 +22,7 @@ MODULE pebble_trace_mod
     integer:: npebble=10
     integer:: nbuffer=10000                     ! max number of traces
     integer:: every=1000                        ! save frequency
+    logical:: do_trace_output=.true.
   contains
     procedure init
     procedure trace_pebble                      ! trace pebbles
@@ -39,6 +40,7 @@ SUBROUTINE init (self, trace_every)
   class(pebble_trace_t):: self
   integer:: trace_every, i
   !-----------------------------------------------------------------------------
+  if (.not.pebble_trace%do_trace_output) return
   pebble_trace%every = trace_every
   if (trace_every > 0) then
     call pebble_trace%lock%init ('trace')
@@ -63,6 +65,7 @@ SUBROUTINE trace_pebble (self, pebble, ip, level)
   integer:: ip, level
   integer:: i, n
   !-----------------------------------------------------------------------------
+  if (.not.pebble_trace%do_trace_output) return
   call trace_begin ('pebbles_mod::trace_pebble')
   !-----------------------------------------------------------------------------
   ! Check if the pebble has a trace id, and give it one if not
@@ -109,11 +112,13 @@ SUBROUTINE trace_output (self, i, close_key)
   optional:: close_key
   character(len=64):: filename
   integer:: j, n
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  if (.not.pebble_trace%do_trace_output) return
   if (i>self%nbuffer) return
   if (.not.associated(self%buffer)) return
   if (self%buffer(i)%n==0) return
-  call trace_begin ('pebbles_mod::trace_output')
+  call trace_begin ('pebbles_mod::trace_output', itimer=itimer)
   call self%lock%set ('trace_output')
   write (filename,'(a,i4.4,".trc")') trim(io%outputname), i
   if (io%verbose>0) &
@@ -140,7 +145,7 @@ SUBROUTINE trace_output (self, i, close_key)
   write (io_unit%trace) 0,0,0,0
   close (io_unit%trace)
   call self%lock%unset ('trace_output')
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE trace_output
 
 !> =============================================================================
@@ -151,6 +156,7 @@ SUBROUTINE check (self, pebble)
   class(pebble_t), pointer:: pebble
   integer:: i
   !-----------------------------------------------------------------------------
+  if (.not.pebble_trace%do_trace_output) return
   if (iand(pebble%status,bits%trace)==0) return
   i = iand(pebble%status,not(bits%trace+bits%has_BC))
   call self%close (i)

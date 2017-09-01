@@ -70,13 +70,16 @@ def image(f,verbose=0,vlim=None,**kwargs):
         im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation=None,**kwargs)
     return im
 
-def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
+def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
              extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
     '''
     Display xy-image for given z  
     '''
     pl.show()
     pp=du.patches(run=run,data=data,iout=iout)
+    if np.size(pp)==0:
+        print "no files found"
+        return
     def inside(p, z):
         return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
     select=[p for p in pp if inside(p,z) and p.level<8]
@@ -136,13 +139,16 @@ def yx_plane(run='',data='../data',iout=-1,z=0.0,var='logd',cmap='coolwarm',\
     #pl.tight_layout()
     pl.draw()
 
-def yz_plane(run='',data='../data',iout=-1,var='logd',x=0.0,cmap='coolwarm',\
+def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
              extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
     '''
     Display yz-image for given x
     '''
     pl.show()
     pp=du.patches(run=run,data=data,iout=iout)
+    if np.size(pp)==0:
+        print "no files found"
+        return
     def inside(p,x):
         return x<=p.active_corners[1][0] and x>=p.active_corners[0][0]
     pp=[p for p in pp if inside(p,x) and p.level<8]
