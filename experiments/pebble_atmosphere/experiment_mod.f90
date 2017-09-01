@@ -114,7 +114,7 @@ SUBROUTINE init (self)
   sph_bnd(6) = x2**2+y1**2+z2**2 < r2
   sph_bnd(7) = x1**2+y2**2+z2**2 < r2
   sph_bnd(8) = x2**2+y2**2+z2**2 < r2
-  if (trim(type)/='disk' .and. any(sph_bnd)) then
+  if (trim(type)/='disk' .and. (any(sph_bnd).or.(all(abs(self%position) < self%ds)))) then
     print *, 'experiment_t%init: setting spherical BC bits on patch', self%id
     call self%set (bits%has_BC)
     call self%boundaries%set (bits%spherical)
