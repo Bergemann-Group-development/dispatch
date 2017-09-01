@@ -452,7 +452,10 @@ SUBROUTINE kdk_drag (self, p)
       p%p, p%v, p%ag, self%ds, p%t, p%dt
   end if
   !---------------------------------------------------------------------------
-  ! Get the drag acceleration, at t+dt, then back up position
+  ! Get the drag acceleration, at t+dt, then back up position. This requires
+  ! access to patch data at time=p%t+p%dt, but not access to data at time=p%t.
+  ! Hence we can wait with moving particle until (at least) the time when
+  ! p%t < self%t(self%itt(1))
   !---------------------------------------------------------------------------
   p%p = p%p + p%dt*p%v
   p%t = p%t + p%dt
@@ -529,6 +532,10 @@ SUBROUTINE kdk_drag (self, p)
 END SUBROUTINE kdk_drag
 
 !> =============================================================================
+!> Starting from a collection of particles belonging to this patch, kept in the
+!> self%pebbles object, process them one by one.  Those that are not yet behind
+!> the patch time slices are left alone, while other ones are moved one step,
+!> after which it is checked if they should be exported to another patch.
 !> =============================================================================
 SUBROUTINE scatter (self, nbors, not_done)
   class(pebble_patch_t):: self
@@ -562,9 +569,10 @@ SUBROUTINE scatter (self, nbors, not_done)
     !$omp flush
     call self%pebbles%lock%unset ('scatter next')
     !---------------------------------------------------------------------------
-    ! If the pebble is already ahead in time, or frozen, just skip it
+    ! If the pebble is already ahead in time, or frozen, just skip it.  If we
+    ! use >= here, particles will not move until all time slots have advanced.
     !---------------------------------------------------------------------------
-    if ((pebble%t>=self%time) .or. iand(pebble%status,bits%frozen) /= 0) goto 9
+    if (pebble%t>=self%t(self%iit(1)) .or. iand(pebble%status,bits%frozen) /= 0) goto 9
     if (detailed_timer) call trace_end (itimer)
     call self%move (pebble)
     if (detailed_timer) call trace_begin ('pebble_patch_t%scatter', itimer=itimer)
@@ -997,9 +1005,13 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
     velocity => self%vgas(:,:,:,j,:)
     pebble%vg(j) = self%interpolate_r4 (pebble%t, velocity, ii, w)
   end do
-  if (pebble%id==id_dbg) &
-    print '(a,i6,1x,3i4,2x,3f5.2,i3,2x,3f8.2,2(2x,3f7.3))', &
-      'interpolate_vg:', self%id, ii, w, warn, pebble%p, pebble%v, pebble%vg
+  if (pebble%id==id_dbg) then
+    call self%time_interval (pebble%t, jt, pt)
+    print '(a,1p,2e15.6,1x,2i3,1x,0p,2f5.2,1x,9i3)', 'time_interval: time,p%t,jt,pt,iit =', self%time, pebble%t, jt, pt, self%iit
+    print '(a,1p,9e15.6)', 'time_interval: self%t =', self%t
+    print '(a,i6,1x,3i4,2x,3f5.2,3i3,1x,2f5.2,1x,3f8.2,2(2x,3f7.3))', &
+      'interpolate_vg:', self%id, ii, w, warn, jt, pt, pebble%p, pebble%v, pebble%vg
+  end if
   if (detailed_timer) call trace_end (itimer)
 END SUBROUTINE interpolate_vg
 

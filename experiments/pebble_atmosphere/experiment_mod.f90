@@ -396,10 +396,6 @@ SUBROUTINE density_boundary_condition (self, it)
   d => self%mem(:,:,:,1,it,1)
   if (self%nw>1) dd => self%mem(:,:,:,self%i_d,it,2)
   associate (r1=>m(1)%r, r3=>m(3)%r)
-  if (self%id==io%id_debug) &
-    print '(a,2i5,2l4,3(2x,2i3))', 'MK', self%id, it, &
-      self%boundaries%is_set(bits%zl), &
-      self%boundaries%is_set(bits%zu), lx,ux, ly,uy, lz,uz
   tt = atmosphere%external%temperature
   if(self%boundaries%is_set(bits%xl)) then
     lx = m(1)%lb; ux = m(1)%lo
@@ -447,6 +443,10 @@ SUBROUTINE density_boundary_condition (self, it)
     z0 = m(3)%p + r3(iz0) - planet%position(3)
     call apply_z
   end if
+  !if (self%id==io%id_debug) &
+  !  print '(a,2i5,2l4,3(2x,2i5))', 'MK', self%id, it, &
+  !    self%boundaries%is_set(bits%zl), &
+  !    self%boundaries%is_set(bits%zu), lx,ux, ly,uy, lz,uz
   call self%check_density ('after density BC')
   end associate
   call trace%end
