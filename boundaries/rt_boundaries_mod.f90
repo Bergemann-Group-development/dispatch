@@ -132,7 +132,7 @@ SUBROUTINE init_outer_bndry (self, n, ndir, mesh)
   if (self%unset) then
     if (present(mesh)) self%m => mesh
     self%ndir = ndir
-    nl = nint(eos%n_lambda)
+    nl = eos%n_lambda
     saved_status=self%bits
     if (self%is_set(bits%xl)) then
       allocate(self%xl(nl))

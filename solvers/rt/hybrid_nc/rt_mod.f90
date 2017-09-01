@@ -968,11 +968,9 @@ SUBROUTINE ray_vol_map4 (self, packet, in, out)
   do ray = 1, packet%n_rays                                             ! loop over all rays
     do pt = 1, packet%n_points                                          ! loop over all points
       p = cell(:,pt,ray)                                                ! get the right cell coordinate
-      !DIR$ SIMD
       do wl =1, nwb                                                     ! loop over wl bins
         out(ray,wl,pt+1) = in(p(1),p(2),p(3),wl)                        ! first point is missing
       end do
-      !DIR$ SIMD
     end do
     p  = packet%rev_coords(:,ray)
     p2 = packet%fwd_coords(:,ray)
@@ -1283,10 +1281,6 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
     self%ioformat = 2
   end if
   write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout+1
-  !$omp master
-  if (iodir/=self%iout+1) call io%mkdir (trim(filename))
-  iodir = self%iout+1
-  !$omp end master
   write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
   if (io%debug(0)) then
     if (io%debug(1) .or. self%track) &

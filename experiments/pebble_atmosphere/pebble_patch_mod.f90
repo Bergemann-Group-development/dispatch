@@ -30,6 +30,7 @@ MODULE pebble_patch_mod
   USE pebble_mod
   USE pebbles_mod
   USE pebble_trace_mod
+  USE mesh_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -84,6 +85,7 @@ SUBROUTINE init (self)
   integer:: iostat
   logical:: ok
   logical, save:: first_time=.true.
+  real, dimension(:,:,:,:), pointer:: U
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
     solid_density_cgs, size, it_max, pebble_rate_cgs, vz_pebble_cgs, id_dbg, &
     only_pebbles, ppc, power, omega_yr, trace_every
@@ -100,6 +102,9 @@ SUBROUTINE init (self)
     self%density => self%mem(:,:,:,self%i_d,:,1)
     allocate (self%pressure(mx,my,mz,mt))
     allocate (self%vgas(mx,my,mz,3,mt))
+    U => self%vgas(:,:,:,:,self%it)
+    call self%p2U (U, self%it)
+    print *,'pebble_patch_t%init: max(U) =',maxval(abs(U))
   end associate
   !-----------------------------------------------------------------------------
   ! Read parameters, but only from one thread
@@ -161,7 +166,8 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> Create a number of particles distributed randomly, with the velocity initially
-!> equal to the gas velocity
+!> equal to the gas velocity.  To be able to use single precision particle
+!> coordinates, they are measured relative to the position of the planet.
 !> =============================================================================
 SUBROUTINE volume_add (self, n)
   class(pebble_patch_t):: self
@@ -173,6 +179,7 @@ SUBROUTINE volume_add (self, n)
   real:: w(3), sign, ppc, average_density
   integer, save:: nprint=10
   integer, save:: itimer=0
+  class(mesh_t), pointer:: m
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles .or. self%is_set(bits%not_leaf)) return
   call trace_begin ('pebbles_t%volume_add', 3, itimer=itimer)
@@ -196,7 +203,10 @@ SUBROUTINE volume_add (self, n)
   do iz=self%mesh(3)%li,self%mesh(3)%ui
   do iy=self%mesh(2)%li,self%mesh(2)%ui
   do ix=self%mesh(1)%li,self%mesh(1)%ui
-    ppc = self%pebbles%ppc*self%density(ix,iy,iz,self%it)/average_density
+    !---------------------------------------------------------------------------
+    ! Probability ia uniform, but weight is proportional to local density
+    !---------------------------------------------------------------------------
+    ppc = self%pebbles%ppc
     ippc = ppc
     ppc = ppc-ippc
     do iter=1,ippc+1
@@ -212,14 +222,22 @@ SUBROUTINE volume_add (self, n)
         pebble%t = self%time
         pebble%s = self%pebbles%size*10.0**(-self%pebbles%power*random%ran1())
         pebble%m = pebble%s**3*self%pebbles%density
-        pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
-        pebble%p(2) =   (self%position(2) - planet%position(2)) + self%size(2)*(0.5-random%ran1())
-        pebble%p(3) =   (self%position(3) - planet%position(3)) + self%size(3)*(0.5-random%ran1())
+        m => self%mesh(1); pebble%p(1) = m%r(ix) + m%d*(0.5-random%ran1())
+        m => self%mesh(2); pebble%p(2) = m%r(iy) + m%d*(0.5-random%ran1())
+        m => self%mesh(3); pebble%p(3) = m%r(iz) + m%d*(0.5-random%ran1())
+        !-----------------------------------------------------------------------
+        ! Avoid placement outside (could happen for no-no-mans-land mesh)
+        !-----------------------------------------------------------------------
+        if (any(pebble%p < self%mesh%lf .or. pebble%p > self%mesh%uf)) cycle
+        !-----------------------------------------------------------------------
+        ! Single precision position measured relative to planet position, with
+        ! initial speed = gas speed, and weight proportional to local density
+        !-----------------------------------------------------------------------
+        pebble%p = pebble%p + self%position - planet%position
         call interpolate_vg (self, pebble, warn)
         pebble%v = pebble%vg
-        pebble%v = self%vgas(ix,iy,iz,:,self%it)
         pebble%d = self%mem(ix,iy,iz,self%i_d,self%it,1)
-        pebble%w = average_density*product(self%ds)
+        pebble%w = pebble%d*product(self%ds)
         if (pebble_trace%every > 0) then
           if (mod(pebble%id,pebble_trace%every)==0 .and. &
         abs(pebble%p(1)) < 2.0*planet%hill_radius .and. &
@@ -302,7 +320,7 @@ SUBROUTINE boundary_add (self, n)
     pebble%v(2) =   0.0
     pebble%v(3) = - self%vz_pebble*sign
     ii = self%index_r4 (pebble%p, w, self%mesh%gn)
-    pebble%d = self%interpolate_r4 (self%density , ii, w)
+    pebble%d = self%interpolate_r4 (pebble%t, self%density , ii, w)
     pebble%w = product(self%size)/n_local                               ! probability density
     pebble%w = pebble%w*pebble%d                                        ! normalize by gas density
     self%pebbles%z_min = min(self%pebbles%z_min,abs(pebble%p(3)))
@@ -344,8 +362,8 @@ SUBROUTINE drag (self, pebble, warning)
   integer:: w1, w2, warning
   !-----------------------------------------------------------------------------
   ii  = self%index_r4 (pebble%p, w, self%mesh%gn)
-  d   = self%interpolate_r4 (self%density , ii, w)
-  p   = self%interpolate_r4 (self%pressure, ii, w)
+  d   = self%interpolate_r4 (pebble%t, self%density , ii, w)
+  p   = self%interpolate_r4 (pebble%t, self%pressure, ii, w)
   w1  = count(w<0.0 .or. w>1.0)
   call interpolate_vg (self, pebble, w2)
   warning = w1+w2
@@ -394,7 +412,7 @@ SUBROUTINE kdk_drag (self, p)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: p
   !.............................................................................
-  real:: rp(3), ar
+  real:: rp(3), ar, ds
   integer, save:: nprint=20
   integer:: warn
   !-----------------------------------------------------------------------------
@@ -404,8 +422,8 @@ SUBROUTINE kdk_drag (self, p)
   rp = - p%p
   ar = 1./sqrt(sum(rp**2))
   p%ag = scaling%grav*planet%mass*rp*ar**3
-  p%ag(1) = p%ag(1) + 2.*self%omega(3)*p%v(2)
-  p%ag(2) = p%ag(2) - 2.*self%omega(3)*p%v(1) + self%omega(3)**2*p%p(2)
+  p%ag(1) = p%ag(1) + 2.*self%omega(3)*p%v(2) + self%omega(3)**2*p%p(1)*3.0
+  p%ag(2) = p%ag(2) - 2.*self%omega(3)*p%v(1)
   p%ag(3) = p%ag(3)                           - self%omega(3)**2*p%p(3)
   !rp = self%pebbles%position - p%p
   !ar = 1./sqrt(sum(rp**2))
@@ -414,7 +432,9 @@ SUBROUTINE kdk_drag (self, p)
   p%dt = min(p%dt,0.1*io%out_time,minval(self%ds/max(1e-20,abs(p%v))))
   !
   if (p%id==self%pebbles%id_dbg) then
-    print'("kdkd1",1p,5(3e10.2,2x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t
+    ds = sqrt(sum((p%dt*p%v/self%ds)**2))
+    print *,'kdkd0',self%id,self%it,self%time,maxval(abs(self%vgas(:,:,:,:,self%it)))
+    print'("kdkd1",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
   end if
   !
   if (io%verbose>0 .and. p%id==1 .and. nprint>0) then
@@ -428,6 +448,10 @@ SUBROUTINE kdk_drag (self, p)
   p%p = p%p + p%dt*p%v
   p%t = p%t + p%dt
   call self%drag (p,warn)
+  if (p%id==self%pebbles%id_dbg) then
+    ds = sqrt(sum((p%dt*p%v/self%ds)**2))
+    print'("kdkd2",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
+  end if
   if (warn>0 .and. io%verbose>3) then
     print *,'  dt',p%dt,1,io%verbose
     print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
@@ -456,8 +480,8 @@ SUBROUTINE kdk_drag (self, p)
   !rp = self%pebbles%position - p%p
   !ar = 1./sqrt(sum(rp**2))
   !p%ag = p%ag + scaling%grav*star%mass*rp*ar**3
-  p%ag(1) = p%ag(1) + 2.*self%omega(3)*p%v(2)
-  p%ag(2) = p%ag(2) - 2.*self%omega(3)*p%v(1) + self%omega(3)**2*p%p(2)
+  p%ag(1) = p%ag(1) + 2.*self%omega(3)*p%v(2) + self%omega(3)**2*p%p(1)*3.0
+  p%ag(2) = p%ag(2) - 2.*self%omega(3)*p%v(1)
   p%ag(3) = p%ag(3)                           - self%omega(3)**2*p%p(3)
   !---------------------------------------------------------------------------
   ! Get the drag acceleration, at t+2*dt
@@ -475,10 +499,15 @@ SUBROUTINE kdk_drag (self, p)
   !---------------------------------------------------------------------------
   ! Second kick, with drag, moving v to v(t+2*dt)
   !---------------------------------------------------------------------------
+  if (p%id==self%pebbles%id_dbg) then
+    ds = sqrt(sum((p%dt*p%v/self%ds)**2))
+    print'("kdkd3",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
+  end if
   p%v = p%v + p%dt*(p%ag+p%ad)/(1.+p%c*p%dt)
   if (p%id==self%pebbles%id_dbg) then
     nprint = nprint-1
-    print'("kdkd2",1p,5(3e10.2,2x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t
+    ds = sqrt(sum((p%dt*p%v/self%ds)**2))
+    print'("kdkd4",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
   end if
   if (p%id == id_dbg) &
     print*,'dbg: kdk_drag:', p%p
@@ -498,6 +527,7 @@ SUBROUTINE scatter (self, nbors, not_done)
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task
   integer:: n, m
+  real(8):: pos(3)
   !-----------------------------------------------------------------------------
   self%pebbles%dt_min = 1e30
   self%pebbles%dt_max = 0.0
@@ -543,6 +573,17 @@ SUBROUTINE scatter (self, nbors, not_done)
               if (.not.(self%is_set(bits%not_leaf)) .or. task%level>self%level) then
                 if (debug.or.pebble%id==id_dbg) &
                   print*, pebble%id, 'dbg: exporting to other task', task%id, task%pebbles%id, task%pebbles%n
+                !---------------------------------------------------------------
+                ! Periodic wrapping, in case the new patch is a periodic nbor
+                !---------------------------------------------------------------
+                pos = pebble%p + planet%position
+                where (self%periodic)
+                  pos = modulo(pos+self%box*0.5_8,self%box) - self%box*0.5_8
+                end where
+                pebble%p = pos - planet%position
+                if ((io%verbose > 0) .and. any(abs(self%position-task%position) > self%box)) then
+                  print *, 'INFO: exporting across periodic boundary', self%id, task%id, pebble%id
+                end if
                 call self%pebbles%export (pebble, task%pebbles)
                 self%pebbles%n_export = self%pebbles%n_export+1
                 goto 9
@@ -886,6 +927,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
 END SUBROUTINE info
 
 !> =============================================================================
+!> Velocity interpolation. By using a 4-D pointer we can treat the velocity
+!> component as a 3D+time array, which can be passed to interpolate_r4.
 !> =============================================================================
 SUBROUTINE interpolate_vg (self, pebble, warn)
   class(pebble_patch_t):: self
@@ -895,22 +938,39 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
   real:: w(3), pos(3), v(3)
   integer:: ii(3), j, k
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: velocity
+  real, save:: h(3)=-1.0
+  class(mesh_t), pointer:: m
   !-----------------------------------------------------------------------------
-  ! By using a 4-D pointer we can treat the velocity component as a 3D+time
-  ! array, which can be passed to interpolate_r4.
+  ! Cache staggered mesh index shift for the three velocity components
   !-----------------------------------------------------------------------------
-  pos = (modulo(pebble%p-self%position+0.5_8*self%box,self%box)-0.5_8*self%box)
+  if (h(1)==-1.0) then
+    do j=1,3
+      m => self%mesh(j)
+      h(j) = m%h(self%i_px+j-1)
+    end do
+    if (io%master) &
+      print *,'interpolate_vg: h =',h
+  end if
+  !-----------------------------------------------------------------------------
+  ! Add planet position and subtract patch position for interpolation
+  !-----------------------------------------------------------------------------
+  pos = pebble%p + (planet%position - self%position)
   warn = 0
-  do j=1,3
-    do k=1,3
-      w(k) = pos(k)/self%mesh(k)%d - self%mesh(k)%h(k+2) + self%mesh(k)%o
+  do j=1,3      ! velocity component
+    do k=1,3    ! particle space coordinate
+      m => self%mesh(k)
+      w(k) = pos(k)/m%d - h(j) + m%o
       ii(k) = w(k)
-      warn = warn + merge (1, 0, ii(k)<1 .or. ii(k)>self%mesh(k)%gn-1)
-      ii(k) = max(1,min(ii(k),self%mesh(k)%gn-1))
+      warn = warn + merge (1, 0, ii(k)<1 .or. ii(k)>m%gn-1)
+      ii(k) = max(1,min(ii(k),m%gn-1))
+      w(k) = w(k)-ii(k)
     end do
     velocity => self%vgas(:,:,:,j,:)
-    pebble%vg(j) = self%interpolate_r4 (velocity, ii, w)
+    pebble%vg(j) = self%interpolate_r4 (pebble%t, velocity, ii, w)
   end do
+  if (pebble%id==id_dbg) &
+    print '(a,i6,1x,3i4,2x,3f5.2,i3,2x,3f8.2,2(2x,3f7.3))', &
+      'interpolate_vg:', self%id, ii, w, warn, pebble%p, pebble%v, pebble%vg
 END SUBROUTINE interpolate_vg
 
 !> =============================================================================
@@ -939,40 +999,52 @@ FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
 END FUNCTION
 
 !> =============================================================================
-!> Decide if a point is inside the patch
+!> Decide if a point is inside a patch, taking period wrapping into account
 !> =============================================================================
 FUNCTION inside_r4 (self, p)
   class(pebble_patch_t):: self
   real, intent(in):: p(3)
   logical:: inside_r4
+  real(8):: pos(3)
   !-----------------------------------------------------------------------------
-  inside_r4 = all(abs(p-self%position) < 0.5*self%size)
+  pos = p - self%position
+  where (self%periodic)
+    pos = modulo(pos+self%box*0.5_8,self%box) - self%box*0.5_8
+  end where
+  inside_r4 = all(abs(pos) < 0.5*self%size)
 END FUNCTION
 
 !> =============================================================================
 !> =============================================================================
-FUNCTION interpolate_r4 (self, field, i, w) RESULT (out)
+FUNCTION interpolate_r4 (self, t, field, i, w) RESULT (out)
   class(pebble_patch_t):: self
+  real(8):: t
   real(kind=KindScalarVar), dimension(:,:,:,:), intent(in):: field
   integer:: i(3)
   real, intent(in):: w(3)
   real:: out
   !.............................................................................
-  real:: q(3)
-  integer:: it, j, dim(4)
+  real:: q(3), pt(2)
+  integer:: it, j, dim(4), jt(2)
   !-----------------------------------------------------------------------------
   dim = shape(field)-1
-  it = self%it  ! FIXME!
+  call self%time_interval (t, jt, pt)
   q = 1.0-w
   if (any(i<1 .or. i>dim(1:3))) then
     if (io%verbose>1) print*,'interpolate_r4: warning', i, w
     i = max(1,min(i,dim(1:3)))
   end if
   out = &
-    w(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)  ,it)+q(1)*field(i(1)+1,i(2)  ,i(3)  ,it))  + &
-          q(2)*(w(1)*field(i(1),i(2)+1,i(3)  ,it)+q(1)*field(i(1)+1,i(2)+1,i(3)  ,it))) + &
-    q(3)*(w(2)*(w(1)*field(i(1),i(2)  ,i(3)+1,it)+q(1)*field(i(1)+1,i(2)  ,i(3)+1,it))  + &
-          q(2)*(w(1)*field(i(1),i(2)+1,i(3)+1,it)+q(1)*field(i(1)+1,i(2)+1,i(3)+1,it)))
+    pt(1)*( &
+      q(3)*(q(2)*(q(1)*field(i(1),i(2)  ,i(3)  ,jt(1))+w(1)*field(i(1)+1,i(2)  ,i(3)  ,jt(1)))  + &
+            w(2)*(q(1)*field(i(1),i(2)+1,i(3)  ,jt(1))+w(1)*field(i(1)+1,i(2)+1,i(3)  ,jt(1)))) + &
+      w(3)*(q(2)*(q(1)*field(i(1),i(2)  ,i(3)+1,jt(1))+w(1)*field(i(1)+1,i(2)  ,i(3)+1,jt(1)))  + &
+            w(2)*(q(1)*field(i(1),i(2)+1,i(3)+1,jt(1))+w(1)*field(i(1)+1,i(2)+1,i(3)+1,jt(1))))) + &
+    pt(2)*( &
+      q(3)*(q(2)*(q(1)*field(i(1),i(2)  ,i(3)  ,jt(2))+w(1)*field(i(1)+1,i(2)  ,i(3)  ,jt(2)))  + &
+            w(2)*(q(1)*field(i(1),i(2)+1,i(3)  ,jt(2))+w(1)*field(i(1)+1,i(2)+1,i(3)  ,jt(2)))) + &
+      w(3)*(q(2)*(q(1)*field(i(1),i(2)  ,i(3)+1,jt(2))+w(1)*field(i(1)+1,i(2)  ,i(3)+1,jt(2)))  + &
+            w(2)*(q(1)*field(i(1),i(2)+1,i(3)+1,jt(2))+w(1)*field(i(1)+1,i(2)+1,i(3)+1,jt(2)))))
 END FUNCTION
 
 !> =============================================================================
