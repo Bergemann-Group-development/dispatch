@@ -34,7 +34,7 @@ MODULE pebbles_mod
     integer(8):: n_update = 0                   ! speed counter
     real:: ppc                                  ! particles per cell
     real:: mass                                 ! representative pebble mass
-    real:: power                                ! random distribution
+    real:: size_range                           ! random distribution
     real:: size                                 ! representative pebble size
     real:: density                              ! mass density
     real:: drag_coeff                           ! drag coefficient

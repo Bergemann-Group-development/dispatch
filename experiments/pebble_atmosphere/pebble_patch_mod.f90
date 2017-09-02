@@ -77,7 +77,7 @@ SUBROUTINE init (self)
   real, save:: density_yr_cgs = 1e-12, solid_density_cgs=3., size(3), pebble_size_cm=1.
   real, save:: pebble_rate_cgs = 0.0    ! 1e2 = about one pebble per 10 second (3e6 per year)
   real, save:: vz_pebble_cgs = 3e6      ! about 30 km/s vertically
-  real, save:: power = 2.0              ! random number range in power of 10
+  real, save:: size_range = 3.0         ! random number range in power of 10
   real, save:: ppc = 0.10               ! probability per cell of making a pebble
   real, save:: omega_yr(3)=0.0          ! omega in units where 1 = 1/yr
   integer, save:: trace_every=0         ! trace pebble frequency
@@ -88,8 +88,8 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   real, dimension(:,:,:,:), pointer:: U
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
-    solid_density_cgs, size, it_max, pebble_rate_cgs, vz_pebble_cgs, id_dbg, &
-    only_pebbles, ppc, power, omega_yr, trace_every, detailed_timer, do_trace_output
+    solid_density_cgs, size, size_range, it_max, pebble_rate_cgs, vz_pebble_cgs, &
+    id_dbg, only_pebbles, ppc, omega_yr, trace_every, detailed_timer, do_trace_output
   !-----------------------------------------------------------------------------
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
@@ -136,7 +136,7 @@ SUBROUTINE init (self)
   ! a gas density of 1 g/cm**3, in the sub-sonic Epstein regime, specified in
   ! terms of the cgs gas density that gives one year stopping time.
   !-----------------------------------------------------------------------------
-  self%pebbles%power = power
+  self%pebbles%size_range = size_range
   self%pebbles%ppc = ppc
   self%pebbles%id_dbg = id_dbg
   self%pebbles%size = pebble_size_cm/scaling%l
@@ -221,7 +221,7 @@ SUBROUTINE volume_add (self, n)
           pebble%status = ior(pebble%status,bits%trace+bits%has_BC)
         end if
         pebble%t = self%time
-        pebble%s = self%pebbles%size*10.0**(-self%pebbles%power*random%ran1())
+        pebble%s = self%pebbles%size*10.0**(-self%pebbles%size_range*random%ran1())
         pebble%m = pebble%s**3*self%pebbles%density
         m => self%mesh(1); pebble%p(1) = m%r(ix) + m%d*(0.5-random%ran1())
         m => self%mesh(2); pebble%p(2) = m%r(iy) + m%d*(0.5-random%ran1())
@@ -311,7 +311,7 @@ SUBROUTINE boundary_add (self, n)
     pebble%t = self%time
     !$omp atomic
     n_vol = n_vol+1
-    pebble%s = self%pebbles%size*10.**(-self%pebbles%power*random%ran1())
+    pebble%s = self%pebbles%size*10.**(-self%pebbles%size_range*random%ran1())
     pebble%m = pebble%s**3*pebble%d
     sign = merge(1.0,-1.0,self%position(3)>0.0)
     pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())

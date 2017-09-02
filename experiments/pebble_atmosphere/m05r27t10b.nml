@@ -20,7 +20,7 @@
 !id_debug=204
 /
 &out_params
- end_time=9000 out_time=50 restart=173 ! 00-90
+ end_time=9000 out_time=50 !restart=173 ! 00-90
  !end_time=50 out_time=5
  print_time=0
  guard_zones=t
@@ -44,12 +44,13 @@
  omega_yr=0.0,0.0,1.0               ! omega in units where 1 = 1/yr
  solid_density_cgs=3.               ! density of a pebble
  pebble_size_cm=1.                  ! size of a pebble
+ size_range=3                       ! power of 10 size range
  !------------------------------------- TOP/BOTTOM ENTRY --------------
  pebble_rate_cgs=0                  ! top/bottom rate of pebble entry
  vz_pebble_cgs=1.5e6                ! incoming vertical velocity
  !------------------------------------- RANDOM DISTRIBUTION -----------
- ppc=0.10                           ! particles per cell, everywhere
- trace_every=50                     ! trace every so many pebbles => data/*.trc
+ ppc=0.02                           ! particles per cell, everywhere
+ trace_every=10                     ! trace every so many pebbles => data/*.trc
 /
 
 &planet_params
@@ -62,7 +63,7 @@
 !artificial_friction=1e-4           ! friction time = 250
 /
 &atmosphere_params
- densitY_cgs=1e-9                   ! outer density of the atmosphere at 1 Hill radius (i.e. surrounding local disk density)
+ densitY_cgs=1e-11                  ! outer density of the atmosphere at 1 Hill radius (i.e. surrounding local disk density)
  temperature_K=300.                 ! outer temperature of the atmosphere at 1 Hill radius
  mass_m_earth=0.5
  orbit_au=1.0
