@@ -104,7 +104,7 @@ SUBROUTINE init (self)
     allocate (self%vgas(mx,my,mz,3,mt))
     U => self%vgas(:,:,:,:,self%it)
     call self%p2U (U, self%it)
-    print *,'pebble_patch_t%init: max(U) =',maxval(abs(U))
+    !print *,'pebble_patch_t%init: max(U) =',maxval(abs(U))
   end associate
   !-----------------------------------------------------------------------------
   ! Read parameters, but only from one thread

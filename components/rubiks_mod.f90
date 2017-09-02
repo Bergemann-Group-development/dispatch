@@ -174,7 +174,8 @@ SUBROUTINE init_level (self, level, position)
       if (.not.patch%periodic(1).and.i==self%n_patch) call patch%boundaries%set (bits%xu)
       if (.not.patch%periodic(2).and.j==self%n_patch) call patch%boundaries%set (bits%yu)
       if (.not.patch%periodic(3).and.k==self%n_patch) call patch%boundaries%set (bits%zu)
-      if (patch%boundaries%bits /= 0) print *, patch%id, 'EDGE', patch%boundaries%bits
+      if (patch%boundaries%bits /= 0 .and. io%verbose>1) &
+        print *, patch%id, 'EDGE', patch%boundaries%bits
     end if
   end do
   end do

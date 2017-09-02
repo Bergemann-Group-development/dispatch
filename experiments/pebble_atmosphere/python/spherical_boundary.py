@@ -32,6 +32,8 @@ for i in range(20):
     pu.image(f)
     if f.min() < fmin: fmin=f.min()
     if f.max() > fmax: fmax=f.max()
+pl.tight_layout()
+print fmin,fmax
 
 pl.figure(3)
 pl.clf()

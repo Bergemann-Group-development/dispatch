@@ -316,7 +316,7 @@ SUBROUTINE boundary_conditions (self, it, new)
        ! Spherical inner BCs on mass flux, which automatically makes denisty and
        ! entropy evolve consistently
        !------------------------------------------------------------------------
-        p => self%mem(:,:,:,self%i_px:self%i_pz,it,1)
+        p => self%mem(:,:,:,self%i_px:self%i_pz,new,1)
         call self%boundaries%spherical_p_ns (p, self%mesh, planet%position, planet%radius)
       end if
     end if
