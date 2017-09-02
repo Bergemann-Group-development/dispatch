@@ -38,6 +38,7 @@ MODULE patch_mod
     integer:: nw=2                      ! number of work indices
     integer:: msplit=2                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
+    integer:: check_refine_next=0
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
