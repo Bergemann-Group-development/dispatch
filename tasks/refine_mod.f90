@@ -264,7 +264,7 @@ SUBROUTINE split_patch (self, tlist, this)
   call this_patch%set(bits%not_leaf)
   call tlist%check_nbors(this)
 
-  !!!if (io%verbose > 0) call tlist%print_tasks()
+  if (io%verbose > 0) call tlist%print_tasks()
 
   call trace_end
 END SUBROUTINE split_patch

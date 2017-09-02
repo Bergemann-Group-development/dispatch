@@ -52,7 +52,6 @@ MODULE task_list_mod
     procedure:: check_active
     procedure:: output
     procedure:: print => print_table
-    procedure:: print_tasks
   end type
   real, save:: check_ms=10.
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
@@ -1091,32 +1090,6 @@ SUBROUTINE output (self)
   end do
   call trace%end
 END SUBROUTINE output
-
-!> =============================================================================
-!> Print a table with task id, positions, and all neighbors
-!> =============================================================================
-SUBROUTINE print_tasks (self, label)
-  class (task_list_t):: self
-  character(len=*), optional:: label
-  class(link_t) , pointer:: link, nbor
-  !.............................................................................
-  !if (io%verbose < 2) return
-  if (present(label)) then
-    write (io_unit%log,'(a,i4,":")') 'task_list: '//trim(label), self%n
-  else
-    write (io_unit%log,'(a,i4,":")') 'task_list', self%n
-  end if
-  link => self%head
-  do while (associated(link))
-    if (io%verbose < 3) then
-      write (io_unit%log,'(i4,g15.6,l5)') link%task%id, link%task%time, link%task%is_set(bits%ready)
-    else
-      call link%print_nbors
-    end if
-    link => link%next
-  end do
-  write (io_unit%log,*) ''
-END SUBROUTINE print_tasks
 
 !> =============================================================================
 !> Print a table with task id and all neighbors

@@ -78,6 +78,7 @@ MODULE list_mod
     procedure:: print_queue_until
     procedure:: print_queue_times
     procedure:: print => print_list
+    procedure:: print_tasks
   end type
   integer, parameter:: mnbor=100
   public link_t, task2patch
@@ -1397,5 +1398,31 @@ SUBROUTINE print_list (self, label)
   !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE print_list
+
+!> =============================================================================
+!> Print a table with task id, positions, and all neighbors
+!> =============================================================================
+SUBROUTINE print_tasks (self, label)
+  class (list_t):: self
+  character(len=*), optional:: label
+  class(link_t) , pointer:: link, nbor
+  !.............................................................................
+  !if (io%verbose < 2) return
+  if (present(label)) then
+    write (io_unit%log,'(a,i4,":")') 'task_list: '//trim(label), self%n
+  else
+    write (io_unit%log,'(a,i4,":")') 'task_list', self%n
+  end if
+  link => self%head
+  do while (associated(link))
+    if (io%verbose < 3) then
+      write (io_unit%log,'(i4,g15.6,l5)') link%task%id, link%task%time, link%task%is_set(bits%ready)
+    else
+      call link%print_nbors
+    end if
+    link => link%next
+  end do
+  write (io_unit%log,*) ''
+END SUBROUTINE print_tasks
 
 END MODULE list_mod
