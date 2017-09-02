@@ -59,14 +59,16 @@ END SUBROUTINE init
 !> with 1, and running up to nbuffer.  The 17th and 18th bit are set to mark the
 !> pebble as being traced, and as being launched from the boundary, respectively
 !> =============================================================================
-SUBROUTINE trace_pebble (self, pebble, ip, level)
+SUBROUTINE trace_pebble (self, pebble, ip, level, detailed_timer)
   class(pebble_trace_t):: self
   class(pebble_t), pointer:: pebble
   integer:: ip, level
+  logical:: detailed_timer
   integer:: i, n
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.pebble_trace%do_trace_output) return
-  call trace_begin ('pebbles_mod::trace_pebble')
+  if (detailed_timer) call trace_begin ('pebble_trace_t%trace_pebble', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Check if the pebble has a trace id, and give it one if not
   !-----------------------------------------------------------------------------
@@ -93,13 +95,14 @@ SUBROUTINE trace_pebble (self, pebble, ip, level)
     self%buffer(i)%v(14,n)  = pebble%w
     self%buffer(i)%n = n
     if (io%verbose > 1) print *,'MK', pebble%id, i, n, pebble%t, pebble%dt
+    if (detailed_timer) call trace_end (itimer)
     if (n >= self%npebble) then
-      call self%trace_output (i)
+      call self%trace_output (i, detailed_timer)
     end if
   else
     if (io%verbose > 1) print *,'MK', pebble%id, i
+    if (detailed_timer) call trace_end (itimer)
   end if
-  call trace_end
 END SUBROUTINE trace_pebble
 
 !> =============================================================================
@@ -146,6 +149,7 @@ SUBROUTINE trace_output (self, i, close_key)
   close (io_unit%trace)
   call self%lock%unset ('trace_output')
   call trace_end (itimer)
+  if (detailed_timer) call trace_end (itimer)
 END SUBROUTINE trace_output
 
 !> =============================================================================
