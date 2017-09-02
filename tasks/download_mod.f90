@@ -13,7 +13,7 @@ MODULE download_mod
   USE task_mod
   USE patch_mod
   USE link_mod
-  use interpolate_mod
+  USE interpolate_mod
   implicit none
   private
   type, public:: download_t
