@@ -34,6 +34,7 @@ MODULE boundaries_mod
     procedure:: constant
     procedure:: spherical0
     procedure:: spherical3
+    procedure:: spherical_p_ns
     procedure:: spherical_ns
     procedure:: spherical_jagged_d
     procedure:: spherical_jagged_s
@@ -584,6 +585,43 @@ SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
 END SUBROUTINE spherical0
 
 !> =============================================================================
+!> Impose vanishing mass flux on any face that is inside the radius; this
+!> automatically makes density and entropy well behaved there also
+!> =============================================================================
+SUBROUTINE spherical_p_ns (self, p, m, position, radius)
+  class(boundaries_t)                          :: self
+  real(kind=KindScalarVar), pointer            :: p(:,:,:,:)
+  class(mesh_t), pointer                       :: m(:)
+  real(8)                                      :: position(3), radius
+  !............................................................................
+  integer                                      :: ix, iy, iz, iv, i
+  real                                         :: h(3), r(3)
+  class(mesh_t), pointer                       :: mm
+  type(index_t)                                :: idx
+  !-----------------------------------------------------------------------------
+  call trace_begin('boundaries_t%spherical0_ns')
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iv=1,3
+    do i=1,3
+      mm => m(i)
+      h(i) = mm%h(idx%px+iv-1)*mm%d
+    end do
+    do iz=m(3)%lb,m(3)%ub
+    do iy=m(2)%lb,m(2)%ub
+    do ix=m(1)%lb,m(1)%ub
+      r(1) = m(1)%p - position(1) + r1(ix) + h(1)
+      r(2) = m(2)%p - position(2) + r2(iy) + h(2)
+      r(3) = m(3)%p - position(3) + r3(iz) + h(3)
+      if (sum(r**2) < radius**2) p(ix,iy,iz,iv) = 0.0
+    end do
+    end do
+    end do
+  end do
+  end associate
+  call trace_end
+END SUBROUTINE spherical_p_ns
+
+!> =============================================================================
 !> Impose no-slip boundary condition; scalar values
 !> =============================================================================
 SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
@@ -922,7 +960,7 @@ END SUBROUTINE spherical_jagged_p
 
 !> =====================================================================
 !> Linear antisymmetric extrapolation
-!> ===================================================================== 
+!> =====================================================================
 FUNCTION extrapolate_antisym(ip, op, bp, yop) result(out)
   real(8) :: ip, op, bp
   real(kind=KindScalarVar):: yop, out

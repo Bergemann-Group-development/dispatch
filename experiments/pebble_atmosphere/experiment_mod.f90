@@ -30,6 +30,7 @@ MODULE experiment_mod
   end type
   real, save:: temp0=0.0
   logical, save:: first_time=.true.
+  logical, save:: jagged_boundaries=.false.
 CONTAINS
 
 !> =============================================================================
@@ -60,7 +61,7 @@ SUBROUTINE init (self)
   real(8):: x_sponge=-1.0e99
   real(8):: r2, x1, x2, y1, y2, z1, z2
   class(mesh_t), pointer:: m1, m2, m3
-  namelist /experiment_params/ type, x_sponge
+  namelist /experiment_params/ type, x_sponge, jagged_boundaries
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
@@ -129,7 +130,7 @@ SUBROUTINE init (self)
   call self%boundary_conditions (self%it, self%it)
   call self%debug ('end init')
   !----------------------------------------------------------------------------
-  ! Choose interpolation types. The smallest initial glitch (positive) is with 
+  ! Choose interpolation types. The smallest initial glitch (positive) is with
   !
   ! self%unsigned(self%i_d) = .true.
   ! self%pervolume(self%i_s) = .false.
@@ -278,41 +279,50 @@ SUBROUTINE boundary_conditions (self, it, new)
   real(8)             :: h(3)
   integer             :: iv, nb,i
   integer, save       :: itimer=0
-  real, pointer       :: d(:,:,:), e(:,:,:), s(:,:,:)
+  real, pointer       :: d(:,:,:), e(:,:,:), s(:,:,:), p(:,:,:,:)
   real                :: s0
   !-----------------------------------------------------------------------------
   if (self%boundaries%bits /= 0) then
     call trace%begin ('experiment_mod::boundary_conditions', itimer=itimer)
   !  print *, self%id, 'BOUNDARY CONDITION BITS:', self%boundaries%bits
     call self%check_density ('before boundary_conditions')
-    !---------------------------------------------------------------------------
-    ! If spherical inner BCs, save the incoming values
-    !---------------------------------------------------------------------------
     if (self%boundaries%is_set (bits%spherical)) then
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
       print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
-      call self%boundaries%spherical_jagged_d (self%mem(:,:,:,self%i_d,:,1), self%mesh, self%i_d, it, new)
-      d => self%mem(:,:,:,self%i_d,new,1)
-      s0 = (log(atmosphere%surface%pressure) - &
-        log(atmosphere%surface%density)*self%gamma)/(self%gamma-1.0)
-      allocate (s(self%gn(1),self%gn(2),self%gn(3)))
-      if (self%kind(1:9)=='stagger2_') then
-        s = self%mem(:,:,:,self%i_s,new,1)/d
-        call self%boundaries%spherical_jagged_s (s, self%mesh, self%i_s, s0)
-        self%mem(:,:,:,self%i_s,new,1) = s*d
+      if (jagged_boundaries) then
+       !------------------------------------------------------------------------
+       ! Jagged boundary conditions
+       !------------------------------------------------------------------------
+        call self%boundaries%spherical_jagged_d (self%mem(:,:,:,self%i_d,:,1), self%mesh, self%i_d, it, new)
+        d => self%mem(:,:,:,self%i_d,new,1)
+        s0 = (log(atmosphere%surface%pressure) - &
+          log(atmosphere%surface%density)*self%gamma)/(self%gamma-1.0)
+        allocate (s(self%gn(1),self%gn(2),self%gn(3)))
+        if (self%kind(1:9)=='stagger2_') then
+          s = self%mem(:,:,:,self%i_s,new,1)/d
+          call self%boundaries%spherical_jagged_s (s, self%mesh, self%i_s, s0)
+          self%mem(:,:,:,self%i_s,new,1) = s*d
+        else
+          call self%e2S (s, new)
+          call self%boundaries%spherical_jagged_s (s, self%mesh, self%i_s, s0)
+          call self%S2e (s, new)
+        end if
+        deallocate (s)
+        do iv=self%i_px,self%i_pz
+          call self%boundaries%spherical_jagged_p (self%mem(:,:,:,iv,new,1), self%mesh, iv)
+        end do
       else
-        call self%e2S (s, new)
-        call self%boundaries%spherical_jagged_s (s, self%mesh, self%i_s, s0)
-        call self%S2e (s, new)
+       !------------------------------------------------------------------------
+       ! Spherical inner BCs on mass flux, which automatically makes denisty and
+       ! entropy evolve consistently
+       !------------------------------------------------------------------------
+        p => self%mem(:,:,:,self%i_px:self%i_pz,it,1)
+        call self%boundaries%spherical_p_ns (p, self%mesh, planet%position, planet%radius)
       end if
-      deallocate (s)
-      do iv=self%i_px,self%i_pz
-        call self%boundaries%spherical_jagged_p (self%mem(:,:,:,iv,new,1), self%mesh, iv)
-      end do
     end if
-    !------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Edge boundary conditions
-    !------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     if (self%boundaries%bits /= 0) then
       if (io%verbose>2) then
         print *, self%id, 'MK x-BC:', self%boundaries%is_set (bits%xl), self%boundaries%is_set (bits%xu)
