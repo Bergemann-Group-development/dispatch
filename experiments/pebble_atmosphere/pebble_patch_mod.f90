@@ -657,6 +657,7 @@ SUBROUTINE scatter (self, nbors, not_done)
       !-------------------------------------------------------------------------
       if (debug.or.pebble%id==id_dbg) &
         print *, self%id, 'scatter: inside planet: accrete', pebble%id
+      pebble%status = ior(pebble%status,bits%frozen)
       call pebble_trace%check (pebble)
       call self%pebbles%remove (pebble)
       self%pebbles%n_accrete = self%pebbles%n_accrete + 1
@@ -699,7 +700,7 @@ SUBROUTINE scatter (self, nbors, not_done)
     else
       if (debug.or.pebble%id==id_dbg) print*, self%id, &
        'dbg: done, time, self%time =', pebble%id, pebble%t, self%time
-      end if
+    end if
   9 continue
     pebble => next
 !    if (n > 50*self%pebbles%n) then
@@ -766,27 +767,28 @@ SUBROUTINE gather (self, not_done, nbors, verbose)
       ! Check if it should be exported to a neighbor, either because it is
       ! outside, or because there is a higher resolution child patch.
       !-------------------------------------------------------------------------
-        nbor => nbors
-        do while (associated(nbor))
-          task => nbor%task
-          select type (task)
-          class is (pebble_patch_t)
-            if (task%inside_r4(pebble%p)) then
-              if (.not.(self%is_set(bits%not_leaf)) .or. task%level>self%level) then
-              if (verbose>0 .or. debug.or.pebble%id==id_dbg) print*, self%id, &
-                'gather: exporting to other task', pebble%id, task%id, task%pebbles%id, task%pebbles%n
-                call not_done%export (pebble, task%pebbles)
-                not_done%n_export = not_done%n_export+1
-                goto 9
-              end if
+      nbor => nbors
+      do while (associated(nbor))
+        task => nbor%task
+        select type (task)
+        class is (pebble_patch_t)
+          if (task%inside_r4(pebble%p)) then
+            if (.not.(self%is_set(bits%not_leaf)) .or. task%level>self%level) then
+            if (verbose>0 .or. debug.or.pebble%id==id_dbg) print*, self%id, &
+              'gather: exporting to other task', pebble%id, task%id, task%pebbles%id, task%pebbles%n
+              call not_done%export (pebble, task%pebbles)
+              not_done%n_export = not_done%n_export+1
+              goto 9
             end if
-          end select
-          nbor => nbor%next
-        end do
+          end if
+        end select
+        nbor => nbor%next
+      end do
       call not_done%remove (pebble)
         not_done%n_remove = not_done%n_remove + 1
       if (verbose>0 .or. debug.or.pebble%id==id_dbg) print*, self%id, 'gather: no nbor: removed'
     else if (planet%inside(pebble%p)) then
+      pebble%status = ior(pebble%status,bits%frozen)
       call pebble_trace%check (pebble)
       call not_done%remove (pebble)
       not_done%n_remove = not_done%n_remove + 1
@@ -1151,8 +1153,8 @@ SUBROUTINE output (self, experiment_name)
   !
   if (self%do_pebbles) then
     !$omp critical (out_cr)
-    write (filename,'(a,i4.4,"_",i4.4,".peb")') &
-        trim(io%outputname)//'/', self%id, self%iout-1
+    write (filename,'(a,i5.5,"/",i5.5,".peb")') &
+        trim(io%outputname)//'/', self%iout-1, self%id
     open  (io%data_unit, file=filename, form='unformatted', status='unknown')
     write (io%data_unit) data_format
     !

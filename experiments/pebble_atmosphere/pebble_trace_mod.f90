@@ -1,5 +1,19 @@
+!> =============================================================================
+!> Module used for tracing particles, producing one output file for every (save
+!> frequency) particles.  Each particle being traced has a buffer here, which is
+!> being filled by trace_pebble() calls.  When full, trace_output() is called to
+!> write out the buffer and reset it.
+!>
+!> Calls:
+!> pebble_trace%trace_pebble (self, pebble, ip, level)   ! add one trace position
+!> pebble_trace%trace_output (self, i)                   ! empty buffer nr. i
+!> pebble_trace%check (self, pebble)                     ! close if pebble traced
+!> pebble_trace%close (self, i)                          ! close buffer i
+!> pebble_trace%close_all (self)                         ! close all buffers
+!> =============================================================================
 MODULE pebble_trace_mod
   USE io_mod
+  USE omp_mod
   USE bits_mod
   USE trace_mod
   USE omp_lock_mod
@@ -43,7 +57,6 @@ SUBROUTINE init (self, trace_every)
   if (.not.pebble_trace%do_trace_output) return
   pebble_trace%every = trace_every
   if (trace_every > 0) then
-    call pebble_trace%lock%init ('trace')
     allocate(pebble_trace%buffer(pebble_trace%nbuffer))
     do i=1,pebble_trace%nbuffer
       allocate (pebble_trace%buffer(i)%v(14,pebble_trace%npebble))
@@ -55,9 +68,10 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> Add a pebble to the trace buffer, and check for output.  A trace pebble has
-!> a status word where the first 16 bits is a consecutive trace numbre, starting
+!> a status word where the first 16 bits is a consecutive trace number, starting
 !> with 1, and running up to nbuffer.  The 17th and 18th bit are set to mark the
-!> pebble as being traced, and as being launched from the boundary, respectively
+!> pebble as being traced, and as being launched from the boundary, respectively.
+!> The 27th bit marks a pebble that has been accreted.
 !> =============================================================================
 SUBROUTINE trace_pebble (self, pebble, ip, level, detailed_timer)
   class(pebble_trace_t):: self
@@ -106,49 +120,56 @@ SUBROUTINE trace_pebble (self, pebble, ip, level, detailed_timer)
 END SUBROUTINE trace_pebble
 
 !> =============================================================================
-!> Write out a pebble trace buffer
+!> Write out a pebble trace buffer.  Each record consists of:
+!>
+!> id=trace_id, rec=record_number, n=record_size   (3 ints)
+!> ip(1:n)      (n ints)
+!> v(:,1:n)     (m*n floats, where m=nn, n=record_size)
 !> =============================================================================
-SUBROUTINE trace_output (self, i, close_key)
+SUBROUTINE trace_output (self, i, detailed_timer, close_key)
   class(pebble_trace_t):: self
   integer:: i, close_key
+  logical:: detailed_timer
   integer, parameter:: key=-1
   optional:: close_key
   character(len=64):: filename
-  integer:: j, n
+  integer:: j, n, unit
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.pebble_trace%do_trace_output) return
   if (i>self%nbuffer) return
   if (.not.associated(self%buffer)) return
   if (self%buffer(i)%n==0) return
-  call trace_begin ('pebbles_mod::trace_output', itimer=itimer)
-  call self%lock%set ('trace_output')
-  write (filename,'(a,i4.4,".trc")') trim(io%outputname), i
+  if (detailed_timer) call trace_begin ('pebbles_mod::trace_output', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Note that this locks the entire pebble_trace data type while the output is
+  ! ongoing, while it would be better to only lock this particular buffer
+  !-----------------------------------------------------------------------------
+  write (filename,'(a,i5.5,".trc")') trim(io%outputname), i
   if (io%verbose>0) &
     print*,'pebble_trace: ', trim(filename), self%buffer(i)%record, self%buffer(i)%n
+  unit = io_unit%tmp + omp%thread
   if (self%buffer(i)%record == 0) then
-    open (io_unit%trace, file=trim(filename), form='unformatted', &
+    open (unit, file=trim(filename), form='unformatted', &
       status='unknown')
-    close (io_unit%trace, status='delete')
-    open (io_unit%trace, file=trim(filename), form='unformatted', &
+    close (unit, status='delete')
+    open (unit, file=trim(filename), form='unformatted', &
       status='new')
-    write (io_unit%trace) key, self%buffer(i)%status
-    write (io_unit%trace) self%buffer(i)%s
+    write (unit) key, self%buffer(i)%status
+    write (unit) self%buffer(i)%s
   else
-    open (io_unit%trace, file=trim(filename), form='unformatted', &
+    open (unit, file=trim(filename), form='unformatted', &
       status='unknown', position = 'append')
-    backspace (io_unit%trace)
+    backspace (unit)
   end if
   n =  self%buffer(i)%n
   self%buffer(i)%record = self%buffer(i)%record+1
-  write (io_unit%trace) self%buffer(i)%id, self%buffer(i)%record, self%buffer(i)%n
-  write (io_unit%trace) self%buffer(i)%ip(1:n)
-  write (io_unit%trace) self%buffer(i)%v(:,1:n)
+  write (unit) self%buffer(i)%id, self%buffer(i)%record, self%buffer(i)%n
+  write (unit) self%buffer(i)%ip(1:n)
+  write (unit) self%buffer(i)%v(:,1:n)
   self%buffer(i)%n = 0
-  write (io_unit%trace) 0,0,0,0
-  close (io_unit%trace)
-  call self%lock%unset ('trace_output')
-  call trace_end (itimer)
+  write (unit) 0,0,0,0
+  close (unit)
   if (detailed_timer) call trace_end (itimer)
 END SUBROUTINE trace_output
 
@@ -173,7 +194,7 @@ SUBROUTINE close (self, i)
   class(pebble_trace_t):: self
   integer:: i
   !-----------------------------------------------------------------------------
-  call self%trace_output (i, 0)
+  call self%trace_output (i,.false., 0)
 END SUBROUTINE close
 
 !> =============================================================================

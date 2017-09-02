@@ -56,43 +56,50 @@ def trace(file,verbose=0):
     class p:
         pass
     with ftf.FortranFile(file,'rb') as f:
-        j=f.readInts()
-        p.status=j[1]
-        size=f.readReals()
-        p.size=size[0]
-        id,rec,n=f.readInts()
-        list=[]
-        # flatten records, which contain several trace points, into list
-        while id:
+        try:
             j=f.readInts()
-            a=f.readReals()
-            a=a.reshape(n,np.size(a)/n)
-            for i in range(n):
-                q=p()
-                q.ip=j[i]
-                q.a=a[i,:]
-                list.append(q)
-            ii=f.readInts()
-            id,rec,n=ii[0:3]
+            p.status=j[1]
+            size=f.readReals()
+            p.size=size[0]
+            id,rec,n=f.readInts()
+            p.id=id
+            list=[]
+            # flatten records, which contain several trace points, into list
+            while id:
+                j=f.readInts()
+                a=f.readReals()
+                a=a.reshape(n,np.size(a)/n)
+                for i in range(n):
+                    q=p()
+                    q.ip=j[i]
+                    q.a=a[i,:]
+                    list.append(q)
+                ii=f.readInts()
+                id,rec,n=ii[0:3]
+        except:
+            print file,"read error after",np.size(list)
     # extract structure fields from list
-    p.n=np.size(list)
-    p.ip=np.array([i.ip     for i in list])
-    p.p =np.array([i.a[0:3] for i in list]).transpose()
-    p.v =np.array([i.a[3:6] for i in list]).transpose()
-    p.vg=np.array([i.a[6:9] for i in list]).transpose()
-    p.c =np.array([i.a[9]   for i in list])
-    p.d =np.array([i.a[10]  for i in list])
-    p.t =np.array([i.a[11]  for i in list])
-    p.x = p.p[0]
-    p.y = p.p[1]
-    p.z = p.p[2]
-    r=np.sqrt(np.sum(p.p**2,0))
-    p.rmin=r.min()
-    p.rmax=r.max()
-    p.first=p.p[:,0]
-    p.last=p.p[:,-1]
-    #if verbose==1: print file, p.n, 'points'
-    return p
+    if list==[]:
+        return None
+    else:
+        p.n=np.size(list)
+        p.ip=np.array([i.ip     for i in list])
+        p.p =np.array([i.a[0:3] for i in list]).transpose()
+        p.v =np.array([i.a[3:6] for i in list]).transpose()
+        p.vg=np.array([i.a[6:9] for i in list]).transpose()
+        p.c =np.array([i.a[9]   for i in list])
+        p.d =np.array([i.a[10]  for i in list])
+        p.t =np.array([i.a[11]  for i in list])
+        p.x = p.p[0]
+        p.y = p.p[1]
+        p.z = p.p[2]
+        r=np.sqrt(np.sum(p.p**2,0))
+        p.rmin=r.min()
+        p.rmax=r.max()
+        p.first=p.p[:,0]
+        p.last=p.p[:,-1]
+        #if verbose==1: print file, p.n, 'points'
+        return p
 
 def traces(run='', data='../data', verbose=0):
     '''
