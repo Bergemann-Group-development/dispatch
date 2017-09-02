@@ -59,6 +59,7 @@ SUBROUTINE init (self)
   logical :: sph_bnd(8)
   real(8):: x_sponge=-1.0e99
   real(8):: r2, x1, x2, y1, y2, z1, z2
+  class(mesh_t), pointer:: m1, m2, m3
   namelist /experiment_params/ type, x_sponge
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
@@ -98,7 +99,9 @@ SUBROUTINE init (self)
   call self%set (bits%static)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   self%boundaries%id = self%id
-  associate(m1 => self%mesh(1), m2 => self%mesh(2), m3 => self%mesh(3))
+  m1 => self%mesh(1)
+  m2 => self%mesh(2)
+  m3 => self%mesh(3)
   r2 = planet%radius**2
   x1 = m1%p - planet%position(1) + m1%r(m1%lb) - 0.5*m1%d
   x2 = m1%p - planet%position(1) + m1%r(m1%ub) + 0.5*m1%d
@@ -122,7 +125,7 @@ SUBROUTINE init (self)
       call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
     end do
   end if
-  end associate
+  nullify (m1, m2, m3)
   call self%boundary_conditions (self%it, self%it)
   call self%debug ('end init')
   !----------------------------------------------------------------------------

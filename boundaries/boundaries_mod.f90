@@ -744,7 +744,7 @@ END SUBROUTINE spherical_ns
 SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
   class(boundaries_t)                          :: self
   real(kind=KindScalarVar), dimension(:,:,:,:) :: mem
-  class(mesh_t), pointer                       :: m(:)
+  class(mesh_t), pointer                       :: m(:), m1, m2, m3
   integer                                      :: iv, it, new
   !............................................................................
   type(index_t):: idx
@@ -754,7 +754,9 @@ SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
   logical      :: inside(8)
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%spherical_jagged')
-  associate (m1=>m(1), m2=>m(2), m3=>m(3))
+  m1 => m(1)
+  m2 => m(2)
+  m3 => m(3)
   r2 = self%radius**2
   if (iv == idx%d) then
     do iz = m3%lb, m3%ub
@@ -783,7 +785,7 @@ SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
     print *, 'iv passed',iv, 'iv required', idx%d
     error stop "boundaries_mod::spherical_jagged_d:: invalid memory index iv"
   end if
-  end associate
+  nullify (m1, m2, m3)
   !call trace_end
 END SUBROUTINE spherical_jagged_d
 
@@ -793,7 +795,7 @@ END SUBROUTINE spherical_jagged_d
 SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
-  class(mesh_t), pointer                     :: m(:)
+  class(mesh_t), pointer                     :: m(:), m1, m2, m3
   integer                                    :: iv, it
   real                                       :: v
   !............................................................................
@@ -804,7 +806,9 @@ SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
   logical      :: inside(8)
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%spherical_jagged')
-  associate (m1=>m(1), m2=>m(2), m3=>m(3))
+  m1 => m(1)
+  m2 => m(2)
+  m3 => m(3)
   r2 = self%radius**2
   if (iv == idx%s) then
     do iz = m3%lb, m3%ub
@@ -832,7 +836,7 @@ SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
     print *, 'iv passed',iv, 'iv required', idx%s
     error stop "boundaries_mod::spherical_jagged_d:: invalid memory index iv"
   end if
-  end associate
+  nullify (m1, m2, m3)
   !call trace_end
 END SUBROUTINE spherical_jagged_s
 
@@ -842,7 +846,7 @@ END SUBROUTINE spherical_jagged_s
 SUBROUTINE spherical_jagged_p (self, mem, m, iv)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
-  class(mesh_t), pointer                     :: m(:)
+  class(mesh_t), pointer                     :: m(:), m1, m2, m3
   integer                                    :: iv
   !............................................................................
   type(index_t):: idx
@@ -852,7 +856,9 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
   logical      :: inside(4)
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%spherical_jagged')
-  associate (m1=>m(1), m2=>m(2), m3=>m(3))
+  m1 => m(1)
+  m2 => m(2)
+  m3 => m(3)
   call set_stagger (m, h, iv)
   r2 = self%radius**2
   if (iv == idx%px) then
@@ -910,7 +916,7 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
     print *, 'iv passed',iv, 'iv required', idx%px, idx%py, idx%pz
     error stop "boundaries_mod::spherical_jagged_p:: invalid memory index iv"
   end if
-  end associate
+  nullify (m1, m2, m3)
   !call trace_end
 END SUBROUTINE spherical_jagged_p
 
