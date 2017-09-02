@@ -25,11 +25,11 @@
  max_files=90000
 /
 &rubiks_params
- size=17.94096                      ! 0.8306*2.4*27/3.
+ size=3*17.94096                    ! 0.8306*2.4*27/3.
  n_levels=4                         ! # of refinement levels in for the rubiks cube
  n_patch=9                          ! # of patches per direction
  m_zoom=3                           ! zoom-in level per direction
- n_repeat=3,5,1                     ! how many times rubiks cube is repeated along the orbit
+ n_repeat=5                         ! how many times rubiks cube is repeated along the orbit
 /
 &eos_params                         ! For ideal gas EOS
  gamma=1.4
@@ -74,6 +74,7 @@
  grace=0.10
  courant=0.2
 !dt_fixed=0.001
+! use_data_hub = t
 /
 
 &mhd_params
