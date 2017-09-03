@@ -586,9 +586,9 @@ SUBROUTINE apply_sponge_boundaries (self)
   pz0 = 0.0
 
   xbndy_lo = m1%p + m1%r(m1%li) - 0.5 * m1%d
-  xkill_lo = xbndy_lo + self%x_sponge * self%size(1)
+  xkill_lo = xbndy_lo + self%x_sponge
   xbndy_hi = m1%p + m1%r(m1%ui) + 0.5 * m1%d
-  xkill_hi = xbndy_hi - self%x_sponge * self%size(1)
+  xkill_hi = xbndy_hi - self%x_sponge
 
   do iv=1,self%nv
     do k=m3%lb,m3%ub
