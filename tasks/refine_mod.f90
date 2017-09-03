@@ -43,6 +43,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(refine_t):: self
+  integer:: iostat
   integer:: check_interval=50, refinement_ratio=2
   real:: refine_from_t=0.0, refine_until_t=1.0e32, min_jeans=0.0, min_dx=0.0, max_dx=1.0e32, &
          tol_shock=0.0, tol_contact=0.0, tol_grad=0.0
@@ -58,7 +59,7 @@ SUBROUTINE init (self)
   if (first_time) then
     first_time=.false.
     rewind (io%input)
-    read (io%input, refine_params)
+    read (io%input, refine_params, iostat=iostat)
     if (io%master) write (*, refine_params)
   end if
   self%check_interval = check_interval
