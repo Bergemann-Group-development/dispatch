@@ -85,6 +85,7 @@ MODULE task_mod
     procedure:: distance                ! return the distance btw two patches
     procedure:: pack
     procedure:: unpack
+    procedure:: is_relevant
   end type
 
   integer, save:: id=0
@@ -427,5 +428,15 @@ SUBROUTINE unpack (self, mesg)
   class(mesg_t), pointer:: mesg
   call mpi%abort ('task_t%unpack called')
 END SUBROUTINE
+
+!> =============================================================================
+!> Stub, to be overloaded in experiment_mod to drop patches
+!> =============================================================================
+FUNCTION is_relevant (self)
+  class(task_t):: self
+  logical:: is_relevant 
+  !-----------------------------------------------------------------------------
+  is_relevant = .true.
+END FUNCTION is_relevant
 
 END MODULE task_mod

@@ -1,20 +1,20 @@
 &experiment_params
- x_sponge=1000.0     ! spatial extent over which to apply the sponge wave-killing conditions
+ x_sponge=500.0     ! spatial extent over which to apply the sponge wave-killing conditions
 /
 &initial_params /
 &force_params   /
 
-&timer_params sec_per_report=30 /
+&timer_params sec_per_report=10 /
 !&task_list_params
 ! sync_time=0.5
 !/
 &io_params
- verbose=0
+ verbose=1
  do_trace=f
  omp_trace=f
  !id_debug=137
  do_debug=f
- do_output=t
+ do_output=f
  do_legacy=t
 /
 &out_params
@@ -25,7 +25,7 @@
  max_files=90000
 /
 &rubiks_params
- size=3*17.94096                    ! 0.8306*2.4*27/3.
+ size=3*7.47                        ! 0.8306*3.0*27/9.
  n_levels=4                         ! # of refinement levels in for the rubiks cube
  n_patch=9                          ! # of patches per direction
  m_zoom=3                           ! zoom-in level per direction
@@ -69,7 +69,7 @@
 /
 &patch_params
  periodic=f,t,f
- n=3*33
+ n=3*32
  nt=5
  grace=0.10
  courant=0.2
