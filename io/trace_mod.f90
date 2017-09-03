@@ -30,8 +30,7 @@ MODULE trace_mod
   integer, save:: verbosity(maxlev)                             ! verbosity level
   integer, private, save:: indent=4                             ! trace indent
   integer, private, save:: level=1                              ! trace level
-  integer, private, save:: otimer=0                             ! previous value
-  !$omp threadprivate(indent,level,tracing,verbosity,otimer)
+  !$omp threadprivate(indent,level,tracing,verbosity)
   real(8), save:: wc0=0d0
 PUBLIC trace_begin, trace_tag, trace_end
 CONTAINS
@@ -47,19 +46,8 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
   integer:: verbose
   real(8):: wc
   !-----------------------------------------------------------------------------
-  ! If a different timer epoch is still open, as signalled by the previous itimer
-  ! value, stored in otimer, then close that timer epoch by calling timer_end
-  !-----------------------------------------------------------------------------
   if (present(itimer)) then
-    if (itimer/=otimer .and. otimer>0) call timer%end (otimer)
     call timer%begin (id, itimer)
-    otimer = itimer
-  !-----------------------------------------------------------------------------
-  ! If no new itimer value is given, but an old timer epoch is still open, then
-  ! close it
-  !-----------------------------------------------------------------------------
-  else if (otimer > 0) then
-    call timer%end (otimer)
   end if
   if (.not.io%do_trace) return
   tracing(level) = trim(id)
@@ -117,9 +105,7 @@ SUBROUTINE trace_tag (id)
 END SUBROUTINE trace_tag
 
 !> =============================================================================
-!> End a trace level.  If the previous trace%begin call had an itimer argument,
-!> the value is remembered in otimer, and that timer epoch can thus be closed,
-!> even if an itimer argument is not given.
+!> End a trace level.
 !> =============================================================================
 SUBROUTINE trace_end (itimer)
   implicit none
@@ -131,10 +117,7 @@ SUBROUTINE trace_end (itimer)
   !-----------------------------------------------------------------------------
   if (present(itimer)) then
     call timer%end(itimer)
-  else if (otimer > 0) then
-    call timer%end(otimer)
   end if
-  otimer = 0
   if (.not.io%do_trace) return
   level  = max(level-1,1)
   indent = max(indent,4)
