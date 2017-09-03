@@ -284,7 +284,7 @@ SUBROUTINE boundary_conditions (self, it, new)
   real                :: s0
   !-----------------------------------------------------------------------------
   if (self%boundaries%bits /= 0) then
-    call trace%begin ('experiment_mod::boundary_conditions', itimer=itimer)
+    call trace%begin ('experiment_t%boundary_conditions', itimer=itimer)
     call self%check_density ('before boundary_conditions')
     if (self%boundaries%is_set (bits%spherical)) then
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'

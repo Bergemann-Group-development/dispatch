@@ -6,7 +6,7 @@
 
 &io_params
  verbose=0
- do_output=t
+ do_output=f
  do_trace=f
  omp_trace=f
  !id_debug=62

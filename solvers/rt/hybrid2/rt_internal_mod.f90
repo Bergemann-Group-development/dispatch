@@ -38,7 +38,7 @@ MODULE rt_internal_mod
     procedure :: update => update_rt_internal
     procedure :: print
     procedure :: check  => check_rt_internal
-    procedure :: check_intensities => check_rt_get_intensities 
+    procedure :: check_intensities => check_rt_get_intensities
 !> Boundary handling
     procedure :: add_upstream
     procedure :: bundle_connects_to
@@ -370,7 +370,7 @@ SUBROUTINE get_same_static (self)
   if (self%n_upstream > 1) then                                         ! this should not happen.
     error stop "rt_internal::get_same_static:: (1)"
   end if
-  
+
   select case(self%rt_type)
   case(2)
   mbid = self%bundle%next_chain_bndl_rev
@@ -386,7 +386,7 @@ SUBROUTINE get_same_static (self)
     rt_nb => this
   end SELECT
   end associate
-  
+
   select case(self%bundle%l_chain)
   case(:2)
     self%I_in = rt_nb%I_out
@@ -414,25 +414,25 @@ FUNCTION I_retrv(self, nbor, c) result (I_out)
   packet => nbor%bundle%rays
   do while (associated(packet).and..not.fnd)                            ! loop over nbor ray packets
     do nb_ray = 1, packet%n_rays                                        ! loop over rays in the nbor ray packet
-    
+
       select case(nbor%rt_type)                                         ! is it fwd or reverse ray direction
         case(2)                                                         ! forward
           rid = 1                                                       ! looking for first point
         case(3)                                                         ! reverse
           rid = packet%n_points                                         ! looking for last point
       end select
-      
+
       if (all(packet%coords(:,rid,nb_ray) == c)) then                   ! if cell coords match with what we are looking for
         fnd = .true.                                                    ! we have found the cell
         I_out = nbor%packet_data(packet%id)%I_out(nb_ray,:)
         return
       end if
-      
+
     end do
     packet => packet%next
   end do
 
-  call trace_end
+  call trace_end (itimer)
 END FUNCTION I_retrv
 
 SUBROUTINE get_dynamic_legacy (self)
@@ -529,7 +529,7 @@ SUBROUTINE solve_internal_integral_1st (self)
     call self%dtau(ropac, dtau)
     I_in = self%packet_data(pck)%I_in
 
-    do pt = 2, npt    
+    do pt = 2, npt
 #if defined __INTEL_COMPILER
     ex0(:,:,pt) = 2**(-dtau(:,:,pt)*1.44269504)                                 ! first exponential coeff
 #else
@@ -537,12 +537,12 @@ SUBROUTINE solve_internal_integral_1st (self)
 #endif
     ds(:,:,pt)  = (1.-ex0(:,:,pt))*s(:,:,pt-1)                                      ! Source factor
     end do
-    
+
     if (detailed_timer) then
       call trace_end (itimer(1))
       call trace_begin('rt_internal_t%integral_1st(2)', itimer=itimer(2))
     end if
-    
+
       !-----------------------------------------------------------------
       ! Forward / reverse solutions
       !-----------------------------------------------------------------
@@ -603,7 +603,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
   nwb = opacity%nwb
   packet => self%bundle%rays
   rtd    => self%my_rt_data
-  
+
   do pck = 1, self%bundle%n_packets
     cell     => packet%coords
     nrays    =  packet%n_rays
@@ -627,24 +627,24 @@ SUBROUTINE solve_internal_integral_2nd (self)
    ! call trace_end (itimer2)
     call self%dtau(opac, dtau)                                          ! Calculate dtau
     I_in = self%packet_data(pck)%I_in
-    
+
 #if defined __INTEL_COMPILER
     do pt = 1, npt+1
       ex0(:,:,pt) = 2**(-dtau(:,:,pt+1)*1.44269504)                     ! first exponential coeff
       ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)          ! half-point centered dS/dtau
-    end do   
+    end do
 #else
     do pt = 1, npt+1
       ex0(:,:,pt) = exp(-dtau(:,:,pt+1))                                  ! first exponential coeff
       if (any(dtau(:,:,pt+1) ==0)) print *,'dtau zero'
       ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)            ! half-point centered dS/dtau
-    end do                                                 
+    end do
 #endif
 
     !-------------------------------------------------------------------
     !  dS/dtau and d2S/dtau2
     !-------------------------------------------------------------------
-    do pt=1, npt  
+    do pt=1, npt
       ctau = 1. / (dtau(:,:,pt+2) + dtau(:,:,pt+1))
       d1s(:,:,pt) =(ds1(:,:,pt+1) * dtau(:,:,pt+1) &
                   + ds1(:,:,pt  ) * dtau(:,:,pt+2))      * ctau         ! dS/dtau, 2nd. order accurate
@@ -661,7 +661,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
         q(:,:,pt) = q(:,:,pt-1) * ex0(:,:,pt) - d1s(:,:,pt) &
                   * (1. - ex0(:,:,pt)) + d2s(:,:,pt) &
                   * (1. - ex0(:,:,pt) - dtau(:,:,pt)*ex0(:,:,pt))
-      end do      
+      end do
       self%packet_data(pck)%I_out = q(:,:,npt) + s(:,:,npt)
     case(3)                                                             ! reverse
       q  (:,:,npt) = I_in - s(:,:,npt)                                  ! initial reverse Q
@@ -672,7 +672,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
       end do
       self%packet_data(pck)%I_out = q(:,:,1) + s(:,:,1)
     case default
-      error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"     
+      error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"
     end select
     call self%update_q (packet, q, opac)
     deallocate(dtau, ex0, ds1, d1s, d2s, s, q, opac, ctau, I_in)
@@ -704,7 +704,7 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
   nwb = opacity%nwb
   packet => self%bundle%rays
   rtd    => self%my_rt_data
-  
+
   do pck = 1, self%bundle%n_packets
     cell     => packet%coords
     nrays    =  packet%n_rays
@@ -733,19 +733,19 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
     do pt = 1, npt+1
       ex0(:,:,pt) = 2**(-dtau(:,:,pt+1)*1.44269504)                     ! first exponential coeff
       ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)          ! half-point centered dS/dtau
-    end do   
+    end do
 #else
     do pt = 1, npt+1
       ex0(:,:,pt) = exp(-dtau(:,:,pt+1))                                  ! first exponential coeff
       if (any(dtau(:,:,pt+1) ==0)) print *,'dtau zero'
       ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)            ! half-point centered dS/dtau
-    end do                                                 
+    end do
 #endif
 
     !-------------------------------------------------------------------
     !  dS/dtau and d2S/dtau2
     !-------------------------------------------------------------------
-    do pt=1, npt  
+    do pt=1, npt
       ctau = 1. / (dtau(:,:,pt+2) + dtau(:,:,pt+1))
       d1s(:,:,pt) =(ds1(:,:,pt+1) * dtau(:,:,pt+1) &
                   + ds1(:,:,pt  ) * dtau(:,:,pt+2))      * ctau         ! dS/dtau, 2nd. order accurate
@@ -763,7 +763,7 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
                   * (1. - ex0(:,:,pt)) + d2s(:,:,pt) &
                   * (1. - ex0(:,:,pt) - dtau(:,:,pt)*ex0(:,:,pt))
         Ifw(:,:,pt) = q(:,:,pt) + s(:,:,pt)
-      end do      
+      end do
       self%packet_data(pck)%I_out = q(:,:,npt) + s(:,:,npt)
     case(3)                                                             ! reverse
       q  (:,:,npt) = I_in - s(:,:,npt)                                  ! initial reverse Q
@@ -775,7 +775,7 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
       end do
       self%packet_data(pck)%I_out = q(:,:,1) + s(:,:,1)
     case default
-      error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"     
+      error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"
     end select
     call self%mp%store_mean_I(Ifw,packet,self%dir_weight)
     call self%update_q (packet, q, opac)
@@ -815,7 +815,7 @@ SUBROUTINE ray_vol_map (self, rays, nwb, in, out)
         rays%rev_coords(2,ray), rays%rev_coords(3,ray), wl)             ! Get the last point
       end do
     end do
-    
+
   if (any(in==0)) then
   error stop "ray vol map in=0"
 !  else
@@ -880,7 +880,7 @@ LOGICAL FUNCTION bundle_connects_to (self, other)
   bundle_connects_to = .false.
   if (.not.self%mhd_patch%overlaps(other%mhd_patch)) return             ! no overlap
   if (self%is_set(bits%has_BC+bits%boundary))        return             ! boundary patch
-  
+
   select case(self%rt_type)
   case(2)
     fwd =  self%bundle%rays%fwd_coords(:,1) + self%bundle%dstep         ! testing only one ray in the bundle for now... For AMR: needs to run
@@ -888,20 +888,20 @@ LOGICAL FUNCTION bundle_connects_to (self, other)
       pp = 1
     else
       pp = self%bundle%ray_chain_fw(1)
-    end if      
-    rev = other%bundle%rays%rev_coords(:,pp)                             
+    end if
+    rev = other%bundle%rays%rev_coords(:,pp)
   case(3)
-    fwd =  self%bundle%rays%rev_coords(:,1) - self%bundle%dstep   
+    fwd =  self%bundle%rays%rev_coords(:,1) - self%bundle%dstep
     if (self%bundle%l_chain <2) then
       pp = 1
     else
-      pp = self%bundle%ray_chain_rev(1)      
-    end if 
-    rev = other%bundle%rays%fwd_coords(:,pp)                             
+      pp = self%bundle%ray_chain_rev(1)
+    end if
+    rev = other%bundle%rays%fwd_coords(:,pp)
   end select
-  
-  if (all(other%pos2cell(self%cell2pos(fwd))==rev)) bundle_connects_to = .true.        
-   
+
+  if (all(other%pos2cell(self%cell2pos(fwd))==rev)) bundle_connects_to = .true.
+
 END function bundle_connects_to
 
 !> =====================================================================
@@ -913,14 +913,14 @@ LOGICAL FUNCTION has_OB (self)
   !.....................................................................
   has_OB = .false.
   d = self%bundle%dstep
-  
+
   if (self%rt_type == 2) then
     i = self%bundle%rays%fwd_coords(:,1)
     do a=1,3
       m => self%mhd_patch%mesh(a)
       if (d(a)<0) then
         if (m%p + m%r(i(a)) > m%b) has_OB = .true.
-      else 
+      else
         if (m%p + m%r(i(a)) < 0.0) has_OB = .true.
       end if
     end do
@@ -963,7 +963,7 @@ SUBROUTINE remove_upstream(self, ups)
   class(rt_internal_t) :: self
   class(link_t), pointer :: ups, this, prev
   logical :: done = .false.
-  !--------------------------------------------------------------------- 
+  !---------------------------------------------------------------------
   this => self%upstream
   do while(associated(this).and..not.done)
     if (associated(this%task,ups%task)) then
@@ -977,7 +977,7 @@ SUBROUTINE remove_upstream(self, ups)
     end if
     prev => this
     this => this%next
-  end do  
+  end do
 END SUBROUTINE remove_upstream
 
 !> =====================================================================

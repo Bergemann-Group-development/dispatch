@@ -11,7 +11,7 @@ MODULE rt_internal_mod
   USE trace_mod
   implicit none
   private
-  
+
   type :: rt_chain_t
     class(rt_t), pointer :: element
     type(rt_chain_t), pointer :: next => null()
@@ -52,7 +52,7 @@ MODULE rt_internal_mod
     procedure :: bundle_connects_to                                     ! check if nbor is at downstream of me
     procedure :: chain_start                                            ! check if the chain starts with me
     procedure :: chain_stop                                             ! check if the chain should stop with me
-    procedure :: get_upstream                                           ! select method to get the upstream values 
+    procedure :: get_upstream                                           ! select method to get the upstream values
     procedure :: get_same_static_chain                                  ! get from chain, upstream is static and same level
     procedure :: get_static_legacy                                      ! old way to get static
     procedure :: get_dynamic_legacy                                     ! not implemented yet
@@ -319,7 +319,7 @@ LOGICAL FUNCTION has_OB (self)
     i = self%bundle%rays%rev_coords(:,1)
     p = self%cell2pos(i)
   end if
-  
+
   do t = 1,3
     if (d(t)>0) then
       if (p(t)<rt_boundary%lbox(t)) has_OB = .true.
@@ -336,7 +336,7 @@ LOGICAL FUNCTION has_OB_legacy (self)
   !.....................................................................
   has_OB_legacy = .false.
   d = self%bundle%dstep
-  
+
   if (self%rt_type == 2) then
     i = self%bundle%rays%fwd_coords(:,1)
     do a=1,3
@@ -344,7 +344,7 @@ LOGICAL FUNCTION has_OB_legacy (self)
       if (d(a)<0) then
         if (m%p + m%r(i(a)) > m%b) has_OB_legacy = .true.
         print *, self%id,'1ob: m%p,m%r(i(a), m%b,pos',m%p, m%r(i(a)),m%b,self%mhd_patch%position/self%mhd_patch%ds
-      else 
+      else
         if (m%p + m%r(i(a)) < 0.0) has_OB_legacy = .true.
         print *, self%id,'2ob: m%p,m%r(i(a), m%b,pos',m%p, m%r(i(a)),m%b,self%mhd_patch%position/self%mhd_patch%ds
       end if
@@ -380,34 +380,34 @@ FUNCTION bundle_connects_to (self, other) RESULT (out)
   if (self%rt_type /= other%rt_type)                 return             ! different direction
   if (self%mhd_patch%id == other%mhd_patch%id)       return             ! same patch
   if (.not.self%mhd_patch%overlaps(other%mhd_patch)) return             ! no overlap
- ! if (self%is_set(bits%has_BC+bits%boundary))        return             ! boundary patch  << why was this even considered? 
-  
+ ! if (self%is_set(bits%has_BC+bits%boundary))        return             ! boundary patch  << why was this even considered?
+
   ray = 1                                                               ! testing only one ray in the bundle for now... For AMR: needs to run
   select case(self%rt_type)                                             ! through all the rays and if ANY has a match - add to the list...
   case(2)
-    last_pt =  self%bundle%rays%coords(:,self%bundle%rays%n_points,ray) ! taking the coordinates of the last point in the ray 
-    if (self%bundle%l_chain <2) then                                    
-      pp = 1
-    else
-      pp = self%bundle%ray_chain_fw(1)                                  ! the ray location in the next bundle in the chain
-    end if      
-    rev = other%bundle%rays%fwd_coords(:,pp)                            ! zeroth point in the ray (location of incoming intensity)                             
-  case(3)
-    last_pt =  self%bundle%rays%coords(:,1,ray)                         ! first point is the last point in reverse   
+    last_pt =  self%bundle%rays%coords(:,self%bundle%rays%n_points,ray) ! taking the coordinates of the last point in the ray
     if (self%bundle%l_chain <2) then
       pp = 1
     else
-      pp = self%bundle%ray_chain_rev(1)      
-    end if 
-    rev = other%bundle%rays%rev_coords(:,pp)                             
+      pp = self%bundle%ray_chain_fw(1)                                  ! the ray location in the next bundle in the chain
+    end if
+    rev = other%bundle%rays%fwd_coords(:,pp)                            ! zeroth point in the ray (location of incoming intensity)
+  case(3)
+    last_pt =  self%bundle%rays%coords(:,1,ray)                         ! first point is the last point in reverse
+    if (self%bundle%l_chain <2) then
+      pp = 1
+    else
+      pp = self%bundle%ray_chain_rev(1)
+    end if
+    rev = other%bundle%rays%rev_coords(:,pp)
   end select
   last_pt = other%pos2cell(self%cell2pos(last_pt))
   do pp = 1,3
     if (last_pt(pp) == rev(pp)) tout(pp) = .true.
   end do
-  if (all(tout)) out = .true.   
-  
-  
+  if (all(tout)) out = .true.
+
+
 END function bundle_connects_to
 
 !> =====================================================================
@@ -451,7 +451,7 @@ print *,'getting upstream values'
         call self%get_dynamic_legacy
       end if
     end if
-    
+
   end if
   if (any(self%i_in==0)) then
   print *,"i_in zero", self%id, 'up id', self%upstream%id
@@ -599,25 +599,25 @@ FUNCTION I_retrv(self, nbor, c) result (I_out)
   packet => nbor%bundle%rays
   do while (associated(packet).and..not.fnd)                            ! loop over nbor ray packets
     do nb_ray = 1, packet%n_rays                                        ! loop over rays in the nbor ray packet
-    
+
       select case(nbor%rt_type)                                         ! is it fwd or reverse ray direction
         case(2)                                                         ! forward
           rid = 1                                                       ! looking for first point
         case(3)                                                         ! reverse
           rid = packet%n_points                                         ! looking for last point
       end select
-      
+
       if (all(packet%coords(:,rid,nb_ray) == c)) then                   ! if cell coords match with what we are looking for
         fnd = .true.                                                    ! we have found the cell
         I_out = nbor%packet_data(packet%id)%I_out(nb_ray,:)
         return
       end if
-      
+
     end do
     packet => packet%next
   end do
 
-  call trace_end
+  call trace_end (itimer)
 END FUNCTION I_retrv
 
 SUBROUTINE get_dynamic_legacy (self)
@@ -648,7 +648,7 @@ SUBROUTINE get_same_static_chain (self)
   nb_ray_pos => self%bundle%ray_chain_fw
   end select
   rt_nb => self%upstream
-  
+
   select case(self%bundle%l_chain)
   case(:2)
     self%I_in = rt_nb%I_out
@@ -787,7 +787,7 @@ SUBROUTINE solve_internal_integral_1st (self)
     call self%dtau_staggered(ropac, dtau)
     I_in = self%packet_data(pck)%I_in
 
-    do pt = 2, npt    
+    do pt = 2, npt
 #if defined __INTEL_COMPILER
     ex0(:,:,pt) = 2**(-dtau(:,:,pt)*1.44269504)                                 ! first exponential coeff
 #else
@@ -795,12 +795,12 @@ SUBROUTINE solve_internal_integral_1st (self)
 #endif
     ds(:,:,pt)  = (1.-ex0(:,:,pt))*s(:,:,pt-1)                                      ! Source factor
     end do
-    
+
     if (detailed_timer) then
       call trace_end (itimer(1))
       call trace_begin('rt_internal_t%integral_1st(2)', itimer=itimer(2))
     end if
-    
+
       !-----------------------------------------------------------------
       ! Forward / reverse solutions
       !-----------------------------------------------------------------
@@ -862,7 +862,7 @@ SUBROUTINE solve_internal_integral_2nd (self)
   nwb = microphysics%n_wl_bins
   packet => self%bundle%rays
   rtd    => self%my_rt_data
-  
+
   do pck = 1, self%bundle%n_packets
     cell     => packet%coords
     nrays    =  packet%n_rays
@@ -890,19 +890,19 @@ call trace_end (itimer2)
     do pt = 1, npt+1
       ex0(:,:,pt) = 2**(-dtau(:,:,pt+1)*1.44269504)                     ! first exponential coeff
       ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)          ! half-point centered dS/dtau
-    end do   
+    end do
 #else
     do pt = 1, npt+1
       ex0(:,:,pt) = exp(-dtau(:,:,pt+1))                                  ! first exponential coeff
       if (any(dtau(:,:,pt+1) ==0)) print *,'dtau zero'
       ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)            ! half-point centered dS/dtau
-    end do                                                 
+    end do
 #endif
 
     !-------------------------------------------------------------------
     !  dS/dtau and d2S/dtau2
     !-------------------------------------------------------------------
-    do pt=1, npt  
+    do pt=1, npt
       ctau = 1. / (dtau(:,:,pt+2) + dtau(:,:,pt+1))
       d1s(:,:,pt) =(ds1(:,:,pt+1) * dtau(:,:,pt+1) &
                   + ds1(:,:,pt  ) * dtau(:,:,pt+2))      * ctau         ! dS/dtau, 2nd. order accurate
@@ -919,7 +919,7 @@ call trace_end (itimer2)
         q(:,:,pt) = q(:,:,pt-1) * ex0(:,:,pt) - d1s(:,:,pt) &
                   * (1. - ex0(:,:,pt)) + d2s(:,:,pt) &
                   * (1. - ex0(:,:,pt) - dtau(:,:,pt)*ex0(:,:,pt))
-      end do      
+      end do
       self%packet_data(pck)%I_out = q(:,:,npt) + s(:,:,npt)
     case(3)                                                             ! reverse
       q  (:,:,npt) = I_in - s(:,:,npt)                                  ! initial reverse Q
@@ -930,7 +930,7 @@ call trace_end (itimer2)
       end do
       self%packet_data(pck)%I_out = q(:,:,1) + s(:,:,1)
     case default
-      error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"     
+      error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"
     end select
 
     call self%update_q (packet, q, opac)
@@ -1006,19 +1006,19 @@ call trace_end (itimer2)
     do pt = 1, npt+1
       ex0(:,:,pt) = 2**(-dtau(:,:,pt+1)*1.44269504)                     ! first exponential coeff
       ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)          ! half-point centered dS/dtau
-    end do   
+    end do
 #else
     do pt = 1, npt+1
       ex0(:,:,pt) = exp(-dtau(:,:,pt+1))                                  ! first exponential coeff
       if (any(dtau(:,:,pt+1) ==0)) print *,'dtau zero'
       ds1(:,:,pt) = (s(:,:,pt+1) - s(:,:,pt)) / dtau(:,:,pt+1)            ! half-point centered dS/dtau
-    end do                                                 
+    end do
 #endif
 
     !-------------------------------------------------------------------
     !  dS/dtau and d2S/dtau2
     !-------------------------------------------------------------------
-    do pt=1, npt  
+    do pt=1, npt
       ctau = 1. / (dtau(:,:,pt+2) + dtau(:,:,pt+1))
       d1s(:,:,pt) =(ds1(:,:,pt+1) * dtau(:,:,pt+1) &
                   + ds1(:,:,pt  ) * dtau(:,:,pt+2))      * ctau         ! dS/dtau, 2nd. order accurate
@@ -1037,7 +1037,7 @@ call trace_end (itimer2)
                   * (1. - ex0(:,:,pt)) + d2s(:,:,pt) &
                   * (1. - ex0(:,:,pt) - dtau(:,:,pt)*ex0(:,:,pt))
         Ifw(:,:,pt) = q(:,:,pt) + s(:,:,pt+1)
-      end do      
+      end do
       self%packet_data(pck)%I_out = q(:,:,npt) + s(:,:,npt)
     case(3)                                                             ! reverse
       q  (:,:,npt) = I_in - s(:,:,npt)                                  ! initial reverse Q
@@ -1050,7 +1050,7 @@ call trace_end (itimer2)
       end do
       self%packet_data(pck)%I_out = q(:,:,1) + s(:,:,1)
     case default
-      error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"     
+      error stop "rt_internal_mod::solve_internal_integral_2nd:: unknown rt type"
     end select
     if (any(self%packet_data(pck)%I_out==0)) then
     print *,"i out zero", self%id, self%rt_type, self%is_set(bits%has_bc)
@@ -1127,7 +1127,7 @@ SUBROUTINE ray_vol_map (self, rays, nwb, in, out,what)
                   pck => pck%next
                 else
                   fnd = .true.
-                end if  
+                end if
               end do
             print *, pck%n_rays, tray,nb_ray_pos(tray)
             cl = self%downstream%bundle%rays%coords(:,pck%n_points,nb_ray_pos(tray))
@@ -1171,7 +1171,7 @@ SUBROUTINE ray_vol_map (self, rays, nwb, in, out,what)
        end do
     end do
     if (self%bundle%n_points>1)  out(1,:,1) = out(1,:,2)  !corner is somehow always 0...
-  nullify(nb_ray_pos)  
+  nullify(nb_ray_pos)
   if (any(in==0)) then
   print *, in
   error stop "ray vol map in=0"
@@ -1218,7 +1218,7 @@ SUBROUTINE ray_vol_map_good (self, rays, nwb, in, out)
         rays%rev_coords(2,ray), rays%rev_coords(3,ray), wl)             ! Get the last point
       end do
     end do
-    
+
   if (any(in==0)) then
   print *, in
   error stop "ray vol map in=0"

@@ -122,7 +122,7 @@ SUBROUTINE single_solenoidal (self, m, ff)
     end do
   end do
   end associate
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE single_solenoidal
 
 !> =============================================================================
@@ -177,7 +177,7 @@ SUBROUTINE single_compressive (self, m, ff)
     end do
   end do
   end associate
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE single_compressive
 
 !> =============================================================================
@@ -231,7 +231,7 @@ SUBROUTINE single_advection (self, m, ff)
     end do
   end do
   end associate
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE single_advection
 
 !> =============================================================================
@@ -294,7 +294,7 @@ SUBROUTINE exa256 (self, m, ff)
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE exa256
 
 !> =============================================================================
@@ -354,7 +354,7 @@ SUBROUTINE raw (self, m, ff)
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
   !$omp end critical (raw_cr)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE raw
 
 END MODULE

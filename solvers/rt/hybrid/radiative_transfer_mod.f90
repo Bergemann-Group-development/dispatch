@@ -57,13 +57,13 @@ SUBROUTINE rt_setup (self)
   select type(mesh)
     type is(Cartesian_mesh)
       call ray_geometry%init(geometry=1, &
-      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)  
+      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)
     type is(spherical_mesh)
       call ray_geometry%init(geometry=2, &
-      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land) 
+      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)
     type is(cylindrical_mesh)
       call ray_geometry%init(geometry=3, &
-      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)   
+      li=mhd_patch%li,ui=mhd_patch%ui, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)
   end select
   nullify(mesh)
 
@@ -90,7 +90,7 @@ SUBROUTINE rt_setup (self)
       allocate (rt_task, link)                                          ! the internal RT task and its link
       mhd_patch => mhd
       !> ---------------------------------------------------------------
-      !> Construct the RT task and add it to the task list, 
+      !> Construct the RT task and add it to the task list,
       !> giving it a nbor list consisting of only the MHD task.
       !> ---------------------------------------------------------------
       link%task         => rt_task                                      ! connect to RT task
@@ -121,28 +121,28 @@ SUBROUTINE rt_setup (self)
         if (rt_task%position(3) >= self%uc(3)) call rt_task%rt_boundaries%set (bits%zu)
       end if
       rt_task%box      = mhd_patch%box                                  ! same box
-      rt_task%level    = mhd_patch%level                                ! same level      
+      rt_task%level    = mhd_patch%level                                ! same level
       rt_task%ds       = mhd_patch%ds                                   ! same cell size
       rt_task%li       = mhd_patch%li                                   ! same lower inner position
       rt_task%ui       = mhd_patch%ui                                   ! same upper inner position
       call rt_task%init                                                 ! initialise
-      call rt_task_list%append_link(link)                               ! insert rt_task into the rt task list      
+      call rt_task_list%append_link(link)                               ! insert rt_task into the rt task list
     end SELECT
     end associate
     t_list => t_list%next                                               ! go to the next mhd task
   end do
-  
+
   call find_rt_nbors(rt_task_list)                                      ! connect nboring rt tasks to be nbors
   !> -------------------------------------------------------------------
   !> Depending whether the RT chains are used (default, recommended) or
   !> not, call the right subroutine to initialize them.
   !> -------------------------------------------------------------------
   if (ray_geometry%head%do_chains) call make_chains (rt_task_list)      ! inter-connect all the chains
-  
+
   !> -------------------------------------------------------------------
   !> TODO:  for mesh refinement and mpi, add a call to find upstreams.
   !> -------------------------------------------------------------------
-  
+
   !> -------------------------------------------------------------------
   !> append the rt tasks to the task list.
   !> -------------------------------------------------------------------
@@ -153,7 +153,7 @@ SUBROUTINE rt_setup (self)
     link => rt_link
   end do
   call self%print
-  call trace_end
+  call trace_end (itimer)
   if (io%master) then
     print *, '=================================='
     print *, 'RT SETUP IS COMPLETE'
@@ -169,7 +169,7 @@ END SUBROUTINE rt_setup
 !> OUTPUT: none
 !> RESULT: rt chains are connected to each other. Master chains are
 !>   identified and all chain inter-connections are done.
-!> SUBROUTINES, CALLED FROM WITHIN: 
+!> SUBROUTINES, CALLED FROM WITHIN:
 !>   rt_mod::rt_chain_t%finish_chain
 !>   rt_mod::rt_chain_t%connect_to_upstream_diff_level
 !>   rt_mod::rt_chain_t%link_connects_to
@@ -178,7 +178,7 @@ END SUBROUTINE rt_setup
 !>   over all it's chain links.
 !> 2) The appropriate chain link is tested against being at a boundary.
 !>   If that is the case, it is marked appropriately.
-!> 3) Initially the link is marked as being the "master" link, meaning 
+!> 3) Initially the link is marked as being the "master" link, meaning
 !>   the chain reaction starts from it.
 !> 4) The search for an upstream link begins. A loop over all patches in
 !>   the rt_task list is done until the right chain is found. If an
@@ -189,13 +189,13 @@ END SUBROUTINE rt_setup
 !> 6) If the link encounters an upstream with different refinement level,
 !>   it doesn't lose it's master title, but connects the upstream to
 !>   a separate link (upstream, which is an array of pointers). In such
-!>   case, a subroutine to connect the appropriate intensity positions 
+!>   case, a subroutine to connect the appropriate intensity positions
 !>   is called
 !> 6) When the loop through rt tasks is done, and the link still hasn't
 !>   lost it's title as a master, it is put to the master list. For sim-
 !>   plicity, chain_link_t structure is used here, since links are not
 !>   tasks. In order not to mess up the link structure, the connections
-!>   are done backwards (link%prev) - master links do not have %prev 
+!>   are done backwards (link%prev) - master links do not have %prev
 !>   companions, so this is safe. Upon finalizing the chains, the %prev
 !>   connection is broken.
 !> 7) When the loop (1) ends, another loop, over the master chains (6) is
@@ -227,32 +227,32 @@ SUBROUTINE make_chains (self)
   n_conn=0
   n_bn=0
   origin => master                                                      ! this will be the head of the temporary master chain
-  rt_list => self%head                                 
+  rt_list => self%head
   do while (associated(rt_list))                                        ! loop through rt_task_list
-  
+
     this => rt_list%task
     SELECT TYPE (this)
     class is (rt_t)                                                     ! select the right task
       ithis => this
     end SELECT
-    
+
     do ip = 1, ithis%n_packet                                           ! loop over chain links
       is_bndry=.false.                                                  ! reset the boundary flag
       connected = .false.                                               ! no connections have been made
       n_links=n_links+1
       my_link => ithis%my_links(ip)
       my_link%master = .true.                                           ! flag the link as being the master for now
-      
+
       !> ---------------------------------------------------------------
       !> Check if the link is adjacent to an outer on an inner boundary
       !> ---------------------------------------------------------------
       if (ithis%has_OB(my_link)) then                                   ! if this link is at the outer boundary
         my_link%BC(1) = .true.                                          ! then flag it to have an outer boundary condition
         call ithis%map_bndry(my_link)
-        is_bndry=.true.                                                 ! since it is a boundary link, it can't have upstreams or other masters 
-        n_bn=n_bn+1                                        
+        is_bndry=.true.                                                 ! since it is a boundary link, it can't have upstreams or other masters
+        n_bn=n_bn+1
       end if
-      
+
       !> ---------------------------------------------------------------
       !> If it is not adjacent to a boundary, find a master link for it
       !> ---------------------------------------------------------------
@@ -264,7 +264,7 @@ SUBROUTINE make_chains (self)
           class is (rt_t)
             ithat => that
           end SELECT
-        
+
           if (ithis%id /= ithat%id) then                                ! not the same patch
             if (ithis%overlaps(ithat)) then                             ! patches overlap
               ! loop over ithat links
@@ -281,11 +281,11 @@ SUBROUTINE make_chains (self)
                   my_link%master = .false.                              ! i am no longer the master
                   my_link%prev => nb_link                               ! this is my superior
                   nb_link%next => my_link                               ! this is my inferior
-                  
+
                   if(.not.associated(my_link%tail)) then
                     nb_link%tail => my_link                             ! connect the tails
                   else
-                    nb_link%tail => my_link%tail 
+                    nb_link%tail => my_link%tail
                   end if
                   !> ---------------------------------------------------
                   !> go through the chain (if there is any) of the newly
@@ -319,23 +319,23 @@ SUBROUTINE make_chains (self)
       if (.not.connected) then
           n_masters = n_masters+1
           master%prev => my_link
-          master => master%prev 
+          master => master%prev
       else
         n_slaves = n_slaves+1
       end if
     end do
     rt_list => rt_list%next                                             ! move to next rt task
   end do
-  
+
   if (io%verbose>-1) print *, 'n_links',n_links,'n_masters',n_masters, &
         'n_slaves',n_slaves,'n_connected',n_conn,'n_boundary',n_bn
-  
+
   !> -------------------------------------------------------------------
   !> finalize the chains by mapping their rays to the correct upstream
   !> positions.
   !> -------------------------------------------------------------------
-  call origin%finish_chain                                              
-  
+  call origin%finish_chain
+
   deallocate(origin)
   nullify(temp, this, that, ithis, ithat, my_link, nb_link)
   !$omp end critical (list_cr)
@@ -367,7 +367,7 @@ END SUBROUTINE connect_nbors
 
 !> =====================================================================
 !> Go through the rt_task list, find the nboring rt tasks ant make them
-!> nbors. Original init_nbors subroutine is not suitable, because all 
+!> nbors. Original init_nbors subroutine is not suitable, because all
 !> rt_patches already have a nbor - the rmhd_patch.
 !> =====================================================================
 SUBROUTINE find_rt_nbors (self)
