@@ -1,7 +1,7 @@
 ! These params are intended for the master branch, with use_data_hub and no_mans_land=.true. 
 
 &experiment_params
- jagged_boundaries=f
+ x_sponge=500.
 /
 &initial_params /
 &force_params   /

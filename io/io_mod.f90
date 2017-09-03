@@ -139,7 +139,7 @@ SUBROUTINE init (self, name)
     ! The input filename is input.nml, or as given on the command line
     !---------------------------------------------------------------------------
     call getarg(1,filename)                                     ! command line
-    if (filename /= ' ') then
+    if (filename/=' '.and.trim(filename)/='input.nml') then
       self%inputname = filename                                 ! run_name.nml
       self%outputname = trim(self%datadir)//self%sep// &        ! data/run_name/
         trim(filename(1:index(filename,'.')-1))//self%sep
