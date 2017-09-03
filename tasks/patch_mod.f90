@@ -115,6 +115,7 @@ MODULE patch_mod
     procedure:: index_only
     procedure:: index_only2
     procedure:: count_edges
+    procedure:: update_position
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -530,6 +531,11 @@ SUBROUTINE rotate (self)
       minval(self%mem(:,:,:,1,self%new,1)), &
       maxval(self%mem(:,:,:,1,self%new,1))
   end if
+  !-----------------------------------------------------------------------------
+  ! Update patch position for non-zero patch velocities;
+  ! This happens *before* `rotate` because `dtime` stores the time step just taken.
+  !-----------------------------------------------------------------------------
+  call self%update_position
   !-----------------------------------------------------------------------------
   ! Task time slot rotation
   !-----------------------------------------------------------------------------
@@ -2253,7 +2259,7 @@ FUNCTION index_only2 (self, nbor, pos, iv, roundup, closest) RESULT (ii)
 END FUNCTION index_only2
 
 !> =============================================================================
-!> Return only the index in self corresponding to a point in native space
+!> How many edges do `self` and its neighbor `source` share?
 !> =============================================================================
 FUNCTION count_edges (self, source) RESULT (out)
   class(patch_t)          :: self
@@ -2387,5 +2393,31 @@ SUBROUTINE interpolate_specific (self, target, ii, iv, jt, pt)
       "   out:",1p,e15.6)
   !call trace%end (itimer)
 END SUBROUTINE interpolate_specific
+
+SUBROUTINE update_position (self)
+  class(patch_t):: self
+  !-----------------------------------------------------------------------------
+  call trace_begin("patch_t%update_position")
+
+  if (all(self%velocity == 0.0)) return
+
+  self%position = self%position + self%velocity * self%dtime
+  self%llc_cart = self%llc_cart + self%velocity * self%dtime
+  self%centre_cart = self%centre_cart + self%velocity * self%dtime
+
+  self%mesh(:)%p = self%position(:)
+  self%mesh(:)%llc_cart = self%llc_cart(:)
+
+  ! adjust the patch position for periodic wrapping
+  where(self%position > 0.5*self%box)
+    self%position = self%position - self%box
+    self%mesh(:)%p = self%mesh(:)%p - self%box(:)
+    self%llc_cart = self%llc_cart - self%box
+    self%mesh(:)%llc_cart = self%mesh(:)%llc_cart - self%box
+    self%centre_cart = self%centre_cart - self%box
+  end where
+
+  call trace_end
+END SUBROUTINE update_position
 
 END MODULE patch_mod
