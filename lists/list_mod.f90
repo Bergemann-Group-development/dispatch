@@ -91,7 +91,7 @@ SUBROUTINE init (self, name)
   class(list_t):: self
   character(len=*), optional:: name
   !.............................................................................
-  call trace_begin ('list_mod::init')
+  call trace_begin ('list_t%init')
   if (present(name)) then
     self%name = name
     write (io_unit%log,*)'init_list: ', name
@@ -116,7 +116,7 @@ SUBROUTINE reset (self)
   class(link_t), pointer:: link, old
   class(task_t), pointer:: task
   !.............................................................................
-  call trace_begin ('list_mod::reset '//self%name)
+  call trace_begin ('list_t%reset '//self%name)
   link => self%head
   do while (associated(link))
     task => link%task
@@ -142,7 +142,7 @@ SUBROUTINE append (self, task, nbor, needed, needs_me)
   class(task_t), pointer:: task
   class(link_t), pointer:: link
   !.............................................................................
-  call trace_begin ('list_mod::append '//self%name)
+  call trace_begin ('list_t%append '//self%name)
   allocate (link)
   link%task => task
   if (present(nbor))     link%nbor     => nbor
@@ -162,7 +162,7 @@ SUBROUTINE append_link (self, link)
   class(*), pointer:: anon
   logical, save:: first_time=.true.
   !.............................................................................
-  call trace_begin ('list_mod::append_link '//self%name)
+  call trace_begin ('list_t%append_link '//self%name)
   !$omp critical (list_cr)
   nullify(link%next)
   if (associated(self%tail)) then
@@ -204,7 +204,7 @@ SUBROUTINE remove_link (self, link)
   class(link_t), pointer:: link, next
   class(task_t), pointer:: task
   !.............................................................................
-  call trace_begin ('list_mod::remove_link '//self%name)
+  call trace_begin ('list_t%remove_link '//self%name)
   next => link%next
   !-------------------------------------------------------------------------
   ! Check for tail task
@@ -235,7 +235,7 @@ SUBROUTINE remove_head (self)
   class(list_t):: self
   class(link_t), pointer:: head, link, next
   !.............................................................................
-  call trace_begin ('list_mod::remove_head '//self%name)
+  call trace_begin ('list_t%remove_head '//self%name)
   head => self%head
   next => head%next
   !-------------------------------------------------------------------------
@@ -309,7 +309,7 @@ SUBROUTINE check_all (self, repair)
   class(link_t), pointer:: link
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_mod::check_all', itimer=itimer)
+  call trace_begin('list_t%check_all', itimer=itimer)
   write (io_unit%log,*) 'check_all: phase 1', self%nq, associated(self%queue)
   !$omp critical (list_cr)
   if (present(repair)) then
@@ -340,7 +340,7 @@ SUBROUTINE check_all (self, repair)
   if (.not.associated(self%queue)) then
     call self%check_oldest
   end if
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE check_all
 
 !> =============================================================================
@@ -366,7 +366,7 @@ SUBROUTINE check_oldest (self)
   class(link_t), pointer:: link, oldest, oldestv
   real(8):: told, toldv
   !.............................................................................
-  call trace_begin('list_mod::check_oldest '//self%name)
+  call trace_begin('list_t%check_oldest '//self%name)
   write (io_unit%log,*) 'check_oldest: phase 1'
   told = 1d30
   toldv = told
@@ -469,7 +469,7 @@ SUBROUTINE consistency (self, link, i)
   integer:: n, id1=0, id2=0, i
   !.............................................................................
   if (self%debug < 2) return
-  call trace_begin ('list_mod::consistency',1)
+  call trace_begin ('list_t%consistency',1)
   !$omp critical (list_cr)
   n = 0
   task => link%task
@@ -503,7 +503,7 @@ SUBROUTINE qconsistency (self, ident)
   real(8):: time
   !.............................................................................
   !if (self%debug < 1) return
-  call trace_begin ('list_mod::qconsistency',4)
+  call trace_begin ('list_t%qconsistency',4)
   n = 0
   if (io%verbose>2) then
     link => self%head
@@ -560,7 +560,7 @@ SUBROUTINE aconsistency (self, ident)
   real(8):: time
   !.............................................................................
   !if (self%debug < 1) return
-  call trace_begin ('list_mod::aconsistency',4)
+  call trace_begin ('list_t%aconsistency',4)
   n = 0
   link => self%active
   if (associated(link)) then
@@ -615,7 +615,7 @@ SUBROUTINE init_nonleaf (self)
   integer:: n_add
   !.............................................................................
   return
-  call trace_begin('list_mod::init_nonleaf ')
+  call trace_begin('list_t%init_nonleaf ')
   !xomp critical (list_cr)
   !-----------------------------------------------------------------------------
   ! First find and mark all non-leaf patches; these are patches that the link
@@ -657,7 +657,7 @@ SUBROUTINE init_nbors (self, link)
   integer:: n_add
   logical:: overlaps
   !.............................................................................
-  call trace_begin('list_mod::init_nbors ')
+  call trace_begin('list_t%init_nbors ')
   nullify (link%nbor)                                 ! initially no nbor
   n_add = 0
   scan => self%head                                   ! scan all links (FIXME)
@@ -717,7 +717,7 @@ SUBROUTINE init_all_nbors (self)
   integer:: i, i0, i1, i2, n=0, nv=0, nb=0
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_mod::init_all_nbors', itimer=itimer)
+  call trace_begin('list_t%init_all_nbors', itimer=itimer)
   call init_nonleaf (self)                              ! set non_leaf bit
   i2 = self%n/omp%nthreads + 1                          ! tasks per thread
   !$omp parallel private(i,i0,i1,link) shared(self,i2) default(none)
@@ -821,7 +821,7 @@ SUBROUTINE remove_parents (self)
   class(list_t):: self
   class(link_t), pointer:: link, scan, parent
   !.............................................................................
-  call trace_begin('list_mod::remove_parents')
+  call trace_begin('list_t%remove_parents')
   !$omp critical (list_cr)
   link => self%head                                     ! start checking links
   do while (associated(link))
@@ -887,7 +887,7 @@ SUBROUTINE append_list (self, task_list)
   class(link_t), pointer:: link
   integer:: n
   !-----------------------------------------------------------------------------
-  call trace_begin ('list_mod::append_list')
+  call trace_begin ('list_t%append_list')
   if (associated(self%tail)) then
     self%tail%next => task_list%head
   else
@@ -915,7 +915,7 @@ SUBROUTINE remove_task (self, task)
   class(task_t), pointer:: task
   class(link_t), pointer:: link, prev
   !.............................................................................
-  call trace_begin('list_mod::remove_task')
+  call trace_begin('list_t%remove_task')
   !$omp critical (list_cr)
   link => self%head
   nullify (prev)
@@ -993,7 +993,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
   error=.false.
   task => this%task
   if (task%is_set(bits%virtual) .or. task%has_finished()) return
-  call trace_begin ('list_mod::queue_by_time ', itimer=itimer)
+  call trace_begin ('list_t%queue_by_time ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
@@ -1006,7 +1006,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
     call task%set(bits%ready)
     if (io%verbose>1) &
       write (io_unit%log,'(f12.6,i5,2x,a,i9,a,f12.6,2x,a,i5)') wallclock(), omp%thread, &
-        'list_mod::queue_by_time: adding task', task%id, ' at time', task%time, &
+        'list_t%queue_by_time: adding task', task%id, ' at time', task%time, &
         'nq', self%nq
     nullify (prev)
     next => self%queue
@@ -1085,13 +1085,13 @@ SUBROUTINE queue_active (self, this)
   class(task_t), pointer:: task
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('list_mod::queue_active ', itimer=itimer)
+  call trace_begin ('list_t%queue_active ', itimer=itimer)
   !-----------------------------------------------------------------------------
   task => this%task
   task%atime = task%time
   if (io%verbose>1) &
     write (io_unit%log,'(1x,i4,2x,a,i9,a,f10.5,i5,l4)') omp%thread, &
-      'list_mod::queue_active: adding task', task%id, ' at time', task%atime, &
+      'list_t%queue_active: adding task', task%id, ' at time', task%atime, &
       self%nac, associated(self%active)
   nullify (prev)
   !$omp critical (active_cr)
@@ -1177,7 +1177,7 @@ SUBROUTINE add_by_quality (self, this)
   class(link_t), pointer:: this
   class(link_t), pointer:: next, prev
   !.............................................................................
-  call trace_begin ('list_mod::add_by_quality')
+  call trace_begin ('list_t%add_by_quality')
   !$omp critical (list_cr)
   nullify (prev)
   next => self%head
@@ -1252,7 +1252,7 @@ SUBROUTINE insert (self, old, new)
   class(list_t):: self
   class(link_t), pointer:: old, new
   !.............................................................................
-  call trace_begin ('list_mod::insert '//self%name)
+  call trace_begin ('list_t%insert '//self%name)
   !$omp critical (list_cr)
   if (associated(old%prev)) then
     new%prev => old%prev
@@ -1367,9 +1367,9 @@ SUBROUTINE print_list (self, label)
   class(task_t), pointer:: task
   character(len=32):: type
   !.............................................................................
-  call trace_begin ('list_mod::print')
+  call trace_begin ('list_t%print')
   if (io%verbose>0) &
-    write (io_unit%log,*) 'list_mod::print: ',trim(self%name), self%n
+    write (io_unit%log,*) 'list_t%print: ',trim(self%name), self%n
   !$omp critical (list_cr)
   link => self%head
   do while (associated(link))
@@ -1391,7 +1391,7 @@ SUBROUTINE print_list (self, label)
     !end select
     if (io%verbose>1) &
       write (io_unit%log,'(a,i9,f10.6,3x,3f10.6,i4,i6,l5,2x,a)') &
-        'list_mod::print:', task%id, task%time, task%position, task%status, &
+        'list_t%print:', task%id, task%time, task%position, task%status, &
         task%n_nbors, associated(link%nbor), type
     link => link%next
   end do

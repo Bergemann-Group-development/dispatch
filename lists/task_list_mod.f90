@@ -172,9 +172,11 @@ SUBROUTINE startup (self)
   class(patch_t), pointer:: patch
   real(8):: sec
   integer:: dims(4)
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists, and set virtual and boundary bits
   !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%execute', itimer=itimer)
   !call self%init_bdries
   call self%init_all_nbors
   call self%reset_status
@@ -212,7 +214,7 @@ SUBROUTINE startup (self)
     dims(4) = patch%nv
     call direct_output%init (dims=dims, nbuf=self%n_tasks)
   end if
-  call trace_end
+  call trace%end (itimer)
 END SUBROUTINE startup
 
 !> =============================================================================
@@ -224,7 +226,9 @@ SUBROUTINE execute (self)
   class(task_list_t):: self
   real(8):: sec
   integer:: dims(4)
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%execute', itimer=itimer)
   call self%startup
   call tic (time=sec)
   call timer%print
@@ -252,6 +256,7 @@ SUBROUTINE execute (self)
   !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
   !    max(1,(download%n_differ+download%n_same))
   call buffered_output%close
+  call trace%end (itimer)
 END SUBROUTINE execute
 
 !> =============================================================================
@@ -268,10 +273,10 @@ SUBROUTINE update (self)
   real(8):: wc
   real(8), save:: time, otime=0d0
   integer, save:: oid=0
-  integer, save:: itimer=0
   integer:: id
+  integer, save:: itimer=0
   !.............................................................................
-  call trace%begin('task_list_t%update')
+  call trace%begin('task_list_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
@@ -348,7 +353,7 @@ SUBROUTINE update (self)
       print *, mpi%rank,' WARNING: thread',omp%thread, &
         ' tried to update busy task', task%id
       !!$omp end critical (io_cr)
-      call trace_end
+      call trace_end (itimer)
       return
     end if
     call self%updater (head)
@@ -412,7 +417,7 @@ SUBROUTINE update (self)
     end if
     !$omp end critical (delay_cr)
   end if
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE update
 
 SUBROUTINE updater (self, head)
@@ -421,11 +426,13 @@ SUBROUTINE updater (self, head)
   class(link_t), pointer:: head
   class(task_t), pointer:: task
   real(8):: wc
+  integer, save:: itimer=0
   !---------------------------------------------------------------------------
-  ! Check for flag files.  If io%out_time is set, set a new out_next. 
+  ! Check for flag files.  If io%out_time is set, set a new out_next.
   ! If task%time is slightly smaller than a multiple of out_time, then
   ! out_next will becoe that multiple.
   !---------------------------------------------------------------------------
+  call trace%begin('task_list_t%updater', itimer=itimer)
   task => head%task
   call io%check_flags
   if (task%id==io%id_track) then
@@ -442,7 +449,7 @@ SUBROUTINE updater (self, head)
       !$omp atomic
       self%na = self%na - 1
     end if
-    call trace_end
+    call trace%end (itimer)
     return
   end if
   !----------------------------------------------------------------------------
@@ -512,6 +519,7 @@ SUBROUTINE updater (self, head)
     end if
     call head%send_to_vnbors                          ! send to virtual nbors
   end if
+  call trace%end (itimer)
 END SUBROUTINE updater
 
 !> =============================================================================
@@ -954,7 +962,7 @@ SUBROUTINE init_virtual (self)
     link => link%next
   end do
   !$omp end parallel
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE init_virtual
 
 !> =============================================================================
@@ -1004,7 +1012,7 @@ SUBROUTINE check_virtual (self)
     link => link%next
   end do
   if (io%verbose>1) write (io_unit%log,*) 'check_virtual', nunpk
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE check_virtual
 
 !> =============================================================================
@@ -1071,7 +1079,7 @@ SUBROUTINE check_active (self)
       mesg => mesg%next
     end do
   end if
-  call trace%end
+  call trace%end (itimer)
   !print *, 'check_active:', mpi%rank, nvirt, nunpk
 END SUBROUTINE check_active
 
