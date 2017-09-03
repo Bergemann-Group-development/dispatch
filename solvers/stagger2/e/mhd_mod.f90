@@ -6,6 +6,7 @@ MODULE mhd_mod
   USE omp_mod
   USE mpi_mod
   USE trace_mod
+  USE kinds_mod
   USE units_mod
   USE scaling_mod
   USE scalar_mod
