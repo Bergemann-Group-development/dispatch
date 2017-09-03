@@ -108,7 +108,7 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
         p.extent[2]=e
         xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
         ylim=[min(ylim[0],e[2]),max(ylim[1],e[3])]
-    if extent<>None:
+    if extent != None:
         xlim=extent[0:2]
         ylim=extent[2:4]
         def overlaps(p):
@@ -119,7 +119,7 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
             return does
         select=[p for p in select if overlaps(p)]
         if verbose: print np.size(select),'patches remain' 
-    if vlim<>None:
+    if vlim != None:
         vmin=vlim[0]
         vmax=vlim[1]
     else:
@@ -219,7 +219,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
     zmax=co[1,2]
     zmin=(np.floor(zmin/dz+0.5)+0.5)*dz
     zmax=(np.floor(zmax/dz+0.5)-0.5)*dz
-    if extent<>None:
+    if extent != None:
         if np.size(extent)==6:
             zmin=extent[4]
             zmax=extent[5]
@@ -230,7 +230,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
         def inside(p, z):
             ac=p.active_corners
             ok = z<=ac[1][2] and z>=ac[0][2]
-            if extent<>None:
+            if extent != None:
                 ok = ok and ac[1][0]>extent[0] and ac[0][0]<extent[1]
                 ok = ok and ac[1][1]>extent[2] and ac[0][1]<extent[3]
             return ok
@@ -307,7 +307,7 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
     xmax=co[1,0]
     xmin=(np.floor(xmin/dx+0.5)+0.5)*dx
     xmax=(np.floor(xmax/dx+0.5)-0.5)*dx
-    if extent<>None:
+    if extent != None:
         if np.size(extent)==6:
             xmin=extent[0]
             xmax=extent[1]
@@ -317,7 +317,7 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
         def inside(p, x):
             ac=p.active_corners
             ok = x<=ac[1][0] and x>=ac[0][0]
-            if extent<>None:
+            if extent != None:
                 ok = ok and ac[1][1]>extent[2] and ac[0][1]<extent[3]   # y-axis is horizontal
                 ok = ok and ac[1][2]>extent[4] and ac[0][2]<extent[5]   # z-axis is vertical
             return ok
