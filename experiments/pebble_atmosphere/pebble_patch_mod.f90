@@ -1146,15 +1146,17 @@ SUBROUTINE output (self, experiment_name)
   integer, dimension(:,:), pointer:: idbuf
   integer:: i, j, np, n_not
   class(pebble_t), pointer:: p
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.io%do_output .or. self%time < self%out_next) return
   !
   call self%patch_t%output (experiment_name)
+  call trace_begin ('pebble_patch_t%output', itimer=itimer)
   !
   if (self%do_pebbles) then
     !$omp critical (out_cr)
     write (filename,'(a,i5.5,"/",i5.5,".peb")') &
-        trim(io%outputname)//'/', self%iout-1, self%id
+        trim(io%outputname), self%iout-1, self%id
     open  (io%data_unit, file=filename, form='unformatted', status='unknown')
     write (io%data_unit) data_format
     !
@@ -1185,7 +1187,7 @@ SUBROUTINE output (self, experiment_name)
     deallocate (buffer,idbuf)
     !$omp end critical (out_cr)
   end if
-  !
+  call trace_end (itimer)
 END SUBROUTINE output
 
 !> =============================================================================

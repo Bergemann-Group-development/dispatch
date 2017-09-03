@@ -1,7 +1,7 @@
 ! These params are intended for the master branch, with use_data_hub and no_mans_land=.true. 
 
 &experiment_params
- jagged_boundaries=f
+ x_sponge=500.
 /
 &initial_params /
 &force_params   /
@@ -15,12 +15,12 @@
  do_trace=f
  omp_trace=f
  do_debug=f
- do_output=t
+ do_output=f
  do_legacy=t
 !id_debug=204
 /
 &out_params
- end_time=20000 out_time=50 restart=180
+ end_time=5000 out_time=100 !restart=180
  !end_time=50 out_time=5
  print_time=0
  guard_zones=t
@@ -38,7 +38,7 @@
 /
 &pebble_params
  detailed_timer=f
- id_dbg=36730
+ !id_dbg=36730
  do_pebbles=t                       ! pebbles on/off
  only_pebbles=f                     ! do only pebbles?
  omega_yr=0.0,0.0,1.0               ! omega in units where 1 = 1/yr
@@ -81,27 +81,17 @@
 &patch_params
  use_data_hub=t no_mans_land=t
  periodic=f,t,f
- n=3*21
+ n=3*48
  nt=5
- grace=0.00
+ grace=0.30
  courant=0.2
 !dt_fixed=0.001
 /
 
 &mhd_params
  gamma=1.4
- nu=  0.20, 1.0, 1.0, 0.0, 1.0, 1.0
+ nu=  0.05, 1.0, 1.0, 0.0, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta
-/
-&ramses_params
- gamma=1.4
- slope_type=2
- courant_factor=0.8
- smallr=1e-20
- smallc=1e-3
- do_isothermal=f
- csound=0.2
- detailed_timer=f
 /
 
 &refine_params
@@ -111,5 +101,4 @@ refine_time= 2.0, 4.0, 8.0
 refine_level = 5, 6, 7
 /
 
-&timestep_params
-/
+&timestep_params /

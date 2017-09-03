@@ -27,10 +27,11 @@ MODULE experiment_mod
     procedure :: boundary_conditions
     procedure :: edge_boundary_conditions
     procedure :: density_boundary_condition
+    procedure :: is_relevant
   end type
   real, save:: temp0=0.0
   logical, save:: first_time=.true.
-  logical, save:: jagged_boundaries=.false.
+  logical, save:: sperical_bc_corners=.false.
 CONTAINS
 
 !> =============================================================================
@@ -58,10 +59,10 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   character(len=32):: type='planet_atmosphere'
   logical :: sph_bnd(8)
-  real(8):: x_sponge=-1.0e99
+  real(8):: x_sponge=-1.0e30
   real(8):: r2, x1, x2, y1, y2, z1, z2
   class(mesh_t), pointer:: m1, m2, m3
-  namelist /experiment_params/ type, x_sponge, jagged_boundaries
+  namelist /experiment_params/ type, x_sponge, sperical_bc_corners
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
@@ -284,12 +285,11 @@ SUBROUTINE boundary_conditions (self, it, new)
   !-----------------------------------------------------------------------------
   if (self%boundaries%bits /= 0) then
     call trace%begin ('experiment_mod::boundary_conditions', itimer=itimer)
-  !  print *, self%id, 'BOUNDARY CONDITION BITS:', self%boundaries%bits
     call self%check_density ('before boundary_conditions')
     if (self%boundaries%is_set (bits%spherical)) then
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
       print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
-      if (jagged_boundaries) then
+      if (sperical_bc_corners) then
        !------------------------------------------------------------------------
        ! Jagged boundary conditions
        !------------------------------------------------------------------------
@@ -332,7 +332,7 @@ SUBROUTINE boundary_conditions (self, it, new)
       call self%edge_boundary_conditions(new)
     end if
     call self%check_density ('after boundary_conditions')
-    call trace%end
+    call trace%end (itimer)
   end if
 END SUBROUTINE boundary_conditions
 
@@ -584,19 +584,18 @@ SUBROUTINE apply_sponge_boundaries (self)
   T0 = atmosphere%external%temperature
   px0 = 0.0
   pz0 = 0.0
-
+  !
   xbndy_lo = m1%p + m1%r(m1%li) - 0.5 * m1%d
   xkill_lo = xbndy_lo + self%x_sponge
   xbndy_hi = m1%p + m1%r(m1%ui) + 0.5 * m1%d
   xkill_hi = xbndy_hi - self%x_sponge
-
+  !
   do iv=1,self%nv
     do k=m3%lb,m3%ub
       z = m3%p + m3%r(k)
       do j=m2%lb,m2%ub
         do i=m1%lb,m1%ub
           x = m1%p + m1%r(i)
-
           d = d0 * exp(-(planet%omega(3)**2 * 0.5 * (z**2 + 2.0 * planet%trap * (x - planet%position(1))**2) / T0))
           p = p0*(d/d0)
           if (iv == self%i_d) then
@@ -619,7 +618,7 @@ SUBROUTINE apply_sponge_boundaries (self)
           else if (iv == self%i_pz) then
             asymptote = pz0
           end if
-
+          !
           ! apply damping procedure to each variable.
           if (self%boundaries%is_set(bits%xl) .and. (x <= xkill_lo)) then
             mem(i,j,k,iv) = mem(i,j,k,iv) + self%dtime &
@@ -649,9 +648,32 @@ SUBROUTINE apply_sponge_boundaries (self)
       end do
     end do
   end do
-
-  nullify (mem, m1, m2, m3)
   call trace%end
 END SUBROUTINE apply_sponge_boundaries
+
+!> =============================================================================
+!> =============================================================================
+FUNCTION is_relevant (self) RESULT (ok)
+  class(experiment_t):: self
+  logical:: ok
+  real(8):: r(3), rmax
+  integer:: ix, iy, iz
+  !-----------------------------------------------------------------------------
+  ok = .false.
+  rmax = 0.0
+  do iz=-1,1,2
+    r(3) = self%position(3) -planet%position(3) + iz*self%size(3)*0.5_8
+    do iy=-1,1,2
+      r(2) = self%position(2) -planet%position(2) + iy*self%size(2)*0.5_8
+      do ix=-1,1,2
+        r(1) = self%position(1) -planet%position(1) + ix*self%size(1)*0.5_8
+        rmax = max(rmax,sqrt(sum(r**2)))
+        if (rmax > planet%radius) ok=.true.
+      end do
+    end do
+  end do
+  if (io%verbose>1) &
+    print '("is_relevant:",i6,1p,2e11.3,l3)', self%level, rmax, planet%radius, ok
+END FUNCTION is_relevant
 
 END MODULE experiment_mod
