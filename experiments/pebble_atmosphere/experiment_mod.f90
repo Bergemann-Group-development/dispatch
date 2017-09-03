@@ -30,7 +30,7 @@ MODULE experiment_mod
   end type
   real, save:: temp0=0.0
   logical, save:: first_time=.true.
-  logical, save:: jagged_boundaries=.false.
+  logical, save:: sperical_bc_corners=.false.
 CONTAINS
 
 !> =============================================================================
@@ -58,10 +58,10 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   character(len=32):: type='planet_atmosphere'
   logical :: sph_bnd(8)
-  real(8):: x_sponge=-1.0e99
+  real(8):: x_sponge=-1.0e30
   real(8):: r2, x1, x2, y1, y2, z1, z2
   class(mesh_t), pointer:: m1, m2, m3
-  namelist /experiment_params/ type, x_sponge, jagged_boundaries
+  namelist /experiment_params/ type, x_sponge, sperical_bc_corners
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
@@ -284,12 +284,11 @@ SUBROUTINE boundary_conditions (self, it, new)
   !-----------------------------------------------------------------------------
   if (self%boundaries%bits /= 0) then
     call trace%begin ('experiment_mod::boundary_conditions', itimer=itimer)
-  !  print *, self%id, 'BOUNDARY CONDITION BITS:', self%boundaries%bits
     call self%check_density ('before boundary_conditions')
     if (self%boundaries%is_set (bits%spherical)) then
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
       print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
-      if (jagged_boundaries) then
+      if (sperical_bc_corners) then
        !------------------------------------------------------------------------
        ! Jagged boundary conditions
        !------------------------------------------------------------------------
@@ -332,7 +331,7 @@ SUBROUTINE boundary_conditions (self, it, new)
       call self%edge_boundary_conditions(new)
     end if
     call self%check_density ('after boundary_conditions')
-    call trace%end
+    call trace%end (itimer)
   end if
 END SUBROUTINE boundary_conditions
 
