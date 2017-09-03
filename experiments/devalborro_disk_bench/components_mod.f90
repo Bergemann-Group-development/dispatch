@@ -102,7 +102,7 @@ SUBROUTINE init_annulus (self, params)
           patch%mhd = .false.
           patch%mesh_type = mesh_types%cylindrical
           patch%box = extent
-          ! set angular (phi) velocity of the annulus (in rad/s), if desired.
+          ! set angular (phi) velocity of the annulus (in rad/unit time), if desired.
           if (rotating) then
             patch%grid_vel = [0.0d0, 0.0d0, &
                               sqrt(scaling%grav * params%mstar / params%aplanet**3)]

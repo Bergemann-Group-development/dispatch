@@ -169,20 +169,22 @@ if __name__ == "__main__":
 
             if pltvar[0] == 'v1':
                 var = p.data[iindex,jindex,kindex,p.varidx['s1']]
-                var = var / p.data[iindex,jindex,kindex,p.varidx['d ']]
+                var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
             elif pltvar[0] == 'v2':
                 var = p.data[iindex,jindex,kindex,p.varidx['s2']]
-                var = var / p.data[iindex,jindex,kindex,p.varidx['d ']]
+                var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
                 var = var / gf['h2c'][iindex,np.newaxis,np.newaxis]
                 if p.mesh_type == 'spherical':
                     var = var / x_i[0][iindex,np.newaxis,np.newaxis]
             elif pltvar[0] == 'v3':
                 var = p.data[iindex,jindex,kindex,p.varidx['s3']]
-                var = var / p.data[iindex,jindex,kindex,p.varidx['d ']]
+                var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
                 var = ( var / gf['h31c'][iindex,np.newaxis,np.newaxis] / gf['h32c'][np.newaxis,jindex,np.newaxis] )
             elif pltvar[0] == 'divb':
                 var, sumd, normmax = divergence(p, (p.varidx['b1'],p.varidx['b2'],p.varidx['b3']), gf)
                 var = var[iindex,jindex,kindex]
+            elif pltvar[0] == 'dts':
+                var = (np.ones_like(p.data[:,:,:,0]) * p.dt)[iindex,jindex,kindex]
             else:
                 var = p.data[iindex,jindex,kindex,p.varidx[pltvar[0]]]
 
@@ -194,6 +196,10 @@ if __name__ == "__main__":
             var = np.ma.array(var,mask=cut_mask)
             cpltvar = pltvar[0]
             print cpltvar, ": ", var.min(), var.max(), var.shape
+            # Note that these values, in general, will differ between patches.
+            if cmin[0] == 0.0 and cmax[0] == 0.0:
+                cmin[0] = qmin - 0.001 * qmin
+                cmax[0] = qmax + 0.001 * qmax
             if clog[0] == 1:
                 var = np.log10(var)
                 cpltvar = r'log ' + cpltvar
@@ -212,7 +218,7 @@ if __name__ == "__main__":
                 #    c.set_clip_path(edges)
 
             # annotate patches with their ID (if desired)
-            if p.id != 1 and showgridno:
+            if showgridno:
                 offset = tuple([3*x for x in p.nghost])
                 gn_xpos = xp[iindex,jindex,kindex][offset]
                 gn_ypos = yp[iindex,jindex,kindex][offset]
