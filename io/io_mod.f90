@@ -107,14 +107,15 @@ SUBROUTINE init (self, name)
   'io_mod.f90 $Id$'
   integer, save:: verbose=0, levelmax=10
   character(len=*), optional:: name
-  character(len=64):: filename
+  character(len=64):: filename, datadir='data'
   character(len=64), save:: top='../../'
   integer, save:: id_debug=-1
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.true., do_flags=.false., do_direct=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
-    do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, top
+    do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, top, &
+    datadir
   real:: test
   integer:: iostat
   !.............................................................................
@@ -141,11 +142,11 @@ SUBROUTINE init (self, name)
     call getarg(1,filename)                                     ! command line
     if (filename/=' '.and.trim(filename)/='input.nml') then
       self%inputname = filename                                 ! run_name.nml
-      self%outputname = trim(self%datadir)//self%sep// &        ! data/run_name/
+      self%outputname = trim(datadir)//self%sep// &             ! data/run_name/
         trim(filename(1:index(filename,'.')-1))//self%sep
     else
       self%inputname = 'input.nml'
-      self%outputname = trim(self%datadir)//self%sep            ! data/
+      self%outputname = trim(datadir)//self%sep                 ! data/
     end if
     open (self%input, file=self%inputname, form='formatted', status='old')
     rewind (io_unit%input)
@@ -201,6 +202,7 @@ SUBROUTINE init (self, name)
     end if
     first_time=.false.
   end if
+  self%datadir   = datadir
   self%id_debug  = id_debug
   self%verbose   = verbose
   self%do_debug  = do_debug
