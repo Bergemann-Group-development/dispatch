@@ -16,6 +16,7 @@ reading /proc/cpuinfo:   0.0 sec
  OMP_TRACE=T,
  ID_DEBUG=         -1,
  TOP="../../                                                          ",
+ DATADIR="data                                                            ",
  /
  logfile:data/0000.log                                                   
  =======================================================================
