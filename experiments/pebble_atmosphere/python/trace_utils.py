@@ -56,6 +56,7 @@ def trace(file,verbose=0):
     class p:
         pass
     with ftf.FortranFile(file,'rb') as f:
+        list=[]
         try:
             j=f.readInts()
             p.status=j[1]
@@ -63,7 +64,6 @@ def trace(file,verbose=0):
             p.size=size[0]
             id,rec,n=f.readInts()
             p.id=id
-            list=[]
             # flatten records, which contain several trace points, into list
             while id:
                 j=f.readInts()

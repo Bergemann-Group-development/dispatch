@@ -1,5 +1,5 @@
 &experiment_params
- x_sponge=0.4           ! fraction of a patch to be sponged [0-1]
+ x_sponge=1000.0     ! spatial extent over which to apply the sponge wave-killing conditions
 /
 &initial_params /
 &force_params   /
