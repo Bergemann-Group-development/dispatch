@@ -1,0 +1,16 @@
+#!/bin/csh
+#
+# This file is intended to serve as "offline" version of `bitbucket-pipelines.yml`.
+# Therefore, be sure to update it if `bitbucket-pipelines.yml` changes.
+#
+set wd = $cwd
+
+setenv OMP_STACKSIZE 265m; setenv OMP_NUM_THREADS 1
+echo "Run simple tests"
+cd $wd; utilities/scripts/validate -x tests/meshes
+cd $wd; cd tests/meshes; make clean; make; ./test.x
+echo "Check compilation of experiments in experiment_list.txt"
+cd $wd; utilities/scripts/validate -l -x
+echo "Validate turbulence experiment"
+cd $wd; utilities/scripts/validate experiments/turbulence
+echo "Everything is awesome!"
