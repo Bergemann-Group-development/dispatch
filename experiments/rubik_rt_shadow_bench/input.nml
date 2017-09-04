@@ -7,15 +7,15 @@
 /
 
 &rubiks_params
- n_levels=3                         ! # of refinement levels in for the rubiks cube
+ n_levels=1                         ! # of refinement levels in for the rubiks cube
  n_patch=3                          ! # of patches per direction
  m_zoom=3                           ! zoom-in level per direction
  n_repeat=1                         ! how many times rubiks cube is repeated along the orbit
 /
 
 &out_params
- end_time=3d-7
- out_time=1d-8
+ end_time=3d-9
+ out_time=1d-10
  print_time=0.0
  guard_zones=t
  time_derivs=f
@@ -33,12 +33,13 @@
  courant=0.0
  grace=0.0
  n=43,43,43
- dt_fixed=1d-8
+ !dt_fixed=1d-12
  no_mans_land=f
 /
 
 &eos_params
   gamma = 1.666667
+  do_rt = t
 /
 
 
@@ -65,8 +66,8 @@ space_diagonals=t
 
 ! Treatment of boundary conditions for RT solver. 
 &rt_bc_params
-cool_temp = 290!40000 !290   ! in kelvins
-hot_temp  = 1740!240000 !1740
+cool_temp = 103530!40000 !290   ! in kelvins
+hot_temp  = 621180!240000 !1740
 /
 
 
@@ -94,7 +95,7 @@ hot_temp  = 1740!240000 !1740
  !clump_pos = 0.6666,0.6666,0.6666
  d0=1.0
  clump_dfact=10.0
- t0=290.0
+ t0=103530.0
  !t0=290.0
  clump_a=0.07
  clump_b=0.04

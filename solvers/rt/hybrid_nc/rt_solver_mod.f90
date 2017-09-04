@@ -4,6 +4,7 @@
 MODULE rt_solver_mod
   USE io_mod
   USE trace_mod
+  USE kinds_mod
   implicit none
   private
   type, public:: rt_solver_t
@@ -46,11 +47,11 @@ END SUBROUTINE init
 SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q)
   implicit none
   class (rt_solver_t):: self
-  real, dimension(:,:,:), pointer :: dtau, ex0, S, q
-  real, dimension(:,:)   :: q_in!, q_out
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, ex0, S, q
+  real(kind=KindRTVar), dimension(:,:)   :: q_in!, q_out
 !-----------------------------------------------------------------------
-  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
-  real(kind=8) :: ctau
+  real(kind=KindRTVar), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
+  real(kind=KindRTVar) :: ctau
   integer i, n, m, w, j, k
 !-----------------------------------------------------------------------
 !
@@ -124,8 +125,8 @@ END SUBROUTINE integral_forward                                         ! 2d 13m
 SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q)
   implicit none
   class (rt_solver_t):: self
-  real, dimension(:,:,:), pointer :: dtau, ex0, S, q
-  real, dimension(:,:)   :: q_in!, q_out
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, ex0, S, q
+  real(kind=KindRTVar), dimension(:,:)   :: q_in!, q_out
 !-----------------------------------------------------------------------
 !
 !  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
@@ -144,8 +145,8 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q)
 ! and linear source functions.
 !
 !-----------------------------------------------------------------------
-  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s, st
-  real(kind=8) :: ctau
+  real(kind=KindRTVar), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s, st
+  real(kind=KindRTVar) :: ctau
   integer i, n, m, w, j, k
 !-----------------------------------------------------------------------
 !
@@ -220,11 +221,11 @@ END SUBROUTINE integral_reverse                                         ! 2d 13m
 SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
   implicit none
   class (rt_solver_t):: self
-  real, dimension(:,:,:), pointer :: dtau, ex0, S, q_fw, q_re
-  real, dimension(:,:)   :: q_in_fw, q_in_re
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, ex0, S, q_fw, q_re
+  real(kind=KindRTVar), dimension(:,:)   :: q_in_fw, q_in_re
 !-----------------------------------------------------------------------
-  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
-  real(kind=8) :: ctau
+  real(kind=KindRTVar), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
+  real(kind=KindRTVar) :: ctau
   integer i, n, m, w, j, k
 !-----------------------------------------------------------------------
 !
@@ -249,7 +250,8 @@ SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
         ctau = 1. / (dtau(k,j,i+1) + dtau(k,j,i))
         d1s(k,j,i) =(ds1(k,j,i+1) * dtau(k,j,i) &
                    + ds1(k,j,i  ) * dtau(k,j,i+1)) * ctau               ! dS/dtau, 2nd. order accurate
-        d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2. * ctau          ! d2S/dtau2, 2nd. order accurate
+        print *, 'ds1+1, ds1,ctau', ds1(k,j,i+1), ds1 (k,j,i  ), ctau
+        d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2d0 * ctau          ! d2S/dtau2, 2nd. order accurate
       end do
     end do  
   end do
@@ -322,12 +324,12 @@ SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
 !
 !> =====================================================================
   class (rt_solver_t):: self
-  real, dimension(:,:,:), pointer :: dtau, s, q
-  real, dimension(:,:), pointer :: qfw, qre
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, s, q
+  real(kind=KindRTVar), dimension(:,:), pointer :: qfw, qre
   logical :: doxi
   !.....................................................................
-  real, dimension(:,:,:), pointer :: sp1, sp2, sp3
-  real, dimension(:,:), pointer   :: ex
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: sp1, sp2, sp3
+  real(kind=KindRTVar), dimension(:,:), pointer   :: ex
   real :: taum, dinv, a
   integer :: nx, ny, nz, l, k, j, n1p
   !---------------------------------------------------------------------

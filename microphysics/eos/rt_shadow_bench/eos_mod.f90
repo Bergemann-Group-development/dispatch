@@ -12,6 +12,7 @@ MODULE eos_mod
   USE trace_mod
   USE scaling_mod
   USE units_mod
+  USE kinds_mod
   implicit none
   private
   type, public:: eos_t
@@ -93,11 +94,11 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
-  real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y
-  real, dimension(:,:,:),                      optional :: pg, tt
-  real, dimension(:,:,:,:),                    optional :: src, rk
+  real(kind=KindScalarVar), dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y
+  real(kind=KindScalarVar), dimension(:,:,:),                      optional :: pg, tt
+  real(kind=KindRTVar), dimension(:,:,:,:),                        optional :: src, rk
   real, dimension(:,:,:), pointer :: x_loc, y_loc
-  real(8), dimension(:,:,:), pointer :: tt_loc
+  real(kind=8), dimension(:,:,:), pointer :: tt_loc
   integer:: i
   integer, save:: itimer = 0
   !-----------------------------------------------------------------------------

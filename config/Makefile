@@ -10,6 +10,7 @@ OMP  = yes
 MPI  = mpi
 MOD  = mod
 PREC ?= SINGLE
+RT_PREC ?= RT_SINGLE
 DEFS = -D$(PREC)
 
 #############################################################################

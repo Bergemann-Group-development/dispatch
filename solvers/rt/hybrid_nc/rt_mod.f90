@@ -31,13 +31,13 @@ MODULE rt_mod
     type(data_hub_t) :: data_hub
     real(kind=8)                      :: upd_time                       ! time when the last internal update was done
     integer(kind=8)                   :: n_packet                       ! number of bundles
-    real, dimension(:), pointer       :: w_lambda                       ! wavelength weights
-    real, dimension(:), pointer       :: w_bundle                       ! space angle weights
-    real                              :: cr_heating
-    real, dimension(:,:,:),   pointer :: d     => null()
-    real, dimension(:,:,:),   pointer :: s     => null()
-    real, dimension(:,:,:,:), pointer :: rk    => null()
-    real, dimension(:,:,:,:), pointer :: src   => null()
+    real(kind=KindRTVar), dimension(:), pointer       :: w_lambda                       ! wavelength weights
+    real(kind=KindRTVar), dimension(:), pointer       :: w_bundle                       ! space angle weights
+    real(kind=KindRTVar)                              :: cr_heating
+    real(kind=KindScalarVar), dimension(:,:,:),   pointer :: d     => null()
+    real(kind=KindRTVar), dimension(:,:,:),   pointer :: s     => null()
+    real(kind=KindRTVar), dimension(:,:,:,:), pointer :: rk    => null()
+    real(kind=KindRTVar), dimension(:,:,:,:), pointer :: src   => null()
     character(len=16)                 :: solver ='integral'             ! choice of solver
     procedure(solve_integral), pointer:: solve => null()
     logical :: do_output      = .false.
@@ -92,7 +92,7 @@ SUBROUTINE init_rt (self)
   logical, save :: do_output  = .false.
   logical, save :: use_data_hub = .true.
   real(8), save :: dtime=0.01_8, grace=0.00_8, init_time=0d0
-  real,    save :: cr_heating=0.0
+  real(kind=KindRTVar), save :: cr_heating=0.0
   character(len=16) :: solver = 'integral'
   integer :: ignore, nd, i
   namelist /rt_params/ init_time, dtime, grace, solver, do_output, cr_heating, use_data_hub
@@ -322,8 +322,8 @@ SUBROUTINE update_rt (self)
   class(patch_t), pointer:: mhd
   integer, save:: itimer=0
   integer :: ii, iy, l(3), u(3), i
-  real    :: g1
-  real, dimension(:,:,:), pointer :: s_scr, k
+  real(kind=KindRTVar) :: g1
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: s_scr, k
   !---------------------------------------------------------------------
   if (self%data_ready) return
   
@@ -436,8 +436,8 @@ SUBROUTINE execute_chain (self)
   class(rt_t),          pointer :: rt_patch
   class(task_t),        pointer :: task
   class(chain_link_t),  pointer :: link, prev
-  real, dimension(:,:  ), pointer :: q0
-  real, dimension(:,:,:), pointer :: q
+  real(kind=KindRTVar), dimension(:,:  ), pointer :: q0
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: q
   integer :: ray, it
   integer, save:: itimer=0
   logical :: first
@@ -520,8 +520,8 @@ SUBROUTINE execute_no_chain (self)
   ! ....................................................................
   class(chain_link_t),  pointer :: link
   class(packet_t),      pointer :: packet
-  real, dimension(:,:  ), pointer :: q_fw0, q_re0
-  real, dimension(:,:,:), pointer :: q_fw , q_re
+  real(kind=KindRTVar), dimension(:,:  ), pointer :: q_fw0, q_re0
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: q_fw , q_re
   integer :: ip, ipck, nrays, npt, ir,tr
   integer, save:: itimer=0
   ! --------------------------------------------------------------------
@@ -811,14 +811,14 @@ END SUBROUTINE finish
 SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   class(rt_t) :: self
   class(chain_link_t),    pointer :: link
-  real, dimension(:,:),   pointer, optional :: q_in_fw
-  real, dimension(:,:),   pointer, optional :: q_in_re
-  real, dimension(:,:,:), pointer, optional :: q_out_fw
-  real, dimension(:,:,:), pointer, optional :: q_out_re
+  real(kind=KindRTVar), dimension(:,:),   pointer, optional :: q_in_fw
+  real(kind=KindRTVar), dimension(:,:),   pointer, optional :: q_in_re
+  real(kind=KindRTVar), dimension(:,:,:), pointer, optional :: q_out_fw
+  real(kind=KindRTVar), dimension(:,:,:), pointer, optional :: q_out_re
   !.....................................................................
   class(packet_t),        pointer :: packet
-  real, dimension(:,:,:), pointer :: s, rk, dtau, exp0
-  real, dimension(:,:),   pointer :: dwf
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: s, rk, dtau, exp0
+  real(kind=KindRTVar), dimension(:,:),   pointer :: dwf
   integer                         :: nrays, npt, nwb, ir
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
@@ -892,15 +892,15 @@ END SUBROUTINE solve_integral
 SUBROUTINE solve_feautrier (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   class(rt_t) :: self
   class(chain_link_t),    pointer :: link
-  real, dimension(:,:),   pointer, optional :: q_in_fw
-  real, dimension(:,:),   pointer, optional :: q_in_re
-  real, dimension(:,:,:), pointer, optional :: q_out_fw
-  real, dimension(:,:,:), pointer, optional :: q_out_re
+  real(kind=KindRTVar), dimension(:,:),   pointer, optional :: q_in_fw
+  real(kind=KindRTVar), dimension(:,:),   pointer, optional :: q_in_re
+  real(kind=KindRTVar), dimension(:,:,:), pointer, optional :: q_out_fw
+  real(kind=KindRTVar), dimension(:,:,:), pointer, optional :: q_out_re
   !.....................................................................
   class(packet_t),        pointer :: packet
   integer                         :: nrays, npt, nwb, ir
-  real, dimension(:,:),   pointer :: dwf
-  real, dimension(:,:,:), pointer :: s, rk, dtau
+  real(kind=KindRTVar), dimension(:,:),   pointer :: dwf
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: s, rk, dtau
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
   call trace_begin ('rt_t%solve_feautrier', itimer=itimer)
@@ -951,8 +951,8 @@ END SUBROUTINE solve_feautrier
 SUBROUTINE ray_vol_map4 (self, packet, in, out)
   class(rt_t) :: self
   class(packet_t), pointer :: packet
-  real, dimension(:,:,:)   , pointer, intent(out) :: out
-  real, dimension(:,:,:,:) , pointer, intent(in)  :: in
+  real(kind=KindRTVar), dimension(:,:,:)   , pointer, intent(out) :: out
+  real(kind=KindRTVar), dimension(:,:,:,:) , pointer, intent(in)  :: in
   !.....................................................................
   integer, dimension(:,:,:), pointer :: cell
   integer :: p(3), p2(3), ray, pt, nwb, wl, lp
@@ -1004,8 +1004,8 @@ END SUBROUTINE ray_vol_map4
 SUBROUTINE ray_vol_map3 (self, packet, in, out)
   class(rt_t) :: self
   class(packet_t), pointer :: packet
-  real, dimension(:,:)   , pointer, intent(out) :: out
-  real, dimension(:,:,:) , pointer, intent(in)  :: in
+  real(kind=KindRTVar), dimension(:,:)   , pointer, intent(out) :: out
+  real(kind=KindRTVar), dimension(:,:,:) , pointer, intent(in)  :: in
   !.....................................................................
   integer, dimension(:,:,:), pointer :: cell
   integer :: p(3), ray, pt, lp
@@ -1030,7 +1030,7 @@ END SUBROUTINE ray_vol_map3
 SUBROUTINE update_q (self, link, q_fw, q_re)
   class(rt_t) :: self
   class(chain_link_t), pointer :: link
-  real, dimension(:,:,:), pointer, optional :: q_fw, q_re
+  real(kind=KindRTVar), dimension(:,:,:), pointer, optional :: q_fw, q_re
   ! ....................................................................
   class(packet_t), pointer :: packet
   real, dimension(:,:,:), pointer :: q
@@ -1084,8 +1084,8 @@ END SUBROUTINE update_q
 SUBROUTINE optical_depth_centered (self, ds, rk, dtau)
   class (rt_t) :: self
   real(kind=8) :: ds
-  real, dimension(:,:,:), pointer :: rk
-  real, dimension(:,:,:), pointer :: dtau
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: rk
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau
   !.....................................................................
   integer                         :: pt
   !---------------------------------------------------------------------
@@ -1104,8 +1104,8 @@ END SUBROUTINE optical_depth_centered
 SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
   class (rt_t) :: self
   real(kind=8) :: ds
-  real, dimension(:,:,:), pointer :: rk
-  real, dimension(:,:,:), pointer :: dtau,dt
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: rk
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau,dt
   !.....................................................................
   integer                         :: pt, n
   !---------------------------------------------------------------------
@@ -1124,7 +1124,7 @@ END SUBROUTINE optical_depth_staggered
 SUBROUTINE density_weight_factor (self, ds, dwf)
   class (rt_t) :: self
   real(kind=8) :: ds
-  real, dimension(:,:,:), pointer :: dwf
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dwf
   !.....................................................................
   integer                         :: iy, iz
   !---------------------------------------------------------------------
@@ -1236,7 +1236,7 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   logical:: first_time=.true.
   integer:: it1, it2, n(3), idir, il, ind, nd
   real:: pt, qt
-  real, dimension(:,:,:), pointer:: buf, b2
+  real(kind=KindRTVar), dimension(:,:,:), pointer:: buf, b2
   real(8):: time
   integer, save:: iodir=-1
   !-----------------------------------------------------------------------------

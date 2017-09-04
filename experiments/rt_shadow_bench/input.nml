@@ -7,8 +7,8 @@
 /
 
 &out_params
- end_time=0.0000015
- out_time=0.0000001
+ end_time=1d-9
+ out_time=1d-10
  print_time=0.0
  guard_zones=t
  time_derivs=f
@@ -25,13 +25,14 @@
  nt=5
  courant=0.0
  grace=0.0
- n=35,35,35
- !dt_fixed=0.00000001
+ n=43,43,43
+ dt_fixed=1d-12
  no_mans_land=f
 /
 
 &eos_params
   gamma = 1.666667
+  do_rt=t
 /
 
 
@@ -58,8 +59,8 @@ space_diagonals=t
 
 ! Treatment of boundary conditions for RT solver. 
 &rt_bc_params
-cool_temp = 290   ! in kelvins
-hot_temp  = 25000
+cool_temp = 103530.0   ! in kelvins
+hot_temp  = 621180.
 /
 
 
@@ -78,7 +79,7 @@ hot_temp  = 25000
  !clump_pos = 0.6666,0.6666,0.6666
  d0=1.0
  clump_dfact=10.0
- t0=290.0
+ t0=103530.0
  clump_a=0.1
  clump_b=0.06
  gamma = 1.666667

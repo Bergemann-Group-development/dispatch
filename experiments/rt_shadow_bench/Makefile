@@ -4,6 +4,7 @@
 OPTS = full_debug
 #OPTS = optimized
 
+RT_PREC=RT_DOUBLE
 # Default target and methods
 UPD             = adams_bashforth
 SOLVER          = stagger2
