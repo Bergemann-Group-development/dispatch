@@ -4,6 +4,7 @@ MODULE mhd_mod
   USE io_mod
   USE bits_mod
   USE omp_mod
+  USE mpi_mod
   USE trace_mod
   USE units_mod
   USE scaling_mod
@@ -88,6 +89,8 @@ SUBROUTINE init (self)
   self%kind='stagger2e_pic'
   call self%force%init
   call timestep%init
+  ! fool-proofing
+  if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   call trace%end
 END SUBROUTINE init
 

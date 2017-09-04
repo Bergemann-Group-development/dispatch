@@ -18,6 +18,10 @@ rm -f *.o *.mod *.stackdump
  [ FC ] link_mod.o
  [ FC ] index_mod.o
  [ FC ] boundary_wavekill_mod.o
+ [ FC ] particle_mod.o
+ [ FC ] units_mod.o
+ [ FC ] scaling_mod.o
+ [ FC ] planet_mod.o
  [ FC ] boundaries_mod.o
  [ FC ] direct_output_mod.o
  [ FC ] patch_mod.o

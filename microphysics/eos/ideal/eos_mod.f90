@@ -5,6 +5,7 @@ MODULE eos_mod
   USE io_mod
   USE mpi_mod
   USE trace_mod
+  USE kinds_mod
   USE scaling_mod
   implicit none
   private
@@ -60,8 +61,8 @@ END SUBROUTINE init
 !-------------------------------------------------------------------------------
 FUNCTION pressure (self, d, e) RESULT (pg)
   class (eos_t):: self
-  real, dimension(:,:,:), pointer:: d, e
-  real, dimension(size(d,1),size(d,2),size(d,3)):: pg
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
+  real(kind=KindScalarVar), dimension(size(d,1),size(d,2),size(d,3)):: pg
   !-----------------------------------------------------------------------------
   pg = (self%gamma-1.0)*d*e
 END FUNCTION

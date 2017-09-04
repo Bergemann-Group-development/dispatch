@@ -79,6 +79,8 @@ SUBROUTINE init(self)
     read (io%input, hd_params)
     if (io%master) write (*,hd_params)
     call timestep%init
+    ! fool-proofing
+    if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
   !$omp end critical (init_cr)
   !-----------------------------------------------------------------------------

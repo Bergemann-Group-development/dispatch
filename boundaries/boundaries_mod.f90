@@ -11,6 +11,7 @@ MODULE boundaries_mod
   USE mesh_mod
   USE index_mod
   USE boundary_wavekill_mod
+  USE planet_mod
   implicit none
   private
   type, public:: boundaries_t
@@ -33,7 +34,11 @@ MODULE boundaries_mod
     procedure:: constant
     procedure:: spherical0
     procedure:: spherical3
+    procedure:: spherical_p_ns
     procedure:: spherical_ns
+    procedure:: spherical_jagged_d
+    procedure:: spherical_jagged_s
+    procedure:: spherical_jagged_p
     generic:: spherical => spherical0, spherical3
     procedure:: spherical_extrapolate
     procedure:: spherical_constant_entropy
@@ -580,6 +585,43 @@ SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
 END SUBROUTINE spherical0
 
 !> =============================================================================
+!> Impose vanishing mass flux on any face that is inside the radius; this
+!> automatically makes density and entropy well behaved there also
+!> =============================================================================
+SUBROUTINE spherical_p_ns (self, p, m, position, radius)
+  class(boundaries_t)                          :: self
+  real(kind=KindScalarVar), pointer            :: p(:,:,:,:)
+  class(mesh_t), pointer                       :: m(:)
+  real(8)                                      :: position(3), radius
+  !............................................................................
+  integer                                      :: ix, iy, iz, iv, i
+  real                                         :: h(3), r(3)
+  class(mesh_t), pointer                       :: mm
+  type(index_t)                                :: idx
+  !-----------------------------------------------------------------------------
+  call trace_begin('boundaries_t%spherical0_ns')
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iv=1,3
+    do i=1,3
+      mm => m(i)
+      h(i) = mm%h(idx%px+iv-1)*mm%d
+    end do
+    do iz=m(3)%lb,m(3)%ub
+    do iy=m(2)%lb,m(2)%ub
+    do ix=m(1)%lb,m(1)%ub
+      r(1) = m(1)%p - position(1) + r1(ix) + h(1)
+      r(2) = m(2)%p - position(2) + r2(iy) + h(2)
+      r(3) = m(3)%p - position(3) + r3(iz) + h(3)
+      if (sum(r**2) < radius**2) p(ix,iy,iz,iv) = 0.0
+    end do
+    end do
+    end do
+  end do
+  end associate
+  call trace_end
+END SUBROUTINE spherical_p_ns
+
+!> =============================================================================
 !> Impose no-slip boundary condition; scalar values
 !> =============================================================================
 SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
@@ -734,9 +776,191 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
   call trace_end
 END SUBROUTINE spherical_ns
 
+!> =============================================================================
+!> Impose spherical density boundary condition, assuming that the sphere is jagged.
+!> =============================================================================
+SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
+  class(boundaries_t)                          :: self
+  real(kind=KindScalarVar), dimension(:,:,:,:) :: mem
+  class(mesh_t), pointer                       :: m(:), m1, m2, m3
+  integer                                      :: iv, it, new
+  !............................................................................
+  type(index_t):: idx
+  integer      :: ix, iy, iz
+  real(8)      :: x1, x2, y1, y2, z1, z2
+  real(8)      :: r2
+  logical      :: inside(8)
+  !-----------------------------------------------------------------------------
+  call trace_begin('boundaries_t%spherical_jagged')
+  m1 => m(1)
+  m2 => m(2)
+  m3 => m(3)
+  r2 = self%radius**2
+  if (iv == idx%d) then
+    do iz = m3%lb, m3%ub
+      do iy = m2%lb, m2%ub
+        do ix = m1%lb, m1%ub
+          x1 = m1%p - planet%position(1) + m1%r(ix) + 0.5*m1%d
+          x2 = m1%p - planet%position(1) + m1%r(ix) - 0.5*m1%d
+          y1 = m2%p - planet%position(2) + m2%r(iy) + 0.5*m2%d
+          y2 = m2%p - planet%position(2) + m2%r(iy) - 0.5*m2%d
+          z1 = m3%p - planet%position(3) + m3%r(iz) + 0.5*m3%d
+          z2 = m3%p - planet%position(3) + m3%r(iz) - 0.5*m3%d
+          inside(1) = x1**2+y1**2+z1**2 < r2
+          inside(2) = x2**2+y1**2+z1**2 < r2
+          inside(3) = x1**2+y2**2+z1**2 < r2
+          inside(4) = x2**2+y2**2+z1**2 < r2
+          inside(5) = x1**2+y1**2+z2**2 < r2
+          inside(6) = x2**2+y1**2+z2**2 < r2
+          inside(7) = x1**2+y2**2+z2**2 < r2
+          inside(8) = x2**2+y2**2+z2**2 < r2
+          if (all(inside)) mem(ix,iy,iz,new) = &
+                           mem(ix,iy,iz,it)
+        end do
+      end do
+    end do
+  else
+    print *, 'iv passed',iv, 'iv required', idx%d
+    error stop "boundaries_mod::spherical_jagged_d:: invalid memory index iv"
+  end if
+  nullify (m1, m2, m3)
+  !call trace_end
+END SUBROUTINE spherical_jagged_d
+
+!> =============================================================================
+!> Impose spherical density boundary condition, assuming that the sphere is jagged.
+!> =============================================================================
+SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
+  class(boundaries_t)                        :: self
+  real(kind=KindScalarVar), dimension(:,:,:) :: mem
+  class(mesh_t), pointer                     :: m(:), m1, m2, m3
+  integer                                    :: iv, it
+  real                                       :: v
+  !............................................................................
+  type(index_t):: idx
+  integer      :: ix, iy, iz
+  real(8)      :: x1, x2, y1, y2, z1, z2
+  real(8)      :: r2
+  logical      :: inside(8)
+  !-----------------------------------------------------------------------------
+  call trace_begin('boundaries_t%spherical_jagged')
+  m1 => m(1)
+  m2 => m(2)
+  m3 => m(3)
+  r2 = self%radius**2
+  if (iv == idx%s) then
+    do iz = m3%lb, m3%ub
+      do iy = m2%lb, m2%ub
+        do ix = m1%lb, m1%ub
+          x1 = m1%p - planet%position(1) + m1%r(ix) + 0.5*m1%d
+          x2 = m1%p - planet%position(1) + m1%r(ix) - 0.5*m1%d
+          y1 = m2%p - planet%position(2) + m2%r(iy) + 0.5*m2%d
+          y2 = m2%p - planet%position(2) + m2%r(iy) - 0.5*m2%d
+          z1 = m3%p - planet%position(3) + m3%r(iz) + 0.5*m3%d
+          z2 = m3%p - planet%position(3) + m3%r(iz) - 0.5*m3%d
+          inside(1) = x1**2+y1**2+z1**2 < r2
+          inside(2) = x2**2+y1**2+z1**2 < r2
+          inside(3) = x1**2+y2**2+z1**2 < r2
+          inside(4) = x2**2+y2**2+z1**2 < r2
+          inside(5) = x1**2+y1**2+z2**2 < r2
+          inside(6) = x2**2+y1**2+z2**2 < r2
+          inside(7) = x1**2+y2**2+z2**2 < r2
+          inside(8) = x2**2+y2**2+z2**2 < r2
+          if (all(inside)) mem(ix,iy,iz) = v
+        end do
+      end do
+    end do
+  else
+    print *, 'iv passed',iv, 'iv required', idx%s
+    error stop "boundaries_mod::spherical_jagged_d:: invalid memory index iv"
+  end if
+  nullify (m1, m2, m3)
+  !call trace_end
+END SUBROUTINE spherical_jagged_s
+
+!> =============================================================================
+!> Same as above, but for momentum
+!> =============================================================================
+SUBROUTINE spherical_jagged_p (self, mem, m, iv)
+  class(boundaries_t)                        :: self
+  real(kind=KindScalarVar), dimension(:,:,:) :: mem
+  class(mesh_t), pointer                     :: m(:), m1, m2, m3
+  integer                                    :: iv
+  !............................................................................
+  type(index_t):: idx
+  integer      :: ix, iy, iz
+  real(8)      :: x1, x2, y1, y2, z1, z2
+  real(8)      :: r2, h(3)
+  logical      :: inside(4)
+  !-----------------------------------------------------------------------------
+  call trace_begin('boundaries_t%spherical_jagged')
+  m1 => m(1)
+  m2 => m(2)
+  m3 => m(3)
+  call set_stagger (m, h, iv)
+  r2 = self%radius**2
+  if (iv == idx%px) then
+    do iz = m3%lb, m3%ub
+      do iy = m2%lb, m2%ub
+        do ix = m1%lb, m1%ub
+          y1 = m2%p - planet%position(2) + m2%r(iy) + 0.5*m2%d
+          y2 = m2%p - planet%position(2) + m2%r(iy) - 0.5*m2%d
+          z1 = m3%p - planet%position(3) + m3%r(iz) + 0.5*m3%d
+          z2 = m3%p - planet%position(3) + m3%r(iz) - 0.5*m3%d
+          x1 = m1%p - planet%position(1) + m1%r(ix) + h(1)*m1%d
+          inside(1) = y1**2+z1**2 + x1**2 < r2
+          inside(2) = y2**2+z1**2 + x1**2 < r2
+          inside(3) = y1**2+z2**2 + x1**2 < r2
+          inside(4) = y2**2+z2**2 + x1**2 < r2
+          if (any(inside)) mem(ix,iy,iz) = 0.0
+        end do
+      end do
+    end do
+  else if (iv == idx%py) then
+    do iz = m3%lb, m3%ub
+      do iy = m2%lb, m2%ub
+        do ix = m1%lb, m1%ub
+          x1 = m1%p - planet%position(1) + m1%r(ix) + 0.5*m1%d
+          x2 = m1%p - planet%position(1) + m1%r(ix) - 0.5*m1%d
+          z1 = m3%p - planet%position(3) + m3%r(iz) + 0.5*m3%d
+          z2 = m3%p - planet%position(3) + m3%r(iz) - 0.5*m3%d
+          y1 = m2%p - planet%position(2) + m2%r(iy) + h(2)*m2%d
+          inside(1) = x1**2+z1**2 + y1**2 < r2
+          inside(2) = x2**2+z1**2 + y1**2 < r2
+          inside(3) = x1**2+z2**2 + y1**2 < r2
+          inside(4) = x2**2+z2**2 + y1**2 < r2
+          if (any(inside)) mem(ix,iy,iz) = 0.0
+        end do
+      end do
+    end do
+  else if (iv == idx%pz) then
+    do iz = m3%lb, m3%ub
+      do iy = m2%lb, m2%ub
+        do ix = m1%lb, m1%ub
+          x1 = m1%p - planet%position(1) + m1%r(ix) + 0.5*m1%d
+          x2 = m1%p - planet%position(1) + m1%r(ix) - 0.5*m1%d
+          y1 = m2%p - planet%position(2) + m2%r(iy) + 0.5*m2%d
+          y2 = m2%p - planet%position(2) + m2%r(iy) - 0.5*m2%d
+          z1 = m3%p - planet%position(3) + m3%r(iz) + h(3)*m3%d
+          inside(1) = x1**2+y1**2 + z1**2 < r2
+          inside(2) = x2**2+y1**2 + z1**2 < r2
+          inside(3) = x1**2+y2**2 + z1**2 < r2
+          inside(4) = x2**2+y2**2 + z1**2 < r2
+          if (any(inside)) mem(ix,iy,iz) = 0.0
+        end do
+      end do
+    end do
+  else
+    print *, 'iv passed',iv, 'iv required', idx%px, idx%py, idx%pz
+    error stop "boundaries_mod::spherical_jagged_p:: invalid memory index iv"
+  end if
+  nullify (m1, m2, m3)
+  !call trace_end
+END SUBROUTINE spherical_jagged_p
+
 !> =====================================================================
 !> Linear antisymmetric extrapolation
-!> ===================================================================== 
+!> =====================================================================
 FUNCTION extrapolate_antisym(ip, op, bp, yop) result(out)
   real(8) :: ip, op, bp
   real(kind=KindScalarVar):: yop, out

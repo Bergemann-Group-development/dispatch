@@ -32,7 +32,7 @@ class SI:
     c=2.9979e8
     stefan=5.6704e-5
 
-def scaling(units=cgs):
+def scaling(units=cgs,verbose=0):
     '''
     Return a structure with scaling constants.  Use e.g.
     
@@ -40,7 +40,8 @@ def scaling(units=cgs):
         sSI=scaling(SI)
         print cgs.k_b, SI.k_b
     '''
-    print "using "+units.name+" units"
+    if verbose>0:
+        print "using "+units.name+" units"
     class s:
         system=units.name
         l=units.r_earth

@@ -172,7 +172,7 @@ foreach d ( $dirs )
   if ($s) then
     echo "WARNING: validation failed"
     if (`uname -o` != "Cygwin" ) then
-      echo "Validation failed -- see $cwd/validate/"
+      echo "Validation failed -- see $cwd/"
     endif
     exit 1
   else

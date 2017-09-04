@@ -119,7 +119,7 @@ SUBROUTINE init_level (self, level, position)
   !.............................................................................
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  integer:: i, j, k
+  integer:: i, j, k, ndrop
   !-----------------------------------------------------------------------------
   ! Allow size and position to be set by an overloading data type, and allow
   ! an empty namelist input here. If present, take the initial values from
@@ -127,6 +127,7 @@ SUBROUTINE init_level (self, level, position)
   !-----------------------------------------------------------------------------
   call trace_begin ('rubiks_revenge_t%init_level')
 
+  ndrop = 0
   do k=1,self%n_patch
   do j=1,self%n_patch
   do i=1,self%n_patch
@@ -152,33 +153,44 @@ SUBROUTINE init_level (self, level, position)
     ! periodic conditions along the x-direction (= phi-direction in cylindrical
     ! coordinates).
     !---------------------------------------------------------------------------
-    patch%box = self%task_list%size
-    call patch%init
     patch%level = level
-    call patch%set (bits%static)
-    if (k==1.or.k==self%n_patch) call patch%set (bits%top_bottom)
-    if (io%verbose>0) &
-      print'(a,i6,i4,2(2x,3g16.6))', 'rubiks_mod%init_level: id, level, size, pos =', &
-        patch%id, level, patch%size, patch%position
-    !---------------------------------------------------------------------------
-    ! Add to a list of links, with pointers from patch to patch
-    !---------------------------------------------------------------------------
-    call self%task_list%append (task)
-    !---------------------------------------------------------------------------
-    ! If at edge, set boundary bits
-    !---------------------------------------------------------------------------
-    if (level==1) then
-      if (.not.patch%periodic(1).and.i==1)            call patch%boundaries%set (bits%xl)
-      if (.not.patch%periodic(2).and.j==1)            call patch%boundaries%set (bits%yl)
-      if (.not.patch%periodic(3).and.k==1)            call patch%boundaries%set (bits%zl)
-      if (.not.patch%periodic(1).and.i==self%n_patch) call patch%boundaries%set (bits%xu)
-      if (.not.patch%periodic(2).and.j==self%n_patch) call patch%boundaries%set (bits%yu)
-      if (.not.patch%periodic(3).and.k==self%n_patch) call patch%boundaries%set (bits%zu)
-      if (patch%boundaries%bits /= 0) print *, patch%id, 'EDGE', patch%boundaries%bits
+    if (patch%is_relevant()) then
+      patch%box = self%task_list%size
+      call patch%init
+      patch%level = level
+      call patch%set (bits%static)
+      if (k==1.or.k==self%n_patch) call patch%set (bits%top_bottom)
+      if (io%verbose>0) &
+        print'(a,i6,i4,2(2x,3g16.6))', 'rubiks_mod%init_level: id, level, size, pos =', &
+          patch%id, level, patch%size, patch%position
+      !---------------------------------------------------------------------------
+      ! Add to a list of links, with pointers from patch to patch
+      !---------------------------------------------------------------------------
+      call self%task_list%append (task)
+      !---------------------------------------------------------------------------
+      ! If at edge, set boundary bits
+      !---------------------------------------------------------------------------
+      if (level==1) then
+        if (.not.patch%periodic(1).and.i==1)            call patch%boundaries%set (bits%xl)
+        if (.not.patch%periodic(2).and.j==1)            call patch%boundaries%set (bits%yl)
+        if (.not.patch%periodic(3).and.k==1)            call patch%boundaries%set (bits%zl)
+        if (.not.patch%periodic(1).and.i==self%n_patch) call patch%boundaries%set (bits%xu)
+        if (.not.patch%periodic(2).and.j==self%n_patch) call patch%boundaries%set (bits%yu)
+        if (.not.patch%periodic(3).and.k==self%n_patch) call patch%boundaries%set (bits%zu)
+        if (patch%boundaries%bits /= 0 .and. io%verbose>1) &
+          print *, patch%id, 'EDGE', patch%boundaries%bits
+      end if
+    else
+      ndrop = ndrop+1
+      if (io%verbose>0) print '(a,1p,3e11.3,a)', &
+        'patch at position',patch%position,' not relevant -- dropping'
+      deallocate (task)
     end if
   end do
   end do
   end do
+  if (ndrop>0) &
+    print '("dropped",i4," not relevant patches on level",i3)', ndrop, level
   call trace_end
 END SUBROUTINE init_level
 

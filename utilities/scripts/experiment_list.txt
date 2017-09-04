@@ -1,2 +1,3 @@
 ./experiments/ramses_snapshots
 ./experiments/turbulence
+./experiments/pebble_atmosphere

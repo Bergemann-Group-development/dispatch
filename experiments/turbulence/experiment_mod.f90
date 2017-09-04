@@ -57,7 +57,7 @@ SUBROUTINE init (self)
     self%t(self%it) = self%initial%time
   end if
   !call self%periodic_grid
-  call trace_end (itimer=itimer)
+  call trace_end
 END SUBROUTINE init
 
 !> =============================================================================

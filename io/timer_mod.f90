@@ -1,4 +1,12 @@
 !> =============================================================================
+!> Each thread uses a private timer data type, with arrays for start time and
+!> total time for each registered procedure.  At begin, it stores the start time,
+!> and at end it increments the call counter and sums the time used into the
+!> total counter.
+!>
+!> We suspend counting of the active procedure if a new begin occurs, and resume
+!> it again on the next end call.  Each subsequent begin call suspends the
+!> ongoing call, so we need a list of active counters.
 !> =============================================================================
 MODULE timer_mod
   USE mpi_mod
@@ -8,7 +16,7 @@ MODULE timer_mod
   USE omp_lib
   implicit none
   private
-  integer, parameter:: maxproc=100
+  integer, parameter:: maxproc=100, maxdepth=20
   integer, save:: ntimer=0
   type:: latency_t
     real:: max=0.0
@@ -18,6 +26,8 @@ MODULE timer_mod
   type:: timer_t
     integer(8):: calls(maxproc)=0
     real(8), dimension(maxproc):: start=0d0, total=0d0
+    integer, dimension(maxdepth):: stack
+    integer:: istack=0
     real(8):: bytes_recv=0.0_8
     real(8):: sec_per_report=10d0
     integer(8):: n_recv=0_8, n_test=0_8
@@ -88,8 +98,9 @@ END SUBROUTINE init
 SUBROUTINE begin (self, name, itimer)
   class(timer_t):: self
   character(len=*), optional:: name
-  integer:: itimer, thread, i
+  integer:: itimer, thread, i, otimer, istack
   logical:: ok
+  real(8):: wc
   !.............................................................................
   if (io_unit%do_validate) return
   thread = omp_get_thread_num()
@@ -111,30 +122,71 @@ SUBROUTINE begin (self, name, itimer)
     !---------------------------------------------------------------------------
     if (itimer <= 0) return
   end if
+  !-----------------------------------------------------------------------------
+  ! If a procedure is being timed, accumulate to its total
+  !-----------------------------------------------------------------------------
+  istack = timers(thread)%istack
+  if (istack>0) then
+    otimer = timers(thread)%stack(istack)
+    !print *,'suspending timer for '//trim(names(otimer))
+    wc = wallclock()
+    timers(thread)%total(otimer) = timers(thread)%total(otimer) &
+                                 + (wc - timers(thread)%start(otimer))
+  end if
+  !-----------------------------------------------------------------------------
+  ! Start the new timer, and record it on the stack
+  !-----------------------------------------------------------------------------
   timers(thread)%start(itimer) = wallclock()
+  istack = istack+1
+  if (istack>maxdepth) call mpi%abort ('too many timer levels')
+  timers(thread)%stack(istack) = itimer
+  timers(thread)%istack = istack
 END SUBROUTINE begin
 
 !> =============================================================================
+!> At end call, increment number of calls and total time for the active timer
+!> and resume any suspended timer
 !> =============================================================================
 SUBROUTINE end (self, itimer)
   class(timer_t):: self
-  integer:: itimer, thread, i
-  optional:: itimer
+  integer, optional:: itimer
+  integer::thread, istack, otimer
   real(8):: wc
   !.............................................................................
   if (io_unit%do_validate) return
+  !-----------------------------------------------------------------------------
+  ! Find the active timer for this thread
+  !-----------------------------------------------------------------------------
   thread = omp_get_thread_num()
-  if (itimer > 0) then
-    wc = wallclock()
-    timers(thread)%calls(itimer) = timers(thread)%calls(itimer) + 1
-    timers(thread)%total(itimer) = timers(thread)%total(itimer) + &
-      wc - timers(thread)%start(itimer)
-    timers(thread)%start(itimer) = wc
-    if (io_unit%master) then
-      if (wc > next_report_sec) then
-        call print()
-        next_report_sec = wc + self%sec_per_report
-      end if
+  istack = timers(thread)%istack
+  otimer = timers(thread)%stack(istack)
+  !-----------------------------------------------------------------------------
+  ! Increment call counter and total time used
+  !-----------------------------------------------------------------------------
+  wc = wallclock()
+  timers(thread)%calls(otimer) = timers(thread)%calls(otimer) + 1
+  timers(thread)%total(otimer) = timers(thread)%total(otimer) + &
+    wc - timers(thread)%start(itimer)
+  !-----------------------------------------------------------------------------
+  ! Check if there is a suspenden timer present, and if so restart it
+  !-----------------------------------------------------------------------------
+  istack = istack-1
+  if (istack>0) then
+    otimer = timers(thread)%stack(istack)
+    timers(thread)%start(otimer) = wc
+    !print *,'restarting timer for '//trim(names(otimer))
+  else if (istack<0) then
+    print *,'WARNNING: too many timer%end calls'
+    istack = 0
+  end if
+  timers(thread)%istack = istack
+  !-----------------------------------------------------------------------------
+  ! Check if it is time to do a printout
+  !-----------------------------------------------------------------------------
+  if (io_unit%master) then
+    if (wc > next_report_sec) then
+      call print()
+      next_report_sec = wc + self%sec_per_report
     end if
   end if
 END SUBROUTINE end
@@ -169,11 +221,11 @@ SUBROUTINE print ()
     write (io_unit%mpi,4) 'procedure', 'calls', 'time', 'percent', 'time/call'
     4 format(23x,a,7x,a,10x,a,7x,a,5x,a)
     do i=1,ntimer
-      if (proc(i)/total > 1e-4) then
+      if (proc(i)/total > 5e-4) then
         print 1, trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
         if (omp%master .and. io_unit%verbose > 0) &
         write (io_unit%mpi,1) trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
-        1 format(a32,1p,2g15.3,2g12.3)
+        1 format(a32,1p,2g15.3,0p,f10.1,f14.6)
       end if
     end do
   end if

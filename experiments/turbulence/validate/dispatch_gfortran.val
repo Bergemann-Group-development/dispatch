@@ -16,6 +16,7 @@ reading /proc/cpuinfo:   0.0 sec
  OMP_TRACE=T,
  ID_DEBUG=         -1,
  TOP="../../                                                          ",
+ DATADIR="data                                                            ",
  /
  logfile:data/0000.log                                                   
  =======================================================================
@@ -39,6 +40,23 @@ reading /proc/cpuinfo:   0.0 sec
  ------------------------ ideal equation-of-state -----------------------------
 &EOS_PARAMS
  GAMMA=  1.39999998    ,
+ DO_RT=F,
+ KAPPA=  0.00000000    ,
+ /
+&REFINE_PARAMS
+ CHECK_INTERVAL=         50,
+ REFINEMENT_RATIO=          2,
+ REFINE_FROM_T=  0.00000000    ,
+ REFINE_UNTIL_T=  1.00000003E+32,
+ MIN_DX=  0.00000000    ,
+ MAX_DX=  1.00000003E+32,
+ MIN_JEANS=  0.00000000    ,
+ TOL_SHOCK=  0.00000000    ,
+ TOL_CONTACT=  0.00000000    ,
+ TOL_GRAD=  0.00000000    ,
+ REGION_LLC= 3*0.00000000      ,
+ REGION_URC= 3*0.00000000      ,
+ DO_REFINE=F,
  /
 &BOX_PARAMS
  SIZE= 3*1.0000000000000000       ,

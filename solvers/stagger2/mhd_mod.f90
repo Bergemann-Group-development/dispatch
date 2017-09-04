@@ -12,7 +12,9 @@ MODULE mhd_mod
   USE io_mod
   USE bits_mod
   USE omp_mod
+  USE mpi_mod
   USE trace_mod
+  USE kinds_mod
   USE units_mod
   USE scaling_mod
   USE scalar_mod
@@ -62,6 +64,7 @@ MODULE mhd_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
     procedure:: apply_heating
+    procedure:: gas_velocity
   end type
 CONTAINS
 
@@ -89,6 +92,8 @@ SUBROUTINE init (self)
     read (io%input, mhd_params)
     if (io%master) write (*, mhd_params)
     call timestep%init
+    ! fool-proofing
+    if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
   !$omp end critical (input_cr)
   self%eos = eos
@@ -807,5 +812,27 @@ SUBROUTINE apply_heating (self, q)
   class (mhd_t):: self
   real, dimension(:,:,:):: q
 END SUBROUTINE
+
+!> =============================================================================
+FUNCTION gas_velocity (self) RESULT (v)
+  USE scalar_mod
+  class (mhd_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d, lnd
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: p, ld, dd
+  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
+  !-----------------------------------------------------------------------------
+  d => self%mem(:,:,:,self%i_d,self%it,1)
+  p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
+  call allocate_vectors (self%gn, ld, dd)
+  call allocate_scalars (self%gn, lnd)
+  lnd = log(d)
+  ld = down(lnd)
+  dd = exp(ld)
+  v = p/dd
+
+  call deallocate_vectors (ld, dd)
+  call deallocate_scalars (lnd)
+  nullify (d,p)
+END FUNCTION gas_velocity
 
 END MODULE mhd_mod

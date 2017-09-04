@@ -15,6 +15,7 @@
 ### Contribution guidelines ###
 
 * If you want your pull request to have a chance, you need to merge from `master` before making the pull request.
+* One should also run the validation pipeline; pull requests that do not pass validation will not be accepted.
 * See also the (growing) [wiki](https://bitbucket.org/aanordlund/dispatch2/wiki/).
 
 ### Commit codes ###
@@ -29,3 +30,4 @@ When committing changes to this repository, please use the following three-lette
 * DBG: debugging
 * SYN: typos and misspellings (including simple syntax error fixes)
 * WIP: snapshot/work in progress
+* CLN: tidying of the code, including removal of obsolete features, experiements, etc.

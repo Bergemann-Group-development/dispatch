@@ -199,7 +199,7 @@ class GeometricFactors(Grid):
         self['dar32c'] = p.dx[1] / self['dvol2c']
         self['dar32f'] = p.dx[1] / self['dvol2f']
 
-def dispatch_grid(p):
+def dispatch_grid(p, truecoords=True):
     """
     Given grid information for a patch, calculate the three *cell-centred*
     coordinate arrays in the *coord. system of the patch*.
@@ -208,13 +208,23 @@ def dispatch_grid(p):
     """
 
     if np.any(p.n != p.nwrite):
-        x1 = p.corners[0][0] + np.arange(p.nwrite[0]) * p.dx[0] + 0.5 * p.dx[0]
-        x2 = p.corners[0][1] + np.arange(p.nwrite[1]) * p.dx[1] + 0.5 * p.dx[1]
-        x3 = p.corners[0][2] + np.arange(p.nwrite[2]) * p.dx[2] + 0.5 * p.dx[2]
+        if truecoords:
+            x1 = p.corners[0][0] + np.arange(p.nwrite[0]) * p.dx[0] + 0.5 * p.dx[0]
+            x2 = p.corners[0][1] + np.arange(p.nwrite[1]) * p.dx[1] + 0.5 * p.dx[1]
+            x3 = p.corners[0][2] + np.arange(p.nwrite[2]) * p.dx[2] + 0.5 * p.dx[2]
+        else:
+            x1 = p.llc[0] - p.nghost[0] * p.dx[0] + np.arange(p.nwrite[0]) * p.dx[0] + 0.5 * p.dx[0]
+            x2 = p.llc[1] - p.nghost[1] * p.dx[1] + np.arange(p.nwrite[1]) * p.dx[1] + 0.5 * p.dx[1]
+            x3 = p.llc[2] - p.nghost[2] * p.dx[2] + np.arange(p.nwrite[2]) * p.dx[2] + 0.5 * p.dx[2]
     else:
-        x1 = p.active_corners[0][0] + np.arange(p.nwrite[0]) * p.dx[0] + 0.5 * p.dx[0]
-        x2 = p.active_corners[0][1] + np.arange(p.nwrite[1]) * p.dx[1] + 0.5 * p.dx[1]
-        x3 = p.active_corners[0][2] + np.arange(p.nwrite[2]) * p.dx[2] + 0.5 * p.dx[2]
+        if truecoords:
+            x1 = p.active_corners[0][0] + np.arange(p.nwrite[0]) * p.dx[0] + 0.5 * p.dx[0]
+            x2 = p.active_corners[0][1] + np.arange(p.nwrite[1]) * p.dx[1] + 0.5 * p.dx[1]
+            x3 = p.active_corners[0][2] + np.arange(p.nwrite[2]) * p.dx[2] + 0.5 * p.dx[2]
+        else:
+            x1 = p.llc[0] + np.arange(p.nwrite[0]) * p.dx[0] + 0.5 * p.dx[0]
+            x2 = p.llc[1] + np.arange(p.nwrite[1]) * p.dx[1] + 0.5 * p.dx[1]
+            x3 = p.llc[2] + np.arange(p.nwrite[2]) * p.dx[2] + 0.5 * p.dx[2]
 
     return (x1, x2, x3)
 
@@ -284,7 +294,7 @@ def plotting_grid(root, p, x_i, slicedir, sliceloc, sliceeps=1.0e-2, truecoords=
 
     return xpcut, ypcut, m.mask
 
-def patch_grid_edges(p, slicedir, truecoords=False):
+def patch_grid_edges(p, slicedir, truecoords=True):
     """
     Using the corners of the patch, create a matplotlib patch that draws
     the grid edges.
@@ -295,15 +305,26 @@ def patch_grid_edges(p, slicedir, truecoords=False):
 
     assert isinstance(p, Patch), "Input must be an instance of a DISPATCH `Patch`!"
 
-    if slicedir == 1:
-        llx, urx = p.active_corners[0][1], p.active_corners[1][1]
-        lly, ury = p.active_corners[0][2], p.active_corners[1][2]
-    elif slicedir == 2:
-        llx, urx = p.active_corners[0][0], p.active_corners[1][0]
-        lly, ury = p.active_corners[0][2], p.active_corners[1][2]
-    elif slicedir == 3:
-        llx, urx = p.active_corners[0][0], p.active_corners[1][0]
-        lly, ury = p.active_corners[0][1], p.active_corners[1][1]
+    if truecoords:
+        if slicedir == 1:
+            llx, urx = p.active_corners[0][1], p.active_corners[1][1]
+            lly, ury = p.active_corners[0][2], p.active_corners[1][2]
+        elif slicedir == 2:
+            llx, urx = p.active_corners[0][0], p.active_corners[1][0]
+            lly, ury = p.active_corners[0][2], p.active_corners[1][2]
+        elif slicedir == 3:
+            llx, urx = p.active_corners[0][0], p.active_corners[1][0]
+            lly, ury = p.active_corners[0][1], p.active_corners[1][1]
+    else:
+        if slicedir == 1:
+            llx, urx = p.llc[1], p.llc[1] + p.size[1]
+            lly, ury = p.llc[2], p.llc[2] + p.size[2]
+        elif slicedir == 2:
+            llx, urx = p.llc[0], p.llc[0] + p.size[0]
+            lly, ury = p.llc[2], p.llc[2] + p.size[2]
+        elif slicedir == 3:
+            llx, urx = p.llc[0], p.llc[0] + p.size[0]
+            lly, ury = p.llc[1], p.llc[1] + p.size[1]
 
     if p.mesh_type == mesh_types[1] or truecoords: # Cartesian
         edges = Rectangle((llx,lly),width=(urx-llx),height=(ury-lly),fc='none',lw=1.0,

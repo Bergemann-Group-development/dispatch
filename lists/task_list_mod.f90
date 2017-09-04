@@ -50,10 +50,8 @@ MODULE task_list_mod
     procedure:: init_virtual
     procedure:: check_virtual
     procedure:: check_active
-    procedure:: split
     procedure:: output
     procedure:: print => print_table
-    procedure:: print_tasks
   end type
   real, save:: check_ms=10.
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
@@ -174,9 +172,11 @@ SUBROUTINE startup (self)
   class(patch_t), pointer:: patch
   real(8):: sec
   integer:: dims(4)
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists, and set virtual and boundary bits
   !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%startup', itimer=itimer)
   !call self%init_bdries
   call self%init_all_nbors
   call self%reset_status
@@ -214,7 +214,7 @@ SUBROUTINE startup (self)
     dims(4) = patch%nv
     call direct_output%init (dims=dims, nbuf=self%n_tasks)
   end if
-  call trace_end
+  call trace%end (itimer)
 END SUBROUTINE startup
 
 !> =============================================================================
@@ -226,7 +226,9 @@ SUBROUTINE execute (self)
   class(task_list_t):: self
   real(8):: sec
   integer:: dims(4)
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%execute', itimer=itimer)
   call self%startup
   call tic (time=sec)
   call timer%print
@@ -254,6 +256,7 @@ SUBROUTINE execute (self)
   !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
   !    max(1,(download%n_differ+download%n_same))
   call buffered_output%close
+  call trace%end (itimer)
 END SUBROUTINE execute
 
 !> =============================================================================
@@ -266,14 +269,14 @@ SUBROUTINE update (self)
   class(link_t), pointer:: head
   class(task_t), pointer:: task, otask
   class(mesg_t), pointer:: mesg
-  logical:: already_busy
+  logical:: already_busy, was_refined
   real(8):: wc
   real(8), save:: time, otime=0d0
   integer, save:: oid=0
-  integer, save:: itimer=0
   integer:: id
+  integer, save:: itimer=0
   !.............................................................................
-  call trace%begin('task_list_t%update')
+  call trace%begin('task_list_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
@@ -350,7 +353,7 @@ SUBROUTINE update (self)
       print *, mpi%rank,' WARNING: thread',omp%thread, &
         ' tried to update busy task', task%id
       !!$omp end critical (io_cr)
-      call trace_end
+      call trace_end (itimer)
       return
     end if
     call self%updater (head)
@@ -373,6 +376,12 @@ SUBROUTINE update (self)
     end if
     task%sync_time = self%sync_next
     !-----------------------------------------------------------------------------
+    ! Check if refinement is needed on the task; if so this will push new tasks
+    ! onto the queue, with the same task time; i.e., to the head of the queue.
+    ! If the task is virtual, it will not be checked by this rank.
+    !-----------------------------------------------------------------------------
+    call refine%check_current(self, head, was_refined)
+    !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the
     ! queue, and its neighbors should also be checked for return to the queue.
     ! If the task was turned into a virtual task by the load balance, its virtual
@@ -380,10 +389,12 @@ SUBROUTINE update (self)
     !-----------------------------------------------------------------------------
     call task%clear (bits%busy)                         ! clear busy bit (FIXME: check this!)
     call task%clear (bits%ready)                        ! needs new check (FIXME: check this!)
-    call self%check_nbors (head)                        ! any nbors ready?
-    !$omp atomic write
-    stalled = 0
-    !call mpi_mesg%diagnostics (0)
+    if (.not. was_refined) then
+      call self%check_nbors (head)                        ! any nbors ready?
+      !$omp atomic write
+      stalled = 0
+      !call mpi_mesg%diagnostics (0)
+    end if
   else if (do_delay) then
     !$omp critical (delay_cr)
     stalled = stalled+1
@@ -406,7 +417,7 @@ SUBROUTINE update (self)
     end if
     !$omp end critical (delay_cr)
   end if
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE update
 
 SUBROUTINE updater (self, head)
@@ -415,11 +426,13 @@ SUBROUTINE updater (self, head)
   class(link_t), pointer:: head
   class(task_t), pointer:: task
   real(8):: wc
+  integer, save:: itimer=0
   !---------------------------------------------------------------------------
-  ! Check for flag files.  If io%out_time is set, set a new out_next. 
+  ! Check for flag files.  If io%out_time is set, set a new out_next.
   ! If task%time is slightly smaller than a multiple of out_time, then
   ! out_next will becoe that multiple.
   !---------------------------------------------------------------------------
+  call trace%begin('task_list_t%updater', itimer=itimer)
   task => head%task
   call io%check_flags
   if (task%id==io%id_track) then
@@ -436,7 +449,7 @@ SUBROUTINE updater (self, head)
       !$omp atomic
       self%na = self%na - 1
     end if
-    call trace_end
+    call trace%end (itimer)
     return
   end if
   !----------------------------------------------------------------------------
@@ -477,11 +490,6 @@ SUBROUTINE updater (self, head)
   end select
   call task%info (self%nq, self%na)                   ! print info on stdout
   !-----------------------------------------------------------------------------
-  ! Check if refinement is needed on the task; if so this will push new tasks
-  ! onto the queue, with the same task time.
-  !-----------------------------------------------------------------------------
-  if (refine%needed(task)) call self%split(head)
-  !-----------------------------------------------------------------------------
   ! Tasks that have finished are subtracted from the task list count but are
   ! not removed, since their data may be needed by other tasks (including on
   ! other ranks).  They are, however, not added back onto the ready queue.
@@ -511,6 +519,7 @@ SUBROUTINE updater (self, head)
     end if
     call head%send_to_vnbors                          ! send to virtual nbors
   end if
+  call trace%end (itimer)
 END SUBROUTINE updater
 
 !> =============================================================================
@@ -953,7 +962,7 @@ SUBROUTINE init_virtual (self)
     link => link%next
   end do
   !$omp end parallel
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE init_virtual
 
 !> =============================================================================
@@ -1003,7 +1012,7 @@ SUBROUTINE check_virtual (self)
     link => link%next
   end do
   if (io%verbose>1) write (io_unit%log,*) 'check_virtual', nunpk
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE check_virtual
 
 !> =============================================================================
@@ -1070,90 +1079,9 @@ SUBROUTINE check_active (self)
       mesg => mesg%next
     end do
   end if
-  call trace%end
+  call trace%end (itimer)
   !print *, 'check_active:', mpi%rank, nvirt, nunpk
 END SUBROUTINE check_active
-
-!> =============================================================================
-!> Split a patch into two (parameter) in each direction, merging the new patches
-!> into the list.  Note that the link to the original patch is kept, with a "leaf"
-!> flag being cleared, indicating it is not longer a "leaf" patch.
-!> =============================================================================
-SUBROUTINE split (self, this)
-  class(task_list_t):: self
-  class(link_t), pointer:: this, link
-  integer:: nsplit(3)
-  class(patch_t), pointer:: patch, this_patch
-  class(task_t), pointer:: task
-  class(link_t), pointer:: tail
-  integer dir, i, ix, iy, iz
-  real:: pos(3)
-  !.............................................................................
-  if (this%task%is_set(bits%not_leaf)) return
-  call trace%begin('task_list_t%split', 1)
-  nsplit = msplit
-  task => this%task
-  select type (task)
-  class is (patch_t)
-  this_patch => task
-  end select
-  where (this_patch%size==0 .or. this_patch%n==1)
-    nsplit = 1
-  end where
-  do ix=1,nsplit(1)
-    pos(1) = ix-(nsplit(1)+1)*0.5
-    do iy=1,nsplit(2)
-      pos(2) = iy-(nsplit(2)+1)*0.5
-      do iz=1,nsplit(3)
-        pos(3) = iz-(nsplit(3)+1)*0.5
-        !------------------------------------------------------------------------
-        ! Allocate a new task, 1/nsplit the size of original one, and adjust its
-        ! position in each direction with "pos", in units of the new size.
-        !------------------------------------------------------------------------
-        allocate (patch, source=this_patch)
-        patch%mem_allocated = .false.
-        nullify (patch%mem)
-        patch%size = this_patch%size/nsplit             ! new size
-        patch%position = this_patch%position + pos*patch%size
-        call patch%init                                 ! patch, for a new id
-        patch%t   = this_patch%t                        ! newly allocated
-        patch%dt  = this_patch%dt                       ! newly allocated
-        patch%iit = this_patch%iit                      ! newly allocated
-        !write (io_unit%log,*) 'mk1: id,it,it,new,new',patch%id,patch%it,this_patch%it,patch%new,this_patch%new
-        !write (io_unit%log,*) 'mk2; id,it,iit',patch%id,this_patch%it, this_patch%iit
-        patch%iit(1:patch%nt-1) = this_patch%it         ! fake history
-        patch%out_next = patch%time                     ! force output now
-        !------------------------------------------------------------------------
-        ! Append links to the new patch in the patch list, sorted by quality
-        !------------------------------------------------------------------------
-        allocate (link)
-        link%task => patch
-        link%parent => this                     ! link is the link to the new patch
-        call self%add_by_quality (link)         ! which is added to the patch list
-        call link%make_new_nbors (link, this)   ! make a new nbors list for link
-        !------------------------------------------------------------------------
-        ! Download values from parent and neighbors, except at time==0.0, to
-        ! allow recursive refinement there
-        !------------------------------------------------------------------------
-        if (this_patch%time > 0.0) call download%download_link (link, all_cells=.true.)
-        !------------------------------------------------------------------------
-        ! Insert the new patch at the head of the ready queue
-        !------------------------------------------------------------------------
-        call self%queue_by_time (link)          ! add patch to queue
-        if (io%verbose>0) then
-          print 1,'task_list_t%split:  patch, level, iout, time, size =', &
-            patch%id, patch%level, patch%iout, patch%time, patch%size
-          1 format(a,3i6,f10.6,2(2x,3f8.4))
-          print 1,'task_list_t%split: parent, level, iout, time, size =', &
-            this_patch%id, this_patch%level, this_patch%iout, this_patch%time, this_patch%size
-        end if
-      end do
-    end do
-  end do
-  call self%check_queue
-  call this_patch%set(bits%not_leaf)
-  call trace%end
-END SUBROUTINE split
 
 !> =============================================================================
 !> Print a table with patch id, positions, and all neighbors
@@ -1170,32 +1098,6 @@ SUBROUTINE output (self)
   end do
   call trace%end
 END SUBROUTINE output
-
-!> =============================================================================
-!> Print a table with task id, positions, and all neighbors
-!> =============================================================================
-SUBROUTINE print_tasks (self, label)
-  class (task_list_t):: self
-  character(len=*), optional:: label
-  class(link_t) , pointer:: link, nbor
-  !.............................................................................
-  !if (io%verbose < 2) return
-  if (present(label)) then
-    write (io_unit%log,'(a,i4,":")') 'task_list: '//trim(label), self%n
-  else
-    write (io_unit%log,'(a,i4,":")') 'task_list', self%n
-  end if
-  link => self%head
-  do while (associated(link))
-    if (io%verbose < 3) then
-      write (io_unit%log,'(i4,g15.6,l5)') link%task%id, link%task%time, link%task%is_set(bits%ready)
-    else
-      call link%print_nbors
-    end if
-    link => link%next
-  end do
-  write (io_unit%log,*) ''
-END SUBROUTINE print_tasks
 
 !> =============================================================================
 !> Print a table with task id and all neighbors

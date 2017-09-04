@@ -113,7 +113,7 @@ SUBROUTINE conditions (self, patch, cit)
             q(i1,i2,i3,patch%i_e)  = p0
             q(i1,i2,i3,patch%i_px) = 0.0d0
             jay2 = 2*m2%uo - 1 - i2
-            q(i1,i2,i3,patch%i_py) = -q(i1,jay2,i3,patch%i_pz)
+            q(i1,i2,i3,patch%i_py) = -q(i1,jay2,i3,patch%i_py)
             q(i1,i2,i3,patch%i_pz) = skep
           end do
         end if

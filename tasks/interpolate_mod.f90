@@ -10,16 +10,23 @@ MODULE interpolate_mod
 
   ! a generic interface for interpolation functions.
   abstract interface
-    function interpolator_interface (q,i,j,k,iv,aa,bb,cc) result(qtilde)
+    function interpolator_interface (q,i,j,k,iv,w) result(qtilde)
       import KindScalarVar
-      real(kind=KindScalarVar), intent(in) :: q(:,:,:,:)
-      integer, intent(in) :: i, j, k, iv
-      real(kind=KindScalarVar), intent(in) :: aa, bb, cc
-      real(kind=KindScalarVar) :: qtilde
+      real(kind=KindScalarVar), intent(in):: q(:,:,:,:)
+      integer, intent(in):: i, j, k, iv
+      real, intent(in):: w(3)
+      real(kind=KindScalarVar):: qtilde
     end function
   end interface
 
-PUBLIC SelectInterpolator, interpolator_interface
+  type:: interpolator_t
+    integer:: order_interpolator
+    procedure(interpolator_interface), pointer, nopass:: interpolator => null()
+  contains
+  end type
+  type(interpolator_t):: interpolator
+
+PUBLIC SelectInterpolator, interpolator_interface, interpolator_unsigned, interpolator_specific
 CONTAINS
 
 !> =============================================================================
@@ -34,13 +41,17 @@ FUNCTION SelectInterpolator (iorder) result(interp)
   select case (iorder)
   case (0) ! donor cell
     interp => interpolator_donor_cell
+    interpolator%interpolator => interpolator_donor_cell
   case (1) ! linear van Leer
     interp => interpolator_van_Leer_3d
+    interpolator%interpolator => interpolator_van_Leer_3d
   case (-1) ! straight, un-limited trilinear interpolation
     interp => interpolator_trilinear
+    interpolator%interpolator => interpolator_trilinear
   case default
     call mpi%abort("The order you have selected has not been implemented. Abort!")
   end select
+  interpolator%order_interpolator = iorder
 
   call trace_end
 END FUNCTION SelectInterpolator
@@ -48,11 +59,11 @@ END FUNCTION SelectInterpolator
 !> =============================================================================
 !> Donor cell (direct injection) interpolation.
 !> =============================================================================
-FUNCTION interpolator_donor_cell (q,i,j,k,iv,aa,bb,cc) result(qtilde)
-  real(kind=KindScalarVar), intent(in) :: q(:,:,:,:)
-  integer, intent(in) :: i, j, k, iv
-  real(kind=KindScalarVar), intent(in) :: aa, bb, cc
-  real(kind=KindScalarVar) :: qtilde
+FUNCTION interpolator_donor_cell (q,i,j,k,iv,w) result(qtilde)
+  real(kind=KindScalarVar), intent(in):: q(:,:,:,:)
+  integer, intent(in):: i, j, k, iv
+  real, intent(in):: w(3)
+  real(kind=KindScalarVar):: qtilde
   !-----------------------------------------------------------------------------
   call trace_begin('interpolate_mod::donor_cell', 2)
   
@@ -69,11 +80,11 @@ END FUNCTION interpolator_donor_cell
 !> Note that, for an interpolation in 3-D, three 1-D, linear van Leer
 !> interpolations are *not* guaranteed to be monotonic!
 !> =============================================================================
-FUNCTION interpolator_van_Leer_3d (q,i,j,k,iv,aa,bb,cc) result(qtilde)
-  real(kind=KindScalarVar), intent(in) :: q(:,:,:,:)
-  integer, intent(in) :: i, j, k, iv
-  real(kind=KindScalarVar), intent(in) :: aa, bb, cc
-  real(kind=KindScalarVar) :: qtilde
+FUNCTION interpolator_van_Leer_3d (q,i,j,k,iv,w) result(qtilde)
+  real(kind=KindScalarVar), intent(in):: q(:,:,:,:)
+  integer, intent(in):: i, j, k, iv
+  real, intent(in):: w(3)
+  real(kind=KindScalarVar):: qtilde
   !-----------------------------------------------------------------------------
   logical :: ldim(3), lzc=.false., lfc(3)=.false.
   real(8) :: qijk, dq1, dq2, dq3, qp, qm, dp, dm, aych1, aych2, aych3
@@ -199,9 +210,9 @@ FUNCTION interpolator_van_Leer_3d (q,i,j,k,iv,aa,bb,cc) result(qtilde)
 !  end if
 
   ! Finally, determine the interpolated value.
-  qtilde = qijk + dq1 * ( aa - aych1 ) &
-                + dq2 * ( bb - aych2 ) &
-                + dq3 * ( cc - aych3 )
+  qtilde = qijk + dq1 * ( w(1) - aych1 ) &
+                + dq2 * ( w(2) - aych2 ) &
+                + dq3 * ( w(3) - aych3 )
 
   call trace_end
 END FUNCTION interpolator_van_Leer_3d
@@ -209,28 +220,77 @@ END FUNCTION interpolator_van_Leer_3d
 !> =============================================================================
 !> Plain, un-limited, trilinear interpolation.
 !> =============================================================================
-FUNCTION interpolator_trilinear (q,i,j,k,iv,aa,bb,cc) result(qtilde)
-  real(kind=KindScalarVar), intent(in) :: q(:,:,:,:)
-  integer, intent(in) :: i, j, k, iv
-  real(kind=KindScalarVar), intent(in) :: aa, bb, cc
-  real(kind=KindScalarVar) :: qtilde, p(3), m(3)
-  integer :: i1, j1, k1
+FUNCTION interpolator_trilinear (q,i,j,k,iv,w) result(qtilde)
+  real(kind=KindScalarVar), intent(in):: q(:,:,:,:)
+  integer, intent(in):: i, j, k, iv
+  real, intent(in):: w(3)
+  real(kind=KindScalarVar):: qtilde, m(3)
+  integer:: i1, j1, k1
   !-----------------------------------------------------------------------------
   call trace_begin('interpolate_mod::trilinear', 2)
   i1 = merge(1,0,size(q,1) > 1)
   j1 = merge(1,0,size(q,2) > 1)
   k1 = merge(1,0,size(q,3) > 1)
 
-  p(1) = aa
-  p(2) = bb
-  p(3) = cc
-  m = 1.0 - p
-  qtilde = m(3) * (m(2) * (m(1) * q(i  ,j   ,k   ,iv) + p(1) * q(i+i1,j   ,k   ,iv))  + &
-                   p(2) * (m(1) * q(i  ,j+j1,k   ,iv) + p(1) * q(i+i1,j+j1,k   ,iv))) + &
-           p(3) * (m(2) * (m(1) * q(i  ,j   ,k+k1,iv) + p(1) * q(i+i1,j   ,k+k1,iv))  + &
-                   p(2) * (m(1) * q(i  ,j+j1,k+k1,iv) + p(1) * q(i+i1,j+j1,k+k1,iv)))
+  m = 1.0 - w
+  qtilde = m(3) * (m(2) * (m(1) * q(i  ,j   ,k   ,iv) + w(1) * q(i+i1,j   ,k   ,iv))  + &
+                   w(2) * (m(1) * q(i  ,j+j1,k   ,iv) + w(1) * q(i+i1,j+j1,k   ,iv))) + &
+           w(3) * (m(2) * (m(1) * q(i  ,j   ,k+k1,iv) + w(1) * q(i+i1,j   ,k+k1,iv))  + &
+                   w(2) * (m(1) * q(i  ,j+j1,k+k1,iv) + w(1) * q(i+i1,j+j1,k+k1,iv)))
 
   call trace_end
 END FUNCTION interpolator_trilinear
+
+!> =============================================================================
+!> Do the interpolation under the assumption that the variable is
+!> positive-definite (i.e. `patch%unsigned(iv) = .true.`).
+!> =============================================================================
+FUNCTION interpolator_unsigned (q,i,j,k,iv,w) result(qtilde)
+  real(kind=KindScalarVar), intent(in):: q(:,:,:,:)
+  integer, intent(in):: i, j, k, iv
+  real, intent(in):: w(3)
+  real(kind=KindScalarVar):: qtilde
+  real(kind=KindScalarVar), allocatable:: logq(:,:,:,:)
+  !-----------------------------------------------------------------------------
+  call trace_begin('interpolate_mod::unsigned', 2)
+
+  allocate(logq(size(q,1),size(q,2),size(q,3),1))
+  logq(:,:,:,1) = log(q(:,:,:,iv))
+  qtilde = exp(interpolator%interpolator(logq,i,j,k,1,w))
+  
+  deallocate (logq)
+  call trace_end
+END FUNCTION interpolator_unsigned
+
+!> =============================================================================
+!> Do the interpolation of the "specific" quantity, i.e., the quantity divided
+!> by density (`patch%pervolume(iv)` = .true.).
+!> *NOTE!*: This function that this should **NOT** be used to convert from momentum
+!> density to velocity!!
+!> =============================================================================
+FUNCTION interpolator_specific (q,i,j,k,iv,w) result(qtilde)
+  USE index_mod
+
+  real(kind=KindScalarVar), intent(in):: q(:,:,:,:)
+  integer, intent(in):: i, j, k, iv
+  real, intent(in):: w(3)
+  real(kind=KindScalarVar):: qtilde
+  real(kind=KindScalarVar), allocatable:: qod(:,:,:,:)
+  type(index_t):: idx
+  !-----------------------------------------------------------------------------
+  call trace_begin('interpolate_mod::specific', 2)
+
+  allocate(qod(size(q,1),size(q,2),size(q,3),1))
+  qod(:,:,:,1) = q(:,:,:,iv) / q(:,:,:,idx%d)
+  ! NOTE: I expect this implementation to be slow (certainly slower than the
+  ! original, hard-coded version in `patch_mod`).
+  ! One way to improve it would be to pass only the smallest slice of `q` necessary
+  ! to perform the interpolation.
+  qtilde = interpolator%interpolator(qod,i,j,k,1,w)
+  qtilde = qtilde * q(i,j,k,idx%d)
+
+  deallocate (qod)
+  call trace_end
+END FUNCTION interpolator_specific
 
 END MODULE interpolate_mod

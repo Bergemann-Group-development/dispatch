@@ -32,6 +32,7 @@ SUBROUTINE init_experiment (self)
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
 
+  self%periodic(2) = .false.
   call self%mhd_t%init()
   call initial_conditions(self)
   call potential%init()
@@ -76,8 +77,9 @@ SUBROUTINE initial_conditions (patch)
   m3 => patch%mesh(3)
 
   ! calculate the Keplerian velocity
-  allocate(vkep(m2%gn-1))
-  vkep(:) = sqrt(experiment_params%mstar * scaling%grav / (m2%centre_nat + patch%mesh(2)%r(:)))
+  allocate(vkep(m2%gn))
+  vkep(:m2%gn-1) = sqrt(experiment_params%mstar * scaling%grav / (m2%centre_nat + patch%mesh(2)%r(:)))
+  vkep(m2%gn) = vkep(m2%gn-1)
   sigma0 = 2.0d-3 * experiment_params%mstar / pi / experiment_params%aplanet**2
 
   select type (m3)
@@ -99,6 +101,8 @@ SUBROUTINE initial_conditions (patch)
         patch%b%x%q(i1,i2,i3) = 0.0
         patch%b%y%q(i1,i2,i3) = 0.0
         patch%b%z%q(i1,i2,i3) = 0.0
+        ! initialise total energy
+        patch%et%q(i1,i2,i3) = patch%e%q(i1,i2,i3) + 0.5 * 0.25 * (vkep(i2)+vkep(i2+1))**2 * sigma0
         ! the ZEUS module stores the angular momentum rather than the linear momentum
         patch%s%y%q(i1,i2,i3) = patch%s%y%q(i1,i2,i3) * m1%h2c(i1)
         patch%s%z%q(i1,i2,i3) = patch%s%z%q(i1,i2,i3) * m1%h31c(i1) * m2%h32c(i2)

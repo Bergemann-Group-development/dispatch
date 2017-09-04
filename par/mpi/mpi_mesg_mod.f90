@@ -374,7 +374,7 @@ SUBROUTINE wait_all (self)
     if (io%verbose > 0) &
       write (io_unit%log,*) wallclock(), ' wait_all:', self%id, wc
   end if
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE wait_all
 
 !> =============================================================================

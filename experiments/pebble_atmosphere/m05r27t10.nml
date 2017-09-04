@@ -1,4 +1,6 @@
-&experiment_params /
+&experiment_params 
+ x_sponge=0.4           ! fraction of a patch to be sponged [0-1]
+/
 &initial_params /
 &force_params   /
 
@@ -23,7 +25,7 @@
  max_files=9000
 /
 &rubiks_params
- size=51.84                         ! 0.8*2.4*27
+ size=53.82288                      ! 0.8306*2.4*27
  n_levels=4                         ! # of refinement levels in for the rubiks cube
  n_patch=3                          ! # of patches per direction
  m_zoom=3                           ! zoom-in level per direction
@@ -41,7 +43,7 @@
 /
 
 &planet_params
- radius_r_earth=0.80
+ radius_r_earth=0.8306
  rad_mult=27.
  mass_m_earth=0.5
  orbit_radius_au=1.0
@@ -50,7 +52,7 @@
 !artificial_friction=1e-4           ! friction time = 1e4
 /
 &atmosphere_params
- densitY_cgs=1e-11                  ! outer density of the atmosphere at 1 Hill radius (i.e. surrounding local disk density)
+ densitY_cgs=1e-10                  ! outer density of the atmosphere at 1 Hill radius (i.e. surrounding local disk density)
  temperature_K=300.                 ! outer temperature of the atmosphere at 1 Hill radius
  mass_m_earth=0.5
  orbit_au=1.0
@@ -72,6 +74,7 @@
  grace=0.00
  courant=0.2
 !dt_fixed=0.001
+! use_data_hub = t
 /
 
 &mhd_params

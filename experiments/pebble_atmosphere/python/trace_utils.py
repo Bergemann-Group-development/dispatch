@@ -4,7 +4,7 @@ import os
 
 def trace_utils():
     '''
-    f=trace_files(dir):  Returns a list of *.trc trace data files in dir
+    f=trace_files(run):  Returns a list of *.trc trace data files in data/run
     tr=trace(file):      Returns a structure with info for one particle
     trs=traces(dir):     Returns a list of structures, one for each particle
     cache_traces(trs):   Dress a list of trace objects with actual paths
@@ -28,7 +28,7 @@ def trace_utils():
  for pop-up help in Canopy"
 
 
-def trace_files (run='', data='../data', verbose=1):
+def trace_files (run='', data='../data', verbose=0):
     '''
     Get a list of .trc trace files
     '''
@@ -38,7 +38,7 @@ def trace_files (run='', data='../data', verbose=1):
     if verbose==1: print np.size(files), 'files found'
     return np.sort(files)
 
-def trace(file,verbose=1):
+def trace(file,verbose=0):
     '''
     Return a structure with trace data from a trace file, with fields
     {n,p,v,vg,c,d,t}, where p[0:3,:], v[0:3,:], vg[0:3,:] are the positions,
@@ -56,45 +56,52 @@ def trace(file,verbose=1):
     class p:
         pass
     with ftf.FortranFile(file,'rb') as f:
-        j=f.readInts()
-        p.status=j[1]
-        size=f.readReals()
-        p.size=size[0]
-        id,rec,n=f.readInts()
         list=[]
-        # flatten records, which contain several trace points, into list
-        while id:
+        try:
             j=f.readInts()
-            a=f.readReals()
-            a=a.reshape(n,np.size(a)/n)
-            for i in range(n):
-                q=p()
-                q.ip=j[i]
-                q.a=a[i,:]
-                list.append(q)
-            ii=f.readInts()
-            id,rec,n=ii[0:3]
+            p.status=j[1]
+            size=f.readReals()
+            p.size=size[0]
+            id,rec,n=f.readInts()
+            p.id=id
+            # flatten records, which contain several trace points, into list
+            while id:
+                j=f.readInts()
+                a=f.readReals()
+                a=a.reshape(n,np.size(a)/n)
+                for i in range(n):
+                    q=p()
+                    q.ip=j[i]
+                    q.a=a[i,:]
+                    list.append(q)
+                ii=f.readInts()
+                id,rec,n=ii[0:3]
+        except:
+            print file,"read error after",np.size(list)
     # extract structure fields from list
-    p.n=np.size(list)
-    p.ip=np.array([i.ip     for i in list])
-    p.p =np.array([i.a[0:3] for i in list]).transpose()
-    p.v =np.array([i.a[3:6] for i in list]).transpose()
-    p.vg=np.array([i.a[6:9] for i in list]).transpose()
-    p.c =np.array([i.a[9]   for i in list])
-    p.d =np.array([i.a[10]  for i in list])
-    p.t =np.array([i.a[11]  for i in list])
-    p.x = p.p[0]
-    p.y = p.p[1]
-    p.z = p.p[2]
-    r=np.sqrt(np.sum(p.p**2,0))
-    p.rmin=r.min()
-    p.rmax=r.max()
-    p.first=p.p[:,0]
-    p.last=p.p[:,-1]
-    if verbose==1: print file, p.n, 'points'
-    return p
+    if list==[]:
+        return None
+    else:
+        p.n=np.size(list)
+        p.ip=np.array([i.ip     for i in list])
+        p.p =np.array([i.a[0:3] for i in list]).transpose()
+        p.v =np.array([i.a[3:6] for i in list]).transpose()
+        p.vg=np.array([i.a[6:9] for i in list]).transpose()
+        p.c =np.array([i.a[9]   for i in list])
+        p.d =np.array([i.a[10]  for i in list])
+        p.t =np.array([i.a[11]  for i in list])
+        p.x = p.p[0]
+        p.y = p.p[1]
+        p.z = p.p[2]
+        r=np.sqrt(np.sum(p.p**2,0))
+        p.rmin=r.min()
+        p.rmax=r.max()
+        p.first=p.p[:,0]
+        p.last=p.p[:,-1]
+        #if verbose==1: print file, p.n, 'points'
+        return p
 
-def traces(run='', dir='../data', verbose=1):
+def traces(run='', data='../data', verbose=0):
     '''
     Return a list of structures {file,trace,rmin,rmax,first,last},
     where self.trace() is a function returning a trace(self.file)
@@ -109,7 +116,7 @@ def traces(run='', dir='../data', verbose=1):
     
     See trace( for more about the contents of the path structure
     '''
-    files=trace_files(dir=dir,run=run,verbose=verbose)
+    files=trace_files(data=data,run=run,verbose=verbose)
     s=[]
     class tr:
         file=''
