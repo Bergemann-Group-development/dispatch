@@ -176,7 +176,7 @@ SUBROUTINE startup (self)
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists, and set virtual and boundary bits
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_list_t%execute', itimer=itimer)
+  call trace%begin ('task_list_t%startup', itimer=itimer)
   !call self%init_bdries
   call self%init_all_nbors
   call self%reset_status
