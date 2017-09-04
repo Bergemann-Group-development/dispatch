@@ -26,7 +26,7 @@
  courant=0.0
  grace=0.0
  n=43,43,43
- dt_fixed=1d-12
+ dt_fixed=1d-10
  no_mans_land=f
 /
 
@@ -59,8 +59,10 @@ space_diagonals=t
 
 ! Treatment of boundary conditions for RT solver. 
 &rt_bc_params
-cool_temp = 103530.0   ! in kelvins
-hot_temp  = 621180.
+!cool_temp = 103530.0   ! in kelvins
+!hot_temp  = 621180.
+ cool_temp = 290.0
+ hot_temp  = 1740.0
 /
 
 
@@ -79,7 +81,8 @@ hot_temp  = 621180.
  !clump_pos = 0.6666,0.6666,0.6666
  d0=1.0
  clump_dfact=10.0
- t0=103530.0
+ !t0=103530.0
+ t0 = 290.0
  clump_a=0.1
  clump_b=0.06
  gamma = 1.666667
