@@ -118,6 +118,9 @@ class Patch(Task):
         if self.kind[0:9]=='rt_solver':
             self.Q = self.data[:,:,:,self.varidx['Q']]
             self.t = self.data[:,:,:,self.varidx['t']]
+            self.xs=self.x-0.5*self.ds[0]
+            self.ys=self.y-0.5*self.ds[1]
+            self.zs=self.z-0.5*self.ds[2]
         else:
             #if not 'd' in dir(self):
             self.d =self.data[:,:,:,self.varidx['d']]
