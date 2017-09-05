@@ -43,5 +43,6 @@ gpatch_mod.o:           io_mod.o trace_mod.o patch_mod.o download_mod.o initial_
 pebbles_mod.o           : io_mod.o trace_mod.o bits_mod.o omp_lock_mod.o pebble_mod.o
 pebble_trace_mod.o      : io_mod.o trace_mod.o bits_mod.o omp_lock_mod.o pebble_mod.o
 pebble_patch_mod.o      : io_mod.o trace_mod.o omp_mod.o omp_timer_mod.o task_mod.o $(PDE) link_mod.o planet_mod.o \
-                          star_mod.o scaling_mod.o units_mod.o random_mod.o scene_mod.o pebble_mod.o pebbles_mod.o pebble_trace_mod.o
+                          star_mod.o scaling_mod.o units_mod.o random_mod.o scene_mod.o pebble_mod.o pebbles_mod.o \
+                          pebble_trace_mod.o solver_mod.o
 pebble_mod.o            : 

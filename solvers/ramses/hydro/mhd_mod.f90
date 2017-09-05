@@ -46,18 +46,7 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: p2U                               ! get velocities
-    procedure:: U2p                               ! put velocities to momentum
-    procedure:: e2E_th                            ! get thermal energy
-    procedure:: E_th2e                            ! put thermal energy to total energy
-    procedure:: e2S                               ! get entropy from total energy
-    procedure:: S2e                               ! put entropy to total energy
-    procedure:: log_density
-    procedure:: log_pressure
-    procedure:: grav_potential
-    procedure:: velocity_magnitude
-    procedure:: magnetic_field_magnitude
-    procedure:: gas_velocity
+    procedure:: gas_pressure
   end type
   real,save:: csound=1.
   logical:: debug=.false.
@@ -1021,54 +1010,11 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
 end subroutine solver
 
 !> =============================================================================
-SUBROUTINE log_density (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
 !> =============================================================================
-SUBROUTINE log_pressure (self, v)
+FUNCTION gas_pressure (self)
   class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE grav_potential (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE velocity_magnitude (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE magnetic_field_magnitude (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
-!> =============================================================================
-FUNCTION gas_velocity (self) RESULT (v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: d
-  real, dimension(:,:,:,:), pointer:: p
-  real, dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
-  !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%i_d,self%it,1)
-  p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
-  v(:,:,:,1) = p(:,:,:,1) / d
-  v(:,:,:,2) = p(:,:,:,2) / d
-  v(:,:,:,3) = p(:,:,:,3) / d
-  
-  nullify (d, p)
-END FUNCTION gas_velocity
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: gas_pressure
+  gas_pressure = self%mem(:,:,:,self%i_e,self%it,1)*(self%gamma-1.0)
+END FUNCTION gas_pressure
 
 END MODULE

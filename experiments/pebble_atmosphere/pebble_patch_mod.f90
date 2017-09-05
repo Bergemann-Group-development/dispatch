@@ -19,6 +19,7 @@ MODULE pebble_patch_mod
   USE kinds_mod
   USE task_mod
   USE patch_mod
+  USE gpatch_mod
   USE mhd_mod
   USE planet_mod
   USE atmosphere_mod
@@ -31,12 +32,13 @@ MODULE pebble_patch_mod
   USE pebbles_mod
   USE pebble_trace_mod
   USE mesh_mod
+  USE solver_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
   ! A patch with pebbles
   !-----------------------------------------------------------------------------
-  type, public, extends(mhd_t):: pebble_patch_t
+  type, public, extends(solver_t):: pebble_patch_t
     class(pebbles_t), pointer:: pebbles=>null()
     class(pebbles_t), pointer:: not_done=>null()
     procedure(kdk_drag), pointer:: move=>null() ! particle mover

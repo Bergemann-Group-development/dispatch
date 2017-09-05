@@ -58,7 +58,7 @@ if ($st) then
     cp -p $label.{log,val}
     exit(0)
   else if (! $?tee) then
-    echo "To see the diffs, list the validate/$label.diff file"
+    echo "To see the diffs, list the file validate/$label.diff"
   endif
   exit(1)
 else

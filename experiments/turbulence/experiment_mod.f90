@@ -13,18 +13,16 @@
 !> update procedure in $(TOP)/lists/task_list_mod.f90.
 !> =============================================================================
 MODULE experiment_mod
-  USE omp_mod
   USE io_mod
-  USE io_unit_mod
   USE bits_mod
   USE trace_mod
-  USE mhd_mod
+  USE solver_mod
   USE initial_mod
   USE timer_mod
   USE link_mod
   implicit none
   private
-  type, public, extends(mhd_t):: experiment_t
+  type, public, extends(solver_t):: experiment_t
   contains
     procedure init
     procedure update
@@ -39,25 +37,31 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_mod::init')
+  call trace_begin('experiment_mod::init', itimer=itimer)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
-  call self%initial%init(self%kind)
+  call self%initial%init (self%kind)
   if (self%initial%mhd) then
     self%nv = 8
   else
     self%nv = 5
   end if
   self%mhd = self%initial%mhd
-  call self%mhd_t%init
-  call self%set(bits%static)
-  if (self%initial%time > 0.0) then
+  !----------------------------------------------------------------------------
+  ! Initial conditions
+  !----------------------------------------------------------------------------
+  call self%solver_t%init
+  if (self%kind(1:9) == 'stagger2_') then
+    call self%e2s (self%mem(:,:,:,self%i_e,self%it,1), self%it)
+  end if
+  call self%set (bits%static)
+  if (self%initial%time > 0d0) then
     self%time = self%initial%time
     self%t(self%it) = self%initial%time
   end if
   !call self%periodic_grid
-  call trace_end
+  call trace_end (itimer=itimer)
 END SUBROUTINE init
 
 !> =============================================================================
