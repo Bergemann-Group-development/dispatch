@@ -32,6 +32,7 @@ SUBROUTINE init_experiment (self)
   call trace_begin('experiment_t%init')
 
   self%nv = 8
+  self%periodic = .false.
   call self%mhd_t%init()
   call initial_conditions(self)
   call pboundaries%conditions(self, self%it)

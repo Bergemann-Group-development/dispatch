@@ -10,10 +10,13 @@
  omp_trace=t
 /
 
-&box_params
-  size=1,1,0.01
-  dims=3,3,1
-  origin=-0.5,-0.5,0.0
+&rubiks_params
+  size=0.33333,0.33333,0.01
+  position=0.0,0.0,0.0
+  n_levels=1
+  m_zoom=1
+  n_repeat=1,1,1
+  n_patch=3,3,1
 /
 
 &out_params
@@ -58,6 +61,7 @@
   msplit=2
   levelmax=8
   refine_from_time=0.0
+  do_refine=f
 /
 
 &ramses_params
