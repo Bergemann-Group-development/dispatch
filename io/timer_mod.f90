@@ -159,6 +159,11 @@ SUBROUTINE end (self, itimer)
   !-----------------------------------------------------------------------------
   thread = omp_get_thread_num()
   istack = timers(thread)%istack
+  if (istack <= 0) then
+    print *, 'WARNING, timer%end out-of-sync: thread, istack =', omp%thread, istack
+    timers(thread)%istack = 0
+    return
+  end if
   otimer = timers(thread)%stack(istack)
   !-----------------------------------------------------------------------------
   ! Increment call counter and total time used
@@ -170,7 +175,7 @@ SUBROUTINE end (self, itimer)
       print *, 'WARNING: itimer should not be zero!'
     else
       timers(thread)%total(otimer) = timers(thread)%total(otimer) + &
-                                     wc - timers(thread)%start(itimer)
+                                     wc - timers(thread)%start(otimer)
     end if
   end if
   !-----------------------------------------------------------------------------
