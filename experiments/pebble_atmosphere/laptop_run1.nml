@@ -6,6 +6,7 @@
 /
 &rubiks_params
  n_levels=6
+ n_patch=3
 /
 &pebble_params
  pebble_rate_cgs=1
