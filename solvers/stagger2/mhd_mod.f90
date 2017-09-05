@@ -131,7 +131,7 @@ SUBROUTINE pde (self)
   integer, save:: itimer=0
   type(index_t):: i
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%update',itimer=itimer)
+  call trace%begin('mhd_t%pde',itimer=itimer)
   self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
   self%s => self%mem(:,:,:,i%s      ,self%it,1); self%dsdt => self%mem(:,:,:,i%s      ,self%it,2)
   self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
@@ -390,6 +390,9 @@ SUBROUTINE update (self)
   ! placed at an earlier point in the task handling the call here will have no
   ! effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%update',itimer=itimer)
   call self%output
   call self%pde
   call self%courant_condition
@@ -397,6 +400,7 @@ SUBROUTINE update (self)
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================
@@ -407,8 +411,10 @@ SUBROUTINE output (self, experiment_name)
   character(len=64):: experiment_name, filename
   optional:: experiment_name
   logical:: exists
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
+  call trace%begin('mhd_t%output',itimer=itimer)
   call self%gpatch_t%output (experiment_name)
   !$omp critical (out_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
@@ -421,6 +427,7 @@ SUBROUTINE output (self, experiment_name)
     close (io%data_unit)
   end if
   !$omp end critical (out_cr)
+  call trace%end (itimer)
 END SUBROUTINE output
 
 !> =============================================================================

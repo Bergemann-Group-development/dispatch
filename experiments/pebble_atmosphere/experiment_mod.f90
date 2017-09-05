@@ -197,9 +197,10 @@ SUBROUTINE update (self)
   real, dimension(:,:,:), pointer:: d, e
   real(8), dimension(3):: h
   integer:: it, iv, nb, i
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call self%debug('start update')
-  call trace_begin('experiment_t%update')
+  call trace_begin('experiment_t%update', itimer=itimer)
   call self%check_density ('before update')
   !-----------------------------------------------------------------------------
   ! Option for transporting pebbles with frozen MHD values, in this case, make
@@ -246,7 +247,7 @@ SUBROUTINE update (self)
   call self%pebble_patch_t%update_pebbles
   call self%check_nan ('after timestep', always=.true.)
     call debug (self, 'after update', self%new)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================
@@ -256,6 +257,9 @@ SUBROUTINE output (self, experiment_name)
   class(experiment_t):: self
   character(len=64), optional:: experiment_name
   integer:: iv, it, m(3)
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace_begin('experiment_t%output', itimer=itimer)
   if (self%id==io%id_debug) then
     m = self%mesh%gn/2
     it = self%iit(self%nt-2)
@@ -268,6 +272,7 @@ SUBROUTINE output (self, experiment_name)
   !if (self%time > self%out_next) &
   !  call self%boundary_conditions (self%it)
   call self%pebble_patch_t%output
+  call trace_end (itimer)
 END SUBROUTINE
 
 !> =============================================================================
@@ -279,16 +284,16 @@ SUBROUTINE boundary_conditions (self, it, new)
   !.............................................................................
   real(8)             :: h(3)
   integer             :: iv, nb,i
-  integer, save       :: itimer=0
   real, pointer       :: d(:,:,:), e(:,:,:), ss(:,:,:), p(:,:,:,:)
   real                :: s0
+  integer, save       :: itimer=0
   !-----------------------------------------------------------------------------
   if (self%boundaries%bits /= 0) then
     call trace%begin ('experiment_t%boundary_conditions', itimer=itimer)
     call self%check_density ('before boundary_conditions')
     if (self%boundaries%is_set (bits%spherical)) then
       if (io%verbose>1) print *, self%id, 'BOUNDARY CONDITION: spherical'
-      print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
+      if (io%verbose>0) print *, self%id, 'BOUNDARY CONDITION: spherical, t =', self%t(self%it)
       if (sperical_bc_corners) then
        !------------------------------------------------------------------------
        ! Jagged boundary conditions
@@ -350,8 +355,9 @@ SUBROUTINE edge_boundary_conditions (self, it)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: u
   integer:: iv, select
   real:: ee
+  integer, save       :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('experiment_t%edge_boundary_conditions')
+  call trace%begin ('experiment_t%edge_boundary_conditions', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Allocate and load values into velocity, consistent with current density
   !-----------------------------------------------------------------------------
@@ -399,7 +405,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
     call apply_sponge_boundaries (self)
   end if
 
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE edge_boundary_conditions
 
 !> =============================================================================

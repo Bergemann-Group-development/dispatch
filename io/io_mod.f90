@@ -263,7 +263,9 @@ SUBROUTINE check_flags (self)
   class (io_t)      :: self
   real(8), save     :: last_checked=0d0
   real(8)           :: flag_time, checked
+  integer, save     :: itimer=0
   !.............................................................................
+  call timer%begin ('io_t%check_flags', itimer)
   flag_time = merge(self%flag_time, self%flag_max, self%do_flags)
   !$omp atomic read
   checked = last_checked
@@ -291,6 +293,7 @@ SUBROUTINE check_flags (self)
     call check ('sec_per_report.flag' , dvalue=timer%sec_per_report)
     !$omp end critical (flag_cr)
   end if
+  call timer%end (itimer)
 contains
   !=============================================================================
   subroutine check (file, lvalue, ivalue, rvalue, dvalue)
