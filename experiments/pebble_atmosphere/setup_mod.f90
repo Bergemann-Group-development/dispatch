@@ -52,7 +52,6 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
   call io%init (label)
-  call scaling%init
   call star%init
   call planet%init
   call atmosphere%init

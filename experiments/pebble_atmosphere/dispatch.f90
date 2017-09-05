@@ -5,11 +5,13 @@ PROGRAM dispatch
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
   USE mpi_mod
+  USE scaling_mod
   USE eos_mod
   USE setup_mod
   !.............................................................................
   call mpi%init
   call io%init ('pebble_atmosphere')
+  call scaling%init
   call eos%init
   call setup%init                       ! initialize the patch list and patches
   call setup%task_list%execute          ! execute the list = update member patches
