@@ -2403,17 +2403,16 @@ END SUBROUTINE interpolate_specific
 SUBROUTINE update_position (self)
   class(patch_t):: self
   !-----------------------------------------------------------------------------
-  call trace_begin("patch_t%update_position")
-
   if (all(self%velocity == 0.0)) return
-
+  call trace_begin("patch_t%update_position")
+  !
   self%position = self%position + self%velocity * self%dtime
   self%llc_cart = self%llc_cart + self%velocity * self%dtime
   self%centre_cart = self%centre_cart + self%velocity * self%dtime
-
+  !
   self%mesh(:)%p = self%position(:)
   self%mesh(:)%llc_cart = self%llc_cart(:)
-
+  !
   ! adjust the patch position for periodic wrapping
   where(self%position > 0.5*self%box)
     self%position = self%position - self%box
@@ -2422,7 +2421,6 @@ SUBROUTINE update_position (self)
     self%mesh(:)%llc_cart = self%mesh(:)%llc_cart - self%box
     self%centre_cart = self%centre_cart - self%box
   end where
-
   call trace_end
 END SUBROUTINE update_position
 
