@@ -13,7 +13,7 @@ MODULE refine_mod
   USE link_mod
   USE list_mod
   USE patch_mod
-  USE mhd_mod
+  USE solver_mod
   USE eos_mod
   implicit none
   private
@@ -331,7 +331,7 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine_it)
            v(patch%mesh(1)%gn,patch%mesh(2)%gn,patch%mesh(3)%gn,3))
   ! we need the gas pressure, density and velocity
   select type (patch)
-  class is (mhd_t)
+  class is (solver_t)
     d => patch%mem(:,:,:,patch%i_d,patch%it,1)
     e => patch%mem(:,:,:,patch%i_e,patch%it,1)
     pg = eos%pressure(d, e)
