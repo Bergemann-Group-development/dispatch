@@ -172,7 +172,7 @@ SUBROUTINE end (self, itimer)
   if (present(itimer)) then
     timers(thread)%calls(otimer) = timers(thread)%calls(otimer) + 1
     if (itimer == 0) then
-      print *, 'WARNING: itimer should not be zero!'
+      print *, omp%thread, 'WARNING: itimer should not be zero!'
     else
       timers(thread)%total(otimer) = timers(thread)%total(otimer) + &
                                      wc - timers(thread)%start(otimer)

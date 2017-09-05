@@ -163,6 +163,7 @@ MODULE patch_mod
     integer:: dim(3)
   end type
   logical, save:: extrapolate_gz=.false.
+  logical, save:: do_check_nan=.false.
   public task2patch
 CONTAINS
 
@@ -328,7 +329,7 @@ SUBROUTINE init (self)
   real(8):: position(3), size(3)
   integer:: iostat, i
   namelist /patch_params/ size, n, nv, ng, nt, courant, u_fixed, dt_fixed, &
-    grace, periodic, extrapolate_gz, no_mans_land, use_data_hub
+    grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     restart, inputdir, guard_zones, time_derivs
   !.............................................................................
@@ -509,9 +510,6 @@ SUBROUTINE rotate (self)
   class(patch_t):: self
   integer:: iv, nv, new
   real(8):: time
-  integer, save:: itimer=0
-  !.............................................................................
-  call trace_begin ('patch_t%rotate')
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
@@ -540,7 +538,6 @@ SUBROUTINE rotate (self)
   ! Task time slot rotation
   !-----------------------------------------------------------------------------
   call self%task_t%rotate
-  call trace_end
 END SUBROUTINE rotate
 
 !> =============================================================================
@@ -1582,15 +1579,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   real(8):: dtime
   integer, save:: itimer=0
   !.............................................................................
-  if (present(detailed_timer)) then
-    if (detailed_timer) then
-      call trace_begin('patch_mod::courant', itimer=itimer)
-    else
-      call trace_begin('patch_mod::courant')
-    end if
-  else
-    call trace_begin('patch_mod::courant')
-  end if
+  call trace_begin('patch_t%courant_condition', itimer=itimer)
   if (io%verbose>1) &
     write (io_unit%log,*) self%id, ' courant: u_max, ds', self%u_max, minval(self%ds)
   if (self%dt_fixed > 0.0) then
@@ -1622,13 +1611,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (io%verbose>3) &
     print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
-  if (present(detailed_timer)) then
-    if (detailed_timer) then
-      call trace_end (itimer)
-      return
-    end if
-  end if
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE courant_condition
 
 !> =============================================================================
@@ -1677,10 +1660,12 @@ SUBROUTINE check_nan (self, label, always)
   logical, optional:: always
   integer:: ix, iy, iz, iv, ii(3)
   logical:: nan
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (io%verbose<1 .and. .not.present(always)) return
+  if (.not. do_check_nan) return
+  if (io%verbose<1 .and. .not. present(always)) return
   if (.not. associated(self%mem)) return
-  call trace%begin ('patch_mod::check_nan')
+  call trace%begin ('patch_mod::check_nan', itimer=itimer)
   if (io%verbose>1) then
     if (present(label)) then
       print *, self%id, trim(label)//', min(d), max(d):', &
@@ -1726,7 +1711,7 @@ SUBROUTINE check_nan (self, label, always)
     print *, self%unsigned
     error stop 'NaN'
   end if
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE check_nan
 
 !> =============================================================================
@@ -1740,10 +1725,11 @@ SUBROUTINE check_density (self, label)
   real:: tiny = 1.0e-32
   integer:: ix, iy, iz, iv, ii(3), ntot, nins, l(3), u(3)
   logical:: inside, nan
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (io%verbose < 1) return
   if (.not. associated(self%mem)) return
-  call trace%begin ('patch_mod::check_density')
+  call trace%begin ('patch_mod::check_density', itimer=itimer)
   l = self%mesh%lb
   u = self%mesh%ub
   mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1))
@@ -1786,7 +1772,7 @@ SUBROUTINE check_density (self, label)
     end if
   end if
   call self%check_nan (label)
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE check_density
 
 !> =============================================================================

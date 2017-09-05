@@ -59,8 +59,9 @@ SUBROUTINE download_link (link, all_cells)
   class(link_t), pointer:: nbor
   class(patch_t), pointer:: target, source
   integer:: edges
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('download_t%download_link')
+  call trace%begin('download_t%download_link', itimer=itimer)
   target => task2patch(link%task)
   if (trim(target%kind)/='rt_solver') then
     if (io%verbose>1) &
@@ -104,7 +105,7 @@ SUBROUTINE download_link (link, all_cells)
     end do
   end if
   call target%check_density (" after download")
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE download_link
 
 !> =============================================================================

@@ -461,7 +461,9 @@ SUBROUTINE updater (self, head)
   !----------------------------------------------------------------------------
   ! Update the task, whatever that means (may include call to task%output)
   !----------------------------------------------------------------------------
-  wc = wallclock()
+  if (mpi_mesg%delay_ms==0.0) then
+    wc = wallclock()
+  end if
   call task%update                                    ! update the task
   !----------------------------------------------------------------------------
   ! Default delay time = first update time
@@ -1080,7 +1082,6 @@ SUBROUTINE check_active (self)
     end do
   end if
   call trace%end (itimer)
-  !print *, 'check_active:', mpi%rank, nvirt, nunpk
 END SUBROUTINE check_active
 
 !> =============================================================================
