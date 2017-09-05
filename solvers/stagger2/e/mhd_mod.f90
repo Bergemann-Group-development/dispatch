@@ -1,4 +1,12 @@
 !> =============================================================================
+!> Staggered mesh solver using entropy per unit volume as the energy variable.
+!>
+!> Flop counting is enable via annotation at the end of lines. To count flops,
+!> use a Linux pipeline such as
+!>
+!> % grep ops: ../../../solvers/stagger2/mhd_mod.f90 | sed 's/.*ops://' | sumcol 2
+!>
+!> where 'sumcol' is any script that sums up values in column 2
 !> =============================================================================
 MODULE mhd_mod
   USE io_mod
@@ -11,45 +19,33 @@ MODULE mhd_mod
   USE scaling_mod
   USE scalar_mod
   USE vector_mod
+  USE vector_ops
   USE stagger_mod
   USE gpatch_mod
   USE force_mod
-  USE eos_mod
   USE index_mod
   USE timestep_mod
   USE planet_mod
+  USE eos_mod
+  USE non_ideal_mod
   implicit none
   private
   type, extends(gpatch_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
-    real:: nu(6), csound
+    real:: nu(6)
+    real:: csound
     real:: cdtd
     logical:: mhd=.true.
+    logical:: first_time=.true.
     type(force_t):: force
   contains
     procedure:: init
     procedure:: pde
     procedure:: update
     procedure:: output
-    procedure:: p2U
-    procedure:: U2p
-    procedure:: e2E_th
-    procedure:: E_th2e
-    procedure:: e2S
-    procedure:: S2e
-    procedure:: log_density => void
-    procedure:: log_pressure => void
     procedure:: gas_pressure
-    procedure:: cell_gas_pressure
-    procedure:: gas_temperature
-    procedure:: cell_gas_temperature
-    procedure:: velocity_magnitude => void
-    procedure:: magnetic_field_magnitude => void
-    procedure:: grav_potential => void
-    procedure:: gas_velocity
   end type
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
@@ -57,14 +53,33 @@ CONTAINS
 !> region once the variable has been set.
 !> =============================================================================
 SUBROUTINE init (self)
-  use mpi_mod
   class(mhd_t):: self
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
+  type(index_t):: idx
   integer:: i
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   logical, save:: first_time=.true.
-  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire
+  character(len=16), save:: eos
+  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    eos = self%eos
+    rewind (io%input)
+    read (io%input, mhd_params)
+    if (io%master) write (*, mhd_params)
+    call non_ideal%init
+    call timestep%init
+    ! fool-proofing
+    if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
+  end if
+  !$omp end critical (input_cr)
+  self%eos = eos
+  self%nu = nu
+  self%gamma = gamma
+  self%csound = csound
+  self%cdtd = cdtd
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
   else
@@ -72,40 +87,27 @@ SUBROUTINE init (self)
   end if
   call self%gpatch_t%init
   self%i_d  = idx%d
+  self%i_e  = idx%e
   self%i_px = idx%px
   self%i_py = idx%py
   self%i_pz = idx%pz
-  self%i_e  = idx%e
   self%i_bx = idx%bx
   self%i_by = idx%by
   self%i_bz = idx%bz
-  !$omp critical (mhd_input_cr)
-  if (first_time) then
-    first_time = .false.
-    rewind (io%input)
-    read (io%input, mhd_params)
-    if (io%master) write (*, mhd_params)
-    call timestep%init
-    ! fool-proofing
-    if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
-  end if
-  !$omp end critical (mhd_input_cr)
-  self%nu = nu
-  self%gamma = gamma
-  self%csound = csound
-  self%cdtd = cdtd
+  self%type = 'mhd_t'
   do i=1,3
     self%mesh(i)%h(2+i) = -0.5
-    if (self%nv > 5) self%mesh(i)%h(5+i) = -0.5
+    if (self%mhd) self%mesh(i)%h(5+i) = -0.5
   end do
-  !self%unsigned(idx%d) = .true.
-  !self%unsigned(idx%e) = .true.
+  self%unsigned(idx%d)  = .true.
+  self%pervolume(idx%e) = .true.
   call self%force%init(self%kind)
   call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
 SUBROUTINE pde (self)
+  USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
   real, dimension(:,:,:,:), pointer:: U, emf, J, p, B, dpdt, dBdt
@@ -119,29 +121,28 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer:: fxx, fxy
   real, dimension(:,:,:),   pointer::      fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx,      fzz
+  real, dimension(:,:,:),   pointer:: Txx, Txy
+  real, dimension(:,:,:),   pointer::      Tyy, Tyz
+  real, dimension(:,:,:),   pointer:: Tzx,      Tzz
+  integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
+  logical, save:: first_time=.true.
   !.............................................................................
-  real:: ds(3), dx
+  real(8):: ds(3)
   integer, save:: itimer=0
-  type(stagger_t):: st
+  type(index_t):: i
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%pde',itimer=itimer)
-  st%m => self%mesh
-  self%d    => self%mem(:,:,:,self%i_d,self%it,1)
-  self%dddt => self%mem(:,:,:,self%i_d,self%it,2)
-  self%e    => self%mem(:,:,:,self%i_e,self%it,1)
-  self%dedt => self%mem(:,:,:,self%i_e,self%it,2)
-  self%p    => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
-  self%dpdt => self%mem(:,:,:,self%i_px:self%i_pz,self%it,2)
-  d=>self%d; dddt=>self%dddt
-  e=>self%e; dedt=>self%dedt
+  call trace%begin('mhd_t%update',itimer=itimer)
+  self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
+  self%e => self%mem(:,:,:,i%e      ,self%it,1); self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
+  self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
+  d=>self%d; dddt=>self%dddt; e=>self%e; dedt=>self%dedt;
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
-    self%B    => self%mem(:,:,:,self%i_bx:self%i_bz,self%it,1)
-    self%dBdt => self%mem(:,:,:,self%i_bx:self%i_bz,self%it,2)
+    self%B => self%mem(:,:,:,i%bx:i%bz,self%it,1); self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
     B=>self%B; dBdt=>self%dBdt
-    Bx   =>   B(:,:,:,1); By   =>   B(:,:,:,2); Bz   =>   B(:,:,:,3);
+    Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
   call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
@@ -165,33 +166,33 @@ SUBROUTINE pde (self)
   ddx=>dd(:,:,:,1); ddy=>dd(:,:,:,2); ddz=>dd(:,:,:,3)
   !-----------------------------------------------------------------------------
   ! Compute velocity U=momentum/density, leaving down shifted density and log
-  ! density for reuse below
+  ! density for reuse below.  U is valid in (2:gn)
   !-----------------------------------------------------------------------------
-  lnd = log(d)
+  lnd = log(d)                                                                  ! ops: 0 0 0 0 3
   ld = down(lnd)
-  dd = exp(ld)
-  U = p/dd
+  dd = exp(ld)                                                                  ! ops: 0 0 0 0 3
+  U = p/dd                                                                      ! ops: 0 0 3
   !-----------------------------------------------------------------------------
-  ! Gas pressure
+  ! Gas pressure. The 2nd table variable is entropy per unit mass, effectively
+  ! a log variable, from the table point of view.
   !-----------------------------------------------------------------------------
-  ee = e/d
+  ee = e/d                                                                      ! ops: 0 0 1
   pg = self%gas_pressure()
   !-----------------------------------------------------------------------------
-  ! Divergence of velocity, and artificial pressure
+  ! Divergence of velocity, and artificial pressure.  The divergence is valid
+  ! in (2,gn-1)
   !-----------------------------------------------------------------------------
-  ds = self%mesh%d
-  dx = minval(ds)                                       ! smallest {dx,dy,dz}
-  du = st%div(U)                                        ! save div(U) for now
-  if (self%gamma /= 1.0) then                           ! unless isothermal
-    dedt = -pg*du                                       ! -Pg*div(U) term
-  else
-    dedt = 0.0
-  end if
-  du = -dx*du                                           ! convergence rate
+  ds = self%ds
+  du = -maxval(ds)*div(ds,U)                            ! convergence rate      ! ops: 0 1 0
   du = max(du,0.0)                                      ! positive part
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
+  ! The diagonal fxx is valid in (2:gn-1)
   !-----------------------------------------------------------------------------
+  call allocate_scalars (self%gn, Txx, Tyy, Tzz)
+  Txx = ddxup(ds,Ux)
+  Tyy = ddyup(ds,Uy)
+  Tzz = ddzup(ds,Uz)
   if (self%mhd) then
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -199,102 +200,105 @@ SUBROUTINE pde (self)
     fzz = zup(Uz)**2
     pp = (fxx+fyy+fzz)
     ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
-    Ex = xup(Bx)**2
-    Ey = yup(By)**2
-    Ez = zup(Bz)**2
+    Ex = xup(Bx)**2                                                             ! mhd: 0 1 0
+    Ey = yup(By)**2                                                             ! mhd: 0 1 0
+    Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
     ! Magnetic pressure
-    pb = 0.5*(Ex+Ey+Ez)
+    pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
     ! Fast mode speed + velocity
     pa = self%nu(2)*d*du**2
-    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)
-    if (io%verbose>2) then
+    cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
+    if (io%verbose>3) then
       self%u_max = self%fmaxval(cs)
       print*,'u_max',self%u_max
       self%u_max = self%fmaxval(cs + sqrt(pp))
       print*,'u_max',self%u_max
     end if
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)
-    if (io%verbose>2) print*,'u_max',self%u_max
+    if (io%verbose>3) print*,'u_max',self%u_max
     ! Isotropic pressure part
-    pp = pg + pa + pb
+    pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
-    du = dx*self%nu(1)*cs
-    fxx = pp + d*(fxx - du*st%ddxup(Ux)) - Ex
-    fyy = pp + d*(fyy - du*st%ddyup(Uy)) - Ey
-    fzz = pp + d*(fzz - du*st%ddzup(Uz)) - Ez
-    Q = d*du*(st%ddxup(Ux)**2+st%ddyup(Uy)**2+st%ddzup(Uz)**2)
+    du = (maxval(ds)*self%nu(1))*cs
+    fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
+    fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
+    fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
   else
     ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2
-    fyy = yup(Uy)**2
-    fzz = zup(Uz)**2
-    pp = (fxx+fyy+fzz)
+    fxx = xup(Ux)**2                                                            ! ops: 0 1 0
+    fyy = yup(Uy)**2                                                            ! ops: 0 1 0
+    fzz = zup(Uz)**2                                                            ! ops: 0 1 0
+    pp = (fxx+fyy+fzz)                                                          ! ops: 2 0 0
     ! Isotropic pressure part
-    pa = self%nu(2)*d*du**2                               ! dimension: pressure
+    pa = self%nu(2)*d*du**2                          ! dimension: pressure      ! ops: 0 3 0
     ! Sound speed + velocity
-    cs = sqrt((self%gamma*pg+pa)/d)
-    if (io%verbose>2) then
+    cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
+    if (io%verbose>3) then
       self%u_max = self%fmaxval(cs)
       print*,'u_max',self%u_max
       self%u_max = self%fmaxval(cs + sqrt(pp))
       print*,'u_max',self%u_max
     end if
-    self%u_max = self%fmaxval(cs + sqrt(pp) + du)
-    if (io%verbose>2) print*,'u_max',self%u_max
-    pp = pg + pa
+    self%u_max = self%fmaxval(cs + sqrt(pp) + du)                               ! ops: 2 0 0 1 0
+    if (io%verbose>3) print*,'u_max',self%u_max
+    pp = pg + pa                                                                ! ops: 1 0 0
     ! Total diagondal stress, with density factor
-    du = dx*self%nu(1)*cs
-    fxx = pp + d*(fxx - du*st%ddxup(Ux))
-    fyy = pp + d*(fyy - du*st%ddyup(Uy))
-    fzz = pp + d*(fzz - du*st%ddzup(Uz))
-    Q = d*du*(st%ddxup(Ux)**2+st%ddyup(Uy)**2+st%ddzup(Uz))
+    du = (maxval(ds)*self%nu(1))*cs                                             ! ops: 0 1 0
+    !---------------------------------------------------------------------------
+    ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
+    !---------------------------------------------------------------------------
+    fxx = pp + d*(fxx - du*Txx)                                                 ! ops: 2 2 0
+    fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
+    fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
   end if
+  !-----------------------------------------------------------------------------
+  ! du has units area per unit time, which gives velocity squared times mass
+  ! density per unit time = energy per unit volume and time
+  !-----------------------------------------------------------------------------
+  Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
+  call deallocate_scalars (Txx, Tyy, Tzz)
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
-  fd = -(self%nu(4)*dd*down(du))*st%ddown(lnd)          ! diffusive mass flux
-  fm = p+fd                                             ! mass flux
-  dddt = -st%div(fm)                                    ! density derivative
-  self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))
-  if (io%verbose>2) print*,'u_max',self%u_max
-  !---------------------------------------------------------------------------
+  fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux   ! ops: 0 9 0
+  fm = p+fd                                             ! mass flux             ! ops: 3 0 0
+  dddt = -div(ds,fm)                                    ! density derivative
+  self%u_max = max(self%u_max,self%cdtd*maxval(ds)*self%fmaxval(abs(dddt/d)))   ! ops: 0 0 1
+  if (io%verbose>3) print*,'u_max',self%u_max
+  !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
-  !---------------------------------------------------------------------------
-  fxy = ydn(Ux)*xdn(Uy)
-  fyz = zdn(Uy)*ydn(Uz)
-  fzx = xdn(Uz)*zdn(Ux)
-  if (self%id==io%id_debug) print *, 'DPDTZ1', fzx(19:20,19,5)
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  fxy = ydn(Ux)*xdn(Uy)                                                         ! ops: 0 1 0
+  fyz = zdn(Uy)*ydn(Uz)                                                         ! ops: 0 1 0
+  fzx = xdn(Uz)*zdn(Ux)                                                         ! ops: 0 1 0
+  !-----------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
-  !---------------------------------------------------------------------------
-  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*(st%ddxdn(Uy)+st%ddydn(Ux))
-  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*(st%ddydn(Uz)+st%ddzdn(Uy))
-  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
-  if (self%id==io%id_debug) then
-    fzx = st%ddzdn(Uy)
-    print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = self%nu(3)*0.5*st%ddzdn(Uy)
-    print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = self%nu(3)*0.5*ydn1(zdn1(du))*st%ddzdn(Uy)
-    print *, 'DPDTZ2', fzx(19:20,19,5)
-    fzx = xdn(Uz)*zdn(Ux)
-    fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*(st%ddzdn(Ux)+st%ddxdn(Uz))
-  if (self%id==io%id_debug) print *, 'DPDTZ2', fzx(19:20,19,5), Uy(19:20,19,4:5), Uz(19:20,18:19,5)
-  end if
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  call allocate_scalars (self%gn, Txy, Tyz, Tzx)
+  Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)                                               ! ops: 0 1 0
+  Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)                                               ! ops: 0 1 0
+  Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)                                               ! ops: 0 1 0
+  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*Txy                                 ! ops: 1 3 0
+  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*Tyz                                 ! ops: 1 3 0
+  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*Tzx                                 ! ops: 1 3 0
+  Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
+                               yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
+                               zup(xup(Tzx))**2)                                ! ops: 1 0 0
+  call deallocate_scalars (Txy, Tyz, Tzx)
+  !-----------------------------------------------------------------------------
   ! Multiply with edge-centered density
-  !---------------------------------------------------------------------------
-  fxy = exp(ydn(ldx))*fxy
-  fyz = exp(zdn(ldy))*fyz
-  fzx = exp(xdn(ldz))*fzx
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  fxy = exp(ydn(ldx))*fxy                                                       ! ops: 0 1 0 0 1
+  fyz = exp(zdn(ldy))*fyz                                                       ! ops: 0 1 0 0 1
+  fzx = exp(xdn(ldz))*fzx                                                       ! ops: 0 1 0 0 1
+  !-----------------------------------------------------------------------------
   ! Off-diagonal Maxwell stress
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (self%mhd) then
-    fxy = fxy - ydn(Bx)*xdn(By)
-    fyz = fyz - zdn(By)*ydn(Bz)
-    fzx = fzx - xdn(Bz)*zdn(Bx)
+    fxy = fxy - ydn(Bx)*xdn(By)                                                 ! mhd: 1 1 0
+    fyz = fyz - zdn(By)*ydn(Bz)                                                 ! mhd: 1 1 0
+    fzx = fzx - xdn(Bz)*zdn(Bx)                                                 ! mhd: 1 1 0
   end if
   !-----------------------------------------------------------------------------
   ! Consistent addition of mass flux related momentum flux, symmetrized. The
@@ -302,84 +306,59 @@ SUBROUTINE pde (self)
   ! while the off-diagonal part needs to be properly symmetrized.
   !-----------------------------------------------------------------------------
   if (self%nu(4) > 0.0) then
-    pa = d*du*self%nu(4)
-    fxx = fxx - pa*st%ddxup(ldx)*xup(Ux)
-    fyy = fyy - pa*st%ddyup(ldy)*yup(Uy)
-    fzz = fzz - pa*st%ddzup(ldz)*zup(Uz)
-    fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
-    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
-    fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
-    !fxx = fxx + xup1(fdx)*xup(Ux)
-    !fyy = fyy + yup1(fdy)*yup(Uy)
-    !fzz = fzz + zup1(fdz)*zup(Uz)
-    !fxy = fxy + 0.5*(xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
-    !fyz = fyz + 0.5*(ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
-    !fzx = fzx + 0.5*(zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
-    if (self%id==io%id_debug) print *, 'DPDTZ4', fzx(19:20,19,5)
+    pa = d*du*self%nu(4)                                                        ! ops: 0 2 0
+    !---------------------------------------------------------------------------
+    ! fxx, pa, ddxup(ldx), and xup(Ux) are all valid in (2:gn-1)
+    !---------------------------------------------------------------------------
+    fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)                                        ! ops: 1 2 0
+    fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)                                        ! ops: 1 2 0
+    fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)                                        ! ops: 1 2 0
+    fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))                           ! ops: 2 2 0
+    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))                           ! ops: 2 2 0
+    fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))                           ! ops: 2 2 0
   end if
   !-----------------------------------------------------------------------------
-  ! Momentum equations
+  ! Momentum equations.  The ddxdn(fxx) part is valid in (3:gn-1), and hence px
+  ! only needs guard zones in (1:2) and (gn:gn)
   !-----------------------------------------------------------------------------
-  dpdtx = - st%ddxdn1(fxx) - st%ddyup1(fxy) - st%ddzup1(fzx)
-  dpdty = - st%ddxup1(fxy) - st%ddydn1(fyy) - st%ddzup1(fyz)
-  dpdtz = - st%ddxup1(fzx) - st%ddyup1(fyz) - st%ddzdn1(fzz)
-  if (self%id==io%id_debug) then
-    print *, 'DPDTZ', st%m%d,    dpdtz(19,19,5), fzz(19,19,4:5)
-    dpdtz = - st%ddxup1(fzx)
-    print *, 'DPDTZ', st%m(1)%d, dpdtz(19,19,5), fzx(19:20,19,5)
-    dpdtz = - st%ddyup1(fyz)
-    print *, 'DPDTZ', st%m(2)%d, dpdtz(19,19,5), fyz(19,19:20,5)
-    dpdtz = - st%ddzdn1(fzz)
-    print *, 'DPDTZ', st%m(3)%d, dpdtz(19,19,5), fzz(19,19,4:5)
-    dpdtz = - st%ddxup1(fzx) - st%ddyup1(fyz) - st%ddzdn1(fzz)
-  end if
+  dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)                    ! ops: 2 0 0
+  dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)                    ! ops: 2 0 0
+  dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)                    ! ops: 2 0 0
   !-----------------------------------------------------------------------------
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-!  if (io%verbose>1 .and. self%position(1)==0d0.and.self%position(2)==0d0) then
-!    print *, self%id, 'VELOC', Ux(18,18,5), Uy(18,18,5), Uz(18,18,5), pg(18,18,5)
-!    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
-!  if (associated(self%force%selected)) &
-!    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-!    print *, self%id, 'FORCE', dpdt(18,18,5,:), self%position(3) - planet%position(3)
-!  else
-    if (associated(self%force%selected)) &
-      dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-!  end if
+  if (associated(self%force%selected)) &
+   dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
   !-----------------------------------------------------------------------------
-  ! Conservation of energy.  The formulation that works best so far is to make
-  ! the diffusive energy flux directly proportional to the diffusive mass flux,
-  ! plus a contribution proportional to the gradient of specific energy ee.
+  ! Conservation of energy; reuse the mass flux for the energy flux
   !-----------------------------------------------------------------------------
-  if (self%gamma == 1.0) then
-    dedt = dddt*e/d
+  if (self%gamma /= 1.0) then                           ! unless isothermal
+    fm = fm*down(ee) - (self%nu(5)*dd*down(du))*ddown(ds,ee)                    ! ops: 1 4 0
+    dedt = -div(ds,fm) - pg*du + Q
   else
-    ee = e/d
-    fm = fm*down(ee) - (self%nu(5)*dd*down(du))*st%ddown(ee)
-    dedt = dedt - st%div(fm) + Q
+    dedt = dddt*ee                                                              ! ops: 0 1 0
   end if
+
   !-----------------------------------------------------------------------------
   ! Induction equation
   !-----------------------------------------------------------------------------
   if (self%mhd) then
     !---------------------------------------------------------------------------
     ! Electric current, resistive electric field and magnetic dissipation
-    ! emf = {Ex,Ey,Ez} is the vector with components Ex, Ey, Ez
     !---------------------------------------------------------------------------
-    J = st%curl_dn(B)
-    emf = self%nu(6)*edge(du)*J
-    if (self%gamma /= 1.0) then
-      Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))
-      dedt = dedt + Q
-    end if
+    J = curl_dn(ds,B)
+    Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                     ! mhd: 2 3 0
+    if (self%gamma/=1.0) &
+      dedt = dedt + Q                                                           ! mhd: 1 0 0
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
     !---------------------------------------------------------------------------
-    Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
-    Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
-    Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
-    dBdt = -st%curl_up(emf)
+    Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)                                 ! mhd: 2 2 0
+    Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
+    Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
+    call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
+    dBdt = -curl_up(ds,emf)
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
@@ -392,7 +371,8 @@ SUBROUTINE pde (self)
 END SUBROUTINE pde
 
 !> =============================================================================
-!> Take a complete update step.  This can be overloaded in higher level ud
+!> Take a complete update step.  This can be overloaded in higher levels, e.g.
+!> in experiment_mod.
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
@@ -411,106 +391,6 @@ SUBROUTINE update (self)
   call self%check_density(' after timestep')
 END SUBROUTINE update
 
-!> =====================================================================
-!> Get velocities from momentum
-!> =====================================================================
-SUBROUTINE p2U(self, U, it)
-  class(mhd_t) :: self
-  real, dimension(:,:,:,:), pointer:: U
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:,:), pointer:: dd
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,           it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
-  allocate(dd(size(d,1),size(d,2),size(d,3),3))
-  dd=down(log(d))
-  U = p/exp(dd)
-  deallocate(dd)
-  end associate
-END SUBROUTINE p2U
-
-!> =====================================================================
-!> Put velocities to momentum
-!> =====================================================================
-SUBROUTINE U2p(self, U, it)
-  class(mhd_t) :: self
-  real, dimension(:,:,:,:), pointer:: U
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:,:), pointer:: dd
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
-  allocate(dd(size(d,1),size(d,2),size(d,3),3))
-  dd=down(log(d))
-  p = U*exp(dd)
-  deallocate(dd)
-  end associate
-END SUBROUTINE U2p
-
-!> =====================================================================
-!> Get thermal energy from total/specific energy
-!> =====================================================================
-SUBROUTINE e2E_th(self, E_th, it)
-  class(mhd_t) :: self
-  real, dimension(:,:,:), pointer:: E_th
-  integer:: it
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_e,it,1))
-  E_th = e/d
-  end associate
-END SUBROUTINE e2E_th
-
-!> =====================================================================
-!> Put thermal energy to total/specific energy
-!> =====================================================================
-SUBROUTINE E_th2e(self, E_th, it)
-  class(mhd_t) :: self
-  real, dimension(:,:,:), pointer:: E_th
-  integer:: it
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_e,it,1))
-  e = E_th*d
-  end associate
-END SUBROUTINE E_th2e
-
-!> =====================================================================
-!> Get thermal energy per unit mass from entropy
-!> =====================================================================
-SUBROUTINE e2S(self, s, it)
-  class(mhd_t) :: self
-  real, dimension(:,:,:), pointer:: s
-  integer:: it
-  !.....................................................................
-  real:: g1
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
-  g1 = self%gamma-1.0
-  s = log(e*g1/d**self%gamma)/g1
-  end associate
-END SUBROUTINE e2S
-
-!> =====================================================================
-!> Get thermal energy per unit mass from entropy
-!> =====================================================================
-SUBROUTINE S2e(self, s, it)
-  class(mhd_t) :: self
-  real, dimension(:,:,:), pointer:: s
-  integer:: it
-  !.....................................................................
-  real:: g1
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
-  g1 = self%gamma-1.0
-  e = d**self%gamma*exp(s*g1)/g1
-  end associate
-END SUBROUTINE S2e
-
 !> =============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
 !> =============================================================================
@@ -524,7 +404,7 @@ SUBROUTINE output (self, experiment_name)
   call self%gpatch_t%output (experiment_name)
   !$omp critical (out_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
-    self%id, self%iout-1
+    self%id, self%iout
   inquire(file=filename, exist=exists)
   if (exists) then
     open (io%data_unit, file=trim(filename), form='formatted', status='old', &
@@ -539,127 +419,19 @@ END SUBROUTINE output
 FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  real, dimension(:,:,:), pointer:: s
-  !-----------------------------------------------------------------------------
-  call trace%begin('mhd_mod::gas_pressure',2)
-  self%d => self%mem(:,:,:,self%i_d,self%it,1)
-  self%e => self%mem(:,:,:,self%i_e,self%it,1)
-  if (trim(self%eos)=='ideal') then
-    if (self%gamma==1.0) then
-      pg = self%d*self%csound**2
-    else
-      pg = self%e*(self%gamma-1.0)
-    end if
-  else
-    allocate (s(self%gn(1),self%gn(2),self%gn(3)))
-    call self%e2S(s, self%it)
-    call eos%lookup (shape(self%d), x=self%d, y=s, pg=pg)
-    deallocate(s)
-  end if
-  call trace%end
-END FUNCTION gas_pressure
-
-FUNCTION cell_gas_pressure(self, c) RESULT (pg)
-  class(mhd_t) :: self
-  integer :: c(3)
-  real :: pg
-  !---------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3),self%i_d,self%it,1), &
-             e => self%mem(c(1),c(2),c(3),self%i_e,self%it,1))
-  if (self%gamma==1.0) then
-    pg = self%d(c(1),c(2),c(3))*self%csound**2
-  else
-    pg = self%e(c(1),c(2),c(3))*(self%gamma-1.0)
-  end if
-  end associate
-END FUNCTION cell_gas_pressure
-
-!> =============================================================================
-!> temperature from ideal gas law, taking into account that the temperature is
-!> normalised by k_B and mu (so that specific gas constant = 1)
-!> =============================================================================
-FUNCTION gas_temperature (self) RESULT (tmp)
-  class(mhd_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
-  !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:,self%i_d,self%it,1))
-  tmp = gas_pressure(self)/d
-  end associate
-END FUNCTION gas_temperature
-
-!> =============================================================================
-!> =============================================================================
-FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
-  class(mhd_t):: self
-  integer :: c(3)
-  real :: tmp(c(1),c(2),c(3))
-  !-----------------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3),self%i_d,self%it,1))
-  tmp = cell_gas_pressure(self,c)/self%d(c(1),c(2),c(3))
-  end associate
-END FUNCTION cell_gas_temperature
-
-!> =============================================================================
-SUBROUTINE log_density (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = log(self%d)
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE log_pressure (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = log(gas_pressure(self))
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE velocity_magnitude (self, v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = norm(self%p/exp(down(log(self%d))))
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE magnetic_field_magnitude (self, v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = norm(self%B)
-END SUBROUTINE
-
-!> =============================================================================
-FUNCTION gas_velocity (self) RESULT (v)
-  USE scalar_mod
-
-  class (mhd_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer: d, lnd
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer: p, ld, dd
-  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
+  real, dimension(:,:,:), pointer:: d, e
   !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%i_d,self%it,1)
-  p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
-  call allocate_vectors (self%gn, ld, dd)
-  call allocate_scalars (self%gn, lnd)
-  lnd = log(d)
-  ld = down(lnd)
-  dd = exp(ld)
-  v = p/dd
-
-  call deallocate_vectors (ld, dd)
-  call deallocate_scalars (lnd)
-  nullify (d,p)
-END FUNCTION gas_velocity
-
-!> =============================================================================
-SUBROUTINE void (self, v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = 0.0
-END SUBROUTINE
+  e => self%mem(:,:,:,self%i_e,self%it,1)
+  if (trim(self%eos)=='ideal') then
+    if (self%gamma==1.0) then
+      pg = d*self%csound**2
+    else
+      pg = e*(self%gamma-1)
+    end if
+  else
+    call eos%lookup (shape(d), x=d, y=e, pg=pg)
+  end if
+END FUNCTION gas_pressure
 
 END MODULE mhd_mod

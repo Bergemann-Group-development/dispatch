@@ -1,7 +1,5 @@
-# include "parent" Makefil
-include $(TOP)/solvers/stagger2/e/Makefile
-
 # Append to VPATH
-VPATH := $(TOP)/solvers/smagorinsky:$(VPATH)
+VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)
 
-eos_mod.o: io_unit_mod.o io_mod.o mpi_mod.o
+include $(TOP)/solvers/stagger2/Makefile
+
