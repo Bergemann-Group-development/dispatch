@@ -16,6 +16,7 @@ MODULE io_mod
     logical:: do_legacy, do_direct, omp_trace
     integer:: levelmax
     integer:: word_size=4
+    integer:: iodir = -1
     integer:: nwrite=0, ntask=0
     character(len=64):: inputname, outputname, datadir='data', top, inputdir
     character(len=1):: sep = '/'
