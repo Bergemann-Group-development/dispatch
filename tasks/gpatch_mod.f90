@@ -30,6 +30,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(gpatch_t):: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: ff
+  character(len=64) filename
   logical:: ok
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init')
@@ -61,6 +62,11 @@ SUBROUTINE init (self)
     self%t(self%it) = self%time
     self%out_next = (int(self%time/io%out_time)+1)*io%out_time
     self%iout = self%restart+1
+    !$omp master
+    write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout
+    if (io%iodir/=self%iout) call io%mkdir (trim(filename))
+    io%iodir = self%iout
+    !$omp end master
   end if
   call trace%end
 END SUBROUTINE

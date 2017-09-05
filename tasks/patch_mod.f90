@@ -1117,7 +1117,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   real:: pt, qt
   real, dimension(:,:,:), pointer:: buf
   real(8):: time
-  integer, save:: iodir=-1
+ ! integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
   call trace_begin('patch_mod::output_legacy')
   !-----------------------------------------------------------------------------
@@ -1164,8 +1164,8 @@ SUBROUTINE output_legacy (self, experiment_name)
   end if
   write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout+1
   !$omp master
-  if (iodir/=self%iout+1) call io%mkdir (trim(filename))
-  iodir = self%iout+1
+  if (io%iodir/=self%iout+1) call io%mkdir (trim(filename))
+  io%iodir = self%iout+1
   !$omp end master
   write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
   if (io%debug(1)) &
