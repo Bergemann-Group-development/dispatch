@@ -280,7 +280,7 @@ SUBROUTINE boundary_conditions (self, it, new)
   real(8)             :: h(3)
   integer             :: iv, nb,i
   integer, save       :: itimer=0
-  real, pointer       :: d(:,:,:), e(:,:,:), s(:,:,:), p(:,:,:,:)
+  real, pointer       :: d(:,:,:), e(:,:,:), ss(:,:,:), p(:,:,:,:)
   real                :: s0
   !-----------------------------------------------------------------------------
   if (self%boundaries%bits /= 0) then
@@ -297,17 +297,17 @@ SUBROUTINE boundary_conditions (self, it, new)
         d => self%mem(:,:,:,self%i_d,new,1)
         s0 = (log(atmosphere%surface%pressure) - &
           log(atmosphere%surface%density)*self%gamma)/(self%gamma-1.0)
-        allocate (s(self%gn(1),self%gn(2),self%gn(3)))
+        allocate (ss(self%gn(1),self%gn(2),self%gn(3)))
         if (self%kind(1:9)=='stagger2_') then
-          s = self%mem(:,:,:,self%i_s,new,1)/d
-          call self%boundaries%spherical_jagged_s (s, self%mesh, self%i_s, s0)
-          self%mem(:,:,:,self%i_s,new,1) = s*d
+          ss = self%mem(:,:,:,self%i_s,new,1)/d
+          call self%boundaries%spherical_jagged_s (ss, self%mesh, self%i_s, s0)
+          self%mem(:,:,:,self%i_s,new,1) = ss*d
         else
-          call self%e2S (s, new)
-          call self%boundaries%spherical_jagged_s (s, self%mesh, self%i_s, s0)
-          call self%S2e (s, new)
+          call self%e2ss (ss, new)
+          call self%boundaries%spherical_jagged_s (ss, self%mesh, self%i_s, s0)
+          call self%ss2e (ss, new)
         end if
-        deallocate (s)
+        deallocate (ss)
         do iv=self%i_px,self%i_pz
           call self%boundaries%spherical_jagged_p (self%mem(:,:,:,iv,new,1), self%mesh, iv)
         end do
@@ -346,7 +346,7 @@ END SUBROUTINE boundary_conditions
 SUBROUTINE edge_boundary_conditions (self, it)
   class(experiment_t):: self
   integer:: it
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e_th, uu, s, ss
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e_th, uu, ss
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: u
   integer:: iv, select
   real:: ee
