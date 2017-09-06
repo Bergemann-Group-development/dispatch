@@ -21,6 +21,7 @@ MODULE pebble_patch_mod
   USE patch_mod
   USE gpatch_mod
   USE mhd_mod
+  USE rmhd_mod
   USE planet_mod
   USE atmosphere_mod
   USE star_mod
@@ -38,7 +39,7 @@ MODULE pebble_patch_mod
   !-----------------------------------------------------------------------------
   ! A patch with pebbles
   !-----------------------------------------------------------------------------
-  type, public, extends(solver_t):: pebble_patch_t
+  type, public, extends(rmhd_t):: pebble_patch_t
     class(pebbles_t), pointer:: pebbles=>null()
     class(pebbles_t), pointer:: not_done=>null()
     procedure(kdk_drag), pointer:: move=>null() ! particle mover

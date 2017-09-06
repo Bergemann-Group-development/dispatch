@@ -18,12 +18,12 @@ MODULE rmhd_mod
   USE trace_mod
   USE kinds_mod
   USE eos_mod
-  USE mhd_mod
+  USE solver_mod
   USE rt_mod
   implicit none
   private
   ! --------------------------------------------------------------------
-  type, public, extends(mhd_t):: rmhd_t
+  type, public, extends(solver_t):: rmhd_t
     class(rt_t), pointer      :: rt
   contains
     procedure :: init
