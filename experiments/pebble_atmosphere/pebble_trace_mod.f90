@@ -136,7 +136,6 @@ SUBROUTINE trace_output (self, i, close_key)
   if (.not.associated(self%buffer)) return
   if (self%buffer(i)%n==0) return
   call trace_begin ('pebbles_mod::trace_output', itimer=itimer)
-  !$omp critical (tr_out_cr)
   write (filename,'(a,i5.5,".trc")') trim(io%outputname), i
   if (io%verbose>0) &
     print*,'pebble_trace: ', trim(filename), self%buffer(i)%record, self%buffer(i)%n
@@ -162,7 +161,6 @@ SUBROUTINE trace_output (self, i, close_key)
   self%buffer(i)%n = 0
   write (unit) 0,0,0,0
   close (unit)
-  !$omp end critical (tr_out_cr)
   call trace_end (itimer)
 END SUBROUTINE trace_output
 
