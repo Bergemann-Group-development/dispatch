@@ -579,7 +579,7 @@ SUBROUTINE apply_sponge_boundaries (self)
     return
   call trace%begin ("experiment_t::apply_sponge_boundaries")
 
-  if (io%debug(2) .or. self%track) print*, self%id, ": Wave killing ON"
+  if (io%debug(2) .or. self%track .and. io%verbose>0) print*, self%id, ": Wave killing ON"
   mem => self%mem(:,:,:,:,self%it,1)
   m1 => self%mesh(1)
   m2 => self%mesh(2)

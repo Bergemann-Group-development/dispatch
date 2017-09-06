@@ -925,7 +925,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         self%print_next = (nint(self%time/io%print_time)+1)*io%print_time
       nv = 1
       if (io%verbose>2) nv = self%nv
-      if (io%verbose>0 .or. self%id==1) then
+      if (io%verbose>0 .or. self%track) then
         if (self%nw > 1) then
           do iv=1,nv
             print '(a,i8,2i4,i3,f12.5,1p,2e12.4,2x,3(2e10.2,2x),z10,2i6)', &
@@ -954,9 +954,9 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       end if
     end if
   end if
-  if (io%verbose>0 .and. self%pebbles%n>0) then
-    print '(5(1x,i8,a,2x),1p,e11.2,0p,f11.3)', &
-      self%id,               ' now has', &
+  if (io%verbose>0 .and. self%pebbles%n>0 .or. self%track) then
+    print '(5(1x,i8,a,2x),1p,e11.2,2x,"t =",g12.3)', &
+      self%id,               ' : has', &
       self%pebbles%n,        ' pebbles, exported', &
       self%pebbles%n_export, ', removed', &
       self%pebbles%n_remove, ', accreted', &
@@ -1180,7 +1180,7 @@ SUBROUTINE output (self, experiment_name)
       p => p%next
     end do
     if (io%master .and. io%verbose>=0) &
-      print*, 'pebble_patch_t%output: ', trim(filename), np, ' particles', n_not
+      print*, 'pebble_patch_t%output: ', trim(filename), np, ' particles'
     write (io%data_unit) np, n_var, scene%n_repeat, scene%n_patch
     write (io%data_unit) buffer
     write (io%data_unit) idbuf
@@ -1224,7 +1224,7 @@ SUBROUTINE input (self, ok)
   allocate (buffer(np,n_var), idbuf(np,2))
   read (io%data_unit) buffer
   read (io%data_unit) idbuf
-  if (io%master .and. io%verbose>=0) &
+  if (io%master .and. io%verbose>0 .or. self%track) &
     print*, 'pebble_patch_t%input: ', trim(filename), np, ' particles'
   !
   do i=1,np

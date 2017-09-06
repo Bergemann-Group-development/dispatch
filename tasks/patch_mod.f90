@@ -1303,7 +1303,8 @@ SUBROUTINE input_legacy (self, ok)
   do iv=1,self%nv
     read (io%data_unit,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
   end do
-  if (io%master .and. io%verbose>=0) print*, 'patch_t%input_legacy: ', trim(filename), time
+  if (io%master .and. io%verbose>0 .or. self%track) &
+    print*, 'patch_t%input_legacy: ', trim(filename), time
   close (io%data_unit)
   if (self%id==io%id_debug) &
     print *,'MK input_legacy', self%id, ok, self%mem(18,18,36,1,self%it,1)
