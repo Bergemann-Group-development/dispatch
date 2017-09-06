@@ -1208,15 +1208,19 @@ SUBROUTINE input (self, ok)
   !-----------------------------------------------------------------------------
   ok = .false.
   if (.not.self%do_pebbles) return
+  call trace%begin ('pebble_patch_t%input')
   !
-  write (filename,'(a,"/",i4.4,"_",i4.4,".peb")') &
-      trim(io%inputdir), self%id, self%iout-1
+  write (filename,'(a,"/",i5.5,"/",i5.5,".peb")') &
+      trim(io%inputdir), self%iout-1, self%id
   inquire  (file=filename, exist=exists)
-  if (.not.exists) then
+  if (exists) then
+    if (io%verbose>0) print *, trim(filename), ' found'
+  else
+    if (io%verbose>0) print *, trim(filename), ' not found'
+    call trace%end
     return
   end if
   !
-  call trace%begin ('pebble_patch_t%input')
   !$omp critical (out_cr)
   open (io%data_unit, file=filename, form='unformatted', status='unknown')
   read (io%data_unit) data_format
