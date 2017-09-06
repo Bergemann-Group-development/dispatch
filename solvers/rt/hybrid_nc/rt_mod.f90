@@ -1113,7 +1113,7 @@ SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
   do pt=2,n
     dtau(:,:,pt) = min((rk(:,:,pt-1)+rk(:,:,pt))*0.5, &
                    max(2*rk(:,:,pt-1)*rk(:,:,pt)/(rk(:,:,pt-1)+rk(:,:,pt)), &
-                   1.33333*ds)) *ds
+                   1.33333/ds)) *ds
   end do
 END SUBROUTINE optical_depth_staggered
 
