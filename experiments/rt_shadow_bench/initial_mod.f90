@@ -91,6 +91,7 @@ SUBROUTINE condition (self, m, mem)
         q = ((x - self%clump_pos(1)) / self%clump_a)**2 &
           + ((y - self%clump_pos(2)) / self%clump_b)**2 &
           + ((z - self%clump_pos(3)) / self%clump_b)**2
+        q = 10.0 * (q - 1.0)
 
         ! the if-then-else is to prevent overflow when (x,y,z) is very from zero.
         if (q > 88.0) then
