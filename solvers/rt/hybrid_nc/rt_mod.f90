@@ -386,7 +386,7 @@ SUBROUTINE update_rt (self)
   !> Get the source function and rk
   !> -------------------------------------------------------------------
   call eos%lookup (shape(self%d), x=self%s, y=self%d, &                 ! call the table lookup, ...
-                   rk=self%rk, src=self%src)  
+                   rk=self%rk, src=self%src)
   self%data_ready =.true.                                               ! flag, that internal data is ready
   if(io%verbose >1) then
     print *, self%id, 'rk', minval(self%rk), maxval(self%rk)
@@ -1149,7 +1149,7 @@ SUBROUTINE get_q (self, time, de)
   !---------------------------------------------------------------------
   associate (l => self%li, u => self%ui)
   do iv = 1, self%nv
-    de= de + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1) * self%w_bundle(iv) * self%w_lambda(iv)
+    de= de + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
   end do
   end associate
 END SUBROUTINE get_q
