@@ -462,9 +462,7 @@ SUBROUTINE kdk_drag (self, p)
   !---------------------------------------------------------------------------
   p%p = p%p + p%dt*p%v
   p%t = p%t + p%dt
-  if (detailed_timer) call trace_end (itimer)
   call self%drag (p,warn)
-  if (detailed_timer) call trace_begin ('pebble_patch_t%kdk_drag', itimer=itimer)
   if (p%id==self%pebbles%id_dbg) then
     ds = sqrt(sum((p%dt*p%v/self%ds)**2))
     print'("kdkd2",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
@@ -503,9 +501,7 @@ SUBROUTINE kdk_drag (self, p)
   !---------------------------------------------------------------------------
   ! Get the drag acceleration, at t+2*dt
   !---------------------------------------------------------------------------
-  if (detailed_timer) call trace_end (itimer)
   call self%drag (p,warn)
-  if (detailed_timer) call trace_begin ('pebble_patch_t%kdk_drag', itimer=itimer)
   if (warn>0 .and. io%verbose>3) then
     print *,'  dt',p%dt,2
     print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
@@ -532,7 +528,7 @@ SUBROUTINE kdk_drag (self, p)
     print*,'dbg: kdk_drag:', p%p
   if (detailed_timer) call trace_end (itimer)
   if (iand(p%status,bits%trace)/=0) then
-    call pebble_trace%trace_pebble (p, self%id, self%level, detailed_timer)
+    call pebble_trace%trace_pebble (p, self%id, self%level)
   end if
 END SUBROUTINE kdk_drag
 
@@ -578,9 +574,7 @@ SUBROUTINE scatter (self, nbors, not_done)
     ! use >= here, particles will not move until all time slots have advanced.
     !---------------------------------------------------------------------------
     if (pebble%t>=self%t(self%iit(1)) .or. iand(pebble%status,bits%frozen) /= 0) goto 9
-    if (detailed_timer) call trace_end (itimer)
     call self%move (pebble)
-    if (detailed_timer) call trace_begin ('pebble_patch_t%scatter', itimer=itimer)
     self%pebbles%z_min = min(self%pebbles%z_min,abs(pebble%p(3)))
     self%pebbles%dt_min = min(pebble%dt,self%pebbles%dt_min)
     self%pebbles%dt_max = max(pebble%dt,self%pebbles%dt_max)
@@ -870,9 +864,7 @@ SUBROUTINE update_pebbles (self)
   self%pebbles%n_frozen = 0
   if (io%verbose>2) &
     print*,'pebbles  in =', self%pebbles%n
-  if (detailed_timer) call trace_end (itimer)
   call self%scatter (nbors, self%not_done)
-  if (detailed_timer) call trace_begin ('pebbles_t%update_pebbles', itimer=itimer)
   if (io%verbose>3) &
     print*, 'not_done =', self%not_done%n, self%pebbles%dt_min, self%pebbles%dt_max
   n = 0
@@ -882,9 +874,7 @@ SUBROUTINE update_pebbles (self)
   do while (self%not_done%n > 0)
     if (io%verbose>3) &
       print*, 'not_done =', self%not_done%n, self%pebbles%dt_min, self%pebbles%dt_max
-    if (detailed_timer) call trace_end (itimer)
     call self%gather (self%not_done, nbors, verbose)
-    if (detailed_timer) call trace_begin ('pebbles_t%update_pebbles', itimer=itimer)
     n = n+1
     if (n > 10000) then
       print*, self%id, 'ERROR: gather loop stuck, removing pebbles:', self%not_done%n, associated(self%not_done%head)
@@ -1010,11 +1000,8 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
       w(k) = w(k)-ii(k)
     end do
     velocity => self%vgas(:,:,:,j,:)
-    if (detailed_timer) call trace_end (itimer)
     pebble%vg(j) = self%interpolate_r4 (pebble%t, velocity, ii, w)
-    if (detailed_timer) call trace_begin ('pebble_patch_t%interpolate_vg', itimer=itimer)
   end do
-  if (detailed_timer) call trace_end (itimer)
   if (pebble%id==id_dbg) then
     call time_interval (self, pebble%t, jt, pt)
     print '(a,1p,2e15.6,1x,2i3,1x,0p,2f5.2,1x,9i3)', 'time_interval: time,p%t,jt,pt,iit =', self%time, pebble%t, jt, pt, self%iit
@@ -1022,6 +1009,7 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
     print '(a,i6,1x,3i4,2x,3f5.2,3i3,1x,2f5.2,1x,3f8.2,2(2x,3f7.3))', &
       'interpolate_vg:', self%id, ii, w, warn, jt, pt, pebble%p, pebble%v, pebble%vg
   end if
+  if (detailed_timer) call trace_end (itimer)
 END SUBROUTINE interpolate_vg
 
 !> =============================================================================

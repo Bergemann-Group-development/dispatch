@@ -826,6 +826,7 @@ SUBROUTINE input (self, ok)
   class(patch_t):: self
   logical:: ok
   !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%input')
   !$omp critical (out_cr)
   if (io%do_legacy) then
     if (io%verbose>2) print *, self%id, ' LEGACY INPUT'
@@ -834,6 +835,7 @@ SUBROUTINE input (self, ok)
     !call self%input_new
   end if
   !$omp end critical (out_cr)
+  call trace_end
 END SUBROUTINE input
 
 !> =============================================================================
