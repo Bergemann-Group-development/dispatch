@@ -945,7 +945,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       end if
     end if
   end if
-  if (io%verbose>0 .and. self%pebbles%n>0 .or. self%track) then
+  if ((io%verbose>0.or.self%track) .and. self%pebbles%n>0) then
     print '(5(1x,i8,a,2x),1p,e11.2,2x,"t =",g12.3)', &
       self%id,               ' : has', &
       self%pebbles%n,        ' pebbles, exported', &
