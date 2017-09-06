@@ -470,7 +470,7 @@ SUBROUTINE init (self)
                          self%mesh(3)%gn, &
                          self%nv,self%nt,self%nw))
       self%mem_allocated = .true.               ! mark
-      timer%gb = timer%gb + storage_size(self%mem)*product(shape(self%mem))/(8*1024.**3)
+      timer%gb = timer%gb + storage_size(self%mem)*(product(shape(self%mem))/(8*1024.**3))
 !    end if
     allocate (self%unsigned (self%nv))
     allocate (self%pervolume(self%nv))
