@@ -250,7 +250,6 @@ SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
         ctau = 1. / (dtau(k,j,i+1) + dtau(k,j,i))
         d1s(k,j,i) =(ds1(k,j,i+1) * dtau(k,j,i) &
                    + ds1(k,j,i  ) * dtau(k,j,i+1)) * ctau               ! dS/dtau, 2nd. order accurate
-        print *, 'ds1+1, ds1,ctau', ds1(k,j,i+1), ds1 (k,j,i  ), ctau
         d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2d0 * ctau          ! d2S/dtau2, 2nd. order accurate
       end do
     end do  
