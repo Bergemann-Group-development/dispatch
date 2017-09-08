@@ -845,7 +845,7 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   !> -------------------------------------------------------------------
   call self%ray_vol_map4(packet, self%src, s)                           ! map source function to rays
   call self%ray_vol_map4(packet, self%rk, rk)                           ! map opacities to rays
-  call self%optical_depth_staggered(link%ds, rk, dtau)                
+  call self%optical_depth_centered(link%ds, rk, dtau)
   call self%ray_vol_map3(packet, self%d, dwf)                           ! density weight factor
   dwf = dwf * link%ds
   if (present(q_in_fw)) then
@@ -929,7 +929,7 @@ SUBROUTINE solve_feautrier (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   !> -------------------------------------------------------------------
   call self%ray_vol_map4(packet, self%src, s)                           ! map source function to rays
   call self%ray_vol_map4(packet, self%rk, rk)                           ! map opacities to rays
-  call self%optical_depth_staggered(link%ds, rk, dtau)                
+  call self%optical_depth_centered(link%ds, rk, dtau)
   call self%ray_vol_map3(packet, self%d, dwf)                           ! density weight factor
   dwf = dwf * link%ds
   do ir=1, nwb
