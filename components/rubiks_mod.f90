@@ -16,6 +16,7 @@ MODULE rubiks_mod
   USE scaling_mod
   USE scene_mod
   USE link_mod
+  USE scene_mod
   implicit none
   private
   type, public:: rubiks_t
@@ -76,7 +77,7 @@ SUBROUTINE init_hierarchy (self, label)
     n_patch(2) = n_patch(1)
     n_patch(3) = n_patch(1)
   end if
-
+  scene%n_patch_total = product(n_patch)*(product(n_repeat)+n_levels-1)
   self%n_levels = n_levels
   self%position = position
   self%size = size

@@ -26,15 +26,14 @@
 /
 &pebble_params
  do_pebbles=t
- trace_every=10         ! trace every 10th pebble => data/*.peb
  omega_yr=0.0,0.0,1.0
 !omega_yr=0.0,0.0,0.0   ! TEST only
  !----------------------- TOP/BOTTOM ENTRY --------------
  vz_pebble_cgs=1.5e6    ! incoming vertical velocity
  pebble_rate_cgs=1      ! top/bottom rate of pebble entry
  !----------------------- RANDOM DISTRIBUTION -----------
- ppc=1                  ! particles per cell
- !cell_probability=0.1   ! probability per cell
+ ppc=0.1                ! particles per cell
+ trace_every=1          ! trace every 10th pebble => data/*.peb
 /
 &planet_params
  mass_m_earth=1.0
