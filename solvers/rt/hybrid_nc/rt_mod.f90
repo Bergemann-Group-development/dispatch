@@ -1070,8 +1070,8 @@ SUBROUTINE update_q (self, link, q_fw, q_re)
     do ray = 1, packet%n_rays                                           ! loop over rays
       do pt = 1, packet%n_points                                        ! loop over points
         p = cell(:,pt,ray)                                              ! get the cell position
-        qq (p(1),p(2),p(3),:) = q_fw(ray,:,pt+1)
-        qq2(p(1),p(2),p(3),:) = q_re(ray,:,pt+1)
+        qq (p(1),p(2),p(3),:) = q_fw(ray,:,pt+1) * self%rk(p(1),p(2),p(3),:)
+        qq2(p(1),p(2),p(3),:) = q_re(ray,:,pt+1) * self%rk(p(1),p(2),p(3),:)
       end do
     end do
   end if
