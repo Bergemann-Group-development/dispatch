@@ -117,6 +117,7 @@ SUBROUTINE init (self)
     self%id = id
   end if
   id = self%id
+  if (self%id==1) self%track = .true.
   scene%n_patch = self%id
   !$omp end critical (task_init_cr)
   if (io%verbose>2) &

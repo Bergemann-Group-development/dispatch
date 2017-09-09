@@ -102,7 +102,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
   integer:: i
   integer, save:: itimer = 0
   !-----------------------------------------------------------------------------
-  call trace%begin ('eos_t: lookup', itimer=itimer)
+  call trace%begin ('eos_t%lookup', itimer=itimer)
   if (present(gamma)) then
     self%gamma = gamma
   end if

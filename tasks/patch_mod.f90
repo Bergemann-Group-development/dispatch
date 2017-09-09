@@ -1433,7 +1433,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           do iv=1,nv
             print 1, &
             'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
-            self%dtime, self%u_max, &
+            self%dtime, log10(max(self%u_max,1e-30)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -1595,6 +1595,9 @@ SUBROUTINE courant_condition (self, detailed_timer)
   endif
   !$omp atomic write
   self%dtime = dtime
+  if (io%verbose>2) &
+    print '(a,i6,1p,3g11.2,2x,3g11.2)', ' courant: id, dt, cdt, u_max, ds =', &
+      self%id, dtime, self%courant, self%u_max, self%ds
   !-----------------------------------------------------------------------------
   ! Force the time step to give exactly sync_time if within reach
   !-----------------------------------------------------------------------------

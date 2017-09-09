@@ -1411,8 +1411,8 @@ SUBROUTINE print_bundle (self, i)
   
   write (*,'(1x,a,i3,2(3x,a,f5.0),2x,a,2(2x,3i3),2x,a,4i5)') &
     '    RAY_BUNDLE:', i, 'theta:', self%theta*radian, 'phi:', self%phi*radian, &
-    'lwall, uwall:', self%lwall, self%uwall, &
-    'packets, dstep:', self%n_packets, self%dstep
+    'lwall, uwall:', self%lwall, self%uwall!, &
+    !'packets, dstep:', self%n_packets, self%dstep
   do j=1,self%n_packets
     call self%packet(j)%print(j)
 

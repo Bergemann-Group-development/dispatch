@@ -879,7 +879,22 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
       end do
     end if
   else
-    call rt_solver%integral_double(dtau, exp0, S, q_in_fw, q_in_re, q_out_fw, q_out_re)
+    if (debug) then
+      write (31) shape(dtau)
+      write (31) dtau, exp0, s, q_in_fw
+      print *,'integral_double   dtau:',self%id,minval(dtau),maxval(dtau),shape(dtau)
+      print *,'integral_double      s:',minval(s),maxval(s)
+      !call rt_solver%integral_double_ref(dtau, exp0, S, q_in_fw, q_in_re, q_out_fw, q_out_re)
+      print *,'integral_double   q_fw:',minval(q_out_fw),maxval(q_out_fw)
+      print *,'integral_double   q_rw:',minval(q_out_re),maxval(q_out_re)
+      write (31) q_out_fw,q_out_re
+      call rt_solver%integral_double(dtau, exp0, S, q_in_fw, q_in_re, q_out_fw, q_out_re)
+      print *,'integral_double   q_fw:',minval(q_out_fw),maxval(q_out_fw)
+      print *,'integral_double   q_rw:',minval(q_out_re),maxval(q_out_re)
+      write (31) q_out_fw,q_out_re
+    else
+      call rt_solver%integral_double(dtau, exp0, S, q_in_fw, q_in_re, q_out_fw, q_out_re)
+    end if
     do ir=1, nwb
       q_out_fw(:,ir,2:npt-1) = q_out_fw(:,ir,2:npt-1) * dwf(:,2:npt-1)
       q_out_re(:,ir,2:npt-1) = q_out_re(:,ir,2:npt-1) * dwf(:,2:npt-1)
@@ -1255,10 +1270,11 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   real(8):: time
   integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
+  if (.not. io%do_output) return
   call trace_begin('patch_mod::output_legacy')
   do while (self%time >= self%out_next)
   !$omp critical (out_cr)
-  print *, self%id,'RT legacy output, TIME:', self%time
+  if (io%verbose>0) print *, self%id,'RT legacy output, TIME:', self%time
   self%max_files = self%max_files-1
   if (self%max_files <= 0) then
     write (io_unit%log,*) 'TOO MANY FILES'
@@ -1338,14 +1354,14 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
             ! print *, buf(:,n(2)/2,n(3)/2)
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
-          trim(filename),1,it,jo,minval(buf),maxval(buf),pt
+          trim(filename),1,it,jo,minval(buf),maxval(buf)
       write (io%data_unit,rec=iv+(jo-1)*2) buf
       if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
     iv = 2
       !buf = ((buf *0.4)/(self%d(l(1):u(1),l(2):u(2),l(3):u(3))))**0.25!/scaling%stefan
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
-          trim(filename),1,it,jo,minval(buf),maxval(buf),pt
+          trim(filename),1,it,jo,minval(buf),maxval(buf)
       write (io%data_unit,rec=iv+(jo-1)*2) buf
       if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)

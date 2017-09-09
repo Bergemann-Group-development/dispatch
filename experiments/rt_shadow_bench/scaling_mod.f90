@@ -39,7 +39,7 @@ SUBROUTINE init (self)
   self%l = 1d0                                          ! length
   self%m = 1d0                                          ! mass
   self%d = self%m/self%l**3                             ! mass density
-  self%u = 1d0                                      ! speed
+  self%u = 1d0                                          ! speed
   self%t = self%l/self%u                                ! time
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
