@@ -16,13 +16,17 @@ MODULE rt_solver_mod
     procedure:: feautrier
   end type
   type (rt_solver_t), public:: rt_solver
+  logical:: detailed_timer=.false.
 CONTAINS
 
 !> =====================================================================
 !> Choose RT solver method
 !> =====================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, onoff)
   class (rt_solver_t):: self
+  logical:: onoff
+  !---------------------------------------------------------------------
+  detailed_timer = onoff
 END SUBROUTINE init
 
 
@@ -227,8 +231,9 @@ SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
   real(kind=KindRTVar), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
   real(kind=KindRTVar) :: ctau
   integer i, n, m, w, j, k
+  integer, save:: itimer=0
 !-----------------------------------------------------------------------
-!
+  if (detailed_timer) call trace%begin ('rt_solver_t%integral_double', itimer=itimer)
   m = size(s,1)
   w = size(s,2)
   n = size(s,3)
@@ -282,6 +287,7 @@ SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
       end do
     end do  
   end do
+  if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE integral_double                                          ! 2d 13m 11a 1e ! 26f + 1e
 
 SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)

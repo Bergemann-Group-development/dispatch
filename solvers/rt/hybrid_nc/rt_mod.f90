@@ -14,6 +14,7 @@ MODULE rt_mod
   USE data_hub_mod
   USE scaling_mod
   USE units_mod
+  USE omp_timer_mod
   implicit none
   private 
 !> =====================================================================
@@ -74,7 +75,7 @@ MODULE rt_mod
     procedure :: update_q
   end type
   real, parameter:: pi4 = 16.*atan(1.)
-  
+  logical:: debug=.false., detailed_timer=.false.
 CONTAINS
 
 !> =====================================================================
@@ -95,15 +96,16 @@ SUBROUTINE init_rt (self)
   real(kind=KindRTVar), save :: cr_heating=0.0
   character(len=16) :: solver = 'integral'
   integer :: ignore, nd, i
-  namelist /rt_params/ init_time, dtime, grace, solver, do_output, cr_heating, use_data_hub
+  namelist /rt_params/ init_time, dtime, grace, solver, do_output, &
+    cr_heating, use_data_hub, detailed_timer, debug
   ! --------------------------------------------------------------------
-  
+
   call trace_begin ('rt_t%init')
   !$omp critical (init_cr)
   if (first_time) then
     rewind (io%input); read (io%input, rt_params, iostat=ignore)
     if (io%master) write (*, rt_params)
-    call rt_solver%init
+    call rt_solver%init (detailed_timer)
     first_time=.false.
   end if
   !$omp end critical (init_cr)
@@ -401,7 +403,8 @@ SUBROUTINE update_rt (self)
     call self%rt_boundaries%condition(self%mem(:,:,:,:,self%it,1))
     call self%execute_no_chain
   end if
-END SUBROUTINE update_rt 
+  call trace%end (itimer)
+END SUBROUTINE update_rt
 
 !> =====================================================================
 !> Nudge the chain heads. If all patches in the chain become ready, then
@@ -442,7 +445,7 @@ SUBROUTINE execute_chain (self)
   integer, save:: itimer=0
   logical :: first
   !---------------------------------------------------------------------
-  call trace%begin ('rmhd_t%execute_chain', itimer=itimer)
+  if (detailed_timer) call trace%begin ('rmhd_t%execute_chain', itimer=itimer)
   link => self%head                                                     ! take the master link
   nullify(prev)                                                         ! just in case - there has to be no "prev" for the master link
   task => link%link%task                                                ! get the patch of current chain link
@@ -509,7 +512,7 @@ SUBROUTINE execute_chain (self)
   self%head%nudged = .false.                                            ! reset the nudge logicals
   self%head%n_ready = 0                                                 ! no links are ready in this chain
   nullify(rt_patch, task, prev)
-  call trace%end(itimer)
+  if (detailed_timer) call trace%end(itimer)
 END SUBROUTINE execute_chain
 
 !> =====================================================================
@@ -525,7 +528,7 @@ SUBROUTINE execute_no_chain (self)
   integer :: ip, ipck, nrays, npt, ir,tr
   integer, save:: itimer=0
   ! --------------------------------------------------------------------
-  call trace%begin ('rt_t%execute_no_chain', itimer=itimer)
+  if (detailed_timer) call trace%begin ('rt_t%execute_no_chain', itimer=itimer)
   do ip = 1, self%n_packet
     link => self%my_links(ip)
     packet => link%packet
@@ -548,7 +551,7 @@ SUBROUTINE execute_no_chain (self)
     call self%update_q(link, q_fw=q_fw, q_re=q_re)         
     deallocate (q_fw, q_re, q_fw0, q_re0)
   end do
-  call trace%end(itimer)
+  if (detailed_timer) call trace%end(itimer)
   call self%finish
 END SUBROUTINE execute_no_chain
 
@@ -822,7 +825,7 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   integer                         :: nrays, npt, nwb, ir
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
-  !call trace_begin ('rt_t%solve_integral', itimer=itimer)
+  if (detailed_timer) call trace_begin ('rt_t%solve_integral', itimer=itimer)
   packet => link%packet
   nwb   =  eos%n_lambda                                                 ! number of wl bins
   nrays =  packet%n_rays                                                ! number of rays in this packet
@@ -883,7 +886,7 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
       end do
   end if
   deallocate (s, rk, dtau, exp0, dwf)
-  !call trace_end (itimer)
+  if (detailed_timer) call trace_end (itimer)
 END SUBROUTINE solve_integral
 
 !> =====================================================================
@@ -903,7 +906,7 @@ SUBROUTINE solve_feautrier (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   real(kind=KindRTVar), dimension(:,:,:), pointer :: s, rk, dtau
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
-  call trace_begin ('rt_t%solve_feautrier', itimer=itimer)
+  if (detailed_timer) call trace_begin ('rt_t%solve_feautrier', itimer=itimer)
   error stop "rt_t::solve_featurier:: feautrier solver not consistent"
   !> TODO: if feautrier solver is used, there should be no forward/reverse
   !> directionality in memory slots, or forward/reverse heating rates have
@@ -942,7 +945,7 @@ SUBROUTINE solve_feautrier (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   do ir=1, nwb
       q_out_fw(:,ir,:) = q_out_fw(:,ir,:) * dwf
   end do
-  call trace_end (itimer)
+  if (detailed_timer) call trace_end (itimer)
 END SUBROUTINE solve_feautrier
 
 !> =====================================================================
@@ -956,7 +959,9 @@ SUBROUTINE ray_vol_map4 (self, packet, in, out)
   !.....................................................................
   integer, dimension(:,:,:), pointer :: cell
   integer :: p(3), p2(3), ray, pt, nwb, wl, lp
+  integer, save:: itimer=0
   !---------------------------------------------------------------------
+  if (detailed_timer) call trace%begin ('rt_t%ray_vol_map4', itimer=itimer)
   cell => packet%coords
   nwb = size(out,2)
   lp  = size(out,3)
@@ -993,10 +998,8 @@ SUBROUTINE ray_vol_map4 (self, packet, in, out)
       error stop "ray vol map4 out=0"
     end if
   end if
-  
+  if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE ray_vol_map4
-
-
 
 !> =====================================================================
 !> Map cell data onto rays. In this case, it is wavelenght independent.
@@ -1009,7 +1012,9 @@ SUBROUTINE ray_vol_map3 (self, packet, in, out)
   !.....................................................................
   integer, dimension(:,:,:), pointer :: cell
   integer :: p(3), ray, pt, lp
+  integer, save:: itimer=0
   !---------------------------------------------------------------------
+  if (detailed_timer) call trace%begin ('rt_t%ray_vol_map3', itimer=itimer)
   cell => packet%coords
   lp  = size(out,2)  
 
@@ -1023,7 +1028,7 @@ SUBROUTINE ray_vol_map3 (self, packet, in, out)
     p = packet%fwd_coords(:,ray)
     out(ray,lp) = in(p(1),p(2),p(3))                                    ! Get the last point
   end do
-  
+  if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE ray_vol_map3
 
 
@@ -1038,8 +1043,9 @@ SUBROUTINE update_q (self, link, q_fw, q_re)
   integer, dimension(:,:,:), pointer :: cell
   integer :: p(3), wl, ray, pt, ib, ivl, ivu, it, ivl2, ivu2
   integer, save:: itimer=0
+  real(8):: wc
   !---------------------------------------------------------------------
-  !call trace_begin ('rt_t%update_q', 4, itimer=itimer)
+  if (detailed_timer) call trace_begin ('rt_t%update_q', 4, itimer=itimer)
   ivl = link%ivl
   ivu = link%ivu
   packet => link%packet
@@ -1075,7 +1081,7 @@ SUBROUTINE update_q (self, link, q_fw, q_re)
       end do
     end do
   end if
-  !call trace_end (itimer)
+  if (detailed_timer) call trace_end (itimer)
 END SUBROUTINE update_q
 
 !> =====================================================================
