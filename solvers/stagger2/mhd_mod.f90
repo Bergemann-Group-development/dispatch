@@ -213,7 +213,7 @@ SUBROUTINE pde (self)
     if (io%verbose>3) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(cs)', u_max, self%u_max
+      if (io%verbose>2) print 1, 'u_max(ca)', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
       u_max = self%fmaxval(cs + sqrt(pp))
       self%u_max = max(self%u_max,u_max)
@@ -221,7 +221,7 @@ SUBROUTINE pde (self)
     end if
     u_max = self%fmaxval(cs + sqrt(pp) + du)
     self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, 'u_max(cs+u+du)', u_max, self%u_max
+    if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
@@ -240,14 +240,16 @@ SUBROUTINE pde (self)
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
     if (io%verbose>3) then
-      self%u_max = self%fmaxval(cs)
-      print*,'u_max',self%u_max
-      self%u_max = self%fmaxval(cs + sqrt(pp))
-      print*,'u_max',self%u_max
+      u_max = self%fmaxval(cs)
+      self%u_max = max(self%u_max,u_max)
+      if (io%verbose>2) print 1, 'u_max(cs)', u_max, self%u_max
+      u_max = self%fmaxval(cs + sqrt(pp))
+      self%u_max = max(self%u_max,u_max)
+      if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
     end if
-    u_max = self%fmaxval(cs + sqrt(pp) + du)                                    ! ops: 2 0 0 1 0
+    u_max = self%fmaxval(cs + sqrt(pp) + du)
     self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, 'u_max(ca+u+du)', u_max, self%u_max
+    if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
     pp = pg + pa                                                                ! ops: 1 0 0
     ! Total diagonal stress, with density factor
     du = (maxval(ds)*self%nu(1))*cs                                             ! ops: 0 1 0

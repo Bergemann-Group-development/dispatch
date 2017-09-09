@@ -130,6 +130,7 @@ SUBROUTINE pde (self)
   real(8):: ds(3)
   integer, save:: itimer=0
   type(index_t):: i
+  real:: u_max
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
   self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
@@ -210,13 +211,17 @@ SUBROUTINE pde (self)
     pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     if (io%verbose>3) then
-      self%u_max = self%fmaxval(cs)
-      print*,'u_max',self%u_max
-      self%u_max = self%fmaxval(cs + sqrt(pp))
-      print*,'u_max',self%u_max
+      u_max = self%fmaxval(cs)
+      self%u_max = max(self%u_max,u_max)
+      if (io%verbose>2) print 1, 'u_max(ca)', u_max, self%u_max
+    1 format(1x,a,1p,2g12.3)
+      u_max = self%fmaxval(cs + sqrt(pp))
+      self%u_max = max(self%u_max,u_max)
+      if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
     end if
-    self%u_max = self%fmaxval(cs + sqrt(pp) + du)
-    if (io%verbose>3) print*,'u_max',self%u_max
+    u_max = self%fmaxval(cs + sqrt(pp) + du)
+    self%u_max = max(self%u_max,u_max)
+    if (io%verbose>2) print 1, 'u_max(ca+u+du)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
@@ -235,13 +240,16 @@ SUBROUTINE pde (self)
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
     if (io%verbose>3) then
-      self%u_max = self%fmaxval(cs)
-      print*,'u_max',self%u_max
-      self%u_max = self%fmaxval(cs + sqrt(pp))
-      print*,'u_max',self%u_max
+      u_max = self%fmaxval(cs)
+      self%u_max = max(self%u_max,u_max)
+      if (io%verbose>2) print 1, 'u_max(cs)', u_max, self%u_max
+      u_max = self%fmaxval(cs + sqrt(pp))
+      self%u_max = max(self%u_max,u_max)
+      if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
     end if
-    self%u_max = self%fmaxval(cs + sqrt(pp) + du)                               ! ops: 2 0 0 1 0
-    if (io%verbose>3) print*,'u_max',self%u_max
+    u_max = self%fmaxval(cs + sqrt(pp) + du)
+    self%u_max = max(self%u_max,u_max)
+    if (io%verbose>2) print 1, 'u_max(cs+u+du)', u_max, self%u_max
     pp = pg + pa                                                                ! ops: 1 0 0
     ! Total diagondal stress, with density factor
     du = (maxval(ds)*self%nu(1))*cs                                             ! ops: 0 1 0
@@ -264,8 +272,9 @@ SUBROUTINE pde (self)
   fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux   ! ops: 0 9 0
   fm = p+fd                                             ! mass flux             ! ops: 3 0 0
   dddt = -div(ds,fm)                                    ! density derivative
-  self%u_max = max(self%u_max,self%cdtd*maxval(ds)*self%fmaxval(abs(dddt/d)))   ! ops: 0 0 1
-  if (io%verbose>3) print*,'u_max',self%u_max
+  u_max = self%cdtd*maxval(ds)*self%fmaxval(abs(dddt/d))                        ! ops: 0 0 1
+  self%u_max = max(self%u_max,u_max)
+  if (io%verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -361,6 +370,12 @@ SUBROUTINE pde (self)
     call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
     dBdt = -curl_up(ds,emf)
   end if
+  !-----------------------------------------------------------------------------
+  ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
+  !-----------------------------------------------------------------------------
+  u_max = self%cdtd*maxval(ds)*self%fmaxval(abs((dedt-ee*dddt)/d))              ! ops: 1 1 1
+  self%u_max = max(self%u_max,u_max)
+  if (io%verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pa, du, ee, cs, pp, pb, Q)
