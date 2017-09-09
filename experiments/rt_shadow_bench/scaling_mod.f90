@@ -27,7 +27,8 @@ MODULE scaling_mod
   type(units_t), public:: scaling
 CONTAINS
 !> =============================================================================
-!> Initialize code units:
+!> Initialize code units. NOTE: Do NOT refer to scaling% in these expressions,
+!> since it may not be set until the procedure exits!
 !> =============================================================================
 SUBROUTINE init (self)
   class(units_t):: self
@@ -47,7 +48,7 @@ SUBROUTINE init (self)
   self%f = self%p*self%u                                ! energy flux = P u
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
   self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for give mu
-  self%stefan = cgs%stefan/scaling%m*scaling%t**3*scaling%temp**4
+  self%stefan = cgs%stefan/(scaling%p*scaling%u)*self%temp**4
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
     print 1,'     length: ',self%l
@@ -60,6 +61,7 @@ SUBROUTINE init (self)
     print 1,'energy flux: ',self%f
     print 1,'    gravity: ',self%grav
     print 1,'temperature: ',self%temp
+    print 1,'     stefan: ',self%stefan
   1 format(1x,a,1p,e11.3)
   end if
 END SUBROUTINE init
