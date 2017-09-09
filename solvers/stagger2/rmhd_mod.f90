@@ -20,6 +20,7 @@ MODULE rmhd_mod
   USE eos_mod
   USE solver_mod
   USE rt_mod
+  USE timestep_mod
   implicit none
   private
   ! --------------------------------------------------------------------
@@ -64,10 +65,10 @@ SUBROUTINE update (self)
   class (rmhd_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: dedt, pgas, s
   integer, save :: itimer=0
-  real :: g1
   !---------------------------------------------------------------------
-  !call trace%begin ('rmhd_t%update', itimer=itimer)
-  call self%mhd_t%update
+  call trace%begin ('rmhd_t%update', itimer=itimer)
+  call self%output
+  call self%pde
   if (eos%do_rt) then
     call self%rt%update
     associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
@@ -77,17 +78,20 @@ SUBROUTINE update (self)
     dedt=0.0
     call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
     s => self%mem(:,:,:,self%i_s,self%it,1)
-    pgas = log(d)
     pgas = self%gas_pressure()
-    self%mem(l(1):u(1),l(2):u(2),l(3):u(3), self%i_s, self%new,1) = &
-    self%mem(l(1):u(1),l(2):u(2),l(3):u(3), self%i_s, self%new,1) + &
-    dedt * d(l(1):u(1),l(2):u(2),l(3):u(3)) / &
-         pgas(l(1):u(1),l(2):u(2),l(3):u(3)) * self%dtime
+    self%mem(l(1):u(1),l(2):u(2),l(3):u(3), self%i_s, self%new,2) = &
+    self%mem(l(1):u(1),l(2):u(2),l(3):u(3), self%i_s, self%new,2) + &
+      dedt*d(l(1):u(1),l(2):u(2),l(3):u(3)) / &
+        pgas(l(1):u(1),l(2):u(2),l(3):u(3))
     end associate
     deallocate(dedt, pgas)
   end if                              
   call self%courant_condition
-  !call trace%end (itimer)
+  if (io%verbose>2) &
+    call self%check_density('before timestep')
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density(' after timestep')
+  call trace%end (itimer)
 END SUBROUTINE update
 
 END MODULE rmhd_mod
