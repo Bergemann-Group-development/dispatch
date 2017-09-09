@@ -2089,7 +2089,7 @@ SUBROUTINE time_interval (self, time, jt, pt)
     pt(2) = (time-t(j))/dt
   end if
   pt(1) = 1.-pt(2)
-  if (io%verbose>1 .and. pt(2)>0.0) then
+  if ((io%verbose>3 .or. io_unit%do_validate) .and. pt(2)>0.0) then
     print '(a,1p,3e12.4,2i5,0p,2f8.4)', 'time_interval: times  =', t(j), time, t(j+1), jt, pt
   end if
   !call trace%end (itimer)

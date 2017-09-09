@@ -163,12 +163,12 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
         target%id, target%level, source%id, source%level
       error stop "dnload_range"
     end if
-    if (io%verbose>1.or.target%id==io%id_debug) &
+    if (io%verbose>3.or.io_unit%do_validate.or.target%id==io%id_debug) &
       print 1, target%id, target%level, iv, source%id, source%level, l, u, offset
       1 format("patch_t%dnload_range: id,lv,iv:",i6,2i3, &
                "  source,lv,l,u,o:",i6,i3,3(2x,3i4))
   else
-    if (io%verbose>1.or.target%id==io%id_debug) &
+    if (io%verbose>3.or.io_unit%do_validate.or.target%id==io%id_debug) &
       print 1, target%id, target%level, iv, source%id, source%level, l, u
   end if
   call trace%end
