@@ -82,30 +82,30 @@ SUBROUTINE init (self, llc, urc)
     read (io%input, rt_bc_params)
     if (io%master) write (*, rt_bc_params)
     call scaling%init()
-  allocate(lnd(1,1,2))
-  allocate(s(1,1,2))
-  allocate(src(1,1,2, eos%n_lambda))
-  allocate(self%xl(eos%n_lambda))
-  allocate(self%xu(eos%n_lambda))
-  allocate(self%yl(eos%n_lambda))
-  allocate(self%yu(eos%n_lambda))
-  allocate(self%zl(eos%n_lambda))
-  allocate(self%zu(eos%n_lambda))
-  lnd = 0.
-  d0 = 1.0/scaling%d
-  s(:,:,1) = d0*(log(cool_temp/scaling%temp/d0)-eos%gamma*log(d0))/(eos%gamma-1.0)
-  s(:,:,2) = d0*(log(hot_temp/scaling%temp/d0)-eos%gamma*log(d0))/(eos%gamma-1.0)
-  call eos%lookup (shape(s), x=s, lny=lnd, &                           ! call the table lookup, ...
+    allocate(lnd(1,1,2))
+    allocate(s(1,1,2))
+    allocate(src(1,1,2, eos%n_lambda))
+    allocate(self%xl(eos%n_lambda))
+    allocate(self%xu(eos%n_lambda))
+    allocate(self%yl(eos%n_lambda))
+    allocate(self%yu(eos%n_lambda))
+    allocate(self%zl(eos%n_lambda))
+    allocate(self%zu(eos%n_lambda))
+    d0 = 1.0/scaling%d
+    lnd = log(d0)
+    s(:,:,1) = d0*(log(cool_temp/scaling%temp*d0)-eos%gamma*log(d0))/(eos%gamma-1.0)
+    s(:,:,2) = d0*(log(hot_temp /scaling%temp*d0)-eos%gamma*log(d0))/(eos%gamma-1.0)
+    call eos%lookup (shape(s), x=s, lny=lnd, &                           ! call the table lookup, ...
                     src=src)  
-  self%xl = src(1,1,2,:) - src(1,1,1,:)
-  self%xu = 0.0
-  self%yl = 0.0
-  self%yu = 0.0
-  self%zl = 0.0
-  self%zu = 0.0
-  deallocate(lnd,s,src)
-  self%llc = llc
-  self%urc = urc
+    self%xl = src(1,1,2,:) - src(1,1,1,:)
+    self%xu = 0.0
+    self%yl = 0.0
+    self%yu = 0.0
+    self%zl = 0.0
+    self%zu = 0.0
+    deallocate(lnd,s,src)
+    self%llc = llc
+    self%urc = urc
   end if
   !$omp end critical (input_cr)
   print *, 'cool', self%xu

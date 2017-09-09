@@ -72,11 +72,9 @@ SUBROUTINE condition (self, m, mem)
   type(index_t) :: i
   !----------------------------------------------------------------------------
   call trace_begin('initial_t::initial_conditions')
-
   mx => m(1)
   my => m(2)
   mz => m(3)
-
   ! note: I've assumed a unit system where k_B / mu * m_pro is 1.
   p0 = self%t0 * self%d0
   do iz=mz%lb,mz%ub
@@ -85,14 +83,12 @@ SUBROUTINE condition (self, m, mem)
       y = my%p  + my%r(iy)
       do ix=mx%lb,mx%ub
         x = mx%p  + mx%r(ix)
-
         ! currently, the y and z coordinates are treated symmetrically; this
         ! leads to a cylindrically symmetric problem in 3-D.
         q = ((x - self%clump_pos(1)) / self%clump_a)**2 &
           + ((y - self%clump_pos(2)) / self%clump_b)**2 &
           + ((z - self%clump_pos(3)) / self%clump_b)**2
         q = 10.0 * (q - 1.0)
-
         ! the if-then-else is to prevent overflow when (x,y,z) is very from zero.
         if (q > 88.0) then
           mem(ix,iy,iz,i%d) = self%d0
@@ -112,7 +108,6 @@ SUBROUTINE condition (self, m, mem)
           print *,trim(self%solver)
           error stop "initial_mod (1): solver type not known"
         end if
-
         ! momentum components
         mem(ix,iy,iz,i%px) = 0.0
         mem(ix,iy,iz,i%py) = 0.0
@@ -126,8 +121,6 @@ SUBROUTINE condition (self, m, mem)
       end do
     end do
   end do
-
-  nullify (mx, my, mz, mem)
   call trace_end
 END SUBROUTINE condition
 

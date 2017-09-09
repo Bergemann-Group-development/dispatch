@@ -1328,7 +1328,7 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   real, dimension(:,:,:), pointer:: buf
   real(8):: time
   !-----------------------------------------------------------------------------
-  call trace_begin('patch_mod::output_legacy')
+  call trace_begin('rt_t%output_legacy')
   do while (self%time >= self%out_next)
   !$omp critical (out_cr)
   print *, self%id,'RT legacy output, TIME:', self%upd_time
