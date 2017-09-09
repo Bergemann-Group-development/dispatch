@@ -158,6 +158,7 @@ associate (d=>self%d, dddt=>self%dddt, &
   end if
   du = -dx*divu                                         ! convergence rate
   du = max(du,0.0)                                      ! positive part
+  self%u_max = 0.0
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   !-----------------------------------------------------------------------------

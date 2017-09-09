@@ -185,6 +185,7 @@ SUBROUTINE pde (self)
   ds = self%ds
   du = -maxval(ds)*div(ds,U)                            ! convergence rate      ! ops: 0 1 0
   du = max(du,0.0)                                      ! positive part
+  self%u_max = 0.0
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   ! The diagonal fxx is valid in (2:gn-1)
