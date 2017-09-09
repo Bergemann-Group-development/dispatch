@@ -8,7 +8,7 @@
 
 &out_params
  end_time=1d-9
- out_time=1d-10
+ out_time=1d-9
  print_time=0.0
  guard_zones=t
  time_derivs=f
@@ -43,6 +43,8 @@
  do_output = t
  cr_heating = 0.0
  init_time = -1d-5
+ debug = f
+ detailed_timer = t
 /
 
 &cartesian_ray_geometry_params

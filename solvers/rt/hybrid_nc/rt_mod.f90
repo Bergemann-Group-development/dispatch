@@ -394,7 +394,6 @@ SUBROUTINE update_rt (self)
     print *, self%id, 'rk', minval(self%rk), maxval(self%rk)
     print *, self%id, 'src', minval(self%src), maxval(self%src)
   end if
-  call trace%end (itimer)
   if (self%do_chains) then
     call self%rt_boundaries%condition(self%mem(:,:,:,:,self%it,1))
     call self%nudge                                                     ! nudge the chain heads
@@ -1262,10 +1261,10 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   real:: pt, qt
   real(kind=KindRTVar), dimension(:,:,:), pointer:: buf, b2
   real(8):: time
-  integer, save:: iodir=-1
+  integer, save:: iodir=-1, itimer=0
   !-----------------------------------------------------------------------------
   if (.not. io%do_output) return
-  call trace_begin('patch_mod::output_legacy')
+  call trace_begin('patch_mod::output_legacy', itimer=0)
   do while (self%time >= self%out_next)
   !$omp critical (out_cr)
   if (io%verbose>0) print *, self%id,'RT legacy output, TIME:', self%time
@@ -1365,7 +1364,7 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
    self%out_next = (nint(self%out_next/io%out_time)+1)*io%out_time
   !$omp end critical (out_cr)
   end do
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE output_legacy_rt
 
 END MODULE rt_mod
