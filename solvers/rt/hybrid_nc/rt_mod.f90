@@ -1264,7 +1264,7 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   integer, save:: iodir=-1, itimer=0
   !-----------------------------------------------------------------------------
   if (.not. io%do_output) return
-  call trace_begin('patch_mod::output_legacy', itimer=0)
+  call trace_begin('patch_mod::output_legacy', itimer=itimer)
   do while (self%time >= self%out_next)
   !$omp critical (out_cr)
   if (io%verbose>0) print *, self%id,'RT legacy output, TIME:', self%time
