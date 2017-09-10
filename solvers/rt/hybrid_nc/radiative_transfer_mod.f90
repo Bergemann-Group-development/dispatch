@@ -104,8 +104,8 @@ SUBROUTINE rt_setup (self)
       rt_task%gn       = mhd_patch%gn                                   ! guard zones
       rt_task%size     = mhd_patch%size                                 ! shadow the size
       rt_task%no_mans_land = mhd_patch%no_mans_land
-      !rt_task%periodic(:) = .true.
-      rt_task%periodic(:) = .false.
+      rt_task%periodic(:) = .true.
+      rt_task%periodic(1) = .false.
       !> ---------------------------------------------------------------
       !> Set up the boundary bits
       !> ---------------------------------------------------------------
