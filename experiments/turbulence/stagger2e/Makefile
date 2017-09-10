@@ -11,7 +11,7 @@ EXEC            = dispatch.x
 TOP             = ../../..
 
 # Tomida & Hori, with opacity
-EOS             = data/eos/Tomida+Hori_2016/e
+#EOS             = data/eos/Tomida+Hori_2016/e
 #OPACITY         = Tomida+Hori_2016/e
 
 # Include Makefile chain
@@ -23,5 +23,5 @@ sinclude $(TOP)/config/Makefile
 $(EXEC): cartesian_mod.o setup_mod.o $(PICOBJ)
 
 # Dependencies
-experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.o mhd_mod.o initial_mod.o timer_mod.o link_mod.o timestep_mod.o
+experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.o solver_mod.o initial_mod.o timer_mod.o link_mod.o timestep_mod.o
 scaling_mod.o		: io_unit_mod.o units_mod.o

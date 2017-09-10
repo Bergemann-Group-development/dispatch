@@ -159,16 +159,27 @@ SUBROUTINE end (self, itimer)
   !-----------------------------------------------------------------------------
   thread = omp_get_thread_num()
   istack = timers(thread)%istack
+  if (istack <= 0) then
+    print *, 'WARNING, timer%end out-of-sync: thread, istack =', omp%thread, istack
+    timers(thread)%istack = 0
+    return
+  end if
   otimer = timers(thread)%stack(istack)
   !-----------------------------------------------------------------------------
   ! Increment call counter and total time used
   !-----------------------------------------------------------------------------
   wc = wallclock()
-  timers(thread)%calls(otimer) = timers(thread)%calls(otimer) + 1
-  timers(thread)%total(otimer) = timers(thread)%total(otimer) + &
-    wc - timers(thread)%start(itimer)
+  if (present(itimer)) then
+    timers(thread)%calls(otimer) = timers(thread)%calls(otimer) + 1
+    if (itimer == 0) then
+      print *, omp%thread, 'WARNING: itimer should not be zero!'
+    else
+      timers(thread)%total(otimer) = timers(thread)%total(otimer) + &
+                                     wc - timers(thread)%start(otimer)
+    end if
+  end if
   !-----------------------------------------------------------------------------
-  ! Check if there is a suspenden timer present, and if so restart it
+  ! Check if there is a suspended timer present, and if so restart it
   !-----------------------------------------------------------------------------
   istack = istack-1
   if (istack>0) then

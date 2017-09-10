@@ -6,15 +6,18 @@ MODULE mhd_mod
   USE omp_mod
   USE mpi_mod
   USE trace_mod
+  USE kinds_mod
   USE units_mod
   USE scaling_mod
   USE scalar_mod
   USE vector_mod
+  USE vector_ops
   USE stagger_mod
   USE gpatch_mod
   USE force_mod
   USE index_mod
   USE timestep_mod
+  USE non_ideal_mod
   implicit none
   private
   type, extends(gpatch_t), public:: mhd_t
@@ -25,17 +28,10 @@ MODULE mhd_mod
     type(force_t):: force
   contains
     procedure:: init
+    procedure:: pde
     procedure:: update
     procedure:: output
-    procedure:: log_density => void
-    procedure:: log_pressure => void
     procedure:: gas_pressure
-    procedure:: cell_gas_pressure
-    procedure:: gas_temperature
-    procedure:: cell_gas_temperature
-    procedure:: velocity_magnitude => void
-    procedure:: magnetic_field_magnitude => void
-    procedure:: grav_potential => void
   end type
   real, save:: smag_s=0.2, smag_d=0.1
   type(index_t):: idx
@@ -47,19 +43,24 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0
-  integer:: i
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
+  integer:: i, iostat
+  logical, save:: hardwire=.false.
   logical, save:: first_time=.true.
-  namelist /mhd_params/ nu, gamma, csound, smag_s, smag_d
+  character(len=16), save:: eos
+  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos
+  namelist /smag_params/ smag_s, smag_d
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%gpatch_t%init
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
-    rewind (io%input)
-    read (io%input, mhd_params)
+    rewind (io%input); read (io%input, mhd_params)
+    rewind (io%input); read (io%input, smag_params, iostat=iostat)
     if (io%master) write (*, mhd_params)
+    if (io%master) write (*, smag_params)
+    call non_ideal%init
     call timestep%init
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
@@ -72,7 +73,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h(2+i) = -0.5
     self%mesh(i)%h(5+i) = -0.5
   end do
-  call self%force%init
+  call self%force%init (self%kind)
   call trace%end
 END SUBROUTINE init
 
@@ -85,7 +86,7 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer:: du, lnd, ee, cs, pg, pa, pp, pb, Q
   real, dimension(:,:,:),   pointer:: divu, s2, sxx, syy, szz, sxy, sxz, syz
   !.............................................................................
-  real:: ds(3), dx
+  real(8):: ds(3), dx
   integer, save:: itimer=0
   type(index_t):: i
   !-----------------------------------------------------------------------------
@@ -294,6 +295,7 @@ associate (d=>self%d, dddt=>self%dddt, &
     Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)
+    call non_ideal%update (self%gn, minval(ds), self%d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
     dBdt = -curl_up(ds,emf)
   end if
   !-----------------------------------------------------------------------------
@@ -379,70 +381,5 @@ FUNCTION cell_gas_pressure(self, c) RESULT (pg)
   end if
   end associate
 END FUNCTION cell_gas_pressure
-
-!> =============================================================================
-!> temperature from ideal gas law, taking into account that the temperature is
-!> normalised by k_B and mu (so that specific gas constant = 1)
-!> =============================================================================
-FUNCTION gas_temperature (self) RESULT (tmp)
-  class(mhd_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
-  !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:,  1,self%it,1))
-  tmp = gas_pressure(self)/d
-  end associate
-END FUNCTION gas_temperature
-
-!> =============================================================================
-!> =============================================================================
-FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
-  class(mhd_t):: self
-  integer :: c(3)
-  real :: tmp(c(1),c(2),c(3))
-  !-----------------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3),  1,self%it,1))
-  tmp = cell_gas_pressure(self,c)/d
-  end associate
-END FUNCTION cell_gas_temperature
-
-!> =============================================================================
-SUBROUTINE log_density (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = log(self%d)
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE log_pressure (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = log(gas_pressure(self))
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE velocity_magnitude (self, v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = norm(self%p/exp(down(log(self%d))))
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE magnetic_field_magnitude (self, v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = norm(self%B)
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE void (self, v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = 0.0
-END SUBROUTINE
 
 END MODULE mhd_mod

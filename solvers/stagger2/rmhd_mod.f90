@@ -18,12 +18,12 @@ MODULE rmhd_mod
   USE trace_mod
   USE kinds_mod
   USE eos_mod
-  USE mhd_mod
+  USE solver_mod
   USE rt_mod
   implicit none
   private
   ! --------------------------------------------------------------------
-  type, public, extends(mhd_t):: rmhd_t
+  type, public, extends(solver_t):: rmhd_t
     class(rt_t), pointer      :: rt
   contains
     procedure :: init
@@ -78,7 +78,7 @@ SUBROUTINE update (self)
     call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
     s => self%mem(:,:,:,self%i_s,self%it,1)
     pgas = log(d)
-    pgas = self%gas_pressure(pgas,s)
+    pgas = self%gas_pressure()
     self%mem(l(1):u(1),l(2):u(2),l(3):u(3), self%i_s, self%new,1) = &
     self%mem(l(1):u(1),l(2):u(2),l(3):u(3), self%i_s, self%new,1) + &
     dedt * d(l(1):u(1),l(2):u(2),l(3):u(3)) / &

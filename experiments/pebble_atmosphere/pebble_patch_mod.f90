@@ -19,7 +19,9 @@ MODULE pebble_patch_mod
   USE kinds_mod
   USE task_mod
   USE patch_mod
+  USE gpatch_mod
   USE mhd_mod
+  USE rmhd_mod
   USE planet_mod
   USE atmosphere_mod
   USE star_mod
@@ -31,12 +33,13 @@ MODULE pebble_patch_mod
   USE pebbles_mod
   USE pebble_trace_mod
   USE mesh_mod
+  USE solver_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
   ! A patch with pebbles
   !-----------------------------------------------------------------------------
-  type, public, extends(mhd_t):: pebble_patch_t
+  type, public, extends(rmhd_t):: pebble_patch_t
     class(pebbles_t), pointer:: pebbles=>null()
     class(pebbles_t), pointer:: not_done=>null()
     procedure(kdk_drag), pointer:: move=>null() ! particle mover
@@ -460,9 +463,7 @@ SUBROUTINE kdk_drag (self, p)
   !---------------------------------------------------------------------------
   p%p = p%p + p%dt*p%v
   p%t = p%t + p%dt
-  if (detailed_timer) call trace_end (itimer)
   call self%drag (p,warn)
-  if (detailed_timer) call trace_begin ('pebble_patch_t%kdk_drag', itimer=itimer)
   if (p%id==self%pebbles%id_dbg) then
     ds = sqrt(sum((p%dt*p%v/self%ds)**2))
     print'("kdkd2",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
@@ -501,9 +502,7 @@ SUBROUTINE kdk_drag (self, p)
   !---------------------------------------------------------------------------
   ! Get the drag acceleration, at t+2*dt
   !---------------------------------------------------------------------------
-  if (detailed_timer) call trace_end (itimer)
   call self%drag (p,warn)
-  if (detailed_timer) call trace_begin ('pebble_patch_t%kdk_drag', itimer=itimer)
   if (warn>0 .and. io%verbose>3) then
     print *,'  dt',p%dt,2
     print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
@@ -530,7 +529,7 @@ SUBROUTINE kdk_drag (self, p)
     print*,'dbg: kdk_drag:', p%p
   if (detailed_timer) call trace_end (itimer)
   if (iand(p%status,bits%trace)/=0) then
-    call pebble_trace%trace_pebble (p, self%id, self%level, detailed_timer)
+    call pebble_trace%trace_pebble (p, self%id, self%level)
   end if
 END SUBROUTINE kdk_drag
 
@@ -576,9 +575,7 @@ SUBROUTINE scatter (self, nbors, not_done)
     ! use >= here, particles will not move until all time slots have advanced.
     !---------------------------------------------------------------------------
     if (pebble%t>=self%t(self%iit(1)) .or. iand(pebble%status,bits%frozen) /= 0) goto 9
-    if (detailed_timer) call trace_end (itimer)
     call self%move (pebble)
-    if (detailed_timer) call trace_begin ('pebble_patch_t%scatter', itimer=itimer)
     self%pebbles%z_min = min(self%pebbles%z_min,abs(pebble%p(3)))
     self%pebbles%dt_min = min(pebble%dt,self%pebbles%dt_min)
     self%pebbles%dt_max = max(pebble%dt,self%pebbles%dt_max)
@@ -868,9 +865,7 @@ SUBROUTINE update_pebbles (self)
   self%pebbles%n_frozen = 0
   if (io%verbose>2) &
     print*,'pebbles  in =', self%pebbles%n
-  if (detailed_timer) call trace_end (itimer)
   call self%scatter (nbors, self%not_done)
-  if (detailed_timer) call trace_begin ('pebbles_t%update_pebbles', itimer=itimer)
   if (io%verbose>3) &
     print*, 'not_done =', self%not_done%n, self%pebbles%dt_min, self%pebbles%dt_max
   n = 0
@@ -880,9 +875,7 @@ SUBROUTINE update_pebbles (self)
   do while (self%not_done%n > 0)
     if (io%verbose>3) &
       print*, 'not_done =', self%not_done%n, self%pebbles%dt_min, self%pebbles%dt_max
-    if (detailed_timer) call trace_end (itimer)
     call self%gather (self%not_done, nbors, verbose)
-    if (detailed_timer) call trace_begin ('pebbles_t%update_pebbles', itimer=itimer)
     n = n+1
     if (n > 10000) then
       print*, self%id, 'ERROR: gather loop stuck, removing pebbles:', self%not_done%n, associated(self%not_done%head)
@@ -923,7 +916,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         self%print_next = (nint(self%time/io%print_time)+1)*io%print_time
       nv = 1
       if (io%verbose>2) nv = self%nv
-      if (io%verbose>0 .or. self%id==1) then
+      if (io%verbose>0 .or. self%track) then
         if (self%nw > 1) then
           do iv=1,nv
             print '(a,i8,2i4,i3,f12.5,1p,2e12.4,2x,3(2e10.2,2x),z10,2i6)', &
@@ -952,9 +945,9 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       end if
     end if
   end if
-  if (io%verbose>0 .and. self%pebbles%n>0) then
-    print '(5(1x,i8,a,2x),1p,e11.2,0p,f11.3)', &
-      self%id,               ' now has', &
+  if ((io%verbose>0.or.self%track) .and. self%pebbles%n>0) then
+    print '(5(1x,i8,a,2x),1p,e11.2,2x,"t =",g12.3)', &
+      self%id,               ' : has', &
       self%pebbles%n,        ' pebbles, exported', &
       self%pebbles%n_export, ', removed', &
       self%pebbles%n_remove, ', accreted', &
@@ -1008,11 +1001,8 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
       w(k) = w(k)-ii(k)
     end do
     velocity => self%vgas(:,:,:,j,:)
-    if (detailed_timer) call trace_end (itimer)
     pebble%vg(j) = self%interpolate_r4 (pebble%t, velocity, ii, w)
-    if (detailed_timer) call trace_begin ('pebble_patch_t%interpolate_vg', itimer=itimer)
   end do
-  if (detailed_timer) call trace_end (itimer)
   if (pebble%id==id_dbg) then
     call time_interval (self, pebble%t, jt, pt)
     print '(a,1p,2e15.6,1x,2i3,1x,0p,2f5.2,1x,9i3)', 'time_interval: time,p%t,jt,pt,iit =', self%time, pebble%t, jt, pt, self%iit
@@ -1020,6 +1010,7 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
     print '(a,i6,1x,3i4,2x,3f5.2,3i3,1x,2f5.2,1x,3f8.2,2(2x,3f7.3))', &
       'interpolate_vg:', self%id, ii, w, warn, jt, pt, pebble%p, pebble%v, pebble%vg
   end if
+  if (detailed_timer) call trace_end (itimer)
 END SUBROUTINE interpolate_vg
 
 !> =============================================================================
@@ -1178,7 +1169,7 @@ SUBROUTINE output (self, experiment_name)
       p => p%next
     end do
     if (io%master .and. io%verbose>=0) &
-      print*, 'pebble_patch_t%output: ', trim(filename), np, ' particles', n_not
+      print*, 'pebble_patch_t%output: ', trim(filename), np, ' particles'
     write (io%data_unit) np, n_var, scene%n_repeat, scene%n_patch
     write (io%data_unit) buffer
     write (io%data_unit) idbuf
@@ -1206,15 +1197,19 @@ SUBROUTINE input (self, ok)
   !-----------------------------------------------------------------------------
   ok = .false.
   if (.not.self%do_pebbles) return
+  call trace%begin ('pebble_patch_t%input')
   !
-  write (filename,'(a,"/",i4.4,"_",i4.4,".peb")') &
-      trim(io%inputdir), self%id, self%iout-1
+  write (filename,'(a,"/",i5.5,"/",i5.5,".peb")') &
+      trim(io%inputdir), self%iout-1, self%id
   inquire  (file=filename, exist=exists)
-  if (.not.exists) then
+  if (exists) then
+    if (io%verbose>0) print *, trim(filename), ' found'
+  else
+    if (io%verbose>0) print *, trim(filename), ' not found'
+    call trace%end
     return
   end if
   !
-  call trace%begin ('pebble_patch_t%input')
   !$omp critical (out_cr)
   open (io%data_unit, file=filename, form='unformatted', status='unknown')
   read (io%data_unit) data_format
@@ -1222,7 +1217,7 @@ SUBROUTINE input (self, ok)
   allocate (buffer(np,n_var), idbuf(np,2))
   read (io%data_unit) buffer
   read (io%data_unit) idbuf
-  if (io%master .and. io%verbose>=0) &
+  if (io%master .and. io%verbose>0 .or. self%track) &
     print*, 'pebble_patch_t%input: ', trim(filename), np, ' particles'
   !
   do i=1,np

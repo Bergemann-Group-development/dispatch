@@ -46,18 +46,7 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: p2U                               ! get velocities
-    procedure:: U2p                               ! put velocities to momentum
-    procedure:: e2E_th                            ! get thermal energy
-    procedure:: E_th2e                            ! put thermal energy to total energy
-    procedure:: e2S                               ! get entropy from total energy
-    procedure:: S2e                               ! put entropy to total energy
-    procedure:: log_density
-    procedure:: log_pressure
-    procedure:: grav_potential
-    procedure:: velocity_magnitude
-    procedure:: magnetic_field_magnitude
-    procedure:: gas_velocity
+    procedure:: gas_pressure
   end type
   real,save:: csound=1.
   logical:: debug=.false.
@@ -76,7 +65,7 @@ SUBROUTINE init (self)
     smallc, do_isothermal, csound, detailed_timer, debug
   type(index_t):: idx
 !...............................................................................
-  call trace_begin('mhd_mod::init')
+  call trace%begin('mhd_mod%init')
 
   ! Fool-proofing
   if (self%mhd) then
@@ -109,7 +98,7 @@ SUBROUTINE init (self)
 !  self%unsigned(idx%d) = .true.
 !  self%unsigned(idx%e) = .true.
   call self%force%init(self%kind)
-  call trace_end
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -122,7 +111,7 @@ SUBROUTINE update (self)
   real, dimension(:,:,:), pointer:: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real, dimension(:,:,:), pointer:: tmp
   !----------------------------------------------------------------------------
-  call trace_begin ('mhd_t%update', itimer=itimer)
+  call trace%begin ('mhd_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
@@ -198,7 +187,7 @@ SUBROUTINE update (self)
   ! Deallocate
   !-----------------------------------------------------------------------------
   deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%c,self%s,self%ff)
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !> =====================================================================
@@ -354,7 +343,7 @@ subroutine godunov (self)
   !-----------------------------------------------------------------------------
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
-  if (.not.detailed_timer) call trace_begin ('mhd_mod::godunov')
+  if (.not.detailed_timer) call trace%begin ('mhd_t%godunov')
   li = self%mesh%li
   ui = self%mesh%ui
   call check_small (self, uin)
@@ -362,7 +351,7 @@ subroutine godunov (self)
   !-----------------------------------------------------------------------------
   ! Conservative update, looping over internal cells only
   !-----------------------------------------------------------------------------
-  if (detailed_timer) call trace_begin ('mhd_mod::godunov', itimer=itimer)
+  if (detailed_timer) call trace%begin ('mhd_t%godunov', itimer=itimer)
   unew = uin
   do ivar=1,self%nv
     do idim=1,self%ndim
@@ -381,7 +370,11 @@ subroutine godunov (self)
       end do
     end do
   end do
-  call trace_end (itimer)
+  if (detailed_timer) then
+    call trace%end (itimer)
+  else
+    call trace%end
+  end if
   end associate
 end subroutine godunov
 
@@ -395,7 +388,7 @@ subroutine check_small (self, uu)
   integer, save:: nprint=10
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (detailed_timer) call trace_begin ('mhd_t%check_small', itimer=itimer)
+  if (detailed_timer) call trace%begin ('mhd_t%check_small', itimer=itimer)
   n_smalld = 0
   n_smallp = 0
   lo = self%mesh%lb
@@ -434,7 +427,7 @@ subroutine check_small (self, uu)
   if (n_smalld+n_smallp > 0) then
     write (io_unit%log,*) 'small: id,nr,np', self%id,n_smalld,n_smallp
   end if
-  if (detailed_timer) call trace_end (itimer)
+  if (detailed_timer) call trace%end (itimer)
 end subroutine check_small
 
 !> =============================================================================
@@ -445,13 +438,13 @@ subroutine unsplit(self)
   class(mhd_t):: self
   real(dp):: dtds(3)
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_t%unsplit')
+  call trace%begin ('mhd_t%unsplit')
   call ctoprim(self)                  ! Primitive variables, sound speeds
   call self%courant_condition (detailed_timer)
   call uslope(self)                   ! TVD slopes
   call trace3d(self)                  ! predictor step
   call cmpflxm(self)                  ! Solve for 1D flux in X direction
-  call trace_end
+  call trace%end
 end subroutine unsplit
 
 !> =============================================================================
@@ -466,9 +459,9 @@ subroutine ctoprim (self)
   associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
-    call trace_begin ('mhd_mod::ctoprim', itimer=itimer)
+    call trace%begin ('mhd_mod::ctoprim', itimer=itimer)
   else
-    call trace_begin ('mhd_mod::ctoprim')
+    call trace%begin ('mhd_mod::ctoprim')
   end if
   smallp = smallr*smallc**2/gamma
   q(:,:,:,1) = max(uin(:,:,:,self%i_d),smallr)
@@ -495,7 +488,11 @@ subroutine ctoprim (self)
   self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
                           + c + abs(q(:,:,:,3)) &
                           + c + abs(q(:,:,:,4)))
-  call trace_end (itimer)
+  if (detailed_timer) then
+    call trace%end (itimer)
+  else
+    call trace%end
+  end if
   end associate
 end subroutine ctoprim
 
@@ -516,9 +513,9 @@ subroutine uslope(self)
   associate (q=>self%q, dq=>self%dq)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
-    call trace_begin ('mhd_mod::uslope', itimer=itimer)
+    call trace%begin ('mhd_mod::uslope', itimer=itimer)
   else
-    call trace_begin ('mhd_mod::uslope')
+    call trace%begin ('mhd_mod::uslope')
   end if
   !
   l = self%mesh%lo
@@ -659,7 +656,11 @@ subroutine uslope(self)
      write(*,*)'Unknown slope type'
      stop
   endif
-  call trace_end (itimer)
+  if (detailed_timer) then
+    call trace%end (itimer)
+  else
+    call trace%end
+  end if
   end associate
 end subroutine uslope
 
@@ -680,9 +681,9 @@ subroutine trace3d(self)
   associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
-    call trace_begin ('mhd_mod::trace3d', itimer=itimer)
+    call trace%begin ('mhd_mod::trace3d', itimer=itimer)
   else
-    call trace_begin ('mhd_mod::trace3d')
+    call trace%begin ('mhd_mod::trace3d')
   end if
   dtdx = self%dtime/self%mesh(1)%d
   dtdy = self%dtime/self%mesh(2)%d
@@ -776,7 +777,11 @@ subroutine trace3d(self)
       end do
     end do
   end do
-  call trace_end (itimer)
+  if (detailed_timer) then
+    call trace%end (itimer)
+  else
+    call trace%end
+  end if
   end associate
 end subroutine trace3d
 
@@ -794,9 +799,9 @@ subroutine cmpflxm(self)
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
-    call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
+    call trace%begin ('mhd_mod::cmpflxm', itimer=itimer)
   else
-    call trace_begin ('mhd_mod::cmpflxm')
+    call trace%begin ('mhd_mod::cmpflxm')
   end if
   error = .false.
   dtds = self%dtime/self%mesh%d
@@ -874,7 +879,11 @@ subroutine cmpflxm(self)
     end do
   end if
   end associate
-  call trace_end (itimer)
+  if (detailed_timer) then
+    call trace%end (itimer)
+  else
+    call trace%end
+  end if
 contains
   subroutine cmpflxm_y
   ! local variables
@@ -1001,54 +1010,11 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
 end subroutine solver
 
 !> =============================================================================
-SUBROUTINE log_density (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
 !> =============================================================================
-SUBROUTINE log_pressure (self, v)
+FUNCTION gas_pressure (self)
   class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE grav_potential (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE velocity_magnitude (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE magnetic_field_magnitude (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
-!> =============================================================================
-FUNCTION gas_velocity (self) RESULT (v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: d
-  real, dimension(:,:,:,:), pointer:: p
-  real, dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
-  !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%i_d,self%it,1)
-  p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
-  v(:,:,:,1) = p(:,:,:,1) / d
-  v(:,:,:,2) = p(:,:,:,2) / d
-  v(:,:,:,3) = p(:,:,:,3) / d
-  
-  nullify (d, p)
-END FUNCTION gas_velocity
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: gas_pressure
+  gas_pressure = self%mem(:,:,:,self%i_e,self%it,1)*(self%gamma-1.0)
+END FUNCTION gas_pressure
 
 END MODULE

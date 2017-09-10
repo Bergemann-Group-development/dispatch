@@ -1,3 +1,5 @@
+&experiment_params
+/
 &io_params
  verbose=2
  do_validate=t
@@ -16,8 +18,7 @@
  do_pebbles=f
  vz_pebble_cgs=1.5e6
  pebble_rate_cgs=1
- cell_probability=0.1
- ppc=1
+ ppc=0.1
 /
 &planet_params
 /
@@ -51,4 +52,9 @@
  temperature_K=200.
  mass_m_earth=0.9
  orbit_au=1.0
+/
+&planet_atm_params
+ omega=0.0,0.0,1.0
+ v_head_cgs=0.0
+ v_accrete_cgs=0.0
 /

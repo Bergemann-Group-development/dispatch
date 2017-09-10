@@ -73,16 +73,15 @@ END SUBROUTINE init
 !> pebble as being traced, and as being launched from the boundary, respectively.
 !> The 27th bit marks a pebble that has been accreted.
 !> =============================================================================
-SUBROUTINE trace_pebble (self, pebble, ip, level, detailed_timer)
+SUBROUTINE trace_pebble (self, pebble, ip, level)
   class(pebble_trace_t):: self
   class(pebble_t), pointer:: pebble
   integer:: ip, level
-  logical:: detailed_timer
   integer:: i, n
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.pebble_trace%do_trace_output) return
-  if (detailed_timer) call trace_begin ('pebble_trace_t%trace_pebble', itimer=itimer)
+  call trace_begin ('pebble_trace_t%trace_pebble', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Check if the pebble has a trace id, and give it one if not
   !-----------------------------------------------------------------------------
@@ -109,14 +108,11 @@ SUBROUTINE trace_pebble (self, pebble, ip, level, detailed_timer)
     self%buffer(i)%v(14,n)  = pebble%w
     self%buffer(i)%n = n
     if (io%verbose > 1) print *,'MK', pebble%id, i, n, pebble%t, pebble%dt
-    if (detailed_timer) call trace_end (itimer)
     if (n >= self%npebble) then
-      call self%trace_output (i, detailed_timer)
+      call self%trace_output (i)
     end if
-  else
-    if (io%verbose > 1) print *,'MK', pebble%id, i
-    if (detailed_timer) call trace_end (itimer)
   end if
+  call trace_end (itimer)
 END SUBROUTINE trace_pebble
 
 !> =============================================================================
@@ -126,10 +122,9 @@ END SUBROUTINE trace_pebble
 !> ip(1:n)      (n ints)
 !> v(:,1:n)     (m*n floats, where m=nn, n=record_size)
 !> =============================================================================
-SUBROUTINE trace_output (self, i, detailed_timer, close_key)
+SUBROUTINE trace_output (self, i, close_key)
   class(pebble_trace_t):: self
   integer:: i, close_key
-  logical:: detailed_timer
   integer, parameter:: key=-1
   optional:: close_key
   character(len=64):: filename
@@ -140,7 +135,7 @@ SUBROUTINE trace_output (self, i, detailed_timer, close_key)
   if (i>self%nbuffer) return
   if (.not.associated(self%buffer)) return
   if (self%buffer(i)%n==0) return
-  if (detailed_timer) call trace_begin ('pebbles_mod::trace_output', itimer=itimer)
+  call trace_begin ('pebbles_mod::trace_output', itimer=itimer)
   write (filename,'(a,i5.5,".trc")') trim(io%outputname), i
   if (io%verbose>0) &
     print*,'pebble_trace: ', trim(filename), self%buffer(i)%record, self%buffer(i)%n
@@ -166,7 +161,7 @@ SUBROUTINE trace_output (self, i, detailed_timer, close_key)
   self%buffer(i)%n = 0
   write (unit) 0,0,0,0
   close (unit)
-  if (detailed_timer) call trace_end (itimer)
+  call trace_end (itimer)
 END SUBROUTINE trace_output
 
 !> =============================================================================
@@ -190,7 +185,7 @@ SUBROUTINE close (self, i)
   class(pebble_trace_t):: self
   integer:: i
   !-----------------------------------------------------------------------------
-  call self%trace_output (i,.false., 0)
+  call self%trace_output (i, 0)
 END SUBROUTINE close
 
 !> =============================================================================

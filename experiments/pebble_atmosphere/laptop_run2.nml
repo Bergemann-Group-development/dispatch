@@ -6,6 +6,7 @@
 /
 &rubiks_params
  n_levels=7
+ n_patch=3
 /
 &pebble_params
  vz_pebble_cgs=1.5e6

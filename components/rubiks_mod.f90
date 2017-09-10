@@ -22,7 +22,7 @@ MODULE rubiks_mod
     real(8):: size(3) = [1.0, 1.0, 1.0]
     real(8):: position(3) = [0.0, 0.0, 0.0]
     integer:: n_levels, n_repeat(3)
-    integer:: n_patch, m_zoom
+    integer:: n_patch(3), m_zoom
     type(task_list_t), pointer:: task_list
   contains
     procedure init_hierarchy
@@ -41,7 +41,7 @@ SUBROUTINE init_hierarchy (self, label)
   type(task_list_t):: task_list
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  integer, save:: n_patch=3, m_zoom=3, n_levels=5
+  integer, save:: n_patch(3)=0, m_zoom=3, n_levels=5
   integer, save:: n_repeat(3)=0
   integer:: iostat
   real(8), save:: position(3)
@@ -59,11 +59,6 @@ SUBROUTINE init_hierarchy (self, label)
   n_levels = self%n_levels
   rewind (io%input); read (io%input, rubiks_params, iostat=iostat)
   if (io%master) write (*, rubiks_params)
-  self%n_levels = n_levels
-  self%position = position
-  self%size = size
-  self%n_patch = n_patch
-  self%m_zoom = m_zoom
   !-----------------------------------------------------------------------------
   ! Avoid having to edit dozens of existing .nml files, by interpreting a single
   ! n_repeat value as being intended for the y-direction
@@ -73,6 +68,20 @@ SUBROUTINE init_hierarchy (self, label)
     n_repeat(1) = 1
     n_repeat(3) = 1
   end if
+  !-----------------------------------------------------------------------------
+  ! Similarly for n_patch, but assume that a single value applies to all
+  ! directions
+  !-----------------------------------------------------------------------------
+  if (n_patch(1)>0 .and. n_patch(2)==0 .and. n_patch(3)==0) then
+    n_patch(2) = n_patch(1)
+    n_patch(3) = n_patch(1)
+  end if
+
+  self%n_levels = n_levels
+  self%position = position
+  self%size = size
+  self%n_patch = n_patch
+  self%m_zoom = m_zoom
   !-----------------------------------------------------------------------------
   ! Save the outer size of the hierarchy as the task list size, for distance
   ! measurements.  The self%task_list%size is the full size of the objects in
@@ -128,9 +137,9 @@ SUBROUTINE init_level (self, level, position)
   call trace_begin ('rubiks_revenge_t%init_level')
 
   ndrop = 0
-  do k=1,self%n_patch
-  do j=1,self%n_patch
-  do i=1,self%n_patch
+  do k=1,self%n_patch(3)
+  do j=1,self%n_patch(2)
+  do i=1,self%n_patch(1)
     !---------------------------------------------------------------------------
     ! Initialize each patch, via patch_t:init
     !---------------------------------------------------------------------------
@@ -159,7 +168,7 @@ SUBROUTINE init_level (self, level, position)
       call patch%init
       patch%level = level
       call patch%set (bits%static)
-      if (k==1.or.k==self%n_patch) call patch%set (bits%top_bottom)
+      if (k==1.or.k==self%n_patch(3)) call patch%set (bits%top_bottom)
       if (io%verbose>0) &
         print'(a,i6,i4,2(2x,3g16.6))', 'rubiks_mod%init_level: id, level, size, pos =', &
           patch%id, level, patch%size, patch%position
@@ -171,12 +180,12 @@ SUBROUTINE init_level (self, level, position)
       ! If at edge, set boundary bits
       !---------------------------------------------------------------------------
       if (level==1) then
-        if (.not.patch%periodic(1).and.i==1)            call patch%boundaries%set (bits%xl)
-        if (.not.patch%periodic(2).and.j==1)            call patch%boundaries%set (bits%yl)
-        if (.not.patch%periodic(3).and.k==1)            call patch%boundaries%set (bits%zl)
-        if (.not.patch%periodic(1).and.i==self%n_patch) call patch%boundaries%set (bits%xu)
-        if (.not.patch%periodic(2).and.j==self%n_patch) call patch%boundaries%set (bits%yu)
-        if (.not.patch%periodic(3).and.k==self%n_patch) call patch%boundaries%set (bits%zu)
+        if (.not.patch%periodic(1).and.i==1)               call patch%boundaries%set (bits%xl)
+        if (.not.patch%periodic(2).and.j==1)               call patch%boundaries%set (bits%yl)
+        if (.not.patch%periodic(3).and.k==1)               call patch%boundaries%set (bits%zl)
+        if (.not.patch%periodic(1).and.i==self%n_patch(1)) call patch%boundaries%set (bits%xu)
+        if (.not.patch%periodic(2).and.j==self%n_patch(2)) call patch%boundaries%set (bits%yu)
+        if (.not.patch%periodic(3).and.k==self%n_patch(3)) call patch%boundaries%set (bits%zu)
         if (patch%boundaries%bits /= 0 .and. io%verbose>1) &
           print *, patch%id, 'EDGE', patch%boundaries%bits
       end if

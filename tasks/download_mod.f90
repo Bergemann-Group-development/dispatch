@@ -59,8 +59,9 @@ SUBROUTINE download_link (link, all_cells)
   class(link_t), pointer:: nbor
   class(patch_t), pointer:: target, source
   integer:: edges
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('download_t%download_link')
+  call trace%begin('download_t%download_link', itimer=itimer)
   target => task2patch(link%task)
   if (trim(target%kind)/='rt_solver') then
     if (io%verbose>1) &
@@ -104,7 +105,7 @@ SUBROUTINE download_link (link, all_cells)
     end do
   end if
   call target%check_density (" after download")
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE download_link
 
 !> =============================================================================
@@ -198,41 +199,55 @@ SUBROUTINE same (target, source, all_cells)
       print 1, source%id, l, u, o, jt, pt
       1 format("DBG download_t%same:", i6,"  l,u,o:",3(3i4,2x)," jt,pt:",2i4,2x,2f6.2)
     if (source%unsigned(iv)) then
-      do iz=l(3),u(3)
-        do iy=l(2),u(2)
-          do ix=l(1),u(1)
-            ii = [ix,iy,iz]
-            if (present(all_cells) .or. &
-                any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0)) then
+      if (present(all_cells)) then
+        do iz=l(3),u(3)
+          do iy=l(2),u(2)
+            do ix=l(1),u(1)
               target%mem(ix,iy,iz,iv,target%it,1) = exp( &
-                 pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
-                 pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
-            else
-              if (target%id==io%id_debug .and. io%verbose>1) &
-                print *, target%id, 'DBG interpolate_t%same: skipping', ii
-              cycle
-            end if
+                pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
+                pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
+            end do
           end do
         end do
-      end do
+      else
+        do iz=l(3),u(3)
+          do iy=l(2),u(2)
+            do ix=l(1),u(1)
+              ii = [ix,iy,iz]
+              target%mem(ix,iy,iz,iv,target%it,1) = merge( &
+                exp(pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
+                    pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))), &
+                target%mem(ix,iy,iz,iv,target%it,1), &
+                any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0))
+            end do
+          end do
+        end do
+      end if
     else
-      do iz=l(3),u(3)
-        do iy=l(2),u(2)
-          do ix=l(1),u(1)
-            ii = [ix,iy,iz]
-            if (present(all_cells) .or. &
-                any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0)) then
-              target%mem(ix,iy,iz,iv,target%it,1) = &
+      if (present(all_cells)) then
+        do iz=l(3),u(3)
+          do iy=l(2),u(2)
+            do ix=l(1),u(1)
+              target%mem(ix,iy,iz,iv,target%it,1) =  &
                 pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
                 pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
-            else
-              if (target%id==io%id_debug .and. io%verbose>1) &
-                print *, target%id, 'DBG interpolate_t%same: skipping', ii
-              cycle
-            end if
+            end do
           end do
         end do
-      end do
+      else
+        do iz=l(3),u(3)
+          do iy=l(2),u(2)
+            do ix=l(1),u(1)
+              ii = [ix,iy,iz]
+              target%mem(ix,iy,iz,iv,target%it,1) = merge( &
+                pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
+                pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
+                target%mem(ix,iy,iz,iv,target%it,1), &
+                any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0))
+            end do
+          end do
+        end do
+      end if
     end if
   end do
   if (io%verbose>2.or.target%id==io%id_debug) &

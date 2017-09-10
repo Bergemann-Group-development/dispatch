@@ -21,7 +21,6 @@ MODULE mhd_mod
 
   integer, parameter:: nvar_zeus = 10
   ! this variable is used to set the staggering of vector components
-  real, dimension(3):: zeus_staggering = [-0.5, -0.5, -0.5]
   integer, parameter:: KindReal = 8
 
   ! a derived-type to keep track of the ZEUS boundary types; ZEUS currently
@@ -42,26 +41,9 @@ MODULE mhd_mod
   contains
     procedure:: init => init_zeus
     procedure:: update => update_zeus
-    procedure:: gas_pressure
-    procedure:: log_density
-    procedure:: log_pressure
-    procedure:: velocity_magnitude
-    procedure:: magnetic_field_magnitude
-    procedure:: grav_potential
     procedure:: MapVectors
-    procedure:: gas_velocity
     procedure:: courant_condition => do_nothing ! this is handled internally by the ZEUS solver
   end type
-
-  interface norm
-    module procedure:: Norm_ArrayToArray, Norm_VectorToArray
-  end interface
-  interface down
-    module procedure:: Down_ScalarToArray
-  end interface
-  interface MomToVel
-    module procedure:: MomToVel_VectorToArray
-  end interface
 
   ! ---- ZEUS common blocks, variables, and namelist parameters ----
   ! TODO: Purge common blocks!
@@ -80,7 +62,6 @@ MODULE mhd_mod
                  , dtold   , dtnew   , dtcs    , dtal    , dtqq    , dtv1    &
                  , dtv2    , dtv3    , dtdf    , dtss    , courno  , gamma   &
                  , dtinit  , prtime
-  real(KindReal), dimension(3) :: zgridvel
 
   ! Other
   real(KindReal) :: glblnmax, adbmin  , adbmax
@@ -107,10 +88,10 @@ MODULE mhd_mod
   common / zcomprvr / &
                     dt      , dtold   , dtnew   , prtime&
                   , dtcs    , dtal    , dtqq    , dtv1    , dtv2    &
-                  , dtv3    , dtdf    , dtss    , zgridvel, courno
+                  , dtv3    , dtdf    , dtss    , courno
 !$omp threadprivate (/zcomprvc/, /zcomprvi/, /zcomprvr/)
 
-PUBLIC CopyToZeus, CopyFromZeus, zeus_staggering
+PUBLIC CopyToZeus, CopyFromZeus
 CONTAINS
 
 !> =============================================================================
@@ -351,17 +332,6 @@ SUBROUTINE init_zeus (self)
   self%i_bx  = idx%bx
   self%i_by  = idx%by
   self%i_bz  = idx%bz
-  ! initialise variable storage
-  call self%d%init(self%mem, idx%d, self%it)
-  call self%e%init(self%mem, idx%e, self%it)
-  call self%et%init(self%mem, idx%et, self%it)
-  call self%gp%init(self%mem, idx%phi, self%it)
-  call self%s%init(self%mem, [idx%px,idx%py,idx%pz], self%it, zeus_staggering)
-  call self%B%init(self%mem, [idx%bx,idx%by,idx%bz], self%it, zeus_staggering)
-  self%d%name = 'mass density'
-  self%e%name = 'int. energy density'
-  self%s%name = 'momentum density'
-  self%B%name = 'magnetic field'
 
   self%dt(self%it) = dtinit
   self%t(self%it) = 0.0d0
@@ -375,8 +345,6 @@ SUBROUTINE update_zeus (self)
   class(mhd_t) :: self
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-!  call trace_begin('zeus_mhd_mod%update_zeus')
-  !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
   ! placed at an earlier point in the task handling the call here will have no
@@ -386,11 +354,9 @@ SUBROUTINE update_zeus (self)
   call CopyToZeus (self)
   call trace_begin ('zeus3d (external)', itimer=itimer)
   call zeus3d (self%istep)  ! run ZEUS
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call trace_end(itimer)
   call CopyFromZeus (self)
 
-!  call trace_end(itimer)
 END SUBROUTINE update_zeus
 
 !> =============================================================================
@@ -402,7 +368,7 @@ SUBROUTINE CopyToZeus (self)
   logical, save :: first_time=.true.
   !$omp threadprivate (first_time)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
-  integer, save:: itimer=0
+  integer, save:: itimer1=0, itimer2=0, itimer3=0, itimer4=0
   type(index_t):: idx
   external abndyall, bndyflgs, bndyall, get_vel
   ! DISPATCH does not have explicit information about the interface of the ZEUScore
@@ -410,8 +376,7 @@ SUBROUTINE CopyToZeus (self)
   ! to ZEUScore.
   interface
     subroutine copyatoz (val, mito, mjto, mkto, nvar, x1low, x2low, x3low, &
-                         dx1, dx2, dx3, mptr, pvelocity, firsttim)
-       logical:: firsttim
+                         dx1, dx2, dx3, mptr, pvelocity)
        integer:: mito, mjto, mkto, nvar, mptr
        real(kind=8):: x1low, x2low, x3low, dx1, dx2, dx3
        real(kind=8), dimension(3):: pvelocity
@@ -419,8 +384,6 @@ SUBROUTINE CopyToZeus (self)
     end subroutine copyatoz
   end interface
   !-----------------------------------------------------------------------------
-  call trace_begin ('zeus_mhd_mod%CopyToZeus', itimer=itimer)
-
   ! Remember: ZEUS has one extra zone in each direction to handle staggered variables
   ! (in ZEUS-speak this is "*ep3"); this is one more zone than STAGGER.
   ! Remember: ZEUS keeps track of *both* the internal and total energy (even if it
@@ -459,8 +422,6 @@ SUBROUTINE CopyToZeus (self)
     call mpi%abort("ERROR: Mesh type unknown in CopyToZeus! Abort!")
   end if
 
-  ! assign the patch velocity (given in the native coord. system).
-  zgridvel(:) = 0.0d0
   ! assign the patch velocity in its native coord. system; currently
   ! only possible in spherical and cylindrical coords., and only for the
   ! phi-(i.e.3-)direction.
@@ -468,12 +429,20 @@ SUBROUTINE CopyToZeus (self)
   pvelocity(2) = self%velocity(2)
   pvelocity(3) = self%velocity(3) + self%grid_vel(3)
 
+  call trace%begin ('copyatoz (external)', itimer=itimer1)
   call copyatoz (qz, self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, &
                  self%nv, x1low, x2low, x3low, dx1, dx2, dx3, self%id, &
-                 pvelocity, first_time)
+                 pvelocity)
+  call trace%end (itimer1)
+  call trace%begin ('abndyall (external)', itimer=itimer2)
   call abndyall
+  call trace%end (itimer2)
+  call trace%begin ('bndyflgs (external)', itimer=itimer3)
   call bndyflgs
+  call trace%end (itimer3)
+  call trace%begin ('bndyall (external)', itimer=itimer4)
   call bndyall
+  call trace%end (itimer4)
   if (first_time) first_time = .false.
 
   if (self%do_pebbles) then
@@ -489,7 +458,7 @@ SUBROUTINE CopyToZeus (self)
   ix1x2x3 = self%ix1x2x3
 
   nullify (qz)
-  call trace_end (itimer)
+
 END SUBROUTINE CopyToZeus
 
 !> =============================================================================
@@ -504,10 +473,11 @@ SUBROUTINE CopyFromZeus (self)
     end subroutine copyztoa
   end interface
   !-----------------------------------------------------------------------------
-  call trace_begin ('zeus_mhd_mod%CopyFromZeus', itimer=itimer)
-
   qz => self%mem(:,:,:,:,self%new,1)
+
+  call trace_begin ('copyztoa (external)', itimer=itimer)
   call copyztoa (qz, self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, self%nv)
+  call trace_end (itimer)
 
   ! update time step.
   self%dt(self%new) = dt
@@ -515,7 +485,7 @@ SUBROUTINE CopyFromZeus (self)
   self%ix1x2x3 = ix1x2x3
 
   nullify (qz)
-  call trace_end (itimer)
+
 END SUBROUTINE CopyFromZeus
 
 !> =============================================================================
@@ -694,284 +664,6 @@ CONTAINS
   END FUNCTION AnyVectorSphToCart
 
 END SUBROUTINE MapVectors
-
-!> =============================================================================
-!> Update pointers for the field variable aliases so that they point to the
-!> current time step.
-!> =============================================================================
-!SUBROUTINE RotateVars (self, itnew)
-!  class(mhd_t) :: self
-!  integer, intent(in):: itnew
-!  !-----------------------------------------------------------------------------
-
-!  call self%d%init(self%mem, self%i_d, self%it)
-!  call self%e%init(self%mem, eidx, self%it)
-!  call self%et%init(self%mem, etidx, self%it)
-!  call self%gp%init(self%mem, gpidx, self%it)
-!  call self%s%init(self%mem, sidxs, self%it, zeus_staggering)
-!  call self%B%init(self%mem, Bidxs, self%it, zeus_staggering)
-
-!END SUBROUTINE RotateVars
-
-!> =============================================================================
-FUNCTION gas_pressure (self) RESULT (pg)
-  class(mhd_t):: self
-  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  !-----------------------------------------------------------------------------
-  if (self%gamma==1.0) then
-    pg = self%d%q
-  else
-    pg = self%e%q * (self%gamma - 1.0)
-  end if
-END FUNCTION gas_pressure
-
-!> =============================================================================
-FUNCTION gas_velocity (self) RESULT (v)
-  class (mhd_t):: self
-  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
-  !-----------------------------------------------------------------------------
-  v = MomToVel(self%s,self%d)
-END FUNCTION gas_velocity
-
-!> =============================================================================
-SUBROUTINE log_density (self, v)
-  class(mhd_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = log(self%d%q)
-END SUBROUTINE log_density
-
-!> =============================================================================
-SUBROUTINE log_pressure (self, v)
-  class(mhd_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = log(gas_pressure(self))
-END SUBROUTINE log_pressure
-
-!> =============================================================================
-SUBROUTINE velocity_magnitude (self, v)
-  class (mhd_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = norm(MomToVel(self%s,self%d))
-END SUBROUTINE velocity_magnitude
-
-!> =============================================================================
-SUBROUTINE magnetic_field_magnitude (self, v)
-  class (mhd_t) :: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = norm(self%B)
-END SUBROUTINE magnetic_field_magnitude
-
-!> =============================================================================
-SUBROUTINE grav_potential (self, v)
-  class (mhd_t) :: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = self%gp%q
-END SUBROUTINE grav_potential
-
-!> =============================================================================
-FUNCTION Norm_VectorToArray (in) RESULT (out)
-  type(vector_t), intent(in) :: in
-  real(kind=KindScalarVar), dimension(size(in%x%q,1),size(in%x%q,2),size(in%x%q,3)) :: out
-  !-----------------------------------------------------------------------------
-  out = sqrt(in%x%q(:,:,:)**2 + in%y%q(:,:,:)**2 + in%z%q(:,:,:)**2)
-END FUNCTION Norm_VectorToArray
-
-!> =============================================================================
-FUNCTION Norm_ArrayToArray (in) RESULT (out)
-  real(kind=KindScalarVar), dimension(:,:,:,:), intent(in) :: in
-  real(kind=KindScalarVar), dimension(size(in,1),size(in,2),size(in,3)) :: out
-  !-----------------------------------------------------------------------------
-  out = sqrt(in(:,:,:,1)**2 + in(:,:,:,2)**2 + in(:,:,:,3)**2)
-END FUNCTION Norm_ArrayToArray
-
-!> =============================================================================
-FUNCTION MomToVel_VectorToArray (s,d) RESULT (out)
-  type(vector_t), intent(in):: s
-  type(scalar_t), intent(in):: d
-  real(kind=KindScalarVar), dimension(size(d%q,1),size(d%q,2),size(d%q,3),3):: out
-  !-----------------------------------------------------------------------------
-  out(:,:,:,1) = s%x%q / xdn_scalar(d%q)
-  out(:,:,:,2) = s%y%q / ydn_scalar(d%q)
-  out(:,:,:,3) = s%z%q / zdn_scalar(d%q)
-END FUNCTION MomToVel_VectorToArray
-
-!> =============================================================================
-FUNCTION Down_ScalarToArray (in) RESULT (out)
-  type(scalar_t), intent(in):: in
-  real(kind=KindScalarVar), dimension(size(in%q,1),size(in%q,2),size(in%q,3),3):: out
-  !-----------------------------------------------------------------------------
-  out(:,:,:,1) = xdn_scalar (in%q)
-  out(:,:,:,2) = ydn_scalar (in%q)
-  out(:,:,:,3) = zdn_scalar (in%q)
-END FUNCTION Down_ScalarToArray
-
-!> =============================================================================
-FUNCTION xdn_scalar (a) RESULT (b)
-  real(kind=KindScalarVar), dimension(:,:,:):: a
-  real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(kind=KindScalarVar) :: c
-  integer :: ix, iy, iz, ione, jone, kone, n(3)
-  !.............................................................................
-  c = 0.5
-  n = ubound(a)
-  ione = merge(1, 0, n(1) > 1)
-  jone = merge(1, 0, n(2) > 1)
-  kone = merge(1, 0, n(3) > 1)
-  if (n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(1,:,:) = a(1,:,:)
-    b(n(1),:,:) = a(n(1)-1,:,:)
-
-    do iz=1,n(3)-kone
-      do iy=1,n(2)-jone
-        do ix=2,n(1)-ione
-          b(ix,iy,iz) = c*(a(ix  ,iy,iz) + a(ix-1,iy,iz))
-        end do
-      end do
-    end do
-  else
-    b = a
-  end if
-  if (n(2) > 1) b(:,n(2),:) = a(:,n(2)-1,:)
-  if (n(3) > 1) b(:,:,n(3)) = a(:,:,n(3)-1)
-  b(n(1),n(2),n(3)) = a(n(1)-ione,n(2)-jone,n(3)-kone)
-END FUNCTION xdn_scalar
-
-!> =============================================================================
-FUNCTION ydn_scalar (a) RESULT (b)
-  real(kind=KindScalarVar), dimension(:,:,:):: a
-  real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(kind=KindScalarVar) :: c
-  integer :: ix, iy, iz, ione, jone, kone, n(3)
-  !.............................................................................
-  c = 0.5
-  n = ubound(a)
-  ione = merge(1, 0, n(1) > 1)
-  jone = merge(1, 0, n(2) > 1)
-  kone = merge(1, 0, n(3) > 1)
-  if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,1,:) = a(:,1,:)
-    b(:,n(2),:) = a(:,n(2)-1,:)
-    do iz=1,n(3)-kone
-      do iy=2,n(2)-jone
-        do ix=1,n(1)-ione
-          b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy-1,iz))
-        end do
-      end do
-    end do
-  else
-    b = a
-  end if
-  if (n(3) > 1) b(:,:,n(3)) = a(:,:,n(3)-1)
-  if (n(1) > 1) b(n(1),:,:) = a(n(1)-1,:,:)
-  b(n(1),n(2),n(3)) = a(n(1)-ione,n(2)-jone,n(3)-kone)
-END FUNCTION ydn_scalar
-
-!> =============================================================================
-FUNCTION zdn_scalar (a) RESULT (b)
-  real(kind=KindScalarVar), dimension(:,:,:):: a
-  real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(kind=KindScalarVar) :: c
-  integer :: ix, iy, iz, ione, jone, kone, n(3)
-!...............................................................................
-  c = 0.5
-  n = ubound(a)
-  ione = merge(1, 0, n(1) > 1)
-  jone = merge(1, 0, n(2) > 1)
-  kone = merge(1, 0, n(3) > 1)
-  if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,:,1) = a(:,:,1)
-    b(:,:,n(3)) = a(:,:,n(3)-1)
-    do iz=2,n(3)-kone
-      do iy=1,n(2)-jone
-        do ix=1,n(1)-ione
-          b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy,iz-1))
-        end do
-      end do
-    end do
-  else
-    b = a
-  end if
-  if (n(1) > 1) b(n(1),:,:) = a(n(1)-1,:,:)
-  if (n(2) > 1) b(:,n(2),:) = a(:,n(2)-1,:)
-  b(n(1),n(2),n(3)) = a(n(1)-ione,n(2)-jone,n(3)-kone)
-END FUNCTION zdn_scalar
-
-!> =============================================================================
-FUNCTION xdn_1vector (a) RESULT (b)
-  real(kind=KindScalarVar), dimension(:,:,:):: a
-  real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(kind=KindScalarVar) :: c
-  integer :: ix, iy, iz, jone, kone
-  !.............................................................................
-  c = 0.5
-  jone = merge(1, 0, size(a,2) > 1)
-  kone = merge(1, 0, size(a,3) > 1)
-  if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(1,:,:) = a(1,:,:)
-    do iz=1,size(a,3)-kone
-      do iy=1,size(a,2)-jone
-        do ix=2,size(a,1)
-          b(ix,iy,iz) = c*(a(ix  ,iy,iz) + a(ix-1,iy,iz))
-        end do
-      end do
-    end do
-  else
-    b = a
-  end if
-END FUNCTION xdn_1vector
-
-!> =============================================================================
-FUNCTION ydn_2vector (a) RESULT (b)
-  real(kind=KindScalarVar), dimension(:,:,:):: a
-  real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(kind=KindScalarVar) :: c
-  integer :: ix, iy, iz, kone, ione
-  !.............................................................................
-  c = 0.5
-  kone = merge(1, 0, size(a,3) > 1)
-  ione = merge(1, 0, size(a,1) > 1)
-  if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,1,:) = a(:,1,:)
-    do iz=1,size(a,3)-kone
-      do iy=2,size(a,2)
-        do ix=1,size(a,1)-ione
-          b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy-1,iz))
-        end do
-      end do
-    end do
-  else
-    b = a
-  end if
-END FUNCTION ydn_2vector
-
-!> =============================================================================
-FUNCTION zdn_3vector (a) RESULT (b)
-  real(kind=KindScalarVar), dimension(:,:,:):: a
-  real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(kind=KindScalarVar) :: c
-  integer :: ix, iy, iz, ione, jone
-  !.............................................................................
-  c = 0.5
-  ione = merge(1, 0, size(a,1) > 1)
-  jone = merge(1, 0, size(a,2) > 1)
-  if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
-    b(:,:,1) = a(:,:,1)
-    do iz=2,size(a,3)
-      do iy=1,size(a,2)-jone
-        do ix=1,size(a,1)-ione
-          b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy,iz-1))
-        end do
-      end do
-    end do
-  else
-    b = a
-  end if
-END FUNCTION zdn_3vector
 
 !> =============================================================================
 !> This subroutine intentionally DOES NOTHING.

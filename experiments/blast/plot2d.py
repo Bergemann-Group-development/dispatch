@@ -29,7 +29,8 @@ if __name__ == "__main__":
     gamma = 5./3.
     datadir = './data/input_s_9p/'
     prefix = ''
-    ptimes = [0.005,0.01,0.019]
+    ptimes = [0.005,0.010,0.020]
+    #ptimes = [0.0]
     #ptimes = 0.629*np.arange(0,2)
     t_eps = 1e-4
     pxsize = [-0.5,0.5]
@@ -56,6 +57,12 @@ if __name__ == "__main__":
         print "Try setting `output_png` to True."
         from sys import exit
         exit(1)
+
+    dirs = os.listdir(datadir)
+    dirs = [ff for ff in dirs if not ff.endswith('.log')]
+    dirs = [ff for ff in dirs if not ff.endswith('.nq')]
+    files = [dd+'/'+ff for dd in dirs for ff in fnmatch.filter(os.listdir(datadir+'/'+dd),'*.txt')]
+
     for pt in ptimes:
 
         cfig = plt.figure("t = {0:.3e}".format(pt),facecolor='w',figsize=(7.0,6.0))
@@ -68,7 +75,6 @@ if __name__ == "__main__":
         # ensure the axes remain visible by putting them at the "top"
         cax.set_zorder(99.0)
 
-        files = fnmatch.filter(os.listdir(datadir), prefix + "*.txt")
         patches = []
         times = []
         # in order to determine which patches have output at the desired time,
@@ -212,12 +218,12 @@ if __name__ == "__main__":
                 #    c.set_clip_path(edges)
 
             # annotate patches with their ID (if desired)
-            if p.id != 1 and showgridno:
+            if showgridno:
                 offset = tuple([3*x for x in p.nghost])
                 gn_xpos = xp[iindex,jindex,kindex][offset]
                 gn_ypos = yp[iindex,jindex,kindex][offset]
                 cax.annotate(str(p.id),(gn_xpos,gn_ypos),color='k',weight='extra bold',
-                            fontsize=13*root.level/p.level,zorder=min(p.dx))
+                            fontsize=13*min(root.dx)/min(p.dx),zorder=min(p.dx))
 
             m2 += 1
 

@@ -51,8 +51,6 @@ SUBROUTINE init (self, label)
   class(experiment_t), pointer:: patch
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
-  call io%init (label)
-  call scaling%init
   call star%init
   call planet%init
   call atmosphere%init

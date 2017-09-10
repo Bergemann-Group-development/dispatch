@@ -81,8 +81,9 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
   real(8), dimension(:):: dt
   real(kind=KindScalarVar), dimension(:,:,:,:,:,:):: mem            ! memory buffer
   integer:: l(3), u(3)
+  integer, save:: itimer=0
   !......................................................................
-  call trace_begin ('timestep_t%update')
+  call trace_begin ('timestep_t%update', itimer=itimer)
   if (self%time_order==-1) error stop 'timestep_mod not initialized!'
   nt = size(iit)                                ! number of time slots
   l = mesh%lb
@@ -132,7 +133,7 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
       minval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt  ),1)), &
       maxval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt  ),1)), shape(mem)
   end if
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE update
 !-------------------------------------------------------------------------------
 END MODULE timestep_mod

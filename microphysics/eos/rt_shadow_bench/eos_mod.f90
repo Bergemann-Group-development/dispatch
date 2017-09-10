@@ -140,7 +140,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
   end if
   if (present(rk)) then
     do i=1,size(rk,4)
-      rk(:,:,:,i) = min(1000.0,self%alfa0*(tt_loc*self%t0)**(-3.5)*(y_loc*self%rho0)**2)
+      rk(:,:,:,i) = self%alfa0*(tt_loc*self%t0)**(-3.5)*(y_loc*self%rho0)**2
     end do
   end if
   if (present(lnx)) deallocate(x_loc)

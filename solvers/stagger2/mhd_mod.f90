@@ -25,46 +25,25 @@ MODULE mhd_mod
   USE force_mod
   USE index_mod
   USE timestep_mod
-  USE planet_mod
   USE eos_mod
+  USE non_ideal_mod
   implicit none
   private
   type, extends(gpatch_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
-    real:: nu(6)
     real:: csound
+    real:: nu(6)
     real:: cdtd
     logical:: mhd=.true.
-    real:: gamma_AD, rho_ions ! ambipolar diffusion parameters
-    real(8):: dt_Ohm, dt_AD, niMHD_courant ! non-ideal MHD time-stepping variables
-    logical:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
+    logical:: first_time=.true.
     type(force_t):: force
   contains
     procedure:: init
     procedure:: pde
-    procedure:: nonideal_MHD_courant_condition ! non-ideal MHD replacement for `courant_condition`
     procedure:: update
     procedure:: output
-    procedure:: p2U
-    procedure:: U2p
-    procedure:: e2E_th
-    procedure:: E_th2e
-    procedure:: e2S
-    procedure:: S2e
-    procedure:: log_density => void
-    procedure:: log_pressure => void
     procedure:: gas_pressure
-    procedure:: gas_pressure_ngz
-    procedure:: cell_gas_pressure
-    procedure:: gas_temperature
-    procedure:: gas_temperature_ngz
-    procedure:: cell_gas_temperature
-    procedure:: velocity_magnitude => void
-    procedure:: magnetic_field_magnitude => void
-    procedure:: grav_potential => void
-    procedure:: apply_heating
-    procedure:: gas_velocity
   end type
 CONTAINS
 
@@ -77,11 +56,9 @@ SUBROUTINE init (self)
   type(index_t):: idx
   integer:: i
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
-  real, save:: gamma_AD=75., rho_ions=1., niMHD_courant=0.1
-  logical, save:: first_time=.true., mhd_AD=.false., mhd_Ohm=.false.
+  logical, save:: first_time=.true.
   character(len=16), save:: eos
-  namelist /mhd_params/ nu, gamma, csound, cdtd, mhd_AD, mhd_Ohm, gamma_AD, &
-    rho_ions, niMHD_courant, hardwire, eos
+  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -91,6 +68,7 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, mhd_params)
     if (io%master) write (*, mhd_params)
+    call non_ideal%init
     call timestep%init
     ! fool-proofing
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
@@ -106,18 +84,6 @@ SUBROUTINE init (self)
   else
     self%kind = 'stagger2_hd_patch'
   end if
-  if (mhd_Ohm) then
-    self%mhd_Ohm = mhd_Ohm
-    self%kind = 'stagger2_mhd_Ohm_patch'
-    self%niMHD_courant = niMHD_courant
-  end if
-  if (mhd_AD) then
-    self%mhd_AD = mhd_AD
-    self%gamma_AD  = gamma_AD
-    self%rho_ions  = rho_ions
-    self%kind = 'stagger2_mhd_AD_patch'
-    self%niMHD_courant = niMHD_courant
-  endif
   call self%gpatch_t%init
   self%i_d  = idx%d
   self%i_e  = idx%e
@@ -135,7 +101,7 @@ SUBROUTINE init (self)
   end do
   self%unsigned(idx%d)  = .true.
   self%pervolume(idx%s) = .true.
-  call self%force%init(self%kind)
+  call self%force%init (self%kind)
   call trace%end
 END SUBROUTINE init
 
@@ -144,8 +110,7 @@ SUBROUTINE pde (self)
   USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
-  real, dimension(:,:,:,:), pointer:: U, E, J, p, B, dpdt, dBdt
-  real, dimension(:,:,:,:), pointer:: Ud, E_AD
+  real, dimension(:,:,:,:), pointer:: U, emf, J, p, B, dpdt, dBdt
   real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm
   real, dimension(:,:,:),   pointer:: d, s, dddt, dsdt
   real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, Q
@@ -156,18 +121,17 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer:: fxx, fxy
   real, dimension(:,:,:),   pointer::      fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx,      fzz
-  real, dimension(:,:,:),   pointer:: Ud_x, Ud_y, Ud_z, eta_non, eta_th, eta_Ohm, ambi, H_AD
   real, dimension(:,:,:),   pointer:: Txx, Txy
   real, dimension(:,:,:),   pointer::      Tyy, Tyz
   real, dimension(:,:,:),   pointer:: Tzx,      Tzz
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
-  logical, save:: first_time=.true., first_AD=.true.
+  logical, save:: first_time=.true.
   !.............................................................................
-  real(8):: ds(3), dx
+  real(8):: ds(3)
   integer, save:: itimer=0
   type(index_t):: i
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%update',itimer=itimer)
+  call trace%begin('mhd_t%pde',itimer=itimer)
   self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
   self%s => self%mem(:,:,:,i%s      ,self%it,1); self%dsdt => self%mem(:,:,:,i%s      ,self%it,2)
   self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
@@ -181,9 +145,8 @@ SUBROUTINE pde (self)
     Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
-  call allocate_vectors (self%gn, ld, dd, E, J, fd, fx, fy, fz, fm)
+  call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
-  if (self%mhd_Ohm) call allocate_scalars (self%gn, eta_Ohm)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
@@ -193,14 +156,7 @@ SUBROUTINE pde (self)
     call allocate_vectors (self%gn, U)
   end if
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
-  if (self%mhd_AD) then
-    call allocate_vectors (self%gn, Ud, E_AD)
-    Ud_x=>Ud(:,:,:,1)
-    Ud_y=>Ud(:,:,:,2)
-    Ud_z=>Ud(:,:,:,3)
-    call allocate_scalars (self%gn, ambi, H_AD)
-  end if
-  Ex=>E(:,:,:,1); Ey=>E(:,:,:,2); Ez=>E(:,:,:,3)
+  Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
   Jx=>J(:,:,:,1); Jy=>J(:,:,:,2); Jz=>J(:,:,:,3)
   fxx=>fx(:,:,:,1); fxy=>fx(:,:,:,2)
                     fyy=>fy(:,:,:,2); fyz=>fy(:,:,:,3)
@@ -221,14 +177,13 @@ SUBROUTINE pde (self)
   ! a log variable, from the table point of view.
   !-----------------------------------------------------------------------------
   ss = s/d                                                                      ! ops: 0 0 1
-  pg = self%gas_pressure(lnd,ss)
+  pg = self%gas_pressure()
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure.  The divergence is valid
   ! in (2,gn-1)
   !-----------------------------------------------------------------------------
   ds = self%ds
-  dx = minval(ds)                                       ! smallest {dx,dy,dz}
-  du = -dx*div(ds,U)                                    ! convergence rate      ! ops: 0 1 0
+  du = -maxval(ds)*div(ds,U)                            ! convergence rate      ! ops: 0 1 0
   du = max(du,0.0)                                      ! positive part
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -244,7 +199,7 @@ SUBROUTINE pde (self)
     fyy = yup(Uy)**2
     fzz = zup(Uz)**2
     pp = (fxx+fyy+fzz)
-    ! Diagonal (negative) Maxwell stress (borrowing E for scratch)
+    ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
     Ex = xup(Bx)**2                                                             ! mhd: 0 1 0
     Ey = yup(By)**2                                                             ! mhd: 0 1 0
     Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
@@ -264,7 +219,7 @@ SUBROUTINE pde (self)
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
-    du = (dx*self%nu(1))*cs
+    du = (maxval(ds)*self%nu(1))*cs
     fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
     fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
     fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
@@ -287,8 +242,8 @@ SUBROUTINE pde (self)
     self%u_max = self%fmaxval(cs + sqrt(pp) + du)                               ! ops: 2 0 0 1 0
     if (io%verbose>3) print*,'u_max',self%u_max
     pp = pg + pa                                                                ! ops: 1 0 0
-    ! Total diagondal stress, with density factor
-    du = (dx*self%nu(1))*cs                                                     ! ops: 0 1 0
+    ! Total diagonal stress, with density factor
+    du = (maxval(ds)*self%nu(1))*cs                                             ! ops: 0 1 0
     !---------------------------------------------------------------------------
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
@@ -308,7 +263,7 @@ SUBROUTINE pde (self)
   fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux   ! ops: 0 9 0
   fm = p+fd                                             ! mass flux             ! ops: 3 0 0
   dddt = -div(ds,fm)                                    ! density derivative
-  self%u_max = max(self%u_max,self%cdtd*dx*self%fmaxval(abs(dddt/d)))           ! ops: 0 0 1
+  self%u_max = max(self%u_max,self%cdtd*maxval(ds)*self%fmaxval(abs(dddt/d)))   ! ops: 0 0 1
   if (io%verbose>3) print*,'u_max',self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
@@ -400,14 +355,7 @@ SUBROUTINE pde (self)
     ! Electric current, resistive electric field and magnetic dissipation
     !---------------------------------------------------------------------------
     J = curl_dn(ds,B)
-    if (self%mhd_Ohm) then
-      eta_Ohm = self%nu(6)
-      self%dt_Ohm = self%niMHD_courant*minval(dx**2/eta_Ohm)
-      E = eta_Ohm*J
-    else
-      self%dt_Ohm = 100.
-      E = self%nu(6)*edge(du)*J                                                 ! mhd: 0 6 0
-    end if
+    emf = self%nu(6)*edge(du)*J                                                 ! mhd: 0 6 0
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                     ! mhd: 2 3 0
     if (self%gamma/=1.0) &
       dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
@@ -417,109 +365,18 @@ SUBROUTINE pde (self)
     Ex = Ex + ydn(Uz)*zdn(By) - zdn(Uy)*ydn(Bz)                                 ! mhd: 2 2 0
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
-    dBdt = -curl_up(ds,E)
-    if (self%mhd_AD) then
-      !---------------------------------------------------------------------------
-      ! Below is the actual ambipolar drift parameter as given in equation 20 in
-      ! Padoan, Zweibel and Nordlund (2000).
-      ! To only write ambi, the definition in Padoan et al. is already multiplied
-      ! by density**(-3/2) as it appears in the calculation of the drift velocity.
-      ! The term d**1.5 is a cosnequence of the single fluid approximation and the
-      ! relation n_i = K(n_n/10^5cm^-3)^k + K' (n_n/10^3 cm^-3)^-2
-      ! K = 3*10^-3cm^-3, k=0.5 and K'=4.64*10^-4cm^-3.
-      ! based on assuming that dust grains do NOT affect ionization balance significantly
-      ! => second term falls off quickly => n_i~n_n^0.5
-      ! In order to compute this parameter correctly, we need to know TEMPERATURE,
-      ! RESOLUTION (not directly applicable here because we use AMR), BOX LENGTH,
-      ! AVERAGE DENSITY, COSMIC-RAY IONISATION (K_i parameter:
-      ! K_i = n_i*n_H**(-0.5) = x_i*n_H**(-0.5) ) and AVERAGE VOLUMETRIC FLOW RATE av_sigv:
-      !---------------------------------------------------------------------------
-      ! ambi = 0.28 * (0.1*T)**0.5 * (N/128d0) * (L/10d0)**(-1) * (av_n/200d0)**(-0.5)
-      !      * (K_i/1e-5)**(-1) * (av_sigv/2e-9)**(-1) * d**(-1.5)
-      !
-      ! Alternative definition in Duffin and Pudritz (2008) assumes constant parameter
-      ! for gamma_AD
-      ! gamma_AD = av_sigv / (m_i + m_n) = 3.28e13 g^-1cm^3s^-1
-      ! ambi = 1.4 / (gamma_AD*d**1.5)
-      ! rho_i = 1.
-      ambi = 1./(self%gamma_AD*d*self%rho_ions)
-      Ud_x = xdn(ambi) * (zup(Jy)*xdn(zup(Bz)) - yup(Jz)*xdn(yup(By)))
-      Ud_y = ydn(ambi) * (xup(Jz)*ydn(xup(Bx)) - zup(Jx)*ydn(zup(Bz)))
-      Ud_z = zdn(ambi) * (yup(Jx)*zdn(yup(By)) - xup(Jy)*zdn(xup(Bx)))
-      E_AD(:,:,:,1) = (Ud_y*Bz - Ud_z*By)
-      E_AD(:,:,:,2) = (Ud_z*Bx - Ud_x*Bz)
-      E_AD(:,:,:,3) = (Ud_x*By - Ud_y*Bx)
-      dBdt(:,:,:,1) = dBdt(:,:,:,1) + (ddyup(ds, (Ud_x*By - Ud_y*Bx)) - ddzup(ds, (Ud_z*Bx - Ud_x*Bz)) )
-      dBdt(:,:,:,2) = dBdt(:,:,:,2) + (ddzup(ds, (Ud_y*Bz - Ud_z*By)) - ddxup(ds, (Ud_x*By - Ud_y*Bx)) )
-      dBdt(:,:,:,3) = dBdt(:,:,:,3) + (ddxup(ds, (Ud_z*Bx - Ud_x*Bz)) - ddyup(ds, (Ud_y*Bz - Ud_z*By)) )
-      self%dt_AD = self%niMHD_courant*minval(self%gamma_AD*self%rho_ions*d/(Bx**2+By**2+Bz**2)*dx**2)
-      if (self%gamma==1.0) then
-        dsdt = 0.
-      else
-        ! ambipolar heating H_AD = rho_i*rho_n*nu_in*v_D^2. nu_in is the collisional frequency between ions and neutrals
-        ! and so far this is all hidden in the constant gamma_AD.
-        H_AD = self%rho_ions * d * self%gamma_AD * (xup(Ud_x)**2 + yup(Ud_y)**2 + zup(Ud_z)**2)
-        dsdt = dsdt + H_AD*d/pg
-      end if
-    end if
+    call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
+    dBdt = -curl_up(ds,emf)
   end if
   !-----------------------------------------------------------------------------
-  call deallocate_vectors (ld, dd, E, J, fd, fx, fy, fz, fm)
+  call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pa, du, ss, cs, pp, pb, Q)
-  if (self%mhd_Ohm) then
-    call deallocate_scalars (eta_Ohm)
-  end if
-  if (self%mhd_AD) then
-    call deallocate_vectors (Ud, E_AD)
-    call deallocate_scalars (ambi,H_AD)
-  end if
   if (.not.self%do_pebbles) then
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
   call trace%end (itimer)
 END SUBROUTINE pde
-
-!> =============================================================================
-!> Courant condition, one way or another
-!> =============================================================================
-SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
-  class(mhd_t):: self
-  real(8):: dt_AD_inp
-  real(8):: dt_Ohm_inp
-  !.............................................................................
-  call trace%begin('mhd_t%nonideal_MHD_courant_condition')
-  call self%lock%set ('nonideal_MHD_courant')
-  if (io%verbose>2) &
-    print*, 'nonideal_MHD_courant_condition: u_max, ds', self%u_max, minval(self%ds)
-  if (self%dt_fixed > 0.0) then
-    self%dtime = self%dt_fixed
-    self%courant = self%dtime*self%u_max/minval(self%ds)
-  else if (self%u_fixed > 0.0) then
-    self%dtime = self%courant*minval(self%ds)/self%u_fixed
-  else
-    self%dtime = self%courant*minval(self%ds)/self%u_max
-  endif
-  !-----------------------------------------------------------------------------
-  ! Non-ideal time step considerations; these are calculated in `pde`.
-  !-----------------------------------------------------------------------------
-  if (self%mhd_AD ) self%dtime = min (self%dtime, dt_AD_inp )
-  if (self%mhd_Ohm) self%dtime = min (self%dtime, dt_Ohm_inp)
-  !-----------------------------------------------------------------------------
-  ! Prevent large (cheap) patches from taking time steps longer than the out_time
-  !-----------------------------------------------------------------------------
-  if (io%out_time > 0.0) &
-    self%dtime = min (self%dtime, io%out_time)
-
-  self%dt(self%it) = self%dtime
-
-  if (io%verbose>3) &
-    print'(a,i7,f12.6,f8.4,1p,e10.2)', 'nonideal_MHD_courant_condition:', &
-      self%id, self%dtime, self%courant, self%u_max
-  call self%lock%unset ('nonideal_MHD_courant')
-
-  call trace%end
-END SUBROUTINE nonideal_MHD_courant_condition
 
 !> =============================================================================
 !> Take a complete update step.  This can be overloaded in higher levels, e.g.
@@ -533,6 +390,9 @@ SUBROUTINE update (self)
   ! placed at an earlier point in the task handling the call here will have no
   ! effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%update',itimer=itimer)
   call self%output
   call self%pde
   call self%courant_condition
@@ -540,6 +400,7 @@ SUBROUTINE update (self)
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================
@@ -550,8 +411,10 @@ SUBROUTINE output (self, experiment_name)
   character(len=64):: experiment_name, filename
   optional:: experiment_name
   logical:: exists
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
+  call trace%begin('mhd_t%output',itimer=itimer)
   call self%gpatch_t%output (experiment_name)
   !$omp critical (out_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
@@ -564,275 +427,27 @@ SUBROUTINE output (self, experiment_name)
     close (io%data_unit)
   end if
   !$omp end critical (out_cr)
+  call trace%end (itimer)
 END SUBROUTINE output
 
-!> =====================================================================
-!> Get velocities from momenta
-!> =====================================================================
-SUBROUTINE p2U(self, U, it)
-  class(mhd_t) :: self
-  real, dimension(:,:,:,:), pointer:: U
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:,:), pointer:: dd
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,           it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
-  allocate(dd(size(d,1),size(d,2),size(d,3),3))
-  dd=down(log(d))
-  U = p/exp(dd)
-  deallocate(dd)
-  end associate
-END SUBROUTINE p2U
-
-!> =====================================================================
-!> Put velocities to momenta
-!> =====================================================================
-SUBROUTINE U2p(self, U, it)
-  class(mhd_t) :: self
-  real, dimension(:,:,:,:), pointer:: U
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:,:), pointer:: dd
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
-  allocate(dd(size(d,1),size(d,2),size(d,3),3))
-  dd=down(log(d))
-  p = U*exp(dd)
-  deallocate(dd)
-  end associate
-END SUBROUTINE U2p
-
-!> =====================================================================
-!> Get thermal energy per unit mass from entropy
-!> =====================================================================
-SUBROUTINE e2E_th(self, E_th, it)
-  class(mhd_t) :: self
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:), pointer:: E_th
-  real:: g1
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            s => self%mem(:,:,:,self%i_s,it,1))
-  g1 = self%gamma-1.0
-  E_th = d**g1*exp(s*g1/d)/g1
-  end associate
-END SUBROUTINE e2E_th
-
-!> =====================================================================
-!> Put thermal energy to entropy per unit volume
-!> =====================================================================
-SUBROUTINE E_th2e(self, E_th, it)
-  class(mhd_t) :: self
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:), pointer:: E_th
-  real:: g1
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            s => self%mem(:,:,:,self%i_s,it,1))
-  g1 = self%gamma-1.0
-  s = d*log(E_th*g1/d**g1)/g1
-  end associate
-END SUBROUTINE E_th2e
-
-!> =====================================================================
-!> Get thermal energy per unit mass from entropy
-!> =====================================================================
-SUBROUTINE e2S(self, s, it)
-  class(mhd_t) :: self
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:), pointer:: s
-  real:: g1
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
-  g1 = self%gamma-1.0
-  s = log(e*g1/d**self%gamma)/g1
-  end associate
-END SUBROUTINE e2S
-
-!> =====================================================================
-!> Get thermal energy per unit mass from entropy
-!> =====================================================================
-SUBROUTINE S2e(self, s, it)
-  class(mhd_t) :: self
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:), pointer:: s
-  real:: g1
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
-  g1 = self%gamma-1.0
-  e = d**self%gamma*exp(s*g1)/g1
-  end associate
-END SUBROUTINE S2e
-
 !> =============================================================================
-FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
+FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: lnd, ss
+  real, dimension(:,:,:), pointer:: d, s
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
   if (trim(self%eos)=='ideal') then
-    self%d => self%mem(:,:,:,self%i_d,self%it,1)
+    d => self%mem(:,:,:,self%i_d,self%it,1)
+    s => self%mem(:,:,:,self%i_s,self%it,1)
     if (self%gamma==1.0) then
-      pg = self%d*self%csound**2
+      pg = d*self%csound**2
     else
-      self%s => self%mem(:,:,:,self%i_s,self%it,1)
-      pg = self%d**self%gamma*exp(self%s/self%d*(self%gamma-1))
+      s => self%mem(:,:,:,self%i_s,self%it,1)
+      pg = d**self%gamma*exp(s/d*(self%gamma-1))
     end if
   else
-    call eos%lookup (shape(lnd), lnx=lnd, y=ss, pg=pg)
+    call eos%lookup (shape(d), x=d, y=s, pg=pg)
   end if
 END FUNCTION gas_pressure
-
-FUNCTION gas_pressure_ngz (self) RESULT (pg)
-  class(mhd_t):: self
-  real, dimension(self%n(1),self%n(2),self%n(3)):: pg
-  integer :: l(3), u(3)
-  !-----------------------------------------------------------------------------
-  l = self%li; u = self%ui
-  associate (d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3), 1,self%it,1), &
-             s => self%mem(l(1):u(1),l(2):u(2),l(3):u(3), 2,self%it,1))
-  if (self%gamma==1.0) then
-    pg = d
-  else
-    pg = d**self%gamma*exp(s/d*(self%gamma-1))
-  end if
-  end associate
-END FUNCTION gas_pressure_ngz
-
-FUNCTION cell_gas_pressure(self, c) RESULT (pg)
-  class(mhd_t) :: self
-  real :: pg
-  integer :: c(3)
-  !---------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3), 1,self%it,1), &
-             s => self%mem(c(1),c(2),c(3), 2,self%it,1))
-  if (self%gamma==1.0) then
-    pg = d
-  else
-    pg = d**self%gamma*exp(s/d*(self%gamma-1))
-  end if
-  end associate
-END FUNCTION cell_gas_pressure
-
-!> =============================================================================
-!> temperature from ideal gas law, taking into account that the temperature is
-!> normalised by k_B and mu (so that specific gas constant = 1)
-!> =============================================================================
-FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
-  class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: lnd, ss
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
-  !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:,  1,self%it,1))
-  tmp = self%gas_pressure(lnd,ss)/d
-  if (io%verbose > 2) then
-    if (any(tmp<0)) then
-      error stop "mhd_t%gas_temperature: T<0"
-    end if
-  end if
-  end associate
-END FUNCTION gas_temperature
-
-FUNCTION gas_temperature_ngz (self) RESULT (tmp)
-  class(mhd_t):: self
-  real, dimension(self%n(1),self%n(2),self%n(3)):: tmp
-  integer :: l(3), u(3)
-  !---------------------------------------------------------------------
-  l = self%li; u = self%ui
-  associate (d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),  1,self%it,1))
-  tmp = self%gas_pressure_ngz()/d
-
-  if (io%verbose > 2) then
-    if (any(tmp<0)) then
-      error stop "mhd_t%gas_temperature: T<0"
-    end if
-  end if
-  end associate
-END FUNCTION gas_temperature_ngz
-
-FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
-  class(mhd_t):: self
-  real :: tmp
-  integer :: c(3)
-  !-----------------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3),  1,self%it,1))
-  tmp = cell_gas_pressure(self,c)/d
-  end associate
-END FUNCTION cell_gas_temperature
-
-!> =============================================================================
-SUBROUTINE log_density (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = log(self%d)
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE log_pressure (self, lnd, ss, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:), pointer:: lnd, ss, v
-  !-----------------------------------------------------------------------------
-  v = log(self%gas_pressure(lnd,ss))
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE velocity_magnitude (self, v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = norm(self%p/exp(down(log(self%d))))
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE magnetic_field_magnitude (self, v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = norm(self%B)
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE void (self, v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: v
-  !-----------------------------------------------------------------------------
-  v = 0.0
-END SUBROUTINE
-
-SUBROUTINE apply_heating (self, q)
-  class (mhd_t):: self
-  real, dimension(:,:,:):: q
-END SUBROUTINE
-
-!> =============================================================================
-FUNCTION gas_velocity (self) RESULT (v)
-  USE scalar_mod
-  class (mhd_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d, lnd
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: p, ld, dd
-  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
-  !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%i_d,self%it,1)
-  p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
-  call allocate_vectors (self%gn, ld, dd)
-  call allocate_scalars (self%gn, lnd)
-  lnd = log(d)
-  ld = down(lnd)
-  dd = exp(ld)
-  v = p/dd
-
-  call deallocate_vectors (ld, dd)
-  call deallocate_scalars (lnd)
-  nullify (d,p)
-END FUNCTION gas_velocity
 
 END MODULE mhd_mod

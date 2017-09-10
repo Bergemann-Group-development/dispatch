@@ -7,7 +7,7 @@ patch_mod.o:            task_mod.o mesh_mod.o buffered_output_mod.o mpi_mesg_mod
                         timer_mod.o boundaries_mod.o direct_output_mod.o
 gpatch_mod.o:           io_mod.o trace_mod.o patch_mod.o download_mod.o initial_mod.o kinds_mod.o data_hub_mod.o
 refine_mod.o:           io_mod.o trace_mod.o bits_mod.o list_mod.o link_mod.o kinds_mod.o scaling_mod.o \
-                        download_mod.o mesh_mod.o mhd_mod.o eos_mod.o
+                        download_mod.o mesh_mod.o solver_mod.o eos_mod.o solver_mod.o
 scaling_mod.o:          io_mod.o units_mod.o
 download_mod.o:         io_mod.o trace_mod.o task_mod.o patch_mod.o link_mod.o interpolate_mod.o kinds_mod.o
 random_mod.o:           io_mod.o trace_mod.o

@@ -26,7 +26,7 @@
  sec_per_report=30
 /
 &io_params
- verbose=0
+ verbose=1
  do_validate=f
  do_trace=f
  omp_trace=f
