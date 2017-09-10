@@ -147,7 +147,6 @@ SUBROUTINE rotate (self)
   if (io%verbose > 1) then
     write (io_unit%log,'(a,7i10)')   'task_mod::rotate iit =', self%iit
     flush (io_unit%log)
-    write (io_unit%log,'(a,7f10.6)') 'task_mod::rotate   t =', self%t(max(1,min(self%nt,self%iit)))
   end if
   !!omp critical (time_cr)
   !-----------------------------------------------------------------------------

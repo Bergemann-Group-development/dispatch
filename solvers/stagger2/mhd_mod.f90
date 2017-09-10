@@ -210,14 +210,14 @@ SUBROUTINE pde (self)
     ! Fast mode speed + velocity
     pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
-    if (io%verbose>3) then
+    if (io%verbose>2) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(ca)', u_max, self%u_max
+      if (io%verbose>2) print 1, 'u_max(ca)  ', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
       u_max = self%fmaxval(cs + sqrt(pp))
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
+      if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
     end if
     u_max = self%fmaxval(cs + sqrt(pp) + du)
     self%u_max = max(self%u_max,u_max)
@@ -239,10 +239,10 @@ SUBROUTINE pde (self)
     pa = self%nu(2)*d*du**2                          ! dimension: pressure      ! ops: 0 3 0
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
-    if (io%verbose>3) then
+    if (io%verbose>2) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(cs)', u_max, self%u_max
+      if (io%verbose>2) print 1, 'u_max(cs)  ', u_max, self%u_max
       u_max = self%fmaxval(cs + sqrt(pp))
       self%u_max = max(self%u_max,u_max)
       if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max

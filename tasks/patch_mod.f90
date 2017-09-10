@@ -829,8 +829,8 @@ SUBROUTINE input (self, ok)
   call trace%begin ('patch_t%input')
   !$omp critical (out_cr)
   if (io%do_legacy) then
-    if (io%verbose>2) print *, self%id, ' LEGACY INPUT'
     call input_legacy (self, ok)
+    if (ok .and. io%verbose>2) print *, self%id, ' LEGACY INPUT'
   !else
     !call self%input_new
   end if
@@ -1379,7 +1379,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         do iv=1,nv
           write (io_unit%log,1) &
             'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
-            self%dtime, self%u_max, &
+            self%dtime, log10(max(self%u_max,1e-30)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &

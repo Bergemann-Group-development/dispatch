@@ -1255,7 +1255,7 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
   !.............................................................................
-  integer:: iv, li(3)=0, ui(3)=0, l(3), u(3), no, jo, it, i
+  integer:: iv, li(3)=0, ui(3)=0, l(3), u(3), no, jo, i
   real:: ds(3)
   logical:: first_time=.true.
   integer:: it1, it2, n(3), idir, il, ind, nd
@@ -1341,21 +1341,15 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
                 self%li(2):self%ui(2),&
                 self%li(3):self%ui(3))
       call self%get_q(time,b2)
-
-      !buf = buf*self%dtime*scaling%f/scaling%l**3/scaling%t
-          !buf = buf*scaling%f/scaling%l**3/scaling%t!*qt &
-             ! + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
-            ! print *, buf(:,n(2)/2,n(3)/2)
       if (io%verbose>1) &
-        write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
-          trim(filename),1,it,jo,minval(buf),maxval(buf)
+        write (io_unit%log,'(1x,a,2i5,i3,1p,2e11.3)') &
+          trim(filename),1,self%it,jo,minval(buf),maxval(buf)
       write (io%data_unit,rec=iv+(jo-1)*2) buf
       if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
     iv = 2
-      !buf = ((buf *0.4)/(self%d(l(1):u(1),l(2):u(2),l(3):u(3))))**0.25!/scaling%stefan
       if (io%verbose>1) &
-        write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
-          trim(filename),1,it,jo,minval(buf),maxval(buf)
+        write (io_unit%log,'(1x,a,2i5,i3,1p,2e11.3)') &
+          trim(filename),1,self%it,jo,minval(buf),maxval(buf)
       write (io%data_unit,rec=iv+(jo-1)*2) buf
       if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
