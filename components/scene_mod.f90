@@ -12,6 +12,7 @@ MODULE scene_mod
     integer:: n_patch
     integer:: n_initial = 0
     integer:: n_add = 0
+    integer:: n_patch_total = 0
   end type
   type(scene_t):: scene
 END MODULE scene_mod

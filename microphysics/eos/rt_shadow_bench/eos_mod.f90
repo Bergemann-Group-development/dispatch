@@ -21,7 +21,6 @@ MODULE eos_mod
     real :: t0    = 290.
     real :: rho0 = 1.
     real :: alfa0 = 1.
-    real(8) :: sc_stf
     integer :: n_lambda = 1
     real :: w_lambda = 1.
     logical :: do_rt = .false.
@@ -98,11 +97,11 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
   real(kind=KindScalarVar), dimension(:,:,:),                      optional :: pg, tt
   real(kind=KindRTVar), dimension(:,:,:,:),                        optional :: src, rk
   real, dimension(:,:,:), pointer :: x_loc, y_loc
-  real(kind=8), dimension(:,:,:), pointer :: tt_loc
+  real, dimension(:,:,:), pointer :: tt_loc
   integer:: i
   integer, save:: itimer = 0
   !-----------------------------------------------------------------------------
-  call trace%begin ('eos_t: lookup', itimer=itimer)
+  call trace%begin ('eos_t%lookup', itimer=itimer)
   if (present(gamma)) then
     self%gamma = gamma
   end if
@@ -126,14 +125,19 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
   end if
   !-----------------------------------------------------------------------------
   allocate (tt_loc(dim(1),dim(2),dim(3)))
-  tt_loc = y_loc**self%gamma*exp(x_loc/y_loc*(self%gamma-1))/y_loc
+  tt_loc = y_loc**(self%gamma-1.0)*exp(x_loc/y_loc*(self%gamma-1.0))
+  if (io%verbose>1) print 1,'MK0',minval(x_loc),maxval(x_loc)
+  if (io%verbose>1) print 1,'MK0',minval(y_loc),maxval(y_loc)
   if (present(tt)) then
     tt = tt_loc
   end if
   if (present(src)) then
     do i=1,size(src,4)
-      src(:,:,:,i) = scaling%stefan*tt_loc**4
+      src(:,:,:,i) = scaling%stefan*real(tt_loc,kind=8)**4
     end do
+    if (io%verbose>1) print 1,'MK1',minval(tt_loc*scaling%temp),maxval(tt_loc*scaling%temp)
+    if (io%verbose>1) print 1,'MK2',minval(src),maxval(src)
+    1 format(a,1p,2g12.3)
   end if
   if (present(pg)) then
     pg = y_loc**self%gamma*exp(x_loc/y_loc*(self%gamma-1))

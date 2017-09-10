@@ -117,6 +117,7 @@ SUBROUTINE init (self)
     self%id = id
   end if
   id = self%id
+  if (self%id==1) self%track = .true.
   scene%n_patch = self%id
   !$omp end critical (task_init_cr)
   if (io%verbose>2) &
@@ -146,7 +147,6 @@ SUBROUTINE rotate (self)
   if (io%verbose > 1) then
     write (io_unit%log,'(a,7i10)')   'task_mod::rotate iit =', self%iit
     flush (io_unit%log)
-    write (io_unit%log,'(a,7f10.6)') 'task_mod::rotate   t =', self%t(max(1,min(self%nt,self%iit)))
   end if
   !!omp critical (time_cr)
   !-----------------------------------------------------------------------------

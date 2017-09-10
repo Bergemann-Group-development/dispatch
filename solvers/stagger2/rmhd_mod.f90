@@ -20,6 +20,7 @@ MODULE rmhd_mod
   USE eos_mod
   USE solver_mod
   USE rt_mod
+  USE timestep_mod
   implicit none
   private
   ! --------------------------------------------------------------------
@@ -55,39 +56,56 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =====================================================================
-!> If the RT solution depends on other patches, then adding separate RT
-!> tasks into the task list is a better method, so to be general we do
-!> this here.   In this case, this update procedure isn't called until
-!> the RT solution is already done.
+!> If RT is on, add the radiative cooling / heating to the entropy time
+!> derivative, before taking the timestep.
 !> =====================================================================
 SUBROUTINE update (self)
   class (rmhd_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: dedt, pgas, s
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: dddt, dsdt, d
   integer, save :: itimer=0
-  real :: g1
+  real:: u_max
   !---------------------------------------------------------------------
-  !call trace%begin ('rmhd_t%update', itimer=itimer)
-  call self%mhd_t%update
+  call trace%begin ('rmhd_t%update', itimer=itimer)
+  call self%output
+  call self%pde
   if (eos%do_rt) then
     call self%rt%update
-    associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
-              l => self%li, u => self%ui)
+    associate(l => self%li, u => self%ui)
     allocate(dedt(self%n(1), self%n(2), self%n(3)))
-    allocate(pgas(size(d,1), size(d,2), size(d,3)))
+    allocate(pgas(self%gn(1), self%gn(2), self%gn(3)))
     dedt=0.0
     call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
-    s => self%mem(:,:,:,self%i_s,self%it,1)
-    pgas = log(d)
     pgas = self%gas_pressure()
-    self%mem(l(1):u(1),l(2):u(2),l(3):u(3), self%i_s, self%new,1) = &
-    self%mem(l(1):u(1),l(2):u(2),l(3):u(3), self%i_s, self%new,1) + &
-    dedt * d(l(1):u(1),l(2):u(2),l(3):u(3)) / &
-         pgas(l(1):u(1),l(2):u(2),l(3):u(3)) * self%dtime
-    end associate
+    d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,1)
+    dsdt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%it,2)
+    dsdt = dsdt + dedt*d/pgas(l(1):u(1),l(2):u(2),l(3):u(3))
+    !-----------------------------------------------------------------------------
+    ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
+    !-----------------------------------------------------------------------------
+    s    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%it,1)
+    dddt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,2)
+    if (io%verbose>2) then
+      print *,'mk:    d', minval(d), maxval(d)
+      print *,'mk: dedt', minval(dedt), maxval(dedt)
+      print *,'mk: pgas', minval(pgas(l(1):u(1),l(2):u(2),l(3):u(3))), maxval(pgas(l(1):u(1),l(2):u(2),l(3):u(3)))
+      print *,'mk: dsdt', minval(dsdt), maxval(dsdt)
+      print *,'mk: dddt', minval(dddt), maxval(dddt)
+      print *,'mk:    s', minval(s), maxval(s)
+    end if
     deallocate(dedt, pgas)
+    u_max = self%cdtd*maxval(self%ds)*maxval(abs((dsdt-s*dddt/d)/d))
+    self%u_max = max(self%u_max,u_max)
+    if (io%verbose>1) print 1, 'u_max(RT)  ', u_max, self%u_max
+    1 format(1x,a,1p,2g12.3)
+    end associate
   end if                              
   call self%courant_condition
-  !call trace%end (itimer)
+  if (io%verbose>2) &
+    call self%check_density('before timestep')
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density(' after timestep')
+  call trace%end (itimer)
 END SUBROUTINE update
 
 END MODULE rmhd_mod

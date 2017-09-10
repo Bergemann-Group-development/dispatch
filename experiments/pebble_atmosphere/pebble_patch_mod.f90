@@ -84,7 +84,7 @@ SUBROUTINE init (self)
   real, save:: ppc = 0.10               ! probability per cell of making a pebble
   real, save:: omega_yr(3)=0.0          ! omega in units where 1 = 1/yr
   integer, save:: trace_every=0         ! trace pebble frequency
-  integer, save:: it_max=1000000
+  integer, save:: it_max=1000000, trace_every_min
   logical, save:: do_pebbles=.true., only_pebbles=.false., do_trace_output
   integer:: iostat
   logical:: ok
@@ -125,6 +125,13 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, pebble_params)
     if (io%master) write(*, pebble_params)
+    trace_every_min = ceiling( &
+      scene%n_patch_total*real(product(self%n))*ppc/real(pebble_trace%nbuffer))
+    print *, 'trace_every_min =', trace_every_min, scene%n_patch_total
+    if (trace_every < trace_every_min) then
+      trace_every = trace_every_min
+      print '("WARNING: trace_every has been increased to", i5)', trace_every
+    end if
     call pebble_trace%init (trace_every)
   end if
   !$omp end critical (pebble_init_cr)

@@ -333,7 +333,7 @@ SUBROUTINE init (self)
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     restart, inputdir, guard_zones, time_derivs
   !.............................................................................
-  call trace_begin ('patch_mod::init')
+  call trace_begin ('patch_t%init')
   call self%task_t%init                         ! sets unique id
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
@@ -634,7 +634,7 @@ SUBROUTINE periodic_grid (self)
   class(patch_t):: self
   integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3)
   !.............................................................................
-  call trace_begin ('patch_mod::periodic_grid')
+  call trace_begin ('patch_t%periodic_grid')
   lb = self%mesh%lb
   ub = self%mesh%ub
   li = self%mesh%li
@@ -801,7 +801,7 @@ SUBROUTINE output (self, experiment_name)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
-  call trace_begin('patch_mod::output', itimer=itimer)
+  call trace_begin('patch_t%output', itimer=itimer)
   do while (self%time >= self%out_next)
     !$omp critical (out_cr)
     if (io%do_direct) then
@@ -829,8 +829,8 @@ SUBROUTINE input (self, ok)
   call trace%begin ('patch_t%input')
   !$omp critical (out_cr)
   if (io%do_legacy) then
-    if (io%verbose>2) print *, self%id, ' LEGACY INPUT'
     call input_legacy (self, ok)
+    if (ok .and. io%verbose>2) print *, self%id, ' LEGACY INPUT'
   !else
     !call self%input_new
   end if
@@ -848,7 +848,7 @@ SUBROUTINE output_direct (self)
   integer              :: n(3), l(3), u(3), ng(3)=0, jt(2), id=0, offset(4)=1
   real                 :: pt(2)
   !-----------------------------------------------------------------------------
-  call trace_begin('patch_mod::output_direct')
+  call trace_begin('patch_t%output_direct')
   !-----------------------------------------------------------------------------
   ! Write a small text file with info when the last chunk is being entered
   !-----------------------------------------------------------------------------
@@ -916,7 +916,7 @@ SUBROUTINE output_new (self)
   !-----------------------------------------------------------------------------
   ! Compute size of buffer and allocate -- it will be freed by the writer
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_mod::output_new')
+  call trace_begin ('patch_t%output_new')
   n_buf = product(self%gn)
   n_data = n_header + self%nv*n_buf
   allocate (buffer(n_data), var(self%gn(1),self%gn(2),self%gn(3)))
@@ -974,7 +974,7 @@ SUBROUTINE pack (self, mesg)
   !-----------------------------------------------------------------------------
   ! Compute size of buffer and allocate -- it will be freed by the writer
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_mod::pack', itimer=itimer)
+  call trace_begin ('patch_t%pack', itimer=itimer)
   allocate (mesg)
   n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
@@ -1044,7 +1044,7 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
   ! Compute size of buffer
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_mod::unpack', itimer=itimer)
+  call trace_begin ('patch_t%unpack', itimer=itimer)
   buffer => mesg%buffer
   n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
@@ -1118,7 +1118,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   real(8):: time
  ! integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
-  call trace_begin('patch_mod::output_legacy')
+  call trace_begin('patch_t%output_legacy')
   !-----------------------------------------------------------------------------
   ! Check number of patches written and issue a message when all done
   !-----------------------------------------------------------------------------
@@ -1242,7 +1242,7 @@ SUBROUTINE input_legacy (self, ok)
   if (self%id==io%id_debug) &
     print *,'MK input_legacy', self%id, self%restart
   if (self%restart < 0) return
-  call trace_begin('patch_mod::input_legacy')
+  call trace_begin('patch_t%input_legacy')
   !-----------------------------------------------------------------------------
   ! Read the patch time from the .txt file
   !-----------------------------------------------------------------------------
@@ -1379,7 +1379,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         do iv=1,nv
           write (io_unit%log,1) &
             'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
-            self%dtime, self%u_max, &
+            self%dtime, log10(max(self%u_max,1e-30)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -1433,7 +1433,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           do iv=1,nv
             print 1, &
             'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
-            self%dtime, self%u_max, &
+            self%dtime, log10(max(self%u_max,1e-30)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -1595,6 +1595,9 @@ SUBROUTINE courant_condition (self, detailed_timer)
   endif
   !$omp atomic write
   self%dtime = dtime
+  if (io%verbose>2) &
+    print '(a,i6,1p,3g11.2,2x,3g11.2)', ' courant: id, dt, cdt, u_max, ds =', &
+      self%id, dtime, self%courant, self%u_max, self%ds
   !-----------------------------------------------------------------------------
   ! Force the time step to give exactly sync_time if within reach
   !-----------------------------------------------------------------------------
@@ -1668,7 +1671,7 @@ SUBROUTINE check_nan (self, label, always)
   if (.not. do_check_nan) return
   if (io%verbose<1 .and. .not. present(always)) return
   if (.not. associated(self%mem)) return
-  call trace%begin ('patch_mod::check_nan', itimer=itimer)
+  call trace%begin ('patch_t%check_nan', itimer=itimer)
   if (io%verbose>1) then
     if (present(label)) then
       print *, self%id, trim(label)//', min(d), max(d):', &
@@ -1732,7 +1735,7 @@ SUBROUTINE check_density (self, label)
   !-----------------------------------------------------------------------------
   if (io%verbose < 1) return
   if (.not. associated(self%mem)) return
-  call trace%begin ('patch_mod::check_density', itimer=itimer)
+  call trace%begin ('patch_t%check_density', itimer=itimer)
   l = self%mesh%lb
   u = self%mesh%ub
   mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1))
@@ -2086,7 +2089,7 @@ SUBROUTINE time_interval (self, time, jt, pt)
     pt(2) = (time-t(j))/dt
   end if
   pt(1) = 1.-pt(2)
-  if (io%verbose>1 .and. pt(2)>0.0) then
+  if ((io%verbose>3 .or. io_unit%do_validate) .and. pt(2)>0.0) then
     print '(a,1p,3e12.4,2i5,0p,2f8.4)', 'time_interval: times  =', t(j), time, t(j+1), jt, pt
   end if
   !call trace%end (itimer)
