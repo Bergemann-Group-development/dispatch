@@ -56,35 +56,42 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =====================================================================
-!> If the RT solution depends on other patches, then adding separate RT
-!> tasks into the task list is a better method, so to be general we do
-!> this here.   In this case, this update procedure isn't called until
-!> the RT solution is already done.
+!> If RT is on, add the radiative cooling / heating to the entropy time
+!> derivative, before taking the timestep.
 !> =====================================================================
 SUBROUTINE update (self)
   class (rmhd_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: dedt, pgas, s
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: dddt, dsdt, d
   integer, save :: itimer=0
+  real:: u_max
   !---------------------------------------------------------------------
   call trace%begin ('rmhd_t%update', itimer=itimer)
   call self%output
   call self%pde
   if (eos%do_rt) then
     call self%rt%update
-    associate(d => self%mem(:,:,:,self%i_d,self%it,1), &
-              l => self%li, u => self%ui)
+    associate(l => self%li, u => self%ui)
     allocate(dedt(self%n(1), self%n(2), self%n(3)))
     allocate(pgas(size(d,1), size(d,2), size(d,3)))
     dedt=0.0
     call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
-    s => self%mem(:,:,:,self%i_s,self%it,1)
     pgas = self%gas_pressure()
-    self%mem(l(1):u(1),l(2):u(2),l(3):u(3), self%i_s, self%new,2) = &
-    self%mem(l(1):u(1),l(2):u(2),l(3):u(3), self%i_s, self%new,2) + &
-      dedt*d(l(1):u(1),l(2):u(2),l(3):u(3)) / &
-        pgas(l(1):u(1),l(2):u(2),l(3):u(3))
-    end associate
+    dsdt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%new,2)
+    dsdt = dsdt + dedt*d(l(1):u(1),l(2):u(2),l(3):u(3)) / &
+                    pgas(l(1):u(1),l(2):u(2),l(3):u(3))
     deallocate(dedt, pgas)
+    !-----------------------------------------------------------------------------
+    ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
+    !-----------------------------------------------------------------------------
+    d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%new,1)
+    s    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%new,1)
+    dddt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%new,2)
+    u_max = self%cdtd*maxval(self%ds)*self%fmaxval(abs((dsdt-s*dddt/d)/d))
+    self%u_max = max(self%u_max,u_max)
+    if (io%verbose>2) print 1, 'u_max(dsdt)', u_max, self%u_max
+    1 format(1x,a,1p,2g12.3)
+    end associate
   end if                              
   call self%courant_condition
   if (io%verbose>2) &
