@@ -73,23 +73,30 @@ SUBROUTINE update (self)
     call self%rt%update
     associate(l => self%li, u => self%ui)
     allocate(dedt(self%n(1), self%n(2), self%n(3)))
-    allocate(pgas(size(d,1), size(d,2), size(d,3)))
+    allocate(pgas(self%gn(1), self%gn(2), self%gn(3)))
     dedt=0.0
     call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
     pgas = self%gas_pressure()
-    dsdt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%new,2)
-    dsdt = dsdt + dedt*d(l(1):u(1),l(2):u(2),l(3):u(3)) / &
-                    pgas(l(1):u(1),l(2):u(2),l(3):u(3))
-    deallocate(dedt, pgas)
+    d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,1)
+    dsdt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%it,2)
+    dsdt = dsdt + dedt*d/pgas(l(1):u(1),l(2):u(2),l(3):u(3))
     !-----------------------------------------------------------------------------
     ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
     !-----------------------------------------------------------------------------
-    d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%new,1)
-    s    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%new,1)
-    dddt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%new,2)
-    u_max = self%cdtd*maxval(self%ds)*self%fmaxval(abs((dsdt-s*dddt/d)/d))
+    s    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%it,1)
+    dddt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,2)
+    if (io%verbose>2) then
+      print *,'mk:    d', minval(d), maxval(d)
+      print *,'mk: dedt', minval(dedt), maxval(dedt)
+      print *,'mk: pgas', minval(pgas(l(1):u(1),l(2):u(2),l(3):u(3))), maxval(pgas(l(1):u(1),l(2):u(2),l(3):u(3)))
+      print *,'mk: dsdt', minval(dsdt), maxval(dsdt)
+      print *,'mk: dddt', minval(dddt), maxval(dddt)
+      print *,'mk:    s', minval(s), maxval(s)
+    end if
+    deallocate(dedt, pgas)
+    u_max = self%cdtd*maxval(self%ds)*maxval(abs((dsdt-s*dddt/d)/d))
     self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, 'u_max(dsdt)', u_max, self%u_max
+    if (io%verbose>1) print 1, 'u_max(RT)  ', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
     end associate
   end if                              
