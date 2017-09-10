@@ -7,8 +7,8 @@
 /
 
 &out_params
- end_time=1d-9
- out_time=1d-9
+ end_time=2d-9
+ out_time=2d-9
  print_time=0.0
  guard_zones=t
  time_derivs=f
@@ -24,47 +24,44 @@
 &patch_params
  nt=5
  courant=0.0
- grace=0.0
+ grace=0.1
  n=43,43,43
  dt_fixed=1d-10
  no_mans_land=f
 /
 
 &eos_params
-  gamma = 1.666667
+  gamma=1.666667
   do_rt=t
 /
 
-
 ! ------- Radiative transfer ---------
 &rt_params
- solver= 'integral'
- use_data_hub = t
- do_output = t
- cr_heating = 0.0
- init_time = -1d-5
- debug = f
- detailed_timer = t
+ solver='integral'
+ use_data_hub=t
+ do_output=t
+ cr_heating=0.0
+ init_time=-1d-5
+ debug=f
+ detailed_timer=f
 /
 
 &cartesian_ray_geometry_params
-do_chains = f
+do_chains=f
 ! along x axis
-nx = 1 xti = 0.,45.
+nx=1 xti=0.,45.
 ! along y axis
-ny = 1 yti = 0.,45.
+ny=1 yti=0.,45.
 ! along z axis
-nz = 1 zti = 0.,45.
+nz=1 zti=0.,45.
 ! use space_diagonals?
 space_diagonals=t
 /
 
 ! Treatment of boundary conditions for RT solver. 
 &rt_bc_params
-!cool_temp = 103530.0   ! in kelvins
-!hot_temp  = 621180.
- cool_temp = 290.0
- hot_temp  = 1740.0
+ cool_temp=290.0
+ hot_temp =1740.0
 /
 
 
@@ -79,14 +76,14 @@ space_diagonals=t
 /
 
 &initial_params
- clump_pos = 0.5,0.5,0.5 
- !clump_pos = 0.6666,0.6666,0.6666
+ clump_pos=0.5,0.5,0.5 
+ !clump_pos=0.6666,0.6666,0.6666
  d0=1.0
  clump_dfact=10.0
  !t0=103530.0
- t0 = 290.0
+ t0=290.0
  clump_a=0.1
  clump_b=0.06
- gamma = 1.666667
+ gamma=1.666667
 /
 &force_params   /

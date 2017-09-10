@@ -125,7 +125,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   real(8), dimension(3):: h, dist, rl, ru
   integer:: i, li, ui
   !-----------------------------------------------------------------------------
-  call trace%begin ('download_mod::dnload_range')
+  call trace%begin ('download_mod::dnload_range', 2)
   h = source%index_stagger(iv)
   !-----------------------------------------------------------------------------
   ! Map to the first and last point inside the source domain, computing first
