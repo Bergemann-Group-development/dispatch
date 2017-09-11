@@ -28,8 +28,9 @@ CONTAINS
 !> =============================================================================
 !> The only procedure callable from the outside
 !> =============================================================================
-SUBROUTINE rt_setup (self)
+SUBROUTINE rt_setup (self, level_min)
   class(task_list_t)     :: self
+  integer, optional:: level_min                                         ! lowest level, at which RT is started
   !.....................................................................
   class(list_t), pointer :: rt_task_list                                ! local task list
   class(list_t), pointer :: list
@@ -39,6 +40,11 @@ SUBROUTINE rt_setup (self)
   class(rmhd_t), pointer :: mhd_patch
   class(rt_t),   pointer :: rt_task
   real(8) :: eps = 1d-3
+  real(8):: lc(3) = +huge(0d0)        ! lower corner
+  real(8):: uc(3) = -huge(0d0)        ! upper corner
+  real(8):: llc(3) = +huge(0d0)       ! lower left corner
+  real(8):: urc(3) = -huge(0d0)       ! upper right corner
+  integer :: nd, lmin
   integer :: itimer=0
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer::rt_setup', itimer=itimer)
@@ -67,13 +73,35 @@ SUBROUTINE rt_setup (self)
       n=mhd_patch%n,  ng=mhd_patch%ng, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)
   end select
   nullify(mesh)
+  if (ray_geometry%head%ray_list%directionality(1) == 1) then
+    nd = 2
+  else
+    nd = 1
+  end if
 
   write (io_unit%log,*) 'Ray geometry: n_ray_dirs:', ray_geometry%head%n_ray_dirs
   !> -------------------------------------------------------------------
   !> Initialize the RT_boundary object
   !> -------------------------------------------------------------------
   call self%init_bdries
-  call rt_boundaries%init(self%llc, self%urc)
+  if (present(level_min)) then
+    t_list => self%head
+    lmin = level_min
+    do while (associated(t_list))
+      if (link%task%level >= level_min) then
+        lc = min(lc, link%task%position)
+        uc = max(uc, link%task%position)
+        llc = min(llc, link%task%position-0.5000000001_8*link%task%size)
+        urc = max(urc, link%task%position+0.5000000001_8*link%task%size)
+      end if
+      t_list => t_list%next
+    end do
+  else
+    lmin = 1
+    lc = self%lc; uc = self%uc
+    llc = self%llc; urc = self%urc
+  end if
+  call rt_boundaries%init(llc, urc)
   !> -------------------------------------------------------------------
   !> Go through the task list, select the rmhd_t tasks and initialize the
   !> radiative transfer patches for them.
@@ -85,49 +113,50 @@ SUBROUTINE rt_setup (self)
     !> -----------------------------------------------------------------
     !> Get the right type of the task to pick up other properties (rmhd_t)
     !> -----------------------------------------------------------------
-    associate (mhd => t_list%task)
-    SELECT TYPE(mhd)
-    class is (rmhd_t)
-      allocate (rt_task, link)                                          ! the internal RT task and its link
-      mhd_patch => mhd
-      !> ---------------------------------------------------------------
-      !> Construct the RT task and add it to the task list,
-      !> giving it a nbor list consisting of only the MHD task.
-      !> ---------------------------------------------------------------
-      link%task         => rt_task                                      ! connect to RT task
-      rt_task%link => link                                              ! save it's link for convenience
-      !call connect_nbors(link,t_list)                                   ! connect rt task and rmhd task
-      mhd%rt => rt_task                                                 ! save link to rt task
-      rt_task%mhd_link => t_list                                        ! save link to mhd task
-      rt_task%position = mhd_patch%position                             ! shadow the position
-      rt_task%n        = mhd_patch%n                                    ! active innre cells
-      rt_task%gn       = mhd_patch%gn                                   ! guard zones
-      rt_task%size     = mhd_patch%size                                 ! shadow the size
-      rt_task%no_mans_land = mhd_patch%no_mans_land
-      rt_task%periodic(:) = .true.
-      rt_task%periodic(1) = .false.
-      !> ---------------------------------------------------------------
-      !> Set up the boundary bits
-      !> ---------------------------------------------------------------
-      if (.not.rt_task%periodic(1)) then
-        if (rt_task%position(1) <= self%lc(1)+eps) call rt_task%rt_boundaries%set (bits%xl)
-        if (rt_task%position(1) >= self%uc(1)-eps) call rt_task%rt_boundaries%set (bits%xu)
-      end if
-      if (.not.rt_task%periodic(2)) then
-        if (rt_task%position(2) <= self%lc(2)+eps) call rt_task%rt_boundaries%set (bits%yl)
-        if (rt_task%position(2) >= self%uc(2)-eps) call rt_task%rt_boundaries%set (bits%yu)
-      end if
-      if (.not.rt_task%periodic(3)) then
-        if (rt_task%position(3) <= self%lc(3)+eps) call rt_task%rt_boundaries%set (bits%zl)
-        if (rt_task%position(3) >= self%uc(3)-eps) call rt_task%rt_boundaries%set (bits%zu)
-      end if
-      rt_task%box      = mhd_patch%box                                  ! same box
-      rt_task%level    = mhd_patch%level                                ! same level
-      rt_task%ds       = mhd_patch%ds                                   ! same cell size
-      call rt_task%init                                                 ! initialise
-      call rt_task_list%append_link(link)                               ! insert rt_task into the rt task list
-    end SELECT
-    end associate
+    if (t_list%task%level >=lmin) then
+      associate (mhd => t_list%task)
+      SELECT TYPE(mhd)
+      class is (rmhd_t)
+        allocate (rt_task, link)                                        ! the internal RT task and its link
+        mhd_patch => mhd
+        !> -------------------------------------------------------------
+        !> Construct the RT task and add it to the task list,
+        !> giving it a nbor list consisting of only the MHD task.
+        !> -------------------------------------------------------------
+        link%task         => rt_task                                    ! connect to RT task
+        rt_task%link => link                                            ! save it's link for convenience
+        !call connect_nbors(link,t_list)                                ! connect rt task and rmhd task
+        mhd%rt => rt_task                                               ! save link to rt task
+        rt_task%mhd_link => t_list                                      ! save link to mhd task
+        rt_task%position = mhd_patch%position                           ! shadow the position
+        rt_task%n        = mhd_patch%n                                  ! active innre cells
+        rt_task%gn       = mhd_patch%gn                                 ! guard zones
+        rt_task%size     = mhd_patch%size                               ! shadow the size
+        rt_task%no_mans_land = mhd_patch%no_mans_land
+        rt_task%box      = mhd_patch%box                                ! same box
+        rt_task%level    = mhd_patch%level                              ! same level
+        rt_task%ds       = mhd_patch%ds                                 ! same cell size
+        call rt_task%init                                               ! initialise
+        !> -------------------------------------------------------------
+        !> Set up the boundary bits
+        !> -------------------------------------------------------------
+        if (.not.rt_task%periodic(1)) then
+          if (rt_task%position(1) <= lc(1)+eps) call rt_task%rt_boundaries%set (bits%xl)
+          if (rt_task%position(1) >= uc(1)-eps) call rt_task%rt_boundaries%set (bits%xu)
+        end if
+        if (.not.rt_task%periodic(2)) then
+          if (rt_task%position(2) <= lc(2)+eps) call rt_task%rt_boundaries%set (bits%yl)
+          if (rt_task%position(2) >= uc(2)-eps) call rt_task%rt_boundaries%set (bits%yu)
+        end if
+        if (.not.rt_task%periodic(3)) then
+          if (rt_task%position(3) <= lc(3)+eps) call rt_task%rt_boundaries%set (bits%zl)
+          if (rt_task%position(3) >= uc(3)-eps) call rt_task%rt_boundaries%set (bits%zu)
+        end if
+        call rt_task%rt_boundaries%init (rt_task%gn, ray_geometry%head%n_ray_dirs*nd, rt_task%mesh)
+        call rt_task_list%append_link(link)                             ! insert rt_task into the rt task list
+      end SELECT
+      end associate
+    end if
     t_list => t_list%next                                               ! go to the next mhd task
   end do
 

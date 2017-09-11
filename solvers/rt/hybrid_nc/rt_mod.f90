@@ -92,12 +92,13 @@ SUBROUTINE init_rt (self)
   logical, save :: first_time= .true.
   logical, save :: do_output  = .false.
   logical, save :: use_data_hub = .true.
+  logical, save :: periodic(3) = .false.
   real(8), save :: dtime=0.01_8, grace=0.00_8, init_time=0d0
   real(kind=KindRTVar), save :: cr_heating=0.0
   character(len=16) :: solver = 'integral'
   integer :: ignore, nd, i
   namelist /rt_params/ init_time, dtime, grace, solver, do_output, &
-    cr_heating, use_data_hub, detailed_timer, debug
+    cr_heating, use_data_hub, detailed_timer, debug, periodic
   ! --------------------------------------------------------------------
 
   call trace_begin ('rt_t%init')
@@ -118,6 +119,7 @@ SUBROUTINE init_rt (self)
   self%nv = ray_geometry%head%n_ray_dirs*nd*eos%n_lambda                ! memory slot stores all heating rates per direction per freq bin
   self%nw = 1                                                           ! no time deriv
   self%ng = 1
+  self%periodic = periodic
   call self%patch_t%init                                                ! initialize patch
   self%use_data_hub = use_data_hub
   self%mem = 0.0
@@ -127,7 +129,6 @@ SUBROUTINE init_rt (self)
   self%dt_fixed = dtime                                                 ! timestep is fixed for radiative transfer
   self%grace = 0.0                                                      ! grace on by default, but very small, so nboring rt_patches would nod do anything stupid
   self%kind = 'rt_solver'                                                ! set the patch kind for output post-processing purposes
-  call self%rt_boundaries%init (self%gn, ray_geometry%head%n_ray_dirs*nd, self%mesh)
   self%do_chains = ray_geometry%head%do_chains                          ! are there chains in the system, or patches are effectively isolated
   if (self%do_chains) then
     self%n_packet = ray_geometry%head%total_n_packets * nd              ! number of packets
