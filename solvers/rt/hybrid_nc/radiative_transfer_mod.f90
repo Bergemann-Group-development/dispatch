@@ -97,7 +97,7 @@ SUBROUTINE rt_setup (self, level_min)
       t_list => t_list%next
     end do
   else
-    lmin = 1
+    lmin = 0
     lc = self%lc; uc = self%uc
     llc = self%llc; urc = self%urc
   end if
