@@ -1180,7 +1180,7 @@ SUBROUTINE get_q (self, time, de)
   !---------------------------------------------------------------------
   associate (l => self%li, u => self%ui)
   do iv = 1, self%nv
-    de= de + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1) * self%w_bundle(iv) * self%w_lambda(iv)
+    de= de + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1) !* self%w_bundle(iv) * self%w_lambda(iv)
   end do
   end associate
 END SUBROUTINE get_q
