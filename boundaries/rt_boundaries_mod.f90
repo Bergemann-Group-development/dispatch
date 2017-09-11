@@ -71,7 +71,7 @@ SUBROUTINE init (self, llc, urc)
   real :: d0
   logical, save:: first_time=.true.
   real, dimension(:,:,:), pointer :: lnd, s
-  real, dimension(:,:,:,:), pointer :: src
+  real, dimension(:,:,:,:), pointer :: src, rk
   namelist /rt_bc_params/ hot_temp, cool_temp
   !---------------------------------------------------------------------
   call trace%begin ('rt_boundaries_t%init')
@@ -85,6 +85,7 @@ SUBROUTINE init (self, llc, urc)
     allocate(lnd(1,1,2))
     allocate(s(1,1,2))
     allocate(src(1,1,2, eos%n_lambda))
+    allocate(rk(1,1,2, eos%n_lambda))
     allocate(self%xl(eos%n_lambda))
     allocate(self%xu(eos%n_lambda))
     allocate(self%yl(eos%n_lambda))
@@ -96,14 +97,15 @@ SUBROUTINE init (self, llc, urc)
     s(:,:,1) = d0*(log(cool_temp/scaling%temp*d0)-eos%gamma*log(d0))/(eos%gamma-1.0)
     s(:,:,2) = d0*(log(hot_temp /scaling%temp*d0)-eos%gamma*log(d0))/(eos%gamma-1.0)
     call eos%lookup (shape(s), x=s, lny=lnd, &                           ! call the table lookup, ...
-                    src=src)  
+                    src=src, rk=rk)
+    src = src * rk  
     self%xl = src(1,1,2,:) - src(1,1,1,:)
     self%xu = 0.0
     self%yl = 0.0
     self%yu = 0.0
     self%zl = 0.0
     self%zu = 0.0
-    deallocate(lnd,s,src)
+    deallocate(lnd,s,src, rk)
     self%llc = llc
     self%urc = urc
   end if
