@@ -806,12 +806,12 @@ SUBROUTINE finish(self)
   if (self%do_chains)  self%updated(:)=.false.
   self%data_ready = .false.
   wb=1
-  do iv = 1, self%nv
-    qq  => self%mem(:,:,:,iv,self%it,1)
-    qq = qq * self%rk(:,:,:,wb)
-    wb = wb+1
-    if (wb > eos%n_lambda) wb = 1
-  end do
+ ! do iv = 1, self%nv
+ !   qq  => self%mem(:,:,:,iv,self%it,1)
+ !   qq = qq * self%rk(:,:,:,wb)
+ !   wb = wb+1
+ !   if (wb > eos%n_lambda) wb = 1
+ ! end do
   if (self%do_output) call self%output
   self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)            ! predict
   deallocate (self%d, self%s, self%rk, self%src)                        ! deallocate scratch
@@ -828,7 +828,7 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   !.....................................................................
   class(packet_t),        pointer :: packet
   real(kind=KindRTVar), dimension(:,:,:), pointer :: s, rk, dtau, exp0
-  real(kind=KindRTVar), dimension(:,:),   pointer :: dwf
+  real(kind=KindRTVar), dimension(:,:,:),   pointer :: dwf
   integer                         :: nrays, npt, nwb, ir
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
@@ -849,23 +849,23 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   allocate(rk    (nrays, nwb, npt))                                     ! opacity
   allocate(dtau  (nrays, nwb, npt))                                     ! optical depth between the points
   allocate(exp0  (nrays, nwb, npt))                                     ! first exponential factor
-  allocate(dwf   (nrays,      npt))                                     ! density weight factor
+  allocate(dwf   (nrays, nwb,     npt))                                     ! density weight factor
   !> -------------------------------------------------------------------
   !> map the quantities onto rays
   !> -------------------------------------------------------------------
   call self%ray_vol_map4(packet, self%src, s)                           ! map source function to rays
   call self%ray_vol_map4(packet, self%rk, rk)                           ! map opacities to rays
   call self%optical_depth_centered(link%ds, rk, dtau)
-  call self%ray_vol_map3(packet, self%d, dwf)                           ! density weight factor
-  dwf = dwf * link%ds
+  !call self%ray_vol_map3(packet, self%d, dwf)                           ! density weight factor
+  dwf = rk * link%ds
   if (present(q_in_fw)) then
     do ir=1, nwb
-      q_in_fw(:,ir) = q_in_fw(:,ir)/dwf(:,1)                            ! take the appropriate heating rates
+      q_in_fw(:,ir) = q_in_fw(:,ir)/dwf(:,ir,1)                            ! take the appropriate heating rates
     end do
   end if
   if (present(q_in_re)) then
     do ir=1, nwb
-      q_in_re(:,ir) = q_in_re(:,ir)/dwf(:,npt)                          ! take the appropriate heating rates
+      q_in_re(:,ir) = q_in_re(:,ir)/dwf(:,ir,npt)                          ! take the appropriate heating rates
     end do
   end if
 #if defined __INTEL_COMPILER
@@ -877,12 +877,12 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
     if (link%direction ==1) then
       call rt_solver%integral_forward (dtau, exp0, s, q_in_fw, q_out_fw)! solve forward
       do ir=1, nwb
-      q_out_fw(:,ir,2:npt-1) = q_out_fw(:,ir,2:npt-1) * dwf(:,2:npt-1)
+      q_out_fw(:,ir,2:npt-1) = q_out_fw(:,ir,2:npt-1) * dwf(:,ir,2:npt-1)
       end do
     else
       call rt_solver%integral_reverse (dtau, exp0, s, q_in_re, q_out_re)! solve reverse
       do ir=1, nwb
-      q_out_re(:,ir,2:npt-1) = q_out_re(:,ir,2:npt-1) * dwf(:,2:npt-1)
+      q_out_re(:,ir,2:npt-1) = q_out_re(:,ir,2:npt-1) * dwf(:,ir,2:npt-1)
       end do
     end if
   else
@@ -903,8 +903,8 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
       call rt_solver%integral_double(dtau, exp0, S, q_in_fw, q_in_re, q_out_fw, q_out_re)
     end if
     do ir=1, nwb
-      q_out_fw(:,ir,2:npt-1) = q_out_fw(:,ir,2:npt-1) * dwf(:,2:npt-1)
-      q_out_re(:,ir,2:npt-1) = q_out_re(:,ir,2:npt-1) * dwf(:,2:npt-1)
+      q_out_fw(:,ir,2:npt-1) = q_out_fw(:,ir,2:npt-1) * dwf(:,ir,2:npt-1)
+      q_out_re(:,ir,2:npt-1) = q_out_re(:,ir,2:npt-1) * dwf(:,ir,2:npt-1)
       end do
   end if
   deallocate (s, rk, dtau, exp0, dwf)
