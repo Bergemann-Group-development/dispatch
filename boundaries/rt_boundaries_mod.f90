@@ -12,6 +12,7 @@ MODULE rt_boundaries_mod
   USE eos_mod
   USE units_mod
   USE scaling_mod
+  USE ray_geometry_v3_mod
   implicit none
   private
   !-----------------------------------------------------------------------
@@ -53,6 +54,7 @@ MODULE rt_boundaries_mod
     class(rt_inner_bndry_t), dimension(:), pointer :: inner_bndry => null()
     real, dimension(:), pointer    :: xl, xu, yl, yu, zl, zu
     real(8) :: llc(3), urc(3)
+    integer :: hot_dir
   contains
     procedure:: init
     procedure:: update
@@ -72,6 +74,8 @@ SUBROUTINE init (self, llc, urc)
   logical, save:: first_time=.true.
   real, dimension(:,:,:), pointer :: lnd, s
   real, dimension(:,:,:,:), pointer :: src, rk
+  integer :: idir
+  class(ray_dirs_t), pointer :: rd
   namelist /rt_bc_params/ hot_temp, cool_temp
   !---------------------------------------------------------------------
   call trace%begin ('rt_boundaries_t%init')
@@ -98,7 +102,7 @@ SUBROUTINE init (self, llc, urc)
     s(:,:,2) = d0*(log(hot_temp /scaling%temp*d0)-eos%gamma*log(d0))/(eos%gamma-1.0)
     call eos%lookup (shape(s), x=s, lny=lnd, &                           ! call the table lookup, ...
                     src=src, rk=rk)
-    src = src * rk  
+    !src = src * rk  
     self%xl = src(1,1,2,:) - src(1,1,1,:)
     self%xu = 0.0
     self%yl = 0.0
@@ -108,6 +112,15 @@ SUBROUTINE init (self, llc, urc)
     deallocate(lnd,s,src, rk)
     self%llc = llc
     self%urc = urc
+    ! find the hot direction ID
+    rd => ray_geometry%head%ray_list
+    rd_loop: do while (associated (rd))
+      if (all(rd%bundle(1)%dstep == [1,0,0])) then
+        self%hot_dir = rd%id
+        exit rd_loop
+      end if
+    rd => rd%next
+    end do rd_loop
   end if
   !$omp end critical (input_cr)
   print *, 'cool', self%xu
@@ -137,9 +150,10 @@ SUBROUTINE init_outer_bndry (self, n, ndir, mesh)
     nl = eos%n_lambda
     saved_status=self%bits
     if (self%is_set(bits%xl)) then
-      allocate(self%xl(nl))
+      allocate(self%xl(nl*2))
       do i=1, eos%n_lambda
         self%xl(i) = rt_boundaries%xl(i)
+        self%xl(i+nl) = rt_boundaries%xu(i)
       end do
     end if
     if (self%is_set(bits%xu)) then
@@ -231,7 +245,8 @@ SUBROUTINE condition (self, f)
    ! do i=1,self%ndir
       do b=m3%lo,m3%uo
         do a=m2%lo,m2%uo
-          f(m1%lo,a,b,:) = self%xl(1)
+          f(m1%lo,a,b,:) = self%xl(2)
+          f(m1%lo,a,b,rt_boundaries%hot_dir) = self%xl(1)
         end do
       end do
       il = il + eos%n_lambda
