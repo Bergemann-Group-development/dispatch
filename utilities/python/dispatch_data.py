@@ -133,16 +133,17 @@ class Patch(Task):
                 self.b3=self.data[:,:,:,self.varidx['b3']]
             g1=self.gamma-1.0
             if self.kind[0:7]=='stagger':
-                logd=np.log(self.d)
-                self.u1=self.p1/np.exp(su.xdn(logd))
-                self.u2=self.p2/np.exp(su.ydn(logd))
-                self.u3=self.p3/np.exp(su.zdn(logd))
+                logd=np.log10(self.d)
+                ln10=np.log(10.)
+                self.u1=self.p1/np.exp(su.xdn(ln10*logd))
+                self.u2=self.p2/np.exp(su.ydn(ln10*logd))
+                self.u3=self.p3/np.exp(su.zdn(ln10*logd))
                 self.xs=self.x-0.5*self.ds[0]
                 self.ys=self.y-0.5*self.ds[1]
                 self.zs=self.z-0.5*self.ds[2]
                 if self.kind[0:9]=='stagger2_':
                     self.s =self.data[:,:,:,self.varidx['s']]
-                    self.e =np.exp((self.s/self.d+logd)*g1)/g1
+                    self.e =np.exp((self.s/self.d+ln10*logd)*g1)/g1
                     self.pg=self.d*self.e*g1
                 elif self.kind[0:9]=='stagger2e':
                     self.e =self.data[:,:,:,self.varidx['e']]/self.d
