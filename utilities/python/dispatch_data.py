@@ -106,6 +106,8 @@ class Patch(Task):
             self.p1 = self.stripv (self.p1)
             self.p2 = self.stripv (self.p2)
             self.p3 = self.stripv (self.p3)
+            if self.nvar>8:
+                self.phi= self.stripv(self.phi)
             if self.nvar>=8:
                 self.b1 = self.stripv (self.b1)
                 self.b2 = self.stripv (self.b2)
@@ -127,6 +129,8 @@ class Patch(Task):
             self.p1=self.data[:,:,:,self.varidx['p1']]
             self.p2=self.data[:,:,:,self.varidx['p2']]
             self.p3=self.data[:,:,:,self.varidx['p3']]
+            if self.nvar>8:
+                self.phi=self.data[:,:,:,self.varidx['phi']]
             if self.nvar>=8:
                 self.b1=self.data[:,:,:,self.varidx['b1']]
                 self.b2=self.data[:,:,:,self.varidx['b2']]
@@ -166,7 +170,23 @@ class Patch(Task):
             if not 'd' in dir(self):
                 self.cache()
         if not 'var' in dir(self):
-            if self.nvar>7:
+            if self.nvar>8:
+                self.var={'d':self.d,\
+                        'e':self.e,\
+                        's':self.s,\
+                        'p1':self.p1,\
+                        'p2':self.p2,\
+                        'p3':self.p3,\
+                        'u1':self.u1,\
+                        'u2':self.u2,\
+                        'u3':self.u3,\
+                        'b1':self.b1,\
+                        'b2':self.b2,\
+                        'b3':self.b3,\
+                       'phi':self.phi,\
+                    'logd':np.log10(self.d),\
+                    'loge':np.log10(self.e)}
+            elif self.nvar>7:
                 self.var={'d':self.d,\
                         'e':self.e,\
                         's':self.s,\
@@ -193,7 +213,6 @@ class Patch(Task):
                         'u3':self.u3,\
                     'logd':np.log10(self.d),\
                     'loge':np.log10(self.e)}
-                
 
 def variable_indices(solver_type, read_derivs=False):
     """
@@ -205,12 +224,14 @@ def variable_indices(solver_type, read_derivs=False):
     if solver[0:9]== 'stagger2e':
         indices = {'d':  0,
                    'e':  1,
+                 'phi':  8,
                    'p1': 2, 'p2': 3, 'p3': 4,
                    'b1': 5, 'b2': 6, 'b3': 7,
                    'v1': 8, 'v2': 9, 'v3':10}
     elif solver[0:7] == 'stagger':
         indices = {'d':  0,
                    's':  1,
+                 'phi':  8,
                    'p1': 2, 'p2': 3, 'p3': 4,
                    'b1': 5, 'b2': 6, 'b3': 7,
                    'v1': 8, 'v2': 9, 'v3':10}
