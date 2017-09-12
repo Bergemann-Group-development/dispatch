@@ -102,7 +102,7 @@ SUBROUTINE select_dnloader (self, link, all_cells)
             call hub%init_lower
           end if
         end if
-      end if 
+      end if
     else if (trim(source%kind)=='rt_solver') then
       if (abs(source%level-patch%level) < 2) then
         call self%add_hub (patch, source, hub, all_cells)
@@ -163,7 +163,7 @@ SUBROUTINE add_hub (self, target, source, hub, all_cells)
         end if
       end if
       prev => next
-      next => next%next  
+      next => next%next
     end do
     if (.not.found) then
       if (associated(prev)) then
@@ -272,10 +272,11 @@ END SUBROUTINE init_same
 !> of refinement, as the target patch. Download range is pre-determined
 !> by the initialization subroutine above.
 !> =====================================================================
-SUBROUTINE dnload_from_same (self)
+SUBROUTINE dnload_from_same (self, only)
   class(data_hub_t) :: self
+  integer, optional :: only
   ! ....................................................................
-  integer :: jt(2), iv, sl(3), su(3), tl(3), tu(3)
+  integer :: jt(2), iv, sl(3), su(3), tl(3), tu(3), iv1, iv2
   real    :: pt(2)
   integer, save:: itimer=0
   ! --------------------------------------------------------------------
@@ -288,7 +289,14 @@ SUBROUTINE dnload_from_same (self)
          pt(1) *self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),:,jt(1),1) + &
          pt(2) *self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),:,jt(2),1)
   else
-    do iv = 1, self%source%nv
+    if (present(only)) then
+      iv1 = only
+      iv2 = only
+    else
+      iv1 = 1
+      iv2 = self%source%nv
+    end if
+    do iv=iv1, iv2
       if (self%source%unsigned(iv)) then
         self%target%mem(tl(1):tu(1),tl(2):tu(2),tl(3):tu(3),iv,self%target%it,1) = exp &
         (pt(1) *log(self%source%mem(sl(1):su(1),sl(2):su(2),sl(3):su(3),iv,jt(1),1)) + &
@@ -386,10 +394,11 @@ END SUBROUTINE init_higher
 !> copied. Then an interpolation is done. Can be easily extended to
 !> accommodate the van Leer interpolation scheme.
 !> =====================================================================
-SUBROUTINE dnload_from_higher (self)
+SUBROUTINE dnload_from_higher (self, only)
   class(data_hub_t) :: self
+  integer, optional :: only
   ! ....................................................................
-  integer :: jt(2), iv, tl(3), tu(3), i, j, k
+  integer :: jt(2), iv, tl(3), tu(3), i, j, k, iv1, iv2
   integer :: d, l(3), u(3), ii
   real(kind=KindScalarVar), dimension(:,:,:,:,:), pointer :: mem
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: cube
@@ -421,7 +430,7 @@ SUBROUTINE dnload_from_higher (self)
             call source%index_space2(target,pos, 1, l, p)
             u=l+1
             mem => source%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,:,1)
-            do iv=1, target%nv
+            do iv = 1, target%nv
               cube(:,:,:,1) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1)
               cube(:,:,:,2) = source%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1)
               call self%interpolate(cube, pt, p,tcell)
@@ -432,8 +441,15 @@ SUBROUTINE dnload_from_higher (self)
       end do
     end do
   else
+    if (present(only)) then
+      iv1 = only
+      iv2 = only
+    else
+      iv1 = 1
+      iv2 = target%nv
+    end if
     d = self%source%i_d
-    do iv = 1, target%nv
+    do iv = iv1, iv2
       tl = self%t_l(:,iv); tu = self%t_u(:,iv)
       do k = tl(3), tu(3)
         do j = tl(2), tu(2)
@@ -583,11 +599,12 @@ END SUBROUTINE init_lower
 !> target%time and then interpolated in space to get the required quantities.
 !> Can be extended to accommodate the van Leer interpolation scheme.
 !> =====================================================================
-SUBROUTINE dnload_from_lower (self)
+SUBROUTINE dnload_from_lower (self, only)
   class(data_hub_t) :: self
+  integer, optional :: only
   ! ....................................................................
   integer :: jt(2),jt2(2), iv, sl(3), su(3), tl(3), tu(3), i, j, k
-  integer :: d, cl(3), ii, l(3), u(3), id, n(3)
+  integer :: d, cl(3), ii, l(3), u(3), id, n(3), iv1, iv2
   class(mesh_t), pointer :: m
   class(patch_t), pointer:: source, target
   real(kind=KindScalarVar), dimension(:,:,:,:,:), pointer :: mem
@@ -607,6 +624,13 @@ SUBROUTINE dnload_from_lower (self)
   target => self%target
   d = source%i_d
   mem => self%source%mem(:,:,:,:,:,1)
+  if (present(only)) then
+    iv1 = only
+    iv2 = only
+  else
+    iv1 = 1
+    iv2 = source%nv
+  end if
   ! --------------------------------------------------------------------
   ! interpolate in time and fill in a scratch cube. When downloading from
   ! a larger patch, not all needed cells are usually available inside the
@@ -680,7 +704,7 @@ SUBROUTINE dnload_from_lower (self)
     end do
     deallocate(rt_scr)
   else
-    do iv = 1, source%nv
+    do iv = iv1, iv2
       sl = self%s_l(:,iv); su = self%s_u(:,iv)
       tl = self%t_l(:,iv); tu = self%t_u(:,iv)
       n = su - sl +2
@@ -760,7 +784,7 @@ SUBROUTINE dnload_from_lower (self)
       end do
       deallocate(scr)
     end do
- end if      
+ end if
  call trace%end(itimer)
 END SUBROUTINE dnload_from_lower
 
@@ -817,7 +841,7 @@ SUBROUTINE check_in_target (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
         call self%interpolate_unsigned(cube, pt, p,scr)
       else if (source%pervolume(iv)) then
         cube(:,:,:,1) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1) / &
-                        target%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(1),1) 
+                        target%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(1),1)
         cube(:,:,:,2) = target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1) / &
                         target%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(2),1)
         call self%interpolate(cube, pt, p,scr)
@@ -923,7 +947,7 @@ SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
                 call self%interpolate_unsigned(cube, pt, p,scr)
               else if (source%pervolume(iv)) then
                 cube(:,:,:,1) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(1),1) / &
-                                nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(1),1) 
+                                nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(1),1)
                 cube(:,:,:,2) = nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,jt(2),1) / &
                                 nbpatch%mem(l(1):u(1),l(2):u(2),l(3):u(3), d,jt(2),1)
                 call self%interpolate(cube, pt, p,scr)
@@ -946,20 +970,21 @@ END SUBROUTINE check_in_nbors
 !> =====================================================================
 !> Update the guard zone values
 !> =====================================================================
-SUBROUTINE update (self, link, all_cells)
+SUBROUTINE update (self, link, all_cells, only)
   class(data_hub_t):: self
   class(link_t), pointer :: link
+  logical, optional :: all_cells
+  integer, optional :: only
   ! ....................................................................
   type  (data_hub_t), pointer :: hub
   integer, save:: itimer=0
-  logical, optional :: all_cells
   ! --------------------------------------------------------------------
   !call trace%begin ('data_hub_t%update',itimer=itimer)
   if (self%first_time) call self%init(link, all_cells)                  ! map data shell if it is the first time
   !
   hub => self%head
   do while(associated(hub))
-    call hub%dnload
+    call hub%dnload (only=only)
     hub => hub%next
   end do
   !call trace%end(itimer)

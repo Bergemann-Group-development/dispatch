@@ -108,12 +108,14 @@ END SUBROUTINE init
 !> Add default guard zone download functionality.  This may be overloaded in
 !> experiment_mod, if more specialized guard zone loading is required.
 !> =============================================================================
-SUBROUTINE dnload (self)
+SUBROUTINE dnload (self, only)
   class(gpatch_t):: self
+  integer, optional:: only
+  !-----------------------------------------------------------------------------
   if (self%use_data_hub) then
-    call self%data_hub%update (self%link)
+    call self%data_hub%update (self%link, only=only)
   else
-    call download%download_link (self%link)
+    call download%download_link (self%link, only=only)
   end if
 END SUBROUTINE dnload
 

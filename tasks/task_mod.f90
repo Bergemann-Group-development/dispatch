@@ -64,7 +64,7 @@ MODULE task_mod
     logical:: periodic(3)=.true.
   contains
     procedure:: init
-    procedure:: dnload => void
+    procedure:: dnload
     procedure:: update => void
     procedure:: rotate
     procedure:: output
@@ -95,7 +95,14 @@ CONTAINS
 SUBROUTINE void (self)
   class (task_t):: self
   print*, 'ERROR: task_t%void called'
-END SUBROUTINE
+END SUBROUTINE void
+
+!> =============================================================================
+SUBROUTINE dnload (self, only)
+  class (task_t):: self
+  integer, optional:: only
+  call mpi%abort('ERROR: task_t%dnload called')
+END SUBROUTINE dnload
 
 !> =============================================================================
 !> Define unique patch ids.  A critical region is OK; this is only done once.
@@ -434,7 +441,7 @@ END SUBROUTINE
 !> =============================================================================
 FUNCTION is_relevant (self)
   class(task_t):: self
-  logical:: is_relevant 
+  logical:: is_relevant
   !-----------------------------------------------------------------------------
   is_relevant = .true.
 END FUNCTION is_relevant
