@@ -153,6 +153,7 @@ SUBROUTINE rt_setup (self, level_min)
           if (rt_task%position(3) >= uc(3)-eps) call rt_task%rt_boundaries%set (bits%zu)
         end if
         call rt_task%rt_boundaries%init (rt_task%gn, ray_geometry%head%n_ray_dirs*nd, rt_task%mesh)
+        if (mhd%is_set(bits%spherical)) call rt_task%set(bits%spherical)! set spherical bits if needed
         call rt_task_list%append_link(link)                             ! insert rt_task into the rt task list
       end SELECT
       end associate
