@@ -89,15 +89,14 @@ END FUNCTION
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
+SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
-  real(kind=KindScalarVar), dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y
-  real(kind=KindScalarVar), dimension(:,:,:),                      optional :: pg, tt
-  real(kind=KindRTVar), dimension(:,:,:,:),                        optional :: src, rk
+  real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y
+  real, dimension(:,:,:),                      optional :: pg, tt, ss
+  real, dimension(:,:,:,:),                    optional :: src, rk
   real, dimension(:,:,:), pointer :: x_loc, y_loc
-  real, dimension(:,:,:), pointer :: tt_loc
   integer:: i
   integer, save:: itimer = 0
   !-----------------------------------------------------------------------------
@@ -112,7 +111,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
     allocate (y_loc(dim(1),dim(2),dim(3)))
     y_loc = exp(lny)
   else
-    call mpi%abort ('eos_t: missing density')
+    call mpi%abort ('eos_t: missing 2nd argument')
   end if
   !-----------------------------------------------------------------------------
   if (present(x)) then
@@ -121,36 +120,28 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, rk, src, gamma)
     allocate (x_loc(dim(1),dim(2),dim(3)))
     x_loc = exp(lnx)
   else
-    call mpi%abort ('eos_t: missing internal energy')
+    call mpi%abort ('eos_t: missing 1st argument')
   end if
   !-----------------------------------------------------------------------------
-  allocate (tt_loc(dim(1),dim(2),dim(3)))
-  tt_loc = y_loc**(self%gamma-1.0)*exp(x_loc/y_loc*(self%gamma-1.0))
-  if (io%verbose>1) print 1,'MK0',minval(x_loc),maxval(x_loc)
-  if (io%verbose>1) print 1,'MK0',minval(y_loc),maxval(y_loc)
   if (present(tt)) then
-    tt = tt_loc
+    tt = (self%gamma-1.0)*x_loc
   end if
   if (present(src)) then
     do i=1,size(src,4)
-      src(:,:,:,i) = scaling%stefan*real(tt_loc,kind=8)**4
+      src(:,:,:,i) = scaling%stefan*real(((self%gamma-1.0)*x_loc),kind=8)**4
     end do
-    if (io%verbose>1) print 1,'MK1',minval(tt_loc*scaling%temp),maxval(tt_loc*scaling%temp)
-    if (io%verbose>1) print 1,'MK2',minval(src),maxval(src)
-    1 format(a,1p,2g12.3)
   end if
   if (present(pg)) then
-    pg = y_loc**self%gamma*exp(x_loc/y_loc*(self%gamma-1))
+    pg = (self%gamma-1.0)*y_loc*x_loc
   end if
   if (present(rk)) then
     do i=1,size(rk,4)
-      rk(:,:,:,i) = self%alfa0*(tt_loc*self%t0)**(-3.5)*(y_loc*self%rho0)**2
+      rk(:,:,:,i) = self%alfa0 *((self%gamma-1.0)*x_loc * self%t0)**(-3.5)*(y_loc*self%rho0)**2
     end do
   end if
   if (present(lnx)) deallocate(x_loc)
-  if (present(lny)) deallocate( y_loc)
-  deallocate(tt_loc)
-    call trace%end(itimer)
+  if (present(lny)) deallocate(y_loc)
+  call trace%end(itimer)
 END SUBROUTINE lookup
 
 END MODULE eos_mod

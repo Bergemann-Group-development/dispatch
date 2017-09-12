@@ -36,7 +36,7 @@ MODULE rt_mod
     real(kind=KindRTVar), dimension(:), pointer       :: w_bundle                       ! space angle weights
     real(kind=KindRTVar)                              :: cr_heating
     real(kind=KindScalarVar), dimension(:,:,:),   pointer :: d     => null()
-    real(kind=KindRTVar), dimension(:,:,:),   pointer :: s     => null()
+    real(kind=KindRTVar), dimension(:,:,:),   pointer :: e     => null()
     real(kind=KindRTVar), dimension(:,:,:,:), pointer :: rk    => null()
     real(kind=KindRTVar), dimension(:,:,:,:), pointer :: src   => null()
     character(len=16)                 :: solver ='integral'             ! choice of solver
@@ -326,7 +326,7 @@ SUBROUTINE update_rt (self)
   integer, save:: itimer=0
   integer :: ii, iy, l(3), u(3), i
   real(kind=KindRTVar) :: g1
-  real(kind=KindScalarVar), dimension(:,:,:), pointer :: s_scr, k
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: k
   !---------------------------------------------------------------------
   if (self%data_ready) return
 
@@ -349,7 +349,7 @@ SUBROUTINE update_rt (self)
   !> allocate all the scratch arrays
   !> -------------------------------------------------------------------
   allocate (self%d (self%gn(1), self%gn(2), self%gn(3)))                ! density scratch
-  allocate (self%s (self%gn(1), self%gn(2), self%gn(3)))                ! entropy scratch
+  allocate (self%e (self%gn(1), self%gn(2), self%gn(3)))                ! entropy scratch
   allocate (self%rk  (self%gn(1), self%gn(2), self%gn(3), eos%n_lambda))! opacity scratch
   allocate (self%src (self%gn(1), self%gn(2), self%gn(3), eos%n_lambda))! source function scratch
 
@@ -358,28 +358,26 @@ SUBROUTINE update_rt (self)
   !> -------------------------------------------------------------------
   self%d = mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_d,mhd%it,1)
   if (mhd%kind(1:9)=='stagger2e') then
-    associate(d => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_d,mhd%it,1), &
-              e => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_e,mhd%it,1))
-    g1 = mhd%gamma-1.0
-    self%s = log(e*g1/d**mhd%gamma)/g1
-    end associate
+    self%e = mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_e,mhd%it,1)
+    self%e = self%e/self%d
   else if (mhd%kind(1:9)=='stagger2_') then
-    self%s = mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_s,mhd%it,1)
+    associate(d => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_d,mhd%it,1), &
+              s => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_s,mhd%it,1))
+    g1 = mhd%gamma-1.0
+    self%e = d**mhd%gamma*exp(s/d*g1)/g1
+    end associate
   else if (mhd%kind(1:7)=='ramses_') then
-    associate(d => mhd%mem(:,:,:,mhd%i_d          ,mhd%it,1), &
-              e => mhd%mem(:,:,:,mhd%i_e          ,mhd%it,1), &
-              p => mhd%mem(:,:,:,mhd%i_px:mhd%i_pz,mhd%it,1))
-    allocate(s_scr(size(d,1),size(d,2),size(d,3)))
+    associate(d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d           ,mhd%it,1), &
+              e => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_e           ,mhd%it,1), &
+              p => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_px:self%i_pz,mhd%it,1))
     allocate(k(size(d,1),size(d,2),size(d,3)))
     k = 0.0
     do i=1,size(p,4)
       k = k+p(:,:,:,i)**2
     end do
     k = 0.5*k/d
-    s_scr = log((e-k)*(mhd%gamma-1.0)/d**mhd%gamma)/(mhd%gamma-1.0)
+    self%e = (e-k)/d
     deallocate(k)
-    self%s = s_scr(l(1):u(1),l(2):u(2),l(3):u(3))
-    deallocate(s_scr)
     end associate
   else
     print *,trim(mhd%kind)
@@ -388,8 +386,11 @@ SUBROUTINE update_rt (self)
   !> -------------------------------------------------------------------
   !> Get the source function and rk
   !> -------------------------------------------------------------------
-  call eos%lookup (shape(self%d), x=self%s, y=self%d, &                 ! call the table lookup, ...
-                   rk=self%rk, src=self%src)  
+  call eos%lookup (shape(self%d), x=self%e, y=self%d, &                 ! call the table lookup, ...
+                   rk=self%rk, src=self%src)
+  if (self%is_set(bits%spherical)) then                                 ! apply spherical BC to src and rk
+
+  end if  
   self%data_ready =.true.                                               ! flag, that internal data is ready
   if(io%verbose >1) then
     print *, self%id, 'rk', minval(self%rk), maxval(self%rk)
@@ -807,15 +808,12 @@ SUBROUTINE finish(self)
   if (self%do_chains)  self%updated(:)=.false.
   self%data_ready = .false.
   wb=1
- ! do iv = 1, self%nv
- !   qq  => self%mem(:,:,:,iv,self%it,1)
- !   qq = qq * self%rk(:,:,:,wb)
- !   wb = wb+1
- !   if (wb > eos%n_lambda) wb = 1
- ! end do
+  if (self%is_set(bits%spherical)) then                                 ! apply spherical BC to dq
+
+  end if 
   if (self%do_output) call self%output
   self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)            ! predict
-  deallocate (self%d, self%s, self%rk, self%src)                        ! deallocate scratch
+  deallocate (self%d, self%e, self%rk, self%src)                        ! deallocate scratch
   call self%task_t%rotate
 END SUBROUTINE finish
 

@@ -72,7 +72,7 @@ SUBROUTINE init (self, llc, urc)
   real, save :: hot_temp = 1000, cool_temp = 10
   real :: d0
   logical, save:: first_time=.true.
-  real, dimension(:,:,:), pointer :: lnd, s
+  real, dimension(:,:,:), pointer :: lnd, e
   real, dimension(:,:,:,:), pointer :: src, rk
   integer :: idir
   class(ray_dirs_t), pointer :: rd
@@ -87,7 +87,7 @@ SUBROUTINE init (self, llc, urc)
     if (io%master) write (*, rt_bc_params)
     call scaling%init()
     allocate(lnd(1,1,2))
-    allocate(s(1,1,2))
+    allocate(e(1,1,2))
     allocate(src(1,1,2, eos%n_lambda))
     allocate(rk(1,1,2, eos%n_lambda))
     allocate(self%xl(eos%n_lambda))
@@ -98,9 +98,9 @@ SUBROUTINE init (self, llc, urc)
     allocate(self%zu(eos%n_lambda))
     d0 = 1.0/scaling%d
     lnd = log(d0)
-    s(:,:,1) = d0*(log(cool_temp/scaling%temp*d0)-eos%gamma*log(d0))/(eos%gamma-1.0)
-    s(:,:,2) = d0*(log(hot_temp /scaling%temp*d0)-eos%gamma*log(d0))/(eos%gamma-1.0)
-    call eos%lookup (shape(s), x=s, lny=lnd, &                           ! call the table lookup, ...
+    e(:,:,1) = (cool_temp/scaling%temp*d0)/(eos%gamma-1.0)
+    e(:,:,2) = (hot_temp/scaling%temp*d0)/(eos%gamma-1.0)
+    call eos%lookup (shape(e), x=e, lny=lnd, &                           ! call the table lookup, ...
                     src=src, rk=rk)
     !src = src * rk  
     self%xl = src(1,1,2,:) - src(1,1,1,:)
@@ -109,7 +109,7 @@ SUBROUTINE init (self, llc, urc)
     self%yu = 0.0
     self%zl = 0.0
     self%zu = 0.0
-    deallocate(lnd,s,src, rk)
+    deallocate(lnd,e,src, rk)
     self%llc = llc
     self%urc = urc
     ! find the hot direction ID
