@@ -136,7 +136,7 @@ SUBROUTINE gravity (self, only)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.selfgravity) return
-  call trace%begin ('gpatch_t%self_gravity', itimer=itimer)
+  call trace%begin ('gpatch_t%gravity', itimer=itimer)
   d   => self%mem(:,:,:,self%i_d  ,self%it,1)
   phi => self%mem(:,:,:,self%i_phi,self%it,1)
   allocate (source  (size(d,1),size(d,2),size(d,3)))
