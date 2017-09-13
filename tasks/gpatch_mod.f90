@@ -23,6 +23,7 @@ MODULE gpatch_mod
     type(data_hub_t) :: data_hub
     type(poisson_t)  :: poisson
     logical:: selfgravity=.false.
+    real:: d0=1.0
   contains
     procedure:: init
     procedure:: dnload
@@ -126,7 +127,6 @@ END SUBROUTINE dnload
 !> previous solution.
 !> =============================================================================
 SUBROUTINE gravity (self, only)
-  USE poisson_mod
   class(gpatch_t):: self
   integer, optional:: only
   !.............................................................................
@@ -144,7 +144,7 @@ SUBROUTINE gravity (self, only)
   do iz=self%mesh(3)%li,self%mesh(3)%ui
   do iy=self%mesh(2)%li,self%mesh(2)%ui
   do ix=self%mesh(1)%li,self%mesh(1)%ui
-    source(ix,iy,iz) = grho*(d(ix,iy,iz)-self%initial%d0)
+    source(ix,iy,iz) = grho*(d(ix,iy,iz)-self%d0)
   end do
   end do
   end do
