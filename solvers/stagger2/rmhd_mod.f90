@@ -69,7 +69,7 @@ SUBROUTINE update (self)
   call trace%begin ('rmhd_t%update', itimer=itimer)
   call self%output
   call self%pde
-  if (eos%do_rt) then
+  if (eos%do_rt.and.associated(self%rt)) then
     call self%rt%update
     associate(l => self%li, u => self%ui)
     allocate(dedt(self%n(1), self%n(2), self%n(3)))

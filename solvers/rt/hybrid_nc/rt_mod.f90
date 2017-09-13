@@ -97,11 +97,12 @@ SUBROUTINE init_rt (self)
   real(kind=KindRTVar), save :: cr_heating=0.0
   character(len=16) :: solver = 'integral'
   integer :: ignore, nd, i
+  integer, save:: itimer = 0
   namelist /rt_params/ init_time, dtime, grace, solver, do_output, &
     cr_heating, use_data_hub, detailed_timer, debug, periodic
   ! --------------------------------------------------------------------
 
-  call trace_begin ('rt_t%init')
+  call trace_begin ('rt_t%init', itimer=itimer)
   !$omp critical (init_cr)
   if (first_time) then
     rewind (io%input); read (io%input, rt_params, iostat=ignore)
@@ -166,7 +167,7 @@ SUBROUTINE init_rt (self)
   else
     call self%init_no_chain
   end if
-  call trace_end
+  call trace%end(itimer)
 END SUBROUTINE init_rt
 
 !> =====================================================================
@@ -329,7 +330,6 @@ SUBROUTINE update_rt (self)
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: k
   !---------------------------------------------------------------------
   if (self%data_ready) return
-
   call trace%begin ('rt_t%update', itimer=itimer)
  ! if (io%verbose > 1) print *, 'RADIATIVE TRANSFER TIME', self%time
  ! if (self%time < 0d0) then
@@ -389,7 +389,7 @@ SUBROUTINE update_rt (self)
   call eos%lookup (shape(self%d), x=self%e, y=self%d, &                 ! call the table lookup, ...
                    rk=self%rk, src=self%src)
   if (self%is_set(bits%spherical)) then                                 ! apply spherical BC to src and rk
-
+    call rt_boundaries%spherical_jagged(self%src,self%rk,self%mesh)
   end if  
   self%data_ready =.true.                                               ! flag, that internal data is ready
   if(io%verbose >1) then
@@ -739,7 +739,6 @@ FUNCTION absolute_point_position (self, link, ray, pt, bn) result (cell_pos)
   integer :: ray, pt, cp(3)
   real(kind=8) :: cell_pos(3)
 !-----------------------------------------------------------------------
-  call trace_begin ('rt_t%absolute_point_position', 4)
   packet => link%packet
   if (present(bn)) then
     select case(link%direction)
@@ -752,7 +751,6 @@ FUNCTION absolute_point_position (self, link, ray, pt, bn) result (cell_pos)
     cp = packet%coords(:,pt,ray)
   end if
   cell_pos = self%myposition(cp)
-  call trace_end
 END FUNCTION absolute_point_position
 
 LOGICAL FUNCTION has_OB (self, link)

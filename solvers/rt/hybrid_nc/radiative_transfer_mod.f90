@@ -37,7 +37,7 @@ SUBROUTINE rt_setup (self, level_min)
   class(link_t), pointer :: t_list, link, rt_link
   class(task_t), pointer :: task
   class(mesh_t), pointer :: mesh
-  class(rmhd_t), pointer :: mhd_patch
+  class(experiment_t), pointer :: mhd_patch
   class(rt_t),   pointer :: rt_task
   real(8) :: eps = 1d-3
   real(8):: lc(3) = +huge(0d0)        ! lower corner
@@ -47,10 +47,10 @@ SUBROUTINE rt_setup (self, level_min)
   integer :: nd, lmin
   integer :: itimer=0
   !---------------------------------------------------------------------
-  call trace_begin('radiative_transfer::rt_setup', itimer=itimer)
+  call trace%begin('radiative_transfer::rt_setup', itimer=itimer)
   associate (mhd => self%head%task)
   SELECT TYPE(mhd)
-  class is (rmhd_t)
+  class is (experiment_t)
     mhd_patch => mhd
   class default
     error stop '(1) in rt_setup'
@@ -88,11 +88,11 @@ SUBROUTINE rt_setup (self, level_min)
     t_list => self%head
     lmin = level_min
     do while (associated(t_list))
-      if (link%task%level >= level_min) then
-        lc = min(lc, link%task%position)
-        uc = max(uc, link%task%position)
-        llc = min(llc, link%task%position-0.5000000001_8*link%task%size)
-        urc = max(urc, link%task%position+0.5000000001_8*link%task%size)
+      if (t_list%task%level >= level_min) then
+        lc = min(lc, t_list%task%position)
+        uc = max(uc, t_list%task%position)
+        llc = min(llc, t_list%task%position-0.5000000001_8*t_list%task%size)
+        urc = max(urc, t_list%task%position+0.5000000001_8*t_list%task%size)
       end if
       t_list => t_list%next
     end do
@@ -116,7 +116,7 @@ SUBROUTINE rt_setup (self, level_min)
     if (t_list%task%level >=lmin) then
       associate (mhd => t_list%task)
       SELECT TYPE(mhd)
-      class is (rmhd_t)
+      class is (experiment_t)
         allocate (rt_task, link)                                        ! the internal RT task and its link
         mhd_patch => mhd
         !> -------------------------------------------------------------
@@ -182,7 +182,7 @@ SUBROUTINE rt_setup (self, level_min)
   !  link => rt_link
   !end do
   call self%print
-  call trace_end (itimer)
+  call trace%end (itimer)
   if (io%master) then
     print *, '=================================='
     print *, 'RT SETUP IS COMPLETE'
@@ -405,6 +405,8 @@ SUBROUTINE find_rt_nbors (self)
   class(link_t), pointer:: link1, link2
   class(link_t), pointer:: nbor
   class(patch_t), pointer:: p1, p2
+  integer, save:: itimer=0
+  call trace%begin('radiative_transfer_mod%find_rt_nbors',itimer=itimer)
   link1 => self%head                                                    ! start on the self list
   do while (associated(link1))
     link2 => link1                                                      ! start searching throuch the chain
@@ -420,7 +422,7 @@ SUBROUTINE find_rt_nbors (self)
     end do
     link1 => link1%next                                                 ! advance in the outer chain
   end do
-  call trace_end
+  call trace_end(itimer)
 END SUBROUTINE find_rt_nbors
 
 END MODULE radiative_transfer_mod
