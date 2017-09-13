@@ -19,7 +19,7 @@ MODULE initial_mod
   type, public:: initial_t
     integer:: id
     character(len=20) :: initial_condition
-    real:: b0(3)
+    real:: b0(3), d0
     real:: gamma
     real(8):: size(3)
     logical:: mhd = .false.
