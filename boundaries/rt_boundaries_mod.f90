@@ -231,8 +231,9 @@ SUBROUTINE condition (self, f)
   !.....................................................................
   class(mesh_t), pointer:: m1, m2, m3
   integer:: i, saved_status, il, iu, a, b
+  integer, save:: itimer
   !---------------------------------------------------------------------
-  call trace%begin ('rt_boundaries_t%condition')
+  call trace%begin ('rt_boundaries_t%condition', itimer=itimer)
   if (self%unset) then
     call mpi%abort ('rt_outer_boundaries_t%init has not been called')
   end if
@@ -335,7 +336,7 @@ SUBROUTINE condition (self, f)
   !  end do
   end if
   self%bits = saved_status
-  call trace%end
+  call trace%end(itimer)
 END SUBROUTINE condition
 
 !> =============================================================================
@@ -350,7 +351,9 @@ SUBROUTINE spherical_jagged (self, src, rk, m)
   real(8)      :: x1, x2, y1, y2, z1, z2
   real(8)      :: r2
   logical      :: inside(8)
+  integer, save:: itimer
   !-----------------------------------------------------------------------------
+  call trace%begin ('rt_boundaries_t%spherical_jagged', itimer=itimer)
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -381,6 +384,7 @@ SUBROUTINE spherical_jagged (self, src, rk, m)
     end do
   end do
   nullify (m1, m2, m3)
+  call trace%end (itimer)
 END SUBROUTINE spherical_jagged
 
 

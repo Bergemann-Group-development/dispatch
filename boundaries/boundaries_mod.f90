@@ -791,7 +791,7 @@ SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
   real(8)      :: r2
   logical      :: inside(8)
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%spherical_jagged')
+  call trace_begin('boundaries_t%spherical_jagged_d')
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -824,7 +824,7 @@ SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
     error stop "boundaries_mod::spherical_jagged_d:: invalid memory index iv"
   end if
   nullify (m1, m2, m3)
-  !call trace_end
+  call trace_end
 END SUBROUTINE spherical_jagged_d
 
 !> =============================================================================
@@ -843,7 +843,7 @@ SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
   real(8)      :: r2
   logical      :: inside(8)
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%spherical_jagged')
+  call trace_begin('boundaries_t%spherical_jagged_s')
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -875,7 +875,7 @@ SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
     error stop "boundaries_mod::spherical_jagged_d:: invalid memory index iv"
   end if
   nullify (m1, m2, m3)
-  !call trace_end
+  call trace_end
 END SUBROUTINE spherical_jagged_s
 
 !> =============================================================================
@@ -893,7 +893,7 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
   real(8)      :: r2, h(3)
   logical      :: inside(4)
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%spherical_jagged')
+  call trace_begin('boundaries_t%spherical_jagged_p')
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -955,7 +955,7 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
     error stop "boundaries_mod::spherical_jagged_p:: invalid memory index iv"
   end if
   nullify (m1, m2, m3)
-  !call trace_end
+  call trace_end
 END SUBROUTINE spherical_jagged_p
 
 !> =====================================================================
