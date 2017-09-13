@@ -13,6 +13,7 @@ MODULE rt_boundaries_mod
   USE units_mod
   USE scaling_mod
   USE ray_geometry_v3_mod
+  USE planet_mod
   implicit none
   private
   !-----------------------------------------------------------------------
@@ -54,10 +55,12 @@ MODULE rt_boundaries_mod
     class(rt_inner_bndry_t), dimension(:), pointer :: inner_bndry => null()
     real, dimension(:), pointer    :: xl, xu, yl, yu, zl, zu
     real(8) :: llc(3), urc(3)
+    real(8) :: position(3), radius, rk, src
     integer :: hot_dir
   contains
     procedure:: init
     procedure:: update
+    procedure:: spherical_jagged
   end type
   type(rt_boundaries_t), public :: rt_boundaries
 CONTAINS
@@ -78,7 +81,6 @@ SUBROUTINE init (self, llc, urc)
   class(ray_dirs_t), pointer :: rd
   namelist /rt_bc_params/ hot_temp, cool_temp
   !---------------------------------------------------------------------
-  call trace%begin ('rt_boundaries_t%init')
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -126,7 +128,6 @@ SUBROUTINE init (self, llc, urc)
   print *, 'cool', self%xu
   print *, 'hot', self%xl
   print *, 'rt boundary llc, urc', self%llc, self%urc
-  call trace_end
 END SUBROUTINE init
 
 SUBROUTINE update(self)
@@ -336,5 +337,51 @@ SUBROUTINE condition (self, f)
   self%bits = saved_status
   call trace%end
 END SUBROUTINE condition
+
+!> =============================================================================
+!> Impose spherical boundary condition, assuming that the sphere is jagged.
+!> =============================================================================
+SUBROUTINE spherical_jagged (self, src, rk, m)
+  class(rt_boundaries_t)                   :: self
+  real(kind=KindRTVar), dimension(:,:,:,:) :: src, rk
+  class(mesh_t), pointer                   :: m(:), m1, m2, m3
+  !............................................................................
+  integer      :: ix, iy, iz
+  real(8)      :: x1, x2, y1, y2, z1, z2
+  real(8)      :: r2
+  logical      :: inside(8)
+  !-----------------------------------------------------------------------------
+  m1 => m(1)
+  m2 => m(2)
+  m3 => m(3)
+  error stop "rt_boundaries_mod::spherical_jagged: this version is a dummy - self%position is not set"
+  r2 = self%radius**2
+  do iz = m3%lb, m3%ub
+    do iy = m2%lb, m2%ub
+      do ix = m1%lb, m1%ub
+        x1 = m1%p - self%position(1) + m1%r(ix) + 0.5*m1%d
+        x2 = m1%p - self%position(1) + m1%r(ix) - 0.5*m1%d
+        y1 = m2%p - self%position(2) + m2%r(iy) + 0.5*m2%d
+        y2 = m2%p - self%position(2) + m2%r(iy) - 0.5*m2%d
+        z1 = m3%p - self%position(3) + m3%r(iz) + 0.5*m3%d
+        z2 = m3%p - self%position(3) + m3%r(iz) - 0.5*m3%d
+        inside(1) = x1**2+y1**2+z1**2 < r2
+        inside(2) = x2**2+y1**2+z1**2 < r2
+        inside(3) = x1**2+y2**2+z1**2 < r2
+        inside(4) = x2**2+y2**2+z1**2 < r2
+        inside(5) = x1**2+y1**2+z2**2 < r2
+        inside(6) = x2**2+y1**2+z2**2 < r2
+        inside(7) = x1**2+y2**2+z2**2 < r2
+        inside(8) = x2**2+y2**2+z2**2 < r2
+        if (all(inside)) then
+          src(ix,iy,iz,:) = self%src
+          rk (ix,iy,iz,:) = self%rk
+        end if
+      end do
+    end do
+  end do
+  nullify (m1, m2, m3)
+END SUBROUTINE spherical_jagged
+
 
 END MODULE rt_boundaries_mod
