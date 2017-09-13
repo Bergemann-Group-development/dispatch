@@ -278,7 +278,7 @@ SUBROUTINE same_rt (target, source)
   integer                 :: ix, iy, iz, iv
   integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('download_t%same', itimer=itimer)
+  call trace%begin('download_t%same_rt', itimer=itimer)
   call source%time_interval (target%time, jt, pt)
   call dnload_range (target, source, 1, l, u, o)
   do iv=1,target%nv
@@ -381,7 +381,7 @@ SUBROUTINE different_rt (target, source)
   integer, save           :: itimer=0
   real                    :: pt(2)
   !-----------------------------------------------------------------------------
-  call trace%begin('download_t%different', itimer=itimer)
+  call trace%begin('download_t%different_rt', itimer=itimer)
   lb = target%mesh%lb
   ub = target%mesh%ub
   call source%time_interval (target%time, jt, pt)
