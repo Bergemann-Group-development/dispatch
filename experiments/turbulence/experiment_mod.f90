@@ -20,6 +20,7 @@ MODULE experiment_mod
   USE initial_mod
   USE timer_mod
   USE link_mod
+  USE particle_patch_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -27,6 +28,7 @@ MODULE experiment_mod
     procedure init
     procedure update
   end type
+  type (particle_patch_t):: particle_patch
   logical, save:: first_time=.true.
 CONTAINS
 
@@ -48,6 +50,7 @@ SUBROUTINE init (self)
     self%nv = 5
   end if
   self%mhd = self%initial%mhd
+  self%d0 = self%initial%d0
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
@@ -61,6 +64,8 @@ SUBROUTINE init (self)
     self%t(self%it) = self%initial%time
   end if
   !call self%periodic_grid
+  call particle_patch%init
+  call particle_patch%test
   call trace_end (itimer=itimer)
 END SUBROUTINE init
 
