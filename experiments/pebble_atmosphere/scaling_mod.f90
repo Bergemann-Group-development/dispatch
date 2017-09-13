@@ -7,7 +7,7 @@ MODULE scaling_mod
   implicit none
   private
   type, public:: scaling_t
-    real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu, pi
+    real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu, pi, stefan
   contains
     procedure:: init
   end type
@@ -34,6 +34,7 @@ SUBROUTINE init (self)
   self%mu = 2.0                                         ! molecular weight
   self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for given mu
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
+  self%stefan = cgs%stefan/(scaling%p*scaling%u)*self%temp**4
   !code%r_earth = cgs%r_earth/self%l
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
@@ -46,6 +47,7 @@ SUBROUTINE init (self)
     print 1,'     energy: ',self%e
     print 1,'    gravity: ',self%grav
     print 1,'temperature: ',self%temp
+    print 1,'     stefan: ',self%stefan
   1 format(1x,a,1p,e11.3)
     print *, 'omega consistency:', &
       sqrt(cgs%grav*cgs%m_sun/cgs%au**3)/ &
