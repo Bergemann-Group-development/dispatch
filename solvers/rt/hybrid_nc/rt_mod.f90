@@ -1141,7 +1141,7 @@ SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
   !.....................................................................
   integer                         :: pt
   !---------------------------------------------------------------------
-  do pt = 1, size(rk,3)
+  do pt = 2, size(rk,3)
     dtau(:,:,pt) = ds * 0.5 * (rk(:,:,pt-1) + rk(:,:,pt))
   end do
 END SUBROUTINE optical_depth_staggered
