@@ -60,7 +60,7 @@ SUBROUTINE init (self, label)
   call self%rubiks_t%init_hierarchy (label)
   call self%task_list%remove_parents
   if (eos%do_rt) then
-    call rt_setup (self%task_list)
+    call rt_setup (self%task_list,2)
   end if
   print*, 'n_initial, n_add =', scene%n_initial, scene%n_add
   call trace_end
