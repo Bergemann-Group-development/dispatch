@@ -810,9 +810,6 @@ SUBROUTINE finish(self)
   if (self%do_chains)  self%updated(:)=.false.
   self%data_ready = .false.
   wb=1
-  if (self%is_set(bits%spherical)) then                                 ! apply spherical BC to dq
-
-  end if 
   if (self%do_output) call self%output
   self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)            ! predict
   deallocate (self%d, self%e, self%rk, self%src)                        ! deallocate scratch
