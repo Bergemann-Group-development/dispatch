@@ -209,7 +209,7 @@ SUBROUTINE init (self, geometry, n, ng, cell_dims, no_mans_land)
   logical :: no_mans_land
   real(kind=8) :: maxdim
 ! ......................................................................
-  call trace_begin('ray_geometry_t%init')
+  !call trace_begin('ray_geometry_t%init')
 
   allocate (new)                                                        ! allocate new geometry object
   new%geometry = geometry
@@ -248,7 +248,7 @@ SUBROUTINE init (self, geometry, n, ng, cell_dims, no_mans_land)
   end select
 
   call new%print
-  call trace_end
+  !call trace_end
 END SUBROUTINE init
 
 SUBROUTINE get_my_geometry(self, geometry, n, ng, cell_dims, my_geom)
@@ -259,7 +259,7 @@ SUBROUTINE get_my_geometry(self, geometry, n, ng, cell_dims, my_geom)
   integer :: geometry
   logical :: found
 ! ......................................................................
-  call trace_begin('ray_geometry_t%get_my_geometry')
+  !call trace_begin('ray_geometry_t%get_my_geometry')
 
   if(.not.associated(self%head)) then
     call self%init(geometry, n, ng,  cell_dims, self%no_mans_land)
@@ -277,7 +277,7 @@ SUBROUTINE get_my_geometry(self, geometry, n, ng, cell_dims, my_geom)
   end if
 
   nullify(this)
-  call trace_end
+  !call trace_end
 END SUBROUTINE get_my_geometry
 
 !> =====================================================================
@@ -303,7 +303,7 @@ SUBROUTINE init_cartesian(self)
   namelist /cartesian_ray_geometry_params/ do_chains, &
     nx, ny, nz, xti, yti, zti, dx, dy, dz, space_diagonals
 ! ......................................................................
-  call trace_begin('ray_geometry_t%init_cartesian',2)
+  !call trace_begin('ray_geometry_t%init_cartesian',2)
   !> TO DO: add an option for 2D simulation setup (i.e. any(cell_dims) == 0)
 
   self%init_done = .true.
@@ -372,7 +372,7 @@ SUBROUTINE init_cartesian(self)
     end do
   end if
 
-  call trace_end
+  !call trace_end
 END SUBROUTINE init_cartesian
 
 !> =====================================================================
@@ -419,7 +419,7 @@ SUBROUTINE add_axis(self, dir)
   class(packet_t)  , pointer :: packet
   integer :: ibn, jbn, jpck, ray1, ray2
 ! ......................................................................
-  call trace_begin('ray_geometry_t%add_axis', 4)
+ ! call trace_begin('ray_geometry_t%add_axis', 4)
   pmax = (self%ui - self%li) + 1                                        ! Total number of points
   self%n_ray_dirs = self%n_ray_dirs + 1                                 ! Adding new direction to the ray geometry
   dstep = 0
@@ -513,7 +513,7 @@ SUBROUTINE add_axis(self, dir)
       ray_n = ray_n + 1                                                 ! move to next ray
     end do
   end do
-  call trace_end
+!  call trace_end
 END SUBROUTINE add_axis
 
 !> =====================================================================
@@ -528,7 +528,7 @@ SUBROUTINE add_ray(self, theta, dir)
   real, dimension(:), allocatable :: phis
   logical :: oob_dir
   ! ....................................................................
-  call trace_begin('ray_geometry_t%add_ray', 4)
+ ! call trace_begin('ray_geometry_t%add_ray', 4)
 
   nphi=floor(360./theta)                                                ! equispaced solid angles for all rays
   allocate(phis(nphi))
@@ -576,7 +576,7 @@ SUBROUTINE add_ray(self, theta, dir)
   end do
 
   deallocate(phis)
-  call trace_end
+  !call trace_end
 END SUBROUTINE add_ray
 
 !> =====================================================================
@@ -598,7 +598,7 @@ SUBROUTINE add_diag(self, rep, dir)
   real, dimension(8) :: phis
   integer :: rep, dir, nphi, a, b, c, pdir
 ! ......................................................................
-  call trace_begin('ray_geometry_t%add_diag',4)
+  !call trace_begin('ray_geometry_t%add_diag',4)
 
   t = 45./radian
 
@@ -661,7 +661,7 @@ SUBROUTINE add_diag(self, rep, dir)
 
     end do
   end if
-  call trace_end
+  !call trace_end
 END SUBROUTINE add_diag
 
 !> =====================================================================
@@ -678,7 +678,7 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
   real :: init_step(3), dp(3)
   logical :: first_point
 ! ......................................................................
-  call trace_begin('traverse_t%traverse')
+  !call trace_begin('traverse_t%traverse')
   r_id = 0
   allocate(t)                                                           ! allocate traversal object
   allocate(ray_bundle)                                                  ! create ray tree to store rays
@@ -730,6 +730,7 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
   end do
   call self%finish_single_ray_list(ray_bundle)                          ! save the ray tree to ray_geometry
   deallocate(t)
+  !call trace_end
 END SUBROUTINE traverse
 
 !> =====================================================================
@@ -741,7 +742,7 @@ SUBROUTINE init_traverse(self, dp, ui, li, a, b, c)
   integer :: a, b, c, li(3), ui(3)
   real :: dp(3)
 ! ......................................................................
-  call trace_begin('traverse_t%init')
+  !call trace_begin('traverse_t%init')
   self%p(1) = a; self%p(2) = b; self%p(3) = c                           ! convenience
   self%cell_max(1) = ui(a)                                              ! last cell point along a axis
   self%cell_max(2) = ui(b)                                              ! last cell point along b axis
@@ -758,7 +759,7 @@ SUBROUTINE init_traverse(self, dp, ui, li, a, b, c)
     self%dstep(b) = nint(dp(b)*self%ds)                                 ! distance between points along b axis
   end if
   self%dstep(c) = 1                                                     ! distance between points along c axis
-  call trace_end
+  !call trace_end
 END SUBROUTINE init_traverse
 
 !> =====================================================================
@@ -908,7 +909,7 @@ SUBROUTINE finish_ray(self, ray_point, id)
   integer :: id
   logical :: fnd_p, fnd_b
 ! ......................................................................
-  call trace_begin('ray_geometry_t%finish_ray')
+  !call trace_begin('ray_geometry_t%finish_ray')
 
   allocate (ray)                                                        ! allocate ray list
   ray%id = id                                                           ! unique ray ID for this direction
@@ -990,7 +991,7 @@ SUBROUTINE finish_ray(self, ray_point, id)
   end if
 
   nullify (ray, bundle, packet, ray_point)
-  call trace_end
+  !call trace_end
 END SUBROUTINE finish_ray
 
 SUBROUTINE fill_ray_list_data(self, sray, rid)
