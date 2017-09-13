@@ -7,6 +7,7 @@ MODULE eos_mod
   USE trace_mod
   USE kinds_mod
   USE scaling_mod
+  USE units_mod
   implicit none
   private
   type, public:: eos_t
@@ -91,6 +92,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   real, dimension(:,:,:), pointer :: x_loc, y_loc
   integer:: i
   integer, save:: itimer=0
+  real:: stefan
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%lookup', itimer=itimer)
   if (present(gamma)) then
@@ -119,8 +121,9 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
     tt = (self%gamma-1.0)*x_loc
   end if
   if (present(src)) then
+    stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
     do i=1,size(src,4)
-      src(:,:,:,i) = scaling%stefan*real(((self%gamma-1.0)*x_loc),kind=8)**4
+      src(:,:,:,i) = stefan*real(((self%gamma-1.0)*x_loc),kind=8)**4
     end do
   end if
   if (present(pg)) then
