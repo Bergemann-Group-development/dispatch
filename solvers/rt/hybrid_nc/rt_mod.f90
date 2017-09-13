@@ -39,6 +39,7 @@ MODULE rt_mod
     real(kind=KindRTVar), dimension(:,:,:),   pointer :: e     => null()
     real(kind=KindRTVar), dimension(:,:,:,:), pointer :: rk    => null()
     real(kind=KindRTVar), dimension(:,:,:,:), pointer :: src   => null()
+    procedure(optical_depth_staggered), pointer :: optical_depth => null()
     character(len=16)                 :: solver ='integral'             ! choice of solver
     procedure(solve_integral), pointer:: solve => null()
     logical :: do_output      = .false.
@@ -63,6 +64,7 @@ MODULE rt_mod
     procedure :: nudge
     procedure :: optical_depth_centered
     procedure :: optical_depth_staggered
+    procedure :: optical_depth_staggered_weighted
     procedure :: output => output_legacy_rt
     procedure :: pos2cell
     procedure :: pos2cell_interp
@@ -96,10 +98,11 @@ SUBROUTINE init_rt (self)
   real(8), save :: dtime=0.01_8, grace=0.00_8, init_time=0d0
   real(kind=KindRTVar), save :: cr_heating=0.0
   character(len=16) :: solver = 'integral'
+  character(len=16) :: dtau = 'weighted'
   integer :: ignore, nd, i
   integer, save:: itimer = 0
   namelist /rt_params/ init_time, dtime, grace, solver, do_output, &
-    cr_heating, use_data_hub, detailed_timer, debug, periodic
+    cr_heating, use_data_hub, detailed_timer, debug, periodic, dtau
   ! --------------------------------------------------------------------
 
   call trace_begin ('rt_t%init', itimer=itimer)
@@ -157,6 +160,15 @@ SUBROUTINE init_rt (self)
   case default
     print *, 'WARNING: rt solver not recognised. Using integral solver.'
     self%solve => solve_integral
+  end select
+
+  select case(trim(dtau))
+  case('centered')
+    self%optical_depth => optical_depth_centered
+  case('staggered')
+    self%optical_depth => optical_depth_staggered
+  case('weighted')
+    self%optical_depth => optical_depth_staggered_weighted
   end select
 
   allocate(self%my_links(self%n_packet))                                ! allocate all the links this patch contains
@@ -853,7 +865,7 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   !> -------------------------------------------------------------------
   call self%ray_vol_map4(packet, self%src, s)                           ! map source function to rays
   call self%ray_vol_map4(packet, self%rk, rk)                           ! map opacities to rays
-  call self%optical_depth_staggered(link%ds, rk, dtau)
+  call self%optical_depth(link%ds, rk, dtau)
   !call self%ray_vol_map3(packet, self%d, dwf)                           ! density weight factor
   dwf = rk * link%ds
   if (present(q_in_fw)) then
@@ -952,7 +964,7 @@ SUBROUTINE solve_feautrier (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   !> -------------------------------------------------------------------
   call self%ray_vol_map4(packet, self%src, s)                           ! map source function to rays
   call self%ray_vol_map4(packet, self%rk, rk)                           ! map opacities to rays
-  call self%optical_depth_staggered(link%ds, rk, dtau)
+  call self%optical_depth(link%ds, rk, dtau)
   call self%ray_vol_map3(packet, self%d, dwf)                           ! density weight factor
   dwf = dwf * link%ds
   do ir=1, nwb
