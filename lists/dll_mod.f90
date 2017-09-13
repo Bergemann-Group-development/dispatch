@@ -13,6 +13,7 @@ MODULE dll_mod
     type(dll_node_t), pointer:: head => null()
     type(dll_node_t), pointer:: tail => null()
     integer:: n=0
+    character(len=32):: name
   contains
     procedure:: init
     procedure:: append
@@ -22,16 +23,23 @@ MODULE dll_mod
     procedure:: insert_after
     procedure:: remove
     procedure:: test
+    procedure:: delete
   end type
 CONTAINS
 
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, name)
   class(dll_t):: self
+  character(len=*), optional:: name
   !.............................................................................
   nullify (self%head, self%tail)
   !$omp atomic write
   self%n = 0
+  if (present(name)) then
+    self%name = name
+  else
+    self%name = 'dll'
+  end if
 END SUBROUTINE init
 
 !> =============================================================================
@@ -170,5 +178,19 @@ contains
     end select
   end subroutine print
 END SUBROUTINE test
+
+!> =============================================================================
+SUBROUTINE delete (self)
+  class(dll_t):: self
+  !.............................................................................
+  type (dll_node_t), pointer:: item
+  !-----------------------------------------------------------------------------
+  item => self%head
+  do while (associated(item))
+    if (associated(item%car)) deallocate (item%car)
+    item => item%next
+  end do
+  call self%init
+END SUBROUTINE delete
 
 END MODULE dll_mod
