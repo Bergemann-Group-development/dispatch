@@ -37,9 +37,10 @@ SUBROUTINE init (self)
   real, save:: gamma=1.4
   real, save:: kappa=0.1
   logical, save:: do_rt = .false.
+  integer, save:: itimer=0
   namelist /eos_params/ gamma, do_rt, kappa
   !-----------------------------------------------------------------------------
-  call trace%begin ('eos_t%init')
+  call trace%begin ('eos_t%init', itimer=itimer)
   if (io%master) print *, &
  '------------------------ ideal equation-of-state -----------------------------'
   !$omp critical (init_cr)
@@ -54,7 +55,7 @@ SUBROUTINE init (self)
   self%gamma = gamma
   self%do_rt = do_rt
   self%kappa = kappa * scaling%m/scaling%l**2
-  call trace%end
+  call trace%end(itimer)
 END SUBROUTINE init
 
 !-------------------------------------------------------------------------------
@@ -89,7 +90,9 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   real, dimension(:,:,:,:),                    optional :: src, rk
   real, dimension(:,:,:), pointer :: x_loc, y_loc
   integer:: i
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin ('eos_t%lookup', itimer=itimer)
   if (present(gamma)) then
     self%gamma = gamma
   end if
@@ -130,6 +133,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   end if
   if (present(lnx)) deallocate(x_loc)
   if (present(lny)) deallocate(y_loc)
+  call trace%end(itimer)
 END SUBROUTINE lookup
 
 END MODULE eos_mod
