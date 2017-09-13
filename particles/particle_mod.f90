@@ -11,10 +11,12 @@ MODULE particle_mod
   ! bulk position in double precision
   !-----------------------------------------------------------------------------
   type, public, extends(task_t):: particle_t
-    real(4), dimension(:,:), pointer:: p, v     ! position, velocity
-    real(4), dimension(:),   pointer:: m, s     ! mass, size
+    real(4), dimension(:), pointer:: p, v, a  ! position, velocity
+    real(4), dimension(:), pointer:: m, s     ! mass, size
   contains
     procedure:: init
+    procedure:: kick
+    procedure:: drift
   end type
   type, public, extends(task_t):: particles_t
     type(particle_t), dimension(:,:), pointer:: particles
@@ -35,6 +37,19 @@ SUBROUTINE init (self)
   !.............................................................................
   call self%task_t%init
 END SUBROUTINE
+
+!> =============================================================================
+SUBROUTINE kick (self)
+  class(particle_t):: self
+  self%v = self%v + 0.5*self%dt*self%a
+END SUBROUTINE kick
+
+!> =============================================================================
+SUBROUTINE drift (self)
+  class(particle_t):: self
+  self%p = self%p + self%dt*self%v
+  self%t = self%t + self%dt
+END SUBROUTINE drift
 
 !> =============================================================================
 SUBROUTINE check (self)

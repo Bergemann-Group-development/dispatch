@@ -261,13 +261,17 @@ SUBROUTINE init_no_chain(self)
 END SUBROUTINE init_no_chain
 
 !> =====================================================================
+!> Type-specific version of `dnload`. This is a *duplicate* of what's in
+!> `gpatch_t` because `rt_t` extends `patch_t`.
 !> =====================================================================
-SUBROUTINE dnload (self)
+SUBROUTINE dnload (self, only)
   class (rt_t) :: self
+  integer, optional:: only
+  !---------------------------------------------------------------------
   if (self%use_data_hub) then
-    call self%data_hub%update (self%link)
+    call self%data_hub%update (self%link, only=only)
   else
-    call download%download_link (self%link)
+    call download%download_link (self%link, only=only)
   end if
 END SUBROUTINE dnload
 
@@ -852,7 +856,7 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   !> -------------------------------------------------------------------
   call self%ray_vol_map4(packet, self%src, s)                           ! map source function to rays
   call self%ray_vol_map4(packet, self%rk, rk)                           ! map opacities to rays
-  call self%optical_depth_centered(link%ds, rk, dtau)
+  call self%optical_depth_staggered(link%ds, rk, dtau)
   !call self%ray_vol_map3(packet, self%d, dwf)                           ! density weight factor
   dwf = rk * link%ds
   if (present(q_in_fw)) then
@@ -951,7 +955,7 @@ SUBROUTINE solve_feautrier (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   !> -------------------------------------------------------------------
   call self%ray_vol_map4(packet, self%src, s)                           ! map source function to rays
   call self%ray_vol_map4(packet, self%rk, rk)                           ! map opacities to rays
-  call self%optical_depth_centered(link%ds, rk, dtau)
+  call self%optical_depth_staggered(link%ds, rk, dtau)
   call self%ray_vol_map3(packet, self%d, dwf)                           ! density weight factor
   dwf = dwf * link%ds
   do ir=1, nwb
@@ -1107,7 +1111,7 @@ SUBROUTINE update_q (self, link, q_fw, q_re)
 END SUBROUTINE update_q
 
 !> =====================================================================
-!> Compute the optical depth along rays
+!> Compute the optical depth along rays; cell-centred version
 !> =====================================================================
 SUBROUTINE optical_depth_centered (self, ds, rk, dtau)
   class (rt_t) :: self
@@ -1122,13 +1126,28 @@ SUBROUTINE optical_depth_centered (self, ds, rk, dtau)
   end do
 END SUBROUTINE optical_depth_centered
 
+!> =====================================================================
+!> Compute the optical depth along rays; face-centred version
+!> =====================================================================
+SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
+  class (rt_t) :: self
+  real(kind=8) :: ds
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: rk
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau
+  !.....................................................................
+  integer                         :: pt
+  !---------------------------------------------------------------------
+  do pt = 2, size(rk,3)
+    dtau(:,:,pt) = ds * 0.5 * (rk(:,:,pt-1) + rk(:,:,pt))
+  end do
+END SUBROUTINE optical_depth_staggered
 
 !> =====================================================================
 !> Compute the optical depth along rays. Dtau is staggered, therefore it
 !> has only a half value on the lower edge of the patch.
 !> Based on fig.4 in Howell et al. (2001) or Ramsey & Dullemond (2014), eq.9
 !> =====================================================================
-SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
+SUBROUTINE optical_depth_staggered_weighted (self, ds, rk, dtau)
   class (rt_t) :: self
   real(kind=8) :: ds
   real(kind=KindRTVar), dimension(:,:,:), pointer :: rk
@@ -1140,9 +1159,9 @@ SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
   do pt=2,n
     dtau(:,:,pt) = min((rk(:,:,pt-1)+rk(:,:,pt))*0.5, &
                    max(2*rk(:,:,pt-1)*rk(:,:,pt)/(rk(:,:,pt-1)+rk(:,:,pt)), &
-                   1.33333*ds)) *ds
+                   1.33333/ds)) *ds
   end do
-END SUBROUTINE optical_depth_staggered
+END SUBROUTINE optical_depth_staggered_weighted
 
 !> =====================================================================
 !> Compute the optical depth along rays. Dtau is staggered, therefore it

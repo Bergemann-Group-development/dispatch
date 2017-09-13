@@ -115,7 +115,7 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer:: d, e, dddt, dedt
   real, dimension(:,:,:),   pointer:: du, lnd, ee, cs, pg, pa, pp, pb, Q
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
-  real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz
+  real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez, Jx, Jy, Jz
   real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
   real, dimension(:,:,:),   pointer:: fxx, fxy
@@ -340,6 +340,12 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) &
    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
+  if (self%selfgravity) then
+    phi => self%mem(:,:,:,self%i_phi,self%it,1)
+    dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)
+    dpdty = dpdty - dd(:,:,:,2)*ddydn(ds,phi)
+    dpdtz = dpdtz - dd(:,:,:,3)*ddzdn(ds,phi)
+  end if
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux
   !-----------------------------------------------------------------------------
@@ -388,15 +394,25 @@ END SUBROUTINE pde
 
 !> =============================================================================
 !> Take a complete update step.  This can be overloaded in higher levels, e.g.
-!> in experiment_mod.
+!> in experiment_mod, where boundary conditions may be inserted
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  ! The call to output below catches the state after both guard zone downloads
-  ! and boundary conditions.  The call here is a fall back; if another call is
-  ! placed at an earlier point in the task handling the call here will have no
-  ! effect, since out_next has already been updated.
+  call trace%begin('mhd_t%update',itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Prepare the external forces for the pde call, in particular selfgravity. At
+  ! this point the nbors are declared up-to-date with respect to everything,
+  ! including their potentials, which we need for guard zones.  They may in fact
+  ! be providing only their preliminary potentials in their (nt-1) time slots,
+  ! while their older time slots should by now contain the converged potential.
+  !-----------------------------------------------------------------------------
+  call self%gravity
+  !-----------------------------------------------------------------------------
+  ! Output the state after guard zone downloads, selfgravity, and boundary
+  ! conditions. If another call is placed at an earlier point in the task handling
+  ! the call here will have no effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
   call self%output
   call self%pde
@@ -405,6 +421,16 @@ SUBROUTINE update (self)
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
+  !---------------------------------------------------------------------------
+  ! Having now advanced the MHD state to the new time, and before allowing
+  ! task_list_t%update to rotate the time slots, we make a preliminary
+  ! call to the Poisson solver, based on extrapolation of the nbor potentials.
+  ! We then provide this preliminary potential to nbors, until we have a
+  ! better offer.
+  !---------------------------------------------------------------------------
+  call self%dnload (only=self%i_phi)
+  call self%gravity (only=self%i_phi)
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================

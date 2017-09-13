@@ -53,9 +53,11 @@ END SUBROUTINE
 !> Select the best method for each case.  So far, this only supports static
 !> patches at the same level, or static patches one level up or down
 !> =============================================================================
-SUBROUTINE download_link (link, all_cells)
+SUBROUTINE download_link (link, all_cells, only)
   class(link_t), pointer:: link
   logical, optional:: all_cells
+  integer, optional:: only
+  !.............................................................................
   class(link_t), pointer:: nbor
   class(patch_t), pointer:: target, source
   integer:: edges
@@ -82,9 +84,9 @@ SUBROUTINE download_link (link, all_cells)
             if (source%is_clear(bits%no_download)) then
               if (abs(source%level-target%level) < 2) then
                 if (source%level==target%level) then
-                  call same (target, source, all_cells)
+                  call same (target, source, all_cells, only=only)
                 else
-                  call different (target, source, all_cells)
+                  call different (target, source, all_cells, only=only)
                 end if
               end if
             end if
@@ -181,19 +183,27 @@ END SUBROUTINE dnload_range
 !>   dnload_range
 !>   time_interval
 !> =============================================================================
-SUBROUTINE same (target, source, all_cells)
+SUBROUTINE same (target, source, all_cells, only)
   class(patch_t), pointer :: target, source
   logical, optional:: all_cells
+  integer, optional:: only
   !.............................................................................
   integer                 :: l(3), u(3), o(3), ii(3), jt(2)
   real(8)                 :: position(3), xx
   real                    :: pt(2)
-  integer                 :: ix, iy, iz, iv
+  integer                 :: ix, iy, iz, iv, iv1, iv2
   integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%same', itimer=itimer)
   call source%time_interval (target%time, jt, pt)
-  do iv=1,target%nv
+  if (present(only)) then
+    iv1 = only
+    iv2 = only
+  else
+    iv1 = 1
+    iv2 = target%nv
+  end if
+  do iv=iv1, iv2
     call dnload_range (target, source, iv, l, u, o)
     if (target%id==io%id_debug) &
       print 1, source%id, l, u, o, jt, pt
@@ -290,11 +300,12 @@ END SUBROUTINE same_rt
 
 !> =============================================================================
 !> Interpolate guard zone info from source patch at a different level
-SUBROUTINE different (target, source, all_cells)
+SUBROUTINE different (target, source, all_cells, only)
   class(patch_t), pointer :: target, source
   logical, optional:: all_cells
+  integer, optional:: only
   !.............................................................................
-  integer                 :: ix, iy, iz, iv, jt(2)
+  integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2
   integer, dimension(3)   :: l, u, ii, li
   real(8), dimension(3)   :: pos, h
   logical                 :: valid
@@ -303,16 +314,23 @@ SUBROUTINE different (target, source, all_cells)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different', itimer=itimer)
   call source%time_interval (target%time, jt, pt)
-  do iv=1,target%nv
+  if (present(only)) then
+    iv1 = only
+    iv2 = only
+  else
+    iv1 = 1
+    iv2 = target%nv
+  end if
+  do iv=iv1,iv2
     call dnload_range (target, source, iv, l, u)
     !---------------------------------------------------------------------------
-    ! For no-no-mans-land meshes, use guard zone values for the li index, to 
+    ! For no-no-mans-land meshes, use guard zone values for the li index, to
     ! make fluxes up/down symmetric
     !---------------------------------------------------------------------------
     li = target%mesh%li
     if (.not.target%no_mans_land) then
       h = target%index_stagger(iv)
-      where (h /= 0.0) 
+      where (h /= 0.0)
         li = target%mesh%li + 1
       end where
       if (target%id==io%id_debug) print '(a,i3,3(2x,3i4))', 'XX: iv,li', iv,li,l,u
