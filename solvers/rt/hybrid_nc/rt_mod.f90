@@ -260,13 +260,17 @@ SUBROUTINE init_no_chain(self)
 END SUBROUTINE init_no_chain
 
 !> =====================================================================
+!> Type-specific version of `dnload`. This is a *duplicate* of what's in
+!> `gpatch_t` because `rt_t` extends `patch_t`.
 !> =====================================================================
-SUBROUTINE dnload (self)
+SUBROUTINE dnload (self, only)
   class (rt_t) :: self
+  integer, optional:: only
+  !---------------------------------------------------------------------
   if (self%use_data_hub) then
-    call self%data_hub%update (self%link)
+    call self%data_hub%update (self%link, only=only)
   else
-    call download%download_link (self%link)
+    call download%download_link (self%link, only=only)
   end if
 END SUBROUTINE dnload
 
