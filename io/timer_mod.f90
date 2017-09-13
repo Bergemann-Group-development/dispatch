@@ -138,7 +138,7 @@ SUBROUTINE begin (self, name, itimer)
   !-----------------------------------------------------------------------------
   timers(thread)%start(itimer) = wallclock()
   istack = istack+1
-  if (istack>maxdepth) call mpi%abort ('too many timer levels')
+  if (istack>maxdepth) call mpi%abort ('too many timer levels;'//trim(name))
   timers(thread)%stack(istack) = itimer
   timers(thread)%istack = istack
 END SUBROUTINE begin
