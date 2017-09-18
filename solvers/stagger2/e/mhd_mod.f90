@@ -132,7 +132,7 @@ SUBROUTINE pde (self)
   type(index_t):: i
   real:: u_max
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%update',itimer=itimer)
+  call trace%begin('mhd_t%pde',itimer=itimer)
   self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
   self%e => self%mem(:,:,:,i%e      ,self%it,1); self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
   self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)

@@ -92,35 +92,36 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   logical:: needed
   logical, intent(out):: was_refined
   real:: dxmin, dxmax
+  integer, save:: itimer=0
   !.............................................................................
   was_refined = .false.
   if (.not. self%do_refine) return
-  call trace_begin('refine_t%check_current')
+  call trace_begin('refine_t%check_current', itimer=itimer)
 
   patch => task2patch(link%task)
   needed = .false.
 
   ! filter out patches which do not match the necessary criteria
   if (patch%is_set(bits%virtual)) then
-    call trace_end
+    call trace_end (itimer)
     return
   end if
   if (patch%istep < patch%check_refine_next) then
-    call trace_end
+    call trace_end (itimer)
     return
   end if
   if (patch%is_set(bits%not_leaf)) then
-    call trace_end
+    call trace_end (itimer)
     return
   end if
   dxmin = minval(patch%ds)
   dxmax = maxval(patch%ds)
   if (dxmin < self%min_dx .or. dxmax >= self%max_dx) then
-    call trace_end
+    call trace_end (itimer)
     return
   end if
   if (patch%time < self%refine_from_t .or. patch%time > self%refine_until_t) then
-    call trace_end
+    call trace_end (itimer)
     return
   end if
 
@@ -153,7 +154,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
 
   patch%check_refine_next = patch%istep + self%check_interval
 
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE check_current
 
 !> =============================================================================

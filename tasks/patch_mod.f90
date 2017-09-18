@@ -512,11 +512,15 @@ SUBROUTINE rotate (self)
   integer:: iv, nv, new
   real(8):: time
   !-----------------------------------------------------------------------------
-  ! Periodic wrapping, time extrapolation
+  ! Time extrapolation -- can help in cases where other patches rely on the
+  ! guard zone values of nbor patches (should norally not be the case).  The
+  ! periodic grid call at this point would have the same purpose -- the normal
+  ! call is inside download_mod/data_hub_mod.
   !-----------------------------------------------------------------------------
-  if (self%is_set(bits%root_grid)) then
-    call self%periodic_grid                     ! periodic root grid
-  else if (extrapolate_gz) then
+  call trace_begin ('patch_t%rotate')
+!  if (self%is_set(bits%root_grid)) then
+!    call self%periodic_grid                     ! periodic root grid
+  if (extrapolate_gz) then
     call self%extrapolate_guards                ! time-extrapolate guard cells
   end if
   !-----------------------------------------------------------------------------
@@ -539,6 +543,7 @@ SUBROUTINE rotate (self)
   ! Task time slot rotation
   !-----------------------------------------------------------------------------
   call self%task_t%rotate
+  call trace_end
 END SUBROUTINE rotate
 
 !> =============================================================================
