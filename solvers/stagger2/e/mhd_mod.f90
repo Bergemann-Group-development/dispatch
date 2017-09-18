@@ -428,8 +428,10 @@ SUBROUTINE update (self)
   ! We then provide this preliminary potential to nbors, until we have a
   ! better offer.
   !---------------------------------------------------------------------------
+  if (self%selfgravity) then
   call self%dnload (only=self%i_phi)
   call self%gravity (only=self%i_phi)
+  end if
   call trace%end (itimer)
 END SUBROUTINE update
 

@@ -41,27 +41,17 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_mod::init', itimer=itimer)
   !----------------------------------------------------------------------------
-  ! Allocate memory and set default values
-  !----------------------------------------------------------------------------
-  call self%initial%init (self%kind)
-  if (self%initial%mhd) then
-    self%nv = 8
-  else
-    self%nv = 5
-  end if
-  self%mhd = self%initial%mhd
-  self%d0 = self%initial%d0
-  !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
   call self%solver_t%init
+  self%d0 = initial%d0
   if (self%kind(1:9) == 'stagger2_') then
     call self%e2s (self%mem(:,:,:,self%i_e,self%it,1), self%it)
   end if
   call self%set (bits%static)
-  if (self%initial%time > 0d0) then
-    self%time = self%initial%time
-    self%t(self%it) = self%initial%time
+  if (initial%time > 0d0) then
+    self%time = initial%time
+    self%t(self%it) = initial%time
   end if
   !call self%periodic_grid
   call particle_patch%init
@@ -83,7 +73,7 @@ SUBROUTINE update (self)
   call trace_begin('experiment_t%update')
   if (first_time) then
     first_time = .false.
-    call self%initial%cleanup
+    call initial%cleanup
   end if
   call self%mhd_t%update
   call trace_end

@@ -27,6 +27,7 @@ MODULE mhd_mod
   USE timestep_mod
   USE eos_mod
   USE non_ideal_mod
+  USE initial_mod
   implicit none
   private
   type, extends(gpatch_t), public:: mhd_t
@@ -79,11 +80,21 @@ SUBROUTINE init (self)
   self%gamma = gamma
   self%csound = csound
   self%cdtd = cdtd
+  call initial%init (self%kind, self%gamma)
   if (self%mhd) then
     self%kind = 'stagger2_mhd_patch'
   else
     self%kind = 'stagger2_hd_patch'
   end if
+  self%mhd = initial%mhd
+  if (self%mhd) then
+    self%nv = 8
+  else
+    self%nv = 5
+  end if
+  !-----------------------------------------------------------------------------
+  ! Allocate memory and mesh, etc
+  !-----------------------------------------------------------------------------
   call self%gpatch_t%init
   self%i_d  = idx%d
   self%i_e  = idx%e
@@ -436,8 +447,10 @@ SUBROUTINE update (self)
   ! We then provide this preliminary potential to nbors, until we have a
   ! better offer.
   !---------------------------------------------------------------------------
-  call self%dnload (only=self%i_phi)
-  call self%gravity (only=self%i_phi)
+  if (self%selfgravity) then
+    call self%dnload (only=self%i_phi)
+    call self%gravity (only=self%i_phi)
+  end if
   call trace%end (itimer)
 END SUBROUTINE update
 
