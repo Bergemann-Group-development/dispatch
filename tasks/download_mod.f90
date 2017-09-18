@@ -146,7 +146,15 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   ! means there is no overlap.  Likewise, the l index can become larger than ub
   !-----------------------------------------------------------------------------
   l = max(target%mesh%lb,l)
-  u = min(target%mesh%ub,u)
+  if (target%kind(1:14) == 'zeus_mhd_patch') then
+    where (target%mesh%n > 1 .and. h /= 0.0)
+      u = min(target%mesh%ub+1,u)
+    elsewhere
+      u = min(target%mesh%ub,u)
+    end where
+  else
+    u = min(target%mesh%ub,u)
+  end if
   !-----------------------------------------------------------------------------
   ! For same level patch, the integer offset is what should be added to the
   ! target index to get the source index.  For aligned meshes, offset=0, while
