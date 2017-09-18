@@ -16,7 +16,8 @@ MODULE initial_mod
   type, public:: initial_t
     integer:: seed
     logical:: mhd
-    real(8):: a(3), b(3), phi(3), d0, e0
+    real(8):: gamma=0d0
+    real(8):: a(3), b(3), phi(3), d0, p0, e0
     real(8):: a0(3), k(3), b0(3), u0(3)
     real(8):: time
     character(len=64):: solver
@@ -28,19 +29,21 @@ MODULE initial_mod
   logical, save:: first_time=.true.
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
   type(index_t):: idx
+  type(initial_t), public:: initial
 CONTAINS
 
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, gamma)
    class(initial_t):: self
    character(len=64):: solver
+   real:: gamma
    integer, save:: seed=-33
    logical, save:: mhd=.true.
-   real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, e0=1.0, b0(3)=0.0, u0(3)=0.0
+   real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, p0=1.0, b0(3)=0.0, u0(3)=0.0
    character(len=32), save:: type='single_solenoidal'
-   namelist /initial_params/ seed, k, a0, u0, b0, d0, e0, mhd, type
+   namelist /initial_params/ seed, k, a0, u0, b0, d0, p0, mhd, type
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    !$omp critical (input_cr)
@@ -53,13 +56,17 @@ SUBROUTINE init (self, solver)
    end if
    self%solver = trim(solver)
    !$omp end critical (input_cr)
+   self%gamma  = gamma
    self%seed   = seed
    self%k      = k
    self%a0     = a0
    self%b0     = b0
    self%u0     = u0
    self%d0     = d0
-   self%e0     = e0
+   self%p0     = p0
+   if (self%gamma==0d0) print *,'initial_t%init WARNING: The solver has not set gamma !'
+   self%gamma  = max(self%gamma,1d0+1d-5)
+   self%e0     = p0/(self%gamma-1.0)
    self%mhd    = mhd
    self%time   = 0d0
    select case (type)
@@ -106,14 +113,14 @@ SUBROUTINE single_solenoidal (self, m, ff)
       ky   =  pi2*self%k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,idx%d ) = self%d0
-        ff(ix,iy,iz,idx%e ) = self%e0
+        ff(ix,iy,iz,idx%d ) = self%d0*(1.0 + self%a0(1)*sin(kx) + self%a0(2)*sin(ky) + self%a0(3)*sin(kz))
+        ff(ix,iy,iz,idx%e ) = self%e0*(1.0 + self%a0(1)*sin(kx) + self%a0(2)*sin(ky) + self%a0(3)*sin(kz))
         ff(ix,iy,iz,idx%px) = self%a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,idx%py) = self%a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,idx%pz) = self%a0(3)*(sin(kx)+sin(ky))
         if (self%mhd) then
-          ff(ix,iy,iz,idx%bx) = self%b0(1)*(sin(kx)+sin(ky))
-          ff(ix,iy,iz,idx%by) = self%b0(2)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,idx%bx) = self%b0(1)*(sin(ky)+sin(kz))
+          ff(ix,iy,iz,idx%by) = self%b0(2)*(sin(kz)+sin(kx))
           ff(ix,iy,iz,idx%bz) = self%b0(3)*(sin(kx)+sin(ky))
         end if
       end do
