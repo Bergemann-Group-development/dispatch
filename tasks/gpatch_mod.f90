@@ -130,7 +130,7 @@ SUBROUTINE gravity (self, only)
   class(gpatch_t):: self
   integer, optional:: only
   !.............................................................................
-  real, dimension(:,:,:), pointer:: d, phi, source
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi, source
   real:: error, error0
   integer:: iter, ix ,iy, iz
   integer, save:: itimer=0
@@ -179,7 +179,7 @@ SUBROUTINE time_derivs (self)
   integer:: it1, it2, it3, nt
   real(8):: t1, t2, t3
   integer, save:: itimer=0
-  real, dimension(:,:,:), pointer:: dphidt
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: dphidt
   integer, parameter:: order=1
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('gpatch_t%time_derivs', itimer=itimer)

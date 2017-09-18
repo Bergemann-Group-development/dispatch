@@ -3,12 +3,13 @@
 !> Troels Haugbølle for the course Computational Astrophysics
 !> =============================================================================
 MODULE poisson_mod
-USE mpi_mod
-USE io_mod
-USE trace_mod
-USE patch_mod
-USE mesh_mod
-!USE boundary_mod
+  USE mpi_mod
+  USE io_mod
+  USE trace_mod
+  USE kinds_mod
+  USE patch_mod
+  USE mesh_mod
+
   implicit none
   private
   type, public:: poisson_t
@@ -111,8 +112,8 @@ END SUBROUTINE init_sor
 SUBROUTINE sor_2nd (self, patch, phi, FourPiGrho, d, error, detailed_timer)
   class(poisson_t) :: self
   class(patch_t)   :: patch
-  real, dimension(:,:,:), pointer :: phi
-  real, dimension(:,:,:), pointer, intent(in) :: FourPiGrho, d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: phi
+  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in) :: FourPiGrho, d
   real:: error
   logical:: detailed_timer
   !
