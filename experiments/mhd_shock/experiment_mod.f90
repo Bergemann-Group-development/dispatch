@@ -11,11 +11,12 @@ MODULE experiment_mod
   USE mesh_mod
   USE pboundary_mod
   USE index_mod
+  USE solver_mod
   USE mhd_mod
   implicit none
   private
 
-  type, public, extends(mhd_t):: experiment_t
+  type, public, extends(solver_t):: experiment_t
   contains
     procedure:: init
     procedure:: update
@@ -37,7 +38,7 @@ SUBROUTINE init (self)
   integer:: i, j, k
   real(8):: x, y, z
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, vx, vy, vz, Bx, By, Bz, &
-                                                        px, py, pz, e1, et
+                                                        px, py, pz, e1, et, s
   real(4), save:: P_l=1.0  , P_r=0.1, &
                   rho_l=1.0, rho_r=0.2, &
                   vx_l=0.0, vx_r=0.0, vy_l=0.0, vy_r=0.0, vz_l=0.0, vz_r=0.0, &
@@ -51,8 +52,9 @@ SUBROUTINE init (self)
                                xdisc
   !----------------------------------------------------------------------------
   call trace_begin ('experiment_t%init')
-  self%nv = 8
+  self%nv = 10
   ! intialise solver
+  self%mhd = .true.
   call self%mhd_t%init
 
   !$omp critical (input_cr)
@@ -70,8 +72,19 @@ SUBROUTINE init (self)
   end if
 
   d  => self%mem(:,:,:,idx%d ,self%it,1)
-  e1 => self%mem(:,:,:,idx%e ,self%it,1)
-  et => self%mem(:,:,:,idx%et,self%it,1)
+  if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:10) == 'stagger2e_') then
+    e1 => self%mem(:,:,:,idx%e ,self%it,1)
+  end if
+  if (self%kind(1:9) == 'stagger2_') then
+    s => self%mem(:,:,:,idx%s ,self%it,1)
+  end if
+  if (self%kind(1:14) == 'zeus_mhd_patch') then
+    et => self%mem(:,:,:,idx%et,self%it,1)
+  end if
+  if (self%kind(1:6) == 'ramses') then
+    et => self%mem(:,:,:,idx%e,self%it,1)
+    allocate (e1(self%gn(1),self%gn(2),self%gn(3)))
+  end if
   px => self%mem(:,:,:,idx%px,self%it,1)
   py => self%mem(:,:,:,idx%py,self%it,1)
   pz => self%mem(:,:,:,idx%pz,self%it,1)
@@ -92,7 +105,9 @@ SUBROUTINE init (self)
         ! for the moment, only initial discontinuities in the x-direction are supported.
         if (x < xdisc) then
           d (i,j,k) = rho_l
-          e1(i,j,k) = P_l / (self%gamma - 1.0)
+          if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:10) == 'stagger2e_') then
+            e1(i,j,k) = P_l / (self%gamma - 1.0)
+          end if
           px(i,j,k) = vx_l * rho_l
           py(i,j,k) = vy_l * rho_l
           pz(i,j,k) = vz_l * rho_l
@@ -115,23 +130,26 @@ SUBROUTINE init (self)
         end if
       end do
       ! set total energy; it needs to be done after because it uses the `i+1` values.
-      do i=m1%lb,m1%ub
-        rhov2 = (0.25 * (px(i,j,k) + px(i+1,j,k))**2 + py(i,j,k)**2 + pz(i,j,k)**2) &
-              / d(i,j,k) 
-        B2 = 0.25 * (Bx(i,j,k) + Bx(i+1,j,k))**2 + By(i,j,k)**2 + Bz(i,j,k)**2
-        et(i,j,k) = e1(i,j,k) + 0.5 * rhov2 + 0.5 * B2
-      end do
+      ! only applies to ZEUS and RAMSES solvers.
+      if (self%kind(1:7) /= 'stagger') then
+        do i=m1%lb,m1%ub
+          rhov2 = (0.25 * (px(i,j,k) + px(i+1,j,k))**2 + py(i,j,k)**2 + pz(i,j,k)**2) &
+                / d(i,j,k) 
+          B2 = 0.25 * (Bx(i,j,k) + Bx(i+1,j,k))**2 + By(i,j,k)**2 + Bz(i,j,k)**2
+          et(i,j,k) = e1(i,j,k) + 0.5 * rhov2 + 0.5 * B2
+        end do
+      end if
     end do
   end do
 
   call self%clear(bits%root_grid)
   self%periodic = .false.
-  self%mhd = .true.
 
   ! assign boundary conditions.
   call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, .true.)
   call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, .false.)
 
+  if (self%kind(1:6) == 'ramses') deallocate (e1)
   nullify (d, e1, et, px, py, pz, Bx, By, Bz)
   call trace_end
 END SUBROUTINE init

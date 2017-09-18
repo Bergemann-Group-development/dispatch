@@ -27,11 +27,11 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     gamma = 5.0/3.0
-    datadir = './data/'
+    datadir = './data/4p/'
     prefix = ''
     ptimes = [0.0,0.10,0.20,0.35,0.45]
     t_eps = 1e-3
-    pxsize = [-0.5,2.5]
+    pxsize = [-0.6,2.6]
     pltvar = [  'd', 'e1', 'v2', 'b2', 'et', 'v1']
     pvmin  = [  0.0,  0.0, -1.0, -0.1,  0.0, -0.1]
     pvmax  = [  1.1,  1.7,  0.1,  1.1,  2.6,  1.1]
@@ -58,6 +58,12 @@ if __name__ == "__main__":
         print "Try setting `output_png` to True."
         from sys import exit
         exit(1)
+
+    dirs = os.listdir(datadir)
+    dirs = [ff for ff in dirs if not ff.endswith('.log')]
+    dirs = [ff for ff in dirs if not ff.endswith('.nq')]
+    files = [dd+'/'+ff for dd in dirs for ff in fnmatch.filter(os.listdir(datadir+'/'+dd),'*.txt')]
+
     for pt in ptimes:
 
         cfig = plt.figure("t = {0:.3e}".format(pt),facecolor='w',figsize=(ncols*xsize0,nrows*ysize0))
@@ -77,7 +83,6 @@ if __name__ == "__main__":
             cax.set_zorder(99.0)
             axs.append(cax)
 
-        files = fnmatch.filter(os.listdir(datadir), prefix + "*.txt")
         patches = []
         times = []
         # in order to determine which patches have output at the desired time,
@@ -212,7 +217,7 @@ if __name__ == "__main__":
                     if cmin[ii] != 0.0: cmin[ii] = np.log10(cmin[ii])
                     if cmax[ii] != 0.0: cmax[ii] = np.log10(cmax[ii])
     
-                l, = cax.plot(xp,var.squeeze(),marker='o',color=savecolr[p.id],zorder=-min(p.dx),mew=0.0)
+                l, = cax.plot(xp,var.squeeze(),marker='o',color=savecolr[p.id],zorder=-min(p.dx),mew=0.0,ls='None')
     
                 if (showgrids or pltvar[0] == 'gs'):
                     cax.plot([x_i[plotdir-1][li],x_i[plotdir-1][li]],[-1.0e32,1.0e32],'k:',lw=2.0)
