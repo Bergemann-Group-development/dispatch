@@ -17,5 +17,5 @@ sinclude $(TOP)/config/Makefile
 $(EXEC): cartesian_mod.o setup_mod.o
 
 # Dependencies
-experiment_mod.o	: trace_mod.o io_mod.o kinds_mod.o mesh_mod.o mhd_mod.o index_mod.o pboundary_mod.o mpi_mod.o bits_mod.o
+experiment_mod.o	: trace_mod.o io_mod.o kinds_mod.o mesh_mod.o solver_mod.o index_mod.o pboundary_mod.o mpi_mod.o bits_mod.o
 pboundary_mod.o		: io_mod.o trace_mod.o mesh_mod.o kinds_mod.o
