@@ -45,10 +45,12 @@ SUBROUTINE update (self, gn, ds, d, Jx, Jy, Jz, Bx, By, Bz, Q, E, u_max)
   class (non_ideal_t):: self
   integer:: gn(3)
   real(8):: ds
-  real:: u_max
+  real:: u_max, gamma_AD
+  logical::mhd_AD, mhd_Ohm
   real, dimension(:,:,:,:), pointer:: E
   real, dimension(:,:,:):: d, Jx, Jy, Jz, Bx, By, Bz, Q
   real, dimension(:,:,:), pointer:: ambi, Ud_x, Ud_y, Ud_z
+  namelist /non_ideal_params/ mhd_AD, mhd_Ohm, gamma_AD
   !---------------------------------------------------------------------------
   ! Below is the actual ambipolar drift parameter as given in equation 20 in
   ! Padoan, Zweibel and Nordlund (2000).
@@ -83,7 +85,7 @@ SUBROUTINE update (self, gn, ds, d, Jx, Jy, Jz, Bx, By, Bz, Q, E, u_max)
     E(:,:,:,3) = E(:,:,:,3) + (Ud_x*By - Ud_y*Bx)
     Q = Q + self%rho_ions*d*self%gamma_AD*(xup(Ud_x)**2+yup(Ud_y)**2+zup(Ud_z)**2)
     call deallocate_scalars (ambi, Ud_x, Ud_y, Ud_z)
-    u_max = max(u_max,maxval((xup(Bx)**2+yup(By)**2+zup(Bz)**2)/(ds*self%gamma_AD*self%rho_ions*d)))
+    u_max = max(u_max,10.*maxval((xup(Bx)**2+yup(By)**2+zup(Bz)**2)*ds**3/(self%gamma_AD*self%rho_ions*d)))
   end if
   if (self%mhd_Ohm) then
     E(:,:,:,1) = E(:,:,:,1) + self%eta_Ohm*Jx

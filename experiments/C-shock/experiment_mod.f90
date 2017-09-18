@@ -164,7 +164,7 @@ SUBROUTINE update (self)
 
   call self%mhd_t%update
   
-  call self%mhd_t%nonideal_MHD_courant_condition(self%dt_Ohm,self%dt_AD)
+  !call self%courant_condition
   call self%check_density('before timestep')
 
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)

@@ -13,22 +13,22 @@
  ! Physical initial conditions: right hand side (isothermal)
  !-----------------------------------------------------------------------------
  !gamma_exp = 1.0000001
- !rho_r = 1.0727d0
- !P_r = 0.2681
- !vx_r = 2.3305d0
- !vy_r = 1.3953d0
- !Bx_r = 1.4142135623730951d0
- !By_r = 3.8809d0
+ rho_r = 1.0727d0
+ P_r = 0.2681
+ vx_r = 2.3305d0
+ vy_r = 1.3953d0
+ Bx_r = 1.4142135623730951d0
+ By_r = 3.8809d0
  !-----------------------------------------------------------------------------
  ! Physical initial conditions: right hand side (non-isothermal)
  !-----------------------------------------------------------------------------
- gamma_exp = 1.666667
- rho_r = 0.988d0
- P_r = 1.4075
- vx_r = 2.5303d0
- vy_r = 1.1415d0
- Bx_r = 1.4142135623730951d0
- By_r = 3.4327d0
+ !gamma_exp = 1.666667
+ !rho_r = 0.988d0
+ !P_r = 1.4075
+ !vx_r = 2.5303d0
+ !vy_r = 1.1415d0
+ !Bx_r = 1.4142135623730951d0
+ !By_r = 3.4327d0
 
  !!-----------------------------------------------------------------------------
  ! Physical initial conditions: !!!OHMIC!!! Same values as in Masson et al. 2012
@@ -58,17 +58,19 @@
  !nu=    0.1, 1., 1., 1., 0.1, 0.1
  !nu=    0., 1., 1., 1., 1., 1.
  !     cs    du   pa   ofd   mas   eta
- !gamma=1.0000001  
- gamma=1.666667
+ gamma=1.0000001  
+ !gamma=1.666667
+ !ksi = 1d-17
+/
+&non_ideal_params
  mhd_AD=.true.
  mhd_Ohm=.false.
  gamma_AD=75.
- !ksi = 1d-17
 /
 &patch_params
  !dims=16,16,16          ! patch dimensions
  n=128,1,1          	! patch dimensions
- dt_fixed=1d-2        ! fixed time step
+ dt_fixed=1d-7        ! fixed time step
  nt=8                   ! time slots
  !end_time=4.1
  !nt=1                   ! time slots
