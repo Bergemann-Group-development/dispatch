@@ -142,8 +142,6 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   ! The lf and uf values are floating point relative coordinates corresponding
   ! to li and ui.  These are the boundaries of the 'authoritative domain'
   !-----------------------------------------------------------------------------
-  l = target%index_only (dist + source%mesh%lf)
-  u = target%index_only (dist + source%mesh%uf)
   do i=1,3
     rl(i) = dist(i) + source%mesh(i)%r(source%mesh(i)%li+1)
     ru(i) = dist(i) + source%mesh(i)%r(source%mesh(i)%ui  )
@@ -164,6 +162,9 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   else
     u = min(target%mesh%ub,u)
   end if
+  l = max(min(l,target%mesh%uo),target%mesh%lb)
+  u = max(min(u,target%mesh%ub),target%mesh%lo)
+  if (target%id==io%id_debug) print *, 'mk3', l(1), u(1)
   !-----------------------------------------------------------------------------
   ! For same level patch, the integer offset is what should be added to the
   ! target index to get the source index.  For aligned meshes, offset=0, while
