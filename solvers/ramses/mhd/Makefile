@@ -1,6 +1,8 @@
 # Vpath
 VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)
 
+include $(TOP)/solvers/ramses/Makefile
+
 DEBUG += -DCHECK_NAN
 
 # Dependencies

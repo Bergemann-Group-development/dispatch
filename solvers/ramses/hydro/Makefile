@@ -1,6 +1,8 @@
 # Vpath
 VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)
 
+include $(TOP)/solvers/ramses/Makefile
+
 # Dependencies
 amr_parameters          :
 hydro_parameters.o      : amr_parameters.o
@@ -12,4 +14,3 @@ initial_mod.o           : io_unit_mod.o trace_mod.o random_mod.o io_mod.o mesh_m
 force_mod.o             : io_unit_mod.o trace_mod.o io_mod.o mesh_mod.o random_mod.o scaling_mod.o
 index_mod.o             : 
 rmhd_mod.o              : io_mod.o trace_mod.o mhd_mod.o rt_mod.o
-solver_mod.o            : io_mod.o trace_mod.o mhd_mod.o
