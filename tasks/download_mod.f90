@@ -173,9 +173,9 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   if (present(offset)) then
     if (source%level==target%level) then
       where (source%mesh%ui > u)
-        offset = source%mesh%ui - u
+        offset = source%mesh%ui   - u
       else where
-        offset = source%mesh%li - l
+        offset = source%mesh%li+1 - l
       end where
       dist = source%distance(target)  ! positive if source to the right of target
     else
@@ -220,7 +220,7 @@ SUBROUTINE same (target, source, all_cells, only)
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................
-  integer                 :: l(3), u(3), o(3), ii(3), jt(2)
+  integer                 :: l(3), u(3), o(3), ii(3), jj(3), jt(2)
   real(8)                 :: position(3), xx
   real                    :: pt(2)
   integer                 :: ix, iy, iz, iv, iv1, iv2
@@ -256,11 +256,12 @@ SUBROUTINE same (target, source, all_cells, only)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
               ii = [ix,iy,iz]
+              jj = ii + o
               target%mem(ix,iy,iz,iv,target%it,1) = merge( &
-                exp(pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
-                    pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))), &
+                exp(pt(1)*log(source%mem(jj(1),jj(2),jj(3),iv,jt(1),1)) + &
+                    pt(2)*log(source%mem(jj(1),jj(2),jj(3),iv,jt(2),1))), &
                 target%mem(ix,iy,iz,iv,target%it,1), &
-                any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0))
+                any((ii-target%mesh%li-1) < 0 .or. (ii-target%mesh%ui) > 0))
             end do
           end do
         end do
@@ -281,11 +282,12 @@ SUBROUTINE same (target, source, all_cells, only)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
               ii = [ix,iy,iz]
+              jj = ii + o
               target%mem(ix,iy,iz,iv,target%it,1) = merge( &
-                pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
-                pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
+                pt(1)*source%mem(jj(1),jj(2),jj(3),iv,jt(1),1) + &
+                pt(2)*source%mem(jj(1),jj(2),jj(3),iv,jt(2),1), &
                 target%mem(ix,iy,iz,iv,target%it,1), &
-                any((ii-target%mesh%li) < 0 .or. (ii-target%mesh%ui) > 0))
+                any((ii-target%mesh%li-1) < 0 .or. (ii-target%mesh%ui) > 0))
             end do
           end do
         end do
