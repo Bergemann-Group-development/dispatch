@@ -135,12 +135,21 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   ! points. By using rl and ru the procedure becomes independent of no_mans_land.
   !-----------------------------------------------------------------------------
   dist = source%position - target%position + h*(source%mesh%d-target%mesh%d)
+  where (source%periodic)
+    dist = modulo(dist+0.5_8*source%mesh%b,source%mesh%b) -0.5_8*source%mesh%b
+  end where
   !-----------------------------------------------------------------------------
   ! The lf and uf values are floating point relative coordinates corresponding
   ! to li and ui.  These are the boundaries of the 'authoritative domain'
   !-----------------------------------------------------------------------------
   l = target%index_only (dist + source%mesh%lf)
   u = target%index_only (dist + source%mesh%uf)
+  do i=1,3
+    rl(i) = dist(i) + source%mesh(i)%r(source%mesh(i)%li+1)
+    ru(i) = dist(i) + source%mesh(i)%r(source%mesh(i)%ui  )
+  end do
+  l = target_index (rl)
+  u = target_index (ru)
   !-----------------------------------------------------------------------------
   ! Make sure the range is legal.  The u index can become smaller than lb, which
   ! means there is no overlap.  Likewise, the l index can become larger than ub
@@ -182,6 +191,20 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
       print 1, target%id, target%level, iv, source%id, source%level, l, u
   end if
   call trace%end
+contains
+!> =============================================================================
+  function target_index (p, roundup) result (ii)
+    real(8)           :: p(3)
+    logical, optional :: roundup
+    integer           :: ii(3)
+    !---------------------------------------------------------------------------
+    p = p/target%mesh%d + target%offset                   ! float index
+    if (present(roundup)) then
+      ii = ceiling(p)                                     ! round up
+    else
+      ii = p + 0.0001                                     ! integer part
+    end if
+  end function target_index
 END SUBROUTINE dnload_range
 
 !> =============================================================================
