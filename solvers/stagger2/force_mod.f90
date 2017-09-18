@@ -12,10 +12,12 @@ MODULE force_mod
   private
   real(8), parameter:: pi2=8.0*atan(1.0)
   type, public:: force_t
+    integer:: id
     integer:: seed=-11
     real(8):: a(3), phi(3)
     real(8):: t_turn, t_save=0.0
     real(8):: a0(3), k(3)
+    type(random_t):: random
     character(len=64):: solver
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
@@ -33,7 +35,7 @@ SUBROUTINE init (self, solver)
    integer,save:: seed=-11, iostat
    character(len=32), save:: type='zero'
    real, save:: t_turn=0.3, a0(3)=0.1, k(3)=1.0
-   namelist /force_params/ k, a0, t_turn, type
+   namelist /force_params/ seed, k, a0, t_turn, type
    !----------------------------------------------------------------------------
    call trace_begin('force_t%init')
    !$omp critical (input_cr)
@@ -49,6 +51,7 @@ SUBROUTINE init (self, solver)
    self%t_turn = t_turn
    self%a0     = a0
    self%k      = k
+   call self%random%init (seed)
    select case (type)
    case ('single_solenoidal')
      self%selected => single_solenoidal
@@ -71,16 +74,18 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   real, dimension(:,:,:):: Ux, Uy, Uz, d
   real, dimension(:,:,:,:):: p
   !.............................................................................
-  type(random_t)        :: random
   integer               :: ix, iy, iz
   real(8)               :: kx, ky, kz
+  real                  :: ran(3)
   !-----------------------------------------------------------------------------
   call trace_begin('force_t:single_solenoidal')
   if (time >= self%t_save) then
-    self%a = self%a0*random%ran3()
-    self%phi = pi2*random%ran3()
+    ran = self%random%ran3()
+    self%a = self%a0*2.0*(ran-0.5)/self%t_turn
+    self%phi = pi2*self%random%ran3()
     self%t_save = self%t_save + self%t_turn
-!     if (io%verbose>3) print *,'forcing', self%a, self%phi
+    if (io%verbose>=0) print '(i6," new forcing",i12,1p,3(3x,3e11.2))', &
+        self%id, self%seed, self%a0, self%a, self%phi
   end if
 
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)

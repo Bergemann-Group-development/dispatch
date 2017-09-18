@@ -4,6 +4,7 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE random_mod
   USE io_mod
+  USE trace_mod
   implicit none
   private
   interface uniform
@@ -18,7 +19,6 @@ MODULE random_mod
     procedure:: uniform_1
     procedure:: uniform_n
   end type
-  type(random_t), public:: random
 CONTAINS
 
 !> =============================================================================
@@ -29,6 +29,7 @@ SUBROUTINE init (self, seed)
   integer, optional:: seed
   real:: a, b(3)
   !.............................................................................
+  call trace_begin ('random_t%init')
   if (present(seed)) then
     self%seed = abs(seed)
   else
@@ -41,6 +42,7 @@ SUBROUTINE init (self, seed)
   !  print*,'random_number:',a
   !  print*,'random_number:',b
   !end if
+  call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
