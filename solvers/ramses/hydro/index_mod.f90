@@ -6,6 +6,6 @@ MODULE index_mod
   implicit none
   private
   type, public:: index_t
-    integer:: d=1, e=5, px=2, py=3, pz=4, bx=6, by=7, bz=8, phi=9, tt=10, s=5
+    integer:: d=1, e=5, px=2, py=3, pz=4, bx=6, by=7, bz=8, phi=9, tt=10, s=-1, et=5
   end type
 END MODULE index_mod
