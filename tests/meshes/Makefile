@@ -5,6 +5,7 @@ OPTS = full_debug
 
 # Common configuration
 EXEC = test.x
+SOLVER = stagger2
 TOP = ../..
 include $(TOP)/config/Makefile
 
