@@ -12,14 +12,16 @@ MODULE initial_mod
   USE units_mod
   USE scaling_mod
   USE mesh_mod
-  USE mhd_mod
   implicit none
   private
-
   type, public:: initial_t
+    logical:: mhd=.false.
+    real:: gamma=1.4
     real:: temp0=14.7, temp_exp=-1.0/3.0
     real:: rho0, r_max, z_scale, r_scale, rho_floor
-    procedure(disk_density_interface), pointer:: disk_density => null()
+    procedure(initial_conditions), pointer:: condition => initial_conditions
+    procedure(disk_density_interface), pointer:: disk_density => pascucci_disk
+    class(mesh_t), pointer:: mesh(:)
   contains
     procedure :: init
     procedure :: initial_conditions
@@ -40,9 +42,10 @@ CONTAINS
 !> =============================================================================
 !> Read namelist and perform simple initialisations.
 !> =============================================================================
-SUBROUTINE init (self, patch)
+SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
-  class(mhd_t) :: patch
+  character(len=*):: solver
+  real, optional:: gamma
   character(len=8):: disk_type='pascucci'
   real, save:: rho0=8.321e-21, z_scale=0.125, r_scale=0.5, &
                rho_floor=1.0e-36 ! the floor value is determined by the available precision
@@ -73,7 +76,7 @@ SUBROUTINE init (self, patch)
     call mpi%abort('Invalid disk type selected. Abort!')
   end if
 
-  self%r_max = patch%mesh(2)%p + patch%mesh(2)%r(patch%mesh(2)%ui)
+  self%r_max = self%mesh(2)%p + self%mesh(2)%r(self%mesh(2)%ui)
   ! Convert from AU (implied) to cm (needed).
   self%r_max = self%r_max * cgs%AU
   ! The scaling parameters are expressed in terms of `r_max`.
@@ -86,9 +89,10 @@ END SUBROUTINE init
 !> =============================================================================
 !> Set the initial conditions
 !> =============================================================================
-SUBROUTINE initial_conditions (self, patch)
+SUBROUTINE initial_conditions (self, mesh, mem)
   class(initial_t) :: self
-  class(mhd_t), target :: patch
+  class(mesh_t), pointer :: mesh(:)
+  real, dimension(:,:,:,:), pointer :: mem
   class(mesh_t), pointer :: m1 => null(), m2 => null(), m3 => null()
   real, dimension(:,:,:,:), pointer :: q => null()
   integer :: i1, i2, i3
@@ -96,10 +100,10 @@ SUBROUTINE initial_conditions (self, patch)
   !----------------------------------------------------------------------------
   call trace_begin('initial_t::initial_conditions')
 
-  m1 => patch%mesh(1)
-  m2 => patch%mesh(2)
-  m3 => patch%mesh(3)
-  q => patch%mem(:,:,:,:,1,1)
+  m1 => mesh(1)
+  m2 => mesh(2)
+  m3 => mesh(3)
+  q => mem(:,:,:,:)
 
   ! fool-proofing
   if (.not. associated(self%disk_density)) &
@@ -120,8 +124,8 @@ SUBROUTINE initial_conditions (self, patch)
         ! assume the temperature is initially locally isothermal
         t0 = self%temp0 * (r / self%r_max)**self%temp_exp
         p0 = q(i1,i2,i3,1) * rideal * t0
-        q(i1,i2,i3,2) = (log(p0) - log(q(i1,i2,i3,1)) * patch%gamma) &
-                      * q(i1,i2,i3,1) / (patch%gamma - 1.0)
+        q(i1,i2,i3,2) = (log(p0) - log(q(i1,i2,i3,1)) * self%gamma) &
+                      * q(i1,i2,i3,1) / (self%gamma - 1.0)
         
         ! momentum components
         q(i1,i2,i3,3) = 0.0

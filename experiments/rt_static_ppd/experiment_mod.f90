@@ -24,6 +24,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
+  real, pointer:: ff(:,:,:,:)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   !----------------------------------------------------------------------------
@@ -36,8 +37,9 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  call self%initial%init(self)
-  call self%initial%initial_conditions(self)
+  call self%initial%init (self%kind, self%gamma)
+  ff => self%mem(:,:,:,:,self%it,1)
+  call self%initial%initial_conditions(self%mesh, ff)
   call trace_end
 END SUBROUTINE init
 

@@ -13,7 +13,6 @@ MODULE rt_boundaries_mod
   USE units_mod
   USE scaling_mod
   USE ray_geometry_v3_mod
-  USE planet_mod
   implicit none
   private
   !-----------------------------------------------------------------------

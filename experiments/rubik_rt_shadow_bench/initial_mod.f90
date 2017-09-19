@@ -29,15 +29,16 @@ CONTAINS
 !> =============================================================================
 !> Read namelist
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
+  real, optional:: gamma
   character(len=64):: solver
   real, save:: clump_pos(3)=0.0, clump_a=0.1, clump_b=0.06, d0=1.0, t0=290.0, clump_dfact=10.0
-  real, save:: gamma=1.4
-  namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact, gamma
+  namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact
   integer:: iostat
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
+  if (present(gamma)) self%gamma = gamma
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
