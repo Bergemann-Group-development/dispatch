@@ -53,7 +53,7 @@
 
 /
 &mhd_params              ! defaults are visible in the log file
- nu=    0.5, 1.0, 1.0, 0.1, 0.1, 0.1
+ nu= 0.1, 0., 0., 0., 1., 0.
  !nu=    0.5, 1., 0., 1., 0.1, 0.1
  !nu=    0.1, 1., 1., 1., 0.1, 0.1
  !nu=    0., 1., 1., 1., 1., 1.
@@ -70,7 +70,7 @@
 &patch_params
  !dims=16,16,16          ! patch dimensions
  n=128,1,1          	! patch dimensions
- dt_fixed=1d-7        ! fixed time step
+ dt_fixed=1d-6        ! fixed time step
  nt=8                   ! time slots
  !end_time=4.1
  !nt=1                   ! time slots
