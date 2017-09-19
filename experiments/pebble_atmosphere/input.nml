@@ -1,13 +1,15 @@
 &timer_params sec_per_report=10 /
 
 &experiment_params /
-&initial_params /
+&initial_params
+ initial_condition='planet_atmosphere'
+/
 &force_params   /
 
 &io_params
  verbose=0
  do_output=f
- do_trace=f
+ do_trace=t
  omp_trace=f
  !id_debug=62
 /

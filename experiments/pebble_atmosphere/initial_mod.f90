@@ -34,24 +34,27 @@ MODULE initial_mod
 CONTAINS
 
 !> =============================================================================
-!> Setup an initial state, with head wind speed and accretion speed
+!> Setup an initial state, with head wind speed and accretion speed.  Note
+!> that the value of initial_condition is (also) set by the 'type' parameter
+!> in the experiment_mod.  This is kept only in order not to break existing
+!> setups -- the proper place to set the type of IC is here, via the namelist
+!> below
 !> =============================================================================
-SUBROUTINE init (self, solver, type)
+SUBROUTINE init (self, solver, gamma)
    class(initial_t):: self
    character(len=64):: solver
-   character(len=*), optional:: type
+   real, optional:: gamma
+   !............................................................................
    logical, save:: first_time=.true.
    character(len=20), save:: initial_condition = 'planet_atmosphere'
    namelist /initial_params/ initial_condition
    integer :: iostat
    !----------------------------------------------------------------------------
    call trace%begin('initial_t%init')
-   if (present(type)) then
-     initial_condition = type
-   end if
    call scaling%init
    if (first_time) then
      first_time = .false.
+     initial_condition = self%initial_condition
      rewind (io%input); read (io%input, initial_params, iostat=iostat)
      if (io%master) write (*, initial_params)
    end if

@@ -83,7 +83,6 @@ SUBROUTINE init (self)
   self%mhd = .false.
   self%msplit = 3
   call scaling%init
-  call self%initial%init (self%kind, type)
   call self%force%init (self%kind, type)
   self%nv = 5
   self%mhd = .false.
@@ -94,6 +93,16 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   self%periodic = .false.
   self%periodic(2) = .true.
+  !----------------------------------------------------------------------------
+  ! To avoid changing a lot of input files (including many not under GIT control),
+  ! we set the initial%initial_condition parameter  (which should really be set
+  ! via a namelist in initial_mod) from here.  Then, when mhd_t%init calls
+  ! initial%init, the type of IC is known, and the procedure pointer is set
+  ! correctly.
+  !----------------------------------------------------------------------------
+  print *,'XXXX', type
+  self%initial%initial_condition = type
+  self%initial%solver = 'planet_atmosphere'
   call self%pebble_patch_t%init
   ! In the case that we're using ZEUS, `self%nv` should now be 10.
   !self%mhd = .false.
