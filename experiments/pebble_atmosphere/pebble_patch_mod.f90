@@ -47,6 +47,7 @@ MODULE pebble_patch_mod
     real:: vz_pebble                            ! vertical in-fall speed
     logical:: only_pebbles                      ! freeze the MHD conditions (for tests)
     real:: omega(3)                             ! angular rate of rotation
+    type(random_t):: random                     ! random number source
   contains
     procedure init                              ! initialize the position and size
     procedure volume_add                        ! add particles throughout
@@ -84,7 +85,7 @@ SUBROUTINE init (self)
   real, save:: ppc = 0.10               ! probability per cell of making a pebble
   real, save:: omega_yr(3)=0.0          ! omega in units where 1 = 1/yr
   integer, save:: trace_every=0         ! trace pebble frequency
-  integer, save:: it_max=1000000, trace_every_min
+  integer, save:: it_max=1000000, seed=11, trace_every_min
   logical, save:: do_pebbles=.true., only_pebbles=.false., do_trace_output
   integer:: iostat
   logical:: ok
@@ -92,7 +93,8 @@ SUBROUTINE init (self)
   real, dimension(:,:,:,:), pointer:: U
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
     solid_density_cgs, size, size_range, it_max, pebble_rate_cgs, vz_pebble_cgs, &
-    id_dbg, only_pebbles, ppc, omega_yr, trace_every, detailed_timer, do_trace_output
+    id_dbg, only_pebbles, ppc, omega_yr, trace_every, detailed_timer, seed, &
+    do_trace_output
   !-----------------------------------------------------------------------------
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
@@ -114,8 +116,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   !$omp critical (pebble_init_cr)
   if (first_time) then
-    call random%init
-    random%seed = 11
+    call self%random%init (seed)
     do_pebbles = .true.
     first_time = .false.
     do_trace_output = io%do_output
@@ -221,7 +222,7 @@ SUBROUTINE volume_add (self, n)
     ippc = ppc
     ppc = ppc-ippc
     do iter=1,ippc+1
-      if (iter<=ippc .or. random%ran1() < ppc) then
+      if (iter<=ippc .or. self%random%ran1() < ppc) then
         allocate (pebble)
         !$omp atomic
         n_bdry = n_bdry+1
@@ -231,11 +232,11 @@ SUBROUTINE volume_add (self, n)
           pebble%status = ior(pebble%status,bits%trace+bits%has_BC)
         end if
         pebble%t = self%time
-        pebble%s = self%pebbles%size*10.0**(-self%pebbles%size_range*random%ran1())
+        pebble%s = self%pebbles%size*10.0**(-self%pebbles%size_range*self%random%ran1())
         pebble%m = pebble%s**3*self%pebbles%density
-        m => self%mesh(1); pebble%p(1) = m%r(ix) + m%d*(0.5-random%ran1())
-        m => self%mesh(2); pebble%p(2) = m%r(iy) + m%d*(0.5-random%ran1())
-        m => self%mesh(3); pebble%p(3) = m%r(iz) + m%d*(0.5-random%ran1())
+        m => self%mesh(1); pebble%p(1) = m%r(ix) + m%d*(0.5-self%random%ran1())
+        m => self%mesh(2); pebble%p(2) = m%r(iy) + m%d*(0.5-self%random%ran1())
+        m => self%mesh(3); pebble%p(3) = m%r(iz) + m%d*(0.5-self%random%ran1())
         !-----------------------------------------------------------------------
         ! Avoid placement outside (could happen for no-no-mans-land mesh)
         !-----------------------------------------------------------------------
@@ -321,11 +322,11 @@ SUBROUTINE boundary_add (self, n)
     pebble%t = self%time
     !$omp atomic
     n_vol = n_vol+1
-    pebble%s = self%pebbles%size*10.**(-self%pebbles%size_range*random%ran1())
+    pebble%s = self%pebbles%size*10.**(-self%pebbles%size_range*self%random%ran1())
     pebble%m = pebble%s**3*pebble%d
     sign = merge(1.0,-1.0,self%position(3)>0.0)
-    pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-random%ran1())
-    pebble%p(2) =   (self%position(2) - planet%position(2)) + self%size(2)*(0.5-random%ran1())
+    pebble%p(1) =   (self%position(1) - planet%position(1)) + self%size(1)*(0.5-self%random%ran1())
+    pebble%p(2) =   (self%position(2) - planet%position(2)) + self%size(2)*(0.5-self%random%ran1())
     pebble%p(3) =   (self%position(3) - planet%position(3)) + self%size(3)*0.5*sign
     pebble%v(1) = - self%omega(3)*planet%orbit_radius
     pebble%v(2) =   0.0
