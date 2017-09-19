@@ -25,9 +25,9 @@ MODULE mhd_mod
   USE force_mod
   USE index_mod
   USE timestep_mod
-  USE planet_mod
   USE eos_mod
   USE non_ideal_mod
+  USE initial_mod
   implicit none
   private
   type, extends(gpatch_t), public:: mhd_t
@@ -36,7 +36,7 @@ MODULE mhd_mod
     real:: nu(6)
     real:: csound
     real:: cdtd
-    logical:: mhd=.true.
+    logical:: mhd=.false.
     logical:: first_time=.true.
     type(force_t):: force
   contains
@@ -80,14 +80,26 @@ SUBROUTINE init (self)
   self%gamma = gamma
   self%csound = csound
   self%cdtd = cdtd
+  self%initial%mhd = self%mhd
+  call self%initial%init (self%kind, self%gamma)
+  self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
   else
     self%kind = 'stagger2e_hd_patch'
   end if
+  if (self%mhd) then
+    self%nv = 8
+  else
+    self%nv = 5
+  end if
+  !-----------------------------------------------------------------------------
+  ! Allocate memory and mesh, etc
+  !-----------------------------------------------------------------------------
   call self%gpatch_t%init
   self%i_d  = idx%d
   self%i_e  = idx%e
+  self%i_s  = idx%s
   self%i_px = idx%px
   self%i_py = idx%py
   self%i_pz = idx%pz
@@ -100,9 +112,9 @@ SUBROUTINE init (self)
     if (self%mhd) self%mesh(i)%h(5+i) = -0.5
   end do
   self%unsigned(idx%d)  = .true.
-  self%pervolume(idx%e) = .true.
-  call self%force%init(self%kind)
-  call trace%end
+  self%pervolume(idx%s) = .true.
+  call self%force%init (self%kind)
+ call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -364,6 +376,7 @@ SUBROUTINE pde (self)
     ! Electric current, resistive electric field and magnetic dissipation
     !---------------------------------------------------------------------------
     J = curl_dn(ds,B)
+    emf = self%nu(6)*edge(du)*J                                                 ! mhd: 0 6 0
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                     ! mhd: 2 3 0
     if (self%gamma/=1.0) &
       dedt = dedt + Q                                                           ! mhd: 1 0 0
