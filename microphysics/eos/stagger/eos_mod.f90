@@ -6,6 +6,9 @@ MODULE eos_mod
   USE io_unit_mod
   USE trace_mod
   USE mpi_mod
+  USE units_mod
+  USE scaling_mod
+  USE kinds_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -27,11 +30,15 @@ MODULE eos_mod
   type, public:: eos_t
     integer :: n_lambda = n_lambda
     real    :: w_lambda(n_lambda) = 1.0
+    real    :: gamma
+    real    :: kappa
     logical :: on = .false.
     logical :: do_rt = .false.
   contains
     procedure:: init
     procedure:: lookup
+    procedure:: pressure
+    procedure:: temperature
   end type
   type (eos_t), public:: eos
 CONTAINS
@@ -74,7 +81,7 @@ SUBROUTINE init (self)
       allocate (d(1,1,1), ee(1,1,1), pg(1,1,1))
       d = 1.0
       ee  = 5.0
-      call self%lookup (shape(ee), ee=ee, d=d, pg=pg)
+      !call self%lookup (shape(ee), ee=ee, d=d, pg=pg)
       print *,'d, ee, pg =', d, ee, pg
       deallocate (d, ee, pg)
     end if
@@ -85,10 +92,90 @@ SUBROUTINE init (self)
   !$omp barrier
 END SUBROUTINE init
 
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+FUNCTION pressure (self, d, e) RESULT (pg)
+  class (eos_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
+  real(kind=KindScalarVar), dimension(size(d,1),size(d,2),size(d,3)):: pg
+  !-----------------------------------------------------------------------------
+  pg = (self%gamma-1.0)*d*e
+END FUNCTION
+
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+FUNCTION temperature (self, d, e) RESULT (tt)
+  class (eos_t):: self
+  real, dimension(:,:,:), pointer:: d, e
+  real, dimension(size(d,1),size(d,2),size(d,3)):: tt
+  !-----------------------------------------------------------------------------
+  tt = (self%gamma-1.0)*e
+END FUNCTION
+
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
+SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
+  class (eos_t):: self
+  integer:: dim(3)
+  real, optional:: gamma
+  real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y
+  real, dimension(:,:,:),                      optional :: pg, tt, ss
+  real, dimension(:,:,:,:),                    optional :: src, rk
+  real, dimension(:,:,:), pointer :: x_loc, y_loc
+  integer:: i
+  integer, save:: itimer=0
+  real:: stefan
+  !-----------------------------------------------------------------------------
+  call trace%begin ('eos_t%lookup', itimer=itimer)
+  if (present(gamma)) then
+    self%gamma = gamma
+  end if
+  !-----------------------------------------------------------------------------
+  if (present(y)) then
+    y_loc => y
+  else if (present(lny)) then
+    allocate (y_loc(dim(1),dim(2),dim(3)))
+    y_loc = exp(lny)
+  else
+    call mpi%abort ('eos_t: missing 2nd argument')
+  end if
+  !-----------------------------------------------------------------------------
+  if (present(x)) then
+    x_loc => x
+  else if (present(lnx)) then
+    allocate (x_loc(dim(1),dim(2),dim(3)))
+    x_loc = exp(lnx)
+  else
+    call mpi%abort ('eos_t: missing 1st argument')
+  end if
+  !-----------------------------------------------------------------------------
+  if (present(tt)) then
+    tt = (self%gamma-1.0)*x_loc
+  end if
+  if (present(src)) then
+    stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
+    do i=1,size(src,4)
+      src(:,:,:,i) = stefan*real(((self%gamma-1.0)*x_loc),kind=8)**4
+    end do
+  end if
+  if (present(pg)) then
+    pg = (self%gamma-1.0)*y_loc*x_loc
+  end if
+  if (present(rk)) then
+    do i=1,size(rk,4)
+      rk(:,:,:,i) = y_loc*self%kappa
+    end do
+  end if
+  if (present(lnx)) deallocate(x_loc)
+  if (present(lny)) deallocate(y_loc)
+  call trace%end(itimer)
+END SUBROUTINE lookup
+
+!> =============================================================================
+!> General EOS lookup routine, returning values in optional arguments
+!> =============================================================================
+SUBROUTINE lookup_real (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, dimension(:,:,:)  , pointer, optional :: ee,d,lne,lnd,pg,tt,ne
@@ -316,6 +403,6 @@ SUBROUTINE lookup (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   if (present(d))   deallocate (lnd_loc)
   if (present(lne)) deallocate (ee_loc)
   call trace%end (itimer)
-END SUBROUTINE lookup
+END SUBROUTINE lookup_real
 
 END MODULE eos_mod
