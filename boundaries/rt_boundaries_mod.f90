@@ -100,8 +100,8 @@ SUBROUTINE init (self, llc, urc)
     allocate(self%zu(eos%n_lambda))
     d0 = 1.0/scaling%d
     lnd = log(d0)
-    e(:,:,1) = (cool_temp/scaling%temp*d0)/(eos%gamma-1.0)
-    e(:,:,2) = (hot_temp/scaling%temp*d0)/(eos%gamma-1.0)
+    e(:,:,1) = (cool_temp/scaling%temp)/(eos%gamma-1.0)
+    e(:,:,2) = (hot_temp/scaling%temp)/(eos%gamma-1.0)
     call eos%lookup (shape(e), x=e, lny=lnd, &                           ! call the table lookup, ...
                     src=src, rk=rk)
     !src = src * rk  

@@ -108,6 +108,9 @@ SUBROUTINE init (self)
           if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:10) == 'stagger2e_') then
             e1(i,j,k) = P_l / (self%gamma - 1.0)
           end if
+          if (self%kind(1:9) == 'stagger2_') then
+            s (i,j,k) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
+          end if
           px(i,j,k) = vx_l * rho_l
           py(i,j,k) = vy_l * rho_l
           pz(i,j,k) = vz_l * rho_l
@@ -116,7 +119,12 @@ SUBROUTINE init (self)
           Bz(i,j,k) = Bz_l
         else
           d (i,j,k) = rho_r
-          e1(i,j,k) = P_r / (self%gamma - 1.0)
+          if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:10) == 'stagger2e_') then
+            e1(i,j,k) = P_r / (self%gamma - 1.0)
+          end if
+          if (self%kind(1:9) == 'stagger2_') then
+            s (i,j,k) = (log(P_r) - log(rho_r) * self%gamma) * rho_r / (self%gamma - 1.0)
+          end if
           px(i,j,k) = vx_r * rho_r
           py(i,j,k) = vy_r * rho_r
           pz(i,j,k) = vz_r * rho_r

@@ -43,7 +43,7 @@ SUBROUTINE condition (self, mem, m, lower)
         end do
       else
         ! also outflow conditions/zero gradient
-        do i=m(1)%uo,m(1)%ub
+        do i=m(1)%uo,m(1)%gn
           mem(i,j,k,:) = mem(m(1)%ui,j,k,:)
         end do
       end if

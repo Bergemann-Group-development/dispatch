@@ -257,7 +257,7 @@ def variable_indices(solver_type, read_derivs=False):
         indices = {'d': 0,
                    'e1': 1, 'et': 2,
                    'gp': 3,
-                   's1': 4, 's2': 5, 's3': 6,
+                   'p1': 4, 'p2': 5, 'p3': 6,
                    'b1': 7, 'b2': 8, 'b3': 9}
     elif solver_type.lower() == 'rt_solver':
         indices = {'Q':  0,

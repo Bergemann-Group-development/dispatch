@@ -27,6 +27,7 @@
   n=300,1,1
   ng=3,1,1
   nt=3
+  no_mans_land=f
 /
 
 &experiment_params
@@ -37,7 +38,7 @@
 /
 
 &refine_params
-  do_refine=t
+  do_refine=f
   tol_shock=0.1
   tol_contact=0.1
 /

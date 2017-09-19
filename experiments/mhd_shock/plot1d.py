@@ -27,7 +27,7 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     gamma = 5.0/3.0
-    datadir = './data/4p/'
+    datadir = './data/'
     prefix = ''
     ptimes = [0.0,0.10,0.20,0.35,0.45]
     t_eps = 1e-3
@@ -36,6 +36,10 @@ if __name__ == "__main__":
     pvmin  = [  0.0,  0.0, -1.0, -0.1,  0.0, -0.1]
     pvmax  = [  1.1,  1.7,  0.1,  1.1,  2.6,  1.1]
     clog   = [    0,    0,    0,    0,    0,    0]
+    #pltvar = [  'd', 'e1', 'v2', 'b2',  's', 'v1']
+    #pvmin  = [  0.0,  0.0, -1.0, -0.1,  0.0, -0.1]
+    #pvmax  = [  1.1,  1.7,  0.1,  1.1,  2.6,  1.1]
+    #clog   = [    0,    0,    0,    0,    0,    0]
     plotdir = 1  # given with respect to the *root* grid (typically patch id = 1)
     slicelocs = (0.0,0.0) # coord. of slice to be taken in the other two directions
     nplots = 6
@@ -182,23 +186,29 @@ if __name__ == "__main__":
                         cax.set_xlabel(r'$z$')
 
                 if pltvar[ii] == 'v1':
-                    var = p.data[iindex,jindex,kindex,p.varidx['s1']]
+                    var = p.data[iindex,jindex,kindex,p.varidx['p1']]
                     var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
                 elif pltvar[ii] == 'v2':
-                    var = p.data[iindex,jindex,kindex,p.varidx['s2']]
+                    var = p.data[iindex,jindex,kindex,p.varidx['p2']]
                     var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
                     var = var / gf['h2c'][iindex,np.newaxis,np.newaxis]
                     if p.mesh_type == 'spherical':
                         var = var / x_i[0][iindex,np.newaxis,np.newaxis]
                 elif pltvar[ii] == 'v3':
-                    var = p.data[iindex,jindex,kindex,p.varidx['s3']]
+                    var = p.data[iindex,jindex,kindex,p.varidx['p3']]
                     var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
                     var = ( var / gf['h31c'][iindex,np.newaxis,np.newaxis] / gf['h32c'][np.newaxis,jindex,np.newaxis] )
                 elif pltvar[ii] == 'divb':
                     var, sumd, normmax = divergence(p, (p.varidx['b1'],p.varidx['b2'],p.varidx['b3']), gf)
                     var = var[iindex,jindex,kindex]
-                elif pltvar[ii] == 'p1':
-                    var = p.data[iindex,jindex,kindex,p.varidx['e1']] * gamma
+                elif pltvar[ii] == 'e1':
+                    if p.varidx.has_key('s'):
+                        var = ( p.data[iindex,jindex,kindex,p.varidx['d']]**(gamma-1.0)
+                                * np.exp(p.data[iindex,jindex,kindex,p.varidx['s']]*(gamma-1.0)
+                                       / p.data[iindex,jindex,kindex,p.varidx['d']])
+                                / (gamma-1.0) )
+                    else:
+                        var = p.data[iindex,jindex,kindex,p.varidx[pltvar[ii]]]
                 else:
                     var = p.data[iindex,jindex,kindex,p.varidx[pltvar[ii]]]
 

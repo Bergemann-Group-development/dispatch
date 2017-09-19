@@ -380,7 +380,7 @@ SUBROUTINE update_rt (self)
     associate(d => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_d,mhd%it,1), &
               s => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_s,mhd%it,1))
     g1 = mhd%gamma-1.0
-    self%e = d**mhd%gamma*exp(s/d*g1)/g1
+    self%e = d**g1*exp(s/d*g1)/g1
     end associate
   else if (mhd%kind(1:7)=='ramses_') then
     associate(d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d           ,mhd%it,1), &
