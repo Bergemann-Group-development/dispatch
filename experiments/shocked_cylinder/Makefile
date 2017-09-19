@@ -24,3 +24,4 @@ pboundary_mod.o: 	io_mod.o mesh_mod.o ic_mod.o mhd_mod.o kinds_mod.o
 experiment_mod.o:	io_mod.o trace_mod.o timestep_mod.o mesh_mod.o ic_mod.o mhd_mod.o pboundary_mod.o
 components_mod.o:	io_mod.o trace_mod.o task_mod.o mhd_mod.o task_list_mod.o experiment_mod.o bits_mod.o immersed_boundary_mod.o
 ic_mod.o:			io_mod.o trace_mod.o mesh_mod.o mhd_mod.o kinds_mod.o
+immersed_boundary_mod.o: io_mod.o patch_mod.o mhd_mod.o
