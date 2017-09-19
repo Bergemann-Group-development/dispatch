@@ -17,6 +17,7 @@ MODULE initial_mod
   type, public:: initial_t
     integer:: seed
     real:: gamma
+    real:: d0
     logical:: mhd
     real(8):: time=0d0
     character(len=64):: solver

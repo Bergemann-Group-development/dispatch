@@ -65,16 +65,9 @@ SUBROUTINE init (self)
     smallc, do_isothermal, csound
 !...............................................................................
   call trace_begin('mhd_mod::init')
-  call self%gpatch_t%init
-  self%i_d  = idx%d
-  self%i_e  = idx%e
-  self%i_px = idx%px
-  self%i_py = idx%py
-  self%i_pz = idx%pz
-  self%i_bx = idx%bx
-  self%i_by = idx%by
-  self%i_bz = idx%bz
-
+  !-----------------------------------------------------------------------------
+  ! Read solver-relevant parameters and store in the task instance
+  !-----------------------------------------------------------------------------
   !$omp critical (pde)
   if (first_time) then
     first_time = .false.
@@ -87,6 +80,27 @@ SUBROUTINE init (self)
   self%courant = courant_factor
   self%gamma = gamma
   self%staggered = .false.
+  !-----------------------------------------------------------------------------
+  ! Initialize the IC module, which determines if we need MHD variables,
+  ! passing on whatever info is of interest.  The template initial_mod.f90
+  ! should reside in the same directory as this file, and any experiment that
+  ! wants to generalize the IC module should use the same calling sequence.
+  !-----------------------------------------------------------------------------
+  call self%initial%init (self%id, self%kind, self%gamma)
+  self%mhd = self%initial%mhd
+  if (self%mhd) self%nv = self%nv+3
+  !-----------------------------------------------------------------------------
+  ! Now we are ready to allocate memory in gpatch_t%init -> patch_t%init
+  !-----------------------------------------------------------------------------
+  call self%gpatch_t%init
+  self%i_d  = idx%d
+  self%i_e  = idx%e
+  self%i_px = idx%px
+  self%i_py = idx%py
+  self%i_pz = idx%pz
+  self%i_bx = idx%bx
+  self%i_by = idx%by
+  self%i_bz = idx%bz
   call trace_end
 END SUBROUTINE init
 
@@ -1057,7 +1071,7 @@ FUNCTION gas_velocity (self) RESULT (v)
   v(:,:,:,1) = p(:,:,:,1) / d
   v(:,:,:,2) = p(:,:,:,2) / d
   v(:,:,:,3) = p(:,:,:,3) / d
-  
+
   nullify (d, p)
 END FUNCTION gas_velocity
 
