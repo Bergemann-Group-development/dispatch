@@ -35,6 +35,7 @@ MODULE mhd_mod
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure
+    procedure:: gas_velocity
     procedure:: cell_gas_pressure
     procedure:: gas_temperature
     procedure:: cell_gas_temperature
@@ -96,8 +97,9 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE dnload (self)
+SUBROUTINE dnload (self, only)
   class(mhd_t):: self
+  integer, optional:: only
   call trace%begin ('experiment_mod::dnload')
   call download%download_link (self%link, all_cells=.false.)
   call trace%end
@@ -450,6 +452,14 @@ FUNCTION gas_pressure (self) RESULT (pg)
     pg = self%e*(self%gamma-1.0)
   end if
 END FUNCTION gas_pressure
+
+!> =============================================================================
+FUNCTION gas_velocity (self) RESULT (vg)
+  class(mhd_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3),3):: vg
+  !-----------------------------------------------------------------------------
+  vg = 0.0
+END FUNCTION gas_velocity
 
 FUNCTION cell_gas_pressure(self, c) RESULT (pg)
   class(mhd_t) :: self

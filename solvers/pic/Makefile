@@ -1,3 +1,10 @@
+ifeq ($(PREC),SINGLE)
+  DEFS := $(DEFS) -DPREC=4
+else
+  DEFS := $(DEFS) -DPREC=8
+endif
+
+
 sinclude $(TOP)/solvers/pic/stagger/Makefile
 sinclude $(TOP)/solvers/pic/Makefile.dep
 
@@ -11,3 +18,7 @@ $(MPI).o:  stat.o textio.o
 
 initial_pic_mod.o : io_mod.o trace_mod.o mesh_mod.o random_mod.o \
            initial_mod.o pic_mod.o
+
+initial.o: io_mod.o trace_mod.o mesh_mod.o random_mod.o \
+           initial_mod.o pic_mod.o
+solver_mod.o: mhd_mod.o

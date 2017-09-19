@@ -17,6 +17,7 @@ MODULE pic_mod
   USE rand_mod,        ONLY: rand_seed
   USE pic_io,          ONLY: toutf, toutp
   USE pic_stagger,     ONLY: xup, yup, zup
+  USE mesh_mod,        ONLY: mesh_t
   implicit none
   private
   type:: scratch_t
@@ -217,7 +218,7 @@ SUBROUTINE post_init (self)
   call init_diagnostics                                 ! energetics etc
   print *,'Bz', sum(Ex**2), sum(Ey**2), sum(Bz**2), 0
   call write_log                                        ! initialize log output
-  call write_io                                         ! write initial snapshot
+  call write_io_pic                                     ! write initial snapshot
   !io%out_time = tend
   !-----------------------------------------------------------------------------
   ! Save the location of dynamic PIC data for this patch
@@ -551,6 +552,7 @@ SUBROUTINE impose_particle_boundaries_np(self)
   real, dimension(mcoord)                 :: velb
   type(particle), pointer, dimension(:)   :: pa
   integer                                 :: below_lb, above_ub
+  class(mesh_t), pointer                  :: m(:)
   !----------------------------------------------------------------------!
   ! If alĺ boundaries are periodic we don't need guard zone particles
   if (all(periodic_bcs)) return
@@ -558,7 +560,6 @@ SUBROUTINE impose_particle_boundaries_np(self)
   !----------------------------------------------------------------------!
   ! First remove any particles outside the boundaries
   ! Replace particles in boundaries
-  associate (m => self%mesh)
   call remove_boundary_particles
   !----------------------------------------------------------------------!
   ! Set limits depending on if a direction is periodic or not
@@ -596,7 +597,6 @@ SUBROUTINE impose_particle_boundaries_np(self)
     if (io%debug(2)) print 1, 'Add particles upper x:', [m(1)%uo, lb(2), lb(3)], [m(1)%ub, ub(2), ub(3)]
     call add_boundary_particles ([m(1)%uo, lb(2), lb(3)], [m(1)%ub, ub(2), ub(3)])
   end if
-  end associate
   call trace_end
 
   contains
