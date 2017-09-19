@@ -9,9 +9,10 @@ COMPILER = gfortran
 OMP  = yes
 MPI  = mpi
 MOD  = mod
-PREC ?= SINGLE
-RT_PREC ?= RT_SINGLE
 DEFS = -D$(PREC)
+SOLVER  ?= VOID
+PREC    ?= SINGLE
+RT_PREC ?= RT_SINGLE
 
 #############################################################################
 # Check for options
