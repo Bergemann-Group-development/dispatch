@@ -15,9 +15,10 @@ MODULE initial_mod
   real(8), parameter:: pi2=8d0*atan(1d0)
 
   type, public:: initial_t
-    real:: clump_pos(3), clump_a, clump_b, d0, t0, clump_dfact, gamma
+    real:: clump_pos(3), clump_a, clump_b, d0, t0, clump_dfact
     character(len=64):: solver
     logical          :: mhd = .false.
+    real             :: gamma = 1.4
   contains
     procedure :: init
     procedure :: condition
@@ -29,15 +30,17 @@ CONTAINS
 !> =============================================================================
 !> Read namelist
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
+  real, optional:: gamma
+  !.............................................................................
   real, save:: clump_pos(3)=0.0, clump_a=0.1, clump_b=0.06, d0=1.0, t0=290.0, clump_dfact=10.0
-  real, save:: gamma=1.4
-  namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact, gamma
+  namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact
   integer:: iostat
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
+  if (present(gamma)) self%gamma = gamma
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -54,7 +57,6 @@ SUBROUTINE init (self, solver)
   self%d0 = d0 /scaling%d
   self%t0 = t0 /scaling%temp
   self%clump_dfact = clump_dfact
-  self%gamma=gamma
 
   call trace_end
 END SUBROUTINE init
@@ -113,11 +115,11 @@ SUBROUTINE condition (self, m, mem)
         mem(ix,iy,iz,i%py) = 0.0
         mem(ix,iy,iz,i%pz) = 0.0
         ! magnetic field components
-        !if (self%mhd) then
+        if (self%mhd) then
           mem(ix,iy,iz,i%bx) = 0.0
           mem(ix,iy,iz,i%by) = 0.0
           mem(ix,iy,iz,i%bz) = 0.0
-        !end if
+        end if
       end do
     end do
   end do
