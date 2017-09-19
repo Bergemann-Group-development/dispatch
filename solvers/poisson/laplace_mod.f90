@@ -558,7 +558,7 @@ FUNCTION error_direct (self, patch, phi, scratch, FourPiGrho, a) result(error)
   enddo
   enddo
   enddo
-  call boundary%sphere (patch, scratch, 0.0, real(minval(patch%ds)))
+  !call boundary%sphere (patch, scratch, 0.0, real(minval(patch%ds)))
   error = maxval(scratch(l(1):u(1),l(2):u(2),l(3):u(3)))/a
   end associate
 END FUNCTION error_direct
