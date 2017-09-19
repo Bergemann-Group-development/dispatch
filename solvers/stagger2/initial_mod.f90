@@ -14,6 +14,7 @@ MODULE initial_mod
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
+    integer:: id=0
     integer:: seed
     logical:: mhd
     real(8):: gamma=0d0
@@ -29,7 +30,6 @@ MODULE initial_mod
   logical, save:: first_time=.true.
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
   type(index_t):: idx
-  type(initial_t), public:: initial
 CONTAINS
 
 !> =============================================================================
@@ -38,7 +38,8 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma)
    class(initial_t):: self
    character(len=64):: solver
-   real:: gamma
+   real, optional:: gamma
+   !............................................................................
    integer, save:: seed=-33
    logical, save:: mhd=.true.
    real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, p0=1.0, b0(3)=0.0, u0(3)=0.0
@@ -46,17 +47,18 @@ SUBROUTINE init (self, solver, gamma)
    namelist /initial_params/ seed, k, a0, u0, b0, d0, p0, mhd, type
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
+   if (present(gamma)) self%gamma = gamma
    !$omp critical (input_cr)
    if (first_time) then
      first_time = .false.
+     mhd = self%mhd
      rewind (io%input)
      read (io%input, initial_params)
-     mhd = mhd .and. any(b0 /= 0.0)
+     mhd = mhd .or. any(b0 /= 0.0)
      if (io%master) write (*, initial_params)
    end if
    self%solver = trim(solver)
    !$omp end critical (input_cr)
-   self%gamma  = gamma
    self%seed   = seed
    self%k      = k
    self%a0     = a0

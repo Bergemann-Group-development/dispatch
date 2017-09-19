@@ -19,6 +19,7 @@ MODULE gpatch_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
+    type(initial_t)  :: initial
     type(data_hub_t) :: data_hub
     type(poisson_t)  :: poisson
     logical:: selfgravity=.false.
@@ -68,6 +69,7 @@ SUBROUTINE init (self)
   else
     call self%patch_t%init
   end if
+  call self%initial%init (self%kind)
   !-----------------------------------------------------------------------------
   ! Try reading a restart snapshot.
   !-----------------------------------------------------------------------------
@@ -82,7 +84,7 @@ SUBROUTINE init (self)
   else
     self%mem = 0.0
     ff => self%mem(:,:,:,:,1,1)
-    call initial%condition (self%mesh, ff)
+    call self%initial%condition (self%mesh, ff)
   end if
   !-----------------------------------------------------------------------------
   ! If restart succeeded for some patch, use it to set time and output cadence.

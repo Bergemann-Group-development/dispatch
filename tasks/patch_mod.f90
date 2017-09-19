@@ -1344,6 +1344,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, save:: n_lines=0
   integer, save:: counts(7)=0
   !-----------------------------------------------------------------------------
+  call trace_begin ('patch_t%info')
   if (io_unit%do_validate) then
     it0 = self%iit(self%nt-2)
     it1 = self%iit(self%nt-1)
@@ -1371,6 +1372,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     if (self%nw==1) then
       deallocate (df)
     end if
+    call trace_end
     return
   end if
   1 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,5i5,6i4,l3,l1,o12)
@@ -1378,7 +1380,6 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     if (self%time>=self%print_next) then
       if (io%print_time > 0) &
         self%print_next = (nint(self%time/io%print_time)+1)*io%print_time
-      call trace%begin ('patch_t%info', itimer=itimer)
       nv = 1
       if (io%verbose>2) nv = self%nv
       if (io%verbose>1) then
@@ -1457,9 +1458,9 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
         mpi_mesg%n_delay=0
       end if
-      call trace%end (itimer)
     end if
   end if
+  call trace%end
 END SUBROUTINE info
 
 !> =============================================================================

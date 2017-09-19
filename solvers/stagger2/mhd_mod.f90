@@ -36,7 +36,7 @@ MODULE mhd_mod
     real:: csound
     real:: nu(6)
     real:: cdtd
-    logical:: mhd=.true.
+    logical:: mhd=.false.
     logical:: first_time=.true.
     type(force_t):: force
   contains
@@ -80,13 +80,14 @@ SUBROUTINE init (self)
   self%gamma = gamma
   self%csound = csound
   self%cdtd = cdtd
-  call initial%init (self%kind, self%gamma)
+  self%initial%mhd = self%mhd
+  call self%initial%init (self%kind, self%gamma)
+  self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2_mhd_patch'
   else
     self%kind = 'stagger2_hd_patch'
   end if
-  self%mhd = initial%mhd
   if (self%mhd) then
     self%nv = 8
   else
