@@ -34,9 +34,9 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  call self%initial%init (self%kind)
+  call self%initial%init (self%kind, self%gamma)
   self%mhd = .true.
-  call self%initial%init_mhd_vars(self%mesh, self%gamma, self%mem(:,:,:,:,1,1))
+  call self%initial%condition(self%mesh, self%mem(:,:,:,:,1,1))
   !
   call trace_end
 END SUBROUTINE init

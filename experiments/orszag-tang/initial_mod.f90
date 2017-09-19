@@ -8,8 +8,10 @@ MODULE initial_mod
   private
   type, public :: initial_t
     integer :: idirect
+    real    :: gamma=1.0
+    logical :: mhd=.true.
     real(8) :: p0, v0, b0
-    procedure(initial_conditions), pointer :: init_mhd_vars => null()
+    procedure(initial_conditions), pointer :: condition => null()
   contains
     procedure :: init
   end type
@@ -19,14 +21,18 @@ CONTAINS
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, solver, gamma)
   class(initial_t) :: self
   integer, save :: idirect
+  real, optional:: gamma
+  !.............................................................................
+  character(len=*):: solver
   real(8), save :: p0, v0, b0
   logical, save :: first_time=.true.
   namelist /initial_params/ idirect, b0, p0, v0
-  !.............................................................................
+  !-----------------------------------------------------------------------------
   call trace_begin ('initial_t%init')
+  if (present(gamma)) self%gamma = gamma
 
   ! default values for namelist parameters
   idirect = 3
@@ -47,7 +53,7 @@ SUBROUTINE init (self)
   self%v0 = v0
   self%b0 = b0
 
-  self%init_mhd_vars => initial_conditions
+  self%condition => initial_conditions
 
   call trace_end
 END SUBROUTINE init
@@ -55,29 +61,28 @@ END SUBROUTINE init
 !> =============================================================================
 !> Initial conditions, callable also from refine_mod.f90
 !> =============================================================================
-SUBROUTINE initial_conditions (self, m, gamma, ff)
+SUBROUTINE initial_conditions (self, m, ff)
   class(initial_t) :: self
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
-  real, intent(in) :: gamma
   !.............................................................................
   integer:: ix, iy, iz                                       ! loop indices
   real:: entropy, twopi, xa, ya, za, xb, yb, zb, d0          ! local variables
   real,dimension(:,:,:),allocatable :: vecpot
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   !.............................................................................
-  call trace_begin ('initial_t%init_mhd_vars')
+  call trace_begin ('initial_t%initial_conditions')
 
   allocate(vecpot(m(1)%gn,m(2)%gn,m(3)%gn))
 
   twopi = 2.0 * pi
-  d0 = gamma * self%p0
+  d0 = self%gamma * self%p0
 
   ! "pre"-initialisation of all variables, independent of `idirect`.
-  if (gamma==1.0) then
+  if (self%gamma==1.0) then
     entropy = 1.0
   else
-    entropy = (log(self%p0)-log(d0)*gamma)/(gamma-1.0)
+    entropy = (log(self%p0)-log(d0)*self%gamma)/(self%gamma-1.0)
   end if
   do iz=m(3)%lb,m(3)%ub
     do iy=m(2)%lb,m(2)%ub
