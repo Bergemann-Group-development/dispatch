@@ -46,6 +46,7 @@ SUBROUTINE init (self)
   print*, 'start init'
   call trace_begin ('experiment_t%init')
   self%nv = 8
+  self%mhd = .true.
   call self%mhd_t%init
  
   if (first_time) then
