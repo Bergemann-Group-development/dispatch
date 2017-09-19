@@ -29,6 +29,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
+  real, dimension(:,:,:,:), pointer:: ff
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
@@ -41,8 +42,9 @@ SUBROUTINE init (self)
   call self%mhd_t%init
   call self%set (bits%static)
   call self%initial%init (self%kind)
-  call self%initial%condition (self%mem, self%mesh)
-  call force%init
+  ff => self%mem(:,:,:,:,self%it,1)
+  call self%initial%condition (self%mesh, ff)
+  call force%init (self%kind)
   call trace_end
 END SUBROUTINE init
 

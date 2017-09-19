@@ -23,8 +23,9 @@ CONTAINS
 !> =============================================================================
 !> Select type of force -- could be more than one planet, for example
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, solver)
   class(force_t):: self
+  character(len=*):: solver
   self%selected => star_and_planet
 END SUBROUTINE
 

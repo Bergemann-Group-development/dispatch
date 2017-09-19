@@ -32,8 +32,10 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, solver)
    class(initial_t):: self
+   character(len=*):: solver
+   !............................................................................
    logical, save:: first_time=.true.
    real, save:: b0(3) = 0.0
    namelist /initial_params/ b0
@@ -53,16 +55,15 @@ END SUBROUTINE init
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-SUBROUTINE planet_atmosphere (self, mem, m)
+SUBROUTINE planet_atmosphere (self, m, mem)
   class(initial_t)             :: self
-  real, dimension(:,:,:,:,:,:) :: mem
+  real, dimension(:,:,:,:)     :: mem
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
   integer :: ix, iy, iz, nr
   real(8) :: x, y, z, r, d, p
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%planet_atmosphere')
-  call self%init
   nr = atmosphere%nr
   do iz=m(3)%lb,m(3)%ub
     z = m(3)%p + m(3)%r(iz) - planet%position(3)
@@ -73,14 +74,14 @@ SUBROUTINE planet_atmosphere (self, mem, m)
         r = sqrt(x**2+y**2+z**2)
         d = interpolate (r, nr ,atmosphere%rr, atmosphere%rho)
         p = interpolate (r, nr, atmosphere%rr, atmosphere%pg)
-        mem(ix,iy,iz,1,1,1) = d
-        mem(ix,iy,iz,2,1,1) = d*(log(p)-self%gamma*log(d))/(self%gamma-1.0)
-        mem(ix,iy,iz,3,1,1) = 0.0
-        mem(ix,iy,iz,4,1,1) = 0.0
-        mem(ix,iy,iz,5,1,1) = 0.0
-        mem(ix,iy,iz,6,1,1) = self%b0(1)
-        mem(ix,iy,iz,7,1,1) = self%b0(2)
-        mem(ix,iy,iz,8,1,1) = self%b0(3)
+        mem(ix,iy,iz,1) = d
+        mem(ix,iy,iz,2) = d*(log(p)-self%gamma*log(d))/(self%gamma-1.0)
+        mem(ix,iy,iz,3) = 0.0
+        mem(ix,iy,iz,4) = 0.0
+        mem(ix,iy,iz,5) = 0.0
+        mem(ix,iy,iz,6) = self%b0(1)
+        mem(ix,iy,iz,7) = self%b0(2)
+        mem(ix,iy,iz,8) = self%b0(3)
       end do
     end do
   end do
