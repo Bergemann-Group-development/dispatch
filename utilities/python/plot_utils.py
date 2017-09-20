@@ -70,6 +70,12 @@ def image(f,verbose=0,vlim=None,**kwargs):
         im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation=None,**kwargs)
     return im
 
+def in_extent(e,p):
+    ok=True
+    if p[0]<e[0] or p[0]>e[1]: ok=False
+    if p[1]<e[2] or p[1]>e[3]: ok=False
+    return ok
+
 def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
              extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
     '''
@@ -131,11 +137,13 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
     pl.clf()
     for p in select:
         image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap)    
-        if labels:
-            pl.text(p.active_corners[0][1],p.active_corners[0][0],p.id)
+        yx=[p.active_corners[0][1],p.active_corners[0][0]]
+        if labels and in_extent(p.extent[2],yx):
+            pl.text(yx[0],yx[1],p.id)
     pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
     pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('x')
-    pl.title('var='+var+'   t={:d}  z={:d}'.format(np.int(p.time),np.int(z)))
+    pl.title('var='+var+'   t={:3.2f}  z={:2.1f}'.\
+      format(p.time,z))
     #pl.tight_layout()
     pl.draw()
 
@@ -198,10 +206,12 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
     pl.clf()
     for p in pp:
         image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap)
-        if labels:
-            pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
+        yz=[p.active_corners[0][1],p.active_corners[0][2]]
+        if labels and in_extent(p.extent[0],yz):
+            pl.text(yz[0],yz[1],p.id)
     pl.xlim(ylim); pl.ylim(zlim); pl.xlabel('y'); pl.ylabel('z')
-    pl.title('var='+var+'   t={:d}  x={:d}'.format(np.int(p.time),np.int(x)))
+    pl.title('var='+var+'   t={:3.2f}  x={:2.1f}'.\
+        format(p.time,x))
     pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
     pl.tight_layout()
     pl.show()

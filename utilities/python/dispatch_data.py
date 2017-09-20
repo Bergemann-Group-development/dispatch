@@ -136,6 +136,7 @@ class Patch(Task):
                 self.b2=self.data[:,:,:,self.varidx['b2']]
                 self.b3=self.data[:,:,:,self.varidx['b3']]
             g1=self.gamma-1.0
+            if g1==0.0: g1=1e-4
             if self.kind[0:7]=='stagger':
                 logd=np.log10(self.d)
                 ln10=np.log(10.)
