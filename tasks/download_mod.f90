@@ -121,13 +121,19 @@ END SUBROUTINE download_link
 !> =============================================================================
 SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   class(patch_t), pointer :: target, source
-  integer                 :: iv, l(3), u(3), offset(3)
+  integer                 :: iv, l(3), u(3), offset(3), one(3)
   optional                :: offset
   !.............................................................................
   real(8), dimension(3):: h, dist, rl, ru
   integer:: i, li, ui
   !-----------------------------------------------------------------------------
   call trace%begin ('download_mod::dnload_range', 2)
+  ! for collapsed dimensions
+  where (source%n > 1)
+    one = 1
+  elsewhere
+    one = 0
+  endwhere
   h = source%index_stagger(iv)
   !-----------------------------------------------------------------------------
   ! Map to the first and last point inside the source domain, computing first
@@ -143,7 +149,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   ! to li and ui.  These are the boundaries of the 'authoritative domain'
   !-----------------------------------------------------------------------------
   do i=1,3
-    rl(i) = dist(i) + source%mesh(i)%r(source%mesh(i)%li+1)
+    rl(i) = dist(i) + source%mesh(i)%r(source%mesh(i)%li+one(i))
     ru(i) = dist(i) + source%mesh(i)%r(source%mesh(i)%ui  )
   end do
   l = target_index (rl)
@@ -173,9 +179,9 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   if (present(offset)) then
     if (source%level==target%level) then
       where (source%mesh%ui > u)
-        offset = source%mesh%ui   - u
+        offset = source%mesh%ui     - u
       else where
-        offset = source%mesh%li+1 - l
+        offset = source%mesh%li+one - l
       end where
       dist = source%distance(target)  ! positive if source to the right of target
     else
