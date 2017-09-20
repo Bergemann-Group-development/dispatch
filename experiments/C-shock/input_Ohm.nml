@@ -31,10 +31,12 @@
  !     cs    du   pa   ofd   mas   eta
  !gamma=1.0000001  
  gamma=1.666667
+/
+
+&non_ideal_params
  mhd_AD=.false.
  mhd_Ohm=.true.
  gamma_AD=75.
- !ksi = 1d-17
 /
 &patch_params
  n=30,1,1          ! patch dimensions
