@@ -36,7 +36,7 @@ SUBROUTINE rt_setup (self, level_min)
   class(list_t), pointer :: list
   class(link_t), pointer :: t_list, link, rt_link
   class(task_t), pointer :: task
-  class(mesh_t), pointer :: mesh
+  class(mesh_t), pointer :: mesh(:)
   class(experiment_t), pointer :: mhd_patch
   class(rt_t),   pointer :: rt_task
   real(8) :: eps = 1d-3
@@ -49,19 +49,20 @@ SUBROUTINE rt_setup (self, level_min)
   !---------------------------------------------------------------------
   call trace%begin('radiative_transfer::rt_setup', itimer=itimer)
   associate (mhd => self%head%task)
-  SELECT TYPE(mhd)
+  select type(mhd)
   class is (experiment_t)
     mhd_patch => mhd
   class default
     error stop '(1) in rt_setup'
-  end SELECT
+  end select
   end associate
 
   !> -------------------------------------------------------------------
   !> Init the ray_geometry objet.
   !> -------------------------------------------------------------------
-  mesh => mhd_patch%mesh(1)
-  select type(mesh)
+  mesh => mhd_patch%mesh
+  associate (m1 => mesh(1))
+  select type(m1)
     type is(Cartesian_mesh)
       call ray_geometry%init(geometry=1, &
       n=mhd_patch%n, ng=mhd_patch%ng, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)
@@ -71,7 +72,10 @@ SUBROUTINE rt_setup (self, level_min)
     type is(cylindrical_mesh)
       call ray_geometry%init(geometry=3, &
       n=mhd_patch%n,  ng=mhd_patch%ng, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)
+    class default
+      error stop "Mesh type not recognised in rt_setup. Abort!"
   end select
+  end associate
   nullify(mesh)
   if (ray_geometry%head%ray_list%directionality(1) == 1) then
     nd = 2
