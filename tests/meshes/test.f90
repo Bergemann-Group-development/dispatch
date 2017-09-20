@@ -350,11 +350,13 @@ PROGRAM test
   type is (spherical_mesh)
     print*,'m2: Spherical mesh recognised'
   class default
-    print*,'m3: Unknown mesh type!'
+    print*,'m2: Unknown mesh type!'
   end select
   end associate
 #endif
 
+  ! NOTE!: The following does not seem to work with IFORT 17.0.2!!!
+  print*,"The following is known to not work in IFORT v17.0.2, but it does work in v17.0.1!!"
   select type(m3)
   type is (Cartesian_mesh)
     print*,'m3: Cartesian mesh recognised'
@@ -365,6 +367,21 @@ PROGRAM test
   class default
     print*,'m3: Unknown mesh type!'
   end select
+
+  ! But this does work in ifort!
+  print*,"Workaround:"
+  associate(m33 => m(3))
+  select type(m33)
+  type is (Cartesian_mesh)
+    print*,'m33: Cartesian mesh recognised'
+  type is (cylindrical_mesh)
+    print*,'m33: Cylindrical mesh recognised'
+  type is (spherical_mesh)
+    print*,'m33: Spherical mesh recognised'
+  class default
+    print*,'m33: Unknown mesh type!'
+  end select
+  end associate
 
   print*,"Columns 2, 3, 4 and 5 should be identical:"
   select type(m)
