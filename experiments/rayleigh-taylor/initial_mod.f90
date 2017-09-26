@@ -101,9 +101,11 @@ SUBROUTINE condition (self, m, f)
         end if
 
         ! this experiment is hydro only.
-        f(i1,i2,i3,i%bx) = 0.0
-        f(i1,i2,i3,i%by) = 0.0
-        f(i1,i2,i3,i%bz) = 0.0
+        if (size(f,4) > i%bx) then
+          f(i1,i2,i3,i%bx) = 0.0
+          f(i1,i2,i3,i%by) = 0.0
+          f(i1,i2,i3,i%bz) = 0.0
+        end if
       end do
     end do
   end do

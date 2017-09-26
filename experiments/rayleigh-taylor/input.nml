@@ -18,7 +18,7 @@
 /
 
 &out_params
- end_time=5.0
+ end_time=5.01
  out_time=0.1
  guard_zones=t
 /

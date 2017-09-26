@@ -29,15 +29,19 @@ if __name__ == "__main__":
     gamma = 5./3.
     datadir = './data/'
     prefix = ''
-    ptimes = [0.0, 1.0, 2.0]
+    ptimes = [0.0, 0.1, 0.5, 1.0, 2.0]
     #ptimes = [0.0]
     #ptimes = 0.629*np.arange(0,2)
     t_eps = 1e-4
     pxsize = [ 0.0,0.5]
     pysize = [ 0.0,1.0]
-    pltvar = ['d']
+    pltvar = ['v2']
     cmin   = [ 0.2]
     cmax   = [ 2.1]
+    cmin   = [-0.1]
+    cmax   = [ 0.1]
+    #cmin   = [ 2.0]
+    #cmax   = [ 4.2]
     clog   = [   0]
     slicedir = 3  # given with respect to the *root* grid (typically patch id = 1)
     sliceloc = 0.0 # coord. of slice to be taken
@@ -170,16 +174,16 @@ if __name__ == "__main__":
                 kindex = slice(0,p.n[2])
 
             if pltvar[0] == 'v1':
-                var = p.data[iindex,jindex,kindex,p.varidx['s1']]
+                var = p.data[iindex,jindex,kindex,p.varidx['p1']]
                 var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
             elif pltvar[0] == 'v2':
-                var = p.data[iindex,jindex,kindex,p.varidx['s2']]
+                var = p.data[iindex,jindex,kindex,p.varidx['p2']]
                 var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
                 var = var / gf['h2c'][iindex,np.newaxis,np.newaxis]
                 if p.mesh_type == 'spherical':
                     var = var / x_i[0][iindex,np.newaxis,np.newaxis]
             elif pltvar[0] == 'v3':
-                var = p.data[iindex,jindex,kindex,p.varidx['s3']]
+                var = p.data[iindex,jindex,kindex,p.varidx['p3']]
                 var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
                 var = ( var / gf['h31c'][iindex,np.newaxis,np.newaxis] / gf['h32c'][np.newaxis,jindex,np.newaxis] )
             elif pltvar[0] == 'divb':
