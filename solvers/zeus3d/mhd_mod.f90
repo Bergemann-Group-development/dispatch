@@ -367,7 +367,8 @@ SUBROUTINE CopyToZeus (self)
   real(KindReal) :: x1low, x2low, x3low, dx1, dx2, dx3, pvelocity(3)
   logical, save :: first_time=.true.
   !$omp threadprivate (first_time)
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz, force, p
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, Ux, Uy, Uz
   integer, save:: itimer1=0, itimer2=0, itimer3=0, itimer4=0
   type(index_t):: idx
   external abndyall, bndyflgs, bndyall, get_vel
@@ -376,11 +377,11 @@ SUBROUTINE CopyToZeus (self)
   ! to ZEUScore.
   interface
     subroutine copyatoz (val, mito, mjto, mkto, nvar, x1low, x2low, x3low, &
-                         dx1, dx2, dx3, mptr, pvelocity)
+                         dx1, dx2, dx3, mptr, pvelocity, force)
        integer:: mito, mjto, mkto, nvar, mptr
        real(kind=8):: x1low, x2low, x3low, dx1, dx2, dx3
        real(kind=8), dimension(3):: pvelocity
-       real(kind=8), dimension(:,:,:,:), pointer:: val
+       real(kind=8), dimension(:,:,:,:), pointer:: val, force
     end subroutine copyatoz
   end interface
   !-----------------------------------------------------------------------------
@@ -428,11 +429,20 @@ SUBROUTINE CopyToZeus (self)
   pvelocity(1) = self%velocity(1)
   pvelocity(2) = self%velocity(2)
   pvelocity(3) = self%velocity(3) + self%grid_vel(3)
+  
+  if (associated(self%force%selected)) then
+    d => qz(:,:,:,self%i_d)
+    p => qz(:,:,:,self%i_px:self%i_pz)
+    allocate (force(self%gn(1),self%gn(2),self%gn(3),3))
+    force = self%force%selected(self%time, d, p, Ux, Uy, Uz, self%mesh)
+  else
+    force => null()
+  end if
 
   call trace%begin ('copyatoz (external)', itimer=itimer1)
   call copyatoz (qz, self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, &
                  self%nv, x1low, x2low, x3low, dx1, dx2, dx3, self%id, &
-                 pvelocity)
+                 pvelocity, force)
   call trace%end (itimer1)
   call trace%begin ('abndyall (external)', itimer=itimer2)
   call abndyall
@@ -457,6 +467,7 @@ SUBROUTINE CopyToZeus (self)
   prtime = self%time
   ix1x2x3 = self%ix1x2x3
 
+  deallocate (force)
   nullify (qz)
 
 END SUBROUTINE CopyToZeus
