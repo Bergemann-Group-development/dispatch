@@ -213,16 +213,9 @@ CONTAINS
 
 
     ! EOS table
-
-!!$     do rank=0,mpi_size-1
-!!$     call barrier_mpi ('init_eos')
-!!$     if (rank .eq. mpi_rank) then
-!!$        if (master)  print '(A,I3)', &
-!!$             'init_eos: read EOS table, mpi_rank=', mpi_rank
-
     
     ! Read EOS table
-    open (lunE, file=eostabfile, format='UNFORMATTED', status='OLD')
+    open (lunE, file=eostabfile, form='UNFORMATTED', status='OLD')
     read (lunE) NetabE, NrtabE, MaE, NaE, Ntbvar, NelemE, NxoptE, NxrevE
     allocate ( auxE(MaE, NaE) )
     allocate ( ielE(NelemE) )
@@ -283,11 +276,8 @@ CONTAINS
     
     ! Radiation table
 
-!!$        if (master)  print '(A,I3)', &
-!!$             'init_eos: read RAD table, mpi_rank=', mpi_rank
-
     ! Read radiation table
-    open (lunR, file=radtabfile, format='UNFORMATTED', status='OLD')
+    open (lunR, file=radtabfile, form='UNFORMATTED', status='OLD')
     read (lunR) NTtabr, Nrtabr, Mar, Nar, Nlam, Nelemr, Nxoptr, Nxrevr
     allocate ( auxR(MaR, NaR) )
     allocate ( ielR(NelemR) )
@@ -341,9 +331,7 @@ CONTAINS
        eostab(1:NetabE,1:NrtabE,1,6) = eostab(1:NetabE,1:NrtabE,1,6) - log(ulE/uul)       
        ! TO DO: ensure that the ln electron number density does not exceed MAXEXPONENT in simulation units
     case default
-!!$       if (master) &
-            print '(A)', trim(IdStr)//': Unsupported table format!'
-!!$       call abort_mpi
+       print '(A)', trim(IdStr)//': Unsupported table format!'
        stop
     end select
 
@@ -360,12 +348,10 @@ CONTAINS
     radtab(1:NTtabR,1:NrtabR,1:3,Nlam+1) = radtab(1:NTtabR,1:NrtabR,1:3,Nlam+1) - log(ulR/uul) 
 
     ! EOS and radiation tables: Check table size
-    mtableE=NetabR*NrtabR*3*Ntbvar
-    mtableR=NTtabR*NrtabR*3*(Nlam+1)
+    mtableE = NetabE * NrtabE * 3 * Ntbvar
+    mtableR = NTtabR * NrtabR * 3 * (Nlam+1)
     if ( mtableE .gt. maxTabE ) then
-!!$       if (master) &
-       print '(A)',trim(IdStr)//': EOS table exceeds size limits.'
-!!$       call abort_mpi
+       print '(A)', trim(IdStr)//': EOS table exceeds size limits.'
        stop
     end if
     if ( mtableR .gt. maxTabR ) then
@@ -386,9 +372,7 @@ CONTAINS
   case(2)
      flag_scat = .true.
   case default
-!!$     if (master) print '(A)', &
      print '(A)', trim(IdStr)//': Unsupported source function type. STOP.'
-!!$     call abort_mpi
      stop
   end select
   flag_odf    = Nxrevr(4).lt.70
@@ -467,41 +451,7 @@ CONTAINS
      print '(A)', hline
   end if
 
-!!$  use params, only: mid,mpi_size,mpi_rank,master,mx,my,mz,hl
-!!$  use arrays
-!!$  use eos_mod
-
-!!$  allocate (pbot0(mx,mz), dlnpdE_r(mx,mz), dlnpdlnr_E(mx,mz))
-!!$
-!!$  ! allocate arrays for lookup routines
-!!$
-!!$  allocate(iearr_e(mx,my,mz),irarr_e(mx,my,mz)) 
-!!$  allocate(itarr_r(mx,my,mz),irarr_r(mx,my,mz))
-!!$  allocate(pxarr_e(mx,my,mz),pyarr_e(mx,my,mz))
-!!$  allocate(pxarr_r(mx,my,mz),pyarr_r(mx,my,mz))
-
-
  END SUBROUTINE init
-
-!!$!-------------------------------------------------------------------------------
-!!$ SUBROUTINE close_eos
-!!$
-!!$  USE eos_mod
-!!$
-!!$  deallocate(pxarr_e,pyarr_e,pxarr_r,pyarr_r)  
-!!$  deallocate(iearr_e,irarr_e,itarr_r,irarr_r)  
-!!$
-!!$  deallocate(auxe, iele, abunde)
-!!$  deallocate(eostab)
-!!$
-!!$  deallocate(auxr, ielr, abundr)
-!!$  deallocate(radtab)
-!!$
-!!$  deallocate(pbot0, dlnpdE_r, dlnpdlnr_E)
-!!$
-!!$END SUBROUTINE close_eos
-
- SUBROUTINE
  
 !-------------------------------------------------------------------------------
 SUBROUTINE lookup_eos(nx,ny,nz,rho,ee,ivar,var,do_indx,do_exp,do_cubic)
