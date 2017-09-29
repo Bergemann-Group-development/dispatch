@@ -351,10 +351,12 @@ CONTAINS
     mtableE = NetabE * NrtabE * 3 * Ntbvar
     mtableR = NTtabR * NrtabR * 3 * (Nlam+1)
     if ( mtableE .gt. maxTabE ) then
+       ! TO DO: should it be printed by master only?       
        print '(A)', trim(IdStr)//': EOS table exceeds size limits.'
        stop
     end if
     if ( mtableR .gt. maxTabR ) then
+       ! TO DO: should it be printed by master only?       
        print '(A)',trim(IdStr)//': Radiation table exceeds size limits.'
        stop
     end if
@@ -372,6 +374,7 @@ CONTAINS
   case(2)
      flag_scat = .true.
   case default
+     ! TO DO: should it be printed by master only?       
      print '(A)', trim(IdStr)//': Unsupported source function type. STOP.'
      stop
   end select
