@@ -33,13 +33,10 @@ SUBROUTINE init_experiment (self)
 
   self%nv = 5
   self%periodic(2) = .false. ! not periodic in the y-direction
-  call self%boundaries%set(bits%yl)
-  call self%boundaries%set(bits%yu)
   self%mhd = .false.
 
   call self%force%init(self%kind)
   call self%mhd_t%init()
-  call self%clear(bits%root_grid)
 
   call trace_end
 END SUBROUTINE init_experiment

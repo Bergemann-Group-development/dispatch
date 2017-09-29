@@ -29,17 +29,17 @@ if __name__ == "__main__":
     gamma = 5./3.
     datadir = './data/'
     prefix = ''
-    ptimes = [0.0, 0.1, 0.5, 1.0, 2.0]
+    ptimes = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
     #ptimes = [0.0]
     #ptimes = 0.629*np.arange(0,2)
     t_eps = 1e-4
     pxsize = [ 0.0,0.5]
     pysize = [ 0.0,1.0]
-    pltvar = ['v2']
+    pltvar = ['d']
     cmin   = [ 0.2]
     cmax   = [ 2.1]
-    cmin   = [-0.1]
-    cmax   = [ 0.1]
+    #cmin   = [-0.1]
+    #cmax   = [ 0.1]
     #cmin   = [ 2.0]
     #cmax   = [ 4.2]
     clog   = [   0]
@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
     for pt in ptimes:
 
-        cfig = plt.figure("t = {0:.3e}".format(pt),facecolor='w',figsize=(7.0,6.0))
+        cfig = plt.figure("t = {0:.3e}".format(pt),facecolor='w',figsize=(6.0,10.0))
         cfig.clf()
         cax = cfig.add_subplot(1,1,1)
         cax.axis(xmin=pxsize[0],xmax=pxsize[1],ymin=pysize[0],ymax=pysize[1])

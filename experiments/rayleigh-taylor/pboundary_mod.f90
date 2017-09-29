@@ -53,7 +53,7 @@ SUBROUTINE conditions (self, patch, it)
       do iy=my%uo,my%ub
         patch%mem(mx%lb:mx%ub,iy,mz%lb:mz%ub,:,it,1) = patch%mem(mx%lb:mx%ub,my%ui-1,mz%lb:mz%ub,:,it,1)
         ! reflective in the y-component of the momentum
-        patch%mem(mx%lb:mx%ub,iy,mz%lb:mz%ub,patch%i_py,it,1) = -patch%mem(mx%lb:mx%ub,my%li+1,mz%lb:mz%ub,patch%i_py,it,1)
+        patch%mem(mx%lb:mx%ub,iy,mz%lb:mz%ub,patch%i_py,it,1) = -patch%mem(mx%lb:mx%ub,my%ui-1,mz%lb:mz%ub,patch%i_py,it,1)
       end do
     end if
   end if
