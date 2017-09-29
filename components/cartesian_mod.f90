@@ -140,6 +140,7 @@ SUBROUTINE init (self, label)
     end do
     end do
     end do
+
     if (rank == mpi%rank) nlpatch=nlpatch+1
     if (patch%is_set(bits%external)) then
       deallocate (patch, link)
@@ -204,6 +205,14 @@ SUBROUTINE init (self, label)
       patch%mesh%origin = origin
       !$omp atomic
       np = np + 1
+      ! Set physical boundary bits if required.
+      if (.not.patch%periodic(1).and.patch%ipos(1)==0)              call patch%boundaries%set(bits%xl)
+      if (.not.patch%periodic(2).and.patch%ipos(2)==0)              call patch%boundaries%set(bits%yl)
+      if (.not.patch%periodic(3).and.patch%ipos(3)==0)              call patch%boundaries%set(bits%zl)
+      if (.not.patch%periodic(1).and.patch%ipos(1)==self%dims(1)-1) call patch%boundaries%set(bits%xu)
+      if (.not.patch%periodic(2).and.patch%ipos(2)==self%dims(2)-1) call patch%boundaries%set(bits%yu)
+      if (.not.patch%periodic(3).and.patch%ipos(3)==self%dims(3)-1) call patch%boundaries%set(bits%zu)
+
       if (io%verbose>0) then
         write (io_unit%log,1) &
           'init_cartesian: id, rank, size, pos =', &
