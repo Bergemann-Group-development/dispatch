@@ -14,11 +14,11 @@ MODULE poisson_mod
   private
   type, public:: poisson_t
     real:: omega_sor
-    procedure(sor_2nd), pointer :: update => sor_2nd
+    !procedure(sor_2nd), pointer :: update => sor_2nd
   contains
     procedure:: init
     procedure:: init_sor
-    procedure:: sor_2nd
+    procedure:: update => sor_2nd
   end type
   real , save   :: omega_sor=0.0
   logical, save :: first_time = .true.
@@ -45,7 +45,7 @@ SUBROUTINE init (self, patch)
   !$omp end critical (poisson_cr)
   select case(trim(solver))
   case('sor')
-    self%update => sor_2nd
+    !self%update => sor_2nd
   case default
     if (io%master) then
       write(*,*) 'Poisson solver '//trim(solver)//' is unknown'
