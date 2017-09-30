@@ -49,7 +49,7 @@ FUNCTION gas_velocity (self) RESULT (v)
   class (solver_t):: self
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
   !-----------------------------------------------------------------------------
-  v = MomToVel(self%s,self%d)
+  v = MomToVel(self)
 END FUNCTION gas_velocity
 
 !> =============================================================================
@@ -73,7 +73,7 @@ SUBROUTINE velocity_magnitude (self, v)
   class (solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   !-----------------------------------------------------------------------------
-  v = norm(MomToVel(self%s,self%d))
+  v = norm(MomToVel(self))
 END SUBROUTINE velocity_magnitude
 
 !> =============================================================================
@@ -109,14 +109,15 @@ FUNCTION Norm_ArrayToArray (in) RESULT (out)
 END FUNCTION Norm_ArrayToArray
 
 !> =============================================================================
-FUNCTION MomToVel_VectorToArray (s,d) RESULT (out)
-  type(vector_t), intent(in):: s
-  type(scalar_t), intent(in):: d
-  real(kind=KindScalarVar), dimension(size(d%q,1),size(d%q,2),size(d%q,3),3):: out
+FUNCTION MomToVel_VectorToArray (self) RESULT (out)
+  class(solver_t):: self
+  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: out
   !-----------------------------------------------------------------------------
-  out(:,:,:,1) = s%x%q / xdn_scalar(d%q)
-  out(:,:,:,2) = s%y%q / ydn_scalar(d%q)
-  out(:,:,:,3) = s%z%q / zdn_scalar(d%q)
+  associate (d => self%mem(:,:,:,self%i_d,self%it,1))
+  out(:,:,:,1) = self%mem(:,:,:,self%i_px,self%it,1) / xdn_scalar(d)
+  out(:,:,:,2) = self%mem(:,:,:,self%i_py,self%it,1) / ydn_scalar(d)
+  out(:,:,:,3) = self%mem(:,:,:,self%i_pz,self%it,1) / zdn_scalar(d)
+  end associate
 END FUNCTION MomToVel_VectorToArray
 
 !> =============================================================================
