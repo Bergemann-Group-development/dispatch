@@ -185,11 +185,10 @@ showinclude:
 	@echo ""; echo "searching for PATTERN=$(PATTERN), use 'make showinclude PATTERN=xxx' to search for xxx"; echo ""
 	@-for f in \
 Makefile \
-$(CONFIG)host/$(HOST)/Makefile \
+$(CONFIG)/host/$(HOST)/Makefile \
 $(CONFIG)/compiler/$(COMPILER)/Makefile \
-$(CONFIG)/compiler/$(COMPILER)/$(HOST).mkf \
-$(CONFIG)/compiler/$(HOST)/$(OPTS).mkf \
 $(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf \
-$(CONFIG)/compiler/$(COMPILER)/$(OPTS)_$(HOST).mkf \
+$(CONFIG)/compiler/$(COMPILER)/$(HOST)/Makefile \
+$(CONFIG)/compiler/$(COMPILER)/$(HOST)/$(OPTS).mkf \
 $(PATCH)/Makefile \
 	; do if [ -e $$f ]; then echo "------ $$f ------"; grep -w \\$(PATTERN) $$f; fi; done

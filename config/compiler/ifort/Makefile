@@ -5,11 +5,13 @@ HW = -axAVX -xSSE4.1
 
 # Depending on MPI use mpif90 or not
 ifeq ($(strip $(MPI)),mpi)
-  F90 = mpiifort -cpp -assume byterecl -diag-disable remark -DPREC=4
-  LD  = mpiifort
+  FC ?= mpiifort
+  F90 = $(FC) -cpp -assume byterecl -diag-disable remark -DPREC=4
+  LD  = $(FC)
 else
-  F90 = ifort -cpp -assume byterecl -diag-disable remark -DPREC=4
-  LD  = ifort
+  FC ?= ifort
+  F90 = $(FC) -cpp -assume byterecl -diag-disable remark -DPREC=4
+  LD  = $(FC)
 endif
 
 # Set openmp compiler flags if needed
