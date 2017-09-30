@@ -467,7 +467,7 @@ SUBROUTINE CopyToZeus (self)
   prtime = self%time
   ix1x2x3 = self%ix1x2x3
 
-  deallocate (force)
+  if (associated(self%force%selected)) deallocate (force)
   nullify (qz)
 
 END SUBROUTINE CopyToZeus

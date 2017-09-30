@@ -7,6 +7,7 @@ MODULE force_mod
   USE trace_mod
   USE mesh_mod
   USE random_mod
+  USE kinds_mod
   implicit none
   private
   real(8), parameter:: pi2=8.0*atan(1.0)
@@ -67,8 +68,8 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   real(8)               :: time
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3) :: ff
-  real, dimension(:,:,:):: Ux, Uy, Uz, d
-  real, dimension(:,:,:,:):: p
+  real(kind=KindScalarVar), dimension(:,:,:):: Ux, Uy, Uz, d
+  real(kind=KindScalarVar), dimension(:,:,:,:):: p
   !.............................................................................
   type(random_t)        :: random
   integer               :: ix, iy, iz
