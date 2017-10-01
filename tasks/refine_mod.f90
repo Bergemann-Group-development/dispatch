@@ -25,7 +25,10 @@ MODULE refine_mod
     real:: min_dx, max_dx
     real:: refine_from_t, refine_until_t        ! Time limits for occurence of refinement
     real:: min_jeans                            ! Jeans number below which a patch is flagged for refinement
-    real:: tol_shock, tol_contact, tol_grad     ! Tolerance values for shock/discontinuity/gradient detectors
+    real:: tol_shock, tol_contact               ! Tolerance values for shock/discontinuity detectors
+    integer:: ngradvar=10
+    real, dimension(:), pointer:: tol_grad      ! Tolerance values for gradient detector
+    character(len=32), dimension(:), pointer:: grad_var
     real, dimension(3):: region_llc, region_urc ! Sometimes you want to refine a region (manually)
     logical:: do_refine                         ! Flag to turn the entire process on or off
   contains
@@ -35,6 +38,7 @@ MODULE refine_mod
     procedure:: shock_and_cd_detector
     procedure:: refine_region
     procedure:: split_patch
+    procedure:: gradient_detector
   end type
 
   type(refine_t), public:: refine
@@ -46,20 +50,28 @@ SUBROUTINE init (self)
   integer:: iostat
   integer:: check_interval=50, refinement_ratio=2
   real:: refine_from_t=0.0, refine_until_t=1.0e32, min_jeans=0.0, min_dx=0.0, max_dx=1.0e32, &
-         tol_shock=0.0, tol_contact=0.0, tol_grad=0.0
+         tol_shock=0.0, tol_contact=0.0
   real, dimension(3):: region_llc=0.0, region_urc=0.0
+
+  real, dimension(self%ngradvar):: tol_grad
+  character(len=32), dimension(self%ngradvar):: grad_var
+
   logical:: do_refine=.false.
   logical, save:: first_time = .true.
   namelist /refine_params/ check_interval, refinement_ratio, refine_from_t, refine_until_t, &
                            min_dx, max_dx, min_jeans, tol_shock, tol_contact, tol_grad, &
-                           region_llc, region_urc, do_refine
+                           grad_var, region_llc, region_urc, do_refine
   !-----------------------------------------------------------------------------
-  call trace_begin ('refine_t%init')
+  call trace%begin ('refine_t%init')
 
   if (first_time) then
     first_time=.false.
+    ! allocate and initialise gradient detector variables
+    allocate (self%tol_grad(self%ngradvar), self%grad_var(self%ngradvar))
+    tol_grad(:) = 0.0
+    grad_var(:) = ""
     rewind (io%input)
-    read (io%input, refine_params, iostat=iostat)
+    read (io%input, refine_params)
     if (io%master) write (*, refine_params)
   end if
   self%check_interval = check_interval
@@ -72,11 +84,12 @@ SUBROUTINE init (self)
   self%tol_shock = tol_shock
   self%tol_contact = tol_contact
   self%tol_grad = tol_grad
+  self%grad_var = grad_var
   self%region_llc = region_llc
   self%region_urc = region_urc
   self%do_refine = do_refine
 
-  call trace_end
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -96,32 +109,32 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   !.............................................................................
   was_refined = .false.
   if (.not. self%do_refine) return
-  call trace_begin('refine_t%check_current', itimer=itimer)
+  call trace%begin('refine_t%check_current', itimer=itimer)
 
   patch => task2patch(link%task)
   needed = .false.
 
   ! filter out patches which do not match the necessary criteria
   if (patch%is_set(bits%virtual)) then
-    call trace_end (itimer)
+    call trace%end (itimer)
     return
   end if
   if (patch%istep < patch%check_refine_next) then
-    call trace_end (itimer)
+    call trace%end (itimer)
     return
   end if
   if (patch%is_set(bits%not_leaf)) then
-    call trace_end (itimer)
+    call trace%end (itimer)
     return
   end if
   dxmin = minval(patch%ds)
   dxmax = maxval(patch%ds)
   if (dxmin < self%min_dx .or. dxmax >= self%max_dx) then
-    call trace_end (itimer)
+    call trace%end (itimer)
     return
   end if
   if (patch%time < self%refine_from_t .or. patch%time > self%refine_until_t) then
-    call trace_end (itimer)
+    call trace%end (itimer)
     return
   end if
 
@@ -136,7 +149,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     needed = needed .or. self%shock_and_cd_detector(patch)
 
   ! gradient detector
-  !!!if (any(self%tol_grad > 0.0) ) needed = needed .or. self%gradient_detector(patch)
+  if (any(self%tol_grad > 0.0) ) needed = needed .or. self%gradient_detector(patch)
 
   ! refine on (a) user-specified region(s)
   if (any(self%region_llc /= 0.0) .and. any(self%region_urc /= 0.0)) &
@@ -154,7 +167,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
 
   patch%check_refine_next = patch%istep + self%check_interval
 
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE check_current
 
 !> =============================================================================
@@ -169,7 +182,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   class(patch_t), pointer :: parent, child
   real, dimension(3), intent(in) :: pos, child_size
   !------------------------------------------------------------------------
-  call trace_begin('refine_mod::make_child_patch')
+  call trace%begin('refine_mod::make_child_patch')
   !------------------------------------------------------------------------
   ! Allocate a new task, 1/nsplit the size of original one, and adjust its
   ! position in each direction with "pos", in units of the new size.
@@ -222,7 +235,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
       parent%id, parent%level, parent%iout, parent%time, parent%size
   end if
 
-  call trace_end
+  call trace%end
 END SUBROUTINE make_child_patch
 
 !> =============================================================================
@@ -240,7 +253,7 @@ SUBROUTINE split_patch (self, tlist, this)
   real, dimension(3):: pos, rpos, split_size
   !.............................................................................
   if (this%task%is_set(bits%not_leaf)) return
-  call trace_begin('refine_t%split_patch', 1)
+  call trace%begin('refine_t%split_patch', 1)
   nsplit = self%refinement_ratio
 
   this_patch => task2patch(this%task)
@@ -268,7 +281,7 @@ SUBROUTINE split_patch (self, tlist, this)
 
   if (io%verbose > 0) call tlist%print_tasks()
 
-  call trace_end
+  call trace%end
 END SUBROUTINE split_patch
 
 !> =============================================================================
@@ -283,7 +296,7 @@ FUNCTION check_jeans (self, patch) RESULT(out)
   real, dimension(:,:,:), allocatable:: c_sound2
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
   !.............................................................................
-  call trace_begin ('refine_t%check_check_jeans', 2)
+  call trace%begin ('refine_t%check_check_jeans', 2)
 
   allocate(c_sound2(patch%mesh(1)%gn,patch%mesh(2)%gn,patch%mesh(3)%gn))
 
@@ -298,7 +311,7 @@ FUNCTION check_jeans (self, patch) RESULT(out)
 
   deallocate (c_sound2)
   nullify (d,e)
-  call trace_end
+  call trace%end
 END FUNCTION check_jeans
 
 !> =============================================================================
@@ -318,7 +331,7 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine_it)
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
   logical:: refine_it
   !.............................................................................
-  call trace_begin('refine_t%shocks_and_cd_detector')
+  call trace%begin('refine_t%shocks_and_cd_detector')
 
   mx => patch%mesh(1)
   my => patch%mesh(2)
@@ -379,8 +392,107 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine_it)
   nullify (mx, my, mz, d)
   deallocate (pg, v)
 
-  call trace_end
+  call trace%end
 END FUNCTION shock_and_cd_detector
+
+!> =============================================================================
+!> Refine on shocks, with threshold set by tolerance parameter `tol_shock`.
+!> =============================================================================
+FUNCTION gradient_detector (self, patch) RESULT (refine_it)
+  USE mesh_mod
+  USE solver_mod
+
+  class(refine_t):: self
+  class(patch_t), pointer:: patch
+  class(mesh_t), pointer:: mx, my, mz
+  integer:: i, j, k, ione=0, jone=0, kone=0, im1, jm1, km1, ip1, jp1, kp1, n
+  real, parameter:: small=1e-10
+  real(kind=KindScalarVar):: dqmax
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: q, dq1, dq2, dq3
+  real, parameter:: rsmall = 1.0e-10
+  logical:: refine_it
+  !.............................................................................
+  call trace%begin('refine_t%gradient_detector')
+
+  allocate (dq1(patch%gn(1),patch%gn(2),patch%gn(3)), &
+            dq2(patch%gn(1),patch%gn(2),patch%gn(3)), &
+            dq3(patch%gn(1),patch%gn(2),patch%gn(3)), &
+            q  (patch%gn(1),patch%gn(2),patch%gn(3)))
+
+  mx => patch%mesh(1)
+  my => patch%mesh(2)
+  mz => patch%mesh(3)
+
+  if (mx%n > 1) ione = 1
+  if (my%n > 1) jone = 1
+  if (mz%n > 1) kone = 1
+
+  refine_it = .false.
+  do n=1,size(self%grad_var)
+    if (trim(self%grad_var(n)) == '') exit
+    if (trim(self%grad_var(n)) == 'd')  q = patch%mem(:,:,:,patch%i_d,patch%it,1)
+    if (trim(self%grad_var(n)) == 'e')  q = patch%mem(:,:,:,patch%i_e,patch%it,1)
+    if (trim(self%grad_var(n)) == 'p1') q = patch%mem(:,:,:,patch%i_px,patch%it,1)
+    if (trim(self%grad_var(n)) == 'p2') q = patch%mem(:,:,:,patch%i_py,patch%it,1)
+    if (trim(self%grad_var(n)) == 'p3') q = patch%mem(:,:,:,patch%i_pz,patch%it,1)
+    if (trim(self%grad_var(n)) == 'b1') q = patch%mem(:,:,:,patch%i_bx,patch%it,1)
+    if (trim(self%grad_var(n)) == 'b2') q = patch%mem(:,:,:,patch%i_by,patch%it,1)
+    if (trim(self%grad_var(n)) == 'b3') q = patch%mem(:,:,:,patch%i_bz,patch%it,1)
+    select type(patch)
+    class is (solver_t)
+      if (trim(self%grad_var(n)) == 'p')  q = patch%gas_pressure()
+      if (trim(self%grad_var(n)) == 'v1') q = patch%gas_velocity(1)
+      if (trim(self%grad_var(n)) == 'v2') q = patch%gas_velocity(2)
+      if (trim(self%grad_var(n)) == 'v3') q = patch%gas_velocity(3)
+    end select
+
+    ! calculate the gradient in each direction
+    do k=mz%lo,mz%uo
+      km1 = k - kone
+      kp1 = k + kone
+      do j=my%lo,my%uo
+        jm1 = j - jone
+        jp1 = j + jone
+        do i=mx%lo,mx%uo
+          im1 = i - ione
+          ip1 = i + ione
+          dq1(i,j,k) = abs ( q(ip1,j,k) - q(im1,j,k) ) &
+                           / ( max ( q(ip1,j,k), q(im1,j,k) ) &
+                             + small )
+          dq2(i,j,k) = abs ( q(i,jp1,k) - q(i,jm1,k) ) &
+                           / ( max ( q(i,jp1,k), q(i,jm1,k) ) &
+                             + small )
+          dq3(i,j,k) = abs ( q(i,j,kp1) - q(i,j,km1) ) &
+                           / ( max ( q(i,j,kp1), q(i,j,km1) ) &
+                             + small )
+        end do
+      end do
+    end do
+
+    ! choose max. gradient; if the max. is greater than the threshold, flag
+    ! for refinement
+    do k=mz%li+kone,mz%ui-kone
+      km1 = k - kone
+      kp1 = k + kone
+      do j=my%li+jone,my%ui-jone
+        jm1 = j - jone
+        jp1 = j + jone
+        do i=mx%li+ione,mx%ui-ione
+          im1 = i - ione
+          ip1 = i + ione
+          dqmax = max ( dq1(i,j,k), dq1(ip1,j,k), dq1(im1,j,k) &
+                      , dq2(i,j,k), dq2(i,jp1,k), dq2(i,jm1,k) &
+                      , dq3(i,j,k), dq3(i,j,kp1), dq3(i,j,km1) )
+          if (dqmax > self%tol_grad(n)) refine_it = .true.
+        end do
+      end do
+    end do
+
+  end do
+
+  deallocate (dq1, dq2, dq3, q)
+  call trace%end
+END FUNCTION gradient_detector
 
 !> =============================================================================
 !> Given a box defined by its lower and upper corners, flag a patch for refinement
@@ -399,7 +511,7 @@ FUNCTION refine_region (self, patch) RESULT (refine_it)
   real :: x, y, z
   real, dimension(3) :: p_llc, p_urc, b_llc, b_urc
   !.............................................................................
-  call trace_begin('refine_t%refine_on_box')
+  call trace%begin('refine_t%refine_on_box')
 
   refine_it = .false.
   m => patch%mesh
@@ -434,7 +546,7 @@ FUNCTION refine_region (self, patch) RESULT (refine_it)
     end do
   end do
 
-  call trace_end
+  call trace%end
 END FUNCTION refine_region
 
 END MODULE refine_mod

@@ -12,7 +12,7 @@
 
 &box_params
   size=3.0,0.01,0.01
-  dims=4,1,1
+  dims=5,1,1
   origin=-0.5,0.0,0.0
 /
 
@@ -24,7 +24,7 @@
 
 &patch_params
   courant=0.75
-  n=300,1,1
+  n=125,1,1
   ng=3,1,1
   nt=3
   no_mans_land=f
@@ -38,9 +38,11 @@
 /
 
 &refine_params
-  do_refine=f
+  do_refine=t
   tol_shock=0.1
   tol_contact=0.1
+  grad_var='d'
+  tol_grad=0.1
 /
 
 &zeus_params
