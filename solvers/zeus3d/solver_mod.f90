@@ -17,7 +17,9 @@ MODULE solver_mod
     procedure:: velocity_magnitude
     procedure:: magnetic_field_magnitude
     procedure:: grav_potential
-    procedure:: gas_velocity
+    procedure:: gas_velocity_vector
+    procedure:: gas_velocity_scalar
+    generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
   end type
   type(solver_t):: solver
   
@@ -45,12 +47,32 @@ FUNCTION gas_pressure (self) RESULT (pg)
 END FUNCTION gas_pressure
 
 !> =============================================================================
-FUNCTION gas_velocity (self) RESULT (v)
+FUNCTION gas_velocity_vector (self) RESULT (v)
   class (solver_t):: self
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
   !-----------------------------------------------------------------------------
   v = MomToVel(self)
-END FUNCTION gas_velocity
+END FUNCTION gas_velocity_vector
+
+!> =============================================================================
+FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
+  class (solver_t):: self
+  integer:: idir
+  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: v
+  !-----------------------------------------------------------------------------
+  associate (d => self%mem(:,:,:,self%i_d,self%it,1))
+  select case (idir)
+  case (1)
+    v(:,:,:) = self%mem(:,:,:,self%i_px,self%it,1) / xdn_scalar(d)
+  case (2)
+    v(:,:,:) = self%mem(:,:,:,self%i_py,self%it,1) / ydn_scalar(d)
+  case (3)
+    v(:,:,:) = self%mem(:,:,:,self%i_pz,self%it,1) / zdn_scalar(d)
+  case default
+    error stop "solver_mod::gas_velocity_scalar:: invalid value of idir"
+  end select
+  end associate
+END FUNCTION gas_velocity_scalar
 
 !> =============================================================================
 SUBROUTINE log_density (self, v)
