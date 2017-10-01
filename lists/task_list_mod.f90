@@ -173,6 +173,7 @@ SUBROUTINE startup (self)
   real(8):: sec
   integer:: dims(4)
   integer, save:: itimer=0
+  logical:: was_refined
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists, and set virtual and boundary bits
   !-----------------------------------------------------------------------------
@@ -192,6 +193,16 @@ SUBROUTINE startup (self)
   end do
   if (recv_active .and. mpi_mesg%recv_priv) &
     call self%init_virtual
+  !-----------------------------------------------------------------------------
+  ! Check if refinement is needed on the task at t = 0; if so this will push new
+  ! tasks onto the queue, with the same task time; i.e., to the head of the queue.
+  ! If the task is virtual, it will not be checked by this rank.
+  !-----------------------------------------------------------------------------
+  link => self%head
+  do while (associated(link))
+    call refine%check_current(self, link, was_refined)
+    link => link%next
+  end do
   !-----------------------------------------------------------------------------
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
