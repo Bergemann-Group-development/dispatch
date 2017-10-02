@@ -223,8 +223,7 @@ FUNCTION ddzup (ds, a) RESULT (b)
 END FUNCTION ddzup
 
 !*******************************************************************************
-FUNCTION xdn (ds, a) RESULT (b)
-  real(8) :: ds(3)
+FUNCTION xdn (a) RESULT (b)
   real    :: a(:,:,:)
   real    :: b(size(a,1),size(a,2),size(a,3))
   !.............................................................................
@@ -232,7 +231,6 @@ FUNCTION xdn (ds, a) RESULT (b)
   real    :: c1, c2, c3, d
   !-----------------------------------------------------------------------------
   m = shape(a)
-  d = ds(1)
   if (m(1) > 5) then
     c3 = 3./256.
     c2 = -25./256.
@@ -254,8 +252,7 @@ FUNCTION xdn (ds, a) RESULT (b)
 END FUNCTION xdn
 
 !*******************************************************************************
-FUNCTION ydn (ds, a) RESULT (b)
-  real(8) :: ds(3)
+FUNCTION ydn (a) RESULT (b)
   real    :: a(:,:,:)
   real    :: b(size(a,1),size(a,2),size(a,3))
   !.............................................................................
@@ -263,7 +260,6 @@ FUNCTION ydn (ds, a) RESULT (b)
   real    :: c1, c2, c3, d
   !-----------------------------------------------------------------------------
   m = shape(a)
-  d = ds(2)
   if (m(1) > 5) then
     c3 = 3./256.
     c2 = -25./256.
@@ -285,8 +281,7 @@ FUNCTION ydn (ds, a) RESULT (b)
 END FUNCTION ydn
 
 !*******************************************************************************
-FUNCTION zdn (ds, a) RESULT (b)
-  real(8) :: ds(3)
+FUNCTION zdn (a) RESULT (b)
   real    :: a(:,:,:)
   real    :: b(size(a,1),size(a,2),size(a,3))
   !.............................................................................
@@ -294,7 +289,6 @@ FUNCTION zdn (ds, a) RESULT (b)
   real    :: c1, c2, c3, d
   !-----------------------------------------------------------------------------
   m = shape(a)
-  d = ds(3)
   if (m(1) > 5) then
     c3 = 3./256.
     c2 = -25./256.
@@ -316,8 +310,7 @@ FUNCTION zdn (ds, a) RESULT (b)
 END FUNCTION zdn
 
 !*******************************************************************************
-FUNCTION xup (ds, a) RESULT (b)
-  real(8) :: ds(3)
+FUNCTION xup (a) RESULT (b)
   real    :: a(:,:,:)
   real    :: b(size(a,1),size(a,2),size(a,3))
   !.............................................................................
@@ -325,7 +318,6 @@ FUNCTION xup (ds, a) RESULT (b)
   real    :: c1, c2, c3, d
   !-----------------------------------------------------------------------------
   m = shape(a)
-  d = ds(1)
   if (m(1) > 5) then
     c3 = 3./256.
     c2 = -25./256.
@@ -347,8 +339,7 @@ FUNCTION xup (ds, a) RESULT (b)
 END FUNCTION xup
 
 !*******************************************************************************
-FUNCTION yup (ds, a) RESULT (b)
-  real(8) :: ds(3)
+FUNCTION yup (a) RESULT (b)
   real    :: a(:,:,:)
   real    :: b(size(a,1),size(a,2),size(a,3))
   !.............................................................................
@@ -356,7 +347,6 @@ FUNCTION yup (ds, a) RESULT (b)
   real    :: c1, c2, c3, d
   !-----------------------------------------------------------------------------
   m = shape(a)
-  d = ds(2)
   if (m(1) > 5) then
     c3 = 3./256.
     c2 = -25./256.
@@ -378,8 +368,7 @@ FUNCTION yup (ds, a) RESULT (b)
 END FUNCTION yup
 
 !*******************************************************************************
-FUNCTION zup (ds, a) RESULT (b)
-  real(8) :: ds(3)
+FUNCTION zup (a) RESULT (b)
   real    :: a(:,:,:)
   real    :: b(size(a,1),size(a,2),size(a,3))
   !.............................................................................
@@ -387,7 +376,6 @@ FUNCTION zup (ds, a) RESULT (b)
   real    :: c1, c2, c3, d
   !-----------------------------------------------------------------------------
   m = shape(a)
-  d = ds(3)
   if (m(1) > 5) then
     c3 = 3./256.
     c2 = -25./256.
@@ -432,7 +420,7 @@ SUBROUTINE stagger_test
     x = i*ds(1)
     a(i,:,:) = x**5
   end do
-  b = xdn(ds,a)
+  b = xdn(a)
   ok = .true.
   do i=4,m(1)-2
     x = (i-0.5d0)*ds(1)
@@ -440,7 +428,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
   print *,'xdn:', ok
-  b = xup(ds,a)
+  b = xup(a)
   ok = .true.
   do i=3,m(1)-3
     x = (i+0.5d0)*ds(1)
@@ -455,7 +443,7 @@ SUBROUTINE stagger_test
     x = i*ds(2)
     a(:,i,:) = x**5
   end do
-  b = ydn(ds,a)
+  b = ydn(a)
   ok = .true.
   do i=4,m(2)-2
     y = (i-0.5d0)*ds(2)
@@ -463,7 +451,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
   print *,'ydn:', ok
-  b = yup(ds,a)
+  b = yup(a)
   ok = .true.
   do i=3,m(2)-3
     y = (i+.5d0)*ds(2)
@@ -478,7 +466,7 @@ SUBROUTINE stagger_test
     x = i*ds(3)
     a(:,:,i) = x**5
   end do
-  b = zdn(ds,a)
+  b = zdn(a)
   ok = .true.
   do i=4,m(3)-2
     z = (i-0.5d0)*ds(3)
@@ -486,7 +474,7 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   print *,'zdn:', ok
-  b = zup(ds,a)
+  b = zup(a)
   ok = .true.
   do i=3,m(3)-3
     z = (i+0.5d0)*ds(3)
@@ -494,7 +482,6 @@ SUBROUTINE stagger_test
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   print *,'zup:', ok
-
   !-----------------------------------------------------------------------------
   ! x-operators
   !-----------------------------------------------------------------------------
