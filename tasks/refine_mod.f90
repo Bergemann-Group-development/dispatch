@@ -52,10 +52,8 @@ SUBROUTINE init (self)
   real:: refine_from_t=0.0, refine_until_t=1.0e32, min_jeans=0.0, min_dx=0.0, max_dx=1.0e32, &
          tol_shock=0.0, tol_contact=0.0
   real, dimension(3):: region_llc=0.0, region_urc=0.0
-
   real, dimension(self%ngradvar):: tol_grad
   character(len=32), dimension(self%ngradvar):: grad_var
-
   logical:: do_refine=.false.
   logical, save:: first_time = .true.
   namelist /refine_params/ check_interval, refinement_ratio, refine_from_t, refine_until_t, &
@@ -71,7 +69,7 @@ SUBROUTINE init (self)
     tol_grad(:) = 0.0
     grad_var(:) = ""
     rewind (io%input)
-    read (io%input, refine_params)
+    read (io%input, refine_params, iostat=iostat)
     if (io%master) write (*, refine_params)
   end if
   self%check_interval = check_interval
