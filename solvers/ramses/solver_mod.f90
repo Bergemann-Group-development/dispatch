@@ -33,7 +33,9 @@ MODULE solver_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
     procedure:: apply_heating
-    procedure:: gas_velocity
+    procedure:: gas_velocity_vector
+    procedure:: gas_velocity_scalar
+    generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
   end type
   type(solver_t):: solver
 CONTAINS
@@ -320,7 +322,7 @@ SUBROUTINE apply_heating (self, q)
 END SUBROUTINE
 
 !> =============================================================================
-FUNCTION gas_velocity (self) RESULT (v)
+FUNCTION gas_velocity_vector (self) RESULT (v)
   class (solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: d
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: p
@@ -332,6 +334,26 @@ FUNCTION gas_velocity (self) RESULT (v)
   do i=1,3
     v(:,:,:,i) = p(:,:,:,i)/d
   end do
-END FUNCTION gas_velocity
+END FUNCTION gas_velocity_vector
+
+!> =============================================================================
+FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
+  class (solver_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d
+  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: v
+  integer:: idir
+  !-----------------------------------------------------------------------------
+  d => self%mem(:,:,:,self%i_d,self%it,1)
+  select case (idir)
+  case (1)
+    v = self%mem(:,:,:,self%i_px,self%it,1) / d
+  case (2)
+    v = self%mem(:,:,:,self%i_py,self%it,1) / d
+  case (3)
+    v = self%mem(:,:,:,self%i_pz,self%it,1) / d
+  case default
+    error stop "solver_mod::gas_velocity_scalar:: invalid value of idir"
+  end select
+END FUNCTION gas_velocity_scalar
 
 END MODULE solver_mod

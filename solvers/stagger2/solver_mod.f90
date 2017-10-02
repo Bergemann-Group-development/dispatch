@@ -35,7 +35,9 @@ MODULE solver_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
     procedure:: apply_heating
-    procedure:: gas_velocity
+    procedure:: gas_velocity_vector
+    procedure:: gas_velocity_scalar
+    generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
   end type
   type(solver_t):: solver
 CONTAINS
@@ -311,7 +313,7 @@ SUBROUTINE apply_heating (self, q)
 END SUBROUTINE
 
 !> =============================================================================
-FUNCTION gas_velocity (self) RESULT (v)
+FUNCTION gas_velocity_vector (self) RESULT (v)
   USE scalar_mod
   class (solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: d, lnd
@@ -330,6 +332,38 @@ FUNCTION gas_velocity (self) RESULT (v)
   call deallocate_vectors (ld, dd)
   call deallocate_scalars (lnd)
   nullify (d,p)
-END FUNCTION gas_velocity
+END FUNCTION gas_velocity_vector
+
+!> =============================================================================
+FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
+  USE scalar_mod
+  class (solver_t):: self
+  integer:: idir
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d, lnd, ld, dd
+  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: v
+  !-----------------------------------------------------------------------------
+  d => self%mem(:,:,:,self%i_d,self%it,1)
+  call allocate_scalars (self%gn, lnd, ld, dd)
+  lnd = log(d)
+  select case (idir)
+  case (1)
+    ld = xdn(lnd)
+    dd = exp(ld)
+    v = self%mem(:,:,:,self%i_px,self%it,1) / dd
+  case (2)
+    ld = ydn(lnd)
+    dd = exp(ld)
+    v = self%mem(:,:,:,self%i_py,self%it,1) / dd
+  case (3)
+    ld = zdn(lnd)
+    dd = exp(ld)
+    v = self%mem(:,:,:,self%i_pz,self%it,1) / dd
+  case default
+    error stop "solver_mod::gas_velocity_scalar:: invalid value of idir"
+  end select
+
+  call deallocate_scalars (lnd, ld, dd)
+  nullify (d)
+END FUNCTION gas_velocity_scalar
 
 END MODULE solver_mod
