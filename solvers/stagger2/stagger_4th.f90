@@ -7,6 +7,7 @@ MODULE stagger_mod
   integer, private:: verbose=0
   logical, save:: hardwire=.false.
   type, public:: stagger_t
+    integer:: flops=0
   contains
     procedure, nopass:: ddxdn1
     procedure, nopass:: ddydn1
@@ -33,97 +34,333 @@ MODULE stagger_mod
     procedure, nopass:: yup
     procedure, nopass:: zup
   end type
+  type(stagger_t):: stagger
 CONTAINS
 
-!> =============================================================================
+!*******************************************************************************
 FUNCTION ddxdn1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8) :: ds(3)
-  b = ddxdn (ds, a)
+  real(8):: ds(3), c
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddxdn', itimer=itimer)
+  n = shape(a)
+  if (n(1) > 1) then
+    b(1,:,:) = 0.0
+    c = 1./ds(1)
+    do iz=1,n(3)
+    do iy=1,n(2)
+    do ix=2,n(1)
+      b(ix,iy,iz) = c*(a(ix  ,iy,iz) - a(ix-1,iy,iz))
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ddxdn1
 
 !*******************************************************************************
 FUNCTION ddydn1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8) :: ds(3)
-  b = ddydn (ds, a)
+  integer :: ix, iy, iz, n(3)
+  real(8):: ds(3), c
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddydn', itimer=itimer)
+  n = shape(a)
+  if (n(2) > 1) then
+    b(:,1,:) = 0.0
+    c = 1./ds(2)
+    do iz=1,n(3)
+    do iy=2,n(2)
+    do ix=1,n(1)
+      b(ix,iy,iz) = c*(a(ix,iy  ,iz) - a(ix,iy-1,iz))
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
 END FUNCTION ddydn1
 
 !*******************************************************************************
 FUNCTION ddzdn1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8) :: ds(3)
-  b = ddzdn (ds, a)
+  real(8):: ds(3), c
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddzdn', itimer=itimer)
+  n = shape(a)
+  if (n(3) > 1) then
+    b(:,:,1) = 0.0
+    c = 1./ds(3)
+    do iz=2,n(3)
+    do iy=1,n(2)
+    do ix=1,n(1)
+      b(ix,iy,iz) = c*(a(ix,iy,iz  ) - a(ix,iy,iz-1))
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ddzdn1
 
 !*******************************************************************************
 FUNCTION ddxup1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8) :: ds(3)
-  b = ddxup (ds, a)
+  integer :: ix, iy, iz, n(3)
+  real(8):: ds(3), c
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddxup', itimer=itimer)
+  n = shape(a)
+  if (n(1) > 1) then
+    b(n(1),:,:) = 0.0
+    c = 1./ds(1)
+    !print*,'mk'
+    do iz=1,n(3)
+    do iy=1,n(2)
+    do ix=1,n(1)-1
+      b(ix,iy,iz) = c*(a(ix+1,iy,iz) - a(ix  ,iy,iz))
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ddxup1
 
 !*******************************************************************************
 FUNCTION ddyup1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8) :: ds(3)
-  b = ddyup (ds, a)
+  integer :: ix, iy, iz, n(3)
+  real(8):: ds(3), c
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddyup', itimer=itimer)
+  n = shape(a)
+  if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,n(2),:) = 0.0
+    c = 1./ds(2)
+    do iz=1,n(3)
+    do iy=1,n(2)-1
+    do ix=1,n(1)
+      b(ix,iy,iz) = c*(a(ix,iy+1,iz) - a(ix,iy  ,iz))
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ddyup1
 
 !*******************************************************************************
 FUNCTION ddzup1 (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8) :: ds(3)
-  b = ddzup (ds, a)
+  integer :: ix, iy, iz, n(3)
+  real(8):: ds(3), c
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ddzup', itimer=itimer)
+  n = shape(a)
+  if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,:,n(3)) = 0.0
+    c = 1./ds(3)
+    do iz=1,n(3)-1
+    do iy=1,n(2)
+    do ix=1,n(1)
+      b(ix,iy,iz) = c*(a(ix,iy,iz+1) - a(ix,iy,iz  ))
+    end do
+    end do
+    end do
+  else
+    b = 0.0
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ddzup1
 
 !*******************************************************************************
 FUNCTION xdn1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = xdn (a)
+  real    :: c
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::xdn', itimer=itimer)
+  n = shape(a)
+  if (n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
+    b(1,:,:) = a(1,:,:)
+    do iz=1,n(3)
+    do iy=1,n(2)
+    do ix=2,n(1)
+      b(ix,iy,iz) = c*(a(ix  ,iy,iz) + a(ix-1,iy,iz))
+    end do
+    end do
+    end do
+  else
+    b = a
+  end if
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION xdn1
 
 !*******************************************************************************
 FUNCTION ydn1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = ydn (a)
+  real    :: c
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ydn', itimer=itimer)
+  n = shape(a)
+  if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
+    b(:,1,:) = a(:,1,:)
+    do iz=1,n(3)
+    do iy=2,n(2)
+    do ix=1,n(1)
+      b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy-1,iz))
+    end do
+    end do
+    end do
+  else
+    b = a
+  end if
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION ydn1
 
 !*******************************************************************************
 FUNCTION zdn1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = zdn (a)
+  real    :: c
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::zdn', itimer=itimer)
+  n = shape(a)
+  if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
+    b(:,:,1) = a(:,:,1)
+    do iz=2,n(3)
+    do iy=1,n(2)
+    do ix=1,n(1)
+      b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy,iz-1))
+    end do
+    end do
+    end do
+  else
+    b = a
+  end if
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION zdn1
 
 !*******************************************************************************
 FUNCTION xup1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = xup (a)
+  real    :: c
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::xup', itimer=itimer)
+  n = shape(a)
+  if (n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
+    b(n(1),:,:) = a(n(1),:,:)
+    do iz=1,n(3)
+    do iy=1,n(2)
+    do ix=1,n(1)-1
+      b(ix,iy,iz) = c*(a(ix+1,iy,iz) + a(ix  ,iy,iz))
+    end do
+    end do
+    end do
+  else
+    b = a
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION xup1
 
 !*******************************************************************************
 FUNCTION yup1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = yup (a)
+  real    :: c
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::yup', itimer=itimer)
+  n = shape(a)
+  if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
+    b(:,n(2),:) = a(:,n(2),:)
+    do iz=1,n(3)
+    do iy=1,n(2)-1
+    do ix=1,n(1)
+      b(ix,iy,iz) = c*(a(ix,iy+1,iz) + a(ix,iy  ,iz))
+    end do
+    end do
+    end do
+  else
+    b = a
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION yup1
 
 !*******************************************************************************
 FUNCTION zup1 (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  b = zup (a)
+  real    :: c
+  integer :: ix, iy, iz, n(3)
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::zup', itimer=itimer)
+  n = shape(a)
+  if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    c = 0.5
+    b(:,:,n(3)) = a(:,:,n(3))
+    do iz=1,n(3)-1
+    do iy=1,n(2)
+    do ix=1,n(1)
+      b(ix,iy,iz) = c*(a(ix,iy,iz+1) + a(ix,iy,iz  ))
+    end do
+    end do
+    end do
+  else
+    b = a
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
 END FUNCTION zup1
+
 
 !*******************************************************************************
 FUNCTION ddxdn (ds, a) RESULT (b)
