@@ -79,7 +79,7 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE add_particle_force_to (self, particle)
   class (particle_history_t):: self
-  type (particle_t), pointer:: particle
+  class (particle_t), pointer:: particle
   !.............................................................................
   real, dimension(self%n):: tt, dt
   integer, dimension(self%n):: iit
