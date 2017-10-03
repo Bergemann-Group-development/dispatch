@@ -16,10 +16,10 @@
 /
 &io_params
  top='../../..'
- verbose=1
+ verbose=0
  do_trace=f
  omp_trace=f
- do_output=t
+ do_output=f
 !id_debug=2
 /
 &particle_patch_params
@@ -48,15 +48,16 @@
 /
 &patch_params
  nt=5
+ ng=3*3
  courant=0.2
  grace=0.0
  n=3*32
- dt_fixed=1e-3
- use_data_hub=t no_mans_land=t
+ !dt_fixed=1e-3
+ !use_data_hub=t no_mans_land=t
 /
 &out_params
  !end_time=0.5 out_time=0.05
- end_time=50e-3 out_time=5e-3
+ end_time=10e-3 out_time=5e-3
  print_time=0.0
  guard_zones=t
  time_derivs=f

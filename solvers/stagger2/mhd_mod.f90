@@ -46,6 +46,7 @@ MODULE mhd_mod
     procedure:: output
     procedure:: gas_pressure
   end type
+  logical, save:: flop_count=.false.
 CONTAINS
 
 !> =============================================================================
@@ -59,7 +60,7 @@ SUBROUTINE init (self)
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   logical, save:: first_time=.true.
   character(len=16), save:: eos
-  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos
+  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos, flop_count
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -415,6 +416,11 @@ SUBROUTINE pde (self)
     call deallocate_scalars (pg)
   end if
   call trace%end (itimer)
+  if (flop_count) then
+    print *, stagger%count, ' calls', stagger%flops,' flops'
+    stagger%count=0
+    stagger%flops=0
+  end if
 END SUBROUTINE pde
 
 !> =============================================================================
