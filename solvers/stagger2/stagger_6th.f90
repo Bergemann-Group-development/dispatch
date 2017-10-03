@@ -573,8 +573,8 @@ FUNCTION xdn (a) RESULT (b)
     c3 = 3./256.
     c2 = -25./256.
     c1 = .5-c2-c3
-    b(    1:2,:,:) = a(    1:2,:,:)
-    b(m(1)-2:,:,:) = a(m(1)-2:,:,:)
+    b(    1:3,:,:) = a(    1:3,:,:)
+    b(m(1)-1:,:,:) = a(m(1)-1:,:,:)
     do k=1,m(3)
     do j=1,m(2)
     do i=4,m(1)-2
@@ -602,8 +602,8 @@ FUNCTION ydn (a) RESULT (b)
     c3 = 3./256.
     c2 = -25./256.
     c1 = .5-c2-c3
-    b(:,    1:2,:) = a(:,    1:2,:)
-    b(:,m(2)-2:,:) = a(:,m(2)-2:,:)
+    b(:,    1:3,:) = a(:,    1:3,:)
+    b(:,m(2)-1:,:) = a(:,m(2)-1:,:)
     do k=1,m(3)
     do j=4,m(2)-2
     do i=1,m(1)
@@ -631,8 +631,8 @@ FUNCTION zdn (a) RESULT (b)
     c3 = 3./256.
     c2 = -25./256.
     c1 = .5-c2-c3
-    b(:,:,    1:2) = a(:,:,    1:2)
-    b(:,:,m(1)-2:) = a(:,:,m(1)-2:)
+    b(:,:,    1:3) = a(:,:,    1:3)
+    b(:,:,m(1)-1:) = a(:,:,m(1)-1:)
     do k=4,m(3)-2
     do j=1,m(2)
     do i=1,m(1)
@@ -744,13 +744,164 @@ SUBROUTINE stagger_test
   real, pointer :: c(:,:,:)
   real(8)       :: ds(3), x, y, z, d
   integer       :: i
-  logical       :: ok
+  logical       :: ok, allok
   real, parameter :: eps = 2e-6
   !-----------------------------------------------------------------------------
   m = [10,11,12]
   ds = 1d0/m
   allocate (a(m(1),m(2),m(3)))
   allocate (b(m(1),m(2),m(3)))
+  allok = .true.
+  !-----------------------------------------------------------------------------
+  ! x-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(1)
+    x = i*ds(1)
+    a(i,:,:) = x**2
+  end do
+  b = ddxdn1(ds,a)
+  ok = .true.
+  do i=4,m(1)-2
+    x = (i-0.5d0)*ds(1)
+    d = 2.*x
+    ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddxdn1:', ok
+  b = ddxup1(ds,a)
+  ok = .true.
+  do i=3,m(1)-3
+    x = (i+0.5d0)*ds(1)
+    d = 2.*x
+    ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddxup1:', ok
+  !-----------------------------------------------------------------------------
+  ! y-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(2)
+    y = i*ds(2)
+    a(:,i,:) = y**2
+  end do
+  b = ddydn1(ds,a)
+  ok = .true.
+  do i=4,m(2)-2
+    y = (i-0.5d0)*ds(2)
+    d = 2.*y
+    ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddydn1:', ok
+  b = ddyup1(ds,a)
+  ok = .true.
+  do i=3,m(2)-3
+    y = (i+.5d0)*ds(2)
+    d = 2.*y
+    ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddyup1:', ok
+  !-----------------------------------------------------------------------------
+  ! z-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(3)
+    z = i*ds(3)
+    a(:,:,i) = z**2
+  end do
+  b = ddzdn1(ds,a)
+  ok = .true.
+  do i=4,m(3)-2
+    z = (i-0.5d0)*ds(3)
+    d = 2.*z
+    ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddzdn1:', ok
+  b = ddzup1(ds,a)
+  ok = .true.
+  do i=3,m(3)-3
+    z = (i+0.5d0)*ds(3)
+    d = 2.*z
+    ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddzup1:', ok
+  !-----------------------------------------------------------------------------
+  ! x-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(1)
+    x = i*ds(1)
+    a(i,:,:) = x
+  end do
+  b = xdn1(a)
+  ok = .true.
+  do i=4,m(1)-2
+    x = (i-0.5d0)*ds(1)
+    d = x
+    ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'xdn1:', ok
+  b = xup1(a)
+  ok = .true.
+  do i=3,m(1)-3
+    x = (i+0.5d0)*ds(1)
+    d = x
+    ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'xup1:', ok
+  !-----------------------------------------------------------------------------
+  ! y-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(2)
+    y = i*ds(2)
+    a(:,i,:) = y
+  end do
+  b = ydn1(a)
+  ok = .true.
+  do i=4,m(2)-2
+    y = (i-0.5d0)*ds(2)
+    d = y
+    ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ydn1:', ok
+  b = yup1(a)
+  ok = .true.
+  do i=3,m(2)-3
+    y = (i+.5d0)*ds(2)
+    d = y
+    ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'yup1:', ok
+  !-----------------------------------------------------------------------------
+  ! z-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(3)
+    z = i*ds(3)
+    a(:,:,i) = z
+  end do
+  b = zdn1(a)
+  ok = .true.
+  do i=4,m(3)-2
+    z = (i-0.5d0)*ds(3)
+    d = z
+    ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'zdn1:', ok
+  b = zup1(a)
+  ok = .true.
+  do i=3,m(3)-3
+    z = (i+0.5d0)*ds(3)
+    d = z
+    ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'zup1:', ok
   !-----------------------------------------------------------------------------
   ! x-operators
   !-----------------------------------------------------------------------------
@@ -765,7 +916,8 @@ SUBROUTINE stagger_test
     d = x**5
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
-  print *,'xdn:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'xdn:', ok
   b = xup(a)
   ok = .true.
   do i=3,m(1)-3
@@ -773,7 +925,8 @@ SUBROUTINE stagger_test
     d = x**5
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
-  print *,'xup:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'xup:', ok
   !-----------------------------------------------------------------------------
   ! y-operators
   !-----------------------------------------------------------------------------
@@ -788,7 +941,8 @@ SUBROUTINE stagger_test
     d = y**5
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
-  print *,'ydn:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'ydn:', ok
   b = yup(a)
   ok = .true.
   do i=3,m(2)-3
@@ -796,7 +950,8 @@ SUBROUTINE stagger_test
     d = y**5
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
-  print *,'yup:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'yup:', ok
   !-----------------------------------------------------------------------------
   ! z-operators
   !-----------------------------------------------------------------------------
@@ -811,7 +966,8 @@ SUBROUTINE stagger_test
     d = z**5
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
-  print *,'zdn:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'zdn:', ok
   b = zup(a)
   ok = .true.
   do i=3,m(3)-3
@@ -819,7 +975,8 @@ SUBROUTINE stagger_test
     d = z**5
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
-  print *,'zup:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'zup:', ok
   !-----------------------------------------------------------------------------
   ! x-operators
   !-----------------------------------------------------------------------------
@@ -834,7 +991,8 @@ SUBROUTINE stagger_test
     d = 6d0*x**5
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
-  print *,'ddxdn:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddxdn:', ok
   b = ddxup(ds,a)
   ok = .true.
   do i=3,m(1)-3
@@ -842,7 +1000,8 @@ SUBROUTINE stagger_test
     d = 6d0*x**5
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
-  print *,'ddxup:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddxup:', ok
   !-----------------------------------------------------------------------------
   ! y-operators
   !-----------------------------------------------------------------------------
@@ -857,7 +1016,8 @@ SUBROUTINE stagger_test
     d = 6d0*y**5
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
-  print *,'ddydn:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddydn:', ok
   b = ddyup(ds,a)
   ok = .true.
   do i=3,m(2)-3
@@ -865,7 +1025,8 @@ SUBROUTINE stagger_test
     d = 6d0*y**5
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
-  print *,'ddyup:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddyup:', ok
   !-----------------------------------------------------------------------------
   ! z-operators
   !-----------------------------------------------------------------------------
@@ -880,7 +1041,8 @@ SUBROUTINE stagger_test
     d = 6d0*z**5
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
-  print *,'ddzdn:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddzdn:', ok
   b = ddzup(ds,a)
   ok = .true.
   do i=3,m(3)-3
@@ -888,7 +1050,13 @@ SUBROUTINE stagger_test
     d = 6d0*z**5
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
-  print *,'ddzup:', ok
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddzup:', ok
+  if (allok) then
+    print *,'6th/5th order stagger operator test is OK'
+  else
+    print *,'6th/5th order stagger operator test is not OK!'
+  end if
   !-----------------------------------------------------------------------------
   deallocate (a, b)
 END SUBROUTINE stagger_test
