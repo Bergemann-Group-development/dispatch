@@ -31,7 +31,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(download_t):: self
-  integer:: order_interpolator, iostat
+  integer:: order_interpolator=-1, iostat
   logical:: first_time=.true.
   namelist /download_params/ order_interpolator
   !-----------------------------------------------------------------------------
@@ -346,11 +346,12 @@ SUBROUTINE different (target, source, all_cells, only)
   integer, optional:: only
   !.............................................................................
   integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2
-  integer, dimension(3)   :: l, u, ii, li
+  integer, dimension(3)   :: l, u, ii, li, jj
   real(8), dimension(3)   :: pos, h
   logical                 :: valid
   integer, save           :: itimer=0
-  real                    :: pt(2)
+  real                    :: pt(2), pp(3)
+  real(kind=KindScalarVar):: qint
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different', itimer=itimer)
   call source%time_interval (target%time, jt, pt)
@@ -378,6 +379,7 @@ SUBROUTINE different (target, source, all_cells, only)
     if (target%id==io%id_debug) &
       print 1, source%id, (source%position-target%position)/target%size, l, u
       1 format("DBG download_t%different:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
+    associate (q1 => source%mem(:,:,:,:,jt(1),1), q2 => source%mem(:,:,:,:,jt(2),1))
     do iz=l(3),u(3)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
@@ -386,11 +388,16 @@ SUBROUTINE different (target, source, all_cells, only)
               any((ii-li) < 0 .or. (ii-target%mesh%ui) > 0)) then
             if (target%id==io%id_debug .and. io%verbose>1) &
               print *, target%id, 'DBG interpolate_t%different:    using', iv,ii, present(all_cells), (ii-li) < 0
+            pos = target%myposition (ii, iv)
+            call source%index_space (pos, iv, jj, pp)
             if (source%pervolume(iv)) then
-              call source%interpolate_specific (target, ii, iv, jt, pt)
+              qint = interpolator%interpolator_specific (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
+                   + interpolator%interpolator_specific (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
             else
-              call source%interpolate (target, ii, iv, jt, pt)
+              qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
+                   + interpolator%interpolator (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
             end if
+            target%mem(ix,iy,iz,iv,target%it,1) = qint
           else
             if (target%id==io%id_debug .and. io%verbose>1) &
               print *, target%id, 'DBG interpolate_t%different: skipping', iv,ii, present(all_cells), (ii-li) < 0
@@ -399,6 +406,7 @@ SUBROUTINE different (target, source, all_cells, only)
         end do
       end do
     end do
+    end associate
   end do
   if (io%verbose>2.or.target%id==io%id_debug) &
     print 2, target%id, target%level, source%id, source%level, 'different picked up', &

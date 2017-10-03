@@ -23,10 +23,11 @@ MODULE interpolate_mod
     integer:: order_interpolator
     procedure(interpolator_interface), pointer, nopass:: interpolator => null()
   contains
+    procedure, nopass:: interpolator_specific
   end type
   type(interpolator_t):: interpolator
 
-PUBLIC SelectInterpolator, interpolator_interface, interpolator_unsigned, interpolator_specific
+PUBLIC SelectInterpolator, interpolator, interpolator_interface, interpolator_unsigned, interpolator_specific
 CONTAINS
 
 !> =============================================================================
