@@ -41,6 +41,7 @@
   do_refine=t
   tol_shock=0.1
   tol_contact=0.1
+  min_dx=0.0025
   grad_var='d'
   tol_grad=0.1
 /

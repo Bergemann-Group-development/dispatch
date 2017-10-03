@@ -31,7 +31,7 @@ if __name__ == "__main__":
     prefix = ''
     ptimes = [0.0,0.10,0.20,0.35,0.45]
     t_eps = 1e-3
-    pxsize = [-0.6,2.6]
+    pxsize = [-0.5,2.5]
     pltvar = [  'd', 'e1', 'v2', 'b2', 'et', 'v1']
     pvmin  = [  0.0,  0.0, -1.0, -0.1,  0.0, -0.1]
     pvmax  = [  1.1,  1.7,  0.1,  1.1,  2.6,  1.1]
@@ -57,6 +57,9 @@ if __name__ == "__main__":
     m1 = 0 # counter 1
     root = None
     savecolr = dict()
+    scolrs = ['r','g','b','c','m','y','k','Brown','Coral']
+    scolrs = itertools.cycle(scolrs)
+
     if len(ptimes) > 30 and not output_png:
         print "Do you really want to open {0} windows?".format(len(ptimes))
         print "Try setting `output_png` to True."
@@ -114,8 +117,6 @@ if __name__ == "__main__":
 
         qmin = np.ones(nplots) * 1.0e99
         qmax = np.ones(nplots) *-1.0e99
-        scolrs = ['r','g','b','c','m','y']
-        scolrs = itertools.cycle(scolrs)
         m2 = 0 # counter 2
         for p in patches:
             if p.kind == 'immersed_boundary_t':
@@ -157,7 +158,7 @@ if __name__ == "__main__":
 
             # loop over axes/variables
             m3 = 0 # counter 3
-            if m1 == 0:
+            if not savecolr.has_key(p.id):
                 savecolr[p.id] = scolrs.next()
             for ii in range(nplots):
                 cax = axs[ii]
