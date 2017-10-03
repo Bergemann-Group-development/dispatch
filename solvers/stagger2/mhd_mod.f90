@@ -64,7 +64,6 @@ SUBROUTINE init (self)
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
   if (first_time) then
-    first_time = .false.
     eos = self%eos
     rewind (io%input)
     read (io%input, mhd_params)
@@ -114,6 +113,12 @@ SUBROUTINE init (self)
   self%unsigned(idx%d)  = .true.
   self%pervolume(idx%s) = .true.
   call self%force%init (self%kind)
+  !$omp critical (input_cr)
+  if (first_time) then
+    call stagger_test
+    first_time = .false.
+  end if
+  !$omp end critical (input_cr)
   call trace%end
 END SUBROUTINE init
 

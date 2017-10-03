@@ -42,6 +42,7 @@ MODULE stagger_mod
     procedure, nopass:: xup
     procedure, nopass:: yup
     procedure, nopass:: zup
+    procedure, nopass:: stagger_test
   end type
   type(stagger_t):: stagger
 CONTAINS
@@ -609,5 +610,182 @@ FUNCTION zup (a) RESULT (b)
 !  call trace%end (itimer)
   stagger%flops = stagger%flops + 2
 END FUNCTION
+
+!> =============================================================================
+!> Unit test of 6th/5th order operators
+!> =============================================================================
+SUBROUTINE stagger_test
+  integer       :: m(3)
+  real, pointer :: a(:,:,:)
+  real, pointer :: b(:,:,:)
+  real, pointer :: c(:,:,:)
+  real(8)       :: ds(3), x, y, z, d
+  integer       :: i
+  logical       :: ok, allok
+  real, parameter :: eps = 2e-6
+  !-----------------------------------------------------------------------------
+  m = [10,11,12]
+  ds = 1d0/m
+  allocate (a(m(1),m(2),m(3)))
+  allocate (b(m(1),m(2),m(3)))
+  allok = .true.
+  !-----------------------------------------------------------------------------
+  ! x-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(1)
+    x = i*ds(1)
+    a(i,:,:) = x
+  end do
+  b = xdn(a)
+  ok = .true.
+  do i=4,m(1)-2
+    x = (i-0.5d0)*ds(1)
+    d = x**5
+    ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'xdn:', ok
+  b = xup(a)
+  ok = .true.
+  do i=3,m(1)-3
+    x = (i+0.5d0)*ds(1)
+    d = x**5
+    ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'xup:', ok
+  !-----------------------------------------------------------------------------
+  ! y-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(2)
+    x = i*ds(2)
+    a(:,i,:) = x
+  end do
+  b = ydn(a)
+  ok = .true.
+  do i=4,m(2)-2
+    y = (i-0.5d0)*ds(2)
+    d = y**5
+    ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ydn:', ok
+  b = yup(a)
+  ok = .true.
+  do i=3,m(2)-3
+    y = (i+.5d0)*ds(2)
+    d = y**5
+    ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'yup:', ok
+  !-----------------------------------------------------------------------------
+  ! z-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(3)
+    x = i*ds(3)
+    a(:,:,i) = x
+  end do
+  b = zdn(a)
+  ok = .true.
+  do i=4,m(3)-2
+    z = (i-0.5d0)*ds(3)
+    d = z**5
+    ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'zdn:', ok
+  b = zup(a)
+  ok = .true.
+  do i=3,m(3)-3
+    z = (i+0.5d0)*ds(3)
+    d = z**5
+    ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'zup:', ok
+  !-----------------------------------------------------------------------------
+  ! x-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(1)
+    x = i*ds(1)
+    a(i,:,:) = 1d0 + x**2
+  end do
+  b = ddxdn(ds,a)
+  ok = .true.
+  do i=4,m(1)-2
+    x = (i-0.5d0)*ds(1)
+    d = 2d0*x
+    ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddxdn:', ok
+  b = ddxup(ds,a)
+  ok = .true.
+  do i=3,m(1)-3
+    x = (i+0.5d0)*ds(1)
+    d = 2d0*x
+    ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddxup:', ok
+  !-----------------------------------------------------------------------------
+  ! y-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(2)
+    x = i*ds(2)
+    a(:,i,:) = 1d0 + x**2
+  end do
+  b = ddydn(ds,a)
+  ok = .true.
+  do i=4,m(2)-2
+    y = (i-0.5d0)*ds(2)
+    d = 2d0*y
+    ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddydn:', ok
+  b = ddyup(ds,a)
+  ok = .true.
+  do i=3,m(2)-3
+    y = (i+.5d0)*ds(2)
+    d = 2d0*y
+    ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddyup:', ok
+  !-----------------------------------------------------------------------------
+  ! z-operators
+  !-----------------------------------------------------------------------------
+  do i=1,m(3)
+    x = i*ds(3)
+    a(:,:,i) = 1d0 + x**2
+  end do
+  b = ddzdn(ds,a)
+  ok = .true.
+  do i=4,m(3)-2
+    z = (i-0.5d0)*ds(3)
+    d = 2d0*z
+    ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddzdn:', ok
+  b = ddzup(ds,a)
+  ok = .true.
+  do i=3,m(3)-3
+    z = (i+0.5d0)*ds(3)
+    d = 2d0*z
+    ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
+  end do
+  allok = allok .and. ok
+  if (.not.ok) print *,'ddzup:', ok
+  if (allok) then
+    print *,'stagger operator test is OK'
+  else
+    print *,'stagger operator test is not OK!'
+  end if
+  !-----------------------------------------------------------------------------
+  deallocate (a, b)
+END SUBROUTINE stagger_test
 
 END MODULE
