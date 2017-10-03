@@ -153,17 +153,16 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   if (any(self%region_llc /= 0.0) .and. any(self%region_urc /= 0.0)) &
     needed = needed .or. self%refine_region(patch)
 
+  patch%check_refine_next = patch%istep + self%check_interval
+
   !------------------------------------------------------------------------
   ! If refinement has been deemed necessary, do it!
   !------------------------------------------------------------------------
   if (needed) then
     if (io%verbose > 1) print*,'refine_t%needed!; patch:', patch%id
     call self%split_patch (tasklist, link)
-    call tasklist%remove_parents
     was_refined = .true.
   end if
-
-  patch%check_refine_next = patch%istep + self%check_interval
 
   call trace%end (itimer)
 END SUBROUTINE check_current
@@ -217,14 +216,11 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   call tlist%append_link (child_link)                       ! which is added to the patch list
   !------------------------------------------------------------------------
   ! Download values from parent and neighbors, except at time = 0, to allow
-  ! recursive refinement there (if time = 0, patch should have been filled
-  ! with values during `child%init()` call).
+  ! recursive refinement there.
+  ! If time = 0, patch should have been filled with values during `child%init()`
+  ! call.
   !------------------------------------------------------------------------
   if (parent%time > 0.0) call download%download_link (child_link, all_cells=.true.)
-  !------------------------------------------------------------------------
-  ! Insert the new patch at the head of the ready queue
-  !------------------------------------------------------------------------
-  call tlist%queue_by_time (child_link)          ! add patch to queue
   if (io%verbose>0) then
     1 format(a,3i6,f10.6,2(2x,3f8.4))
     print 1,'refine_mod::make_child_patch:  child, level, iout, time, size =', &
@@ -232,6 +228,8 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
     print 1,'                              parent, level, iout, time, size =', &
       parent%id, parent%level, parent%iout, parent%time, parent%size
   end if
+
+  call tlist%check_ready(child_link)
 
   call trace%end
 END SUBROUTINE make_child_patch
@@ -272,10 +270,17 @@ SUBROUTINE split_patch (self, tlist, this)
       end do
     end do
   end do
-  call tlist%check_queue
-  call tlist%init_all_nbors
   call this_patch%set(bits%not_leaf)
-  call tlist%check_nbors(this)
+  
+  call tlist%remove_parents
+  call tlist%init_all_nbors
+  call tlist%reset_status
+  link => tlist%head
+  do while (associated(link))
+    call link%task%clear(bits%ready)
+    call tlist%check_ready (link)
+    link => link%next
+  end do
 
   if (io%verbose > 0) call tlist%print_tasks()
 

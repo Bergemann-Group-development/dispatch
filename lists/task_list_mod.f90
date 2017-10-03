@@ -194,16 +194,6 @@ SUBROUTINE startup (self)
   if (recv_active .and. mpi_mesg%recv_priv) &
     call self%init_virtual
   !-----------------------------------------------------------------------------
-  ! Check if refinement is needed on the task at t = 0; if so this will push new
-  ! tasks onto the queue, with the same task time; i.e., to the head of the queue.
-  ! If the task is virtual, it will not be checked by this rank.
-  !-----------------------------------------------------------------------------
-  link => self%head
-  do while (associated(link))
-    call refine%check_current(self, link, was_refined)
-    link => link%next
-  end do
-  !-----------------------------------------------------------------------------
   ! Start timer, and run until the task count is zero
   !-----------------------------------------------------------------------------
   if (mpi%master) &
@@ -367,6 +357,13 @@ SUBROUTINE update (self)
       call trace_end (itimer)
       return
     end if
+    !-----------------------------------------------------------------------------
+    ! Check if refinement is needed on the task; if so this will push new tasks
+    ! onto the queue, with the same task time; i.e., to the head of the queue.
+    ! If the task is virtual, it will not be checked by this rank.
+    !-----------------------------------------------------------------------------
+    call refine%check_current(self, head, was_refined)
+    !
     call self%updater (head)
     !----------------------------------------------------------------------------
     ! Periodic task syncronization:  The first time a task%time is exactly equal
@@ -386,12 +383,6 @@ SUBROUTINE update (self)
       self%syncing = .false.
     end if
     task%sync_time = self%sync_next
-    !-----------------------------------------------------------------------------
-    ! Check if refinement is needed on the task; if so this will push new tasks
-    ! onto the queue, with the same task time; i.e., to the head of the queue.
-    ! If the task is virtual, it will not be checked by this rank.
-    !-----------------------------------------------------------------------------
-    call refine%check_current(self, head, was_refined)
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the
     ! queue, and its neighbors should also be checked for return to the queue.
