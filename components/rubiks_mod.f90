@@ -45,10 +45,10 @@ SUBROUTINE init_hierarchy (self, label)
   integer, save:: n_patch(3)=0, m_zoom=3, n_levels=5
   integer, save:: n_repeat(3)=0
   integer:: iostat
-  real(8), save:: position(3)
-  real(8), save:: size(3)
+  real(8), save:: position(3), size(3), f_zoom=1d0
   integer:: i, j, k, irep, jrep, krep, level, levels
-  namelist /rubiks_params/ size, position, n_levels, n_patch, m_zoom, n_repeat
+  namelist /rubiks_params/ size, position, n_levels, n_patch, m_zoom, n_repeat, &
+                           f_zoom
   !-----------------------------------------------------------------------------
   ! Allow size and position to be set by an overloading data type, and allow
   ! an empty namelist input here. If present, take the initial values from
@@ -83,6 +83,7 @@ SUBROUTINE init_hierarchy (self, label)
   self%size = size
   self%n_patch = n_patch
   self%m_zoom = m_zoom
+  scene%f_zoom = m_zoom*f_zoom
   !-----------------------------------------------------------------------------
   ! Save the outer size of the hierarchy as the task list size, for distance
   ! measurements.  The self%task_list%size is the full size of the objects in
@@ -90,7 +91,7 @@ SUBROUTINE init_hierarchy (self, label)
   ! self%size, on the other hand, is the size of the smallest, central patch.
   !-----------------------------------------------------------------------------
   allocate (self%task_list)
-  self%task_list%size = self%size*self%n_patch*self%m_zoom**(n_levels-1)*n_repeat
+  self%task_list%size = self%size*self%n_patch*scene%f_zoom**(n_levels-1)*n_repeat
   n_repeat = (n_repeat/2)*2 + 1
   scene%n_repeat = n_repeat
   level = 1
@@ -152,9 +153,9 @@ SUBROUTINE init_level (self, level, position)
     !---------------------------------------------------------------------------
     ! The patch size should equal the self%size when level=n_levels, since that
     ! is the level of the smallest, central patch.  The size of the largest
-    ! patches is m_zoom*(n_levels-1) larger.
+    ! patches is f_zoom**(n_levels-1) larger.
     !---------------------------------------------------------------------------
-    patch%size = self%size*real(self%m_zoom,kind=8)**(self%n_levels-level)
+    patch%size = self%size*real(scene%f_zoom,kind=8)**(self%n_levels-level)
     patch%position = ([i,j,k]-(1.+self%n_patch)/2.0)*patch%size + position
     !print '(a,i4,1p,2(3x,3g15.5))', 'XX: level, size, pos', level, patch%size, &
     !  patch%position
