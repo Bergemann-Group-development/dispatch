@@ -280,7 +280,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
     end if
     if (io%verbose>3.or.io_unit%do_validate.or.target%id==io%id_debug) &
       print 1, target%id, target%level, iv, source%id, source%level, l, u, offset
-      1 format("patch_t%dnload_range: id,lv,iv:",i6,2i3, &
+      1 format("download_t%dnload_range: id,lv,iv:",i6,2i3, &
                "  source,lv,l,u,o:",i6,i3,3(2x,3i4))
   else
     if (io%verbose>3.or.io_unit%do_validate.or.target%id==io%id_debug) &
@@ -288,6 +288,9 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   end if
   call trace%end
 contains
+!> =============================================================================
+!> Local function that returns the index in target index space, given a position
+!> p, in relative target coordinates.
 !> =============================================================================
   function target_index (p, roundup) result (ii)
     real(8)           :: p(3)
@@ -315,10 +318,10 @@ SUBROUTINE same (target, source, all_cells, only)
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................
-  integer                 :: l(3), u(3), o(3), ii(3), jj(3), jt(2)
+  integer                 :: l(3), u(3), o(3), ii(3), jt(2)
   real(8)                 :: position(3), xx
   real                    :: pt(2)
-  integer                 :: ix, iy, iz, iv, iv1, iv2
+  integer                 :: ix, iy, iz, iv, iv1, iv2, li(3), ui(3)
   integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%same', itimer=itimer)
@@ -330,6 +333,8 @@ SUBROUTINE same (target, source, all_cells, only)
     iv1 = 1
     iv2 = target%nv
   end if
+  li = target%mesh%li
+  ui = target%mesh%ui
   do iv=iv1, iv2
     call dnload_range (target, source, iv, l, u, o)
     if (target%id==io%id_debug) &
@@ -351,12 +356,11 @@ SUBROUTINE same (target, source, all_cells, only)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
               ii = [ix,iy,iz]
-              jj = ii + o
-              target%mem(ix,iy,iz,iv,target%it,1) = merge( &
-                exp(pt(1)*log(source%mem(jj(1),jj(2),jj(3),iv,jt(1),1)) + &
-                    pt(2)*log(source%mem(jj(1),jj(2),jj(3),iv,jt(2),1))), &
-                target%mem(ix,iy,iz,iv,target%it,1), &
-                any((ii-target%mesh%li-1) < 0 .or. (ii-target%mesh%ui) > 0))
+              target%mem(ix,iy,iz,iv,target%it,1) = &
+                merge(target%mem(ix,iy,iz,iv,target%it,1), &
+                  exp(pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
+                      pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))), &
+                  all((ii>=li).and.(ii<=ui)))
             end do
           end do
         end do
@@ -377,12 +381,11 @@ SUBROUTINE same (target, source, all_cells, only)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
               ii = [ix,iy,iz]
-              jj = ii + o
-              target%mem(ix,iy,iz,iv,target%it,1) = merge( &
-                pt(1)*source%mem(jj(1),jj(2),jj(3),iv,jt(1),1) + &
-                pt(2)*source%mem(jj(1),jj(2),jj(3),iv,jt(2),1), &
-                target%mem(ix,iy,iz,iv,target%it,1), &
-                any((ii-target%mesh%li-1) < 0 .or. (ii-target%mesh%ui) > 0))
+              target%mem(ix,iy,iz,iv,target%it,1) = &
+                merge(target%mem(ix,iy,iz,iv,target%it,1), &
+                  pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
+                  pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
+                  all((ii>=li).and.(ii<=ui)))
             end do
           end do
         end do
@@ -401,7 +404,7 @@ END SUBROUTINE same
 SUBROUTINE same_rt (target, source)
   class(patch_t), pointer :: target, source
   !.............................................................................
-  integer                 :: l(3), u(3), o(3), ii(3), jt(2)
+  integer                 :: l(3), u(3), o(3), ii(3), jt(2), li(3), ui(3)
   real(8)                 :: position(3)
   real                    :: pt(2)
   integer                 :: ix, iy, iz, iv
@@ -410,16 +413,17 @@ SUBROUTINE same_rt (target, source)
   call trace%begin('download_t%same_rt', itimer=itimer)
   call source%time_interval (target%time, jt, pt)
   call dnload_range (target, source, 1, l, u, o)
+  li = target%mesh%li
+  ui = target%mesh%ui
   do iv=1,target%nv
     do iz=l(3),u(3)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii = [ix,iy,iz]
+          if (all((ii>=li).and.(ii<=ui))) cycle
           target%mem(ix,iy,iz,iv,target%it,1) = &
              pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
              pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
-          !if (all(ii>target%mesh%li.and.ii<=target%mesh%ui)) print *, &
-            !target%id, 'ERROR: internal point modified', source%id, ii, iv
         end do
       end do
     end do
@@ -435,7 +439,7 @@ SUBROUTINE different (target, source, all_cells, only)
   integer, optional:: only
   !.............................................................................
   integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2
-  integer, dimension(3)   :: l, u, ii, li, jj
+  integer, dimension(3)   :: l, u, ii, li, ui
   real(8), dimension(3)   :: pos, h
   logical                 :: valid
   integer, save           :: itimer=0
@@ -451,6 +455,8 @@ SUBROUTINE different (target, source, all_cells, only)
     iv1 = 1
     iv2 = target%nv
   end if
+  li = target%mesh%li
+  ui = target%mesh%ui
   do iv=iv1,iv2
     call dnload_range (target, source, iv, l, u)
     !---------------------------------------------------------------------------
@@ -458,13 +464,6 @@ SUBROUTINE different (target, source, all_cells, only)
     ! make fluxes up/down symmetric
     !---------------------------------------------------------------------------
     li = target%mesh%li
-    if (.not.target%no_mans_land) then
-      h = target%index_stagger(iv)
-      where (h /= 0.0)
-        li = target%mesh%li + 1
-      end where
-      if (target%id==io%id_debug) print '(a,i3,3(2x,3i4))', 'XX: iv,li', iv,li,l,u
-    end if
     if (target%id==io%id_debug) &
       print 1, source%id, (source%position-target%position)/target%size, l, u
       1 format("DBG download_t%different:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
@@ -512,7 +511,7 @@ SUBROUTINE different_rt (target, source)
   class(patch_t), pointer :: target, source
   !.............................................................................
   integer                 :: ix, iy, iz, iv, jt(2)
-  integer, dimension(3)   :: l, u, ii, lb, ub
+  integer, dimension(3)   :: l, u, ii, lb, ub, li, ui
   real(8), dimension(3)   :: pos
   logical                 :: valid
   integer, save           :: itimer=0
@@ -523,11 +522,14 @@ SUBROUTINE different_rt (target, source)
   ub = target%mesh%ub
   call source%time_interval (target%time, jt, pt)
   call dnload_range (target, source, 1, l, u)
+  li = target%mesh%li
+  ui = target%mesh%ui
   do iv=1,target%nv
     do iz=l(3),u(3)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
+          if (all((ii>=li).and.(ii<=ui))) cycle
           call source%interpolate (target, ii, iv, jt, pt)
         end do
       end do
