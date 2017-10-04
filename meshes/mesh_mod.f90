@@ -288,8 +288,10 @@ SUBROUTINE MeshRecycler (collection)
   class(mesh_t), dimension(:), pointer :: collection
   integer :: i
   !.............................................................................
+  do i=1,size(collection)
+    call collection(i)%deallocate
+  end do
   deallocate(collection)
-
 END SUBROUTINE MeshRecycler
 
 !> =============================================================================
@@ -368,7 +370,12 @@ END SUBROUTINE init_mesh
 SUBROUTINE deallocate_coord (self)
   class(mesh_t) :: self
   !.............................................................................
-  if (associated(self%r)) deallocate (self%r)
+  if (associated(self%r))   deallocate (self%r)
+  if (associated(self%h))   deallocate (self%h)
+  if (associated(self%la))  deallocate (self%la)
+  if (associated(self%ua))  deallocate (self%ua)
+  if (associated(self%ddn)) deallocate (self%ddn)
+  if (associated(self%dup)) deallocate (self%dup)
 END SUBROUTINE deallocate_coord
 
 !> =============================================================================

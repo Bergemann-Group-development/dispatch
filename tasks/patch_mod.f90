@@ -71,6 +71,8 @@ MODULE patch_mod
   contains
     procedure:: check_error
     procedure:: init
+    procedure:: setup
+    procedure:: delete
     procedure:: rotate
     procedure:: output                  ! output
     procedure:: input                   ! input
@@ -312,7 +314,7 @@ SUBROUTINE check_error (self, a, label, error)
     end if
   end if
   deallocate(b)
-END SUBROUTINE
+END SUBROUTINE check_error
 
 !> =============================================================================
 !> Initialize the patch memory and patch dimensions.  For this we need to be told the
@@ -506,6 +508,41 @@ SUBROUTINE init (self)
 !  end if
   call trace%end
 END SUBROUTINE init
+
+!> =============================================================================
+!> Deallocate a patch and its allocated parts
+!> =============================================================================
+SUBROUTINE setup (self, position, size, nt, nv, nw)
+  class(patch_t)    :: self
+  real(8), optional :: position(3), size(3)
+  integer, optional :: nt, nv, nw
+  !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%setup')
+  print *, self%id, self%position
+  if (present(position)) self%position = position
+  if (present(size    )) self%size     = size
+  if (present(nt      )) self%nt       = nt
+  if (present(nv      )) self%nv       = nv
+  if (present(nw      )) self%nw       = nw
+  call self%init
+  print *,'patch_t%setup', self%id, self%position
+  self%llc_cart = self%position - 0.5 * self%size
+  self%llc_nat = self%llc_cart
+  call trace%end
+END SUBROUTINE setup
+
+!> =============================================================================
+!> Deallocate a patch and its allocated parts
+!> =============================================================================
+SUBROUTINE delete (self)
+  class (patch_t):: self
+  integer                  :: i
+  !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%delete')
+  call MeshRecycler (self%mesh)
+  deallocate (self%mem)
+  call trace%end
+END SUBROUTINE delete
 
 !> =============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time
