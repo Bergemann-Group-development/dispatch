@@ -164,6 +164,7 @@ MODULE patch_mod
   end type
   logical, save:: extrapolate_gz=.false.
   logical, save:: do_check_nan=.false.
+  logical, save:: zero_order_extrap=.true.
   public task2patch
 CONTAINS
 
@@ -329,7 +330,8 @@ SUBROUTINE init (self)
   real(8):: position(3), size(3)
   integer:: iostat, i
   namelist /patch_params/ size, n, nv, ng, nt, courant, u_fixed, dt_fixed, &
-    grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan
+    grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
+    zero_order_extrap
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     restart, inputdir, guard_zones, time_derivs
   !.............................................................................
@@ -2137,9 +2139,7 @@ SUBROUTINE index_space (self, pos, iv, i, p)
   integer           :: i(3)
   real              :: p(3)
   !.............................................................................
-  integer           :: jt(2)
-  real              :: pt(2), h(3)
-  logical           :: full
+  real              :: h(3)
   real, parameter   :: eps=0.001
   integer, save     :: itimer=0
   !-----------------------------------------------------------------------------
@@ -2151,9 +2151,14 @@ SUBROUTINE index_space (self, pos, iv, i, p)
   p = p/self%mesh%d + self%mesh%o - h                   ! float index
   p = p + eps                                           ! ensure same points ok
   i = p                                                 ! integer part
-  i = max(self%mesh%lb, &
-      min(self%mesh%ub-1,i))                            ! valid range
+  i = max(self%mesh%li, &
+      min(self%mesh%ui-1,i))                            ! valid range
   p = p - eps - i                                       ! remaining fraction
+  !-----------------------------------------------------------------------------
+  ! The slight allowance for extrapolation below is to detect it in tests
+  !-----------------------------------------------------------------------------
+  if (zero_order_extrap .and. .not.io_unit%do_validate) &
+    p = min(p,max(p,-0.01),1.01)                        ! 0th order extrapolation
   !call trace%end (itimer)
 END SUBROUTINE index_space
 
