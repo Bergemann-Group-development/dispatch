@@ -49,7 +49,7 @@
 &patch_params
  nt=5
  ng=3*3
- courant=0.2
+ courant=0.1
  grace=0.0
  n=3*32
  !dt_fixed=1e-3
@@ -63,6 +63,7 @@
  time_derivs=f
 /
 &mhd_params
+ flop_count=t
  hardwire=f
  eos='ideal'
  gamma=1.6666667

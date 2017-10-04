@@ -417,7 +417,7 @@ SUBROUTINE pde (self)
   end if
   call trace%end (itimer)
   if (flop_count) then
-    print *, stagger%count, ' calls', stagger%flops,' flops'
+    print *, stagger%count, ' stagger calls', stagger%flops/product(real(self%n)),' flops per interior point'
     stagger%count=0
     stagger%flops=0
   end if

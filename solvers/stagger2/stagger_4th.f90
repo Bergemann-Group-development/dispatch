@@ -62,7 +62,7 @@ FUNCTION ddxdn1 (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddxdn1
 
@@ -90,7 +90,7 @@ FUNCTION ddydn1 (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(3)*(n(2)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddydn1
 
@@ -118,7 +118,7 @@ FUNCTION ddzdn1 (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddzdn1
 
@@ -147,7 +147,7 @@ FUNCTION ddxup1 (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddxup1
 
@@ -175,7 +175,7 @@ FUNCTION ddyup1 (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(3)*(n(2)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddyup1
 
@@ -203,7 +203,7 @@ FUNCTION ddzup1 (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddzup1
 
@@ -231,7 +231,7 @@ FUNCTION xdn1 (a) RESULT (b)
     b = a
   end if
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION xdn1
 
@@ -259,7 +259,7 @@ FUNCTION ydn1 (a) RESULT (b)
     b = a
   end if
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(3)*(n(2)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ydn1
 
@@ -287,7 +287,7 @@ FUNCTION zdn1 (a) RESULT (b)
     b = a
   end if
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
   stagger%count = stagger%count + 1
 END FUNCTION zdn1
 
@@ -315,7 +315,7 @@ FUNCTION xup1 (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION xup1
 
@@ -343,7 +343,7 @@ FUNCTION yup1 (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(3)*(n(2)-1)
   stagger%count = stagger%count + 1
 END FUNCTION yup1
 
@@ -371,7 +371,7 @@ FUNCTION zup1 (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
   stagger%count = stagger%count + 1
 END FUNCTION zup1
 
@@ -382,8 +382,9 @@ FUNCTION ddxdn (ds, a) RESULT (b)
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c1, c2
   real(8) :: ds(3)
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (size(a,1) > 1) then
     b(1:2,:,:) = 0.0
     b(size(a,1),:,:) = 0.0
@@ -400,7 +401,7 @@ FUNCTION ddxdn (ds, a) RESULT (b)
   else
     b = 0.0
   endif
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddxdn
 
@@ -408,10 +409,11 @@ END FUNCTION ddxdn
 FUNCTION ddydn (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
   real    :: c1, c2
   real(8) :: ds(3)
 !...............................................................................
+  n = shape(a)
   if (size(a,2) > 1) then
     b(:,1:2,:) = 0.0
     b(:,size(a,2),:) = 0.0
@@ -428,7 +430,7 @@ FUNCTION ddydn (ds, a) RESULT (b)
   else
     b = 0.0
   endif
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(1)*n(3)*(n(2)-3)
   stagger%count = stagger%count + 1
 END FUNCTION ddydn
 
@@ -438,8 +440,9 @@ FUNCTION ddzdn (ds, a) RESULT (b)
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c1, c2
   real(8) :: ds(3)
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (size(a,3) > 1) then
     b(:,:,1:2) = 0.0
     b(:,:,size(a,3)) = 0.0
@@ -456,7 +459,7 @@ FUNCTION ddzdn (ds, a) RESULT (b)
   else
     b = 0.0
   endif
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(1)*n(2)*(n(3)-3)
   stagger%count = stagger%count + 1
 END FUNCTION ddzdn
 
@@ -464,7 +467,7 @@ END FUNCTION ddzdn
 FUNCTION ddxup (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
   real    :: c1, c2
   real(8) :: ds(3)
 !...............................................................................
@@ -484,7 +487,7 @@ FUNCTION ddxup (ds, a) RESULT (b)
   else
     b = 0.0
   endif
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddxup
 
@@ -492,10 +495,11 @@ END FUNCTION ddxup
 FUNCTION ddyup (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
   real    :: c1, c2
   real(8) :: ds(3)
 !...............................................................................
+  n = shape(a)
   if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,1,:) = 0.0
     b(:,size(a,2)-1:,:) = 0.0
@@ -512,7 +516,7 @@ FUNCTION ddyup (ds, a) RESULT (b)
   else
     b = 0.0
   endif
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(1)*n(3)*(n(2)-3)
   stagger%count = stagger%count + 1
 END FUNCTION ddyup
 
@@ -520,10 +524,11 @@ END FUNCTION ddyup
 FUNCTION ddzup (ds, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
   real    :: c1, c2
   real(8) :: ds(3)
 !...............................................................................
+  n = shape(a)
   if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,:,1) = 0.0
     b(:,:,size(a,3)-1:) = 0.0
@@ -540,7 +545,7 @@ FUNCTION ddzup (ds, a) RESULT (b)
   else
     b = 0.0
   endif
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(1)*n(2)*(n(3)-3)
   stagger%count = stagger%count + 1
 END FUNCTION ddzup
 
@@ -549,8 +554,9 @@ FUNCTION xdn (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c1, c2
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c1 = -1./16.
     c2 = 0.5-c1
@@ -567,7 +573,7 @@ FUNCTION xdn (a) RESULT (b)
   else
     b = a
   end if
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION xdn
 
@@ -576,8 +582,9 @@ FUNCTION ydn (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c1, c2
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c1 = -1./16.
     c2 = 0.5-c1
@@ -594,7 +601,7 @@ FUNCTION ydn (a) RESULT (b)
   else
     b = a
   end if
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(1)*n(3)*(n(2)-3)
   stagger%count = stagger%count + 1
 END FUNCTION ydn
 
@@ -603,8 +610,9 @@ FUNCTION zdn (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c1, c2
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c1 = -1./16.
     c2 = 0.5-c1
@@ -621,7 +629,7 @@ FUNCTION zdn (a) RESULT (b)
   else
     b = a
   end if
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(1)*n(2)*(n(3)-3)
   stagger%count = stagger%count + 1
 END FUNCTION zdn
 
@@ -630,8 +638,9 @@ FUNCTION xup (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c1, c2
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (size(a,1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c1 = -1./16.
     c2 = 0.5-c1
@@ -648,7 +657,7 @@ FUNCTION xup (a) RESULT (b)
   else
     b = a
   endif
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION
 
@@ -657,8 +666,9 @@ FUNCTION yup (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c1, c2
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (size(a,2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c1 = -1./16.
     c2 = 0.5-c1
@@ -675,7 +685,7 @@ FUNCTION yup (a) RESULT (b)
   else
     b = a
   endif
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(1)*n(3)*(n(2)-3)
   stagger%count = stagger%count + 1
 END FUNCTION
 
@@ -684,8 +694,9 @@ FUNCTION zup (a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c1, c2
-  integer :: ix, iy, iz
+  integer :: ix, iy, iz, n(3)
 !...............................................................................
+  n = shape(a)
   if (size(a,3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c1 = -1./16.
     c2 = 0.5-c1
@@ -702,7 +713,7 @@ FUNCTION zup (a) RESULT (b)
   else
     b = a
   endif
-  stagger%flops = stagger%flops + 5
+  stagger%flops = stagger%flops + 5*n(1)*n(2)*(n(3)-3)
   stagger%count = stagger%count + 1
 END FUNCTION
 
