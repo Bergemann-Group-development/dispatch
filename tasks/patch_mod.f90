@@ -333,7 +333,7 @@ SUBROUTINE init (self)
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     restart, inputdir, guard_zones, time_derivs
   !.............................................................................
-  call trace_begin ('patch_t%init')
+  call trace%begin ('patch_t%init')
   call self%task_t%init                         ! sets unique id
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
@@ -502,7 +502,7 @@ SUBROUTINE init (self)
 !    call self%set (bits%root_grid)
 !    if (io%verbose > 1) print *, 'set bits%root_grid id =', self%id
 !  end if
-  call trace_end
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -516,15 +516,12 @@ SUBROUTINE rotate (self)
   integer:: iv, nv, new
   real(8):: time
   !-----------------------------------------------------------------------------
-  ! Time extrapolation -- can help in cases where other patches rely on the
-  ! guard zone values of nbor patches (should norally not be the case).  The
-  ! periodic grid call at this point would have the same purpose -- the normal
-  ! call is inside download_mod/data_hub_mod.
+  ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_t%rotate')
-!  if (self%is_set(bits%root_grid)) then
-!    call self%periodic_grid                     ! periodic root grid
-  if (extrapolate_gz) then
+  call trace%begin ('patch_t%rotate')
+  if (self%is_set(bits%root_grid)) then
+    call self%periodic_grid                     ! periodic root grid
+  else if (extrapolate_gz) then
     call self%extrapolate_guards                ! time-extrapolate guard cells
   end if
   !-----------------------------------------------------------------------------
@@ -547,7 +544,7 @@ SUBROUTINE rotate (self)
   ! Task time slot rotation
   !-----------------------------------------------------------------------------
   call self%task_t%rotate
-  call trace_end
+  call trace%end
 END SUBROUTINE rotate
 
 !> =============================================================================
@@ -642,7 +639,7 @@ END FUNCTION myfloatindex_scalar
 !> =============================================================================
 SUBROUTINE periodic_grid (self)
   class(patch_t):: self
-  integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3)
+  integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3), n(3)
   !.............................................................................
   call trace_begin ('patch_t%periodic_grid')
   lb = self%mesh%lb
@@ -655,12 +652,17 @@ SUBROUTINE periodic_grid (self)
   where (self%mesh%upper_boundary)
     ui = self%mesh%ub
   end where
+  if (self%no_mans_land) then
+    n = self%n
+  else
+    n = self%n-1
+  end if
   do iz=lb(3),ub(3)
   do iy=lb(2),ub(2)
   do ix=lb(1),ub(1)
     i = [ix,iy,iz]
     if (all(i >= li .and. i <= ui)) cycle
-    j = modulo(i-li,self%n)+li
+    j = modulo(i-li,n)+li
     !---------------------------------------------------------------------------
     ! Make sure horizontal periodic wrapping continues over the whole vertical
     ! range when physical boundary conditions are present.  Note the use of
@@ -1965,7 +1967,7 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   real(kind=KindScalarVar), intent(out):: out(size(in))
   integer, intent(in) :: ii(3), jj(3)
   !.............................................................................
-  call trace_begin('patch_t%MapVectors', 2)
+  call trace%begin('patch_t%MapVectors', 2)
 
   select case (self%mesh_type)
   case (1) ! Cartesian
@@ -1979,7 +1981,7 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
     error stop 'Not implemented error! patch_t%MapVectors'
   end select
 
-  call trace_end
+  call trace%end
 END SUBROUTINE MapVectors
 
 !> =============================================================================
@@ -2407,7 +2409,7 @@ SUBROUTINE update_position (self)
   class(patch_t):: self
   !-----------------------------------------------------------------------------
   if (all(self%velocity == 0.0)) return
-  call trace_begin("patch_t%update_position")
+  call trace%begin("patch_t%update_position")
   !
   self%position = self%position + self%velocity * self%dtime
   self%llc_cart = self%llc_cart + self%velocity * self%dtime
@@ -2424,7 +2426,7 @@ SUBROUTINE update_position (self)
     self%mesh(:)%llc_cart = self%mesh(:)%llc_cart - self%box
     self%centre_cart = self%centre_cart - self%box
   end where
-  call trace_end
+  call trace%end
 END SUBROUTINE update_position
 
 END MODULE patch_mod
