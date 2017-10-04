@@ -654,7 +654,7 @@ SUBROUTINE stagger_test
   ok = .true.
   do i=4,m(1)-2
     x = (i-0.5d0)*ds(1)
-    d = x**5
+    d = x
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
   allok = allok .and. ok
@@ -663,7 +663,7 @@ SUBROUTINE stagger_test
   ok = .true.
   do i=3,m(1)-3
     x = (i+0.5d0)*ds(1)
-    d = x**5
+    d = x
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
   allok = allok .and. ok
@@ -679,7 +679,7 @@ SUBROUTINE stagger_test
   ok = .true.
   do i=4,m(2)-2
     y = (i-0.5d0)*ds(2)
-    d = y**5
+    d = y
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
   allok = allok .and. ok
@@ -688,7 +688,7 @@ SUBROUTINE stagger_test
   ok = .true.
   do i=3,m(2)-3
     y = (i+.5d0)*ds(2)
-    d = y**5
+    d = y
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
   allok = allok .and. ok
@@ -704,7 +704,7 @@ SUBROUTINE stagger_test
   ok = .true.
   do i=4,m(3)-2
     z = (i-0.5d0)*ds(3)
-    d = z**5
+    d = z
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   allok = allok .and. ok
@@ -713,7 +713,7 @@ SUBROUTINE stagger_test
   ok = .true.
   do i=3,m(3)-3
     z = (i+0.5d0)*ds(3)
-    d = z**5
+    d = z
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
   allok = allok .and. ok
@@ -794,9 +794,10 @@ SUBROUTINE stagger_test
   allok = allok .and. ok
   if (.not.ok) print *,'ddzup:', ok
   if (allok) then
-    print *,'stagger operator test is OK'
+    print *,'2nd/1st order stagger operator test is OK'
   else
-    print *,'stagger operator test is not OK!'
+    print *,'2nd/1st order stagger operator test is not OK!'
+    error stop 'stagger_test'
   end if
   !-----------------------------------------------------------------------------
   deallocate (a, b)

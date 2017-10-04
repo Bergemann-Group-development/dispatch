@@ -727,7 +727,7 @@ SUBROUTINE stagger_test
   real, pointer :: c(:,:,:)
   real(8)       :: ds(3), x, y, z, d
   integer       :: i
-  logical       :: ok
+  logical       :: ok, allok
   real, parameter :: eps = 2e-6
   !-----------------------------------------------------------------------------
   m = [10,11,12]
@@ -743,12 +743,14 @@ SUBROUTINE stagger_test
   end do
   b = xdn(a)
   ok = .true.
+  allok = .true.
   do i=4,m(1)-2
     x = (i-0.5d0)*ds(1)
     d = x**3
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
-  print *,'xdn:', ok
+  if (.not.ok) print *,'xdn:', ok
+  allok = allok.and.ok
   b = xup(a)
   ok = .true.
   do i=3,m(1)-3
@@ -756,7 +758,8 @@ SUBROUTINE stagger_test
     d = x**3
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
-  print *,'xup:', ok
+  if (.not.ok) print *,'xup:', ok
+  allok = allok.and.ok
   !-----------------------------------------------------------------------------
   ! y-operators
   !-----------------------------------------------------------------------------
@@ -771,7 +774,8 @@ SUBROUTINE stagger_test
     d = y**3
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
-  print *,'ydn:', ok
+  if (.not.ok) print *,'ydn:', ok
+  allok = allok.and.ok
   b = yup(a)
   ok = .true.
   do i=3,m(2)-3
@@ -779,7 +783,8 @@ SUBROUTINE stagger_test
     d = y**3
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
-  print *,'yup:', ok
+  if (.not.ok) print *,'yup:', ok
+  allok = allok.and.ok
   !-----------------------------------------------------------------------------
   ! z-operators
   !-----------------------------------------------------------------------------
@@ -794,7 +799,8 @@ SUBROUTINE stagger_test
     d = z**3
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
-  print *,'zdn:', ok
+  if (.not.ok) print *,'zdn:', ok
+  allok = allok.and.ok
   b = zup(a)
   ok = .true.
   do i=3,m(3)-3
@@ -802,7 +808,8 @@ SUBROUTINE stagger_test
     d = z**3
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
-  print *,'zup:', ok
+  if (.not.ok) print *,'zup:', ok
+  allok = allok.and.ok
   !-----------------------------------------------------------------------------
   ! x-operators
   !-----------------------------------------------------------------------------
@@ -817,7 +824,8 @@ SUBROUTINE stagger_test
     d = 4d0*x**3
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
-  print *,'ddxdn:', ok
+  if (.not.ok) print *,'ddxdn:', ok
+  allok = allok.and.ok
   b = ddxup(ds,a)
   ok = .true.
   do i=3,m(1)-3
@@ -825,7 +833,8 @@ SUBROUTINE stagger_test
     d = 4d0*x**3
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
   end do
-  print *,'ddxup:', ok
+  if (.not.ok) print *,'ddxup:', ok
+  allok = allok.and.ok
   !-----------------------------------------------------------------------------
   ! y-operators
   !-----------------------------------------------------------------------------
@@ -840,7 +849,8 @@ SUBROUTINE stagger_test
     d = 4d0*y**3
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
-  print *,'ddydn:', ok
+  if (.not.ok) print *,'ddydn:', ok
+  allok = allok.and.ok
   b = ddyup(ds,a)
   ok = .true.
   do i=3,m(2)-3
@@ -848,7 +858,8 @@ SUBROUTINE stagger_test
     d = 4d0*y**3
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
   end do
-  print *,'ddyup:', ok
+  if (.not.ok) print *,'ddyup:', ok
+  allok = allok.and.ok
   !-----------------------------------------------------------------------------
   ! z-operators
   !-----------------------------------------------------------------------------
@@ -863,7 +874,8 @@ SUBROUTINE stagger_test
     d = 4d0*z**3
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
-  print *,'ddzdn:', ok
+  if (.not.ok) print *,'ddzdn:', ok
+  allok = allok.and.ok
   b = ddzup(ds,a)
   ok = .true.
   do i=3,m(3)-3
@@ -871,7 +883,16 @@ SUBROUTINE stagger_test
     d = 4d0*z**3
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
   end do
-  print *,'ddzup:', ok
+  if (.not.ok) print *,'ddzup:', ok
+  allok = allok.and.ok
+  print *,'---------------------------------------------------------------------'
+  if (allok) then
+    print *,'4th/3rd order stagger operator test is OK'
+  else
+    print *,'4th/3rd order stagger operator test is not OK!'
+    error stop 'stagger_test'
+  end if
+  print *,'---------------------------------------------------------------------'
   !-----------------------------------------------------------------------------
   deallocate (a, b)
 END SUBROUTINE stagger_test

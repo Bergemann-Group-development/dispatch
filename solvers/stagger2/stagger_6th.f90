@@ -1090,11 +1090,14 @@ SUBROUTINE stagger_test
   end do
   allok = allok .and. ok
   if (.not.ok) print *,'ddzup:', ok
+  print *,'---------------------------------------------------------------------'
   if (allok) then
     print *,'6th/5th order stagger operator test is OK'
   else
     print *,'6th/5th order stagger operator test is not OK!'
+    error stop 'stagger_test'
   end if
+  print *,'---------------------------------------------------------------------'
   !-----------------------------------------------------------------------------
   deallocate (a, b)
 END SUBROUTINE stagger_test
