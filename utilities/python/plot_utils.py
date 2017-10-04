@@ -77,7 +77,7 @@ def in_extent(e,p):
     return ok
 
 def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
-             extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
+    keep=0, extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
     '''
     Display xy-image for given z  
     '''
@@ -134,21 +134,22 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
             vmax=max(vmax,p.f.max())
             if verbose:
                 print p.id,p.f.min(),p.f.max(),vmin,vmax
-    pl.clf()
+    if not keep:
+        pl.clf()
     for p in select:
         image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap)    
         yx=[p.active_corners[0][1],p.active_corners[0][0]]
         if labels and in_extent(p.extent[2],yx):
             pl.text(yx[0],yx[1],p.id)
-    pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
-    pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('x')
-    pl.title('var='+var+'   t={:3.2f}  z={:2.1f}'.\
-      format(p.time,z))
-    #pl.tight_layout()
+    pl.title('var='+var+'   t={:3.2f}  z={:2.1f}'.format(p.time,z))
+    if not keep:
+        pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
+        pl.xlim(xlim); pl.ylim(ylim); pl.xlabel('y'); pl.ylabel('x')
+        pl.tight_layout()
     pl.draw()
 
 def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
-             extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
+      keep=0, extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
     '''
     Display yz-image for given x
     '''
@@ -203,17 +204,18 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
         for p in pp:
             vmin=min(vmin,p.f.min())
             vmax=max(vmax,p.f.max())
-    pl.clf()
+    if not keep:
+        pl.clf()
     for p in pp:
         image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap)
         yz=[p.active_corners[0][1],p.active_corners[0][2]]
         if labels and in_extent(p.extent[0],yz):
             pl.text(yz[0],yz[1],p.id)
-    pl.xlim(ylim); pl.ylim(zlim); pl.xlabel('y'); pl.ylabel('z')
-    pl.title('var='+var+'   t={:3.2f}  x={:2.1f}'.\
-        format(p.time,x))
-    pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
-    pl.tight_layout()
+    pl.title('var='+var+'   t={:3.2f}  x={:2.1f}'.format(p.time,x))
+    if not keep:
+        pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
+        pl.xlim(ylim); pl.ylim(zlim); pl.xlabel('y'); pl.ylabel('z')
+        pl.tight_layout()
     pl.show()
     
 def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\

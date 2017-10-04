@@ -196,9 +196,10 @@ def patches_along(point,pp,dir=0,verbose=0):
         if verbose>0:
             for p in out:
                 print 'id: {:4d}        position: {}'.format(p.id,p.centre)
-        return out
     else:
-        return None
+        out=None
+    np.set_printoptions(formatter=None)
+    return out
 
 def patches_along_x(point,pp,verbose=0):
     ''' Get the patches along the x direction through a point '''
@@ -222,7 +223,7 @@ def indices_and_weights(point,p):
     weights=p-indices
     return indices, weights
     
-def values_along(point,pp,dir=0,iv=0,verbose=0):
+def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
     ''' 
         Return s,f(s) with s the coordinates and f the values in the iv
         slot of data, taken along the direction v -- so far restricted 
@@ -233,8 +234,12 @@ def values_along(point,pp,dir=0,iv=0,verbose=0):
     ff=[]
     for p in patches:
         ii,w=indices_and_weights(point,p)
-        m=p.nghost
-        n=p.n
+        if all:
+            m=np.zeros(3,dtype=np.int32)
+            n=p.gn
+        else:
+            m=p.nghost
+            n=p.n
         if dir==0:
             j=ii[1]
             k=ii[2]
@@ -262,9 +267,11 @@ def values_along(point,pp,dir=0,iv=0,verbose=0):
                 f=f1*(1-w[1])+f2*w[1]
                 ss.append(p.z[k])
                 ff.append(f)
+                print ('{:5d} '+3*'{:3d}'+2*'{:10.6f}'+'{:12.4e}').format(
+                p.id,i,j,k,w[0],w[1],f)
     return ss,ff
 
-def values_in(point,p,dir=0,iv=0,verbose=0):
+def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
     '''
         Return s,f(s) with s the coordinates and f the values in the iv
         slot of data, taken along the direction v -- so far restricted
@@ -273,8 +280,12 @@ def values_in(point,p,dir=0,iv=0,verbose=0):
     ss=[]
     ff=[]
     ii,w=indices_and_weights(point,p)
-    m=p.nghost
-    n=p.n
+    if all:
+        m=np.zeros(3,dtype=np.int32)
+        n=p.gn
+    else:
+        m=p.nghost
+        n=p.n
     if dir==0:
         j=ii[1]
         k=ii[2]
