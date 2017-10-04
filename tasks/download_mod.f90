@@ -38,14 +38,13 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   namelist /download_params/ order_interpolator
   !-----------------------------------------------------------------------------
-  call trace%begin ('download_mod%init')
+  call trace%begin ('download_t%init')
   !$omp critical (download_cr)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, download_params, iostat=iostat)
     if (io%master) write (*, download_params)
-    call self%test
   end if
   self%interpolate => SelectInterpolator(order_interpolator)
   !$omp end critical (download_cr)
@@ -65,7 +64,7 @@ SUBROUTINE test (self)
   real(4), dimension(3)  :: pp
   class(mesh_t), pointer :: mesh
   !-----------------------------------------------------------------------------
-  call trace%begin ('download_mod%test')
+  call trace%begin ('download_t%test')
   !-----------------------------------------------------------------------------
   ! Generate meshes with three resolutions, differing with a factor of three,
   ! with and w/o staggering
@@ -78,8 +77,6 @@ SUBROUTINE test (self)
   allocate (source(3))
   do i=1,3
     call source(i)%setup (size=0.1_8*[1,1,1]*(scene%f_zoom)**(i-2), nv=2, nt=1, nw=1)
-    print *, 'mesh', i, associated(source(i)%mesh), source(i)%position
-    print *, 'mesh', i, associated(source(i)%mesh), source(i)%mesh%p, dir
   end do
   !---------------------------------------------------------------------------
   ! Loop over source size
@@ -93,7 +90,8 @@ SUBROUTINE test (self)
         source(i)%mesh(dir)%h(iv) = -0.5*(iv-1)
            target%mesh(dir)%h(iv) = -0.5*(iv-1)
       end do
-      print *, 'source size, stagger:', source(i)%size(1), source(i)%mesh(1)%h(iv)
+      if (io%verbose>1 .or. io_unit%do_validate) &
+        print *, 'source size, stagger:', source(i)%size(1), source(i)%mesh(1)%h(iv)
       !-------------------------------------------------------------------------
       ! Loop over placement of the source mesh: ol, il, c, ir, or
       !-------------------------------------------------------------------------
@@ -120,10 +118,12 @@ SUBROUTINE test (self)
             pos(dir) = target%position(dir) + target%mesh(dir)%r(k) + target%mesh(dir)%h(iv)*target%ds(dir)
           end do
           call source(i)%index_space (pos, iv, ii, pp)
-          print 1, i, iv, j, "k:", k, "o:", o(1), "ii:", ii(1), "pp:", pp(1)
-        1 format("download_t%test",3i3,3(2x,a,i3),2x,a,f5.2)
+          if (io%verbose>1 .or. io_unit%do_validate) &
+            print 1, i, iv, j, "k:", k, "o:", o(1), "ii:", ii(1), "pp:", pp(1)
+          1 format("download_t%test",3i3,3(2x,a,i3),2x,a,f5.2)
         end do
-        print *,' '
+        if (io%verbose>1 .or. io_unit%do_validate) &
+          print *,' '
       end do
     end do
   end do

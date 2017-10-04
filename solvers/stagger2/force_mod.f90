@@ -84,7 +84,7 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     self%a = self%a0*2.0*(ran-0.5)/self%t_turn
     self%phi = pi2*self%random%ran3()
     self%t_save = self%t_save + self%t_turn
-    if (io%verbose>=0) print '(i6," new forcing",i12,1p,3(3x,3e11.2))', &
+    if (io%verbose>0) print '(i6," new forcing",i12,1p,3(3x,3e11.2))', &
         self%id, self%seed, self%a0, self%a, self%phi
   end if
 

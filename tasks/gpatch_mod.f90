@@ -52,7 +52,6 @@ SUBROUTINE init (self)
   call trace%begin ('gpatch_t%init')
   !$omp critical (poisson_cr)
   if (first_time) then
-    first_time = .false.
     grho = cgs%grav*scaling%d*scaling%t**2
     rewind (io%input)
     read (io%input, selfgravity_params, iostat=iostat)
@@ -70,6 +69,16 @@ SUBROUTINE init (self)
     call self%patch_t%init
   end if
   call self%initial%init (self%kind)
+  !$omp critical (poisson_cr)
+  if (first_time) then
+    first_time = .false.
+    if (self%use_data_hub) then
+      !call data_hub%test
+    else
+      call download%test
+    end if
+  end if
+  !$omp end critical (poisson_cr)
   !-----------------------------------------------------------------------------
   ! Try reading a restart snapshot.
   !-----------------------------------------------------------------------------

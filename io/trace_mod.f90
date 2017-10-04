@@ -61,7 +61,7 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
     level = level+1
     indent = indent + 3
   end if
-  write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
+  write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
   if (io%verbose>=verbose) then
     if (wc0==0d0) then
       wc0 = wallclock()

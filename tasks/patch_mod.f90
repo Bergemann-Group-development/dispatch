@@ -518,14 +518,14 @@ SUBROUTINE setup (self, position, size, nt, nv, nw)
   integer, optional :: nt, nv, nw
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%setup')
-  print *, self%id, self%position
   if (present(position)) self%position = position
   if (present(size    )) self%size     = size
   if (present(nt      )) self%nt       = nt
   if (present(nv      )) self%nv       = nv
   if (present(nw      )) self%nw       = nw
   call self%init
-  print *,'patch_t%setup', self%id, self%position
+  if (io%verbose>1) &
+    print *,'patch_t%setup', self%id, self%position
   self%llc_cart = self%position - 0.5 * self%size
   self%llc_nat = self%llc_cart
   call trace%end
@@ -540,7 +540,7 @@ SUBROUTINE delete (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%delete')
   call MeshRecycler (self%mesh)
-  deallocate (self%mem)
+  if (associated(self%mem)) deallocate (self%mem)
   call trace%end
 END SUBROUTINE delete
 
