@@ -31,20 +31,24 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(download_t):: self
-  integer:: order_interpolator=-1, iostat
-  logical:: first_time=.true.
+  integer:: iostat
+  integer, save:: order_interpolator=-1
+  logical, save:: first_time=.true.
   namelist /download_params/ order_interpolator
   !-----------------------------------------------------------------------------
   call trace%begin ('download_mod%init')
-
+  !$omp critical (download_cr)
   if (first_time) then
-    order_interpolator = -1
     first_time = .false.
     rewind (io%input)
     read (io%input, download_params, iostat=iostat)
     if (io%master) write (*, download_params)
-    self%interpolate => SelectInterpolator(order_interpolator)
+    call self%test
   end if
+  self%interpolate => SelectInterpolator(order_interpolator)
+  !$omp end critical (download_cr)
+  call trace%end
+END SUBROUTINE init
 
   call trace%end
 END SUBROUTINE
