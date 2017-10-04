@@ -13,6 +13,7 @@ MODULE download_mod
   USE task_mod
   USE patch_mod
   USE link_mod
+  USE scene_mod
   USE interpolate_mod
   implicit none
   private
@@ -22,6 +23,7 @@ MODULE download_mod
   contains
     procedure, nopass:: download_link
     procedure:: init
+    procedure:: test
   end type
   type(download_t), public:: download
 CONTAINS
@@ -50,8 +52,91 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
+!> =============================================================================
+!> Initialise downloading and interpolating options.
+!> =============================================================================
+SUBROUTINE test (self)
+  class(download_t):: self
+  !.............................................................................
+  class(patch_t), pointer :: source(:), target, src
+  integer, dimension(3)  :: l, u, o, ii
+  integer                :: i, j, k, iv, dir
+  real(8), dimension(3)  :: pos
+  real(4), dimension(3)  :: pp
+  class(mesh_t), pointer :: mesh
+  !-----------------------------------------------------------------------------
+  call trace%begin ('download_mod%test')
+  !-----------------------------------------------------------------------------
+  ! Generate meshes with three resolutions, differing with a factor of three,
+  ! with and w/o staggering
+  !-----------------------------------------------------------------------------
+  allocate (target)
+  call target%setup (size=0.1_8*[1,1,1], nv=2, nt=1, nw=1)
+  !-----------------------------------------------------------------------------
+  ! Loop over the three resolutions for source patches
+  !-----------------------------------------------------------------------------
+  allocate (source(3))
+  do i=1,3
+    call source(i)%setup (size=0.1_8*[1,1,1]*(scene%f_zoom)**(i-2), nv=2, nt=1, nw=1)
+    print *, 'mesh', i, associated(source(i)%mesh), source(i)%position
+    print *, 'mesh', i, associated(source(i)%mesh), source(i)%mesh%p, dir
+  end do
+  !---------------------------------------------------------------------------
+  ! Loop over source size
+  !---------------------------------------------------------------------------
+  do i=1,3
+    !---------------------------------------------------------------------------
+    ! Loop over no-stagger / stagger
+    !---------------------------------------------------------------------------
+    do iv=1,2
+      do dir=1,3
+        source(i)%mesh(dir)%h(iv) = -0.5*(iv-1)
+           target%mesh(dir)%h(iv) = -0.5*(iv-1)
+      end do
+      print *, 'source size, stagger:', source(i)%size(1), source(i)%mesh(1)%h(iv)
+      !-------------------------------------------------------------------------
+      ! Loop over placement of the source mesh: ol, il, c, ir, or
+      !-------------------------------------------------------------------------
+      do j=1,5
+        select case (j)
+        case (1)
+          source(i)%position = target%position - 0.5_8*(target%size + source(i)%size)
+        case (2)
+          if (i == 2) cycle
+          source(i)%position = target%position - 0.5_8*(target%size - source(i)%size)
+        case (3)
+          source(i)%position = target%position
+        case (4)
+          if (i == 2) cycle
+          source(i)%position = target%position + 0.5_8*(target%size - source(i)%size)
+        case (5)
+          source(i)%position = target%position + 0.5_8*(target%size + source(i)%size)
+        end select
+        source(i)%mesh%p = source(i)%position
+        src => source(i)
+        call dnload_range (target, src, iv, l, u, o)
+        do k=l(1),u(1)
+          do dir=1,3
+            pos(dir) = target%position(dir) + target%mesh(dir)%r(k) + target%mesh(dir)%h(iv)*target%ds(dir)
+          end do
+          call source(i)%index_space (pos, iv, ii, pp)
+          print 1, i, iv, j, "k:", k, "o:", o(1), "ii:", ii(1), "pp:", pp(1)
+        1 format("download_t%test",3i3,3(2x,a,i3),2x,a,f5.2)
+        end do
+        print *,' '
+      end do
+    end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Clean up
+  !-----------------------------------------------------------------------------
+  call target%delete
+  do i=1,3
+    call source(i)%delete
+  end do
+  deallocate (target, source)
   call trace%end
-END SUBROUTINE
+END SUBROUTINE test
 
 !> =============================================================================
 !> Select the best method for each case.  So far, this only supports static
