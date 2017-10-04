@@ -111,12 +111,6 @@ SUBROUTINE init (self)
     self%mesh(i)%h(self%i_px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%i_bx+i-1) = -0.5
   end do
-  do i=1,3
-    do iv=1,self%nv
-      self%mesh(i)%la(iv) = self%mesh(i)%p + self%mesh(i)%r(self%mesh(i)%li) + self%mesh(i)%h(iv)
-      self%mesh(i)%ua(iv) = self%mesh(i)%p + self%mesh(i)%r(self%mesh(i)%ui) + self%mesh(i)%h(iv)
-    end do
-  end do
   if (io%verbose>1 .and. self%track) then
     do i=1,3
       print '("h:",8f5.2)', self%mesh(i)%h

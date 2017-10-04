@@ -60,8 +60,6 @@ MODULE mesh_mod
     real(8), dimension(:), pointer :: r => null()    ! coordinate relative to patch centre
     real(8), dimension(:), pointer :: h => null()    ! offset for staggered variables;
                                                      ! should be initialised in `mhd_t%init`
-    real(8), dimension(:), pointer :: la => null()   ! lower authoritative boundary
-    real(8), dimension(:), pointer :: ua => null()   ! upper authoritative boundary
     real(8), dimension(:), pointer :: ddn => null()  ! borrow for now (FIXME)
     real(8), dimension(:), pointer :: dup => null()  ! borrow for now (FIXME)
     real(4), dimension(:), pointer :: dsup=> null()  ! borrow for now (FIXME)
@@ -372,8 +370,6 @@ SUBROUTINE deallocate_coord (self)
   !.............................................................................
   if (associated(self%r))   deallocate (self%r)
   if (associated(self%h))   deallocate (self%h)
-  if (associated(self%la))  deallocate (self%la)
-  if (associated(self%ua))  deallocate (self%ua)
   if (associated(self%ddn)) deallocate (self%ddn)
   if (associated(self%dup)) deallocate (self%dup)
 END SUBROUTINE deallocate_coord
