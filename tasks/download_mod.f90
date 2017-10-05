@@ -416,14 +416,15 @@ END SUBROUTINE dnload_range
 !> =============================================================================
 SUBROUTINE same (target, source, all_cells, only)
   class(patch_t), pointer :: target, source
-  logical, optional:: all_cells
-  integer, optional:: only
+  logical, optional       :: all_cells
+  integer, optional       :: only
   !.............................................................................
-  integer                 :: l(3), u(3), o(3), ii(3), jt(2)
+  integer                 :: l(3), u(3), o(3), ii(3), jt(2), i
   real(8)                 :: position(3), xx
   real                    :: pt(2)
   integer                 :: ix, iy, iz, iv, iv1, iv2, li(3), ui(3)
   integer, save           :: itimer=0
+  logical                 :: all_cells_l
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%same', itimer=itimer)
   call source%time_interval (target%time, jt, pt)
@@ -434,15 +435,20 @@ SUBROUTINE same (target, source, all_cells, only)
     iv1 = 1
     iv2 = target%nv
   end if
-  li = target%mesh%li
-  ui = target%mesh%ui
+  if (present(all_cells)) then
+    all_cells_l = all_cells
+  else
+    all_cells_l = .false.
+  end if
   do iv=iv1, iv2
+    li = target%mesh%li
+    ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
     if (target%id==io%id_debug) &
       print 1, source%id, l, u, o, jt, pt
       1 format("DBG download_t%same:", i6,"  l,u,o:",3(3i4,2x)," jt,pt:",2i4,2x,2f6.2)
     if (source%unsigned(iv)) then
-      if (present(all_cells)) then
+      if (all_cells_l) then
         do iz=l(3),u(3)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
@@ -539,13 +545,14 @@ SUBROUTINE different (target, source, all_cells, only)
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................
-  integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2
-  integer, dimension(3)   :: l, u, ii, li, ui
-  real(8), dimension(3)   :: pos, h
+  integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i
+  integer, dimension(3)   :: l, u, ii, li, ui, jj
+  real(8), dimension(3)   :: pos
   logical                 :: valid
   integer, save           :: itimer=0
   real                    :: pt(2), pp(3)
   real(kind=KindScalarVar):: qint
+  logical                 :: all_cells_l
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different', itimer=itimer)
   call source%time_interval (target%time, jt, pt)
@@ -556,8 +563,11 @@ SUBROUTINE different (target, source, all_cells, only)
     iv1 = 1
     iv2 = target%nv
   end if
-  li = target%mesh%li
-  ui = target%mesh%ui
+  if (present(all_cells)) then
+    all_cells_l = all_cells
+  else
+    all_cells_l = .false.
+  end if
   do iv=iv1,iv2
     call dnload_range (target, source, iv, l, u)
     !---------------------------------------------------------------------------
@@ -565,6 +575,7 @@ SUBROUTINE different (target, source, all_cells, only)
     ! make fluxes up/down symmetric
     !---------------------------------------------------------------------------
     li = target%mesh%li
+    ui = target%mesh%ui
     if (target%id==io%id_debug) &
       print 1, source%id, (source%position-target%position)/target%size, l, u
       1 format("DBG download_t%different:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
@@ -573,20 +584,19 @@ SUBROUTINE different (target, source, all_cells, only)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
-          if (present(all_cells) .or. &
-              any((ii-li) < 0 .or. (ii-target%mesh%ui) > 0)) then
+          if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
             if (target%id==io%id_debug .and. io%verbose>1) &
               print *, target%id, 'DBG interpolate_t%different:    using', iv,ii, present(all_cells), (ii-li) < 0
             pos = target%myposition (ii, iv)
             call source%index_space (pos, iv, jj, pp)
             if (source%pervolume(iv)) then
-              qint = interpolator%interpolator_specific (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
-                   + interpolator%interpolator_specific (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
+              call source%interpolate_specific (target, ii, iv, jt, pt)
             else
-              qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
-                   + interpolator%interpolator (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
+              call source%interpolate          (target, ii, iv, jt, pt)
             end if
-            target%mem(ix,iy,iz,iv,target%it,1) = qint
+            if (all((ii>=li.and.ii<=ui))) then
+              print *,'INTERNAL BREACH!', ii
+            end if
           else
             if (target%id==io%id_debug .and. io%verbose>1) &
               print *, target%id, 'DBG interpolate_t%different: skipping', iv,ii, present(all_cells), (ii-li) < 0
