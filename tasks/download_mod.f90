@@ -311,69 +311,58 @@ END SUBROUTINE download_link
 !> =============================================================================
 SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   class(patch_t), pointer :: target, source
-  integer                 :: iv, l(3), u(3), offset(3), one(3)
+  integer                 :: iv, l(3), u(3), offset(3), li, ui
   optional                :: offset
   !.............................................................................
-  real(8), dimension(3):: h, dist, rl, ru
-  integer:: i, li, ui
+  real(8), dimension(3)   :: h, dist, la, ua
+  integer                 :: i
+  class(mesh_t), pointer  :: sm, tm
   !-----------------------------------------------------------------------------
-  call trace%begin ('download_mod::dnload_range', 2)
-  ! for collapsed dimensions
-  where (source%n > 1)
-    one = 1
-  elsewhere
-    one = 0
-  endwhere
-  h = source%index_stagger(iv)
+  call trace%begin ('download_t%dnload_range', 2)
   !-----------------------------------------------------------------------------
-  ! Map to the first and last point inside the source domain, computing first
-  ! the distance btw patch midpoints, then adding the offsets to the li and ui
-  ! points. By using rl and ru the procedure becomes independent of no_mans_land.
+  ! First take care of mapping the distance between the source and target
+  ! periodically, so this can be ignored in the next steps.
   !-----------------------------------------------------------------------------
-  dist = source%position - target%position + h*(source%mesh%d-target%mesh%d)
+  dist = source%position - target%position
   where (source%periodic)
-    dist = modulo(dist+0.5_8*source%mesh%b,source%mesh%b) -0.5_8*source%mesh%b
+    dist = modulo(dist+0.5_8*source%mesh%b,source%mesh%b) - 0.5_8*source%mesh%b
   end where
   !-----------------------------------------------------------------------------
-  ! The lf and uf values are floating point relative coordinates corresponding
-  ! to li and ui.  These are the boundaries of the 'authoritative domain'
+  ! Add the distances from the source center to the start and end of the
+  ! authoritative domain of each variable.
   !-----------------------------------------------------------------------------
   do i=1,3
-    rl(i) = dist(i) + source%mesh(i)%r(source%mesh(i)%li+one(i))
-    ru(i) = dist(i) + source%mesh(i)%r(source%mesh(i)%ui  )
+    sm => source%mesh(i)
+    tm => target%mesh(i)
+    la(i) = dist(i) + sm%r(sm%li) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
+    ua(i) = dist(i) + sm%r(sm%ui) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
   end do
-  l = target_index (rl)
-  u = target_index (ru)
+!  print *,'di:',dist/target%size
+!  print *,'la:',(sm%r(sm%li) + sm%h(iv)*sm%d - tm%h(iv)*tm%d)/target%size
+!  print *,'ua:',(sm%r(sm%ui) + sm%h(iv)*sm%d - tm%h(iv)*tm%d)/target%size
+!  print *,'la:',(sm%r(sm%li) + sm%h(iv)*sm%d - tm%h(iv)*tm%d)/source%size
+!  print *,'ua:',(sm%r(sm%ui) + sm%h(iv)*sm%d - tm%h(iv)*tm%d)/source%size
+  l = target_index (la)
+  u = target_index (ua)
   !-----------------------------------------------------------------------------
   ! Make sure the range is legal.  The u index can become smaller than lb, which
   ! means there is no overlap.  Likewise, the l index can become larger than ub
   !-----------------------------------------------------------------------------
   l = max(target%mesh%lb,l)
-  if (target%kind(1:14) == 'zeus_mhd_patch') then
-    where (target%mesh%n > 1 .and. h /= 0.0)
-      u = min(target%mesh%ub+1,u)
-    elsewhere
-      u = min(target%mesh%ub,u)
-    end where
-  else
-    u = min(target%mesh%ub,u)
-  end if
-  l = max(min(l,target%mesh%uo),target%mesh%lb)
-  u = max(min(u,target%mesh%ub),target%mesh%lo)
-  if (target%id==io%id_debug) print *, 'mk3', l(1), u(1)
+  u = min(target%mesh%ub,u)
   !-----------------------------------------------------------------------------
   ! For same level patch, the integer offset is what should be added to the
-  ! target index to get the source index.  For aligned meshes, offset=0, while
-  ! for adjacent meshes, the offset is equal to the number of authoritative points.
+  ! target index to get the source index.  For aligned meshes, offset=0.
   !-----------------------------------------------------------------------------
   if (present(offset)) then
     if (source%level==target%level) then
-      where (source%mesh%ui > u)
-        offset = source%mesh%ui     - u
+      where      (source%mesh%ui > u)
+        offset = source%mesh%ui - u
+      else where (source%mesh%li < l)
+        offset = source%mesh%li - l
       else where
-        offset = source%mesh%li+one - l
+        offset = 0
       end where
-      dist = source%distance(target)  ! positive if source to the right of target
     else
       print *, 'ERROR: fixed offset not valid for different levels', &
         target%id, target%level, source%id, source%level
