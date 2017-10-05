@@ -100,7 +100,6 @@ SUBROUTINE init (self)
   ! initial%init, the type of IC is known, and the procedure pointer is set
   ! correctly.
   !----------------------------------------------------------------------------
-  print *,'XXXX', type
   self%initial%initial_condition = type
   self%initial%solver = 'planet_atmosphere'
   call self%pebble_patch_t%init
