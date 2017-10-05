@@ -20,6 +20,7 @@ MODULE io_mod
     integer:: nwrite=0, ntask=0
     character(len=64):: inputname, outputname, datadir='data', top, inputdir
     character(len=1):: sep = '/'
+    character(len=72):: hl='-------------------------------------------------------------------------'
     ! flag values
     logical:: do_trace=.false.
     logical:: do_output=.true.

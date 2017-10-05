@@ -290,6 +290,7 @@ SUBROUTINE MeshRecycler (collection)
     call collection(i)%deallocate
   end do
   deallocate(collection)
+  nullify (collection)
 END SUBROUTINE MeshRecycler
 
 !> =============================================================================

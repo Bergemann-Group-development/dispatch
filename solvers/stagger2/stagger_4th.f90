@@ -2,6 +2,7 @@
 !> $Id$
 !> =============================================================================
 MODULE stagger_mod
+  USE io_mod
   implicit none
   public
   integer, private:: verbose=0
@@ -885,14 +886,15 @@ SUBROUTINE stagger_test
   end do
   if (.not.ok) print *,'ddzup:', ok
   allok = allok.and.ok
-  print *,'---------------------------------------------------------------------'
+  print *,io%hl
   if (allok) then
-    print *,'4th/3rd order stagger operator test is OK'
+    print *,'4th/3rd order stagger operator test passed'
+    print *,io%hl
   else
-    print *,'4th/3rd order stagger operator test is not OK!'
+    print *,'4th/3rd order stagger operator test failed!'
+    print *,io%hl
     error stop 'stagger_test'
   end if
-  print *,'---------------------------------------------------------------------'
   !-----------------------------------------------------------------------------
   deallocate (a, b)
 END SUBROUTINE stagger_test

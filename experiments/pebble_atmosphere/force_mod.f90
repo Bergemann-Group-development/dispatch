@@ -14,6 +14,7 @@ MODULE force_mod
   real(8), parameter:: pi2=8.0*atan(1.0)
   type, public:: force_t
     integer:: id
+    logical:: do_force=.true.
     character(len=64):: solver
     procedure(star_and_planet), pointer:: selected=>null()
   contains
@@ -109,6 +110,7 @@ FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet)
   real(8):: x, y, z, xs, ys, zs, xp, yp, zp, ds2(3), uxx, uyy
   !-----------------------------------------------------------------------------
   call trace_begin('force_t:star_and_planet')
+  if (self%do_force) then
   if (self%solver(1:7)=='ramses_') then
     ds2 = 0.
   else if (self%solver(1:7)=='stagger') then
@@ -265,6 +267,9 @@ FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet)
     end if
   end if
   end associate
+  else
+    ff(:,:,:,:) = 0.0
+  end if
   call trace_end
 END FUNCTION disk_perhaps_with_planet
 

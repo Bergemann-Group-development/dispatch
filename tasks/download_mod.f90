@@ -63,6 +63,7 @@ SUBROUTINE test (self)
   real(8), dimension(3)  :: pos
   real(4), dimension(3)  :: pp
   class(mesh_t), pointer :: mesh
+  logical                :: ok, allok
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%test')
   !-----------------------------------------------------------------------------
@@ -123,12 +124,14 @@ SUBROUTINE test (self)
   !-----------------------------------------------------------------------------
   ! Test actual download values
   !-----------------------------------------------------------------------------
+  allok = .true.
   do i=1,3
     src => source(i)
     do j=1,5
       call set_position (src, target, j)
       if (i==2.and.(j==2.or.j==4)) cycle
-      print "('source size:',i2,3x,'position:',i2,2x,'levels:',2i2)", i, j, src%level, target%level
+      if (io%verbose>1) & 
+        print "('source size:',i2,3x,'position:',i2,2x,'levels:',2i2)", i, j, src%level, target%level
       call set_values (src)
       call set_values (target)
       if (src%level==target%level) then
@@ -136,9 +139,19 @@ SUBROUTINE test (self)
       else
         call different (target, src, all_cells=.false.)
       end if
-      call check_values (target)
+      call check_values (target, ok)
+      allok = allok.and.ok
     end do
   end do
+  print *,io%hl
+  if (allok) then
+    print *,'download_t%test passed'
+    print *,io%hl
+  else
+    print *,'download_t%test failed'
+    print *,io%hl
+    error stop 'download_t%test::check_values'
+  end if
   !-----------------------------------------------------------------------------
   ! Clean up
   !-----------------------------------------------------------------------------
@@ -200,8 +213,9 @@ end subroutine set_values
 !> =============================================================================
 !> Check values, including in guard zones
 !> =============================================================================
-subroutine check_values (patch)
+subroutine check_values (patch, ok)
   type(patch_t)          :: patch
+  logical                :: ok
   integer                :: ix, iy, iz, iv, n(3)
   real                   :: x, y, z, v, w, eps
   !-----------------------------------------------------------------------------
@@ -233,8 +247,14 @@ subroutine check_values (patch)
     end do
   end do
   end associate
-  print *,'check_values: n_zero, n_ok, n_nok =', n
-  if (n(3) > 0) error stop 'download_t%test::check_values'
+  if (io%verbose>0) & 
+    print *,'check_values: n_zero, n_ok, n_nok =', n
+  if (n(3) == 0) then
+    ok = .true.
+  else
+    ok = .false.
+    print *,'check_values: n_zero, n_ok, n_nok =', n
+  end if
 end subroutine check_values
 !> =============================================================================
 END SUBROUTINE test
@@ -432,6 +452,9 @@ SUBROUTINE same (target, source, all_cells, only)
   do iv=iv1, iv2
     li = target%mesh%li
     ui = target%mesh%ui
+!    do i=1,3
+!      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
+!    end do
     call dnload_range (target, source, iv, l, u, o)
     if (target%id==io%id_debug) &
       print 1, source%id, l, u, o, jt, pt
@@ -565,6 +588,9 @@ SUBROUTINE different (target, source, all_cells, only)
     !---------------------------------------------------------------------------
     li = target%mesh%li
     ui = target%mesh%ui
+!    do i=1,3
+!      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
+!    end do
     if (target%id==io%id_debug) &
       print 1, source%id, (source%position-target%position)/target%size, l, u
       1 format("DBG download_t%different:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))

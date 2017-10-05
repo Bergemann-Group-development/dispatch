@@ -41,11 +41,13 @@ MODULE mhd_mod
     type(force_t):: force
   contains
     procedure:: init
+    procedure:: test
     procedure:: pde
     procedure:: update
     procedure:: output
     procedure:: gas_pressure
   end type
+  type(index_t):: idx
   logical, save:: flop_count=.false.
 CONTAINS
 
@@ -55,7 +57,6 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  type(index_t):: idx
   integer:: i, iv
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   logical, save:: first_time=.true.
@@ -94,6 +95,14 @@ SUBROUTINE init (self)
     self%nv = 5
   end if
   !-----------------------------------------------------------------------------
+  ! Self test
+  !-----------------------------------------------------------------------------
+  !$omp critical (input_cr)
+  if (first_time) then
+    call self%test
+  end if
+  !$omp end critical (input_cr)
+  !-----------------------------------------------------------------------------
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
   call self%gpatch_t%init
@@ -129,8 +138,81 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
+SUBROUTINE test (self)
+  class(mhd_t) :: self
+  integer      :: ix, iy, iz, m(3), n(3), i1
+  real         :: fx, fy, fz, eps
+  logical      :: ok
+  !-----------------------------------------------------------------------------
+  ! Allocate mem to a temporary patch
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%test')
+  call self%patch_t%init
+  !-----------------------------------------------------------------------------
+  ! Give it initial values (linear compression), also in the guard zones
+  !-----------------------------------------------------------------------------
+  do iz=self%mesh(3)%lb,self%mesh(3)%ub
+    fz = sin(4.*cgs%pi*self%mesh(3)%r(iz)/self%size(3))
+    do iy=self%mesh(2)%lb,self%mesh(2)%ub
+      fy = sin(4.*cgs%pi*self%mesh(2)%r(iy)/self%size(2))
+      do ix=self%mesh(1)%lb,self%mesh(1)%ub
+        fx = sin(4.*cgs%pi*self%mesh(1)%r(ix)/self%size(1))
+        self%mem(ix,iy,iz,idx%d,self%it,1) = 1.0+0.1*(fx+fy+fz)
+        self%mem(ix,iy,iz,idx%s,self%it,1) = 0.1*(fx+fy+fz)
+        self%mem(ix,iy,iz,idx%px,self%it,1) = fx
+        self%mem(ix,iy,iz,idx%py,self%it,1) = fy
+        self%mem(ix,iy,iz,idx%pz,self%it,1) = fz
+      end do
+    end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Evaluate the PDE and print the time derivatives (which are placed in the 2nd
+  ! time slot and the 2nd variable slot)
+  !-----------------------------------------------------------------------------
+  self%force%do_force = .false.
+  call self%pde
+  self%force%do_force = .true.
+  m = (1+self%gn)/2
+  ok = .true.
+  eps = 1e-6
+  n = nint(self%size*0.5_8/self%ds)
+  do ix=self%mesh(1)%li,self%mesh(1)%ui
+    i1 = mod(ix-self%mesh(1)%li+n(1),self%mesh(1)%n) + self%mesh(1)%li
+    ok = ok .and. all(abs(self%mem(ix,m(2),m(3),1:5,self%it,2)- &
+                          self%mem(i1,m(2),m(3),1:5,self%it,2)) < eps)
+    if (io%verbose>0 .or. io_unit%do_validate) &
+      print 1,ix,self%mem(ix,m(2),m(3),1:5,self%it,2)
+    1 format("mhd_t%test:",i4,1p,2(2x,5e14.5))
+  end do
+  do iy=self%mesh(2)%li,self%mesh(2)%ui
+    i1 = mod(iy-self%mesh(2)%li+n(2),self%mesh(2)%n) + self%mesh(2)%li
+    ok = ok .and. all(abs(self%mem(m(1),iy,m(3),1:5,self%it,2)- &
+                          self%mem(m(1),i1,m(3),1:5,self%it,2)) < eps)
+    if (io%verbose>0 .or. io_unit%do_validate) &
+      print 1,iy,self%mem(m(1),iy,m(3),1:5,self%it,2)
+  end do
+  do iz=self%mesh(3)%li,self%mesh(3)%ui
+    i1 = mod(iz-self%mesh(3)%li+n(3),self%mesh(3)%n) + self%mesh(3)%li
+    ok = ok .and. all(abs(self%mem(m(1),m(2),iz,1:5,self%it,2)- &
+                          self%mem(m(1),m(2),i1,1:5,self%it,2)) < eps)
+    if (io%verbose>0 .or. io_unit%do_validate) &
+      print 1,iz,self%mem(m(1),m(2),iz,1:5,self%it,2)
+  end do
+  print *,io%hl
+  if (ok) then
+    print *,'mhd_t%test passed'
+    print *,io%hl
+  else
+    print *,'mhd_t%test failed'
+    print *,io%hl
+    error stop 'mhd_t%test'
+  end if
+  call self%delete
+  call trace%end
+END SUBROUTINE test
+
+!> =============================================================================
 SUBROUTINE pde (self)
-  USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
   real, dimension(:,:,:,:), pointer:: U, emf, J, p, B, dpdt, dBdt

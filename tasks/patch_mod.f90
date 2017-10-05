@@ -537,6 +537,8 @@ SUBROUTINE delete (self)
   call trace%begin ('patch_t%delete')
   call MeshRecycler (self%mesh)
   if (associated(self%mem)) deallocate (self%mem)
+  nullify (self%mem)
+  self%mem_allocated = .false.
   call trace%end
 END SUBROUTINE delete
 

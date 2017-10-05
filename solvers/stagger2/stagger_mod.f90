@@ -2,9 +2,7 @@
 !> $Id$
 !> =============================================================================
 MODULE stagger_mod
-  !USE omp_timer_mod
-  !USE scalar_mod
-  !USE vector_mod
+  USE io_mod
   USE stagger_16
   USE stagger_20
   USE stagger_24
@@ -793,10 +791,13 @@ SUBROUTINE stagger_test
   end do
   allok = allok .and. ok
   if (.not.ok) print *,'ddzup:', ok
+  print *,io%hl
   if (allok) then
-    print *,'2nd/1st order stagger operator test is OK'
+    print *,'2nd/1st order stagger operator test passed'
+    print *,io%hl
   else
-    print *,'2nd/1st order stagger operator test is not OK!'
+    print *,'2nd/1st order stagger operator test failed!'
+    print *,io%hl
     error stop 'stagger_test'
   end if
   !-----------------------------------------------------------------------------

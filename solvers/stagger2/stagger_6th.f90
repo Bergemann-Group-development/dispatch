@@ -2,6 +2,7 @@
 !> 6th order stagger operators, with self-test procedure
 !> =============================================================================
 MODULE stagger_mod
+  USE io_mod
   implicit none
   public
   integer, private:: verbose=0
@@ -1090,14 +1091,15 @@ SUBROUTINE stagger_test
   end do
   allok = allok .and. ok
   if (.not.ok) print *,'ddzup:', ok
-  print *,'---------------------------------------------------------------------'
+  print *,io%hl
   if (allok) then
-    print *,'6th/5th order stagger operator test is OK'
+    print *,'6th/5th order stagger operator test passed'
+    print *,io%hl
   else
-    print *,'6th/5th order stagger operator test is not OK!'
+    print *,'6th/5th order stagger operator test failed!'
+    print *,io%hl
     error stop 'stagger_test'
   end if
-  print *,'---------------------------------------------------------------------'
   !-----------------------------------------------------------------------------
   deallocate (a, b)
 END SUBROUTINE stagger_test
