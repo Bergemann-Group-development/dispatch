@@ -383,6 +383,13 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   l = max(target%mesh%lb,l)
   u = min(target%mesh%ub,u)
   !-----------------------------------------------------------------------------
+  ! Account for collapsed dimensions
+  !-----------------------------------------------------------------------------
+  where (target%n == 1)
+    l = min(l,target%mesh%ub)
+    u = max(u,target%mesh%lb)
+  end where
+  !-----------------------------------------------------------------------------
   ! For same level patch, the integer offset is what should be added to the
   ! target index to get the source index.  For aligned meshes, offset=0.
   !-----------------------------------------------------------------------------
