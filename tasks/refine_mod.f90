@@ -189,6 +189,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   allocate (child, source=parent)
   child%mem_allocated = .false.
   nullify (child%mem)
+  nullify (child%mesh)
   child%id = 0                                       ! to ensure it gets its own ID
   child%size = child_size                            ! new size
   child%position = pos                               ! patch position
