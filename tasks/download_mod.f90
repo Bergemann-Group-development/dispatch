@@ -71,13 +71,13 @@ SUBROUTINE test (self)
   ! with and w/o staggering
   !-----------------------------------------------------------------------------
   allocate (target)
-  call target%setup (size=0.1_8*[1,1,1], nv=2, nt=1, nw=1)
+  call target%setup (size=0.1_8*[1,1,1], n=[16,16,16], nv=2, nt=1, nw=1)
   !-----------------------------------------------------------------------------
   ! Loop over the three resolutions for source patches
   !-----------------------------------------------------------------------------
   allocate (source(3))
   do i=1,3
-    call source(i)%setup (size=0.1_8*[1,1,1]*(scene%f_zoom)**(i-2), nv=2, nt=1, nw=1)
+    call source(i)%setup (size=0.1_8*[1,1,1]*(scene%f_zoom)**(i-2), n=[16,16,16], nv=2, nt=1, nw=1)
   end do
   !---------------------------------------------------------------------------
   ! Loop over source size
@@ -90,8 +90,10 @@ SUBROUTINE test (self)
     !---------------------------------------------------------------------------
     do iv=1,2
       do dir=1,3
-        source(i)%mesh(dir)%h(iv) = -0.5*(iv-1)
-           target%mesh(dir)%h(iv) = -0.5*(iv-1)
+        associate (srcih => source(i)%mesh(dir)%h)
+        srcih(iv) = -0.5*(iv-1)
+        end associate
+        target%mesh(dir)%h(iv)    = -0.5*(iv-1)
       end do
       if (io%verbose>0 .or. io_unit%do_validate) &
         print *, 'source size, stagger:', source(i)%size(1), source(i)%mesh(1)%h(iv)
@@ -112,9 +114,15 @@ SUBROUTINE test (self)
             pos(dir) = target%position(dir) + target%mesh(dir)%r(k) + target%mesh(dir)%h(iv)*target%ds(dir)
           end do
           call source(i)%index_space (pos, iv, ii, pp)
-          if (io%verbose>0 .or. io_unit%do_validate) &
-            print 1, i, iv, j, "k:", k, "o:", o(1), "ii:", ii(1), "pp:", pp(1)
-          1 format("download_t%test",3i3,3(2x,a,i3),2x,a,f5.2)
+          if (io%verbose>0 .or. io_unit%do_validate) then
+            if (src%level==target%level) then
+              print 1, i, iv, j, "k:", k, "o:", o(1), "ii:", ii(1), "pp:", pp(1)
+              1 format("download_t%test",3i3,3(2x,a,i4),2x,a,f5.2)
+            else
+              print 2, i, iv, j, "k:", k, "o: N/A", "ii:", ii(1), "pp:", pp(1)
+              2 format("download_t%test",3i3,2x,a,i4,2x,a,2x,a,i4,2x,a,f5.2)
+            end if
+          end if
         end do
         if (io%verbose>0 .or. io_unit%do_validate) &
           print *,' '
@@ -190,10 +198,13 @@ end subroutine set_position
 !> =============================================================================
 subroutine set_values (patch)
   type(patch_t)          :: patch
+  class(mesh_t), pointer :: m1, m2, m3
   integer                :: ix, iy, iz, iv
   real                   :: x, y, z, v
   !-----------------------------------------------------------------------------
-  associate (m1=>patch%mesh(1), m2=>patch%mesh(2), m3=>patch%mesh(3))
+  m1 => patch%mesh(1)
+  m2 => patch%mesh(2)
+  m3 => patch%mesh(3)
   do iv=1,2
     patch%mem(:,:,:,iv,:,:) = 0.0
     do iz=m3%li,m3%ui
@@ -208,18 +219,20 @@ subroutine set_values (patch)
       end do
     end do
   end do
-  end associate
 end subroutine set_values
 !> =============================================================================
 !> Check values, including in guard zones
 !> =============================================================================
 subroutine check_values (patch, ok)
   type(patch_t)          :: patch
+  class(mesh_t), pointer :: m1, m2, m3
   logical                :: ok
   integer                :: ix, iy, iz, iv, n(3)
   real                   :: x, y, z, v, w, eps
   !-----------------------------------------------------------------------------
-  associate (m1=>patch%mesh(1), m2=>patch%mesh(2), m3=>patch%mesh(3))
+  m1 => patch%mesh(1)
+  m2 => patch%mesh(2)
+  m3 => patch%mesh(3)
   eps=0.1*max(m1%d,m2%d,m3%d)
   n = 0
   do iv=1,2
@@ -246,7 +259,6 @@ subroutine check_values (patch, ok)
       end do
     end do
   end do
-  end associate
   if (io%verbose>0) & 
     print *,'check_values: n_zero, n_ok, n_nok =', n
   if (n(3) == 0) then

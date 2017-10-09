@@ -508,14 +508,16 @@ END SUBROUTINE init
 !> =============================================================================
 !> Deallocate a patch and its allocated parts
 !> =============================================================================
-SUBROUTINE setup (self, position, size, nt, nv, nw)
+SUBROUTINE setup (self, position, size, n, nt, nv, nw)
   class(patch_t)    :: self
   real(8), optional :: position(3), size(3)
+  integer, optional :: n(3)
   integer, optional :: nt, nv, nw
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%setup')
   if (present(position)) self%position = position
   if (present(size    )) self%size     = size
+  if (present(n       )) self%n        = n
   if (present(nt      )) self%nt       = nt
   if (present(nv      )) self%nv       = nv
   if (present(nw      )) self%nw       = nw
