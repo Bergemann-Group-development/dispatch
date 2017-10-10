@@ -33,6 +33,7 @@ rm -f *.o *.mod *.stackdump
  [ FC ] hydro_commons.o
  [ FC ] initial_mod.o
  [ FC ] data_hub_mod.o
+ [ FC ] poisson_mod.o
  [ FC ] gpatch_mod.o
  [ FC ] riemann_mod.o
  [ FC ] eos_mod.o
@@ -42,6 +43,7 @@ rm -f *.o *.mod *.stackdump
  [ FC ] star_mod.o
  [ FC ] load_balance_mod.o
  [ FC ] list_mod.o
+ [ FC ] solver_mod.o
  [ FC ] refine_mod.o
  [ FC ] task_list_mod.o
  [ FC ] ramses_mod.o

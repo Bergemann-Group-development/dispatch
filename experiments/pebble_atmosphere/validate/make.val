@@ -44,6 +44,7 @@ rm -f *.o *.mod *.stackdump
  [ FC ] atmosphere_mod.o
  [ FC ] initial_mod.o
  [ FC ] data_hub_mod.o
+ [ FC ] poisson_mod.o
  [ FC ] gpatch_mod.o
  [ FC ] timestep_mod.o
  [ FC ] vector_ops.o
@@ -54,11 +55,11 @@ rm -f *.o *.mod *.stackdump
  [ FC ] rt_components_mod.o
  [ FC ] rt_solver_mod.o
  [ FC ] rt_mod.o
+ [ FC ] solver_mod.o
  [ FC ] rmhd_mod.o
  [ FC ] pebble_mod.o
  [ FC ] pebbles_mod.o
  [ FC ] pebble_trace_mod.o
- [ FC ] solver_mod.o
  [ FC ] pebble_patch_mod.o
  [ FC ] experiment_mod.o
  [ FC ] load_balance_mod.o
