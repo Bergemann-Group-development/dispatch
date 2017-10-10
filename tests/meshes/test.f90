@@ -368,7 +368,8 @@ PROGRAM test
     print*,'m3: Unknown mesh type!'
   end select
 
-  ! But this does work in ifort!
+  ! But this does work in ifort (but causes an ICE in gfortran v5.4.1)!
+#ifndef __GFORTRAN__
   print*,"Workaround:"
   associate(m33 => m(3))
   select type(m33)
@@ -382,6 +383,7 @@ PROGRAM test
     print*,'m33: Unknown mesh type!'
   end select
   end associate
+#endif
 
   print*,"Columns 2, 3, 4 and 5 should be identical:"
   select type(m)
