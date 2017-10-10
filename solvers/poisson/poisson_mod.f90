@@ -88,7 +88,7 @@ SUBROUTINE init_sor (self, patch)
   character(len=16) :: comment
   logical, save     :: first_time = .true.
   !-----------------------------------------------------------------------------
-  if (omega_sor==0.) then
+  if (self%omega_sor==0.) then
     delta = 0.0; pref = 0.0
     do i=1,3
       if (patch%n(i) > 1) then
@@ -100,7 +100,6 @@ SUBROUTINE init_sor (self, patch)
     self%omega_sor = 2.0 / (1. + sqrt(1.0 - delta**2))
     comment =' (computed)'
   else
-    self%omega_sor = omega_sor
     comment =' (from namelist)'
   endif
   if (self%omega_sor < 0. .or. self%omega_sor>2) call mpi%abort( &
@@ -110,7 +109,7 @@ SUBROUTINE init_sor (self, patch)
     print '(a,f6.4,a)', 'poisson_mod: SOR prefactor set to: ', self%omega_sor, comment
     first_time = .false.
   endif
-  !$omp critical (poisson_cr2)
+  !$omp end critical (poisson_cr2)
 END SUBROUTINE init_sor
 
 !> =============================================================================
