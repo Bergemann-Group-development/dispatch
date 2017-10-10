@@ -624,16 +624,13 @@ SUBROUTINE different (target, source, all_cells, only)
             pos = target%myposition (ii, iv)
             call source%index_space (pos, iv, jj, pp)
             if (source%pervolume(iv)) then
-              qint = interpolator%interpolator_specific (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
-                   + interpolator%interpolator_specific (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
+              call source%interpolate_specific (target, ii, iv, jt, pt)
             else
-              qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
-                   + interpolator%interpolator (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
+              call source%interpolate          (target, ii, iv, jt, pt)
             end if
             if (all((ii>=li.and.ii<=ui))) then
               print *,'INTERNAL BREACH!', ii
             end if
-            target%mem(ix,iy,iz,iv,target%it,1) = qint
           else
             if (target%id==io%id_debug .and. io%verbose>1) &
               print *, target%id, 'DBG interpolate_t%different: skipping', iv,ii, present(all_cells), (ii-li) < 0

@@ -19,11 +19,11 @@
  verbose=0
  do_trace=f
  omp_trace=f
- do_output=f
+ do_output=t
 !id_debug=2
 /
 &particle_patch_params
- do_test=t
+ do_test=f
  test_time=10
  size=0.1
  n_star=20
@@ -39,7 +39,7 @@
 /
 &poisson_params /
 &selfgravity_params
- selfgravity=t prediction=t
+ selfgravity=f prediction=t
 !verbose=0 detailed_timer=f
 !max_iter=300
 !epsilon=0.001
@@ -48,22 +48,23 @@
 /
 &patch_params
  nt=5
- ng=3*3
- courant=0.1
+ ng=3*4
+ courant=0.2
  grace=0.0
  n=3*32
- !dt_fixed=1e-3
+ dt_fixed=3e-4
  !use_data_hub=t no_mans_land=t
+ no_mans_land=t
 /
 &out_params
- !end_time=0.5 out_time=0.05
- end_time=10e-3 out_time=5e-3
+ end_time=0.5 out_time=0.01
+ !end_time=10e-3 out_time=5e-3
  print_time=0.0
  guard_zones=t
  time_derivs=f
 /
 &mhd_params
- flop_count=t
+ flop_count=f
  hardwire=f
  eos='ideal'
  gamma=1.6666667
