@@ -745,7 +745,7 @@ SUBROUTINE stagger_test
   b = xdn(a)
   ok = .true.
   allok = .true.
-  do i=4,m(1)-2
+  do i=3,m(1)-1
     x = (i-0.5d0)*ds(1)
     d = x**3
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
@@ -754,7 +754,7 @@ SUBROUTINE stagger_test
   allok = allok.and.ok
   b = xup(a)
   ok = .true.
-  do i=3,m(1)-3
+  do i=2,m(1)-2
     x = (i+0.5d0)*ds(1)
     d = x**3
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
@@ -770,7 +770,7 @@ SUBROUTINE stagger_test
   end do
   b = ydn(a)
   ok = .true.
-  do i=4,m(2)-2
+  do i=3,m(2)-1
     y = (i-0.5d0)*ds(2)
     d = y**3
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
@@ -779,7 +779,7 @@ SUBROUTINE stagger_test
   allok = allok.and.ok
   b = yup(a)
   ok = .true.
-  do i=3,m(2)-3
+  do i=2,m(2)-2
     y = (i+.5d0)*ds(2)
     d = y**3
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
@@ -795,7 +795,7 @@ SUBROUTINE stagger_test
   end do
   b = zdn(a)
   ok = .true.
-  do i=4,m(3)-2
+  do i=3,m(3)-1
     z = (i-0.5d0)*ds(3)
     d = z**3
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
@@ -804,7 +804,7 @@ SUBROUTINE stagger_test
   allok = allok.and.ok
   b = zup(a)
   ok = .true.
-  do i=3,m(3)-3
+  do i=2,m(3)-2
     z = (i+0.5d0)*ds(3)
     d = z**3
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
@@ -820,7 +820,7 @@ SUBROUTINE stagger_test
   end do
   b = ddxdn(ds,a)
   ok = .true.
-  do i=4,m(1)-2
+  do i=3,m(1)-1
     x = (i-0.5d0)*ds(1)
     d = 4d0*x**3
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
@@ -829,7 +829,7 @@ SUBROUTINE stagger_test
   allok = allok.and.ok
   b = ddxup(ds,a)
   ok = .true.
-  do i=3,m(1)-3
+  do i=2,m(1)-2
     x = (i+0.5d0)*ds(1)
     d = 4d0*x**3
     ok = ok .and. (maxval(abs(b(i,:,:)-d)) < eps)
@@ -845,7 +845,7 @@ SUBROUTINE stagger_test
   end do
   b = ddydn(ds,a)
   ok = .true.
-  do i=4,m(2)-2
+  do i=3,m(2)-1
     y = (i-0.5d0)*ds(2)
     d = 4d0*y**3
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
@@ -854,7 +854,7 @@ SUBROUTINE stagger_test
   allok = allok.and.ok
   b = ddyup(ds,a)
   ok = .true.
-  do i=3,m(2)-3
+  do i=2,m(2)-2
     y = (i+.5d0)*ds(2)
     d = 4d0*y**3
     ok = ok .and. (maxval(abs(b(:,i,:)-d)) < eps)
@@ -870,7 +870,7 @@ SUBROUTINE stagger_test
   end do
   b = ddzdn(ds,a)
   ok = .true.
-  do i=4,m(3)-2
+  do i=3,m(3)-1
     z = (i-0.5d0)*ds(3)
     d = 4d0*z**3
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)
@@ -879,7 +879,7 @@ SUBROUTINE stagger_test
   allok = allok.and.ok
   b = ddzup(ds,a)
   ok = .true.
-  do i=3,m(3)-3
+  do i=2,m(3)-2
     z = (i+0.5d0)*ds(3)
     d = 4d0*z**3
     ok = ok .and. (maxval(abs(b(:,:,i)-d)) < eps)

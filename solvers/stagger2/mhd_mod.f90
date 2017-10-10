@@ -38,6 +38,7 @@ MODULE mhd_mod
     real:: cdtd
     logical:: mhd=.false.
     logical:: first_time=.true.
+    logical:: do_force=.true.
     type(force_t):: force
   contains
     procedure:: init
@@ -140,14 +141,26 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE test (self)
   class(mhd_t) :: self
-  integer      :: ix, iy, iz, m(3), n(3), i1
+  integer      :: ix, iy, iz, m(3), n(3), n0(3), i1
   real         :: fx, fy, fz, eps
-  logical      :: ok
+  logical      :: ok, allok
   !-----------------------------------------------------------------------------
   ! Allocate mem to a temporary patch
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%test')
   call self%patch_t%init
+  if (self%no_mans_land) then
+    n0 = 2*(self%n/2)
+  else
+    n0 = 2*(self%n/2)+1
+  end if
+  if (any(self%n /= n0)) then
+    print *,io%hs
+    print *, 'mhd_t%test not possible with n, no_mans_land =', self%n, self%no_mans_land
+    print *,io%hs
+    call trace%end
+    return
+  end if
   !-----------------------------------------------------------------------------
   ! Give it initial values (linear compression), also in the guard zones
   !-----------------------------------------------------------------------------
@@ -162,6 +175,11 @@ SUBROUTINE test (self)
         self%mem(ix,iy,iz,idx%px,self%it,1) = fx
         self%mem(ix,iy,iz,idx%py,self%it,1) = fy
         self%mem(ix,iy,iz,idx%pz,self%it,1) = fz
+        if (self%nv >= 8) then
+          self%mem(ix,iy,iz,idx%bx,self%it,1) = fy
+          self%mem(ix,iy,iz,idx%by,self%it,1) = fz
+          self%mem(ix,iy,iz,idx%bz,self%it,1) = fx
+        end if
       end do
     end do
   end do
@@ -169,37 +187,44 @@ SUBROUTINE test (self)
   ! Evaluate the PDE and print the time derivatives (which are placed in the 2nd
   ! time slot and the 2nd variable slot)
   !-----------------------------------------------------------------------------
-  self%force%do_force = .false.
+  self%do_force = .false.
   call self%pde
-  self%force%do_force = .true.
+  self%do_force = .true.
   m = (1+self%gn)/2
-  ok = .true.
-  eps = 1e-6
+  allok = .true.
+  eps = 3e-6/minval(self%ds)
+  print *,io%hl
+  print *,'minval(ds), eps =', minval(self%ds), eps
   n = nint(self%size*0.5_8/self%ds)
   do ix=self%mesh(1)%li,self%mesh(1)%ui
-    i1 = mod(ix-self%mesh(1)%li+n(1),self%mesh(1)%n) + self%mesh(1)%li
-    ok = ok .and. all(abs(self%mem(ix,m(2),m(3),1:5,self%it,2)- &
-                          self%mem(i1,m(2),m(3),1:5,self%it,2)) < eps)
-    if (io%verbose>0 .or. io_unit%do_validate) &
-      print 1,ix,self%mem(ix,m(2),m(3),1:5,self%it,2)
+    i1 = mod(ix-self%mesh(1)%li+n(1),2*n(1)) + self%mesh(1)%li
+    ok = all(abs(self%mem(ix,m(2),m(3),1:5,self%it,2)- &
+                 self%mem(i1,m(2),m(3),1:5,self%it,2)) < eps)
+    allok = allok .and. ok
+    if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
+      print 1,ix,self%mem(ix,m(2),m(3),1:5,self%it,2), &
+                 self%mem(i1,m(2),m(3),1:5,self%it,2)
     1 format("mhd_t%test:",i4,1p,2(2x,5e14.5))
   end do
   do iy=self%mesh(2)%li,self%mesh(2)%ui
-    i1 = mod(iy-self%mesh(2)%li+n(2),self%mesh(2)%n) + self%mesh(2)%li
-    ok = ok .and. all(abs(self%mem(m(1),iy,m(3),1:5,self%it,2)- &
-                          self%mem(m(1),i1,m(3),1:5,self%it,2)) < eps)
-    if (io%verbose>0 .or. io_unit%do_validate) &
-      print 1,iy,self%mem(m(1),iy,m(3),1:5,self%it,2)
+    i1 = mod(iy-self%mesh(2)%li+n(2),2*n(2)) + self%mesh(2)%li
+    ok = all(abs(self%mem(m(1),iy,m(3),1:5,self%it,2)- &
+                 self%mem(m(1),i1,m(3),1:5,self%it,2)) < eps)
+    allok = allok .and. ok
+    if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
+      print 1,iy,self%mem(m(1),iy,m(3),1:5,self%it,2), &
+                 self%mem(m(1),i1,m(3),1:5,self%it,2)
   end do
   do iz=self%mesh(3)%li,self%mesh(3)%ui
-    i1 = mod(iz-self%mesh(3)%li+n(3),self%mesh(3)%n) + self%mesh(3)%li
-    ok = ok .and. all(abs(self%mem(m(1),m(2),iz,1:5,self%it,2)- &
-                          self%mem(m(1),m(2),i1,1:5,self%it,2)) < eps)
-    if (io%verbose>0 .or. io_unit%do_validate) &
-      print 1,iz,self%mem(m(1),m(2),iz,1:5,self%it,2)
+    i1 = mod(iz-self%mesh(3)%li+n(3),2*n(3)) + self%mesh(3)%li
+    ok = all(abs(self%mem(m(1),m(2),iz,1:5,self%it,2)- &
+                 self%mem(m(1),m(2),i1,1:5,self%it,2)) < eps)
+    allok = allok .and. ok
+    if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
+      print 1,iz,self%mem(m(1),m(2),iz,1:5,self%it,2), &
+                 self%mem(m(1),m(2),i1,1:5,self%it,2)
   end do
-  print *,io%hl
-  if (ok) then
+  if (allok) then
     print *,'mhd_t%test passed'
     print *,io%hl
   else
@@ -443,7 +468,7 @@ SUBROUTINE pde (self)
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (associated(self%force%selected)) &
+  if (associated(self%force%selected) .and. self%do_force) &
    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
   if (self%selfgravity) then
     phi => self%mem(:,:,:,self%i_phi,self%it,1)

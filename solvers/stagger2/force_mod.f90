@@ -23,7 +23,7 @@ MODULE force_mod
   contains
     procedure init
   end type
- logical, save:: first_time=.true.
+  logical, save:: first_time=.true.
 CONTAINS
 
 !> =============================================================================

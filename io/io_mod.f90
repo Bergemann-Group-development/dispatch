@@ -21,6 +21,7 @@ MODULE io_mod
     character(len=64):: inputname, outputname, datadir='data', top, inputdir
     character(len=1):: sep = '/'
     character(len=72):: hl='-------------------------------------------------------------------------'
+    character(len=72):: hs='*************************************************************************'
     ! flag values
     logical:: do_trace=.false.
     logical:: do_output=.true.
