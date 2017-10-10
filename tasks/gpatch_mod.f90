@@ -60,11 +60,10 @@ SUBROUTINE init (self)
   !$omp end critical (poisson_cr)
   if (selfgravity) then
     self%selfgravity = selfgravity
-    call self%poisson%init (self)
     self%nv = self%nv+1
     self%i_phi = self%nv
     call self%patch_t%init
-    call self%poisson%init_sor (self)
+    call self%poisson%init (self)
   else
     call self%patch_t%init
   end if

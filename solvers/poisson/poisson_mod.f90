@@ -20,8 +20,6 @@ MODULE poisson_mod
     procedure:: init_sor
     procedure:: update => sor_2nd
   end type
-  real , save   :: omega_sor=0.0
-  logical, save :: first_time = .true.
 CONTAINS
 
 !> =============================================================================
@@ -33,6 +31,8 @@ SUBROUTINE init (self, patch)
   class(patch_t)    :: patch
   character(len=12) :: solver='sor'
   integer           :: iostat
+  real,    save     :: omega_sor=0.0
+  logical, save     :: first_time = .true.
   namelist /poisson_params/ solver, omega_sor
   !.............................................................................
   !$omp critical (poisson_cr)
@@ -45,6 +45,8 @@ SUBROUTINE init (self, patch)
   !$omp end critical (poisson_cr)
   select case(trim(solver))
   case('sor')
+    self%omega_sor = omega_sor
+    call init_sor(self, patch)
     !self%update => sor_2nd
   case default
     if (io%master) then
@@ -84,6 +86,7 @@ SUBROUTINE init_sor (self, patch)
   real              :: delta, pref
   real, parameter   :: pi=3.1415926536
   character(len=16) :: comment
+  logical, save     :: first_time = .true.
   !-----------------------------------------------------------------------------
   if (omega_sor==0.) then
     delta = 0.0; pref = 0.0
@@ -102,8 +105,12 @@ SUBROUTINE init_sor (self, patch)
   endif
   if (self%omega_sor < 0. .or. self%omega_sor>2) call mpi%abort( &
     'omega_sor in Laplace_mod has to be between 0 and 2 for stability')
-  if (first_time .and. io%master) print '(a,f6.4,a)', &
-    'poisson_mod: SOR prefactor set to: ', self%omega_sor, comment
+  !$omp critical (poisson_cr2)
+  if (first_time .and. io%master) then
+    print '(a,f6.4,a)', 'poisson_mod: SOR prefactor set to: ', self%omega_sor, comment
+    first_time = .false.
+  endif
+  !$omp critical (poisson_cr2)
 END SUBROUTINE init_sor
 
 !> =============================================================================
@@ -120,7 +127,7 @@ SUBROUTINE sor_2nd (self, patch, phi, FourPiGrho, d, error, detailed_timer)
   integer :: i,j,k,sweep,ss
   real    :: a,b,b1,b2,b3,sor
   real, dimension(:,:,:), pointer :: source
-  integer, save          :: itimer=0
+  integer, save                   :: itimer=0
 associate(n=>patch%n,ds=>patch%ds,l=>patch%li,u=>patch%ui,gn=>patch%gn,omega_sor=>self%omega_sor)
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('poisson_t%sor_2nd_abs', itimer=itimer)
