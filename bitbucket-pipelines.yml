@@ -10,12 +10,6 @@ pipelines:
     - step:
         script:
           - export OMP_STACKSIZE=265m; export OMP_NUM_THREADS=1
-          - echo "Run simple tests"
-          - cd $BITBUCKET_CLONE_DIR; cd tests/meshes; make clean; make; ./test.x
-          - echo "Check compilation of experiments in experiment_list.txt"
-          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -l -x
-          - echo "Validate turbulence experiment"
-          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate experiments/turbulence
           - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate experiments/turbulence/stagger2; cat experiments/turbulence/stagger2/validate/dispatch_gfortran.log
           - echo "Validate pebble atmosphere experiment"
           - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate experiments/pebble_atmosphere
