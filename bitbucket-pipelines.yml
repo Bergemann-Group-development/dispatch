@@ -11,4 +11,6 @@ pipelines:
         script:
           - export OMP_STACKSIZE=265m; export OMP_NUM_THREADS=1
           - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate experiments/turbulence/stagger2; cat experiments/turbulence/stagger2/validate/dispatch_gfortran.log
-          - cd $BITBUCKET_CLONE_DIR/experiments/turbulence/stagger2/validate; diff ./dispatch_gfortran.val ./dispatch_gfortran.log
+          - echo "Validate pebble atmosphere experiment"
+          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate experiments/pebble_atmosphere
+          - echo "Everything is awesome!"

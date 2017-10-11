@@ -174,7 +174,7 @@ foreach d ( $dirs )
     if (`uname -o` != "Cygwin" ) then
       echo "Validation failed -- see $cwd/"
     endif
-    ###exit 1
+    exit 1
   else
     echo "validation OK"
     make clean >& /dev/null
