@@ -1,5 +1,9 @@
-&experiment_params
+&experiment_params /
+&initial_params
+ initial_condition='planet_atmosphere'
 /
+&force_params   /
+
 &io_params
  verbose=2
  do_validate=t
@@ -8,49 +12,53 @@
  do_output=f
 /
 &rubiks_params
- n_levels=6
+ n_levels=7
  n_patch=3
  m_zoom=3
- n_repeat=5
+ f_zoom=0.95
+ n_repeat=1,3,1
 /
 &pebble_params
+ do_pebbles=t
  omega_yr=0.0,0.0,1.0
- do_pebbles=f
- vz_pebble_cgs=1.5e6
- pebble_rate_cgs=1
- ppc=0.1
+ !----------------------- TOP/BOTTOM ENTRY --------------
+ vz_pebble_cgs=1.5e6    ! incoming vertical velocity
+ pebble_rate_cgs=1      ! top/bottom rate of pebble entry
+ !----------------------- RANDOM DISTRIBUTION -----------
+ ppc=0.1                ! particles per cell
+ trace_every=1          ! trace every 10th pebble => data/*.peb
 /
 &planet_params
-/
-&initial_params
+ mass_m_earth=1.0
 /
 &patch_params
- n=20,20,20
- nt=5
- grace=0.1
+ n=3*32
+ nv=5
+ nt=7
+ grace=0.0
  courant=0.2
+ no_mans_land=t
+ use_data_hub=f
 /
 &out_params
- end_time=0.01          ! outer scale = 1500 R_E => 1500 time units at 1 km/s
- out_time=0.01          ! pebble speed 30 => 1.5 l.u. per snapshot
- !out_time=0
- print_time=0.0
+ end_time=0.01 out_time=1
+ print_time=0
  guard_zones=t
  time_derivs=f
  max_files=9000
 /
 &mhd_params
  gamma=1.4
- nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
+ nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta
 /
 &timestep_params
  time_order=2
 /
 &atmosphere_params
- densitY_cgs=3e-12
+ density_cgs=3e-12
  temperature_K=200.
- mass_m_earth=0.9
+ mass_m_earth=1.0
  orbit_au=1.0
 /
 &planet_atm_params
