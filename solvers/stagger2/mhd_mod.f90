@@ -541,6 +541,7 @@ END SUBROUTINE pde
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
+  real:: error
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
@@ -551,7 +552,7 @@ SUBROUTINE update (self)
   ! be providing only their preliminary potentials in their (nt-1) time slots,
   ! while their older time slots should by now contain the converged potential.
   !-----------------------------------------------------------------------------
-  call self%gravity
+  call self%gravity(error)
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
@@ -573,7 +574,7 @@ SUBROUTINE update (self)
   !---------------------------------------------------------------------------
   if (self%selfgravity) then
     call self%dnload (only=self%i_phi)
-    call self%gravity (only=self%i_phi)
+    call self%gravity (error, only=self%i_phi)
   end if
   call trace%end (itimer)
 END SUBROUTINE update

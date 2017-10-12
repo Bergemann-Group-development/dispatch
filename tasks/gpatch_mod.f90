@@ -134,45 +134,49 @@ END SUBROUTINE dnload
 !> which is alredy from the start based on the time extrapolation of the
 !> previous solution.
 !> =============================================================================
-SUBROUTINE gravity (self, only)
+SUBROUTINE gravity (self, error, only)
   class(gpatch_t):: self
-  integer, optional:: only
+  integer, optional:: only !unused
   !.............................................................................
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi, source
   real:: error, error0
   integer:: iter, ix ,iy, iz
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (.not.selfgravity) return
+  if (.not. selfgravity) return
   call trace%begin ('gpatch_t%gravity', itimer=itimer)
+
   d   => self%mem(:,:,:,self%i_d  ,self%it,1)
   phi => self%mem(:,:,:,self%i_phi,self%it,1)
   allocate (source  (size(d,1),size(d,2),size(d,3)))
+
   source = 0.0
   do iz=self%mesh(3)%li,self%mesh(3)%ui
-  do iy=self%mesh(2)%li,self%mesh(2)%ui
-  do ix=self%mesh(1)%li,self%mesh(1)%ui
-    source(ix,iy,iz) = grho*(d(ix,iy,iz)-self%d0)
-  end do
-  end do
+    do iy=self%mesh(2)%li,self%mesh(2)%ui
+      do ix=self%mesh(1)%li,self%mesh(1)%ui
+        source(ix,iy,iz) = grho*(d(ix,iy,iz)-self%d0)
+      end do
+    end do
   end do
   do iter=1,max_iter
     call self%poisson%update (self, phi, source, d, error, detailed_timer)
-    error = error/grho
-    if (iter==1) error0=error
-    if (verbose>1) print "(i6,' self_gravity: error =',1p,g14.5)", self%id, error
+    error = error / grho
+    if (iter == 1) error0 = error
+    if (verbose > 1) print "(i6,' self_gravity: error =',1p,g14.5)", self%id, error
     if (error < epsilon) then
       if (verbose>0) &
-        print "(i6,' poission converged in',i4,' iterations, initial error:',1p,e10.3)", &
-          self%id, iter, error0
+        print "(i6,' poisson converged in',i4,' iterations; initial, final error:',1p,e10.3,e10.3)", &
+          self%id, iter, error0, error
       exit
     end if
   end do
-  if (iter>max_iter) &
+  if (iter > max_iter) &
     print "(i6,' WARNING: poisson solution not converged in', i4, ' iterations')", &
       self%id, max_iter
+
   deallocate (source)
   call time_derivs (self)
+
   call trace%end (itimer)
 END SUBROUTINE gravity
 
