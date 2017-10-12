@@ -114,71 +114,80 @@ END SUBROUTINE init_sor
 
 !> =============================================================================
 !> 3pt 2nd order Red-Black Gauss-Seidel iteration with SOR acceleration
+!>
+!> Make one iterative update for
+!>
+!>   (2/dx^2 + 2/dy^2 + 2/dz^2) phi_new_ijk =
+!>                                 (phi_i+1,j,k + phi_i-1,j,k)/dx^2
+!>                               + (phi_i,j+1,k + phi_i,j-1,k)/dy^2
+!>                               + (phi_i,j,k+1 + phi_i,j,k-1)/dz^2
+!>                               - FourPiGrho
+!>
 !> =============================================================================
 SUBROUTINE sor_2nd (self, patch, phi, FourPiGrho, d, error, detailed_timer)
-  class(poisson_t) :: self
-  class(patch_t)   :: patch
-  real(kind=KindScalarVar), dimension(:,:,:), pointer :: phi
-  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in) :: FourPiGrho, d
-  real:: error
+  class(poisson_t):: self
+  class(patch_t)  :: patch
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi
+  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: FourPiGrho, d
+  real   :: error
   logical:: detailed_timer
-  !
-  integer :: i,j,k,sweep,ss
-  real    :: a,b,b1,b2,b3,sor
-  real, dimension(:,:,:), pointer :: source
-  integer, save                   :: itimer=0
-associate(n=>patch%n,ds=>patch%ds,l=>patch%li,u=>patch%ui,gn=>patch%gn,omega_sor=>self%omega_sor)
+  integer:: i, j, k, sweep, ss, ione, jone, kone
+  real   :: a, b, b1, b2, b3, sor
+  real, dimension(:,:,:), pointer:: source
+  integer, save                  :: itimer=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('poisson_t%sor_2nd_abs', itimer=itimer)
-  !.............................................................................
-  ! Make one iterative update for
-  !
-  !   (2/dx^2 + 2/dy^2 + 2/dz^2) phi_new_ijk =
-  !                                 (phi_i+1,j,k + phi_i-1,j,k)/dx^2
-  !                               + (phi_i,j+1,k + phi_i,j-1,k)/dy^2
-  !                               + (phi_i,j,k+1 + phi_i,j,k-1)/dz^2
-  !                               - FourPiGrho
-  !.............................................................................
+  associate(n=>patch%n,ds=>patch%ds,l=>patch%li,u=>patch%ui,gn=>patch%gn,omega_sor=>self%omega_sor)
+
+  ione = 1
+  jone = 1
+  kone = 1
+  if (n(1) <= 1) ione = 0
+  if (n(2) <= 1) jone = 0
+  if (n(3) <= 1) kone = 0
+
   ! Calculate 1 / [(2/dx + 2/dy + 2/dz)] prefactor according to dimensionality
   a = 0.0
-  if (n(1)>1) a = a + 2. / ds(1)**2
-  if (n(2)>1) a = a + 2. / ds(2)**2
-  if (n(3)>1) a = a + 2. / ds(3)**2
+  if (n(1) > 1) a = a + 2. / ds(1)**2
+  if (n(2) > 1) a = a + 2. / ds(2)**2
+  if (n(3) > 1) a = a + 2. / ds(3)**2
   a = 1. / a
+
   error = 0.0
   do sweep=0,1
     ! Add up contributions
-    b1 = a / ds(1)**2
-    b2 = a / ds(2)**2
-    b3 = a / ds(3)**2
-    b = 2.0*(b1+b2+b3)
+    b1 = a / ds(1)**2 * ione
+    b2 = a / ds(2)**2 * jone
+    b3 = a / ds(3)**2 * kone
+    b = 2.0 * (b1 + b2 + b3)
     do k=l(3),u(3)
       do j=l(2),u(2)
-        ss = modulo(j+k+sweep,2)
+        ss = modulo(j + k + sweep,2)
         do i=l(1)+ss,u(1),2
-          phi(i,j,k)     = (1. - omega_sor) * phi(i,j,k) + &
-                                 omega_sor * ( &
-                                   b1 * (phi(i+1,j,k)+phi(i-1,j,k)) &
-                                 + b2 * (phi(i,j+1,k)+phi(i,j-1,k)) &
-                                 + b3 * (phi(i,j,k+1)+phi(i,j,k-1)) &
-                                 - a * FourPiGrho(i,j,k) )
+          phi(i,j,k) = (1. - omega_sor) * phi(i,j,k) + &
+                             omega_sor * ( &
+                               b1 * (phi(i+ione,j,k) + phi(i-ione,j,k)) &
+                             + b2 * (phi(i,j+jone,k) + phi(i,j-jone,k)) &
+                             + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
+                             - a * FourPiGrho(i,j,k) )
         end do
         !-----------------------------------------------------------------------
         ! At least with gfortran, keeping these loops separate is faster
         !-----------------------------------------------------------------------
         do i=l(1)+ss,u(1),2
           error = max(error, abs( &
-            ((b1*(phi(i+1,j,k)+phi(i-1,j,k)) + &
-              b2*(phi(i,j+1,k)+phi(i,j-1,k)) + &
-              b3*(phi(i,j,k+1)+phi(i,j,k-1)) - &
-              b * phi(i,j,k)) - a*FourPiGrho(i,j,k)))/d(i,j,k))
+                   ((b1 * (phi(i+ione,j,k) + phi(i-ione,j,k)) + &
+                     b2 * (phi(i,j+jone,k) + phi(i,j-jone,k)) + &
+                     b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) - &
+                     b * phi(i,j,k)) - a*FourPiGrho(i,j,k))) / d(i,j,k))
         end do
       end do
     end do
   end do
-  error = error/a
+  error = error / a
+  end associate
+
   if (detailed_timer) call trace%end (itimer)
-end associate
 END SUBROUTINE sor_2nd
 
 END MODULE poisson_mod
