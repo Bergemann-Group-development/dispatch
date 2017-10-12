@@ -701,7 +701,11 @@ SUBROUTINE periodic_grid (self)
   do ix=lb(1),ub(1)
     i = [ix,iy,iz]
     if (all(i >= li .and. i <= ui)) cycle
-    j = modulo(i-li,n)+li
+    where (n > 0)
+      j = modulo(i-li,n)+li
+    else where
+      j = 1
+    end where
     !---------------------------------------------------------------------------
     ! Make sure horizontal periodic wrapping continues over the whole vertical
     ! range when physical boundary conditions are present.  Note the use of
