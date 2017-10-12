@@ -47,6 +47,7 @@ SUBROUTINE init (self)
   
   call self%gpatch_t%init()
   call timestep%init()
+  self%kind = 'poisson'
 
   ! allocate error storage array
   allocate(self%error(self%nt))
