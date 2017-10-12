@@ -20,20 +20,24 @@
 
 &out_params
  end_time=1.0
- out_time=0.1
+ out_time=0.0001
  guard_zones=t
 /
 
 &patch_params
   courant=0.8
   n=16,16,1
+  nt=4
 /
 
 &experiment_params
 /
 
+&initial_params
+/
+
 &timestep_params
-  time_order=0
+  time_order=2
 /
 
 &refine_params

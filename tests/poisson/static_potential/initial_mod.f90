@@ -28,7 +28,7 @@ SUBROUTINE init (self, solver, gamma)
   real, optional:: gamma
   real:: r0 = 1.0
   logical:: first_time = .true.
-  namelist / experiment_params / r0
+  namelist / initial_params / r0
   !----------------------------------------------------------------------------
   call trace%begin('initial_t%init')
 
@@ -36,8 +36,8 @@ SUBROUTINE init (self, solver, gamma)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, experiment_params)
-    if (io%master) write (*, experiment_params)
+    read (io%input, initial_params)
+    if (io%master) write (*, initial_params)
   end if
   !$omp end critical (input_cr)
   self%r0 = r0
