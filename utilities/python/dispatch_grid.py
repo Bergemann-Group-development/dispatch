@@ -226,6 +226,11 @@ def dispatch_grid(p, truecoords=True):
             x2 = p.llc[1] + np.arange(p.nwrite[1]) * p.dx[1] + 0.5 * p.dx[1]
             x3 = p.llc[2] + np.arange(p.nwrite[2]) * p.dx[2] + 0.5 * p.dx[2]
 
+    if p.ioformat == 2:
+        x1 = x1 - p.dx[0] * 0.5
+        x2 = x2 - p.dx[1] * 0.5
+        x3 = x3 - p.dx[2] * 0.5
+
     return (x1, x2, x3)
 
 def plotting_grid(root, p, x_i, slicedir, sliceloc, sliceeps=1.0e-2, truecoords=False,
