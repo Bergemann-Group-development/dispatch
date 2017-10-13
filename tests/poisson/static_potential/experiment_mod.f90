@@ -42,7 +42,7 @@ SUBROUTINE init (self)
   !$omp end critical (input_cr)
 
   self%toler = toler
-  self%nv = 2
+  self%nv = 1
   self%periodic = .false.
   
   call self%gpatch_t%init()

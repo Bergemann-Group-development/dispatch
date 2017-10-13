@@ -90,6 +90,9 @@ class Patch(Task):
         if self.kind[0:9]=='rt_solver':
             self.t = self.stripv(self.t)
             self.Q = self.stripv(self.Q)
+        elif self.kind[0:7]=='poisson':
+            self.d = self.stripv(self.d)
+            self.phi = self.stripv(self.phi)
         else:
             '''Remove guard cells from cached arrays'''
             if not 'd' in dir(self):
@@ -120,6 +123,12 @@ class Patch(Task):
         if self.kind[0:9]=='rt_solver':
             self.Q = self.data[:,:,:,self.varidx['Q']]
             self.t = self.data[:,:,:,self.varidx['t']]
+            self.xs=self.x-0.5*self.ds[0]
+            self.ys=self.y-0.5*self.ds[1]
+            self.zs=self.z-0.5*self.ds[2]
+        elif self.kind[0:7]=='poisson':
+            self.d = self.data[:,:,:,self.varidx['d']]
+            self.phi = self.data[:,:,:,self.varidx['phi']]
             self.xs=self.x-0.5*self.ds[0]
             self.ys=self.y-0.5*self.ds[1]
             self.zs=self.z-0.5*self.ds[2]
@@ -263,6 +272,11 @@ def variable_indices(solver_type, read_derivs=False):
     elif solver_type.lower() == 'rt_solver':
         indices = {'Q':  0,
                    't': 1}
+    elif solver_type.lower() == 'poisson':
+        indices = {'d': 0, 'phi': 1}
+        if read_derivs:
+            indicesd = {'dd': 0, 'dphi': 1}
+            indices.updates(indicesd)
     else:
         raise Exception("Unrecognised solver type! => "+solver_type.lower())
     return indices
