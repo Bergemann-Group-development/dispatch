@@ -50,6 +50,7 @@ MODULE mhd_mod
   end type
   type(index_t):: idx
   logical, save:: flop_count=.false.
+  logical, save:: do_2nd_div=.true.
 CONTAINS
 
 !> =============================================================================
@@ -62,7 +63,7 @@ SUBROUTINE init (self)
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   logical, save:: first_time=.true.
   character(len=16), save:: eos
-  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos, flop_count
+  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos, flop_count, do_2nd_div
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -461,9 +462,15 @@ SUBROUTINE pde (self)
   ! Momentum equations.  The ddxdn(fxx) part is valid in (3:gn-1), and hence px
   ! only needs guard zones in (1:2) and (gn:gn)
   !-----------------------------------------------------------------------------
-  dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)                    ! ops: 2 0 0
-  dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)                    ! ops: 2 0 0
-  dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)                    ! ops: 2 0 0
+  if (do_2nd_div) then
+    dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)                  ! ops: 2 0 0
+    dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)                  ! ops: 2 0 0
+    dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)                  ! ops: 2 0 0
+  else
+    dpdtx = - ddxdn(ds,fxx) - ddyup(ds,fxy) - ddzup(ds,fzx)                     ! ops: 2 0 0
+    dpdty = - ddxup(ds,fxy) - ddydn(ds,fyy) - ddzup(ds,fyz)                     ! ops: 2 0 0
+    dpdtz = - ddxup(ds,fzx) - ddyup(ds,fyz) - ddzdn(ds,fzz)                     ! ops: 2 0 0
+  end if
   !-----------------------------------------------------------------------------
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
