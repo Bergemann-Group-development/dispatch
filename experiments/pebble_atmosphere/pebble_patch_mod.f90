@@ -196,7 +196,7 @@ SUBROUTINE volume_add (self, n)
   if (.not.self%do_pebbles .or. self%is_set(bits%not_leaf)) return
   call trace_begin ('pebbles_t%volume_add', 3)
   pebbles => self%pebbles
-  if (io%verbose>1 .or. (io%verbose>0.and.nprint>0)) then
+  if (io%verbose>2 .or. (io%verbose>1.and.nprint>0)) then
     nprint = nprint-1
     print *, ' ADDING RANDOM PEBBLES TO PATCH', self%id
     print 1, '     patch position:', self%position - planet%position
@@ -266,10 +266,10 @@ SUBROUTINE volume_add (self, n)
   end do
   end do
   end do
-  if (io%verbose>0) &
+  if (io%verbose>1) &
     print '(a,i7,i3,2i6,1p,2e14.6)', 'initial_trace: id, level, n_initial, n_add =', &
       self%id, self%level, scene%n_initial, scene%n_add, xmin, xmax
-  if (io%verbose>1) &
+  if (io%verbose>2) &
     print *, 'volume_add:', self%id, self%position(3), self%pebbles%n
   call self%pebbles%check_list ('after volume_add')
   call trace_end
@@ -302,7 +302,7 @@ SUBROUTINE boundary_add (self, n)
   else
     n_local = self%pebble_rate*self%dtime
   end if
-  if (io%verbose>1 .or. (io%verbose>0.and.nprint>0)) then
+  if (io%verbose>2 .or. (io%verbose>1.and.nprint>0)) then
     nprint = nprint-1
     print *, ' ADDING TOP/BOTTOM PEBBLES TO PATCH', self%id
     print 1, '     patch position:', self%position - planet%position
@@ -1204,7 +1204,7 @@ SUBROUTINE input (self, ok)
   logical:: exists
   !-----------------------------------------------------------------------------
   ok = .false.
-  if (.not.self%do_pebbles) return
+  if (.not.self%do_pebbles.or.self%iout==0) return
   call trace%begin ('pebble_patch_t%input')
   !
   write (filename,'(a,"/",i5.5,"/",i5.5,".peb")') &

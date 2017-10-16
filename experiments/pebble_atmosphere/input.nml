@@ -42,7 +42,8 @@
  mass_m_earth=1.0
 /
 &atmosphere_params
- densitY_cgs=3e-12
+ densitY_cgs=1e-10
+ kappa_cgs=1.0
  temperature_K=200.
  mass_m_earth=1.0
  orbit_au=1.0
@@ -54,6 +55,7 @@
 /
 &patch_params
  n=3*32
+ ng=3*2
  nv=5
  nt=7
  grace=0.0
