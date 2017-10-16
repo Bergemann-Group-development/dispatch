@@ -28,7 +28,7 @@ def extinction (d, T, alpha0 = 1.0, T0=290.0, d0=1.0):
 def source (T):
     """Calculate the blackbody source function for a given temperature."""
 
-    return cnst.SBc * T**4
+    return cnst.SBc * T**4 / np.pi
 
 if __name__ == "__main__":
     # zc = zone-centred; fc = face-centred
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     make_plots = True
-    ncells = 256
+    ncells = 512
 
     ds = 1./ncells
     d0 = 1.0
@@ -90,8 +90,8 @@ if __name__ == "__main__":
 
     # Relative difference between heating rates calculating with the two methods
     rd = np.abs(Q1 - Q2) / np.abs(Q2)
-    print "Max Q1: {0:.5e}".format(np.nanmax(Q1[:ncells]))
-    print "Max Q2: {0:.5e}".format(np.nanmax(Q2[:ncells]))
+    print "Max Q1 (divergence of the flux): {0:.5e}".format(np.nanmax(Q1[:ncells]))
+    print "Max Q2 (integral method): {0:.5e}".format(np.nanmax(Q2[:ncells]))
     print "Max relative difference: {0:.5e}".format(np.nanmax(rd))
 
     # Make some plots.
