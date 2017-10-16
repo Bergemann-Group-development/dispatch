@@ -20,8 +20,8 @@ MODULE atmosphere_mod
     integer:: nr, niter
     real:: gamma(2), temp_gamma
     real:: mass
-    real(kind=8), dimension(:), pointer:: rho, pg, temp, rr
-    real(8):: dlnr, hill_radius, orbit_radius
+    real(kind=8), dimension(:), pointer:: rho, pg, temp, rr, tau
+    real(8):: dlnr, hill_radius, orbit_radius, kappa
     type(conditions_t):: external, surface
   contains
     procedure init
@@ -36,13 +36,13 @@ CONTAINS
 SUBROUTINE init (self)
   class(atmosphere_t):: self
   logical, save:: first_time=.true.
-  real:: density_cgs=1e-10, temperature_K=200, delta_r=0.01, orbit_au=1.0
-  real:: mass_m_earth=0.9
-  real:: gamma(2)=1.4, temp_gamma=2000.
+  real, save:: density_cgs=1e-10, temperature_K=200, delta_r=0.01, orbit_au=1.0
+  real, save:: mass_m_earth=0.9
+  real, save:: gamma(2)=1.4, temp_gamma=2000., kappa_cgs=0.1
   real(8):: inner_radius
-  integer:: nr=500, niter=10
+  integer, save:: nr=500, niter=10
   namelist /atmosphere_params/ orbit_au, density_cgs, temperature_K, &
-    mass_m_earth, nr, niter, gamma, temp_gamma
+    mass_m_earth, nr, niter, gamma, temp_gamma, kappa_cgs
   !----------------------------------------------------------------------------
   call trace_begin('atmosphere_t%init')
   call scaling%init
@@ -65,6 +65,8 @@ SUBROUTINE init (self)
   allocate (self%rho(self%nr))
   allocate (self%pg(self%nr))
   allocate (self%temp(self%nr))
+  allocate (self%tau(self%nr))
+  self%kappa = kappa_cgs*scaling%m/scaling%l**2
   self%orbit_radius = orbit_au*cgs%au/scaling%l
   self%external%density = density_cgs/scaling%d
   self%external%temperature = temperature_K/scaling%temp
@@ -107,8 +109,7 @@ SUBROUTINE hydrostatic (self)
     self%rho(nr)  = self%external%density
     self%pg(nr)   = self%external%pressure
     self%rr(nr)   = self%hill_radius
-    if (io%verbose>0) print*, &
-      '              i         rr         pg       temp        rho         dr      dlnpg       grav'
+    self%tau(nr)  = 0.0
     do i=nr-1,1,-1
       self%rr(i) = exp(log(planet%radius) + (i-1)*log(self%hill_radius/planet%radius)/(nr-1))
       self%temp(i) = self%temp(i+1)
@@ -132,17 +133,28 @@ SUBROUTINE hydrostatic (self)
         self%temp(i) = self%temp(i+1)*exp(dlnT)
         if (io%verbose>2) print*, i, iter, self%rr(i), self%pg(i), self%rho(i), self%temp(i)
       end do
+      self%tau(i) = self%tau(i+1) + 0.5*(self%rho(i)+self%rho(i+1))*self%kappa*dr
       if (self%gamma(2)==1.0) then
         s = 1.0
       else
         s = (log(self%pg(i))-gamma*log(self%rho(i)))/(self%gamma(2)-1.0)
       end if
-      if (io%verbose>0) print'("hydrostatic",i5,1p,9e11.3)', &
-        i,self%rr(i)*scaling%l/cgs%r_earth, self%pg(i)*scaling%p, self%temp(i)*scaling%temp, &
-        self%rho(i)*scaling%d, s, dlnpg, self%mass*scaling%grav/self%rr(i)**2
     end do
-    if (io%verbose>0) print*, &
-      '              i         rr         pg       temp        rho      dlnpg       dlnT       grav'
+    !---------------------------------------------------------------------------
+    ! Add a another layer of optical depth at the outer boundary, as an estimate
+    !---------------------------------------------------------------------------
+    self%tau = self%tau + self%tau(nr-1)
+    if (io%verbose>0) then
+      print*, &
+      '              i         rr         pg       temp        rho      dlnpg       dlnT       grav        tau'
+      do i=1,nr
+        print'("hydrostatic",i5,1p,9e11.3)',i,self%rr(i)*scaling%l/cgs%r_earth, &
+          self%pg(i)*scaling%p, self%temp(i)*scaling%temp,self%rho(i)*scaling%d, &
+          s, dlnpg, self%mass*scaling%grav/self%rr(i)**2, self%tau(i)
+      end do
+      print*, &
+      '              i         rr         pg       temp        rho      dlnpg       dlnT       grav        tau'
+    end if
     self%surface%density     = self%rho(1)
     self%surface%pressure    = self%pg(1)
     self%surface%temperature = self%temp(1)
