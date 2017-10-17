@@ -1428,13 +1428,20 @@ SUBROUTINE get_q (self, time, de)
   real(8):: time
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: de
   !.....................................................................
-  integer :: iv
+  integer :: iv, jt(2)
+  real    :: pt(2)
   integer, save :: itimer=0
   !---------------------------------------------------------------------
   associate (l => self%li, u => self%ui)
-  do iv = 1, self%nv
-    de= de + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1) !* self%w_bundle(iv) * eos%w_lambda(iv)
-  end do
+  if (self%do_chains) then
+    call self%time_interval(time, jt, pt)
+    de = pt(1) * self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,jt(1),1) + &
+         pt(2) * self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,jt(2),1)
+  else
+    do iv = 1, self%nv
+      de= de + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1) !* self%w_bundle(iv) * eos%w_lambda(iv)
+    end do
+  end if
   end associate
 END SUBROUTINE get_q
 
