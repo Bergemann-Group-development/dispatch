@@ -247,8 +247,7 @@ SUBROUTINE condition_mem (self, f)
    ! do i=1,self%ndir
       do b=m3%lo,m3%uo
         do a=m2%lo,m2%uo
-          f(m1%lo,a,b,:) = self%xl(2)
-          f(m1%lo,a,b,rt_boundaries%hot_dir) = self%xl(1)
+          f(m1%lo,a,b,:) = self%xl(1)
         end do
       end do
       il = il + eos%n_lambda
