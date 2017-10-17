@@ -8,7 +8,34 @@ from derived_variables import *
 import itertools
 import fnmatch
 
+def phi_exact(x,y,r0=1.0):
+    """
+    \Phi_e(r) = ln( (r/r_0)^2 + 1)
 
+    """
+
+    xx, yy = np.meshgrid(x,y)
+    r = np.sqrt((xx-0.5)**2 + (yy-0.5)**2)
+    phi_e = np.log((r / r0)**2 + 1.0)
+
+    return phi_e
+
+def rho_exact(x,y,r0=1.0):
+    """
+    \rho_e(r) = 4 * r_0^2 / (r^2 + r_0^2)^2
+
+    """
+
+    xx, yy = np.meshgrid(x,y)
+    r = np.sqrt((xx-0.5)**2 + (yy-0.5)**2)
+    rho_e = 4.0 * r0**2 / (r**2 + r0**2)**2
+
+    return rho_e
+
+def relative_difference(qstd, qmeas):
+    """Calculate the relative difference of a quantity."""
+    
+    return (np.abs(qstd - qmeas) / qstd)
 
 if __name__ == "__main__":
 
@@ -19,15 +46,15 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     data = './data/'
-    iters = [2]
-    pxsize = [ 0.0,1.0]
-    pysize = [ 0.0,1.0]
-    pltvar = ['d','phi','rd_d','rd_phi']
-    cmin = [1.0, 0.1]
-    cmax = [4.0, 0.4]
-    clog = [  0,   0]
+    iters = [1,2]
+    pxsize = [-0.02,1.02]
+    pysize = [-0.02,1.02]
+    pltvar = ['d','rdd','phi','rdphi']
+    cmin   = [1.0,  0.0,  0.0,   0.0]
+    cmax   = [16.,  1.0, 1.15,   1.0]
     showgrids = True
     ColMap = cm.RdBu_r
+    r0 = 0.5
 
     for i in iters:
         patches = du.patches(data=data,iout=i)
@@ -35,7 +62,7 @@ if __name__ == "__main__":
             pp.cache()
             pp.stripit()
 
-        cfig = plt.figure("{0}".format(i),facecolor='w',figsize=(12.0,6.0))
+        cfig = plt.figure("{0}".format(i),facecolor='w',figsize=(5.0*len(pltvar),4.0))
         cfig.clf()
         gs = gridspec.GridSpec(1,len(pltvar))
         
@@ -69,7 +96,22 @@ if __name__ == "__main__":
                     kindex = slice(0,pp.n[2])
 
                 print "Data:", pp.filename, pp.istep
-                var = pp.data[iindex,jindex,kindex,pp.varidx[pltvar[j]]]
+                if pltvar[j] == 'rdd':
+                    var = pp.data[iindex,jindex,kindex,pp.varidx['d']]
+                    q0 = rho_exact(x,y,r0=r0)
+                    print q0[iindex,jindex].shape,var.shape
+                    var = relative_difference(q0[iindex,jindex],var.squeeze())
+                elif pltvar[j] == 'rdphi':
+                    var = pp.data[iindex,jindex,kindex,pp.varidx['phi']]
+                    q0 = phi_exact(x,y,r0=r0)
+                    print q0[iindex,jindex].shape,var.shape
+                    var = relative_difference(q0[iindex,jindex],var.squeeze())
+                elif pltvar[j] == 'phie':
+                    var = phi_exact(x,y,r0=r0)
+                    var = var[iindex,jindex]
+                else:
+                    var = pp.data[iindex,jindex,kindex,pp.varidx[pltvar[j]]]
+
                 print spltvar, ": ", var.min(), var.max(), var.shape
                 conf = cax.contourf(x[iindex],y[jindex],var.squeeze(),levels,cmap=ColMap,
                              extend='both',zorder=-min(pp.dx))
