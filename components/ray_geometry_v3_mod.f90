@@ -39,6 +39,7 @@ MODULE ray_geometry_v3_mod
 ! ----------------------------------------------------------------------
   type, public :: packet_t
     integer :: ID                                                       ! packet ID
+    integer :: id_loc                                                   ! packet ID in this bundle
     integer :: n_rays                                                   ! number of rays in this packet
     integer :: n_points                                                 ! ray lengths in this packet
     real    :: dstep(3)                                                 ! traverse index increment
@@ -60,6 +61,7 @@ MODULE ray_geometry_v3_mod
     integer, dimension(:), pointer   :: rays_fw => null()               ! ray locations in the next bundle
     integer, dimension(:), pointer   :: rays_rev => null()              ! ray locations in the previous bundle
     integer :: ID                                                       ! bundle ID
+    integer :: id_loc                                                   ! bundle ID in this direction
     integer :: dir_ID                                                   ! direction ID
     integer :: b_id_fw                                                  ! bundle ID for ray connection in forward direction
     integer :: b_id_rev                                                 ! bundle ID for ray connection in forward direction
@@ -460,6 +462,7 @@ SUBROUTINE add_axis(self, dir)
   bundle%theta     = 0
   bundle%phi       = 0
   bundle%id        = self%total_n_bundles                               ! bundle ID in this direction
+  bundle%id_loc    = 1
   bundle%dir_id    = ndir%id                                            ! dir_ID of this bundle
   bundle%n_packets = 1                                                  ! there can only be one packet for this bundle
   bundle%n_rays    = nr                                                 ! number of rays in this direction
@@ -473,6 +476,7 @@ SUBROUTINE add_axis(self, dir)
   ! --- Fill in rays info ---
   packet => bundle%packet(1)
   packet%id = self%total_n_packets                                      ! it's packet ID
+  packet%id_loc = 1
   packet%n_rays   = nr                                                  ! number of rays in this direction
   packet%dstep    = dstep                                               ! step along direction axis
   packet%n_points = pmax(c)                                             ! number of points per ray corresponds to n_cells in that direction
@@ -482,13 +486,13 @@ SUBROUTINE add_axis(self, dir)
   allocate (packet%fwd_coords(3,nr))                                    ! create table, containing x|y|z coords for upstream position for particular ray, for all rays
   allocate (packet%rev_coords(3,nr))                                    ! create table, containing x|y|z coords for downstream position for particular ray, for all rays
 
-  bundle%b_id_fw  = self%total_n_bundles                                ! bundle ID for ray connection in forward direction
-  bundle%b_id_rev = self%total_n_bundles                                ! same for bundle ID for ray connection in forward direction
+  bundle%b_id_fw  = bundle%id_loc                                       ! bundle ID for ray connection in forward direction
+  bundle%b_id_rev = bundle%id_loc                                       ! same for bundle ID for ray connection in forward direction
   allocate(packet%p_id_fw(nr))                                          ! packet  ID for ray connection in forward direction
   packet%p_id_rev =>   packet%p_id_fw(:)                                ! same for packet ID for ray connection in reverse direction
   allocate(packet%r_id_fw(nr))                                          ! ray ID for ray connection in forward direction
   packet%r_id_fw(:) = 1
-  packet%p_id_fw(:) = self%total_n_packets
+  packet%p_id_fw(:) = packet%id_loc
   packet%r_id_rev => packet%r_id_fw(:)                                  ! same for ray ID for ray connection in reverse direction
   bundle%rays_fw  => packet%r_id_fw(:)
   bundle%rays_rev => packet%r_id_fw(:)
@@ -1073,6 +1077,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     self%total_n_bundles = self%total_n_bundles + 1                     ! increment the total number of bundles in ray geometry
     bundle => dir%bundle(b_id)
     bundle%id     = self%total_n_bundles                                ! bundle ID
+    bundle%id_loc = b_ID
     bundle%dir_ID = dir%ID                                              ! dir ID
     bundle%axis   = self%axis                                           ! axis of ray flow
     bundle%theta  = self%theta
@@ -1100,6 +1105,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
       self%total_n_packets = self%total_n_packets + 1
       packet => bundle%packet(p_id)
       packet%id       = self%total_n_packets                            ! save the packet ID
+      packet%id_loc   = p_id
       packet%n_rays   = spacket%n_rays                                  ! pick up the number of rays in this packet
       packet%n_points = spacket%n_points                                ! how long the rays are in this packet
       packet%dstep    = bundle%dstep
@@ -1209,6 +1215,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
       sp_next => spacket%next
       packet => bundle%packet(p_id)
       packet%id        = self%total_n_packets                           ! unique ID for this packet
+      packet%id_loc    = p_id
       packet%n_rays    = spacket%n_rays                                 ! number of rays in this packet
       packet%n_points  = spacket%n_points                               ! how long are the rays in this packet
       packet%dstep     = bundle%dstep
@@ -1295,12 +1302,12 @@ SUBROUTINE finish_direction(self, dir)
                   packet2%p_id_fw = 0; packet2%p_id_rev = 0           ! zero at first
                   packet2%r_id_fw = 0; packet2%r_id_rev = 0           ! zero at first
                 end if
-                bnd1%b_id_fw           = bnd2%id                      ! get bundle id fw
-                bnd2%b_id_rev          = bnd1%id                      ! get bundle id reverse
+                bnd1%b_id_fw           = bnd2%id_loc                    ! get bundle id fw
+                bnd2%b_id_rev          = bnd1%id_loc                    ! get bundle id reverse
                 bnd1%rays_fw(packet1%b_id(ray1))     = packet2%b_id(ray2)
                 bnd2%rays_rev(packet2%b_id(ray2))    = packet1%b_id(ray1)
-                packet1%p_id_fw(ray1)  = packet2%id                   ! get packet id fw
-                packet2%p_id_rev(ray2) = packet1%id                   ! get packet id reverse
+                packet1%p_id_fw(ray1)  = packet2%id_loc                 ! get packet id fw
+                packet2%p_id_rev(ray2) = packet1%id_loc                 ! get packet id reverse
                 packet1%r_id_fw(ray1)  = ray2                         ! get ray id fw
                 packet2%r_id_rev(ray2) = ray1                         ! get ray id reverse
               end if
