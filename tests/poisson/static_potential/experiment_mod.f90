@@ -2,6 +2,7 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
+  USE bits_mod
   USE solver_mod
   USE initial_mod
   USE pboundary_mod
@@ -15,7 +16,7 @@ MODULE experiment_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: has_finished
+    !!!procedure:: has_finished
     procedure:: output
   end type
   logical, save:: first_time = .true.
@@ -44,6 +45,7 @@ SUBROUTINE init (self)
   self%toler = toler
   self%nv = 1
   self%periodic = .false.
+  call self%clear(bits%root_grid)
   
   call self%gpatch_t%init()
   call timestep%init()
@@ -52,6 +54,7 @@ SUBROUTINE init (self)
   ! allocate error storage array
   allocate(self%error(self%nt))
   self%error(:) = 0.0
+  self%d0 = 0.0
 
   call trace%end
 END SUBROUTINE init
@@ -72,8 +75,8 @@ SUBROUTINE update (self)
   call self%output
   call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%dnload  (only=self%i_phi)
+  call pboundaries%conditions(self, self%it)
   call self%gravity (error, only=self%i_phi)
-  call pboundaries%conditions(self, self%new)
 
   call trace%end
 END SUBROUTINE update
@@ -83,16 +86,17 @@ END SUBROUTINE update
 !> change in the error/residual since the previous iteration falls below a
 !> user-defined residual.
 !> =============================================================================
-LOGICAL FUNCTION has_finished (self)
-  class (experiment_t):: self
-  real:: rd
-  !.............................................................................
-  has_finished = .false.
-  if (self%error(self%iit(self%nt-1)) == 0.0) return
-  rd = abs(self%error(self%iit(self%nt)) - self%error(self%iit(self%nt-1))) / self%error(self%iit(self%nt-1))
-  if (rd < self%toler) has_finished = .true.
+!LOGICAL FUNCTION has_finished (self)
+!  class (experiment_t):: self
+!  real:: rd
+!  !.............................................................................
+!  has_finished = .false.
+!  if (self%error(self%iit(self%nt-1)) == 0.0) return
+!  rd = abs(self%error(self%iit(self%nt)) - self%error(self%iit(self%nt-1))) &
+!     / self%error(self%iit(self%nt-1))
+!  if (rd < self%toler) has_finished = .true.
 
-END FUNCTION has_finished
+!END FUNCTION has_finished
 
 !> =============================================================================
 !> Dummy output procedure to trick `patch_t%output` into writing output.
