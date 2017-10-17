@@ -29,10 +29,11 @@ MODULE rt_mod
     logical, dimension(:), pointer :: updated => null()                 ! list of flags, indicates if particular direction has been updated
     type(link_t), pointer             :: mhd_link                       ! link to my mhd_patch
     type(rt_outer_bndry_t)            :: rt_boundaries                  ! RT outer boundaries
+    type(rt_hub_t), dimension(:,:), pointer:: wall => null()            ! intensity shell data, contracted to 2D (coords | n_out_dirs). n_out_dirs is the number of directions leaving any given surface (3 dirs = 1 n_out_dir, 13 dirs = 9 n_out_dirs). This is tertiary surface.
+    integer :: wall_idx(6)    
     type(data_hub_t) :: data_hub
     real(kind=8)                      :: upd_time                       ! time when the last internal update was done
-    integer(kind=8)                   :: n_packet                       ! number of bundles
-    real(kind=KindRTVar), dimension(:), pointer       :: w_lambda                       ! wavelength weights
+    integer(kind=8)                   :: n_packet, n_bundle             ! number of bundles
     real(kind=KindRTVar), dimension(:), pointer       :: w_bundle                       ! space angle weights
     real(kind=KindRTVar)                              :: cr_heating
     real(kind=KindScalarVar), dimension(:,:,:),   pointer :: d     => null()
@@ -47,12 +48,14 @@ MODULE rt_mod
     logical :: do_chains      = .false.
   contains
     procedure :: absolute_point_position
+    procedure :: allocate_shell
     procedure :: boundary_conditions
     procedure :: cell2pos
     procedure :: density_weight_factor
     procedure :: dnload
     procedure :: execute_no_chain
     procedure :: finish
+    procedure :: get_bndry
     procedure :: get_ds
     procedure :: get_q
     procedure :: has_OB
@@ -61,6 +64,7 @@ MODULE rt_mod
     procedure :: init_chain
     procedure :: init_no_chain
     procedure :: map_bndry
+    procedure :: map_intensity_shell
     procedure :: nudge
     procedure :: optical_depth_centered
     procedure :: optical_depth_staggered
@@ -75,6 +79,7 @@ MODULE rt_mod
     procedure :: solve_feautrier
     procedure :: update => update_rt
     procedure :: update_q
+    procedure :: wall_id
   end type
   real, parameter:: pi4 = 16.*atan(1.)
   logical:: debug=.false., detailed_timer=.false.
@@ -120,7 +125,12 @@ SUBROUTINE init_rt (self)
   else
     nd = 1
   end if
-  self%nv = ray_geometry%head%n_ray_dirs*nd*eos%n_lambda                ! memory slot stores all heating rates per direction per freq bin
+  self%do_chains = ray_geometry%head%do_chains                          ! are there chains in the system, or patches are effectively isolated
+  if (self%do_chains) then
+    self%nv = 1                                                         ! single memory slot for all heating rates
+  else
+    self%nv = ray_geometry%head%n_ray_dirs*nd*eos%n_lambda              ! memory slot stores all heating rates per direction per freq bin
+  end if
   self%nw = 1                                                           ! no time deriv
   self%ng = 1
   self%periodic = periodic
@@ -133,11 +143,11 @@ SUBROUTINE init_rt (self)
   self%dt_fixed = dtime                                                 ! timestep is fixed for radiative transfer
   self%grace = 0.0                                                      ! grace on by default, but very small, so nboring rt_patches would nod do anything stupid
   self%kind = 'rt_solver'                                                ! set the patch kind for output post-processing purposes
-  self%do_chains = ray_geometry%head%do_chains                          ! are there chains in the system, or patches are effectively isolated
+  self%n_packet = ray_geometry%head%total_n_packets
+  self%n_bundle = ray_geometry%head%total_n_bundles
   if (self%do_chains) then
-    self%n_packet = ray_geometry%head%total_n_packets * nd              ! number of packets
-  else
-    self%n_packet = ray_geometry%head%total_n_packets
+    self%n_packet = self%n_packet * nd                                  ! number of packets
+    self%n_bundle = self%n_bundle * nd                                  ! number of bundles
   end if
   self%cr_heating = cr_heating                                          ! store cr heating, if it is present
   do i=1,3
@@ -147,9 +157,8 @@ SUBROUTINE init_rt (self)
   !> set up rt-specific parameters : weights for frequency bins and
   !> space-angles. Also, select the appropriate solver.
   !> -------------------------------------------------------------------
-  allocate (self%w_lambda(self%nv))                                     ! frequency bin weights
-  allocate (self%w_bundle(self%nv))                                     ! space angle weights
-  self%w_bundle = pi4/(ray_geometry%head%n_ray_dirs * nd)               ! space angle weights FIXME: could/should be different weights for different directions
+  allocate (self%w_bundle(ray_geometry%head%n_ray_dirs))                ! space angle weights
+  self%w_bundle = pi4/(ray_geometry%head%n_ray_dirs)                    ! space angle weights FIXME: could/should be different weights for different directions
 
   self%solver = solver                                                  ! solver selection
   select case(self%solver)
@@ -171,16 +180,40 @@ SUBROUTINE init_rt (self)
     self%optical_depth => optical_depth_staggered_weighted
   end select
 
-  allocate(self%my_links(self%n_packet))                                ! allocate all the links this patch contains
   if (self%do_chains) then
-    allocate(self%updated(self%n_packet))                               ! flags, indicating update status of all the bundles
+    call self%allocate_shell
+    allocate(self%my_links(self%n_bundle))                              ! allocate all the links this patch contains
+    allocate(self%updated(self%n_bundle))                               ! flags, indicating update status of all the bundles
     self%updated(:) = .false.                                           ! none are updated initially
     call self%init_chain(nd)
   else
+    allocate(self%my_links(self%n_packet))                                ! allocate all the links this patch contains
     call self%init_no_chain
   end if
   call trace%end(itimer)
 END SUBROUTINE init_rt
+
+!> =====================================================================
+!> Subroutine to allocate the data structure to hold the leaving heating
+!> rates. It acts as a hub for communications between nboring rt patches. 
+!> =====================================================================
+SUBROUTINE allocate_shell (self)
+  class (rt_t) :: self
+  ! ....................................................................
+  integer :: n_out(3), idx, itot, n_cells
+  ! --------------------------------------------------------------------
+  n_out = ray_geometry%head%wall_n_dirs
+  self%wall_idx(1) = 1                                                  ! -x wall, starts with 1
+  self%wall_idx(2) = self%wall_idx(1) +     self%n(2)*   self%n(3)      ! +x wall, starts with cell numbers in wall + 1
+  self%wall_idx(3) = self%wall_idx(2) +     self%n(2)   *self%n(3)      ! number of wall cells +1 to start -y
+  self%wall_idx(4) = self%wall_idx(3) + abs(self%n(1)-2)*self%n(3)   
+  self%wall_idx(5) = self%wall_idx(4) + abs(self%n(1)-2)*self%n(3)   
+  self%wall_idx(6) = self%wall_idx(5) + abs(self%n(1)-2)*abs(self%n(2)-2)
+  itot = product(self%n)-product(abs(self%n-2))
+  allocate(self%wall(itot,ray_geometry%head%n_ray_dirs))
+  print *, itot
+  print *, self%wall_idx
+END SUBROUTINE allocate_shell
 
 !> =====================================================================
 !> Set up all the links, belonging to this patch. Every link represents
@@ -203,22 +236,19 @@ SUBROUTINE init_chain(self, nd)
     do while(associated(ray_dir))                                         ! loop over all ray directions
       do ibnd =1, ray_dir%n_bundles                                       ! loop over ray bundles
         ray_bnd => ray_dir%bundle(ibnd)
-        do ipck = 1, ray_bnd%n_packets
-          packet => ray_bnd%packet(ipck)
-          this_link => self%my_links(a_id)
-          this_link%link => self%link                                   ! links should know, what rt patch hosts them
-          this_link%direction = dd                                      ! forward/reverse direction links
-          this_link%id = a_id                                           ! link personal ID in the link array
-          this_link%dir_id = ray_bnd%dir_id
-          this_link%packet => packet                                     ! link has to know, which packet it corresponds to
-          this_link%ivl = ivl
-          this_link%ivu = ivl + eos%n_lambda-1
-          allocate(this_link%pdata(packet%n_rays))                      ! allocate Q_in data for the link. Array consists of all the rays
-          call self%get_ds(packet,this_link%ds)
-          a_id = a_id + 1                                               ! next ID
-        end do
+        this_link => self%my_links(a_id)
+        this_link%link => self%link                                     ! links should know, what rt patch hosts them
+        this_link%direction = dd                                        ! forward/reverse direction links
+        this_link%id = a_id                                             ! link personal ID in the link array
+        this_link%dir_id = ray_bnd%dir_id
+        this_link%bundle => ray_bnd                                     ! link has to know, which packet it corresponds to
+        this_link%ivl = ivl
+        this_link%ivu = ivl + eos%n_lambda-1
+        allocate(this_link%packet_data(ray_bnd%n_rays))                 ! allocate intensity in data for the link. Array consists of all the rays
+        call self%get_ds(this_link%ds,bundle=ray_bnd)
+        call self%map_intensity_shell(this_link)                        ! map the links to the intensity outer shell (their "out" position in packet_data)
+        a_id = a_id + 1                                             
       end do
-      self%w_lambda(ivl:ivl+eos%n_lambda-1) = eos%w_lambda
       ray_dir => ray_dir%next                                           ! next direction
       ivl = ivl + eos%n_lambda
     end do
@@ -259,12 +289,10 @@ SUBROUTINE init_no_chain(self)
       this_link%ivu2 = ivl2 + eos%n_lambda-1
       this_link%master = .true.
       allocate(this_link%pdata(packet%n_rays*2))                        ! allocate Q_in data for the link. Array consists of all the rays
-      call self%get_ds(packet,this_link%ds)
+      call self%get_ds(this_link%ds, packet=packet)
       call self%map_bndry(this_link)
       a_id = a_id + 1                                                   ! next ID
     end do
-    self%w_lambda(ivl:ivl+eos%n_lambda-1)   = eos%w_lambda
-    self%w_lambda(ivl2:ivl2+eos%n_lambda-1) = eos%w_lambda
     ray_dir => ray_dir%next                                             ! next direction
     ivl = ivl + eos%n_lambda
     ivl2 = ivl2 + eos%n_lambda
@@ -288,6 +316,102 @@ SUBROUTINE dnload (self, only)
 END SUBROUTINE dnload
 
 !> =====================================================================
+!> This subroutine goes though all the rays in the bundle, belonging to
+!> particular chain link and maps all the rays to particular cell in the
+!> outer shell in the patch. This will completely remove the intensity
+!> lookup time, unless the patches are moving.
+!> INPUT: rt_patch as self and the link to be mapped.
+!> OUTPUT: none
+!> RESULT: the link knows where to put output intensities on the outer 
+!>   shell of the rt patch.
+!> FLOW: 
+!> 1) the bundle lwall and uwall are checked to find, which faces the
+!>   bundle cross. The -/+x face is the primary one, consisting of y*z
+!>   cells, the -/+y face is a secondary one, consisting of x*(z-2) cells
+!>   and the -/+z face is the tertiary one, consisting of (x-2)*(y-2) cells.
+!>   the last indice in the shells is the lower(1)/upper(2) wall. Indices
+!>   a and b are set to correspond to the right axes to obtain the cell
+!>   coordinates later.
+!> 2) a loop over all packets in the bundle is done.
+!> 3) if direction is forward, one needs the coordinates of the last point
+!>   in the ray, if it is reverse, one needs the coordinates for the first
+!>   point.
+!> 4) cell coordinate is taken for particular ray
+!> 5) a loop is initialized to find unocuppied data entry point (different
+!>   directions use same cells and nobody knows, which direction will do
+!>   this subroutine first). As soon as available entry point is found,
+!>   the quick lookup array point, related to particular ray, points to
+!>   that location. Work for this ray is done, moving to next ray or packet.
+!> =====================================================================
+SUBROUTINE map_intensity_shell(self, link)
+  class(rt_t) :: self
+  class(chain_link_t) :: link
+  !.....................................................................
+  class(packet_t), pointer :: packet
+  class(rt_hub_t), pointer :: this
+  integer :: ray, rid, pt, dir, i, ipck, wid
+  logical :: selected
+  !---------------------------------------------------------------------
+  dir = link%direction                                                  ! forward of reverse
+  rid=1
+  do ipck =1, link%bundle%n_packets
+    packet => link%bundle%packet(ipck)                                  ! loop over ray packets in the bundle                                        
+    if (dir ==1) then
+       pt = packet%n_points                                             ! select the last point in the ray
+    else
+      pt = 1                                                            ! it might be the first point for reverse direction.
+    end if
+    do ray = 1, packet%n_rays                                           ! loop over rays in the packet
+      selected = .false.
+      wid = self%wall_id(packet%coords(:,pt,ray))                       ! get the wall index for this point
+      i=1
+      do while (.not.selected)                                          ! loop over the data in the selected cell on the shell
+        this => self%wall(wid,i)
+        if (associated(this%out)) then                                  ! this entry point is already occupied by another ray (direction)
+          i = i+1                                                       ! switch to the next entry point.
+        else        
+          allocate(self%wall(wid,i)%out(eos%n_lambda))                  ! allocate the outgoing intensity storage
+          allocate(self%wall(wid,i)%dir_id)                             ! allocate a pointer to direction id, to know, who owns the entry point
+          self%wall(wid,i)%dir_ID = link%bundle%dir_ID                  ! know, which direction this intensity is from
+          link%packet_data(rid)%out => self%wall(wid,i)%out             ! point the fast lookup to the shell cell position
+          link%packet_data(rid)%dir_ID =>  self%wall(wid,i)%dir_ID      ! point to the direction ID to have the reference.
+          selected = .true.                                             ! this ray has chosen it's entry point on the rt outer shell.
+          link%packet_data(rid)%out = 0.
+        end if
+      end do
+      rid=rid+1
+    end do
+  end do
+END SUBROUTINE map_intensity_shell
+
+!> =====================================================================
+!> Subroutine to allocate the data structure to hold the leaving heating
+!> rates. It acts as a hub for communications between nboring rt patches. 
+!> =====================================================================
+FUNCTION wall_id (self, c) result(out)
+  class (rt_t) :: self
+  integer :: c(3), out
+  ! --------------------------------------------------------------------
+  if (c(1) == self%li(1)) then
+    out = self%wall_idx(1) + ((c(2)-self%ng(2)-1)*self%n(3))+c(3)-self%ng(3)-1
+  else if (c(1) == self%ui(1)) then
+    out = self%wall_idx(2) + ((c(2)-self%ng(2)-1)*self%n(3))+c(3)-self%ng(3)-1
+  else if (c(2) == self%li(2)) then
+    out = self%wall_idx(3) + (abs(c(1)-self%ng(1)-2)*self%n(3))+c(3)-self%ng(3)-1
+  else if (c(2) == self%ui(2)) then
+    out = self%wall_idx(4) + (abs(c(1)-self%ng(1)-2)*self%n(3))+c(3)-self%ng(3)-1
+  else if (c(3) == self%li(3)) then
+    out = self%wall_idx(5) + (abs(c(1)-self%ng(1)-2)*(self%n(2)-2))+abs(c(2)-self%ng(2)-2)
+  else if (c(3) == self%ui(3)) then
+    out = self%wall_idx(6) + (abs(c(1)-self%ng(1)-2)*(self%n(2)-2))+abs(c(2)-self%ng(2)-2)
+  else
+    print *, c
+    print *, self%li, self%ui
+    error stop "rt_t:wall_id: no suitable wall found (???)"
+  end if    
+END FUNCTION wall_id
+
+!> =====================================================================
 !> This subroutine maps the incoming heating rates to the outer boundary
 !> conditions
 !> =====================================================================
@@ -295,40 +419,52 @@ SUBROUTINE map_bndry(self, link)
   class(rt_t) :: self
   class(chain_link_t) :: link
   !.....................................................................
-  integer :: r, i, c(3), lv, uv, lt, ut
+  class(packet_t), pointer :: packet
+  integer :: r, i, c(3), lv, uv, lt, ut, ipck, rid, ray
   integer, dimension(:,:), pointer:: up, dn
   !---------------------------------------------------------------------
-  select case(link%direction)
-  case(1)                                                               ! forward rays
-    lv = link%ivl; uv = link%ivu                                        ! memory slot indices
-    up => link%packet%rev_coords                                        ! upstream coordinates
-    do r = 1, link%packet%n_rays
-      c = up(:,r)
-      link%pdata(r)%in => self%mem(c(1),c(2),c(3),lv:uv,:,1)            ! map to guard cells
+  if (self%do_chains) then
+    rid=1
+    do ipck =1, link%bundle%n_packets
+      packet => link%bundle%packet(ipck)                                  ! loop over ray packets in the bundle
+      do ray = 1, packet%n_rays                                 
+        allocate(link%packet_data(rid)%in(eos%n_lambda))
+        rid = rid + 1
+      end do
     end do
-  case(2)                                                               ! reverse rays
-    lv = link%ivl; uv = link%ivu                                        ! memory slot indices
-    up => link%packet%fwd_coords                                        ! dnstream coordinates
-    do r = 1, link%packet%n_rays
-      c = up(:,r)
-      link%pdata(r)%in => self%mem(c(1),c(2),c(3),lv:uv,:,1)            ! map to guard cells
-    end do
-  case(3)                                                               ! both directions
-    lv = link%ivl ; uv = link%ivu                                       ! memory slot forward
-    lt = link%ivl2; ut = link%ivu2                                      ! memory slot reverse
-    up => link%packet%rev_coords                                        ! upstream coordinates
-    dn => link%packet%fwd_coords                                        ! dnstream coordinates
-    i = link%packet%n_rays
-    do r = 1, link%packet%n_rays
-      i = i + 1
-      c = up(:,r)
-      link%pdata(r)%in => self%mem(c(1),c(2),c(3),lv:uv,:,1)            ! map forward to mem
-      c = dn(:,r)
-      link%pdata(i)%in => self%mem(c(1),c(2),c(3),lt:ut,:,1)            ! map reverse to mem
-    end do
-   case default
-     error stop "rt_t::map_bndry:: direction not understood"
-   end select
+  else
+    select case(link%direction)
+    case(1)                                                               ! forward rays
+      lv = link%ivl; uv = link%ivu                                        ! memory slot indices
+      up => link%packet%rev_coords                                        ! upstream coordinates
+      do r = 1, link%packet%n_rays
+        c = up(:,r)
+        link%pdata(r)%in => self%mem(c(1),c(2),c(3),lv:uv,:,1)            ! map to guard cells
+      end do
+    case(2)                                                               ! reverse rays
+      lv = link%ivl; uv = link%ivu                                        ! memory slot indices
+      up => link%packet%fwd_coords                                        ! dnstream coordinates
+      do r = 1, link%packet%n_rays
+        c = up(:,r)
+        link%pdata(r)%in => self%mem(c(1),c(2),c(3),lv:uv,:,1)            ! map to guard cells
+      end do
+    case(3)                                                               ! both directions
+      lv = link%ivl ; uv = link%ivu                                       ! memory slot forward
+      lt = link%ivl2; ut = link%ivu2                                      ! memory slot reverse
+      up => link%packet%rev_coords                                        ! upstream coordinates
+      dn => link%packet%fwd_coords                                        ! dnstream coordinates
+      i = link%packet%n_rays
+      do r = 1, link%packet%n_rays
+        i = i + 1
+        c = up(:,r)
+        link%pdata(r)%in => self%mem(c(1),c(2),c(3),lv:uv,:,1)            ! map forward to mem
+        c = dn(:,r)
+        link%pdata(i)%in => self%mem(c(1),c(2),c(3),lt:ut,:,1)            ! map reverse to mem
+      end do
+     case default
+       error stop "rt_t::map_bndry:: direction not understood"
+     end select
+   end if
 END SUBROUTINE map_bndry
 
 !> =====================================================================
@@ -413,7 +549,6 @@ SUBROUTINE update_rt (self)
     print *, self%id, 'src', minval(self%src), maxval(self%src)
   end if
   if (self%do_chains) then
-    call self%rt_boundaries%condition(self%mem(:,:,:,:,self%it,1))
     call self%nudge                                                     ! nudge the chain heads
   else
     call self%dnload
@@ -456,9 +591,10 @@ SUBROUTINE execute_chain (self)
   class(rt_t),          pointer :: rt_patch
   class(task_t),        pointer :: task
   class(chain_link_t),  pointer :: link, prev
-  real(kind=KindRTVar), dimension(:,:  ), pointer :: q0
+  real(kind=KindRTVar), dimension(:,:  ), pointer :: q0, q_in
   real(kind=KindRTVar), dimension(:,:,:), pointer :: q
-  integer :: ray, it
+  class(packet_t),        pointer :: packet
+  integer :: ray, it, ipck, ir
   integer, save:: itimer=0
   logical :: first
   !---------------------------------------------------------------------
@@ -470,23 +606,17 @@ SUBROUTINE execute_chain (self)
   class is (rt_t)
   rt_patch => task
   end select
-  allocate(q0 (link%packet%n_rays,eos%n_lambda))
+  allocate(q0 (size(link%packet_data),eos%n_lambda))
   first = .true.
   do while (associated(link))
-    allocate(q (link%packet%n_rays,eos%n_lambda,link%packet%n_points+2))
     if (associated(prev)) then
       task => prev%link%task                                            ! get the patch of upstream chain link
       select type (task)
       class is (rt_t)
       rt_patch => task
       end select
-      if  (rt_patch%upd_time < rt_patch%time) then
-        it = rt_patch%iit(rt_patch%nt-2)
-      else
-        it = rt_patch%it
-      end if
-      do ray=1, link%packet%n_rays
-        q0(ray,:) = link%pdata(ray)%in(:,it)
+      do ray=1, link%bundle%n_rays
+        q0(ray,:) = link%packet_data(ray)%in(:)
       end do
       task => link%link%task                                            ! get the patch of current chain link
       select type (task)
@@ -499,29 +629,54 @@ SUBROUTINE execute_chain (self)
       class is (rt_t)
       rt_patch => task
       end select
-      if  (rt_patch%upd_time < rt_patch%time) then
-        it = rt_patch%iit(rt_patch%nt-2)
+      if (link%bc(1)) then
+        call rt_patch%get_bndry(link,q0)
       else
-        it = rt_patch%it
+        do ray=1, link%bundle%n_rays
+          q0(ray,:) = link%packet_data(ray)%in(:)
+        end do
       end if
-      do ray=1, link%packet%n_rays
-        q0(ray,:) = link%pdata(ray)%in(:,it)
-      end do
     end if
     !
     select case(self%direction)
-      case(1)                                                           ! forward rays
-        call rt_patch%solve(link,q_in_fw=q0,q_out_fw=q)                 ! do the radiative transfer for this particular link
-        call rt_patch%update_q(link, q_fw=q)                            ! update the memory slot
-      case(2)                                                           ! reverse rays
-        call rt_patch%solve(link,q_in_re=q0,q_out_re=q)                 ! do the radiative transfer for this particular link
-        call rt_patch%update_q(link, q_re=q)                            ! update the memory slot
-      case default
+    case(1)                    
+      do ipck = 1, link%bundle%n_packets                                  ! loop over packets
+        packet => link%bundle%packet(ipck)
+        allocate(q    (packet%n_rays,eos%n_lambda,packet%n_points+2))
+        allocate(q_in (packet%n_rays,eos%n_lambda))
+        do ray=1, packet%n_rays
+          q_in(ray,:) = q0(packet%b_id(ray),:)
+        end do
+        call rt_patch%solve(link,q_in_fw=q_in,q_out_fw=q, pid=ipck)     ! do the radiative transfer for this particular link
+        call rt_patch%update_q(link, q_fw=q,pck=packet)                 ! update the memory slot
+        do ray=1, packet%n_rays
+          ir = packet%b_id(ray)
+          link%packet_data(ir)%out(:) = q(ray,:,packet%n_points+1)
+        end do
+        deallocate(q, q_in)
+      end do
+    case(2)                                                             ! reverse rays
+      do ipck = 1, link%bundle%n_packets                                  ! loop over packets
+        packet => link%bundle%packet(ipck)
+        allocate(q    (packet%n_rays,eos%n_lambda,packet%n_points+2))
+        allocate(q_in (packet%n_rays,eos%n_lambda))
+        do ray=1, packet%n_rays
+          q_in(ray,:) = q0(packet%b_id(ray),:)
+        end do
+        call rt_patch%solve(link,q_in_re=q_in,q_out_re=q, pid=ipck)     ! do the radiative transfer for this particular link
+        call rt_patch%update_q(link, q_re=q,pck=packet)                 ! update the memory slot
+        do ray=1, packet%n_rays
+          ir = packet%b_id(ray)
+          link%packet_data(ir)%out(:) = q(ray,:,2)
+        end do
+        deallocate(q, q_in)
+      end do
+    case default
       error stop "rt_t::execute_chain:: direction not understood"
     end select
+    
     rt_patch%updated(link%id) = .true.                                  ! mark, that this link has been updated
     if(all(rt_patch%updated)) call rt_patch%finish                      ! if all links are done, this rt_patch is complete
-    deallocate(q)
     prev => link
     link => link%next
   end do
@@ -531,6 +686,47 @@ SUBROUTINE execute_chain (self)
   nullify(rt_patch, task, prev)
   if (detailed_timer) call trace%end(itimer)
 END SUBROUTINE execute_chain
+
+!> =====================================================================
+!> This subroutine maps the incoming heating rates to the outer boundary
+!> conditions
+!> =====================================================================
+SUBROUTINE get_bndry(self, link, q0)
+  class(rt_t) :: self
+  class(chain_link_t) :: link
+  real(kind=KindRTVar), dimension(:,:), pointer :: q0
+  !.....................................................................
+  class(packet_t), pointer :: packet
+  real, dimension(:,:,:), pointer:: wall
+  integer :: ray, rid, c(3), pt, dir, ipck, i
+  logical :: selected
+  !---------------------------------------------------------------------
+  if (self%do_chains) then
+    select case(link%direction)
+    case(1)
+      rid=1
+      do ipck =1, link%bundle%n_packets
+        packet => link%bundle%packet(ipck)                              ! loop over ray packets in the bundle
+        do ray = 1, packet%n_rays                                 
+          c = packet%rev_coords(:,ray)
+          call self%rt_boundaries%condition_cell(q0(packet%b_id(ray),:),c)
+          rid = rid + 1
+        end do
+      end do
+    case(2)
+      rid=1
+      do ipck =1, link%bundle%n_packets
+        packet => link%bundle%packet(ipck)                              ! loop over ray packets in the bundle
+        do ray = 1, packet%n_rays                                 
+          c = packet%fwd_coords(:,ray)
+          call self%rt_boundaries%condition_cell(q0(packet%b_id(ray),:),c)
+        end do
+      end do
+    end select
+  else
+
+  end if
+END SUBROUTINE get_bndry
 
 !> =====================================================================
 !> Loop through all links in the chain and solve the actual rt
@@ -602,12 +798,13 @@ SUBROUTINE link_connects_to (self, nbor, mine, other, connects, is_upstream)
   class (rt_t), pointer :: nbor
   class (chain_link_t) :: mine
   class (chain_link_t) :: other
-  logical :: connects, is_upstream
+  logical :: connects, is_upstream, tout(3)
   !.....................................................................
-  integer :: ray, upc(3), ir, oc(3), pt, i
+  integer :: ray, upc(3), ir, oc(3), pt, i, first_pt(3), rev(3), pid, pp, rid
   !---------------------------------------------------------------------
   connects = .false.
   is_upstream = .false.
+  tout(:) = .false.
 
   if (mine%dir_ID /= other%dir_ID)       return                         ! different ray spatial direction
   if (mine%direction /= other%direction) return                         ! different direction
@@ -723,22 +920,46 @@ SUBROUTINE link_connects_to (self, nbor, mine, other, connects, is_upstream)
     !end if
   else
     ray = 1                                                             ! testing only one ray in the bundle
-    upc = mine%get_upstream_coord_same(ray)
-    select case(mine%direction)
-    case(1)                                                             ! look at last points in other rays
-      pt = other%packet%n_points
-    case(2)                                                             ! look at first points in other rays
-      pt = 1
-    case default
-      error stop "rt_t::link_connects_to:: direction not understood(2)"
-    end select
-    do ir = 1, other%packet%n_rays
-      oc = other%packet%coords(:,pt,ir)
-      if (all(oc==upc)) then
-        connects = .true.
-        exit
+    select case(mine%direction)                                           
+    case(1)
+      if (mine%bundle%b_id_rev  /= other%bundle%ID_loc) return              ! wrong bundle to make a chain
+        first_pt =  mine%bundle%packet(1)%coords(:,1,ray)                 ! taking the coordinates of the first point in the ray
+        if (self%no_mans_land) then
+          rid = mine%bundle%packet(1)%r_id_rev(ray)                         ! ray id in a packet list of a ray in the previous bundle 
+          pid = mine%bundle%packet(1)%p_id_rev(ray)                         ! packet id in the previous bundle
+          rev = other%bundle%packet(pid)%fwd_coords(:,rid)                ! zeroth point in the ray (location of incoming intensity)               
+        else
+          rid = mine%bundle%packet(1)%r_id_rev(ray)                         ! ray id in a packet list of a ray in the previous bundle 
+          pid = mine%bundle%packet(1)%p_id_rev(ray)                         ! packet id in the previous bundle
+          pp = other%bundle%packet(pid)%n_points
+          rev = other%bundle%packet(pid)%coords(:,pp,rid)                  ! zeroth point in the ray (location of incoming intensity)               
+        end if
+      rid = mine%bundle%packet(1)%r_id_rev(ray)                         ! ray id in a packet list of a ray in the previous bundle 
+      pid = mine%bundle%packet(1)%p_id_rev(ray)                         ! packet id in the previous bundle
+      rev = other%bundle%packet(pid)%fwd_coords(:,rid)                ! zeroth point in the ray (location of incoming intensity)                                  
+    case(2)
+      if (mine%bundle%b_id_fw /= other%bundle%ID_loc) return                ! wrong bundle to make a chain
+      pp = mine%bundle%packet(1)%n_points
+      first_pt =  mine%bundle%packet(1)%coords(:,pp,ray)                ! taking the coordinates of the last point in the ray
+      if (self%no_mans_land) then
+        rid = mine%bundle%packet(1)%r_id_fw(ray)                          ! ray id in a packet list of a ray in the previous bundle 
+        pid = mine%bundle%packet(1)%p_id_fw(ray)                          ! packet id in the previous bundle
+        print *, rid, pid
+        rev = other%bundle%packet(pid)%rev_coords(:,rid)                ! zeroth point in the ray (location of incoming intensity)            
+      else
+        rid = mine%bundle%packet(1)%r_id_fw(ray)                          ! ray id in a packet list of a ray in the previous bundle 
+        pid = mine%bundle%packet(1)%p_id_fw(ray)                          ! packet id in the previous bundle
+        rev = other%bundle%packet(pid)%coords(:,1,rid)                    ! zeroth point in the ray (location of incoming intensity)            
       end if
+                                                   
+    end select
+    first_pt = nbor%pos2cell(self%myposition(first_pt))
+
+    do pp = 1,3
+      if (first_pt(pp) == rev(pp)) tout(pp) = .true.
     end do
+    
+    if (all(tout)) connects = .true.
   end if
 END SUBROUTINE link_connects_to
 
@@ -777,10 +998,10 @@ LOGICAL FUNCTION has_OB (self, link)
   real(8) :: p(3)
   !.....................................................................
   has_OB = .false.
-  d = link%packet%dstep
+  d = link%bundle%dstep
   select case (link%direction)
   case(1)
-    i = link%packet%rev_coords(:,1)
+    i = link%bundle%packet(1)%rev_coords(:,1)
     p = self%myposition(i)
     do t = 1,3
       if (d(t)>0) then
@@ -790,7 +1011,7 @@ LOGICAL FUNCTION has_OB (self, link)
       end if
     end do
   case(2)
-    i = link%packet%fwd_coords(:,1)
+    i = link%bundle%packet(1)%fwd_coords(:,1)
     p = self%myposition(i)
     do t = 1,3
       if (d(t)>0) then
@@ -828,13 +1049,14 @@ SUBROUTINE finish(self)
   call self%task_t%rotate
 END SUBROUTINE finish
 
-SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
+SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re, pid)
   class(rt_t) :: self
   class(chain_link_t),    pointer :: link
   real(kind=KindRTVar), dimension(:,:),   pointer, optional :: q_in_fw
   real(kind=KindRTVar), dimension(:,:),   pointer, optional :: q_in_re
   real(kind=KindRTVar), dimension(:,:,:), pointer, optional :: q_out_fw
   real(kind=KindRTVar), dimension(:,:,:), pointer, optional :: q_out_re
+  integer, optional :: pid
   !.....................................................................
   class(packet_t),        pointer :: packet
   real(kind=KindRTVar), dimension(:,:,:), pointer :: s, rk, dtau, exp0
@@ -843,8 +1065,12 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
   if (detailed_timer) call trace_begin ('rt_t%solve_integral', itimer=itimer)
-  packet => link%packet
   nwb   =  eos%n_lambda                                                 ! number of wl bins
+  if (self%do_chains) then
+    packet => link%bundle%packet(pid)                                           
+  else
+    packet => link%packet
+  end if
   nrays =  packet%n_rays                                                ! number of rays in this packet
   !> -------------------------------------------------------------------
   !> RT solvers need at least 3 points to work with, as they use
@@ -924,13 +1150,14 @@ END SUBROUTINE solve_integral
 !> =====================================================================
 !> Same as solve_integral, but for the Feautrier formulation
 !> =====================================================================
-SUBROUTINE solve_feautrier (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)
+SUBROUTINE solve_feautrier (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re, pid)
   class(rt_t) :: self
   class(chain_link_t),    pointer :: link
   real(kind=KindRTVar), dimension(:,:),   pointer, optional :: q_in_fw
   real(kind=KindRTVar), dimension(:,:),   pointer, optional :: q_in_re
   real(kind=KindRTVar), dimension(:,:,:), pointer, optional :: q_out_fw
   real(kind=KindRTVar), dimension(:,:,:), pointer, optional :: q_out_re
+  integer, optional :: pid
   !.....................................................................
   class(packet_t),        pointer :: packet
   integer                         :: nrays, npt, nwb, ir
@@ -1059,13 +1286,14 @@ SUBROUTINE ray_vol_map3 (self, packet, in, out)
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE ray_vol_map3
 
-SUBROUTINE update_q (self, link, q_fw, q_re)
+SUBROUTINE update_q (self, link, q_fw, q_re, pck)
   class(rt_t) :: self
   class(chain_link_t), pointer :: link
   real(kind=KindRTVar), dimension(:,:,:), pointer, optional :: q_fw, q_re
+  class(packet_t), pointer, optional :: pck
   ! ....................................................................
   class(packet_t), pointer :: packet
-  real, dimension(:,:,:), pointer :: q
+  real, dimension(:,:,:), pointer :: q, q1
   real, dimension(:,:,:,:), pointer :: qq, qq2
   integer, dimension(:,:,:), pointer :: cell
   integer :: p(3), wl, ray, pt, ib, ivl, ivu, it, ivl2, ivu2, nwb
@@ -1075,9 +1303,10 @@ SUBROUTINE update_q (self, link, q_fw, q_re)
   if (detailed_timer) call trace_begin ('rt_t%update_q', 4, itimer=itimer)
   ivl = link%ivl
   ivu = link%ivu
-  nwb = size(q_fw,2)
+  nwb = eos%n_lambda
   packet => link%packet
   if (self%do_chains) then
+    packet => pck
     if  (self%upd_time < self%time) then
       it = self%iit(self%nt-2)
     else
@@ -1085,14 +1314,13 @@ SUBROUTINE update_q (self, link, q_fw, q_re)
     end if
     if (present(q_fw)) q => q_fw
     if (present(q_re)) q => q_re
-    qq => self%mem(:,:,:,ivl:ivu,it,1)                                  ! point to the memory slot
-
+    q1 => self%mem(:,:,:,1,it,1)                                        ! point to the memory slot
     cell => packet%coords                                                 ! point to coordinates
     do ray = 1, packet%n_rays                                             ! loop over rays
       do pt = 1, packet%n_points                                          ! loop over points
         p = cell(:,pt,ray)                                                ! get the cell position
         do wl=1,nwb
-          qq(p(1),p(2),p(3),wl) = q(ray,wl,pt+1)
+          q1(p(1),p(2),p(3)) = q1(p(1),p(2),p(3))+q(ray,wl,pt+1)
         end do
       end do
     end do
@@ -1205,7 +1433,7 @@ SUBROUTINE get_q (self, time, de)
   !---------------------------------------------------------------------
   associate (l => self%li, u => self%ui)
   do iv = 1, self%nv
-    de= de + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1) !* self%w_bundle(iv) * self%w_lambda(iv)
+    de= de + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1) !* self%w_bundle(iv) * eos%w_lambda(iv)
   end do
   end associate
 END SUBROUTINE get_q
@@ -1265,14 +1493,16 @@ SUBROUTINE boundary_conditions (self)
   !---------------------------------------------------------------------
 END SUBROUTINE boundary_conditions
 
-SUBROUTINE get_ds(self, packet, ds)
+SUBROUTINE get_ds(self, ds, packet, bundle)
   class(rt_t) :: self
-  class(packet_t), pointer :: packet
+  class(packet_t), pointer, optional :: packet
+  class(ray_bndl_t), pointer, optional :: bundle
   real(kind=8) :: cs(3), ds
   !.....................................................................
   real(kind=8) :: dst(3), c(3)
   !---------------------------------------------------------------------
-  dst = real(packet%dstep,kind=8)
+  if (present(packet)) dst = real(packet%dstep,kind=8)
+  if (present(bundle)) dst = real(bundle%dstep,kind=8)
   c   = self%mesh%d
   ds  = ((c(1)*dst(1))**2+(c(2)*dst(2))**2+(c(3)*dst(3))**2)**0.5
 

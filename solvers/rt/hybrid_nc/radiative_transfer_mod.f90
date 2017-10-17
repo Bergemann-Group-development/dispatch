@@ -128,7 +128,7 @@ SUBROUTINE rt_setup (self, level_min)
         !> -------------------------------------------------------------
         link%task         => rt_task                                    ! connect to RT task
         rt_task%link => link                                            ! save it's link for convenience
-        !call connect_nbors(link,t_list)                                ! connect rt task and rmhd task
+        if (ray_geometry%head%do_chains) call connect_nbors(link,t_list)  ! connect rt task and rmhd task
         mhd%rt => rt_task                                               ! save link to rt task
         rt_task%mhd_link => t_list                                      ! save link to mhd task
         rt_task%position = mhd_patch%position                           ! shadow the position
@@ -178,12 +178,17 @@ SUBROUTINE rt_setup (self, level_min)
   !> -------------------------------------------------------------------
   !> append the rt tasks to the task list.
   !> -------------------------------------------------------------------
-  !link => rt_task_list%head
-  !do while (associated(link))
-  !  rt_link => link%next
-  !  call self%append_link (link)                                        ! append the task to the task list
-  !  link => rt_link
-  !end do
+  if (ray_geometry%head%do_chains) then
+    link => rt_task_list%head
+    nd=1
+    do while (associated(link))
+      rt_link => link%next
+      call self%append_link (link)                                        ! append the task to the task list
+      link => rt_link
+      nd = nd + 1
+    end do
+    print *, 'added',nd,' rt tasks to the task list'
+  end if
   call self%print
   call trace%end (itimer)
   if (io%master) then
@@ -248,7 +253,7 @@ SUBROUTINE make_chains (self)
   logical :: upstream = .false.
   logical :: connected = .false.
   logical :: is_bndry
-  integer:: ip, ipn, n_links, n_masters, n_slaves, n_conn,n_bn
+  integer:: ibnd, ibn, n_links, n_masters, n_slaves, n_conn,n_bn
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer_mod%add_correction_nbors ')
   print *, 'making chains...'
@@ -269,11 +274,11 @@ SUBROUTINE make_chains (self)
       ithis => this
     end SELECT
 
-    do ip = 1, ithis%n_packet                                           ! loop over chain links
+    do ibnd = 1, ithis%n_bundle                                         ! loop over chain links
       is_bndry=.false.                                                  ! reset the boundary flag
       connected = .false.                                               ! no connections have been made
       n_links=n_links+1
-      my_link => ithis%my_links(ip)
+      my_link => ithis%my_links(ibnd)
       my_link%master = .true.                                           ! flag the link as being the master for now
 
       !> ---------------------------------------------------------------
@@ -301,10 +306,10 @@ SUBROUTINE make_chains (self)
           if (ithis%id /= ithat%id) then                                ! not the same patch
             if (ithis%overlaps(ithat)) then                             ! patches overlap
               ! loop over ithat links
-              nblink_loop: do ipn=1, ithat%n_packet                     ! loop over nbor links
+              nblink_loop: do ibn=1, ithat%n_bundle                     ! loop over nbor links
                 connects = .false.                                      ! can links connect?
                 upstream = .false.                                      ! nbor is different lvl upstreamer?
-                nb_link => ithat%my_links(ipn)
+                nb_link => ithat%my_links(ibn)
                 call ithis%link_connects_to(ithat,my_link,nb_link, &
                 connects, upstream)
                 !> -----------------------------------------------------
