@@ -35,7 +35,8 @@ MODULE rt_boundaries_mod
     procedure:: set
     procedure:: is_set
     procedure:: is_clear
-    procedure:: condition                                               ! modify outer BCs if necessary
+    procedure:: condition => condition_mem                              ! modify outer BCs if necessary in no chains mode
+    procedure:: condition_cell                                          ! modify outer BCs in chains mode
   end type
 !-----------------------------------------------------------------------
 
@@ -203,7 +204,7 @@ END FUNCTION is_clear
 !> =====================================================================
 !> Apply a boundary condition
 !> =====================================================================
-SUBROUTINE condition (self, f)
+SUBROUTINE condition_mem (self, f)
   class(rt_outer_bndry_t) :: self
   real(kind=KindRTVar)           :: f(:,:,:,:)
   !.....................................................................
@@ -281,6 +282,45 @@ SUBROUTINE condition (self, f)
   end if
   self%bits = saved_status
   call trace%end(itimer)
-END SUBROUTINE condition
+END SUBROUTINE condition_mem
+
+!> =====================================================================
+!> Apply a boundary condition
+!> =====================================================================
+SUBROUTINE condition_cell (self, v,cell,dir)
+  class(rt_outer_bndry_t) :: self
+  real(kind=KindScalarVar):: v(:)
+  integer:: cell(3), dir
+  !.....................................................................
+  integer:: i, saved_status, il, iu, a, b
+  integer, save:: itimer
+  !---------------------------------------------------------------------
+  call trace%begin ('rt_boundaries_t%condition', itimer=itimer)
+  if (self%unset) then
+    call mpi%abort ('rt_outer_boundaries_t%init has not been called')
+  end if
+  saved_status = self%bits
+  if (self%is_set(bits%xl)) then
+    if (cell(1) < self%m(1)%li) v = 0d0
+  end if
+  if (self%is_set(bits%xu)) then
+    if (cell(1) > self%m(1)%ui) v = 0d0
+  end if
+  if (self%is_set(bits%yl)) then
+    if (cell(2) < self%m(2)%li) v = 0d0
+  end if
+  if (self%is_set(bits%yu)) then
+    if (cell(2) > self%m(2)%ui) v = 0d0
+  end if
+  if (self%is_set(bits%zl)) then
+    if (cell(3) < self%m(3)%li) v = 0d0
+  end if
+  if (self%is_set(bits%zu)) then
+    if (cell(3) > self%m(3)%ui) v = 0d0
+  end if
+  self%bits = saved_status
+  call trace%end(itimer)
+END SUBROUTINE condition_cell
+
 
 END MODULE rt_boundaries_mod
