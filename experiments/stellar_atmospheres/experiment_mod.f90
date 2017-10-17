@@ -16,14 +16,14 @@ MODULE experiment_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
-  USE mhd_mod
+  USE rmhd_mod
   USE initial_mod
   USE timestep_mod
   USE timer_mod
   USE link_mod
   implicit none
   private
-  type, public, extends(mhd_t):: experiment_t
+  type, public, extends(rmhd_t):: experiment_t
   contains
     procedure init
     procedure update
@@ -47,7 +47,7 @@ SUBROUTINE init (self)
   self%nv  = self%initial%nv
   self%mhd = self%initial%mhd
   self%periodic(2) = .false.                     ! non-periodic vertically
-  call self%mhd_t%init
+  call self%rmhd_t%init
   self%i_bx=7
   self%i_by=8
   self%i_bz=9
@@ -59,6 +59,7 @@ SUBROUTINE init (self)
   call self%initial%condition(self%mesh, self%mem(:,:,:,:,1,1))
   self%time = self%initial%time
   self%t(self%it) = self%initial%time
+  call self%boundary_conditions
   call trace_end (itimer=itimer)
 END SUBROUTINE init
 
@@ -81,7 +82,7 @@ SUBROUTINE update (self)
     first_time = .false.
     call self%initial%cleanup
   end if
-  call self%mhd_t%update
+  call self%rmhd_t%update
   call self%boundary_conditions
   call self%courant_condition
   if (io%verbose>2) &

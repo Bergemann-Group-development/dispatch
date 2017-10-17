@@ -6,6 +6,7 @@ OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
+RT_SOLVER       = hybrid_nc
 SOLVER          = stagger2/e
 EXEC            = dispatch.x
 TOP             = ../..
@@ -29,7 +30,7 @@ sinclude $(TOP)/config/Makefile
 $(EXEC): cartesian_mod.o setup_mod.o $(PICOBJ)
 
 # Dependencies
-experiment_mod.o        : mhd_mod.o trace_mod.o io_mod.o initial_mod.o download_mod.o link_mod.o
+experiment_mod.o        : rmhd_mod.o trace_mod.o io_mod.o initial_mod.o download_mod.o link_mod.o
 initial_mod.o           : io_mod.o trace_mod.o random_mod.o mesh_mod.o vector_mod.o stagger_mod.o mesh_mod.o
 stagger_mod.o           : io_mod.o trace_mod.o scalar_mod.o vector_mod.o \
                           stagger_16.o stagger_20.o stagger_24.o stagger_32.o stagger_36.o
