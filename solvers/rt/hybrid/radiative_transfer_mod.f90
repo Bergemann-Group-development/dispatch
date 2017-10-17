@@ -216,7 +216,7 @@ SUBROUTINE make_chains (self)
   logical :: upstream = .false.
   logical :: connected = .false.
   logical :: is_bndry
-  integer:: ip, ipn, n_links, n_masters, n_slaves, n_conn,n_bn
+  integer:: ibnd, irn, n_links, n_masters, n_slaves, n_conn,n_bn
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer_mod%add_correction_nbors ')
   !$omp critical (list_cr)
@@ -236,7 +236,7 @@ SUBROUTINE make_chains (self)
       ithis => this
     end SELECT
 
-    do ip = 1, ithis%n_packet                                           ! loop over chain links
+    do ibnd = 1, ithis%n_bundle                                         ! loop over chain links
       is_bndry=.false.                                                  ! reset the boundary flag
       connected = .false.                                               ! no connections have been made
       n_links=n_links+1
@@ -268,10 +268,10 @@ SUBROUTINE make_chains (self)
           if (ithis%id /= ithat%id) then                                ! not the same patch
             if (ithis%overlaps(ithat)) then                             ! patches overlap
               ! loop over ithat links
-              nblink_loop: do ipn=1, ithat%n_packet                     ! loop over nbor links
+              nblink_loop: do irn=1, ithat%n_bundle                     ! loop over nbor links
                 connects = .false.                                      ! can links connect?
                 upstream = .false.                                      ! nbor is different lvl upstreamer?
-                nb_link => ithat%my_links(ipn)
+                nb_link => ithat%my_links(irn)
                 call ithis%link_connects_to(ithat,my_link,nb_link, &
                 connects, upstream)
                 !> -----------------------------------------------------

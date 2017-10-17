@@ -4,26 +4,112 @@
 MODULE rt_solver_mod
   USE io_mod
   USE trace_mod
+  USE kinds_mod
   implicit none
   private
   type, public:: rt_solver_t
   contains
     procedure:: init
+    procedure:: integral_forward_ref
+    procedure:: integral_reverse_ref
+    procedure:: integral_double_ref
     procedure:: integral_forward
     procedure:: integral_reverse
     procedure:: integral_double
     procedure:: feautrier
   end type
   type (rt_solver_t), public:: rt_solver
+  logical:: detailed_timer=.false.
 CONTAINS
 
 !> =====================================================================
 !> Choose RT solver method
 !> =====================================================================
-SUBROUTINE init (self)
+SUBROUTINE init (self, onoff)
   class (rt_solver_t):: self
+  logical:: onoff
+  !---------------------------------------------------------------------
+  detailed_timer = onoff
 END SUBROUTINE init
 
+!> =====================================================================
+!> Integral reference solution method in forward direction
+!> =====================================================================
+SUBROUTINE integral_forward_ref (self, dtau, ex0, S, q_in, q)
+  implicit none
+  class (rt_solver_t):: self
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, ex0, S, q
+  real(kind=KindRTVar), dimension(:,:)   :: q_in!, q_out
+!-----------------------------------------------------------------------
+  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ii
+  integer i, n
+!-----------------------------------------------------------------------
+!
+  q(:,:,1)  = q_in
+  ii(:,:,1) = q_in + s(:,:,1)                                           ! initial forward I
+  do i=2,n
+    ii(:,:,i) = ii(:,:,i-1)*ex0(:,:,i) + s(:,:,i)*(1-ex0(:,:,i)) &
+    - (s(:,:,i)-s(:,:,i-1))/dtau(:,:,i)*(1.-(1.+dtau(:,:,i))*ex0(:,:,i))
+    q(:,:,i) = ii(:,:,i)-s(:,:,i)
+  end do
+END SUBROUTINE integral_forward_ref                                     ! 2d 13m 11a 1e ! 26f + 1e
+
+!> =====================================================================
+!> Integral reference solution method in forward direction
+!> =====================================================================
+SUBROUTINE integral_reverse_ref (self, dtau, ex0, S, q_in, q)
+  implicit none
+  class (rt_solver_t):: self
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, ex0, S, q
+  real(kind=KindRTVar), dimension(:,:)   :: q_in!, q_out
+!-----------------------------------------------------------------------
+  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ii
+  integer i, n
+!-----------------------------------------------------------------------
+!
+  n = size(s,3)
+  q(:,:,n)  = q_in
+  ii(:,:,n) = q_in + s(:,:,n)                                           ! initial reverse I
+  do i=n,2,-1
+    ii(:,:,i-1) = ii(:,:,i)*ex0(:,:,i) + s(:,:,i-1)*(1-ex0(:,:,i))
+    q(:,:,i-1) = ii(:,:,i-1)-s(:,:,i-1)
+  end do
+END SUBROUTINE integral_reverse_ref                                     ! 2d 13m 11a 1e ! 26f + 1e
+
+!> =====================================================================
+!> Integral reference solution method in forward direction, assuming a
+!> linear source function in each dtau interval.
+!> =====================================================================
+SUBROUTINE integral_double_ref (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
+  implicit none
+  class (rt_solver_t):: self
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, ex0, S, q_fw, q_re
+  real(kind=KindRTVar), dimension(:,:)   :: q_in_fw, q_in_re
+!-----------------------------------------------------------------------
+  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ii
+  integer i, j, n
+!-----------------------------------------------------------------------
+!
+  n = size(s,3)
+  do j=1,size(s,2)
+    q_fw(:,j,1)  = q_in_fw(:,j)
+    ii(:,j,1) = q_in_fw(:,j) + s(:,j,1)                                         ! initial forward I
+    do i=2,n
+      ii(:,j,i) = ii(:,j,i-1)*ex0(:,j,i) &                                      ! attenuation of previous I
+      + s(:,j,i)*(1-ex0(:,j,i)) &                                               ! local source function
+      - (s(:,j,i)-s(:,j,i-1))/dtau(:,j,i)*(1.-(1.+dtau(:,j,i))*ex0(:,j,i))      ! contribution from slope
+      q_fw(:,j,i) = ii(:,j,i)-s(:,j,i)
+    end do
+    q_re(:,j,n)  = q_in_re(:,j)
+    ii(:,j,n) = q_in_re(:,j) + s(:,j,n)                                         ! initial reverse I
+    do i=n,2,-1
+      ii(:,j,i-1) = ii(:,j,i)*ex0(:,j,i) &                                      ! attenuation
+      + s(:,j,i-1)*(1-ex0(:,j,i)) &                                             ! local source
+      + (s(:,j,i)-s(:,j,i-1))/dtau(:,j,i)*(1.-(1.+dtau(:,j,i))*ex0(:,j,i))      ! correction for slope
+      q_re(:,j,i-1) = ii(:,j,i-1)-s(:,j,i-1)
+    end do
+  end do
+END SUBROUTINE integral_double_ref                                              ! 2d 13m 11a 1e ! 26f + 1e
 
 !> =====================================================================
 !> Integral solution method in forward direction
@@ -46,11 +132,11 @@ END SUBROUTINE init
 SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q)
   implicit none
   class (rt_solver_t):: self
-  real, dimension(:,:,:), pointer :: dtau, ex0, S, q
-  real, dimension(:,:)   :: q_in!, q_out
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, ex0, S, q
+  real(kind=KindRTVar), dimension(:,:)   :: q_in!, q_out
 !-----------------------------------------------------------------------
-  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
-  real(kind=8) :: ctau
+  real(kind=KindRTVar), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
+  real(kind=KindRTVar) :: ctau
   integer i, n, m, w, j, k
 !-----------------------------------------------------------------------
 !
@@ -65,7 +151,7 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q)
     ds1(k,j,i) = (s(k,j,i) - s(k,j,i-1)) / dtau(k,j,i)                  ! half-point centered dS/dtau
       end do
     end do
-  end do 
+  end do
 !
 !  dS/dtau and d2S/dtau2 (3a+5m+1d)
 !
@@ -77,7 +163,7 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q)
                    + ds1(k,j,i  ) * dtau(k,j,i+1)) * ctau               ! dS/dtau, 2nd. order accurate
         d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2. * ctau          ! d2S/dtau2, 2nd. order accurate
       end do
-    end do  
+    end do
   end do
 !
   do j = 1, w
@@ -93,18 +179,19 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q)
                  - d1s(k,j,i) *ex1(k,j,i) &
                  + d2s(k,j,i) *ex2(k,j,i)                               ! formal solution forward
       end do
-    end do  
+    end do
   end do
+  q(:,:,n) = (q(:,:,n-1)+s(:,:,n-1)-s(:,:,n))*ex0(:,:,n)                ! final point
 !
 !  do j = 1, w
 !    do k = 1, m
 !      q_out(k,j) = q(k,j,n-1)                                           ! forward boundary intensity
 !    end do
-!  end do  
+!  end do
 END SUBROUTINE integral_forward                                         ! 2d 13m 11a 1e ! 26f + 1e
 
 !> =============================================================================
-!> Integral solution method in forward direction
+!> Integral solution method in reverse direction
 !>  Input: N, dtau(2:n), S(1:n), qrv(n)
 !> Output: Q(1:n-1), qrv(2)
 !>
@@ -124,8 +211,8 @@ END SUBROUTINE integral_forward                                         ! 2d 13m
 SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q)
   implicit none
   class (rt_solver_t):: self
-  real, dimension(:,:,:), pointer :: dtau, ex0, S, q
-  real, dimension(:,:)   :: q_in!, q_out
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, ex0, S, q
+  real(kind=KindRTVar), dimension(:,:)   :: q_in!, q_out
 !-----------------------------------------------------------------------
 !
 !  Input: N, dtau(2:n), S(1:n), Ifw(1), Irv(n)
@@ -144,8 +231,8 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q)
 ! and linear source functions.
 !
 !-----------------------------------------------------------------------
-  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s, st
-  real(kind=8) :: ctau
+  real(kind=KindRTVar), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s, st
+  real(kind=KindRTVar) :: ctau
   integer i, n, m, w, j, k
 !-----------------------------------------------------------------------
 !
@@ -160,7 +247,7 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q)
     ds1(k,j,i) = (s(k,j,i) - s(k,j,i-1)) / dtau(k,j,i)                  ! half-point centered dS/dtau
       end do
     end do
-  end do 
+  end do
 !
 !  dS/dtau and d2S/dtau2 (3a+5m+1d)
 !
@@ -172,7 +259,7 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q)
                    + ds1(k,j,i  ) * dtau(k,j,i+1)) * ctau               ! dS/dtau, 2nd. order accurate
         d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2. * ctau          ! d2S/dtau2, 2nd. order accurate
       end do
-    end do  
+    end do
   end do
 !
   do j = 1, w
@@ -188,14 +275,15 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q)
                  + d1s(k,j,i) *ex1(k,j,i+1) &
                  + d2s(k,j,i) *ex2(k,j,i+1)                             ! formal solution reverse
       end do
-    end do  
+    end do
   end do
+  q(:,:,1) = (q(:,:,2)+s(:,:,2)-s(:,:,1))*ex0(:,:,2)                    ! final point
 !
 !  do j = 1, w
 !    do k = 1, m
 !      q_out(k,j) = q(k,j,2)                                             ! reverse boundary intensity
 !    end do
-!  end do  
+!  end do
 END SUBROUTINE integral_reverse                                         ! 2d 13m 11a 1e ! 26f + 1e
 
 !> =====================================================================
@@ -220,14 +308,15 @@ END SUBROUTINE integral_reverse                                         ! 2d 13m
 SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
   implicit none
   class (rt_solver_t):: self
-  real, dimension(:,:,:), pointer :: dtau, ex0, S, q_fw, q_re
-  real, dimension(:,:)   :: q_in_fw, q_in_re
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, ex0, S, q_fw, q_re
+  real(kind=KindRTVar), dimension(:,:)   :: q_in_fw, q_in_re
 !-----------------------------------------------------------------------
-  real(kind=8), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
-  real(kind=8) :: ctau
+  real(kind=KindRTVar), dimension(size(s,1),size(s,2),size(s,3)) :: ex1,ex2, ds1, d1s, d2s
+  real(kind=KindRTVar) :: ctau
   integer i, n, m, w, j, k
+  integer, save:: itimer=0
 !-----------------------------------------------------------------------
-!
+  if (detailed_timer) call trace%begin ('rt_solver_t%integral_double', itimer=itimer)
   m = size(s,1)
   w = size(s,2)
   n = size(s,3)
@@ -239,7 +328,7 @@ SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
     ds1(k,j,i) = (s(k,j,i) - s(k,j,i-1)) / dtau(k,j,i)                  ! half-point centered dS/dtau
       end do
     end do
-  end do 
+  end do
 !
 !  dS/dtau and d2S/dtau2 (3a+5m+1d)
 !
@@ -249,10 +338,14 @@ SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
         ctau = 1. / (dtau(k,j,i+1) + dtau(k,j,i))
         d1s(k,j,i) =(ds1(k,j,i+1) * dtau(k,j,i) &
                    + ds1(k,j,i  ) * dtau(k,j,i+1)) * ctau               ! dS/dtau, 2nd. order accurate
-        d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2. * ctau          ! d2S/dtau2, 2nd. order accurate
+        d2s(k,j,i)= (ds1(k,j,i+1) - ds1 (k,j,i  )) * 2d0 * ctau          ! d2S/dtau2, 2nd. order accurate
       end do
-    end do  
+    end do
   end do
+  d1s(:,:,n)=d1s(:,:,n-1)
+  d2s(:,:,n)=d2s(:,:,n-1)
+  d1s(:,:,1)=d1s(:,:,2)
+  d2s(:,:,1)=d2s(:,:,2)
 !
   do j = 1, w
     do k = 1, m
@@ -268,7 +361,7 @@ SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
                        - d1s(k,j,i) *ex1(k,j,i) &
                        + d2s(k,j,i) *ex2(k,j,i)                         ! formal solution forward
       end do
-    end do  
+    end do
   end do
 !
   do i=n-1,2,-1
@@ -278,8 +371,11 @@ SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
                        + d1s(k,j,i) *ex1(k,j,i+1) &
                        + d2s(k,j,i) *ex2(k,j,i+1)                       ! formal solution reverse
       end do
-    end do  
+    end do
   end do
+  q_fw(:,:,n) = (q_fw(:,:,n-1)+s(:,:,n-1)-s(:,:,n))*ex0(:,:,n)          ! final point q_fw
+  q_re(:,:,1) = (q_re(:,:,2  )+s(:,:,2  )-s(:,:,1))*ex0(:,:,2)          ! final point q_ew
+  if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE integral_double                                          ! 2d 13m 11a 1e ! 26f + 1e
 
 SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
@@ -316,31 +412,31 @@ SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
 !> Timings:
 !>           Alliant: 0.58 * 21 / 1.25 = 9.7 Mfl @ 31*31*31
 !
-!> Update history:  
+!> Update history:
 !> 12/01/2017 This routine is based on transfer_feautrier_omp from
-!> stagger. 
+!> stagger.
 !
 !> =====================================================================
   class (rt_solver_t):: self
-  real, dimension(:,:,:), pointer :: dtau, s, q
-  real, dimension(:,:), pointer :: qfw, qre
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, s, q
+  real(kind=KindRTVar), dimension(:,:), pointer :: qfw, qre
   logical :: doxi
   !.....................................................................
-  real, dimension(:,:,:), pointer :: sp1, sp2, sp3
-  real, dimension(:,:), pointer   :: ex
+  real(kind=KindRTVar), dimension(:,:,:), pointer :: sp1, sp2, sp3
+  real(kind=KindRTVar), dimension(:,:), pointer   :: ex
   real :: taum, dinv, a
   integer :: nx, ny, nz, l, k, j, n1p
   !---------------------------------------------------------------------
-  
+
   nx = size(s,1)
   ny = size(s,2)
   nz = size(s,3)
-  
+
   !---------------------------------------------------------------------
   ! Allocate the necessary arrays
   !---------------------------------------------------------------------
   allocate(sp1(nx,ny,nz),sp2(nx,ny,nz), sp3(nx,ny,nz), ex(nx,ny))
-  
+
   !---------------------------------------------------------------------
   ! Calculate 1-exp(-tau(l,k,1)) straight or by series expansion,
   ! based on max tau(l,k,1).
@@ -363,7 +459,7 @@ SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
   sp2(:,:,1)=dtau(:,:,2)*(1.+.5*dtau(:,:,2))
   sp3(:,:,1)=-1.
   q  (:,:,1)=s(:,:,1)*dtau(:,:,2)*(.5*dtau(:,:,2)+ex)
-  
+
   !---------------------------------------------------------------------
   ! Matrix elements for j>2, j<np: [3d+3s]
   !---------------------------------------------------------------------
@@ -377,7 +473,7 @@ SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
       end do
     end do
   end do
-    
+
   !---------------------------------------------------------------------
   ! Right hand sides, for j>2, j<n1
   !---------------------------------------------------------------------
@@ -389,7 +485,7 @@ SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
       end do
     end do
   end do
-  
+
   !---------------------------------------------------------------------
   ! RHS for j=n1p.  The equation is still in p(j), but q(j+1) is now
   ! q(j+1)=p(j+1)-s(j+1), so to get p(j+1) we have to add s(j+1) to the
@@ -415,7 +511,7 @@ SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
       end do
     end do
   endif
-  
+
   !---------------------------------------------------------------------
   ! j>n1p+1,<np [2m+2a]
   !---------------------------------------------------------------------
@@ -427,13 +523,13 @@ SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
       end do
     end do
   end do
-  
+
   !---------------------------------------------------------------------
   ! j=np
   !---------------------------------------------------------------------
   sp2(:,:,nz)=1.
     q(:,:,nz)=0.0
-    
+
   !---------------------------------------------------------------------
   !  Eliminate subdiagonal, save factors in sp1 [1d+2m+4a]
   !---------------------------------------------------------------------
@@ -447,9 +543,9 @@ SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
       end do
     end do
   end do
-  
+
   sp2(:,:,nz-1)=sp2(:,:,nz-1)-sp3(:,:,nz-1)
-  
+
   !---------------------------------------------------------------------
   ! Backsubstitute [1d+1m+1a]
   !---------------------------------------------------------------------
@@ -460,7 +556,7 @@ SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
       end do
     end do
   end do
-  
+
   !---------------------------------------------------------------------
   ! Subtract S in the region where the equation is in P
   !---------------------------------------------------------------------
@@ -471,7 +567,7 @@ SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
       end do
     end do
   end do
-  
+
   !---------------------------------------------------------------------
   ! Surface intensity.
   !---------------------------------------------------------------------
