@@ -1318,7 +1318,7 @@ SUBROUTINE finish_direction(self, dir)
     end do
   end do
 
- ! if (io%verbose>3) then
+  if (io%verbose>3) then
   print *,'========== Direction',dir%id,'==============='
   print *, 'n_bundles:', dir%n_bundles
   do jbn =1, dir%n_bundles
@@ -1357,7 +1357,7 @@ SUBROUTINE finish_direction(self, dir)
       end do
     end do
   end do
- ! end if
+  end if
 
   ! tests
   !neq_fw=0
