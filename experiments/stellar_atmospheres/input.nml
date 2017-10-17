@@ -1,6 +1,6 @@
 
 &io_params
- verbose=0
+ verbose=1
  do_validate=f
  do_trace=f
  do_debug=f
@@ -13,10 +13,11 @@
 /
 &patch_params
  nt=5
- nw=2
  courant=0.2
  grace=0.3
  n=21,59,21
+ no_mans_land=t
+ use_data_hub=f
 /
 &out_params
  end_time=0.1
@@ -32,6 +33,7 @@
 /
 &timer_params       sec_per_report=5       /
 &initial_params     type='stagger'         /
+&stellar_params                            /
 &force_params                              /
 &solenoidal_params                         /
 &stagger_params     file='mhd63' dims=3*63 /

@@ -88,10 +88,12 @@ SUBROUTINE init (self)
   else
     self%kind = 'stagger2e_hd_patch'
   end if
-  if (self%mhd) then
-    self%nv = 8
-  else
-    self%nv = 5
+  if (self%nv == 0) then
+    if (self%mhd) then
+      self%nv = 8
+    else
+      self%nv = 5
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Allocate memory and mesh, etc

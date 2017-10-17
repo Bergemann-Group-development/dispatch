@@ -34,7 +34,7 @@ MODULE patch_mod
     real:: gamma=1.0                    ! gas gamma
     real:: dt_fixed, u_fixed, u_max     ! for fixed time step Courant condition
     integer:: ndim = ndim               ! number of dimensions
-    integer:: nv=5                      ! number of variables
+    integer:: nv=0                      ! number of variables
     integer:: nw=2                      ! number of work indices
     integer:: msplit=2                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
