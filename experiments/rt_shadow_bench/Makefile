@@ -1,8 +1,8 @@
 
 # Option groups
 #OPTS = debug
-OPTS = full_debug
-#OPTS = optimized
+#OPTS = full_debug
+OPTS = optimized
 
 RT_PREC=RT_DOUBLE
 # Default target and methods
@@ -10,7 +10,7 @@ UPD             = adams_bashforth
 SOLVER          = stagger2
 #RT_SOLVER       = hybrid
 #RT_SOLVER       = hybrid2
-RT_SOLVER       = hybrid
+RT_SOLVER       = hybrid_nc
 #EOS             = microphysics/eos/stagger
 #EOS             = microphysics/eos/ideal
 EXEC            = dispatch.x

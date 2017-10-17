@@ -25,7 +25,7 @@
  nt=5
  courant=0.0
  grace=0.1
- n=43,43,43
+ n=32,32,32
  dt_fixed=1d-10
  no_mans_land=t
 /
@@ -38,10 +38,11 @@
 ! ------- Radiative transfer ---------
 &rt_params
  solver='integral'
+ dtime = 1d-10
  use_data_hub=t
- do_output=t
+ do_output=f
  cr_heating=0.0
- init_time=-1d-5
+ init_time=-1d-11
  debug=f
  detailed_timer=f
  dtau='staggered'   !other options: centered, weighted
