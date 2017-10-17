@@ -2,6 +2,7 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
+  USE bits_mod
   USE solver_mod
   USE initial_mod
   USE pboundary_mod
@@ -44,6 +45,7 @@ SUBROUTINE init (self)
   self%toler = toler
   self%nv = 1
   self%periodic = .false.
+  call self%clear(bits%root_grid)
   
   call self%gpatch_t%init()
   call timestep%init()
@@ -52,6 +54,7 @@ SUBROUTINE init (self)
   ! allocate error storage array
   allocate(self%error(self%nt))
   self%error(:) = 0.0
+  self%d0 = 0.0
 
   call trace%end
 END SUBROUTINE init
@@ -72,8 +75,8 @@ SUBROUTINE update (self)
   call self%output
   call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%dnload  (only=self%i_phi)
+  call pboundaries%conditions(self, self%it)
   call self%gravity (error, only=self%i_phi)
-  call pboundaries%conditions(self, self%new)
 
   call trace%end
 END SUBROUTINE update

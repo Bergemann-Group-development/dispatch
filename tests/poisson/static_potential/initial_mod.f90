@@ -65,7 +65,7 @@ SUBROUTINE condition (self, m, f)
   class(mesh_t), pointer:: m(:), m1, m2, m3
   type(index_t):: i
   integer:: i1, i2, i3
-  real:: x, y ,z, r
+  real:: x, y ,z
   !----------------------------------------------------------------------------
   call trace%begin('initial_t%condition')
 
@@ -80,7 +80,6 @@ SUBROUTINE condition (self, m, f)
       y = m2%centre_nat + m2%r(i2)
       do i1=m1%lb,m1%ub
         x = m1%centre_nat + m1%r(i1)
-        r = sqrt((x - 0.5)**2 + (y - 0.5)**2)
 
         f(i1,i2,i3,i%d) = func_d0(x,y)
         ! intentionally intialise the grav. pot. to a poor estimate of the true value

@@ -63,7 +63,7 @@ SUBROUTINE init (self)
     self%nv = self%nv+1
     self%i_phi = self%nv
     call self%patch_t%init
-    call self%poisson%init (self)
+    call self%poisson%init (self, selfgravity)
   else
     call self%patch_t%init
   end if
@@ -148,7 +148,7 @@ SUBROUTINE gravity (self, error, only)
 
   d   => self%mem(:,:,:,self%i_d  ,self%it,1)
   phi => self%mem(:,:,:,self%i_phi,self%it,1)
-  allocate (source  (size(d,1),size(d,2),size(d,3)))
+  allocate (source(size(d,1),size(d,2),size(d,3)))
 
   source = 0.0
   do iz=self%mesh(3)%li,self%mesh(3)%ui
@@ -158,30 +158,38 @@ SUBROUTINE gravity (self, error, only)
       end do
     end do
   end do
+  ! initial error estimate; assumes phi = 0.
+  error0 = sum(source)
+
+  ! call the Poisson solver iteratively
   do iter=1,max_iter
     call self%poisson%update (self, phi, source, d, error, detailed_timer)
     error = error / grho
-    if (iter == 1) error0 = error
-    if (verbose > 1) print "(i6,' self_gravity: error =',1p,g14.5)", self%id, error
-    if (error < epsilon) then
+    if (verbose > 1) print "(i6,' self_gravity: iter =',i3.1,' error =',1p,g14.5)", self%id, iter, error
+    ! check for convergence
+    if (error < epsilon * error0) then
       if (verbose>0) &
         print "(i6,' poisson converged in',i4,' iterations; initial, final error:',1p,e10.3,e10.3)", &
           self%id, iter, error0, error
       exit
     end if
   end do
-  if (iter > max_iter) &
+  ! too many iterations; throw warning before continuing
+  if (iter > max_iter) then
     print "(i6,' WARNING: poisson solution not converged in', i4, ' iterations')", &
       self%id, max_iter
+    print "('error0 = ',g14.5,'; error = ',g14.5)",error0,error
+  end if
 
   deallocate (source)
+  ! compute estimate of dphi/dt
   call time_derivs (self)
 
   call trace%end (itimer)
 END SUBROUTINE gravity
 
 !> =============================================================================
-!> Compute an approximate, conservative estiate of dphi/dt, which will cause
+!> Compute an approximate, conservative estimate of dphi/dt, which will cause
 !> the timestep routine to make a good guess at the next phi, at the same time
 !> as it is updating the other variables.  The 1st order prediction is in
 !> practice better at reducing the nuber of iterations than the 2nd order.
