@@ -26,8 +26,9 @@ sinclude $(TOP)/config/Makefile
 #PPCODE          = $(TOP)/solvers/pic/PPcode
 #sinclude $(PPCODE)/Experiments/DISPATCH/Makefile
 
+
 # List the .o files the main program depends on after the colon:
-$(EXEC): cartesian_mod.o setup_mod.o $(PICOBJ)
+$(EXEC): cartesian_mod.o setup_mod.o radiative_transfer_mod.o eos_mod.o
 
 # Dependencies
 experiment_mod.o        : rmhd_mod.o trace_mod.o io_mod.o initial_mod.o download_mod.o link_mod.o

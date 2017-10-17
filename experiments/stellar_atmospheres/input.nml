@@ -2,7 +2,7 @@
 &io_params
  verbose=1
  do_validate=f
- do_trace=f
+ do_trace=t
  do_debug=f
  do_output=t
 /
@@ -31,6 +31,23 @@
  nu=  0.03, 1.0, 1.0, 0.1, 1.0, 1.0
  gamma=1.4
 /
+
+&eos_params
+ do_rt = t
+/
+&rt_params
+ solver='integral' use_data_hub=f do_output=f
+ cr_heating=0.0 init_time=0d0
+ dtau='staggered'   !other options: centered, weighted, staggered
+/
+&rt_bc_params /
+&cartesian_ray_geometry_params
+ do_chains=f space_diagonals=f
+ nx=0 xti=0.,45.
+ ny=1 yti=0.,45.
+ nz=0 zti=0.,45.
+/
+
 &timer_params       sec_per_report=5       /
 &initial_params     type='stagger'         /
 &stellar_params                            /
