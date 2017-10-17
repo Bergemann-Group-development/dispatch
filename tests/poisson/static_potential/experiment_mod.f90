@@ -16,7 +16,7 @@ MODULE experiment_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: has_finished
+    !!!procedure:: has_finished
     procedure:: output
   end type
   logical, save:: first_time = .true.
@@ -86,16 +86,17 @@ END SUBROUTINE update
 !> change in the error/residual since the previous iteration falls below a
 !> user-defined residual.
 !> =============================================================================
-LOGICAL FUNCTION has_finished (self)
-  class (experiment_t):: self
-  real:: rd
-  !.............................................................................
-  has_finished = .false.
-  if (self%error(self%iit(self%nt-1)) == 0.0) return
-  rd = abs(self%error(self%iit(self%nt)) - self%error(self%iit(self%nt-1))) / self%error(self%iit(self%nt-1))
-  if (rd < self%toler) has_finished = .true.
+!LOGICAL FUNCTION has_finished (self)
+!  class (experiment_t):: self
+!  real:: rd
+!  !.............................................................................
+!  has_finished = .false.
+!  if (self%error(self%iit(self%nt-1)) == 0.0) return
+!  rd = abs(self%error(self%iit(self%nt)) - self%error(self%iit(self%nt-1))) &
+!     / self%error(self%iit(self%nt-1))
+!  if (rd < self%toler) has_finished = .true.
 
-END FUNCTION has_finished
+!END FUNCTION has_finished
 
 !> =============================================================================
 !> Dummy output procedure to trick `patch_t%output` into writing output.
