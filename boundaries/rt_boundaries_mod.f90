@@ -342,10 +342,10 @@ END SUBROUTINE condition_mem
 !> =====================================================================
 !> Apply a boundary condition
 !> =====================================================================
-SUBROUTINE condition_cell (self, v,cell)
+SUBROUTINE condition_cell (self, v,cell,dir)
   class(rt_outer_bndry_t) :: self
   real(kind=KindScalarVar):: v(:)
-  integer:: cell(3)
+  integer:: cell(3), dir
   !.....................................................................
   integer:: i, saved_status, il, iu, a, b
   integer, save:: itimer
@@ -356,7 +356,11 @@ SUBROUTINE condition_cell (self, v,cell)
   end if
   saved_status = self%bits
   if (self%is_set(bits%xl)) then
-    if (cell(1) < self%m(1)%li) v = self%xl(1)
+    if (dir==rt_boundaries%hot_dir) then
+      if (cell(1) < self%m(1)%li) v = self%xl(1)
+    else
+      if (cell(1) < self%m(1)%li) v = self%xl(2)
+    end if
   end if
   if (self%is_set(bits%xu)) then
     if (cell(1) > self%m(1)%ui) v = self%xu(1)
