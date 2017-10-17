@@ -48,17 +48,19 @@ SUBROUTINE init (self)
   self%mhd = self%initial%mhd
   self%periodic(2) = .false.                     ! non-periodic vertically
   call self%rmhd_t%init
-  self%i_bx=7
-  self%i_by=8
-  self%i_bz=9
-  self%i_tt=6
+  self%i_bx=6
+  self%i_by=7
+  self%i_bz=8
+  self%i_tt=9
   call self%set(bits%static)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  call self%initial%condition(self%mesh, self%mem(:,:,:,:,1,1))
   self%time = self%initial%time
-  self%t(self%it) = self%initial%time
+  self%t(:) = self%initial%time
+  self%dtime = 1.0
+  self%dt(:) = self%dtime
+  print *, 'iit =', self%iit
   call self%boundary_conditions
   call trace_end (itimer=itimer)
 END SUBROUTINE init
@@ -94,10 +96,21 @@ END SUBROUTINE update
 
 SUBROUTINE boundary_conditions (self)
   class(experiment_t):: self
+  integer:: iy, li(3), ui(3)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%boundary_conditions')
-  self%mem(:,01:05,:,:,:,2) = 0.0
-  self%mem(:,59:63,:,:,:,2) = 0.0
+  li = self%mesh%li
+  ui = self%mesh%ui
+  if (self%mesh(2)%lower_boundary) then
+    do iy=self%mesh(2)%lb,self%mesh(2)%lo
+      self%mem(:,iy,:,:,self%it,1) = self%mem(:,self%mesh(2)%li,:,:,self%it,1)
+    end do
+  end if
+  if (self%mesh(2)%upper_boundary) then
+    do iy=self%mesh(2)%uo,self%mesh(2)%ub
+      self%mem(:,iy,:,:,self%it,1) = self%mem(:,self%mesh(2)%ui,:,:,self%it,1)
+    end do
+  end if
   call trace_end
 END SUBROUTINE boundary_conditions
 

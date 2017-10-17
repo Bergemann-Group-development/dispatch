@@ -1,6 +1,6 @@
 
 &io_params
- verbose=0
+ verbose=1
  do_validate=f
  do_trace=f
  do_debug=f
@@ -33,6 +33,7 @@
 /
 &timer_params       sec_per_report=5       /
 &initial_params     type='stagger'         /
+&stellar_params                            /
 &force_params                              /
 &solenoidal_params                         /
 &stagger_params     file='mhd63' dims=3*63 /

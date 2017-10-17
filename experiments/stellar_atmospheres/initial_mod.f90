@@ -9,6 +9,7 @@ MODULE initial_mod
   USE trace_mod
   USE mesh_mod
   USE random_mod
+  USE index_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -95,7 +96,7 @@ SUBROUTINE snapshot (self, m, ff)
   integer:: dims(4)=0
   namelist /snapshot_params/ iread, iwrite, dims
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_mod::stagger')
+  call trace_begin('initial_t%snapshot')
   !-----------------------------------------------------------------------------
   !$omp critical (init_cr)
   if (first_time) then
@@ -117,18 +118,19 @@ SUBROUTINE stagger (self, m, ff)
   class(initial_t):: self
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
-  integer:: n(3), i(3), iv, recl
+  integer:: n(3), o(3), iv, recl
   logical, save:: first_time=.true.
-  integer:: mx, my, mz
+  integer:: mx, my, mz, ii(9)
   real, save, dimension(:), pointer:: dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
   real, save, dimension(:), pointer:: dym, dymdn, ym, ymdn, dyidyup, dyidydn
   real, save, dimension(:), pointer:: dzm, dzmdn, zm, zmdn, dzidzup, dzidzdn
   !.............................................................................
   integer, save:: dims(3)=63
+  type(index_t):: i
   character(len=64):: file='snapshot'
   namelist /stagger_params/ file, dims, iread, iwrite
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_mod::stagger')
+  call trace_begin('initial_t%stagger')
   !-----------------------------------------------------------------------------
   !$omp critical (init_cr)
   if (first_time) then
@@ -151,8 +153,10 @@ SUBROUTINE stagger (self, m, ff)
     recl = 4*product(n)                                           ! FIXME
     if (io%master) print *,'reading MHD data from ' //trim(file)//'.dat'
     open (io_unit%data, file=trim(file)//'.dat', form='unformatted', access='direct', recl=recl)
+    i%tt = 9
+    ii=[i%d,i%px,i%py,i%pz,i%e,i%tt,i%bx,i%by,i%bz]
     do iv=1,self%nv
-      read (io_unit%data, rec=iv) buffer(:,:,:,iv)
+      read (io_unit%data, rec=iv) buffer(:,:,:,ii(iv))
     end do
     close (io_unit%data)
     !---------------------------------------------------------------------------
@@ -182,28 +186,28 @@ SUBROUTINE stagger (self, m, ff)
   !-----------------------------------------------------------------------------
   ! Pick out the piece that belongs to this patch, based on its position
   !-----------------------------------------------------------------------------
-  i = 1 + nint(m%p/m%d) - (m%n+1)/2                             ! index offsets
+  o = 1 + nint(m%p/m%d) - (m%n+1)/2                             ! index offsets
   ff = 0.0
   do iv=1,self%nv
     ff(m(1)%li:m(1)%ui, &
        m(2)%lb:m(2)%ub, &
-       m(3)%li:m(3)%ui,iv) = buffer(i(1):i(1)+m(1)%n -1, &
-                                    i(2):i(2)+m(2)%gn-1, &
-                                    i(3):i(3)+m(3)%n -1,iv)
+       m(3)%li:m(3)%ui,iv) = buffer(o(1):o(1)+m(1)%n -1, &
+                                    o(2):o(2)+m(2)%gn-1, &
+                                    o(3):o(3)+m(3)%n -1,iv)
   end do
   !-----------------------------------------------------------------------------
   ! Mesh coefficient
   !-----------------------------------------------------------------------------
   allocate (m(2)%ddn(m(2)%gn))
   allocate (m(2)%dup(m(2)%gn))
-  m(2)%ddn = dyidydn(i(2):i(2)+m(2)%gn-1)
-  m(2)%dup = dyidyup(i(2):i(2)+m(2)%gn-1)
+  m(2)%ddn = dyidydn(o(2):o(2)+m(2)%gn-1)
+  m(2)%dup = dyidyup(o(2):o(2)+m(2)%gn-1)
   !-----------------------------------------------------------------------------
   ! Diagnostic output
   !-----------------------------------------------------------------------------
   if (io%verbose > 0) then
     do iv=1,self%nv
-      write (io_unit%log,'(a,3i4,i5,1p,2g12.3)') 'ix,iy,iz,fmin,fmax =', i, iv, &
+      write (io_unit%log,'(a,3i4,i5,1p,2g12.3)') 'ix,iy,iz,fmin,fmax =', o, iv, &
         minval(ff(m(1)%li:m(1)%ui,m(2)%lb:m(2)%ub,m(3)%li:m(3)%ui,iv)), &
         maxval(ff(m(1)%li:m(1)%ui,m(2)%lb:m(2)%ub,m(3)%li:m(3)%ui,iv))
     end do
@@ -228,7 +232,7 @@ SUBROUTINE raw (self, m, ff)
   real, save:: t0=0.02
   namelist /raw_params/ file, dims, t0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_mod::raw')
+  call trace_begin('initial_t%raw')
   !-----------------------------------------------------------------------------
   ! At first call, allocate a buffer and read the entire file -- this is OK since
   ! we only use one thread per rank to initialize, computing also how many calls
