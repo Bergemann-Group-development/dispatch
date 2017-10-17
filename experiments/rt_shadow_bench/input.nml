@@ -27,7 +27,7 @@
  grace=0.1
  n=43,43,43
  dt_fixed=1d-10
- no_mans_land=f
+ no_mans_land=t
 /
 
 &eos_params
@@ -48,7 +48,7 @@
 /
 
 &cartesian_ray_geometry_params
-do_chains=f
+do_chains=t
 ! along x axis
 nx=1 xti=0.,45.
 ! along y axis
