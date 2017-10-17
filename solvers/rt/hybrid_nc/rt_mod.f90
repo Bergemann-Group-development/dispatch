@@ -210,7 +210,7 @@ SUBROUTINE allocate_shell (self)
   self%wall_idx(5) = self%wall_idx(4) + abs(self%n(1)-2)*self%n(3)   
   self%wall_idx(6) = self%wall_idx(5) + abs(self%n(1)-2)*abs(self%n(2)-2)
   itot = product(self%n)-product(abs(self%n-2))
-  allocate(self%wall(itot,ray_geometry%head%n_ray_dirs))
+  allocate(self%wall(itot,ray_geometry%head%n_ray_dirs*2))
   print *, itot
   print *, self%wall_idx
 END SUBROUTINE allocate_shell
@@ -355,7 +355,7 @@ SUBROUTINE map_intensity_shell(self, link)
   dir = link%direction                                                  ! forward of reverse
   rid=1
   do ipck =1, link%bundle%n_packets
-    packet => link%bundle%packet(ipck)                                  ! loop over ray packets in the bundle                                        
+    packet => link%bundle%packet(ipck)                                  ! loop over ray packets in the bundle
     if (dir ==1) then
        pt = packet%n_points                                             ! select the last point in the ray
     else
@@ -569,7 +569,7 @@ SUBROUTINE nudge (self)
   class(chain_link_t), pointer :: link
   integer :: ip
   !---------------------------------------------------------------------
-  do ip = 1, self%n_packet
+  do ip = 1, self%n_bundle
     link => self%my_links(ip)
     !$omp atomic update
     link%head%n_ready = link%head%n_ready+1                             ! nudge the master link
@@ -709,7 +709,7 @@ SUBROUTINE get_bndry(self, link, q0)
         packet => link%bundle%packet(ipck)                              ! loop over ray packets in the bundle
         do ray = 1, packet%n_rays                                 
           c = packet%rev_coords(:,ray)
-          call self%rt_boundaries%condition_cell(q0(packet%b_id(ray),:),c)
+          call self%rt_boundaries%condition_cell(q0(packet%b_id(ray),:),c,link%bundle%dir_id)
           rid = rid + 1
         end do
       end do
@@ -719,7 +719,7 @@ SUBROUTINE get_bndry(self, link, q0)
         packet => link%bundle%packet(ipck)                              ! loop over ray packets in the bundle
         do ray = 1, packet%n_rays                                 
           c = packet%fwd_coords(:,ray)
-          call self%rt_boundaries%condition_cell(q0(packet%b_id(ray),:),c)
+          call self%rt_boundaries%condition_cell(q0(packet%b_id(ray),:),c,link%bundle%dir_id)
         end do
       end do
     end select
