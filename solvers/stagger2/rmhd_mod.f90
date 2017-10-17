@@ -68,7 +68,6 @@ SUBROUTINE update (self)
   !---------------------------------------------------------------------
   call trace%begin ('rmhd_t%update', itimer=itimer)
   call self%output
-  print *, 'rmhd update',self%id, self%time
   call self%pde
   if (eos%do_rt.and.associated(self%rt)) then
     if (.not.self%rt%do_chains) call self%rt%update
