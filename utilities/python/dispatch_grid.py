@@ -233,8 +233,8 @@ def dispatch_grid(p, truecoords=True):
 
     return (x1, x2, x3)
 
-def plotting_grid(root, p, x_i, slicedir, sliceloc, sliceeps=1.0e-2, truecoords=False,
-                  rootcoords=False, phi_rotate=0.0, theta_rotate=0.0):
+def plotting_grid(p, x_i, slicedir, sliceloc, sliceeps=1.0e-2, truecoords=False,
+                  phi_rotate=0.0, theta_rotate=0.0):
     """
     Given slice information, return the appropriate coord. vectors for plotting,
     including the conversion to Cartesian coords. (required for plotting with
@@ -252,7 +252,6 @@ def plotting_grid(root, p, x_i, slicedir, sliceloc, sliceeps=1.0e-2, truecoords=
     """
 
     assert (slicedir > 1) or (slicedir < 3), "slice direction must be 1, 2, or 3."
-    assert not (truecoords and rootcoords), "truecoords and rootcoords parameters are mutually exclusive."
 
     if p.mesh_type == 'Cartesian' or truecoords:
         x, y, z = np.meshgrid(x_i[0], x_i[1], x_i[2], indexing='ij')
