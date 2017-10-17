@@ -13,10 +13,11 @@
 /
 &patch_params
  nt=5
- nw=2
  courant=0.2
  grace=0.3
  n=21,59,21
+ no_mans_land=t
+ use_data_hub=f
 /
 &out_params
  end_time=0.1

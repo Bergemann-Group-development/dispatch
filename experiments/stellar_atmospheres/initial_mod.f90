@@ -31,9 +31,10 @@ CONTAINS
 !> Setup an initial state -- from reading a STAGGER code snapshot, a test case,
 !> or (FIXME) by reading a snapshot from a production run
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
+  real, optional:: gamma
   integer:: iostat
   logical, save:: first_time=.true.
   !.............................................................................
