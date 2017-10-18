@@ -2,6 +2,7 @@
 !> Module for Lagrange interpolation
 !> -----------------------------------------------------------------------------
 MODULE lagrange_mod
+  USE io_mod
   implicit none
   private
   type, public:: lagrange_t
@@ -22,6 +23,8 @@ MODULE lagrange_mod
     procedure sequence_weights4
     procedure sequence_weights8
     generic:: sequence_weights => sequence_weights4, sequence_weights8
+    procedure interpolate3d
+    procedure trilinear3d
   end type
   type(lagrange_t), public:: lagrange
 CONTAINS
@@ -292,5 +295,99 @@ SUBROUTINE sequence_weights8 (self, x0, x, i0, i2, w, order)
   w = 0d0
   w(1:i2-i0+1) = self%weights (x0, x(i0:i2))
 END SUBROUTINE sequence_weights8
+
+!> -----------------------------------------------------------------------------
+!> Interpolate in 3D from fi to fo
+!> -----------------------------------------------------------------------------
+SUBROUTINE interpolate3d (self, xi, yi, zi, fi, xo, yo, zo, fo, order)
+  class(lagrange_t):: self
+  real, dimension(:):: xi, yi, zi, xo, yo, zo
+  real, dimension(:,:,:):: fi, fo
+  integer:: order
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: f1, f2
+  integer:: nix, niy, niz, nox, noy, noz, ix, iy, iz
+  !-----------------------------------------------------------------------------
+  nix = size(xi)
+  niy = size(yi)
+  niz = size(zi)
+  nox = size(xo)
+  noy = size(yo)
+  noz = size(zo)
+  allocate (f1(nix,niy,noz))
+  do iz=1,noz
+  do iy=1,niy
+  do ix=1,nix
+    f1(ix,iy,iz) = self%sequence (zo(iz), zi, fi(ix,iy,:), order)
+  end do
+  end do
+  end do
+  allocate (f2(nix,noy,noz))
+  do iz=1,noz
+  do iy=1,noy
+  do ix=1,nix
+    f2(ix,iy,iz) = self%sequence (yo(iy), yi, f1(ix,:,iz), order)
+  end do
+  end do
+  end do
+  deallocate (f1)
+  do iz=1,noz
+  do iy=1,noy
+  do ix=1,nox
+    fo(ix,iy,iz) = self%sequence (xo(ix), xi, f2(:,iy,iz), order)
+  end do
+  end do
+  end do
+  deallocate (f2)
+END SUBROUTINE interpolate3d
+
+!> -----------------------------------------------------------------------------
+!> Interpolate in 3D from fi to fo
+!> -----------------------------------------------------------------------------
+SUBROUTINE trilinear3d (self, xi, yi, zi, fi, xo, yo, zo, fo, order)
+  class(lagrange_t):: self
+  real, dimension(:):: xi, yi, zi, xo, yo, zo
+  real, dimension(:,:,:):: fi, fo
+  integer:: order
+  !.............................................................................
+  integer:: nix, niy, niz, nox, noy, noz, ix, iy, iz, jx ,jy, jz
+  real:: px, py, pz, qx, qy, qz, dx, dy, dz
+  !-----------------------------------------------------------------------------
+  nix = size(xi)
+  niy = size(yi)
+  niz = size(zi)
+  nox = size(xo)
+  noy = size(yo)
+  noz = size(zo)
+  dx = (xi(nix)-xi(1))/(nix-1)
+  dy = (yi(niy)-yi(1))/(niy-1)
+  dz = (zi(niz)-zi(1))/(niz-1)
+  do iz=1,noz
+    pz = (zo(iz)-zi(1))/dz
+    jz = pz
+    jz = max(1,min(niz-1,jz))
+    pz = max(0.0,min(1.0,pz -jz))
+    qz = 1.0-pz
+    do iy=1,noy
+      py = (yo(iy)-yi(1))/dy
+      jy = py
+      jy = max(1,min(niy-1,jy))
+      py = max(0.0,min(1.0,py -jy))
+      qy = 1.0-py
+      do ix=1,nox
+        px = (xo(ix)-xi(1))/dx
+        jx = px
+        jx = max(1,min(nix-1,jx))
+        px = max(0.0,min(1.0,px -jx))
+        qx = 1.0-px
+        fo(ix,iy,iz) = &
+          qz*(qy*(qx*fi(jx  ,jy  , jz  ) + px*fi(jx+1,jy  , jz  )) + &
+              py*(qx*fi(jx  ,jy+1, jz  ) + px*fi(jx+1,jy+1, jz  ))) + &
+          pz*(qy*(qx*fi(jx  ,jy  , jz+1) + px*fi(jx+1,jy  , jz+1)) + &
+              py*(qx*fi(jx  ,jy+1, jz+1) + px*fi(jx+1,jy+1, jz+1)))
+      end do
+    end do
+  end do
+END SUBROUTINE trilinear3d
 
 END MODULE

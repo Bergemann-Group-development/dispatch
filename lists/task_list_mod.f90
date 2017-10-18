@@ -104,6 +104,7 @@ END SUBROUTINE init
 !> while each rank still has a list of all patches.
 !> =============================================================================
 SUBROUTINE init_bdries (self)
+  implicit none
   class(task_list_t):: self
   class(link_t), pointer:: link
   class(task_t), pointer:: task
@@ -129,16 +130,34 @@ SUBROUTINE init_bdries (self)
     ! If at edge, set boundary bits
     !---------------------------------------------------------------------------
     if (.not.task%periodic(1)) then
-      if (task%position(1) <= self%lc(1)) call task%boundaries%set (bits%xl)
-      if (task%position(1) >= self%uc(1)) call task%boundaries%set (bits%xu)
+      if (task%position(1) <= self%lc(1)) then
+        call task%boundaries%set (bits%xl)
+        task%mesh(1)%lower_boundary = .true.
+      end if
+      if (task%position(1) >= self%uc(1)) then
+        call task%boundaries%set (bits%xu)
+        task%mesh(1)%upper_boundary = .true.
+      end if
     end if
     if (.not.task%periodic(2)) then
-      if (task%position(2) <= self%lc(2)) call task%boundaries%set (bits%yl)
-      if (task%position(2) >= self%uc(2)) call task%boundaries%set (bits%yu)
+      if (task%position(2) <= self%lc(2)) then
+        call task%boundaries%set (bits%yl)
+        task%mesh(2)%lower_boundary = .true.
+      end if
+      if (task%position(2) >= self%uc(2)) then
+        call task%boundaries%set (bits%yu)
+        task%mesh(2)%upper_boundary = .true.
+      end if
     end if
     if (.not.task%periodic(3)) then
-      if (task%position(3) <= self%lc(3)) call task%boundaries%set (bits%zl)
-      if (task%position(3) >= self%uc(3)) call task%boundaries%set (bits%zu)
+      if (task%position(3) <= self%lc(3)) then
+        call task%boundaries%set (bits%zl)
+        task%mesh(3)%lower_boundary = .true.
+      end if
+      if (task%position(3) >= self%uc(3)) then
+        call task%boundaries%set (bits%zu)
+        task%mesh(3)%upper_boundary = .true.
+      end if
     end if
     if (task%boundaries%bits /= 0) print '(2i6,2(2x,a6),o9,2(2x,3f10.0))', &
       task%id, task%level, 'BCs: ', formatted(task), task%boundaries%bits, &
@@ -148,6 +167,7 @@ SUBROUTINE init_bdries (self)
   end do
   call trace_end
 contains
+  !-----------------------------------------------------------------------------
   function formatted (task) result (out)
   class(experiment_t):: task
   character(len=6):: out

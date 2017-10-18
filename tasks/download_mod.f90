@@ -478,6 +478,10 @@ SUBROUTINE same (target, source, all_cells, only)
     do i=1,3
       if (source%mesh(i)%lower_boundary) l(i) = target%mesh(i)%lb
       if (source%mesh(i)%upper_boundary) u(i) = target%mesh(i)%ub
+      !if (i==2) then
+        !if (source%boundaries%is_set (bits%yl)) l(i) = target%mesh(i)%lb
+        !if (source%boundaries%is_set (bits%yu)) u(i) = target%mesh(i)%ub
+      !end if
 !      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
     end do
     if (target%id==io%id_debug) &
