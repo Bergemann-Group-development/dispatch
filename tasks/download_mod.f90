@@ -633,9 +633,11 @@ SUBROUTINE different (target, source, all_cells, only)
             pos = target%myposition (ii, iv)
             call source%index_space (pos, iv, jj, pp)
             if (source%pervolume(iv)) then
-              call source%interpolate_specific (target, ii, iv, jt, pt)
+              qint = interpolator%interpolator_specific (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
+                   + interpolator%interpolator_specific (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
             else
-              call source%interpolate          (target, ii, iv, jt, pt)
+              qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
+                   + interpolator%interpolator (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
             end if
             if (all((ii>=li.and.ii<=ui))) then
               print *,'INTERNAL BREACH!', ii
