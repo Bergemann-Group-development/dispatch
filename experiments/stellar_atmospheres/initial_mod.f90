@@ -10,11 +10,13 @@ MODULE initial_mod
   USE mesh_mod
   USE random_mod
   USE index_mod
+  USE lagrange_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     logical:: mhd
+    integer:: id=0
     integer:: nv
     integer:: iread=0, iwrite=0
     real(8):: time
@@ -118,17 +120,20 @@ SUBROUTINE stagger (self, m, ff)
   class(initial_t):: self
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
-  integer:: n(3), o(3), iv, recl
+  integer:: n(3), o(3), iv, recl, iy
   logical, save:: first_time=.true.
   integer:: mx, my, mz, ii(9)
-  real, save, dimension(:), pointer:: dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
-  real, save, dimension(:), pointer:: dym, dymdn, ym, ymdn, dyidyup, dyidydn
-  real, save, dimension(:), pointer:: dzm, dzmdn, zm, zmdn, dzidzup, dzidzdn
+  real, save, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
+  real, save, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn, dyidyup, dyidydn
+  real, save, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn, dzidzup, dzidzdn
+  real, dimension(:), pointer:: xi, yi, zi, xo, yo, zo
+  integer:: nx, ny, nz
   !.............................................................................
   integer, save:: dims(3)=63
+  integer, save:: order=2
   type(index_t):: i
   character(len=64):: file='snapshot'
-  namelist /stagger_params/ file, dims, iread, iwrite
+  namelist /stagger_params/ file, dims, iread, iwrite, order
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%stagger')
   !-----------------------------------------------------------------------------
@@ -140,9 +145,8 @@ SUBROUTINE stagger (self, m, ff)
     n = nint(m%b/m%d)
     n(2) = n(2)+4
     if (.not.all(n==dims)) then
-      if (io%master) print *, 'ERROR: file  dims =', dims
-      if (io%master) print *, 'ERROR: setup dims =', n
-      call mpi%abort
+      if (io%master) print *, 'file  dims =', dims, self%nv
+      if (io%master) print *, 'setup dims =', n
     end if
     !---------------------------------------------------------------------------
     ! At first call, allocate a buffer and read the entire file -- this is OK since
@@ -150,7 +154,7 @@ SUBROUTINE stagger (self, m, ff)
     ! will be made, so the buffer can be deallocated when all patches are done
     !---------------------------------------------------------------------------
     allocate (buffer(dims(1),dims(2),dims(3),self%nv))
-    recl = 4*product(n)                                           ! FIXME
+    recl = 4*product(dims)                                           ! FIXME
     if (io%master) print *,'reading MHD data from ' //trim(file)//'.dat'
     open (io_unit%data, file=trim(file)//'.dat', form='unformatted', access='direct', recl=recl)
     i%tt = 9
@@ -166,9 +170,9 @@ SUBROUTINE stagger (self, m, ff)
     ! read dimensions
       read(io_unit%data) mx, my, mz
       if (.not. all(dims==[mx,my,mz])) then
-        if (io%master) print *, 'ERROR: file dims =', dims
-        if (io%master) print *, 'ERROR: mesh dims =', [mx,my,mz]
-        call mpi%abort
+        if (io%master) print *, ' file dims =', dims
+        if (io%master) print *, ' mesh dims =', m%n, m%gn
+        if (io%master) print *, 'setup dims =', nint(m%b/m%d), m%b, m%d
       end if
       if (io%master) print *,'reading mesh data from ' //trim(file)//'.msh', mx, my, mz
       ! allocate single-precision variables for reading
@@ -179,6 +183,15 @@ SUBROUTINE stagger (self, m, ff)
       read(io_unit%data) dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
       read(io_unit%data) dym, dymdn, ym, ymdn, dyidyup, dyidydn
       read(io_unit%data) dzm, dzmdn, zm, zmdn, dzidzup, dzidzdn
+      if (io%verbose>1) then
+        do iy=1,size(dym)
+          print *, 'initial_t%stagger: min(dx),dy,min(dz)', &
+            iy, minval(dxm), dym(iy), minval(dzm)
+        end do
+      end if
+      print *, 'initial_t%stagger: min(dx),min(dy),min(dz)', &
+            minval(dxm), minval(dym), minval(dzm)
+      print *,'initial_t%stagger: ny for max res:', int((ym(my)-ym(1))/minval(dym))+1
     close (io_unit%data)
   end if
   !$omp end critical (init_cr)
@@ -186,22 +199,36 @@ SUBROUTINE stagger (self, m, ff)
   !-----------------------------------------------------------------------------
   ! Pick out the piece that belongs to this patch, based on its position
   !-----------------------------------------------------------------------------
-  o = 1 + nint(m%p/m%d) - (m%n+1)/2                             ! index offsets
-  ff = 0.0
+  nx = m(1)%gn
+  ny = m(2)%gn
+  nz = m(3)%gn
+  allocate (xo(nx))
+  allocate (yo(ny))
+  allocate (zo(nz))
   do iv=1,self%nv
-    ff(m(1)%li:m(1)%ui, &
-       m(2)%lb:m(2)%ub, &
-       m(3)%li:m(3)%ui,iv) = buffer(o(1):o(1)+m(1)%n -1, &
-                                    o(2):o(2)+m(2)%gn-1, &
-                                    o(3):o(3)+m(3)%n -1,iv)
+    xo = m(1)%p + m(1)%r + m(1)%h(iv)
+    yo = m(2)%p + m(2)%r + m(2)%h(iv)
+    zo = m(3)%p + m(3)%r + m(3)%h(iv)
+    xi => xm
+    yi => ym
+    zi => zm
+    if (iv==i%px.or.iv==i%bx) xi => xmdn
+    if (iv==i%py.or.iv==i%by) yi => ymdn
+    if (iv==i%pz.or.iv==i%bz) zi => zmdn
+    !print '(i4,2x,2(2x,3(2x,2f7.2)))', iv, &
+      !minval(xi), maxval(xi), minval(yi), maxval(yi), minval(zi), maxval(zi), &
+      !minval(xo), maxval(xo), minval(yo), maxval(yo), minval(zo), maxval(zo)
+    if (order==1) then
+      call lagrange%trilinear3d (xi, yi, zi, buffer(:,:,:,iv), &
+                                 xo, yo, zo,     ff(:,:,:,iv), order)
+    else
+      call lagrange%interpolate3d (xi, yi, zi, buffer(:,:,:,iv), &
+                                   xo, yo, zo,     ff(:,:,:,iv), order)
+    end if
+    !print '(i4,i3,2x,3f8.3,1p,2e12.4)', self%id, iv, m%p, minval(ff(:,:,:,iv)), maxval(ff(:,:,:,iv))
   end do
-  !-----------------------------------------------------------------------------
-  ! Mesh coefficient
-  !-----------------------------------------------------------------------------
-  allocate (m(2)%ddn(m(2)%gn))
-  allocate (m(2)%dup(m(2)%gn))
-  m(2)%ddn = dyidydn(o(2):o(2)+m(2)%gn-1)
-  m(2)%dup = dyidyup(o(2):o(2)+m(2)%gn-1)
+  deallocate (xo, yo, zo)
+  if (io%verbose>0) print *, 'initial_t%stagger: id, pos =', self%id, m%p
   !-----------------------------------------------------------------------------
   ! Diagnostic output
   !-----------------------------------------------------------------------------
@@ -212,8 +239,6 @@ SUBROUTINE stagger (self, m, ff)
         maxval(ff(m(1)%li:m(1)%ui,m(2)%lb:m(2)%ub,m(3)%li:m(3)%ui,iv))
     end do
   end if
-  m(2)%lower_boundary = .true.
-  m(2)%upper_boundary = .true.
   call trace_end
 END SUBROUTINE stagger
 
@@ -245,9 +270,8 @@ SUBROUTINE raw (self, m, ff)
     if (io%master) write (*, raw_params)
     n = nint(m%b/m%d)
     if (.not.all(n==dims(1:3))) then
-      if (io%master) print *, 'ERROR: file  dims =', dims
-      if (io%master) print *, 'ERROR: setup dims =', n
-      call mpi%abort
+      if (io%master) print *, 'file  dims =', dims
+      if (io%master) print *, 'setup dims =', n, m%b, m%d
     end if
     allocate (buffer(dims(1),dims(2),dims(3),dims(4)))
     recl = 4*product(n)                                         ! FIXME

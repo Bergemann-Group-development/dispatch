@@ -47,11 +47,16 @@ SUBROUTINE init (self)
   self%nv  = self%initial%nv
   self%mhd = self%initial%mhd
   self%periodic(2) = .false.                     ! non-periodic vertically
+  self%initial%id = self%id
   call self%rmhd_t%init
-  self%i_bx=6
-  self%i_by=7
-  self%i_bz=8
-  self%i_tt=9
+  if (self%mhd) then
+    self%i_bx=6
+    self%i_by=7
+    self%i_bz=8
+    self%i_tt=9
+  else
+    self%i_tt=6
+  end if
   call self%set(bits%static)
   !----------------------------------------------------------------------------
   ! Initial conditions
@@ -60,7 +65,6 @@ SUBROUTINE init (self)
   self%t(:) = self%initial%time
   self%dtime = 1.0
   self%dt(:) = self%dtime
-  print *, 'iit =', self%iit
   call self%boundary_conditions
   call trace_end (itimer=itimer)
 END SUBROUTINE init
