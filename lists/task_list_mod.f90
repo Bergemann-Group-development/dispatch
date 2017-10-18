@@ -27,7 +27,6 @@ MODULE task_list_mod
   USE bits_mod
   USE trace_mod
   USE refine_mod
-  USE download_mod
   USE buffered_output_mod
   USE load_balance_mod
   USE direct_output_mod
@@ -94,7 +93,6 @@ SUBROUTINE init (self, name)
   self%job_seconds = job_seconds
   write (io_unit%mpi,*) 'task_list%init: next_sync =', self%sync_next, self%sync_time
   call load_balance%init
-  call download%init
   call trace_end
 END SUBROUTINE init
 
@@ -273,9 +271,6 @@ SUBROUTINE execute (self)
   call toc ('wall time', n_update, time=sec)
   call mpi%barrier ('end')
   if (io%master) write (*,*) "task list finished, min_nq =", min_nq
-  !if (io%master) &
-  !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
-  !    max(1,(download%n_differ+download%n_same))
   call buffered_output%close
   call trace%end (itimer)
 END SUBROUTINE execute
