@@ -52,7 +52,7 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     data = './data'
-    iters = [0,10,20,30,40,50,60,70,80,90]
+    iters = [0,10,50,90,150,190,250,290]
     pxsize = [-0.02,1.02]
     pysize = [-0.02,1.02]
     pltvar = ['d','rdd','phi','rdphi']
@@ -63,6 +63,8 @@ if __name__ == "__main__":
     ColMap = cm.RdBu_r
     r0 = 0.5
 
+    L2_min, L2_max, L2_mean = [], [], []
+    Linf_min, Linf_max, Linf_mean = [], [], []
     for i in iters:
         patches = du.patches(data=data,iout=i)
         for pp in patches:
@@ -136,10 +138,52 @@ if __name__ == "__main__":
                     gn_ypos = yp[iindex,jindex,kindex][offset]
                     cax.annotate(str(pp.id),(gn_xpos,gn_ypos),color='k',weight='extra bold',
                                  fontsize=13,zorder=min(pp.dx))
-        
+
             cbar = plt.colorbar(conf, ax=cax, fraction=0.03, pad=0.03)
             cbar.ax.annotate(spltvar,xy=(-0.10,-0.06),fontsize=14,xycoords='axes fraction')
 
         cfig.tight_layout()
         plt.draw()
         print "="*20
+
+        # print L2 and Linf norm of the result
+        L2_iter, Linf_iter = [], []
+        for pp in patches:
+            x_i = dg.dispatch_grid(pp)
+            xp, yp, cut_mask = dg.plotting_grid(pp, x_i, 3, 0.0)
+            # ghost zones *can* now be included (or not)
+            ione = (0,1)[pp.n[0] > 1]
+            jone = (0,1)[pp.n[1] > 1]
+            kone = (0,1)[pp.n[2] > 1]
+            if np.any(pp.n != pp.nwrite):
+                iindex = slice(pp.nghost[0] - ione,pp.n[0] + pp.nghost[0] + ione)
+                jindex = slice(pp.nghost[1] - jone,pp.n[1] + pp.nghost[1] + jone)
+                kindex = slice(pp.nghost[2] - kone,pp.n[2] + pp.nghost[2] + kone)
+            else:
+                iindex = slice(0,pp.n[0])
+                jindex = slice(0,pp.n[1])
+                kindex = slice(0,pp.n[2])
+
+            phie = phi_exact(xp,yp,r0=r0)
+            dphi = pp.data[:,:,:,pp.varidx['phi']] - phie
+            L2d = np.linalg.norm(phie[iindex,jindex,kindex].flatten(),ord=2)
+            L2n = np.linalg.norm(dphi[iindex,jindex,kindex].flatten(),ord=2)
+            Linfd = np.linalg.norm(phie[iindex,jindex,kindex].flatten(),ord=np.inf)
+            Linfn = np.linalg.norm(dphi[iindex,jindex,kindex].flatten(),ord=np.inf)
+            L2_iter.append(L2n/L2d)
+            Linf_iter.append(Linfn/Linfd)
+            #print "i = {0}, p = {1}, n = {2}, L2-norm = {3:.3e}, Linf-norm = {4:.3e}".format(i,pp.id,pp.n,L2n/L2d,Linfn/Linfd)
+
+        # accumulate L2, Linf results
+        L2_min.append(np.min(L2_iter))
+        L2_max.append(np.max(L2_iter))
+        L2_mean.append(np.mean(L2_iter))
+        Linf_min.append(np.min(Linf_iter))
+        Linf_max.append(np.max(Linf_iter))
+        Linf_mean.append(np.mean(Linf_iter))
+
+    for i in xrange(len(iters)):
+        print "i = {0}, iout = {1}".format(i,iters[i])
+        print "L2 min = {0:.3e}, L2 max = {1:.3e}, L2 mean = {2:.3e}".format(L2_min[i],L2_max[i],L2_mean[i])
+        print "Linf min = {0:.3e}, Linf max = {1:.3e}, Linf mean = {2:.3e}".format(Linf_min[i],Linf_max[i],Linf_mean[i])
+        print "-"*40
