@@ -33,6 +33,7 @@ MODULE mhd_mod
   type, extends(gpatch_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
+    real, dimension(:,:,:),   pointer:: lnd, ee, pg
     real:: nu(6)
     real:: csound
     real:: cdtd
@@ -197,7 +198,10 @@ SUBROUTINE pde (self)
   ! a log variable, from the table point of view.
   !-----------------------------------------------------------------------------
   ee = e/d                                                                      ! ops: 0 0 1
-  pg = self%gas_pressure()
+  self%lnd => lnd
+  self%ee  => ee
+  pg = self%gas_pressure ()
+  self%pg => pg
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure.  The divergence is valid
   ! in (2,gn-1)
@@ -486,16 +490,21 @@ FUNCTION gas_pressure (self) RESULT (pg)
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   real, dimension(:,:,:), pointer:: d, e
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%i_d,self%it,1)
-  e => self%mem(:,:,:,self%i_e,self%it,1)
   if (trim(self%eos)=='ideal') then
+    d => self%mem(:,:,:,self%i_d,self%it,1)
+    e => self%mem(:,:,:,self%i_e,self%it,1)
     if (self%gamma==1.0) then
       pg = d*self%csound**2
     else
       pg = e*(self%gamma-1)
     end if
   else
-    call eos%lookup (shape(d), x=d, y=e, pg=pg)
+    call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg)
+    if (io%verbose>1) then
+      print *, self%id, 'lookup_table: lnd =', minval(self%lnd), maxval(self%lnd)
+      print *, self%id, 'lookup_table:  ee =', minval(self%ee ), maxval(self%ee )
+      print *, self%id, 'lookup_table:  pg =', minval(pg),       maxval(pg)
+    end if
   end if
 END FUNCTION gas_pressure
 

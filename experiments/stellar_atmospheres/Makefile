@@ -28,7 +28,7 @@ sinclude $(TOP)/config/Makefile
 
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): cartesian_mod.o setup_mod.o radiative_transfer_mod.o eos_mod.o
+$(EXEC): cartesian_mod.o setup_mod.o radiative_transfer_mod.o eos_mod.o rt_boundaries_mod.o
 
 # Dependencies
 experiment_mod.o        : rmhd_mod.o trace_mod.o io_mod.o initial_mod.o download_mod.o link_mod.o
@@ -39,3 +39,4 @@ mhd_mod.o               : io_mod.o trace_mod.o scalar_mod.o vector_mod.o force_m
                           stagger_mod.o mesh_mod.o
 patches_mod.o           : io_mod.o trace_mod.o timestep_mod.o
 eos_mod.o               : io_mod.o trace_mod.o
+rt_boundaries_mod.o     : io_mod.o trace_mod.o kinds_mod.o mpi_mod.o bits_mod.o mesh_mod.o eos_mod.o units_mod.o scaling_mod.o ray_geometry_v3_mod.o

@@ -37,6 +37,7 @@ MODULE eos_mod
   contains
     procedure:: init
     procedure:: lookup
+    procedure:: lookup_table
     procedure:: pressure
     procedure:: temperature
   end type
@@ -50,7 +51,8 @@ SUBROUTINE init (self)
   class (eos_t):: self
   real, dimension(:,:,:), pointer:: d, ee, pg
   logical, save :: do_rt = .false.
-  namelist /eos_params/ do_eos, top, tablefile, do_rt
+  real, save :: kappa = 1.0
+  namelist /eos_params/ do_eos, top, tablefile, do_rt, kappa
   !-----------------------------------------------------------------------------
   do_rt = self%do_rt
   !$omp critical (eos_cr)
@@ -88,6 +90,7 @@ SUBROUTINE init (self)
   end if
   self%do_rt = do_rt
   self%on = do_eos
+  self%kappa = kappa
   !$omp end critical (eos_cr)
   !$omp barrier
 END SUBROUTINE init
@@ -122,7 +125,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y
   real, dimension(:,:,:),                      optional :: pg, tt, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
-  real, dimension(:,:,:), pointer :: x_loc, y_loc
+  real, dimension(:,:,:), pointer :: x_loc, y_loc, lnd, ee
   integer:: i
   integer, save:: itimer=0
   real:: stefan
@@ -150,6 +153,14 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
     call mpi%abort ('eos_t: missing 1st argument')
   end if
   !-----------------------------------------------------------------------------
+  if (present(src).and.present(rk)) then
+    allocate (lnd(dim(1),dim(2),dim(3)))
+    allocate (ee (dim(1),dim(2),dim(3)))
+    lnd = log(x_loc)
+    ee  = y_loc/x_loc
+    call lookup_table (self, dim, ee=ee, lnd=lnd, src=src, rk=rk)
+    deallocate (lnd, ee)
+  else
   if (present(tt)) then
     tt = (self%gamma-1.0)*x_loc
   end if
@@ -167,6 +178,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
       rk(:,:,:,i) = y_loc*self%kappa
     end do
   end if
+  end if
   if (present(lnx)) deallocate(x_loc)
   if (present(lny)) deallocate(y_loc)
   call trace%end(itimer)
@@ -175,11 +187,12 @@ END SUBROUTINE lookup
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup_real (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
+SUBROUTINE lookup_table (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
-  real, dimension(:,:,:)  , pointer, optional :: ee,d,lne,lnd,pg,tt,ne
-  real, dimension(:,:,:,:), pointer, optional :: src,rk
+  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,ee,tt,ne
+  real, dimension(:,:,:,:)         , optional :: src,rk
+  real, dimension(:,:,:)           , optional :: pg
   real, optional:: gamma
   !.............................................................................
   real, dimension(:,:,:),   pointer  :: lnd_loc, ee_loc
@@ -195,7 +208,15 @@ SUBROUTINE lookup_real (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays
   !-----------------------------------------------------------------------------
-  call trace%begin ('eos_t%lookup', itimer=itimer)
+  call trace%begin ('eos_t%lookup_table', itimer=itimer)
+  if (io%verbose>1) then
+    print *, 'present(lnd) =', present(lnd)
+    print *, 'present(ee)  =', present(ee)
+    print *, 'present(pg)  =', present(pg)
+    print *, 'present(src) =', present(src)
+    print *, 'present(rk)  =', present(rk)
+    print *, 'dim:', dim
+  end if
   mx=dim(1)
   my=dim(2)
   mz=dim(3)
@@ -403,6 +424,6 @@ SUBROUTINE lookup_real (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   if (present(d))   deallocate (lnd_loc)
   if (present(lne)) deallocate (ee_loc)
   call trace%end (itimer)
-END SUBROUTINE lookup_real
+END SUBROUTINE lookup_table
 
 END MODULE eos_mod

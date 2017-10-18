@@ -211,7 +211,7 @@ SUBROUTINE init (self, geometry, n, ng, cell_dims, no_mans_land)
   logical :: no_mans_land
   real(kind=8) :: maxdim
 ! ......................................................................
-  !call trace_begin('ray_geometry_t%init')
+  call trace_begin('ray_geometry_t%init')
 
   allocate (new)                                                        ! allocate new geometry object
   new%geometry = geometry
@@ -250,7 +250,7 @@ SUBROUTINE init (self, geometry, n, ng, cell_dims, no_mans_land)
   end select
 
   call new%print
-  !call trace_end
+  call trace_end
 END SUBROUTINE init
 
 SUBROUTINE get_my_geometry(self, geometry, n, ng, cell_dims, my_geom)
@@ -305,7 +305,7 @@ SUBROUTINE init_cartesian(self)
   namelist /cartesian_ray_geometry_params/ do_chains, &
     nx, ny, nz, xti, yti, zti, dx, dy, dz, space_diagonals
 ! ......................................................................
-  !call trace_begin('ray_geometry_t%init_cartesian',2)
+  call trace_begin('ray_geometry_t%init_cartesian',2)
   !> TO DO: add an option for 2D simulation setup (i.e. any(cell_dims) == 0)
 
   self%init_done = .true.
@@ -374,7 +374,7 @@ SUBROUTINE init_cartesian(self)
     end do
   end if
 
-  !call trace_end
+  call trace_end
 END SUBROUTINE init_cartesian
 
 !> =====================================================================
@@ -421,7 +421,7 @@ SUBROUTINE add_axis(self, dir)
   class(packet_t)  , pointer :: packet
   integer :: ibn, jbn, jpck, ray1, ray2
 ! ......................................................................
- ! call trace_begin('ray_geometry_t%add_axis', 4)
+  call trace_begin('ray_geometry_t%add_axis', 4)
   pmax = (self%ui - self%li) + 1                                        ! Total number of points
   self%n_ray_dirs = self%n_ray_dirs + 1                                 ! Adding new direction to the ray geometry
   dstep = 0
@@ -517,7 +517,7 @@ SUBROUTINE add_axis(self, dir)
       ray_n = ray_n + 1                                                 ! move to next ray
     end do
   end do
-!  call trace_end
+  call trace_end
 END SUBROUTINE add_axis
 
 !> =====================================================================

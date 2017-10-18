@@ -81,6 +81,7 @@ SUBROUTINE init (self, llc, urc)
   class(ray_dirs_t), pointer :: rd
   namelist /rt_bc_params/ hot_temp, cool_temp
   !---------------------------------------------------------------------
+  call trace_begin ('rt_boundaries_t%init')
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -128,6 +129,7 @@ SUBROUTINE init (self, llc, urc)
   print *, 'cool', self%xu
   print *, 'hot', self%xl
   print *, 'rt boundary llc, urc', self%llc, self%urc
+  call trace_end
 END SUBROUTINE init
 
 SUBROUTINE update(self)
