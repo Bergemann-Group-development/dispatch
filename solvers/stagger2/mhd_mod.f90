@@ -31,7 +31,7 @@ MODULE mhd_mod
   implicit none
   private
   type, extends(gpatch_t), public:: mhd_t
-    real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt
+    real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt, pg
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real:: csound
     real:: nu(6)
@@ -312,6 +312,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ss = s/d                                                                      ! ops: 0 0 1
   pg = self%gas_pressure()
+  self%pg => pg
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure.  The divergence is valid
   ! in (2,gn-1)
