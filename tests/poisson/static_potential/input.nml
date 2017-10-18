@@ -19,7 +19,7 @@
 /
 
 &out_params
- end_time=0.01
+ end_time=0.03
  out_time=0.0001
  guard_zones=t
  time_derivs=t

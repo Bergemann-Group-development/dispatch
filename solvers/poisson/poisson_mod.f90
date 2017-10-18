@@ -138,16 +138,15 @@ END SUBROUTINE init_sor_2nd
 !>                               - FourPiGrho
 !>
 !> =============================================================================
-SUBROUTINE sor_2nd (self, patch, phi, FourPiGrho, d, error, detailed_timer)
+SUBROUTINE sor_2nd (self, patch, phi, resid, FourPiGrho, d, error, detailed_timer)
   class(poisson_t):: self
   class(patch_t)  :: patch
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi, resid
   real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: FourPiGrho, d
   real   :: error
   logical:: detailed_timer
   integer:: i, j, k, sweep, ss, ione, jone, kone
-  real   :: a, b, b1, b2, b3, sor
-  real, dimension(:,:,:), pointer:: source
+  real   :: a, b, b1, b2, b3, ustar
   integer, save                  :: itimer=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('poisson_t%sor_2nd_abs', itimer=itimer)
@@ -178,22 +177,13 @@ SUBROUTINE sor_2nd (self, patch, phi, FourPiGrho, d, error, detailed_timer)
       do j=l(2),u(2)
         ss = modulo(j + k + sweep,2)
         do i=l(1)+ss,u(1),2
-          phi(i,j,k) = (1. - omega_sor) * phi(i,j,k) + &
-                             omega_sor * ( &
-                               b1 * (phi(i+ione,j,k) + phi(i-ione,j,k)) &
-                             + b2 * (phi(i,j+jone,k) + phi(i,j-jone,k)) &
-                             + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
-                             - a * FourPiGrho(i,j,k) )
-        end do
-        !-----------------------------------------------------------------------
-        ! At least with gfortran, keeping these loops separate is faster
-        !-----------------------------------------------------------------------
-        do i=l(1)+ss,u(1),2
-          error = max(error, abs( &
-                   ((b1 * (phi(i+ione,j,k) + phi(i-ione,j,k)) &
-                   + b2 * (phi(i,j+jone,k) + phi(i,j-jone,k)) &
-                   + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
-                   - b * phi(i,j,k)) - a*FourPiGrho(i,j,k))) / d(i,j,k))
+          ustar = b1 * (phi(i+ione,j,k) + phi(i-ione,j,k)) &
+                + b2 * (phi(i,j+jone,k) + phi(i,j-jone,k)) &
+                + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
+                - a * FourPiGrho(i,j,k)
+          phi(i,j,k)   = (1. - omega_sor) * phi(i,j,k) + omega_sor  * ustar
+          resid(i,j,k) = (phi(i,j,k) - ustar) / a
+          error = max(error, abs(ustar - b * phi(i,j,k)) / d(i,j,k))
         end do
       end do
     end do
@@ -300,13 +290,12 @@ END SUBROUTINE init_zeus_sor
   !  generalised for curvilinear geometries (XYZ, ZRP, RTP) and with any
   !  symmetry (1-D, 2-D, or full 3-D).
 !> =====================================================================
-SUBROUTINE zeus_sor (self, patch, phi, FourPiGrho, d, anorm, detailed_timer)
+SUBROUTINE zeus_sor (self, patch, phi, resid, FourPiGrho, d, anorm, detailed_timer)
   class(poisson_t):: self
   class(patch_t):: patch
   class(mesh_t), pointer:: m1, m2, m3
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi, resid
   real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: FourPiGrho, d
-  real(kind=KindScalarVar):: resid
   real   :: anorm
   logical:: detailed_timer
   integer, save:: itimer = 0
@@ -357,9 +346,9 @@ SUBROUTINE zeus_sor (self, patch, phi, FourPiGrho, d, anorm, detailed_timer)
                / m1%h2c(i)**2 * jone &
              + ( phi(i,j,k+kone) + phi(i,j,k-kone) ) * dx3a2i &
                / m1%h31c(i)**2 / m2%h32c(j)**2 * kone
-          resid      = self%omega_sor / self%eta(i,j,k) * da
-          phi(i,j,k) = phi(i,j,k) - resid
-          anorm      = anorm + abs(da)
+          resid(i,j,k) = da
+          phi(i,j,k)   = phi(i,j,k) - self%omega_sor / self%eta(i,j,k) * da
+          anorm        = anorm + abs(da)
         end do
         sw3 = 1 - sw3
       end do

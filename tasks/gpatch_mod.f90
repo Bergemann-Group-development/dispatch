@@ -138,7 +138,7 @@ SUBROUTINE gravity (self, error, only)
   class(gpatch_t):: self
   integer, optional:: only !unused
   !.............................................................................
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi, source
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi, source, resid
   real:: error, error0
   integer:: iter, ix ,iy, iz
   integer, save:: itimer=0
@@ -148,7 +148,7 @@ SUBROUTINE gravity (self, error, only)
 
   d   => self%mem(:,:,:,self%i_d  ,self%it,1)
   phi => self%mem(:,:,:,self%i_phi,self%it,1)
-  allocate (source(size(d,1),size(d,2),size(d,3)))
+  allocate (source(size(d,1),size(d,2),size(d,3)), resid(size(d,1),size(d,2),size(d,3)))
 
   source = 0.0
   do iz=self%mesh(3)%li,self%mesh(3)%ui
@@ -163,7 +163,7 @@ SUBROUTINE gravity (self, error, only)
 
   ! call the Poisson solver iteratively
   do iter=1,max_iter
-    call self%poisson%update (self, phi, source, d, error, detailed_timer)
+    call self%poisson%update (self, phi, resid, source, d, error, detailed_timer)
     error = error / grho
     if (verbose > 1) print "(i6,' self_gravity: iter =',i3.1,' error =',1p,g14.5)", self%id, iter, error
     ! check for convergence
@@ -181,7 +181,7 @@ SUBROUTINE gravity (self, error, only)
     print "('error0 = ',g14.5,'; error = ',g14.5)",error0,error
   end if
 
-  deallocate (source)
+  deallocate (source, resid)
   ! compute estimate of dphi/dt
   call time_derivs (self)
 
