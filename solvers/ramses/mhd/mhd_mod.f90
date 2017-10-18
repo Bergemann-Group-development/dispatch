@@ -88,7 +88,10 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call self%initial%init (self%id, self%kind, self%gamma)
   self%mhd = self%initial%mhd
-  if (self%mhd) self%nv = self%nv+3
+  if (self%nv == 0) then
+    self%nv = 5
+    if (self%mhd) self%nv = self%nv + 3
+  end if
   !-----------------------------------------------------------------------------
   ! Now we are ready to allocate memory in gpatch_t%init -> patch_t%init
   !-----------------------------------------------------------------------------
