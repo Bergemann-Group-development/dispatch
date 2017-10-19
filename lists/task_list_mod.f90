@@ -329,11 +329,11 @@ SUBROUTINE update (self)
       !$omp atomic
       self%nq = self%nq-1                               ! decrement queue count
       task%nq = self%nq                                 ! for info print
-      if (io%verbose>=0) then
+      if (io%verbose >= 0) then
         otask => self%active%task
         time = otask%atime
         if (time < otime) &
-          write (*,'(a,2(f12.6,i6))') 'ERROR: otime, oid, time, id =', otime, oid, time, otask%id
+          write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
         !$omp atomic write
         otime = time
         !$omp atomic write

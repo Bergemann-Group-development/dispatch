@@ -39,6 +39,7 @@ MODULE refine_mod
     procedure:: refine_region
     procedure:: split_patch
     procedure:: gradient_detector
+    procedure:: check_nbor_support
   end type
 
   type(refine_t), public:: refine
@@ -152,6 +153,11 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   ! refine on (a) user-specified region(s)
   if (any(self%region_llc /= 0.0) .and. any(self%region_urc /= 0.0)) &
     needed = needed .or. self%refine_region(patch)
+
+  ! Check that neighbors of `self` are not more than one level different.
+  ! If they are, mark this patch for splitting so that support can be
+  ! provided to the neighbors of `patch`.
+  needed = needed .or. self%check_nbor_support(tasklist, link)
 
   patch%check_refine_next = patch%istep + self%check_interval
 
@@ -289,13 +295,58 @@ SUBROUTINE split_patch (self, tlist, this)
 END SUBROUTINE split_patch
 
 !> =============================================================================
+!> Check the neighbors of the task associated with `link` to see if they can
+!> provide support to newly refined patches made from `link`.
+!> The current definition of "support" is a difference in levels of one or less.
+!>
+!> In the absence of the optional argument, `check_only`, neighbour patches will
+!> be split as needed.
+!> =============================================================================
+FUNCTION check_nbor_support (self, tlist, link, check_only) RESULT (refine_it)
+  USE task_mod
+  class(refine_t):: self
+  class(list_t):: tlist
+  class(link_t), pointer:: link, nbor
+  class(task_t), pointer:: this, npatch
+  logical, optional:: check_only
+  logical:: split_if_necessary, refine_it
+  !.............................................................................
+  call trace%begin('refine_t%check_nbor_support')
+  if (present(check_only)) then
+    split_if_necessary = .not. check_only
+  else
+    split_if_necessary = .true.
+  end if
+
+  refine_it = .false.
+  this => link%task
+  nbor => link%nbor
+  do while (associated(nbor))
+    npatch => nbor%task
+    ! support is defined as having a level difference no greater than one
+    if ((npatch%level - this%level) > 1) then
+      if (io%verbose > 0) print "('Patch',i5.1,' at level ',i2.1,' cannot provide support to patches at level',i2.1)",this%id,this%level,npatch%level
+      if (split_if_necessary) then
+        ! mark this patch for splitting to ensure support for neighbor patches
+        if (io%verbose > 0) print "('Splitting',i5.1,' in order to provide support')",this%id
+        refine_it = .true.
+        exit
+      end if
+    end if
+    nbor => nbor%next
+  end do
+
+  call trace%end
+END FUNCTION check_nbor_support
+
+!> =============================================================================
 !> Calculate the Jeans length and compare it to the patch resolution.
 !> =============================================================================
-FUNCTION check_jeans (self, patch) RESULT(out)
+FUNCTION check_jeans (self, patch) RESULT(refine_it)
   USE scaling_mod
   class(refine_t):: self
   class(patch_t), pointer:: patch
-  logical:: out
+  logical:: refine_it
   real:: jeans_length, ratio
   real, dimension(:,:,:), allocatable:: c_sound2
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
@@ -309,9 +360,9 @@ FUNCTION check_jeans (self, patch) RESULT(out)
   c_sound2 = patch%gamma * eos%pressure(d,e) / d
   jeans_length = minval(sqrt(c_sound2 / (d*scaling%grav)))
   ratio = jeans_length / minval(patch%mesh%d)
-  out = ratio < self%min_jeans
+  refine_it = ratio < self%min_jeans
 
-  if (io%verbose > 2) print*,'Jeans:', patch%id, ratio, self%min_jeans, out
+  if (io%verbose > 2) print*,'Jeans:', patch%id, ratio, self%min_jeans, refine_it
 
   deallocate (c_sound2)
   nullify (d,e)
