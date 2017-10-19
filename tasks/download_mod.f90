@@ -642,6 +642,7 @@ SUBROUTINE different (target, source, all_cells, only)
             if (all((ii>=li.and.ii<=ui))) then
               print *,'INTERNAL BREACH!', ii
             end if
+            target%mem(ix,iy,iz,iv,target%it,1) = qint
           else
             if (target%id==io%id_debug .and. io%verbose>1) &
               print *, target%id, 'DBG interpolate_t%different: skipping', iv,ii, present(all_cells), (ii-li) < 0
