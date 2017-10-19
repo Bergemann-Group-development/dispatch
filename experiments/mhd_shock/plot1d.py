@@ -18,6 +18,47 @@ def dump_min_max(p):
     for q,v in zip(p.varidx.iterkeys(),p.varidx.itervalues()):
         print "{0}: min = {1}; max = {2}".format(q,p.data[:,:,:,v].min(),p.data[:,:,:,v].max())
 
+def aesthetics(cax):
+
+    # Aesthetic tweaks.
+    for loc,spine in cax.spines.items():
+        if loc in ['top','right']:
+            spine.set_color('none')
+
+    cax.xaxis.set_ticks_position('bottom')
+    cax.yaxis.set_ticks_position('left')
+
+def amr_shading(levels=7):
+    """
+    Calculate what grey level is used to denote the level of refinement
+    when plotting 1D AMR results.
+
+    Plotting the level of refinement in this fashion is only "visually
+    reasonable" if there are less than 10 levels, otherwise the contrast
+    between the different grey levels becomes too small.
+
+    Imported from soapp.plot.amr_common.
+
+    >>> levels = 7
+    >>> greylevs = amr_shading(levels)
+    >>> print [g for g in greylevs]
+    ['0.9', '0.8', '0.7', '0.6', '0.5', '0.4', '0.3']
+
+    """
+
+    if levels <= 9:
+        dgrey = 0.1
+    else:
+        dgrey = 0.9 / levels
+    
+    # Note that a grey level of 1.0 (white) is reserved for the coarsest
+    # level.
+    fgreys = [1.0]
+    for i in xrange(1,levels):
+        fgreys.append(fgreys[i-1]-dgrey)
+
+    return [str(i) for i in fgreys]
+
 if __name__ == "__main__":
 
     # set font style
@@ -29,7 +70,7 @@ if __name__ == "__main__":
     gamma = 5.0/3.0
     datadir = './data/'
     prefix = ''
-    ptimes = [0.0,0.10,0.20,0.35,0.45]
+    ptimes = [0.0,0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45]
     t_eps = 1e-3
     pxsize = [-0.5,2.5]
     pltvar = [  'd', 'e1', 'v2', 'b2', 'et', 'v1']
@@ -57,8 +98,9 @@ if __name__ == "__main__":
     m1 = 0 # counter 1
     root = None
     savecolr = dict()
-    scolrs = ['r','g','b','c','m','y','k','Brown','Coral']
+    scolrs = ['r','g','b','c','m','y','k','Brown','Coral','steelblue','limegreen','orange','fuchsia']
     scolrs = itertools.cycle(scolrs)
+    greys = amr_shading()
 
     if len(ptimes) > 30 and not output_png:
         print "Do you really want to open {0} windows?".format(len(ptimes))
@@ -88,6 +130,7 @@ if __name__ == "__main__":
             cax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
             # ensure the axes remain visible by putting them at the "top"
             cax.set_zorder(99.0)
+            aesthetics(cax)
             axs.append(cax)
 
         patches = []
@@ -162,7 +205,7 @@ if __name__ == "__main__":
                 savecolr[p.id] = scolrs.next()
             for ii in range(nplots):
                 cax = axs[ii]
-                cax.grid(True)
+                #cax.grid(True,ls='dashed')
 
                 if root.mesh_type == 'cylindrical':
                     if plotdir == 1:
@@ -225,14 +268,17 @@ if __name__ == "__main__":
                 cax.set_ylabel(cpltvar)
                 cax.axis(ymin=pvmin[ii],ymax=pvmax[ii])
                 if m1 == 0 and m2 == 0 and clog[ii] == 1:
-                    if cmin[ii] != 0.0: cmin[ii] = np.log10(cmin[ii])
-                    if cmax[ii] != 0.0: cmax[ii] = np.log10(cmax[ii])
-    
+                    if pvmin[ii] != 0.0: pvmin[ii] = np.log10(pvmin[ii])
+                    if pvmax[ii] != 0.0: pvmax[ii] = np.log10(pvmax[ii])
+
                 l, = cax.plot(xp,var.squeeze(),marker='o',color=savecolr[p.id],zorder=-min(p.dx),mew=0.0,ls='None')
-    
-                if (showgrids or pltvar[0] == 'gs'):
-                    cax.plot([x_i[plotdir-1][li],x_i[plotdir-1][li]],[-1.0e32,1.0e32],'k:',lw=2.0)
-                    cax.plot([x_i[plotdir-1][ui],x_i[plotdir-1][ui]],[-1.0e32,1.0e32],'k:',lw=2.0)
+
+                if (showgrids):
+                    ylims = cax.get_ylim()
+                    rect = cax.fill_between(xp,y1=ylims[0]-0.5*abs(ylims[0]),
+                                            y2=ylims[1]+abs(ylims[1]),
+                                            facecolor=greys[p.level],zorder=-min(p.dx)*2.5,
+                                            edgecolor=greys[p.level-1],lw=1.0,linestyle='dotted')
 
                 m3 += 1
 
