@@ -206,7 +206,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%dt(child%it) = parent%dt(parent%it)          ! reset the time-step
   child%t(child%it) = child%time
   child%out_next = child%time                        ! force output now
-  child%iout = 0                                     ! reset output counter
+  child%iout = max(0,child%iout - 1)                 ! correct output counter
   !------------------------------------------------------------------------
   ! Reset flags (FIXME: Would it be better to just reset `status` to zero?)
   !------------------------------------------------------------------------
