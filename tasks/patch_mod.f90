@@ -403,8 +403,8 @@ SUBROUTINE init (self)
   where (self%n==1)                             ! for collapsed dimensions
     self%ng = 0                                 ! no guard zones
     self%box = 1                                ! make sure it is non-zero
-    self%ds = minval(self%ds)                   ! then set to reasonable val
-    self%size = self%ds                         ! one cell thick
+    !!!self%ds = minval(self%ds)                   ! then set to reasonable val
+    !!!self%size = self%ds                         ! one cell thick
   end where
   self%llc_cart = self%position - 0.5_8*self%size
   if (self%mesh_type == mesh_types%Cartesian) then
