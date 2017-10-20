@@ -1,0 +1,59 @@
+&timer_params
+ sec_per_report=10
+/
+
+&io_params
+ verbose=1
+ do_trace=f
+ do_debug=f
+ do_output=t
+ do_legacy=t
+ omp_trace=f
+/
+
+&rubiks_params
+ size=1.0,1.0,0.001
+ n_patch=1,1,1
+ n_repeat=1,1,1
+ m_zoom=1
+ n_levels=1
+ position=0.5,0.5,0.001
+/
+
+&out_params
+ end_time=0.03
+ out_time=0.0001
+ guard_zones=t
+ time_derivs=t
+/
+
+&patch_params
+  courant=0.8
+  n=1280,1280,1
+  nt=4
+/
+
+&experiment_params
+/
+
+&initial_params
+ r0=0.25
+/
+
+&timestep_params
+  time_order=2
+/
+
+&refine_params
+ do_refine=f
+/
+
+&selfgravity_params
+ selfgravity=t
+ verbose=2
+ grho=1.0
+/
+
+&poisson_params
+ solver='zeus_sor'
+/

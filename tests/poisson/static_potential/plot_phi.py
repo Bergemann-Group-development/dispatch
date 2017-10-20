@@ -51,7 +51,7 @@ if __name__ == "__main__":
     plt.rc('font', size=18)
     plt.interactive(True)
 
-    data = './data'
+    data = './data/input_1p_1280'
     iters = [0,10,50,90,150,190,250,290]
     pxsize = [-0.02,1.02]
     pysize = [-0.02,1.02]
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     showgrids = True
     showgridno = True
     ColMap = cm.RdBu_r
-    r0 = 0.1
+    r0 = 0.25
 
     L2_min, L2_max, L2_mean = [], [], []
     Linf_min, Linf_max, Linf_mean = [], [], []
