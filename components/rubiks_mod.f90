@@ -99,7 +99,8 @@ SUBROUTINE init_hierarchy (self, label)
   do krep=0,n_repeat(3)-1
     do jrep=0,n_repeat(2)-1
       do irep=0,n_repeat(1)-1
-        position = (([irep,jrep,krep] - n_repeat / 2) * self%task_list%size) / n_repeat
+        position = (([irep,jrep,krep] - n_repeat / 2) * self%task_list%size) / n_repeat &
+                 + self%position
         if (io%verbose>1) &
           print*,'generating a cube of ',n_patch,' patches',' centred at position', position
         call self%init_level (level, position)
