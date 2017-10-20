@@ -3,12 +3,13 @@
 !> =============================================================================
 PROGRAM dispatch
   USE setup_mod
-  USE cartesian_mod
-  type (cartesian_t):: cartesian
+  USE rubiks_mod
+  type (rubiks_t):: rubiks
   !.............................................................................
   call setup%init                       ! Standard setup (MPI, I/O, scaling, ...)
-  call cartesian%init                   ! Initialize the patch list and patches
-  call cartesian%task_list%execute      ! Update task list = update all tasks
+  call rubiks%init_hierarchy            ! Initialize the patch list and patches
+  call rubiks%task_list%remove_parents  ! Remove any entirely covered patches
+  call rubiks%task_list%execute         ! Update task list = update all tasks
   call setup%end
 !> =============================================================================
 END PROGRAM dispatch

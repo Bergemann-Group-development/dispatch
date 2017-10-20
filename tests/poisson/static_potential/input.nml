@@ -11,11 +11,13 @@
  omp_trace=f
 /
 
-&box_params
- size=1.0,1.0,0.001
- dims=5,5,1
- mpi_dims=1,1,1
- origin=0,0,0
+&rubiks_params
+ size=0.01234567,0.01234567,0.001
+ n_patch=3,3,1
+ n_repeat=1,1,1
+ m_zoom=3
+ n_levels=4
+ position=0.5,0.5,0.001
 /
 
 &out_params
@@ -35,7 +37,7 @@
 /
 
 &initial_params
- r0=0.5
+ r0=0.1
 /
 
 &timestep_params

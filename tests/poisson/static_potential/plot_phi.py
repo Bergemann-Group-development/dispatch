@@ -56,12 +56,13 @@ if __name__ == "__main__":
     pxsize = [-0.02,1.02]
     pysize = [-0.02,1.02]
     pltvar = ['d','rdd','phi','rdphi']
-    cmin   = [1.0,  0.0,  0.0,   0.0]
-    cmax   = [16., 1e-4, 1.15,   1.0]
+    cmin   = [ 1.0,  0.0,  0.0,   0.0]
+    cmax   = [400., 1e-4,  3.9,   1.0]
+    clog   = [   1,    0,    0,     0]
     showgrids = True
     showgridno = True
     ColMap = cm.RdBu_r
-    r0 = 0.5
+    r0 = 0.1
 
     L2_min, L2_max, L2_mean = [], [], []
     Linf_min, Linf_max, Linf_mean = [], [], []
@@ -77,7 +78,10 @@ if __name__ == "__main__":
         
         axs = []
         for j in xrange(len(pltvar)):
-            cax = plt.subplot(gs[0,j])
+            if j == 0:
+                cax = cfig.add_subplot(gs[0,j])
+            else:
+                cax = cfig.add_subplot(gs[0,j],sharex=axs[0],sharey=axs[0])
             axs.append(cax)
             cax.axis(xmin=pxsize[0],xmax=pxsize[1],ymin=pysize[0],ymax=pysize[1])
             cax.yaxis.set_minor_locator(ticker.AutoMinorLocator())
@@ -125,6 +129,11 @@ if __name__ == "__main__":
                 print spltvar, ": ", var.min(), var.max(), var.shape
                 xpp = xp[iindex,jindex,kindex].squeeze()
                 ypp = yp[iindex,jindex,kindex].squeeze()
+
+                if clog[j] == 1:
+                    var = np.log10(var)
+                    spltvar = r'log ' + spltvar
+
                 conf = cax.contourf(xpp,ypp,var.squeeze(),levels,cmap=ColMap,
                              extend='both',zorder=-min(pp.dx))
 
