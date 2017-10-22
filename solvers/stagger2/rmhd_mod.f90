@@ -76,7 +76,7 @@ SUBROUTINE update (self)
     allocate(pgas(self%gn(1), self%gn(2), self%gn(3)))
     dedt=0.0
     call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
-    pgas => self%pg
+    pgas = self%gas_pressure()
     d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,1)
     dsdt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%it,2)
     dsdt = dsdt + dedt*d/pgas(l(1):u(1),l(2):u(2),l(3):u(3))
