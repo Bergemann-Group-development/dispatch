@@ -60,14 +60,14 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   integer:: idir
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: v
   !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:,self%i_d,self%it,1))
+  associate (d => self%mem(:,:,:,self%idx%d,self%it,1))
   select case (idir)
   case (1)
-    v(:,:,:) = self%mem(:,:,:,self%i_px,self%it,1) / xdn_scalar(d)
+    v(:,:,:) = self%mem(:,:,:,self%idx%px,self%it,1) / xdn_scalar(d)
   case (2)
-    v(:,:,:) = self%mem(:,:,:,self%i_py,self%it,1) / ydn_scalar(d)
+    v(:,:,:) = self%mem(:,:,:,self%idx%py,self%it,1) / ydn_scalar(d)
   case (3)
-    v(:,:,:) = self%mem(:,:,:,self%i_pz,self%it,1) / zdn_scalar(d)
+    v(:,:,:) = self%mem(:,:,:,self%idx%pz,self%it,1) / zdn_scalar(d)
   case default
     error stop "solver_mod::gas_velocity_scalar:: invalid value of idir"
   end select
@@ -135,10 +135,10 @@ FUNCTION MomToVel_VectorToArray (self) RESULT (out)
   class(solver_t):: self
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: out
   !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:,self%i_d,self%it,1))
-  out(:,:,:,1) = self%mem(:,:,:,self%i_px,self%it,1) / xdn_scalar(d)
-  out(:,:,:,2) = self%mem(:,:,:,self%i_py,self%it,1) / ydn_scalar(d)
-  out(:,:,:,3) = self%mem(:,:,:,self%i_pz,self%it,1) / zdn_scalar(d)
+  associate (d => self%mem(:,:,:,self%idx%d,self%it,1))
+  out(:,:,:,1) = self%mem(:,:,:,self%idx%px,self%it,1) / xdn_scalar(d)
+  out(:,:,:,2) = self%mem(:,:,:,self%idx%py,self%it,1) / ydn_scalar(d)
+  out(:,:,:,3) = self%mem(:,:,:,self%idx%pz,self%it,1) / zdn_scalar(d)
   end associate
 END FUNCTION MomToVel_VectorToArray
 

@@ -377,8 +377,8 @@ SUBROUTINE check_poisson (self, patch, FourPiG, resid)
   real, dimension(3):: dsi2
   !.............................................................................
   call trace%begin('experiment_t%check_poisson')
-  d => patch%mem(:,:,:,patch%i_d,patch%it,1)
-  phi => patch%mem(:,:,:,patch%i_phi,patch%it,1)
+  d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
+  phi => patch%mem(:,:,:,patch%idx%phi,patch%it,1)
 
   ione = 1
   jone = 1

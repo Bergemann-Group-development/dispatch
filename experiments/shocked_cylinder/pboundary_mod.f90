@@ -47,22 +47,22 @@ SUBROUTINE conditions (self, initial, patch, it)
         do ix=mx%lb,mx%lo
           x = mx%centre_nat + patch%mesh(1)%r(ix)
           if ( x <= (mx%p - 0.5*mx%s) )then
-            q(ix,iy,iz,patch%i_d ) = initial%rhol
-            q(ix,iy,iz,patch%i_e ) = initial%presl / (patch%gamma - 1.0)
-            q(ix,iy,iz,patch%i_px) = initial%vxl * initial%rhol
-            q(ix,iy,iz,patch%i_py) = initial%vyl * initial%rhol
-            q(ix,iy,iz,patch%i_pz) = initial%vzl * initial%rhol
+            q(ix,iy,iz,patch%idx%d ) = initial%rhol
+            q(ix,iy,iz,patch%idx%e ) = initial%presl / (patch%gamma - 1.0)
+            q(ix,iy,iz,patch%idx%px) = initial%vxl * initial%rhol
+            q(ix,iy,iz,patch%idx%py) = initial%vyl * initial%rhol
+            q(ix,iy,iz,patch%idx%pz) = initial%vzl * initial%rhol
           end if
         end do
         ! outflow boundary (upper x)
         do ix=mx%uo,mx%ub
           x = mx%centre_nat + patch%mesh(1)%r(ix)
           if ( x >= (mx%p + 0.5*mx%s) )then
-            q(ix,iy,iz,patch%i_d ) = q(mx%ui-1,iy,iz,patch%i_d )
-            q(ix,iy,iz,patch%i_e ) = q(mx%ui-1,iy,iz,patch%i_e )
-            q(ix,iy,iz,patch%i_px) = q(mx%ui-1,iy,iz,patch%i_px)
-            q(ix,iy,iz,patch%i_py) = q(mx%ui-1,iy,iz,patch%i_py)
-            q(ix,iy,iz,patch%i_pz) = q(mx%ui-1,iy,iz,patch%i_pz)
+            q(ix,iy,iz,patch%idx%d ) = q(mx%ui-1,iy,iz,patch%idx%d )
+            q(ix,iy,iz,patch%idx%e ) = q(mx%ui-1,iy,iz,patch%idx%e )
+            q(ix,iy,iz,patch%idx%px) = q(mx%ui-1,iy,iz,patch%idx%px)
+            q(ix,iy,iz,patch%idx%py) = q(mx%ui-1,iy,iz,patch%idx%py)
+            q(ix,iy,iz,patch%idx%pz) = q(mx%ui-1,iy,iz,patch%idx%pz)
           end if
         end do
       end do
@@ -77,19 +77,19 @@ SUBROUTINE conditions (self, initial, patch, it)
       do ix=mx%lb,mx%ub
         ! (lower y)
         do iy=my%lo,my%lb,-1
-          q(ix,iy,iz,patch%i_d ) =  q(ix,offi-iy,iz,patch%i_d )
-          q(ix,iy,iz,patch%i_e ) =  q(ix,offi-iy,iz,patch%i_e )
-          q(ix,iy,iz,patch%i_px) =  q(ix,offi-iy,iz,patch%i_px)
-          q(ix,iy,iz,patch%i_py) = -q(ix,offi-iy,iz,patch%i_py)
-          q(ix,iy,iz,patch%i_pz) =  q(ix,offi-iy,iz,patch%i_pz)
+          q(ix,iy,iz,patch%idx%d ) =  q(ix,offi-iy,iz,patch%idx%d )
+          q(ix,iy,iz,patch%idx%e ) =  q(ix,offi-iy,iz,patch%idx%e )
+          q(ix,iy,iz,patch%idx%px) =  q(ix,offi-iy,iz,patch%idx%px)
+          q(ix,iy,iz,patch%idx%py) = -q(ix,offi-iy,iz,patch%idx%py)
+          q(ix,iy,iz,patch%idx%pz) =  q(ix,offi-iy,iz,patch%idx%pz)
         end do
         ! (upper y)
         do iy=my%uo,my%ub,+1
-          q(ix,iy,iz,patch%i_d ) =  q(ix,offo-iy,iz,patch%i_d )
-          q(ix,iy,iz,patch%i_e ) =  q(ix,offo-iy,iz,patch%i_e )
-          q(ix,iy,iz,patch%i_px) =  q(ix,offo-iy,iz,patch%i_px)
-          q(ix,iy,iz,patch%i_py) = -q(ix,offo-iy,iz,patch%i_py)
-          q(ix,iy,iz,patch%i_pz) =  q(ix,offo-iy,iz,patch%i_pz)
+          q(ix,iy,iz,patch%idx%d ) =  q(ix,offo-iy,iz,patch%idx%d )
+          q(ix,iy,iz,patch%idx%e ) =  q(ix,offo-iy,iz,patch%idx%e )
+          q(ix,iy,iz,patch%idx%px) =  q(ix,offo-iy,iz,patch%idx%px)
+          q(ix,iy,iz,patch%idx%py) = -q(ix,offo-iy,iz,patch%idx%py)
+          q(ix,iy,iz,patch%idx%pz) =  q(ix,offo-iy,iz,patch%idx%pz)
         end do
       end do
     end do

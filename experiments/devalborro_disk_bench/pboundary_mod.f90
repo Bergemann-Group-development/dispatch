@@ -77,16 +77,16 @@ SUBROUTINE conditions (self, patch, cit)
           else
             cycle
           end if
-          q(i1,i2,i3,patch%i_d)  = q(i1,i2,i3,patch%i_d) &
-                                 + dt * wave_killing(q(i1,i2,i3,patch%i_d), sigma0, tau, rkill, rbnd, r)
-          q(i1,i2,i3,patch%i_e)  = q(i1,i2,i3,patch%i_e) &
-                                 + dt * wave_killing(q(i1,i2,i3,patch%i_e), p0, tau, rkill, rbnd, r)
-          q(i1,i2,i3,patch%i_px) = q(i1,i2,i3,patch%i_px) &
-                                 + dt * wave_killing(q(i1,i2,i3,patch%i_px), 0.0d0, tau, rkill, rbnd, r)
-          q(i1,i2,i3,patch%i_py) = q(i1,i2,i3,patch%i_py) &
-                                 + dt * wave_killing(q(i1,i2,i3,patch%i_py), 0.0d0, tau, rkill, rbnd, r) 
-          q(i1,i2,i3,patch%i_pz) = q(i1,i2,i3,patch%i_pz) &
-                                 + dt * wave_killing(q(i1,i2,i3,patch%i_pz), skep, tau, rkill, rbnd, r)
+          q(i1,i2,i3,patch%idx%d)  = q(i1,i2,i3,patch%idx%d) &
+                                 + dt * wave_killing(q(i1,i2,i3,patch%idx%d), sigma0, tau, rkill, rbnd, r)
+          q(i1,i2,i3,patch%idx%e)  = q(i1,i2,i3,patch%idx%e) &
+                                 + dt * wave_killing(q(i1,i2,i3,patch%idx%e), p0, tau, rkill, rbnd, r)
+          q(i1,i2,i3,patch%idx%px) = q(i1,i2,i3,patch%idx%px) &
+                                 + dt * wave_killing(q(i1,i2,i3,patch%idx%px), 0.0d0, tau, rkill, rbnd, r)
+          q(i1,i2,i3,patch%idx%py) = q(i1,i2,i3,patch%idx%py) &
+                                 + dt * wave_killing(q(i1,i2,i3,patch%idx%py), 0.0d0, tau, rkill, rbnd, r) 
+          q(i1,i2,i3,patch%idx%pz) = q(i1,i2,i3,patch%idx%pz) &
+                                 + dt * wave_killing(q(i1,i2,i3,patch%idx%pz), skep, tau, rkill, rbnd, r)
         end do
         if (m2%llc_nat < experiment_params%roffset ) then 
           ! reset ghost zones to initial values, except for s2, which is anti-symmetric.
@@ -95,12 +95,12 @@ SUBROUTINE conditions (self, patch, cit)
             vkep = sqrt(experiment_params%mstar * scaling%grav / r)
             skep = sigma0 * vkep * m1%h31c(i1) * m2%h32c(i2)
             p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0 / (patch%gamma - 1.0)
-            q(i1,i2,i3,patch%i_d)  = sigma0
-            q(i1,i2,i3,patch%i_e)  = p0
-            q(i1,i2,i3,patch%i_px) = 0.0d0
+            q(i1,i2,i3,patch%idx%d)  = sigma0
+            q(i1,i2,i3,patch%idx%e)  = p0
+            q(i1,i2,i3,patch%idx%px) = 0.0d0
             jay2 = 2*m2%lo + 1 - i2
-            q(i1,i2,i3,patch%i_py) = -q(i1,jay2,i3,patch%i_py)
-            q(i1,i2,i3,patch%i_pz) = skep
+            q(i1,i2,i3,patch%idx%py) = -q(i1,jay2,i3,patch%idx%py)
+            q(i1,i2,i3,patch%idx%pz) = skep
           end do
         end if
         if ((m2%llc_nat + m2%s) >= (experiment_params%roffset + patch%box(2))) then
@@ -109,12 +109,12 @@ SUBROUTINE conditions (self, patch, cit)
             vkep = sqrt(experiment_params%mstar * scaling%grav / r)
             skep = sigma0 * vkep * m1%h31c(i1) * m2%h32c(i2)
             p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0 / (patch%gamma - 1.0)
-            q(i1,i2,i3,patch%i_d)  = sigma0
-            q(i1,i2,i3,patch%i_e)  = p0
-            q(i1,i2,i3,patch%i_px) = 0.0d0
+            q(i1,i2,i3,patch%idx%d)  = sigma0
+            q(i1,i2,i3,patch%idx%e)  = p0
+            q(i1,i2,i3,patch%idx%px) = 0.0d0
             jay2 = 2*m2%uo - 1 - i2
-            q(i1,i2,i3,patch%i_py) = -q(i1,jay2,i3,patch%i_py)
-            q(i1,i2,i3,patch%i_pz) = skep
+            q(i1,i2,i3,patch%idx%py) = -q(i1,jay2,i3,patch%idx%py)
+            q(i1,i2,i3,patch%idx%pz) = skep
           end do
         end if
       end do

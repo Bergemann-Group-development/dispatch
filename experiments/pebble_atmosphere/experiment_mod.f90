@@ -131,7 +131,7 @@ SUBROUTINE init (self)
     print *, 'experiment_t%init: setting spherical BC bits on patch', self%id
     call self%set (bits%has_BC)
     call self%boundaries%set (bits%spherical)
-    do iv=self%i_px,self%i_pz
+    do iv=self%idx%px,self%idx%pz
       call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
     end do
   end if
@@ -141,8 +141,8 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Choose interpolation types. The smallest initial glitch (positive) is with
   !
-  ! self%unsigned(self%i_d) = .true.
-  ! self%pervolume(self%i_s) = .false.
+  ! self%unsigned(self%idx%d) = .true.
+  ! self%pervolume(self%idx%s) = .false.
   !
   ! All other combinations give a stronger negative initial glitch in p1 at
   ! mesh%li. Both types of glitches come from the different precision in the
@@ -151,11 +151,11 @@ SUBROUTINE init (self)
   !
   ! Note that the current default in stagger2/mhd_mod.f90 is
   !
-  ! self%unsigned(self%i_d) = .true.
-  ! self%pervolume(self%i_s) = .true.
+  ! self%unsigned(self%idx%d) = .true.
+  ! self%pervolume(self%idx%s) = .true.
   !----------------------------------------------------------------------------
-  self%unsigned(self%i_d) = .true.
-  self%pervolume(self%i_s) = .false.
+  self%unsigned(self%idx%d) = .true.
+  self%pervolume(self%idx%s) = .false.
   !----------------------------------------------------------------------------
   ! Export the patch ids for debugging purposes
   !----------------------------------------------------------------------------
@@ -183,15 +183,15 @@ SUBROUTINE debug (self, label, it)
       n = self%mesh(1)%gn
       print '(i4,1x,a,f6.1,1p,3(1x,3e14.6),1x,a)', &
         self%id, 'DBG:', self%time, &
-        self%mem(n-3:n-1,18,18,self%i_d ,it_l,1), &
-        self%mem(n-3:n-1,18,18,self%i_s ,it_l,1)/self%mem(n-3:n-1,18,18,self%i_d ,it_l,1), &
-        self%mem(n-3:n-1,18,18,self%i_px,it_l,1), trim(label)
+        self%mem(n-3:n-1,18,18,self%idx%d ,it_l,1), &
+        self%mem(n-3:n-1,18,18,self%idx%s ,it_l,1)/self%mem(n-3:n-1,18,18,self%idx%d ,it_l,1), &
+        self%mem(n-3:n-1,18,18,self%idx%px,it_l,1), trim(label)
     else
       print '(i4,1x,a,f6.1,1p,3(1x,3e14.6),1x,a)', &
         self%id, 'DBG:', self%time, &
-        self%mem(2:4,18,18,self%i_d ,it_l,1), &
-        self%mem(2:4,18,18,self%i_s ,it_l,1)/self%mem(2:4,18,18,self%i_d ,it_l,1), &
-        self%mem(2:4,18,18,self%i_px,it_l,1), trim(label)
+        self%mem(2:4,18,18,self%idx%d ,it_l,1), &
+        self%mem(2:4,18,18,self%idx%s ,it_l,1)/self%mem(2:4,18,18,self%idx%d ,it_l,1), &
+        self%mem(2:4,18,18,self%idx%px,it_l,1), trim(label)
     end if
   end if
 END SUBROUTINE debug
@@ -220,7 +220,7 @@ SUBROUTINE update (self)
       call self%mhd_t%update
     end if
     if (self%is_set (bits%spherical)) then
-      do iv=self%i_px,self%i_pz
+      do iv=self%idx%px,self%idx%pz
         call self%boundaries%spherical_ns (self%mem(:,:,:,iv,self%it,2), 0.0, self%mesh, iv)
       end do
     end if
@@ -243,13 +243,13 @@ SUBROUTINE update (self)
     print *, 'time, dtime', self%time, self%dtime
     print *, 'iz, pos, p_x, p_y, p_z, ee, d'
     do i = self%mesh(3)%lb, self%mesh(3)%ub
-      print *, i, r3(i), self%mem(14,14,i,self%i_px,self%it,1), self%mem(14,14,i,self%i_py,self%it,1), &
-      self%mem(14,14,i,self%i_pz,self%it,1),self%mem(14,14,i,self%i_e,self%it,1),self%mem(14,14,i,self%i_d,self%it,1)
+      print *, i, r3(i), self%mem(14,14,i,self%idx%px,self%it,1), self%mem(14,14,i,self%idx%py,self%it,1), &
+      self%mem(14,14,i,self%idx%pz,self%it,1),self%mem(14,14,i,self%idx%e,self%it,1),self%mem(14,14,i,self%idx%d,self%it,1)
     end do
-    print *, 'min T', minval((self%mem(:,:,:,self%i_e,self%it,1)/self%mem(:,:,:,self%i_d,self%it,1)*(self%gamma-1)*scaling%temp))
-    print *, 'max T', maxval((self%mem(:,:,:,self%i_e,self%it,1)/self%mem(:,:,:,self%i_d,self%it,1)*(self%gamma-1)*scaling%temp))
-    print *, 'min max d', minval(self%mem(:,:,:,self%i_d,self%it,1)), maxval (self%mem(:,:,:,self%i_d,self%it,1))
-    print *, 'min max e', minval(self%mem(:,:,:,self%i_e,self%it,1)), maxval (self%mem(:,:,:,self%i_e,self%it,1))
+    print *, 'min T', minval((self%mem(:,:,:,self%idx%e,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)*(self%gamma-1)*scaling%temp))
+    print *, 'max T', maxval((self%mem(:,:,:,self%idx%e,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)*(self%gamma-1)*scaling%temp))
+    print *, 'min max d', minval(self%mem(:,:,:,self%idx%d,self%it,1)), maxval (self%mem(:,:,:,self%idx%d,self%it,1))
+    print *, 'min max e', minval(self%mem(:,:,:,self%idx%e,self%it,1)), maxval (self%mem(:,:,:,self%idx%e,self%it,1))
    end associate
   end if
   call self%pebble_patch_t%update_pebbles
@@ -306,22 +306,22 @@ SUBROUTINE boundary_conditions (self, it, new)
        !------------------------------------------------------------------------
        ! Jagged boundary conditions
        !------------------------------------------------------------------------
-        call self%boundaries%spherical_jagged_d (self%mem(:,:,:,self%i_d,:,1), self%mesh, self%i_d, it, new)
-        d => self%mem(:,:,:,self%i_d,new,1)
+        call self%boundaries%spherical_jagged_d (self%mem(:,:,:,self%idx%d,:,1), self%mesh, self%idx%d, it, new)
+        d => self%mem(:,:,:,self%idx%d,new,1)
         s0 = (log(atmosphere%surface%pressure) - &
           log(atmosphere%surface%density)*self%gamma)/(self%gamma-1.0)
         allocate (ss(self%gn(1),self%gn(2),self%gn(3)))
         if (self%kind(1:9)=='stagger2_') then
-          ss = self%mem(:,:,:,self%i_s,new,1)/d
-          call self%boundaries%spherical_jagged_s (ss, self%mesh, self%i_s, s0)
-          self%mem(:,:,:,self%i_s,new,1) = ss*d
+          ss = self%mem(:,:,:,self%idx%s,new,1)/d
+          call self%boundaries%spherical_jagged_s (ss, self%mesh, self%idx%s, s0)
+          self%mem(:,:,:,self%idx%s,new,1) = ss*d
         else
           call self%e2ss (ss, new)
-          call self%boundaries%spherical_jagged_s (ss, self%mesh, self%i_s, s0)
+          call self%boundaries%spherical_jagged_s (ss, self%mesh, self%idx%s, s0)
           call self%ss2e (ss, new)
         end if
         deallocate (ss)
-        do iv=self%i_px,self%i_pz
+        do iv=self%idx%px,self%idx%pz
           call self%boundaries%spherical_jagged_p (self%mem(:,:,:,iv,new,1), self%mesh, iv)
         end do
       else
@@ -329,7 +329,7 @@ SUBROUTINE boundary_conditions (self, it, new)
        ! Spherical inner BCs on mass flux, which automatically makes denisty and
        ! entropy evolve consistently
        !------------------------------------------------------------------------
-        p => self%mem(:,:,:,self%i_px:self%i_pz,new,1)
+        p => self%mem(:,:,:,self%idx%px:self%idx%pz,new,1)
         call self%boundaries%spherical_p_ns (p, self%mesh, planet%position, planet%radius)
       end if
     end if
@@ -369,7 +369,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
   !-----------------------------------------------------------------------------
   ! Allocate and load values into velocity, consistent with current density
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%i_d,it,1)
+  d => self%mem(:,:,:,self%idx%d,it,1)
   allocate (u   (size(d,1),size(d,2),size(d,3),3))
   call self%p2U(u,it)
   !-----------------------------------------------------------------------------
@@ -377,7 +377,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
   !-----------------------------------------------------------------------------
   call self%check_density ('before density_BC')
   call self%density_boundary_condition (it)
-  !call self%boundaries%log_extrapolate (d, self%i_d)
+  !call self%boundaries%log_extrapolate (d, self%idx%d)
   call self%check_density ('after density_BC')
   !-----------------------------------------------------------------------------
   ! Velocity boundary conditions
@@ -389,12 +389,12 @@ SUBROUTINE edge_boundary_conditions (self, it)
     ! where it it parallel to the boundary
     !---------------------------------------------------------------------------
     if (iv==2) then
-      call self%boundaries%extrapolate (uu, self%i_px+iv-1)
+      call self%boundaries%extrapolate (uu, self%idx%px+iv-1)
     !---------------------------------------------------------------------------
     ! Use vanishing perpendicular derivative in other cases
     !---------------------------------------------------------------------------
     else
-      call self%boundaries%symmetric (uu, self%i_px+iv-1)
+      call self%boundaries%symmetric (uu, self%idx%px+iv-1)
     end if
   end do
   call self%U2p(u,it)
@@ -404,7 +404,7 @@ SUBROUTINE edge_boundary_conditions (self, it)
   !-----------------------------------------------------------------------------
   allocate (e_th(size(d,1),size(d,2),size(d,3)  ))
   call self%e2E_th(e_th, it)
-  call self%boundaries%constant (e_th, self%i_e, atmosphere%external%energy)
+  call self%boundaries%constant (e_th, self%idx%e, atmosphere%external%energy)
   call self%E_th2e(e_th, it)
   deallocate (e_th)
 
@@ -432,7 +432,7 @@ SUBROUTINE density_boundary_condition (self, it)
   call trace%begin ('experiment_t%density_boundary_conditions')
   m => self%mesh
   d => self%mem(:,:,:,1,it,1)
-  if (self%nw>1) dd => self%mem(:,:,:,self%i_d,it,2)
+  if (self%nw>1) dd => self%mem(:,:,:,self%idx%d,it,2)
   associate (r1=>m(1)%r, r3=>m(3)%r)
   tt = atmosphere%external%temperature
   if(self%boundaries%is_set(bits%xl)) then
@@ -499,8 +499,8 @@ contains
       do iy=ly,uy
         do ix=lx,ux
           x = m(1)%p + r1(ix) - planet%position(1)
-          d0 = self%mem(ix0,iy,iz,self%i_d,it,1)
-          self%mem(ix,iy,iz,self%i_d,it,1) = d0*exp(-c2*(x**2-x0**2))
+          d0 = self%mem(ix0,iy,iz,self%idx%d,it,1)
+          self%mem(ix,iy,iz,self%idx%d,it,1) = d0*exp(-c2*(x**2-x0**2))
         end do
       end do
     end do
@@ -509,7 +509,7 @@ contains
       do iz=lz,uz
         do iy=ly,uy
           do ix=lx,ux
-            self%mem(ix,iy,iz,self%i_d,it,2) = 0.0
+            self%mem(ix,iy,iz,self%idx%d,it,2) = 0.0
           end do
         end do
       end do
@@ -521,7 +521,7 @@ contains
     do iz=lz,uz
       do iy=ly,uy
         do ix=lx,ux
-          self%mem(ix,iy,iz,self%i_d,it,1) = self%mem(ix,iy0,iz,self%i_d,it,1)
+          self%mem(ix,iy,iz,self%idx%d,it,1) = self%mem(ix,iy0,iz,self%idx%d,it,1)
         end do
       end do
     end do
@@ -529,7 +529,7 @@ contains
       do iz=lz,uz
         do iy=ly,uy
           do ix=lx,ux
-            self%mem(ix,iy,iz,self%i_d,it,2) = 0.0
+            self%mem(ix,iy,iz,self%idx%d,it,2) = 0.0
           end do
         end do
       end do
@@ -544,14 +544,14 @@ contains
       z = m(3)%p + r3(iz) - planet%position(3)
       do iy=ly,uy
         do ix=lx,ux
-          d0 = self%mem(ix,iy,iz0,self%i_d,it,1)
+          d0 = self%mem(ix,iy,iz0,self%idx%d,it,1)
           d1 = d0*exp(-c2*(z**2-z0**2))
           if (self%id==io%id_debug.and.iy==uy/2.and.iz==uz) &
             print '(a,i4,1p,8e14.6)', &
             'BCd: ix,d0,p0/do,exp,do,d =',ix, d0, tt, (z-z0), &
             exp(-c2*(z**2-z0**2)), &
-            self%mem(ix,iy,iz,self%i_d,it,1), d1
-          self%mem(ix,iy,iz,self%i_d,it,1) = d1
+            self%mem(ix,iy,iz,self%idx%d,it,1), d1
+          self%mem(ix,iy,iz,self%idx%d,it,1) = d1
         end do
       end do
     end do
@@ -560,7 +560,7 @@ contains
       do iz=lz,uz
         do iy=ly,uy
           do ix=lx,ux
-            self%mem(ix,iy,iz,self%i_d,it,2) = 0.0
+            self%mem(ix,iy,iz,self%idx%d,it,2) = 0.0
           end do
         end do
      end do
@@ -612,11 +612,11 @@ SUBROUTINE apply_sponge_boundaries (self)
           x = m1%p + m1%r(i)
           d = d0 * exp(-(planet%omega(3)**2 * 0.5 * (z**2 + 2.0 * planet%trap * (x - planet%position(1))**2) / T0))
           p = p0*(d/d0)
-          if (iv == self%i_d) then
+          if (iv == self%idx%d) then
             asymptote = d
-          else if (iv == self%i_py) then
+          else if (iv == self%idx%py) then
             asymptote = -d * ((1.5+planet%trap)*planet%omega(3)*x - planet%v_head)
-          else if (iv == self%i_e) then
+          else if (iv == self%idx%e) then
             if (self%kind(1:7)=='ramses_') then
               py0 = -d * ((1.5+planet%trap)*planet%omega(3)*x - planet%v_head)
               asymptote = p / (self%gamma - 1.0) + 0.5 * d * py0**2
@@ -627,9 +627,9 @@ SUBROUTINE apply_sponge_boundaries (self)
             else if (self%kind(1:6)=='zeus3d') then
               asymptote = p / (self%gamma - 1.0)
             end if
-          else if (iv == self%i_px) then
+          else if (iv == self%idx%px) then
             asymptote = px0
-          else if (iv == self%i_pz) then
+          else if (iv == self%idx%pz) then
             asymptote = pz0
           end if
           !
@@ -643,7 +643,7 @@ SUBROUTINE apply_sponge_boundaries (self)
           else if (self%boundaries%is_set(bits%xl) .and. (i <= m1%lo)) then
             ! reset ghost cell values; in the case of the x-velocity, make it anti-symmetric
             ! lower x-boundary
-            if (iv == self%i_px) then
+            if (iv == self%idx%px) then
               eye = 2*m1%lo - i + 1
               mem(i,j,k,iv) = -mem(eye,j,k,iv)
             else
@@ -651,7 +651,7 @@ SUBROUTINE apply_sponge_boundaries (self)
             end if
           else if (self%boundaries%is_set(bits%xu) .and. (i >= m1%uo)) then
             ! upper x-boundary
-            if (iv == self%i_px) then
+            if (iv == self%idx%px) then
               eye = 2*m1%uo - i - 1
               mem(i,j,k,iv) = -mem(eye,j,k,iv)
             else

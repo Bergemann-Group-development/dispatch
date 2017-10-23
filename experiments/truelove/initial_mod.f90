@@ -86,11 +86,11 @@ END SUBROUTINE init
 !>    c3           matching constant for ambient potential
 !>
 !> =============================================================================
-SUBROUTINE condition (self, m, f)
+SUBROUTINE condition (self, m, f, idx)
   class(initial_t):: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: f
   class(mesh_t), pointer:: m(:), m1, m2, m3
-  type(index_t):: id
+  type(index_t):: idx
   integer:: i, j, k
   integer:: pertm=2
   real(8):: rho0=1.0, r0=0.25, truealpha=0.25, truebeta=0.0, perta=0.0, chipres=1.0 &
@@ -173,34 +173,34 @@ SUBROUTINE condition (self, m, f)
           phi0            = datan2 ( y - y0, x - x0 )
           q1              = 1.0 + perta * cos ( dble ( pertm ) * phi0 )
           nrg             = pcloud / (gamma - 1.0)
-          f(i,j,k,id%d)   = q1 * rho0
-          f(i,j,k,id%phi) = c1 + 2.0 * pi * cgs%grav * rho0 * rzsq / 3.0
-          f(i,j,k,id%px ) =-omega * (y - y0) * f(i,j,k,id%d)
-          f(i,j,k,id%py)  = omega * (x - x0) * f(i,j,k,id%d)
-          f(i,j,k,id%pz)  = 0.0
+          f(i,j,k,idx%d)   = q1 * rho0
+          f(i,j,k,idx%phi) = c1 + 2.0 * pi * cgs%grav * rho0 * rzsq / 3.0
+          f(i,j,k,idx%px ) =-omega * (y - y0) * f(i,j,k,idx%d)
+          f(i,j,k,idx%py)  = omega * (x - x0) * f(i,j,k,idx%d)
+          f(i,j,k,idx%pz)  = 0.0
         else
           nrg             = pamb / (gamma - 1.0)
-          f(i,j,k,id%d)   = rhoamb
-          f(i,j,k,id%phi) = c2 - c3 / rz + 2.0 * cgs%grav * pi * rhoamb * rzsq / 3.0
-          f(i,j,k,id%px) = 0.0
-          f(i,j,k,id%py) = 0.0
-          f(i,j,k,id%pz) = 0.0
+          f(i,j,k,idx%d)   = rhoamb
+          f(i,j,k,idx%phi) = c2 - c3 / rz + 2.0 * cgs%grav * pi * rhoamb * rzsq / 3.0
+          f(i,j,k,idx%px) = 0.0
+          f(i,j,k,idx%py) = 0.0
+          f(i,j,k,idx%pz) = 0.0
         endif
         if (trim(self%solver) == 'stagger2_mhd_patch') then
-          f(i,j,k,id%s) = (nrg * (gamma - 1.0) - log(f(i,j,k,id%d)) * gamma) &
-                           * f(i,j,k,id%d) / (gamma - 1.0)
+          f(i,j,k,idx%s) = (nrg * (gamma - 1.0) - log(f(i,j,k,idx%d)) * gamma) &
+                         * f(i,j,k,idx%d) / (gamma - 1.0)
         else if (trim(self%solver) == 'stagger2e_mhd_patch') then
-          f(i,j,k,id%e) = nrg
+          f(i,j,k,idx%e) = nrg
         else if (trim(self%solver) == 'ramses_mhd_patch') then
-          f(i,j,k,id%e) = nrg + 0.5 * f(i,j,k,id%py)**2 / f(i,j,k,id%d)
+          f(i,j,k,idx%e) = nrg + 0.5 * f(i,j,k,idx%py)**2 / f(i,j,k,idx%d)
         else if (trim(self%solver) == 'zeus_mhd_patch') then
-          f(i,j,k,id%e) = nrg
+          f(i,j,k,idx%e) = nrg
         end if
         ! this experiment is hydro and gravity only.
-        if (size(f,4) > id%bx) then
-          f(i,j,k,id%bx) = 0.0
-          f(i,j,k,id%by) = 0.0
-          f(i,j,k,id%bz) = 0.0
+        if (size(f,4) > idx%bx) then
+          f(i,j,k,idx%bx) = 0.0
+          f(i,j,k,idx%by) = 0.0
+          f(i,j,k,idx%bz) = 0.0
         end if
       end do
     end do

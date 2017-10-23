@@ -55,14 +55,14 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   call self%patch_t%init
-  self%i_d  = idx%d
-  self%i_px = idx%px
-  self%i_py = idx%py
-  self%i_pz = idx%pz
-  self%i_e  = idx%e
-  self%i_bx = idx%bx
-  self%i_by = idx%by
-  self%i_bz = idx%bz
+  self%idx%d  = idx%d
+  self%idx%px = idx%px
+  self%idx%py = idx%py
+  self%idx%pz = idx%pz
+  self%idx%e  = idx%e
+  self%idx%bx = idx%bx
+  self%idx%by = idx%by
+  self%idx%bz = idx%bz
   !$omp critical (mhd_input_cr)
   if (first_time) then
     first_time = .false.
@@ -106,20 +106,20 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
   st%m => self%mesh
-  self%d    => self%mem(:,:,:,self%i_d,self%it,1)
-  self%dddt => self%mem(:,:,:,self%i_d,self%it,2)
-  self%e    => self%mem(:,:,:,self%i_e,self%it,1)
-  self%dedt => self%mem(:,:,:,self%i_e,self%it,2)
-  self%p    => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
-  self%dpdt => self%mem(:,:,:,self%i_px:self%i_pz,self%it,2)
+  self%d    => self%mem(:,:,:,self%idx%d,self%it,1)
+  self%dddt => self%mem(:,:,:,self%idx%d,self%it,2)
+  self%e    => self%mem(:,:,:,self%idx%e,self%it,1)
+  self%dedt => self%mem(:,:,:,self%idx%e,self%it,2)
+  self%p    => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  self%dpdt => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,2)
   d=>self%d; dddt=>self%dddt
   e=>self%e; dedt=>self%dedt
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
-    self%B    => self%mem(:,:,:,self%i_bx:self%i_bz,self%it,1)
-    self%dBdt => self%mem(:,:,:,self%i_bx:self%i_bz,self%it,2)
+    self%B    => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
+    self%dBdt => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,2)
     B=>self%B; dBdt=>self%dBdt
     Bx   =>   B(:,:,:,1); By   =>   B(:,:,:,2); Bz   =>   B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
@@ -388,8 +388,8 @@ SUBROUTINE gas_pressure (self, pg)
   real, dimension(:,:,:), pointer:: d,e,pg
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_mod::gas_pressure',2)
-  d => self%mem(:,:,:,self%i_d,self%it,1)
-  e => self%mem(:,:,:,self%i_e,self%it,1)
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  e => self%mem(:,:,:,self%idx%e,self%it,1)
   call eos%lookup(dim=shape(pg),d=d,ee=e,pg=pg)
   
   nullify(d,e)
@@ -401,8 +401,8 @@ FUNCTION cell_gas_pressure(self, c) RESULT (pg)
   integer :: c(3)
   real :: pg
   !---------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3),self%i_d,self%it,1), &
-             e => self%mem(c(1),c(2),c(3),self%i_e,self%it,1))
+  associate (d => self%mem(c(1),c(2),c(3),self%idx%d,self%it,1), &
+             e => self%mem(c(1),c(2),c(3),self%idx%e,self%it,1))
   if (self%gamma==1.0) then
     pg = self%d(c(1),c(2),c(3))*self%csound**2
   else
@@ -419,8 +419,8 @@ SUBROUTINE gas_temperature (self, tmp)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: tmp, d, e
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%i_d,self%it,1)
-  e => self%mem(:,:,:,self%i_e,self%it,1)
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  e => self%mem(:,:,:,self%idx%e,self%it,1)
   call eos%lookup(dim=shape(tmp),d=d,ee=e,tt=tmp)
   nullify(d,e)
 END SUBROUTINE gas_temperature
@@ -432,7 +432,7 @@ FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
   integer :: c(3)
   real :: tmp(c(1),c(2),c(3))
   !-----------------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3),self%i_d,self%it,1))
+  associate (d => self%mem(c(1),c(2),c(3),self%idx%d,self%it,1))
   tmp = cell_gas_pressure(self,c)/self%d(c(1),c(2),c(3))
   end associate
 END FUNCTION cell_gas_temperature

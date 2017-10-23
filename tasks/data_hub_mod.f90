@@ -448,7 +448,7 @@ SUBROUTINE dnload_from_higher (self, only)
       iv1 = 1
       iv2 = target%nv
     end if
-    d = self%source%i_d
+    d = self%source%idx%d
     do iv = iv1, iv2
       tl = self%t_l(:,iv); tu = self%t_u(:,iv)
       do k = tl(3), tu(3)
@@ -622,7 +622,7 @@ SUBROUTINE dnload_from_lower (self, only)
   call trace%begin ('data_hub_t%dnload_lower',itimer=itimer)
   source => self%source
   target => self%target
-  d = source%i_d
+  d = source%idx%d
   mem => self%source%mem(:,:,:,:,:,1)
   if (present(only)) then
     iv1 = only
@@ -813,7 +813,7 @@ SUBROUTINE check_in_target (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   ! --------------------------------------------------------------------
   source => self%source
   target => self%target
-  d = source%i_d
+  d = source%idx%d
   inside = .true.
   call target%index_space2(source,pos,iv, cl, p)
   inside = all(cl>=target%mesh%li .and. cl<=target%mesh%ui)
@@ -885,7 +885,7 @@ SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   ! --------------------------------------------------------------------
   source => self%source
   target => self%target
-  d = source%i_d
+  d = source%idx%d
   nbor => source%link%nbor
   do while((associated(nbor)).and..not.found)
     if ((nbor%task%id /= source%id).and.(nbor%task%id /= target%id)) then ! source is already checked, target should not be there

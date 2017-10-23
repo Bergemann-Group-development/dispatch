@@ -100,19 +100,19 @@ SUBROUTINE init (self)
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
   call self%gpatch_t%init
-  self%i_d  = idx%d
-  self%i_e  = idx%e
-  self%i_s  = idx%s
-  self%i_px = idx%px
-  self%i_py = idx%py
-  self%i_pz = idx%pz
-  self%i_bx = idx%bx
-  self%i_by = idx%by
-  self%i_bz = idx%bz
+  self%idx%d  = idx%d
+  self%idx%e  = idx%e
+  self%idx%s  = idx%s
+  self%idx%px = idx%px
+  self%idx%py = idx%py
+  self%idx%pz = idx%pz
+  self%idx%bx = idx%bx
+  self%idx%by = idx%by
+  self%idx%bz = idx%bz
   self%type = 'mhd_t'
   do i=1,3
-    self%mesh(i)%h(self%i_px+i-1) = -0.5
-    if (self%mhd) self%mesh(i)%h(self%i_bx+i-1) = -0.5
+    self%mesh(i)%h(self%idx%px+i-1) = -0.5
+    if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
   if (io%verbose>1 .and. self%track) then
     do i=1,3
@@ -364,7 +364,7 @@ SUBROUTINE pde (self)
   if (associated(self%force%selected)) &
    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
   if (self%selfgravity) then
-    phi => self%mem(:,:,:,self%i_phi,self%it,1)
+    phi => self%mem(:,:,:,self%idx%phi,self%it,1)
     dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)
     dpdty = dpdty - dd(:,:,:,2)*ddydn(ds,phi)
     dpdtz = dpdtz - dd(:,:,:,3)*ddzdn(ds,phi)
@@ -454,8 +454,8 @@ SUBROUTINE update (self)
   ! better offer.
   !---------------------------------------------------------------------------
   if (self%selfgravity) then
-  call self%dnload (only=self%i_phi)
-  call self%gravity (error, only=self%i_phi)
+  call self%dnload (only=self%idx%phi)
+  call self%gravity (error, only=self%idx%phi)
   end if
   call trace%end (itimer)
 END SUBROUTINE update
@@ -491,8 +491,8 @@ FUNCTION gas_pressure (self) RESULT (pg)
   real, dimension(:,:,:), pointer:: d, e
   !-----------------------------------------------------------------------------
   if (trim(self%eos)=='ideal') then
-    d => self%mem(:,:,:,self%i_d,self%it,1)
-    e => self%mem(:,:,:,self%i_e,self%it,1)
+    d => self%mem(:,:,:,self%idx%d,self%it,1)
+    e => self%mem(:,:,:,self%idx%e,self%it,1)
     if (self%gamma==1.0) then
       pg = d*self%csound**2
     else

@@ -85,20 +85,20 @@ SUBROUTINE init(self)
   !-----------------------------------------------------------------------------
   self%gamma = gamma
   self%nu = nu
-  self%i_d  = idx%d
-  self%i_px = idx%px
-  self%i_py = idx%py
-  self%i_pz = idx%pz
-  self%i_e  = idx%e
-  self%i_bx = idx%bz
-  self%i_by = idx%by
-  self%i_bz = idx%bz
+  self%idx%d  = idx%d
+  self%idx%px = idx%px
+  self%idx%py = idx%py
+  self%idx%pz = idx%pz
+  self%idx%e  = idx%e
+  self%idx%bx = idx%bz
+  self%idx%by = idx%by
+  self%idx%bz = idx%bz
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Sedov blast or advection
   !-----------------------------------------------------------------------------
-  self%d => self%mem(:,:,:,self%i_d ,self%it,1)
-  self%e => self%mem(:,:,:,self%i_s ,self%it,1)
-  self%p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
+  self%d => self%mem(:,:,:,self%idx%d ,self%it,1)
+  self%e => self%mem(:,:,:,self%idx%s ,self%it,1)
+  self%p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   !-----------------------------------------------------------------------------
   call trace%end
 END SUBROUTINE init
@@ -149,12 +149,12 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Memory mapping (changes with time steps)
   !-----------------------------------------------------------------------------
-  self%d             => self%mem(:,:,:,self%i_d ,self%it,1)
-  self%e             => self%mem(:,:,:,self%i_e ,self%it,1)
-  self%dd_dt         => self%mem(:,:,:,self%i_d ,self%it,2)
-  self%dedt          => self%mem(:,:,:,self%i_e ,self%it,2)
-  self%p             => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
-  self%dp_dt         => self%mem(:,:,:,self%i_px:self%i_pz,self%it,2)
+  self%d             => self%mem(:,:,:,self%idx%d ,self%it,1)
+  self%e             => self%mem(:,:,:,self%idx%e ,self%it,1)
+  self%dd_dt         => self%mem(:,:,:,self%idx%d ,self%it,2)
+  self%dedt          => self%mem(:,:,:,self%idx%e ,self%it,2)
+  self%p             => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  self%dp_dt         => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,2)
   !-----------------------------------------------------------------------------
   ! Mesh pointers in operators
   !-----------------------------------------------------------------------------

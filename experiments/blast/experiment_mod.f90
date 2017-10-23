@@ -117,27 +117,27 @@ SUBROUTINE initial_conditions (patch)
       do i1=m1%lb,m1%ub
         x = m1%centre_nat + patch%mesh(1)%r(i1)
 
-        f(i1,i2,i3,patch%i_d)  = d0(1)
-        f(i1,i2,i3,patch%i_px) = d0(1) * vx0(1)
-        f(i1,i2,i3,patch%i_py) = d0(1) * vy0(1)
-        f(i1,i2,i3,patch%i_pz) = d0(1) * vz0(1)
-        f(i1,i2,i3,patch%i_bx) = bx0(1)
-        f(i1,i2,i3,patch%i_by) = by0(1)
-        f(i1,i2,i3,patch%i_bz) = bz0(1)
+        f(i1,i2,i3,patch%idx%d)  = d0(1)
+        f(i1,i2,i3,patch%idx%px) = d0(1) * vx0(1)
+        f(i1,i2,i3,patch%idx%py) = d0(1) * vy0(1)
+        f(i1,i2,i3,patch%idx%pz) = d0(1) * vz0(1)
+        f(i1,i2,i3,patch%idx%bx) = bx0(1)
+        f(i1,i2,i3,patch%idx%by) = by0(1)
+        f(i1,i2,i3,patch%idx%bz) = bz0(1)
 
         if (trim(patch%kind) == 'stagger2_mhd_patch') then
-          f(i1,i2,i3,patch%i_s)  = (log(p0(1)) - log(d0(1)) * patch%gamma) &
+          f(i1,i2,i3,patch%idx%s)  = (log(p0(1)) - log(d0(1)) * patch%gamma) &
                             * d0(1) / (patch%gamma - 1.0)
         else if (trim(patch%kind) == 'stagger2e_mhd_patch') then
-          f(i1,i2,i3,patch%i_e) = p0(1)
+          f(i1,i2,i3,patch%idx%e) = p0(1)
         else if (trim(patch%kind) == 'ramses_mhd_patch') then
-          f(i1,i2,i3,patch%i_e) = p0(1) + 0.5 * d0(1) * speedsq + 0.5 * bsq
+          f(i1,i2,i3,patch%idx%e) = p0(1) + 0.5 * d0(1) * speedsq + 0.5 * bsq
         else if (trim(patch%kind) == 'zeus_mhd_patch') then
-          f(i1,i2,i3,patch%i_e) = p0(1)
+          f(i1,i2,i3,patch%idx%e) = p0(1)
 
           ! the ZEUS module stores the angular momentum rather than the linear momentum
-          f(i1,i2,i3,patch%i_py) = f(i1,i2,i3,patch%i_py) * m1%h2c(i1)
-          f(i1,i2,i3,patch%i_pz) = f(i1,i2,i3,patch%i_pz) * m1%h31c(i1) * m2%h32c(i2)
+          f(i1,i2,i3,patch%idx%py) = f(i1,i2,i3,patch%idx%py) * m1%h2c(i1)
+          f(i1,i2,i3,patch%idx%pz) = f(i1,i2,i3,patch%idx%pz) * m1%h31c(i1) * m2%h32c(i2)
         end if
       end do
     end do
@@ -154,27 +154,27 @@ SUBROUTINE initial_conditions (patch)
         x = m1%centre_nat + patch%mesh(1)%r(i1)
         r2 = (x - centre(1))**2 + (y - centre(2))**2 + (z - centre(3))**2
         if (r2 .le. real(r0,kind=8)**2) then
-          f(i1,i2,i3,patch%i_d) = d0(2)
-          f(i1,i2,i3,patch%i_px) = d0(2) * vx0(2)
-          f(i1,i2,i3,patch%i_py) = d0(2) * vy0(2)
-          f(i1,i2,i3,patch%i_pz) = d0(2) * vz0(2)
-          f(i1,i2,i3,patch%i_bx) = bx0(2)
-          f(i1,i2,i3,patch%i_by) = by0(2)
-          f(i1,i2,i3,patch%i_bz) = bz0(2)
+          f(i1,i2,i3,patch%idx%d) = d0(2)
+          f(i1,i2,i3,patch%idx%px) = d0(2) * vx0(2)
+          f(i1,i2,i3,patch%idx%py) = d0(2) * vy0(2)
+          f(i1,i2,i3,patch%idx%pz) = d0(2) * vz0(2)
+          f(i1,i2,i3,patch%idx%bx) = bx0(2)
+          f(i1,i2,i3,patch%idx%by) = by0(2)
+          f(i1,i2,i3,patch%idx%bz) = bz0(2)
 
           if (trim(patch%kind) == 'stagger2_mhd_patch') then
-            f(i1,i2,i3,patch%i_s)  = (log(p0(2)) - log(d0(2)) * patch%gamma) &
+            f(i1,i2,i3,patch%idx%s)  = (log(p0(2)) - log(d0(2)) * patch%gamma) &
                               * d0(2) / (patch%gamma - 1.0)
           else if (trim(patch%kind) == 'stagger2e_mhd_patch') then
-            f(i1,i2,i3,patch%i_e) = p0(2)
+            f(i1,i2,i3,patch%idx%e) = p0(2)
           else if (trim(patch%kind) == 'ramses_mhd_patch') then
-            f(i1,i2,i3,patch%i_e) = p0(2) + 0.5 * d0(2) * speedsq + 0.5 * bsq
+            f(i1,i2,i3,patch%idx%e) = p0(2) + 0.5 * d0(2) * speedsq + 0.5 * bsq
           else if (trim(patch%kind) == 'zeus_mhd_patch') then
-            f(i1,i2,i3,patch%i_e) = p0(2)
+            f(i1,i2,i3,patch%idx%e) = p0(2)
 
             ! the ZEUS module stores the angular momentum rather than the linear momentum
-            f(i1,i2,i3,patch%i_py) = f(i1,i2,i3,patch%i_py) * m1%h2c(i1)
-            f(i1,i2,i3,patch%i_pz) = f(i1,i2,i3,patch%i_pz) * m1%h31c(i1) * m2%h32c(i2)
+            f(i1,i2,i3,patch%idx%py) = f(i1,i2,i3,patch%idx%py) * m1%h2c(i1)
+            f(i1,i2,i3,patch%idx%pz) = f(i1,i2,i3,patch%idx%pz) * m1%h31c(i1) * m2%h32c(i2)
           end if
         end if
       end do

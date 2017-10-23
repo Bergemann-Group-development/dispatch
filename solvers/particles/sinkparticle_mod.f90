@@ -57,9 +57,9 @@ SUBROUTINE dnload (self, only)
   namelist /sinkparticle_params/ accretion_radius, exclusion_radius, jeans_resolution
   !-----------------------------------------------------------------------------
   if (self%patch%use_data_hub) then
-    call data_hub%dnload (only=self%patch%i_d)
+    call data_hub%dnload (only=self%patch%idx%d)
   else
-    call download%download_link (self%patch%link, only=self%patch%i_d)
+    call download%download_link (self%patch%link, only=self%patch%idx%d)
   end if
 END SUBROUTINE dnload
 

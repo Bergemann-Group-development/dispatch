@@ -35,7 +35,6 @@ MODULE mhd_mod
     type(vector_t):: s, B
     logical:: mhd = .true.
     type(zeus_boundaries_t):: btypes
-    integer:: i_et=0
     type(force_t):: force
     integer:: ix1x2x3
   contains
@@ -322,16 +321,16 @@ SUBROUTINE init_zeus (self)
     self%mesh(i)%h(4+i) = -0.5 ! momentum/velocity components
     self%mesh(i)%h(7+i) = -0.5 ! mag. field components
   end do
-  self%i_d   = idx%d
-  self%i_e   = idx%e
-  self%i_et  = idx%et
-  self%i_phi = idx%phi
-  self%i_px  = idx%px
-  self%i_py  = idx%py
-  self%i_pz  = idx%pz
-  self%i_bx  = idx%bx
-  self%i_by  = idx%by
-  self%i_bz  = idx%bz
+  self%idx%d   = idx%d
+  self%idx%e   = idx%e
+  self%idx%et  = idx%et
+  self%idx%phi = idx%phi
+  self%idx%px  = idx%px
+  self%idx%py  = idx%py
+  self%idx%pz  = idx%pz
+  self%idx%bx  = idx%bx
+  self%idx%by  = idx%by
+  self%idx%bz  = idx%bz
 
   self%dt(self%it) = dtinit
   self%t(self%it) = 0.0d0
@@ -431,8 +430,8 @@ SUBROUTINE CopyToZeus (self)
   pvelocity(3) = self%velocity(3) + self%grid_vel(3)
   
   if (associated(self%force%selected)) then
-    d => qz(:,:,:,self%i_d)
-    p => qz(:,:,:,self%i_px:self%i_pz)
+    d => qz(:,:,:,self%idx%d)
+    p => qz(:,:,:,self%idx%px:self%idx%pz)
     allocate (force(self%gn(1),self%gn(2),self%gn(3),3))
     force = self%force%selected(self%time, d, p, Ux, Uy, Uz, self%mesh)
   else
@@ -522,8 +521,8 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   !.............................................................................
   call trace_begin('mhd_t%MapVectors')
 
-  sidxs = [self%i_px, self%i_py, self%i_pz]
-  Bidxs = [self%i_bx, self%i_by, self%i_bz]
+  sidxs = [self%idx%px, self%idx%py, self%idx%pz]
+  Bidxs = [self%idx%bx, self%idx%by, self%idx%bz]
   select case (self%mesh_type)
   case (1) ! source: Cartesian
     sx = self%mesh(1)%r(jj(1)) + self%mesh(1)%centre_nat

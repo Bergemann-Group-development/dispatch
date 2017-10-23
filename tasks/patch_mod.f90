@@ -21,6 +21,7 @@ MODULE patch_mod
   USE direct_output_mod
   USE buffered_output_mod
   USE boundaries_mod
+  USE index_mod
   implicit none
   private
   integer, parameter:: ndim = 3
@@ -51,10 +52,10 @@ MODULE patch_mod
     character(len=32):: eos='ideal'
     character(len=32):: opacity='none'
     integer:: file_offset(4)
+    type(index_t):: idx
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
-    integer:: i_d=1, i_s=2, i_e=2, i_px=3, i_py=4, i_pz=5, i_bx=6, i_by=7, i_bz=8, i_tt=9, i_phi=10
     real:: grav                         ! gravitational consant (code units)
     integer:: n(3)=0, ng(3)=2          ! convenient defaults
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
@@ -1270,7 +1271,7 @@ SUBROUTINE output_legacy (self, experiment_name)
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
           trim(filename),iv,it1,jo,minval(buf),maxval(buf),pt
       write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
-      if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
+      if (io%verbose>1 .and. iv==self%idx%d) print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
     end do
   end do
@@ -1731,12 +1732,12 @@ SUBROUTINE check_nan (self, label, always)
   if (io%verbose>1) then
     if (present(label)) then
       print *, self%id, trim(label)//', min(d), max(d):', &
-        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
-        maxval(self%mem(:,:,:,self%i_d,self%it,1))
+        minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%idx%d,self%it,1))
     else
       print *, self%id, 'min(d), max(d):', &
-        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
-        maxval(self%mem(:,:,:,self%i_d,self%it,1))
+        minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%idx%d,self%it,1))
     end if
   end if
   nan = .false.
@@ -1763,12 +1764,12 @@ SUBROUTINE check_nan (self, label, always)
   if (nan) then
     if (present(label)) then
       print *, self%id, trim(label)//' ERROR NaN, min(d), max(d):', &
-        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
-        maxval(self%mem(:,:,:,self%i_d,self%it,1)), ii
+        minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%idx%d,self%it,1)), ii
     else
       print *, self%id, ' ERROR NaN, min(d), max(d):', &
-        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
-        maxval(self%mem(:,:,:,self%i_d,self%it,1)), ii
+        minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%idx%d,self%it,1)), ii
     end if
     print *, self%unsigned
     error stop 'NaN'
@@ -1809,9 +1810,9 @@ SUBROUTINE check_density (self, label)
     do ix=1,self%gn(1)
       ii = [ix,iy,iz]
       inside = all([ix,iy,iz]>self%mesh%lo.and.ii<self%mesh%uo)
-      posd = merge (posd, max(posd,self%mem(ix,iy,iz,self%i_d,self%it,1)), inside)
-      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,self%i_d,self%it,1)<=0.0)
-      nins = nins + merge(1,0,self%mem(ix,iy,iz,self%i_d,self%it,1)<=0.0 .and. inside)
+      posd = merge (posd, max(posd,self%mem(ix,iy,iz,self%idx%d,self%it,1)), inside)
+      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,self%idx%d,self%it,1)<=0.0)
+      nins = nins + merge(1,0,self%mem(ix,iy,iz,self%idx%d,self%it,1)<=0.0 .and. inside)
       !-------------------------------------------------------------------------
       ! Pick the sampled positive value if a negative one is found in the
       ! guard zone
@@ -2417,7 +2418,7 @@ SUBROUTINE interpolate_specific (self, target, ii, iv, jt, pt)
   !-----------------------------------------------------------------------------
   ! Pick up 16 values for tri-linear interpolation, divided by density
   !-----------------------------------------------------------------------------
-  associate (id=>self%i_d)
+  associate (id=>self%idx%d)
   tmp(:,:,:,:) = self%mem(j(1):j(1)+1,j(2):j(2)+1,j(3):j(3)+1,iv,jt(1:2),1) &
                / self%mem(j(1):j(1)+1,j(2):j(2)+1,j(3):j(3)+1,id,jt(1:2),1)
   target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &

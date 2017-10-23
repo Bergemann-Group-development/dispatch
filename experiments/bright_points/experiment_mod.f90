@@ -140,12 +140,12 @@ SUBROUTINE boundary_conditions (self)
   call trace_begin('experiment_t%boundary_conditions')
   associate (lb=>self%mesh(1)%lb, lo=>self%mesh(1)%lo, &
              uo=>self%mesh(1)%uo, ub=>self%mesh(1)%ub)
-  d  => self%mem(:,:,:,self%i_d ,self%it,1)
-  e  => self%mem(:,:,:,self%i_e ,self%it,1)
-  px => self%mem(:,:,:,self%i_px,self%it,1)
-  bx => self%mem(:,:,:,self%i_bx,self%it,1)
-  by => self%mem(:,:,:,self%i_by,self%it,1)
-  bz => self%mem(:,:,:,self%i_bz,self%it,1)
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
+  by => self%mem(:,:,:,self%idx%by,self%it,1)
+  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
   m  => self%mesh
   if (self%lower_boundary) then
     ! -- impose lower BCs here ---

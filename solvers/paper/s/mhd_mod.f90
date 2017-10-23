@@ -102,15 +102,15 @@ SUBROUTINE init (self)
     self%kind = 'stagger2_hd_patch'
   end if
   call self%gpatch_t%init
-  self%i_d  = idx%d
-  self%i_e  = idx%e
-  self%i_s  = idx%s
-  self%i_px = idx%px
-  self%i_py = idx%py
-  self%i_pz = idx%pz
-  self%i_bx = idx%bx
-  self%i_by = idx%by
-  self%i_bz = idx%bz
+  self%idx%d  = idx%d
+  self%idx%e  = idx%e
+  self%idx%s  = idx%s
+  self%idx%px = idx%px
+  self%idx%py = idx%py
+  self%idx%pz = idx%pz
+  self%idx%bx = idx%bx
+  self%idx%by = idx%by
+  self%idx%bz = idx%bz
   self%type = 'mhd_t'
   do i=1,3
     self%mesh(i)%h(2+i) = -0.5
@@ -748,8 +748,8 @@ SUBROUTINE p2U(self, U, it)
   !.....................................................................
   real, dimension(:,:,:,:), pointer:: dd
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,           it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,           it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
   dd=down(log(d))
   U = p/exp(dd)
@@ -767,8 +767,8 @@ SUBROUTINE U2p(self, U, it)
   !.....................................................................
   real, dimension(:,:,:,:), pointer:: dd
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
   dd=down(log(d))
   p = U*exp(dd)
@@ -786,8 +786,8 @@ SUBROUTINE e2E_th(self, E_th, it)
   real, dimension(:,:,:), pointer:: E_th
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            s => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            s => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   E_th = d**g1*exp(s*g1/d)/g1
   end associate
@@ -803,8 +803,8 @@ SUBROUTINE E_th2e(self, E_th, it)
   real, dimension(:,:,:), pointer:: E_th
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            s => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            s => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   s = d*log(E_th*g1/d**g1)/g1
   end associate
@@ -820,8 +820,8 @@ SUBROUTINE e2S(self, s, it)
   real, dimension(:,:,:), pointer:: s
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   s = log(e*g1/d**self%gamma)/g1
   end associate
@@ -837,8 +837,8 @@ SUBROUTINE S2e(self, s, it)
   real, dimension(:,:,:), pointer:: s
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   e = d**self%gamma*exp(s*g1)/g1
   end associate
@@ -851,11 +851,11 @@ FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
   if (trim(self%eos)=='ideal') then
-    self%d => self%mem(:,:,:,self%i_d,self%it,1)
+    self%d => self%mem(:,:,:,self%idx%d,self%it,1)
     if (self%gamma==1.0) then
       pg = self%d*self%csound**2
     else
-      self%s => self%mem(:,:,:,self%i_s,self%it,1)
+      self%s => self%mem(:,:,:,self%idx%s,self%it,1)
       pg = self%d**self%gamma*exp(self%s/self%d*(self%gamma-1))
     end if
   else

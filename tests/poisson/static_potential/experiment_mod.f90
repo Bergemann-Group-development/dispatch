@@ -74,9 +74,9 @@ SUBROUTINE update (self)
   ! create one output per iteration (probably overkill)
   call self%output
   call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
-  call self%dnload  (only=self%i_phi)
+  call self%dnload  (only=self%idx%phi)
   call pboundaries%conditions(self, self%it)
-  call self%gravity (error, only=self%i_phi)
+  call self%gravity (error, only=self%idx%phi)
 
   call trace%end
 END SUBROUTINE update

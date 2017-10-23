@@ -98,32 +98,32 @@ SUBROUTINE init_mhd_vars(self, patch)
         do ix=mx%lb,mx%ub
           x = mx%centre_nat + patch%mesh(1)%r(ix)
           if (x <= x0) then
-            q(ix,iy,iz,patch%i_d) = rhol
-            q(ix,iy,iz,patch%i_e) = presl / (patch%gamma - 1.0)
-            q(ix,iy,iz,patch%i_py) = vyl * rhol
-            q(ix,iy,iz,patch%i_pz) = vzl * rhol
+            q(ix,iy,iz,patch%idx%d) = rhol
+            q(ix,iy,iz,patch%idx%e) = presl / (patch%gamma - 1.0)
+            q(ix,iy,iz,patch%idx%py) = vyl * rhol
+            q(ix,iy,iz,patch%idx%pz) = vzl * rhol
           else
-            q(ix,iy,iz,patch%i_d) = rhor
-            q(ix,iy,iz,patch%i_e) = presr / (patch%gamma - 1.0)
-            q(ix,iy,iz,patch%i_px) = vxr * rhor
-            q(ix,iy,iz,patch%i_py) = vyr * rhor
-            q(ix,iy,iz,patch%i_pz) = vzr * rhor
+            q(ix,iy,iz,patch%idx%d) = rhor
+            q(ix,iy,iz,patch%idx%e) = presr / (patch%gamma - 1.0)
+            q(ix,iy,iz,patch%idx%px) = vxr * rhor
+            q(ix,iy,iz,patch%idx%py) = vyr * rhor
+            q(ix,iy,iz,patch%idx%pz) = vzr * rhor
           end if
           ! because the velocity is staggered, special treatment is required
           ! if a value is co-spatial with the initial discontinuity.
           if ( (x-0.5*mx%d) < x0 ) then
-            q(ix,iy,iz,patch%i_px) = vxl * rhol
+            q(ix,iy,iz,patch%idx%px) = vxl * rhol
           else if ( (x-0.5*mx%d) >= x0 .and. (x-1.5*mx%d) < x0) then
-            q(ix,iy,iz,patch%i_px) = 0.25 * (vxl + vxr) * (rhol + rhor)
+            q(ix,iy,iz,patch%idx%px) = 0.25 * (vxl + vxr) * (rhol + rhor)
           else if ( (x-0.5*mx%d) > x0 ) then
-            q(ix,iy,iz,patch%i_px) = vxr * rhor
+            q(ix,iy,iz,patch%idx%px) = vxr * rhor
           end if
           ! in the case that a cell face is co-spatial with the initial discontinuity.
           if ( abs(x - x0 - patch%s%h(1)) < 1.0e-10 ) &
-            q(ix,iy,iz,patch%i_px) = 0.5 * (vxl + vxr) * 0.5 * (rhor + rhol)
-          q(ix,iy,iz,patch%i_bx) = 0.0
-          q(ix,iy,iz,patch%i_by) = 0.0
-          q(ix,iy,iz,patch%i_bz) = 0.0
+            q(ix,iy,iz,patch%idx%px) = 0.5 * (vxl + vxr) * 0.5 * (rhor + rhol)
+          q(ix,iy,iz,patch%idx%bx) = 0.0
+          q(ix,iy,iz,patch%idx%by) = 0.0
+          q(ix,iy,iz,patch%idx%bz) = 0.0
         end do
       end do
     end do
@@ -148,24 +148,24 @@ SUBROUTINE init_mhd_vars(self, patch)
           ! determine cell position in Cartesian coords.
           vec = CylindricalToCartesian(z,r,phi+zeta_offset) + patch%position
           if (vec(1) <= x0) then
-            q(ix,iy,iz,patch%i_d) = rhol
-            q(ix,iy,iz,patch%i_e) = presl / (patch%gamma - 1.0)
-            q(ix,iy,iz,patch%i_px) = vcyll(1) * rhol
-            q(ix,iy,iz,patch%i_py) = vcyll(2) * rhol
-            q(ix,iy,iz,patch%i_pz) = vcyll(3) * rhol
+            q(ix,iy,iz,patch%idx%d) = rhol
+            q(ix,iy,iz,patch%idx%e) = presl / (patch%gamma - 1.0)
+            q(ix,iy,iz,patch%idx%px) = vcyll(1) * rhol
+            q(ix,iy,iz,patch%idx%py) = vcyll(2) * rhol
+            q(ix,iy,iz,patch%idx%pz) = vcyll(3) * rhol
           else
-            q(ix,iy,iz,patch%i_d) = rhor
-            q(ix,iy,iz,patch%i_e) = presr / (patch%gamma - 1.0)
-            q(ix,iy,iz,patch%i_px) = vcylr(1) * rhor
-            q(ix,iy,iz,patch%i_py) = vcylr(2) * rhor
-            q(ix,iy,iz,patch%i_pz) = vcylr(3) * rhor
+            q(ix,iy,iz,patch%idx%d) = rhor
+            q(ix,iy,iz,patch%idx%e) = presr / (patch%gamma - 1.0)
+            q(ix,iy,iz,patch%idx%px) = vcylr(1) * rhor
+            q(ix,iy,iz,patch%idx%py) = vcylr(2) * rhor
+            q(ix,iy,iz,patch%idx%pz) = vcylr(3) * rhor
           end if
           ! the ZEUS module stores the angular momentum rather than the linear momentum
-          q(ix,iy,iz,patch%i_py) = q(ix,iy,iz,patch%i_py) * mx%h2c(ix)
-          q(ix,iy,iz,patch%i_pz) = q(ix,iy,iz,patch%i_pz) * mx%h31c(ix) * my%h32c(iy)
-          q(ix,iy,iz,patch%i_bx) = 0.0
-          q(ix,iy,iz,patch%i_by) = 0.0
-          q(ix,iy,iz,patch%i_bz) = 0.0
+          q(ix,iy,iz,patch%idx%py) = q(ix,iy,iz,patch%idx%py) * mx%h2c(ix)
+          q(ix,iy,iz,patch%idx%pz) = q(ix,iy,iz,patch%idx%pz) * mx%h31c(ix) * my%h32c(iy)
+          q(ix,iy,iz,patch%idx%bx) = 0.0
+          q(ix,iy,iz,patch%idx%by) = 0.0
+          q(ix,iy,iz,patch%idx%bz) = 0.0
         end do
       end do
     end do

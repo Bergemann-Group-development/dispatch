@@ -77,11 +77,11 @@ SUBROUTINE init (self)
   if (self%nv == 0) self%nv = 5
 
   call self%gpatch_t%init
-  self%i_d  = idx%d
-  self%i_e  = idx%e
-  self%i_px = idx%px
-  self%i_py = idx%py
-  self%i_pz = idx%pz
+  self%idx%d  = idx%d
+  self%idx%e  = idx%e
+  self%idx%px = idx%px
+  self%idx%py = idx%py
+  self%idx%pz = idx%pz
   !$omp critical (pde)
   if (first_time) then
     first_time = .false.
@@ -138,19 +138,19 @@ SUBROUTINE update (self)
   if (detailed_timer) call trace_end (itimer)
   if (debug) then
     if (self%id==229.or.self%id==231) then
-      print *,self%id, 'mk1:px', self%mem(19-2:19+2,19,19,self%i_px,self%it,1), self%i_px
-      print *,self%id, 'mk1: d', self%mem(19-2:19+2,19,19,self%i_d ,self%it,1)
-      print *,self%id, 'mk1: e', self%mem(19-2:19+2,19,19,self%i_e ,self%it,1), self%i_e
+      print *,self%id, 'mk1:px', self%mem(19-2:19+2,19,19,self%idx%px,self%it,1), self%idx%px
+      print *,self%id, 'mk1: d', self%mem(19-2:19+2,19,19,self%idx%d ,self%it,1)
+      print *,self%id, 'mk1: e', self%mem(19-2:19+2,19,19,self%idx%e ,self%it,1), self%idx%e
     end if
     if (self%id==230) then
-      print *,self%id, 'mk1:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%it,1), self%i_px
-      print *,self%id, 'mk1: d', self%mem( m-7:m-3 ,19,19,self%i_d ,self%it,1)
-      print *,self%id, 'mk1: e', self%mem( m-7:m-3 ,19,19,self%i_e ,self%it,1), self%i_e
+      print *,self%id, 'mk1:px', self%mem( m-7:m-3 ,19,19,self%idx%px,self%it,1), self%idx%px
+      print *,self%id, 'mk1: d', self%mem( m-7:m-3 ,19,19,self%idx%d ,self%it,1)
+      print *,self%id, 'mk1: e', self%mem( m-7:m-3 ,19,19,self%idx%e ,self%it,1), self%idx%e
     end if
   end if
-  d => self%mem(:,:,:,          self%i_d ,self%it,1)
-  e => self%mem(:,:,:,          self%i_e ,self%it,1)
-  p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
+  d => self%mem(:,:,:,          self%idx%d ,self%it,1)
+  e => self%mem(:,:,:,          self%idx%e ,self%it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   !-----------------------------------------------------------------------------
   ! External force; note that Ux, Uy, Uz are empty pointers here, so they
   ! should not and cannot be used in the solver
@@ -168,20 +168,20 @@ SUBROUTINE update (self)
   if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
   if (debug) then
     if (self%id==229.or.self%id==231) then
-      print *,self%id, 'mk2:px', self%mem(19-2:19+2,19,19,self%i_px,self%new,1), self%i_px
-      print *,self%id, 'mk2: d', self%mem(19-2:19+2,19,19,self%i_d ,self%new,1)
-      print *,self%id, 'mk2: e', self%mem(19-2:19+2,19,19,self%i_e ,self%new,1), self%i_e
+      print *,self%id, 'mk2:px', self%mem(19-2:19+2,19,19,self%idx%px,self%new,1), self%idx%px
+      print *,self%id, 'mk2: d', self%mem(19-2:19+2,19,19,self%idx%d ,self%new,1)
+      print *,self%id, 'mk2: e', self%mem(19-2:19+2,19,19,self%idx%e ,self%new,1), self%idx%e
     end if
     if (self%id==230) then
-      print *,self%id, 'mk2:px', self%mem( m-7:m-3 ,19,19,self%i_px,self%new,1), self%i_px
-      print *,self%id, 'mk2: d', self%mem( m-7:m-3 ,19,19,self%i_d ,self%new,1)
-      print *,self%id, 'mk2: e', self%mem( m-7:m-3 ,19,19,self%i_e ,self%new,1), self%i_e
+      print *,self%id, 'mk2:px', self%mem( m-7:m-3 ,19,19,self%idx%px,self%new,1), self%idx%px
+      print *,self%id, 'mk2: d', self%mem( m-7:m-3 ,19,19,self%idx%d ,self%new,1)
+      print *,self%id, 'mk2: e', self%mem( m-7:m-3 ,19,19,self%idx%e ,self%new,1), self%idx%e
     end if
   end if
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
-  p => self%mem(:,:,:,self%i_px:self%i_pz,self%new,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   do i=1,3
     p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%ff(:,:,:,i)*d
   end do
@@ -202,8 +202,8 @@ SUBROUTINE p2U(self, U, it)
   !.....................................................................
   integer:: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,           it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,           it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   do i=1,size(p,4)
   U(:,:,:,i) = p(:,:,:,i)/d
   end do
@@ -220,8 +220,8 @@ SUBROUTINE U2p(self, U, it)
   !.....................................................................
   integer:: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   do i=1,size(p,4)
   p(:,:,:,i)= U(:,:,:,i)*d
   end do
@@ -239,9 +239,9 @@ SUBROUTINE e2E_th(self, E_th, it)
   real, dimension(:,:,:), pointer:: k
   integer :: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
-            e => self%mem(:,:,:,self%i_e           ,it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
+            e => self%mem(:,:,:,self%idx%e           ,it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
@@ -264,9 +264,9 @@ SUBROUTINE e2S(self, s, it)
   real, dimension(:,:,:), pointer:: k
   integer :: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
-            e => self%mem(:,:,:,self%i_e           ,it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
+            e => self%mem(:,:,:,self%idx%e           ,it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
@@ -289,9 +289,9 @@ SUBROUTINE S2e (self, s, it)
   real, dimension(:,:,:), pointer:: k
   integer :: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
-            e => self%mem(:,:,:,self%i_e           ,it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
+            e => self%mem(:,:,:,self%idx%e           ,it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
@@ -314,9 +314,9 @@ SUBROUTINE E_th2e(self, E_th, it)
   real, dimension(:,:,:), pointer:: k
   integer :: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
-            e => self%mem(:,:,:,self%i_e           ,it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
+            e => self%mem(:,:,:,self%idx%e           ,it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
@@ -398,28 +398,28 @@ subroutine check_small (self, uu)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   do i=lo(1),uo(1)
-    if (uu(i,j,k,self%i_d) < smallr) then
+    if (uu(i,j,k,self%idx%d) < smallr) then
       if (nprint>0) then
         nprint = nprint-1
-        write (io_unit%log,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,self%i_d),smallr
+        write (io_unit%log,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,self%idx%d),smallr
       end if
       n_smalld = n_smalld+1
-      uu(i,j,k,self%i_d) = smallr
+      uu(i,j,k,self%idx%d) = smallr
     end if
-    d =  uu(i,j,k,self%i_d)
+    d =  uu(i,j,k,self%idx%d)
     c = 1./d
-    u =  uu(i,j,k,self%i_px)*c
-    v =  uu(i,j,k,self%i_py)*c
-    w =  uu(i,j,k,self%i_pz)*c
+    u =  uu(i,j,k,self%idx%px)*c
+    v =  uu(i,j,k,self%idx%py)*c
+    w =  uu(i,j,k,self%idx%pz)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
     if (do_isothermal) then
       p = d*csound**2
-      uu(i,j,k,self%i_e) = p/(gamma-one)+ekin
+      uu(i,j,k,self%idx%e) = p/(gamma-one)+ekin
     else
-      p = (uu(i,j,k,self%i_e)-ekin)*(gamma-one)
+      p = (uu(i,j,k,self%idx%e)-ekin)*(gamma-one)
       if (p < smallr*smallc**2) then
         p = smallr*smallc**2
-        uu(i,j,k,self%i_e) = p/(gamma-one)+ekin
+        uu(i,j,k,self%idx%e) = p/(gamma-one)+ekin
         n_smallp = n_smallp+1
       end if
     end if
@@ -466,16 +466,16 @@ subroutine ctoprim (self)
     call trace%begin ('mhd_mod::ctoprim')
   end if
   smallp = smallr*smallc**2/gamma
-  q(:,:,:,1) = max(uin(:,:,:,self%i_d),smallr)
+  q(:,:,:,1) = max(uin(:,:,:,self%idx%d),smallr)
   s = 1.d0/q(:,:,:,1)
-  q(:,:,:,2) = uin(:,:,:,self%i_px)*s
-  q(:,:,:,3) = uin(:,:,:,self%i_py)*s
-  q(:,:,:,4) = uin(:,:,:,self%i_pz)*s
+  q(:,:,:,2) = uin(:,:,:,self%idx%px)*s
+  q(:,:,:,3) = uin(:,:,:,self%idx%py)*s
+  q(:,:,:,4) = uin(:,:,:,self%idx%pz)*s
   s = q(:,:,:,2)**2+q(:,:,:,3)**2+q(:,:,:,4)**2
   !-----------------------------------------------------------------------------
   ! Equation-of-state: s is the internal energy, and pg is the gas pressure
   !-----------------------------------------------------------------------------
-  s = max((uin(:,:,:,self%i_e)-half*q(:,:,:,1)*s(:,:,:)),smallp)
+  s = max((uin(:,:,:,self%idx%e)-half*q(:,:,:,1)*s(:,:,:)),smallp)
   d => q(:,:,:,1)
   e => s
   pg => q(:,:,:,5)
@@ -823,11 +823,11 @@ subroutine cmpflxm(self)
       if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
       if (error) call error_handler('x', j, k, lb(1), ub(1))
       do i = lb(1),ub(1)
-        fl(i,j,k,self%i_d ,1) = fgdnv(i,1)*dtds(1)
-        fl(i,j,k,self%i_px,1) = fgdnv(i,2)*dtds(1)
-        fl(i,j,k,self%i_e ,1) = fgdnv(i,3)*dtds(1)
-        fl(i,j,k,self%i_py,1) = fgdnv(i,4)*dtds(1)
-        fl(i,j,k,self%i_pz,1) = fgdnv(i,5)*dtds(1)
+        fl(i,j,k,self%idx%d ,1) = fgdnv(i,1)*dtds(1)
+        fl(i,j,k,self%idx%px,1) = fgdnv(i,2)*dtds(1)
+        fl(i,j,k,self%idx%e ,1) = fgdnv(i,3)*dtds(1)
+        fl(i,j,k,self%idx%py,1) = fgdnv(i,4)*dtds(1)
+        fl(i,j,k,self%idx%pz,1) = fgdnv(i,5)*dtds(1)
       end do
     end do
   end do
@@ -849,11 +849,11 @@ subroutine cmpflxm(self)
         if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
         if (error) call error_handler('y', i, k, lb(2), ub(2))
         do j = lb(2),ub(2)
-          fl(i,j,k,self%i_d ,2) = fgdnv(j,1)*dtds(2)
-          fl(i,j,k,self%i_py,2) = fgdnv(j,2)*dtds(2)
-          fl(i,j,k,self%i_e ,2) = fgdnv(j,3)*dtds(2)
-          fl(i,j,k,self%i_px,2) = fgdnv(j,4)*dtds(2)
-          fl(i,j,k,self%i_pz,2) = fgdnv(j,5)*dtds(2)
+          fl(i,j,k,self%idx%d ,2) = fgdnv(j,1)*dtds(2)
+          fl(i,j,k,self%idx%py,2) = fgdnv(j,2)*dtds(2)
+          fl(i,j,k,self%idx%e ,2) = fgdnv(j,3)*dtds(2)
+          fl(i,j,k,self%idx%px,2) = fgdnv(j,4)*dtds(2)
+          fl(i,j,k,self%idx%pz,2) = fgdnv(j,5)*dtds(2)
         end do
       end do
     end do
@@ -871,11 +871,11 @@ subroutine cmpflxm(self)
         if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
         if (error) call error_handler('z', i, j, lb(3), ub(3))
         do k = lb(3),ub(3)
-          fl(i,j,k,self%i_d ,3) = fgdnv(k,1)*dtds(3)
-          fl(i,j,k,self%i_pz,3) = fgdnv(k,2)*dtds(3)
-          fl(i,j,k,self%i_e ,3) = fgdnv(k,3)*dtds(3)
-          fl(i,j,k,self%i_px,3) = fgdnv(k,4)*dtds(3)
-          fl(i,j,k,self%i_py,3) = fgdnv(k,5)*dtds(3)
+          fl(i,j,k,self%idx%d ,3) = fgdnv(k,1)*dtds(3)
+          fl(i,j,k,self%idx%pz,3) = fgdnv(k,2)*dtds(3)
+          fl(i,j,k,self%idx%e ,3) = fgdnv(k,3)*dtds(3)
+          fl(i,j,k,self%idx%px,3) = fgdnv(k,4)*dtds(3)
+          fl(i,j,k,self%idx%py,3) = fgdnv(k,5)*dtds(3)
         end do
       end do
     end do
@@ -906,11 +906,11 @@ contains
       call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('y', i, k, lb(2), ub(2))
       if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
-      fl(i,:,k,self%i_d ,2) = fgdnv(:,1)*dtds(2)
-      fl(i,:,k,self%i_py,2) = fgdnv(:,2)*dtds(2)
-      fl(i,:,k,self%i_e ,2) = fgdnv(:,3)*dtds(2)
-      fl(i,:,k,self%i_px,2) = fgdnv(:,4)*dtds(2)
-      fl(i,:,k,self%i_pz,2) = fgdnv(:,5)*dtds(2)
+      fl(i,:,k,self%idx%d ,2) = fgdnv(:,1)*dtds(2)
+      fl(i,:,k,self%idx%py,2) = fgdnv(:,2)*dtds(2)
+      fl(i,:,k,self%idx%e ,2) = fgdnv(:,3)*dtds(2)
+      fl(i,:,k,self%idx%px,2) = fgdnv(:,4)*dtds(2)
+      fl(i,:,k,self%idx%pz,2) = fgdnv(:,5)*dtds(2)
     end do
   end do
   end associate
@@ -936,11 +936,11 @@ contains
       call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('z', i, j, lb(3), ub(3))
       if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
-      fl(i,j,:,self%i_d ,3) = fgdnv(:,1)*dtds(3)
-      fl(i,j,:,self%i_pz,3) = fgdnv(:,2)*dtds(3)
-      fl(i,j,:,self%i_e ,3) = fgdnv(:,3)*dtds(3)
-      fl(i,j,:,self%i_px,3) = fgdnv(:,4)*dtds(3)
-      fl(i,j,:,self%i_py,3) = fgdnv(:,5)*dtds(3)
+      fl(i,j,:,self%idx%d ,3) = fgdnv(:,1)*dtds(3)
+      fl(i,j,:,self%idx%pz,3) = fgdnv(:,2)*dtds(3)
+      fl(i,j,:,self%idx%e ,3) = fgdnv(:,3)*dtds(3)
+      fl(i,j,:,self%idx%px,3) = fgdnv(:,4)*dtds(3)
+      fl(i,j,:,self%idx%py,3) = fgdnv(:,5)*dtds(3)
     end do
   end do
   end associate
@@ -1016,7 +1016,7 @@ end subroutine solver
 FUNCTION gas_pressure (self)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: gas_pressure
-  gas_pressure = self%mem(:,:,:,self%i_e,self%it,1)*(self%gamma-1.0)
+  gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(self%gamma-1.0)
 END FUNCTION gas_pressure
 
 END MODULE

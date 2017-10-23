@@ -508,20 +508,20 @@ SUBROUTINE update_rt (self)
   !> -------------------------------------------------------------------
   !> Take entropy and density from MHD patch
   !> -------------------------------------------------------------------
-  self%d = mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_d,mhd%it,1)
+  self%d = mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%idx%d,mhd%it,1)
   if (mhd%kind(1:9)=='stagger2e') then
-    self%e = mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_e,mhd%it,1)
+    self%e = mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%idx%e,mhd%it,1)
     self%e = self%e/self%d
   else if (mhd%kind(1:9)=='stagger2_') then
-    associate(d => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_d,mhd%it,1), &
-              s => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_s,mhd%it,1))
+    associate(d => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%idx%d,mhd%it,1), &
+              s => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%idx%s,mhd%it,1))
     g1 = mhd%gamma-1.0
     self%e = d**g1*exp(s/d*g1)/g1
     end associate
   else if (mhd%kind(1:7)=='ramses_') then
-    associate(d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d           ,mhd%it,1), &
-              e => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_e           ,mhd%it,1), &
-              p => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_px:self%i_pz,mhd%it,1))
+    associate(d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d           ,mhd%it,1), &
+              e => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e           ,mhd%it,1), &
+              p => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%px:self%idx%pz,mhd%it,1))
     allocate(k(size(d,1),size(d,2),size(d,3)))
     k = 0.0
     do i=1,size(p,4)
@@ -1614,13 +1614,13 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
         write (io_unit%log,'(1x,a,2i5,i3,1p,2e11.3)') &
           trim(filename),1,self%it,jo,minval(buf),maxval(buf)
       write (io%data_unit,rec=iv+(jo-1)*2) buf
-      if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
+      if (io%verbose>1 .and. iv==self%idx%d) print *,'rho minmax',minval(buf), maxval(buf)
     iv = 2
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,2e11.3)') &
           trim(filename),1,self%it,jo,minval(buf),maxval(buf)
       write (io%data_unit,rec=iv+(jo-1)*2) buf
-      if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
+      if (io%verbose>1 .and. iv==self%idx%d) print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
   end do
   close (io%data_unit)

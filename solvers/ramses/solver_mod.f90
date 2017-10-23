@@ -51,8 +51,8 @@ SUBROUTINE p2U(self, U, it)
   real, dimension(:,:,:,:), pointer:: dd
   integer:: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,           it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,           it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   do i=1,3
     U(:,:,:,i) = p(:,:,:,i)/d
   end do
@@ -70,8 +70,8 @@ SUBROUTINE U2p(self, U, it)
   real, dimension(:,:,:,:), pointer:: dd
   integer:: i
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   do i=1,3
     p(:,:,:,i) = U(:,:,:,i)*d
   end do
@@ -88,8 +88,8 @@ SUBROUTINE e2E_th(self, E_th, it)
   real, dimension(:,:,:), pointer:: E_th
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            s => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            s => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   E_th = d**g1*exp(s*g1/d)/g1
   end associate
@@ -105,8 +105,8 @@ SUBROUTINE E_th2e(self, E_th, it)
   real, dimension(:,:,:), pointer:: E_th
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            s => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            s => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   s = d*log(E_th*g1/d**g1)/g1
   end associate
@@ -122,8 +122,8 @@ SUBROUTINE e2s(self, s, it)
   real, dimension(:,:,:):: s
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   s = d*log(e*g1/d**self%gamma)/g1
   end associate
@@ -139,8 +139,8 @@ SUBROUTINE e2ss(self, ss, it)
   real, dimension(:,:,:):: ss
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   ss = log(e*g1/d**self%gamma)/g1
   end associate
@@ -156,8 +156,8 @@ SUBROUTINE s2e(self, s, it)
   real, dimension(:,:,:):: s
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   e = d**self%gamma*exp(s/d*g1)/g1
   end associate
@@ -173,8 +173,8 @@ SUBROUTINE ss2e(self, ss, it)
   real, dimension(:,:,:):: ss
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   e = d**self%gamma*exp(ss/d*g1)/g1
   end associate
@@ -283,8 +283,8 @@ SUBROUTINE velocity_magnitude (self, v)
   real, dimension(:,:,:,:), pointer:: p, U
   integer:: i
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%i_d,self%it,1)
-  p => self%mem(:,:,:,self%i_px:self%i_px,self%it,1)
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%px,self%it,1)
   v = 0.0
   do i=1,3
     v(:,:,:) = v(:,:,:) + (p(:,:,:,i)/d)**2
@@ -299,7 +299,7 @@ SUBROUTINE magnetic_field_magnitude (self, v)
   real, dimension(:,:,:,:), pointer:: b
   integer:: i
   !-----------------------------------------------------------------------------
-  b => self%mem(:,:,:,self%i_bx:self%i_bx,self%it,1)
+  b => self%mem(:,:,:,self%idx%bx:self%idx%bx,self%it,1)
   v = 0.0
   do i=1,3
     v(:,:,:) = v(:,:,:) + b(:,:,:,i)**2
@@ -329,8 +329,8 @@ FUNCTION gas_velocity_vector (self) RESULT (v)
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
   integer:: i
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%i_d,self%it,1)
-  p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   do i=1,3
     v(:,:,:,i) = p(:,:,:,i)/d
   end do
@@ -343,14 +343,14 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: v
   integer:: idir
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%i_d,self%it,1)
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
   select case (idir)
   case (1)
-    v = self%mem(:,:,:,self%i_px,self%it,1) / d
+    v = self%mem(:,:,:,self%idx%px,self%it,1) / d
   case (2)
-    v = self%mem(:,:,:,self%i_py,self%it,1) / d
+    v = self%mem(:,:,:,self%idx%py,self%it,1) / d
   case (3)
-    v = self%mem(:,:,:,self%i_pz,self%it,1) / d
+    v = self%mem(:,:,:,self%idx%pz,self%it,1) / d
   case default
     error stop "solver_mod::gas_velocity_scalar:: invalid value of idir"
   end select

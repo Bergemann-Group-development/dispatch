@@ -61,7 +61,7 @@ SUBROUTINE init (self)
   if (selfgravity) then
     self%selfgravity = selfgravity
     self%nv = self%nv+1
-    self%i_phi = self%nv
+    self%idx%phi = self%nv
     call self%patch_t%init
     call self%poisson%init (self, selfgravity)
   else
@@ -146,8 +146,8 @@ SUBROUTINE gravity (self, error, only)
   if (.not. selfgravity) return
   call trace%begin ('gpatch_t%gravity', itimer=itimer)
 
-  d   => self%mem(:,:,:,self%i_d  ,self%it,1)
-  phi => self%mem(:,:,:,self%i_phi,self%it,1)
+  d   => self%mem(:,:,:,self%idx%d  ,self%it,1)
+  phi => self%mem(:,:,:,self%idx%phi,self%it,1)
   allocate (source(size(d,1),size(d,2),size(d,3)), resid(size(d,1),size(d,2),size(d,3)))
 
   source = 0.0
@@ -203,7 +203,7 @@ SUBROUTINE time_derivs (self)
   integer, parameter:: order=1
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('gpatch_t%time_derivs', itimer=itimer)
-  dphidt => self%mem(:,:,:,self%i_phi,self%it,2)
+  dphidt => self%mem(:,:,:,self%idx%phi,self%it,2)
   if (prediction) then
     nt = self%nt
     t1 = self%t(nt-1)
@@ -214,13 +214,13 @@ SUBROUTINE time_derivs (self)
     it3 = self%iit(nt-3)
     if (it2/=it1 .and. t1/=t2) then
       if (order==2) then
-        dphidt = (self%mem(:,:,:,self%i_phi,it1,1) - &
-                  self%mem(:,:,:,self%i_phi,it2,1))/(t1-t2)*1.5 - &
-                 (self%mem(:,:,:,self%i_phi,it2,1) - &
-                  self%mem(:,:,:,self%i_phi,it3,1))/(t2-t3)*0.5
+        dphidt = (self%mem(:,:,:,self%idx%phi,it1,1) - &
+                  self%mem(:,:,:,self%idx%phi,it2,1))/(t1-t2)*1.5 - &
+                 (self%mem(:,:,:,self%idx%phi,it2,1) - &
+                  self%mem(:,:,:,self%idx%phi,it3,1))/(t2-t3)*0.5
       else
-        dphidt = (self%mem(:,:,:,self%i_phi,it1,1) - &
-                  self%mem(:,:,:,self%i_phi,it2,1))/(t1-t2)
+        dphidt = (self%mem(:,:,:,self%idx%phi,it1,1) - &
+                  self%mem(:,:,:,self%idx%phi,it2,1))/(t1-t2)
       end if
       if (verbose>1) print *,self%id,'d(phi)/dt min,max,nv =', &
           self%fminval(dphidt), self%fmaxval(dphidt), size(self%mem,4)
