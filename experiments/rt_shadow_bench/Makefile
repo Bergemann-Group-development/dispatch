@@ -37,6 +37,6 @@ boundary_mod.o          : io_mod.o trace_mod.o units_mod.o scaling_mod.o
 mhd_mod.o               : io_mod.o trace_mod.o scalar_mod.o vector_mod.o force_mod.o patch_mod.o scaling_mod.o units_mod.o download_mod.o \
                           stagger_mod.o eos_mod.o
 experiment_mod.o	: rmhd_mod.o trace_mod.o io_mod.o initial_mod.o bits_mod.o boundaries_mod.o scaling_mod.o units_mod.o
-intial_mod.o		: io_mod.o trace_mod.o mesh_mod.o units_mod.o scaling_mod.o
+intial_mod.o		: io_mod.o trace_mod.o mesh_mod.o units_mod.o scaling_mod.o index_mod.o
 #data_hub_mod.o:		io_mod.o omp_mod.o bits_mod.o kinds_mod.o mesh_mod.o trace_mod.o task_mod.o patch_mod.o link_mod.o
 eos_mod.o               : io_mod.o mpi_mod.o trace_mod.o scaling_mod.o units_mod.o kinds_mod.o

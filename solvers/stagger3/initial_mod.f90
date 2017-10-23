@@ -53,8 +53,9 @@ END SUBROUTINE cleanup
 !> =============================================================================
 !> Generic initial conditions
 !> =============================================================================
-SUBROUTINE conditions (self, mesh, mem)
+SUBROUTINE conditions (self, mesh, mem, idx)
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
   !.............................................................................
@@ -93,8 +94,9 @@ END SUBROUTINE conditions
 !> =============================================================================
 !> Sedov blast wave initial conditions
 !> =============================================================================
-SUBROUTINE sedov (self, mesh, mem)
+SUBROUTINE sedov (self, mesh, mem, idx)
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
   !.............................................................................
@@ -151,8 +153,9 @@ END SUBROUTINE sedov
 !> Map variables to the current memory slot and initialize the deriv operators.
 !> mhd_t%init is called from timestep_t%init, again called from task_list_t%init.
 !> =============================================================================
-SUBROUTINE advection (self, mesh, mem)
+SUBROUTINE advection (self, mesh, mem, idx)
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), dimension(:), pointer:: mesh
   real, dimension(:,:,:,:), pointer:: mem
   !.............................................................................

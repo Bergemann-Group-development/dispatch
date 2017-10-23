@@ -4,6 +4,7 @@ MODULE initial_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
+  USE index_mod
   implicit none
   private
   type, public :: initial_t
@@ -70,8 +71,9 @@ END SUBROUTINE cleanup
 !> =============================================================================
 !> Initial conditions, callable also from refine_mod.f90
 !> =============================================================================
-SUBROUTINE initial_conditions (self, m, ff)
+SUBROUTINE initial_conditions (self, m, ff, idx)
   class(initial_t) :: self
+  type(index_t):: idx
   class(mesh_t), pointer :: m(:)
   real, dimension(:,:,:,:), pointer :: ff
   !class(_t), pointer:: patch

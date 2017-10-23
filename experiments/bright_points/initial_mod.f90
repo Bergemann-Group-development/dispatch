@@ -6,6 +6,7 @@ MODULE initial_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
+  USE index_mod
   implicit none
   private
 
@@ -46,8 +47,9 @@ END SUBROUTINE cleanup
 !> =============================================================================
 !> This routine should give initial conditions when starting from scratch
 !> =============================================================================
-SUBROUTINE initial_conditions (self, m, ff)
+SUBROUTINE initial_conditions (self, m, ff, idx)
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), pointer:: m(:)
   real, dimension(:,:,:,:), pointer :: ff
   !-----------------------------------------------------------------------------

@@ -59,11 +59,11 @@ END SUBROUTINE init
 !> given by:
 !>   \rho(r) = 4r0^2 / (r^2 + r0^2)^2.
 !> =============================================================================
-SUBROUTINE condition (self, m, f)
+SUBROUTINE condition (self, m, f, idx)
   class(initial_t):: self
+  type(index_t):: idx
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: f
   class(mesh_t), pointer:: m(:), m1, m2, m3
-  type(index_t):: i
   integer:: i1, i2, i3
   real:: x, y ,z
   !----------------------------------------------------------------------------
@@ -81,9 +81,9 @@ SUBROUTINE condition (self, m, f)
       do i1=m1%lb,m1%ub
         x = m1%centre_nat + m1%r(i1)
 
-        f(i1,i2,i3,i%d) = func_d0(x,y)
+        f(i1,i2,i3,idx%d) = func_d0(x,y)
         ! intentionally intialise the grav. pot. to a poor estimate of the true value
-        f(i1,i2,i3,i%phi) = 0.0
+        f(i1,i2,i3,idx%phi) = 0.0
 
       end do
     end do

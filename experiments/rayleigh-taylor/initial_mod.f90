@@ -38,11 +38,11 @@ END SUBROUTINE init
 !> Namelist parameters:
 !>
 !> =============================================================================
-SUBROUTINE condition (self, m, f)
+SUBROUTINE condition (self, m, f, idx)
   class(initial_t):: self
+  type(index_t):: idx
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: f
   class(mesh_t), pointer:: m(:), m1, m2, m3
-  type(index_t):: i
   integer:: i1, i2, i3
   real(4):: y0=0.5, d1=1.0, d2=2.0, deltay=0.025, deltavy=0.025, dymin=0.3, dymax=0.7, y_grav_acc=-0.5, gamma=1.4
   real(4):: d0, p0
@@ -74,37 +74,37 @@ SUBROUTINE condition (self, m, f)
 
         ! initial density
         d0 = d1 + (d2 - d1) / (1.0 + exp((y0 - y)/deltay))
-        f(i1,i2,i3,i%d) = d0
+        f(i1,i2,i3,idx%d) = d0
         ! add y-velocity perturbation
         if (y >= dymin .and. y <= dymax) then
-          f(i1,i2,i3,i%py) = deltavy * (1.0 + cos(8.0 * pi * (x + 0.25))) &
+          f(i1,i2,i3,idx%py) = deltavy * (1.0 + cos(8.0 * pi * (x + 0.25))) &
                                            * (1.0 + cos(5.0 * pi * (y - 0.50))) & 
                                      * d0
         else
-          f(i1,i2,i3,i%py) = 0.0
+          f(i1,i2,i3,idx%py) = 0.0
         end if
-        f(i1,i2,i3,i%px) = 0.0
-        f(i1,i2,i3,i%pz) = 0.0
+        f(i1,i2,i3,idx%px) = 0.0
+        f(i1,i2,i3,idx%pz) = 0.0
 
         ! assign energy/entropy/whatever
         ! the sound speed is set to 1.0 in the upper region
         p0 = d2 / gamma + y_grav_acc * d0 * (y - y0)
         if (trim(self%solver) == 'stagger2_mhd_patch') then
-          f(i1,i2,i3,i%s) = (log(p0) - log(d0) * gamma) &
+          f(i1,i2,i3,idx%s) = (log(p0) - log(d0) * gamma) &
                                 * d0 / (gamma - 1.0)
         else if (trim(self%solver) == 'stagger2e_mhd_patch') then
-          f(i1,i2,i3,i%e) = p0 / (gamma - 1.0)
+          f(i1,i2,i3,idx%e) = p0 / (gamma - 1.0)
         else if (trim(self%solver) == 'ramses_mhd_patch') then
-          f(i1,i2,i3,i%e) = p0 + 0.5 * f(i1,i2,i3,i%py)**2 / d0
+          f(i1,i2,i3,idx%e) = p0 + 0.5 * f(i1,i2,i3,idx%py)**2 / d0
         else if (trim(self%solver) == 'zeus_mhd_patch') then
-          f(i1,i2,i3,i%e) = p0 / (gamma - 1.0)
+          f(i1,i2,i3,idx%e) = p0 / (gamma - 1.0)
         end if
 
         ! this experiment is hydro only.
-        if (size(f,4) > i%bx) then
-          f(i1,i2,i3,i%bx) = 0.0
-          f(i1,i2,i3,i%by) = 0.0
-          f(i1,i2,i3,i%bz) = 0.0
+        if (size(f,4) > idx%bx) then
+          f(i1,i2,i3,idx%bx) = 0.0
+          f(i1,i2,i3,idx%by) = 0.0
+          f(i1,i2,i3,idx%bz) = 0.0
         end if
       end do
     end do

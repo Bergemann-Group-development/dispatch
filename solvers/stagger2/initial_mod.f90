@@ -97,8 +97,9 @@ END SUBROUTINE cleanup
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-SUBROUTINE single_solenoidal (self, m, ff)
+SUBROUTINE single_solenoidal (self, m, ff, idx)
   class(initial_t)      :: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
@@ -135,8 +136,9 @@ END SUBROUTINE single_solenoidal
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-SUBROUTINE single_compressive (self, m, ff)
+SUBROUTINE single_compressive (self, m, ff, idx)
   class(initial_t)        :: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
@@ -173,8 +175,9 @@ END SUBROUTINE single_compressive
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-SUBROUTINE single_advection (self, m, ff)
+SUBROUTINE single_advection (self, m, ff, idx)
   class(initial_t)        :: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
@@ -211,9 +214,10 @@ END SUBROUTINE single_advection
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-SUBROUTINE exa256 (self, m, ff)
+SUBROUTINE exa256 (self, m, ff, idx)
   USE io_unit_mod
   class(initial_t)      :: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:) :: ff
   real, dimension(:), allocatable:: u, d
@@ -261,9 +265,10 @@ END SUBROUTINE exa256
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-SUBROUTINE raw (self, m, ff)
+SUBROUTINE raw (self, m, ff, idx)
   USE io_unit_mod
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
   !.............................................................................

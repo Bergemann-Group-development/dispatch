@@ -19,4 +19,4 @@ $(EXEC): components_mod.o setup_mod.o
 components_mod.o:	io_mod.o trace_mod.o rubiks_mod.o
 experiment_mod.o	: trace_mod.o io_mod.o kinds_mod.o mesh_mod.o mhd_mod.o pboundary_mod.o
 pboundary_mod.o		: io_mod.o trace_mod.o patch_mod.o mesh_mod.o bits_mod.o
-initial_mod.o:	io_mod.o trace_mod.o kinds_mod.o mesh_mod.o
+initial_mod.o:	io_mod.o trace_mod.o kinds_mod.o mesh_mod.o index_mod.o

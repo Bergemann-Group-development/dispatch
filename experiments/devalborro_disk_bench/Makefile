@@ -24,4 +24,4 @@ potential_mod.o:	io_mod.o trace_mod.o scaling_mod.o mesh_mod.o parameters_mod.o 
 scaling_mod.o:		io_mod.o trace_mod.o
 parameters_mod.o:	io_mod.o trace_mod.o scaling_mod.o
 components_mod.o:	io_mod.o trace_mod.o scaling_mod.o task_mod.o task_list_mod.o mhd_mod.o mesh_mod.o bits_mod.o experiment_mod.o parameters_mod.o
-initial_mod.o:		io_mod.o trace_mod.o mesh_mod.o kinds_mod.o
+initial_mod.o:		io_mod.o trace_mod.o mesh_mod.o kinds_mod.o index_mod.o

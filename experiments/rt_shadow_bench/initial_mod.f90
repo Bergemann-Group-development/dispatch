@@ -61,11 +61,12 @@ SUBROUTINE init (self, solver, gamma)
   call trace_end
 END SUBROUTINE init
 
-SUBROUTINE condition (self, m, mem)
+SUBROUTINE condition (self, m, mem, idx)
 !> =============================================================================
 !> Set the initial conditions
 !> =============================================================================
   class(initial_t) :: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(:,:,:,:), pointer :: mem
   class(mesh_t), pointer :: mx, my, mz

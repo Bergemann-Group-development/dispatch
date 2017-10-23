@@ -70,8 +70,9 @@ END SUBROUTINE init
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-SUBROUTINE planet_atmosphere (self, m, mem)
+SUBROUTINE planet_atmosphere (self, m, mem, idx)
   class(initial_t) :: self
+  type(index_t):: idx
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: mem
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................
@@ -150,8 +151,9 @@ END SUBROUTINE planet_atmosphere
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-SUBROUTINE disk (self, m, mem)
+SUBROUTINE disk (self, m, mem, idx)
   class(initial_t):: self
+  type(index_t):: idx
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
   class(mesh_t), pointer, dimension(:):: m
   !.............................................................................

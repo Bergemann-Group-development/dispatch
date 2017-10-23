@@ -56,7 +56,7 @@ SUBROUTINE init (self)
   call self%initial%init(self%kind)
   !call self%boundaries%init(self%kind)
   mem => self%mem(:,:,:,:,self%it,1)
-  call self%initial%condition(self%mesh,mem)
+  call self%initial%condition(self%mesh, mem, self%idx)
   !----------------------------------------------------------------------------
   call self%stats ('initial')
   call trace_end

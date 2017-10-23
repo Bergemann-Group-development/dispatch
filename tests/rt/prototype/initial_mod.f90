@@ -9,6 +9,7 @@ MODULE initial_mod
   USE trace_mod
   USE mesh_mod
   USE random_mod
+  USE index_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -83,8 +84,9 @@ END SUBROUTINE cleanup
 !> =============================================================================
 !> Initialize from a snapshot file
 !> =============================================================================
-SUBROUTINE snapshot (self, m, ff)
+SUBROUTINE snapshot (self, m, ff. idx)
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
   logical, save:: first_time=.true.
@@ -110,8 +112,9 @@ END SUBROUTINE snapshot
 !> =============================================================================
 !> Initialize from a legacy raw data file, with auxciliary grid file
 !> =============================================================================
-SUBROUTINE stagger (self, m, ff)
+SUBROUTINE stagger (self, m, ff, idx)
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
   integer:: n(3), i(3), iv, recl
@@ -215,8 +218,9 @@ END SUBROUTINE stagger
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-SUBROUTINE raw (self, m, ff)
+SUBROUTINE raw (self, m, ff, idx)
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
   integer:: n(3), i(3), iv, recl
@@ -271,8 +275,9 @@ END SUBROUTINE raw
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-SUBROUTINE single_solenoidal (self, m, ff)
+SUBROUTINE single_solenoidal (self, m, ff, idx)
   class(initial_t)      :: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:) :: ff
   !.............................................................................

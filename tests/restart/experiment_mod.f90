@@ -65,7 +65,7 @@ SUBROUTINE init (self)
   call self%set (bits%static)
   call self%initial%init (self%kind)
   ff => self%mem(:,:,:,:,1,1)
-  call self%initial%condition (self%mesh, ff, self%level)
+  call self%initial%condition (self%mesh, ff, self%idx, self%idx, self%level)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
   do iv=self%idx%px,self%idx%pz
     call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
