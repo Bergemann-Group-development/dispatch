@@ -15,7 +15,7 @@
  size=1.0,1.0,1.0
  dims=1,1,1
  mpi_dims=1,1,1
- origin=0,0,0
+ origin=-0.5,-0.5,-0.5
 /
 
 &out_params
@@ -26,12 +26,10 @@
 
 &patch_params
  courant=0.5
- n=64,64,64
+ n=32,32,32
 /
 
 &experiment_params
- truealpha=0.0475
- chirho=0.01
 /
 
 &timestep_params
@@ -39,7 +37,9 @@
 /
 
 &refine_params
- do_refine=f
+ do_refine=t
+ min_jeans=0.25
+ min_dx=0.002
 /
 
 &selfgravity_params
@@ -50,6 +50,10 @@
 
 &poisson_params
  solver='zeus_sor'
+/
+
+&eos_params
+ gamma=1.0001
 /
 
 &zeus_params

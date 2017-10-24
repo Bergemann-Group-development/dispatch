@@ -8,7 +8,7 @@ MODULE initial_mod
   USE mesh_mod
   USE index_mod
   USE patch_mod
-  USE units_mod
+  USE scaling_mod
   implicit none
   private
 
@@ -93,8 +93,8 @@ SUBROUTINE condition (self, m, f, idx)
   type(index_t):: idx
   integer:: i, j, k
   integer:: pertm=2
-  real(8):: rho0=1.0, r0=0.25, truealpha=0.25, truebeta=0.0, perta=0.0, chipres=1.0 &
-          , chirho=1.0, gamma=1.0001, x0=0.0, y0=0.0, z0=0.0
+  real(8):: rho0=15.27026, r0=0.25, truealpha=0.0475, truebeta=0.0, perta=0.0, &
+            chipres=1.0, chirho=100.0, gamma=1.0001, x0=0.0, y0=0.0, z0=0.0
   real(8):: phi0    , q1      , kappa   , c1      , c2      , c3       &
           , pcloud  , vol     , mass    , momi    , omega   , gammad   &
           , egrav   , etherm  , erot    , pamb    , rhoamb  , rz       &
@@ -111,7 +111,6 @@ SUBROUTINE condition (self, m, f, idx)
 
   !$omp critical (input_cr)
   if (first_time) then
-    first_time = .false.
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*, experiment_params)
@@ -125,11 +124,11 @@ SUBROUTINE condition (self, m, f, idx)
   mass   = 4.0 * pi * r0**3 * rho0 / 3.0
   momi   = 0.4 * mass * r0**2
   vol    = 4.0 * pi * r0**3 / 3.0
-  omega  = sqrt ( 4.0 * pi * cgs%grav * rho0 * truebeta )
+  omega  = sqrt ( 4.0 * pi * scaling%grav * rho0 * truebeta )
   erot   = 0.5 * momi * omega**2
   csqiso = 4.0 * pi * rho0 * mass**2 / 3.0
-  csqiso = csqiso**(1.0/3.0) * 0.4 * truealpha * cgs%grav
-  vff    = sqrt ( 2.0 * cgs%grav * mass / r0 )
+  csqiso = csqiso**(1.0/3.0) * 0.4 * truealpha * scaling%grav
+  vff    = sqrt ( 2.0 * scaling%grav * mass / r0 )
 !-----------------------------------------------------------------------
 !      Calculate ambient parameters.
 !-----------------------------------------------------------------------
@@ -140,21 +139,29 @@ SUBROUTINE condition (self, m, f, idx)
 !-----------------------------------------------------------------------
 !      Calculate Jeans-related parameters
 !-----------------------------------------------------------------------
-  tff    = sqrt( 3.0 * pi / ( 32.0 * cgs%grav * rho0) )
+  tff    = sqrt( 3.0 * pi / ( 32.0 * scaling%grav * rho0) )
   cjlen  = tff * sqrt( 32.0 * csqiso / 3.0 )
   cjnum  = maxval(m%d) / cjlen
 !-----------------------------------------------------------------------
 !      Calculate analytical gravitational potential variables
 !-----------------------------------------------------------------------
-  c1     = -2.0 * cgs%grav * pi * rhoamb * (r2**2 - r0**2 * (1.0 - chirho))
-  c2     = -2.0 * cgs%grav * pi * r2**2 * rhoamb
-  c3     = (4.0/3.0) * cgs%grav * pi * r0**3 * (rho0 - rhoamb)
+  c1     = -2.0 * scaling%grav * pi * rhoamb * (r2**2 - r0**2 * (1.0 - chirho))
+  c2     = -2.0 * scaling%grav * pi * r2**2 * rhoamb
+  c3     = (4.0/3.0) * scaling%grav * pi * r0**3 * (rho0 - rhoamb)
 !-----------------------------------------------------------------------
 !      Print out diagnostic information
 !-----------------------------------------------------------------------
-  print "('Free-fall time =',1pe8.3)",tff
-  print "('Initial Jeans length (entire cloud)= ',1pe8.3)",cjlen
-  print "('Initial Jeans number (entire cloud)= ',1pe8.3)",cjnum
+  if (first_time) then
+    first_time = .false.
+    print "('Gravitational constant =',1pe10.3)", scaling%grav
+    print "('Cloud mass =',1pe10.3)", mass
+    print "('Cloud free-fall time =',1pe10.3)", tff
+    print "('Cloud free-fall speed =',1pe10.3)", vff
+    print "('Initial isothermal sound speed =',1pe10.3)", sqrt(csqiso)
+    print "('Initial Jeans length = ',1pe10.3)", cjlen
+    print "('Initial Jeans number = ',1pe10.3)", cjnum
+    print "('Initial angular speed =',1pe10.3)", omega
+  end if
 
   m1 => m(1)
   m2 => m(2)
@@ -166,25 +173,25 @@ SUBROUTINE condition (self, m, f, idx)
       y = m2%centre_nat + m2%r(j)
       do i=m1%lb,m1%ub
         x = m1%centre_nat + m1%r(i)
-        rzsq = ( x - x0 )**2 + ( y - y0 )**2 + ( z - z0 )**2
+        rzsq = (x - x0)**2 + (y - y0)**2 + (z - z0)**2
         rz = sqrt( rzsq )
 
         if (rz <= r0) then
-          phi0            = datan2 ( y - y0, x - x0 )
-          q1              = 1.0 + perta * cos ( dble ( pertm ) * phi0 )
-          nrg             = pcloud / (gamma - 1.0)
+          phi0             = datan2(y - y0, x - x0)
+          q1               = 1.0 + perta * cos(real(pertm,kind=8) * phi0)
+          nrg              = pcloud / (gamma - 1.0)
           f(i,j,k,idx%d)   = q1 * rho0
-          f(i,j,k,idx%phi) = c1 + 2.0 * pi * cgs%grav * rho0 * rzsq / 3.0
+          f(i,j,k,idx%phi) = c1 + 2.0 * pi * scaling%grav * rho0 * rzsq / 3.0
           f(i,j,k,idx%px ) =-omega * (y - y0) * f(i,j,k,idx%d)
           f(i,j,k,idx%py)  = omega * (x - x0) * f(i,j,k,idx%d)
           f(i,j,k,idx%pz)  = 0.0
         else
-          nrg             = pamb / (gamma - 1.0)
+          nrg              = pamb / (gamma - 1.0)
           f(i,j,k,idx%d)   = rhoamb
-          f(i,j,k,idx%phi) = c2 - c3 / rz + 2.0 * cgs%grav * pi * rhoamb * rzsq / 3.0
-          f(i,j,k,idx%px) = 0.0
-          f(i,j,k,idx%py) = 0.0
-          f(i,j,k,idx%pz) = 0.0
+          f(i,j,k,idx%phi) = c2 - c3 / rz + 2.0 * scaling%grav * pi * rhoamb * rzsq / 3.0
+          f(i,j,k,idx%px)  = 0.0
+          f(i,j,k,idx%py)  = 0.0
+          f(i,j,k,idx%pz)  = 0.0
         endif
         if (trim(self%solver) == 'stagger2_mhd_patch') then
           f(i,j,k,idx%s) = (nrg * (gamma - 1.0) - log(f(i,j,k,idx%d)) * gamma) &
@@ -196,6 +203,7 @@ SUBROUTINE condition (self, m, f, idx)
         else if (trim(self%solver) == 'zeus_mhd_patch') then
           f(i,j,k,idx%e) = nrg
         end if
+
         ! this experiment is hydro and gravity only.
         if (size(f,4) > idx%bx) then
           f(i,j,k,idx%bx) = 0.0
