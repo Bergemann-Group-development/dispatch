@@ -347,25 +347,31 @@ FUNCTION check_jeans (self, patch) RESULT(refine_it)
   class(refine_t):: self
   class(patch_t), pointer:: patch
   logical:: refine_it
-  real:: jeans_length, ratio
-  real, dimension(:,:,:), allocatable:: c_sound2
+  real:: Jeans_length, Jeans_num
+  real, dimension(:,:,:), allocatable:: c_sound2, pg
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
   !.............................................................................
-  call trace%begin ('refine_t%check_check_jeans', 2)
+  call trace%begin ('refine_t%check_check_jeans')
+  associate(l => patch%li, u => patch%ui)
+  d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
+  e => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,patch%it,1)
+  allocate(c_sound2(size(d,1),size(d,2),size(d,3)), &
+           pg(patch%gn(1),patch%gn(2),patch%gn(3)))
 
-  allocate(c_sound2(patch%mesh(1)%gn,patch%mesh(2)%gn,patch%mesh(3)%gn))
+  select type (patch)
+  class is (solver_t)
+    pg = patch%gas_pressure()
+  end select
+  c_sound2 = patch%gamma * pg(l(1):u(1),l(2):u(2),l(3):u(3)) / d
+  Jeans_length = minval(sqrt(scaling%pi * c_sound2 / (d*scaling%grav)))
+  Jeans_num = minval(patch%mesh%d) / Jeans_length
+  refine_it = Jeans_num < self%min_jeans
 
-  d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
-  e => patch%mem(:,:,:,patch%idx%e,patch%it,1)
-  c_sound2 = patch%gamma * eos%pressure(d,e) / d
-  jeans_length = minval(sqrt(c_sound2 / (d*scaling%grav)))
-  ratio = jeans_length / minval(patch%mesh%d)
-  refine_it = ratio < self%min_jeans
+  if (io%verbose > 0) print*,'Jeans criterion:', patch%id, Jeans_num, self%min_jeans, refine_it
 
-  if (io%verbose > 2) print*,'Jeans:', patch%id, ratio, self%min_jeans, refine_it
-
-  deallocate (c_sound2)
+  deallocate (c_sound2, pg)
   nullify (d,e)
+  end associate
   call trace%end
 END FUNCTION check_jeans
 
@@ -403,7 +409,7 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine_it)
   class is (solver_t)
     d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
     e => patch%mem(:,:,:,patch%idx%e,patch%it,1)
-    pg = eos%pressure(d, e)
+    pg = patch%gas_pressure()
     v  = patch%gas_velocity()
   end select
 
