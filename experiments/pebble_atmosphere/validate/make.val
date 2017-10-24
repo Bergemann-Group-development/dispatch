@@ -51,9 +51,9 @@ rm -f *.o *.mod *.stackdump
  [ FC ] non_ideal_mod.o
  [ FC ] mhd_mod.o
  [ FC ] ray_geometry_v3_mod.o
- [ FC ] rt_boundaries_mod.o
  [ FC ] rt_components_mod.o
  [ FC ] rt_solver_mod.o
+ [ FC ] rt_boundaries_mod.o
  [ FC ] rt_mod.o
  [ FC ] solver_mod.o
  [ FC ] rmhd_mod.o

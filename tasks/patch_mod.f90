@@ -1681,36 +1681,56 @@ FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
   real:: fmaxval
   class(patch_t):: self
   real, dimension(:,:,:), intent(in):: f
-  fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                     self%mesh(2)%li:self%mesh(2)%ui, &
-                     self%mesh(3)%li:self%mesh(3)%ui))
+  !-----------------------------------------------------------------------------
+  if (self%boundaries%is_set (bits%spherical)) then
+    fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
+  else
+    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                       self%mesh(2)%li:self%mesh(2)%ui, &
+                       self%mesh(3)%li:self%mesh(3)%ui))
+  end if
 END FUNCTION fmaxval4
 !> =============================================================================
 FUNCTION fminval4 (self, f) RESULT(fminval)
   real:: fminval
   class(patch_t):: self
   real, dimension(:,:,:), intent(in):: f
-  fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                     self%mesh(2)%li:self%mesh(2)%ui, &
-                     self%mesh(3)%li:self%mesh(3)%ui))
+  !-----------------------------------------------------------------------------
+  if (self%boundaries%is_set (bits%spherical)) then
+    fminval = minval(f, mask=self%boundaries%mask(self%mesh))
+  else
+    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                       self%mesh(2)%li:self%mesh(2)%ui, &
+                       self%mesh(3)%li:self%mesh(3)%ui))
+  end if
 END FUNCTION fminval4
 !> =============================================================================
 FUNCTION fmaxval8 (self, f) RESULT (fmaxval)
   real(8):: fmaxval
   class(patch_t):: self
   real(8), dimension(:,:,:), intent(in):: f
-  fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                     self%mesh(2)%li:self%mesh(2)%ui, &
-                     self%mesh(3)%li:self%mesh(3)%ui))
+  !-----------------------------------------------------------------------------
+  if (self%boundaries%is_set (bits%spherical)) then
+    fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
+  else
+    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                       self%mesh(2)%li:self%mesh(2)%ui, &
+                       self%mesh(3)%li:self%mesh(3)%ui))
+  end if
 END FUNCTION fmaxval8
 !> =============================================================================
 FUNCTION fminval8 (self, f) RESULT(fminval)
   real(8):: fminval
   class(patch_t):: self
   real(8), dimension(:,:,:), intent(in):: f
-  fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                     self%mesh(2)%li:self%mesh(2)%ui, &
-                     self%mesh(3)%li:self%mesh(3)%ui))
+  !-----------------------------------------------------------------------------
+  if (self%boundaries%is_set (bits%spherical)) then
+    fminval = minval(f, mask=self%boundaries%mask(self%mesh))
+  else
+    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                       self%mesh(2)%li:self%mesh(2)%ui, &
+                       self%mesh(3)%li:self%mesh(3)%ui))
+  end if
 END FUNCTION fminval8
 
 !> =============================================================================
