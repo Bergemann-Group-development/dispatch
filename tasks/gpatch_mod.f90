@@ -33,7 +33,7 @@ MODULE gpatch_mod
   logical, save :: selfgravity=.false., prediction=.true.
   logical, save :: detailed_timer=.false.
   integer, save :: max_iter=100, verbose=0
-  real,    save :: epsilon=1e-3, grho=1.0
+  real,    save :: epsilon=1e-3, fourpiG=1.0
 CONTAINS
 
 !> =============================================================================
@@ -46,13 +46,13 @@ SUBROUTINE init (self)
   logical                           :: ok
   integer                           :: iostat
   logical, save                     :: first_time=.true.
-  namelist /selfgravity_params/ selfgravity, prediction, grho, epsilon, &
+  namelist /selfgravity_params/ selfgravity, prediction, fourpiG, epsilon, &
                                 max_iter, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init')
   !$omp critical (poisson_cr)
   if (first_time) then
-    grho = cgs%grav*scaling%d*scaling%t**2
+    fourpiG = scaling%grav
     rewind (io%input)
     read (io%input, selfgravity_params, iostat=iostat)
     if (io%master) write (io%output, selfgravity_params)
@@ -154,7 +154,7 @@ SUBROUTINE gravity (self, error, only)
   do iz=self%mesh(3)%li,self%mesh(3)%ui
     do iy=self%mesh(2)%li,self%mesh(2)%ui
       do ix=self%mesh(1)%li,self%mesh(1)%ui
-        source(ix,iy,iz) = grho*(d(ix,iy,iz)-self%d0)
+        source(ix,iy,iz) = fourpiG*(d(ix,iy,iz)-self%d0)
       end do
     end do
   end do
@@ -164,7 +164,7 @@ SUBROUTINE gravity (self, error, only)
   ! call the Poisson solver iteratively
   do iter=1,max_iter
     call self%poisson%update (self, phi, resid, source, d, error, detailed_timer)
-    error = error / grho
+    error = error / fourpiG
     if (verbose > 1) print "(i6,' self_gravity: iter =',i3.1,' error =',1p,g14.5)", self%id, iter, error
     ! check for convergence
     if (error < epsilon * error0) then
