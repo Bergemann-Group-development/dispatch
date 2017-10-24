@@ -11,7 +11,6 @@ MODULE solver_mod
   private
   type, public, extends(mhd_t):: solver_t
   contains
-    procedure:: gas_pressure
     procedure:: log_density
     procedure:: log_pressure
     procedure:: velocity_magnitude
@@ -33,18 +32,6 @@ MODULE solver_mod
     module procedure:: MomToVel_VectorToArray
   end interface
 CONTAINS
-
-!> =============================================================================
-FUNCTION gas_pressure (self) RESULT (pg)
-  class(solver_t):: self
-  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  !-----------------------------------------------------------------------------
-  if (self%gamma==1.0) then
-    pg = self%d%q
-  else
-    pg = self%e%q * (self%gamma - 1.0)
-  end if
-END FUNCTION gas_pressure
 
 !> =============================================================================
 FUNCTION gas_velocity_vector (self) RESULT (v)
@@ -79,7 +66,7 @@ SUBROUTINE log_density (self, v)
   class(solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   !-----------------------------------------------------------------------------
-  v = log(self%d%q)
+  v = log(self%mem(:,:,:,self%idx%d,self%it,1))
 END SUBROUTINE log_density
 
 !> =============================================================================
@@ -87,7 +74,7 @@ SUBROUTINE log_pressure (self, v)
   class(solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   !-----------------------------------------------------------------------------
-  v = log(gas_pressure(self))
+  v = log(self%gas_pressure())
 END SUBROUTINE log_pressure
 
 !> =============================================================================
@@ -103,7 +90,7 @@ SUBROUTINE magnetic_field_magnitude (self, v)
   class (solver_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   !-----------------------------------------------------------------------------
-  v = norm(self%B)
+  v = norm(self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1))
 END SUBROUTINE magnetic_field_magnitude
 
 !> =============================================================================
@@ -111,7 +98,7 @@ SUBROUTINE grav_potential (self, v)
   class (solver_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   !-----------------------------------------------------------------------------
-  v = self%gp%q
+  v = self%mem(:,:,:,self%idx%phi,self%it,1)
 END SUBROUTINE grav_potential
 
 !> =============================================================================

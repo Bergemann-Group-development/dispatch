@@ -40,6 +40,7 @@ MODULE mhd_mod
   contains
     procedure:: init => init_zeus
     procedure:: update => update_zeus
+    procedure:: gas_pressure
     procedure:: MapVectors
     procedure:: courant_condition => do_nothing ! this is handled internally by the ZEUS solver
   end type
@@ -497,6 +498,18 @@ SUBROUTINE CopyFromZeus (self)
   nullify (qz)
 
 END SUBROUTINE CopyFromZeus
+
+!> =============================================================================
+FUNCTION gas_pressure (self) RESULT (pg)
+  class(mhd_t):: self
+  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  !-----------------------------------------------------------------------------
+  if (self%gamma==1.0) then
+    pg = self%mem(:,:,:,self%idx%d,self%it,1)
+  else
+    pg = self%mem(:,:,:,self%idx%e,self%it,1) * (self%gamma - 1.0)
+  end if
+END FUNCTION gas_pressure
 
 !> =============================================================================
 !> In `download_mod::interpolate_to` at least, this is invoked by the "source"
