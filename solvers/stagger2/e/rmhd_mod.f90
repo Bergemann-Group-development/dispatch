@@ -96,7 +96,7 @@ SUBROUTINE update (self)
           maxval(qrad(:,iy,:)/e(:,iy,:))
       end do
     end if
-    u_max = self%cdtd*maxval(self%ds)*maxval(abs((dedt-e*dddt/d)/d))
+    u_max = maxval(self%ds)*maxval(abs((dedt-e*dddt/d)/d))*self%courant/self%cdtd
     self%u_max = max(self%u_max,u_max)
     if (io%verbose>1) print 1, 'u_max(RT)  ', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
