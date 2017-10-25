@@ -365,7 +365,7 @@ FUNCTION check_jeans (self, patch) RESULT(refine_it)
   c_sound2 = patch%gamma * pg(l(1):u(1),l(2):u(2),l(3):u(3)) / d
   Jeans_length = minval(sqrt(scaling%pi * c_sound2 / (d*scaling%grav)))
   Jeans_num = minval(patch%mesh%d) / Jeans_length
-  refine_it = Jeans_num < self%min_jeans
+  refine_it = Jeans_num > self%min_jeans
 
   if (io%verbose > 0) print*,'Jeans criterion:', patch%id, Jeans_num, self%min_jeans, refine_it
 
