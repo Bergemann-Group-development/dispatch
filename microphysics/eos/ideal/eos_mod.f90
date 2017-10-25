@@ -82,11 +82,11 @@ END FUNCTION
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
+SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
-  real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y
+  real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y, lnd, ee
   real, dimension(:,:,:),                      optional :: pg, tt, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
   real, dimension(:,:,:), pointer :: x_loc, y_loc
@@ -97,6 +97,11 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   call trace%begin ('eos_t%lookup', itimer=itimer)
   if (present(gamma)) then
     self%gamma = gamma
+  end if
+  if (present(lnd)) then
+    error stop 'trying to use lnd in eos/ideal/eos_mod.f90'
+  else if (present(ee)) then
+    error stop 'trying to use ee in eos/ideal/eos_mod.f90'
   end if
   !-----------------------------------------------------------------------------
   if (present(y)) then

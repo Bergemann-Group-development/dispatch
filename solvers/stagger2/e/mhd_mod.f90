@@ -490,7 +490,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
       pg = e*(self%gamma-1)
     end if
   else
-    call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg)
+    call eos%lookup (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg)
     if (io%verbose>1) then
       print *, self%id, 'lookup_table: lnd =', minval(self%lnd), maxval(self%lnd)
       print *, self%id, 'lookup_table:  ee =', minval(self%ee ), maxval(self%ee )
