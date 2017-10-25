@@ -60,8 +60,12 @@ SUBROUTINE init (self)
   !$omp end critical (poisson_cr)
   if (selfgravity) then
     self%selfgravity = selfgravity
-    self%nv = self%nv+1
+    if (trim(self%kind) /= 'zeus_mhd_patch') self%nv = self%nv + 1
     self%idx%phi = self%nv
+    if (self%nw == 1) then
+      self%nv = self%nv + 1
+      self%idx%dphi = self%nv
+    end if
     call self%patch_t%init
     call self%poisson%init (self, selfgravity)
   else
@@ -203,7 +207,12 @@ SUBROUTINE time_derivs (self)
   integer, parameter:: order=1
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('gpatch_t%time_derivs', itimer=itimer)
-  dphidt => self%mem(:,:,:,self%idx%phi,self%it,2)
+  if (self%nw == 2) then
+    dphidt => self%mem(:,:,:,self%idx%phi,self%it,2)
+  else
+    dphidt => self%mem(:,:,:,self%idx%dphi,self%it,1)
+  end if
+
   if (prediction) then
     nt = self%nt
     t1 = self%t(nt-1)

@@ -26,6 +26,7 @@ MODULE timestep_mod
   contains
     procedure:: init
     procedure:: update
+    procedure:: update_single
   end type
   type(timestep_t), save, public:: timestep
 CONTAINS
@@ -135,5 +136,68 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
   end if
   call trace_end (itimer)
 END SUBROUTINE update
-!-------------------------------------------------------------------------------
+
+!> =============================================================================
+SUBROUTINE update_single (self, id, iit, dt, mem, dmem, mesh, time_order)
+  class(timestep_t):: self
+  class(mesh_t):: mesh(:)
+  integer:: id, nt
+  integer, dimension(:):: iit
+  real(8), dimension(:):: dt
+  real(kind=KindScalarVar), dimension(:,:,:,:):: mem, dmem       ! memory buffers
+  integer, intent(in):: time_order
+  integer:: l(3), u(3)
+  integer, save:: itimer=0
+  !......................................................................
+  call trace_begin ('timestep_t%update_single', itimer=itimer)
+  if (time_order <= 0) return
+
+  nt = size(iit)                                ! number of time slots
+  l = mesh%lb
+  u = mesh%ub
+  where (mesh%lower_boundary)
+    l = mesh%lb
+  end where
+  where (mesh%upper_boundary)
+    u = mesh%ub
+  end where
+
+  select case (time_order)
+  case (0)
+  case (1)
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  )) = &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1)) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(self%wt(1)*dt(iit(nt-1)))
+  case (2)
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  )) = &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1)) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(self%wt(1)*dt(iit(nt-1))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-2))*(self%wt(2)*dt(iit(nt-2)))
+  case (3)
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  )) = &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1)) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(self%wt(1)*dt(iit(nt-1))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-2))*(self%wt(2)*dt(iit(nt-2))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-3))*(self%wt(3)*dt(iit(nt-3)))
+  case (4)
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  )) = &
+    mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1)) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(self%wt(1)*dt(iit(nt-1))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-2))*(self%wt(2)*dt(iit(nt-2))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-3))*(self%wt(3)*dt(iit(nt-3))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-4))*(self%wt(4)*dt(iit(nt-4)))
+  end select
+  if (self%verbose>3) then
+    print'(a,i4,2x,a,1p,6e10.2,2x,6i5)', 'timestep, id:', &
+      id, 'minmax:', &
+      minval(dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))), &
+      maxval(dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))), &
+      minval(mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))), &
+      maxval(mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))), &
+      minval(mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  ))), &
+      maxval(mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  ))), shape(mem)
+  end if
+  call trace_end (itimer)
+END SUBROUTINE update_single
+
 END MODULE timestep_mod
