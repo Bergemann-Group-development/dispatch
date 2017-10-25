@@ -14,6 +14,8 @@ MODULE initial_mod
 
   type, public:: initial_t
     character(len=64):: solver
+    logical:: mhd
+    real:: gamma
   contains
     procedure:: init
     procedure:: condition
@@ -25,11 +27,17 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
+  real, optional:: gamma
   !----------------------------------------------------------------------------
   self%solver = solver
+  if (present(gamma)) then
+    self%gamma = max(gamma, 1.0001)
+  else
+    self%gamma = 1.0001
+  end if
 END SUBROUTINE init
 
 !> =============================================================================
@@ -94,7 +102,7 @@ SUBROUTINE condition (self, m, f, idx)
   integer:: i, j, k
   integer:: pertm=2
   real(8):: rho0=15.27026, r0=0.25, truealpha=0.0475, truebeta=0.0, perta=0.0, &
-            chipres=1.0, chirho=100.0, gamma=1.0001, x0=0.0, y0=0.0, z0=0.0
+            chipres=1.0, chirho=100.0, x0=0.0, y0=0.0, z0=0.0
   real(8):: phi0    , q1      , kappa   , c1      , c2      , c3       &
           , pcloud  , vol     , mass    , momi    , omega   , gammad   &
           , egrav   , etherm  , erot    , pamb    , rhoamb  , rz       &
@@ -105,9 +113,9 @@ SUBROUTINE condition (self, m, f, idx)
   real(8):: x, y, z
   logical, save:: first_time=.true.
   namelist / experiment_params / rho0, r0, truealpha, truebeta, chipres &
-                               , chirho, x0, y0, z0, perta, pertm, gamma
+                               , chirho, x0, y0, z0, perta, pertm
   !----------------------------------------------------------------------------
-  call trace%begin('initial_t%init')
+  call trace%begin('initial_t%condition')
 
   !$omp critical (input_cr)
   if (first_time) then
@@ -132,8 +140,8 @@ SUBROUTINE condition (self, m, f, idx)
 !-----------------------------------------------------------------------
 !      Calculate ambient parameters.
 !-----------------------------------------------------------------------
-  kappa  = csqiso / gamma / rho0**(gamma - 1.0)
-  pcloud = kappa * rho0**gamma
+  kappa  = csqiso / self%gamma / rho0**(self%gamma - 1.0)
+  pcloud = kappa * rho0**self%gamma
   pamb   = pcloud / chipres
   rhoamb = rho0   / chirho
 !-----------------------------------------------------------------------
@@ -179,26 +187,26 @@ SUBROUTINE condition (self, m, f, idx)
         if (rz <= r0) then
           phi0             = datan2(y - y0, x - x0)
           q1               = 1.0 + perta * cos(real(pertm,kind=8) * phi0)
-          nrg              = pcloud / (gamma - 1.0)
+          nrg              = pcloud / (self%gamma - 1.0)
           f(i,j,k,idx%d)   = q1 * rho0
           f(i,j,k,idx%phi) = c1 + 2.0 * pi * scaling%grav * rho0 * rzsq / 3.0
           f(i,j,k,idx%px ) =-omega * (y - y0) * f(i,j,k,idx%d)
           f(i,j,k,idx%py)  = omega * (x - x0) * f(i,j,k,idx%d)
           f(i,j,k,idx%pz)  = 0.0
         else
-          nrg              = pamb / (gamma - 1.0)
+          nrg              = pamb / (self%gamma - 1.0)
           f(i,j,k,idx%d)   = rhoamb
           f(i,j,k,idx%phi) = c2 - c3 / rz + 2.0 * scaling%grav * pi * rhoamb * rzsq / 3.0
           f(i,j,k,idx%px)  = 0.0
           f(i,j,k,idx%py)  = 0.0
           f(i,j,k,idx%pz)  = 0.0
         endif
-        if (trim(self%solver) == 'stagger2_mhd_patch') then
-          f(i,j,k,idx%s) = (nrg * (gamma - 1.0) - log(f(i,j,k,idx%d)) * gamma) &
-                         * f(i,j,k,idx%d) / (gamma - 1.0)
-        else if (trim(self%solver) == 'stagger2e_mhd_patch') then
+        if (self%solver(1:9) == 'stagger2_') then
+          f(i,j,k,idx%s) = (log(nrg * (self%gamma - 1.0)) - log(f(i,j,k,idx%d)) * self%gamma) &
+                         * f(i,j,k,idx%d) / (self%gamma - 1.0)
+        else if (self%solver(1:10) == 'stagger2e_') then
           f(i,j,k,idx%e) = nrg
-        else if (trim(self%solver) == 'ramses_mhd_patch') then
+        else if (self%solver(1:7) == 'ramses_') then
           f(i,j,k,idx%e) = nrg + 0.5 * f(i,j,k,idx%py)**2 / f(i,j,k,idx%d)
         else if (trim(self%solver) == 'zeus_mhd_patch') then
           f(i,j,k,idx%e) = nrg
