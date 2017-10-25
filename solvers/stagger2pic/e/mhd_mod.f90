@@ -68,14 +68,6 @@ SUBROUTINE init (self)
     self%kind = 'stagger2e_hd_patch'
   end if
   call self%gpatch_t%init
-  self%idx%d  = idx%d
-  self%idx%px = idx%px
-  self%idx%py = idx%py
-  self%idx%pz = idx%pz
-  self%idx%e  = idx%e
-  self%idx%bx = idx%bx
-  self%idx%by = idx%by
-  self%idx%bz = idx%bz
   !$omp critical (mhd_input_cr)
   if (first_time) then
     first_time = .false.

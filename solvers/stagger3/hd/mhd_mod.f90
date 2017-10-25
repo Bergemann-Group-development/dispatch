@@ -88,14 +88,6 @@ SUBROUTINE init(self)
   !-----------------------------------------------------------------------------
   self%gamma = gamma
   self%nu = nu
-  self%idx%d  = idx%d
-  self%idx%px = idx%px
-  self%idx%py = idx%py
-  self%idx%pz = idx%pz
-  self%idx%e  = idx%e
-  self%idx%bx = idx%bz
-  self%idx%by = idx%by
-  self%idx%bz = idx%bz
   !-----------------------------------------------------------------------------
   ! Physical initial conditions: Sedov blast or advection
   !-----------------------------------------------------------------------------

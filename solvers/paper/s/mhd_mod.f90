@@ -102,15 +102,6 @@ SUBROUTINE init (self)
     self%kind = 'stagger2_hd_patch'
   end if
   call self%gpatch_t%init
-  self%idx%d  = idx%d
-  self%idx%e  = idx%e
-  self%idx%s  = idx%s
-  self%idx%px = idx%px
-  self%idx%py = idx%py
-  self%idx%pz = idx%pz
-  self%idx%bx = idx%bx
-  self%idx%by = idx%by
-  self%idx%bz = idx%bz
   self%type = 'mhd_t'
   do i=1,3
     self%mesh(i)%h(2+i) = -0.5

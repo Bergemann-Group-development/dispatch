@@ -112,15 +112,6 @@ SUBROUTINE init (self)
   self%min_iter  = min_iter
   self%max_iter  = max_iter
   self%nv        = 6
-  self%idx%d  = idx%d
-  self%idx%px = idx%px
-  self%idx%py = idx%py
-  self%idx%pz = idx%pz
-  self%idx%e  = idx%e
-  self%idx%bx = idx%bz
-  self%idx%by = idx%by
-  self%idx%bz = idx%bz
-  self%idx%phi= idx%phi
   !-----------------------------------------------------------------------------
   ! Set up the right dimensions from current patch, etc for laplace iteration method
   !-----------------------------------------------------------------------------

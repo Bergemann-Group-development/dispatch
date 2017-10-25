@@ -322,16 +322,6 @@ SUBROUTINE init_zeus (self)
     self%mesh(i)%h(4+i) = -0.5 ! momentum/velocity components
     self%mesh(i)%h(7+i) = -0.5 ! mag. field components
   end do
-  self%idx%d   = idx%d
-  self%idx%e   = idx%e
-  self%idx%et  = idx%et
-  self%idx%phi = idx%phi
-  self%idx%px  = idx%px
-  self%idx%py  = idx%py
-  self%idx%pz  = idx%pz
-  self%idx%bx  = idx%bx
-  self%idx%by  = idx%by
-  self%idx%bz  = idx%bz
 
   self%dt(self%it) = dtinit
   self%t(self%it) = 0.0d0

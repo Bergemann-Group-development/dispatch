@@ -77,11 +77,6 @@ SUBROUTINE init (self)
   if (self%nv == 0) self%nv = 5
 
   call self%gpatch_t%init
-  self%idx%d  = idx%d
-  self%idx%e  = idx%e
-  self%idx%px = idx%px
-  self%idx%py = idx%py
-  self%idx%pz = idx%pz
   !$omp critical (pde)
   if (first_time) then
     first_time = .false.

@@ -96,14 +96,6 @@ SUBROUTINE init (self)
   ! Now we are ready to allocate memory in gpatch_t%init -> patch_t%init
   !-----------------------------------------------------------------------------
   call self%gpatch_t%init
-  self%idx%d  = idx%d
-  self%idx%e  = idx%e
-  self%idx%px = idx%px
-  self%idx%py = idx%py
-  self%idx%pz = idx%pz
-  self%idx%bx = idx%bx
-  self%idx%by = idx%by
-  self%idx%bz = idx%bz
   call trace_end
 END SUBROUTINE init
 
