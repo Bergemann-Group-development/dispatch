@@ -214,6 +214,9 @@ SUBROUTINE init_zeus_sor (self, patch)
 
   dsi = 1.0 / patch%ds
 
+  if (allocated(self%dx1m2i)) then
+    deallocate (self%dx1m2i, self%dx1p2i, self%dx2m2i, self%dx2p2i, self%eta)
+  end if
   allocate (self%dx1m2i(m1%gn), self%dx1p2i(m1%gn), self%dx2m2i(m2%gn), self%dx2p2i(m2%gn))
   allocate (self%eta(m1%gn,m2%gn,m3%gn))
 
