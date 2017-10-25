@@ -19,14 +19,15 @@
 /
 
 &out_params
- end_time=5.01
- out_time=0.1
+ end_time=152.0
+ out_time=0.5
  guard_zones=t
 /
 
 &patch_params
  courant=0.5
  n=32,32,32
+ nt=5
 /
 
 &experiment_params

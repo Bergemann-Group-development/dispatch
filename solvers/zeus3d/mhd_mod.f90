@@ -19,8 +19,6 @@ MODULE mhd_mod
   implicit none
   private
 
-  integer, parameter:: nvar_zeus = 10
-  ! this variable is used to set the staggering of vector components
   integer, parameter:: KindReal = 8
 
   ! a derived-type to keep track of the ZEUS boundary types; ZEUS currently
@@ -308,7 +306,7 @@ SUBROUTINE init_zeus (self)
   endif
 
   self%ix1x2x3 = ix1x2x3
-  self%nv = nvar_zeus
+  self%nv = 10
   self%gamma = gamma
   gamma_z = gamma
   self%ng = nghst
@@ -334,6 +332,10 @@ END SUBROUTINE init_zeus
 SUBROUTINE update_zeus (self)
   class(mhd_t) :: self
   integer, save:: itimer=0
+  real:: error
+  !-----------------------------------------------------------------------------
+
+  call self%gravity(error)
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
@@ -346,6 +348,14 @@ SUBROUTINE update_zeus (self)
   call zeus3d (self%istep)  ! run ZEUS
   call trace_end(itimer)
   call CopyFromZeus (self)
+
+  if (self%selfgravity) then
+    associate (phi => self%mem(:,:,:,self%idx%phi,:,1), dphidt => self%mem(:,:,:,self%idx%dphi,:,1))
+    call timestep%update_single (self%id, self%iit, self%dt, phi, dphidt, self%mesh, 1)
+    end associate
+    call self%dnload (only=self%idx%phi)
+    call self%gravity (error, only=self%idx%phi)
+  end if
 
 END SUBROUTINE update_zeus
 
