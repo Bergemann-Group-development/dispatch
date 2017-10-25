@@ -118,11 +118,11 @@ END FUNCTION
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
+SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
-  real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y
+  real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y, lnd, ee
   real, dimension(:,:,:),                      optional :: pg, tt, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
   real, dimension(:,:,:), pointer :: x_loc, y_loc, lnd, ee
@@ -153,7 +153,13 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
     call mpi%abort ('eos_t: missing 1st argument')
   end if
   !-----------------------------------------------------------------------------
-  if (present(src).and.present(rk)) then
+  if (present(lnr).and.present(ee) then
+    if (present(src)) then
+      call lookup_table (self, dim, ee=ee, lnd=lnd, rk=rk, src=src)
+    else
+      call lookup_table (self, dim, ee=ee, lnd=lnd, rk=rk)
+    end if
+  else if (present(src).and.present(rk)) then
     allocate (lnd(dim(1),dim(2),dim(3)))
     allocate (ee (dim(1),dim(2),dim(3)))
     lnd = log(x_loc)
@@ -161,23 +167,23 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
     call lookup_table (self, dim, ee=ee, lnd=lnd, src=src, rk=rk)
     deallocate (lnd, ee)
   else
-  if (present(tt)) then
-    tt = (self%gamma-1.0)*x_loc
-  end if
-  if (present(src)) then
-    stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
-    do i=1,size(src,4)
-      src(:,:,:,i) = stefan*real(((self%gamma-1.0)*x_loc),kind=8)**4
-    end do
-  end if
-  if (present(pg)) then
-    pg = (self%gamma-1.0)*y_loc*x_loc
-  end if
-  if (present(rk)) then
-    do i=1,size(rk,4)
-      rk(:,:,:,i) = y_loc*self%kappa
-    end do
-  end if
+    if (present(tt)) then
+      tt = (self%gamma-1.0)*x_loc
+    end if
+    if (present(src)) then
+      stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
+      do i=1,size(src,4)
+        src(:,:,:,i) = stefan*real(((self%gamma-1.0)*x_loc),kind=8)**4
+      end do
+    end if
+    if (present(pg)) then
+      pg = (self%gamma-1.0)*y_loc*x_loc
+    end if
+    if (present(rk)) then
+      do i=1,size(rk,4)
+        rk(:,:,:,i) = y_loc*self%kappa
+      end do
+    end if
   end if
   if (present(lnx)) deallocate(x_loc)
   if (present(lny)) deallocate(y_loc)
