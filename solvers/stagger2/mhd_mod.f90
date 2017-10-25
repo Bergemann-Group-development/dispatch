@@ -152,6 +152,7 @@ SUBROUTINE test (self)
     print *,io%hs
     print *, 'mhd_t%test not possible with n, no_mans_land =', self%n, self%no_mans_land
     print *,io%hs
+    call self%delete
     call trace%end
     return
   end if
