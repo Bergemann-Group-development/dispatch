@@ -34,6 +34,7 @@ class Patch(Task):
         fp.close()
         self.varidx = variable_indices(self.kind, read_derivs)
         self.varnames = []
+        self.__cached = 0
         for k in self.varidx.keys():
             self.varnames.append(k)
         for k in self.varidx.keys():
@@ -120,9 +121,13 @@ class Patch(Task):
         l=self.nghost[2]; u=l+self.n[2]; self.z = self.z[l:u]; self.zs = self.zs[l:u]
 
     def cache(self):
+        if self.__cached:
+            return
+        self.__cached=1
         if self.kind[0:9]=='rt_solver':
-            self.Q = self.data[:,:,:,self.varidx['Q']]
-            self.t = self.data[:,:,:,self.varidx['t']]
+            self.Q  = self.data[:,:,:,self.varidx['Q']]
+            self.S  = self.data[:,:,:,self.varidx['S']]
+            self.rk = self.data[:,:,:,self.varidx['rk']]
             self.xs=self.x-0.5*self.ds[0]
             self.ys=self.y-0.5*self.ds[1]
             self.zs=self.z-0.5*self.ds[2]
@@ -176,11 +181,13 @@ class Patch(Task):
 
     def vars(self):
         '''Make arrays available in a .var dict'''
-        if self.kind[0:9]!='rt_solver':
-            if not 'd' in dir(self):
-                self.cache()
         if not 'var' in dir(self):
-            if self.nvar>8:
+            self.cache()
+            if self.kind=='rt_solver':
+               self.var={'Q':self.Q,\
+                        'S' :self.S,\
+                        'rk':self.rk}
+            elif self.nvar>8:
                 self.var={'d':self.d,\
                         'e':self.e,\
                         's':self.s,\
@@ -274,7 +281,8 @@ def variable_indices(solver_type, read_derivs=False):
                    'b1': 7, 'b2': 8, 'b3': 9}
     elif solver_type.lower() == 'rt_solver':
         indices = {'Q':  0,
-                   't': 1}
+                   'S':  1,
+                  'rk':  2}
     elif solver_type.lower() == 'poisson':
         indices = {'d': 0, 'phi': 1}
         if read_derivs:
