@@ -39,4 +39,5 @@ mhd_mod.o               : io_mod.o trace_mod.o scalar_mod.o vector_mod.o force_m
                           stagger_mod.o mesh_mod.o
 patches_mod.o           : io_mod.o trace_mod.o timestep_mod.o
 eos_mod.o               : io_mod.o trace_mod.o
-rt_boundaries_mod.o     : io_mod.o trace_mod.o kinds_mod.o mpi_mod.o bits_mod.o mesh_mod.o eos_mod.o units_mod.o scaling_mod.o ray_geometry_v3_mod.o
+rt_boundaries_mod.o     : io_mod.o trace_mod.o kinds_mod.o mpi_mod.o bits_mod.o mesh_mod.o eos_mod.o units_mod.o scaling_mod.o ray_geometry_v3_mod.o \
+                          rt_components_mod.o

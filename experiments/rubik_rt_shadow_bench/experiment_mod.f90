@@ -66,7 +66,7 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%rmhd_t%update
-  print *, self%time
+  print *,self%id,'update',self%time
   call trace_end
 END SUBROUTINE update
 

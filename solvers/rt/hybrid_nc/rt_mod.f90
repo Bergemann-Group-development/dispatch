@@ -6,6 +6,7 @@ MODULE rt_mod
   USE kinds_mod
   USE ray_geometry_v3_mod
   USE rt_components_mod
+  USE rt_boundaries_mod
   USE rt_solver_mod
   USE patch_mod
   USE task_mod
@@ -211,8 +212,7 @@ SUBROUTINE allocate_shell (self)
   self%wall_idx(6) = self%wall_idx(5) + abs(self%n(1)-2)*abs(self%n(2)-2)
   itot = product(self%n)-product(abs(self%n-2))
   allocate(self%wall(itot,ray_geometry%head%n_ray_dirs*2))
-  print *, itot
-  print *, self%wall_idx
+
 END SUBROUTINE allocate_shell
 
 !> =====================================================================
@@ -754,11 +754,13 @@ SUBROUTINE execute_no_chain (self)
     do ir = 1, nrays
       q_fw0(ir,:) = link%pdata(ir)%in(:,self%it)
     end do
+    !print *, 'qfw',minval(q_fw0), maxval(q_fw0)
     tr=1
     do ir = nrays+1, nrays*2
       q_re0(tr,:) = link%pdata(ir)%in(:,self%it)
       tr=tr+1
     end do
+    !print *, 'qre',minval(q_re0), maxval(q_re0)
     call self%solve(link,q_in_fw=q_fw0, q_in_re=q_re0, &
                          q_out_fw=q_fw, q_out_re=q_re)          ! do the radiative transfer for this particular link
     call self%update_q(link, q_fw=q_fw, q_re=q_re)
@@ -944,7 +946,6 @@ SUBROUTINE link_connects_to (self, nbor, mine, other, connects, is_upstream)
       if (self%no_mans_land) then
         rid = mine%bundle%packet(1)%r_id_fw(ray)                          ! ray id in a packet list of a ray in the previous bundle 
         pid = mine%bundle%packet(1)%p_id_fw(ray)                          ! packet id in the previous bundle
-        print *, rid, pid
         rev = other%bundle%packet(pid)%rev_coords(:,rid)                ! zeroth point in the ray (location of incoming intensity)            
       else
         rid = mine%bundle%packet(1)%r_id_fw(ray)                          ! ray id in a packet list of a ray in the previous bundle 

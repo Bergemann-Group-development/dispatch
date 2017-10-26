@@ -34,6 +34,8 @@ boundary_mod.o          : io_mod.o trace_mod.o units_mod.o scaling_mod.o
 setup_mod.o             : io_mod.o trace_mod.o units_mod.o scaling_mod.o rubiks_mod.o omp_mod.o radiative_transfer_mod.o
 experiment_mod.o	: rmhd_mod.o trace_mod.o io_mod.o initial_mod.o bits_mod.o boundaries_mod.o
 intial_mod.o		: io_mod.o trace_mod.o mesh_mod.o units_mod.o scaling_mod.o
+rt_boundaries_mod.o     : io_mod.o trace_mod.o mpi_mod.o bits_mod.o mesh_mod.o ray_geometry_v3_mod.o eos_mod.o
+
 
 
 

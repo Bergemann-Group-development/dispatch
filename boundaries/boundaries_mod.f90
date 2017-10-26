@@ -26,6 +26,7 @@ MODULE boundaries_mod
     procedure:: set
     procedure:: is_set
     procedure:: is_clear
+    procedure:: mask
     procedure:: condition
     procedure:: symmetric
     procedure:: antisymmetric
@@ -93,6 +94,38 @@ FUNCTION is_clear (self, bits) RESULT (out)
   !-----------------------------------------------------------------------------
   out = (iand (self%bits, bits) ==0)
 END FUNCTION is_clear
+
+!> =============================================================================
+!> Check bits in the status word
+!> =============================================================================
+FUNCTION mask (self, m) RESULT (out)
+  class(boundaries_t)      :: self
+  class(mesh_t), pointer   :: m(:)
+  logical                  :: out(m(1)%gn,m(2)%gn,m(3)%gn)
+  !............................................................................
+  integer                  :: ix, iy, iz
+  real(8)                  :: x, y, z, r
+  !-----------------------------------------------------------------------------
+  call trace_begin('boundaries_t%mask')
+  out(:,:,:) = .false.
+  out(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = .true.
+  if (self%is_set (bits%spherical)) then
+    associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+    do iz=m(3)%li,m(3)%ui
+      z = m(3)%p + r3(iz) - planet%position(3)
+      do iy=m(2)%li,m(2)%ui
+        y = m(2)%p + r2(iy) - planet%position(2)
+        do ix=m(1)%li,m(1)%ui
+          x = m(1)%p + r1(ix) - planet%position(1)
+          r = sqrt(x**2+y**2+z**2)
+          out(ix,iy,iz) = merge (out(ix,iy,iz), .false., r>planet%radius)
+        end do
+      end do
+    end do
+    end associate
+  end if
+  call trace_end
+END FUNCTION mask
 
 !> =============================================================================
 !> Apply a boundary condition, using the procedure pointer "operator"

@@ -70,9 +70,9 @@ SUBROUTINE update (self)
   call trace%begin ('rmhd_t%update', itimer=itimer)
   call self%output
   call self%pde
+  associate(l => self%li, u => self%ui)
   if (eos%do_rt.and.associated(self%rt)) then
     if (.not.self%rt%do_chains) call self%rt%update
-    associate(l => self%li, u => self%ui)
     allocate(qrad(self%n(1), self%n(2), self%n(3)))
     qrad = 0.0
     call self%rt%get_q (self%time, qrad)                                  ! interpolate in time and space
@@ -96,18 +96,23 @@ SUBROUTINE update (self)
           maxval(qrad(:,iy,:)/e(:,iy,:))
       end do
     end if
-    u_max = self%cdtd*maxval(self%ds)*maxval(abs((dedt-e*dddt/d)/d))
+    u_max = maxval(self%ds)*maxval(abs((dedt-e*dddt/d)/d))*self%courant/self%cdtd
     self%u_max = max(self%u_max,u_max)
     if (io%verbose>1) print 1, 'u_max(RT)  ', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
+    !---------------------------------------------------------------------------
+    ! Store qrad in temperatures slot for now
+    !---------------------------------------------------------------------------
+    self%mem(:,:,:,self%i_tt,self%it,1) = 0.0
+    self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_tt,self%it,1) = qrad
     deallocate (qrad)
-    end associate
   end if                              
   call self%courant_condition
   if (io%verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
+  end associate
   call trace%end (itimer)
 END SUBROUTINE update
 

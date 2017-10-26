@@ -31,8 +31,9 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
-  real, optional:: gamma
   character(len=64):: solver
+  real, optional:: gamma
+  !.............................................................................
   real, save:: clump_pos(3)=0.0, clump_a=0.1, clump_b=0.06, d0=1.0, t0=290.0, clump_dfact=10.0
   namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact
   integer:: iostat
@@ -55,7 +56,6 @@ SUBROUTINE init (self, solver, gamma)
   self%d0 = d0 /scaling%d
   self%t0 = t0 /scaling%temp
   self%clump_dfact = clump_dfact
-  self%gamma=gamma
 
   call trace_end
 END SUBROUTINE init
@@ -92,7 +92,7 @@ SUBROUTINE condition (self, m, mem, idx)
         q = ((x - self%clump_pos(1)) / self%clump_a)**2 &
           + ((y - self%clump_pos(2)) / self%clump_b)**2 &
           + ((z - self%clump_pos(3)) / self%clump_b)**2
-
+        q = 10.0 * (q - 1.0)
         ! the if-then-else is to prevent overflow when (x,y,z) is very from zero.
         if (q > 88.0) then
           mem(ix,iy,iz,idx%d) = self%d0

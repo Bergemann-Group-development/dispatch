@@ -47,4 +47,4 @@ pebble_patch_mod.o      : io_mod.o trace_mod.o omp_mod.o omp_timer_mod.o task_mo
                           pebble_trace_mod.o solver_mod.o
 pebble_mod.o            :
 rt_boundaries_mod.o     : io_mod.o trace_mod.o mpi_mod.o bits_mod.o mesh_mod.o ray_geometry_v3_mod.o planet_mod.o \
-                          atmosphere_mod.o eos_mod.o
+                          atmosphere_mod.o eos_mod.o rt_components_mod.o
