@@ -64,10 +64,10 @@ def image(f,verbose=0,vlim=None,**kwargs):
     2nd index upwards
     '''
     if vlim:
-        im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation=None,\
+        im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation='nearest',\
           vmin=vlim[0],vmax=vlim[0],**kwargs)
     else:
-        im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation=None,**kwargs)
+        im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation='nearest',**kwargs)
     return im
 
 def in_extent(e,p):
