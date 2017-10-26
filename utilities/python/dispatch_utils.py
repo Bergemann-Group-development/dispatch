@@ -330,7 +330,7 @@ def values_along_z(point,p,iv=0,verbose=0):
     s,f=values_along(point,p,dir=2,iv=iv,verbose=verbose)
     return s,f
 
-def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None):
+def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None, same=True):
     '''
     Return a list of structures s={id,iout,time,data,...}, where id,iout
     are the integer patch and snapshot numbers, time is in code units,
@@ -344,9 +344,16 @@ def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None)
     if verbose: print 'patches: run={} data={} iout={}'.format(run,data,iout)
     files = patch_files (run=run, data=data, iout=iout, verbose=verbose)
     pp=[]
+    nghost=-1
     for f in files:
         s=dd.Patch(f,verbose=verbose)
-        pp.append(s)
+        if same:
+            if nghost==-1:
+                nghost=s.nghost[0]
+            if s.nghost[0]==nghost:
+                pp.append(s)
+        else:
+            pp.append(s)
     if x:
         pp=[p for p in pp if x>=p.active_corners[0,0] and x<p.active_corners[1,0]]
     if y:
