@@ -184,6 +184,7 @@ class Patch(Task):
                 self.var={'d':self.d,\
                         'e':self.e,\
                         's':self.s,\
+                        'sd':self.sd,\
                         'p1':self.p1,\
                         'p2':self.p2,\
                         'p3':self.p3,\
@@ -200,6 +201,7 @@ class Patch(Task):
                 self.var={'d':self.d,\
                         'e':self.e,\
                         's':self.s,\
+                        'sd':self.sd,\
                         'p1':self.p1,\
                         'p2':self.p2,\
                         'p3':self.p3,\
@@ -215,6 +217,7 @@ class Patch(Task):
                  self.var={'d':self.d,\
                         'e':self.e,\
                         's':self.s,\
+                        'sd':self.sd,\
                         'p1':self.p1,\
                         'p2':self.p2,\
                         'p3':self.p3,\
