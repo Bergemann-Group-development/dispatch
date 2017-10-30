@@ -16,6 +16,7 @@ MODULE gpatch_mod
   USE units_mod
   USE scaling_mod
   USE poisson_mod
+  USE omp_timer_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
@@ -34,6 +35,7 @@ MODULE gpatch_mod
   logical, save :: detailed_timer=.false.
   integer, save :: max_iter=100, verbose=0
   real,    save :: epsilon=1e-3, fourpiG=1.0
+  integer, save :: order=1
 CONTAINS
 
 !> =============================================================================
@@ -144,6 +146,7 @@ SUBROUTINE gravity (self, error, only)
   !.............................................................................
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi, source, resid
   real:: error, error0
+  real(8):: sec
   integer:: iter, ix ,iy, iz
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -166,6 +169,7 @@ SUBROUTINE gravity (self, error, only)
   error0 = sum(source)
 
   ! call the Poisson solver iteratively
+  sec = wallclock()
   do iter=1,max_iter
     call self%poisson%update (self, phi, resid, source, d, error, detailed_timer)
     error = error / fourpiG
@@ -173,8 +177,8 @@ SUBROUTINE gravity (self, error, only)
     ! check for convergence
     if (error < epsilon * error0) then
       if (verbose>0) &
-        print "(i6,' poisson converged in',i4,' iterations; initial, final error:',1p,e10.3,e10.3)", &
-          self%id, iter, error0, error
+        print "(i6,' poisson converged in',i4,' iterations; initial, final error, time taken:',1p,3e10.3)", &
+          self%id, iter, error0, error, wallclock()-sec
       exit
     end if
   end do
@@ -196,15 +200,14 @@ END SUBROUTINE gravity
 !> Compute an approximate, conservative estimate of dphi/dt, which will cause
 !> the timestep routine to make a good guess at the next phi, at the same time
 !> as it is updating the other variables.  The 1st order prediction is in
-!> practice better at reducing the nuber of iterations than the 2nd order.
+!> practice better at reducing the number of iterations than the 2nd order.
 !> =============================================================================
 SUBROUTINE time_derivs (self)
   class(gpatch_t):: self
-  integer:: it1, it2, it3, nt
+  integer:: it1, it2, it3, nt, l(3), u(3)
   real(8):: t1, t2, t3
   integer, save:: itimer=0
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: dphidt
-  integer, parameter:: order=1
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('gpatch_t%time_derivs', itimer=itimer)
   if (self%nw == 2) then
@@ -215,26 +218,29 @@ SUBROUTINE time_derivs (self)
 
   if (prediction) then
     nt = self%nt
-    t1 = self%t(nt-1)
-    t2 = self%t(nt-2)
-    t3 = self%t(nt-3)
     it1 = self%iit(nt-1)
     it2 = self%iit(nt-2)
     it3 = self%iit(nt-3)
+    t1 = self%t(it1)
+    t2 = self%t(it2)
+    t3 = self%t(it3)
+    dphidt = 0.0
     if (it2/=it1 .and. t1/=t2) then
-      if (order==2) then
-        dphidt = (self%mem(:,:,:,self%idx%phi,it1,1) - &
-                  self%mem(:,:,:,self%idx%phi,it2,1))/(t1-t2)*1.5 - &
-                 (self%mem(:,:,:,self%idx%phi,it2,1) - &
-                  self%mem(:,:,:,self%idx%phi,it3,1))/(t2-t3)*0.5
+      l = self%mesh%li
+      u = self%mesh%ui
+      if (order==2 .and. t2/=t3) then
+        dphidt(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+                 (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it1,1) - &
+                  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it2,1))/(t1-t2)*1.5 - &
+                 (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it2,1) - &
+                  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it3,1))/(t2-t3)*0.5
       else
-        dphidt = (self%mem(:,:,:,self%idx%phi,it1,1) - &
-                  self%mem(:,:,:,self%idx%phi,it2,1))/(t1-t2)
+        dphidt(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+                 (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it1,1) - &
+                  self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%phi,it2,1))/(t1-t2)
       end if
       if (verbose>1) print *,self%id,'d(phi)/dt min,max,nv =', &
           self%fminval(dphidt), self%fmaxval(dphidt), size(self%mem,4)
-    else
-      dphidt = 0.0
     end if
   else
     dphidt = 0.0
