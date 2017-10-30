@@ -23,7 +23,7 @@ MODULE gpatch_mod
     type(data_hub_t) :: data_hub
     type(poisson_t)  :: poisson
     logical:: selfgravity=.false.
-    real:: d0=0.0
+    real:: d0=1.0
   contains
     procedure:: init
     procedure:: dnload
@@ -33,7 +33,7 @@ MODULE gpatch_mod
   logical, save :: selfgravity=.false., prediction=.true.
   logical, save :: detailed_timer=.false.
   integer, save :: max_iter=100, verbose=0
-  real,    save :: rtoler=1e-3, atoler=1e-5, fourpiG=1.0
+  real,    save :: epsilon=1e-3, fourpiG=1.0
 CONTAINS
 
 !> =============================================================================
@@ -46,7 +46,7 @@ SUBROUTINE init (self)
   logical                           :: ok
   integer                           :: iostat
   logical, save                     :: first_time=.true.
-  namelist /selfgravity_params/ selfgravity, prediction, fourpiG, rtoler, atoler, &
+  namelist /selfgravity_params/ selfgravity, prediction, fourpiG, epsilon, &
                                 max_iter, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init')
@@ -143,7 +143,7 @@ SUBROUTINE gravity (self, error, only)
   integer, optional:: only !unused
   !.............................................................................
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi, source, resid
-  real:: error, rerror0, aerror0
+  real:: error, error0
   integer:: iter, ix ,iy, iz
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -162,18 +162,19 @@ SUBROUTINE gravity (self, error, only)
       end do
     end do
   end do
-  aerror0 = sum(source)
+  ! initial error estimate; assumes phi = 0.
+  error0 = sum(source)
 
   ! call the Poisson solver iteratively
   do iter=1,max_iter
     call self%poisson%update (self, phi, resid, source, d, error, detailed_timer)
-    if (iter == 1) rerror0 = error
+    error = error / fourpiG
     if (verbose > 1) print "(i6,' self_gravity: iter =',i3.1,' error =',1p,g14.5)", self%id, iter, error
     ! check for convergence
-    if (error < rtoler * rerror0 .or. error < atoler * aerror0) then
+    if (error < epsilon * error0) then
       if (verbose>0) &
-        print "(i6,' poisson converged in',i4,' iterations; initial rel, initial abs, final error:',1p,e10.3, e10.3,e10.3)", &
-          self%id, iter, rerror0, aerror0, error
+        print "(i6,' poisson converged in',i4,' iterations; initial, final error:',1p,e10.3,e10.3)", &
+          self%id, iter, error0, error
       exit
     end if
   end do
@@ -181,7 +182,7 @@ SUBROUTINE gravity (self, error, only)
   if (iter > max_iter) then
     print "(i6,' WARNING: poisson solution not converged in', i4, ' iterations')", &
       self%id, max_iter
-    print "('rerror0 = ',g14.5,'; aerror0  = ',g14.5,'; error = ',g14.5)",rerror0,aerror0,error
+    print "('error0 = ',g14.5,'; error = ',g14.5)",error0,error
   end if
 
   deallocate (source, resid)
