@@ -183,8 +183,7 @@ SUBROUTINE sor_2nd (self, patch, phi, resid, FourPiGrho, d, error, detailed_time
                 - a * FourPiGrho(i,j,k)
           phi(i,j,k)   = (1. - omega_sor) * phi(i,j,k) + omega_sor  * ustar
           resid(i,j,k) = (phi(i,j,k) - ustar) / a
-          !!!error = max(error, abs(ustar - b * phi(i,j,k)) / d(i,j,k))
-          error = max(error, abs(resid(i,j,k)))
+          error = max(error, abs(ustar - b * phi(i,j,k)) / d(i,j,k))
         end do
       end do
     end do
