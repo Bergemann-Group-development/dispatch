@@ -165,15 +165,19 @@ SUBROUTINE gravity (self, error, only)
       end do
     end do
   end do
-  ! initial error estimate; assumes phi = 0.
-  error0 = sum(source)
 
   ! call the Poisson solver iteratively
   sec = wallclock()
   do iter=1,max_iter
     call self%poisson%update (self, phi, resid, source, d, error, detailed_timer)
+    !---------------------------------------------------------------------------
+    ! The error coming back from poisson should be (Laplace(phi)-source)/d, which
+    ! we then here normalize with grho, to get the relative error in density.
+    !---------------------------------------------------------------------------
     error = error / fourpiG
+    if (iter == 1) error0 = error
     if (verbose > 1) print "(i6,' self_gravity: iter =',i3.1,' error =',1p,g14.5)", self%id, iter, error
+
     ! check for convergence
     if (error < epsilon * error0) then
       if (verbose>0) &
@@ -182,6 +186,7 @@ SUBROUTINE gravity (self, error, only)
       exit
     end if
   end do
+
   ! too many iterations; throw warning before continuing
   if (iter > max_iter) then
     print "(i6,' WARNING: poisson solution not converged in', i4, ' iterations')", &
