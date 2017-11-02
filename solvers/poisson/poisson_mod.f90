@@ -365,7 +365,7 @@ SUBROUTINE zeus_sor (self, patch, phi, resid, FourPiGrho, d, anorm, detailed_tim
           phi(i,j,k)   = phi(i,j,k) - self%omega_sor / self%eta(i,j,k) * da
           ! this presents the error as drho / rho, where drho (= resid) can be interpreted
           ! as the error in the mass.
-          anorm        = anorm + abs(da) / d(i,j,k)
+          anorm = max(anorm, abs(da) / d(i,j,k))
         end do
         sw3 = 1 - sw3
       end do
