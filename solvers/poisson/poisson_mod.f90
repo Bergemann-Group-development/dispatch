@@ -102,12 +102,14 @@ SUBROUTINE init_sor_2nd (self, patch)
   character(len=16) :: comment
   logical, save     :: first_time = .true.
   !-----------------------------------------------------------------------------
+  ! Note that, when not using red-black ordering, cos(pi/n) -> cos(2*pi/n)
+  !-----------------------------------------------------------------------------
   if (self%omega_sor==0.) then
     delta = 0.0; pref = 0.0
     do i=1,3
       if (patch%n(i) > 1) then
         pref  = pref + 1.
-        delta = delta + cos(pi / patch%n(i))
+        delta = delta + cos(2. * pi / patch%n(i))
       endif
     enddo
     delta = delta / pref
@@ -137,17 +139,19 @@ END SUBROUTINE init_sor_2nd
 !>                               + (phi_i,j,k+1 + phi_i,j,k-1)/dz^2
 !>                               - FourPiGrho
 !>
+!> Using double precision for "res" has no noticeable effect, but using double
+!> for the b[123] coefficients does have a positive effect.
 !> =============================================================================
 SUBROUTINE sor_2nd (self, patch, phi, resid, FourPiGrho, d, error, detailed_timer)
-  class(poisson_t):: self
-  class(patch_t)  :: patch
+  class(poisson_t) :: self
+  class(patch_t)   :: patch
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi, resid
   real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: FourPiGrho, d
-  real   :: error
   logical:: detailed_timer
-  integer:: i, j, k, sweep, ss, ione, jone, kone
-  real   :: a, b, b1, b2, b3, ustar
-  integer, save                  :: itimer=0
+  integer :: i, j, k, sweep, ss, ione, jone, kone
+  real    :: error, res
+  real(8) :: a, b, b1, b2, b3
+  integer, save          :: itimer=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('poisson_t%sor_2nd_abs', itimer=itimer)
   associate(n=>patch%n,ds=>patch%ds,l=>patch%li,u=>patch%ui,gn=>patch%gn,omega_sor=>self%omega_sor)
@@ -167,27 +171,35 @@ SUBROUTINE sor_2nd (self, patch, phi, resid, FourPiGrho, d, error, detailed_time
   a = 1. / a
 
   error = 0.0
-  do sweep=0,1
+  !do sweep=0,1
     ! Add up contributions
     b1 = a / ds(1)**2 * ione
     b2 = a / ds(2)**2 * jone
     b3 = a / ds(3)**2 * kone
-    b = 2.0 * (b1 + b2 + b3)
     do k=l(3),u(3)
       do j=l(2),u(2)
-        ss = modulo(j + k + sweep,2)
-        do i=l(1)+ss,u(1),2
-          ustar = b1 * (phi(i+ione,j,k) + phi(i-ione,j,k)) &
-                + b2 * (phi(i,j+jone,k) + phi(i,j-jone,k)) &
-                + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
-                - a * FourPiGrho(i,j,k)
-          phi(i,j,k)   = (1. - omega_sor) * phi(i,j,k) + omega_sor  * ustar
-          resid(i,j,k) = (phi(i,j,k) - ustar) / a
-          error = max(error, abs(ustar - b * phi(i,j,k)) / d(i,j,k))
+        !ss = modulo(j + k + sweep,2)
+        !do i=l(1)+ss,u(1),2
+        do i=l(1),u(1)
+          !---------------------------------------------------------------------
+          ! This form of the residual has no factor in front of phi, which makes
+          ! it clear how to apply the over-relaxation factor
+          !---------------------------------------------------------------------
+          res = b1 * (phi(i+ione,j,k) + phi(i-ione,j,k)) &
+              + b2 * (phi(i,j+jone,k) + phi(i,j-jone,k)) &
+              + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
+              - phi(i,j,k)- a * FourPiGrho(i,j,k)
+          phi(i,j,k) = phi(i,j,k) + self%omega_sor * res
+          resid(i,j,k) = abs(res/d(i,j,k))
+          error = max(resid(i,j,k), error)
         end do
       end do
     end do
-  end do
+  !end do
+  !-----------------------------------------------------------------------------
+  ! We are supposed to return the residual as (Laplace(phi)-source)/d, so we
+  ! need to divide with the factor that source (FourPiGrho) was multiplied by
+  !-----------------------------------------------------------------------------
   error = error / a
   end associate
 
