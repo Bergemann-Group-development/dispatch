@@ -147,6 +147,7 @@ SUBROUTINE update_single (self, id, iit, dt, mem, dmem, mesh, time_order)
   real(kind=KindScalarVar), dimension(:,:,:,:):: mem, dmem       ! memory buffers
   integer, intent(in):: time_order
   integer:: l(3), u(3)
+  real:: wt(nslice)
   integer, save:: itimer=0
   !......................................................................
   call trace_begin ('timestep_t%update_single', itimer=itimer)
@@ -165,27 +166,31 @@ SUBROUTINE update_single (self, id, iit, dt, mem, dmem, mesh, time_order)
   select case (time_order)
   case (0)
   case (1)
+    wt = [   1.0,     0.0,      0.0,    0.0]       ! 1st order
     mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  )) = &
     mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1)) + &
-    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(self%wt(1)*dt(iit(nt-1)))
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(wt(1)*dt(iit(nt-1)))
   case (2)
+    wt = [   1.5,     -.5,      0.0,    0.0]       ! 2nd order
     mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  )) = &
     mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1)) + &
-    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(self%wt(1)*dt(iit(nt-1))) + &
-    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-2))*(self%wt(2)*dt(iit(nt-2)))
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(wt(1)*dt(iit(nt-1))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-2))*(wt(2)*dt(iit(nt-2)))
   case (3)
+    wt = [23./12., -4./3.,   5./12.,    0.0]       ! 3rd order
     mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  )) = &
     mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1)) + &
-    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(self%wt(1)*dt(iit(nt-1))) + &
-    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-2))*(self%wt(2)*dt(iit(nt-2))) + &
-    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-3))*(self%wt(3)*dt(iit(nt-3)))
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(wt(1)*dt(iit(nt-1))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-2))*(wt(2)*dt(iit(nt-2))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-3))*(wt(3)*dt(iit(nt-3)))
   case (4)
+    wt = [55./24., -59./24., 37/24., -3./8.]       ! 4th order
     mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt  )) = &
     mem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1)) + &
-    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(self%wt(1)*dt(iit(nt-1))) + &
-    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-2))*(self%wt(2)*dt(iit(nt-2))) + &
-    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-3))*(self%wt(3)*dt(iit(nt-3))) + &
-    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-4))*(self%wt(4)*dt(iit(nt-4)))
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-1))*(wt(1)*dt(iit(nt-1))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-2))*(wt(2)*dt(iit(nt-2))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-3))*(wt(3)*dt(iit(nt-3))) + &
+    dmem(l(1):u(1),l(2):u(2),l(3):u(3),iit(nt-4))*(wt(4)*dt(iit(nt-4)))
   end select
   if (self%verbose>3) then
     print'(a,i4,2x,a,1p,6e10.2,2x,6i5)', 'timestep, id:', &
