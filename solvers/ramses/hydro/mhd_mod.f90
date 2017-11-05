@@ -800,7 +800,7 @@ subroutine cmpflxm(self)
   class(mhd_t):: self
   ! local variables
   integer:: i, j, k, lb(3), ub(3)
-  real(dp), dimension(self%mesh(1)%gn,self%nv):: qleft, qright, fgdnv
+  real(dp), dimension(self%mesh(1)%gn,self%idx%e):: qleft, qright, fgdnv
   real(dp):: dtds(3)
   logical:: error
   integer,save:: itimer=0
@@ -998,19 +998,19 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
   logical:: error, detailed_timer
   !.............................................................................
   if(self%riemann.eq.'acoustic')then
-    call rieman%acoustic(qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%acoustic(qleft,qright,fgdnv,ngrid,self%idx%e)
   else if (self%riemann.eq.'exact')then
-    call rieman%approx  (qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%approx  (qleft,qright,fgdnv,ngrid,self%idx%e)
   else if (self%riemann.eq.'llf')then
-    call rieman%llf     (qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%llf     (qleft,qright,fgdnv,ngrid,self%idx%e)
   else if (self%riemann.eq.'hllc')then
-    call rieman%hllc    (qleft,qright,fgdnv,ngrid,self%nv,error,detailed_timer)
+    call rieman%hllc    (qleft,qright,fgdnv,ngrid,self%idx%e,error,detailed_timer)
   else if (self%riemann.eq.'hllc_a')then
-    call rieman%hllc_a  (qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%hllc_a  (qleft,qright,fgdnv,ngrid,self%idx%e)
   else if (self%riemann.eq.'hllc_v')then
-    call rieman%hllc_v  (qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%hllc_v  (qleft,qright,fgdnv,ngrid,self%idx%e)
   else if (self%riemann.eq.'hll')then
-    call rieman%hll     (qleft,qright,fgdnv,ngrid,self%nv)
+    call rieman%hll     (qleft,qright,fgdnv,ngrid,self%idx%e)
   else
     write(*,*)'unknown Riemann solver'
     stop
