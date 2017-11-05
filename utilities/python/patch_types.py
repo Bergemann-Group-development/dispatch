@@ -54,6 +54,14 @@ class Stagger2eMHDPatch(MHDPatch):
 
         self.varidx = variable_indices('stagger2e', read_derivs)
 
+class RamsesHDPatch(MHDPatch):
+    """A concrete derived class for RAMSES hydro patches."""
+
+    def __init__ (self, filename, verbose=False):
+        super(MHDPatch, self).__init__(filename, verbose)
+
+        self.varidx = variable_indices('ramses', read_derivs=False)
+
 class RTPatch(MHDPatch):
     """A concrete derived class for RT  patches."""
 
