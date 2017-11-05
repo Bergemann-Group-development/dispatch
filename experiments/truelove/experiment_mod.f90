@@ -28,10 +28,11 @@ SUBROUTINE init_experiment (self)
   call trace%begin('experiment_t%init')
 
   self%nv = 5
-  self%periodic = .true. ! not periodic in the y-direction
+  self%periodic = .true.
   self%mhd = .false.
 
   call self%solver_t%init()
+  self%d0 = 0.0
 
   call trace%end
 END SUBROUTINE init_experiment

@@ -29,7 +29,7 @@ if __name__ == "__main__":
     gamma = 1.0001
     datadir = './data/'
     prefix = ''
-    ptimes = [0.0,0.1,0.2,0.3]
+    ptimes = [0.0,0.1,0.2]
     t_eps = 1e-2
     pxsize = [-1.0,1.0]
     pysize = [-1.0,1.0]
@@ -38,7 +38,7 @@ if __name__ == "__main__":
     cmax   = [700.0]
     clog   = [   1]
     slicedir = 3  # given with respect to the *root* grid (typically patch id = 1)
-    sliceloc = 0.0 # coord. of slice to be taken
+    sliceloc = 0.02 # coord. of slice to be taken
     sliceeps = 1.0e-2
     showgrids = True
     showgridno = True
@@ -248,7 +248,7 @@ if __name__ == "__main__":
                 gn_xpos = xp[iindex,jindex,kindex][tuple(offset)]
                 gn_ypos = yp[iindex,jindex,kindex][tuple(offset)]
                 cax.annotate(str(p.id),(gn_xpos,gn_ypos),color='k',weight='extra bold',
-                            fontsize=13*min(root.dx)/min(p.dx),zorder=min(p.dx))
+                            fontsize=13,zorder=min(p.dx))
 
             m2 += 1
 
