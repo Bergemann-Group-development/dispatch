@@ -107,8 +107,11 @@ SUBROUTINE update (self)
   real, dimension(:,:,:,:), pointer:: p
   real, dimension(:,:,:), pointer:: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real, dimension(:,:,:), pointer:: tmp
+  real:: error
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%update', itimer=itimer)
+
+  call self%gravity(error)
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
@@ -180,6 +183,14 @@ SUBROUTINE update (self)
   do i=1,3
     p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%ff(:,:,:,i)*d
   end do
+  !-----------------------------------------------------------------------------
+  ! Add gradient of grav. potential as source term (simple, 1st-order approach)
+  !-----------------------------------------------------------------------------
+  if (self%selfgravity) then
+    call gravitational_force(self)
+    call self%dnload (only=self%idx%phi)
+    call self%gravity (error, only=self%idx%phi)
+  end if
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
@@ -1013,5 +1024,56 @@ FUNCTION gas_pressure (self)
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: gas_pressure
   gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(self%gamma-1.0)
 END FUNCTION gas_pressure
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE gravitational_force (self)
+  class(mhd_t):: self
+  real, dimension(:,:,:), pointer:: phi, d, et, gradphi1, gradphi2, gradphi3
+  real, dimension(:,:,:,:), pointer:: p
+  integer:: i,j,k
+  real, dimension(3):: wtp1, wtm1
+  real:: etemp
+  !.............................................................................
+  associate (l => self%li, u => self%ui)
+  wtp1 = 0.50 * 4.0 / 3.0 / self%ds
+  wtm1 = 0.25 * 1.0 / 3.0 / self%ds
+  phi => self%mem(:,:,:,self%idx%phi,self%it,1)
+  d   => self%mem(:,:,:,self%idx%d,self%it,1)
+  et  => self%mem(:,:,:,self%idx%e,self%new,1)
+  p   => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  allocate (gradphi1(self%gn(1),self%gn(2),self%gn(3)), &
+            gradphi2(self%gn(1),self%gn(2),self%gn(3)), &
+            gradphi3(self%gn(1),self%gn(2),self%gn(3)))
+
+  do k=l(3),u(3)
+    do j=l(2),u(2)
+      do i=l(1),u(1)
+        ! calculate energy minus the kinetic energy
+        etemp = et(i,j,k) - 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
+                          - 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
+                          - 0.5 * p(i,j,k,3)**2 / d(i,j,k)
+        ! calculate gradient of phi
+        gradphi1(i,j,k) = wtp1(1) * (phi(i+1,j,k) - phi(i-1,j,k)) &
+                 - wtm1(1) * (phi(i+2,j,k) - phi(i-2,j,k))
+        gradphi2(i,j,k) = wtp1(2) * (phi(i,j+1,k) - phi(i,j-1,k)) &
+                 - wtm1(2) * (phi(i,j+2,k) - phi(i,j-2,k))
+        gradphi3(i,j,k) = wtp1(3) * (phi(i,j,k+1) - phi(i,j,k-1)) &
+                 - wtm1(3) * (phi(i,j,k+2) - phi(i,j,k-2))
+        ! update momentum
+        p(i,j,k,1) = p(i,j,k,1) - self%dtime * d(i,j,k) * gradphi1(i,j,k)
+        p(i,j,k,2) = p(i,j,k,2) - self%dtime * d(i,j,k) * gradphi2(i,j,k)
+        p(i,j,k,3) = p(i,j,k,3) - self%dtime * d(i,j,k) * gradphi3(i,j,k)
+        ! update total energy with new momentum
+        et(i,j,k) = etemp + 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
+                          + 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
+                          + 0.5 * p(i,j,k,3)**2 / d(i,j,k)
+      end do
+    end do
+  end do
+
+  deallocate (gradphi1, gradphi2, gradphi3)
+  end associate
+END SUBROUTINE gravitational_force
 
 END MODULE
