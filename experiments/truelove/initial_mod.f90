@@ -207,13 +207,13 @@ SUBROUTINE condition (self, m, f, idx)
         else if (self%solver(1:10) == 'stagger2e_') then
           f(i,j,k,idx%e) = nrg
         else if (self%solver(1:7) == 'ramses_') then
-          f(i,j,k,idx%e) = nrg + 0.5 * f(i,j,k,idx%py)**2 / f(i,j,k,idx%d)
+          f(i,j,k,idx%e) = nrg + 0.5 * (f(i,j,k,idx%px)**2 + f(i,j,k,idx%py)**2) / f(i,j,k,idx%d)
         else if (trim(self%solver) == 'zeus_mhd_patch') then
           f(i,j,k,idx%e) = nrg
         end if
 
         ! this experiment is hydro and gravity only.
-        if (size(f,4) > idx%bx) then
+        if (self%mhd) then
           f(i,j,k,idx%bx) = 0.0
           f(i,j,k,idx%by) = 0.0
           f(i,j,k,idx%bz) = 0.0
