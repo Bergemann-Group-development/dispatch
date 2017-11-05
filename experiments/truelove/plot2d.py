@@ -29,22 +29,22 @@ if __name__ == "__main__":
     gamma = 1.0001
     datadir = './data/'
     prefix = ''
-    ptimes = [0.0]
-    t_eps = 1e-4
-    pxsize = [-0.5,0.5]
-    pysize = [-0.5,0.5]
+    ptimes = [0.0,0.1,0.2,0.3]
+    t_eps = 1e-2
+    pxsize = [-1.0,1.0]
+    pysize = [-1.0,1.0]
     pltvar = ['d']
-    cmin   = [ 0.0]
-    cmax   = [16.0]
-    clog   = [   0]
+    cmin   = [ 0.1]
+    cmax   = [700.0]
+    clog   = [   1]
     slicedir = 3  # given with respect to the *root* grid (typically patch id = 1)
-    sliceloc = 0.016 # coord. of slice to be taken
+    sliceloc = 0.0 # coord. of slice to be taken
     sliceeps = 1.0e-2
     showgrids = True
     showgridno = True
     output_png = False
     truecoords = True
-    ThisPatch = ZeusMHDPatch
+    ThisPatch = Stagger2eMHDPatch
     ColMap = cm.RdBu_r
     verbose = False
     skipped = []
@@ -168,6 +168,7 @@ if __name__ == "__main__":
                 jindex = slice(0,p.n[1])
                 kindex = slice(0,p.n[2])
 
+            act_slice = 0.0
             if slicedir == 1 and ione > 0:
                 diff = np.abs(x_i[0] - sliceloc)
                 iindex, = np.where(diff < sliceeps)
@@ -212,7 +213,10 @@ if __name__ == "__main__":
             qmax = max(qmax, np.nanmax(var))
 
             # mask data for cutting
-            var = np.ma.array(var,mask=cut_mask[iindex,jindex,kindex])
+            if cut_mask.ndim == 0:
+                var = np.ma.array(var,mask=cut_mask)
+            else:
+                var = np.ma.array(var,mask=cut_mask[iindex,jindex,kindex])
             cpltvar = pltvar[0]
             print cpltvar, ": ", var.min(), var.max(), var.shape
             print kindex
