@@ -49,7 +49,7 @@ SUBROUTINE init (self)
   integer                           :: iostat
   logical, save                     :: first_time=.true.
   namelist /selfgravity_params/ selfgravity, prediction, fourpiG, epsilon, &
-                                max_iter, verbose
+                                max_iter, order, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init')
   !$omp critical (poisson_cr)
@@ -179,7 +179,7 @@ SUBROUTINE gravity (self, error, only)
     if (verbose > 1) print "(i6,' self_gravity: iter =',i3.1,' error =',1p,g14.5)", self%id, iter, error
 
     ! check for convergence
-    if (error < epsilon * error0) then
+    if (error < epsilon) then
       if (verbose>0) &
         print "(i6,' poisson converged in',i4,' iterations; initial, final error, time taken:',1p,3e10.3)", &
           self%id, iter, error0, error, wallclock()-sec
