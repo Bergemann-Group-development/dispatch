@@ -279,7 +279,6 @@ SUBROUTINE init_zeus_sor (self, patch)
     q1 = cos(pi / patch%n(1)) * dx1a2i
   end if
   self%rjac2 = ( ( q1 + q2 + q3 ) / ( dx1a2i + dx2a2i + dx3a2i ) )**2 ! Jacobi spectral radius squared
-  self%omega_sor = 1.0 / ( 1.0 - 0.5 * self%rjac2 )
   do k=m3%li,m3%ui
     do j=m2%li,m2%ui
       if (patch%n(2) > 1) etajk =-self%dx2m2i(j) - self%dx2p2i(j)

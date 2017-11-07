@@ -168,6 +168,7 @@ SUBROUTINE gravity (self, error, only)
 
   ! call the Poisson solver iteratively
   sec = wallclock()
+  if (self%poisson%kind == 'zeus_sor') self%poisson%omega_sor = 1.0 / ( 1.0 - 0.5 * self%poisson%rjac2 )
   do iter=1,max_iter
     call self%poisson%update (self, phi, resid, source, d, error, detailed_timer)
     !---------------------------------------------------------------------------
@@ -176,12 +177,12 @@ SUBROUTINE gravity (self, error, only)
     !---------------------------------------------------------------------------
     error = error / fourpiG
     if (iter == 1) error0 = error
-    if (verbose > 1) print "(i6,' self_gravity: iter =',i3.1,' error =',1p,g14.5)", self%id, iter, error
+    if (verbose > 1) print "(i6,' self_gravity: iter = ',i4.1,' error =',1p,g13.4)", self%id, iter, error
 
     ! check for convergence
     if (error < epsilon) then
       if (verbose>0) &
-        print "(i6,' poisson converged in',i4,' iterations; initial, final error, time taken:',1p,3e10.3)", &
+        print "(i6,' poisson converged in ',i4,' iterations; initial, final error, time taken:',1p,3e10.3)", &
           self%id, iter, error0, error, wallclock()-sec
       exit
     end if
