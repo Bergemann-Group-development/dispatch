@@ -514,6 +514,7 @@ SUBROUTINE updater (self, head)
   ! other ranks).  They are, however, not added back onto the ready queue.
   !-----------------------------------------------------------------------------
   if (task%has_finished()) then  ! finished:
+    call task%set (bits%frozen)
     call load_balance%active (.false.)                ! turn off load balancing
     !$omp atomic
     self%na = self%na-1

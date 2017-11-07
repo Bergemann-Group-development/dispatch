@@ -992,7 +992,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
   !-----------------------------------------------------------------------------
   error=.false.
   task => this%task
-  if (task%is_set(bits%virtual) .or. task%has_finished()) return
+  if (task%is_set(bits%virtual) .or. task%is_set(bits%frozen)) return
   call trace_begin ('list_t%queue_by_time ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
