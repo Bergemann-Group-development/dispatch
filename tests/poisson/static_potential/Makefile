@@ -8,6 +8,7 @@ OPTS = full_debug
 EXEC            = dispatch.x
 UPD             = adams_bashforth
 TOP             = ../../..
+PREC = DOUBLE
 
 sinclude $(TOP)/config/Makefile
 
