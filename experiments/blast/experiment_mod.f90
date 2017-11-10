@@ -81,7 +81,7 @@ SUBROUTINE initial_conditions (patch)
   class(mhd_t), target:: patch
   class(mesh_t), pointer:: m1, m2, m3
   integer:: i1, i2, i3
-  real(4):: speedsq, bsq
+  real(4):: speedsq, bsq, dxmax
   real(4):: r0=0.125, centre(3)=0.0, d0(2)=1.0, p0(2)=0.6, vx0(2)=0.0, vy0(2)=0.0, &
              vz0(2)=0.0, bx0(2)=0.0, by0(2)=0.0, bz0(2)=0.0
   real(8):: x, y, z, r2
@@ -105,7 +105,8 @@ SUBROUTINE initial_conditions (patch)
 
   f => patch%mem(:,:,:,:,1,1)
 
-  r0 = max(r0, m1%d, m2%d, m3%d)
+  dxmax = maxval(patch%ds,mask=(patch%n>1))
+  r0 = max(r0, dxmax)
 
   speedsq = sqrt(vx0(1)**2 + vy0(1)**2 + vz0(1)**2)
   bsq = sqrt(bx0(1)**2 + by0(1)**2 + bz0(1)**2)
