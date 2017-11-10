@@ -1,2 +1,4 @@
 &cg_params
+ tolerance=1e-4
+ floor=1e-2
 /

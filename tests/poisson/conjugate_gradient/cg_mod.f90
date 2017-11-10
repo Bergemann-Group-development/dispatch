@@ -2,12 +2,15 @@
 !> Conjugate gradient Poisson solver module
 !> =============================================================================
 MODULE cg_mod
+  USE lagrange_mod
   implicit none
   private
+  integer, parameter:: nt=7
   type, public:: cg_t
     real(8)   :: ds(3)
     real      :: tolerance, floor, width, courant
-    integer   :: max_iter, dims(3), move, nt
+    integer   :: max_iter, dims(3), move
+    integer   :: iit(nt)
   contains
     procedure :: init
     procedure :: laplace
@@ -25,11 +28,11 @@ SUBROUTINE init (self)
   class(cg_t)   :: self
   !.............................................................................
   real, save    :: tolerance=1e-6, floor=1e-6, width=0.2, courant=0.2
-  integer, save :: max_iter=1000, dims(3)=64, move=8, nt=5
+  integer, save :: max_iter=1000, dims(3)=64, move=8
   !.............................................................................
   namelist /cg_params/ tolerance, floor, max_iter, width, dims
   !-----------------------------------------------------------------------------
-  !read (*,cg_params)
+  read (*,cg_params)
   self%tolerance = tolerance
   self%floor     = floor
   self%max_iter  = max_iter
@@ -37,9 +40,9 @@ SUBROUTINE init (self)
   self%width     = width
   self%dims      = dims
   self%move      = move
-  self%nt        = nt
   self%ds        = 1d0/dims
   write (*,cg_params)
+  print *, lagrange%weights (3.,[0.,1.,2.])
 END SUBROUTINE init
 
 !> =============================================================================
@@ -152,18 +155,19 @@ SUBROUTINE test (self)
   real, dimension(:,:,:,:), pointer :: phii
   real, dimension(:,:,:), pointer   :: source, phi
   real                              :: x, y, z, ds(3), c, r2, dx, error
-  integer                           :: ix, iy, iz, i0, i, it, new, niter
+  integer                           :: ix, iy, iz, i0, i, it, jt, new, niter
   !-----------------------------------------------------------------------------
   ds = 1d0/self%dims
   c = 0.5d0/self%width**2
-  associate (m=>self%dims, nt=>self%nt)
+  associate (m=>self%dims)
   allocate (phii(m(1),m(2),m(3),nt))
   allocate (source(m(1),m(2),m(3)))
   phii = 0.0
   it = 1
+  jt = 1
+  self%iit = 1
   i0 = self%move/self%courant
   do i=-i0,i0
-    phi => phii(:,:,:,it)
     dx = i*self%courant
     do iz=1,m(3)
       z = (iz-(m(3)+1d0)/2d0)*ds(3)
@@ -177,11 +181,27 @@ SUBROUTINE test (self)
       end do
     end do
     call zero_boundaries (source)
+    phi => phii(:,:,:,it)
     call self%solve (phi, source, niter, error)
-    print *, 'position, niter, error =', dx, niter, error
     new = 1 + mod(it,nt)
-    phii(:,:,:,new) = phii(:,:,:,it)             ! 0th order extrapolation
+    self%iit(1:nt-1) = self%iit(2:nt)
+    self%iit(nt) = new
+    if (jt==1) then
+      phii(:,:,:,new) = phii(:,:,:,it)             ! 0th order extrapolation
+    else if (jt==2) then
+      phii(:,:,:,self%iit(nt)) &
+      = phii(:,:,:,self%iit(nt-1))*2.0 &
+      - phii(:,:,:,self%iit(nt-2))
+    else
+      phii(:,:,:,self%iit(nt)) &
+      = phii(:,:,:,self%iit(nt-1))*3.0 &
+      - phii(:,:,:,self%iit(nt-2))*3.0 &
+      + phii(:,:,:,self%iit(nt-3))
+    end if
+    print '(a,f8.2,i5,1p,e10.2,2i3,2x,7i3)', &
+      'position, niter, error =', dx, niter, error, it, new, self%iit
     it = new
+    jt = jt+1
   end do
   end associate
 END SUBROUTINE test
