@@ -12,15 +12,15 @@
 /
 
 &rubiks_params
- !size=0.0123456,0.0123456,1.0
+ size=0.0123456,0.0123456,1.0
  !size=0.037037,0.037037,1.0
  !size=0.11111,0.11111,1.0
- size=0.33333,0.33333,1.0
+ !size=0.33333,0.33333,1.0
  !size=1.0,1.0,1.0
  n_patch=3,3,1
  n_repeat=1,1,1
  m_zoom=3
- n_levels=1
+ n_levels=4
  position=0.5,0.5,0.0
 /
 
@@ -36,7 +36,7 @@
   courant=1.0
   n=32,32,1
   nt=5
-  no_mans_land=t
+  no_mans_land=f
 /
 
 &experiment_params
