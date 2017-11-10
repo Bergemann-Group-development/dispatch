@@ -15,10 +15,10 @@ MODULE experiment_mod
   contains
     procedure:: init
     procedure:: update
-    !!!procedure:: has_finished
+    procedure:: has_finished
   end type
   logical, save:: first_time = .true.
-
+  real, save:: ema_error=0.0, aepsilon=1e-3
 CONTAINS
 
 !> =============================================================================
@@ -26,8 +26,8 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
-  real:: toler=5e-4
-  namelist / experiment_params / toler
+  real:: init_ema_error=0.0
+  namelist / experiment_params / init_ema_error, aepsilon
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%init')
 
@@ -54,6 +54,12 @@ SUBROUTINE init (self)
   ! allocate error storage array
   allocate(self%error(self%nt))
   self%error(:) = 0.0
+  ! initialise exponetial moving average (assumes 4piG = 1).
+  if (init_ema_error == 0.0) then
+    ema_error = max(ema_error, sum(self%mem(:,:,:,self%idx%d,1,1)))
+  else
+    ema_error = init_ema_error
+  end if
 
   call trace%end
 END SUBROUTINE init
@@ -70,31 +76,29 @@ SUBROUTINE update (self)
   call pboundaries%conditions(self, self%it)
   call self%gravity(error)
   self%error(self%it) = error
+  ema_error = ema_error + 0.025 * (error - ema_error)
+
+  print "('ID: ',i4.1,' EMA error = ',1pe11.3,' local error = ',1pe11.4,'; steps taken: ',i4.1)",&
+    self%id, ema_error, error, self%istep
 
   call self%output
   call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
-  call self%dnload  (only=self%idx%phi)
-  call pboundaries%conditions(self, self%it)
-  call self%gravity (error, only=self%idx%phi)
 
   call trace%end
 END SUBROUTINE update
 
 !> =============================================================================
-!> Check to see if the current task has converged, defined here as meaning the
-!> change in the error/residual since the previous iteration falls below a
-!> user-defined residual.
+!> Check to see if the test has converged.
 !> =============================================================================
-!LOGICAL FUNCTION has_finished (self)
-!  class (experiment_t):: self
-!  real:: rd
-!  !.............................................................................
-!  has_finished = .false.
-!  if (self%error(self%iit(self%nt-1)) == 0.0) return
-!  rd = abs(self%error(self%iit(self%nt)) - self%error(self%iit(self%nt-1))) &
-!     / self%error(self%iit(self%nt-1))
-!  if (rd < self%toler) has_finished = .true.
-
-!END FUNCTION has_finished
+LOGICAL FUNCTION has_finished (self)
+  class (experiment_t):: self
+  !.............................................................................
+  has_finished = .false.
+  if (ema_error < aepsilon) then
+    has_finished = .true.
+    self%out_next = self%time
+    call self%output
+  end if
+END FUNCTION has_finished
 
 END MODULE experiment_mod
