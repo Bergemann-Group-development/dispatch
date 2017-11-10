@@ -31,10 +31,9 @@ MODULE gpatch_mod
     procedure:: gravity
   end type
   real(8), save :: restart_time = 0d0
-  logical, save :: selfgravity=.false., prediction=.true.
-  logical, save :: detailed_timer=.false.
+  logical, save :: selfgravity=.false., prediction=.true., detailed_timer=.false.
   integer, save :: max_iter=100, verbose=0
-  real,    save :: epsilon=1e-3, fourpiG=1.0
+  real,    save :: repsilon=1e-2, aepsilon=1e-3, fourpiG=1.0
   integer, save :: order=1
 CONTAINS
 
@@ -48,7 +47,7 @@ SUBROUTINE init (self)
   logical                           :: ok
   integer                           :: iostat
   logical, save                     :: first_time=.true.
-  namelist /selfgravity_params/ selfgravity, prediction, fourpiG, epsilon, &
+  namelist /selfgravity_params/ selfgravity, prediction, fourpiG, repsilon, aepsilon, &
                                 max_iter, order, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init')
@@ -180,7 +179,7 @@ SUBROUTINE gravity (self, error, only)
     if (verbose > 1) print "(i6,' self_gravity: iter = ',i4.1,' error =',1p,g13.4)", self%id, iter, error
 
     ! check for convergence
-    if (error < epsilon) then
+    if (error < repsilon * error0 .or. error < aepsilon) then
       if (verbose>0) &
         print "(i6,' poisson converged in ',i4,' iterations; initial, final error, time taken:',1p,3e10.3)", &
           self%id, iter, error0, error, wallclock()-sec
