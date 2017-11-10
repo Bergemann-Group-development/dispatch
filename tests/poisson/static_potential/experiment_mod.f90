@@ -12,12 +12,10 @@ MODULE experiment_mod
 
   type, public, extends(solver_t):: experiment_t
     real, dimension(:), allocatable:: error
-    real:: toler
   contains
     procedure:: init
     procedure:: update
     !!!procedure:: has_finished
-    procedure:: output
   end type
   logical, save:: first_time = .true.
 
@@ -39,22 +37,23 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, experiment_params)
     if (io%master) write (*, experiment_params)
+    call timestep%init()
   end if
   !$omp end critical (input_cr)
 
-  self%toler = toler
   self%nv = 1
+  self%nw = 2
   self%periodic = .false.
-  call self%clear(bits%root_grid)
   
   call self%gpatch_t%init()
-  call timestep%init()
+  call self%clear(bits%root_grid)
   self%kind = 'poisson'
+  self%dtime = 32.0 * minval(self%ds)
+  self%d0 = 0.0
 
   ! allocate error storage array
   allocate(self%error(self%nt))
   self%error(:) = 0.0
-  self%d0 = 0.0
 
   call trace%end
 END SUBROUTINE init
@@ -71,7 +70,7 @@ SUBROUTINE update (self)
   call pboundaries%conditions(self, self%it)
   call self%gravity(error)
   self%error(self%it) = error
-  ! create one output per iteration (probably overkill)
+
   call self%output
   call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%dnload  (only=self%idx%phi)
@@ -97,16 +96,5 @@ END SUBROUTINE update
 !  if (rd < self%toler) has_finished = .true.
 
 !END FUNCTION has_finished
-
-!> =============================================================================
-!> Dummy output procedure to trick `patch_t%output` into writing output.
-!> =============================================================================
-SUBROUTINE output (self, experiment_name)
-  class(experiment_t):: self
-  character(len=64), optional:: experiment_name
-  !.............................................................................
-  self%time = 1.01 * self%out_next
-  call self%patch_t%output
-END SUBROUTINE output
 
 END MODULE experiment_mod

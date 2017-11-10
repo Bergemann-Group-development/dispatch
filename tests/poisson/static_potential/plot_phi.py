@@ -51,14 +51,14 @@ if __name__ == "__main__":
     plt.rc('font', size=18)
     plt.interactive(True)
 
-    data = './data/input_1p_1280'
-    iters = [0,10,50,90,150,190,250,290]
-    pxsize = [-0.02,1.02]
-    pysize = [-0.02,1.02]
-    pltvar = ['d','rdd','phi','rdphi']
-    cmin   = [ 1.0,  0.0,  0.0,   0.0]
-    cmax   = [400., 1e-4,  3.9,   1.0]
-    clog   = [   1,    0,    0,     0]
+    data = './data'
+    iters = [0,5,10]
+    pxsize = [ 0.0, 1.0]
+    pysize = [ 0.0, 1.0]
+    pltvar = [ 'd','phie','phi','rdphi']
+    cmin   = [ 1.0,  0.0,  0.0,    0.0]
+    cmax   = [ 63.,  2.2,  2.2,    2.0]
+    clog   = [   0,    0,    0,      0]
     showgrids = True
     showgridno = True
     ColMap = cm.RdBu_r
@@ -117,6 +117,10 @@ if __name__ == "__main__":
                     var = pp.data[iindex,jindex,kindex,pp.varidx['phi']]
                     q0 = phi_exact(xp,yp,r0=r0)
                     var = relative_difference(q0[iindex,jindex,kindex].squeeze(),var.squeeze())
+                elif pltvar[j] == 'dphi':
+                    var = pp.data[iindex,jindex,kindex,pp.varidx['phi']]
+                    q0 = phi_exact(xp,yp,r0=r0)
+                    var = var.squeeze() - q0[iindex,jindex,kindex].squeeze()
                 elif pltvar[j] == 'de':
                     var = rho_exact(xp,yp,r0=r0)
                     var = var[iindex,jindex]
@@ -192,7 +196,7 @@ if __name__ == "__main__":
         Linf_mean.append(np.mean(Linf_iter))
 
     for i in xrange(len(iters)):
-        print "i = {0}, iout = {1}".format(i,iters[i])
+        print "i = {0}, iout = {1} (normalised)".format(i,iters[i])
         print "L2 min = {0:.3e}, L2 max = {1:.3e}, L2 mean = {2:.3e}".format(L2_min[i],L2_max[i],L2_mean[i])
         print "Linf min = {0:.3e}, Linf max = {1:.3e}, Linf mean = {2:.3e}".format(Linf_min[i],Linf_max[i],Linf_mean[i])
         print "-"*40
