@@ -279,7 +279,6 @@ SUBROUTINE split_patch (self, tlist, this)
   end do
   call this_patch%set(bits%not_leaf)
   
-  call tlist%remove_parents
   call tlist%init_all_nbors
   call tlist%reset_status
   link => tlist%head

@@ -8,7 +8,6 @@ PROGRAM dispatch
   !.............................................................................
   call setup%init                       ! Standard setup (MPI, I/O, scaling, ...)
   call rubiks%init_hierarchy            ! Initialize the patch list and patches
-  call rubiks%task_list%remove_parents  ! Remove any entirely covered patches
   call rubiks%task_list%execute         ! Update task list = update all tasks
   call setup%end
 !> =============================================================================
