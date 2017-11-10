@@ -360,6 +360,8 @@ FUNCTION check_jeans (self, patch) RESULT(refine_it)
   select type (patch)
   class is (solver_t)
     pg = patch%gas_pressure()
+  class default
+    call mpi%abort("Unrecognised patch type. Abort!")
   end select
   c_sound2 = patch%gamma * pg(l(1):u(1),l(2):u(2),l(3):u(3)) / d
   Jeans_length = minval(sqrt(scaling%pi * c_sound2 / (d*scaling%grav)))
@@ -410,6 +412,8 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine_it)
     e => patch%mem(:,:,:,patch%idx%e,patch%it,1)
     pg = patch%gas_pressure()
     v  = patch%gas_velocity()
+  class default
+    call mpi%abort("Unrecognised patch type. Abort!")
   end select
 
   refine_it = .false.
@@ -504,6 +508,8 @@ FUNCTION gradient_detector (self, patch) RESULT (refine_it)
       if (trim(self%grad_var(n)) == 'v1') q = patch%gas_velocity(1)
       if (trim(self%grad_var(n)) == 'v2') q = patch%gas_velocity(2)
       if (trim(self%grad_var(n)) == 'v3') q = patch%gas_velocity(3)
+    class default
+      call mpi%abort("Unrecognised patch type. Abort!")
     end select
 
     ! calculate the gradient in each direction
