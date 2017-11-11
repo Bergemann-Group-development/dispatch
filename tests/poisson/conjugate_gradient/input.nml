@@ -1,4 +1,6 @@
 &cg_params
+ dims=3*48
+ move=6
  tolerance=1e-4
  floor=1e-3
  order=3

@@ -216,13 +216,13 @@ SUBROUTINE solve (self, phi1, source, niter, error)
   !-----------------------------------------------------------------------------
   pes = res
   do iter = 1,self%max_iter
+    call self%precondition (pes)
     call self%laplace (pes, Ap)
     pap = sum(pes*Ap)
     alpha = resnorm/pap
     phi = phi + alpha*pes
     call zero_boundaries8 (phi)
     res = res - alpha*Ap
-    call self%precondition (res)
     resnorm2 = sum(res**2)
     error = maxval(abs(res/(source+self%floor)))
     if (error < self%tolerance) exit
@@ -421,7 +421,7 @@ SUBROUTINE test (self)
     jt = jt+1
   end do
   print *, 'total number of iterations =', sum_iter
-  call timer%toc('conjugate gradient',sum_iter*product(self%dims))
+  call timer%toc('conjugate gradient',jt*product(self%dims))
   if (trim(self%method)=='cg') then
     option = 'precondition:'
   else
