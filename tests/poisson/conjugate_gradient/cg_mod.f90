@@ -9,7 +9,7 @@ MODULE cg_mod
   type, public:: cg_t
     real(8)   :: ds(3)
     real      :: tolerance, floor, width, courant
-    integer   :: max_iter, dims(3), move
+    integer   :: max_iter, dims(3), move, order
     integer   :: iit(nt)
   contains
     procedure :: init
@@ -28,9 +28,9 @@ SUBROUTINE init (self)
   class(cg_t)   :: self
   !.............................................................................
   real, save    :: tolerance=1e-6, floor=1e-6, width=0.2, courant=0.2
-  integer, save :: max_iter=1000, dims(3)=64, move=8
+  integer, save :: max_iter=1000, dims(3)=64, move=8, order=2
   !.............................................................................
-  namelist /cg_params/ tolerance, floor, max_iter, width, dims
+  namelist /cg_params/ tolerance, floor, max_iter, width, dims, move, order
   !-----------------------------------------------------------------------------
   read (*,cg_params)
   self%tolerance = tolerance
@@ -40,9 +40,11 @@ SUBROUTINE init (self)
   self%width     = width
   self%dims      = dims
   self%move      = move
+  self%order     = order
   self%ds        = 1d0/dims
   write (*,cg_params)
   print *, lagrange%weights (3.,[0.,1.,2.])
+  print *, lagrange%weights (4.,[0.,1.,2.,3.])
 END SUBROUTINE init
 
 !> =============================================================================
@@ -152,10 +154,11 @@ END SUBROUTINE solve
 !> =============================================================================
 SUBROUTINE test (self)
   class(cg_t)                       :: self
+  !.............................................................................
   real, dimension(:,:,:,:), pointer :: phii
   real, dimension(:,:,:), pointer   :: source, phi
-  real                              :: x, y, z, ds(3), c, r2, dx, error
-  integer                           :: ix, iy, iz, i0, i, it, jt, new, niter
+  real    :: x, y, z, ds(3), c, r2, dx, error
+  integer :: ix, iy, iz, i0, i, it, jt, new, niter, order, sum_iter
   !-----------------------------------------------------------------------------
   ds = 1d0/self%dims
   c = 0.5d0/self%width**2
@@ -165,6 +168,7 @@ SUBROUTINE test (self)
   phii = 0.0
   it = 1
   jt = 1
+  sum_iter = 0
   self%iit = 1
   i0 = self%move/self%courant
   do i=-i0,i0
@@ -183,26 +187,35 @@ SUBROUTINE test (self)
     call zero_boundaries (source)
     phi => phii(:,:,:,it)
     call self%solve (phi, source, niter, error)
+    sum_iter = sum_iter+niter
     new = 1 + mod(it,nt)
     self%iit(1:nt-1) = self%iit(2:nt)
     self%iit(nt) = new
-    if (jt==1) then
-      phii(:,:,:,new) = phii(:,:,:,it)             ! 0th order extrapolation
-    else if (jt==2) then
+    order = min(self%order,jt-1)
+    if (order==0) then
+      phii(:,:,:,new) = phii(:,:,:,it)
+    else if (order==1) then
       phii(:,:,:,self%iit(nt)) &
       = phii(:,:,:,self%iit(nt-1))*2.0 &
       - phii(:,:,:,self%iit(nt-2))
-    else
+    else if (order==2) then
       phii(:,:,:,self%iit(nt)) &
       = phii(:,:,:,self%iit(nt-1))*3.0 &
       - phii(:,:,:,self%iit(nt-2))*3.0 &
       + phii(:,:,:,self%iit(nt-3))
+    else
+      phii(:,:,:,self%iit(nt)) &
+      = phii(:,:,:,self%iit(nt-1))*4.0 &
+      - phii(:,:,:,self%iit(nt-2))*6.0 &
+      + phii(:,:,:,self%iit(nt-3))*4.0 &
+      - phii(:,:,:,self%iit(nt-4))
     end if
     print '(a,f8.2,i5,1p,e10.2,2i3,2x,7i3)', &
       'position, niter, error =', dx, niter, error, it, new, self%iit
     it = new
     jt = jt+1
   end do
+  print *, 'total number of iterations =', sum_iter
   end associate
 END SUBROUTINE test
 
