@@ -13,7 +13,7 @@ MODULE cg_mod
     real      :: tolerance, floor, width, courant, omega_sor
     integer   :: max_iter, dims(3), move, order
     integer   :: iit(nt)
-    procedure(solve), pointer:: solver => solve
+    procedure(solve), pointer:: solver => null()
     logical   :: precond, red_black
     character(len=16):: method='solve'
   contains
@@ -63,6 +63,8 @@ SUBROUTINE init (self)
       delta = delta/pref
       omega_sor = 2./(1.+sqrt(1.-delta**2))
     end if
+  case default
+    self%solver => solve
   end select
   write (*,cg_params)
   self%tolerance = tolerance

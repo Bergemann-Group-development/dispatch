@@ -1,0 +1,18 @@
+astro07.cluster
+model name	: Intel(R) Xeon(R) CPU E5-4650 0 @ 2.70GHz
+method: cg        precondition:  F    order:  0    TIME:   5.50
+method: cg        precondition:  T    order:  0    TIME:   5.11
+method: cg        precondition:  F    order:  1    TIME:   4.60
+method: cg        precondition:  T    order:  1    TIME:   3.53
+method: cg        precondition:  F    order:  2    TIME:   2.57
+method: cg        precondition:  T    order:  2    TIME:   1.88
+method: cg        precondition:  F    order:  3    TIME:   2.11
+method: cg        precondition:  T    order:  3    TIME:   2.43
+method: sor          red_black:  F    order:  0    TIME:   1.43
+method: sor          red_black:  T    order:  0    TIME:   3.89
+method: sor          red_black:  F    order:  1    TIME:   1.14
+method: sor          red_black:  T    order:  1    TIME:   2.79
+method: sor          red_black:  F    order:  2    TIME:   0.67
+method: sor          red_black:  T    order:  2    TIME:   1.90
+method: sor          red_black:  F    order:  3    TIME:   0.61
+method: sor          red_black:  T    order:  3    TIME:   1.49
