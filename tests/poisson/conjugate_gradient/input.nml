@@ -1,5 +1,9 @@
 &cg_params
  tolerance=1e-4
- floor=1e-2
+ floor=1e-3
  order=3
+ width=0.1
+ method='sor' red_black=f
+ !method='cg' precondition=t
+ max_iter=300
 /

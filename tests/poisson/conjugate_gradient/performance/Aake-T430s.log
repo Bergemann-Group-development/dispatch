@@ -1,0 +1,18 @@
+Aake-T430s
+model name	: Intel(R) Core(TM) i7-3520M CPU @ 2.90GHz
+method: cg        precondition:  F    order:  0    TIME:   9.63
+method: cg        precondition:  T    order:  0    TIME:  10.41
+method: cg        precondition:  F    order:  1    TIME:   8.31
+method: cg        precondition:  T    order:  1    TIME:   7.48
+method: cg        precondition:  F    order:  2    TIME:   4.63
+method: cg        precondition:  T    order:  2    TIME:   4.04
+method: cg        precondition:  F    order:  3    TIME:   3.95
+method: cg        precondition:  T    order:  3    TIME:   5.10
+method: sor          red_black:  F    order:  0    TIME:   2.51
+method: sor          red_black:  T    order:  0    TIME:   6.58
+method: sor          red_black:  F    order:  1    TIME:   2.05
+method: sor          red_black:  T    order:  1    TIME:   4.80
+method: sor          red_black:  F    order:  2    TIME:   1.26
+method: sor          red_black:  T    order:  2    TIME:   3.30
+method: sor          red_black:  F    order:  3    TIME:   1.19
+method: sor          red_black:  T    order:  3    TIME:   2.45
