@@ -9,8 +9,8 @@ echo "log file: $log"
 
 hostname | tee $log
 grep 'model name' /proc/cpuinfo | head -1 | tee -a $log
-foreach m ( 'cg' 'sor' )
-foreach o ( 0 1 2 3)
+foreach m ( 'gv1' 'sor' 'aslakp' 'aslaka' )
+foreach o ( -1 0 1 2 3)
 foreach t ( f t )
 ./test.x << EOF | grep TIME | tee -a $log
 &cg_params

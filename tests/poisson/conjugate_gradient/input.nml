@@ -1,13 +1,15 @@
 &cg_params
  dims=3*48
  move=6
- tolerance=1e-3
+ tolerance=1e-4
  floor=1e-3
  order=2
  width=0.1
  method='sor' red_black=t
  !method='aslak' precondition=f
- !method='ramses' precondition=t
- max_iter=2000
+ !method='gv1' precondition=t
+ !method='ramses' precondition=f
+ max_iter=1000
  verbose=1
+ dump=t
 /
