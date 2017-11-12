@@ -6,6 +6,6 @@
  order=3
  width=0.1
  method='sor' red_black=f
- !method='cg' precondition=t
+ !method='cg' precondition=f
  max_iter=300
 /

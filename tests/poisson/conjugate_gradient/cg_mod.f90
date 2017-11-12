@@ -209,19 +209,19 @@ SUBROUTINE solve (self, phi1, source, niter, error)
   phi = phi1
   call self%laplace (phi, res)
   res = source - res
-  !call self%precondition (res)
+  call self%precondition (res)
   resnorm = sum(res**2)
   !-----------------------------------------------------------------------------
   ! Main loop
   !-----------------------------------------------------------------------------
   pes = res
   do iter = 1,self%max_iter
-    call self%precondition (pes)
     call self%laplace (pes, Ap)
     pap = sum(pes*Ap)
     alpha = resnorm/pap
     phi = phi + alpha*pes
     call zero_boundaries8 (phi)
+    call self%precondition (pes)
     res = res - alpha*Ap
     resnorm2 = sum(res**2)
     error = maxval(abs(res/(source+self%floor)))
@@ -235,6 +235,10 @@ SUBROUTINE solve (self, phi1, source, niter, error)
   if (iter==self%max_iter+1) print *, &
     'cg_mod%solve: no convergence, max_iter, error =', self%max_iter, error
   phi1 = phi
+  call self%laplace (phi, res, source)
+  print *, minval(res), maxval(res)
+  write (11) shape(phi)
+  write (11) phi, res
   deallocate (res, pes, Ap, phi)
 END SUBROUTINE solve
 
@@ -277,7 +281,7 @@ SUBROUTINE sor_2nd (self, phi1, source, niter, error)
   integer                :: niter
   real                   :: error
   !.............................................................................
-  integer :: i, j, k, sweep, ss, iter
+  integer :: i, j, k, sweep, ss, iter, i1
   real    :: a, b, b1, b2, b3, sor
   real(8), dimension(:,:,:), allocatable:: phi, res
   associate (n=>self%dims, ds=>self%ds, l=>[2,2,2], u=>self%dims-1)
@@ -311,7 +315,8 @@ SUBROUTINE sor_2nd (self, phi1, source, niter, error)
         do j=l(2),u(2)
           ss = modulo(j+k+sweep,2)
           ss = merge(ss,0,self%red_black)
-          do i=l(1)+ss,u(1),2
+          i1 = merge(2,1,self%red_black)
+          do i=l(1)+ss,u(1),i1
             phi(i,j,k)     = (1. - self%omega_sor) * phi(i,j,k) + &
                                    self%omega_sor * ( &
                                      b1 * (phi(i+1,j,k)+phi(i-1,j,k)) &
@@ -345,6 +350,10 @@ SUBROUTINE sor_2nd (self, phi1, source, niter, error)
     !print *,error,a,b,b1,b2,b3
     if (error < self%tolerance) exit
   end do
+  call self%laplace (phi, res, source)
+  print *, minval(res), maxval(res)
+  write (12) shape(phi)
+  write (12) phi, res
   niter = iter
   phi1 = phi
   end associate
@@ -420,6 +429,7 @@ SUBROUTINE test (self)
     it = new
     jt = jt+1
   end do
+  print *, 'min/maxval(phi) =', minval(phi), maxval(phi)
   print *, 'total number of iterations =', sum_iter
   call timer%toc('conjugate gradient',jt*product(self%dims))
   if (trim(self%method)=='cg') then
