@@ -640,7 +640,7 @@ SUBROUTINE different_prolong (target, source, all_cells, only)
               qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
                    + interpolator%interpolator (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
             end if
-            if (all((ii>=li.and.ii<=ui))) then
+            if (all((ii>=li.and.ii<=ui)) .and. .not. all_cells_l) then
               print *,'INTERNAL BREACH!', ii
             end if
             target%mem(ix,iy,iz,iv,target%it,1) = qint

@@ -179,9 +179,8 @@ END SUBROUTINE check_current
 !> =============================================================================
 SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   USE download_mod
-
   class(list_t) :: tlist
-  class(link_t), pointer :: parent_link, child_link
+  class(link_t), pointer :: parent_link, child_link, child_nbor
   class(patch_t), pointer :: parent, child
   real, dimension(3), intent(in) :: pos, child_size
   !------------------------------------------------------------------------
@@ -222,6 +221,15 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child_link%parent => parent_link                          ! link is the link to the new patch
   call tlist%append_link (child_link)                       ! which is added to the patch list
   !------------------------------------------------------------------------
+  ! Make parent a neighbour of new child patch.
+  ! This will be overwritten in `init_all_nbors` but is necessary here to permit
+  ! interpolation of values from parent to child.
+  !------------------------------------------------------------------------
+  allocate (child_nbor)
+  child_nbor%link => parent_link
+  child_nbor%task => parent
+  child_link%nbor => child_nbor
+  !------------------------------------------------------------------------
   ! Download values from parent and neighbors, except at time = 0, to allow
   ! recursive refinement there.
   ! If time = 0, patch should have been filled with values during `child%init()`
@@ -230,9 +238,9 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   if (parent%time > 0.0) call download%download_link (child_link, all_cells=.true.)
   if (io%verbose>0) then
     1 format(a,3i6,f10.6,2(2x,3f8.4))
-    print 1,'refine_mod::make_child_patch:  child, level, iout, time, size =', &
+    print 1,'refine_mod::make_child_patch:  child, level, iout, time, size(3) =', &
       child%id, child%level, child%iout, child%time, child%size
-    print 1,'                              parent, level, iout, time, size =', &
+    print 1,'                              parent, level, iout, time, size(3) =', &
       parent%id, parent%level, parent%iout, parent%time, parent%size
   end if
 
