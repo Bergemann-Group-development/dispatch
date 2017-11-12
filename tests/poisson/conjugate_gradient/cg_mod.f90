@@ -22,6 +22,7 @@ MODULE cg_mod
     procedure :: precondition
     procedure :: test
   end type
+  logical, save:: dump=.false.
   integer, save:: verbose=1
   type(cg_t), public:: cg
 CONTAINS
@@ -42,7 +43,7 @@ SUBROUTINE init (self)
   character(len=16), save:: method='solve'
   logical, save   :: precondition=.false., red_black=.true.
   namelist /cg_params/ tolerance, floor, max_iter, width, dims, move, order, &
-                       omega_sor, method, precondition, red_black, verbose
+                       omega_sor, method, precondition, red_black, verbose, dump
   !-----------------------------------------------------------------------------
   read (*,cg_params)
   select case (trim(method))
@@ -64,6 +65,9 @@ SUBROUTINE init (self)
       omega_sor = 2./(1.+sqrt(1.-delta**2))
     end if
     self%red_black = red_black
+  case ('aslak1')
+    self%solver => aslak1
+    self%red_black = precondition
   case default
     self%solver => aslak
     self%red_black = precondition
@@ -170,7 +174,7 @@ SUBROUTINE precondition (self, res, out)
     end if
     a = 1d0 + 1d0/12d0
     b = 1d0/6d0
-    if (trim(self%method)=='aslak') then
+    if (self%method(1:5)=='aslak') then
       c = 6*b + a
       a = a/c
       b = b/c
@@ -211,7 +215,7 @@ SUBROUTINE aslak (self, phi1, source, niter, error)
   real(8)                :: pap, resnorm, resnorm2, phi_tol
   real(8)                :: alpha, beta
   integer                :: iter, m(3)
-  real(8), dimension(:,:,:), pointer:: phi, res, pes, Ap
+  real(8), dimension(:,:,:), allocatable:: phi, res, pes, Ap
   !-----------------------------------------------------------------------------
   m = shape(phi1)
   allocate (res(m(1),m(2),m(3)), pes(m(1),m(2),m(3)))
@@ -222,7 +226,7 @@ SUBROUTINE aslak (self, phi1, source, niter, error)
   phi = phi1
   call self%laplace (phi, res)
   res = source - res
-  call self%precondition (res)
+!  call self%precondition (res)
   resnorm = sum(res**2)
   !-----------------------------------------------------------------------------
   ! Main loop
@@ -234,8 +238,8 @@ SUBROUTINE aslak (self, phi1, source, niter, error)
     alpha = resnorm/pap
     phi = phi + alpha*pes
     call zero_boundaries8 (phi)
-    call self%precondition (pes)
     res = res - alpha*Ap
+    call self%precondition (pes)
     resnorm2 = sum(res**2)
     error = maxval(abs(res/(source+self%floor)))
     if (error < self%tolerance) exit
@@ -250,10 +254,67 @@ SUBROUTINE aslak (self, phi1, source, niter, error)
   phi1 = phi
   call self%laplace (phi, res, source)
   if (verbose>1) print *, 'min/maxval residual:', minval(res), maxval(res)
-  write (11) shape(phi)
-  write (11) phi, res
+  if (dump) write (11) shape(phi)
+  if (dump) write (11) phi, res
   deallocate (res, pes, Ap, phi)
 END SUBROUTINE aslak
+
+!> =============================================================================
+!> Conjugate gradient Poisson solver
+!> =============================================================================
+SUBROUTINE aslak1 (self, phi1, source, niter, error)
+  class(cg_t)            :: self
+  real, dimension(:,:,:) :: phi1, source
+  intent(in)             :: source
+  integer                :: niter
+  real                   :: error
+  !.............................................................................
+  real(8)                :: pap, resnorm, resnorm2, phi_tol
+  real(8)                :: alpha, beta
+  integer                :: iter, m(3)
+  real(8), dimension(:,:,:), pointer:: phi, res, pes, Ap
+  !-----------------------------------------------------------------------------
+  m = shape(phi1)
+  allocate (res(m(1),m(2),m(3)), pes(m(1),m(2),m(3)))
+  allocate ( Ap(m(1),m(2),m(3)), phi(m(1),m(2),m(3)))
+  !-----------------------------------------------------------------------------
+  ! Calculate the residual = source - Laplace(phi)
+  !-----------------------------------------------------------------------------
+  phi = phi1
+  call self%laplace (phi, res)
+  res = source - res
+  !call self%precondition (res)
+  resnorm = sum(res**2)
+  !-----------------------------------------------------------------------------
+  ! Main loop
+  !-----------------------------------------------------------------------------
+  pes = res
+  do iter = 1,self%max_iter
+    call self%laplace (pes, Ap)
+    pap = sum(pes*Ap)
+    alpha = resnorm/pap
+    phi = phi + alpha*pes
+    call zero_boundaries8 (phi)
+    res = res - alpha*Ap
+    call self%precondition (res)
+    resnorm2 = sum(res**2)
+    error = maxval(abs(res/(source+self%floor)))
+    if (error < self%tolerance) exit
+    beta = resnorm2/resnorm
+    pes = res + beta*pes
+    resnorm = resnorm2
+    if (verbose>2) print *,iter,error,resnorm,alpha,beta
+  end do
+  niter = iter
+  if (iter==self%max_iter+1) print *, &
+    'cg_mod%solve: no convergence, max_iter, error =', self%max_iter, error
+  call self%laplace (phi, res, source)
+  if (verbose>1) print *, 'min/maxval residual:', minval(res), maxval(res)
+  phi1 = phi
+  if (dump) write (12) shape(phi)
+  if (dump) write (12) phi, res
+  deallocate (res, pes, Ap, phi)
+END SUBROUTINE aslak1
 
 !> =============================================================================
 !> Conjugate gradient Poisson solver
@@ -268,7 +329,8 @@ SUBROUTINE ramses (self, phi1, source, niter, error1)
   real(8)                :: gamma, gamma_old, delta
   real(8)                :: alpha, alpha_old, beta
   integer                :: iter, mm(3)
-  real(8), dimension(:,:,:), pointer:: phi, p, q, r, s, u, w, m, n, z, res
+  real(8), dimension(:,:,:), allocatable:: phi, p, q, r, s, w, n, z, res
+  real(8), dimension(:,:,:), pointer:: u, m
   !-----------------------------------------------------------------------------
   ! Initially :
   !   r = b - A x
@@ -347,8 +409,8 @@ SUBROUTINE ramses (self, phi1, source, niter, error1)
   phi1 = phi
   call self%laplace (phi, r, source)
   if (verbose>1) print *, 'min/maxval residual:', minval(r), maxval(r)
-  write (13) shape(phi)
-  write (13) phi, r
+  if (dump) write (13) shape(phi)
+  if (dump) write (13) phi, r
   deallocate (p,q,r,s,u,w,m,n,z,phi)
 END SUBROUTINE ramses
 
@@ -462,8 +524,8 @@ SUBROUTINE sor_2nd (self, phi1, source, niter, error)
   end do
   call self%laplace (phi, res, source)
   if (verbose>1) print *, 'min/maxval residual:', minval(res), maxval(res)
-  write (12) shape(phi)
-  write (12) phi, res
+  if (dump) write (14) shape(phi)
+  if (dump) write (14) phi, res
   niter = iter
   phi1 = phi
   end associate
@@ -516,7 +578,9 @@ SUBROUTINE test (self)
     self%iit(1:nt-1) = self%iit(2:nt)
     self%iit(nt) = new
     order = min(self%order,jt-1)
-    if (order==0) then
+    if (order==-1) then
+      phii(:,:,:,new) = 0.0
+    else if (order==0) then
       phii(:,:,:,new) = phii(:,:,:,it)
     else if (order==1) then
       phii(:,:,:,self%iit(nt)) &
