@@ -13,19 +13,16 @@ MODULE cg_mod
     real      :: tolerance, floor, width, courant, omega_sor
     integer   :: max_iter, dims(3), move, order
     integer   :: iit(nt)
-    procedure(solve), pointer:: solver => null()
+    procedure(aslak), pointer:: solver => null()
     logical   :: precond, red_black
     character(len=16):: method='solve'
   contains
     procedure :: init
     procedure :: laplace
     procedure :: precondition
-    procedure :: solve
-    procedure :: jacobi
-    procedure :: sor_2nd
     procedure :: test
   end type
-  integer, parameter:: verbose=1
+  integer, save:: verbose=1
   type(cg_t), public:: cg
 CONTAINS
 
@@ -45,12 +42,15 @@ SUBROUTINE init (self)
   character(len=16), save:: method='solve'
   logical, save   :: precondition=.false., red_black=.true.
   namelist /cg_params/ tolerance, floor, max_iter, width, dims, move, order, &
-                       omega_sor, method, precondition, red_black
+                       omega_sor, method, precondition, red_black, verbose
   !-----------------------------------------------------------------------------
   read (*,cg_params)
   select case (trim(method))
   case ('jacobi')
     self%solver => jacobi
+  case ('ramses')
+    self%solver => ramses
+    self%red_black = precondition
   case ('sor')
     self%solver => sor_2nd
     if (omega_sor==0.0) then
@@ -63,8 +63,10 @@ SUBROUTINE init (self)
       delta = delta/pref
       omega_sor = 2./(1.+sqrt(1.-delta**2))
     end if
+    self%red_black = red_black
   case default
-    self%solver => solve
+    self%solver => aslak
+    self%red_black = precondition
   end select
   write (*,cg_params)
   self%tolerance = tolerance
@@ -77,7 +79,6 @@ SUBROUTINE init (self)
   self%order     = order
   self%omega_sor = omega_sor
   self%precond   = precondition
-  self%red_black = red_black
   self%method    = method
   self%ds        = 1d0/dims
   !print *, lagrange%weights (3.,[0.,1.,2.])
@@ -151,44 +152,56 @@ END SUBROUTINE laplace
 !> =============================================================================
 !> Laplace operator
 !> =============================================================================
-SUBROUTINE precondition (self, res)
+SUBROUTINE precondition (self, res, out)
   class(cg_t)               :: self
   real(8), dimension(:,:,:) :: res
+  real(8), dimension(:,:,:), pointer, optional :: out
   !.............................................................................
-  real(8), dimension(:,:,:), allocatable :: out
+  real(8), dimension(:,:,:), pointer :: o
   integer                   :: ix, iy, iz
   real(8)                   :: a, b, c
   !-----------------------------------------------------------------------------
-  if (.not.self%precond) return
-  associate (m=>self%dims)
-  allocate (out(m(1),m(2),m(3)))
-  a = 1d0 + 1d0/12d0
-  b = 1d0/6d0
-  c = 6*b + a
-  a = a/c
-  b = b/c
-  do iz=2,m(3)-1
-  do iy=2,m(2)-1
-  do ix=2,m(1)-1
-    out(ix,iy,iz) = b*(res(ix+1,iy,iz)+res(ix-1,iy,iz)  &
+  if (self%precond) then
+    associate (m=>self%dims)
+    if (present(out)) then
+      o => out
+    else
+      allocate (o(m(1),m(2),m(3)))
+    end if
+    a = 1d0 + 1d0/12d0
+    b = 1d0/6d0
+    if (trim(self%method)=='aslak') then
+      c = 6*b + a
+      a = a/c
+      b = b/c
+    end if
+    do iz=2,m(3)-1
+    do iy=2,m(2)-1
+    do ix=2,m(1)-1
+      o(ix,iy,iz) = b*(res(ix+1,iy,iz)+res(ix-1,iy,iz)  &
                   +    res(ix,iy+1,iz)+res(ix,iy-1,iz)  &
                   +    res(ix,iy,iz+1)+res(ix,iy,iz-1)) &
                   + a*res(ix,iy,iz)
-  end do
-  end do
-  end do
-  call zero_boundaries8 (out)
-  !print *,'res',minval(res),maxval(res)
-  !print *,'out',minval(out),maxval(out)
-  res = out
-  deallocate (out)
-  end associate
+    end do
+    end do
+    end do
+    call zero_boundaries8 (o)
+    !print *,'res',minval(res),maxval(res)
+    !print *,'out',minval(out),maxval(out)
+    if (.not.present(out)) then
+      res = o
+      deallocate (o)
+    end if
+    end associate
+  else if (present(out)) then
+    out = res
+  end if
 END SUBROUTINE precondition
 
 !> =============================================================================
 !> Conjugate gradient Poisson solver
 !> =============================================================================
-SUBROUTINE solve (self, phi1, source, niter, error)
+SUBROUTINE aslak (self, phi1, source, niter, error)
   class(cg_t)            :: self
   real, dimension(:,:,:) :: phi1, source
   intent(in)             :: source
@@ -198,7 +211,7 @@ SUBROUTINE solve (self, phi1, source, niter, error)
   real(8)                :: pap, resnorm, resnorm2, phi_tol
   real(8)                :: alpha, beta
   integer                :: iter, m(3)
-  real(8), dimension(:,:,:), allocatable:: phi, res, pes, Ap
+  real(8), dimension(:,:,:), pointer:: phi, res, pes, Ap
   !-----------------------------------------------------------------------------
   m = shape(phi1)
   allocate (res(m(1),m(2),m(3)), pes(m(1),m(2),m(3)))
@@ -229,18 +242,115 @@ SUBROUTINE solve (self, phi1, source, niter, error)
     beta = resnorm2/resnorm
     pes = res + beta*pes
     resnorm = resnorm2
-    if (verbose>1) print *,iter,error,resnorm,alpha,beta
+    if (verbose>2) print *,iter,error,resnorm,alpha,beta
   end do
   niter = iter
   if (iter==self%max_iter+1) print *, &
     'cg_mod%solve: no convergence, max_iter, error =', self%max_iter, error
   phi1 = phi
   call self%laplace (phi, res, source)
-  print *, minval(res), maxval(res)
+  if (verbose>1) print *, 'min/maxval residual:', minval(res), maxval(res)
   write (11) shape(phi)
   write (11) phi, res
   deallocate (res, pes, Ap, phi)
-END SUBROUTINE solve
+END SUBROUTINE aslak
+
+!> =============================================================================
+!> Conjugate gradient Poisson solver
+!> =============================================================================
+SUBROUTINE ramses (self, phi1, source, niter, error1)
+  class(cg_t)            :: self
+  real, dimension(:,:,:) :: phi1, source
+  intent(in)             :: source
+  integer                :: niter
+  real                   :: error1, error2
+  !.............................................................................
+  real(8)                :: gamma, gamma_old, delta
+  real(8)                :: alpha, alpha_old, beta
+  integer                :: iter, mm(3)
+  real(8), dimension(:,:,:), pointer:: phi, p, q, r, s, u, w, m, n, z, res
+  !-----------------------------------------------------------------------------
+  ! Initially :
+  !   r = b - A x
+  !   u = M^-1 r
+  !   w = A u
+  !-----------------------------------------------------------------------------
+  mm = shape(phi1)
+  allocate (p(mm(1),mm(2),mm(3)), q(mm(1),mm(2),mm(3)))
+  allocate (r(mm(1),mm(2),mm(3)), s(mm(1),mm(2),mm(3)))
+  allocate (u(mm(1),mm(2),mm(3)), w(mm(1),mm(2),mm(3)))
+  allocate (m(mm(1),mm(2),mm(3)), n(mm(1),mm(2),mm(3)))
+  allocate (z(mm(1),mm(2),mm(3)), phi(mm(1),mm(2),mm(3)))
+  allocate (res(mm(1),mm(2),mm(3)))
+  phi = phi1
+  call self%laplace (phi, r, source)
+  r = -r
+  call self%precondition (r, u)
+  call self%laplace (u, w)
+  !-----------------------------------------------------------------------------
+  ! Comments copied verbatim from ramses/poisson/phi_fine_cg.f90:
+  ! while (iter<cg_itermax .and. error > error_ini * epsilon)
+  !   gamma = (r.u)
+  !   delta = (w.u)
+  !   if (iter=1) error_ini = error
+  !   if (iter>1) then
+  !     alpha = gamma / (delta - beta * gamma / alpha_old)
+  !     beta  = gamma / gamma_old
+  !   else
+  !     alpha = gamma / delta
+  !     beta = 0
+  !   endif
+  !   alpha_old = alpha
+  !   gamma_old = gamma
+  !   m = M^-1 w
+  !   n = A m
+  !   z = n + beta z
+  !   q = m + beta q
+  !   s = w + beta s
+  !   p = u + beta p
+  !   phi = phi + alpha p
+  !   r   = r   - alpha s
+  !   u   = u   - alpha q
+  !   w   = w   - alpha z
+  !-----------------------------------------------------------------------------
+  do iter=1,self%max_iter
+    gamma = sum(r*u)
+    delta = sum(w*u)
+    if (iter>1) then
+      alpha = gamma / (delta - beta * gamma / alpha_old)
+      beta  = gamma / gamma_old
+    else
+      alpha = gamma / delta
+      beta = 0
+    end if
+    alpha_old = alpha
+    gamma_old = gamma
+    call self%precondition (w, m)
+    call self%laplace (m, n)
+    z = n + beta*z
+    q = m + beta*q
+    s = w + beta*s
+    p = u + beta*p
+    phi = phi + alpha*p
+    r   = r   - alpha*s
+    u   = u   - alpha*q
+    w   = w   - alpha*z
+    error1 = maxval(abs(r/(source+self%floor)))
+    call self%laplace (phi, res, source)
+    error2 = maxval(abs(res/(source+self%floor)))
+    if (verbose>2) print *, iter, error1, error2
+    if (error2 < self%tolerance) exit
+  end do
+  niter = iter
+  if (iter==self%max_iter+1) print *, &
+    'cg_mod%ramses: no convergence, max_iter, error =', self%max_iter, error2
+  phi1 = phi
+  call self%laplace (phi, r, source)
+  if (verbose>1) print *, 'min/maxval residual:', minval(r), maxval(r)
+  write (13) shape(phi)
+  write (13) phi, r
+  deallocate (p,q,r,s,u,w,m,n,z,phi)
+END SUBROUTINE ramses
 
 !> =============================================================================
 !> Iterative Poisson solver
@@ -340,18 +450,18 @@ SUBROUTINE sor_2nd (self, phi1, source, niter, error)
                  b3*(phi(i,j,k+1)+phi(i,j,k-1))
             a2 = b*phi(i,j,k)
             a3 = a*source(i,j,k)
-            !if (j==32.and.k==32) & 
+            !if (j==32.and.k==32) &
               !print *,i,j,k,phi(i,j,k),error,a1,a2,a3
             end block
           end do
         end do
       end do
     end do
-    !print *,error,a,b,b1,b2,b3
+    if (verbose>2) print *, iter, error
     if (error < self%tolerance) exit
   end do
   call self%laplace (phi, res, source)
-  print *, minval(res), maxval(res)
+  if (verbose>1) print *, 'min/maxval residual:', minval(res), maxval(res)
   write (12) shape(phi)
   write (12) phi, res
   niter = iter
@@ -431,11 +541,11 @@ SUBROUTINE test (self)
   end do
   print *, 'min/maxval(phi) =', minval(phi), maxval(phi)
   print *, 'total number of iterations =', sum_iter
-  call timer%toc('conjugate gradient',jt*product(self%dims))
-  if (trim(self%method)=='cg') then
-    option = 'precondition:'
-  else
+  call timer%toc('Poisson',jt*product(self%dims))
+  if (trim(self%method)=='sor') then
     option = '   red_black:'
+  else
+    option = 'precondition:'
   end if
   print '(a,a6,4x,a13,l3,4x,a,i3,4x,a,f7.2)', &
     'method: ', self%method, &
