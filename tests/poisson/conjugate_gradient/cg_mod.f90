@@ -9,7 +9,7 @@ MODULE cg_mod
   private
   integer, parameter:: nt=7
   type, public:: cg_t
-    real(8)   :: ds(3)
+    real(8)   :: ds(3), rjac2
     real      :: tolerance, floor, width, courant, omega_sor
     integer   :: max_iter, dims(3), move, order
     integer   :: iit(nt)
@@ -23,6 +23,7 @@ MODULE cg_mod
     procedure :: test
   end type
   logical, save:: dump=.false.
+  logical, save:: chebyshev=.false.
   integer, save:: verbose=1
   type(cg_t), public:: cg
 CONTAINS
@@ -36,6 +37,7 @@ SUBROUTINE init (self)
   real            :: delta, pref
   real, parameter :: pi = 4.*atan(1.)
   integer         :: i
+  real(8)         :: dsi(3), q(3)
   !.............................................................................
   real, save      :: tolerance=1e-6, floor=1e-6, width=0.2, courant=0.2
   real, save      :: omega_sor=0.0
@@ -43,10 +45,12 @@ SUBROUTINE init (self)
   character(len=16), save:: method='solve'
   logical, save   :: precondition=.false., red_black=.true.
   namelist /cg_params/ tolerance, floor, max_iter, width, dims, move, order, &
-                       omega_sor, method, precondition, red_black, verbose, dump
+                       omega_sor, method, precondition, red_black, chebyshev, &
+                       verbose, dump
   !-----------------------------------------------------------------------------
   read (*,cg_params)
   self%red_black = precondition     ! for printout
+  self%ds        = 1d0/dims
   select case (trim(method))
   case ('jacobi')
     self%solver => jacobi
@@ -70,6 +74,12 @@ SUBROUTINE init (self)
       delta = delta/pref
       omega_sor = 2./(1.+sqrt(1.-delta**2))
     end if
+    if (chebyshev) then
+      dsi = 1d0/self%ds
+      q = cos(pi/dims)*dsi**2
+      self%rjac2 = (sum(q)/sum(dsi**2))**2
+      print *,'dsi, q, rjac2', dsi(1), q(1), self%rjac2
+    end if
     self%red_black = red_black
   end select
   write (*,cg_params)
@@ -84,7 +94,6 @@ SUBROUTINE init (self)
   self%omega_sor = omega_sor
   self%precond   = precondition
   self%method    = method
-  self%ds        = 1d0/dims
   !print *, lagrange%weights (3.,[0.,1.,2.])
   !print *, lagrange%weights (4.,[0.,1.,2.,3.])
 END SUBROUTINE init
@@ -519,6 +528,9 @@ SUBROUTINE sor_2nd (self, phi1, source, niter, error)
   if (n(3)>1) a = a + 2. / ds(3)**2
   a = 1. / a
   !print *,a,n,ds
+  if (chebyshev) then
+    self%omega_sor = 1d0/(1d0-0.5d0*self%rjac2)
+  end if
   do iter=1,self%max_iter
     error = 0.0
     do sweep=0,merge(1,0,self%red_black)
@@ -556,15 +568,16 @@ SUBROUTINE sor_2nd (self, phi1, source, niter, error)
                  b3*(phi(i,j,k+1)+phi(i,j,k-1))
             a2 = b*phi(i,j,k)
             a3 = a*source(i,j,k)
-            !if (j==32.and.k==32) &
-              !print *,i,j,k,phi(i,j,k),error,a1,a2,a3
             end block
           end do
         end do
       end do
+      if (chebyshev) then
+        self%omega_sor = 1d0/(1d0-self%rjac2*0.25d0*self%omega_sor)
+      end if
     end do
-    if (verbose>2) print *, iter, error
     if (error < self%tolerance) exit
+    if (verbose>2) print *, iter, error, self%omega_sor, self%rjac2
   end do
   call self%laplace (phi, res, source)
   if (verbose>1) print *, 'min/maxval residual:', minval(res), maxval(res)

@@ -5,7 +5,7 @@
  floor=1e-3
  order=2
  width=0.1
- method='sor' red_black=t
+ method='sor' red_black=t chebyshev=t
  !method='aslak' precondition=f
  !method='gv1' precondition=t
  !method='ramses' precondition=f
