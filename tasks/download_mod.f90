@@ -534,7 +534,7 @@ SUBROUTINE same (target, source, filled, all_cells, only)
         end do
       end if
     else
-      if (present(all_cells)) then
+      if (all_cells_l) then
         do iz=l(3),u(3)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
