@@ -1840,11 +1840,11 @@ FUNCTION fsum8 (self, f) RESULT (out)
   if (self%no_mans_land) then
     out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
                      self%mesh(2)%li:self%mesh(2)%ui, &
-                     self%mesh(3)%li:self%mesh(3)%ui),kind=8))
+                     self%mesh(3)%li:self%mesh(3)%ui)))
   else
-    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui-1, &
-                     self%mesh(2)%li:self%mesh(2)%ui-1, &
-                     self%mesh(3)%li:self%mesh(3)%ui-1),kind=8))
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui)))
   end if
 END FUNCTION fsum8
 

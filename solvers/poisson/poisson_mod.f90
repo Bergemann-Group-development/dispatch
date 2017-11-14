@@ -512,7 +512,6 @@ SUBROUTINE cg (self, patch, phi1, source, d, error0, error, niter, detailed_time
   if (verbose > 1) print "(i6,2x,a,': iter = ',i4.1,3x,'error =',1p,g12.4)", &
     patch%id, trim(self%kind), 0, error0
   call precondition (r, u)
-  call zero_boundaries (u)
   ru = patch%fsum(r*u)
   !-----------------------------------------------------------------------------
   ! Iteratively improve the solution
@@ -525,7 +524,7 @@ SUBROUTINE cg (self, patch, phi1, source, d, error0, error, niter, detailed_time
     r   = r   - alpha*s
     error = patch%fmaxval(abs(r/(d+floor)))
     call precondition (r, u)
-    call zero_boundaries (u)
+    !call zero_boundaries (u)
     ru2 = patch%fsum(r*u)
     if (error < tolerance) exit
     beta = ru2/ru
@@ -544,52 +543,6 @@ SUBROUTINE cg (self, patch, phi1, source, d, error0, error, niter, detailed_time
   phi1 = phi
   if (detailed_timer) call trace%end (itimer)
 contains
-  !> =============================================================================
-  !> Make a function period in the guard zones
-  !> =============================================================================
-  subroutine periodic_f1 (f)
-    real(8):: f(:,:,:)
-    class(mesh_t), pointer:: m(:)
-    !.............................................................................
-    if (patch%is_clear (bits%root_grid)) return
-    m => patch%mesh
-    f(m(1)%lb:m(1)%lo,:,:) = f(m(1)%lb+m(1)%n:m(1)%lo+m(1)%n,:,:)
-    f(m(1)%uo:m(1)%ub,:,:) = f(m(1)%uo-m(1)%n:m(1)%ub-m(1)%n,:,:)
-    f(:,m(2)%lb:m(2)%lo,:) = f(:,m(2)%lb+m(2)%n:m(2)%lo+m(2)%n,:)
-    f(:,m(2)%uo:m(2)%ub,:) = f(:,m(2)%uo-m(2)%n:m(2)%ub-m(2)%n,:)
-    f(:,:,m(3)%lb:m(3)%lo) = f(:,:,m(3)%lb+m(3)%n:m(3)%lo+m(3)%n)
-    f(:,:,m(3)%uo:m(3)%ub) = f(:,:,m(3)%uo-m(3)%n:m(3)%ub-m(3)%n)
-  end subroutine periodic_f1
-  !> =============================================================================
-  !> Make a function period in the guard zones
-  !> =============================================================================
-  subroutine periodic_f (f)
-    real(8):: f(:,:,:)
-    class(mesh_t), pointer:: m(:)
-    integer:: ix, iy, iz
-    integer, dimension(3):: lb, ub, li, ui, n, i, j
-    !.............................................................................
-    if (patch%is_clear (bits%root_grid)) return
-    m => patch%mesh
-    lb = m%lb; ub=m%ub
-    li = m%li; ui=m%ui
-    n = m%n
-    do iz=lb(3),ub(3)
-    do iy=lb(2),ub(2)
-    do ix=lb(1),ub(1)
-      i = [ix,iy,iz]
-      if (all(i >= li .and. i <= ui)) cycle
-      where (n > 0)
-        j = modulo(i-li,n)+li
-      else where
-        j = 1
-      end where
-      f(ix,iy,iz) = f(j(1),j(2),j(3))
-      f(ix,iy,iz) = f(j(1),j(2),j(3))
-    end do
-    end do
-    end do
-  end subroutine periodic_f
   !> =============================================================================
   !> Set scratch array outer boundary to zero
   !> =============================================================================
@@ -612,21 +565,40 @@ contains
     real(8)                   :: ds(3)
     real(8), dimension(:,:,:) :: phi, out
     !.............................................................................
-    integer                   :: ix, iy, iz
+    integer                   :: i, j, k, im1, jm1, km1, ip1, jp1, kp1, li(3), n(3)
     real(8)                   :: c(3)
     !-----------------------------------------------------------------------------
-    c = 1d0/ds**2
-    do iz=patch%li(3),patch%ui(3)
-    do iy=patch%li(2),patch%ui(2)
-    do ix=patch%li(1),patch%ui(1)
-      out(ix,iy,iz) = c(1)*(phi(ix+1,iy,iz)+phi(ix-1,iy,iz)-2d0*phi(ix,iy,iz)) &
-                    + c(2)*(phi(ix,iy+1,iz)+phi(ix,iy-1,iz)-2d0*phi(ix,iy,iz)) &
-                    + c(3)*(phi(ix,iy,iz+1)+phi(ix,iy,iz-1)-2d0*phi(ix,iy,iz))
-    end do
-    end do
-    end do
-    !call periodic_f (out)
-    if (patch%is_periodic()) call patch%make_periodic (out)
+    c  = 1d0/ds**2
+    n  = patch%mesh%n
+    li = patch%mesh%li
+    if (patch%is_periodic()) then
+      do k=patch%mesh(3)%lb,patch%mesh(3)%ub
+        kp1 = modulo(k-li(3)+1,n(3))+li(3)
+        km1 = modulo(k-li(3)-1,n(3))+li(3)
+        do j=patch%mesh(2)%lb,patch%mesh(2)%ub
+          jp1 = modulo(j-li(2)+1,n(2))+li(2)
+          jm1 = modulo(j-li(2)-1,n(2))+li(2)
+          do i=patch%mesh(1)%lb,patch%mesh(1)%ub
+            ip1 = modulo(i-li(1)+1,n(1))+li(1)
+            im1 = modulo(i-li(1)-1,n(1))+li(1)
+            out(i,j,k) = c(1)*(phi(ip1,j,k)+phi(im1,j,k)-2d0*phi(i,j,k)) &
+                       + c(2)*(phi(i,jp1,k)+phi(i,jm1,k)-2d0*phi(i,j,k)) &
+                       + c(3)*(phi(i,j,kp1)+phi(i,j,km1)-2d0*phi(i,j,k))
+          end do
+        end do
+      end do
+    else
+      do k=patch%mesh(3)%li,patch%mesh(3)%ui
+        do j=patch%mesh(2)%li,patch%mesh(2)%ui
+          do i=patch%mesh(1)%li,patch%mesh(1)%ui
+            out(i,j,k) = c(1)*(phi(i+1,j,k)+phi(i-1,j,k)-2d0*phi(i,j,k)) &
+                       + c(2)*(phi(i,j+1,k)+phi(i,j-1,k)-2d0*phi(i,j,k)) &
+                       + c(3)*(phi(i,j,k+1)+phi(i,j,k-1)-2d0*phi(i,j,k))
+          end do
+        end do
+      end do
+      call zero_boundaries (out)
+    end if
   end subroutine laplace
   !> =============================================================================
   !> Preconditioner for conjugate gradient method
@@ -634,25 +606,72 @@ contains
   subroutine precondition (res, out)
     real(8), dimension(:,:,:) :: res, out
     !.............................................................................
-    integer                   :: ix, iy, iz, m(3)
+    integer                   :: i, j, k, im1, jm1, km1, ip1, jp1, kp1, li(3), n(3)
     real(8)                   :: a, b, c
     !-----------------------------------------------------------------------------
-    m = shape(res)
     a = 1d0 + 1d0/12d0
     b = 1d0/6d0
-    do iz=patch%li(3),patch%ui(3)
-    do iy=patch%li(2),patch%ui(2)
-    do ix=patch%li(1),patch%ui(1)
-      out(ix,iy,iz) = b*(res(ix+1,iy,iz)+res(ix-1,iy,iz)  &
-                    +    res(ix,iy+1,iz)+res(ix,iy-1,iz)  &
-                    +    res(ix,iy,iz+1)+res(ix,iy,iz-1)) &
-                    + a*res(ix,iy,iz)
-    end do
-    end do
-    end do
-    !call periodic_f (out)
-    !if (patch%is_periodic()) call patch%make_periodic (phi)
+    n  = patch%mesh%n
+    li = patch%mesh%li
+    if (patch%is_periodic()) then
+      do k=patch%mesh(3)%lb,patch%mesh(3)%ub
+        kp1 = modulo(k-li(3)+1,n(3))+li(3)
+        km1 = modulo(k-li(3)-1,n(3))+li(3)
+        do j=patch%mesh(2)%lb,patch%mesh(2)%ub
+          jp1 = modulo(j-li(2)+1,n(2))+li(2)
+          jm1 = modulo(j-li(2)-1,n(2))+li(2)
+          do i=patch%mesh(1)%lb,patch%mesh(1)%ub
+            ip1 = modulo(i-li(1)+1,n(1))+li(1)
+            im1 = modulo(i-li(1)-1,n(1))+li(1)
+            out(i,j,k) = b*(res(ip1,j,k)+res(im1,j,k)  &
+                       +    res(i,jp1,k)+res(i,jm1,k)  &
+                       +    res(i,j,kp1)+res(i,j,km1)) &
+                       + a*res(i,j,k)
+          end do
+        end do
+      end do
+    else
+      do k=patch%li(3),patch%ui(3)
+        do j=patch%li(2),patch%ui(2)
+          do i=patch%li(1),patch%ui(1)
+            out(i,j,k) = b*(res(i+1,j,k)+res(i-1,j,k)  &
+                       +    res(i,j+1,k)+res(i,j-1,k)  &
+                       +    res(i,j,k+1)+res(i,j,k-1)) &
+                       + a*res(i,j,k)
+          end do
+        end do
+      end do
+      call zero_boundaries (out)
+    end if
   end subroutine precondition
+  !> =============================================================================
+  !> 2nd order periodic Laplace operator
+  !> =============================================================================
+  subroutine laplacep (ds, phi, out)
+    real(8)                   :: ds(3)
+    real(8), dimension(:,:,:) :: phi, out
+    !.............................................................................
+    integer                   :: i, j, k, im1, jm1, km1, ip1, jp1, kp1, li(3), n(3)
+    real(8)                   :: c(3)
+    !-----------------------------------------------------------------------------
+    c = 1d0/ds**2
+    n  = patch%mesh%n
+    li = patch%mesh%li
+  end subroutine laplacep
+  !> =============================================================================
+  !> Preconditioner for conjugate gradient method
+  !> =============================================================================
+  subroutine preconditionp (res, out)
+    real(8), dimension(:,:,:) :: res, out
+    !.............................................................................
+    integer                   :: i, j, k, im1, jm1, km1, ip1, jp1, kp1, li(3), n(3)
+    real(8)                   :: a, b, c
+    !-----------------------------------------------------------------------------
+    a = 1d0 + 1d0/12d0
+    b = 1d0/6d0
+    n  = patch%mesh%n
+    li = patch%mesh%li
+  end subroutine preconditionp
 END SUBROUTINE cg
 
 !> =============================================================================

@@ -30,7 +30,7 @@ mpi_dims=1,1,1
  n=32,32,32
  nt=5
  dt_fixed=1e-10
- no_mans_land=f
+ no_mans_land=t
 /
 
 &experiment_params
