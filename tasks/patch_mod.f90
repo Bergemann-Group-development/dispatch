@@ -90,6 +90,10 @@ MODULE patch_mod
     procedure:: myposition_staggered
     procedure:: periodic_grid
     procedure:: extrapolate_guards
+    procedure:: is_periodic
+    procedure, private :: make_periodic4
+    procedure, private :: make_periodic8
+    generic, public :: make_periodic  => make_periodic4 , make_periodic8
     procedure, private :: fsum4
     procedure, private :: fsum8
     procedure, private :: faver4
@@ -740,6 +744,128 @@ SUBROUTINE periodic_grid (self, only)
     'periodic_grid: id, it, new =', self%id, self%it, self%new
   call trace_end
 END SUBROUTINE periodic_grid
+
+!> =============================================================================
+FUNCTION is_periodic(self) RESULT(out)
+  class(patch_t):: self
+  logical:: out
+  !.............................................................................
+  out = self%is_set (bits%root_grid) .and. all(self%periodic)
+END FUNCTION is_periodic
+
+!> =============================================================================
+!> Optimized periodic boundary enforcer
+!> =============================================================================
+SUBROUTINE make_periodic4 (patch, f)
+  class(patch_t):: patch
+  class(mesh_t), pointer:: m(:)
+  real(4):: f(:,:,:)
+  integer:: ix, iy, iz, n(3)
+  !-----------------------------------------------------------------------------
+  ! x periodicity; make periodic inside the yz patch limits
+  !-----------------------------------------------------------------------------
+  m => patch%mesh
+  n = m%n
+  do iz=m(3)%li,m(3)%ui
+  do ix=m(1)%lb,m(1)%lo
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix+n(1),iy,iz)
+    end do
+  end do
+  do ix=m(1)%uo,m(1)%ub
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix-n(1),iy,iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! y periodicity, full range in x now
+  !-----------------------------------------------------------------------------
+  do iz=m(3)%li,m(3)%ui
+  do iy=m(2)%lb,m(2)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy+n(2),iz)
+    end do
+  end do
+  do iy=m(2)%uo,m(2)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy-n(2),iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! z periodicity, full range in xy
+  !-----------------------------------------------------------------------------
+  do iy=m(2)%lb,m(2)%ub
+  do iz=m(3)%lb,m(3)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz+n(3))
+    end do
+  end do
+  do iz=m(3)%uo,m(3)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz-n(3))
+    end do
+  end do
+  end do
+END SUBROUTINE make_periodic4
+
+!> =====================================================================
+!> Optimized periodic boundary enforcer
+!> =====================================================================
+SUBROUTINE make_periodic8 (patch, f)
+  class(patch_t):: patch
+  class(mesh_t), pointer:: m(:)
+  real(8):: f(:,:,:)
+  integer:: ix, iy, iz, n(3)
+  !-----------------------------------------------------------------------------
+  ! x periodicity; make periodic inside the yz patch limits
+  !-----------------------------------------------------------------------------
+  m => patch%mesh
+  n = m%n
+  do iz=m(3)%li,m(3)%ui
+  do ix=m(1)%lb,m(1)%lo
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix+n(1),iy,iz)
+    end do
+  end do
+  do ix=m(1)%uo,m(1)%ub
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix-n(1),iy,iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! y periodicity, full range in x now
+  !-----------------------------------------------------------------------------
+  do iz=m(3)%li,m(3)%ui
+  do iy=m(2)%lb,m(2)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy+n(2),iz)
+    end do
+  end do
+  do iy=m(2)%uo,m(2)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy-n(2),iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! z periodicity, full range in xy
+  !-----------------------------------------------------------------------------
+  do iy=m(2)%lb,m(2)%ub
+  do iz=m(3)%lb,m(3)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz+n(3))
+    end do
+  end do
+  do iz=m(3)%uo,m(3)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz-n(3))
+    end do
+  end do
+  end do
+END SUBROUTINE make_periodic8
 
 !> =============================================================================
 !> Time extrapolate guard cell values, to allow using also guard zone values to
