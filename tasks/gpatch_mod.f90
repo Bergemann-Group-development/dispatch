@@ -30,6 +30,7 @@ MODULE gpatch_mod
     procedure:: init
     procedure:: dnload
     procedure:: gravity
+    procedure:: update
   end type
   real(8), save :: total_mass=0d0, total_volume=0d0
   real(8), save :: restart_time = 0d0
@@ -146,14 +147,14 @@ SUBROUTINE dnload (self, only)
 END SUBROUTINE dnload
 
 !> =============================================================================
-!> USE a Poisson solver module to solve for the potential phi in the current
-!> patch.  The task of the Poisson solver is to make one correction of phi,
-!> which is alredy from the start based on the time extrapolation of the
-!> previous solution.
+!> Prepare the external forces for the pde call, in particular selfgravity. At
+!> this point the nbors are declared up-to-date with respect to everything,
+!> including their potentials, which we need for guard zones.  They may in fact
+!> be providing only their preliminary potentials in their (nt-1) time slots,
+!> while their older time slots should by now contain the converged potential.
 !> =============================================================================
-SUBROUTINE gravity (self, error, only)
+SUBROUTINE gravity (self)
   class(gpatch_t):: self
-  integer, optional:: only !unused
   !.............................................................................
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi, source, resid
   real:: error, error0
@@ -191,25 +192,25 @@ SUBROUTINE gravity (self, error, only)
     !---------------------------------------------------------------------------
     ! call the Poisson solver iteratively
     !---------------------------------------------------------------------------
-  if (self%poisson%kind == 'zeus_sor') self%poisson%omega_sor = 1.0 / ( 1.0 - 0.5 * self%poisson%rjac2 )
-  do iter=1,max_iter
+    if (self%poisson%kind == 'zeus_sor') self%poisson%omega_sor = 1.0 / ( 1.0 - 0.5 * self%poisson%rjac2 )
+    do iter=1,max_iter
     call self%poisson%update (self, phi, resid, source, d, error, detailed_timer)
     if (self%is_set(bits%root_grid)) call self%periodic_grid (only=self%idx%phi)
-    !---------------------------------------------------------------------------
-    ! The error coming back from poisson should be (Laplace(phi)-source)/d, which
-    ! we then here normalize with grho, to get the relative error in density.
-    !---------------------------------------------------------------------------
+      !---------------------------------------------------------------------------
+      ! The error coming back from poisson should be (Laplace(phi)-source)/d, which
+      ! we then here normalize with grho, to get the relative error in density.
+      !---------------------------------------------------------------------------
     error = error / fourpiG
-    if (iter == 1) error0 = error
+      if (iter == 1) error0 = error
       if (verbose > 1) print "(i6,2x,a,': iter = ',i4.1,3x,'error =',1p,g12.4)", &
         self%id, trim(self%poisson%kind), iter, error
       !---------------------------------------------------------------------------
-    ! check for convergence
+      ! check for convergence
       !---------------------------------------------------------------------------
-    if (error < repsilon * error0 .or. error < aepsilon) then
-      exit
-    end if
-  end do
+      if (error < repsilon * error0 .or. error < aepsilon) then
+        exit
+      end if
+    end do
     !---------------------------------------------------------------------------
     ! too many iterations; throw warning before continuing
     !---------------------------------------------------------------------------
@@ -218,7 +219,7 @@ SUBROUTINE gravity (self, error, only)
         self%id, max_iter
       print "('error0 = ',g14.5,'; error = ',g14.5)",error0,error
     end if
-  end do
+  end if
   call self%poisson%laplace (self%ds, phi, source, resid)
 !  print *,'src2', self%fminval(source), self%fmaxval(source)
 !  print *,'phi2', self%fminval(phi), self%fmaxval(phi)
@@ -236,10 +237,30 @@ SUBROUTINE gravity (self, error, only)
       self%id, trim(self%poisson%kind), iter, error0, error, wallclock()-sec, &
       self%fminval(phi), self%fmaxval(phi)
   deallocate (source, resid)
+  !-----------------------------------------------------------------------------
   ! compute estimate of dphi/dt
+  !-----------------------------------------------------------------------------
   call time_derivs (self)
   call trace%end (itimer)
 END SUBROUTINE gravity
+
+!> =============================================================================
+!> Having advanced the MHD state to the new time, we make a preliminary
+!> call to the Poisson solver, based on extrapolation of the nbor potentials.
+!> We then provide this preliminary potential to nbors, until we have a
+!> better offer.
+!> =============================================================================
+SUBROUTINE update (self)
+  class(gpatch_t):: self
+  !-----------------------------------------------------------------------------
+  if (.not. selfgravity) return
+  call trace%begin ('gpatch_t%update')
+  call self%rotate
+  call self%dnload (only=self%idx%d)
+  call self%dnload (only=self%idx%phi)
+  call self%gravity
+  call trace%end
+END SUBROUTINE update
 
 !> =============================================================================
 !> Compute an approximate, conservative estimate of dphi/dt, which will cause
