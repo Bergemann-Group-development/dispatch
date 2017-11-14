@@ -188,9 +188,9 @@ SUBROUTINE gravity (self)
 !  write (10) shape(phi); write (10) source, phi, resid
   if (self%poisson%kind == 'zeus_sor') self%poisson%omega_sor = 1.0 / ( 1.0 - 0.5 * self%poisson%rjac2 )
   if (self%poisson%kind=='cg') then
-    call self%poisson%cg (self, phi, source, error0, error, iter, detailed_timer)
+    call self%poisson%cg (self, phi, source, d, error0, error, iter, detailed_timer)
   else if (self%poisson%kind=='sor_iter') then
-    call self%poisson%sor_iter (self, phi, source, error0, error, iter, detailed_timer)
+    call self%poisson%sor_iter (self, phi, source, d, error0, error, iter, detailed_timer)
   else
     !---------------------------------------------------------------------------
     ! call the Poisson solver iteratively

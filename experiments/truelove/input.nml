@@ -66,10 +66,10 @@ mpi_dims=1,1,1
  !solver='sor_iter'
  !solver='zeus_sor'
  !omega_sor=0.0
- floor=1e-10
- tolerance=1e-3
+ floor=1e-5
+ tolerance=1e-5
  verbose=2
- max_iter=100
+ max_iter=200
 /
 
 &zeus_params

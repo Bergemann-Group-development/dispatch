@@ -199,7 +199,7 @@ SUBROUTINE sor_2nd (self, patch, phi, resid, FourPiGrho, d, error, detailed_time
               + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
               - phi(i,j,k)- a * FourPiGrho(i,j,k)
           phi(i,j,k) = phi(i,j,k) + self%omega_sor * res
-          resid(i,j,k) = res/d(i,j,k)
+          resid(i,j,k) = res/(d(i,j,k)+floor)
           error = max(abs(resid(i,j,k)), error)
         end do
       end do
@@ -215,11 +215,11 @@ SUBROUTINE sor_2nd (self, patch, phi, resid, FourPiGrho, d, error, detailed_time
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE sor_2nd
 
-SUBROUTINE sor_iter (self, patch, phi1, source, error0, error, niter, detailed_timer)
+SUBROUTINE sor_iter (self, patch, phi1, source, d, error0, error, niter, detailed_timer)
   class(poisson_t)       :: self
   class(patch_t)         :: patch
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi1
-  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: source
+  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: source, d
   real                   :: error, error0
   integer                :: niter
   logical                :: detailed_timer
@@ -269,7 +269,7 @@ SUBROUTINE sor_iter (self, patch, phi1, source, error0, error, niter, detailed_t
                 + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
                 - phi(i,j,k)- a * source(i,j,k)
             phi(i,j,k) = phi(i,j,k) + self%omega_sor * res
-            error = max(abs(res), error)
+            error = max(abs(res/(d(i,j,k)+floor)), error)
           end do
         end do
       end do
@@ -471,11 +471,11 @@ END SUBROUTINE zeus_sor
 !> =============================================================================
 !> Conjugate gradient Poisson solver (Ghysels & Vanroose 2014, Algorithm 1)
 !> =============================================================================
-SUBROUTINE cg (self, patch, phi1, source, error0, error, niter, detailed_timer)
+SUBROUTINE cg (self, patch, phi1, source, d, error0, error, niter, detailed_timer)
   class(poisson_t)       :: self
   class(patch_t)         :: patch
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi1
-  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: source
+  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: source, d
   real                   :: error, error0
   integer                :: niter
   logical                :: detailed_timer
@@ -502,12 +502,17 @@ SUBROUTINE cg (self, patch, phi1, source, error0, error, niter, detailed_timer)
   write (11) shape(phi)
   write (11) source
   write (11) phi
+  p = 0d0
+  r = 0d0
+  s = 0d0
+  u = 0d0
   call laplace (ds, phi, r)
   r = source - r
-  error0 = patch%fmaxval(abs(r/(source+floor)))
+  error0 = patch%fmaxval(abs(r/(d+floor)))
   if (verbose > 1) print "(i6,2x,a,': iter = ',i4.1,3x,'error =',1p,g12.4)", &
     patch%id, trim(self%kind), 0, error0
   call precondition (r, u)
+  call zero_boundaries (u)
   ru = patch%fsum(r*u)
   !-----------------------------------------------------------------------------
   ! Iteratively improve the solution
@@ -517,9 +522,10 @@ SUBROUTINE cg (self, patch, phi1, source, error0, error, niter, detailed_timer)
     call laplace (ds, p, s)
     alpha = ru/patch%fsum(s*p)
     phi = phi + alpha*p
-    r = r - alpha*s
-    error = patch%fmaxval(abs(r/(source+floor)))
+    r   = r   - alpha*s
+    error = patch%fmaxval(abs(r/(d+floor)))
     call precondition (r, u)
+    call zero_boundaries (u)
     ru2 = patch%fsum(r*u)
     if (error < tolerance) exit
     beta = ru2/ru
@@ -619,7 +625,8 @@ contains
     end do
     end do
     end do
-    call periodic_f (out)
+    !call periodic_f (out)
+    if (patch%is_periodic()) call patch%make_periodic (out)
   end subroutine laplace
   !> =============================================================================
   !> Preconditioner for conjugate gradient method
@@ -643,7 +650,8 @@ contains
     end do
     end do
     end do
-    call periodic_f (out)
+    !call periodic_f (out)
+    !if (patch%is_periodic()) call patch%make_periodic (phi)
   end subroutine precondition
 END SUBROUTINE cg
 
