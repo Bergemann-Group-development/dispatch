@@ -232,7 +232,10 @@ SUBROUTINE sor_iter (self, patch, phi1, source, error0, error, niter, detailed_t
   if (detailed_timer) call trace%begin ('poisson_t%sor_iter', itimer=itimer)
   associate(n=>patch%n,ds=>patch%ds,l=>patch%li,u=>patch%ui,gn=>patch%gn)
   allocate (phi(gn(1),gn(2),gn(3)))
-  phi = phi1
+  if (patch%is_periodic()) call patch%make_periodic (phi)
+  write (11) shape(phi)
+  write (11) source
+  write (11) phi
   ione = 1
   jone = 1
   kone = 1
@@ -279,12 +282,14 @@ SUBROUTINE sor_iter (self, patch, phi1, source, error0, error, niter, detailed_t
     if (iter==1) error0 = error
     if (verbose > 1) print *, 'poisson_t%sor_iter: iter, error =', iter, error
     if (error < tolerance) exit
+    !if (patch%is_periodic()) call patch%make_periodic (phi)
+    write (11) phi
   end do
   niter = iter
   phi1 = phi
   deallocate (phi)
-  end associate
   if (detailed_timer) call trace%end (itimer)
+  end associate
 END SUBROUTINE sor_iter
 
 !> =====================================================================
@@ -493,32 +498,36 @@ SUBROUTINE cg (self, patch, phi1, source, error0, error, niter, detailed_timer)
   !-----------------------------------------------------------------------------
   ds = patch%ds
   phi = phi1
-  call periodic_f (phi)
+  if (patch%is_periodic()) call patch%make_periodic (phi)
+  write (11) shape(phi)
+  write (11) source
+  write (11) phi
   call laplace (ds, phi, r)
   r = source - r
   error0 = patch%fmaxval(abs(r/(source+floor)))
   if (verbose > 1) print "(i6,2x,a,': iter = ',i4.1,3x,'error =',1p,g12.4)", &
     patch%id, trim(self%kind), 0, error0
   call precondition (r, u)
-  ru = sum(r*u)
+  ru = patch%fsum(r*u)
   !-----------------------------------------------------------------------------
   ! Iteratively improve the solution
   !-----------------------------------------------------------------------------
   p = u
   do iter = 1,max_iter
     call laplace (ds, p, s)
-    alpha = ru/sum(s*p)
+    alpha = ru/patch%fsum(s*p)
     phi = phi + alpha*p
     r = r - alpha*s
     error = patch%fmaxval(abs(r/(source+floor)))
     call precondition (r, u)
-    ru2 = sum(r*u)
+    ru2 = patch%fsum(r*u)
     if (error < tolerance) exit
     beta = ru2/ru
     p = u + beta*p
     ru = ru2
     if (verbose > 1) print "(i6,2x,a,': iter = ',i4.1,3x,'error =',1p,g12.4)", &
       patch%id, trim(self%kind), iter, error
+    write (11) phi
   end do
   niter = iter
   if (iter==max_iter+1) then

@@ -57,18 +57,19 @@ mpi_dims=1,1,1
  aepsilon=1e-3
  prediction=f
  order=1
- max_iter=200
+ max_iter=100
 /
 
 &poisson_params
- !solver='cg'
+ solver='cg'
  !solver='sor_2nd'
- solver='sor_iter'
+ !solver='sor_iter'
  !solver='zeus_sor'
  !omega_sor=0.0
  floor=1e-10
  tolerance=1e-3
- verbose=1
+ verbose=2
+ max_iter=100
 /
 
 &zeus_params

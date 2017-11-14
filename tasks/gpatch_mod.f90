@@ -179,6 +179,7 @@ SUBROUTINE gravity (self)
       end do
     end do
   end do
+  if (self%is_periodic()) call self%make_periodic (source)
   sec = wallclock()
   call self%poisson%laplace (self%ds, phi, source, resid)
 !  print *,'src1', self%fminval(source), self%fmaxval(source)
