@@ -22,6 +22,7 @@ MODULE poisson_mod
     real(kind=KindScalarVar), dimension(:,:,:), allocatable:: eta
   contains
     procedure:: init
+    procedure, nopass:: laplace
     procedure:: check => check_poisson
   end type
 
@@ -377,6 +378,30 @@ SUBROUTINE zeus_sor (self, patch, phi, resid, FourPiGrho, d, anorm, detailed_tim
   end associate
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE zeus_sor
+
+!> =============================================================================
+!> 2nd order Laplace operator
+!> =============================================================================
+SUBROUTINE laplace (ds, phi, source, res)
+  real(8)                   :: ds(3)
+  real, dimension(:,:,:)    :: phi, source, res
+  !.............................................................................
+  integer                   :: ix, iy, iz, m(3)
+  real(8)                   :: c(3)
+  !-----------------------------------------------------------------------------
+  c = 1d0/ds**2
+  m = shape(phi)
+  do iz=2,m(3)-1
+  do iy=2,m(2)-1
+  do ix=2,m(1)-1
+    res(ix,iy,iz) = c(1)*(phi(ix+1,iy,iz)+phi(ix-1,iy,iz)-2d0*phi(ix,iy,iz)) &
+                  + c(2)*(phi(ix,iy+1,iz)+phi(ix,iy-1,iz)-2d0*phi(ix,iy,iz)) &
+                  + c(3)*(phi(ix,iy,iz+1)+phi(ix,iy,iz-1)-2d0*phi(ix,iy,iz)) &
+                  - source(ix,iy,iz)
+  end do
+  end do
+  end do
+END SUBROUTINE laplace
 
 !> =============================================================================
 !> Given a grav. pot. and a density, calculate Poisson's equation and return

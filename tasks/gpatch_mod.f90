@@ -182,6 +182,10 @@ SUBROUTINE gravity (self, error, only)
 
   ! call the Poisson solver iteratively
   sec = wallclock()
+  call self%poisson%laplace (self%ds, phi, source, resid)
+  print *,'src', self%fminval(source), self%fmaxval(source)
+  print *,'phi', self%fminval(phi), self%fmaxval(phi)
+  print *,'res', self%fminval(resid), self%fmaxval(resid)
   if (self%poisson%kind == 'zeus_sor') self%poisson%omega_sor = 1.0 / ( 1.0 - 0.5 * self%poisson%rjac2 )
   do iter=1,max_iter
     call self%poisson%update (self, phi, resid, source, d, error, detailed_timer)
@@ -191,13 +195,10 @@ SUBROUTINE gravity (self, error, only)
     !---------------------------------------------------------------------------
     error = error / fourpiG
     if (iter == 1) error0 = error
-    if (verbose > 1) print "(i6,' self_gravity: iter = ',i4.1,' error =',1p,g13.4)", self%id, iter, error
-
+      if (verbose > 1) print "(i6,2x,a,': iter = ',i4.1,3x,'error =',1p,g12.4)", &
+        self%id, trim(self%poisson%kind), iter, error
     ! check for convergence
     if (error < repsilon * error0 .or. error < aepsilon) then
-      if (verbose>0) &
-        print "(i6,' poisson converged in ',i4,' iterations; initial, final error, time taken:',1p,3e10.3)", &
-          self%id, iter, error0, error, wallclock()-sec
       exit
     end if
   end do
@@ -209,6 +210,10 @@ SUBROUTINE gravity (self, error, only)
     print "('error0 = ',g14.5,'; error = ',g14.5)",error0,error
   end if
 
+  if (verbose>0) &
+    print "(i6,2x,a,' converged in ',i4,' iterations; initial, final error, time taken:',1p,3e10.3,2x,2e12.3)", &
+      self%id, trim(self%poisson%kind), iter, error0, error, wallclock()-sec, &
+      self%fminval(phi), self%fmaxval(phi)
   deallocate (source, resid)
   ! compute estimate of dphi/dt
   call time_derivs (self)
