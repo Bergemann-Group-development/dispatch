@@ -306,9 +306,8 @@ SUBROUTINE download_link (link, all_cells, only)
     if (io%verbose>1) &
       call target%check_density ("before download")
   end if
-  if (target%is_set(bits%root_grid)) then
-    call target%periodic_grid
-  else
+  if (target%is_set(bits%root_grid)) call target%periodic_grid
+
     do edges=3,1,-1
       nbor => link%nbor
       do while (associated(nbor))
@@ -342,7 +341,7 @@ SUBROUTINE download_link (link, all_cells, only)
         nbor => nbor%next
       end do
     end do
-  end if
+
   call target%check_density (" after download")
   deallocate (filled)
 
