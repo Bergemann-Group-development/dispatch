@@ -24,12 +24,13 @@ MODULE gpatch_mod
     type(data_hub_t) :: data_hub
     type(poisson_t)  :: poisson
     logical:: selfgravity=.false.
-    real:: d0=1.0
+    real(8):: d0=0.0
   contains
     procedure:: init
     procedure:: dnload
     procedure:: gravity
   end type
+  real(8), save :: total_mass=0d0, total_volume=0d0
   real(8), save :: restart_time = 0d0
   logical, save :: selfgravity=.false., prediction=.true., detailed_timer=.false.
   integer, save :: max_iter=100, verbose=0
@@ -47,6 +48,7 @@ SUBROUTINE init (self)
   logical                           :: ok
   integer                           :: iostat
   logical, save                     :: first_time=.true.
+  real(kind=KindScalarVar), pointer :: d(:,:,:)
   namelist /selfgravity_params/ selfgravity, prediction, fourpiG, repsilon, aepsilon, &
                                 max_iter, order, verbose
   !-----------------------------------------------------------------------------
@@ -99,6 +101,15 @@ SUBROUTINE init (self)
     ff => self%mem(:,:,:,:,1,1)
     call self%initial%condition (self%mesh, ff, self%idx)
   end if
+  !-----------------------------------------------------------------------------
+  ! Sum up the total mass and total volume, to get the average density d0.
+  ! FIXME: This needs to be modified for MPI
+  !-----------------------------------------------------------------------------
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  !$omp atomic
+  total_mass = total_mass + self%fsum(d)*product(self%ds)
+  !$omp atomic
+  total_volume = total_volume + product(self%size)
   !-----------------------------------------------------------------------------
   ! If restart succeeded for some patch, use it to set time and output cadence.
   ! FIXME: This may fail in some corner cases when running on multiple MPI ranks,
@@ -157,6 +168,10 @@ SUBROUTINE gravity (self, error, only)
   allocate (source(size(d,1),size(d,2),size(d,3)), resid(size(d,1),size(d,2),size(d,3)))
 
   source = 0.0
+  if (self%d0==0.0) then
+    self%d0 = total_mass/total_volume
+    print *,'setting self%d0 =', self%d0, self%faver(d)
+  end if
   do iz=self%mesh(3)%li,self%mesh(3)%ui
     do iy=self%mesh(2)%li,self%mesh(2)%ui
       do ix=self%mesh(1)%li,self%mesh(1)%ui

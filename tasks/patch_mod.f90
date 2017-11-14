@@ -90,10 +90,16 @@ MODULE patch_mod
     procedure:: myposition_staggered
     procedure:: periodic_grid
     procedure:: extrapolate_guards
+    procedure, private :: fsum4
+    procedure, private :: fsum8
+    procedure, private :: faver4
+    procedure, private :: faver8
     procedure, private :: fminval4
     procedure, private :: fminval8
     procedure, private :: fmaxval4
     procedure, private :: fmaxval8
+    generic, public :: fsum    => fsum4   , fsum8     ! interior sum
+    generic, public :: faver   => faver4  , faver8    ! interior average
     generic, public :: fminval => fminval4, fminval8  ! interior min value
     generic, public :: fmaxval => fmaxval4, fmaxval8  ! interior max value
     procedure:: courant_condition
@@ -1676,6 +1682,64 @@ SUBROUTINE courant_condition (self, detailed_timer)
       self%id, self%dtime, self%courant, self%u_max
   call trace_end (itimer)
 END SUBROUTINE courant_condition
+
+!> =============================================================================
+FUNCTION fsum4 (self, f) RESULT (out)
+  class(patch_t):: self
+  real:: out
+  real, dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  if (self%no_mans_land) then
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui),kind=8))
+  else
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui-1, &
+                     self%mesh(2)%li:self%mesh(2)%ui-1, &
+                     self%mesh(3)%li:self%mesh(3)%ui-1),kind=8))
+  end if
+END FUNCTION fsum4
+!> =============================================================================
+FUNCTION fsum8 (self, f) RESULT (out)
+  class(patch_t):: self
+  real(8):: out
+  real(8), dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  if (self%no_mans_land) then
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui),kind=8))
+  else
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui-1, &
+                     self%mesh(2)%li:self%mesh(2)%ui-1, &
+                     self%mesh(3)%li:self%mesh(3)%ui-1),kind=8))
+  end if
+END FUNCTION fsum8
+
+!> =============================================================================
+FUNCTION faver4 (self, f) RESULT (out)
+  class(patch_t):: self
+  real:: out
+  real, dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  if (self%no_mans_land) then
+    out = self%fsum4(f)/product(self%mesh%ui-self%mesh%li+1)
+  else
+    out = self%fsum4(f)/product(self%mesh%ui-self%mesh%li)
+  end if
+END FUNCTION faver4
+!> =============================================================================
+FUNCTION faver8 (self, f) RESULT (out)
+  class(patch_t):: self
+  real(8):: out
+  real(8), dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  if (self%no_mans_land) then
+    out = self%fsum8(f)/product(self%mesh%ui-self%mesh%li+1)
+  else
+    out = self%fsum8(f)/product(self%mesh%ui-self%mesh%li)
+  end if
+END FUNCTION faver8
 
 !> =============================================================================
 FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
