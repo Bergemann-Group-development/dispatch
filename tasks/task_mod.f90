@@ -62,6 +62,7 @@ MODULE task_mod
     logical:: syncing=.false.
     logical:: track=.false.
     logical:: periodic(3)=.true.
+    logical:: rotated=.false.
   contains
     procedure:: init
     procedure:: dnload
@@ -147,6 +148,7 @@ SUBROUTINE rotate (self)
   real(8), pointer:: rptr
   integer, pointer:: iptr
   !.............................................................................
+  if (self%rotated) return
   call trace_begin ('task_mod::rotate',itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Call timestep update procedure to fill the next time slot with values
@@ -210,6 +212,7 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
   !!omp end critical (time_cr)
   nullify (rptr, iptr)
+  self%rotated = .true.
   call trace_end (itimer)
 END SUBROUTINE rotate
 
