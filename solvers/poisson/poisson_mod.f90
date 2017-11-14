@@ -110,7 +110,7 @@ SUBROUTINE init_sor_2nd (self, patch)
     do i=1,3
       if (patch%n(i) > 1) then
         pref  = pref + 1.
-        delta = delta + cos(2. * pi / patch%n(i))
+        delta = delta + cos(pi / patch%n(i))
       endif
     enddo
     delta = delta / pref
@@ -191,8 +191,8 @@ SUBROUTINE sor_2nd (self, patch, phi, resid, FourPiGrho, d, error, detailed_time
               + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
               - phi(i,j,k)- a * FourPiGrho(i,j,k)
           phi(i,j,k) = phi(i,j,k) + self%omega_sor * res
-          resid(i,j,k) = abs(res/d(i,j,k))
-          error = max(resid(i,j,k), error)
+          resid(i,j,k) = res/d(i,j,k)
+          error = max(abs(resid(i,j,k)), error)
         end do
       end do
     end do
@@ -344,16 +344,20 @@ SUBROUTINE zeus_sor (self, patch, phi, resid, FourPiGrho, d, anorm, detailed_tim
   !  introduced to perform the checkerboarding on the appropriate loop.
   anorm = 0.0d0
   dx3a2i = 1.0 / patch%ds(3)**2
-  do sweep=1,2
+  !do sweep=1,2
+  do sweep=1,1
     sw1 = sweep - 1
     sw2 = sw1
     swk = (inck-1) * sw1
-    do k=l(3)+swk,u(3),inck
+    !do k=l(3)+swk,u(3),inck
+    do k=l(3),u(3)
       sw3 = sw2
       swj = (incj-1) * sw2
-      do j=l(2)+swj,u(2),incj
+      !do j=l(2)+swj,u(2),incj
+      do j=l(2),u(2)
         swi = (inci-1) * sw3
-        do i=l(1)+swi,u(1),inci
+        !do i=l(1)+swi,u(1),inci
+        do i=l(1),u(1)
           da = self%eta(i,j,k) * phi(i,j,k) - FourPiGrho(i,j,k) &
              + ( phi(i+ione,j,k) * self%dx1p2i(i) + phi(i-ione,j,k) * self%dx1m2i(i) ) &
                * ione &

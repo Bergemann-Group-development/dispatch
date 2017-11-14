@@ -53,16 +53,16 @@ mpi_dims=1,1,1
  selfgravity=t
  verbose=2
  fourpiG=1.0
- repsilon=1e-3
- aepsilon=0.0
- prediction=t
+ repsilon=0.0
+ aepsilon=1e-2
+ prediction=f
  order=1
  max_iter=200
 /
 
 &poisson_params
- solver='cg'
- !solver='sor_2nd'
+ !solver='cg'
+ solver='sor_2nd'
  !solver='zeus_sor'
  !omega_sor=0.0
  floor=1e-10

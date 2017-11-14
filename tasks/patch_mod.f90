@@ -683,8 +683,9 @@ END FUNCTION myfloatindex_scalar
 !> =============================================================================
 !> Periodic mapping of a grid -- typically the root grid
 !> =============================================================================
-SUBROUTINE periodic_grid (self)
+SUBROUTINE periodic_grid (self, only)
   class(patch_t):: self
+  integer, optional:: only
   integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3), n(3)
   !.............................................................................
   call trace_begin ('patch_t%periodic_grid')
@@ -725,8 +726,13 @@ SUBROUTINE periodic_grid (self)
     where (self%mesh%upper_boundary .and. i > self%mesh%ui-4)
       j = i
     end where
-    self%mem(ix,iy,iz,:,self%it ,1) = self%mem(j(1),j(2),j(3),:,self%it ,1)
-    self%mem(ix,iy,iz,:,self%new,1) = self%mem(j(1),j(2),j(3),:,self%new,1)
+    if (present(only)) then
+      self%mem(ix,iy,iz,only,self%it ,1) = self%mem(j(1),j(2),j(3),only,self%it ,1)
+      self%mem(ix,iy,iz,only,self%new,1) = self%mem(j(1),j(2),j(3),only,self%new,1)
+    else
+      self%mem(ix,iy,iz,:,self%it ,1) = self%mem(j(1),j(2),j(3),:,self%it ,1)
+      self%mem(ix,iy,iz,:,self%new,1) = self%mem(j(1),j(2),j(3),:,self%new,1)
+    end if
   end do
   end do
   end do

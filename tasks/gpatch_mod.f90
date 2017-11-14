@@ -17,6 +17,7 @@ MODULE gpatch_mod
   USE scaling_mod
   USE poisson_mod
   USE omp_timer_mod
+  USE bits_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
@@ -183,12 +184,14 @@ SUBROUTINE gravity (self, error, only)
   ! call the Poisson solver iteratively
   sec = wallclock()
   call self%poisson%laplace (self%ds, phi, source, resid)
-  print *,'src', self%fminval(source), self%fmaxval(source)
-  print *,'phi', self%fminval(phi), self%fmaxval(phi)
-  print *,'res', self%fminval(resid), self%fmaxval(resid)
+!  print *,'src1', self%fminval(source), self%fmaxval(source)
+!  print *,'phi1', self%fminval(phi), self%fmaxval(phi)
+!  print *,'res1', self%fminval(resid), self%fmaxval(resid)
+!  write (10) shape(phi); write (10) source, phi, resid
   if (self%poisson%kind == 'zeus_sor') self%poisson%omega_sor = 1.0 / ( 1.0 - 0.5 * self%poisson%rjac2 )
   do iter=1,max_iter
     call self%poisson%update (self, phi, resid, source, d, error, detailed_timer)
+    if (self%is_set(bits%root_grid)) call self%periodic_grid (only=self%idx%phi)
     !---------------------------------------------------------------------------
     ! The error coming back from poisson should be (Laplace(phi)-source)/d, which
     ! we then here normalize with grho, to get the relative error in density.
@@ -202,6 +205,11 @@ SUBROUTINE gravity (self, error, only)
       exit
     end if
   end do
+  call self%poisson%laplace (self%ds, phi, source, resid)
+!  print *,'src2', self%fminval(source), self%fmaxval(source)
+!  print *,'phi2', self%fminval(phi), self%fmaxval(phi)
+!  print *,'res2', self%fminval(resid), self%fmaxval(resid)
+!  write (10) shape(phi); write (10) source, phi, resid
 
   ! too many iterations; throw warning before continuing
   if (iter > max_iter) then
@@ -209,7 +217,6 @@ SUBROUTINE gravity (self, error, only)
       self%id, max_iter
     print "('error0 = ',g14.5,'; error = ',g14.5)",error0,error
   end if
-
   if (verbose>0) &
     print "(i6,2x,a,' converged in ',i4,' iterations; initial, final error, time taken:',1p,3e10.3,2x,2e12.3)", &
       self%id, trim(self%poisson%kind), iter, error0, error, wallclock()-sec, &
@@ -217,7 +224,6 @@ SUBROUTINE gravity (self, error, only)
   deallocate (source, resid)
   ! compute estimate of dphi/dt
   call time_derivs (self)
-
   call trace%end (itimer)
 END SUBROUTINE gravity
 
