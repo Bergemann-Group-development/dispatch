@@ -62,12 +62,13 @@ mpi_dims=1,1,1
 
 &poisson_params
  !solver='cg'
- solver='sor_2nd'
+ !solver='sor_2nd'
+ solver='sor_iter'
  !solver='zeus_sor'
  !omega_sor=0.0
  floor=1e-10
- tolerance=1e-4
- verbose=2
+ tolerance=1e-3
+ verbose=1
 /
 
 &zeus_params

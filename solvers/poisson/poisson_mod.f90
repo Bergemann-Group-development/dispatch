@@ -23,6 +23,7 @@ MODULE poisson_mod
   contains
     procedure:: init
     procedure:: cg
+    procedure:: sor_iter
     procedure, nopass:: laplace
     procedure:: check => check_poisson
   end type
@@ -61,6 +62,9 @@ SUBROUTINE init (self, patch, selfgravity)
     self%omega_sor = omega_sor
     call init_sor_2nd(self, patch)
     self%update => sor_2nd
+  case('sor_iter')
+    self%omega_sor = omega_sor
+    call init_sor_2nd(self, patch)
   case('zeus_sor')
     call init_zeus_sor(self, patch)
     self%update => zeus_sor
@@ -210,6 +214,78 @@ SUBROUTINE sor_2nd (self, patch, phi, resid, FourPiGrho, d, error, detailed_time
 
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE sor_2nd
+
+SUBROUTINE sor_iter (self, patch, phi1, source, error0, error, niter, detailed_timer)
+  class(poisson_t)       :: self
+  class(patch_t)         :: patch
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi1
+  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: source
+  real                   :: error, error0
+  integer                :: niter
+  logical                :: detailed_timer
+  !.............................................................................
+  integer                :: i, j, k, sweep, ss, ione, jone, kone, m(3), iter
+  real(8)                :: a, b, b1, b2, b3, res
+  integer, save          :: itimer=0
+  real(8), allocatable   :: phi(:,:,:)
+  !-----------------------------------------------------------------------------
+  if (detailed_timer) call trace%begin ('poisson_t%sor_iter', itimer=itimer)
+  associate(n=>patch%n,ds=>patch%ds,l=>patch%li,u=>patch%ui,gn=>patch%gn)
+  allocate (phi(gn(1),gn(2),gn(3)))
+  phi = phi1
+  ione = 1
+  jone = 1
+  kone = 1
+  if (n(1) <= 1) ione = 0
+  if (n(2) <= 1) jone = 0
+  if (n(3) <= 1) kone = 0
+  ! Calculate 1 / [(2/dx + 2/dy + 2/dz)] prefactor according to dimensionality
+  a = 0.0
+  if (n(1) > 1) a = a + 2. / ds(1)**2
+  if (n(2) > 1) a = a + 2. / ds(2)**2
+  if (n(3) > 1) a = a + 2. / ds(3)**2
+  a = 1. / a
+  do iter=1,max_iter
+    error = 0.0
+    !do sweep=0,1
+      ! Add up contributions
+      b1 = a / ds(1)**2 * ione
+      b2 = a / ds(2)**2 * jone
+      b3 = a / ds(3)**2 * kone
+      do k=l(3),u(3)
+        do j=l(2),u(2)
+          !ss = modulo(j + k + sweep,2)
+          !do i=l(1)+ss,u(1),2
+          do i=l(1),u(1)
+            !---------------------------------------------------------------------
+            ! This form of the residual has no factor in front of phi, which makes
+            ! it clear how to apply the over-relaxation factor
+            !---------------------------------------------------------------------
+            res = b1 * (phi(i+ione,j,k) + phi(i-ione,j,k)) &
+                + b2 * (phi(i,j+jone,k) + phi(i,j-jone,k)) &
+                + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
+                - phi(i,j,k)- a * source(i,j,k)
+            phi(i,j,k) = phi(i,j,k) + self%omega_sor * res
+            error = max(abs(res), error)
+          end do
+        end do
+      end do
+    !end do
+    !-----------------------------------------------------------------------------
+    ! We are supposed to return the residual as (Laplace(phi)-source)/d, so we
+    ! need to divide with the factor that source (FourPiGrho) was multiplied by
+    !-----------------------------------------------------------------------------
+    error = error / a
+    if (iter==1) error0 = error
+    if (verbose > 1) print *, 'poisson_t%sor_iter: iter, error =', iter, error
+    if (error < tolerance) exit
+  end do
+  niter = iter
+  phi1 = phi
+  deallocate (phi)
+  end associate
+  if (detailed_timer) call trace%end (itimer)
+END SUBROUTINE sor_iter
 
 !> =====================================================================
 !> Initialise variables for the ZEUS SOR solver which are independent of
