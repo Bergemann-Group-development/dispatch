@@ -163,11 +163,9 @@ SUBROUTINE gravity (self, error, only)
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
   call trace%begin ('gpatch_t%gravity', itimer=itimer)
-
   d   => self%mem(:,:,:,self%idx%d  ,self%it,1)
   phi => self%mem(:,:,:,self%idx%phi,self%it,1)
   allocate (source(size(d,1),size(d,2),size(d,3)), resid(size(d,1),size(d,2),size(d,3)))
-
   source = 0.0
   if (self%d0==0.0) then
     self%d0 = total_mass/total_volume
@@ -180,14 +178,19 @@ SUBROUTINE gravity (self, error, only)
       end do
     end do
   end do
-
-  ! call the Poisson solver iteratively
   sec = wallclock()
   call self%poisson%laplace (self%ds, phi, source, resid)
 !  print *,'src1', self%fminval(source), self%fmaxval(source)
 !  print *,'phi1', self%fminval(phi), self%fmaxval(phi)
 !  print *,'res1', self%fminval(resid), self%fmaxval(resid)
 !  write (10) shape(phi); write (10) source, phi, resid
+  if (self%poisson%kind == 'zeus_sor') self%poisson%omega_sor = 1.0 / ( 1.0 - 0.5 * self%poisson%rjac2 )
+  if (self%poisson%kind=='cg') then
+    call self%poisson%cg (self, phi, source, error0, error, iter, detailed_timer)
+  else
+    !---------------------------------------------------------------------------
+    ! call the Poisson solver iteratively
+    !---------------------------------------------------------------------------
   if (self%poisson%kind == 'zeus_sor') self%poisson%omega_sor = 1.0 / ( 1.0 - 0.5 * self%poisson%rjac2 )
   do iter=1,max_iter
     call self%poisson%update (self, phi, resid, source, d, error, detailed_timer)
@@ -200,9 +203,20 @@ SUBROUTINE gravity (self, error, only)
     if (iter == 1) error0 = error
       if (verbose > 1) print "(i6,2x,a,': iter = ',i4.1,3x,'error =',1p,g12.4)", &
         self%id, trim(self%poisson%kind), iter, error
+      !---------------------------------------------------------------------------
     ! check for convergence
+      !---------------------------------------------------------------------------
     if (error < repsilon * error0 .or. error < aepsilon) then
       exit
+    end if
+  end do
+    !---------------------------------------------------------------------------
+    ! too many iterations; throw warning before continuing
+    !---------------------------------------------------------------------------
+    if (iter > max_iter) then
+      print "(i6,' WARNING: poisson solution not converged in', i4, ' iterations')", &
+        self%id, max_iter
+      print "('error0 = ',g14.5,'; error = ',g14.5)",error0,error
     end if
   end do
   call self%poisson%laplace (self%ds, phi, source, resid)

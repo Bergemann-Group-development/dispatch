@@ -9,7 +9,7 @@ MODULE poisson_mod
   USE kinds_mod
   USE patch_mod
   USE mesh_mod
-
+  USE bits_mod
   implicit none
   private
   type, public:: poisson_t
@@ -22,12 +22,14 @@ MODULE poisson_mod
     real(kind=KindScalarVar), dimension(:,:,:), allocatable:: eta
   contains
     procedure:: init
+    procedure:: cg
     procedure, nopass:: laplace
     procedure:: check => check_poisson
   end type
-
   real(8), parameter:: pi = asin(1.0) * 2.0
-
+  real,    save:: floor=1e-2, tolerance=1e-4
+  integer, save:: verbose=0
+  integer, save:: max_iter=500
 CONTAINS
 
 !> =============================================================================
@@ -37,13 +39,15 @@ SUBROUTINE init (self, patch, selfgravity)
   implicit none
   class(poisson_t)  :: self
   class(patch_t)    :: patch
-  character(len=12) :: solver='sor_2nd'
-  integer           :: iostat
-  real,    save     :: omega_sor=0.0
-  logical, save     :: first_time = .true.
   logical           :: selfgravity
-  namelist /poisson_params/ solver, omega_sor
   !.............................................................................
+  integer           :: iostat
+  !.............................................................................
+  character(len=12), save :: solver='cg'
+  real,              save :: omega_sor=0.0
+  logical,           save :: first_time = .true.
+  namelist /poisson_params/ solver, omega_sor, tolerance, floor, max_iter, verbose
+  !-----------------------------------------------------------------------------
   !$omp critical (poisson_cr)
   if (first_time) then
     first_time = .false.
@@ -57,18 +61,18 @@ SUBROUTINE init (self, patch, selfgravity)
     self%omega_sor = omega_sor
     call init_sor_2nd(self, patch)
     self%update => sor_2nd
-    self%kind = solver
   case('zeus_sor')
     call init_zeus_sor(self, patch)
     self%update => zeus_sor
-    self%kind = solver
+  case('cg')
   case default
     if (io%master) then
       write(*,*) 'Poisson solver '//trim(solver)//' is unknown'
-      write(*,*) 'Valid solvers are: sor_2nd, zeus_sor'
+      write(*,*) 'Valid solvers are: cg, sor_2nd, zeus_sor'
     end if
     selfgravity = .false.
   end select
+  self%kind = solver
 END SUBROUTINE init
 
 !> =============================================================================
@@ -110,7 +114,7 @@ SUBROUTINE init_sor_2nd (self, patch)
     do i=1,3
       if (patch%n(i) > 1) then
         pref  = pref + 1.
-        delta = delta + cos(pi / patch%n(i))
+        delta = delta + cos(pi/patch%n(i))
       endif
     enddo
     delta = delta / pref
@@ -384,6 +388,181 @@ SUBROUTINE zeus_sor (self, patch, phi, resid, FourPiGrho, d, anorm, detailed_tim
 END SUBROUTINE zeus_sor
 
 !> =============================================================================
+!> Conjugate gradient Poisson solver (Ghysels & Vanroose 2014, Algorithm 1)
+!> =============================================================================
+SUBROUTINE cg (self, patch, phi1, source, error0, error, niter, detailed_timer)
+  class(poisson_t)       :: self
+  class(patch_t)         :: patch
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi1
+  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: source
+  real                   :: error, error0
+  integer                :: niter
+  logical                :: detailed_timer
+  !.............................................................................
+  real(8)                :: pap, ru, ru2, alpha, beta, ds(3)
+  integer                :: iter, m(3)
+  integer, save          :: itimer=0
+  real(8), dimension(:,:,:), allocatable:: phi, r, p, s, u
+  !-----------------------------------------------------------------------------
+  if (detailed_timer) call trace%begin('poisson_mod%cg', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Allocate double precision scratch arrays
+  !-----------------------------------------------------------------------------
+  m = shape(phi1)
+  allocate (r(m(1),m(2),m(3)), p(m(1),m(2),m(3)))
+  allocate (s(m(1),m(2),m(3)), u(m(1),m(2),m(3)))
+  allocate (phi(m(1),m(2),m(3)))
+  !-----------------------------------------------------------------------------
+  ! Calculate the initial residual = source - Laplace(phi)
+  !-----------------------------------------------------------------------------
+  ds = patch%ds
+  phi = phi1
+  call periodic_f (phi)
+  call laplace (ds, phi, r)
+  r = source - r
+  error0 = patch%fmaxval(abs(r/(source+floor)))
+  if (verbose > 1) print "(i6,2x,a,': iter = ',i4.1,3x,'error =',1p,g12.4)", &
+    patch%id, trim(self%kind), 0, error0
+  call precondition (r, u)
+  ru = sum(r*u)
+  !-----------------------------------------------------------------------------
+  ! Iteratively improve the solution
+  !-----------------------------------------------------------------------------
+  p = u
+  do iter = 1,max_iter
+    call laplace (ds, p, s)
+    alpha = ru/sum(s*p)
+    phi = phi + alpha*p
+    r = r - alpha*s
+    error = patch%fmaxval(abs(r/(source+floor)))
+    call precondition (r, u)
+    ru2 = sum(r*u)
+    if (error < tolerance) exit
+    beta = ru2/ru
+    p = u + beta*p
+    ru = ru2
+    if (verbose > 1) print "(i6,2x,a,': iter = ',i4.1,3x,'error =',1p,g12.4)", &
+      patch%id, trim(self%kind), iter, error
+  end do
+  niter = iter
+  if (iter==max_iter+1) then
+    print *, 'poisson_t%cg: no convergence, niter, error =', max_iter, error
+  else if (verbose>0 .and. io%master) then
+    print *, 'poisson_t%cg: niter, error =', iter, error
+  end if
+  phi1 = phi
+  if (detailed_timer) call trace%end (itimer)
+contains
+  !> =============================================================================
+  !> Make a function period in the guard zones
+  !> =============================================================================
+  subroutine periodic_f1 (f)
+    real(8):: f(:,:,:)
+    class(mesh_t), pointer:: m(:)
+    !.............................................................................
+    if (patch%is_clear (bits%root_grid)) return
+    m => patch%mesh
+    f(m(1)%lb:m(1)%lo,:,:) = f(m(1)%lb+m(1)%n:m(1)%lo+m(1)%n,:,:)
+    f(m(1)%uo:m(1)%ub,:,:) = f(m(1)%uo-m(1)%n:m(1)%ub-m(1)%n,:,:)
+    f(:,m(2)%lb:m(2)%lo,:) = f(:,m(2)%lb+m(2)%n:m(2)%lo+m(2)%n,:)
+    f(:,m(2)%uo:m(2)%ub,:) = f(:,m(2)%uo-m(2)%n:m(2)%ub-m(2)%n,:)
+    f(:,:,m(3)%lb:m(3)%lo) = f(:,:,m(3)%lb+m(3)%n:m(3)%lo+m(3)%n)
+    f(:,:,m(3)%uo:m(3)%ub) = f(:,:,m(3)%uo-m(3)%n:m(3)%ub-m(3)%n)
+  end subroutine periodic_f1
+  !> =============================================================================
+  !> Make a function period in the guard zones
+  !> =============================================================================
+  subroutine periodic_f (f)
+    real(8):: f(:,:,:)
+    class(mesh_t), pointer:: m(:)
+    integer:: ix, iy, iz
+    integer, dimension(3):: lb, ub, li, ui, n, i, j
+    !.............................................................................
+    if (patch%is_clear (bits%root_grid)) return
+    m => patch%mesh
+    lb = m%lb; ub=m%ub
+    li = m%li; ui=m%ui
+    n = m%n
+    do iz=lb(3),ub(3)
+    do iy=lb(2),ub(2)
+    do ix=lb(1),ub(1)
+      i = [ix,iy,iz]
+      if (all(i >= li .and. i <= ui)) cycle
+      where (n > 0)
+        j = modulo(i-li,n)+li
+      else where
+        j = 1
+      end where
+      f(ix,iy,iz) = f(j(1),j(2),j(3))
+      f(ix,iy,iz) = f(j(1),j(2),j(3))
+    end do
+    end do
+    end do
+  end subroutine periodic_f
+  !> =============================================================================
+  !> Set scratch array outer boundary to zero
+  !> =============================================================================
+  subroutine zero_boundaries (f)
+    real(8):: f(:,:,:)
+    class(mesh_t), pointer:: m(:)
+    !.............................................................................
+    m => patch%mesh
+    f(m(1)%lb:m(1)%lo,:,:) = 0d0
+    f(m(1)%uo:m(1)%ub,:,:) = 0d0
+    f(:,m(2)%lb:m(2)%lo,:) = 0d0
+    f(:,m(2)%uo:m(2)%ub,:) = 0d0
+    f(:,:,m(3)%lb:m(3)%lo) = 0d0
+    f(:,:,m(3)%uo:m(3)%ub) = 0d0
+  end subroutine zero_boundaries
+  !> =============================================================================
+  !> 2nd order Laplace operator
+  !> =============================================================================
+  subroutine laplace (ds, phi, out)
+    real(8)                   :: ds(3)
+    real(8), dimension(:,:,:) :: phi, out
+    !.............................................................................
+    integer                   :: ix, iy, iz
+    real(8)                   :: c(3)
+    !-----------------------------------------------------------------------------
+    c = 1d0/ds**2
+    do iz=patch%li(3),patch%ui(3)
+    do iy=patch%li(2),patch%ui(2)
+    do ix=patch%li(1),patch%ui(1)
+      out(ix,iy,iz) = c(1)*(phi(ix+1,iy,iz)+phi(ix-1,iy,iz)-2d0*phi(ix,iy,iz)) &
+                    + c(2)*(phi(ix,iy+1,iz)+phi(ix,iy-1,iz)-2d0*phi(ix,iy,iz)) &
+                    + c(3)*(phi(ix,iy,iz+1)+phi(ix,iy,iz-1)-2d0*phi(ix,iy,iz))
+    end do
+    end do
+    end do
+    call periodic_f (out)
+  end subroutine laplace
+  !> =============================================================================
+  !> Preconditioner for conjugate gradient method
+  !> =============================================================================
+  subroutine precondition (res, out)
+    real(8), dimension(:,:,:) :: res, out
+    !.............................................................................
+    integer                   :: ix, iy, iz, m(3)
+    real(8)                   :: a, b, c
+    !-----------------------------------------------------------------------------
+    m = shape(res)
+    a = 1d0 + 1d0/12d0
+    b = 1d0/6d0
+    do iz=patch%li(3),patch%ui(3)
+    do iy=patch%li(2),patch%ui(2)
+    do ix=patch%li(1),patch%ui(1)
+      out(ix,iy,iz) = b*(res(ix+1,iy,iz)+res(ix-1,iy,iz)  &
+                    +    res(ix,iy+1,iz)+res(ix,iy-1,iz)  &
+                    +    res(ix,iy,iz+1)+res(ix,iy,iz-1)) &
+                    + a*res(ix,iy,iz)
+    end do
+    end do
+    end do
+    call periodic_f (out)
+  end subroutine precondition
+END SUBROUTINE cg
+
+!> =============================================================================
 !> 2nd order Laplace operator
 !> =============================================================================
 SUBROUTINE laplace (ds, phi, source, res)
@@ -424,7 +603,6 @@ SUBROUTINE check_poisson (self, patch, FourPiG, resid)
   call trace%begin('experiment_t%check_poisson')
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   phi => patch%mem(:,:,:,patch%idx%phi,patch%it,1)
-
   ione = 1
   jone = 1
   kone = 1
@@ -432,7 +610,6 @@ SUBROUTINE check_poisson (self, patch, FourPiG, resid)
   if (patch%n(2) <= 1) jone = 0
   if (patch%n(3) <= 1) kone = 0
   dsi2 = 1.0 / patch%ds**2
-
   resid = 0.0
   associate (l => patch%li, u => patch%ui)
   do k=l(3),u(3)
@@ -447,9 +624,7 @@ SUBROUTINE check_poisson (self, patch, FourPiG, resid)
     end do
   end do
   end associate
-
   print*,"Max. resid.:",maxval(resid)
-
   call trace%end
 END SUBROUTINE check_poisson
 
