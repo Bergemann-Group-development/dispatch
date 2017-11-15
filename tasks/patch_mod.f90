@@ -407,7 +407,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Special handling of collapsed dimensions
   !-----------------------------------------------------------------------------
-  self%ds = self%size/self%ncell
   where (self%n==1)                             ! for collapsed dimensions
     self%ng = 0                                 ! no guard zones
     self%box = 1                                ! make sure it is non-zero
@@ -432,6 +431,7 @@ SUBROUTINE init (self)
     if (self%kind == 'zeus_mhd_patch' .and. &
         self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
   end do
+  self%ds = self%mesh%d
   self%ncell = self%mesh%nc
   self%mesh%id = self%id
   self%mesh%b = self%box
