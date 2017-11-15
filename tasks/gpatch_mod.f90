@@ -14,7 +14,6 @@ MODULE gpatch_mod
   USE data_hub_mod
   USE mesh_mod
   USE units_mod
-  USE scaling_mod
   USE poisson_mod
   USE omp_timer_mod
   USE bits_mod
@@ -35,8 +34,7 @@ MODULE gpatch_mod
   real(8), save :: total_mass=0d0, total_volume=0d0
   real(8), save :: restart_time = 0d0
   logical, save :: selfgravity=.false., prediction=.true., detailed_timer=.false.
-  integer, save :: max_iter=100, verbose=0
-  real,    save :: repsilon=1e-2, aepsilon=1e-3, fourpiG=1.0
+  integer, save :: verbose=0
   integer, save :: order=1
 CONTAINS
 
@@ -51,13 +49,11 @@ SUBROUTINE init (self)
   integer                           :: iostat
   logical, save                     :: first_time=.true.
   real(kind=KindScalarVar), pointer :: d(:,:,:)
-  namelist /selfgravity_params/ selfgravity, prediction, fourpiG, repsilon, aepsilon, &
-                                max_iter, order, verbose
+  namelist /selfgravity_params/ selfgravity, prediction, order, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init')
   !$omp critical (poisson_cr)
   if (first_time) then
-    fourpiG = scaling%grav
     rewind (io%input)
     read (io%input, selfgravity_params, iostat=iostat)
     if (io%master) write (io%output, selfgravity_params)
@@ -72,7 +68,7 @@ SUBROUTINE init (self)
       self%idx%dphi = self%nv
     end if
     call self%patch_t%init
-    call self%poisson%init (self, selfgravity)
+    call self%poisson%init
   else
     call self%patch_t%init
   end if
@@ -156,8 +152,7 @@ END SUBROUTINE dnload
 SUBROUTINE gravity (self)
   class(gpatch_t):: self
   !.............................................................................
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi, source, resid
-  real:: error, error0
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi
   real(8):: sec
   integer:: iter, ix ,iy, iz
   integer, save:: itimer=0
@@ -166,80 +161,11 @@ SUBROUTINE gravity (self)
   call trace%begin ('gpatch_t%gravity', itimer=itimer)
   d   => self%mem(:,:,:,self%idx%d  ,self%it,1)
   phi => self%mem(:,:,:,self%idx%phi,self%it,1)
-  allocate (source(size(d,1),size(d,2),size(d,3)), resid(size(d,1),size(d,2),size(d,3)))
-  source = 0.0
   if (self%d0==0.0) then
     self%d0 = total_mass/total_volume
-    print *,'setting self%d0 =', self%d0, self%faver(d)
+    print *, self%id, 'setting self%d0 =', self%d0, self%faver(d)
   end if
-  do iz=self%mesh(3)%li,self%mesh(3)%ui
-    do iy=self%mesh(2)%li,self%mesh(2)%ui
-      do ix=self%mesh(1)%li,self%mesh(1)%ui
-        source(ix,iy,iz) = fourpiG*(d(ix,iy,iz)-self%d0)
-      end do
-    end do
-  end do
-  if (self%is_periodic()) call self%make_periodic (source)
-  sec = wallclock()
-  call self%poisson%laplace (self%ds, phi, source, resid)
-!  print *,'src1', self%fminval(source), self%fmaxval(source)
-!  print *,'phi1', self%fminval(phi), self%fmaxval(phi)
-!  print *,'res1', self%fminval(resid), self%fmaxval(resid)
-!  write (10) shape(phi); write (10) source, phi, resid
-  if (self%poisson%kind == 'zeus_sor') self%poisson%omega_sor = 1.0 / ( 1.0 - 0.5 * self%poisson%rjac2 )
-  if (self%poisson%kind=='cg') then
-    call self%poisson%cg (self, phi, source, d, error0, error, iter, detailed_timer)
-  else if (self%poisson%kind=='sor_iter') then
-    call self%poisson%sor_iter (self, phi, source, d, error0, error, iter, detailed_timer)
-  else
-    !---------------------------------------------------------------------------
-    ! call the Poisson solver iteratively
-    !---------------------------------------------------------------------------
-    if (self%poisson%kind == 'zeus_sor') self%poisson%omega_sor = 1.0 / ( 1.0 - 0.5 * self%poisson%rjac2 )
-    do iter=1,max_iter
-    call self%poisson%update (self, phi, resid, source, d, error, detailed_timer)
-    if (self%is_set(bits%root_grid)) call self%periodic_grid (only=self%idx%phi)
-      !---------------------------------------------------------------------------
-      ! The error coming back from poisson should be (Laplace(phi)-source)/d, which
-      ! we then here normalize with grho, to get the relative error in density.
-      !---------------------------------------------------------------------------
-    error = error / fourpiG
-      if (iter == 1) error0 = error
-      if (verbose > 1) print "(i6,2x,a,': iter = ',i4.1,3x,'error =',1p,g12.4)", &
-        self%id, trim(self%poisson%kind), iter, error
-      !---------------------------------------------------------------------------
-      ! check for convergence
-      !---------------------------------------------------------------------------
-      if (error < repsilon * error0 .or. error < aepsilon) then
-        exit
-      end if
-    end do
-    !---------------------------------------------------------------------------
-    ! too many iterations; throw warning before continuing
-    !---------------------------------------------------------------------------
-    if (iter > max_iter) then
-      print "(i6,' WARNING: poisson solution not converged in', i4, ' iterations')", &
-        self%id, max_iter
-      print "('error0 = ',g14.5,'; error = ',g14.5)",error0,error
-    end if
-  end if
-  call self%poisson%laplace (self%ds, phi, source, resid)
-!  print *,'src2', self%fminval(source), self%fmaxval(source)
-!  print *,'phi2', self%fminval(phi), self%fmaxval(phi)
-!  print *,'res2', self%fminval(resid), self%fmaxval(resid)
-!  write (10) shape(phi); write (10) source, phi, resid
-
-  ! too many iterations; throw warning before continuing
-  if (iter > max_iter) then
-    print "(i6,' WARNING: poisson solution not converged in', i4, ' iterations')", &
-      self%id, max_iter
-    print "('error0 = ',g14.5,'; error = ',g14.5)",error0,error
-  end if
-  if (verbose>0) &
-    print "(i6,2x,a,' converged in ',i4,' iterations; initial, final error, time taken:',1p,3e10.3,2x,2e12.3)", &
-      self%id, trim(self%poisson%kind), iter, error0, error, wallclock()-sec, &
-      self%fminval(phi), self%fmaxval(phi)
-  deallocate (source, resid)
+  call self%poisson%cg (self, phi, d, self%d0, detailed_timer)
   !-----------------------------------------------------------------------------
   ! compute estimate of dphi/dt
   !-----------------------------------------------------------------------------
@@ -256,7 +182,7 @@ END SUBROUTINE gravity
 SUBROUTINE update (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
-  if (.not. selfgravity) return
+  if (.not. selfgravity .or. self%is_periodic()) return
   call trace%begin ('gpatch_t%update')
   call self%rotate
   call self%dnload (only=self%idx%d)
