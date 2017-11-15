@@ -22,7 +22,6 @@ MODULE poisson_mod
     procedure:: init
     procedure:: cg
     procedure, nopass:: laplace
-    procedure:: check
   end type
   real,    save:: floor=1e-2, tolerance=1e-4, fourPiG=1.0
   integer, save:: verbose=0
@@ -286,47 +285,5 @@ SUBROUTINE laplace (ds, phi, source, res)
   end do
   end do
 END SUBROUTINE laplace
-
-!> =============================================================================
-!> Given a grav. pot. and a density, calculate Poisson's equation and return
-!> the residual.
-!> =============================================================================
-SUBROUTINE check (self, patch, FourPiG, resid)
-  class(poisson_t):: self
-  class(patch_t):: patch
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
-  real(kind=KindScalarVar), dimension(patch%gn(1),patch%gn(2),patch%gn(3)):: resid
-  real:: FourPiG
-  integer:: i, j, k, ione, jone, kone
-  real, dimension(3):: dsi2
-  !.............................................................................
-  call trace%begin('experiment_t%check_poisson')
-  d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
-  phi => patch%mem(:,:,:,patch%idx%phi,patch%it,1)
-  ione = 1
-  jone = 1
-  kone = 1
-  if (patch%n(1) <= 1) ione = 0
-  if (patch%n(2) <= 1) jone = 0
-  if (patch%n(3) <= 1) kone = 0
-  dsi2 = 1.0 / patch%ds**2
-  resid = 0.0
-  associate (l => patch%li, u => patch%ui)
-  do k=l(3),u(3)
-    do j=l(2),u(2)
-      do i=l(1),u(1)
-        resid(i,j,k) = (phi(i+ione,j,k) - 2.0 * phi(i,j,k) + phi(i-ione,j,k)) * dsi2(1) * ione &
-                     + (phi(i,j+jone,k) - 2.0 * phi(i,j,k) + phi(i,j-jone,k)) * dsi2(2) * jone &
-                     + (phi(i,j,k+kone) - 2.0 * phi(i,j,k) + phi(i,j,k-kone)) * dsi2(3) * kone &
-                     - FourPiG * d(i,j,k)
-        resid(i,j,k) = abs(resid(i,j,k))
-      end do
-    end do
-  end do
-  end associate
-  print*,"Max. resid.:",maxval(resid)
-  call trace%end
-END SUBROUTINE check
 
 END MODULE poisson_mod
