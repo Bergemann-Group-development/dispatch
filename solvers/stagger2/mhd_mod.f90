@@ -143,11 +143,7 @@ SUBROUTINE test (self)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%test')
   call self%patch_t%init
-  if (self%no_mans_land) then
-    n0 = 2*(self%n/2)
-  else
-    n0 = 2*(self%n/2)+1
-  end if
+  n0 = 2*(self%ncell/2)
   if (any(self%n /= n0)) then
     print *,io%hs
     print *, 'mhd_t%test not possible with n, no_mans_land =', self%n, self%no_mans_land

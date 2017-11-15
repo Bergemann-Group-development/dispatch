@@ -57,8 +57,9 @@ MODULE patch_mod
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
     real:: grav                         ! gravitational consant (code units)
-    integer:: n(3)=0, ng(3)=2          ! convenient defaults
+    integer:: n(3)=0, ng(3)=2           ! convenient defaults
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
+    integer:: ncell(3)                  ! number of cells per patch
     integer:: ipos(3)                   ! integer position
     real(8):: offset(3)                 ! this is used to compute indices, locations
     real(8):: llc_cart(3)=0d0           ! the lower left corner of the patch in *Cartesian* coords.
@@ -406,16 +407,10 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Special handling of collapsed dimensions
   !-----------------------------------------------------------------------------
-  if (self%no_mans_land) then
-    self%ds = self%size/self%n
-  else
-    self%ds = self%size/max(1,self%n-1)
-  end if
+  self%ds = self%size/self%ncell
   where (self%n==1)                             ! for collapsed dimensions
     self%ng = 0                                 ! no guard zones
     self%box = 1                                ! make sure it is non-zero
-    !!!self%ds = minval(self%ds)                   ! then set to reasonable val
-    !!!self%size = self%ds                         ! one cell thick
   end where
   self%llc_cart = self%position - 0.5_8*self%size
   if (self%mesh_type == mesh_types%Cartesian) then
@@ -437,6 +432,7 @@ SUBROUTINE init (self)
     if (self%kind == 'zeus_mhd_patch' .and. &
         self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
   end do
+  self%ncell = self%mesh%nc
   self%mesh%id = self%id
   self%mesh%b = self%box
   self%mesh%llc_cart = self%llc_cart
@@ -703,11 +699,7 @@ SUBROUTINE periodic_grid (self, only)
   where (self%mesh%upper_boundary)
     ui = self%mesh%ub
   end where
-  if (self%no_mans_land) then
-    n = self%n
-  else
-    n = self%n-1
-  end if
+  n = self%ncell
   do iz=lb(3),ub(3)
   do iy=lb(2),ub(2)
   do ix=lb(1),ub(1)
@@ -765,7 +757,7 @@ SUBROUTINE make_periodic4 (patch, f)
   ! x periodicity; make periodic inside the yz patch limits
   !-----------------------------------------------------------------------------
   m => patch%mesh
-  n = m%n
+  n = patch%ncell
   do iz=m(3)%li,m(3)%ui
   do ix=m(1)%lb,m(1)%lo
     do iy=m(2)%li,m(2)%ui
@@ -822,7 +814,7 @@ SUBROUTINE make_periodic8 (patch, f)
   ! x periodicity; make periodic inside the yz patch limits
   !-----------------------------------------------------------------------------
   m => patch%mesh
-  n = m%n
+  n = patch%ncell
   do iz=m(3)%li,m(3)%ui
   do ix=m(1)%lb,m(1)%lo
     do iy=m(2)%li,m(2)%ui
@@ -1075,12 +1067,8 @@ SUBROUTINE output_direct (self)
   ! Pass a chunk to the procedure that eventually writes a binary file
   !-----------------------------------------------------------------------------
   l = self%mesh%li
-  if (self%no_mans_land) then
-    u = self%mesh%ui
-  else
-    u = self%mesh%ui-1
-  end if
-  n = u-l+1
+  n = self%ncell
+  u = l+ n-1
   allocate (buf(n(1),n(2),n(3),self%nv))
   call self%time_interval (self%out_next, jt, pt)
   buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,jt(1),1)*pt(1) &
@@ -1820,32 +1808,24 @@ FUNCTION fsum4 (self, f) RESULT (out)
   class(patch_t):: self
   real:: out
   real, dimension(:,:,:), intent(in):: f
+  integer:: n(3)
   !-----------------------------------------------------------------------------
-  if (self%no_mans_land) then
-    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                     self%mesh(2)%li:self%mesh(2)%ui, &
-                     self%mesh(3)%li:self%mesh(3)%ui),kind=8))
-  else
-    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui-1, &
-                     self%mesh(2)%li:self%mesh(2)%ui-1, &
-                     self%mesh(3)%li:self%mesh(3)%ui-1),kind=8))
-  end if
+  n = self%ncell-1
+  out = sum(real(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                   self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                   self%mesh(3)%li:self%mesh(3)%li+n(3)),kind=8))
 END FUNCTION fsum4
 !> =============================================================================
 FUNCTION fsum8 (self, f) RESULT (out)
   class(patch_t):: self
   real(8):: out
   real(8), dimension(:,:,:), intent(in):: f
+  integer:: n(3)
   !-----------------------------------------------------------------------------
-  if (self%no_mans_land) then
-    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                     self%mesh(2)%li:self%mesh(2)%ui, &
-                     self%mesh(3)%li:self%mesh(3)%ui)))
-  else
-    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                     self%mesh(2)%li:self%mesh(2)%ui, &
-                     self%mesh(3)%li:self%mesh(3)%ui)))
-  end if
+  n = self%ncell-1
+  out = sum(real(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                   self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                   self%mesh(3)%li:self%mesh(3)%li+n(3)),kind=8))
 END FUNCTION fsum8
 
 !> =============================================================================
@@ -1854,11 +1834,7 @@ FUNCTION faver4 (self, f) RESULT (out)
   real:: out
   real, dimension(:,:,:), intent(in):: f
   !-----------------------------------------------------------------------------
-  if (self%no_mans_land) then
-    out = self%fsum4(f)/product(self%mesh%ui-self%mesh%li+1)
-  else
-    out = self%fsum4(f)/product(self%mesh%ui-self%mesh%li)
-  end if
+  out = self%fsum4(f)/product(self%ncell)
 END FUNCTION faver4
 !> =============================================================================
 FUNCTION faver8 (self, f) RESULT (out)
@@ -1866,11 +1842,7 @@ FUNCTION faver8 (self, f) RESULT (out)
   real(8):: out
   real(8), dimension(:,:,:), intent(in):: f
   !-----------------------------------------------------------------------------
-  if (self%no_mans_land) then
-    out = self%fsum8(f)/product(self%mesh%ui-self%mesh%li+1)
-  else
-    out = self%fsum8(f)/product(self%mesh%ui-self%mesh%li)
-  end if
+  out = self%fsum8(f)/product(self%ncell)
 END FUNCTION faver8
 
 !> =============================================================================
@@ -1878,13 +1850,15 @@ FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
   real:: fmaxval
   class(patch_t):: self
   real, dimension(:,:,:), intent(in):: f
+  integer:: n(3)
   !-----------------------------------------------------------------------------
+  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                       self%mesh(2)%li:self%mesh(2)%ui, &
-                       self%mesh(3)%li:self%mesh(3)%ui))
+    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
   end if
 END FUNCTION fmaxval4
 !> =============================================================================
@@ -1892,13 +1866,15 @@ FUNCTION fminval4 (self, f) RESULT(fminval)
   real:: fminval
   class(patch_t):: self
   real, dimension(:,:,:), intent(in):: f
+  integer:: n(3)
   !-----------------------------------------------------------------------------
+  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fminval = minval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                       self%mesh(2)%li:self%mesh(2)%ui, &
-                       self%mesh(3)%li:self%mesh(3)%ui))
+    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
   end if
 END FUNCTION fminval4
 !> =============================================================================
@@ -1906,13 +1882,15 @@ FUNCTION fmaxval8 (self, f) RESULT (fmaxval)
   real(8):: fmaxval
   class(patch_t):: self
   real(8), dimension(:,:,:), intent(in):: f
+  integer:: n(3)
   !-----------------------------------------------------------------------------
+  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                       self%mesh(2)%li:self%mesh(2)%ui, &
-                       self%mesh(3)%li:self%mesh(3)%ui))
+    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
   end if
 END FUNCTION fmaxval8
 !> =============================================================================
@@ -1920,13 +1898,15 @@ FUNCTION fminval8 (self, f) RESULT(fminval)
   real(8):: fminval
   class(patch_t):: self
   real(8), dimension(:,:,:), intent(in):: f
+  integer:: n(3)
   !-----------------------------------------------------------------------------
+  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fminval = minval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                       self%mesh(2)%li:self%mesh(2)%ui, &
-                       self%mesh(3)%li:self%mesh(3)%ui))
+    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
   end if
 END FUNCTION fminval8
 
