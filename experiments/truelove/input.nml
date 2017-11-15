@@ -60,7 +60,7 @@ mpi_dims=1,1,1
  fourPiG=1.0
  max_iter=200
  precondition=t
- verbose=1
+ verbose=2
 /
 
 &zeus_params
