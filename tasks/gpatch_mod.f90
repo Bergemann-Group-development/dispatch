@@ -24,7 +24,7 @@ MODULE gpatch_mod
     type(data_hub_t) :: data_hub
     type(poisson_t)  :: poisson
     logical:: selfgravity=.false.
-    real(8):: d0=0.0
+    real(8):: d0
   contains
     procedure:: init
     procedure:: dnload
@@ -48,8 +48,9 @@ SUBROUTINE init (self)
   logical                           :: ok
   integer                           :: iostat
   logical, save                     :: first_time=.true.
+  real, save                        :: d0=-1.0
   real(kind=KindScalarVar), pointer :: d(:,:,:)
-  namelist /selfgravity_params/ selfgravity, prediction, order, verbose
+  namelist /selfgravity_params/ selfgravity, prediction, order, d0, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init')
   !$omp critical (poisson_cr)
@@ -72,6 +73,7 @@ SUBROUTINE init (self)
   else
     call self%patch_t%init
   end if
+  self%d0 = d0
   call self%initial%init (self%kind)
   !$omp critical (poisson_cr)
   if (first_time) then
@@ -161,7 +163,7 @@ SUBROUTINE gravity (self)
   call trace%begin ('gpatch_t%gravity', itimer=itimer)
   d   => self%mem(:,:,:,self%idx%d  ,self%it,1)
   phi => self%mem(:,:,:,self%idx%phi,self%it,1)
-  if (self%d0==0.0) then
+  if (self%d0==-1.0) then
     self%d0 = total_mass/total_volume
     print *, self%id, 'setting self%d0 =', self%d0, self%faver(d)
   end if
@@ -182,7 +184,7 @@ END SUBROUTINE gravity
 SUBROUTINE update (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
-  if (.not. selfgravity .or. self%is_periodic()) return
+  if (.not. selfgravity) return
   call trace%begin ('gpatch_t%update')
   call self%rotate
   call self%dnload (only=self%idx%d)
