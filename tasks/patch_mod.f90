@@ -90,10 +90,20 @@ MODULE patch_mod
     procedure:: myposition_staggered
     procedure:: periodic_grid
     procedure:: extrapolate_guards
+    procedure:: is_periodic
+    procedure, private :: make_periodic4
+    procedure, private :: make_periodic8
+    generic, public :: make_periodic  => make_periodic4 , make_periodic8
+    procedure, private :: fsum4
+    procedure, private :: fsum8
+    procedure, private :: faver4
+    procedure, private :: faver8
     procedure, private :: fminval4
     procedure, private :: fminval8
     procedure, private :: fmaxval4
     procedure, private :: fmaxval8
+    generic, public :: fsum    => fsum4   , fsum8     ! interior sum
+    generic, public :: faver   => faver4  , faver8    ! interior average
     generic, public :: fminval => fminval4, fminval8  ! interior min value
     generic, public :: fmaxval => fmaxval4, fmaxval8  ! interior max value
     procedure:: courant_condition
@@ -677,8 +687,9 @@ END FUNCTION myfloatindex_scalar
 !> =============================================================================
 !> Periodic mapping of a grid -- typically the root grid
 !> =============================================================================
-SUBROUTINE periodic_grid (self)
+SUBROUTINE periodic_grid (self, only)
   class(patch_t):: self
+  integer, optional:: only
   integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3), n(3)
   !.............................................................................
   call trace_begin ('patch_t%periodic_grid')
@@ -719,8 +730,13 @@ SUBROUTINE periodic_grid (self)
     where (self%mesh%upper_boundary .and. i > self%mesh%ui-4)
       j = i
     end where
-    self%mem(ix,iy,iz,:,self%it ,1) = self%mem(j(1),j(2),j(3),:,self%it ,1)
-    self%mem(ix,iy,iz,:,self%new,1) = self%mem(j(1),j(2),j(3),:,self%new,1)
+    if (present(only)) then
+      self%mem(ix,iy,iz,only,self%it ,1) = self%mem(j(1),j(2),j(3),only,self%it ,1)
+      self%mem(ix,iy,iz,only,self%new,1) = self%mem(j(1),j(2),j(3),only,self%new,1)
+    else
+      self%mem(ix,iy,iz,:,self%it ,1) = self%mem(j(1),j(2),j(3),:,self%it ,1)
+      self%mem(ix,iy,iz,:,self%new,1) = self%mem(j(1),j(2),j(3),:,self%new,1)
+    end if
   end do
   end do
   end do
@@ -728,6 +744,128 @@ SUBROUTINE periodic_grid (self)
     'periodic_grid: id, it, new =', self%id, self%it, self%new
   call trace_end
 END SUBROUTINE periodic_grid
+
+!> =============================================================================
+FUNCTION is_periodic(self) RESULT(out)
+  class(patch_t):: self
+  logical:: out
+  !.............................................................................
+  out = self%is_set (bits%root_grid) .and. all(self%periodic)
+END FUNCTION is_periodic
+
+!> =============================================================================
+!> Optimized periodic boundary enforcer
+!> =============================================================================
+SUBROUTINE make_periodic4 (patch, f)
+  class(patch_t):: patch
+  class(mesh_t), pointer:: m(:)
+  real(4):: f(:,:,:)
+  integer:: ix, iy, iz, n(3)
+  !-----------------------------------------------------------------------------
+  ! x periodicity; make periodic inside the yz patch limits
+  !-----------------------------------------------------------------------------
+  m => patch%mesh
+  n = m%n
+  do iz=m(3)%li,m(3)%ui
+  do ix=m(1)%lb,m(1)%lo
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix+n(1),iy,iz)
+    end do
+  end do
+  do ix=m(1)%uo,m(1)%ub
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix-n(1),iy,iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! y periodicity, full range in x now
+  !-----------------------------------------------------------------------------
+  do iz=m(3)%li,m(3)%ui
+  do iy=m(2)%lb,m(2)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy+n(2),iz)
+    end do
+  end do
+  do iy=m(2)%uo,m(2)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy-n(2),iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! z periodicity, full range in xy
+  !-----------------------------------------------------------------------------
+  do iy=m(2)%lb,m(2)%ub
+  do iz=m(3)%lb,m(3)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz+n(3))
+    end do
+  end do
+  do iz=m(3)%uo,m(3)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz-n(3))
+    end do
+  end do
+  end do
+END SUBROUTINE make_periodic4
+
+!> =====================================================================
+!> Optimized periodic boundary enforcer
+!> =====================================================================
+SUBROUTINE make_periodic8 (patch, f)
+  class(patch_t):: patch
+  class(mesh_t), pointer:: m(:)
+  real(8):: f(:,:,:)
+  integer:: ix, iy, iz, n(3)
+  !-----------------------------------------------------------------------------
+  ! x periodicity; make periodic inside the yz patch limits
+  !-----------------------------------------------------------------------------
+  m => patch%mesh
+  n = m%n
+  do iz=m(3)%li,m(3)%ui
+  do ix=m(1)%lb,m(1)%lo
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix+n(1),iy,iz)
+    end do
+  end do
+  do ix=m(1)%uo,m(1)%ub
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix-n(1),iy,iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! y periodicity, full range in x now
+  !-----------------------------------------------------------------------------
+  do iz=m(3)%li,m(3)%ui
+  do iy=m(2)%lb,m(2)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy+n(2),iz)
+    end do
+  end do
+  do iy=m(2)%uo,m(2)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy-n(2),iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! z periodicity, full range in xy
+  !-----------------------------------------------------------------------------
+  do iy=m(2)%lb,m(2)%ub
+  do iz=m(3)%lb,m(3)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz+n(3))
+    end do
+  end do
+  do iz=m(3)%uo,m(3)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz-n(3))
+    end do
+  end do
+  end do
+END SUBROUTINE make_periodic8
 
 !> =============================================================================
 !> Time extrapolate guard cell values, to allow using also guard zone values to
@@ -1676,6 +1814,64 @@ SUBROUTINE courant_condition (self, detailed_timer)
       self%id, self%dtime, self%courant, self%u_max
   call trace_end (itimer)
 END SUBROUTINE courant_condition
+
+!> =============================================================================
+FUNCTION fsum4 (self, f) RESULT (out)
+  class(patch_t):: self
+  real:: out
+  real, dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  if (self%no_mans_land) then
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui),kind=8))
+  else
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui-1, &
+                     self%mesh(2)%li:self%mesh(2)%ui-1, &
+                     self%mesh(3)%li:self%mesh(3)%ui-1),kind=8))
+  end if
+END FUNCTION fsum4
+!> =============================================================================
+FUNCTION fsum8 (self, f) RESULT (out)
+  class(patch_t):: self
+  real(8):: out
+  real(8), dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  if (self%no_mans_land) then
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui)))
+  else
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui)))
+  end if
+END FUNCTION fsum8
+
+!> =============================================================================
+FUNCTION faver4 (self, f) RESULT (out)
+  class(patch_t):: self
+  real:: out
+  real, dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  if (self%no_mans_land) then
+    out = self%fsum4(f)/product(self%mesh%ui-self%mesh%li+1)
+  else
+    out = self%fsum4(f)/product(self%mesh%ui-self%mesh%li)
+  end if
+END FUNCTION faver4
+!> =============================================================================
+FUNCTION faver8 (self, f) RESULT (out)
+  class(patch_t):: self
+  real(8):: out
+  real(8), dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  if (self%no_mans_land) then
+    out = self%fsum8(f)/product(self%mesh%ui-self%mesh%li+1)
+  else
+    out = self%fsum8(f)/product(self%mesh%ui-self%mesh%li)
+  end if
+END FUNCTION faver8
 
 !> =============================================================================
 FUNCTION fmaxval4 (self, f) RESULT (fmaxval)

@@ -543,18 +543,10 @@ END SUBROUTINE pde
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
-  real:: error
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Prepare the external forces for the pde call, in particular selfgravity. At
-  ! this point the nbors are declared up-to-date with respect to everything,
-  ! including their potentials, which we need for guard zones.  They may in fact
-  ! be providing only their preliminary potentials in their (nt-1) time slots,
-  ! while their older time slots should by now contain the converged potential.
-  !-----------------------------------------------------------------------------
-  call self%gravity(error)
+  call self%gravity
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
@@ -567,17 +559,10 @@ SUBROUTINE update (self)
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
-  !---------------------------------------------------------------------------
-  ! Having now advanced the MHD state to the new time, and before allowing
-  ! task_list_t%update to rotate the time slots, we make a preliminary
-  ! call to the Poisson solver, based on extrapolation of the nbor potentials.
-  ! We then provide this preliminary potential to nbors, until we have a
-  ! better offer.
-  !---------------------------------------------------------------------------
-  if (self%selfgravity) then
-    call self%dnload (only=self%idx%phi)
-    call self%gravity (error, only=self%idx%phi)
-  end if
+  !-----------------------------------------------------------------------------
+  ! Make a preliminary update of the selfgravity
+  !-----------------------------------------------------------------------------
+  call self%gpatch_t%update
   call trace%end (itimer)
 END SUBROUTINE update
 

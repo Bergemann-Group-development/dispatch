@@ -481,6 +481,7 @@ SUBROUTINE updater (self, head)
   if (mpi_mesg%delay_ms==0.0) then
     wc = wallclock()
   end if
+  task%rotated = .false.
   call task%update                                    ! update the task
   !----------------------------------------------------------------------------
   ! Default delay time = first update time
