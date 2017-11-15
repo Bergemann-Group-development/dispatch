@@ -158,7 +158,7 @@ contains
     real(8)                   :: c(3)
     !-----------------------------------------------------------------------------
     c  = 1d0/ds**2
-    n  = patch%mesh%n
+    n  = patch%mesh%nc
     li = patch%mesh%li
     !-----------------------------------------------------------------------------
     ! For periodic patches, wrap around
@@ -219,7 +219,7 @@ contains
     if (precondition) then
       a = 1d0 + 1d0/12d0
       b = 1d0/6d0
-      n  = patch%mesh%n
+      n  = patch%mesh%nc
       li = patch%mesh%li
       !---------------------------------------------------------------------------
       ! For periodic patches, wrap around (cheap patch so no need to optimize)
