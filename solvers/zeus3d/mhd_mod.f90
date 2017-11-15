@@ -335,7 +335,7 @@ SUBROUTINE update_zeus (self)
   real:: error
   !-----------------------------------------------------------------------------
 
-  call self%gravity(error)
+  call self%gravity
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
@@ -349,13 +349,10 @@ SUBROUTINE update_zeus (self)
   call trace_end(itimer)
   call CopyFromZeus (self)
 
-  if (self%selfgravity) then
-    associate (phi => self%mem(:,:,:,self%idx%phi,:,1), dphidt => self%mem(:,:,:,self%idx%dphi,:,1))
-    call timestep%update_single (self%id, self%iit, self%dt, phi, dphidt, self%mesh, 1)
-    end associate
-    call self%dnload (only=self%idx%phi)
-    call self%gravity (error, only=self%idx%phi)
-  end if
+  !-----------------------------------------------------------------------------
+  ! Make a preliminary update of the selfgravity
+  !-----------------------------------------------------------------------------
+  call self%gpatch_t%update
 
 END SUBROUTINE update_zeus
 
