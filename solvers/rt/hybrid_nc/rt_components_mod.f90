@@ -100,17 +100,9 @@ FUNCTION get_upstream_coord_same(self, pck, ray) result(coords)
  end select
  do i=1,3
    if (coords(i) > patch%ui(i)) then
-     if (patch%no_mans_land) then
-       coords(i) = coords(i) - patch%n(i)
-     else
-       coords(i) = coords(i) - (patch%n(i)-1)
-     end if
+     coords(i) = coords(i) - patch%ncell(i)
    else if (coords(i) < patch%li(i)) then
-     if (patch%no_mans_land) then
-       coords(i) = coords(i) + patch%n(i)
-     else
-       coords(i) = coords(i) + (patch%n(i)-1)
-     end if
+     coords(i) = coords(i) + patch%ncell(i)
    end if
  end do
 END FUNCTION get_upstream_coord_same

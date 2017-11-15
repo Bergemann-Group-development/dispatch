@@ -36,6 +36,7 @@ MODULE mesh_mod
     integer :: id=0          ! copy of task id, for info
     integer :: n = 16        ! number of "active" zones
     integer :: ng = 2        ! number of ghost zones
+    integer :: nc            ! number of cells
     integer :: lb            ! lower boundary of mesh incl. ghost zones
     integer :: li            ! lower boundary of mesh excl. ghost zones
     integer :: lo
@@ -349,12 +350,13 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   ! of the patch, and `self%p + self%centre_nat + self%r(i)`.
   ! in Cartesian coords., self%centre_nat = self%p
   if (self%no_mans_land) then
-    self%d = self%s/max(1,self%n)
     h = 0.5_8
+    self%nc = self%ui - self%li + 1
   else
-    self%d = self%s/max(1,self%n-1)
     h = 1.0_8
+    self%nc = self%ui - self%li
   end if
+  self%d = self%s/max(1,self%nc)
   do i=1,self%gn
     self%r(i) = real(i - h - self%ng,kind=8) * self%d + self%llc_nat - self%centre_nat
   end do

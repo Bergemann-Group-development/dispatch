@@ -56,8 +56,9 @@ MODULE patch_mod
     !---------------------------------------------------------------------------
     integer:: i_d=1, i_s=2, i_e=2, i_px=3, i_py=4, i_pz=5, i_bx=6, i_by=7, i_bz=8, i_tt=9, i_phi=10
     real:: grav                         ! gravitational consant (code units)
-    integer:: n(3)=0, ng(3)=2          ! convenient defaults
+    integer:: n(3)=0, ng(3)=2           ! convenient defaults
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
+    integer:: ncell(3)                  ! number of cells per patch
     integer:: ipos(3)                   ! integer position
     real(8):: offset(3)                 ! this is used to compute indices, locations
     real(8):: llc_cart(3)=0d0           ! the lower left corner of the patch in *Cartesian* coords.
@@ -89,11 +90,17 @@ MODULE patch_mod
     procedure:: myposition_staggered
     procedure:: periodic_grid
     procedure:: extrapolate_guards
+    procedure, private :: fsum4
+    procedure, private :: fsum8
+    generic, public :: fsum    => fsum4, fsum8        ! interior sum
+    procedure, private :: faver4
+    procedure, private :: faver8
+    generic, public :: faver    => faver4, faver8     ! interior average
     procedure, private :: fminval4
     procedure, private :: fminval8
+    generic, public :: fminval => fminval4, fminval8  ! interior min value
     procedure, private :: fmaxval4
     procedure, private :: fmaxval8
-    generic, public :: fminval => fminval4, fminval8  ! interior min value
     generic, public :: fmaxval => fmaxval4, fmaxval8  ! interior max value
     procedure:: courant_condition
     procedure:: check_density
@@ -395,16 +402,9 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Special handling of collapsed dimensions
   !-----------------------------------------------------------------------------
-  if (self%no_mans_land) then
-    self%ds = self%size/self%n
-  else
-    self%ds = self%size/max(1,self%n-1)
-  end if
   where (self%n==1)                             ! for collapsed dimensions
     self%ng = 0                                 ! no guard zones
     self%box = 1                                ! make sure it is non-zero
-    self%ds = minval(self%ds)                   ! then set to reasonable val
-    self%size = self%ds                         ! one cell thick
   end where
   self%llc_cart = self%position - 0.5_8*self%size
   if (self%mesh_type == mesh_types%Cartesian) then
@@ -426,6 +426,12 @@ SUBROUTINE init (self)
     if (self%kind == 'zeus_mhd_patch' .and. &
         self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
   end do
+  self%ds = self%mesh%d
+  where (self%n==1)
+    self%ds = minval(self%ds)
+    self%size = self%ds
+  end where
+  self%ncell = self%mesh%nc
   self%mesh%id = self%id
   self%mesh%b = self%box
   self%mesh%llc_cart = self%llc_cart
@@ -691,11 +697,7 @@ SUBROUTINE periodic_grid (self)
   where (self%mesh%upper_boundary)
     ui = self%mesh%ub
   end where
-  if (self%no_mans_land) then
-    n = self%n
-  else
-    n = self%n-1
-  end if
+  n = self%ncell
   do iz=lb(3),ub(3)
   do iy=lb(2),ub(2)
   do ix=lb(1),ub(1)
@@ -727,6 +729,128 @@ SUBROUTINE periodic_grid (self)
     'periodic_grid: id, it, new =', self%id, self%it, self%new
   call trace_end
 END SUBROUTINE periodic_grid
+
+!> =============================================================================
+FUNCTION is_periodic(self) RESULT(out)
+  class(patch_t):: self
+  logical:: out
+  !.............................................................................
+  out = self%is_set (bits%root_grid) .and. all(self%periodic)
+END FUNCTION is_periodic
+
+!> =============================================================================
+!> Optimized periodic boundary enforcer
+!> =============================================================================
+SUBROUTINE make_periodic4 (patch, f)
+  class(patch_t):: patch
+  class(mesh_t), pointer:: m(:)
+  real(4):: f(:,:,:)
+  integer:: ix, iy, iz, n(3)
+  !-----------------------------------------------------------------------------
+  ! x periodicity; make periodic inside the yz patch limits
+  !-----------------------------------------------------------------------------
+  m => patch%mesh
+  n = patch%ncell
+  do iz=m(3)%li,m(3)%ui
+  do ix=m(1)%lb,m(1)%lo
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix+n(1),iy,iz)
+    end do
+  end do
+  do ix=m(1)%uo,m(1)%ub
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix-n(1),iy,iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! y periodicity, full range in x now
+  !-----------------------------------------------------------------------------
+  do iz=m(3)%li,m(3)%ui
+  do iy=m(2)%lb,m(2)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy+n(2),iz)
+    end do
+  end do
+  do iy=m(2)%uo,m(2)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy-n(2),iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! z periodicity, full range in xy
+  !-----------------------------------------------------------------------------
+  do iy=m(2)%lb,m(2)%ub
+  do iz=m(3)%lb,m(3)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz+n(3))
+    end do
+  end do
+  do iz=m(3)%uo,m(3)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz-n(3))
+    end do
+  end do
+  end do
+END SUBROUTINE make_periodic4
+
+!> =====================================================================
+!> Optimized periodic boundary enforcer
+!> =====================================================================
+SUBROUTINE make_periodic8 (patch, f)
+  class(patch_t):: patch
+  class(mesh_t), pointer:: m(:)
+  real(8):: f(:,:,:)
+  integer:: ix, iy, iz, n(3)
+  !-----------------------------------------------------------------------------
+  ! x periodicity; make periodic inside the yz patch limits
+  !-----------------------------------------------------------------------------
+  m => patch%mesh
+  n = patch%ncell
+  do iz=m(3)%li,m(3)%ui
+  do ix=m(1)%lb,m(1)%lo
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix+n(1),iy,iz)
+    end do
+  end do
+  do ix=m(1)%uo,m(1)%ub
+    do iy=m(2)%li,m(2)%ui
+      f(ix,iy,iz) = f(ix-n(1),iy,iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! y periodicity, full range in x now
+  !-----------------------------------------------------------------------------
+  do iz=m(3)%li,m(3)%ui
+  do iy=m(2)%lb,m(2)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy+n(2),iz)
+    end do
+  end do
+  do iy=m(2)%uo,m(2)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy-n(2),iz)
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! z periodicity, full range in xy
+  !-----------------------------------------------------------------------------
+  do iy=m(2)%lb,m(2)%ub
+  do iz=m(3)%lb,m(3)%lo
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz+n(3))
+    end do
+  end do
+  do iz=m(3)%uo,m(3)%ub
+    do ix=m(1)%lb,m(1)%ub
+      f(ix,iy,iz) = f(ix,iy,iz-n(3))
+    end do
+  end do
+  end do
+END SUBROUTINE make_periodic8
 
 !> =============================================================================
 !> Time extrapolate guard cell values, to allow using also guard zone values to
@@ -936,12 +1060,8 @@ SUBROUTINE output_direct (self)
   ! Pass a chunk to the procedure that eventually writes a binary file
   !-----------------------------------------------------------------------------
   l = self%mesh%li
-  if (self%no_mans_land) then
-    u = self%mesh%ui
-  else
-    u = self%mesh%ui-1
-  end if
-  n = u-l+1
+  n = self%ncell
+  u = l+ n-1
   allocate (buf(n(1),n(2),n(3),self%nv))
   call self%time_interval (self%out_next, jt, pt)
   buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,jt(1),1)*pt(1) &
@@ -1677,17 +1797,61 @@ SUBROUTINE courant_condition (self, detailed_timer)
 END SUBROUTINE courant_condition
 
 !> =============================================================================
+FUNCTION fsum4 (self, f) RESULT (out)
+  class(patch_t):: self
+  real:: out
+  real, dimension(:,:,:), intent(in):: f
+  integer:: n(3)
+  !-----------------------------------------------------------------------------
+  n = self%ncell-1
+  out = sum(real(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                   self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                   self%mesh(3)%li:self%mesh(3)%li+n(3)),kind=8))
+END FUNCTION fsum4
+!> =============================================================================
+FUNCTION fsum8 (self, f) RESULT (out)
+  class(patch_t):: self
+  real(8):: out
+  real(8), dimension(:,:,:), intent(in):: f
+  integer:: n(3)
+  !-----------------------------------------------------------------------------
+  n = self%ncell-1
+  out = sum(real(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                   self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                   self%mesh(3)%li:self%mesh(3)%li+n(3)),kind=8))
+END FUNCTION fsum8
+
+!> =============================================================================
+FUNCTION faver4 (self, f) RESULT (out)
+  class(patch_t):: self
+  real:: out
+  real, dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  out = self%fsum4(f)/product(self%ncell)
+END FUNCTION faver4
+!> =============================================================================
+FUNCTION faver8 (self, f) RESULT (out)
+  class(patch_t):: self
+  real(8):: out
+  real(8), dimension(:,:,:), intent(in):: f
+  !-----------------------------------------------------------------------------
+  out = self%fsum8(f)/product(self%ncell)
+END FUNCTION faver8
+
+!> =============================================================================
 FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
   real:: fmaxval
   class(patch_t):: self
   real, dimension(:,:,:), intent(in):: f
+  integer:: n(3)
   !-----------------------------------------------------------------------------
+  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                       self%mesh(2)%li:self%mesh(2)%ui, &
-                       self%mesh(3)%li:self%mesh(3)%ui))
+    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
   end if
 END FUNCTION fmaxval4
 !> =============================================================================
@@ -1695,13 +1859,15 @@ FUNCTION fminval4 (self, f) RESULT(fminval)
   real:: fminval
   class(patch_t):: self
   real, dimension(:,:,:), intent(in):: f
+  integer:: n(3)
   !-----------------------------------------------------------------------------
+  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fminval = minval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                       self%mesh(2)%li:self%mesh(2)%ui, &
-                       self%mesh(3)%li:self%mesh(3)%ui))
+    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
   end if
 END FUNCTION fminval4
 !> =============================================================================
@@ -1709,13 +1875,15 @@ FUNCTION fmaxval8 (self, f) RESULT (fmaxval)
   real(8):: fmaxval
   class(patch_t):: self
   real(8), dimension(:,:,:), intent(in):: f
+  integer:: n(3)
   !-----------------------------------------------------------------------------
+  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                       self%mesh(2)%li:self%mesh(2)%ui, &
-                       self%mesh(3)%li:self%mesh(3)%ui))
+    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
   end if
 END FUNCTION fmaxval8
 !> =============================================================================
@@ -1723,13 +1891,15 @@ FUNCTION fminval8 (self, f) RESULT(fminval)
   real(8):: fminval
   class(patch_t):: self
   real(8), dimension(:,:,:), intent(in):: f
+  integer:: n(3)
   !-----------------------------------------------------------------------------
+  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fminval = minval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                       self%mesh(2)%li:self%mesh(2)%ui, &
-                       self%mesh(3)%li:self%mesh(3)%ui))
+    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
   end if
 END FUNCTION fminval8
 
