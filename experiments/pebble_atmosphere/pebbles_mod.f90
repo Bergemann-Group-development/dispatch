@@ -101,7 +101,7 @@ SUBROUTINE append (self, pebble)
   ! pointer becomes null, as it should be.  If not, it points to the currently
   ! last item
   !-----------------------------------------------------------------------------
-  pebble%prev => self%tail  
+  pebble%prev => self%tail
   !-----------------------------------------------------------------------------
   ! If the head is null, then this is the first pebble and head should point to it.
   !-----------------------------------------------------------------------------
@@ -109,7 +109,7 @@ SUBROUTINE append (self, pebble)
   !-----------------------------------------------------------------------------
   ! If the tail exists, the new item should be the next item after it
   !-----------------------------------------------------------------------------
-  if (associated(self%tail)) self%tail%next => pebble 
+  if (associated(self%tail)) self%tail%next => pebble
   nullify (pebble%next)
   self%tail => pebble
   self%n = self%n + 1
@@ -190,10 +190,12 @@ SUBROUTINE freeze (self, pebble)
 END SUBROUTINE freeze
 
 !> =============================================================================
-SUBROUTINE export (self, pebble, nbor_list)
+SUBROUTINE export (self, pebble, nbor_list, mass_ratio, ds)
   class(pebbles_t), target:: self
   class(pebble_t), pointer:: pebble
   class(pebbles_t), pointer:: nbor_list
+  real, optional:: mass_ratio
+  real(8), optional:: ds(3)
   integer, save:: nprint=20
   !.............................................................................
   if (debug) print*,'dbg: export', pebble%id, self%id, nbor_list%id, nbor_list%initialized
@@ -202,6 +204,26 @@ SUBROUTINE export (self, pebble, nbor_list)
     if (associated(nbor_list,self)) then
       print*,'ERROR: attempting to export to self', self%id, pebble%id
       stop
+    end if
+    if (present(mass_ratio).and.present(ds)) then
+      if (mass_ratio > 1.5) then
+        block
+          integer:: i, n
+          class(pebble_t), pointer:: new_pebble
+          real:: dr(3)
+          !.......................................................................
+          n = ceiling(mass_ratio)
+          print *, 'splitting pebble into', n
+          pebble%w = pebble%w/n
+          do i=2,n
+            allocate (new_pebble, source=pebble)
+            call new_pebble%init
+            call random_number (dr)
+            new_pebble%p = new_pebble%p + ds*(dr-0.5)
+            call nbor_list%append (new_pebble)
+          end do
+        end block
+      end if
     end if
     call nbor_list%append (pebble)
     if (debug) print*,'dbg: export done', pebble%id, self%id, nbor_list%id, nbor_list%initialized

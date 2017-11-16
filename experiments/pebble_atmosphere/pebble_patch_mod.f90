@@ -34,6 +34,7 @@ MODULE pebble_patch_mod
   USE pebble_trace_mod
   USE mesh_mod
   USE solver_mod
+  USE index_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -69,6 +70,7 @@ MODULE pebble_patch_mod
   integer, save:: n_vol=0, n_bdry=0
   real, save:: xmin=1e10, xmax=-1e10
   logical, save:: detailed_timer=.false.
+  logical, save:: do_split=.true.
 CONTAINS
 
 !> =============================================================================
@@ -94,7 +96,7 @@ SUBROUTINE init (self)
   namelist /pebble_params/ do_pebbles, type, density_yr_cgs, pebble_size_cm, &
     solid_density_cgs, size, size_range, it_max, pebble_rate_cgs, vz_pebble_cgs, &
     id_dbg, only_pebbles, ppc, omega_yr, trace_every, detailed_timer, seed, &
-    do_trace_output
+    do_trace_output, do_split
   !-----------------------------------------------------------------------------
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
@@ -557,6 +559,9 @@ SUBROUTINE scatter (self, nbors, not_done)
   class(task_t), pointer:: task
   integer:: n, m
   real(8):: pos(3)
+  real:: m_patch1, m_patch2
+  real, pointer:: d(:,:,:)
+  type(index_t):: idx
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace_begin ('pebble_patch_t%scatter', itimer=itimer)
@@ -616,7 +621,13 @@ SUBROUTINE scatter (self, nbors, not_done)
                 if ((io%verbose > 0) .and. any(abs(self%position-task%position) > self%box)) then
                   print *, 'INFO: exporting across periodic boundary', self%id, task%id, pebble%id
                 end if
-                call self%pebbles%export (pebble, task%pebbles)
+                if (do_split) then
+                  d => self%mem(:,:,:,idx%d,self%it,1); m_patch1 = self%faver(d)*product(self%size)
+                  d => task%mem(:,:,:,idx%d,task%it,1); m_patch2 = task%faver(d)*product(task%size)
+                  call self%pebbles%export (pebble, task%pebbles, m_patch1/m_patch2, task%ds)
+                else
+                  call self%pebbles%export (pebble, task%pebbles)
+                end if
                 self%pebbles%n_export = self%pebbles%n_export+1
                 goto 9
               end if
@@ -682,7 +693,13 @@ SUBROUTINE scatter (self, nbors, not_done)
               if (task%inside_r4(pebble%p)) then
                 if (debug.or.pebble%id==id_dbg) &
                   print*, pebble%id, 'dbg: exporting to other task', task%id, task%pebbles%id, task%pebbles%n
-                call self%pebbles%export (pebble, task%pebbles)
+                if (do_split) then
+                  d => self%mem(:,:,:,idx%d,self%it,1); m_patch1 = self%faver(d)*product(self%size)
+                  d => task%mem(:,:,:,idx%d,task%it,1); m_patch2 = task%faver(d)*product(task%size)
+                  call self%pebbles%export (pebble, task%pebbles, m_patch1/m_patch2, task%ds)
+                else
+                  call self%pebbles%export (pebble, task%pebbles)
+                end if
                 self%pebbles%n_export = self%pebbles%n_export+1
                 goto 9
               end if
@@ -697,7 +714,7 @@ SUBROUTINE scatter (self, nbors, not_done)
         end do
       end if
       !-------------------------------------------------------------------------
-        ! If it wasn't, export to the 'not_done' list
+      ! If it wasn't, export to the 'not_done' list
       !-------------------------------------------------------------------------
       if (debug.or.pebble%id==id_dbg) &
         print*, self%id, 'dbg: exporting to not_done', pebble%id, not_done%id, not_done%n
@@ -747,6 +764,9 @@ SUBROUTINE gather (self, not_done, nbors, verbose)
   class(pebble_t), pointer:: pebble, next
   class(task_t), pointer:: task
   integer:: n, verbose
+  real:: m_patch1, m_patch2
+  real, pointer:: d(:,:,:)
+  type(index_t):: idx
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace_begin ('pebble_patch_t%gather', itimer=itimer)
@@ -779,9 +799,15 @@ SUBROUTINE gather (self, not_done, nbors, verbose)
         class is (pebble_patch_t)
           if (task%inside_r4(pebble%p)) then
             if (.not.(self%is_set(bits%not_leaf)) .or. task%level>self%level) then
-            if (verbose>0 .or. debug.or.pebble%id==id_dbg) print*, self%id, &
-              'gather: exporting to other task', pebble%id, task%id, task%pebbles%id, task%pebbles%n
-              call not_done%export (pebble, task%pebbles)
+              if (verbose>0 .or. debug.or.pebble%id==id_dbg) print*, self%id, &
+                'gather: exporting to other task', pebble%id, task%id, task%pebbles%id, task%pebbles%n
+              if (do_split) then
+                d => self%mem(:,:,:,idx%d,self%it,1); m_patch1 = self%faver(d)*product(self%size)
+                d => task%mem(:,:,:,idx%d,task%it,1); m_patch2 = task%faver(d)*product(task%size)
+                call not_done%export (pebble, task%pebbles, m_patch1/m_patch2, task%ds)
+              else
+                call not_done%export (pebble, task%pebbles)
+              end if
               not_done%n_export = not_done%n_export+1
               goto 9
             end if
