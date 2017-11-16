@@ -1032,7 +1032,7 @@ SUBROUTINE output_direct (self)
   ! Write a small text file with info when the last chunk is being entered
   !-----------------------------------------------------------------------------
   if (direct_output%count==direct_output%nbuf-1) then
-    write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), id, self%iout
+    write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, id
     if (self%no_mans_land) then
       self%ioformat = 1
     else
