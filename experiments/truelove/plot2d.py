@@ -29,22 +29,24 @@ if __name__ == "__main__":
     gamma = 1.0001
     datadir = './data/'
     prefix = ''
-    ptimes = [0.0,0.1,0.2]
+    ptimes = [0.0,0.1,0.2,0.3,0.35]
+    #ptimes = [0.35]
+    #ptimes = [0.0]
     t_eps = 1e-2
     pxsize = [-1.0,1.0]
     pysize = [-1.0,1.0]
     pltvar = ['d']
-    cmin   = [ 0.1]
-    cmax   = [700.0]
+    cmin   = [0.1]
+    cmax   = [1e3]
     clog   = [   1]
     slicedir = 3  # given with respect to the *root* grid (typically patch id = 1)
     sliceloc = 0.02 # coord. of slice to be taken
-    sliceeps = 1.0e-2
+    sliceeps = 5.0e-3
     showgrids = True
     showgridno = True
     output_png = False
     truecoords = True
-    ThisPatch = Stagger2eMHDPatch
+    ThisPatch = ZeusMHDPatch
     ColMap = cm.RdBu_r
     verbose = False
     skipped = []
@@ -207,6 +209,8 @@ if __name__ == "__main__":
                 var = var[iindex,jindex,kindex]
             else:
                 var = p.data[iindex,jindex,kindex,p.varidx[pltvar[0]]]
+            dmass = p.data[p.li[0]-1:p.ui[0],p.li[1]-1:p.ui[1],p.li[2]-1:p.ui[2],p.varidx['d']] * p.ds.prod()
+            mass = np.sum(dmass)
 
             # record global max. and min. of data
             qmin = min(qmin, np.nanmin(var))
@@ -218,7 +222,7 @@ if __name__ == "__main__":
             else:
                 var = np.ma.array(var,mask=cut_mask[iindex,jindex,kindex])
             cpltvar = pltvar[0]
-            print cpltvar, ": ", var.min(), var.max(), var.shape
+            print cpltvar, ": ", var.min(), var.max(), var.shape, "; M = ", mass
             print kindex
             # Note that these values, in general, will differ between patches.
             if cmin[0] == 0.0 and cmax[0] == 0.0:
