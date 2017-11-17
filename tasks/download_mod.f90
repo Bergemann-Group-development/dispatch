@@ -286,7 +286,7 @@ SUBROUTINE download_link (link, all_cells, only)
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................
-  class(link_t), pointer:: nbor
+  class(link_t), pointer:: nbor, sorted_head
   class(patch_t), pointer:: target, source
   integer:: edges
   integer, save:: itimer=0
@@ -308,39 +308,36 @@ SUBROUTINE download_link (link, all_cells, only)
   end if
   if (target%is_set(bits%root_grid)) call target%periodic_grid
 
-    do edges=3,1,-1
-      nbor => link%nbor
-      do while (associated(nbor))
-        source => task2patch(nbor%task)
-        if (target%count_edges(source) == edges) then
-          if (target%id == io%id_debug) then
-            print *, source%id, ' EDGE COUNT:', edges
-          end if
-          if (trim(target%kind)/='rt_solver') then
-            if (source%is_clear(bits%no_download)) then
-              if (source%level==target%level) then
-                call same (target, source, filled, all_cells, only=only)
-              else if ((source%level-target%level) == -1) then
-                call different_prolong (target, source, filled, all_cells, only=only)
-              else if ((source%level-target%level) == 1) then
-                call different_restrict (target, source, filled, only=only)
-              end if
-            end if
+  ! Take the nbor list and produce a list sorted by decreasing distance from `target`.
+  call sort_nbors_by_distance (link,sorted_head)
+
+  ! Walk through the sorted neighbour list
+  nbor => sorted_head
+  do while (associated(nbor))
+    source => task2patch(nbor%task)
+    if (trim(target%kind)/='rt_solver') then
+      if (source%is_clear(bits%no_download)) then
+        if (source%level==target%level) then
+          call same (target, source, filled, all_cells, only=only)
+        else if ((source%level-target%level) == -1) then
+          call different_prolong (target, source, filled, all_cells, only=only)
+        else if ((source%level-target%level) == 1) then
+          call different_restrict (target, source, filled, only=only)
+        end if
+      end if
+    else
+      if (trim(source%kind)=='rt_solver') then
+        if (abs(source%level-target%level) < 2) then
+          if (source%level==target%level) then
+            call same_rt (target, source, filled)
           else
-            if (trim(source%kind)=='rt_solver') then
-              if (abs(source%level-target%level) < 2) then
-                if (source%level==target%level) then
-                  call same_rt (target, source, filled)
-                else
-                  call different_rt (target, source, filled)
-                end if
-              end if
-            end if
+            call different_rt (target, source, filled)
           end if
         end if
-        nbor => nbor%next
-      end do
-    end do
+      end if
+    end if
+    nbor => nbor%next
+  end do
 
   call target%check_density (" after download")
   deallocate (filled)
@@ -837,5 +834,56 @@ SUBROUTINE different_restrict (target, source, filled, only)
   end do
   call trace%end (itimer)
 END SUBROUTINE different_restrict
+
+!> =============================================================================
+!> Create a nbors list sorted by decreasing distance.
+!> =============================================================================
+SUBROUTINE sort_nbors_by_distance (this, head)
+  class(link_t), pointer:: this, head
+  class(link_t), pointer:: nbor, xx, pp, nn
+  real(8):: r2n, r2x
+  !.............................................................................
+  allocate (head)
+  head%task => this%nbor%task
+  nbor => this%nbor%next
+
+  do while (associated(nbor))
+    allocate (nn)
+    nn%task => nbor%task
+    r2n = sum(this%task%distance(nbor%task)**2)
+    xx => head
+    nullify(pp)
+    do while (associated(xx))
+      if (.not.associated(xx%task,nbor%task)) then
+        r2x = sum(this%task%distance(xx%task)**2)
+        if (r2n > r2x) then
+          ! insert before
+          nn%next => xx
+          if (.not. associated(pp)) then
+            head => nn
+          else
+            pp%next => nn
+          end if
+          exit
+        end if
+        if (.not. associated(xx%next)) xx%next => nn
+      end if
+      pp => xx
+      xx => xx%next
+    end do
+    nbor => nbor%next
+  end do
+
+  if (io%verbose > 1) then
+    print*, "target: ",this%task%id
+    print*, "sorted nbors:"
+    xx => head
+    do while(associated(xx))
+      print*,xx%task%id,sum(this%task%distance(xx%task)**2)
+      xx => xx%next
+    end do
+    print*,'----'
+  end if
+END SUBROUTINE sort_nbors_by_distance
 
 END MODULE
