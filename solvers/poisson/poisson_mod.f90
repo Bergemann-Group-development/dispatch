@@ -68,11 +68,17 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
   integer                :: niter
   real                   :: error, error0, usppt
   real(8)                :: pap, ru, ru2, alpha, beta, ds(3), wc
-  integer                :: iter, m(3)
+  integer                :: iter, m(3), ione, jone, kone
   integer, save          :: itimer=0
   real(8), dimension(:,:,:), allocatable:: source, phi, r, p, s, u
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin('poisson_mod%cg', itimer=itimer)
+  ione = 1
+  jone = 1
+  kone = 1
+  if (size(phi1,1) <= 1) ione = 0
+  if (size(phi1,2) <= 1) jone = 0
+  if (size(phi1,3) <= 1) kone = 0
   !-----------------------------------------------------------------------------
   ! Allocate double precision scratch arrays
   !-----------------------------------------------------------------------------
@@ -139,12 +145,18 @@ contains
     !.............................................................................
     if (patch%is_periodic()) return
     m => patch%mesh
-    f(m(1)%lb:m(1)%lo,:,:) = 0d0
-    f(m(1)%uo:m(1)%ub,:,:) = 0d0
-    f(:,m(2)%lb:m(2)%lo,:) = 0d0
-    f(:,m(2)%uo:m(2)%ub,:) = 0d0
-    f(:,:,m(3)%lb:m(3)%lo) = 0d0
-    f(:,:,m(3)%uo:m(3)%ub) = 0d0
+    if (size(f,1) > 1) then
+      f(m(1)%lb:m(1)%lo,:,:) = 0d0
+      f(m(1)%uo:m(1)%ub,:,:) = 0d0
+    end if
+    if (size(f,2) > 1) then
+      f(:,m(2)%lb:m(2)%lo,:) = 0d0
+      f(:,m(2)%uo:m(2)%ub,:) = 0d0
+    end if
+    if (size(f,3) > 1) then
+      f(:,:,m(3)%lb:m(3)%lo) = 0d0
+      f(:,:,m(3)%uo:m(3)%ub) = 0d0
+    end if
   end subroutine zero_boundaries
   !> =============================================================================
   !> 2nd order Laplace operator
@@ -177,9 +189,9 @@ contains
                        + c(3)*(phi(i,j,kp1)+phi(i,j,km1)-2d0*phi(i,j,k))
           end do
           do i=patch%mesh(1)%li,patch%mesh(1)%ui
-            out(i,j,k) = c(1)*(phi(i+1,j,k)+phi(i-1,j,k)-2d0*phi(i,j,k)) &
-                       + c(2)*(phi(i,jp1,k)+phi(i,jm1,k)-2d0*phi(i,j,k)) &
-                       + c(3)*(phi(i,j,kp1)+phi(i,j,km1)-2d0*phi(i,j,k))
+            out(i,j,k) = c(1)*(phi(i+ione,j,k)+phi(i-ione,j,k)-2d0*phi(i,j,k)) &
+                       + c(2)*(phi(i   ,jp1,k)+phi(i   ,jm1,k)-2d0*phi(i,j,k)) &
+                       + c(3)*(phi(i   ,j,kp1)+phi(i   ,j,km1)-2d0*phi(i,j,k))
           end do
           do i=patch%mesh(1)%uo,patch%mesh(1)%ub
             ip1 = modulo(i-li(1)+1,n(1))+li(1)
@@ -198,9 +210,9 @@ contains
       do k=patch%mesh(3)%li,patch%mesh(3)%ui
         do j=patch%mesh(2)%li,patch%mesh(2)%ui
           do i=patch%mesh(1)%li,patch%mesh(1)%ui
-            out(i,j,k) = c(1)*(phi(i+1,j,k)+phi(i-1,j,k)-2d0*phi(i,j,k)) &
-                       + c(2)*(phi(i,j+1,k)+phi(i,j-1,k)-2d0*phi(i,j,k)) &
-                       + c(3)*(phi(i,j,k+1)+phi(i,j,k-1)-2d0*phi(i,j,k))
+            out(i,j,k) = c(1)*(phi(i+ione,j,k)+phi(i-ione,j,k)-2d0*phi(i,j,k)) &
+                       + c(2)*(phi(i,j+jone,k)+phi(i,j-jone,k)-2d0*phi(i,j,k)) &
+                       + c(3)*(phi(i,j,k+kone)+phi(i,j,k-kone)-2d0*phi(i,j,k))
           end do
         end do
       end do
@@ -247,9 +259,9 @@ contains
         do k=patch%li(3),patch%ui(3)
           do j=patch%li(2),patch%ui(2)
             do i=patch%li(1),patch%ui(1)
-              out(i,j,k) = b*(res(i+1,j,k)+res(i-1,j,k)  &
-                         +    res(i,j+1,k)+res(i,j-1,k)  &
-                         +    res(i,j,k+1)+res(i,j,k-1)) &
+              out(i,j,k) = b*(res(i+ione,j,k)+res(i-ione,j,k)  &
+                         +    res(i,j+jone,k)+res(i,j-jone,k)  &
+                         +    res(i,j,k+kone)+res(i,j,k-kone)) &
                          + a*res(i,j,k)
             end do
           end do
@@ -269,17 +281,24 @@ SUBROUTINE laplace (ds, phi, source, res)
   real(8)                   :: ds(3)
   real, dimension(:,:,:)    :: phi, source, res
   !.............................................................................
-  integer                   :: ix, iy, iz, m(3)
+  integer                   :: ix, iy, iz, m(3), ione, jone, kone
   real(8)                   :: c(3)
   !-----------------------------------------------------------------------------
+  ione = 1
+  jone = 1
+  kone = 1
+  if (size(phi,1) <= 1) ione = 0
+  if (size(phi,2) <= 1) jone = 0
+  if (size(phi,3) <= 1) kone = 0
+
   c = 1d0/ds**2
   m = shape(phi)
-  do iz=2,m(3)-1
-  do iy=2,m(2)-1
-  do ix=2,m(1)-1
-    res(ix,iy,iz) = c(1)*(phi(ix+1,iy,iz)+phi(ix-1,iy,iz)-2d0*phi(ix,iy,iz)) &
-                  + c(2)*(phi(ix,iy+1,iz)+phi(ix,iy-1,iz)-2d0*phi(ix,iy,iz)) &
-                  + c(3)*(phi(ix,iy,iz+1)+phi(ix,iy,iz-1)-2d0*phi(ix,iy,iz)) &
+  do iz=2,m(3)-kone
+  do iy=2,m(2)-jone
+  do ix=2,m(1)-ione
+    res(ix,iy,iz) = c(1)*ione*(phi(ix+ione,iy,iz)+phi(ix-ione,iy,iz)-2d0*phi(ix,iy,iz)) &
+                  + c(2)*jone*(phi(ix,iy+jone,iz)+phi(ix,iy-jone,iz)-2d0*phi(ix,iy,iz)) &
+                  + c(3)*kone*(phi(ix,iy,iz+kone)+phi(ix,iy,iz-kone)-2d0*phi(ix,iy,iz)) &
                   - source(ix,iy,iz)
   end do
   end do
