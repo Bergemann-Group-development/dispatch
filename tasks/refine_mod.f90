@@ -202,7 +202,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%llc_nat = child%llc_cart                     ! FIXME!: this form only applies for Cartesian coords.
   call child%init()                                  ! patch, for a new id
   child%level = parent%level + 1                     ! override the calculation in `patch_t%init`.
-  child%dt(child%it) = parent%dt(parent%it)          ! reset the time-step
+  child%dt(child%it) = parent%dt(parent%it) / refine%refinement_ratio ! reset the time-step
   child%t(child%it) = child%time
   child%out_next = child%time                        ! force output now
   child%iout = max(0,child%iout - 1)                 ! correct output counter
