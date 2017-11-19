@@ -446,9 +446,7 @@ SUBROUTINE update (self)
   ! the call here will have no effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
   call self%output
-  if (self%incompressible) then
-    self%mem(:,:,:,idx%d,self%it,1) = 1.0
-  end if
+  self%mem(:,:,:,idx%d,self%it,1) = 1.0
   if (self%isothermal) then
     self%mem(:,:,:,idx%e,self%it,1) = &
     self%mem(:,:,:,idx%d,self%it,1)*self%csound**2
