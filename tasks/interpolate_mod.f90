@@ -107,6 +107,9 @@ FUNCTION interpolator_van_Leer_3d (q,i,j,k,iv,w) result(qtilde)
   if (lfc(2) .or. lfc(3)) ldim(1) = .true.
   if (lfc(3) .or. lfc(1)) ldim(2) = .true.
   if (lfc(1) .or. lfc(2)) ldim(3) = .true.
+  if (size(q,1) <= 1) ldim(1) = .false.
+  if (size(q,2) <= 1) ldim(2) = .false.
+  if (size(q,3) <= 1) ldim(3) = .false.
 
   qijk = q(i,j,k,iv)
 

@@ -20,6 +20,7 @@ MODULE download_mod
   private
   type, public:: download_t
     integer(8):: n_same=0, n_differ=0
+    integer:: order_interpolator
     procedure(interpolator_interface), pointer, nopass:: interpolate => null()
   contains
     procedure, nopass:: download_link
@@ -47,6 +48,7 @@ SUBROUTINE init (self)
     read (io%input, download_params, iostat=iostat)
     if (io%master) write (*, download_params)
   end if
+  self%order_interpolator = order_interpolator
   self%interpolate => SelectInterpolator(order_interpolator)
   !$omp end critical (download_cr)
   call trace%end
@@ -68,6 +70,7 @@ SUBROUTINE test (self)
   integer(int8), dimension(:,:,:,:), allocatable:: filled
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%test')
+  self%interpolate => SelectInterpolator(-1)
   !-----------------------------------------------------------------------------
   ! Generate meshes with three resolutions, differing with a factor of three,
   ! with and w/o staggering
@@ -174,6 +177,7 @@ SUBROUTINE test (self)
     call source(i)%delete
   end do
   deallocate (target, source)
+  self%interpolate => SelectInterpolator(self%order_interpolator)
   call trace%end
 contains
 !> =============================================================================
