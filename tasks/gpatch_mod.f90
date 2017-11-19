@@ -105,11 +105,13 @@ SUBROUTINE init (self)
   ! Sum up the total mass and total volume, to get the average density d0.
   ! FIXME: This needs to be modified for MPI
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d,self%it,1)
-  !$omp atomic
-  total_mass = total_mass + self%fsum(d)*product(self%ds)
-  !$omp atomic
-  total_volume = total_volume + product(self%size)
+  if (self%time == 0.0) then
+    d => self%mem(:,:,:,self%idx%d,self%it,1)
+    !$omp atomic
+    total_mass = total_mass + self%fsum(d)*product(self%ds)
+    !$omp atomic
+    total_volume = total_volume + product(self%size)
+  end if
   !-----------------------------------------------------------------------------
   ! If restart succeeded for some patch, use it to set time and output cadence.
   ! FIXME: This may fail in some corner cases when running on multiple MPI ranks,
