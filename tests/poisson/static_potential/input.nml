@@ -1,5 +1,5 @@
 &timer_params
- sec_per_report=10
+ sec_per_report=20
 /
 
 &io_params
@@ -12,24 +12,26 @@
 /
 
 &rubiks_params
- size=0.0123456,0.0123456,1.0
+ !size=0.001371742,0.001371742,1.0
+ !size=0.004115226,0.004115226,1.0
+ !size=0.0123456,0.0123456,1.0
  !size=0.037037,0.037037,1.0
- !size=0.11111,0.11111,1.0
+ size=0.11111,0.11111,1.0
  !size=0.33333,0.33333,1.0
  !size=1.0,1.0,1.0
  n_patch=3,3,1
  n_repeat=1,1,1
  m_zoom=3
- n_levels=4
+ n_levels=2
  position=0.5,0.5,0.0
 /
 
 &out_params
- end_time=100.0
+ end_time=150.0
  out_time=10.0
  guard_zones=t
  time_derivs=f
- print_time=500.0
+ print_time=1.0
 /
 
 &patch_params
@@ -39,16 +41,12 @@
   no_mans_land=f
 /
 
-&experiment_params
- aepsilon=1e-3
-/
-
 &initial_params
- r0=0.25
+ r0=0.1
 /
 
 &timestep_params
-  time_order=1
+  time_order=2
 /
 
 &refine_params
@@ -58,14 +56,14 @@
 &selfgravity_params
  selfgravity=t
  verbose=1
- fourpiG=1.0
- prediction=f
- order=1
- max_iter=1000
- repsilon=1e-1
- aepsilon=1e-3
+ prediction=f order=1
 /
 
 &poisson_params
- solver='zeus_sor'
+ floor=1e-8
+ tolerance=1e-3
+ fourpiG=1.0
+ max_iter=200
+ precondition=t
+ verbose=1
 /
