@@ -848,6 +848,10 @@ SUBROUTINE sort_nbors_by_distance (this, head)
   real(8):: r2n, r2x
   !.............................................................................
   allocate (head)
+  if (.not. associated(this%nbor)) then
+    nullify(head)
+    return
+  end if
   head%task => this%nbor%task
   nbor => this%nbor%next
 
