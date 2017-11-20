@@ -123,7 +123,7 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
     ru = ru2
     if (verbose > 1) print "(i6,2x,'cg: iter = ',i4.1,3x,'error =',1p,g12.4)", &
       patch%id, iter, error
-    write (11) phi
+    !!!write (11) phi
   end do
   if (iter==max_iter+1) then
     print *, 'poisson_t%cg: no convergence, niter, error =', max_iter, error
