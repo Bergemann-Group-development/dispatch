@@ -51,8 +51,8 @@ if __name__ == "__main__":
     plt.rc('font', size=18)
     plt.interactive(True)
 
-    data = './data'
-    iters = [0,5,10]
+    data = './data/'
+    iters = [5,10,14,15]
     pxsize = [ 0.0, 1.0]
     pysize = [ 0.0, 1.0]
     pltvar = [ 'd','phie','phi','rdphi']
@@ -62,10 +62,11 @@ if __name__ == "__main__":
     showgrids = True
     showgridno = True
     ColMap = cm.RdBu_r
-    r0 = 0.25
+    r0 = 0.1
 
     L2_min, L2_max, L2_mean = [], [], []
     Linf_min, Linf_max, Linf_mean = [], [], []
+    istep_min, istep_max = [], []
     for i in iters:
         patches = du.patches(data=data,iout=i)
         for pp in patches:
@@ -77,6 +78,7 @@ if __name__ == "__main__":
         gs = gridspec.GridSpec(1,len(pltvar))
         
         axs = []
+        istep_p_min, istep_p_max = 1000000, -1000000
         for j in xrange(len(pltvar)):
             if j == 0:
                 cax = cfig.add_subplot(gs[0,j])
@@ -108,7 +110,7 @@ if __name__ == "__main__":
                     jindex = slice(0,pp.n[1])
                     kindex = slice(0,pp.n[2])
 
-                print "Data:", pp.filename, pp.istep
+                print "Data:", pp.filename, "; step #: ",pp.istep
                 if pltvar[j] == 'rdd':
                     var = pp.data[iindex,jindex,kindex,pp.varidx['d']]
                     q0 = rho_exact(xp,yp,r0=r0)
@@ -131,6 +133,9 @@ if __name__ == "__main__":
                     var = pp.data[iindex,jindex,kindex,pp.varidx[pltvar[j]]]
 
                 print spltvar, ": ", var.min(), var.max(), var.shape
+                if j == 0:
+                    istep_p_min = min(istep_p_min, pp.istep)
+                    istep_p_max = max(istep_p_max, pp.istep)
                 xpp = xp[iindex,jindex,kindex].squeeze()
                 ypp = yp[iindex,jindex,kindex].squeeze()
 
@@ -152,8 +157,12 @@ if __name__ == "__main__":
                     cax.annotate(str(pp.id),(gn_xpos,gn_ypos),color='k',weight='extra bold',
                                  fontsize=13,zorder=min(pp.dx))
 
+
             cbar = plt.colorbar(conf, ax=cax, fraction=0.03, pad=0.03)
             cbar.ax.annotate(spltvar,xy=(-0.10,-0.06),fontsize=14,xycoords='axes fraction')
+
+        istep_min.append(istep_p_min)
+        istep_max.append(istep_p_max)
 
         cfig.tight_layout()
         plt.draw()
@@ -196,7 +205,7 @@ if __name__ == "__main__":
         Linf_mean.append(np.mean(Linf_iter))
 
     for i in xrange(len(iters)):
-        print "i = {0}, iout = {1} (normalised)".format(i,iters[i])
+        print "i = {0}, iout = {1}, min nsteps = {2}, max nsteps = {3}".format(i,iters[i],istep_min[i], istep_max[i])
         print "L2 min = {0:.3e}, L2 max = {1:.3e}, L2 mean = {2:.3e}".format(L2_min[i],L2_max[i],L2_mean[i])
         print "Linf min = {0:.3e}, Linf max = {1:.3e}, Linf mean = {2:.3e}".format(Linf_min[i],Linf_max[i],Linf_mean[i])
         print "-"*40
