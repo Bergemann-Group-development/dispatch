@@ -26,6 +26,11 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%init')
 
+  if (first_time) then
+    call timestep%init
+    first_time = .false.
+  end if
+
   self%nv = 1
   self%nw = 2
   self%periodic = .false.
