@@ -51,14 +51,15 @@ if __name__ == "__main__":
     plt.rc('font', size=18)
     plt.interactive(True)
 
-    data = './data/'
-    iters = [5,10,14,15]
+    data = './data/input_1p'
+    iters = [0,1,2]
+    #iters = [0]
     pxsize = [ 0.0, 1.0]
     pysize = [ 0.0, 1.0]
     pltvar = [ 'd','phie','phi','rdphi']
-    cmin   = [ 1.0,  0.0,  0.0,    0.0]
-    cmax   = [ 63.,  2.2,  2.2,    2.0]
-    clog   = [   0,    0,    0,      0]
+    cmin   = [ 1.0,  0.0,  0.0,   1e-3]
+    cmax   = [ 1e2, 10.0, 10.0,    1e0]
+    clog   = [   1,    0,    0,      1]
     showgrids = True
     showgridno = True
     ColMap = cm.RdBu_r
@@ -67,6 +68,7 @@ if __name__ == "__main__":
     L2_min, L2_max, L2_mean = [], [], []
     Linf_min, Linf_max, Linf_mean = [], [], []
     istep_min, istep_max = [], []
+    mi = 0
     for i in iters:
         patches = du.patches(data=data,iout=i)
         for pp in patches:
@@ -91,8 +93,13 @@ if __name__ == "__main__":
             # ensure the axes remain visible by putting them at the "top"
             cax.set_zorder(99.0)
 
-            levels = np.linspace(cmin[j],cmax[j],num=50)
             spltvar = pltvar[j]
+            if clog[j] == 1:
+                spltvar = r'log ' + spltvar
+                if cmin[j] != 0.0 and mi == 0: cmin[j] = np.log10(cmin[j])
+                if cmax[j] != 0.0 and mi == 0: cmax[j] = np.log10(cmax[j])
+            levels = np.linspace(cmin[j],cmax[j],num=50)
+            print cmin[j],cmax[j]
 
             for pp in patches:
                 x_i = dg.dispatch_grid(pp)
@@ -141,7 +148,6 @@ if __name__ == "__main__":
 
                 if clog[j] == 1:
                     var = np.log10(var)
-                    spltvar = r'log ' + spltvar
 
                 conf = cax.contourf(xpp,ypp,var.squeeze(),levels,cmap=ColMap,
                              extend='both',zorder=-min(pp.dx))
@@ -203,6 +209,9 @@ if __name__ == "__main__":
         Linf_min.append(np.min(Linf_iter))
         Linf_max.append(np.max(Linf_iter))
         Linf_mean.append(np.mean(Linf_iter))
+
+        # increment counter (`iters` loop)
+        mi += 1
 
     for i in xrange(len(iters)):
         print "i = {0}, iout = {1}, min nsteps = {2}, max nsteps = {3}".format(i,iters[i],istep_min[i], istep_max[i])
