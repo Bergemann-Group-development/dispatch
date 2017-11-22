@@ -30,6 +30,7 @@ MODULE initial_mod
   integer, save:: seed1
   integer, save:: id=0
   real, save:: alpha=0.8
+  real, save:: beta=1.0
   real, save:: epsilon=0.1
   real, allocatable:: ran(:)
   logical, save:: first_time=.true.
@@ -48,7 +49,7 @@ SUBROUTINE init (self, solver, gamma)
   !............................................................................
   logical, save:: mhd=.true.
   character(len=32), save:: type='politano+95'
-  namelist /initial_params/ alpha, epsilon, seed, read_random
+  namelist /initial_params/ alpha, beta, epsilon, seed, read_random
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
   !$omp critical (input_cr)
@@ -144,8 +145,8 @@ SUBROUTINE condition (self, m, f)
       phi(2)   =  pi2*(r2(iy)+m(2)%p)/m(2)%b
       do ix=m(1)%lb,m(1)%ub
         phi(1)   =  pi2*(r1(ix)+m(1)%p)/m(1)%b
-        f(ix,iy,iz,idx%d ) = 1.0
-        f(ix,iy,iz,idx%e ) = 1.0
+        f(ix,iy,iz,idx%d ) = beta
+        f(ix,iy,iz,idx%e ) = beta
         ff(ix,iy,iz,1) = -2.0*sin(phi(2))                         ! ux
         ff(ix,iy,iz,2) = +2.0*sin(phi(1))                         ! uy
         ff(ix,iy,iz,3) = 0.0                                      ! uz
